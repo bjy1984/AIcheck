@@ -48,17 +48,18 @@ def expected_d7006() -> dict[str, str]:
     result.update({f"R{n:02d}": f"D2.2({n - 3})" for n in range(4, 10)})
     result["R11"] = "D2.3"
     result.update({
-        "R12": "D2.6.1", "R13": "D2.6.2", "R14": "D2.6.3(1)", "R15": "D2.6.3(2)", "R16": "D2.6.4",
-        "R17": "D2.6.5(1)", "R18": "D2.6.5(2)", "R19": "D2.6.6", "R20": "D2.7(1)", "R21": "D2.7(2)", "R22": "D2.7(3)",
-        "R23": "D2.8.1(1)", "R24": "D2.8.1(2)", "R25": "D2.8.1(3)", "R26": "D2.8.2", "R27": "D2.8.3", "R28": "D2.8.4", "R29": "D2.8.5", "R30": "D2.8.6",
-        "R31": "D2.9(1)", "R32": "D2.9(2)", "R33": "D2.9(3)", "R34": "D2.9(3)", "R35": "D2.9(4)",
-        "R36": "D2.10(1)", "R37": "D2.10(2)", "R38": "D2.10(3)", "R39": "D2.10(4)",
-        "R40": "D2.11(1)", "R41": "D2.11(2)", "R42": "D2.11(2)", "R43": "D2.11(2)",
-        "R44": "D2.12(1)", "R45": "D2.12(2)", "R46": "D2.12(3)",
-        "R47": "D2.13.1(1)", "R48": "D2.13.1(2)", "R49": "D2.13.1(3)", "R50": "D2.13.1(4)",
-        "R51": "D2.13.2(1)", "R52": "D2.13.2(2)", "R53": "D2.13.2(3)", "R54": "D2.14(1)", "R55": "D2.14(2)", "R56": "D2.15",
-        "R57": "D2.4.1(1)", "R58": "D2.4.1(2)", "R59": "D2.4.1(3)", "R60": "D2.4.1(4)", "R61": "D2.4.1(5)",
-        "R62": "D2.4.1(6)", "R63": "D2.4.1(7)", "R64": "D2.4.1(8)", "R65": "D2.4.1(9)", "R66": "D2.4.2", "R67": "D2.4.3", "R68": "D2.5",
+        "R24": "D2.6.1", "R25": "D2.6.2", "R26": "D2.6.3(1)", "R27": "D2.6.3(2)", "R28": "D2.6.4",
+        "R29": "D2.6.5(1)", "R30": "D2.6.5(2)", "R31": "D2.6.6", "R32": "D2.7(1)", "R33": "D2.7(2)", "R34": "D2.7(3)",
+        "R35": "D2.8.1(1)", "R36": "D2.8.1(2)", "R37": "D2.8.1(3)", "R38": "D2.8.2", "R39": "D2.8.3", "R40": "D2.8.4", "R41": "D2.8.5", "R42": "D2.8.6",
+        "R43": "D2.9(1)", "R44": "D2.9(2)", "R45": "D2.9(3)", "R46": "D2.9(3)", "R47": "D2.9(4)",
+        "R48": "D2.10(1)", "R49": "D2.10(2)", "R50": "D2.10(3)", "R51": "D2.10(4)",
+        "R52": "D2.11(1)", "R53": "D2.11(2)", "R54": "D2.11(2)", "R55": "D2.11(2)",
+        "R56": "D2.12(1)", "R57": "D2.12(2)", "R58": "D2.12(3)",
+        "R59": "D2.13.1(1)", "R60": "D2.13.1(2)", "R61": "D2.13.1(3)", "R62": "D2.13.1(4)",
+        "R63": "D2.13.2(1)", "R64": "D2.13.2(2)", "R65": "D2.13.2(3)", "R66": "D2.14(1)", "R67": "D2.14(2)", "R68": "D2.15",
+        "R12": "D2.4.1(1)", "R13": "D2.4.1(2)", "R14": "D2.4.1(3)", "R15": "D2.4.1(4)", "R16": "D2.4.1(5)",
+        "R17": "D2.4.1(6)", "R18": "D2.4.1(7)", "R19": "D2.4.1(8)", "R20": "D2.4.1(9)", "R21": "D2.4.2", "R22": "D2.4.3", "R23": "D2.5",
+        "R69": "2.2.4",
     })
     return result
 
@@ -73,7 +74,7 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
     packages = package_doc["standardClausePackages"]
     rules = load("rules.yaml")["ruleSets"]
 
-    expected_rules = {f"R{index:02d}" for index in range(1, 69)}
+    expected_rules = {f"R{index:02d}" for index in range(1, 70)}
     by_binding = {item["sourceRuleId"]: item for item in bindings}
     by_package = {item["sourceRuleId"]: item for item in packages}
     check_ids = {item["id"] for item in checks}
@@ -87,11 +88,11 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
         if duplicates:
             errors.append(f"{label} duplicate ids: {duplicates}")
     if set(by_binding) != expected_rules:
-        errors.append("primary binding coverage is not R01-R68")
+        errors.append("primary binding coverage is not R01-R69")
     if set(by_package) != expected_rules:
-        errors.append("package coverage is not R01-R68")
+        errors.append("package coverage is not R01-R69")
     if {rule["sourceRuleId"] for rule in rules} != expected_rules:
-        errors.append("rules.yaml coverage is not R01-R68")
+        errors.append("rules.yaml coverage is not R01-R69")
 
     expected = expected_d7006()
     for source_rule, clause in expected.items():
@@ -123,7 +124,9 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
         if unknown_checks:
             errors.append(f"{package['sourceRuleId']} unknown atomic checks: {sorted(unknown_checks)}")
         if package["decisionModel"]["ruleExecution"] != "deterministic_tools_only":
-            errors.append(f"{package['sourceRuleId']} does not enforce deterministic tools")
+            errors.append(f"{package['sourceRuleId']} has an invalid decision execution mode")
+        if package["sourceRuleId"] == "R69" and package["decisionModel"].get("automatedDecisionAllowed") is not False:
+            errors.append("R69 must prohibit an automated evaluation conclusion")
         for clause in package["professionalClauses"]:
             professional_clause_count += 1
             if clause["standardRef"] not in catalog_ids:
@@ -152,12 +155,12 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
 
     second_check_expected = {
         "R03": ("STD-TSG-Z7002-2022", "附件A（核准证样式、填写说明及表A-1核准项目代码）"),
-        "R33": ("STD-SYT-4113.11-2023", "第4-7章"),
-        "R34": ("STD-GBT-21448-2017", "第5-7章、第9章"),
-        "R37": ("STD-GB-50235-2010", "7.1、7.3、7.9"),
-        "R56": ("STD-GB-50235-2010", "第9章（9.1-9.7）"),
-        "R59": ("STD-GBT-8163-2018", "第6-8章"),
-        "R61": ("STD-GBT-13401-2025", "第8章、第10-11章"),
+        "R45": ("STD-SYT-4113.11-2023", "第4-7章"),
+        "R46": ("STD-GBT-21448-2017", "第5-7章、第9章"),
+        "R49": ("STD-GB-50235-2010", "7.1、7.3、7.9"),
+        "R68": ("STD-GB-50235-2010", "第9章（9.1-9.7）"),
+        "R14": ("STD-GBT-8163-2018", "第6-8章"),
+        "R16": ("STD-GBT-13401-2025", "第8章、第10-11章"),
     }
     for source_rule, expected_clause in second_check_expected.items():
         actual = {(item["standardRef"], item["clauseNo"]) for item in by_package[source_rule]["professionalClauses"]}
@@ -166,15 +169,16 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
 
     batches = package_doc["standardClausePackageSet"]["batches"]
     flattened = [rule for batch in batches for rule in batch["sourceRuleIds"]]
-    if len(flattened) != 68 or set(flattened) != expected_rules or len(flattened) != len(set(flattened)):
-        errors.append("six-batch partition is not an exact partition of R01-R68")
+    if len(flattened) != 69 or set(flattened) != expected_rules or len(flattened) != len(set(flattened)):
+        errors.append("six-batch partition is not an exact partition of R01-R69")
 
     matrix = (REPO_ROOT / "docs" / "业务节点具体标准条款审核矩阵.md").read_text(encoding="utf-8")
     matrix_rows = [line for line in matrix.splitlines() if line.startswith("| BATCH-")]
-    if len(matrix_rows) != 68:
-        errors.append(f"human matrix has {len(matrix_rows)} data rows, expected 68")
+    if len(matrix_rows) != 69:
+        errors.append(f"human matrix has {len(matrix_rows)} data rows, expected 69")
     notes.append("TSG D7006—2020 PDF第27-32页已与独立维护的规范条款序列逐项比对。")
     notes.append("R10已独立核对为TSG 31—2025第1.9(3)，未再从D2.2间接推定。")
+    notes.append("R69已依据TSG D7006—2020第2.2.4条及附件G核对；工具仅汇总证据并校验评价报告，评价结论由监检人员确认和签发。")
     notes.append("扫描件可视复核纠正了TSG Z7002附件A、GB 50235第7/9章、SY/T 4113.11第4-7章、GB/T 21448第5-7/9章及产品标准章节落点。")
     notes.append("全部专业条款均已绑定知识文件、文档版本和一个或多个PDF页级locator；组合条款的不连续落点已拆分。")
     notes.append("全部标准源文件路径、PDF页数边界、条款包引用、原子项引用、六批覆盖和人工矩阵行数已检查。")
@@ -197,7 +201,7 @@ def main() -> int:
     for error in errors:
         print("ERROR", error)
     if args.write_report:
-        lines = ["# 标准条款二次检查报告", "", "- 检查时间：2026-07-11", f"- 结果：**{status}**", f"- 统计：{stats}", "", "## 独立检查项", ""]
+        lines = ["# 标准条款二次检查报告", "", "- 检查时间：2026-07-14", f"- 结果：**{status}**", f"- 统计：{stats}", "", "## 独立检查项", ""]
         lines.extend(f"- {item}" for item in notes)
         lines.extend(["", "## 错误", ""])
         lines.extend(["- 无。"] if not errors else [f"- {item}" for item in errors])

@@ -1,7 +1,7 @@
 standardCatalogSet:
   id: engineering-inspection-standard-catalog-v1
   schemaVersion: standard-catalog-v1
-  version: 2026.07.11
+  version: 2026.07.14
   lifecycleStatus: published
 standardCatalog:
 - id: STD-TSG-D7006-2020

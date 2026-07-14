@@ -88,7 +88,7 @@ def test_clients_send_distinct_visual_and_structured_audit_requests() -> None:
 
 def test_normalization_strips_invented_candidates_and_standard_references() -> None:
     context = {
-        "rules": [{"ruleCode": "R28", "sources": [{"standardNo": "NB/T 47013.2-2015"}]}],
+        "rules": [{"ruleCode": "R40", "sources": [{"standardNo": "NB/T 47013.2-2015"}]}],
         "retrieval": [],
     }
     payload = {
@@ -198,11 +198,11 @@ def test_candidate_collection_and_table_quality_include_nested_cells() -> None:
 def test_pipeline_comparison_reports_agreement_without_claiming_accuracy() -> None:
     baseline = {
         "documentFields": {"ratio": {"value": "10%"}, "grade": {"value": "AB"}},
-        "findings": [{"severity": "high", "suggestedAction": "request_correction", "standardRefs": ["R28"]}],
+        "findings": [{"severity": "high", "suggestedAction": "request_correction", "standardRefs": ["R40"]}],
     }
     challenger = {
         "documentFields": {"ratio": {"value": "10%"}, "grade": {"value": "A"}},
-        "findings": [{"severity": "high", "suggestedAction": "human_confirm", "standardRefs": ["R28"]}],
+        "findings": [{"severity": "high", "suggestedAction": "human_confirm", "standardRefs": ["R40"]}],
     }
 
     metrics = compare_pipeline_results(baseline, challenger)

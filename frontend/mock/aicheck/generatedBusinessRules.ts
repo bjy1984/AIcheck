@@ -6,7 +6,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R01",
     "name": "设计单位许可资质",
     "ruleKey": "engineering-inspection-r01",
-    "version": "engineering-inspection-r01-v20260703",
+    "version": "engineering-inspection-r01-v20260714",
     "status": "已发布",
     "nodeIds": [
       1
@@ -132,7 +132,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R02",
     "name": "施工单位许可资质",
     "ruleKey": "engineering-inspection-r02",
-    "version": "engineering-inspection-r02-v20260703",
+    "version": "engineering-inspection-r02-v20260714",
     "status": "已发布",
     "nodeIds": [
       2
@@ -253,7 +253,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R03",
     "name": "无损检测机构核准资质",
     "ruleKey": "engineering-inspection-r03",
-    "version": "engineering-inspection-r03-v20260703",
+    "version": "engineering-inspection-r03-v20260714",
     "status": "已发布",
     "nodeIds": [
       3
@@ -357,7 +357,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R04",
     "name": "设计文件的批准程序",
     "ruleKey": "engineering-inspection-r04",
-    "version": "engineering-inspection-r04-v20260703",
+    "version": "engineering-inspection-r04-v20260714",
     "status": "已发布",
     "nodeIds": [
       4
@@ -458,7 +458,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R05",
     "name": "施工图审查手续",
     "ruleKey": "engineering-inspection-r05",
-    "version": "engineering-inspection-r05-v20260703",
+    "version": "engineering-inspection-r05-v20260714",
     "status": "已发布",
     "nodeIds": [
       5
@@ -537,7 +537,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R06",
     "name": "强度计算书、管道应力分析计算书的审批手续",
     "ruleKey": "engineering-inspection-r06",
-    "version": "engineering-inspection-r06-v20260703",
+    "version": "engineering-inspection-r06-v20260714",
     "status": "已发布",
     "nodeIds": [
       6
@@ -634,7 +634,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R07",
     "name": "设计变更的书面批准文件",
     "ruleKey": "engineering-inspection-r07",
-    "version": "engineering-inspection-r07-v20260703",
+    "version": "engineering-inspection-r07-v20260714",
     "status": "已发布",
     "nodeIds": [
       7
@@ -723,7 +723,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R08",
     "name": "设计采用的安全技术规范以及相关标准、压力管道元件的材料标准的版本",
     "ruleKey": "engineering-inspection-r08",
-    "version": "engineering-inspection-r08-v20260703",
+    "version": "engineering-inspection-r08-v20260714",
     "status": "已发布",
     "nodeIds": [
       8
@@ -820,7 +820,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R09",
     "name": "设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求",
     "ruleKey": "engineering-inspection-r09",
-    "version": "engineering-inspection-r09-v20260703",
+    "version": "engineering-inspection-r09-v20260714",
     "status": "已发布",
     "nodeIds": [
       9
@@ -838,9 +838,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionItem": "设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求",
     "materialTypeCodes": [
       "generic_review_material",
-      "design_document",
-      "leakage_test_report",
-      "instrument_calibration_certificate"
+      "design_document"
     ],
     "thinkingModeIds": [
       "M03",
@@ -1049,9 +1047,9 @@ export const generatedKnowledgeRuleVersions = [
   },
   {
     "id": "RULE-ENG-INSP-R10",
-    "name": "采用其他标准时的符合性申明及比照表",
+    "name": "采用其他标准时，设计文件或工程规定中应包括符合《工业管道安全技术规程》基本安全的符合性申明及比照表",
     "ruleKey": "engineering-inspection-r10",
-    "version": "engineering-inspection-r10-v20260703",
+    "version": "engineering-inspection-r10-v20260714",
     "status": "已发布",
     "nodeIds": [
       10
@@ -1136,7 +1134,7 @@ export const generatedKnowledgeRuleVersions = [
     "id": "RULE-ENG-INSP-R11",
     "name": "施工组织设计",
     "ruleKey": "engineering-inspection-r11",
-    "version": "engineering-inspection-r11-v20260703",
+    "version": "engineering-inspection-r11-v20260714",
     "status": "已发布",
     "nodeIds": [
       11
@@ -1372,9 +1370,1276 @@ export const generatedKnowledgeRuleVersions = [
   },
   {
     "id": "RULE-ENG-INSP-R12",
-    "name": "焊工资格证及持证合格项目",
+    "name": "压力管道元件及安全附件制造单位的许可资质",
     "ruleKey": "engineering-inspection-r12",
-    "version": "engineering-inspection-r12-v20260703",
+    "version": "engineering-inspection-r12-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      12
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R12",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 12,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "压力管道元件及安全附件制造单位的许可资质",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "manufacturing_license",
+      "design_document"
+    ],
+    "thinkingModeIds": [
+      "M01",
+      "M06"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T05",
+      "T06",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三",
+    "standardText": "全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三",
+    "checkMethod": "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件",
+    "witnessText": "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件",
+    "sourceWitness": "",
+    "agentThinking": "找到压力管道元件或安全附件制造许可证，抽取制造单位名称、许可证号、许可范围、产品类别、级别和有效期；再找到设计资料中的管道特性表、材料表和安全附件清单，抽取本工程所用管道元件类型、规格、压力等级和材料。先在全国特种设备公示信息查询平台核实许可证号和单位信息，再判断许可范围是否覆盖本工程实际使用的管道元件或安全附件。",
+    "toolchainThinking": "调用 T01、T02 定位制造许可证、管道特性表、材料表和安全附件清单；调用 T03、T04 抽取许可证号、制造单位、许可范围、元件类型和压力等级；调用 T05 查询或核验证照；调用 T06 查询第41号公告许可范围要求；调用 T08 比对许可证范围与设计资料；调用 T11 标记证照缺失、过期或范围不覆盖；调用 T12 输出证据链。",
+    "referencedStandards": [],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R12",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 12,
+        "inspectionCategory": "材料",
+        "inspectionItem": "压力管道元件及安全附件制造单位的许可资质",
+        "inspectionClass": "C",
+        "standardText": "全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三",
+        "witnessText": "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件",
+        "agentThinking": "找到压力管道元件或安全附件制造许可证，抽取制造单位名称、许可证号、许可范围、产品类别、级别和有效期；再找到设计资料中的管道特性表、材料表和安全附件清单，抽取本工程所用管道元件类型、规格、压力等级和材料。先在全国特种设备公示信息查询平台核实许可证号和单位信息，再判断许可范围是否覆盖本工程实际使用的管道元件或安全附件。",
+        "toolchainThinking": "调用 T01、T02 定位制造许可证、管道特性表、材料表和安全附件清单；调用 T03、T04 抽取许可证号、制造单位、许可范围、元件类型和压力等级；调用 T05 查询或核验证照；调用 T06 查询第41号公告许可范围要求；调用 T08 比对许可证范围与设计资料；调用 T11 标记证照缺失、过期或范围不覆盖；调用 T12 输出证据链。"
+      },
+      "requiredEvidence": [
+        "制造许可证",
+        "提取许可证",
+        "并与设计资料中特性表、材料表",
+        "找到压力管道元件或安全附件制造许可证",
+        "抽取制造单位名称、许可证",
+        "再找到设计资料中的管道特性表、材料表",
+        "和安全附件清单",
+        "全国特种设备公示信息查询平台核实许可证",
+        "定位制造许可证、管道特性表、材料表",
+        "抽取许可证",
+        "比对许可证"
+      ],
+      "extractionTargets": [
+        "许可证号",
+        "压力",
+        "单位名称",
+        "许可范围",
+        "有效期",
+        "规格"
+      ],
+      "verificationSteps": [
+        "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件"
+      ],
+      "acceptanceCriteria": [
+        "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件"
+      ],
+      "humanConfirmation": [
+        "证据缺失、范围不覆盖或跨文件不一致时生成补充资料项或联络单。"
+      ],
+      "promptContext": "监检项目：压力管道元件及安全附件制造单位的许可资质\n类别：C\n判断准则/标准规范：全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三\n方法及内容/工作见证：制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件\nAgent思考方式：找到压力管道元件或安全附件制造许可证，抽取制造单位名称、许可证号、许可范围、产品类别、级别和有效期；再找到设计资料中的管道特性表、材料表和安全附件清单，抽取本工程所用管道元件类型、规格、压力等级和材料。先在全国特种设备公示信息查询平台核实许可证号和单位信息，再判断许可范围是否覆盖本工程实际使用的管道元件或安全附件。\n工具集调用思考：调用 T01、T02 定位制造许可证、管道特性表、材料表和安全附件清单；调用 T03、T04 抽取许可证号、制造单位、许可范围、元件类型和压力等级；调用 T05 查询或核验证照；调用 T06 查询第41号公告许可范围要求；调用 T08 比对许可证范围与设计资料；调用 T11 标记证照缺失、过期或范围不覆盖；调用 T12 输出证据链。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R13",
+    "name": "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告",
+    "ruleKey": "engineering-inspection-r13",
+    "version": "engineering-inspection-r13-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      13
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R13",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 13,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "manufacturing_supervision_certificate",
+      "type_test_report"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M12"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T05",
+      "T06",
+      "T07",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四",
+    "standardText": "全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四",
+    "checkMethod": "监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件",
+    "witnessText": "监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件",
+    "sourceWitness": "",
+    "agentThinking": "先从材料表和管道元件清单识别哪些元件属于需制造监督检验或有型式试验要求的范围；再找到对应制造监督检验证书、型式试验证书或型式试验报告。逐项核对证书中的产品名称、规格范围、制造单位、证书编号、有效期和覆盖范围，判断是否覆盖设计文件材料表中本工程实际使用的管道元件。",
+    "toolchainThinking": "调用 T01、T02 定位材料表、元件清单、监检证书和型式试验报告；调用 T03、T04 抽取元件类型、规格、证书编号、覆盖范围和有效期；调用 T05 核验证书；调用 T06 查询 TSG D7006 和第41号公告要求；调用 T07 判断是否触发制造监检或型式试验分支；调用 T08 比对证书覆盖范围与材料表；调用 T11 处理证书缺失或不覆盖；调用 T12 输出结论。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R13",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 13,
+        "inspectionCategory": "材料",
+        "inspectionItem": "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告",
+        "inspectionClass": "C",
+        "standardText": "全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四",
+        "witnessText": "监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件",
+        "agentThinking": "先从材料表和管道元件清单识别哪些元件属于需制造监督检验或有型式试验要求的范围；再找到对应制造监督检验证书、型式试验证书或型式试验报告。逐项核对证书中的产品名称、规格范围、制造单位、证书编号、有效期和覆盖范围，判断是否覆盖设计文件材料表中本工程实际使用的管道元件。",
+        "toolchainThinking": "调用 T01、T02 定位材料表、元件清单、监检证书和型式试验报告；调用 T03、T04 抽取元件类型、规格、证书编号、覆盖范围和有效期；调用 T05 核验证书；调用 T06 查询 TSG D7006 和第41号公告要求；调用 T07 判断是否触发制造监检或型式试验分支；调用 T08 比对证书覆盖范围与材料表；调用 T11 处理证书缺失或不覆盖；调用 T12 输出结论。"
+      },
+      "requiredEvidence": [
+        "监检证书",
+        "型式试验证书（报告",
+        "检查覆盖范围是否符合设计文件中材料表",
+        "先从材料表和管道元件清单",
+        "再找到对应制造监督检验证书",
+        "、型式试验证书或型式试验报告",
+        "逐项核对证书",
+        "的产品名称、规格范围、制造单位、证书",
+        "判断是否覆盖设计文件材料表",
+        "定位材料表、元件清单、监检证书",
+        "和型式试验报告",
+        "抽取元件类型、规格、证书"
+      ],
+      "extractionTargets": [
+        "规格",
+        "证书编号",
+        "有效期",
+        "结论"
+      ],
+      "verificationSteps": [
+        "型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件"
+      ],
+      "acceptanceCriteria": [
+        "监检证书是否齐全",
+        "型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件"
+      ],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告\n类别：C\n判断准则/标准规范：全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四\n方法及内容/工作见证：监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件\nAgent思考方式：先从材料表和管道元件清单识别哪些元件属于需制造监督检验或有型式试验要求的范围；再找到对应制造监督检验证书、型式试验证书或型式试验报告。逐项核对证书中的产品名称、规格范围、制造单位、证书编号、有效期和覆盖范围，判断是否覆盖设计文件材料表中本工程实际使用的管道元件。\n工具集调用思考：调用 T01、T02 定位材料表、元件清单、监检证书和型式试验报告；调用 T03、T04 抽取元件类型、规格、证书编号、覆盖范围和有效期；调用 T05 核验证书；调用 T06 查询 TSG D7006 和第41号公告要求；调用 T07 判断是否触发制造监检或型式试验分支；调用 T08 比对证书覆盖范围与材料表；调用 T11 处理证书缺失或不覆盖；调用 T12 输出结论。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R14",
+    "name": "不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验",
+    "ruleKey": "engineering-inspection-r14",
+    "version": "engineering-inspection-r14-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      14
+    ],
+    "severity": "medium",
+    "reviewClass": "C/B",
+    "inspectionClass": "C/B",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R14",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 14,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "factory_inspection_report",
+      "material_retest_report"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M09"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T07",
+      "T08",
+      "T09",
+      "T11",
+      "T12"
+    ],
+    "criteria": "设计文件中材料表、管道特性表压力等级对应",
+    "standardText": "设计文件中材料表、管道特性表压力等级对应",
+    "checkMethod": "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告",
+    "witnessText": "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告",
+    "sourceWitness": "",
+    "agentThinking": "先判断管道组成件是否属于不需制造许可、制造监检和型式试验的情形；若属于该情形，找到出厂质量证明文件和必要的现场抽查复验记录。抽取组成件名称、规格、等级、材质、批号、压力等级、检验项目和结论，与设计文件材料表、管道特性表逐项比对。若触发现场抽查复验，应继续审查光谱、硬度、金相、无损检测和耐压试验等报告是否覆盖抽查对象。",
+    "toolchainThinking": "调用 T01、T02 定位材料表、管道特性表、出厂检验报告和复验报告；调用 T03、T04 抽取组成件规格、等级、材质、批号、压力等级和检验项目；调用 T06 查询材料及检验标准；调用 T07 判断是否需抽查复验及检验项目是否满足；调用 T08 比对报告与设计文件；调用 T11 标记材质等级不符或复验缺失；调用 T12 回写审查意见。",
+    "referencedStandards": [],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R14",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 14,
+        "inspectionCategory": "材料",
+        "inspectionItem": "不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验",
+        "inspectionClass": "C/B",
+        "standardText": "设计文件中材料表、管道特性表压力等级对应",
+        "witnessText": "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告",
+        "agentThinking": "先判断管道组成件是否属于不需制造许可、制造监检和型式试验的情形；若属于该情形，找到出厂质量证明文件和必要的现场抽查复验记录。抽取组成件名称、规格、等级、材质、批号、压力等级、检验项目和结论，与设计文件材料表、管道特性表逐项比对。若触发现场抽查复验，应继续审查光谱、硬度、金相、无损检测和耐压试验等报告是否覆盖抽查对象。",
+        "toolchainThinking": "调用 T01、T02 定位材料表、管道特性表、出厂检验报告和复验报告；调用 T03、T04 抽取组成件规格、等级、材质、批号、压力等级和检验项目；调用 T06 查询材料及检验标准；调用 T07 判断是否需抽查复验及检验项目是否满足；调用 T08 比对报告与设计文件；调用 T11 标记材质等级不符或复验缺失；调用 T12 回写审查意见。"
+      },
+      "requiredEvidence": [
+        "设计文件中材料表、管道特性表",
+        "审核出厂质量证明文件或抽查复验记录",
+        "查看等级材质是否符合设计文件",
+        "要求（与材料表",
+        "硬度、金相、无损检测和耐压试验等报告",
+        "找到出厂质量证明文件",
+        "和必要的现场抽查复验记录",
+        "与设计文件材料表、管道特性表",
+        "定位材料表、管道特性表、出厂检验报告",
+        "和复验报告",
+        "比对报告与设计文件"
+      ],
+      "extractionTargets": [
+        "压力",
+        "材质",
+        "规格",
+        "批号",
+        "结论",
+        "标准"
+      ],
+      "verificationSteps": [
+        "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）",
+        "审查光谱、硬度、金相、无损检测和耐压试验等报告"
+      ],
+      "acceptanceCriteria": [
+        "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）",
+        "设计文件中材料表、管道特性表压力等级对应"
+      ],
+      "humanConfirmation": [
+        "涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。"
+      ],
+      "promptContext": "监检项目：不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验\n类别：C/B\n判断准则/标准规范：设计文件中材料表、管道特性表压力等级对应\n方法及内容/工作见证：审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告\nAgent思考方式：先判断管道组成件是否属于不需制造许可、制造监检和型式试验的情形；若属于该情形，找到出厂质量证明文件和必要的现场抽查复验记录。抽取组成件名称、规格、等级、材质、批号、压力等级、检验项目和结论，与设计文件材料表、管道特性表逐项比对。若触发现场抽查复验，应继续审查光谱、硬度、金相、无损检测和耐压试验等报告是否覆盖抽查对象。\n工具集调用思考：调用 T01、T02 定位材料表、管道特性表、出厂检验报告和复验报告；调用 T03、T04 抽取组成件规格、等级、材质、批号、压力等级和检验项目；调用 T06 查询材料及检验标准；调用 T07 判断是否需抽查复验及检验项目是否满足；调用 T08 比对报告与设计文件；调用 T11 标记材质等级不符或复验缺失；调用 T12 回写审查意见。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R15",
+    "name": "境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质",
+    "ruleKey": "engineering-inspection-r15",
+    "version": "engineering-inspection-r15-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      15
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R15",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 15,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "overseas_material_certificate",
+      "manufacturing_license",
+      "type_test_report"
+    ],
+    "thinkingModeIds": [
+      "M01",
+      "M06",
+      "M12"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T05",
+      "T06",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1",
+    "standardText": "TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1",
+    "checkMethod": "制造许可资质、型式试验证书",
+    "witnessText": "制造许可资质、型式试验证书",
+    "sourceWitness": "",
+    "agentThinking": "找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。",
+    "toolchainThinking": "调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。",
+    "referencedStandards": [
+      {
+        "reference": "TSG31-2025",
+        "file": "rules/standards/TSG31-2025.pdf",
+        "fileName": "TSG31-2025.pdf"
+      },
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R15",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 15,
+        "inspectionCategory": "材料",
+        "inspectionItem": "境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质",
+        "inspectionClass": "C",
+        "standardText": "TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1",
+        "witnessText": "制造许可资质、型式试验证书",
+        "agentThinking": "找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。",
+        "toolchainThinking": "调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。"
+      },
+      "requiredEvidence": [
+        "制造许可资质、型式试验证书",
+        "境外制造的压力管道元件或安全附件清单",
+        "到制造单位制造许可资质和型式试验证书",
+        "证书",
+        "定位境外制造产品清单",
+        "、制造许可资质、型式试验证书",
+        "和设计文件",
+        "抽取制造单位、产地、规格型号、证书",
+        "核验证书",
+        "比对证书、产品清单和设计文件",
+        "处理证书"
+      ],
+      "extractionTargets": [
+        "压力",
+        "规格",
+        "型号",
+        "标准",
+        "证书编号",
+        "结论"
+      ],
+      "verificationSteps": [
+        "制造许可资质、型式试验证书"
+      ],
+      "acceptanceCriteria": [],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质\n类别：C\n判断准则/标准规范：TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1\n方法及内容/工作见证：制造许可资质、型式试验证书\nAgent思考方式：找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。\n工具集调用思考：调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R16",
+    "name": "压力管道元件以及安全附件产品质量证明文件",
+    "ruleKey": "engineering-inspection-r16",
+    "version": "engineering-inspection-r16-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      16
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R16",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 16,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "压力管道元件以及安全附件产品质量证明文件",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "quality_certificate",
+      "design_document"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M03"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T07",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019",
+    "standardText": "TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019",
+    "checkMethod": "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准",
+    "witnessText": "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准",
+    "sourceWitness": "",
+    "agentThinking": "找到压力管道元件和安全附件产品质量证明文件，识别是否为原件或复印件；若为复印件，检查经营单位公章和经办负责人章。抽取产品名称、规格、材质、批号、供货状态、化学成分、力学性能、出厂检验项目和适用制造验收标准，与设计文件规定的材料验收标准及特殊要求逐项比对。",
+    "toolchainThinking": "调用 T01、T02 定位产品质量证明文件、设计文件和材料表；调用 T03、T04 抽取规格、材质、批号、成分、性能、供货状态、检验项目和盖章信息；调用 T06 查询对应 GB/T 标准和 TSG D7006 要求；调用 T07 判断检验项目、性能指标和供货状态是否符合；调用 T08 比对质量证明文件与设计材料表；调用 T11 标记缺章、缺项目或指标不符；调用 T12 输出证据链。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      },
+      {
+        "reference": "GB/T 12459-2025",
+        "file": "rules/standards/GBT 12459-2025 钢制对焊管件 类型与参数.pdf",
+        "fileName": "GBT 12459-2025 钢制对焊管件 类型与参数.pdf"
+      },
+      {
+        "reference": "GB/T 13401-2025",
+        "file": "rules/standards/GBT 13401-2025钢制对焊管件 技术规范.pdf",
+        "fileName": "GBT 13401-2025钢制对焊管件 技术规范.pdf"
+      },
+      {
+        "reference": "GB/T 8163-2018",
+        "file": "rules/standards/GBT 8163-2018 输送流体用无缝钢管.pdf",
+        "fileName": "GBT 8163-2018 输送流体用无缝钢管.pdf"
+      },
+      {
+        "reference": "GB/T 3087-2022",
+        "file": "rules/standards/GBT+3087-2022.pdf",
+        "fileName": "GBT+3087-2022.pdf"
+      },
+      {
+        "reference": "GB/T 5310-2023",
+        "file": "rules/standards/GBT+5310-2023.pdf",
+        "fileName": "GBT+5310-2023.pdf"
+      },
+      {
+        "reference": "GB/T 9948-2025",
+        "file": "rules/standards/GBT+9948-2025石化和化工装置用无缝钢管.pdf",
+        "fileName": "GBT+9948-2025石化和化工装置用无缝钢管.pdf"
+      },
+      {
+        "reference": "GB/T 14976-2025",
+        "file": "rules/standards/GBT+14976-2025输送流体用不锈钢无缝钢管.pdf",
+        "fileName": "GBT+14976-2025输送流体用不锈钢无缝钢管.pdf"
+      },
+      {
+        "reference": "GB/T 12771-2019",
+        "file": "rules/standards/GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf",
+        "fileName": "GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R16",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 16,
+        "inspectionCategory": "材料",
+        "inspectionItem": "压力管道元件以及安全附件产品质量证明文件",
+        "inspectionClass": "C",
+        "standardText": "TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019",
+        "witnessText": "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准",
+        "agentThinking": "找到压力管道元件和安全附件产品质量证明文件，识别是否为原件或复印件；若为复印件，检查经营单位公章和经办负责人章。抽取产品名称、规格、材质、批号、供货状态、化学成分、力学性能、出厂检验项目和适用制造验收标准，与设计文件规定的材料验收标准及特殊要求逐项比对。",
+        "toolchainThinking": "调用 T01、T02 定位产品质量证明文件、设计文件和材料表；调用 T03、T04 抽取规格、材质、批号、成分、性能、供货状态、检验项目和盖章信息；调用 T06 查询对应 GB/T 标准和 TSG D7006 要求；调用 T07 判断检验项目、性能指标和供货状态是否符合；调用 T08 比对质量证明文件与设计材料表；调用 T11 标记缺章、缺项目或指标不符；调用 T12 输出证据链。"
+      },
+      "requiredEvidence": [
+        "设计文件",
+        "产品质量证明文件",
+        "其内容是否符合设计文件",
+        "找到压力管道元件和安全附件产品质量证明",
+        "文件",
+        "与设计文件",
+        "定位产品质量证明文件、设计文件和材料表",
+        "比对质量证明文件与设计材料表"
+      ],
+      "extractionTargets": [
+        "标准",
+        "压力",
+        "规格",
+        "材质",
+        "批号"
+      ],
+      "verificationSteps": [
+        "审查供货状态、成分、出厂检验项目是否符合对应标准"
+      ],
+      "acceptanceCriteria": [
+        "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章",
+        "审查供货状态、成分、出厂检验项目是否符合对应标准"
+      ],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：压力管道元件以及安全附件产品质量证明文件\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019\n方法及内容/工作见证：产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准\nAgent思考方式：找到压力管道元件和安全附件产品质量证明文件，识别是否为原件或复印件；若为复印件，检查经营单位公章和经办负责人章。抽取产品名称、规格、材质、批号、供货状态、化学成分、力学性能、出厂检验项目和适用制造验收标准，与设计文件规定的材料验收标准及特殊要求逐项比对。\n工具集调用思考：调用 T01、T02 定位产品质量证明文件、设计文件和材料表；调用 T03、T04 抽取规格、材质、批号、成分、性能、供货状态、检验项目和盖章信息；调用 T06 查询对应 GB/T 标准和 TSG D7006 要求；调用 T07 判断检验项目、性能指标和供货状态是否符合；调用 T08 比对质量证明文件与设计材料表；调用 T11 标记缺章、缺项目或指标不符；调用 T12 输出证据链。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R17",
+    "name": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
+    "ruleKey": "engineering-inspection-r17",
+    "version": "engineering-inspection-r17-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      17
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R17",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 17,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "acceptance_witness_record",
+      "material_retest_report"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M07",
+      "M11"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T07",
+      "T08",
+      "T10",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG D7006-2020附件D D2.4.1",
+    "standardText": "TSG D7006-2020附件D D2.4.1",
+    "checkMethod": "验收记录、复验报告",
+    "witnessText": "验收记录、复验报告",
+    "sourceWitness": "",
+    "agentThinking": "找到产品到货验收记录、验收见证资料和抽样复验报告，抽取验收对象、批号、规格型号、数量、验收项目、见证人员、复验项目、复验结果和结论。判断验收记录是否覆盖本工程到货产品，抽样复验是否按规定或设计要求执行，复验结果是否与质量证明文件和材料表一致。",
+    "toolchainThinking": "调用 T01、T02 定位验收记录、见证资料、复验报告、质量证明文件和材料表；调用 T03、T04 抽取批号、规格、数量、验收项目、复验项目和结论；调用 T06 查询 TSG D7006 验收要求；调用 T07 判断抽样复验项目和结论；调用 T08 比对验收、复验和质量证明文件；调用 T11 标记验收缺项或复验不合格；调用 T12 回写审查意见。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R17",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 17,
+        "inspectionCategory": "材料",
+        "inspectionItem": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
+        "inspectionClass": "C",
+        "standardText": "TSG D7006-2020附件D D2.4.1",
+        "witnessText": "验收记录、复验报告",
+        "agentThinking": "找到产品到货验收记录、验收见证资料和抽样复验报告，抽取验收对象、批号、规格型号、数量、验收项目、见证人员、复验项目、复验结果和结论。判断验收记录是否覆盖本工程到货产品，抽样复验是否按规定或设计要求执行，复验结果是否与质量证明文件和材料表一致。",
+        "toolchainThinking": "调用 T01、T02 定位验收记录、见证资料、复验报告、质量证明文件和材料表；调用 T03、T04 抽取批号、规格、数量、验收项目、复验项目和结论；调用 T06 查询 TSG D7006 验收要求；调用 T07 判断抽样复验项目和结论；调用 T08 比对验收、复验和质量证明文件；调用 T11 标记验收缺项或复验不合格；调用 T12 回写审查意见。"
+      },
+      "requiredEvidence": [
+        "验收记录、复验报告",
+        "找到产品到货验收记录",
+        "、验收见证资料和抽样复验报告",
+        "判断验收记录",
+        "复验结果是否与质量证明文件和材料表",
+        "定位验收记录、见证资料、复验报告",
+        "、质量证明文件和材料表",
+        "比对验收、复验和质量证明文件"
+      ],
+      "extractionTargets": [
+        "批号",
+        "规格",
+        "型号",
+        "数量",
+        "人员",
+        "结论"
+      ],
+      "verificationSteps": [
+        "验收记录、复验报告"
+      ],
+      "acceptanceCriteria": [],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：压力管道元件以及安全附件产品验收的见证资料、抽样复验\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1\n方法及内容/工作见证：验收记录、复验报告\nAgent思考方式：找到产品到货验收记录、验收见证资料和抽样复验报告，抽取验收对象、批号、规格型号、数量、验收项目、见证人员、复验项目、复验结果和结论。判断验收记录是否覆盖本工程到货产品，抽样复验是否按规定或设计要求执行，复验结果是否与质量证明文件和材料表一致。\n工具集调用思考：调用 T01、T02 定位验收记录、见证资料、复验报告、质量证明文件和材料表；调用 T03、T04 抽取批号、规格、数量、验收项目、复验项目和结论；调用 T06 查询 TSG D7006 验收要求；调用 T07 判断抽样复验项目和结论；调用 T08 比对验收、复验和质量证明文件；调用 T11 标记验收缺项或复验不合格；调用 T12 回写审查意见。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R18",
+    "name": "材料复验报告、无损检测报告",
+    "ruleKey": "engineering-inspection-r18",
+    "version": "engineering-inspection-r18-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      18
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R18",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 18,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "材料复验报告、无损检测报告",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "material_retest_report",
+      "ndt_report"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M07"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T07",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019",
+    "standardText": "TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019",
+    "checkMethod": "材料复验报告、无损检测报告",
+    "witnessText": "材料复验报告、无损检测报告",
+    "sourceWitness": "",
+    "agentThinking": "找到材料复验报告和无损检测报告，抽取材料名称、规格、批号、取样位置、复验项目、无损检测方法、检测比例、执行标准、结果和结论。判断复验报告和无损检测报告是否对应材料批次及设计要求，复验项目和检测方法是否符合对应材料标准，结果是否合格。",
+    "toolchainThinking": "调用 T01、T02 定位复验报告、无损检测报告、材料表和质量证明文件；调用 T03、T04 抽取批号、取样位置、复验项目、检测方法、标准和结论；调用 T06 查询 TSG D7006 及对应材料标准；调用 T07 判断复验和无损检测项目是否满足；调用 T08 比对报告与材料批次；调用 T11 处理报告缺失、批次不对应或结果不合格；调用 T12 输出结论。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      },
+      {
+        "reference": "GB/T 12459-2025",
+        "file": "rules/standards/GBT 12459-2025 钢制对焊管件 类型与参数.pdf",
+        "fileName": "GBT 12459-2025 钢制对焊管件 类型与参数.pdf"
+      },
+      {
+        "reference": "GB/T 13401-2025",
+        "file": "rules/standards/GBT 13401-2025钢制对焊管件 技术规范.pdf",
+        "fileName": "GBT 13401-2025钢制对焊管件 技术规范.pdf"
+      },
+      {
+        "reference": "GB/T 14976-2025",
+        "file": "rules/standards/GBT+14976-2025输送流体用不锈钢无缝钢管.pdf",
+        "fileName": "GBT+14976-2025输送流体用不锈钢无缝钢管.pdf"
+      },
+      {
+        "reference": "GB/T 12771-2019",
+        "file": "rules/standards/GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf",
+        "fileName": "GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R18",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 18,
+        "inspectionCategory": "材料",
+        "inspectionItem": "材料复验报告、无损检测报告",
+        "inspectionClass": "C",
+        "standardText": "TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019",
+        "witnessText": "材料复验报告、无损检测报告",
+        "agentThinking": "找到材料复验报告和无损检测报告，抽取材料名称、规格、批号、取样位置、复验项目、无损检测方法、检测比例、执行标准、结果和结论。判断复验报告和无损检测报告是否对应材料批次及设计要求，复验项目和检测方法是否符合对应材料标准，结果是否合格。",
+        "toolchainThinking": "调用 T01、T02 定位复验报告、无损检测报告、材料表和质量证明文件；调用 T03、T04 抽取批号、取样位置、复验项目、检测方法、标准和结论；调用 T06 查询 TSG D7006 及对应材料标准；调用 T07 判断复验和无损检测项目是否满足；调用 T08 比对报告与材料批次；调用 T11 处理报告缺失、批次不对应或结果不合格；调用 T12 输出结论。"
+      },
+      "requiredEvidence": [
+        "材料复验报告、无损检测报告",
+        "找到材料复验报告和无损检测报告",
+        "判断复验报告和无损检测报告",
+        "定位复验报告、无损检测报告、材料表",
+        "和质量证明文件",
+        "比对报告",
+        "处理报告"
+      ],
+      "extractionTargets": [
+        "标准",
+        "规格",
+        "批号",
+        "检测方法",
+        "结论"
+      ],
+      "verificationSteps": [
+        "材料复验报告、无损检测报告"
+      ],
+      "acceptanceCriteria": [
+        "对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019"
+      ],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：材料复验报告、无损检测报告\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019\n方法及内容/工作见证：材料复验报告、无损检测报告\nAgent思考方式：找到材料复验报告和无损检测报告，抽取材料名称、规格、批号、取样位置、复验项目、无损检测方法、检测比例、执行标准、结果和结论。判断复验报告和无损检测报告是否对应材料批次及设计要求，复验项目和检测方法是否符合对应材料标准，结果是否合格。\n工具集调用思考：调用 T01、T02 定位复验报告、无损检测报告、材料表和质量证明文件；调用 T03、T04 抽取批号、取样位置、复验项目、检测方法、标准和结论；调用 T06 查询 TSG D7006 及对应材料标准；调用 T07 判断复验和无损检测项目是否满足；调用 T08 比对报告与材料批次；调用 T11 处理报告缺失、批次不对应或结果不合格；调用 T12 输出结论。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R19",
+    "name": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+    "ruleKey": "engineering-inspection-r19",
+    "version": "engineering-inspection-r19-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      19
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R19",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 19,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "overseas_material_certificate",
+      "material_retest_report"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M12"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T07",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准",
+    "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准",
+    "checkMethod": "审核产品质量证明文件、复验报告，企业标准",
+    "witnessText": "审核产品质量证明文件、复验报告，企业标准",
+    "sourceWitness": "",
+    "agentThinking": "先识别压力管道元件或安全附件是否使用境外牌号材料；若使用境外牌号，找到产品质量证明文件、验证性复验报告和对应企业标准。抽取境外牌号、国内对应或等效材料、化学成分、力学性能、复验项目和企业标准编号，判断企业标准是否建立，验证性复验结果是否支持该境外牌号材料用于本工程。",
+    "toolchainThinking": "调用 T01、T02 定位质量证明文件、复验报告、企业标准和设计材料表；调用 T03、T04 抽取境外牌号、成分、性能、复验项目和标准编号；调用 T06 查询 TSG31、TSG D7006 和材料标准；调用 T07 判断验证性复验项目和结果；调用 T08 比对境外牌号、企业标准和设计要求；调用 T11 标记无企业标准或复验不足；调用 T12 输出审查意见。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      },
+      {
+        "reference": "TSG31-2025",
+        "file": "rules/standards/TSG31-2025.pdf",
+        "fileName": "TSG31-2025.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R19",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 19,
+        "inspectionCategory": "材料",
+        "inspectionItem": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+        "inspectionClass": "C",
+        "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准",
+        "witnessText": "审核产品质量证明文件、复验报告，企业标准",
+        "agentThinking": "先识别压力管道元件或安全附件是否使用境外牌号材料；若使用境外牌号，找到产品质量证明文件、验证性复验报告和对应企业标准。抽取境外牌号、国内对应或等效材料、化学成分、力学性能、复验项目和企业标准编号，判断企业标准是否建立，验证性复验结果是否支持该境外牌号材料用于本工程。",
+        "toolchainThinking": "调用 T01、T02 定位质量证明文件、复验报告、企业标准和设计材料表；调用 T03、T04 抽取境外牌号、成分、性能、复验项目和标准编号；调用 T06 查询 TSG31、TSG D7006 和材料标准；调用 T07 判断验证性复验项目和结果；调用 T08 比对境外牌号、企业标准和设计要求；调用 T11 标记无企业标准或复验不足；调用 T12 输出审查意见。"
+      },
+      "requiredEvidence": [
+        "审核产品质量证明文件、复验报告",
+        "找到产品质量证明文件、验证性复验报告",
+        "定位质量证明文件、复验报告",
+        "、企业标准和设计材料表"
+      ],
+      "extractionTargets": [
+        "标准",
+        "压力"
+      ],
+      "verificationSteps": [
+        "审核产品质量证明文件、复验报告，企业标准"
+      ],
+      "acceptanceCriteria": [
+        "TSG31-2025中2.1.2，制定相对应的企业标准"
+      ],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准\n方法及内容/工作见证：审核产品质量证明文件、复验报告，企业标准\nAgent思考方式：先识别压力管道元件或安全附件是否使用境外牌号材料；若使用境外牌号，找到产品质量证明文件、验证性复验报告和对应企业标准。抽取境外牌号、国内对应或等效材料、化学成分、力学性能、复验项目和企业标准编号，判断企业标准是否建立，验证性复验结果是否支持该境外牌号材料用于本工程。\n工具集调用思考：调用 T01、T02 定位质量证明文件、复验报告、企业标准和设计材料表；调用 T03、T04 抽取境外牌号、成分、性能、复验项目和标准编号；调用 T06 查询 TSG31、TSG D7006 和材料标准；调用 T07 判断验证性复验项目和结果；调用 T08 比对境外牌号、企业标准和设计要求；调用 T11 标记无企业标准或复验不足；调用 T12 输出审查意见。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R20",
+    "name": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
+    "ruleKey": "engineering-inspection-r20",
+    "version": "engineering-inspection-r20-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      20
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R20",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 20,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "type_test_report",
+      "technical_review_approval"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M12"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T05",
+      "T06",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3",
+    "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3",
+    "checkMethod": "型式试验报告、技术评审证书",
+    "witnessText": "型式试验报告、技术评审证书",
+    "sourceWitness": "",
+    "agentThinking": "先判断管道元件或安全附件是否采用新材料制造；若采用新材料，找到型式试验报告、技术评审证书和批准手续。抽取新材料名称、适用产品、技术评审范围、型式试验覆盖范围、批准文件编号和结论，判断技术评审及批准手续是否完整，型式试验是否覆盖本工程使用场景。",
+    "toolchainThinking": "调用 T01、T02 定位新材料说明、型式试验报告、技术评审证书、批准文件和设计材料表；调用 T03、T04 抽取材料名称、适用范围、证书编号和结论；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 要求；调用 T08 比对评审、型式试验和设计要求；调用 T11 处理手续缺失或覆盖不足；调用 T12 回写结论。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      },
+      {
+        "reference": "TSG31-2025",
+        "file": "rules/standards/TSG31-2025.pdf",
+        "fileName": "TSG31-2025.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R20",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 20,
+        "inspectionCategory": "材料",
+        "inspectionItem": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
+        "inspectionClass": "C",
+        "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3",
+        "witnessText": "型式试验报告、技术评审证书",
+        "agentThinking": "先判断管道元件或安全附件是否采用新材料制造；若采用新材料，找到型式试验报告、技术评审证书和批准手续。抽取新材料名称、适用产品、技术评审范围、型式试验覆盖范围、批准文件编号和结论，判断技术评审及批准手续是否完整，型式试验是否覆盖本工程使用场景。",
+        "toolchainThinking": "调用 T01、T02 定位新材料说明、型式试验报告、技术评审证书、批准文件和设计材料表；调用 T03、T04 抽取材料名称、适用范围、证书编号和结论；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 要求；调用 T08 比对评审、型式试验和设计要求；调用 T11 处理手续缺失或覆盖不足；调用 T12 回写结论。"
+      },
+      "requiredEvidence": [
+        "型式试验报告、技术评审证书",
+        "找到型式试验报告、技术评审证书",
+        "评审范围、型式试验覆盖范围、批准文件",
+        "定位新材料说明、型式试验报告",
+        "、技术评审证书、批准文件和设计材料表",
+        "抽取材料名称、适用范围、证书",
+        "核验证书"
+      ],
+      "extractionTargets": [
+        "结论",
+        "证书编号"
+      ],
+      "verificationSteps": [
+        "型式试验报告、技术评审证书"
+      ],
+      "acceptanceCriteria": [],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3\n方法及内容/工作见证：型式试验报告、技术评审证书\nAgent思考方式：先判断管道元件或安全附件是否采用新材料制造；若采用新材料，找到型式试验报告、技术评审证书和批准手续。抽取新材料名称、适用产品、技术评审范围、型式试验覆盖范围、批准文件编号和结论，判断技术评审及批准手续是否完整，型式试验是否覆盖本工程使用场景。\n工具集调用思考：调用 T01、T02 定位新材料说明、型式试验报告、技术评审证书、批准文件和设计材料表；调用 T03、T04 抽取材料名称、适用范围、证书编号和结论；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 要求；调用 T08 比对评审、型式试验和设计要求；调用 T11 处理手续缺失或覆盖不足；调用 T12 回写结论。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R21",
+    "name": "材料标志移植",
+    "ruleKey": "engineering-inspection-r21",
+    "version": "engineering-inspection-r21-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      21
+    ],
+    "severity": "medium",
+    "reviewClass": "B",
+    "inspectionClass": "B",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R21",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 21,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "材料标志移植",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "material_mark_transfer_record",
+      "quality_certificate",
+      "field_photo"
+    ],
+    "thinkingModeIds": [
+      "M06",
+      "M07",
+      "M09"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T08",
+      "T09",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2",
+    "standardText": "TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2",
+    "checkMethod": "标志移植抽查记录",
+    "witnessText": "标志移植抽查记录",
+    "sourceWitness": "",
+    "agentThinking": "找到材料标志移植抽查记录和材料质量证明文件，抽取原始标志、移植后标志、材料批号、规格、材质、切割或加工部位、移植人员和检查结论。判断材料在切割、预制、安装过程中是否保持可追溯，移植标志是否与原始质量证明文件、领用记录和实物一致。",
+    "toolchainThinking": "调用 T01、T02 定位标志移植记录、材料质量证明、领用记录和现场照片；调用 T03、T04 抽取标志、批号、材质、规格和检查结论；调用 T06 查询标志移植要求；调用 T08 串联原始标志、移植记录和实物追溯关系；调用 T09 辅助识别现场标志照片；调用 T11 标记追溯断点或标志不清；调用 T12 输出证据链。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      },
+      {
+        "reference": "GB/T20801.1-2025",
+        "file": "rules/standards/GBT+20801.1-2025.pdf",
+        "fileName": "GBT+20801.1-2025.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R21",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 21,
+        "inspectionCategory": "材料",
+        "inspectionItem": "材料标志移植",
+        "inspectionClass": "B",
+        "standardText": "TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2",
+        "witnessText": "标志移植抽查记录",
+        "agentThinking": "找到材料标志移植抽查记录和材料质量证明文件，抽取原始标志、移植后标志、材料批号、规格、材质、切割或加工部位、移植人员和检查结论。判断材料在切割、预制、安装过程中是否保持可追溯，移植标志是否与原始质量证明文件、领用记录和实物一致。",
+        "toolchainThinking": "调用 T01、T02 定位标志移植记录、材料质量证明、领用记录和现场照片；调用 T03、T04 抽取标志、批号、材质、规格和检查结论；调用 T06 查询标志移植要求；调用 T08 串联原始标志、移植记录和实物追溯关系；调用 T09 辅助识别现场标志照片；调用 T11 标记追溯断点或标志不清；调用 T12 输出证据链。"
+      },
+      "requiredEvidence": [
+        "标志移植抽查记录",
+        "找到材料标志移植抽查记录和材料质量证明",
+        "文件",
+        "移植标志是否与原始质量证明文件",
+        "、领用记录",
+        "定位标志移植记录、材料质量证明",
+        "、领用记录和现场照片",
+        "串联原始标志、移植记录",
+        "辅助识别现场标志照片"
+      ],
+      "extractionTargets": [
+        "批号",
+        "规格",
+        "材质",
+        "人员",
+        "结论"
+      ],
+      "verificationSteps": [
+        "标志移植抽查记录"
+      ],
+      "acceptanceCriteria": [],
+      "humanConfirmation": [
+        "涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。"
+      ],
+      "promptContext": "监检项目：材料标志移植\n类别：B\n判断准则/标准规范：TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2\n方法及内容/工作见证：标志移植抽查记录\nAgent思考方式：找到材料标志移植抽查记录和材料质量证明文件，抽取原始标志、移植后标志、材料批号、规格、材质、切割或加工部位、移植人员和检查结论。判断材料在切割、预制、安装过程中是否保持可追溯，移植标志是否与原始质量证明文件、领用记录和实物一致。\n工具集调用思考：调用 T01、T02 定位标志移植记录、材料质量证明、领用记录和现场照片；调用 T03、T04 抽取标志、批号、材质、规格和检查结论；调用 T06 查询标志移植要求；调用 T08 串联原始标志、移植记录和实物追溯关系；调用 T09 辅助识别现场标志照片；调用 T11 标记追溯断点或标志不清；调用 T12 输出证据链。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R22",
+    "name": "材料代用",
+    "ruleKey": "engineering-inspection-r22",
+    "version": "engineering-inspection-r22-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      22
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R22",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 22,
+    "businessModule": "材料",
+    "inspectionCategory": "材料",
+    "inspectionItem": "材料代用",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "material_substitution_approval",
+      "design_change_document"
+    ],
+    "thinkingModeIds": [
+      "M04",
+      "M06",
+      "M12"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T07",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件",
+    "standardText": "TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件",
+    "checkMethod": "设计变更单",
+    "witnessText": "设计变更单",
+    "sourceWitness": "",
+    "agentThinking": "先从材料表、采购记录、施工记录和质量证明文件中识别是否存在材料代用；若存在代用，找到原设计单位出具的书面批准文件或设计变更单。抽取原设计材料、代用材料、代用范围、批准单位、批准日期、签字盖章和技术条件，判断材料代用是否获得原设计单位书面批准，代用材料是否满足设计和标准要求。",
+    "toolchainThinking": "调用 T01、T02 定位材料表、质量证明文件、施工记录和设计变更单；调用 T03、T04 抽取原材料、代用材料、批准信息和签章；调用 T06 查询 TSG D7006 材料代用要求；调用 T07 判断代用条件；调用 T08 比对代用文件与实际使用材料；调用 T11 标记无设计批准或代用范围不清；调用 T12 回写审查意见。",
+    "referencedStandards": [
+      {
+        "reference": "TSG D7006-2020",
+        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
+        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R22",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 22,
+        "inspectionCategory": "材料",
+        "inspectionItem": "材料代用",
+        "inspectionClass": "C",
+        "standardText": "TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件",
+        "witnessText": "设计变更单",
+        "agentThinking": "先从材料表、采购记录、施工记录和质量证明文件中识别是否存在材料代用；若存在代用，找到原设计单位出具的书面批准文件或设计变更单。抽取原设计材料、代用材料、代用范围、批准单位、批准日期、签字盖章和技术条件，判断材料代用是否获得原设计单位书面批准，代用材料是否满足设计和标准要求。",
+        "toolchainThinking": "调用 T01、T02 定位材料表、质量证明文件、施工记录和设计变更单；调用 T03、T04 抽取原材料、代用材料、批准信息和签章；调用 T06 查询 TSG D7006 材料代用要求；调用 T07 判断代用条件；调用 T08 比对代用文件与实际使用材料；调用 T11 标记无设计批准或代用范围不清；调用 T12 回写审查意见。"
+      },
+      "requiredEvidence": [
+        "应当取得原设计单位书面批准设计文件",
+        "先从材料表、采购记录、施工记录和质量证明",
+        "文件",
+        "找到原设计单位出具的书面批准文件",
+        "定位材料表、质量证明文件、施工记录",
+        "比对代用文件"
+      ],
+      "extractionTargets": [
+        "日期",
+        "签字",
+        "标准",
+        "签章"
+      ],
+      "verificationSteps": [
+        "设计变更单"
+      ],
+      "acceptanceCriteria": [
+        "应当取得原设计单位书面批准设计文件"
+      ],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：材料代用\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件\n方法及内容/工作见证：设计变更单\nAgent思考方式：先从材料表、采购记录、施工记录和质量证明文件中识别是否存在材料代用；若存在代用，找到原设计单位出具的书面批准文件或设计变更单。抽取原设计材料、代用材料、代用范围、批准单位、批准日期、签字盖章和技术条件，判断材料代用是否获得原设计单位书面批准，代用材料是否满足设计和标准要求。\n工具集调用思考：调用 T01、T02 定位材料表、质量证明文件、施工记录和设计变更单；调用 T03、T04 抽取原材料、代用材料、批准信息和签章；调用 T06 查询 TSG D7006 材料代用要求；调用 T07 判断代用条件；调用 T08 比对代用文件与实际使用材料；调用 T11 标记无设计批准或代用范围不清；调用 T12 回写审查意见。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R23",
+    "name": "阀门的施工资料和耐压试验记录（报告）",
+    "ruleKey": "engineering-inspection-r23",
+    "version": "engineering-inspection-r23-v20260714",
+    "status": "已发布",
+    "nodeIds": [
+      23
+    ],
+    "severity": "low",
+    "reviewClass": "C",
+    "inspectionClass": "C",
+    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "outputSchemaVersion": "schema-review-v1.3",
+    "sourceRuleId": "R23",
+    "sourceDocument": "监检项目-材料阀门.docx",
+    "sourceSequence": 23,
+    "businessModule": "阀门",
+    "inspectionCategory": "阀门",
+    "inspectionItem": "阀门的施工资料和耐压试验记录（报告）",
+    "materialTypeCodes": [
+      "generic_review_material",
+      "pressure_test_report",
+      "pressure_test_plan",
+      "valve_test_report",
+      "quality_certificate"
+    ],
+    "thinkingModeIds": [
+      "M07",
+      "M10",
+      "M06"
+    ],
+    "toolIds": [
+      "T01",
+      "T02",
+      "T03",
+      "T04",
+      "T06",
+      "T07",
+      "T08",
+      "T11",
+      "T12"
+    ],
+    "criteria": "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4",
+    "standardText": "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4",
+    "checkMethod": "阀门施工记录、耐压试验记录或报告（包含依据标准）",
+    "witnessText": "阀门施工记录、耐压试验记录或报告（包含依据标准）",
+    "sourceWitness": "",
+    "agentThinking": "找到阀门施工记录、阀门清单、产品质量证明文件、耐压试验记录或报告。抽取阀门编号、规格型号、公称压力、试验方法、试验介质、壳体试验压力、密封试验压力、保压时间、试验数量、依据标准和结论。判断试验方法、数量、压力、保压时间和结果是否符合设计文件、GB/T 13927-2022、GB/T 26480-2011 和 GB/T20801.1-2025 中 7.2.4 的要求。",
+    "toolchainThinking": "调用 T01、T02 定位阀门施工记录、阀门清单、质量证明文件和耐压试验报告；调用 T03、T04 抽取阀门编号、规格、压力等级、试验参数、数量和结论；调用 T06 查询 GB/T 13927、GB/T 26480 和 GB/T20801.1 要求；调用 T07 判断试验压力、保压时间和数量要求；调用 T08 比对阀门清单、施工记录和报告；调用 T11 标记报告缺失、数量不足或参数不符；调用 T12 输出证据链。",
+    "referencedStandards": [
+      {
+        "reference": "GB/T 13927-2022",
+        "file": "rules/standards/GB_T 13927-2022+工业阀门·压力试验.pdf",
+        "fileName": "GB_T 13927-2022+工业阀门·压力试验.pdf"
+      },
+      {
+        "reference": "GB/T 26480-2011",
+        "file": "rules/standards/GBT 26480-2011 阀门的检验和试验.pdf",
+        "fileName": "GBT 26480-2011 阀门的检验和试验.pdf"
+      },
+      {
+        "reference": "GB/T20801.1-2025",
+        "file": "rules/standards/GBT+20801.1-2025.pdf",
+        "fileName": "GBT+20801.1-2025.pdf"
+      }
+    ],
+    "aiExecution": {
+      "schemaVersion": "business-rule-execution-v1",
+      "compiledAt": "2026-07-03 00:00:00",
+      "sourceFields": {
+        "sourceRuleId": "R23",
+        "sourceDocument": "监检项目-材料阀门.docx",
+        "sequence": 23,
+        "inspectionCategory": "阀门",
+        "inspectionItem": "阀门的施工资料和耐压试验记录（报告）",
+        "inspectionClass": "C",
+        "standardText": "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4",
+        "witnessText": "阀门施工记录、耐压试验记录或报告（包含依据标准）",
+        "agentThinking": "找到阀门施工记录、阀门清单、产品质量证明文件、耐压试验记录或报告。抽取阀门编号、规格型号、公称压力、试验方法、试验介质、壳体试验压力、密封试验压力、保压时间、试验数量、依据标准和结论。判断试验方法、数量、压力、保压时间和结果是否符合设计文件、GB/T 13927-2022、GB/T 26480-2011 和 GB/T20801.1-2025 中 7.2.4 的要求。",
+        "toolchainThinking": "调用 T01、T02 定位阀门施工记录、阀门清单、质量证明文件和耐压试验报告；调用 T03、T04 抽取阀门编号、规格、压力等级、试验参数、数量和结论；调用 T06 查询 GB/T 13927、GB/T 26480 和 GB/T20801.1 要求；调用 T07 判断试验压力、保压时间和数量要求；调用 T08 比对阀门清单、施工记录和报告；调用 T11 标记报告缺失、数量不足或参数不符；调用 T12 输出证据链。"
+      },
+      "requiredEvidence": [
+        "试验方法程序与结果应符合设计文件",
+        "阀门施工记录、耐压试验记录或报告",
+        "找到阀门施工记录、阀门清单、产品质量证明",
+        "文件、耐压试验记录或报告",
+        "压力、保压时间和结果是否符合设计文件",
+        "定位阀门施工记录、阀门清单、质量证明",
+        "文件和耐压试验报告",
+        "比对阀门清单、施工记录和报告",
+        "标记报告"
+      ],
+      "extractionTargets": [
+        "压力",
+        "数量",
+        "标准",
+        "规格",
+        "型号",
+        "保压时间",
+        "结论"
+      ],
+      "verificationSteps": [
+        "阀门施工记录、耐压试验记录或报告（包含依据标准）"
+      ],
+      "acceptanceCriteria": [
+        "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》"
+      ],
+      "humanConfirmation": [
+        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
+      ],
+      "promptContext": "监检项目：阀门的施工资料和耐压试验记录（报告）\n类别：C\n判断准则/标准规范：试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4\n方法及内容/工作见证：阀门施工记录、耐压试验记录或报告（包含依据标准）\nAgent思考方式：找到阀门施工记录、阀门清单、产品质量证明文件、耐压试验记录或报告。抽取阀门编号、规格型号、公称压力、试验方法、试验介质、壳体试验压力、密封试验压力、保压时间、试验数量、依据标准和结论。判断试验方法、数量、压力、保压时间和结果是否符合设计文件、GB/T 13927-2022、GB/T 26480-2011 和 GB/T20801.1-2025 中 7.2.4 的要求。\n工具集调用思考：调用 T01、T02 定位阀门施工记录、阀门清单、质量证明文件和耐压试验报告；调用 T03、T04 抽取阀门编号、规格、压力等级、试验参数、数量和结论；调用 T06 查询 GB/T 13927、GB/T 26480 和 GB/T20801.1 要求；调用 T07 判断试验压力、保压时间和数量要求；调用 T08 比对阀门清单、施工记录和报告；调用 T11 标记报告缺失、数量不足或参数不符；调用 T12 输出证据链。"
+    }
+  },
+  {
+    "id": "RULE-ENG-INSP-R24",
+    "name": "焊工资格证及持证合格项目",
+    "ruleKey": "engineering-inspection-r24",
+    "version": "engineering-inspection-r24-v20260714",
     "status": "已发布",
     "nodeIds": [
       24
@@ -1384,12 +2649,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R12",
+    "sourceRuleId": "R24",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 24,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "焊工资格证及持证合格项目 (B类)",
+    "inspectionItem": "焊工资格证及持证合格项目",
     "materialTypeCodes": [
       "generic_review_material",
       "welder_certificate",
@@ -1429,11 +2694,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R12",
+        "sourceRuleId": "R24",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 24,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "焊工资格证及持证合格项目 (B类)",
+        "inspectionItem": "焊工资格证及持证合格项目",
         "inspectionClass": "B",
         "standardText": "标准规范： 《特种设备焊接操作人员考核细则》(TSG Z6002-2010) 。监检人员需现场核对人证是否相符，且作业内容（序号29）在证书允许范围内，例：某焊工所焊接的管线材质20钢，规格为89×4.5mm，焊接方法是氩弧焊，焊工证号是GTAW-FeII-6G-3/57-FefS-02/11/12，查TSG Z6002-2010，焊接方法氩弧焊代号GTAW，金属材料类别FeII能覆盖20；焊接位置6G，全位置焊，能覆盖；3/57代号可焊管线壁厚0-6mm，管径25-不限，能覆盖89×4.5mm，即通过。",
         "witnessText": "工作见证： 需提供焊工的有效资格证书原件或复印件，以及证书上明确标注的“合格项目”范围（如焊接方法、母材类别、位置等）。",
@@ -1473,14 +2738,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：焊工资格证及持证合格项目 (B类)\n类别：B\n判断准则/标准规范：标准规范： 《特种设备焊接操作人员考核细则》(TSG Z6002-2010) 。监检人员需现场核对人证是否相符，且作业内容（序号29）在证书允许范围内，例：某焊工所焊接的管线材质20钢，规格为89×4.5mm，焊接方法是氩弧焊，焊工证号是GTAW-FeII-6G-3/57-FefS-02/11/12，查TSG Z6002-2010，焊接方法氩弧焊代号GTAW，金属材料类别FeII能覆盖20；焊接位置6G，全位置焊，能覆盖；3/57代号可焊管线壁厚0-6mm，管径25-不限，能覆盖89×4.5mm，即通过。\n方法及内容/工作见证：工作见证： 需提供焊工的有效资格证书原件或复印件，以及证书上明确标注的“合格项目”范围（如焊接方法、母材类别、位置等）。\nAgent思考方式：找到焊工资格证和焊工本人、焊接记录或焊缝编号图中的实际作业信息。先核对人证是否相符，再解析证书代号含义，例如 GTAW 表示氩弧焊，FeII 表示母材类别，6G 表示全位置焊，3/57 表示可焊厚度和管径范围；然后找到实际焊接管线的材质、规格、壁厚、管径、焊接方法和位置。逐项判断证书中的焊接方法、母材类别、焊接位置、可焊厚度和管径范围是否覆盖实际作业，不覆盖或证书无效时判定需处理。\n工具集调用思考：调用 T01、T02 定位焊工资格证、人员明细、焊接记录和焊缝编号图；调用 T03、T04 抽取证书项目和实际作业参数；调用 T05 核验证书有效性；调用 T07 执行 TSG Z6002 覆盖关系判断；调用 T08 比对人员、焊缝和记录一致性；调用 T11 标记不覆盖或人证不符；调用 T12 输出结论。"
+      "promptContext": "监检项目：焊工资格证及持证合格项目\n类别：B\n判断准则/标准规范：标准规范： 《特种设备焊接操作人员考核细则》(TSG Z6002-2010) 。监检人员需现场核对人证是否相符，且作业内容（序号29）在证书允许范围内，例：某焊工所焊接的管线材质20钢，规格为89×4.5mm，焊接方法是氩弧焊，焊工证号是GTAW-FeII-6G-3/57-FefS-02/11/12，查TSG Z6002-2010，焊接方法氩弧焊代号GTAW，金属材料类别FeII能覆盖20；焊接位置6G，全位置焊，能覆盖；3/57代号可焊管线壁厚0-6mm，管径25-不限，能覆盖89×4.5mm，即通过。\n方法及内容/工作见证：工作见证： 需提供焊工的有效资格证书原件或复印件，以及证书上明确标注的“合格项目”范围（如焊接方法、母材类别、位置等）。\nAgent思考方式：找到焊工资格证和焊工本人、焊接记录或焊缝编号图中的实际作业信息。先核对人证是否相符，再解析证书代号含义，例如 GTAW 表示氩弧焊，FeII 表示母材类别，6G 表示全位置焊，3/57 表示可焊厚度和管径范围；然后找到实际焊接管线的材质、规格、壁厚、管径、焊接方法和位置。逐项判断证书中的焊接方法、母材类别、焊接位置、可焊厚度和管径范围是否覆盖实际作业，不覆盖或证书无效时判定需处理。\n工具集调用思考：调用 T01、T02 定位焊工资格证、人员明细、焊接记录和焊缝编号图；调用 T03、T04 抽取证书项目和实际作业参数；调用 T05 核验证书有效性；调用 T07 执行 TSG Z6002 覆盖关系判断；调用 T08 比对人员、焊缝和记录一致性；调用 T11 标记不覆盖或人证不符；调用 T12 输出结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R13",
+    "id": "RULE-ENG-INSP-R25",
     "name": "焊接（粘接）工艺文件",
-    "ruleKey": "engineering-inspection-r13",
-    "version": "engineering-inspection-r13-v20260703",
+    "ruleKey": "engineering-inspection-r25",
+    "version": "engineering-inspection-r25-v20260714",
     "status": "已发布",
     "nodeIds": [
       25
@@ -1490,12 +2755,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R13",
+    "sourceRuleId": "R25",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 25,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "焊接（粘接）工艺文件 (C类)",
+    "inspectionItem": "焊接（粘接）工艺文件",
     "materialTypeCodes": [
       "generic_review_material",
       "wps_pqr",
@@ -1534,11 +2799,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R13",
+        "sourceRuleId": "R25",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 25,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "焊接（粘接）工艺文件 (C类)",
+        "inspectionItem": "焊接（粘接）工艺文件",
         "inspectionClass": "C",
         "standardText": "标准规范：管线汇总表、NB/T 47014-2023《承压设备焊接工艺评定》。重点核查WPS中的参数（电流、电压、速度、层间温度等）是否与PQR一致，且覆盖实际生产条件（与管线汇总表的管道壁厚对比，看焊评是否能覆盖所焊管线壁厚）。",
         "witnessText": "工作见证： 提供经审批生效的《焊接工艺评定报告》(PQR) 和对应的《焊接作业指导书》(WPS)。",
@@ -1566,14 +2831,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：焊接（粘接）工艺文件 (C类)\n类别：C\n判断准则/标准规范：标准规范：管线汇总表、NB/T 47014-2023《承压设备焊接工艺评定》。重点核查WPS中的参数（电流、电压、速度、层间温度等）是否与PQR一致，且覆盖实际生产条件（与管线汇总表的管道壁厚对比，看焊评是否能覆盖所焊管线壁厚）。\n方法及内容/工作见证：工作见证： 提供经审批生效的《焊接工艺评定报告》(PQR) 和对应的《焊接作业指导书》(WPS)。\nAgent思考方式：找到 PQR、WPS 和管线汇总表，抽取 WPS 中的焊接方法、母材类别、厚度范围、电流、电压、焊接速度、层间温度等参数；再抽取 PQR 的评定参数和管线汇总表中的实际材质、规格、壁厚。先判断 WPS 是否有对应 PQR 支撑，再判断 WPS 参数是否与 PQR 一致，最后判断焊评覆盖范围是否覆盖实际生产条件。\n工具集调用思考：调用 T01、T02 定位 PQR、WPS 和管线汇总表；调用 T03、T04 抽取焊接参数和实际管线条件；调用 T06 查询 NB/T 47014 判据；调用 T07 判断评定覆盖范围；调用 T08 比对 PQR、WPS 与管线汇总表一致性；调用 T11 处理无评定、参数不一致或覆盖不足；调用 T12 回写意见。"
+      "promptContext": "监检项目：焊接（粘接）工艺文件\n类别：C\n判断准则/标准规范：标准规范：管线汇总表、NB/T 47014-2023《承压设备焊接工艺评定》。重点核查WPS中的参数（电流、电压、速度、层间温度等）是否与PQR一致，且覆盖实际生产条件（与管线汇总表的管道壁厚对比，看焊评是否能覆盖所焊管线壁厚）。\n方法及内容/工作见证：工作见证： 提供经审批生效的《焊接工艺评定报告》(PQR) 和对应的《焊接作业指导书》(WPS)。\nAgent思考方式：找到 PQR、WPS 和管线汇总表，抽取 WPS 中的焊接方法、母材类别、厚度范围、电流、电压、焊接速度、层间温度等参数；再抽取 PQR 的评定参数和管线汇总表中的实际材质、规格、壁厚。先判断 WPS 是否有对应 PQR 支撑，再判断 WPS 参数是否与 PQR 一致，最后判断焊评覆盖范围是否覆盖实际生产条件。\n工具集调用思考：调用 T01、T02 定位 PQR、WPS 和管线汇总表；调用 T03、T04 抽取焊接参数和实际管线条件；调用 T06 查询 NB/T 47014 判据；调用 T07 判断评定覆盖范围；调用 T08 比对 PQR、WPS 与管线汇总表一致性；调用 T11 处理无评定、参数不一致或覆盖不足；调用 T12 回写意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R14",
+    "id": "RULE-ENG-INSP-R26",
     "name": "焊接材料质量证明文件",
-    "ruleKey": "engineering-inspection-r14",
-    "version": "engineering-inspection-r14-v20260703",
+    "ruleKey": "engineering-inspection-r26",
+    "version": "engineering-inspection-r26-v20260714",
     "status": "已发布",
     "nodeIds": [
       26
@@ -1583,12 +2848,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R14",
+    "sourceRuleId": "R26",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 26,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "焊接材料质量证明文件 (C类)",
+    "inspectionItem": "焊接材料质量证明文件",
     "materialTypeCodes": [
       "generic_review_material",
       "welding_material_certificate",
@@ -1636,11 +2901,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R14",
+        "sourceRuleId": "R26",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 26,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "焊接材料质量证明文件 (C类)",
+        "inspectionItem": "焊接材料质量证明文件",
         "inspectionClass": "C",
         "standardText": "标准规范：设计说明、NB/T47018-2017，GB/T 5117（碳钢焊条）、GB/T 8110（气体保护焊用钢丝）等材料标准。监检时需确认材料牌号、规格符合设计要求，且在有效期内。",
         "witnessText": "工作见证： 焊条、焊丝、焊剂等材料的出厂质量证明书（MTC），需包含化学成分、力学性能等数据，并与实物批号对应。",
@@ -1677,14 +2942,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。"
       ],
-      "promptContext": "监检项目：焊接材料质量证明文件 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计说明、NB/T47018-2017，GB/T 5117（碳钢焊条）、GB/T 8110（气体保护焊用钢丝）等材料标准。监检时需确认材料牌号、规格符合设计要求，且在有效期内。\n方法及内容/工作见证：工作见证： 焊条、焊丝、焊剂等材料的出厂质量证明书（MTC），需包含化学成分、力学性能等数据，并与实物批号对应。\nAgent思考方式：找到焊条、焊丝、焊剂等焊接材料质量证明书，抽取材料牌号、规格、批号、生产日期、有效期、化学成分和力学性能；找到设计说明和焊接工艺文件中的材料要求；必要时找到实物或领用记录中的批号。判断质量证明文件是否覆盖实际使用材料，牌号和规格是否符合设计要求，批号是否可追溯，材料是否在有效期内。\n工具集调用思考：调用 T01、T02 定位材料质量证明书、设计说明、WPS 和领用记录；调用 T03、T04 抽取牌号、规格、批号、性能数据和有效期；调用 T06 查询材料标准；调用 T08 比对设计要求、证明文件和实物/领用记录；调用 T11 标记批号不一致、过期或缺证明；调用 T12 输出证据链。"
+      "promptContext": "监检项目：焊接材料质量证明文件\n类别：C\n判断准则/标准规范：标准规范：设计说明、NB/T47018-2017，GB/T 5117（碳钢焊条）、GB/T 8110（气体保护焊用钢丝）等材料标准。监检时需确认材料牌号、规格符合设计要求，且在有效期内。\n方法及内容/工作见证：工作见证： 焊条、焊丝、焊剂等材料的出厂质量证明书（MTC），需包含化学成分、力学性能等数据，并与实物批号对应。\nAgent思考方式：找到焊条、焊丝、焊剂等焊接材料质量证明书，抽取材料牌号、规格、批号、生产日期、有效期、化学成分和力学性能；找到设计说明和焊接工艺文件中的材料要求；必要时找到实物或领用记录中的批号。判断质量证明文件是否覆盖实际使用材料，牌号和规格是否符合设计要求，批号是否可追溯，材料是否在有效期内。\n工具集调用思考：调用 T01、T02 定位材料质量证明书、设计说明、WPS 和领用记录；调用 T03、T04 抽取牌号、规格、批号、性能数据和有效期；调用 T06 查询材料标准；调用 T08 比对设计要求、证明文件和实物/领用记录；调用 T11 标记批号不一致、过期或缺证明；调用 T12 输出证据链。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R15",
+    "id": "RULE-ENG-INSP-R27",
     "name": "焊接材料的验收、保管、发放、使用和回收的管理",
-    "ruleKey": "engineering-inspection-r15",
-    "version": "engineering-inspection-r15-v20260703",
+    "ruleKey": "engineering-inspection-r27",
+    "version": "engineering-inspection-r27-v20260714",
     "status": "已发布",
     "nodeIds": [
       27
@@ -1694,12 +2959,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R15",
+    "sourceRuleId": "R27",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 27,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "焊接材料的验收、保管、发放、使用和回收的管理 (B类)",
+    "inspectionItem": "焊接材料的验收、保管、发放、使用和回收的管理",
     "materialTypeCodes": [
       "generic_review_material",
       "welding_material_management_record",
@@ -1742,11 +3007,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R15",
+        "sourceRuleId": "R27",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 27,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "焊接材料的验收、保管、发放、使用和回收的管理 (B类)",
+        "inspectionItem": "焊接材料的验收、保管、发放、使用和回收的管理",
         "inspectionClass": "B",
         "standardText": "标准规范：设计说明、GB/T20801.1-2025第7.4.2条、 JB/T 3223《焊接材料质量管理规程》。重点检查焊材是否按要求烘干、保温，是否存在混用或过期现象。",
         "witnessText": "工作见证： 焊材库温湿度记录表、焊条烘干记录、领用登记表、剩余焊材回收记录。",
@@ -1779,14 +3044,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：焊接材料的验收、保管、发放、使用和回收的管理 (B类)\n类别：B\n判断准则/标准规范：标准规范：设计说明、GB/T20801.1-2025第7.4.2条、 JB/T 3223《焊接材料质量管理规程》。重点检查焊材是否按要求烘干、保温，是否存在混用或过期现象。\n方法及内容/工作见证：工作见证： 焊材库温湿度记录表、焊条烘干记录、领用登记表、剩余焊材回收记录。\nAgent思考方式：找到焊材库温湿度记录、焊条烘干记录、保温记录、领用登记和回收记录。沿着“入库验收、保管、烘干、发放、使用、回收”顺序建立批号流转链，判断记录是否连续、温湿度和烘干参数是否满足要求、领用数量与回收数量是否合理，是否存在混用、过期、无记录发放或回收缺失。\n工具集调用思考：调用 T01、T02 定位焊材管理记录和焊材质量证明；调用 T03、T04 抽取批号、时间、温湿度、烘干参数、领用和回收数量；调用 T06 查询管理规程要求；调用 T07 判断参数和时间是否满足阈值；调用 T08 串联批号追溯链；调用 T11 生成过程断点或异常项；调用 T12 回写结论。"
+      "promptContext": "监检项目：焊接材料的验收、保管、发放、使用和回收的管理\n类别：B\n判断准则/标准规范：标准规范：设计说明、GB/T20801.1-2025第7.4.2条、 JB/T 3223《焊接材料质量管理规程》。重点检查焊材是否按要求烘干、保温，是否存在混用或过期现象。\n方法及内容/工作见证：工作见证： 焊材库温湿度记录表、焊条烘干记录、领用登记表、剩余焊材回收记录。\nAgent思考方式：找到焊材库温湿度记录、焊条烘干记录、保温记录、领用登记和回收记录。沿着“入库验收、保管、烘干、发放、使用、回收”顺序建立批号流转链，判断记录是否连续、温湿度和烘干参数是否满足要求、领用数量与回收数量是否合理，是否存在混用、过期、无记录发放或回收缺失。\n工具集调用思考：调用 T01、T02 定位焊材管理记录和焊材质量证明；调用 T03、T04 抽取批号、时间、温湿度、烘干参数、领用和回收数量；调用 T06 查询管理规程要求；调用 T07 判断参数和时间是否满足阈值；调用 T08 串联批号追溯链；调用 T11 生成过程断点或异常项；调用 T12 回写结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R16",
+    "id": "RULE-ENG-INSP-R28",
     "name": "管道组对",
-    "ruleKey": "engineering-inspection-r16",
-    "version": "engineering-inspection-r16-v20260703",
+    "ruleKey": "engineering-inspection-r28",
+    "version": "engineering-inspection-r28-v20260714",
     "status": "已发布",
     "nodeIds": [
       28
@@ -1796,12 +3061,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R16",
+    "sourceRuleId": "R28",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 28,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "管道组对 (C类)",
+    "inspectionItem": "管道组对",
     "materialTypeCodes": [
       "generic_review_material",
       "welding_record",
@@ -1846,11 +3111,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R16",
+        "sourceRuleId": "R28",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 28,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "管道组对 (C类)",
+        "inspectionItem": "管道组对",
         "inspectionClass": "C",
         "standardText": "标准规范： 设计说明、 GB/T20801.1-2025第7.4.4.3条、GB 50236《现场设备、工业管道焊接工程施工规范》。监检时可抽查实物，或现场拍照上传，确保组对质量满足工艺要求，避免强行组对。",
         "witnessText": "工作见证： 管道组对检查记录表，包含错边量、间隙、坡口角度等实测数据。",
@@ -1879,14 +3144,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：管道组对 (C类)\n类别：C\n判断准则/标准规范：标准规范： 设计说明、 GB/T20801.1-2025第7.4.4.3条、GB 50236《现场设备、工业管道焊接工程施工规范》。监检时可抽查实物，或现场拍照上传，确保组对质量满足工艺要求，避免强行组对。\n方法及内容/工作见证：工作见证： 管道组对检查记录表，包含错边量、间隙、坡口角度等实测数据。\nAgent思考方式：找到管道组对检查记录，抽取焊口编号、错边量、间隙、坡口角度、组对日期和检查结论；找到设计说明或工艺文件中的组对要求；如有现场照片或实物抽查数据，同时识别是否存在强行组对迹象。将实测数据与工艺要求逐项比较，超过允许值或记录与照片不一致时标记为异常。\n工具集调用思考：调用 T01、T02 定位组对记录、工艺文件和现场照片；调用 T03、T04 抽取组对实测数据；调用 T06、T07 获取并应用组对允许值；调用 T09 解析照片或实测证据；调用 T08 比对记录、工艺和现场证据；调用 T11 处理超差或证据不足；调用 T12 输出审查意见。"
+      "promptContext": "监检项目：管道组对\n类别：C\n判断准则/标准规范：标准规范： 设计说明、 GB/T20801.1-2025第7.4.4.3条、GB 50236《现场设备、工业管道焊接工程施工规范》。监检时可抽查实物，或现场拍照上传，确保组对质量满足工艺要求，避免强行组对。\n方法及内容/工作见证：工作见证： 管道组对检查记录表，包含错边量、间隙、坡口角度等实测数据。\nAgent思考方式：找到管道组对检查记录，抽取焊口编号、错边量、间隙、坡口角度、组对日期和检查结论；找到设计说明或工艺文件中的组对要求；如有现场照片或实物抽查数据，同时识别是否存在强行组对迹象。将实测数据与工艺要求逐项比较，超过允许值或记录与照片不一致时标记为异常。\n工具集调用思考：调用 T01、T02 定位组对记录、工艺文件和现场照片；调用 T03、T04 抽取组对实测数据；调用 T06、T07 获取并应用组对允许值；调用 T09 解析照片或实测证据；调用 T08 比对记录、工艺和现场证据；调用 T11 处理超差或证据不足；调用 T12 输出审查意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R17",
+    "id": "RULE-ENG-INSP-R29",
     "name": "施焊参数、施焊记录、焊缝标识",
-    "ruleKey": "engineering-inspection-r17",
-    "version": "engineering-inspection-r17-v20260703",
+    "ruleKey": "engineering-inspection-r29",
+    "version": "engineering-inspection-r29-v20260714",
     "status": "已发布",
     "nodeIds": [
       29
@@ -1896,12 +3161,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R17",
+    "sourceRuleId": "R29",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 29,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "施焊参数、施焊记录、焊缝标识 (B类)",
+    "inspectionItem": "施焊参数、施焊记录、焊缝标识",
     "materialTypeCodes": [
       "generic_review_material",
       "welding_record",
@@ -1929,7 +3194,7 @@ export const generatedKnowledgeRuleVersions = [
     "checkMethod": "工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识。",
     "witnessText": "工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识。",
     "sourceWitness": "工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识。",
-    "agentThinking": "找到焊接施工记录、焊缝编号图、钢印标识、WPS、PQR 和焊工资格证。抽取每道焊缝的焊工、焊接方法、电流、电压、焊接速度、层间温度、焊材批号和焊缝编号。按 R12 的焊工证代号解析方法判断焊工资格是否覆盖实际作业；按 R13 的 WPS/PQR 覆盖方法判断施焊参数是否落在工艺允许范围内；最后判断焊缝标识是否能追溯到人员、材料、检测和返修记录。",
+    "agentThinking": "找到焊接施工记录、焊缝编号图、钢印标识、WPS、PQR 和焊工资格证。抽取每道焊缝的焊工、焊接方法、电流、电压、焊接速度、层间温度、焊材批号和焊缝编号。按 R24 的焊工证代号解析方法判断焊工资格是否覆盖实际作业；按 R25 的 WPS/PQR 覆盖方法判断施焊参数是否落在工艺允许范围内；最后判断焊缝标识是否能追溯到人员、材料、检测和返修记录。",
     "toolchainThinking": "调用 T01、T02 定位焊接记录、焊缝编号图、WPS、PQR 和焊工资格证；调用 T03、T04 抽取参数和编号；调用 T05、T07 判断焊工资格和 WPS 参数覆盖；调用 T08 建立焊缝追溯关系；调用 T11 标记参数越界、标识不清或不可追溯；调用 T12 回写结果。",
     "referencedStandards": [
       {
@@ -1942,15 +3207,15 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R17",
+        "sourceRuleId": "R29",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 29,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "施焊参数、施焊记录、焊缝标识 (B类)",
+        "inspectionItem": "施焊参数、施焊记录、焊缝标识",
         "inspectionClass": "B",
         "standardText": "标准规范：TSG Z6002-2010，与序号24和序号25联动比对，具体比对方式参考序号24。施工记录的要求：真实、可追溯，焊缝标识清晰，便于后续无损检测和返修定位。",
         "witnessText": "工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识。",
-        "agentThinking": "找到焊接施工记录、焊缝编号图、钢印标识、WPS、PQR 和焊工资格证。抽取每道焊缝的焊工、焊接方法、电流、电压、焊接速度、层间温度、焊材批号和焊缝编号。按 R12 的焊工证代号解析方法判断焊工资格是否覆盖实际作业；按 R13 的 WPS/PQR 覆盖方法判断施焊参数是否落在工艺允许范围内；最后判断焊缝标识是否能追溯到人员、材料、检测和返修记录。",
+        "agentThinking": "找到焊接施工记录、焊缝编号图、钢印标识、WPS、PQR 和焊工资格证。抽取每道焊缝的焊工、焊接方法、电流、电压、焊接速度、层间温度、焊材批号和焊缝编号。按 R24 的焊工证代号解析方法判断焊工资格是否覆盖实际作业；按 R25 的 WPS/PQR 覆盖方法判断施焊参数是否落在工艺允许范围内；最后判断焊缝标识是否能追溯到人员、材料、检测和返修记录。",
         "toolchainThinking": "调用 T01、T02 定位焊接记录、焊缝编号图、WPS、PQR 和焊工资格证；调用 T03、T04 抽取参数和编号；调用 T05、T07 判断焊工资格和 WPS 参数覆盖；调用 T08 建立焊缝追溯关系；调用 T11 标记参数越界、标识不清或不可追溯；调用 T12 回写结果。"
       },
       "requiredEvidence": [
@@ -1976,14 +3241,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：施焊参数、施焊记录、焊缝标识 (B类)\n类别：B\n判断准则/标准规范：标准规范：TSG Z6002-2010，与序号24和序号25联动比对，具体比对方式参考序号24。施工记录的要求：真实、可追溯，焊缝标识清晰，便于后续无损检测和返修定位。\n方法及内容/工作见证：工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识。\nAgent思考方式：找到焊接施工记录、焊缝编号图、钢印标识、WPS、PQR 和焊工资格证。抽取每道焊缝的焊工、焊接方法、电流、电压、焊接速度、层间温度、焊材批号和焊缝编号。按 R12 的焊工证代号解析方法判断焊工资格是否覆盖实际作业；按 R13 的 WPS/PQR 覆盖方法判断施焊参数是否落在工艺允许范围内；最后判断焊缝标识是否能追溯到人员、材料、检测和返修记录。\n工具集调用思考：调用 T01、T02 定位焊接记录、焊缝编号图、WPS、PQR 和焊工资格证；调用 T03、T04 抽取参数和编号；调用 T05、T07 判断焊工资格和 WPS 参数覆盖；调用 T08 建立焊缝追溯关系；调用 T11 标记参数越界、标识不清或不可追溯；调用 T12 回写结果。"
+      "promptContext": "监检项目：施焊参数、施焊记录、焊缝标识\n类别：B\n判断准则/标准规范：标准规范：TSG Z6002-2010，与序号24和序号25联动比对，具体比对方式参考序号24。施工记录的要求：真实、可追溯，焊缝标识清晰，便于后续无损检测和返修定位。\n方法及内容/工作见证：工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识。\nAgent思考方式：找到焊接施工记录、焊缝编号图、钢印标识、WPS、PQR 和焊工资格证。抽取每道焊缝的焊工、焊接方法、电流、电压、焊接速度、层间温度、焊材批号和焊缝编号。按 R24 的焊工证代号解析方法判断焊工资格是否覆盖实际作业；按 R25 的 WPS/PQR 覆盖方法判断施焊参数是否落在工艺允许范围内；最后判断焊缝标识是否能追溯到人员、材料、检测和返修记录。\n工具集调用思考：调用 T01、T02 定位焊接记录、焊缝编号图、WPS、PQR 和焊工资格证；调用 T03、T04 抽取参数和编号；调用 T05、T07 判断焊工资格和 WPS 参数覆盖；调用 T08 建立焊缝追溯关系；调用 T11 标记参数越界、标识不清或不可追溯；调用 T12 回写结果。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R18",
+    "id": "RULE-ENG-INSP-R30",
     "name": "焊接接头外观质量",
-    "ruleKey": "engineering-inspection-r18",
-    "version": "engineering-inspection-r18-v20260703",
+    "ruleKey": "engineering-inspection-r30",
+    "version": "engineering-inspection-r30-v20260714",
     "status": "已发布",
     "nodeIds": [
       30
@@ -1993,12 +3258,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R18",
+    "sourceRuleId": "R30",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 30,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "焊接接头外观质量 (B类)",
+    "inspectionItem": "焊接接头外观质量",
     "materialTypeCodes": [
       "generic_review_material",
       "welding_record",
@@ -2042,11 +3307,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R18",
+        "sourceRuleId": "R30",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 30,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "焊接接头外观质量 (B类)",
+        "inspectionItem": "焊接接头外观质量",
         "inspectionClass": "B",
         "standardText": "标准规范： GB/T20801.1-2025第7.4条；GB 50236-2011。监检人员需现场目视或使用焊缝检验尺进行测量，可将数据上传。",
         "witnessText": "工作见证： 外观检查记录表，必要时附照片。检查内容包括焊缝余高、宽度、咬边、表面气孔、裂纹等。",
@@ -2081,14 +3346,14 @@ export const generatedKnowledgeRuleVersions = [
         "涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。",
         "证据缺失、范围不覆盖或跨文件不一致时生成补充资料项或联络单。"
       ],
-      "promptContext": "监检项目：焊接接头外观质量 (B类)\n类别：B\n判断准则/标准规范：标准规范： GB/T20801.1-2025第7.4条；GB 50236-2011。监检人员需现场目视或使用焊缝检验尺进行测量，可将数据上传。\n方法及内容/工作见证：工作见证： 外观检查记录表，必要时附照片。检查内容包括焊缝余高、宽度、咬边、表面气孔、裂纹等。\nAgent思考方式：找到监检人员现场外观检查记录、测量数据和现场照片，抽取焊缝编号、余高、宽度、咬边、气孔、裂纹、未熔合等检查项目和结论。对有实测值的项目按标准阈值判断，对照片可见缺陷进行辅助识别；若记录结论合格但照片或实测数据存在明显缺陷，标记为需人工复核。现场照片和检查记录是本规则的必要输入，Agent 不替代监检人员的现场目视检查。\n工具集调用思考：调用 T01、T02 定位外观检查记录、焊缝编号图和现场照片；调用 T03、T04 抽取检查项目和实测值；调用 T06、T07 获取外观质量判据并判断是否超限；调用 T09 识别照片中的外观缺陷；调用 T08 比对记录与现场证据；调用 T11 触发人工复核；调用 T12 输出意见。"
+      "promptContext": "监检项目：焊接接头外观质量\n类别：B\n判断准则/标准规范：标准规范： GB/T20801.1-2025第7.4条；GB 50236-2011。监检人员需现场目视或使用焊缝检验尺进行测量，可将数据上传。\n方法及内容/工作见证：工作见证： 外观检查记录表，必要时附照片。检查内容包括焊缝余高、宽度、咬边、表面气孔、裂纹等。\nAgent思考方式：找到监检人员现场外观检查记录、测量数据和现场照片，抽取焊缝编号、余高、宽度、咬边、气孔、裂纹、未熔合等检查项目和结论。对有实测值的项目按标准阈值判断，对照片可见缺陷进行辅助识别；若记录结论合格但照片或实测数据存在明显缺陷，标记为需人工复核。现场照片和检查记录是本规则的必要输入，Agent 不替代监检人员的现场目视检查。\n工具集调用思考：调用 T01、T02 定位外观检查记录、焊缝编号图和现场照片；调用 T03、T04 抽取检查项目和实测值；调用 T06、T07 获取外观质量判据并判断是否超限；调用 T09 识别照片中的外观缺陷；调用 T08 比对记录与现场证据；调用 T11 触发人工复核；调用 T12 输出意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R19",
+    "id": "RULE-ENG-INSP-R31",
     "name": "焊缝返修",
-    "ruleKey": "engineering-inspection-r19",
-    "version": "engineering-inspection-r19-v20260703",
+    "ruleKey": "engineering-inspection-r31",
+    "version": "engineering-inspection-r31-v20260714",
     "status": "已发布",
     "nodeIds": [
       31
@@ -2098,12 +3363,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R19",
+    "sourceRuleId": "R31",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 31,
     "businessModule": "一、焊接（粘接）部分",
     "inspectionCategory": "一、焊接（粘接）部分",
-    "inspectionItem": "焊缝返修 (C类)",
+    "inspectionItem": "焊缝返修",
     "materialTypeCodes": [
       "generic_review_material",
       "weld_repair_record",
@@ -2148,11 +3413,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R19",
+        "sourceRuleId": "R31",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 31,
         "inspectionCategory": "一、焊接（粘接）部分",
-        "inspectionItem": "焊缝返修 (C类)",
+        "inspectionItem": "焊缝返修",
         "inspectionClass": "C",
         "standardText": "标准规范：设计说明、 GB/T20801.1-2025第7.4.11条、NB/T 47014-2023 。",
         "witnessText": "工作见证： 返修申请单、返修工艺、返修审手续（同一部位返修次数通常不得超过2次，超过需制定专项方案并经技术负责人批准）、返修后检测报告（如RT/UT）。",
@@ -2183,14 +3448,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：焊缝返修 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计说明、 GB/T20801.1-2025第7.4.11条、NB/T 47014-2023 。\n方法及内容/工作见证：工作见证： 返修申请单、返修工艺、返修审手续（同一部位返修次数通常不得超过2次，超过需制定专项方案并经技术负责人批准）、返修后检测报告（如RT/UT）。\nAgent思考方式：找到返修申请单、返修工艺、返修审批手续、返修记录和返修后检测报告。先识别返修焊缝编号、缺陷类型、返修次数和返修部位；判断返修工艺是否经批准并与缺陷类型匹配；再判断同一部位返修次数是否超过 2 次，超过 2 次时必须有专项方案并经技术负责人批准；最后确认返修后检测合格并闭环。\n工具集调用思考：调用 T01、T02 定位返修全套记录和检测报告；调用 T03、T04 抽取焊缝编号、缺陷、次数、审批和复检结论；调用 T06、T07 查询返修规则并判断是否超限；调用 T08 关联原检测、返修、复检证据；调用 T11 对超次返修或未闭环触发人工确认；调用 T12 回写结论。"
+      "promptContext": "监检项目：焊缝返修\n类别：C\n判断准则/标准规范：标准规范：设计说明、 GB/T20801.1-2025第7.4.11条、NB/T 47014-2023 。\n方法及内容/工作见证：工作见证： 返修申请单、返修工艺、返修审手续（同一部位返修次数通常不得超过2次，超过需制定专项方案并经技术负责人批准）、返修后检测报告（如RT/UT）。\nAgent思考方式：找到返修申请单、返修工艺、返修审批手续、返修记录和返修后检测报告。先识别返修焊缝编号、缺陷类型、返修次数和返修部位；判断返修工艺是否经批准并与缺陷类型匹配；再判断同一部位返修次数是否超过 2 次，超过 2 次时必须有专项方案并经技术负责人批准；最后确认返修后检测合格并闭环。\n工具集调用思考：调用 T01、T02 定位返修全套记录和检测报告；调用 T03、T04 抽取焊缝编号、缺陷、次数、审批和复检结论；调用 T06、T07 查询返修规则并判断是否超限；调用 T08 关联原检测、返修、复检证据；调用 T11 对超次返修或未闭环触发人工确认；调用 T12 回写结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R20",
+    "id": "RULE-ENG-INSP-R32",
     "name": "焊接接头焊后热处理工艺文件",
-    "ruleKey": "engineering-inspection-r20",
-    "version": "engineering-inspection-r20-v20260703",
+    "ruleKey": "engineering-inspection-r32",
+    "version": "engineering-inspection-r32-v20260714",
     "status": "已发布",
     "nodeIds": [
       32
@@ -2200,12 +3465,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R20",
+    "sourceRuleId": "R32",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 32,
     "businessModule": "二、热处理部分",
     "inspectionCategory": "二、热处理部分",
-    "inspectionItem": "焊接接头焊后热处理工艺文件 (C类)",
+    "inspectionItem": "焊接接头焊后热处理工艺文件",
     "materialTypeCodes": [
       "generic_review_material",
       "heat_treatment_procedure",
@@ -2244,11 +3509,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R20",
+        "sourceRuleId": "R32",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 32,
         "inspectionCategory": "二、热处理部分",
-        "inspectionItem": "焊接接头焊后热处理工艺文件 (C类)",
+        "inspectionItem": "焊接接头焊后热处理工艺文件",
         "inspectionClass": "C",
         "standardText": "标准规范：设计说明、 GB/T20801.1-2025第7.6.3条。工艺文件必须基于热处理评定报告编制。",
         "witnessText": "工作见证： 经审批的热处理工艺卡，明确升温速率、保温温度、保温时间、降温速率等参数。",
@@ -2276,14 +3541,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：焊接接头焊后热处理工艺文件 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计说明、 GB/T20801.1-2025第7.6.3条。工艺文件必须基于热处理评定报告编制。\n方法及内容/工作见证：工作见证： 经审批的热处理工艺卡，明确升温速率、保温温度、保温时间、降温速率等参数。\nAgent思考方式：找到热处理工艺卡和热处理评定报告，抽取适用焊接接头、材质、厚度、升温速率、保温温度、保温时间、降温速率和审批信息。判断工艺卡是否基于热处理评定报告编制，参数是否覆盖实际接头条件，审批是否有效；若无评定支撑或参数缺失，则输出不符合或需补充资料。\n工具集调用思考：调用 T01、T02 定位热处理工艺卡、评定报告和焊接接头清单；调用 T03、T04 抽取材质、厚度和热处理参数；调用 T06 查询标准要求；调用 T07 判断参数覆盖和审批要求；调用 T08 比对工艺卡、评定报告与实际接头；调用 T11 标记缺评定或参数不覆盖；调用 T12 输出审查意见。"
+      "promptContext": "监检项目：焊接接头焊后热处理工艺文件\n类别：C\n判断准则/标准规范：标准规范：设计说明、 GB/T20801.1-2025第7.6.3条。工艺文件必须基于热处理评定报告编制。\n方法及内容/工作见证：工作见证： 经审批的热处理工艺卡，明确升温速率、保温温度、保温时间、降温速率等参数。\nAgent思考方式：找到热处理工艺卡和热处理评定报告，抽取适用焊接接头、材质、厚度、升温速率、保温温度、保温时间、降温速率和审批信息。判断工艺卡是否基于热处理评定报告编制，参数是否覆盖实际接头条件，审批是否有效；若无评定支撑或参数缺失，则输出不符合或需补充资料。\n工具集调用思考：调用 T01、T02 定位热处理工艺卡、评定报告和焊接接头清单；调用 T03、T04 抽取材质、厚度和热处理参数；调用 T06 查询标准要求；调用 T07 判断参数覆盖和审批要求；调用 T08 比对工艺卡、评定报告与实际接头；调用 T11 标记缺评定或参数不覆盖；调用 T12 输出审查意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R21",
+    "id": "RULE-ENG-INSP-R33",
     "name": "热处理设备用测温记录仪表",
-    "ruleKey": "engineering-inspection-r21",
-    "version": "engineering-inspection-r21-v20260703",
+    "ruleKey": "engineering-inspection-r33",
+    "version": "engineering-inspection-r33-v20260714",
     "status": "已发布",
     "nodeIds": [
       33
@@ -2293,12 +3558,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R21",
+    "sourceRuleId": "R33",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 33,
     "businessModule": "二、热处理部分",
     "inspectionCategory": "二、热处理部分",
-    "inspectionItem": "热处理设备用测温记录仪表 (C类)",
+    "inspectionItem": "热处理设备用测温记录仪表",
     "materialTypeCodes": [
       "generic_review_material",
       "instrument_calibration_certificate",
@@ -2329,11 +3594,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R21",
+        "sourceRuleId": "R33",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 33,
         "inspectionCategory": "二、热处理部分",
-        "inspectionItem": "热处理设备用测温记录仪表 (C类)",
+        "inspectionItem": "热处理设备用测温记录仪表",
         "inspectionClass": "C",
         "standardText": "标准规范： ——。",
         "witnessText": "工作见证： 热电偶校准证书、温控仪校验报告、测温点布置图。",
@@ -2364,14 +3629,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：热处理设备用测温记录仪表 (C类)\n类别：C\n判断准则/标准规范：标准规范： ——。\n方法及内容/工作见证：工作见证： 热电偶校准证书、温控仪校验报告、测温点布置图。\nAgent思考方式：找到热电偶校准证书、温控仪校验报告和测温点布置图，抽取仪表编号、校准/检定日期、有效期、精度等级、测温点数量和布置位置。判断热处理使用的测温仪表是否均有有效校准，测温点布置是否覆盖焊接接头或热处理区域，仪表编号是否能与热处理记录对应。\n工具集调用思考：调用 T01、T02 定位仪表证书、校验报告、布点图和热处理记录；调用 T03、T04 抽取仪表编号、有效期、精度和布点信息；调用 T06 查询项目或标准对仪表的要求；调用 T08 比对仪表证书与热处理记录编号；调用 T11 处理证书过期、编号不一致或布点不足；调用 T12 回写结论。"
+      "promptContext": "监检项目：热处理设备用测温记录仪表\n类别：C\n判断准则/标准规范：标准规范： ——。\n方法及内容/工作见证：工作见证： 热电偶校准证书、温控仪校验报告、测温点布置图。\nAgent思考方式：找到热电偶校准证书、温控仪校验报告和测温点布置图，抽取仪表编号、校准/检定日期、有效期、精度等级、测温点数量和布置位置。判断热处理使用的测温仪表是否均有有效校准，测温点布置是否覆盖焊接接头或热处理区域，仪表编号是否能与热处理记录对应。\n工具集调用思考：调用 T01、T02 定位仪表证书、校验报告、布点图和热处理记录；调用 T03、T04 抽取仪表编号、有效期、精度和布点信息；调用 T06 查询项目或标准对仪表的要求；调用 T08 比对仪表证书与热处理记录编号；调用 T11 处理证书过期、编号不一致或布点不足；调用 T12 回写结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R22",
+    "id": "RULE-ENG-INSP-R34",
     "name": "热处理记录、报告曲线、硬度检测报告",
-    "ruleKey": "engineering-inspection-r22",
-    "version": "engineering-inspection-r22-v20260703",
+    "ruleKey": "engineering-inspection-r34",
+    "version": "engineering-inspection-r34-v20260714",
     "status": "已发布",
     "nodeIds": [
       34
@@ -2381,12 +3646,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R22",
+    "sourceRuleId": "R34",
     "sourceDocument": "焊接热处理要求.docx",
     "sourceSequence": 34,
     "businessModule": "二、热处理部分",
     "inspectionCategory": "二、热处理部分",
-    "inspectionItem": "热处理记录、报告曲线、硬度检测报告 (C类)",
+    "inspectionItem": "热处理记录、报告曲线、硬度检测报告",
     "materialTypeCodes": [
       "generic_review_material",
       "heat_treatment_record",
@@ -2425,11 +3690,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R22",
+        "sourceRuleId": "R34",
         "sourceDocument": "焊接热处理要求.docx",
         "sequence": 34,
         "inspectionCategory": "二、热处理部分",
-        "inspectionItem": "热处理记录、报告曲线、硬度检测报告 (C类)",
+        "inspectionItem": "热处理记录、报告曲线、硬度检测报告",
         "inspectionClass": "C",
         "standardText": "标准规范：热处理曲线需完整无中断，硬度值应符合设计说明或GB/T20801.1-2025第7.6.6条要求，一般碳钢布氏硬度≤200HB、合金钢≤225HB。",
         "witnessText": "工作见证： 自动记录的温度-时间曲线图、热处理报告、硬度测试报告（布氏/洛氏/维氏）。",
@@ -2460,14 +3725,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：热处理记录、报告曲线、硬度检测报告 (C类)\n类别：C\n判断准则/标准规范：标准规范：热处理曲线需完整无中断，硬度值应符合设计说明或GB/T20801.1-2025第7.6.6条要求，一般碳钢布氏硬度≤200HB、合金钢≤225HB。\n方法及内容/工作见证：工作见证： 自动记录的温度-时间曲线图、热处理报告、硬度测试报告（布氏/洛氏/维氏）。\nAgent思考方式：找到自动记录的温度-时间曲线、热处理报告、硬度检测报告和对应工艺卡。通过 T03/T04 抽取曲线时间-温度点、升温段、保温段和降温段，判断曲线是否连续无中断，保温温度、保温时间、升温速率和降温速率是否满足工艺卡；抽取硬度检测值并按材质类型判断是否满足设计说明或 GB/T20801.1-2025 第 7.6.6 条，一般碳钢布氏硬度不大于 200HB、合金钢不大于 225HB。若曲线断点、参数偏离或硬度超限，标记为异常。\n工具集调用思考：调用 T01、T02 定位热处理曲线、报告、硬度报告和工艺卡；调用 T03、T04 对曲线图或曲线数据进行识别，抽取时间-温度点、升温/保温/降温参数、硬度值、材质和焊缝编号；调用 T06、T07 查询并执行温度、时间、速率和硬度判定；调用 T08 比对报告、曲线和工艺卡一致性；调用 T11 处理曲线缺失、曲线中断或硬度超限；调用 T12 输出证据链。"
+      "promptContext": "监检项目：热处理记录、报告曲线、硬度检测报告\n类别：C\n判断准则/标准规范：标准规范：热处理曲线需完整无中断，硬度值应符合设计说明或GB/T20801.1-2025第7.6.6条要求，一般碳钢布氏硬度≤200HB、合金钢≤225HB。\n方法及内容/工作见证：工作见证： 自动记录的温度-时间曲线图、热处理报告、硬度测试报告（布氏/洛氏/维氏）。\nAgent思考方式：找到自动记录的温度-时间曲线、热处理报告、硬度检测报告和对应工艺卡。通过 T03/T04 抽取曲线时间-温度点、升温段、保温段和降温段，判断曲线是否连续无中断，保温温度、保温时间、升温速率和降温速率是否满足工艺卡；抽取硬度检测值并按材质类型判断是否满足设计说明或 GB/T20801.1-2025 第 7.6.6 条，一般碳钢布氏硬度不大于 200HB、合金钢不大于 225HB。若曲线断点、参数偏离或硬度超限，标记为异常。\n工具集调用思考：调用 T01、T02 定位热处理曲线、报告、硬度报告和工艺卡；调用 T03、T04 对曲线图或曲线数据进行识别，抽取时间-温度点、升温/保温/降温参数、硬度值、材质和焊缝编号；调用 T06、T07 查询并执行温度、时间、速率和硬度判定；调用 T08 比对报告、曲线和工艺卡一致性；调用 T11 处理曲线缺失、曲线中断或硬度超限；调用 T12 输出证据链。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R23",
+    "id": "RULE-ENG-INSP-R35",
     "name": "无损检测机构施工现场质量保证体系的实施",
-    "ruleKey": "engineering-inspection-r23",
-    "version": "engineering-inspection-r23-v20260703",
+    "ruleKey": "engineering-inspection-r35",
+    "version": "engineering-inspection-r35-v20260714",
     "status": "已发布",
     "nodeIds": [
       35
@@ -2477,12 +3742,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R23",
+    "sourceRuleId": "R35",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 35,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "无损检测机构施工现场质量保证体系的实施 (B类)",
+    "inspectionItem": "无损检测机构施工现场质量保证体系的实施",
     "materialTypeCodes": [
       "generic_review_material",
       "ndt_org_certificate",
@@ -2866,11 +4131,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R23",
+        "sourceRuleId": "R35",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 35,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "无损检测机构施工现场质量保证体系的实施 (B类)",
+        "inspectionItem": "无损检测机构施工现场质量保证体系的实施",
         "inspectionClass": "B",
         "standardText": "标准规范：TSG Z7002-2022《特种设备检测机构核准规则》、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
         "witnessText": "工作见证：需提供无损检测单位质量保证手册、受控记录及报告表格、项目人员任命文件、检测仪器及其他必要设备的检定报告。",
@@ -2904,14 +4169,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：无损检测机构施工现场质量保证体系的实施 (B类)\n类别：B\n判断准则/标准规范：标准规范：TSG Z7002-2022《特种设备检测机构核准规则》、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供无损检测单位质量保证手册、受控记录及报告表格、项目人员任命文件、检测仪器及其他必要设备的检定报告。\nAgent思考方式：找到无损检测单位质量保证手册、受控记录和报告表格、项目人员任命文件、检测仪器及设备检定报告。先判断质量体系文件是否适用于现场项目，再判断人员任命、设备检定、记录表格是否覆盖实际检测活动；最后与机构核准资质和检测方案联动，判断现场质量保证体系是否真实运行而不是只提供模板文件。\n工具集调用思考：调用 T01、T02 定位质量手册、受控表格、人员任命、设备检定报告和检测方案；调用 T03、T04 抽取人员、设备、检定有效期和体系文件版本；调用 T05 核验机构资质和人员设备对应关系；调用 T06 查询体系要求；调用 T08 比对体系文件与项目检测活动；调用 T11 标记体系缺项；调用 T12 输出结论。"
+      "promptContext": "监检项目：无损检测机构施工现场质量保证体系的实施\n类别：B\n判断准则/标准规范：标准规范：TSG Z7002-2022《特种设备检测机构核准规则》、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供无损检测单位质量保证手册、受控记录及报告表格、项目人员任命文件、检测仪器及其他必要设备的检定报告。\nAgent思考方式：找到无损检测单位质量保证手册、受控记录和报告表格、项目人员任命文件、检测仪器及设备检定报告。先判断质量体系文件是否适用于现场项目，再判断人员任命、设备检定、记录表格是否覆盖实际检测活动；最后与机构核准资质和检测方案联动，判断现场质量保证体系是否真实运行而不是只提供模板文件。\n工具集调用思考：调用 T01、T02 定位质量手册、受控表格、人员任命、设备检定报告和检测方案；调用 T03、T04 抽取人员、设备、检定有效期和体系文件版本；调用 T05 核验机构资质和人员设备对应关系；调用 T06 查询体系要求；调用 T08 比对体系文件与项目检测活动；调用 T11 标记体系缺项；调用 T12 输出结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R24",
+    "id": "RULE-ENG-INSP-R36",
     "name": "无损检测方案",
-    "ruleKey": "engineering-inspection-r24",
-    "version": "engineering-inspection-r24-v20260703",
+    "ruleKey": "engineering-inspection-r36",
+    "version": "engineering-inspection-r36-v20260714",
     "status": "已发布",
     "nodeIds": [
       36
@@ -2921,12 +4186,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R24",
+    "sourceRuleId": "R36",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 36,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "无损检测方案 (C类)",
+    "inspectionItem": "无损检测方案",
     "materialTypeCodes": [
       "generic_review_material",
       "ndt_plan",
@@ -3305,11 +4570,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R24",
+        "sourceRuleId": "R36",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 36,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "无损检测方案 (C类)",
+        "inspectionItem": "无损检测方案",
         "inspectionClass": "C",
         "standardText": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
         "witnessText": "工作见证：需提供无损检测方案。",
@@ -3339,14 +4604,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：无损检测方案 (C类)\n类别：C\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供无损检测方案。\nAgent思考方式：找到无损检测方案，抽取检测对象、检测方法、检测比例、检测时机、验收等级、人员资格、设备要求和审批信息。再找到设计文件中的无损检测要求和相关标准要求，判断方案是否完整、是否经审批、检测方法和比例是否满足设计文件，人员和设备配置是否能支撑方案执行。\n工具集调用思考：调用 T01、T02 定位无损检测方案、设计文件和标准要求；调用 T03、T04 抽取方法、比例、时机、等级、人员和设备；调用 T06 查询 NB/T 47013 判据；调用 T07 判断检测比例和等级是否满足要求；调用 T08 比对方案与设计文件；调用 T11 处理方案缺项或未审批；调用 T12 回写审查意见。"
+      "promptContext": "监检项目：无损检测方案\n类别：C\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供无损检测方案。\nAgent思考方式：找到无损检测方案，抽取检测对象、检测方法、检测比例、检测时机、验收等级、人员资格、设备要求和审批信息。再找到设计文件中的无损检测要求和相关标准要求，判断方案是否完整、是否经审批、检测方法和比例是否满足设计文件，人员和设备配置是否能支撑方案执行。\n工具集调用思考：调用 T01、T02 定位无损检测方案、设计文件和标准要求；调用 T03、T04 抽取方法、比例、时机、等级、人员和设备；调用 T06 查询 NB/T 47013 判据；调用 T07 判断检测比例和等级是否满足要求；调用 T08 比对方案与设计文件；调用 T11 处理方案缺项或未审批；调用 T12 回写审查意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R25",
+    "id": "RULE-ENG-INSP-R37",
     "name": "检测过程中发现问题的处理",
-    "ruleKey": "engineering-inspection-r25",
-    "version": "engineering-inspection-r25-v20260703",
+    "ruleKey": "engineering-inspection-r37",
+    "version": "engineering-inspection-r37-v20260714",
     "status": "已发布",
     "nodeIds": [
       37
@@ -3356,12 +4621,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R25",
+    "sourceRuleId": "R37",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 37,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "检测过程中发现问题的处理 (C类)",
+    "inspectionItem": "检测过程中发现问题的处理",
     "materialTypeCodes": [
       "generic_review_material"
     ],
@@ -3737,11 +5002,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R25",
+        "sourceRuleId": "R37",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 37,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "检测过程中发现问题的处理 (C类)",
+        "inspectionItem": "检测过程中发现问题的处理",
         "inspectionClass": "C",
         "standardText": "标准规范：无损检测单位质量保证手册中有关不合格品与不符合项控制程序文件、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
         "witnessText": "工作见证：需提供检测单位不合格品的控制处理措施程序、无损检测委托单、对不合格品开出的联络单或意见书、不合格品处理的反馈见证文件。",
@@ -3772,14 +5037,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：检测过程中发现问题的处理 (C类)\n类别：C\n判断准则/标准规范：标准规范：无损检测单位质量保证手册中有关不合格品与不符合项控制程序文件、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供检测单位不合格品的控制处理措施程序、无损检测委托单、对不合格品开出的联络单或意见书、不合格品处理的反馈见证文件。\nAgent思考方式：找到不合格品控制程序、无损检测委托单、联络单或意见书、不合格品处理反馈文件。先识别检测过程中发现的问题或不合格项，再沿着“发现问题、发出联络单、责任方处理、处理反馈、复检确认”的链路检查是否闭环。若只有问题记录没有反馈，或反馈后没有复检证据，判定为未闭环。\n工具集调用思考：调用 T01、T02 定位不合格品程序、委托单、联络单、反馈文件和复检报告；调用 T03、T04 抽取问题编号、焊缝编号、处理措施、日期和结论；调用 T06 查询程序要求；调用 T08 串联问题处理闭环；调用 T11 对未闭环问题生成待人工确认项；调用 T12 回写证据链。"
+      "promptContext": "监检项目：检测过程中发现问题的处理\n类别：C\n判断准则/标准规范：标准规范：无损检测单位质量保证手册中有关不合格品与不符合项控制程序文件、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供检测单位不合格品的控制处理措施程序、无损检测委托单、对不合格品开出的联络单或意见书、不合格品处理的反馈见证文件。\nAgent思考方式：找到不合格品控制程序、无损检测委托单、联络单或意见书、不合格品处理反馈文件。先识别检测过程中发现的问题或不合格项，再沿着“发现问题、发出联络单、责任方处理、处理反馈、复检确认”的链路检查是否闭环。若只有问题记录没有反馈，或反馈后没有复检证据，判定为未闭环。\n工具集调用思考：调用 T01、T02 定位不合格品程序、委托单、联络单、反馈文件和复检报告；调用 T03、T04 抽取问题编号、焊缝编号、处理措施、日期和结论；调用 T06 查询程序要求；调用 T08 串联问题处理闭环；调用 T11 对未闭环问题生成待人工确认项；调用 T12 回写证据链。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R26",
+    "id": "RULE-ENG-INSP-R38",
     "name": "无损检测人员资格证、执业注册证及持证合格项目",
-    "ruleKey": "engineering-inspection-r26",
-    "version": "engineering-inspection-r26-v20260703",
+    "ruleKey": "engineering-inspection-r38",
+    "version": "engineering-inspection-r38-v20260714",
     "status": "已发布",
     "nodeIds": [
       38
@@ -3789,12 +5054,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R26",
+    "sourceRuleId": "R38",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 38,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "无损检测人员资格证、执业注册证及持证合格项目 (B类)",
+    "inspectionItem": "无损检测人员资格证、执业注册证及持证合格项目",
     "materialTypeCodes": [
       "generic_review_material",
       "ndt_person_certificate",
@@ -4177,11 +5442,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R26",
+        "sourceRuleId": "R38",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 38,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "无损检测人员资格证、执业注册证及持证合格项目 (B类)",
+        "inspectionItem": "无损检测人员资格证、执业注册证及持证合格项目",
         "inspectionClass": "B",
         "standardText": "标准规范：TSG Z8001-2019《特种设备无损检测人员考核规则》及第1号修改单、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
         "witnessText": "工作见证：需提供无损检测人员明细表、无损检测人员资格证和执业注册证，必要时提供无损检测人员劳动合同证明文件。",
@@ -4215,14 +5480,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据缺失、范围不覆盖或跨文件不一致时生成补充资料项或联络单。"
       ],
-      "promptContext": "监检项目：无损检测人员资格证、执业注册证及持证合格项目 (B类)\n类别：B\n判断准则/标准规范：标准规范：TSG Z8001-2019《特种设备无损检测人员考核规则》及第1号修改单、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供无损检测人员明细表、无损检测人员资格证和执业注册证，必要时提供无损检测人员劳动合同证明文件。\nAgent思考方式：找到无损检测人员明细表、资格证、执业注册证和必要的劳动合同证明。抽取人员姓名、证书编号、检测方法、级别、有效期和注册单位；再找到实际检测记录或报告中的检测人员。判断人员证书是否有效、注册单位是否匹配、持证项目是否覆盖实际检测方法和级别，必要时判断劳动关系或项目任命是否支撑人员参与。\n工具集调用思考：调用 T01、T02 定位人员明细、资格证、执业注册证、劳动合同和检测报告；调用 T03、T04 抽取人员、证书项目、有效期和注册单位；调用 T05 核验证书和注册关系；调用 T07 判断持证项目覆盖；调用 T08 比对证书人员与报告签字人员；调用 T11 标记证书过期、项目不覆盖或单位不一致；调用 T12 输出结论。"
+      "promptContext": "监检项目：无损检测人员资格证、执业注册证及持证合格项目\n类别：B\n判断准则/标准规范：标准规范：TSG Z8001-2019《特种设备无损检测人员考核规则》及第1号修改单、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供无损检测人员明细表、无损检测人员资格证和执业注册证，必要时提供无损检测人员劳动合同证明文件。\nAgent思考方式：找到无损检测人员明细表、资格证、执业注册证和必要的劳动合同证明。抽取人员姓名、证书编号、检测方法、级别、有效期和注册单位；再找到实际检测记录或报告中的检测人员。判断人员证书是否有效、注册单位是否匹配、持证项目是否覆盖实际检测方法和级别，必要时判断劳动关系或项目任命是否支撑人员参与。\n工具集调用思考：调用 T01、T02 定位人员明细、资格证、执业注册证、劳动合同和检测报告；调用 T03、T04 抽取人员、证书项目、有效期和注册单位；调用 T05 核验证书和注册关系；调用 T07 判断持证项目覆盖；调用 T08 比对证书人员与报告签字人员；调用 T11 标记证书过期、项目不覆盖或单位不一致；调用 T12 输出结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R27",
+    "id": "RULE-ENG-INSP-R39",
     "name": "无损检测工艺文件",
-    "ruleKey": "engineering-inspection-r27",
-    "version": "engineering-inspection-r27-v20260703",
+    "ruleKey": "engineering-inspection-r39",
+    "version": "engineering-inspection-r39-v20260714",
     "status": "已发布",
     "nodeIds": [
       39
@@ -4232,12 +5497,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R27",
+    "sourceRuleId": "R39",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 39,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "无损检测工艺文件 (C类)",
+    "inspectionItem": "无损检测工艺文件",
     "materialTypeCodes": [
       "generic_review_material",
       "ndt_procedure",
@@ -4616,11 +5881,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R27",
+        "sourceRuleId": "R39",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 39,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "无损检测工艺文件 (C类)",
+        "inspectionItem": "无损检测工艺文件",
         "inspectionClass": "C",
         "standardText": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
         "witnessText": "工作见证：需提供相关单项无损检测工艺文件、操作指导书。",
@@ -4650,14 +5915,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：无损检测工艺文件 (C类)\n类别：C\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供相关单项无损检测工艺文件、操作指导书。\nAgent思考方式：找到单项无损检测工艺文件和操作指导书，抽取检测方法、对象范围、设备型号、工艺参数、灵敏度或校准要求、曝光参数或扫查参数、验收等级、记录格式、人员资格和适用标准。再找到检测方案、设计要求和实际检测对象，判断工艺文件是否覆盖该方法和对象，参数是否满足标准；操作指导书只有在检测对象、设备、参数、校准、验收等级、记录表格和人员要求均明确时，才判定为可指导现场实施。\n工具集调用思考：调用 T01、T02 定位工艺文件、操作指导书、检测方案和设计要求；调用 T03、T04 抽取检测参数、适用对象和验收等级；调用 T06 查询对应检测方法标准；调用 T07 判断参数和适用范围；调用 T08 比对工艺文件与方案、记录一致性；调用 T11 标记工艺缺失或不覆盖；调用 T12 输出审查意见。"
+      "promptContext": "监检项目：无损检测工艺文件\n类别：C\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供相关单项无损检测工艺文件、操作指导书。\nAgent思考方式：找到单项无损检测工艺文件和操作指导书，抽取检测方法、对象范围、设备型号、工艺参数、灵敏度或校准要求、曝光参数或扫查参数、验收等级、记录格式、人员资格和适用标准。再找到检测方案、设计要求和实际检测对象，判断工艺文件是否覆盖该方法和对象，参数是否满足标准；操作指导书只有在检测对象、设备、参数、校准、验收等级、记录表格和人员要求均明确时，才判定为可指导现场实施。\n工具集调用思考：调用 T01、T02 定位工艺文件、操作指导书、检测方案和设计要求；调用 T03、T04 抽取检测参数、适用对象和验收等级；调用 T06 查询对应检测方法标准；调用 T07 判断参数和适用范围；调用 T08 比对工艺文件与方案、记录一致性；调用 T11 标记工艺缺失或不覆盖；调用 T12 输出审查意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R28",
+    "id": "RULE-ENG-INSP-R40",
     "name": "无损检测记录、报告",
-    "ruleKey": "engineering-inspection-r28",
-    "version": "engineering-inspection-r28-v20260703",
+    "ruleKey": "engineering-inspection-r40",
+    "version": "engineering-inspection-r40-v20260714",
     "status": "已发布",
     "nodeIds": [
       40
@@ -4667,12 +5932,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R28",
+    "sourceRuleId": "R40",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 40,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "无损检测记录、报告 (C类)",
+    "inspectionItem": "无损检测记录、报告",
     "materialTypeCodes": [
       "generic_review_material",
       "ndt_report",
@@ -5050,11 +6315,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R28",
+        "sourceRuleId": "R40",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 40,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "无损检测记录、报告 (C类)",
+        "inspectionItem": "无损检测记录、报告",
         "inspectionClass": "C",
         "standardText": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
         "witnessText": "工作见证：需提供相关单项无损检测记录、报告。",
@@ -5088,14 +6353,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：无损检测记录、报告 (C类)\n类别：C\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供相关单项无损检测记录、报告。\nAgent思考方式：找到单项无损检测记录和报告，抽取委托单号、焊缝或部件编号、检测方法、检测比例、执行标准、设备、检测日期、检测人员、评定人员、评定级别、检测结果、结论、签字和签章。判断报告是否与委托、方案和工艺文件对应，检测对象是否覆盖要求范围，关键字段是否完整，签字是否完整，结论是否明确；若记录和报告不一致，或缺少上述关键字段，输出问题。\n工具集调用思考：调用 T01、T02 定位检测记录、报告、委托单、检测方案和工艺文件；调用 T03、T04 抽取编号、方法、比例、日期、人员、结论和签章；调用 T06、T07 判断报告字段和检测比例要求；调用 T08 比对委托、记录、报告和焊缝编号；调用 T11 处理缺签、缺字段或不一致；调用 T12 回写证据链。"
+      "promptContext": "监检项目：无损检测记录、报告\n类别：C\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。\n方法及内容/工作见证：工作见证：需提供相关单项无损检测记录、报告。\nAgent思考方式：找到单项无损检测记录和报告，抽取委托单号、焊缝或部件编号、检测方法、检测比例、执行标准、设备、检测日期、检测人员、评定人员、评定级别、检测结果、结论、签字和签章。判断报告是否与委托、方案和工艺文件对应，检测对象是否覆盖要求范围，关键字段是否完整，签字是否完整，结论是否明确；若记录和报告不一致，或缺少上述关键字段，输出问题。\n工具集调用思考：调用 T01、T02 定位检测记录、报告、委托单、检测方案和工艺文件；调用 T03、T04 抽取编号、方法、比例、日期、人员、结论和签章；调用 T06、T07 判断报告字段和检测比例要求；调用 T08 比对委托、记录、报告和焊缝编号；调用 T11 处理缺签、缺字段或不一致；调用 T12 回写证据链。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R29",
+    "id": "RULE-ENG-INSP-R41",
     "name": "射线检测底片抽查",
-    "ruleKey": "engineering-inspection-r29",
-    "version": "engineering-inspection-r29-v20260703",
+    "ruleKey": "engineering-inspection-r41",
+    "version": "engineering-inspection-r41-v20260714",
     "status": "已发布",
     "nodeIds": [
       41
@@ -5105,12 +6370,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R29",
+    "sourceRuleId": "R41",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 41,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "射线检测底片抽查 (B类)",
+    "inspectionItem": "射线检测底片抽查",
     "materialTypeCodes": [
       "generic_review_material",
       "radiographic_film",
@@ -5489,11 +6754,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R29",
+        "sourceRuleId": "R41",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 41,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "射线检测底片抽查 (B类)",
+        "inspectionItem": "射线检测底片抽查",
         "inspectionClass": "B",
         "standardText": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。",
         "witnessText": "工作见证：需提供相关所有射线检测底片。",
@@ -5522,14 +6787,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：射线检测底片抽查 (B类)\n类别：B\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。\n方法及内容/工作见证：工作见证：需提供相关所有射线检测底片。\nAgent思考方式：找到所有射线检测底片及其对应报告，建立底片编号、焊缝编号、检测日期、评定结论和报告编号的对应关系。按抽查策略选择样本，依据 NB/T 47013.2 或 NB/T 47013.11 检查底片标识、像质计或灵敏度、黑度、几何不清晰度、缺陷显示和评定结论是否与报告一致。底片无法打开、编号不对应、质量指标缺失或底片显示与报告结论不一致时，进入人工复核。\n工具集调用思考：调用 T01、T02 定位底片库和射线检测报告；调用 T03、T04 抽取底片编号、焊缝编号和报告信息；调用 T09 辅助识别底片质量和标识；调用 T10 生成抽查样本和覆盖统计；调用 T08 比对底片与报告对应关系；调用 T11 触发底片异常人工复核；调用 T12 输出抽查结论。"
+      "promptContext": "监检项目：射线检测底片抽查\n类别：B\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。\n方法及内容/工作见证：工作见证：需提供相关所有射线检测底片。\nAgent思考方式：找到所有射线检测底片及其对应报告，建立底片编号、焊缝编号、检测日期、评定结论和报告编号的对应关系。按抽查策略选择样本，依据 NB/T 47013.2 或 NB/T 47013.11 检查底片标识、像质计或灵敏度、黑度、几何不清晰度、缺陷显示和评定结论是否与报告一致。底片无法打开、编号不对应、质量指标缺失或底片显示与报告结论不一致时，进入人工复核。\n工具集调用思考：调用 T01、T02 定位底片库和射线检测报告；调用 T03、T04 抽取底片编号、焊缝编号和报告信息；调用 T09 辅助识别底片质量和标识；调用 T10 生成抽查样本和覆盖统计；调用 T08 比对底片与报告对应关系；调用 T11 触发底片异常人工复核；调用 T12 输出抽查结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R30",
+    "id": "RULE-ENG-INSP-R42",
     "name": "射线检测现场抽查",
-    "ruleKey": "engineering-inspection-r30",
-    "version": "engineering-inspection-r30-v20260703",
+    "ruleKey": "engineering-inspection-r42",
+    "version": "engineering-inspection-r42-v20260714",
     "status": "已发布",
     "nodeIds": [
       42
@@ -5539,12 +6804,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R30",
+    "sourceRuleId": "R42",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 42,
     "businessModule": "一、无损检测",
     "inspectionCategory": "一、无损检测",
-    "inspectionItem": "射线检测现场抽查 (B类)",
+    "inspectionItem": "射线检测现场抽查",
     "materialTypeCodes": [
       "generic_review_material",
       "radiographic_film",
@@ -5926,11 +7191,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R30",
+        "sourceRuleId": "R42",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 42,
         "inspectionCategory": "一、无损检测",
-        "inspectionItem": "射线检测现场抽查 (B类)",
+        "inspectionItem": "射线检测现场抽查",
         "inspectionClass": "B",
         "standardText": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。",
         "witnessText": "工作见证：需提供射线检测现场抽查的底片、记录和报告；委托无损检测单位进行的需提供委托检测合同、射线检测委托单。",
@@ -5962,14 +7227,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。"
       ],
-      "promptContext": "监检项目：射线检测现场抽查 (B类)\n类别：B\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。\n方法及内容/工作见证：工作见证：需提供射线检测现场抽查的底片、记录和报告；委托无损检测单位进行的需提供委托检测合同、射线检测委托单。\nAgent思考方式：找到射线检测现场抽查底片、现场监检记录、现场照片、报告、委托检测合同和射线检测委托单。先判断该检测是否委托外部机构，若委托则核查合同和委托单是否覆盖现场抽查内容；再核查现场记录、底片和报告是否能互相对应，检测方法、人员、设备和结论是否满足标准。现场抽查应要求监检人员上传现场记录和必要照片。\n工具集调用思考：调用 T01、T02 定位现场抽查资料、合同、委托单、底片和报告；调用 T03、T04 抽取合同范围、委托内容、检测编号、人员和结论；调用 T09 辅助核查底片或现场照片；调用 T10 校验抽查样本；调用 T08 串联合同、委托、记录、底片、报告；调用 T11 处理委托缺失或证据断链；调用 T12 回写结论。"
+      "promptContext": "监检项目：射线检测现场抽查\n类别：B\n判断准则/标准规范：标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。\n方法及内容/工作见证：工作见证：需提供射线检测现场抽查的底片、记录和报告；委托无损检测单位进行的需提供委托检测合同、射线检测委托单。\nAgent思考方式：找到射线检测现场抽查底片、现场监检记录、现场照片、报告、委托检测合同和射线检测委托单。先判断该检测是否委托外部机构，若委托则核查合同和委托单是否覆盖现场抽查内容；再核查现场记录、底片和报告是否能互相对应，检测方法、人员、设备和结论是否满足标准。现场抽查应要求监检人员上传现场记录和必要照片。\n工具集调用思考：调用 T01、T02 定位现场抽查资料、合同、委托单、底片和报告；调用 T03、T04 抽取合同范围、委托内容、检测编号、人员和结论；调用 T09 辅助核查底片或现场照片；调用 T10 校验抽查样本；调用 T08 串联合同、委托、记录、底片、报告；调用 T11 处理委托缺失或证据断链；调用 T12 回写结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R31",
+    "id": "RULE-ENG-INSP-R43",
     "name": "防腐及保温材料质量证明文件",
-    "ruleKey": "engineering-inspection-r31",
-    "version": "engineering-inspection-r31-v20260703",
+    "ruleKey": "engineering-inspection-r43",
+    "version": "engineering-inspection-r43-v20260714",
     "status": "已发布",
     "nodeIds": [
       43
@@ -5979,12 +7244,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R31",
+    "sourceRuleId": "R43",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 43,
     "businessModule": "二、防腐、保温",
     "inspectionCategory": "二、防腐、保温",
-    "inspectionItem": "防腐及保温材料质量证明文件 (C类)",
+    "inspectionItem": "防腐及保温材料质量证明文件",
     "materialTypeCodes": [
       "generic_review_material",
       "anticorrosion_insulation_material_certificate",
@@ -6038,11 +7303,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R31",
+        "sourceRuleId": "R43",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 43,
         "inspectionCategory": "二、防腐、保温",
-        "inspectionItem": "防腐及保温材料质量证明文件 (C类)",
+        "inspectionItem": "防腐及保温材料质量证明文件",
         "inspectionClass": "C",
         "standardText": "标准规范：设计文件要求、TSG D7006-2020《压力管道监督检验规则》、TSG 0-2019《特种设备生产和充装单位许可规则》。",
         "witnessText": "工作见证：防腐漆或其他特殊防腐材料的质量证明文件；工厂化预制的防腐管道元件需提供出厂质量证明文件，必要时提供型式试验证书、压力管道元件制造许可、制造监督检验证书。",
@@ -6078,14 +7343,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据缺失、范围不覆盖或跨文件不一致时生成补充资料项或联络单。"
       ],
-      "promptContext": "监检项目：防腐及保温材料质量证明文件 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计文件要求、TSG D7006-2020《压力管道监督检验规则》、TSG 0-2019《特种设备生产和充装单位许可规则》。\n方法及内容/工作见证：工作见证：防腐漆或其他特殊防腐材料的质量证明文件；工厂化预制的防腐管道元件需提供出厂质量证明文件，必要时提供型式试验证书、压力管道元件制造许可、制造监督检验证书。\nAgent思考方式：找到防腐漆、特殊防腐材料或工厂化预制防腐管道元件的质量证明文件；当产品属于工厂化预制防腐管道元件、设计文件或法规要求型式试验/制造许可/制造监检、或属于压力管道元件许可目录内产品时，还应找到型式试验证书、压力管道元件制造许可和制造监督检验证书。抽取材料名称、型号规格、批号、生产单位、适用范围和有效证明信息；再找到设计文件中的防腐和保温材料要求，判断证明文件是否覆盖实际材料和预制元件。\n工具集调用思考：调用 T01、T02 定位材料质量证明、型式试验、制造许可、监检证明和设计文件；调用 T03、T04 抽取材料型号、批号、生产单位和证明范围；调用 T05 核验许可和证明文件；调用 T06 查询监管规则；调用 T08 比对证明文件、设计要求和实物/清单；调用 T11 标记缺证或不覆盖；调用 T12 回写结论。"
+      "promptContext": "监检项目：防腐及保温材料质量证明文件\n类别：C\n判断准则/标准规范：标准规范：设计文件要求、TSG D7006-2020《压力管道监督检验规则》、TSG 0-2019《特种设备生产和充装单位许可规则》。\n方法及内容/工作见证：工作见证：防腐漆或其他特殊防腐材料的质量证明文件；工厂化预制的防腐管道元件需提供出厂质量证明文件，必要时提供型式试验证书、压力管道元件制造许可、制造监督检验证书。\nAgent思考方式：找到防腐漆、特殊防腐材料或工厂化预制防腐管道元件的质量证明文件；当产品属于工厂化预制防腐管道元件、设计文件或法规要求型式试验/制造许可/制造监检、或属于压力管道元件许可目录内产品时，还应找到型式试验证书、压力管道元件制造许可和制造监督检验证书。抽取材料名称、型号规格、批号、生产单位、适用范围和有效证明信息；再找到设计文件中的防腐和保温材料要求，判断证明文件是否覆盖实际材料和预制元件。\n工具集调用思考：调用 T01、T02 定位材料质量证明、型式试验、制造许可、监检证明和设计文件；调用 T03、T04 抽取材料型号、批号、生产单位和证明范围；调用 T05 核验许可和证明文件；调用 T06 查询监管规则；调用 T08 比对证明文件、设计要求和实物/清单；调用 T11 标记缺证或不覆盖；调用 T12 回写结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R32",
+    "id": "RULE-ENG-INSP-R44",
     "name": "防腐、补口、补伤及保温",
-    "ruleKey": "engineering-inspection-r32",
-    "version": "engineering-inspection-r32-v20260703",
+    "ruleKey": "engineering-inspection-r44",
+    "version": "engineering-inspection-r44-v20260714",
     "status": "已发布",
     "nodeIds": [
       44
@@ -6095,12 +7360,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R32",
+    "sourceRuleId": "R44",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 44,
     "businessModule": "二、防腐、保温",
     "inspectionCategory": "二、防腐、保温",
-    "inspectionItem": "防腐、补口、补伤及保温 (C类)",
+    "inspectionItem": "防腐、补口、补伤及保温",
     "materialTypeCodes": [
       "generic_review_material",
       "anticorrosion_insulation_record",
@@ -6134,11 +7399,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R32",
+        "sourceRuleId": "R44",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 44,
         "inspectionCategory": "二、防腐、保温",
-        "inspectionItem": "防腐、补口、补伤及保温 (C类)",
+        "inspectionItem": "防腐、补口、补伤及保温",
         "inspectionClass": "C",
         "standardText": "标准规范：设计文件要求。",
         "witnessText": "工作见证：防腐施工及检查记录、保温施工及检查记录。",
@@ -6171,14 +7436,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：防腐、补口、补伤及保温 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计文件要求。\n方法及内容/工作见证：工作见证：防腐施工及检查记录、保温施工及检查记录。\nAgent思考方式：找到防腐施工记录、补口补伤记录、保温施工记录、检查记录和现场照片，抽取施工部位、材料批号、防腐等级、工艺、厚度、外观检查、漏点检查、保温厚度、检查日期和验收结论。再找到设计文件中的防腐等级、补口补伤要求和保温要求，逐项判断施工记录是否覆盖所有要求部位，材料和工艺是否与设计一致，厚度、外观、漏点等检查结果是否合格，检查结论是否闭合。\n工具集调用思考：调用 T01、T02 定位施工记录、检查记录和设计文件；调用 T03、T04 抽取部位、材料、厚度、日期和结论；调用 T06 查询设计及标准要求；调用 T08 比对施工记录与设计要求；必要时调用 T09 辅助识别现场照片；调用 T11 处理记录缺失、部位不覆盖或结论不清；调用 T12 输出意见。"
+      "promptContext": "监检项目：防腐、补口、补伤及保温\n类别：C\n判断准则/标准规范：标准规范：设计文件要求。\n方法及内容/工作见证：工作见证：防腐施工及检查记录、保温施工及检查记录。\nAgent思考方式：找到防腐施工记录、补口补伤记录、保温施工记录、检查记录和现场照片，抽取施工部位、材料批号、防腐等级、工艺、厚度、外观检查、漏点检查、保温厚度、检查日期和验收结论。再找到设计文件中的防腐等级、补口补伤要求和保温要求，逐项判断施工记录是否覆盖所有要求部位，材料和工艺是否与设计一致，厚度、外观、漏点等检查结果是否合格，检查结论是否闭合。\n工具集调用思考：调用 T01、T02 定位施工记录、检查记录和设计文件；调用 T03、T04 抽取部位、材料、厚度、日期和结论；调用 T06 查询设计及标准要求；调用 T08 比对施工记录与设计要求；必要时调用 T09 辅助识别现场照片；调用 T11 处理记录缺失、部位不覆盖或结论不清；调用 T12 输出意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R33",
+    "id": "RULE-ENG-INSP-R45",
     "name": "防腐层电火花检测",
-    "ruleKey": "engineering-inspection-r33",
-    "version": "engineering-inspection-r33-v20260703",
+    "ruleKey": "engineering-inspection-r45",
+    "version": "engineering-inspection-r45-v20260714",
     "status": "已发布",
     "nodeIds": [
       45
@@ -6188,12 +7453,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R33",
+    "sourceRuleId": "R45",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 45,
     "businessModule": "二、防腐、保温",
     "inspectionCategory": "二、防腐、保温",
-    "inspectionItem": "防腐层电火花检测 (C类)",
+    "inspectionItem": "防腐层电火花检测",
     "materialTypeCodes": [
       "generic_review_material",
       "anticorrosion_insulation_record",
@@ -6239,11 +7504,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R33",
+        "sourceRuleId": "R45",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 45,
         "inspectionCategory": "二、防腐、保温",
-        "inspectionItem": "防腐层电火花检测 (C类)",
+        "inspectionItem": "防腐层电火花检测",
         "inspectionClass": "C",
         "standardText": "标准规范：设计文件要求和GB/T 19285-2026《埋地钢质管道腐蚀防护工程检验》、SY/T4113.11-2023《管道防腐层性能试验方法 第11部分：漏点检测》等标准。",
         "witnessText": "工作见证：电火花检测仪检定报告、防腐层电火花检测记录和报告。",
@@ -6277,14 +7542,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：防腐层电火花检测 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计文件要求和GB/T 19285-2026《埋地钢质管道腐蚀防护工程检验》、SY/T4113.11-2023《管道防腐层性能试验方法 第11部分：漏点检测》等标准。\n方法及内容/工作见证：工作见证：电火花检测仪检定报告、防腐层电火花检测记录和报告。\nAgent思考方式：找到电火花检测仪检定报告、防腐层电火花检测记录和检测报告。先抽取检测仪编号、检定有效期、检测电压、检测部位、漏点数量、处理结果和报告结论；再根据设计文件、GB/T 19285-2026 和 SY/T 4113.11-2023 判断检测仪是否在有效期内，检测电压、检测方法和检测部位是否满足要求，发现漏点后是否有补伤和复检闭环。\n工具集调用思考：调用 T01、T02 定位检测仪检定报告、检测记录、报告和补伤记录；调用 T03、T04 抽取仪器编号、电压、部位、漏点和有效期；调用 T06、T07 查询并执行电火花检测判据；调用 T08 比对仪器、记录、报告和补伤闭环；调用 T09 辅助核查现场照片；调用 T11 标记仪器过期或漏点未闭环；调用 T12 回写结论。"
+      "promptContext": "监检项目：防腐层电火花检测\n类别：C\n判断准则/标准规范：标准规范：设计文件要求和GB/T 19285-2026《埋地钢质管道腐蚀防护工程检验》、SY/T4113.11-2023《管道防腐层性能试验方法 第11部分：漏点检测》等标准。\n方法及内容/工作见证：工作见证：电火花检测仪检定报告、防腐层电火花检测记录和报告。\nAgent思考方式：找到电火花检测仪检定报告、防腐层电火花检测记录和检测报告。先抽取检测仪编号、检定有效期、检测电压、检测部位、漏点数量、处理结果和报告结论；再根据设计文件、GB/T 19285-2026 和 SY/T 4113.11-2023 判断检测仪是否在有效期内，检测电压、检测方法和检测部位是否满足要求，发现漏点后是否有补伤和复检闭环。\n工具集调用思考：调用 T01、T02 定位检测仪检定报告、检测记录、报告和补伤记录；调用 T03、T04 抽取仪器编号、电压、部位、漏点和有效期；调用 T06、T07 查询并执行电火花检测判据；调用 T08 比对仪器、记录、报告和补伤闭环；调用 T09 辅助核查现场照片；调用 T11 标记仪器过期或漏点未闭环；调用 T12 回写结论。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R34",
+    "id": "RULE-ENG-INSP-R46",
     "name": "牺牲阳极、外加电流阴极保护、杂散电流排流装置",
-    "ruleKey": "engineering-inspection-r34",
-    "version": "engineering-inspection-r34-v20260703",
+    "ruleKey": "engineering-inspection-r46",
+    "version": "engineering-inspection-r46-v20260714",
     "status": "已发布",
     "nodeIds": [
       46
@@ -6294,12 +7559,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R34",
+    "sourceRuleId": "R46",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 46,
     "businessModule": "二、防腐、保温",
     "inspectionCategory": "二、防腐、保温",
-    "inspectionItem": "牺牲阳极、外加电流阴极保护、杂散电流排流装置 (C类)",
+    "inspectionItem": "牺牲阳极、外加电流阴极保护、杂散电流排流装置",
     "materialTypeCodes": [
       "generic_review_material",
       "cathodic_protection_record",
@@ -6344,11 +7609,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R34",
+        "sourceRuleId": "R46",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 46,
         "inspectionCategory": "二、防腐、保温",
-        "inspectionItem": "牺牲阳极、外加电流阴极保护、杂散电流排流装置 (C类)",
+        "inspectionItem": "牺牲阳极、外加电流阴极保护、杂散电流排流装置",
         "inspectionClass": "C",
         "standardText": "标准规范：设计文件要求和GB/T 21448-2017《埋地钢质管道阴极保护技术规范》、GB/T 33378-2025《阴极保护技术条件》等标准。",
         "witnessText": "工作见证：牺牲阳极、外加电流阴极保护、杂散电流排流装置施工记录和验收报告。",
@@ -6380,14 +7645,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：牺牲阳极、外加电流阴极保护、杂散电流排流装置 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计文件要求和GB/T 21448-2017《埋地钢质管道阴极保护技术规范》、GB/T 33378-2025《阴极保护技术条件》等标准。\n方法及内容/工作见证：工作见证：牺牲阳极、外加电流阴极保护、杂散电流排流装置施工记录和验收报告。\nAgent思考方式：找到牺牲阳极、外加电流阴极保护、杂散电流排流装置的施工记录和验收报告，抽取装置类型、安装位置、材料或设备型号、测试参数、验收结论和日期。再找到设计文件中的阴极保护和排流要求，判断装置类型、位置、数量、测试结果是否满足设计和标准要求。\n工具集调用思考：调用 T01、T02 定位阴极保护和排流装置记录、验收报告、设计文件及设备证明；调用 T03、T04 抽取装置类型、位置、型号、测试值和结论；调用 T06、T07 查询并应用阴极保护判据；调用 T08 比对设计要求、记录和验收报告；调用 T09 辅助核查现场照片或铭牌；调用 T11 处理缺项或测试异常；调用 T12 输出证据链。"
+      "promptContext": "监检项目：牺牲阳极、外加电流阴极保护、杂散电流排流装置\n类别：C\n判断准则/标准规范：标准规范：设计文件要求和GB/T 21448-2017《埋地钢质管道阴极保护技术规范》、GB/T 33378-2025《阴极保护技术条件》等标准。\n方法及内容/工作见证：工作见证：牺牲阳极、外加电流阴极保护、杂散电流排流装置施工记录和验收报告。\nAgent思考方式：找到牺牲阳极、外加电流阴极保护、杂散电流排流装置的施工记录和验收报告，抽取装置类型、安装位置、材料或设备型号、测试参数、验收结论和日期。再找到设计文件中的阴极保护和排流要求，判断装置类型、位置、数量、测试结果是否满足设计和标准要求。\n工具集调用思考：调用 T01、T02 定位阴极保护和排流装置记录、验收报告、设计文件及设备证明；调用 T03、T04 抽取装置类型、位置、型号、测试值和结论；调用 T06、T07 查询并应用阴极保护判据；调用 T08 比对设计要求、记录和验收报告；调用 T09 辅助核查现场照片或铭牌；调用 T11 处理缺项或测试异常；调用 T12 输出证据链。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R35",
+    "id": "RULE-ENG-INSP-R47",
     "name": "静电接地",
-    "ruleKey": "engineering-inspection-r35",
-    "version": "engineering-inspection-r35-v20260703",
+    "ruleKey": "engineering-inspection-r47",
+    "version": "engineering-inspection-r47-v20260714",
     "status": "已发布",
     "nodeIds": [
       47
@@ -6397,12 +7662,12 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R35",
+    "sourceRuleId": "R47",
     "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
     "sourceSequence": 47,
     "businessModule": "二、防腐、保温",
     "inspectionCategory": "二、防腐、保温",
-    "inspectionItem": "静电接地 (C类)",
+    "inspectionItem": "静电接地",
     "materialTypeCodes": [
       "generic_review_material",
       "grounding_test_record",
@@ -6453,11 +7718,11 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R35",
+        "sourceRuleId": "R47",
         "sourceDocument": "监检项目——无损检测；防腐、保温.docx",
         "sequence": 47,
         "inspectionCategory": "二、防腐、保温",
-        "inspectionItem": "静电接地 (C类)",
+        "inspectionItem": "静电接地",
         "inspectionClass": "C",
         "standardText": "标准规范：设计文件要求和TSG 31-2025《工业管道安全技术规程》、GB/T 20801.1-2025《压力管道规范 第1部分：工业管道》、GB 50235-2010《工业金属管道工程施工规范》等标准。",
         "witnessText": "工作见证：静电接地施工记录和验收报告。",
@@ -6489,14 +7754,14 @@ export const generatedKnowledgeRuleVersions = [
       "humanConfirmation": [
         "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
       ],
-      "promptContext": "监检项目：静电接地 (C类)\n类别：C\n判断准则/标准规范：标准规范：设计文件要求和TSG 31-2025《工业管道安全技术规程》、GB/T 20801.1-2025《压力管道规范 第1部分：工业管道》、GB 50235-2010《工业金属管道工程施工规范》等标准。\n方法及内容/工作见证：工作见证：静电接地施工记录和验收报告。\nAgent思考方式：找到静电接地施工记录和验收报告，抽取接地点位置、连接方式、测试值、测试日期、验收结论和签字。再找到设计文件和标准中的静电接地要求，判断接地点是否覆盖要求部位，测试值是否满足要求，施工记录和验收报告是否一致。\n工具集调用思考：调用 T01、T02 定位静电接地记录、验收报告和设计文件；调用 T03、T04 抽取接地点、测试值、日期、结论和签字；调用 T06、T07 查询并判断接地要求和测试值；调用 T08 比对设计、施工和验收记录；调用 T09 辅助核查现场照片；调用 T11 处理测试值异常或记录缺失；调用 T12 回写审查意见。"
+      "promptContext": "监检项目：静电接地\n类别：C\n判断准则/标准规范：标准规范：设计文件要求和TSG 31-2025《工业管道安全技术规程》、GB/T 20801.1-2025《压力管道规范 第1部分：工业管道》、GB 50235-2010《工业金属管道工程施工规范》等标准。\n方法及内容/工作见证：工作见证：静电接地施工记录和验收报告。\nAgent思考方式：找到静电接地施工记录和验收报告，抽取接地点位置、连接方式、测试值、测试日期、验收结论和签字。再找到设计文件和标准中的静电接地要求，判断接地点是否覆盖要求部位，测试值是否满足要求，施工记录和验收报告是否一致。\n工具集调用思考：调用 T01、T02 定位静电接地记录、验收报告和设计文件；调用 T03、T04 抽取接地点、测试值、日期、结论和签字；调用 T06、T07 查询并判断接地要求和测试值；调用 T08 比对设计、施工和验收记录；调用 T09 辅助核查现场照片；调用 T11 处理测试值异常或记录缺失；调用 T12 回写审查意见。"
     }
   },
   {
-    "id": "RULE-ENG-INSP-R36",
+    "id": "RULE-ENG-INSP-R48",
     "name": "穿跨越工程的管道结构、焊缝布置",
-    "ruleKey": "engineering-inspection-r36",
-    "version": "engineering-inspection-r36-v20260703",
+    "ruleKey": "engineering-inspection-r48",
+    "version": "engineering-inspection-r48-v20260714",
     "status": "已发布",
     "nodeIds": [
       48
@@ -6506,7 +7771,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R36",
+    "sourceRuleId": "R48",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 48,
     "businessModule": "穿跨越工程",
@@ -6563,7 +7828,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R36",
+        "sourceRuleId": "R48",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 48,
         "inspectionCategory": "穿跨越工程",
@@ -6606,10 +7871,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R37",
+    "id": "RULE-ENG-INSP-R49",
     "name": "穿跨越工程施工",
-    "ruleKey": "engineering-inspection-r37",
-    "version": "engineering-inspection-r37-v20260703",
+    "ruleKey": "engineering-inspection-r49",
+    "version": "engineering-inspection-r49-v20260714",
     "status": "已发布",
     "nodeIds": [
       49
@@ -6619,7 +7884,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R37",
+    "sourceRuleId": "R49",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 49,
     "businessModule": "穿跨越工程",
@@ -6685,7 +7950,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R37",
+        "sourceRuleId": "R49",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 49,
         "inspectionCategory": "穿跨越工程",
@@ -6726,10 +7991,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R38",
+    "id": "RULE-ENG-INSP-R50",
     "name": "套管防腐绝缘",
-    "ruleKey": "engineering-inspection-r38",
-    "version": "engineering-inspection-r38-v20260703",
+    "ruleKey": "engineering-inspection-r50",
+    "version": "engineering-inspection-r50-v20260714",
     "status": "已发布",
     "nodeIds": [
       50
@@ -6739,7 +8004,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R38",
+    "sourceRuleId": "R50",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 50,
     "businessModule": "穿跨越工程",
@@ -6796,7 +8061,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R38",
+        "sourceRuleId": "R50",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 50,
         "inspectionCategory": "穿跨越工程",
@@ -6831,10 +8096,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R39",
+    "id": "RULE-ENG-INSP-R51",
     "name": "绝缘支撑",
-    "ruleKey": "engineering-inspection-r39",
-    "version": "engineering-inspection-r39-v20260703",
+    "ruleKey": "engineering-inspection-r51",
+    "version": "engineering-inspection-r51-v20260714",
     "status": "已发布",
     "nodeIds": [
       51
@@ -6844,7 +8109,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R39",
+    "sourceRuleId": "R51",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 51,
     "businessModule": "穿跨越工程",
@@ -6900,7 +8165,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R39",
+        "sourceRuleId": "R51",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 51,
         "inspectionCategory": "穿跨越工程",
@@ -6939,10 +8204,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R40",
+    "id": "RULE-ENG-INSP-R52",
     "name": "管道现场制作（预制）",
-    "ruleKey": "engineering-inspection-r40",
-    "version": "engineering-inspection-r40-v20260703",
+    "ruleKey": "engineering-inspection-r52",
+    "version": "engineering-inspection-r52-v20260714",
     "status": "已发布",
     "nodeIds": [
       52
@@ -6952,7 +8217,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R40",
+    "sourceRuleId": "R52",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 52,
     "businessModule": "管道现场制作（预制）",
@@ -7010,7 +8275,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R40",
+        "sourceRuleId": "R52",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 52,
         "inspectionCategory": "管道现场制作（预制）",
@@ -7045,10 +8310,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R41",
+    "id": "RULE-ENG-INSP-R53",
     "name": "管道布管与连接方式、穿跨越",
-    "ruleKey": "engineering-inspection-r41",
-    "version": "engineering-inspection-r41-v20260703",
+    "ruleKey": "engineering-inspection-r53",
+    "version": "engineering-inspection-r53-v20260714",
     "status": "已发布",
     "nodeIds": [
       53
@@ -7058,7 +8323,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R41",
+    "sourceRuleId": "R53",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 53,
     "businessModule": "管道安装",
@@ -7115,7 +8380,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R41",
+        "sourceRuleId": "R53",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 53,
         "inspectionCategory": "管道安装",
@@ -7156,10 +8421,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R42",
+    "id": "RULE-ENG-INSP-R54",
     "name": "补偿装置",
-    "ruleKey": "engineering-inspection-r42",
-    "version": "engineering-inspection-r42-v20260703",
+    "ruleKey": "engineering-inspection-r54",
+    "version": "engineering-inspection-r54-v20260714",
     "status": "已发布",
     "nodeIds": [
       54
@@ -7169,7 +8434,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R42",
+    "sourceRuleId": "R54",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 54,
     "businessModule": "管道安装",
@@ -7225,7 +8490,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R42",
+        "sourceRuleId": "R54",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 54,
         "inspectionCategory": "管道安装",
@@ -7265,10 +8530,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R43",
+    "id": "RULE-ENG-INSP-R55",
     "name": "支撑件",
-    "ruleKey": "engineering-inspection-r43",
-    "version": "engineering-inspection-r43-v20260703",
+    "ruleKey": "engineering-inspection-r55",
+    "version": "engineering-inspection-r55-v20260714",
     "status": "已发布",
     "nodeIds": [
       55
@@ -7278,7 +8543,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R43",
+    "sourceRuleId": "R55",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 55,
     "businessModule": "管道安装",
@@ -7333,7 +8598,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R43",
+        "sourceRuleId": "R55",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 55,
         "inspectionCategory": "管道安装",
@@ -7373,10 +8638,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R44",
+    "id": "RULE-ENG-INSP-R56",
     "name": "安全阀、爆破片和紧急切断阀的安装位置、规格和型号",
-    "ruleKey": "engineering-inspection-r44",
-    "version": "engineering-inspection-r44-v20260703",
+    "ruleKey": "engineering-inspection-r56",
+    "version": "engineering-inspection-r56-v20260714",
     "status": "已发布",
     "nodeIds": [
       56
@@ -7386,7 +8651,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R44",
+    "sourceRuleId": "R56",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 56,
     "businessModule": "安全附件",
@@ -7443,7 +8708,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R44",
+        "sourceRuleId": "R56",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 56,
         "inspectionCategory": "安全附件",
@@ -7490,10 +8755,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R45",
+    "id": "RULE-ENG-INSP-R57",
     "name": "安全阀校验报告",
-    "ruleKey": "engineering-inspection-r45",
-    "version": "engineering-inspection-r45-v20260703",
+    "ruleKey": "engineering-inspection-r57",
+    "version": "engineering-inspection-r57-v20260714",
     "status": "已发布",
     "nodeIds": [
       57
@@ -7503,7 +8768,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R45",
+    "sourceRuleId": "R57",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 57,
     "businessModule": "安全附件",
@@ -7547,7 +8812,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R45",
+        "sourceRuleId": "R57",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 57,
         "inspectionCategory": "安全附件",
@@ -7588,10 +8853,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R46",
+    "id": "RULE-ENG-INSP-R58",
     "name": "紧急切断阀性能测试报告",
-    "ruleKey": "engineering-inspection-r46",
-    "version": "engineering-inspection-r46-v20260703",
+    "ruleKey": "engineering-inspection-r58",
+    "version": "engineering-inspection-r58-v20260714",
     "status": "已发布",
     "nodeIds": [
       58
@@ -7601,7 +8866,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R46",
+    "sourceRuleId": "R58",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 58,
     "businessModule": "安全附件",
@@ -7644,7 +8909,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R46",
+        "sourceRuleId": "R58",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 58,
         "inspectionCategory": "安全附件",
@@ -7682,10 +8947,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R47",
+    "id": "RULE-ENG-INSP-R59",
     "name": "耐压试验方案",
-    "ruleKey": "engineering-inspection-r47",
-    "version": "engineering-inspection-r47-v20260703",
+    "ruleKey": "engineering-inspection-r59",
+    "version": "engineering-inspection-r59-v20260714",
     "status": "已发布",
     "nodeIds": [
       59
@@ -7695,7 +8960,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "A",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R47",
+    "sourceRuleId": "R59",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 59,
     "businessModule": "耐压试验",
@@ -7750,7 +9015,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R47",
+        "sourceRuleId": "R59",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 59,
         "inspectionCategory": "耐压试验",
@@ -7793,10 +9058,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R48",
+    "id": "RULE-ENG-INSP-R60",
     "name": "试验用压力表、试验介质、介质温度、环境温度",
-    "ruleKey": "engineering-inspection-r48",
-    "version": "engineering-inspection-r48-v20260703",
+    "ruleKey": "engineering-inspection-r60",
+    "version": "engineering-inspection-r60-v20260714",
     "status": "已发布",
     "nodeIds": [
       60
@@ -7806,7 +9071,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "A",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R48",
+    "sourceRuleId": "R60",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 60,
     "businessModule": "耐压试验",
@@ -7862,7 +9127,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R48",
+        "sourceRuleId": "R60",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 60,
         "inspectionCategory": "耐压试验",
@@ -7909,10 +9174,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R49",
+    "id": "RULE-ENG-INSP-R61",
     "name": "耐压试验压力、保压时间及结果",
-    "ruleKey": "engineering-inspection-r49",
-    "version": "engineering-inspection-r49-v20260703",
+    "ruleKey": "engineering-inspection-r61",
+    "version": "engineering-inspection-r61-v20260714",
     "status": "已发布",
     "nodeIds": [
       61
@@ -7922,7 +9187,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "A",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R49",
+    "sourceRuleId": "R61",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 61,
     "businessModule": "耐压试验",
@@ -7977,7 +9242,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R49",
+        "sourceRuleId": "R61",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 61,
         "inspectionCategory": "耐压试验",
@@ -8020,10 +9285,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R50",
+    "id": "RULE-ENG-INSP-R62",
     "name": "耐压试验记录（报告）",
-    "ruleKey": "engineering-inspection-r50",
-    "version": "engineering-inspection-r50-v20260703",
+    "ruleKey": "engineering-inspection-r62",
+    "version": "engineering-inspection-r62-v20260714",
     "status": "已发布",
     "nodeIds": [
       62
@@ -8033,7 +9298,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "A",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R50",
+    "sourceRuleId": "R62",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 62,
     "businessModule": "耐压试验",
@@ -8087,7 +9352,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R50",
+        "sourceRuleId": "R62",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 62,
         "inspectionCategory": "耐压试验",
@@ -8135,10 +9400,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R51",
+    "id": "RULE-ENG-INSP-R63",
     "name": "管道系统的柔性(应力)分析",
-    "ruleKey": "engineering-inspection-r51",
-    "version": "engineering-inspection-r51-v20260703",
+    "ruleKey": "engineering-inspection-r63",
+    "version": "engineering-inspection-r63-v20260714",
     "status": "已发布",
     "nodeIds": [
       63
@@ -8148,7 +9413,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "A",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R51",
+    "sourceRuleId": "R63",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 63,
     "businessModule": "耐压试验免除或替代",
@@ -8203,7 +9468,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R51",
+        "sourceRuleId": "R63",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 63,
         "inspectionCategory": "耐压试验免除或替代",
@@ -8242,10 +9507,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R52",
+    "id": "RULE-ENG-INSP-R64",
     "name": "现场检查替代性试验的过程",
-    "ruleKey": "engineering-inspection-r52",
-    "version": "engineering-inspection-r52-v20260703",
+    "ruleKey": "engineering-inspection-r64",
+    "version": "engineering-inspection-r64-v20260714",
     "status": "已发布",
     "nodeIds": [
       64
@@ -8255,7 +9520,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "A",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R52",
+    "sourceRuleId": "R64",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 64,
     "businessModule": "耐压试验免除或替代",
@@ -8426,7 +9691,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R52",
+        "sourceRuleId": "R64",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 64,
         "inspectionCategory": "耐压试验免除或替代",
@@ -8467,10 +9732,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R53",
+    "id": "RULE-ENG-INSP-R65",
     "name": "无损检测报告和底片",
-    "ruleKey": "engineering-inspection-r53",
-    "version": "engineering-inspection-r53-v20260703",
+    "ruleKey": "engineering-inspection-r65",
+    "version": "engineering-inspection-r65-v20260714",
     "status": "已发布",
     "nodeIds": [
       65
@@ -8480,7 +9745,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "A",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R53",
+    "sourceRuleId": "R65",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 65,
     "businessModule": "耐压试验免除或替代",
@@ -8649,7 +9914,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R53",
+        "sourceRuleId": "R65",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 65,
         "inspectionCategory": "耐压试验免除或替代",
@@ -8698,10 +9963,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R54",
+    "id": "RULE-ENG-INSP-R66",
     "name": "试验用压力表、试验介质、介质温度、环境温度、试验压力",
-    "ruleKey": "engineering-inspection-r54",
-    "version": "engineering-inspection-r54-v20260703",
+    "ruleKey": "engineering-inspection-r66",
+    "version": "engineering-inspection-r66-v20260714",
     "status": "已发布",
     "nodeIds": [
       66
@@ -8711,7 +9976,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "B",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R54",
+    "sourceRuleId": "R66",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 66,
     "businessModule": "泄漏试验",
@@ -8768,7 +10033,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R54",
+        "sourceRuleId": "R66",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 66,
         "inspectionCategory": "泄漏试验",
@@ -8811,10 +10076,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R55",
+    "id": "RULE-ENG-INSP-R67",
     "name": "泄漏试验方法和试验报告",
-    "ruleKey": "engineering-inspection-r55",
-    "version": "engineering-inspection-r55-v20260703",
+    "ruleKey": "engineering-inspection-r67",
+    "version": "engineering-inspection-r67-v20260714",
     "status": "已发布",
     "nodeIds": [
       67
@@ -8824,7 +10089,7 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R55",
+    "sourceRuleId": "R67",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
     "sourceSequence": 67,
     "businessModule": "泄漏试验",
@@ -8879,7 +10144,7 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R55",
+        "sourceRuleId": "R67",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
         "sequence": 67,
         "inspectionCategory": "泄漏试验",
@@ -8925,10 +10190,10 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R56",
+    "id": "RULE-ENG-INSP-R68",
     "name": "吹扫、清洗",
-    "ruleKey": "engineering-inspection-r56",
-    "version": "engineering-inspection-r56-v20260703",
+    "ruleKey": "engineering-inspection-r68",
+    "version": "engineering-inspection-r68-v20260714",
     "status": "已发布",
     "nodeIds": [
       68
@@ -8938,9 +10203,9 @@ export const generatedKnowledgeRuleVersions = [
     "inspectionClass": "C",
     "promptVersion": "prompt-engineering-inspection-v2026.06",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R56",
+    "sourceRuleId": "R68",
     "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
-    "sourceSequence": 69,
+    "sourceSequence": 68,
     "businessModule": "吹扫、清洗",
     "inspectionCategory": "吹扫、清洗",
     "inspectionItem": "吹扫、清洗",
@@ -8993,9 +10258,9 @@ export const generatedKnowledgeRuleVersions = [
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R56",
+        "sourceRuleId": "R68",
         "sourceDocument": "监检项目-管道安装 耐压试验等.docx",
-        "sequence": 69,
+        "sequence": 68,
         "inspectionCategory": "吹扫、清洗",
         "inspectionItem": "吹扫、清洗",
         "inspectionClass": "C",
@@ -9034,675 +10299,30 @@ export const generatedKnowledgeRuleVersions = [
     }
   },
   {
-    "id": "RULE-ENG-INSP-R57",
-    "name": "压力管道元件及安全附件制造单位的许可资质",
-    "ruleKey": "engineering-inspection-r57",
-    "version": "engineering-inspection-r57-v20260703",
+    "id": "RULE-ENG-INSP-R69",
+    "name": "施工单位质量保证体系实施状况的评价",
+    "ruleKey": "engineering-inspection-r69",
+    "version": "engineering-inspection-r69-v20260714",
     "status": "已发布",
     "nodeIds": [
-      12
+      69
     ],
     "severity": "low",
     "reviewClass": "C",
     "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
+    "promptVersion": "prompt-engineering-inspection-v20260703",
     "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R57",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 12,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "压力管道元件及安全附件制造单位的许可资质",
+    "sourceRuleId": "R69",
+    "sourceDocument": "files/checklist.docx",
+    "sourceSequence": 69,
+    "businessModule": "质量保证体系评价",
+    "inspectionCategory": "质量保证体系评价",
+    "inspectionItem": "施工单位质量保证体系实施状况的评价",
     "materialTypeCodes": [
-      "generic_review_material",
-      "manufacturing_license",
-      "design_document"
+      "generic_review_material"
     ],
     "thinkingModeIds": [
-      "M01",
-      "M06"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T05",
-      "T06",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三",
-    "standardText": "全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三",
-    "checkMethod": "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件",
-    "witnessText": "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件",
-    "sourceWitness": "",
-    "agentThinking": "找到压力管道元件或安全附件制造许可证，抽取制造单位名称、许可证号、许可范围、产品类别、级别和有效期；再找到设计资料中的管道特性表、材料表和安全附件清单，抽取本工程所用管道元件类型、规格、压力等级和材料。先在全国特种设备公示信息查询平台核实许可证号和单位信息，再判断许可范围是否覆盖本工程实际使用的管道元件或安全附件。",
-    "toolchainThinking": "调用 T01、T02 定位制造许可证、管道特性表、材料表和安全附件清单；调用 T03、T04 抽取许可证号、制造单位、许可范围、元件类型和压力等级；调用 T05 查询或核验证照；调用 T06 查询第41号公告许可范围要求；调用 T08 比对许可证范围与设计资料；调用 T11 标记证照缺失、过期或范围不覆盖；调用 T12 输出证据链。",
-    "referencedStandards": [],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R57",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 12,
-        "inspectionCategory": "材料",
-        "inspectionItem": "压力管道元件及安全附件制造单位的许可资质",
-        "inspectionClass": "C",
-        "standardText": "全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三",
-        "witnessText": "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件",
-        "agentThinking": "找到压力管道元件或安全附件制造许可证，抽取制造单位名称、许可证号、许可范围、产品类别、级别和有效期；再找到设计资料中的管道特性表、材料表和安全附件清单，抽取本工程所用管道元件类型、规格、压力等级和材料。先在全国特种设备公示信息查询平台核实许可证号和单位信息，再判断许可范围是否覆盖本工程实际使用的管道元件或安全附件。",
-        "toolchainThinking": "调用 T01、T02 定位制造许可证、管道特性表、材料表和安全附件清单；调用 T03、T04 抽取许可证号、制造单位、许可范围、元件类型和压力等级；调用 T05 查询或核验证照；调用 T06 查询第41号公告许可范围要求；调用 T08 比对许可证范围与设计资料；调用 T11 标记证照缺失、过期或范围不覆盖；调用 T12 输出证据链。"
-      },
-      "requiredEvidence": [
-        "制造许可证",
-        "提取许可证",
-        "并与设计资料中特性表、材料表",
-        "找到压力管道元件或安全附件制造许可证",
-        "抽取制造单位名称、许可证",
-        "再找到设计资料中的管道特性表、材料表",
-        "和安全附件清单",
-        "全国特种设备公示信息查询平台核实许可证",
-        "定位制造许可证、管道特性表、材料表",
-        "抽取许可证",
-        "比对许可证"
-      ],
-      "extractionTargets": [
-        "许可证号",
-        "压力",
-        "单位名称",
-        "许可范围",
-        "有效期",
-        "规格"
-      ],
-      "verificationSteps": [
-        "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件"
-      ],
-      "acceptanceCriteria": [
-        "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件"
-      ],
-      "humanConfirmation": [
-        "证据缺失、范围不覆盖或跨文件不一致时生成补充资料项或联络单。"
-      ],
-      "promptContext": "监检项目：压力管道元件及安全附件制造单位的许可资质\n类别：C\n判断准则/标准规范：全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三\n方法及内容/工作见证：制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件\nAgent思考方式：找到压力管道元件或安全附件制造许可证，抽取制造单位名称、许可证号、许可范围、产品类别、级别和有效期；再找到设计资料中的管道特性表、材料表和安全附件清单，抽取本工程所用管道元件类型、规格、压力等级和材料。先在全国特种设备公示信息查询平台核实许可证号和单位信息，再判断许可范围是否覆盖本工程实际使用的管道元件或安全附件。\n工具集调用思考：调用 T01、T02 定位制造许可证、管道特性表、材料表和安全附件清单；调用 T03、T04 抽取许可证号、制造单位、许可范围、元件类型和压力等级；调用 T05 查询或核验证照；调用 T06 查询第41号公告许可范围要求；调用 T08 比对许可证范围与设计资料；调用 T11 标记证照缺失、过期或范围不覆盖；调用 T12 输出证据链。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R58",
-    "name": "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告",
-    "ruleKey": "engineering-inspection-r58",
-    "version": "engineering-inspection-r58-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      13
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R58",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 13,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "manufacturing_supervision_certificate",
-      "type_test_report"
-    ],
-    "thinkingModeIds": [
-      "M06",
-      "M12"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T05",
-      "T06",
-      "T07",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四",
-    "standardText": "全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四",
-    "checkMethod": "监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件",
-    "witnessText": "监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件",
-    "sourceWitness": "",
-    "agentThinking": "先从材料表和管道元件清单识别哪些元件属于需制造监督检验或有型式试验要求的范围；再找到对应制造监督检验证书、型式试验证书或型式试验报告。逐项核对证书中的产品名称、规格范围、制造单位、证书编号、有效期和覆盖范围，判断是否覆盖设计文件材料表中本工程实际使用的管道元件。",
-    "toolchainThinking": "调用 T01、T02 定位材料表、元件清单、监检证书和型式试验报告；调用 T03、T04 抽取元件类型、规格、证书编号、覆盖范围和有效期；调用 T05 核验证书；调用 T06 查询 TSG D7006 和第41号公告要求；调用 T07 判断是否触发制造监检或型式试验分支；调用 T08 比对证书覆盖范围与材料表；调用 T11 处理证书缺失或不覆盖；调用 T12 输出结论。",
-    "referencedStandards": [
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R58",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 13,
-        "inspectionCategory": "材料",
-        "inspectionItem": "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告",
-        "inspectionClass": "C",
-        "standardText": "全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四",
-        "witnessText": "监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件",
-        "agentThinking": "先从材料表和管道元件清单识别哪些元件属于需制造监督检验或有型式试验要求的范围；再找到对应制造监督检验证书、型式试验证书或型式试验报告。逐项核对证书中的产品名称、规格范围、制造单位、证书编号、有效期和覆盖范围，判断是否覆盖设计文件材料表中本工程实际使用的管道元件。",
-        "toolchainThinking": "调用 T01、T02 定位材料表、元件清单、监检证书和型式试验报告；调用 T03、T04 抽取元件类型、规格、证书编号、覆盖范围和有效期；调用 T05 核验证书；调用 T06 查询 TSG D7006 和第41号公告要求；调用 T07 判断是否触发制造监检或型式试验分支；调用 T08 比对证书覆盖范围与材料表；调用 T11 处理证书缺失或不覆盖；调用 T12 输出结论。"
-      },
-      "requiredEvidence": [
-        "监检证书",
-        "型式试验证书（报告",
-        "检查覆盖范围是否符合设计文件中材料表",
-        "先从材料表和管道元件清单",
-        "再找到对应制造监督检验证书",
-        "、型式试验证书或型式试验报告",
-        "逐项核对证书",
-        "的产品名称、规格范围、制造单位、证书",
-        "判断是否覆盖设计文件材料表",
-        "定位材料表、元件清单、监检证书",
-        "和型式试验报告",
-        "抽取元件类型、规格、证书"
-      ],
-      "extractionTargets": [
-        "规格",
-        "证书编号",
-        "有效期",
-        "结论"
-      ],
-      "verificationSteps": [
-        "型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件"
-      ],
-      "acceptanceCriteria": [
-        "监检证书是否齐全",
-        "型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件"
-      ],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告\n类别：C\n判断准则/标准规范：全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四\n方法及内容/工作见证：监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件\nAgent思考方式：先从材料表和管道元件清单识别哪些元件属于需制造监督检验或有型式试验要求的范围；再找到对应制造监督检验证书、型式试验证书或型式试验报告。逐项核对证书中的产品名称、规格范围、制造单位、证书编号、有效期和覆盖范围，判断是否覆盖设计文件材料表中本工程实际使用的管道元件。\n工具集调用思考：调用 T01、T02 定位材料表、元件清单、监检证书和型式试验报告；调用 T03、T04 抽取元件类型、规格、证书编号、覆盖范围和有效期；调用 T05 核验证书；调用 T06 查询 TSG D7006 和第41号公告要求；调用 T07 判断是否触发制造监检或型式试验分支；调用 T08 比对证书覆盖范围与材料表；调用 T11 处理证书缺失或不覆盖；调用 T12 输出结论。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R59",
-    "name": "不需制造许可、监检、型式试验的管道组成件的出厂检验报告",
-    "ruleKey": "engineering-inspection-r59",
-    "version": "engineering-inspection-r59-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      14
-    ],
-    "severity": "medium",
-    "reviewClass": "C/B",
-    "inspectionClass": "C/B",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R59",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 14,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "factory_inspection_report",
-      "material_retest_report"
-    ],
-    "thinkingModeIds": [
-      "M06",
-      "M09"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T06",
-      "T07",
-      "T08",
-      "T09",
-      "T11",
-      "T12"
-    ],
-    "criteria": "设计文件中材料表、管道特性表压力等级对应",
-    "standardText": "设计文件中材料表、管道特性表压力等级对应",
-    "checkMethod": "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告",
-    "witnessText": "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告",
-    "sourceWitness": "",
-    "agentThinking": "先判断管道组成件是否属于不需制造许可、制造监检和型式试验的情形；若属于该情形，找到出厂质量证明文件和必要的现场抽查复验记录。抽取组成件名称、规格、等级、材质、批号、压力等级、检验项目和结论，与设计文件材料表、管道特性表逐项比对。若触发现场抽查复验，应继续审查光谱、硬度、金相、无损检测和耐压试验等报告是否覆盖抽查对象。",
-    "toolchainThinking": "调用 T01、T02 定位材料表、管道特性表、出厂检验报告和复验报告；调用 T03、T04 抽取组成件规格、等级、材质、批号、压力等级和检验项目；调用 T06 查询材料及检验标准；调用 T07 判断是否需抽查复验及检验项目是否满足；调用 T08 比对报告与设计文件；调用 T11 标记材质等级不符或复验缺失；调用 T12 回写审查意见。",
-    "referencedStandards": [],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R59",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 14,
-        "inspectionCategory": "材料",
-        "inspectionItem": "不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验",
-        "inspectionClass": "C/B",
-        "standardText": "设计文件中材料表、管道特性表压力等级对应",
-        "witnessText": "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告",
-        "agentThinking": "先判断管道组成件是否属于不需制造许可、制造监检和型式试验的情形；若属于该情形，找到出厂质量证明文件和必要的现场抽查复验记录。抽取组成件名称、规格、等级、材质、批号、压力等级、检验项目和结论，与设计文件材料表、管道特性表逐项比对。若触发现场抽查复验，应继续审查光谱、硬度、金相、无损检测和耐压试验等报告是否覆盖抽查对象。",
-        "toolchainThinking": "调用 T01、T02 定位材料表、管道特性表、出厂检验报告和复验报告；调用 T03、T04 抽取组成件规格、等级、材质、批号、压力等级和检验项目；调用 T06 查询材料及检验标准；调用 T07 判断是否需抽查复验及检验项目是否满足；调用 T08 比对报告与设计文件；调用 T11 标记材质等级不符或复验缺失；调用 T12 回写审查意见。"
-      },
-      "requiredEvidence": [
-        "设计文件中材料表、管道特性表",
-        "审核出厂质量证明文件或抽查复验记录",
-        "查看等级材质是否符合设计文件",
-        "要求（与材料表",
-        "硬度、金相、无损检测和耐压试验等报告",
-        "找到出厂质量证明文件",
-        "和必要的现场抽查复验记录",
-        "与设计文件材料表、管道特性表",
-        "定位材料表、管道特性表、出厂检验报告",
-        "和复验报告",
-        "比对报告与设计文件"
-      ],
-      "extractionTargets": [
-        "压力",
-        "材质",
-        "规格",
-        "批号",
-        "结论",
-        "标准"
-      ],
-      "verificationSteps": [
-        "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）",
-        "审查光谱、硬度、金相、无损检测和耐压试验等报告"
-      ],
-      "acceptanceCriteria": [
-        "审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）",
-        "设计文件中材料表、管道特性表压力等级对应"
-      ],
-      "humanConfirmation": [
-        "涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。"
-      ],
-      "promptContext": "监检项目：不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验\n类别：C/B\n判断准则/标准规范：设计文件中材料表、管道特性表压力等级对应\n方法及内容/工作见证：审核出厂质量证明文件或抽查复验记录，比如螺栓螺母，查看等级材质是否符合设计文件要求（与材料表对应）；审查光谱、硬度、金相、无损检测和耐压试验等报告\nAgent思考方式：先判断管道组成件是否属于不需制造许可、制造监检和型式试验的情形；若属于该情形，找到出厂质量证明文件和必要的现场抽查复验记录。抽取组成件名称、规格、等级、材质、批号、压力等级、检验项目和结论，与设计文件材料表、管道特性表逐项比对。若触发现场抽查复验，应继续审查光谱、硬度、金相、无损检测和耐压试验等报告是否覆盖抽查对象。\n工具集调用思考：调用 T01、T02 定位材料表、管道特性表、出厂检验报告和复验报告；调用 T03、T04 抽取组成件规格、等级、材质、批号、压力等级和检验项目；调用 T06 查询材料及检验标准；调用 T07 判断是否需抽查复验及检验项目是否满足；调用 T08 比对报告与设计文件；调用 T11 标记材质等级不符或复验缺失；调用 T12 回写审查意见。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R60",
-    "name": "境外制造的压力管道元件、安全附件的型式试验证书及制造许可证资质",
-    "ruleKey": "engineering-inspection-r60",
-    "version": "engineering-inspection-r60-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      15
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R60",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 15,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "overseas_material_certificate",
-      "manufacturing_license",
-      "type_test_report"
-    ],
-    "thinkingModeIds": [
-      "M01",
-      "M06",
-      "M12"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T05",
-      "T06",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1",
-    "standardText": "TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1",
-    "checkMethod": "制造许可资质、型式试验证书",
-    "witnessText": "制造许可资质、型式试验证书",
-    "sourceWitness": "",
-    "agentThinking": "找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。",
-    "toolchainThinking": "调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。",
-    "referencedStandards": [
-      {
-        "reference": "TSG31-2025",
-        "file": "rules/standards/TSG31-2025.pdf",
-        "fileName": "TSG31-2025.pdf"
-      },
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R60",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 15,
-        "inspectionCategory": "材料",
-        "inspectionItem": "境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质",
-        "inspectionClass": "C",
-        "standardText": "TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1",
-        "witnessText": "制造许可资质、型式试验证书",
-        "agentThinking": "找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。",
-        "toolchainThinking": "调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。"
-      },
-      "requiredEvidence": [
-        "制造许可资质、型式试验证书",
-        "境外制造的压力管道元件或安全附件清单",
-        "到制造单位制造许可资质和型式试验证书",
-        "证书",
-        "定位境外制造产品清单",
-        "、制造许可资质、型式试验证书",
-        "和设计文件",
-        "抽取制造单位、产地、规格型号、证书",
-        "核验证书",
-        "比对证书、产品清单和设计文件",
-        "处理证书"
-      ],
-      "extractionTargets": [
-        "压力",
-        "规格",
-        "型号",
-        "标准",
-        "证书编号",
-        "结论"
-      ],
-      "verificationSteps": [
-        "制造许可资质、型式试验证书"
-      ],
-      "acceptanceCriteria": [],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质\n类别：C\n判断准则/标准规范：TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1\n方法及内容/工作见证：制造许可资质、型式试验证书\nAgent思考方式：找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。\n工具集调用思考：调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R61",
-    "name": "压力管道元件以及安全附件产品质量证明文件",
-    "ruleKey": "engineering-inspection-r61",
-    "version": "engineering-inspection-r61-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      16
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R61",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 16,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "压力管道元件以及安全附件产品质量证明文件",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "quality_certificate",
-      "design_document"
-    ],
-    "thinkingModeIds": [
-      "M06",
-      "M03"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T06",
-      "T07",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019",
-    "standardText": "TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019",
-    "checkMethod": "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准",
-    "witnessText": "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准",
-    "sourceWitness": "",
-    "agentThinking": "找到压力管道元件和安全附件产品质量证明文件，识别是否为原件或复印件；若为复印件，检查经营单位公章和经办负责人章。抽取产品名称、规格、材质、批号、供货状态、化学成分、力学性能、出厂检验项目和适用制造验收标准，与设计文件规定的材料验收标准及特殊要求逐项比对。",
-    "toolchainThinking": "调用 T01、T02 定位产品质量证明文件、设计文件和材料表；调用 T03、T04 抽取规格、材质、批号、成分、性能、供货状态、检验项目和盖章信息；调用 T06 查询对应 GB/T 标准和 TSG D7006 要求；调用 T07 判断检验项目、性能指标和供货状态是否符合；调用 T08 比对质量证明文件与设计材料表；调用 T11 标记缺章、缺项目或指标不符；调用 T12 输出证据链。",
-    "referencedStandards": [
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      },
-      {
-        "reference": "GB/T 12459-2025",
-        "file": "rules/standards/GBT 12459-2025 钢制对焊管件 类型与参数.pdf",
-        "fileName": "GBT 12459-2025 钢制对焊管件 类型与参数.pdf"
-      },
-      {
-        "reference": "GB/T 13401-2025",
-        "file": "rules/standards/GBT 13401-2025钢制对焊管件 技术规范.pdf",
-        "fileName": "GBT 13401-2025钢制对焊管件 技术规范.pdf"
-      },
-      {
-        "reference": "GB/T 8163-2018",
-        "file": "rules/standards/GBT 8163-2018 输送流体用无缝钢管.pdf",
-        "fileName": "GBT 8163-2018 输送流体用无缝钢管.pdf"
-      },
-      {
-        "reference": "GB/T 3087-2022",
-        "file": "rules/standards/GBT+3087-2022.pdf",
-        "fileName": "GBT+3087-2022.pdf"
-      },
-      {
-        "reference": "GB/T 5310-2023",
-        "file": "rules/standards/GBT+5310-2023.pdf",
-        "fileName": "GBT+5310-2023.pdf"
-      },
-      {
-        "reference": "GB/T 9948-2025",
-        "file": "rules/standards/GBT+9948-2025石化和化工装置用无缝钢管.pdf",
-        "fileName": "GBT+9948-2025石化和化工装置用无缝钢管.pdf"
-      },
-      {
-        "reference": "GB/T 14976-2025",
-        "file": "rules/standards/GBT+14976-2025输送流体用不锈钢无缝钢管.pdf",
-        "fileName": "GBT+14976-2025输送流体用不锈钢无缝钢管.pdf"
-      },
-      {
-        "reference": "GB/T 12771-2019",
-        "file": "rules/standards/GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf",
-        "fileName": "GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R61",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 16,
-        "inspectionCategory": "材料",
-        "inspectionItem": "压力管道元件以及安全附件产品质量证明文件",
-        "inspectionClass": "C",
-        "standardText": "TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019",
-        "witnessText": "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准",
-        "agentThinking": "找到压力管道元件和安全附件产品质量证明文件，识别是否为原件或复印件；若为复印件，检查经营单位公章和经办负责人章。抽取产品名称、规格、材质、批号、供货状态、化学成分、力学性能、出厂检验项目和适用制造验收标准，与设计文件规定的材料验收标准及特殊要求逐项比对。",
-        "toolchainThinking": "调用 T01、T02 定位产品质量证明文件、设计文件和材料表；调用 T03、T04 抽取规格、材质、批号、成分、性能、供货状态、检验项目和盖章信息；调用 T06 查询对应 GB/T 标准和 TSG D7006 要求；调用 T07 判断检验项目、性能指标和供货状态是否符合；调用 T08 比对质量证明文件与设计材料表；调用 T11 标记缺章、缺项目或指标不符；调用 T12 输出证据链。"
-      },
-      "requiredEvidence": [
-        "设计文件",
-        "产品质量证明文件",
-        "其内容是否符合设计文件",
-        "找到压力管道元件和安全附件产品质量证明",
-        "文件",
-        "与设计文件",
-        "定位产品质量证明文件、设计文件和材料表",
-        "比对质量证明文件与设计材料表"
-      ],
-      "extractionTargets": [
-        "标准",
-        "压力",
-        "规格",
-        "材质",
-        "批号"
-      ],
-      "verificationSteps": [
-        "审查供货状态、成分、出厂检验项目是否符合对应标准"
-      ],
-      "acceptanceCriteria": [
-        "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章",
-        "审查供货状态、成分、出厂检验项目是否符合对应标准"
-      ],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：压力管道元件以及安全附件产品质量证明文件\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019\n方法及内容/工作见证：产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准\nAgent思考方式：找到压力管道元件和安全附件产品质量证明文件，识别是否为原件或复印件；若为复印件，检查经营单位公章和经办负责人章。抽取产品名称、规格、材质、批号、供货状态、化学成分、力学性能、出厂检验项目和适用制造验收标准，与设计文件规定的材料验收标准及特殊要求逐项比对。\n工具集调用思考：调用 T01、T02 定位产品质量证明文件、设计文件和材料表；调用 T03、T04 抽取规格、材质、批号、成分、性能、供货状态、检验项目和盖章信息；调用 T06 查询对应 GB/T 标准和 TSG D7006 要求；调用 T07 判断检验项目、性能指标和供货状态是否符合；调用 T08 比对质量证明文件与设计材料表；调用 T11 标记缺章、缺项目或指标不符；调用 T12 输出证据链。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R62",
-    "name": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
-    "ruleKey": "engineering-inspection-r62",
-    "version": "engineering-inspection-r62-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      17
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R62",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 17,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "acceptance_witness_record",
-      "material_retest_report"
-    ],
-    "thinkingModeIds": [
-      "M06",
-      "M07",
-      "M11"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T06",
-      "T07",
-      "T08",
-      "T10",
-      "T11",
-      "T12"
-    ],
-    "criteria": "TSG D7006-2020附件D D2.4.1",
-    "standardText": "TSG D7006-2020附件D D2.4.1",
-    "checkMethod": "验收记录、复验报告",
-    "witnessText": "验收记录、复验报告",
-    "sourceWitness": "",
-    "agentThinking": "找到产品到货验收记录、验收见证资料和抽样复验报告，抽取验收对象、批号、规格型号、数量、验收项目、见证人员、复验项目、复验结果和结论。判断验收记录是否覆盖本工程到货产品，抽样复验是否按规定或设计要求执行，复验结果是否与质量证明文件和材料表一致。",
-    "toolchainThinking": "调用 T01、T02 定位验收记录、见证资料、复验报告、质量证明文件和材料表；调用 T03、T04 抽取批号、规格、数量、验收项目、复验项目和结论；调用 T06 查询 TSG D7006 验收要求；调用 T07 判断抽样复验项目和结论；调用 T08 比对验收、复验和质量证明文件；调用 T11 标记验收缺项或复验不合格；调用 T12 回写审查意见。",
-    "referencedStandards": [
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R62",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 17,
-        "inspectionCategory": "材料",
-        "inspectionItem": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
-        "inspectionClass": "C",
-        "standardText": "TSG D7006-2020附件D D2.4.1",
-        "witnessText": "验收记录、复验报告",
-        "agentThinking": "找到产品到货验收记录、验收见证资料和抽样复验报告，抽取验收对象、批号、规格型号、数量、验收项目、见证人员、复验项目、复验结果和结论。判断验收记录是否覆盖本工程到货产品，抽样复验是否按规定或设计要求执行，复验结果是否与质量证明文件和材料表一致。",
-        "toolchainThinking": "调用 T01、T02 定位验收记录、见证资料、复验报告、质量证明文件和材料表；调用 T03、T04 抽取批号、规格、数量、验收项目、复验项目和结论；调用 T06 查询 TSG D7006 验收要求；调用 T07 判断抽样复验项目和结论；调用 T08 比对验收、复验和质量证明文件；调用 T11 标记验收缺项或复验不合格；调用 T12 回写审查意见。"
-      },
-      "requiredEvidence": [
-        "验收记录、复验报告",
-        "找到产品到货验收记录",
-        "、验收见证资料和抽样复验报告",
-        "判断验收记录",
-        "复验结果是否与质量证明文件和材料表",
-        "定位验收记录、见证资料、复验报告",
-        "、质量证明文件和材料表",
-        "比对验收、复验和质量证明文件"
-      ],
-      "extractionTargets": [
-        "批号",
-        "规格",
-        "型号",
-        "数量",
-        "人员",
-        "结论"
-      ],
-      "verificationSteps": [
-        "验收记录、复验报告"
-      ],
-      "acceptanceCriteria": [],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：压力管道元件以及安全附件产品验收的见证资料、抽样复验\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1\n方法及内容/工作见证：验收记录、复验报告\nAgent思考方式：找到产品到货验收记录、验收见证资料和抽样复验报告，抽取验收对象、批号、规格型号、数量、验收项目、见证人员、复验项目、复验结果和结论。判断验收记录是否覆盖本工程到货产品，抽样复验是否按规定或设计要求执行，复验结果是否与质量证明文件和材料表一致。\n工具集调用思考：调用 T01、T02 定位验收记录、见证资料、复验报告、质量证明文件和材料表；调用 T03、T04 抽取批号、规格、数量、验收项目、复验项目和结论；调用 T06 查询 TSG D7006 验收要求；调用 T07 判断抽样复验项目和结论；调用 T08 比对验收、复验和质量证明文件；调用 T11 标记验收缺项或复验不合格；调用 T12 回写审查意见。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R63",
-    "name": "材料复验报告、无损检测报告",
-    "ruleKey": "engineering-inspection-r63",
-    "version": "engineering-inspection-r63-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      18
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R63",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 18,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "材料复验报告、无损检测报告",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "material_retest_report",
-      "ndt_report"
-    ],
-    "thinkingModeIds": [
-      "M06",
+      "M13",
       "M07"
     ],
     "toolIds": [
@@ -9710,594 +10330,65 @@ export const generatedKnowledgeRuleVersions = [
       "T02",
       "T03",
       "T04",
-      "T06",
-      "T07",
       "T08",
       "T11",
       "T12"
     ],
-    "criteria": "TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019",
-    "standardText": "TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019",
-    "checkMethod": "材料复验报告、无损检测报告",
-    "witnessText": "材料复验报告、无损检测报告",
+    "criteria": "TSG D7006—2020 第2.2.4条、附件G G1-G5\n\n《受检单位质量保证体系实施状况评价工艺》",
+    "standardText": "TSG D7006—2020 第2.2.4条、附件G G1-G5\n\n《受检单位质量保证体系实施状况评价工艺》",
+    "checkMethod": "结合监检项目按《受检单位质量保证体系实施状况评价工艺》相关要求对施工单位进行评价，并出具评价报告。",
+    "witnessText": "结合监检项目按《受检单位质量保证体系实施状况评价工艺》相关要求对施工单位进行评价，并出具评价报告。",
     "sourceWitness": "",
-    "agentThinking": "找到材料复验报告和无损检测报告，抽取材料名称、规格、批号、取样位置、复验项目、无损检测方法、检测比例、执行标准、结果和结论。判断复验报告和无损检测报告是否对应材料批次及设计要求，复验项目和检测方法是否符合对应材料标准，结果是否合格。",
-    "toolchainThinking": "调用 T01、T02 定位复验报告、无损检测报告、材料表和质量证明文件；调用 T03、T04 抽取批号、取样位置、复验项目、检测方法、标准和结论；调用 T06 查询 TSG D7006 及对应材料标准；调用 T07 判断复验和无损检测项目是否满足；调用 T08 比对报告与材料批次；调用 T11 处理报告缺失、批次不对应或结果不合格；调用 T12 输出结论。",
+    "agentThinking": "本节点属于监检人员的项目级人工评价。AI 只汇总 R01-R68 的监检结果，以及施工单位资源条件变化、质量保证体系文件与实施记录、许可制度执行、问题通知和整改闭环等证据；再核验评价报告是否覆盖当前工程，是否包含评价结果、评价人员、评价日期和签发信息。评价报告缺失、字段不全、未覆盖当前工程或未由监检人员确认时，只能返回“待人工确认”或“证据不足”，不得自动判定“符合”或代替监检人员签发评价结论。",
+    "toolchainThinking": "调用 T01、T02 定位本项目 R01-R68 结果、质量体系实施证据和评价报告；调用 T03、T04 抽取评价结果、评价人员、评价日期、覆盖工程和签发信息；调用 T08 比对评价报告与当前项目及全项目监检结果；调用 T11 标记报告缺失、签发缺失或证据冲突；调用 T12 保存证据链。Tool 仅校验证据和报告完整性，最终评价结论必须采用监检人员签发结果。",
     "referencedStandards": [
       {
         "reference": "TSG D7006-2020",
         "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
         "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      },
-      {
-        "reference": "GB/T 12459-2025",
-        "file": "rules/standards/GBT 12459-2025 钢制对焊管件 类型与参数.pdf",
-        "fileName": "GBT 12459-2025 钢制对焊管件 类型与参数.pdf"
-      },
-      {
-        "reference": "GB/T 13401-2025",
-        "file": "rules/standards/GBT 13401-2025钢制对焊管件 技术规范.pdf",
-        "fileName": "GBT 13401-2025钢制对焊管件 技术规范.pdf"
-      },
-      {
-        "reference": "GB/T 14976-2025",
-        "file": "rules/standards/GBT+14976-2025输送流体用不锈钢无缝钢管.pdf",
-        "fileName": "GBT+14976-2025输送流体用不锈钢无缝钢管.pdf"
-      },
-      {
-        "reference": "GB/T 12771-2019",
-        "file": "rules/standards/GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf",
-        "fileName": "GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf"
       }
     ],
     "aiExecution": {
       "schemaVersion": "business-rule-execution-v1",
       "compiledAt": "2026-07-03 00:00:00",
       "sourceFields": {
-        "sourceRuleId": "R63",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 18,
-        "inspectionCategory": "材料",
-        "inspectionItem": "材料复验报告、无损检测报告",
+        "sourceRuleId": "R69",
+        "sourceDocument": "files/checklist.docx",
+        "sequence": 69,
+        "inspectionCategory": "质量保证体系评价",
+        "inspectionItem": "施工单位质量保证体系实施状况的评价",
         "inspectionClass": "C",
-        "standardText": "TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019",
-        "witnessText": "材料复验报告、无损检测报告",
-        "agentThinking": "找到材料复验报告和无损检测报告，抽取材料名称、规格、批号、取样位置、复验项目、无损检测方法、检测比例、执行标准、结果和结论。判断复验报告和无损检测报告是否对应材料批次及设计要求，复验项目和检测方法是否符合对应材料标准，结果是否合格。",
-        "toolchainThinking": "调用 T01、T02 定位复验报告、无损检测报告、材料表和质量证明文件；调用 T03、T04 抽取批号、取样位置、复验项目、检测方法、标准和结论；调用 T06 查询 TSG D7006 及对应材料标准；调用 T07 判断复验和无损检测项目是否满足；调用 T08 比对报告与材料批次；调用 T11 处理报告缺失、批次不对应或结果不合格；调用 T12 输出结论。"
+        "standardText": "TSG D7006—2020 第2.2.4条、附件G G1-G5\n\n《受检单位质量保证体系实施状况评价工艺》",
+        "witnessText": "结合监检项目按《受检单位质量保证体系实施状况评价工艺》相关要求对施工单位进行评价，并出具评价报告。",
+        "agentThinking": "本节点属于监检人员的项目级人工评价。AI 只汇总 R01-R68 的监检结果，以及施工单位资源条件变化、质量保证体系文件与实施记录、许可制度执行、问题通知和整改闭环等证据；再核验评价报告是否覆盖当前工程，是否包含评价结果、评价人员、评价日期和签发信息。评价报告缺失、字段不全、未覆盖当前工程或未由监检人员确认时，只能返回“待人工确认”或“证据不足”，不得自动判定“符合”或代替监检人员签发评价结论。",
+        "toolchainThinking": "调用 T01、T02 定位本项目 R01-R68 结果、质量体系实施证据和评价报告；调用 T03、T04 抽取评价结果、评价人员、评价日期、覆盖工程和签发信息；调用 T08 比对评价报告与当前项目及全项目监检结果；调用 T11 标记报告缺失、签发缺失或证据冲突；调用 T12 保存证据链。Tool 仅校验证据和报告完整性，最终评价结论必须采用监检人员签发结果。"
       },
       "requiredEvidence": [
-        "材料复验报告、无损检测报告",
-        "找到材料复验报告和无损检测报告",
-        "判断复验报告和无损检测报告",
-        "定位复验报告、无损检测报告、材料表",
-        "和质量证明文件",
-        "比对报告",
-        "处理报告"
+        "并出具评价报告",
+        "工单位资源条件变化、质量保证体系文件",
+        "与实施记录",
+        "再核验评价报告",
+        "评价报告",
+        "结果、质量体系实施证据和评价报告",
+        "比对评价报告",
+        "标记报告",
+        "仅校验证据和报告"
       ],
       "extractionTargets": [
-        "标准",
-        "规格",
-        "批号",
-        "检测方法",
-        "结论"
-      ],
-      "verificationSteps": [
-        "材料复验报告、无损检测报告"
-      ],
-      "acceptanceCriteria": [
-        "对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019"
-      ],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：材料复验报告、无损检测报告\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019\n方法及内容/工作见证：材料复验报告、无损检测报告\nAgent思考方式：找到材料复验报告和无损检测报告，抽取材料名称、规格、批号、取样位置、复验项目、无损检测方法、检测比例、执行标准、结果和结论。判断复验报告和无损检测报告是否对应材料批次及设计要求，复验项目和检测方法是否符合对应材料标准，结果是否合格。\n工具集调用思考：调用 T01、T02 定位复验报告、无损检测报告、材料表和质量证明文件；调用 T03、T04 抽取批号、取样位置、复验项目、检测方法、标准和结论；调用 T06 查询 TSG D7006 及对应材料标准；调用 T07 判断复验和无损检测项目是否满足；调用 T08 比对报告与材料批次；调用 T11 处理报告缺失、批次不对应或结果不合格；调用 T12 输出结论。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R64",
-    "name": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
-    "ruleKey": "engineering-inspection-r64",
-    "version": "engineering-inspection-r64-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      19
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R64",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 19,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "overseas_material_certificate",
-      "material_retest_report"
-    ],
-    "thinkingModeIds": [
-      "M06",
-      "M12"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T06",
-      "T07",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准",
-    "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准",
-    "checkMethod": "审核产品质量证明文件、复验报告，企业标准",
-    "witnessText": "审核产品质量证明文件、复验报告，企业标准",
-    "sourceWitness": "",
-    "agentThinking": "先识别压力管道元件或安全附件是否使用境外牌号材料；若使用境外牌号，找到产品质量证明文件、验证性复验报告和对应企业标准。抽取境外牌号、国内对应或等效材料、化学成分、力学性能、复验项目和企业标准编号，判断企业标准是否建立，验证性复验结果是否支持该境外牌号材料用于本工程。",
-    "toolchainThinking": "调用 T01、T02 定位质量证明文件、复验报告、企业标准和设计材料表；调用 T03、T04 抽取境外牌号、成分、性能、复验项目和标准编号；调用 T06 查询 TSG31、TSG D7006 和材料标准；调用 T07 判断验证性复验项目和结果；调用 T08 比对境外牌号、企业标准和设计要求；调用 T11 标记无企业标准或复验不足；调用 T12 输出审查意见。",
-    "referencedStandards": [
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      },
-      {
-        "reference": "TSG31-2025",
-        "file": "rules/standards/TSG31-2025.pdf",
-        "fileName": "TSG31-2025.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R64",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 19,
-        "inspectionCategory": "材料",
-        "inspectionItem": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
-        "inspectionClass": "C",
-        "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准",
-        "witnessText": "审核产品质量证明文件、复验报告，企业标准",
-        "agentThinking": "先识别压力管道元件或安全附件是否使用境外牌号材料；若使用境外牌号，找到产品质量证明文件、验证性复验报告和对应企业标准。抽取境外牌号、国内对应或等效材料、化学成分、力学性能、复验项目和企业标准编号，判断企业标准是否建立，验证性复验结果是否支持该境外牌号材料用于本工程。",
-        "toolchainThinking": "调用 T01、T02 定位质量证明文件、复验报告、企业标准和设计材料表；调用 T03、T04 抽取境外牌号、成分、性能、复验项目和标准编号；调用 T06 查询 TSG31、TSG D7006 和材料标准；调用 T07 判断验证性复验项目和结果；调用 T08 比对境外牌号、企业标准和设计要求；调用 T11 标记无企业标准或复验不足；调用 T12 输出审查意见。"
-      },
-      "requiredEvidence": [
-        "审核产品质量证明文件、复验报告",
-        "找到产品质量证明文件、验证性复验报告",
-        "定位质量证明文件、复验报告",
-        "、企业标准和设计材料表"
-      ],
-      "extractionTargets": [
-        "标准",
-        "压力"
-      ],
-      "verificationSteps": [
-        "审核产品质量证明文件、复验报告，企业标准"
-      ],
-      "acceptanceCriteria": [
-        "TSG31-2025中2.1.2，制定相对应的企业标准"
-      ],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.2，制定相对应的企业标准\n方法及内容/工作见证：审核产品质量证明文件、复验报告，企业标准\nAgent思考方式：先识别压力管道元件或安全附件是否使用境外牌号材料；若使用境外牌号，找到产品质量证明文件、验证性复验报告和对应企业标准。抽取境外牌号、国内对应或等效材料、化学成分、力学性能、复验项目和企业标准编号，判断企业标准是否建立，验证性复验结果是否支持该境外牌号材料用于本工程。\n工具集调用思考：调用 T01、T02 定位质量证明文件、复验报告、企业标准和设计材料表；调用 T03、T04 抽取境外牌号、成分、性能、复验项目和标准编号；调用 T06 查询 TSG31、TSG D7006 和材料标准；调用 T07 判断验证性复验项目和结果；调用 T08 比对境外牌号、企业标准和设计要求；调用 T11 标记无企业标准或复验不足；调用 T12 输出审查意见。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R65",
-    "name": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
-    "ruleKey": "engineering-inspection-r65",
-    "version": "engineering-inspection-r65-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      20
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R65",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 20,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "type_test_report",
-      "technical_review_approval"
-    ],
-    "thinkingModeIds": [
-      "M06",
-      "M12"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T05",
-      "T06",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3",
-    "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3",
-    "checkMethod": "型式试验报告、技术评审证书",
-    "witnessText": "型式试验报告、技术评审证书",
-    "sourceWitness": "",
-    "agentThinking": "先判断管道元件或安全附件是否采用新材料制造；若采用新材料，找到型式试验报告、技术评审证书和批准手续。抽取新材料名称、适用产品、技术评审范围、型式试验覆盖范围、批准文件编号和结论，判断技术评审及批准手续是否完整，型式试验是否覆盖本工程使用场景。",
-    "toolchainThinking": "调用 T01、T02 定位新材料说明、型式试验报告、技术评审证书、批准文件和设计材料表；调用 T03、T04 抽取材料名称、适用范围、证书编号和结论；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 要求；调用 T08 比对评审、型式试验和设计要求；调用 T11 处理手续缺失或覆盖不足；调用 T12 回写结论。",
-    "referencedStandards": [
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      },
-      {
-        "reference": "TSG31-2025",
-        "file": "rules/standards/TSG31-2025.pdf",
-        "fileName": "TSG31-2025.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R65",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 20,
-        "inspectionCategory": "材料",
-        "inspectionItem": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
-        "inspectionClass": "C",
-        "standardText": "TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3",
-        "witnessText": "型式试验报告、技术评审证书",
-        "agentThinking": "先判断管道元件或安全附件是否采用新材料制造；若采用新材料，找到型式试验报告、技术评审证书和批准手续。抽取新材料名称、适用产品、技术评审范围、型式试验覆盖范围、批准文件编号和结论，判断技术评审及批准手续是否完整，型式试验是否覆盖本工程使用场景。",
-        "toolchainThinking": "调用 T01、T02 定位新材料说明、型式试验报告、技术评审证书、批准文件和设计材料表；调用 T03、T04 抽取材料名称、适用范围、证书编号和结论；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 要求；调用 T08 比对评审、型式试验和设计要求；调用 T11 处理手续缺失或覆盖不足；调用 T12 回写结论。"
-      },
-      "requiredEvidence": [
-        "型式试验报告、技术评审证书",
-        "找到型式试验报告、技术评审证书",
-        "评审范围、型式试验覆盖范围、批准文件",
-        "定位新材料说明、型式试验报告",
-        "、技术评审证书、批准文件和设计材料表",
-        "抽取材料名称、适用范围、证书",
-        "核验证书"
-      ],
-      "extractionTargets": [
-        "结论",
-        "证书编号"
-      ],
-      "verificationSteps": [
-        "型式试验报告、技术评审证书"
-      ],
-      "acceptanceCriteria": [],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.1；TSG31-2025中2.1.3\n方法及内容/工作见证：型式试验报告、技术评审证书\nAgent思考方式：先判断管道元件或安全附件是否采用新材料制造；若采用新材料，找到型式试验报告、技术评审证书和批准手续。抽取新材料名称、适用产品、技术评审范围、型式试验覆盖范围、批准文件编号和结论，判断技术评审及批准手续是否完整，型式试验是否覆盖本工程使用场景。\n工具集调用思考：调用 T01、T02 定位新材料说明、型式试验报告、技术评审证书、批准文件和设计材料表；调用 T03、T04 抽取材料名称、适用范围、证书编号和结论；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 要求；调用 T08 比对评审、型式试验和设计要求；调用 T11 处理手续缺失或覆盖不足；调用 T12 回写结论。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R66",
-    "name": "材料标志移植",
-    "ruleKey": "engineering-inspection-r66",
-    "version": "engineering-inspection-r66-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      21
-    ],
-    "severity": "medium",
-    "reviewClass": "B",
-    "inspectionClass": "B",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R66",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 21,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "材料标志移植",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "material_mark_transfer_record",
-      "quality_certificate",
-      "field_photo"
-    ],
-    "thinkingModeIds": [
-      "M06",
-      "M07",
-      "M09"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T06",
-      "T08",
-      "T09",
-      "T11",
-      "T12"
-    ],
-    "criteria": "TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2",
-    "standardText": "TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2",
-    "checkMethod": "标志移植抽查记录",
-    "witnessText": "标志移植抽查记录",
-    "sourceWitness": "",
-    "agentThinking": "找到材料标志移植抽查记录和材料质量证明文件，抽取原始标志、移植后标志、材料批号、规格、材质、切割或加工部位、移植人员和检查结论。判断材料在切割、预制、安装过程中是否保持可追溯，移植标志是否与原始质量证明文件、领用记录和实物一致。",
-    "toolchainThinking": "调用 T01、T02 定位标志移植记录、材料质量证明、领用记录和现场照片；调用 T03、T04 抽取标志、批号、材质、规格和检查结论；调用 T06 查询标志移植要求；调用 T08 串联原始标志、移植记录和实物追溯关系；调用 T09 辅助识别现场标志照片；调用 T11 标记追溯断点或标志不清；调用 T12 输出证据链。",
-    "referencedStandards": [
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      },
-      {
-        "reference": "GB/T20801.1-2025",
-        "file": "rules/standards/GBT+20801.1-2025.pdf",
-        "fileName": "GBT+20801.1-2025.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R66",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 21,
-        "inspectionCategory": "材料",
-        "inspectionItem": "材料标志移植",
-        "inspectionClass": "B",
-        "standardText": "TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2",
-        "witnessText": "标志移植抽查记录",
-        "agentThinking": "找到材料标志移植抽查记录和材料质量证明文件，抽取原始标志、移植后标志、材料批号、规格、材质、切割或加工部位、移植人员和检查结论。判断材料在切割、预制、安装过程中是否保持可追溯，移植标志是否与原始质量证明文件、领用记录和实物一致。",
-        "toolchainThinking": "调用 T01、T02 定位标志移植记录、材料质量证明、领用记录和现场照片；调用 T03、T04 抽取标志、批号、材质、规格和检查结论；调用 T06 查询标志移植要求；调用 T08 串联原始标志、移植记录和实物追溯关系；调用 T09 辅助识别现场标志照片；调用 T11 标记追溯断点或标志不清；调用 T12 输出证据链。"
-      },
-      "requiredEvidence": [
-        "标志移植抽查记录",
-        "找到材料标志移植抽查记录和材料质量证明",
-        "文件",
-        "移植标志是否与原始质量证明文件",
-        "、领用记录",
-        "定位标志移植记录、材料质量证明",
-        "、领用记录和现场照片",
-        "串联原始标志、移植记录",
-        "辅助识别现场标志照片"
-      ],
-      "extractionTargets": [
-        "批号",
-        "规格",
-        "材质",
         "人员",
+        "日期",
         "结论"
       ],
       "verificationSteps": [
-        "标志移植抽查记录"
+        "结合监检项目按《受检单位质量保证体系实施状况评价工艺》相关要求对施工单位进行评价，并出具评价报告"
       ],
       "acceptanceCriteria": [],
       "humanConfirmation": [
-        "涉及现场检查、抽查或影像证据时，AI 只做辅助核验，需监检人员确认现场事实。"
+        "R69 仅汇总与校验评价报告证据；评价结果必须由监检人员依据 TSG D7006—2020 附件G确认并签发。"
       ],
-      "promptContext": "监检项目：材料标志移植\n类别：B\n判断准则/标准规范：TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2\n方法及内容/工作见证：标志移植抽查记录\nAgent思考方式：找到材料标志移植抽查记录和材料质量证明文件，抽取原始标志、移植后标志、材料批号、规格、材质、切割或加工部位、移植人员和检查结论。判断材料在切割、预制、安装过程中是否保持可追溯，移植标志是否与原始质量证明文件、领用记录和实物一致。\n工具集调用思考：调用 T01、T02 定位标志移植记录、材料质量证明、领用记录和现场照片；调用 T03、T04 抽取标志、批号、材质、规格和检查结论；调用 T06 查询标志移植要求；调用 T08 串联原始标志、移植记录和实物追溯关系；调用 T09 辅助识别现场标志照片；调用 T11 标记追溯断点或标志不清；调用 T12 输出证据链。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R67",
-    "name": "材料代用",
-    "ruleKey": "engineering-inspection-r67",
-    "version": "engineering-inspection-r67-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      22
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R67",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 22,
-    "businessModule": "材料",
-    "inspectionCategory": "材料",
-    "inspectionItem": "材料代用",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "material_substitution_approval",
-      "design_change_document"
-    ],
-    "thinkingModeIds": [
-      "M04",
-      "M06",
-      "M12"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T06",
-      "T07",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件",
-    "standardText": "TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件",
-    "checkMethod": "设计变更单",
-    "witnessText": "设计变更单",
-    "sourceWitness": "",
-    "agentThinking": "先从材料表、采购记录、施工记录和质量证明文件中识别是否存在材料代用；若存在代用，找到原设计单位出具的书面批准文件或设计变更单。抽取原设计材料、代用材料、代用范围、批准单位、批准日期、签字盖章和技术条件，判断材料代用是否获得原设计单位书面批准，代用材料是否满足设计和标准要求。",
-    "toolchainThinking": "调用 T01、T02 定位材料表、质量证明文件、施工记录和设计变更单；调用 T03、T04 抽取原材料、代用材料、批准信息和签章；调用 T06 查询 TSG D7006 材料代用要求；调用 T07 判断代用条件；调用 T08 比对代用文件与实际使用材料；调用 T11 标记无设计批准或代用范围不清；调用 T12 回写审查意见。",
-    "referencedStandards": [
-      {
-        "reference": "TSG D7006-2020",
-        "file": "rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf",
-        "fileName": "TSG D7006-2020 压力管道监督检验规则.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R67",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 22,
-        "inspectionCategory": "材料",
-        "inspectionItem": "材料代用",
-        "inspectionClass": "C",
-        "standardText": "TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件",
-        "witnessText": "设计变更单",
-        "agentThinking": "先从材料表、采购记录、施工记录和质量证明文件中识别是否存在材料代用；若存在代用，找到原设计单位出具的书面批准文件或设计变更单。抽取原设计材料、代用材料、代用范围、批准单位、批准日期、签字盖章和技术条件，判断材料代用是否获得原设计单位书面批准，代用材料是否满足设计和标准要求。",
-        "toolchainThinking": "调用 T01、T02 定位材料表、质量证明文件、施工记录和设计变更单；调用 T03、T04 抽取原材料、代用材料、批准信息和签章；调用 T06 查询 TSG D7006 材料代用要求；调用 T07 判断代用条件；调用 T08 比对代用文件与实际使用材料；调用 T11 标记无设计批准或代用范围不清；调用 T12 回写审查意见。"
-      },
-      "requiredEvidence": [
-        "应当取得原设计单位书面批准设计文件",
-        "先从材料表、采购记录、施工记录和质量证明",
-        "文件",
-        "找到原设计单位出具的书面批准文件",
-        "定位材料表、质量证明文件、施工记录",
-        "比对代用文件"
-      ],
-      "extractionTargets": [
-        "日期",
-        "签字",
-        "标准",
-        "签章"
-      ],
-      "verificationSteps": [
-        "设计变更单"
-      ],
-      "acceptanceCriteria": [
-        "应当取得原设计单位书面批准设计文件"
-      ],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：材料代用\n类别：C\n判断准则/标准规范：TSG D7006-2020附件D D2.4.3；应当取得原设计单位书面批准设计文件\n方法及内容/工作见证：设计变更单\nAgent思考方式：先从材料表、采购记录、施工记录和质量证明文件中识别是否存在材料代用；若存在代用，找到原设计单位出具的书面批准文件或设计变更单。抽取原设计材料、代用材料、代用范围、批准单位、批准日期、签字盖章和技术条件，判断材料代用是否获得原设计单位书面批准，代用材料是否满足设计和标准要求。\n工具集调用思考：调用 T01、T02 定位材料表、质量证明文件、施工记录和设计变更单；调用 T03、T04 抽取原材料、代用材料、批准信息和签章；调用 T06 查询 TSG D7006 材料代用要求；调用 T07 判断代用条件；调用 T08 比对代用文件与实际使用材料；调用 T11 标记无设计批准或代用范围不清；调用 T12 回写审查意见。"
-    }
-  },
-  {
-    "id": "RULE-ENG-INSP-R68",
-    "name": "阀门的施工资料和耐压试验记录（报告）",
-    "ruleKey": "engineering-inspection-r68",
-    "version": "engineering-inspection-r68-v20260703",
-    "status": "已发布",
-    "nodeIds": [
-      23
-    ],
-    "severity": "low",
-    "reviewClass": "C",
-    "inspectionClass": "C",
-    "promptVersion": "prompt-engineering-inspection-v2026.06",
-    "outputSchemaVersion": "schema-review-v1.3",
-    "sourceRuleId": "R68",
-    "sourceDocument": "监检项目-材料阀门.docx",
-    "sourceSequence": 23,
-    "businessModule": "阀门",
-    "inspectionCategory": "阀门",
-    "inspectionItem": "阀门的施工资料和耐压试验记录（报告）",
-    "materialTypeCodes": [
-      "generic_review_material",
-      "pressure_test_report",
-      "pressure_test_plan",
-      "valve_test_report",
-      "quality_certificate"
-    ],
-    "thinkingModeIds": [
-      "M07",
-      "M10",
-      "M06"
-    ],
-    "toolIds": [
-      "T01",
-      "T02",
-      "T03",
-      "T04",
-      "T06",
-      "T07",
-      "T08",
-      "T11",
-      "T12"
-    ],
-    "criteria": "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4",
-    "standardText": "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4",
-    "checkMethod": "阀门施工记录、耐压试验记录或报告（包含依据标准）",
-    "witnessText": "阀门施工记录、耐压试验记录或报告（包含依据标准）",
-    "sourceWitness": "",
-    "agentThinking": "找到阀门施工记录、阀门清单、产品质量证明文件、耐压试验记录或报告。抽取阀门编号、规格型号、公称压力、试验方法、试验介质、壳体试验压力、密封试验压力、保压时间、试验数量、依据标准和结论。判断试验方法、数量、压力、保压时间和结果是否符合设计文件、GB/T 13927-2022、GB/T 26480-2011 和 GB/T20801.1-2025 中 7.2.4 的要求。",
-    "toolchainThinking": "调用 T01、T02 定位阀门施工记录、阀门清单、质量证明文件和耐压试验报告；调用 T03、T04 抽取阀门编号、规格、压力等级、试验参数、数量和结论；调用 T06 查询 GB/T 13927、GB/T 26480 和 GB/T20801.1 要求；调用 T07 判断试验压力、保压时间和数量要求；调用 T08 比对阀门清单、施工记录和报告；调用 T11 标记报告缺失、数量不足或参数不符；调用 T12 输出证据链。",
-    "referencedStandards": [
-      {
-        "reference": "GB/T 13927-2022",
-        "file": "rules/standards/GB_T 13927-2022+工业阀门·压力试验.pdf",
-        "fileName": "GB_T 13927-2022+工业阀门·压力试验.pdf"
-      },
-      {
-        "reference": "GB/T 26480-2011",
-        "file": "rules/standards/GBT 26480-2011 阀门的检验和试验.pdf",
-        "fileName": "GBT 26480-2011 阀门的检验和试验.pdf"
-      },
-      {
-        "reference": "GB/T20801.1-2025",
-        "file": "rules/standards/GBT+20801.1-2025.pdf",
-        "fileName": "GBT+20801.1-2025.pdf"
-      }
-    ],
-    "aiExecution": {
-      "schemaVersion": "business-rule-execution-v1",
-      "compiledAt": "2026-07-03 00:00:00",
-      "sourceFields": {
-        "sourceRuleId": "R68",
-        "sourceDocument": "监检项目-材料阀门.docx",
-        "sequence": 23,
-        "inspectionCategory": "阀门",
-        "inspectionItem": "阀门的施工资料和耐压试验记录（报告）",
-        "inspectionClass": "C",
-        "standardText": "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4",
-        "witnessText": "阀门施工记录、耐压试验记录或报告（包含依据标准）",
-        "agentThinking": "找到阀门施工记录、阀门清单、产品质量证明文件、耐压试验记录或报告。抽取阀门编号、规格型号、公称压力、试验方法、试验介质、壳体试验压力、密封试验压力、保压时间、试验数量、依据标准和结论。判断试验方法、数量、压力、保压时间和结果是否符合设计文件、GB/T 13927-2022、GB/T 26480-2011 和 GB/T20801.1-2025 中 7.2.4 的要求。",
-        "toolchainThinking": "调用 T01、T02 定位阀门施工记录、阀门清单、质量证明文件和耐压试验报告；调用 T03、T04 抽取阀门编号、规格、压力等级、试验参数、数量和结论；调用 T06 查询 GB/T 13927、GB/T 26480 和 GB/T20801.1 要求；调用 T07 判断试验压力、保压时间和数量要求；调用 T08 比对阀门清单、施工记录和报告；调用 T11 标记报告缺失、数量不足或参数不符；调用 T12 输出证据链。"
-      },
-      "requiredEvidence": [
-        "试验方法程序与结果应符合设计文件",
-        "阀门施工记录、耐压试验记录或报告",
-        "找到阀门施工记录、阀门清单、产品质量证明",
-        "文件、耐压试验记录或报告",
-        "压力、保压时间和结果是否符合设计文件",
-        "定位阀门施工记录、阀门清单、质量证明",
-        "文件和耐压试验报告",
-        "比对阀门清单、施工记录和报告",
-        "标记报告"
-      ],
-      "extractionTargets": [
-        "压力",
-        "数量",
-        "标准",
-        "规格",
-        "型号",
-        "保压时间",
-        "结论"
-      ],
-      "verificationSteps": [
-        "阀门施工记录、耐压试验记录或报告（包含依据标准）"
-      ],
-      "acceptanceCriteria": [
-        "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》"
-      ],
-      "humanConfirmation": [
-        "证据不足、OCR 置信度不足或结论影响放行时需人工确认。"
-      ],
-      "promptContext": "监检项目：阀门的施工资料和耐压试验记录（报告）\n类别：C\n判断准则/标准规范：试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4\n方法及内容/工作见证：阀门施工记录、耐压试验记录或报告（包含依据标准）\nAgent思考方式：找到阀门施工记录、阀门清单、产品质量证明文件、耐压试验记录或报告。抽取阀门编号、规格型号、公称压力、试验方法、试验介质、壳体试验压力、密封试验压力、保压时间、试验数量、依据标准和结论。判断试验方法、数量、压力、保压时间和结果是否符合设计文件、GB/T 13927-2022、GB/T 26480-2011 和 GB/T20801.1-2025 中 7.2.4 的要求。\n工具集调用思考：调用 T01、T02 定位阀门施工记录、阀门清单、质量证明文件和耐压试验报告；调用 T03、T04 抽取阀门编号、规格、压力等级、试验参数、数量和结论；调用 T06 查询 GB/T 13927、GB/T 26480 和 GB/T20801.1 要求；调用 T07 判断试验压力、保压时间和数量要求；调用 T08 比对阀门清单、施工记录和报告；调用 T11 标记报告缺失、数量不足或参数不符；调用 T12 输出证据链。"
-    }
+      "promptContext": "监检项目：施工单位质量保证体系实施状况的评价\n类别：C\n判断准则/标准规范：TSG D7006—2020 第2.2.4条、附件G G1-G5\n\n《受检单位质量保证体系实施状况评价工艺》\n方法及内容/工作见证：结合监检项目按《受检单位质量保证体系实施状况评价工艺》相关要求对施工单位进行评价，并出具评价报告。\nAgent思考方式：本节点属于监检人员的项目级人工评价。AI 只汇总 R01-R68 的监检结果，以及施工单位资源条件变化、质量保证体系文件与实施记录、许可制度执行、问题通知和整改闭环等证据；再核验评价报告是否覆盖当前工程，是否包含评价结果、评价人员、评价日期和签发信息。评价报告缺失、字段不全、未覆盖当前工程或未由监检人员确认时，只能返回“待人工确认”或“证据不足”，不得自动判定“符合”或代替监检人员签发评价结论。\n工具集调用思考：调用 T01、T02 定位本项目 R01-R68 结果、质量体系实施证据和评价报告；调用 T03、T04 抽取评价结果、评价人员、评价日期、覆盖工程和签发信息；调用 T08 比对评价报告与当前项目及全项目监检结果；调用 T11 标记报告缺失、签发缺失或证据冲突；调用 T12 保存证据链。Tool 仅校验证据和报告完整性，最终评价结论必须采用监检人员签发结果。"
+    },
+    "executionMode": "manual_evaluation",
+    "automatedDecisionAllowed": false
   }
 ]

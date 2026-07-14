@@ -142,7 +142,7 @@ def test_r01_design_license_pilot_tools() -> None:
     assert scope["outputSchema"] == "deterministic-tool-result-v1"
 
 
-def test_r12_welder_qualification_coverage_pilot_tool() -> None:
+def test_r24_welder_qualification_coverage_pilot_tool() -> None:
     decoded = dispatch_runtime_tool(
         {},
         "decode_welder_qualification",
@@ -187,7 +187,7 @@ def test_r12_welder_qualification_coverage_pilot_tool() -> None:
     assert uncovered["result"] == "failed"
 
 
-def test_r48_to_r50_pressure_test_pilot_tools() -> None:
+def test_r60_to_r62_pressure_test_pilot_tools() -> None:
     gauges = dispatch_runtime_tool(
         {},
         "check_pressure_gauge_requirements",

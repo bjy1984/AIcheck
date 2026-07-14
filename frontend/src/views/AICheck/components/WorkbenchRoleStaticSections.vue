@@ -111,70 +111,70 @@ const contractorMaterialRequirements: ContractorMaterialRequirement[] = [
     requiredItems: '施工单位安装许可证、设计单位资质、焊工资格证、元件制造许可',
     keywords: ['许可证', '资质', '焊工', '制造许可', '许可资质'],
     missingHint: '核验施工/设计/检测/制造单位资质和人员证书是否覆盖项目范围',
-    nodeRefs: 'R01、R02、R03、R12、R57'
+    nodeRefs: 'R01、R02、R03、R24、R12'
   },
   {
     category: '设计资料',
     requiredItems: '图纸目录、设计说明、数据表、材料表、布置图、强度/应力计算',
     keywords: ['设计', '图纸', '施工图', '说明书', '数据表', '特性表', '材料表', '计算书'],
     missingHint: '补齐设计基础资料、计算书、设计变更或特殊标准符合性说明',
-    nodeRefs: 'R04、R06、R08、R09、R51'
+    nodeRefs: 'R04、R06、R08、R09、R63'
   },
   {
     category: '施工方案',
     requiredItems: '施工组织设计、施工方案、试压/泄漏/吹扫清洗专项方案',
     keywords: ['施工方案', '施工组织', '试压方案', '泄漏试验', '吹扫', '清洗方案'],
     missingHint: '确认方案审批页、建设单位批复和专项试验方案是否齐全',
-    nodeRefs: 'R11、R47、R55、R56'
+    nodeRefs: 'R11、R59、R67、R68'
   },
   {
     category: '焊接资料',
     requiredItems: 'WPS/PQR、焊材证明、焊材烘干/领用、组对、焊接记录、返修闭环',
     keywords: ['焊接', '焊材', 'WPS', 'PQR', '焊缝', '返修', '组对'],
     missingHint: '补齐焊材过程记录、焊缝编号、外观检查和返修闭环资料',
-    nodeRefs: 'R13、R14、R15、R16、R17、R18、R19'
+    nodeRefs: 'R25、R26、R27、R28、R29、R30、R31'
   },
   {
     category: '热处理资料',
     requiredItems: '热处理工艺卡、评定报告、仪表校验、曲线、热处理报告、硬度报告',
     keywords: ['热处理', '硬度', '温控', '热电偶', '曲线'],
     missingHint: '若不涉及热处理，应在资料状态中标记不适用；涉及时需上传完整过程资料',
-    nodeRefs: 'R20、R21、R22'
+    nodeRefs: 'R32、R33、R34'
   },
   {
     category: '防腐保温资料',
     requiredItems: '防腐/保温材料证明、施工记录、补口补伤、电火花检测、阴保资料',
     keywords: ['防腐', '保温', '涂料', '补口', '补伤', '电火花', '阴极保护', '静电接地'],
     missingHint: '核验材料批号、厚度、漏点检测、电火花仪器检定和阴保验收资料',
-    nodeRefs: 'R31-R35、R38、R39'
+    nodeRefs: 'R43-R47、R50、R51'
   },
   {
     category: '安装交工资料',
     requiredItems: '元件检查、安装记录、支吊架、穿跨越、单线图、静电接地、交工资料',
     keywords: ['交工', '安装记录', '支吊架', '穿跨越', '单线图', '元件检查', '接地'],
     missingHint: '补齐安装过程记录、穿跨越记录、支撑件和单线图等交工资料',
-    nodeRefs: 'R36-R43'
+    nodeRefs: 'R48-R55'
   },
   {
     category: '安全附件与阀门',
     requiredItems: '安全阀/爆破片/紧急切断阀资料、校验报告、阀门试验记录',
     keywords: ['安全阀', '爆破片', '紧急切断', '阀门', '校验', '压力试验'],
     missingHint: '核验安全附件产品资料、安装位置、校验报告和阀门耐压试验记录',
-    nodeRefs: 'R44、R45、R46、R68'
+    nodeRefs: 'R56、R57、R58、R23'
   },
   {
     category: '试验与吹扫资料',
     requiredItems: '压力表检定、耐压试验、泄漏试验、吹扫清洗记录、现场确认资料',
     keywords: ['耐压', '压力表', '泄漏', '吹扫', '清洗', '试验记录', '试验报告'],
     missingHint: '补齐压力表检定、试验参数、过程照片/视频和监检确认记录',
-    nodeRefs: 'R48、R49、R50、R54、R55、R56'
+    nodeRefs: 'R60、R61、R62、R66、R67、R68'
   },
   {
     category: '材料证明与复验',
     requiredItems: '产品质量证明、出厂检验、到货验收、抽样复验、材料复验、标志移植',
     keywords: ['质量证明', '材质', '材料', '复验', '出厂检验', '验收', '标志移植'],
     missingHint: '核验产品质量证明、验收见证、抽样复验和材料追溯资料',
-    nodeRefs: 'R58-R66'
+    nodeRefs: 'R13-R21'
   }
 ]
 

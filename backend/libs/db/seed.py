@@ -227,7 +227,7 @@ PROJECTS = [
         "status": "已归档",
         "todoCount": 0,
         "messageCount": 2,
-        "currentNodeId": 68,
+        "currentNodeId": 69,
         "updatedAt": "2026-06-18 15:40:00",
         "actions": ["project:view", "archive:view", "archive:download"],
         "revision": 1,
@@ -645,7 +645,7 @@ for run in AI_RUNS:
         "userPrompt": (
             "{\"businessPack\":{\"id\":\"engineering_inspection_v1\",\"name\":\"工业管道\"},"
             "\"node\":{\"id\":24,\"name\":\"焊工资格证及持证合格项目\"},"
-            "\"rule\":{\"id\":\"RULE-ENG-INSP-R12\",\"inspectionItem\":\"焊工资格证及持证合格项目 (B类)\"},"
+            "\"rule\":{\"id\":\"RULE-ENG-INSP-R24\",\"inspectionItem\":\"焊工资格证及持证合格项目 (B类)\"},"
             "\"ocrFields\":[{\"id\":\"FIELD-24-001\",\"fieldName\":\"证书编号\",\"fieldValue\":\"TS6J-2024-03158\"}]}\n\n"
             "{\"task\":\"Generate ReviewFindingDraftList JSON only.\",\"groundingStatus\":\"insufficient_evidence\","
             "\"requirements\":[\"Do not infer names, dates, validity or project coverage that are not present in OCR evidence.\"],"
@@ -1751,7 +1751,7 @@ CORE_RULE_VERSIONS = [
         "version": "Welder-Qualification-B-v2.1",
         "status": "已发布",
         "nodeIds": [24, 25, 27, 28],
-        "sourceRuleId": "R12",
+        "sourceRuleId": "R24",
         "promptVersion": "prompt-welder-v2.1",
         "outputSchemaVersion": "schema-review-v1.3",
         "description": "核验焊工资格证、持证项目、有效期与施工焊接方法覆盖关系。",
@@ -1766,7 +1766,7 @@ CORE_RULE_VERSIONS = [
         "version": "NDT-Report-C-v1.4",
         "status": "待发布",
         "nodeIds": [35, 36, 40, 41, 42],
-        "sourceRuleId": "R28",
+        "sourceRuleId": "R40",
         "promptVersion": "prompt-ndt-v1.4",
         "outputSchemaVersion": "schema-ndt-v1.1",
         "description": "核验底片、检测比例、评片结论、返修闭环和报告签章。",

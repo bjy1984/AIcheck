@@ -171,7 +171,7 @@ const emptyRuleForm = (): KnowledgeRuleVersionSavePayload => ({
 const DEFAULT_RULE_BUSINESS_PACK_ID = 'engineering_inspection_v1'
 const DEFAULT_STANDARD_SOURCE_ID = 'KS-STANDARD-RULES'
 const DEFAULT_STANDARD_SOURCE_NAME = '标准规范库（业务规则引用标准）'
-const DEFAULT_STANDARD_SOURCE_VERSION = 'rules-standards-20260703'
+const DEFAULT_STANDARD_SOURCE_VERSION = 'rules-standards-20260714'
 const DEFAULT_PROJECT_FILE_SOURCE_ID = 'KS-PROJECT-FILE'
 const DEFAULT_PROJECT_FILE_SOURCE_NAME = '项目文件知识库'
 const DEFAULT_PROJECT_FILE_SOURCE_VERSION = 'proj-v2026.06.26'
@@ -4540,7 +4540,7 @@ onMounted(() => {
               </ElSelect>
             </ElFormItem>
             <ElFormItem label="版本">
-              <ElInput v-model="sourceForm.version" placeholder="例如 rules-standards-20260703" />
+              <ElInput v-model="sourceForm.version" placeholder="例如 rules-standards-20260714" />
             </ElFormItem>
           </template>
           <template v-if="sourceDialogMode === 'create'">

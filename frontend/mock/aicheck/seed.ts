@@ -137,7 +137,7 @@ export const projects: Project[] = [
     status: '已归档',
     todoCount: 0,
     messageCount: 2,
-    currentNodeId: 68,
+    currentNodeId: 69,
     updatedAt: '2026-06-18 15:40:00',
     actions: ['project:view', 'archive:view', 'archive:download']
   },
@@ -154,7 +154,7 @@ export const projects: Project[] = [
     status: '已归档',
     todoCount: 0,
     messageCount: 1,
-    currentNodeId: 68,
+    currentNodeId: 69,
     updatedAt: '2026-06-20 15:00:00',
     actions: ['project:view']
   }
@@ -181,7 +181,7 @@ const groupDefinitions: Array<{
       [7, '设计变更的书面批准文件', 'C'],
       [8, '设计采用的安全技术规范以及相关标准、压力管道元件的材料标准的版本', 'C'],
       [9, '设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求', 'C'],
-      [10, '采用其他标准时的符合性申明及比照表', '需确认']
+      [10, '采用其他标准时，设计文件或工程规定中应包括符合《工业管道安全技术规程》基本安全的符合性申明及比照表', '需确认']
     ]
   },
   { name: '施工组织设计', nodes: [[11, '施工组织设计', 'C']] },
@@ -190,8 +190,8 @@ const groupDefinitions: Array<{
     nodes: [
       [12, '压力管道元件及安全附件制造单位的许可资质', 'C'],
       [13, '需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告', 'C'],
-      [14, '不需制造许可、监检、型式试验的管道组成件的出厂检验报告', 'C/B'],
-      [15, '境外制造的压力管道元件、安全附件的型式试验证书及制造许可证资质', 'C'],
+      [14, '不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验', 'C/B'],
+      [15, '境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质', 'C'],
       [16, '压力管道元件以及安全附件产品质量证明文件', 'C'],
       [17, '压力管道元件以及安全附件产品验收的见证资料、抽样复验', 'C'],
       [18, '材料复验报告、无损检测报告', 'C'],
@@ -637,7 +637,7 @@ export const archiveItems: ArchiveItem[] = [
     projectId: 'P-2025-NJARCH-018',
     name: '监督检验报告 GDJ-JJ-2025-018.pdf',
     type: 'report',
-    nodeId: 68,
+    nodeId: 69,
     sourceOrgName: '省特检院一部',
     status: '已归档',
     updatedAt: '2026-06-20 15:00:00',
@@ -648,7 +648,7 @@ export const archiveItems: ArchiveItem[] = [
     projectId: 'P-2025-CQARCH-007',
     name: '监督检验报告 GDJ-JJ-2025-007.pdf',
     type: 'report',
-    nodeId: 68,
+    nodeId: 69,
     sourceOrgName: '市特检院二部',
     status: '已归档',
     updatedAt: '2026-06-18 15:40:00',

@@ -93,8 +93,8 @@ def test_engineering_pack_has_fixed_standard_clause_bindings() -> None:
     primary = [item for item in bindings if item["bindingRole"] == "primary"]
     supplemental = [item for item in bindings if item["bindingRole"] == "supplemental"]
 
-    assert len(bindings) == 68
-    assert len(primary) == 68
+    assert len(bindings) == 69
+    assert len(primary) == 69
     assert len(supplemental) == 0
     assert {item["ruleId"] for item in primary} == {item["id"] for item in pack["ruleSets"]}
     assert all(item["verificationStatus"] == "source_verified" for item in bindings)
@@ -120,18 +120,21 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     checks = pack["atomicChecks"]
     catalog = {item["id"] for item in pack["standardCatalog"]}
 
-    assert len(packages) == 68
+    assert len(packages) == 69
     assert len(checks) >= 136
-    assert {item["sourceRuleId"] for item in packages} == {f"R{index:02d}" for index in range(1, 69)}
+    assert {item["sourceRuleId"] for item in packages} == {f"R{index:02d}" for index in range(1, 70)}
     assert all(len(item["atomicCheckIds"]) >= 2 for item in packages)
     assert all(item["decisionModel"]["ruleExecution"] == "deterministic_tools_only" for item in packages)
+    r69 = next(item for item in packages if item["sourceRuleId"] == "R69")
+    assert r69["decisionModel"]["automatedDecisionAllowed"] is False
+    assert "不得生成或覆盖监检人员评价结论" in r69["decisionModel"]["llmRole"]
     assert all(
         clause["standardRef"] in catalog
         for package in packages
         for clause in package["professionalClauses"]
     )
     professional_clauses = [clause for package in packages for clause in package["professionalClauses"]]
-    assert len(professional_clauses) == 100
+    assert len(professional_clauses) == 101
     assert all(clause["knowledgeFileId"] and clause["documentVersionId"] for clause in professional_clauses)
     assert all(clause["locators"] for clause in professional_clauses)
     assert all(
@@ -145,11 +148,11 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     )
 
     tool_bindings = pack["atomicCheckToolBindings"]
-    assert len(tool_bindings) == len(checks) == 171
+    assert len(tool_bindings) == len(checks) == 173
     assert {item["atomicCheckId"] for item in tool_bindings} == {item["id"] for item in checks}
     assert all(item["requiredFacts"] and item["tools"] and item["outputSchema"] for item in tool_bindings)
     pilot_bindings = [item for item in tool_bindings if item["implementationStatus"] == "pilot_implemented"]
-    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R01", "R02", "R03", "R06", "R07", "R09", "R12", "R48", "R49", "R50"}
+    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R01", "R02", "R03", "R06", "R07", "R09", "R24", "R60", "R61", "R62"}
     assert all("validate_evidence_grounding" in item["tools"] for item in pilot_bindings)
 
     invalid_tool_binding_pack = deepcopy(pack)
@@ -161,7 +164,7 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     assert any("missing tool bindings" in item for item in validation["errors"])
 
     conditional = {item["sourceRuleId"] for item in packages if item["applicability"]["type"] == "conditional"}
-    assert {"R10", "R33", "R34", "R44", "R45", "R46", "R51", "R52", "R53", "R60", "R64", "R65"} <= conditional
+    assert {"R10", "R45", "R46", "R56", "R57", "R58", "R63", "R64", "R65", "R15", "R19", "R20"} <= conditional
 
     r10 = next(item for item in packages if item["sourceRuleId"] == "R10")
     assert "其他标准" in r10["applicability"]["expression"]
@@ -189,12 +192,12 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
 
 def test_node_standards_exposes_fixed_clause_page_locators() -> None:
     assert len(repo.state["standard_document_versions"]) == 29
-    assert len(repo.state["standard_clause_packages_db"]) == 68
-    assert len(repo.state["standard_clause_package_items"]) == 168
-    assert len(repo.state["standard_clause_locators"]) == 217
+    assert len(repo.state["standard_clause_packages_db"]) == 69
+    assert len(repo.state["standard_clause_package_items"]) == 170
+    assert len(repo.state["standard_clause_locators"]) == 218
     assert len(
         [item for item in repo.state["project_node_clause_packages"] if item["projectId"] == "P-2026-HDCP-001"]
-    ) == 68
+    ) == 69
 
     standards = assert_ok(
         client.get("/api/projects/P-2026-HDCP-001/inspection/nodes/1/standards")
@@ -210,7 +213,7 @@ def test_node_standards_exposes_fixed_clause_page_locators() -> None:
     assert all(item["sourceLocatorId"] in {locator["locatorId"] for locator in item["locators"]} for item in fixed)
 
     package_detail = assert_ok(client.get("/api/business-packs/engineering_inspection_v1"))
-    assert len(package_detail["standardClausePackages"]) == 68
+    assert len(package_detail["standardClausePackages"]) == 69
     assert len(package_detail["standardCatalog"]) == 29
 
     node_binding = next(

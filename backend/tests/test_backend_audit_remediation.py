@@ -370,7 +370,7 @@ def test_formal_review_rejects_draft_binding_set() -> None:
     with pytest.raises(ValueError, match="requires published"):
         compile_node_tool_plan(
             pack,
-            "R24",
+            "R36",
             available_tools=set(),
             require_published=True,
         )

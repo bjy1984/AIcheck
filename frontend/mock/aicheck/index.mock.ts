@@ -54,7 +54,7 @@ const timeout = 240
 const serverTime = '2026-06-26 10:30:00'
 const standardLibrarySourceId = 'KS-STANDARD-RULES'
 const standardLibrarySourceName = '标准规范库（业务规则引用标准）'
-const standardLibraryVersion = 'rules-standards-20260703'
+const standardLibraryVersion = 'rules-standards-20260714'
 
 const standardLibraryRelativePaths = `
 rules/standards/GB 50235-2010 工业金属管道工程施工规范.pdf
@@ -1262,7 +1262,7 @@ const mockBusinessPacks: BusinessPackMock[] = [
   {
     id: 'engineering_inspection_v1',
     name: '工业管道',
-    version: '2026.06.99',
+    version: '2026.07.14',
     domainType: 'engineering_inspection',
     description:
       'GC 类工业压力管道业务类型，承载工业管道监督检验角色、节点、资料目录、规则、报告和 AI SOP。',

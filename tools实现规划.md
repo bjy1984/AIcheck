@@ -10,25 +10,24 @@
 
 本方案现已在当前工程完成第一轮落地：
 
-- `tools规划.md` 中 56 个唯一 Tool 已全部进入 Runtime Tool Catalog，缺失 Tool 数量由 41 个降为 0。
-- 171 条 atomicCheck Tool 链均可由固定执行器编译，无未注册 Tool；154 条标记为 `implemented`，17 条保留 `pilot_implemented`。
+- `tools规划.md` 中 61 个唯一 Tool 已全部进入 Runtime Tool Catalog，缺失 Tool 数量为 0。
+- 173 条 atomicCheck Tool 链均可由固定执行器编译，无未注册 Tool；140 条标记为 `implemented`，33 条保留 `pilot_implemented`。
 - 新增 10 个通用确定性 Tool，并为资质设计、焊接热处理、NDT、防腐安装、压力泄漏、材料组件等专业 Tool 提供安全执行实现。
 - `run_rule_engine` 已接入固定 Tool Plan；强制 Tool 是否执行不再由 LLM 决定。
 - 专业事实、证据或规则参数不完整时统一 fail-closed，返回 `failed`、`evidence_insufficient` 或 `not_applicable`，不能自动得到“符合”。
-- R49 已升级为 `pressure-test-parameters-gbt20801-v2`，补入液压温度许用应力比、组成件上限、气压 1.33 倍和 90% 屈服上限、分级升压及保压检查；旧固定倍数规则已从 atomicCheck 和生成器源配置删除。
-- 后端全量单元/集成测试结果：817 passed；新增 Tool 专项测试覆盖注册完整性、缺证、边界值、不适用、机构隔离、文件本体、抽样、版本日期、追溯以及压力试验安全规则。
+- R61 已升级为 `pressure-test-parameters-gbt20801-v2`，补入液压温度许用应力比、组成件上限、气压 1.33 倍和 90% 屈服上限、分级升压及保压检查；旧固定倍数规则已从 atomicCheck 和生成器源配置删除。
+- 2026-07-14 编号迁移回归结果：938 passed、12 skipped；另有 4 个 Temporal/Outbox 测试因本地环境未安装 `temporalio` 在收集阶段排除。Tool 专项测试覆盖注册完整性、缺证、边界值、不适用、机构隔离、文件本体、抽样、版本日期、追溯以及压力试验安全规则。
 
-以下事项仍保持试点或人工复核，不得理解为已经允许自动生产放行：TSG Z6002-2026 全量焊工资格代号、R48 未明确的表盘直径阈值、R50 全过程报告一致性，以及缺少正式 NB/T 47013.8-2025 原文支撑的 R52/R54/R55 专业规则。
+以下事项仍保持试点或人工复核，不得理解为已经允许自动生产放行：TSG Z6002-2026 全量焊工资格代号、R60 未明确的表盘直径阈值、R62 全过程报告一致性，以及缺少正式 NB/T 47013.8-2025 原文支撑的 R64/R66/R67 专业规则。
 
-以下为实施前基线，保留用于说明本次改造范围：
+以下为编号整理后的当前绑定基线：
 
-- 已配置 171 条 `atomicCheck → requiredFacts → tools → parameters → outputSchema` 绑定，覆盖 R01-R68。
-- 绑定清单中共有 56 个唯一 Tool 名称。
-- 16 条绑定标记为 `pilot_implemented`，155 条仍为 `planned`。
-- 当前真正已实现且被绑定引用的 Tool 共 15 个；其余 41 个仍需实现。
-- R49 的 `check_pressure_test_parameters` 使用了不完整的压力计算规则，修复前不得用于生产放行。
-- R12、R48、R50 的试点实现也只覆盖有限场景，必须继续保持试点状态。
-- R69 尚无业务定义，不进入本次 Tool 实现范围。
+- 已配置 173 条 `atomicCheck → requiredFacts → tools → parameters → outputSchema` 绑定，覆盖附件定义的 R01-R69。
+- 绑定清单中共有 61 个唯一 Tool 名称，均已注册；专业能力是否达到生产放行要求仍按节点单独验收。
+- 33 条绑定标记为 `pilot_implemented`，其余 140 条标记为 `implemented`。
+- R61 的 `check_pressure_test_parameters` 使用了不完整的压力计算规则，修复前不得用于生产放行。
+- R24、R60、R62 的试点实现也只覆盖有限场景，必须继续保持试点状态。
+- R69 已按 `files/checklist.docx` 补录，但属于人工评价节点；Tool 只校验评价报告和证据完整性，`automatedDecisionAllowed=false`。
 
 推荐采用“固定执行计划 + 确定性专业 Tool + LLM 解释与交互”的模式：
 
@@ -52,7 +51,7 @@ LLM 不负责选择强制 Tool、不提供阈值或公式、不修改 Tool 结�
 
 ### 2.1 实现目标
 
-1. 将 171 条 atomicCheck 绑定转换为可执行、可重复、可测试的 Tool 执行计划。
+1. 将 173 条 atomicCheck 绑定转换为可执行、可重复、可测试的 Tool 执行计划。
 2. 将证据抽取、事实标准化、适用性判断、业务计算、证据门禁和结论聚合分层实现。
 3. 每个判断均可追溯到输入文件版本、页码/坐标或原文、Tool 版本、规则版本和固定条款快照。
 4. 同一输入、同一版本的执行结果必须一致，不依赖 LLM 的随机推理。
@@ -64,7 +63,7 @@ LLM 不负责选择强制 Tool、不提供阈值或公式、不修改 Tool 结�
 - 业务方尚未明确的专业口径，例如 R05 施工图审查见证材料的认定范围。
 - 尚无正式有效标准原文支撑的判断，例如当前缺少正式 NB/T 47013.8-2025 原文支撑的部分判断。
 - 联络单自动创建；当前只输出 `suggestedAction=issue_contact_notice`，记录为待实现。
-- R69；业务节点定义补齐前不建立 Tool。
+- R69 的评价结果；Tool 只能汇总 R01-R68 结果并校验监检人员评价报告，不自动形成或覆盖评价结论。
 
 ## 3. 当前实现盘点
 
@@ -90,10 +89,10 @@ LLM 不负责选择强制 Tool、不提供阈值或公式、不修改 Tool 结�
 
 其中“实现”不等于“已具备生产放行能力”：
 
-- R12 的资格项目解析仅支持少数代号形态，未完整覆盖 TSG Z6002-2026。
-- R48 尚缺压力表位置、表盘直径来源及完整介质条件。
-- R49 缺少液压温度许用应力比、气压上限、90% 屈服限制和分级升压规则，必须停用旧算法。
-- R50 只做有限字段一致性比较，不能代表试验全过程合格。
+- R24 的资格项目解析仅支持少数代号形态，未完整覆盖 TSG Z6002-2026。
+- R60 尚缺压力表位置、表盘直径来源及完整介质条件。
+- R61 缺少液压温度许用应力比、气压上限、90% 屈服限制和分级升压规则，必须停用旧算法。
+- R62 只做有限字段一致性比较，不能代表试验全过程合格。
 
 ### 3.3 当前结构性问题
 
@@ -251,13 +250,13 @@ LLM 只能提供事实候选，不能传入或覆盖压力倍数、抽样比例�
 | `check_design_license_scope` | R01 | 受限试点 |
 | `evaluate_installation_license_scope` | R02 | 待实现 |
 | `evaluate_ndt_organization_scope` | R03 | 待实现 |
-| `evaluate_design_approval_level` | R04、R06、R07、R67 | 待实现 |
+| `evaluate_design_approval_level` | R04、R06、R07、R22 | 待实现 |
 | `evaluate_alternative_standard` | R10 | 待实现 |
 | `evaluate_construction_plan` | R11 | 待实现 |
 | `evaluate_design_special_requirements` | R09 | 待实现 |
-| `evaluate_stress_analysis` | R51 | 待实现 |
-| `evaluate_component_manufacturer_scope` | R57 | 待实现 |
-| `evaluate_foreign_component` | R60 | 待实现 |
+| `evaluate_stress_analysis` | R63 | 待实现 |
+| `evaluate_component_manufacturer_scope` | R12 | 待实现 |
+| `evaluate_foreign_component` | R15 | 待实现 |
 
 重点业务约束：
 
@@ -277,70 +276,70 @@ LLM 只能提供事实候选，不能传入或覆盖压力倍数、抽样比例�
 
 - TSG Z6002-2010 与 TSG Z6002-2026 按 2026-08-01 实施日期切换，解析器按规则版本运行。
 - 焊工资格覆盖必须包括焊接方法、材料类别、位置、厚度、直径、填充金属和附加工艺因素。
-- R20 先按焊口生成热处理适用性；R21、R22 必须继承同一份焊口级适用性事实。
-- R22 硬度阈值按材料和标准表格确定，禁止使用统一 200HB/225HB 阈值。
+- R32 先按焊口生成热处理适用性；R33、R34 必须继承同一份焊口级适用性事实。
+- R34 硬度阈值按材料和标准表格确定，禁止使用统一 200HB/225HB 阈值。
 
 ### 6.5 E 包：无损检测（5 个）
 
 | Tool | 主要节点 | 状态 |
 | --- | --- | --- |
-| `evaluate_ndt_quality_system` | R23 | 待实现 |
-| `evaluate_ndt_process` | R24、R27、R28 | 待实现 |
-| `evaluate_ndt_nonconformance` | R25 | 待实现 |
-| `check_ndt_personnel_coverage` | R26 | 待实现 |
-| `evaluate_rt_film` | R29、R30、R53 | 待实现 |
+| `evaluate_ndt_quality_system` | R35 | 待实现 |
+| `evaluate_ndt_process` | R36、R39、R40 | 待实现 |
+| `evaluate_ndt_nonconformance` | R37 | 待实现 |
+| `check_ndt_personnel_coverage` | R38 | 待实现 |
+| `evaluate_rt_film` | R41、R42、R65 | 待实现 |
 
 实现要求：
 
-- R23-R30 按检测机构分组，共用 R24 的方法、比例、级别、时机和标准版本事实。
-- R18 的施工单位目视检查比例和监检机构抽查比例使用两个独立分母。
-- R29/R30 实现分层抽样、最低数量、代表性和加倍抽查，不能只比较一个总百分比。
-- R52/R54/R55 在取得 NB/T 47013.8-2025 正式原文并重做条款绑定前不得完成生产验收。
+- R35-R42 按检测机构分组，共用 R36 的方法、比例、级别、时机和标准版本事实。
+- R30 的施工单位目视检查比例和监检机构抽查比例使用两个独立分母。
+- R41/R42 实现分层抽样、最低数量、代表性和加倍抽查，不能只比较一个总百分比。
+- R64/R66/R67 在取得 NB/T 47013.8-2025 正式原文并重做条款绑定前不得完成生产验收。
 
 ### 6.6 F 包：防腐与安装（2 个专业 Tool）
 
 | Tool | 主要节点 | 状态 |
 | --- | --- | --- |
-| `evaluate_corrosion_protection` | R31-R35、R38 | 待实现 |
-| `evaluate_pipeline_installation` | R36-R43 | 待实现 |
+| `evaluate_corrosion_protection` | R43-R47、R50 | 待实现 |
+| `evaluate_pipeline_installation` | R48-R55 | 待实现 |
 
 这两个 Tool 名称保持不变，但内部按 profile 拆分策略模块，不使用一个超大 if/else：
 
 - 防腐：材料批次、施工环境、层级/厚度、漏点检测、阴极保护、套管防腐。
 - 安装：开挖、穿跨越、套管、绝缘支撑、预制、布管连接、补偿装置、支撑件。
 
-R36/R37 先形成穿跨越结构事实，R38/R39 继承该适用性；不存在套管或绝缘结构时应返回 `not_applicable`，不能误判缺失。
+R48/R49 先形成穿跨越结构事实，R50/R51 继承该适用性；不存在套管或绝缘结构时应返回 `not_applicable`，不能误判缺失。
 
 ### 6.7 G 包：安全附件、压力、泄漏、吹扫和阀门（8 个）
 
 | Tool | 主要节点 | 状态 |
 | --- | --- | --- |
-| `evaluate_safety_accessory` | R44-R46 | 待实现 |
-| `evaluate_pressure_test` | R47 | 待实现 |
-| `check_pressure_gauge_requirements` | R48 | 受限试点 |
-| `check_pressure_test_parameters` | R49 | 旧版必须停用并重写 |
-| `check_pressure_test_report_consistency` | R50 | 受限试点 |
-| `evaluate_leak_test` | R52、R54、R55 | 待实现且受标准原文阻塞 |
-| `evaluate_blowing_cleaning` | R56 | 待实现 |
-| `evaluate_valve_test` | R68 | 待实现 |
+| `evaluate_safety_accessory` | R56-R58 | 待实现 |
+| `evaluate_pressure_test` | R59 | 待实现 |
+| `check_pressure_gauge_requirements` | R60 | 受限试点 |
+| `check_pressure_test_parameters` | R61 | 旧版必须停用并重写 |
+| `check_pressure_test_report_consistency` | R62 | 受限试点 |
+| `evaluate_leak_test` | R64、R66、R67 | 待实现且受标准原文阻塞 |
+| `evaluate_blowing_cleaning` | R68 | 待实现 |
+| `evaluate_valve_test` | R23 | 待实现 |
 
 该包为最高安全优先级：
 
-- R47-R55 必须共享同一管道系统边界和试验路线，不允许各节点独立猜测适用性。
-- R49 重写后必须支持液压试验 S1/S2 温度许用应力比、气压试验上下限、90% 屈服限制和分级升压过程。
-- R51-R53 的压力试验免除必须同时满足柔性分析、敏感性泄漏试验和 100% NDT，缺一不可。
-- R44-R46 按每台设备的产品编号关联安装记录、校验/性能报告。
-- R68 补齐 GB/T 20801.1-2025 7.2.4 适用性和阀门试验数量算法后再实现。
+- R59-R67 必须共享同一管道系统边界和试验路线，不允许各节点独立猜测适用性。
+- R61 重写后必须支持液压试验 S1/S2 温度许用应力比、气压试验上下限、90% 屈服限制和分级升压过程。
+- R63-R65 的压力试验免除必须同时满足柔性分析、敏感性泄漏试验和 100% NDT，缺一不可。
+- R56-R58 按每台设备的产品编号关联安装记录、校验/性能报告。
+- R23 补齐 GB/T 20801.1-2025 7.2.4 适用性和阀门试验数量算法后再实现。
 
 ### 6.8 H 包：材料和产品组成件（1 个聚合 Tool）
 
 | Tool | 主要节点 | 状态 |
 | --- | --- | --- |
-| `evaluate_material_component` | R58-R65 | 待实现 |
+| `evaluate_material_component` | R13-R20 | 待实现 |
 
 该 Tool 仅作为稳定入口，内部按监管分类调用独立策略：许可、制造监检、型式试验、出厂检验、质量证明、抽样复验、材料复验、境外牌号和新材料。不得把所有材料规则压缩为“文件是否存在”。
 
-先由 R57 形成产品监管分类，再执行 R58-R65 分支；R61-R66 使用同一产品编号/炉批号/批次追溯链。R58、R60 条款误绑定修正前不得完成实现验收。
+先由 R12 形成产品监管分类，再执行 R13-R20 分支；R16-R21 使用同一产品编号/炉批号/批次追溯链。R13、R15 条款误绑定修正前不得完成实现验收。
 
 ## 7. 工程代码落地方案
 
@@ -430,10 +429,10 @@ owner: pressure_test_domain
 
 ### 阶段 0：安全止血和配置修正（P0，3-5 个工作日）
 
-1. 将 R49 旧 `check_pressure_test_parameters@1.0.0` 标记为 `disabled_for_production`。
+1. 将 R61 旧 `check_pressure_test_parameters@1.0.0` 标记为 `disabled_for_production`。
 2. 生产执行遇到 disabled/planned/pilot Tool 时返回 `human_review_required`，不得默认跳过。
 3. 完成 `业务节点分析.md` 第 79.5 节列出的 9 项 P0 配置修正。
-4. 补充 NB/T 47013.8-2025 正式原文；未补齐前锁定 R52/R54/R55 为人工复核。
+4. 补充 NB/T 47013.8-2025 正式原文；未补齐前锁定 R64/R66/R67 为人工复核。
 5. 重新生成 `tools规划.md`，保证它与修正后的 atomicCheck 和绑定一致。
 
 验收门槛：已知不安全算法不再产生生产“符合”结论；P0 误绑定均有修订记录和专业复核人。
@@ -450,34 +449,34 @@ owner: pressure_test_domain
 
 ### 阶段 2：耐压、泄漏和阀门安全包（P0，1.5-2 周）
 
-优先重写 R47-R50，随后在正式标准原文可用后完成 R51-R56、R68。
+优先重写 R59-R62，随后在正式标准原文可用后完成 R63-R68、R23。
 
-验收门槛：所有压力边界、临界值、上下限、温度应力比、分级升压、抽样数量均有边界测试和专业人员签字确认；旧 R49 回归用例必须证明不会误放行。
+验收门槛：所有压力边界、临界值、上下限、温度应力比、分级升压、抽样数量均有边界测试和专业人员签字确认；旧 R61 回归用例必须证明不会误放行。
 
 ### 阶段 3：焊接、热处理和无损检测（P0/P1，2-3 周）
 
 1. 完成 D、E 包。
-2. 建立焊口级事实模型和 R20-R22 共享适用性。
-3. 建立机构级 NDT 上下文和 R23-R30 共享计划事实。
+2. 建立焊口级事实模型和 R32-R34 共享适用性。
+3. 建立机构级 NDT 上下文和 R35-R42 共享计划事实。
 4. 支持 TSG Z6002 版本切换和分层抽样/加倍抽查。
 
 验收门槛：不同机构、不同焊口、不同材料和不同标准版本不会串用事实；抽样分母和加倍规则可审计。
 
 ### 阶段 4：资质、设计和施工策划（P1，1.5-2 周）
 
-完成 C 包，处理 R01-R11、R51、R57、R60、R67 的相关能力。R05 保持人工确认，直到业务方明确见证文件类型和签字角色。
+完成 C 包，处理 R01-R11、R63、R12、R15、R22 的相关能力。R05 保持人工确认，直到业务方明确见证文件类型和签字角色。
 
 验收门槛：机构逐家判断、文件本体缺失、三级/四级签字、标准有效期切换和施工周期口径均有正反用例。
 
 ### 阶段 5：防腐、安装和安全附件（P1，2 周）
 
-完成 F 包及 `evaluate_safety_accessory`，优先处理 R31、R36/R41 已发现的条款问题和跨节点适用性继承。
+完成 F 包及 `evaluate_safety_accessory`，优先处理 R43、R48/R53 已发现的条款问题和跨节点适用性继承。
 
 验收门槛：条件不适用返回 `not_applicable`；材料批次、结构类型和设备编号可跨节点追溯。
 
 ### 阶段 6：材料和产品组成件（P1，2 周）
 
-完成 R57-R67 的监管分类和材料追溯链，修正 R58/R60 后实现材料专业策略。
+完成 R12-R22 的监管分类和材料追溯链，修正 R13/R15 后实现材料专业策略。
 
 验收门槛：每个产品/批次先分类再分支判断；目录或质量证明中的文字不能替代缺失的文件本体；材料代用能触发设计、WPS/PQR 和竣工资料一致性复核。
 
@@ -548,10 +547,10 @@ owner: pressure_test_domain
 
 先执行阶段 0，不直接新增第 41 个缺失 Tool：
 
-1. 禁止 R49 旧算法参与生产放行。
+1. 禁止 R61 旧算法参与生产放行。
 2. 新建 Tool Registry 和 v2 结果协议骨架。
 3. 把 atomicCheck 绑定编译为服务器固定执行计划。
 4. 修正 9 项 P0 业务配置并重新生成 `tools规划.md`。
-5. 以 R47-R50 为首个安全闭环试点，完整实现“事实快照 → 适用性 → 压力计算 → 证据门禁 → AI结论 → 审计回放”。
+5. 以 R59-R62 为首个安全闭环试点，完整实现“事实快照 → 适用性 → 压力计算 → 证据门禁 → AI结论 → 审计回放”。
 
 完成这个闭环后，再按阶段 3-6 扩展专业包。这样既保留现有工程的 ReviewRun、Tool Gateway 和审计基础，也能尽快消除当前最危险的错误放行风险。

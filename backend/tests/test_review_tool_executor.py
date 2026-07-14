@@ -8,9 +8,9 @@ from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 def test_all_engineering_node_plans_compile_against_runtime_catalog() -> None:
     pack = load_business_pack("engineering_inspection_v1")
     available = {item["name"] for item in runtime_tool_catalog()}
-    plans = [compile_node_tool_plan(pack, f"R{node_id:02d}", available_tools=available) for node_id in range(1, 69)]
+    plans = [compile_node_tool_plan(pack, f"R{node_id:02d}", available_tools=available) for node_id in range(1, 70)]
 
-    assert sum(len(plan) for plan in plans) == 171
+    assert sum(len(plan) for plan in plans) == 173
     assert all(item["compilable"] for plan in plans for item in plan)
     assert all(not item["missingTools"] for plan in plans for item in plan)
     assert {item["implementationStatus"] for plan in plans for item in plan} <= {

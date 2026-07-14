@@ -10,7 +10,7 @@ from typing import Any
 GENERATED_AT = "2026-07-03 00:00:00"
 STANDARD_SOURCE_ID = "KS-STANDARD-RULES"
 STANDARD_SOURCE_NAME = "标准规范库（业务规则引用标准）"
-STANDARD_VERSION = "rules-standards-20260703"
+STANDARD_VERSION = "rules-standards-20260714"
 ALLOWED_STANDARD_EXTENSIONS = {".pdf", ".doc", ".docx", ".md", ".txt", ".yaml", ".yml", ".json"}
 
 BUSINESS_RULE_EVIDENCE_PATTERNS = [
@@ -390,7 +390,7 @@ def build_rule_sets(
     standard_files: list[dict[str, Any]],
     existing_rules_by_source: dict[str, dict[str, Any]] | None = None,
     node_name_by_id: dict[int, str] | None = None,
-    import_version: str = "v2026.07.03",
+    import_version: str = "v2026.07.14",
 ) -> list[dict[str, Any]]:
     mapping = parse_rule_mapping_table(markdown_text)
     existing = existing_rules_by_source or {}
@@ -439,6 +439,12 @@ def build_rule_sets(
             "referencedStandards": standard_matches,
         }
         rule["aiExecution"] = compile_ai_execution(rule)
+        if source_rule_id == "R69":
+            rule["executionMode"] = "manual_evaluation"
+            rule["automatedDecisionAllowed"] = False
+            rule["aiExecution"]["humanConfirmation"] = [
+                "R69 仅汇总与校验评价报告证据；评价结果必须由监检人员依据 TSG D7006—2020 附件G确认并签发。"
+            ]
         rule_sets.append(rule)
     return rule_sets
 
@@ -555,7 +561,7 @@ def build_standard_anchor_clauses(rule_sets: list[dict[str, Any]]) -> list[dict[
             "clauseId": "TSG-Z6002-3.2",
             "clauseNo": "3.2",
             "title": "焊工资格覆盖要求",
-            "rules": related("R12", "R17"),
+            "rules": related("R24", "R29"),
             "sectionPath": ["TSG Z6002-2010 焊接人员考核细则", "焊工资格覆盖"],
             "nodeIds": [24, 29],
             "materialTypes": ["welder_certificate", "welding_record"],
@@ -565,7 +571,7 @@ def build_standard_anchor_clauses(rule_sets: list[dict[str, Any]]) -> list[dict[
             "clauseId": "TSG-D7006-D2.4.1",
             "clauseNo": "D2.4.1",
             "title": "压力管道元件质量证明与验收要求",
-            "rules": related("R59", "R61", "R62", "R63", "R64", "R65"),
+            "rules": related("R14", "R16", "R17", "R18", "R19", "R20"),
             "sectionPath": ["TSG D7006-2020 压力管道监督检验规则", "附件 D", "D2.4.1 压力管道元件及安全附件"],
             "nodeIds": [14, 16, 17, 18, 19, 20],
             "materialTypes": ["quality_certificate", "material_retest_report"],
@@ -575,7 +581,7 @@ def build_standard_anchor_clauses(rule_sets: list[dict[str, Any]]) -> list[dict[
             "clauseId": "NB-T-47013-NDT-REPORT",
             "clauseNo": "报告",
             "title": "无损检测记录、报告和底片审查要求",
-            "rules": related("R28", "R29", "R30", "R53"),
+            "rules": related("R40", "R41", "R42", "R65"),
             "sectionPath": ["NB/T 47013 承压设备无损检测", "检测记录与报告"],
             "nodeIds": [40, 41, 42, 65],
             "materialTypes": ["ndt_report", "radiographic_film"],

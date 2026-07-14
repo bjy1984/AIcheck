@@ -140,7 +140,7 @@ const ndtMaterialChecklist = computed(() => {
         ? '已上传资质资料，等待监检核验'
         : '当前接口未返回资质文件，需在无损检测资料库中补充或核验',
       status: statusForCategory('机构与人员资质'),
-      nodeRefs: 'R23、R24、R25',
+      nodeRefs: 'R35、R36、R37',
       actions: [{ key: 'upload', label: '上传资料', category: '机构与人员资质' }]
     },
     {
@@ -151,7 +151,7 @@ const ndtMaterialChecklist = computed(() => {
         ? '已上传检测方案与工艺资料'
         : '需补充检测方案、工艺文件和操作指导书',
       status: statusForCategory('检测方案与工艺'),
-      nodeRefs: 'R23、R27、R28',
+      nodeRefs: 'R35、R39、R40',
       actions: [{ key: 'upload', label: '上传资料', category: '检测方案与工艺' }]
     },
     {
@@ -162,7 +162,7 @@ const ndtMaterialChecklist = computed(() => {
         ? '已上传设备与校准资料'
         : '需补充设备检定或校准证明',
       status: statusForCategory('检测设备与校准'),
-      nodeRefs: 'R26',
+      nodeRefs: 'R38',
       actions: [{ key: 'upload', label: '上传资料', category: '检测设备与校准' }]
     },
     {
@@ -176,7 +176,7 @@ const ndtMaterialChecklist = computed(() => {
       status: props.films.some((film) => film.status === '需补正')
         ? '需补正'
         : statusForCategory('底片与影像资料', props.films.length),
-      nodeRefs: 'R28、R53',
+      nodeRefs: 'R40、R65',
       actions: [{ key: 'upload', label: '上传底片/影像', category: '底片与影像资料' }]
     },
     {
@@ -188,7 +188,7 @@ const ndtMaterialChecklist = computed(() => {
           ? '已上传或导入检测记录，等待监检核验'
           : '需导入检测记录和原始记录',
       status: statusForCategory('检测记录', props.records.length),
-      nodeRefs: 'R28、R29',
+      nodeRefs: 'R40、R41',
       actions: [{ key: 'upload', label: '上传检测记录', category: '检测记录' }]
     },
     {
@@ -202,7 +202,7 @@ const ndtMaterialChecklist = computed(() => {
       status: props.reports.some((report) => report.status === '需补正')
         ? '需补正'
         : statusForCategory('检测报告', props.reports.length),
-      nodeRefs: 'R28、R53',
+      nodeRefs: 'R40、R65',
       actions: [{ key: 'upload', label: '上传检测报告', category: '检测报告' }]
     },
     {
@@ -211,7 +211,7 @@ const ndtMaterialChecklist = computed(() => {
       uploadedCount: openFeedbackCount,
       missing: openFeedbackCount ? `${openFeedbackCount} 项监检反馈待处理` : '暂无待处理反馈',
       status: openFeedbackCount ? '需补正' : '已覆盖',
-      nodeRefs: 'R29、R30',
+      nodeRefs: 'R41、R42',
       actions: [
         { key: 'upload', label: '上传补正', category: '问题处理闭环' },
         { key: 'rectify', label: '提交反馈' }

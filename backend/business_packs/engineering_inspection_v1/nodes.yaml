@@ -231,7 +231,7 @@ nodeTemplates:
     note: 依据 R09，用于支撑设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求中仪表检定或校准证书相关核查。
 - nodeId: 10
   code: '10'
-  name: 采用其他标准时的符合性申明及比照表
+  name: 采用其他标准时，设计文件或工程规定中应包括符合《工业管道安全技术规程》基本安全的符合性申明及比照表
   groupName: 设计文件
   inspectionType: 需确认
   defaultStatus: 待提交
@@ -286,14 +286,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R57，用于支撑压力管道元件及安全附件制造单位的许可资质中制造单位许可证相关核查。
+    note: 依据 R12，用于支撑压力管道元件及安全附件制造单位的许可资质中制造单位许可证相关核查。
   - id: REQ-12-02
     materialTypeCode: design_document
     name: 相关设计文件、施工说明及管道特性表
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R57，用于支撑压力管道元件及安全附件制造单位的许可资质中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R12，用于支撑压力管道元件及安全附件制造单位的许可资质中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 13
   code: '13'
   name: 需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告
@@ -310,17 +310,17 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R58，用于支撑需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告中制造监督检验证书相关核查。
+    note: 依据 R13，用于支撑需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告中制造监督检验证书相关核查。
   - id: REQ-13-02
     materialTypeCode: type_test_report
     name: 型式试验证书或型式试验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R58，用于支撑需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告中型式试验证书或型式试验报告相关核查。
+    note: 依据 R13，用于支撑需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告中型式试验证书或型式试验报告相关核查。
 - nodeId: 14
   code: '14'
-  name: 不需制造许可、监检、型式试验的管道组成件的出厂检验报告
+  name: 不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验
   groupName: 材料
   inspectionType: C/B
   defaultStatus: 待提交
@@ -334,17 +334,17 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R59，用于支撑不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验中出厂检验报告相关核查。
+    note: 依据 R14，用于支撑不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验中出厂检验报告相关核查。
   - id: REQ-14-02
     materialTypeCode: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R59，用于支撑不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验中材料复验报告相关核查。
+    note: 依据 R14，用于支撑不需制造许可、监检、型式试验的管道组成件的出厂检验报告，必要时进行现场抽查复验中材料复验报告相关核查。
 - nodeId: 15
   code: '15'
-  name: 境外制造的压力管道元件、安全附件的型式试验证书及制造许可证资质
+  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质
   groupName: 材料
   inspectionType: C
   defaultStatus: 待提交
@@ -358,21 +358,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R60，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中境外制造或境外牌号材料证明文件相关核查。
+    note: 依据 R15，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中境外制造或境外牌号材料证明文件相关核查。
   - id: REQ-15-02
     materialTypeCode: manufacturing_license
     name: 制造单位许可证
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R60，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中制造单位许可证相关核查。
+    note: 依据 R15，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中制造单位许可证相关核查。
   - id: REQ-15-03
     materialTypeCode: type_test_report
     name: 型式试验证书或型式试验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R60，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中型式试验证书或型式试验报告相关核查。
+    note: 依据 R15，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中型式试验证书或型式试验报告相关核查。
 - nodeId: 16
   code: '16'
   name: 压力管道元件以及安全附件产品质量证明文件
@@ -393,14 +393,14 @@ nodeTemplates:
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R61，用于支撑压力管道元件以及安全附件产品质量证明文件中产品质量证明书相关核查。
+    note: 依据 R16，用于支撑压力管道元件以及安全附件产品质量证明文件中产品质量证明书相关核查。
   - id: REQ-16-02
     materialTypeCode: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R61，用于支撑压力管道元件以及安全附件产品质量证明文件中材料复验报告相关核查。
+    note: 依据 R16，用于支撑压力管道元件以及安全附件产品质量证明文件中材料复验报告相关核查。
 - nodeId: 17
   code: '17'
   name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验
@@ -417,14 +417,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R62，用于支撑压力管道元件以及安全附件产品验收的见证资料、抽样复验中到货验收见证资料相关核查。
+    note: 依据 R17，用于支撑压力管道元件以及安全附件产品验收的见证资料、抽样复验中到货验收见证资料相关核查。
   - id: REQ-17-02
     materialTypeCode: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R62，用于支撑压力管道元件以及安全附件产品验收的见证资料、抽样复验中材料复验报告相关核查。
+    note: 依据 R17，用于支撑压力管道元件以及安全附件产品验收的见证资料、抽样复验中材料复验报告相关核查。
 - nodeId: 18
   code: '18'
   name: 材料复验报告、无损检测报告
@@ -441,14 +441,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R63，用于支撑材料复验报告、无损检测报告中材料复验报告相关核查。
+    note: 依据 R18，用于支撑材料复验报告、无损检测报告中材料复验报告相关核查。
   - id: REQ-18-02
     materialTypeCode: ndt_report
     name: 无损检测报告
     requiredType: 必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R63，用于支撑材料复验报告、无损检测报告中无损检测报告相关核查。
+    note: 依据 R18，用于支撑材料复验报告、无损检测报告中无损检测报告相关核查。
 - nodeId: 19
   code: '19'
   name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果
@@ -465,14 +465,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R64，用于支撑使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果中境外制造或境外牌号材料证明文件相关核查。
+    note: 依据 R19，用于支撑使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果中境外制造或境外牌号材料证明文件相关核查。
   - id: REQ-19-02
     materialTypeCode: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R64，用于支撑使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果中材料复验报告相关核查。
+    note: 依据 R19，用于支撑使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果中材料复验报告相关核查。
 - nodeId: 20
   code: '20'
   name: 新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续
@@ -489,14 +489,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R65，用于支撑新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续中型式试验证书或型式试验报告相关核查。
+    note: 依据 R20，用于支撑新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续中型式试验证书或型式试验报告相关核查。
   - id: REQ-20-02
     materialTypeCode: technical_review_approval
     name: 技术评审和批准手续
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R65，用于支撑新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续中技术评审和批准手续相关核查。
+    note: 依据 R20，用于支撑新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续中技术评审和批准手续相关核查。
 - nodeId: 21
   code: '21'
   name: 材料标志移植
@@ -513,21 +513,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R66，用于支撑材料标志移植中材料标志移植记录相关核查。
+    note: 依据 R21，用于支撑材料标志移植中材料标志移植记录相关核查。
   - id: REQ-21-02
     materialTypeCode: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R66，用于支撑材料标志移植中产品质量证明书相关核查。
+    note: 依据 R21，用于支撑材料标志移植中产品质量证明书相关核查。
   - id: REQ-21-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R66，用于支撑材料标志移植中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R21，用于支撑材料标志移植中现场照片、底片或实物核验证据相关核查。
 - nodeId: 22
   code: '22'
   name: 材料代用
@@ -544,14 +544,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R67，用于支撑材料代用中材料代用批准文件相关核查。
+    note: 依据 R22，用于支撑材料代用中材料代用批准文件相关核查。
   - id: REQ-22-02
     materialTypeCode: design_change_document
     name: 设计变更和书面批准文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R67，用于支撑材料代用中设计变更和书面批准文件相关核查。
+    note: 依据 R22，用于支撑材料代用中设计变更和书面批准文件相关核查。
 - nodeId: 23
   code: '23'
   name: 阀门的施工资料和耐压试验记录（报告）
@@ -568,28 +568,28 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R68，用于支撑阀门的施工资料和耐压试验记录（报告）中耐压试验记录或报告相关核查。
+    note: 依据 R23，用于支撑阀门的施工资料和耐压试验记录（报告）中耐压试验记录或报告相关核查。
   - id: REQ-23-02
     materialTypeCode: pressure_test_plan
     name: 耐压试验方案
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R68，用于支撑阀门的施工资料和耐压试验记录（报告）中耐压试验方案相关核查。
+    note: 依据 R23，用于支撑阀门的施工资料和耐压试验记录（报告）中耐压试验方案相关核查。
   - id: REQ-23-03
     materialTypeCode: valve_test_report
     name: 阀门施工资料和耐压试验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R68，用于支撑阀门的施工资料和耐压试验记录（报告）中阀门施工资料和耐压试验报告相关核查。
+    note: 依据 R23，用于支撑阀门的施工资料和耐压试验记录（报告）中阀门施工资料和耐压试验报告相关核查。
   - id: REQ-23-04
     materialTypeCode: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R68，用于支撑阀门的施工资料和耐压试验记录（报告）中产品质量证明书相关核查。
+    note: 依据 R23，用于支撑阀门的施工资料和耐压试验记录（报告）中产品质量证明书相关核查。
 - nodeId: 24
   code: '24'
   name: 焊工资格证及持证合格项目
@@ -610,21 +610,21 @@ nodeTemplates:
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R12，用于支撑焊工资格证及持证合格项目 (B类)中焊工资格证相关核查。
+    note: 依据 R24，用于支撑焊工资格证及持证合格项目 (B类)中焊工资格证相关核查。
   - id: REQ-24-02
     materialTypeCode: welder_roster
     name: 焊工名册
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R12，用于支撑焊工资格证及持证合格项目 (B类)中焊工名册相关核查。
+    note: 依据 R24，用于支撑焊工资格证及持证合格项目 (B类)中焊工名册相关核查。
   - id: REQ-24-03
     materialTypeCode: external_query_screenshot
     name: 外部查询截图
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R12，用于支撑焊工资格证及持证合格项目 (B类)中外部查询截图相关核查。
+    note: 依据 R24，用于支撑焊工资格证及持证合格项目 (B类)中外部查询截图相关核查。
 - nodeId: 25
   code: '25'
   name: 焊接（粘接）工艺文件
@@ -641,14 +641,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R13，用于支撑焊接（粘接）工艺文件 (C类)中焊接工艺评定报告和焊接作业指导书相关核查。
+    note: 依据 R25，用于支撑焊接（粘接）工艺文件 (C类)中焊接工艺评定报告和焊接作业指导书相关核查。
   - id: REQ-25-02
     materialTypeCode: welding_record
     name: 焊接记录和焊缝标识资料
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R13，用于支撑焊接（粘接）工艺文件 (C类)中焊接记录和焊缝标识资料相关核查。
+    note: 依据 R25，用于支撑焊接（粘接）工艺文件 (C类)中焊接记录和焊缝标识资料相关核查。
 - nodeId: 26
   code: '26'
   name: 焊接材料质量证明文件
@@ -665,14 +665,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R14，用于支撑焊接材料质量证明文件 (C类)中焊接材料质量证明文件相关核查。
+    note: 依据 R26，用于支撑焊接材料质量证明文件 (C类)中焊接材料质量证明文件相关核查。
   - id: REQ-26-02
     materialTypeCode: design_document
     name: 焊接材料质量证明文件相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R14，用于支撑焊接材料质量证明文件 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R26，用于支撑焊接材料质量证明文件 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 27
   code: '27'
   name: 焊接材料的验收、保管、发放、使用和回收的管理
@@ -689,14 +689,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R15，用于支撑焊接材料的验收、保管、发放、使用和回收的管理 (B类)中焊材验收保管发放回收记录相关核查。
+    note: 依据 R27，用于支撑焊接材料的验收、保管、发放、使用和回收的管理 (B类)中焊材验收保管发放回收记录相关核查。
   - id: REQ-27-02
     materialTypeCode: welding_material_certificate
     name: 焊接材料质量证明文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R15，用于支撑焊接材料的验收、保管、发放、使用和回收的管理 (B类)中焊接材料质量证明文件相关核查。
+    note: 依据 R27，用于支撑焊接材料的验收、保管、发放、使用和回收的管理 (B类)中焊接材料质量证明文件相关核查。
 - nodeId: 28
   code: '28'
   name: 管道组对
@@ -713,14 +713,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R16，用于支撑管道组对 (C类)中焊接记录和焊缝标识资料相关核查。
+    note: 依据 R28，用于支撑管道组对 (C类)中焊接记录和焊缝标识资料相关核查。
   - id: REQ-28-02
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R16，用于支撑管道组对 (C类)中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R28，用于支撑管道组对 (C类)中现场照片、底片或实物核验证据相关核查。
 - nodeId: 29
   code: '29'
   name: 施焊参数、施焊记录、焊缝标识
@@ -737,21 +737,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R17，用于支撑施焊参数、施焊记录、焊缝标识 (B类)中焊接记录和焊缝标识资料相关核查。
+    note: 依据 R29，用于支撑施焊参数、施焊记录、焊缝标识 (B类)中焊接记录和焊缝标识资料相关核查。
   - id: REQ-29-02
     materialTypeCode: wps_pqr
     name: 焊接工艺评定报告和焊接作业指导书
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R17，用于支撑施焊参数、施焊记录、焊缝标识 (B类)中焊接工艺评定报告和焊接作业指导书相关核查。
+    note: 依据 R29，用于支撑施焊参数、施焊记录、焊缝标识 (B类)中焊接工艺评定报告和焊接作业指导书相关核查。
   - id: REQ-29-03
     materialTypeCode: welder_certificate
     name: 焊工资格证
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R17，用于支撑施焊参数、施焊记录、焊缝标识 (B类)中焊工资格证相关核查。
+    note: 依据 R29，用于支撑施焊参数、施焊记录、焊缝标识 (B类)中焊工资格证相关核查。
 - nodeId: 30
   code: '30'
   name: 焊接接头外观质量
@@ -768,14 +768,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R18，用于支撑焊接接头外观质量 (B类)中焊接记录和焊缝标识资料相关核查。
+    note: 依据 R30，用于支撑焊接接头外观质量 (B类)中焊接记录和焊缝标识资料相关核查。
   - id: REQ-30-02
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R18，用于支撑焊接接头外观质量 (B类)中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R30，用于支撑焊接接头外观质量 (B类)中现场照片、底片或实物核验证据相关核查。
 - nodeId: 31
   code: '31'
   name: 焊缝返修
@@ -792,14 +792,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R19，用于支撑焊缝返修 (C类)中焊缝返修记录相关核查。
+    note: 依据 R31，用于支撑焊缝返修 (C类)中焊缝返修记录相关核查。
   - id: REQ-31-02
     materialTypeCode: ndt_report
     name: 无损检测报告
     requiredType: 必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R19，用于支撑焊缝返修 (C类)中无损检测报告相关核查。
+    note: 依据 R31，用于支撑焊缝返修 (C类)中无损检测报告相关核查。
 - nodeId: 32
   code: '32'
   name: 焊接接头焊后热处理工艺文件
@@ -816,14 +816,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R20，用于支撑焊接接头焊后热处理工艺文件 (C类)中焊后热处理工艺文件相关核查。
+    note: 依据 R32，用于支撑焊接接头焊后热处理工艺文件 (C类)中焊后热处理工艺文件相关核查。
   - id: REQ-32-02
     materialTypeCode: wps_pqr
     name: 焊接工艺评定报告和焊接作业指导书
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R20，用于支撑焊接接头焊后热处理工艺文件 (C类)中焊接工艺评定报告和焊接作业指导书相关核查。
+    note: 依据 R32，用于支撑焊接接头焊后热处理工艺文件 (C类)中焊接工艺评定报告和焊接作业指导书相关核查。
 - nodeId: 33
   code: '33'
   name: 热处理设备用测温记录仪表
@@ -840,14 +840,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R21，用于支撑热处理设备用测温记录仪表 (C类)中仪表检定或校准证书相关核查。
+    note: 依据 R33，用于支撑热处理设备用测温记录仪表 (C类)中仪表检定或校准证书相关核查。
   - id: REQ-33-02
     materialTypeCode: heat_treatment_record
     name: 热处理记录、曲线和硬度检测报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R21，用于支撑热处理设备用测温记录仪表 (C类)中热处理记录、曲线和硬度检测报告相关核查。
+    note: 依据 R33，用于支撑热处理设备用测温记录仪表 (C类)中热处理记录、曲线和硬度检测报告相关核查。
 - nodeId: 34
   code: '34'
   name: 热处理记录、报告曲线、硬度检测报告
@@ -864,14 +864,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R22，用于支撑热处理记录、报告曲线、硬度检测报告 (C类)中热处理记录、曲线和硬度检测报告相关核查。
+    note: 依据 R34，用于支撑热处理记录、报告曲线、硬度检测报告 (C类)中热处理记录、曲线和硬度检测报告相关核查。
   - id: REQ-34-02
     materialTypeCode: instrument_calibration_certificate
     name: 仪表检定或校准证书
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R22，用于支撑热处理记录、报告曲线、硬度检测报告 (C类)中仪表检定或校准证书相关核查。
+    note: 依据 R34，用于支撑热处理记录、报告曲线、硬度检测报告 (C类)中仪表检定或校准证书相关核查。
 - nodeId: 35
   code: '35'
   name: 无损检测机构施工现场质量保证体系的实施
@@ -888,14 +888,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R23，用于支撑无损检测机构施工现场质量保证体系的实施 (B类)中无损检测机构核准证相关核查。
+    note: 依据 R35，用于支撑无损检测机构施工现场质量保证体系的实施 (B类)中无损检测机构核准证相关核查。
   - id: REQ-35-02
     materialTypeCode: quality_system_document
     name: 质量保证体系文件和实施记录
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R23，用于支撑无损检测机构施工现场质量保证体系的实施 (B类)中质量保证体系文件和实施记录相关核查。
+    note: 依据 R35，用于支撑无损检测机构施工现场质量保证体系的实施 (B类)中质量保证体系文件和实施记录相关核查。
 - nodeId: 36
   code: '36'
   name: 无损检测方案
@@ -912,14 +912,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R24，用于支撑无损检测方案 (C类)中无损检测方案相关核查。
+    note: 依据 R36，用于支撑无损检测方案 (C类)中无损检测方案相关核查。
   - id: REQ-36-02
     materialTypeCode: design_document
     name: 无损检测方案相关设计文件
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R24，用于支撑无损检测方案 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R36，用于支撑无损检测方案 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 37
   code: '37'
   name: 检测过程中发现问题的处理
@@ -936,14 +936,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R25，用于支撑检测过程中发现问题的处理 (C类)中质量保证体系文件和实施记录相关核查。
+    note: 依据 R37，用于支撑检测过程中发现问题的处理 (C类)中质量保证体系文件和实施记录相关核查。
   - id: REQ-37-02
     materialTypeCode: ndt_report
     name: 无损检测报告
     requiredType: 必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R25，用于支撑检测过程中发现问题的处理 (C类)中无损检测报告相关核查。
+    note: 依据 R37，用于支撑检测过程中发现问题的处理 (C类)中无损检测报告相关核查。
 - nodeId: 38
   code: '38'
   name: 无损检测人员资格证、执业注册证及持证合格项目
@@ -960,14 +960,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R26，用于支撑无损检测人员资格证、执业注册证及持证合格项目 (B类)中无损检测人员资格证和执业注册证相关核查。
+    note: 依据 R38，用于支撑无损检测人员资格证、执业注册证及持证合格项目 (B类)中无损检测人员资格证和执业注册证相关核查。
   - id: REQ-38-02
     materialTypeCode: ndt_plan
     name: 无损检测方案
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R26，用于支撑无损检测人员资格证、执业注册证及持证合格项目 (B类)中无损检测方案相关核查。
+    note: 依据 R38，用于支撑无损检测人员资格证、执业注册证及持证合格项目 (B类)中无损检测方案相关核查。
 - nodeId: 39
   code: '39'
   name: 无损检测工艺文件
@@ -984,14 +984,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R27，用于支撑无损检测工艺文件 (C类)中无损检测工艺文件相关核查。
+    note: 依据 R39，用于支撑无损检测工艺文件 (C类)中无损检测工艺文件相关核查。
   - id: REQ-39-02
     materialTypeCode: ndt_plan
     name: 无损检测方案
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R27，用于支撑无损检测工艺文件 (C类)中无损检测方案相关核查。
+    note: 依据 R39，用于支撑无损检测工艺文件 (C类)中无损检测方案相关核查。
 - nodeId: 40
   code: '40'
   name: 无损检测记录、报告
@@ -1012,7 +1012,7 @@ nodeTemplates:
     requiredType: 必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R28，用于支撑无损检测记录、报告 (C类)中无损检测报告相关核查。
+    note: 依据 R40，用于支撑无损检测记录、报告 (C类)中无损检测报告相关核查。
 - nodeId: 41
   code: '41'
   name: 射线检测底片抽查
@@ -1029,14 +1029,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R29，用于支撑射线检测底片抽查 (B类)中射线检测底片相关核查。
+    note: 依据 R41，用于支撑射线检测底片抽查 (B类)中射线检测底片相关核查。
   - id: REQ-41-02
     materialTypeCode: ndt_report
     name: 无损检测报告
     requiredType: 必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R29，用于支撑射线检测底片抽查 (B类)中无损检测报告相关核查。
+    note: 依据 R41，用于支撑射线检测底片抽查 (B类)中无损检测报告相关核查。
 - nodeId: 42
   code: '42'
   name: 射线检测现场抽查
@@ -1053,21 +1053,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R30，用于支撑射线检测现场抽查 (B类)中射线检测底片相关核查。
+    note: 依据 R42，用于支撑射线检测现场抽查 (B类)中射线检测底片相关核查。
   - id: REQ-42-02
     materialTypeCode: ndt_report
     name: 无损检测报告
     requiredType: 必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R30，用于支撑射线检测现场抽查 (B类)中无损检测报告相关核查。
+    note: 依据 R42，用于支撑射线检测现场抽查 (B类)中无损检测报告相关核查。
   - id: REQ-42-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R30，用于支撑射线检测现场抽查 (B类)中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R42，用于支撑射线检测现场抽查 (B类)中现场照片、底片或实物核验证据相关核查。
 - nodeId: 43
   code: '43'
   name: 防腐及保温材料质量证明文件
@@ -1084,14 +1084,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R31，用于支撑防腐及保温材料质量证明文件 (C类)中防腐及保温材料质量证明文件相关核查。
+    note: 依据 R43，用于支撑防腐及保温材料质量证明文件 (C类)中防腐及保温材料质量证明文件相关核查。
   - id: REQ-43-02
     materialTypeCode: design_document
     name: 防腐及保温材料质量证明文件相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R31，用于支撑防腐及保温材料质量证明文件 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R43，用于支撑防腐及保温材料质量证明文件 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 44
   code: '44'
   name: 防腐、补口、补伤及保温
@@ -1108,14 +1108,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R32，用于支撑防腐、补口、补伤及保温 (C类)中防腐补口补伤和保温施工记录相关核查。
+    note: 依据 R44，用于支撑防腐、补口、补伤及保温 (C类)中防腐补口补伤和保温施工记录相关核查。
   - id: REQ-44-02
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R32，用于支撑防腐、补口、补伤及保温 (C类)中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R44，用于支撑防腐、补口、补伤及保温 (C类)中现场照片、底片或实物核验证据相关核查。
 - nodeId: 45
   code: '45'
   name: 防腐层电火花检测
@@ -1132,14 +1132,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R33，用于支撑防腐层电火花检测 (C类)中防腐补口补伤和保温施工记录相关核查。
+    note: 依据 R45，用于支撑防腐层电火花检测 (C类)中防腐补口补伤和保温施工记录相关核查。
   - id: REQ-45-02
     materialTypeCode: instrument_calibration_certificate
     name: 仪表检定或校准证书
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R33，用于支撑防腐层电火花检测 (C类)中仪表检定或校准证书相关核查。
+    note: 依据 R45，用于支撑防腐层电火花检测 (C类)中仪表检定或校准证书相关核查。
 - nodeId: 46
   code: '46'
   name: 牺牲阳极、外加电流阴极保护、杂散电流排流装置
@@ -1156,14 +1156,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R34，用于支撑牺牲阳极、外加电流阴极保护、杂散电流排流装置 (C类)中阴极保护和杂散电流排流装置资料相关核查。
+    note: 依据 R46，用于支撑牺牲阳极、外加电流阴极保护、杂散电流排流装置 (C类)中阴极保护和杂散电流排流装置资料相关核查。
   - id: REQ-46-02
     materialTypeCode: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R34，用于支撑牺牲阳极、外加电流阴极保护、杂散电流排流装置 (C类)中产品质量证明书相关核查。
+    note: 依据 R46，用于支撑牺牲阳极、外加电流阴极保护、杂散电流排流装置 (C类)中产品质量证明书相关核查。
 - nodeId: 47
   code: '47'
   name: 静电接地
@@ -1180,14 +1180,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R35，用于支撑静电接地 (C类)中静电接地施工和测试记录相关核查。
+    note: 依据 R47，用于支撑静电接地 (C类)中静电接地施工和测试记录相关核查。
   - id: REQ-47-02
     materialTypeCode: design_document
     name: 静电接地相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R35，用于支撑静电接地 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R47，用于支撑静电接地 (C类)中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 48
   code: '48'
   name: 穿跨越工程的管道结构、焊缝布置
@@ -1204,21 +1204,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R36，用于支撑穿跨越工程的管道结构、焊缝布置中管道安装和现场制作记录相关核查。
+    note: 依据 R48，用于支撑穿跨越工程的管道结构、焊缝布置中管道安装和现场制作记录相关核查。
   - id: REQ-48-02
     materialTypeCode: design_document
     name: 穿跨越工程的管道结构、焊缝布置相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R36，用于支撑穿跨越工程的管道结构、焊缝布置中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R48，用于支撑穿跨越工程的管道结构、焊缝布置中项目范围、设计参数、签章或标准引用等信息核查。
   - id: REQ-48-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R36，用于支撑穿跨越工程的管道结构、焊缝布置中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R48，用于支撑穿跨越工程的管道结构、焊缝布置中现场照片、底片或实物核验证据相关核查。
 - nodeId: 49
   code: '49'
   name: 穿跨越工程施工
@@ -1235,21 +1235,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R37，用于支撑穿跨越工程施工中管道安装和现场制作记录相关核查。
+    note: 依据 R49，用于支撑穿跨越工程施工中管道安装和现场制作记录相关核查。
   - id: REQ-49-02
     materialTypeCode: design_document
     name: 穿跨越工程施工相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R37，用于支撑穿跨越工程施工中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R49，用于支撑穿跨越工程施工中项目范围、设计参数、签章或标准引用等信息核查。
   - id: REQ-49-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R37，用于支撑穿跨越工程施工中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R49，用于支撑穿跨越工程施工中现场照片、底片或实物核验证据相关核查。
 - nodeId: 50
   code: '50'
   name: 套管防腐绝缘
@@ -1266,28 +1266,28 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R38，用于支撑套管防腐绝缘中管道安装和现场制作记录相关核查。
+    note: 依据 R50，用于支撑套管防腐绝缘中管道安装和现场制作记录相关核查。
   - id: REQ-50-02
     materialTypeCode: design_document
     name: 套管防腐绝缘相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R38，用于支撑套管防腐绝缘中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R50，用于支撑套管防腐绝缘中项目范围、设计参数、签章或标准引用等信息核查。
   - id: REQ-50-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R38，用于支撑套管防腐绝缘中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R50，用于支撑套管防腐绝缘中现场照片、底片或实物核验证据相关核查。
   - id: REQ-50-04
     materialTypeCode: anticorrosion_insulation_record
     name: 防腐补口补伤和保温施工记录
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R38，用于支撑套管防腐绝缘中防腐补口补伤和保温施工记录相关核查。
+    note: 依据 R50，用于支撑套管防腐绝缘中防腐补口补伤和保温施工记录相关核查。
 - nodeId: 51
   code: '51'
   name: 绝缘支撑
@@ -1304,21 +1304,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R39，用于支撑绝缘支撑中管道安装和现场制作记录相关核查。
+    note: 依据 R51，用于支撑绝缘支撑中管道安装和现场制作记录相关核查。
   - id: REQ-51-02
     materialTypeCode: design_document
     name: 绝缘支撑相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R39，用于支撑绝缘支撑中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R51，用于支撑绝缘支撑中项目范围、设计参数、签章或标准引用等信息核查。
   - id: REQ-51-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R39，用于支撑绝缘支撑中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R51，用于支撑绝缘支撑中现场照片、底片或实物核验证据相关核查。
 - nodeId: 52
   code: '52'
   name: 管道现场制作（预制）
@@ -1335,21 +1335,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R40，用于支撑管道现场制作（预制）中管道安装和现场制作记录相关核查。
+    note: 依据 R52，用于支撑管道现场制作（预制）中管道安装和现场制作记录相关核查。
   - id: REQ-52-02
     materialTypeCode: welding_record
     name: 焊接记录和焊缝标识资料
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R40，用于支撑管道现场制作（预制）中焊接记录和焊缝标识资料相关核查。
+    note: 依据 R52，用于支撑管道现场制作（预制）中焊接记录和焊缝标识资料相关核查。
   - id: REQ-52-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R40，用于支撑管道现场制作（预制）中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R52，用于支撑管道现场制作（预制）中现场照片、底片或实物核验证据相关核查。
 - nodeId: 53
   code: '53'
   name: 管道布管与连接方式、穿跨越
@@ -1366,21 +1366,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R41，用于支撑管道布管与连接方式、穿跨越中管道安装和现场制作记录相关核查。
+    note: 依据 R53，用于支撑管道布管与连接方式、穿跨越中管道安装和现场制作记录相关核查。
   - id: REQ-53-02
     materialTypeCode: design_document
     name: 管道布管与连接方式、穿跨越相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R41，用于支撑管道布管与连接方式、穿跨越中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R53，用于支撑管道布管与连接方式、穿跨越中项目范围、设计参数、签章或标准引用等信息核查。
   - id: REQ-53-03
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
     requiredType: 条件必传
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R41，用于支撑管道布管与连接方式、穿跨越中现场照片、底片或实物核验证据相关核查。
+    note: 依据 R53，用于支撑管道布管与连接方式、穿跨越中现场照片、底片或实物核验证据相关核查。
 - nodeId: 54
   code: '54'
   name: 补偿装置
@@ -1397,14 +1397,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R42，用于支撑补偿装置中管道安装和现场制作记录相关核查。
+    note: 依据 R54，用于支撑补偿装置中管道安装和现场制作记录相关核查。
   - id: REQ-54-02
     materialTypeCode: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R42，用于支撑补偿装置中产品质量证明书相关核查。
+    note: 依据 R54，用于支撑补偿装置中产品质量证明书相关核查。
 - nodeId: 55
   code: '55'
   name: 支撑件
@@ -1421,14 +1421,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R43，用于支撑支撑件中管道安装和现场制作记录相关核查。
+    note: 依据 R55，用于支撑支撑件中管道安装和现场制作记录相关核查。
   - id: REQ-55-02
     materialTypeCode: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R43，用于支撑支撑件中产品质量证明书相关核查。
+    note: 依据 R55，用于支撑支撑件中产品质量证明书相关核查。
 - nodeId: 56
   code: '56'
   name: 安全阀、爆破片和紧急切断阀的安装位置、规格和型号
@@ -1445,21 +1445,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R44，用于支撑安全阀、爆破片和紧急切断阀的安装位置、规格和型号中安全附件安装、校验或性能测试资料相关核查。
+    note: 依据 R56，用于支撑安全阀、爆破片和紧急切断阀的安装位置、规格和型号中安全附件安装、校验或性能测试资料相关核查。
   - id: REQ-56-02
     materialTypeCode: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R44，用于支撑安全阀、爆破片和紧急切断阀的安装位置、规格和型号中产品质量证明书相关核查。
+    note: 依据 R56，用于支撑安全阀、爆破片和紧急切断阀的安装位置、规格和型号中产品质量证明书相关核查。
   - id: REQ-56-03
     materialTypeCode: type_test_report
     name: 型式试验证书或型式试验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R44，用于支撑安全阀、爆破片和紧急切断阀的安装位置、规格和型号中型式试验证书或型式试验报告相关核查。
+    note: 依据 R56，用于支撑安全阀、爆破片和紧急切断阀的安装位置、规格和型号中型式试验证书或型式试验报告相关核查。
 - nodeId: 57
   code: '57'
   name: 安全阀校验报告
@@ -1476,14 +1476,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R45，用于支撑安全阀校验报告中安全附件安装、校验或性能测试资料相关核查。
+    note: 依据 R57，用于支撑安全阀校验报告中安全附件安装、校验或性能测试资料相关核查。
   - id: REQ-57-02
     materialTypeCode: instrument_calibration_certificate
     name: 仪表检定或校准证书
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R45，用于支撑安全阀校验报告中仪表检定或校准证书相关核查。
+    note: 依据 R57，用于支撑安全阀校验报告中仪表检定或校准证书相关核查。
 - nodeId: 58
   code: '58'
   name: 紧急切断阀性能测试报告
@@ -1500,7 +1500,7 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R46，用于支撑紧急切断阀性能测试报告中安全附件安装、校验或性能测试资料相关核查。
+    note: 依据 R58，用于支撑紧急切断阀性能测试报告中安全附件安装、校验或性能测试资料相关核查。
 - nodeId: 59
   code: '59'
   name: 耐压试验方案
@@ -1517,14 +1517,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R47，用于支撑耐压试验方案中耐压试验方案相关核查。
+    note: 依据 R59，用于支撑耐压试验方案中耐压试验方案相关核查。
   - id: REQ-59-02
     materialTypeCode: design_document
     name: 耐压试验方案相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R47，用于支撑耐压试验方案中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R59，用于支撑耐压试验方案中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 60
   code: '60'
   name: 试验用压力表、试验介质、介质温度、环境温度
@@ -1541,14 +1541,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R48，用于支撑试验用压力表、试验介质、介质温度、环境温度中仪表检定或校准证书相关核查。
+    note: 依据 R60，用于支撑试验用压力表、试验介质、介质温度、环境温度中仪表检定或校准证书相关核查。
   - id: REQ-60-02
     materialTypeCode: pressure_test_report
     name: 耐压试验记录或报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R48，用于支撑试验用压力表、试验介质、介质温度、环境温度中耐压试验记录或报告相关核查。
+    note: 依据 R60，用于支撑试验用压力表、试验介质、介质温度、环境温度中耐压试验记录或报告相关核查。
 - nodeId: 61
   code: '61'
   name: 耐压试验压力、保压时间及结果
@@ -1565,14 +1565,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R49，用于支撑耐压试验压力、保压时间及结果中耐压试验记录或报告相关核查。
+    note: 依据 R61，用于支撑耐压试验压力、保压时间及结果中耐压试验记录或报告相关核查。
   - id: REQ-61-02
     materialTypeCode: pressure_test_plan
     name: 耐压试验方案
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R49，用于支撑耐压试验压力、保压时间及结果中耐压试验方案相关核查。
+    note: 依据 R61，用于支撑耐压试验压力、保压时间及结果中耐压试验方案相关核查。
 - nodeId: 62
   code: '62'
   name: 耐压试验记录（报告）
@@ -1589,14 +1589,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R50，用于支撑耐压试验记录（报告）中耐压试验记录或报告相关核查。
+    note: 依据 R62，用于支撑耐压试验记录（报告）中耐压试验记录或报告相关核查。
   - id: REQ-62-02
     materialTypeCode: pressure_test_plan
     name: 耐压试验方案
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R50，用于支撑耐压试验记录（报告）中耐压试验方案相关核查。
+    note: 依据 R62，用于支撑耐压试验记录（报告）中耐压试验方案相关核查。
 - nodeId: 63
   code: '63'
   name: 管道系统的柔性(应力)分析
@@ -1613,14 +1613,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R51，用于支撑管道系统的柔性(应力)分析中强度计算书或应力分析报告相关核查。
+    note: 依据 R63，用于支撑管道系统的柔性(应力)分析中强度计算书或应力分析报告相关核查。
   - id: REQ-63-02
     materialTypeCode: design_document
     name: 管道系统的柔性(应力)分析相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R51，用于支撑管道系统的柔性(应力)分析中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R63，用于支撑管道系统的柔性(应力)分析中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 64
   code: '64'
   name: 现场检查替代性试验的过程
@@ -1637,14 +1637,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R52，用于支撑现场检查替代性试验的过程中泄漏试验记录或报告相关核查。
+    note: 依据 R64，用于支撑现场检查替代性试验的过程中泄漏试验记录或报告相关核查。
   - id: REQ-64-02
     materialTypeCode: design_document
     name: 现场检查替代性试验的过程相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R52，用于支撑现场检查替代性试验的过程中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R64，用于支撑现场检查替代性试验的过程中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 65
   code: '65'
   name: 无损检测报告和底片
@@ -1661,14 +1661,14 @@ nodeTemplates:
     requiredType: 必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R53，用于支撑无损检测报告和底片中无损检测报告相关核查。
+    note: 依据 R65，用于支撑无损检测报告和底片中无损检测报告相关核查。
   - id: REQ-65-02
     materialTypeCode: radiographic_film
     name: 射线检测底片
     requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R53，用于支撑无损检测报告和底片中射线检测底片相关核查。
+    note: 依据 R65，用于支撑无损检测报告和底片中射线检测底片相关核查。
 - nodeId: 66
   code: '66'
   name: 试验用压力表、试验介质、介质温度、环境温度、试验压力
@@ -1685,21 +1685,21 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R54，用于支撑试验用压力表、试验介质、介质温度、环境温度、试验压力中仪表检定或校准证书相关核查。
+    note: 依据 R66，用于支撑试验用压力表、试验介质、介质温度、环境温度、试验压力中仪表检定或校准证书相关核查。
   - id: REQ-66-02
     materialTypeCode: pressure_test_report
     name: 耐压试验记录或报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R54，用于支撑试验用压力表、试验介质、介质温度、环境温度、试验压力中耐压试验记录或报告相关核查。
+    note: 依据 R66，用于支撑试验用压力表、试验介质、介质温度、环境温度、试验压力中耐压试验记录或报告相关核查。
   - id: REQ-66-03
     materialTypeCode: leakage_test_report
     name: 泄漏试验记录或报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R54，用于支撑试验用压力表、试验介质、介质温度、环境温度、试验压力中泄漏试验记录或报告相关核查。
+    note: 依据 R66，用于支撑试验用压力表、试验介质、介质温度、环境温度、试验压力中泄漏试验记录或报告相关核查。
 - nodeId: 67
   code: '67'
   name: 泄漏试验方法和试验报告
@@ -1716,14 +1716,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R55，用于支撑泄漏试验方法和试验报告中泄漏试验记录或报告相关核查。
+    note: 依据 R67，用于支撑泄漏试验方法和试验报告中泄漏试验记录或报告相关核查。
   - id: REQ-67-02
     materialTypeCode: instrument_calibration_certificate
     name: 仪表检定或校准证书
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R55，用于支撑泄漏试验方法和试验报告中仪表检定或校准证书相关核查。
+    note: 依据 R67，用于支撑泄漏试验方法和试验报告中仪表检定或校准证书相关核查。
 - nodeId: 68
   code: '68'
   name: 吹扫、清洗
@@ -1740,14 +1740,14 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R56，用于支撑吹扫、清洗中吹扫清洗方案和记录相关核查。
+    note: 依据 R68，用于支撑吹扫、清洗中吹扫清洗方案和记录相关核查。
   - id: REQ-68-02
     materialTypeCode: design_document
     name: 吹扫、清洗相关设计文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R56，用于支撑吹扫、清洗中项目范围、设计参数、签章或标准引用等信息核查。
+    note: 依据 R68，用于支撑吹扫、清洗中项目范围、设计参数、签章或标准引用等信息核查。
 - nodeId: 69
   code: '69'
   name: 施工单位质量保证体系实施状况的评价

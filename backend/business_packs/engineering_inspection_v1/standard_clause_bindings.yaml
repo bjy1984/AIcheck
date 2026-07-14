@@ -1,7 +1,7 @@
 standardClauseBindingSet:
   id: engineering-inspection-standard-clause-bindings-v2
   schemaVersion: standard-clause-binding-v1
-  version: 2026.07.11
+  version: 2026.07.14
   lifecycleStatus: published
   sourceBusinessRules: rules/业务规则.md
   runtimePolicy:
@@ -168,7 +168,7 @@ standardClauseBindings:
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.2(4)
   bindingRole: primary
-  applicability: design_change_or_material_substitution
+  applicability: always
   lifecycleStatus: published
   verificationStatus: source_verified
   knowledgeFileId: KF-KB-CE49677F5B
@@ -286,1134 +286,9 @@ standardClauseBindings:
     endPage: 27
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R12-D2-6-1
+- bindingId: BIND-R12-D2-4-1-1
   ruleId: RULE-ENG-INSP-R12
   sourceRuleId: R12
-  nodeId: 24
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.1
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 28
-  startPage: 28
-  endPage: 28
-  sourceLocatorId: LOC-221E818C916E
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-221E818C916E
-    clauseNo: D2.6.1
-    sourcePage: 28
-    startPage: 28
-    endPage: 28
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R13-D2-6-2
-  ruleId: RULE-ENG-INSP-R13
-  sourceRuleId: R13
-  nodeId: 25
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.2
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-EC00431D0AE4
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-EC00431D0AE4
-    clauseNo: D2.6.2
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R14-D2-6-3-1
-  ruleId: RULE-ENG-INSP-R14
-  sourceRuleId: R14
-  nodeId: 26
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.3(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-E187BD01DDAC
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-E187BD01DDAC
-    clauseNo: D2.6.3(1)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R15-D2-6-3-2
-  ruleId: RULE-ENG-INSP-R15
-  sourceRuleId: R15
-  nodeId: 27
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.3(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-FA546879E692
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-FA546879E692
-    clauseNo: D2.6.3(2)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R16-D2-6-4
-  ruleId: RULE-ENG-INSP-R16
-  sourceRuleId: R16
-  nodeId: 28
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.4
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-5EAE77A945FF
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-5EAE77A945FF
-    clauseNo: D2.6.4
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R17-D2-6-5-1
-  ruleId: RULE-ENG-INSP-R17
-  sourceRuleId: R17
-  nodeId: 29
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.5(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-759273AC8996
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-759273AC8996
-    clauseNo: D2.6.5(1)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R18-D2-6-5-2
-  ruleId: RULE-ENG-INSP-R18
-  sourceRuleId: R18
-  nodeId: 30
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.5(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-C22B397198CC
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-C22B397198CC
-    clauseNo: D2.6.5(2)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R19-D2-6-6
-  ruleId: RULE-ENG-INSP-R19
-  sourceRuleId: R19
-  nodeId: 31
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.6.6
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-7DF9A9F31DBC
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-7DF9A9F31DBC
-    clauseNo: D2.6.6
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R20-D2-7-1
-  ruleId: RULE-ENG-INSP-R20
-  sourceRuleId: R20
-  nodeId: 32
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.7(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-73AACA2EFD8A
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-73AACA2EFD8A
-    clauseNo: D2.7(1)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R21-D2-7-2
-  ruleId: RULE-ENG-INSP-R21
-  sourceRuleId: R21
-  nodeId: 33
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.7(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-761300EB9554
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-761300EB9554
-    clauseNo: D2.7(2)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R22-D2-7-3
-  ruleId: RULE-ENG-INSP-R22
-  sourceRuleId: R22
-  nodeId: 34
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.7(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-B4A9F65C200A
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-B4A9F65C200A
-    clauseNo: D2.7(3)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R23-D2-8-1-1
-  ruleId: RULE-ENG-INSP-R23
-  sourceRuleId: R23
-  nodeId: 35
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.1(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-9E748D0A7E0A
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-9E748D0A7E0A
-    clauseNo: D2.8.1(1)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R24-D2-8-1-2
-  ruleId: RULE-ENG-INSP-R24
-  sourceRuleId: R24
-  nodeId: 36
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.1(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-A1B89BCC6587
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-A1B89BCC6587
-    clauseNo: D2.8.1(2)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R25-D2-8-1-3
-  ruleId: RULE-ENG-INSP-R25
-  sourceRuleId: R25
-  nodeId: 37
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.1(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-15B91A63F2AA
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-15B91A63F2AA
-    clauseNo: D2.8.1(3)
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R26-D2-8-2
-  ruleId: RULE-ENG-INSP-R26
-  sourceRuleId: R26
-  nodeId: 38
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.2
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 29
-  startPage: 29
-  endPage: 29
-  sourceLocatorId: LOC-F503B733E6A7
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-F503B733E6A7
-    clauseNo: D2.8.2
-    sourcePage: 29
-    startPage: 29
-    endPage: 29
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R27-D2-8-3
-  ruleId: RULE-ENG-INSP-R27
-  sourceRuleId: R27
-  nodeId: 39
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.3
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-42DE4694DC27
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-42DE4694DC27
-    clauseNo: D2.8.3
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R28-D2-8-4
-  ruleId: RULE-ENG-INSP-R28
-  sourceRuleId: R28
-  nodeId: 40
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.4
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-9E47CB40583A
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-9E47CB40583A
-    clauseNo: D2.8.4
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R29-D2-8-5
-  ruleId: RULE-ENG-INSP-R29
-  sourceRuleId: R29
-  nodeId: 41
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.5
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-29B69900DB19
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-29B69900DB19
-    clauseNo: D2.8.5
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R30-D2-8-6
-  ruleId: RULE-ENG-INSP-R30
-  sourceRuleId: R30
-  nodeId: 42
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.8.6
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-A7594F4AAAFC
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-A7594F4AAAFC
-    clauseNo: D2.8.6
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R31-D2-9-1
-  ruleId: RULE-ENG-INSP-R31
-  sourceRuleId: R31
-  nodeId: 43
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.9(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-CEF695A21FCA
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-CEF695A21FCA
-    clauseNo: D2.9(1)
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R32-D2-9-2
-  ruleId: RULE-ENG-INSP-R32
-  sourceRuleId: R32
-  nodeId: 44
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.9(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-ECB47D066985
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-ECB47D066985
-    clauseNo: D2.9(2)
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R33-D2-9-3
-  ruleId: RULE-ENG-INSP-R33
-  sourceRuleId: R33
-  nodeId: 45
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.9(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-6772FF622210
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-6772FF622210
-    clauseNo: D2.9(3)
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R34-D2-9-3
-  ruleId: RULE-ENG-INSP-R34
-  sourceRuleId: R34
-  nodeId: 46
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.9(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-6772FF622210
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-6772FF622210
-    clauseNo: D2.9(3)
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R35-D2-9-4
-  ruleId: RULE-ENG-INSP-R35
-  sourceRuleId: R35
-  nodeId: 47
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.9(4)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-0311F64EE481
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-0311F64EE481
-    clauseNo: D2.9(4)
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R36-D2-10-1
-  ruleId: RULE-ENG-INSP-R36
-  sourceRuleId: R36
-  nodeId: 48
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.10(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 30
-  startPage: 30
-  endPage: 30
-  sourceLocatorId: LOC-82B89C9867F2
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-82B89C9867F2
-    clauseNo: D2.10(1)
-    sourcePage: 30
-    startPage: 30
-    endPage: 30
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R37-D2-10-2
-  ruleId: RULE-ENG-INSP-R37
-  sourceRuleId: R37
-  nodeId: 49
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.10(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-34A61AAB2B3D
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-34A61AAB2B3D
-    clauseNo: D2.10(2)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R38-D2-10-3
-  ruleId: RULE-ENG-INSP-R38
-  sourceRuleId: R38
-  nodeId: 50
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.10(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-4DCD151F1403
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-4DCD151F1403
-    clauseNo: D2.10(3)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R39-D2-10-4
-  ruleId: RULE-ENG-INSP-R39
-  sourceRuleId: R39
-  nodeId: 51
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.10(4)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-DDEC9529E037
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-DDEC9529E037
-    clauseNo: D2.10(4)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R40-D2-11-1
-  ruleId: RULE-ENG-INSP-R40
-  sourceRuleId: R40
-  nodeId: 52
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.11(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-929461AF09C3
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-929461AF09C3
-    clauseNo: D2.11(1)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R41-D2-11-2
-  ruleId: RULE-ENG-INSP-R41
-  sourceRuleId: R41
-  nodeId: 53
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.11(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-9DF20EDAD45F
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-9DF20EDAD45F
-    clauseNo: D2.11(2)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R42-D2-11-2
-  ruleId: RULE-ENG-INSP-R42
-  sourceRuleId: R42
-  nodeId: 54
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.11(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-9DF20EDAD45F
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-9DF20EDAD45F
-    clauseNo: D2.11(2)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R43-D2-11-2
-  ruleId: RULE-ENG-INSP-R43
-  sourceRuleId: R43
-  nodeId: 55
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.11(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-9DF20EDAD45F
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-9DF20EDAD45F
-    clauseNo: D2.11(2)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R44-D2-12-1
-  ruleId: RULE-ENG-INSP-R44
-  sourceRuleId: R44
-  nodeId: 56
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.12(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-41254A3B277F
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-41254A3B277F
-    clauseNo: D2.12(1)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R45-D2-12-2
-  ruleId: RULE-ENG-INSP-R45
-  sourceRuleId: R45
-  nodeId: 57
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.12(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-5C26974531AF
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-5C26974531AF
-    clauseNo: D2.12(2)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R46-D2-12-3
-  ruleId: RULE-ENG-INSP-R46
-  sourceRuleId: R46
-  nodeId: 58
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.12(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-35DCE1BF738E
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-35DCE1BF738E
-    clauseNo: D2.12(3)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R47-D2-13-1-1
-  ruleId: RULE-ENG-INSP-R47
-  sourceRuleId: R47
-  nodeId: 59
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.13.1(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-565429C0070B
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-565429C0070B
-    clauseNo: D2.13.1(1)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R48-D2-13-1-2
-  ruleId: RULE-ENG-INSP-R48
-  sourceRuleId: R48
-  nodeId: 60
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.13.1(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-5364E30AE7ED
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-5364E30AE7ED
-    clauseNo: D2.13.1(2)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R49-D2-13-1-3
-  ruleId: RULE-ENG-INSP-R49
-  sourceRuleId: R49
-  nodeId: 61
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.13.1(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-CA93C82BA726
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-CA93C82BA726
-    clauseNo: D2.13.1(3)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R50-D2-13-1-4
-  ruleId: RULE-ENG-INSP-R50
-  sourceRuleId: R50
-  nodeId: 62
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.13.1(4)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-25C563A6FF04
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-25C563A6FF04
-    clauseNo: D2.13.1(4)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R51-D2-13-2-1
-  ruleId: RULE-ENG-INSP-R51
-  sourceRuleId: R51
-  nodeId: 63
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.13.2(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-4BC2E394BAF1
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-4BC2E394BAF1
-    clauseNo: D2.13.2(1)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R52-D2-13-2-2
-  ruleId: RULE-ENG-INSP-R52
-  sourceRuleId: R52
-  nodeId: 64
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.13.2(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-8550B7029265
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-8550B7029265
-    clauseNo: D2.13.2(2)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R53-D2-13-2-3
-  ruleId: RULE-ENG-INSP-R53
-  sourceRuleId: R53
-  nodeId: 65
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.13.2(3)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 31
-  startPage: 31
-  endPage: 31
-  sourceLocatorId: LOC-0C398E78506F
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-0C398E78506F
-    clauseNo: D2.13.2(3)
-    sourcePage: 31
-    startPage: 31
-    endPage: 31
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R54-D2-14-1
-  ruleId: RULE-ENG-INSP-R54
-  sourceRuleId: R54
-  nodeId: 66
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.14(1)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 32
-  startPage: 32
-  endPage: 32
-  sourceLocatorId: LOC-D2EE670AF52A
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-D2EE670AF52A
-    clauseNo: D2.14(1)
-    sourcePage: 32
-    startPage: 32
-    endPage: 32
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R55-D2-14-2
-  ruleId: RULE-ENG-INSP-R55
-  sourceRuleId: R55
-  nodeId: 67
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.14(2)
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 32
-  startPage: 32
-  endPage: 32
-  sourceLocatorId: LOC-A5CD8ECD3D49
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-A5CD8ECD3D49
-    clauseNo: D2.14(2)
-    sourcePage: 32
-    startPage: 32
-    endPage: 32
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R56-D2-15
-  ruleId: RULE-ENG-INSP-R56
-  sourceRuleId: R56
-  nodeId: 68
-  standardRef: STD-TSG-D7006-2020
-  clauseNo: D2.15
-  bindingRole: primary
-  applicability: always
-  lifecycleStatus: published
-  verificationStatus: source_verified
-  knowledgeFileId: KF-KB-CE49677F5B
-  documentVersionId: KDV-CE49677F5B-V1
-  sourcePage: 32
-  startPage: 32
-  endPage: 32
-  sourceLocatorId: LOC-FECAA4D086A4
-  locatorPrecision: page
-  locators:
-  - locatorId: LOC-FECAA4D086A4
-    clauseNo: D2.15
-    sourcePage: 32
-    startPage: 32
-    endPage: 32
-    precision: page
-    verificationStatus: source_verified
-- bindingId: BIND-R57-D2-4-1-1
-  ruleId: RULE-ENG-INSP-R57
-  sourceRuleId: R57
   nodeId: 12
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(1)
@@ -1436,9 +311,9 @@ standardClauseBindings:
     endPage: 27
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R58-D2-4-1-2
-  ruleId: RULE-ENG-INSP-R58
-  sourceRuleId: R58
+- bindingId: BIND-R13-D2-4-1-2
+  ruleId: RULE-ENG-INSP-R13
+  sourceRuleId: R13
   nodeId: 13
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(2)
@@ -1461,9 +336,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R59-D2-4-1-3
-  ruleId: RULE-ENG-INSP-R59
-  sourceRuleId: R59
+- bindingId: BIND-R14-D2-4-1-3
+  ruleId: RULE-ENG-INSP-R14
+  sourceRuleId: R14
   nodeId: 14
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(3)
@@ -1486,9 +361,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R60-D2-4-1-4
-  ruleId: RULE-ENG-INSP-R60
-  sourceRuleId: R60
+- bindingId: BIND-R15-D2-4-1-4
+  ruleId: RULE-ENG-INSP-R15
+  sourceRuleId: R15
   nodeId: 15
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(4)
@@ -1511,9 +386,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R61-D2-4-1-5
-  ruleId: RULE-ENG-INSP-R61
-  sourceRuleId: R61
+- bindingId: BIND-R16-D2-4-1-5
+  ruleId: RULE-ENG-INSP-R16
+  sourceRuleId: R16
   nodeId: 16
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(5)
@@ -1536,9 +411,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R62-D2-4-1-6
-  ruleId: RULE-ENG-INSP-R62
-  sourceRuleId: R62
+- bindingId: BIND-R17-D2-4-1-6
+  ruleId: RULE-ENG-INSP-R17
+  sourceRuleId: R17
   nodeId: 17
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(6)
@@ -1561,9 +436,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R63-D2-4-1-7
-  ruleId: RULE-ENG-INSP-R63
-  sourceRuleId: R63
+- bindingId: BIND-R18-D2-4-1-7
+  ruleId: RULE-ENG-INSP-R18
+  sourceRuleId: R18
   nodeId: 18
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(7)
@@ -1586,9 +461,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R64-D2-4-1-8
-  ruleId: RULE-ENG-INSP-R64
-  sourceRuleId: R64
+- bindingId: BIND-R19-D2-4-1-8
+  ruleId: RULE-ENG-INSP-R19
+  sourceRuleId: R19
   nodeId: 19
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(8)
@@ -1611,9 +486,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R65-D2-4-1-9
-  ruleId: RULE-ENG-INSP-R65
-  sourceRuleId: R65
+- bindingId: BIND-R20-D2-4-1-9
+  ruleId: RULE-ENG-INSP-R20
+  sourceRuleId: R20
   nodeId: 20
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(9)
@@ -1636,9 +511,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R66-D2-4-2
-  ruleId: RULE-ENG-INSP-R66
-  sourceRuleId: R66
+- bindingId: BIND-R21-D2-4-2
+  ruleId: RULE-ENG-INSP-R21
+  sourceRuleId: R21
   nodeId: 21
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.2
@@ -1661,9 +536,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R67-D2-4-3
-  ruleId: RULE-ENG-INSP-R67
-  sourceRuleId: R67
+- bindingId: BIND-R22-D2-4-3
+  ruleId: RULE-ENG-INSP-R22
+  sourceRuleId: R22
   nodeId: 22
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.3
@@ -1686,9 +561,9 @@ standardClauseBindings:
     endPage: 28
     precision: page
     verificationStatus: source_verified
-- bindingId: BIND-R68-D2-5
-  ruleId: RULE-ENG-INSP-R68
-  sourceRuleId: R68
+- bindingId: BIND-R23-D2-5
+  ruleId: RULE-ENG-INSP-R23
+  sourceRuleId: R23
   nodeId: 23
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.5
@@ -1709,5 +584,1155 @@ standardClauseBindings:
     sourcePage: 28
     startPage: 28
     endPage: 28
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R24-D2-6-1
+  ruleId: RULE-ENG-INSP-R24
+  sourceRuleId: R24
+  nodeId: 24
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.1
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 28
+  startPage: 28
+  endPage: 28
+  sourceLocatorId: LOC-221E818C916E
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-221E818C916E
+    clauseNo: D2.6.1
+    sourcePage: 28
+    startPage: 28
+    endPage: 28
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R25-D2-6-2
+  ruleId: RULE-ENG-INSP-R25
+  sourceRuleId: R25
+  nodeId: 25
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.2
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-EC00431D0AE4
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-EC00431D0AE4
+    clauseNo: D2.6.2
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R26-D2-6-3-1
+  ruleId: RULE-ENG-INSP-R26
+  sourceRuleId: R26
+  nodeId: 26
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.3(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-E187BD01DDAC
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-E187BD01DDAC
+    clauseNo: D2.6.3(1)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R27-D2-6-3-2
+  ruleId: RULE-ENG-INSP-R27
+  sourceRuleId: R27
+  nodeId: 27
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.3(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-FA546879E692
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-FA546879E692
+    clauseNo: D2.6.3(2)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R28-D2-6-4
+  ruleId: RULE-ENG-INSP-R28
+  sourceRuleId: R28
+  nodeId: 28
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.4
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-5EAE77A945FF
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-5EAE77A945FF
+    clauseNo: D2.6.4
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R29-D2-6-5-1
+  ruleId: RULE-ENG-INSP-R29
+  sourceRuleId: R29
+  nodeId: 29
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.5(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-759273AC8996
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-759273AC8996
+    clauseNo: D2.6.5(1)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R30-D2-6-5-2
+  ruleId: RULE-ENG-INSP-R30
+  sourceRuleId: R30
+  nodeId: 30
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.5(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-C22B397198CC
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-C22B397198CC
+    clauseNo: D2.6.5(2)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R31-D2-6-6
+  ruleId: RULE-ENG-INSP-R31
+  sourceRuleId: R31
+  nodeId: 31
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.6.6
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-7DF9A9F31DBC
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-7DF9A9F31DBC
+    clauseNo: D2.6.6
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R32-D2-7-1
+  ruleId: RULE-ENG-INSP-R32
+  sourceRuleId: R32
+  nodeId: 32
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.7(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-73AACA2EFD8A
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-73AACA2EFD8A
+    clauseNo: D2.7(1)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R33-D2-7-2
+  ruleId: RULE-ENG-INSP-R33
+  sourceRuleId: R33
+  nodeId: 33
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.7(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-761300EB9554
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-761300EB9554
+    clauseNo: D2.7(2)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R34-D2-7-3
+  ruleId: RULE-ENG-INSP-R34
+  sourceRuleId: R34
+  nodeId: 34
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.7(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-B4A9F65C200A
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-B4A9F65C200A
+    clauseNo: D2.7(3)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R35-D2-8-1-1
+  ruleId: RULE-ENG-INSP-R35
+  sourceRuleId: R35
+  nodeId: 35
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.1(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-9E748D0A7E0A
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-9E748D0A7E0A
+    clauseNo: D2.8.1(1)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R36-D2-8-1-2
+  ruleId: RULE-ENG-INSP-R36
+  sourceRuleId: R36
+  nodeId: 36
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.1(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-A1B89BCC6587
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-A1B89BCC6587
+    clauseNo: D2.8.1(2)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R37-D2-8-1-3
+  ruleId: RULE-ENG-INSP-R37
+  sourceRuleId: R37
+  nodeId: 37
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.1(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-15B91A63F2AA
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-15B91A63F2AA
+    clauseNo: D2.8.1(3)
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R38-D2-8-2
+  ruleId: RULE-ENG-INSP-R38
+  sourceRuleId: R38
+  nodeId: 38
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.2
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 29
+  startPage: 29
+  endPage: 29
+  sourceLocatorId: LOC-F503B733E6A7
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-F503B733E6A7
+    clauseNo: D2.8.2
+    sourcePage: 29
+    startPage: 29
+    endPage: 29
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R39-D2-8-3
+  ruleId: RULE-ENG-INSP-R39
+  sourceRuleId: R39
+  nodeId: 39
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.3
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-42DE4694DC27
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-42DE4694DC27
+    clauseNo: D2.8.3
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R40-D2-8-4
+  ruleId: RULE-ENG-INSP-R40
+  sourceRuleId: R40
+  nodeId: 40
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.4
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-9E47CB40583A
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-9E47CB40583A
+    clauseNo: D2.8.4
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R41-D2-8-5
+  ruleId: RULE-ENG-INSP-R41
+  sourceRuleId: R41
+  nodeId: 41
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.5
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-29B69900DB19
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-29B69900DB19
+    clauseNo: D2.8.5
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R42-D2-8-6
+  ruleId: RULE-ENG-INSP-R42
+  sourceRuleId: R42
+  nodeId: 42
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.8.6
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-A7594F4AAAFC
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-A7594F4AAAFC
+    clauseNo: D2.8.6
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R43-D2-9-1
+  ruleId: RULE-ENG-INSP-R43
+  sourceRuleId: R43
+  nodeId: 43
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.9(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-CEF695A21FCA
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-CEF695A21FCA
+    clauseNo: D2.9(1)
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R44-D2-9-2
+  ruleId: RULE-ENG-INSP-R44
+  sourceRuleId: R44
+  nodeId: 44
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.9(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-ECB47D066985
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-ECB47D066985
+    clauseNo: D2.9(2)
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R45-D2-9-3
+  ruleId: RULE-ENG-INSP-R45
+  sourceRuleId: R45
+  nodeId: 45
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.9(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-6772FF622210
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-6772FF622210
+    clauseNo: D2.9(3)
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R46-D2-9-3
+  ruleId: RULE-ENG-INSP-R46
+  sourceRuleId: R46
+  nodeId: 46
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.9(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-6772FF622210
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-6772FF622210
+    clauseNo: D2.9(3)
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R47-D2-9-4
+  ruleId: RULE-ENG-INSP-R47
+  sourceRuleId: R47
+  nodeId: 47
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.9(4)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-0311F64EE481
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-0311F64EE481
+    clauseNo: D2.9(4)
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R48-D2-10-1
+  ruleId: RULE-ENG-INSP-R48
+  sourceRuleId: R48
+  nodeId: 48
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.10(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 30
+  startPage: 30
+  endPage: 30
+  sourceLocatorId: LOC-82B89C9867F2
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-82B89C9867F2
+    clauseNo: D2.10(1)
+    sourcePage: 30
+    startPage: 30
+    endPage: 30
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R49-D2-10-2
+  ruleId: RULE-ENG-INSP-R49
+  sourceRuleId: R49
+  nodeId: 49
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.10(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-34A61AAB2B3D
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-34A61AAB2B3D
+    clauseNo: D2.10(2)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R50-D2-10-3
+  ruleId: RULE-ENG-INSP-R50
+  sourceRuleId: R50
+  nodeId: 50
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.10(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-4DCD151F1403
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-4DCD151F1403
+    clauseNo: D2.10(3)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R51-D2-10-4
+  ruleId: RULE-ENG-INSP-R51
+  sourceRuleId: R51
+  nodeId: 51
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.10(4)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-DDEC9529E037
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-DDEC9529E037
+    clauseNo: D2.10(4)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R52-D2-11-1
+  ruleId: RULE-ENG-INSP-R52
+  sourceRuleId: R52
+  nodeId: 52
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.11(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-929461AF09C3
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-929461AF09C3
+    clauseNo: D2.11(1)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R53-D2-11-2
+  ruleId: RULE-ENG-INSP-R53
+  sourceRuleId: R53
+  nodeId: 53
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.11(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-9DF20EDAD45F
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-9DF20EDAD45F
+    clauseNo: D2.11(2)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R54-D2-11-2
+  ruleId: RULE-ENG-INSP-R54
+  sourceRuleId: R54
+  nodeId: 54
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.11(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-9DF20EDAD45F
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-9DF20EDAD45F
+    clauseNo: D2.11(2)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R55-D2-11-2
+  ruleId: RULE-ENG-INSP-R55
+  sourceRuleId: R55
+  nodeId: 55
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.11(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-9DF20EDAD45F
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-9DF20EDAD45F
+    clauseNo: D2.11(2)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R56-D2-12-1
+  ruleId: RULE-ENG-INSP-R56
+  sourceRuleId: R56
+  nodeId: 56
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.12(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-41254A3B277F
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-41254A3B277F
+    clauseNo: D2.12(1)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R57-D2-12-2
+  ruleId: RULE-ENG-INSP-R57
+  sourceRuleId: R57
+  nodeId: 57
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.12(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-5C26974531AF
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-5C26974531AF
+    clauseNo: D2.12(2)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R58-D2-12-3
+  ruleId: RULE-ENG-INSP-R58
+  sourceRuleId: R58
+  nodeId: 58
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.12(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-35DCE1BF738E
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-35DCE1BF738E
+    clauseNo: D2.12(3)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R59-D2-13-1-1
+  ruleId: RULE-ENG-INSP-R59
+  sourceRuleId: R59
+  nodeId: 59
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.13.1(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-565429C0070B
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-565429C0070B
+    clauseNo: D2.13.1(1)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R60-D2-13-1-2
+  ruleId: RULE-ENG-INSP-R60
+  sourceRuleId: R60
+  nodeId: 60
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.13.1(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-5364E30AE7ED
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-5364E30AE7ED
+    clauseNo: D2.13.1(2)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R61-D2-13-1-3
+  ruleId: RULE-ENG-INSP-R61
+  sourceRuleId: R61
+  nodeId: 61
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.13.1(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-CA93C82BA726
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-CA93C82BA726
+    clauseNo: D2.13.1(3)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R62-D2-13-1-4
+  ruleId: RULE-ENG-INSP-R62
+  sourceRuleId: R62
+  nodeId: 62
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.13.1(4)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-25C563A6FF04
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-25C563A6FF04
+    clauseNo: D2.13.1(4)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R63-D2-13-2-1
+  ruleId: RULE-ENG-INSP-R63
+  sourceRuleId: R63
+  nodeId: 63
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.13.2(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-4BC2E394BAF1
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-4BC2E394BAF1
+    clauseNo: D2.13.2(1)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R64-D2-13-2-2
+  ruleId: RULE-ENG-INSP-R64
+  sourceRuleId: R64
+  nodeId: 64
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.13.2(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-8550B7029265
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-8550B7029265
+    clauseNo: D2.13.2(2)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R65-D2-13-2-3
+  ruleId: RULE-ENG-INSP-R65
+  sourceRuleId: R65
+  nodeId: 65
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.13.2(3)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 31
+  startPage: 31
+  endPage: 31
+  sourceLocatorId: LOC-0C398E78506F
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-0C398E78506F
+    clauseNo: D2.13.2(3)
+    sourcePage: 31
+    startPage: 31
+    endPage: 31
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R66-D2-14-1
+  ruleId: RULE-ENG-INSP-R66
+  sourceRuleId: R66
+  nodeId: 66
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.14(1)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 32
+  startPage: 32
+  endPage: 32
+  sourceLocatorId: LOC-D2EE670AF52A
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-D2EE670AF52A
+    clauseNo: D2.14(1)
+    sourcePage: 32
+    startPage: 32
+    endPage: 32
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R67-D2-14-2
+  ruleId: RULE-ENG-INSP-R67
+  sourceRuleId: R67
+  nodeId: 67
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.14(2)
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 32
+  startPage: 32
+  endPage: 32
+  sourceLocatorId: LOC-A5CD8ECD3D49
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-A5CD8ECD3D49
+    clauseNo: D2.14(2)
+    sourcePage: 32
+    startPage: 32
+    endPage: 32
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R68-D2-15
+  ruleId: RULE-ENG-INSP-R68
+  sourceRuleId: R68
+  nodeId: 68
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: D2.15
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 32
+  startPage: 32
+  endPage: 32
+  sourceLocatorId: LOC-FECAA4D086A4
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-FECAA4D086A4
+    clauseNo: D2.15
+    sourcePage: 32
+    startPage: 32
+    endPage: 32
+    precision: page
+    verificationStatus: source_verified
+- bindingId: BIND-R69-2-2-4
+  ruleId: RULE-ENG-INSP-R69
+  sourceRuleId: R69
+  nodeId: 69
+  standardRef: STD-TSG-D7006-2020
+  clauseNo: 2.2.4
+  bindingRole: primary
+  applicability: always
+  lifecycleStatus: published
+  verificationStatus: source_verified
+  knowledgeFileId: KF-KB-CE49677F5B
+  documentVersionId: KDV-CE49677F5B-V1
+  sourcePage: 9
+  startPage: 9
+  endPage: 9
+  sourceLocatorId: LOC-0B7ABAC6930F
+  locatorPrecision: page
+  locators:
+  - locatorId: LOC-0B7ABAC6930F
+    clauseNo: 2.2.4
+    sourcePage: 9
+    startPage: 9
+    endPage: 9
     precision: page
     verificationStatus: source_verified

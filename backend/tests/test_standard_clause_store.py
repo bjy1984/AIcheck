@@ -32,13 +32,13 @@ def test_clause_release_is_idempotent_and_review_snapshot_is_immutable() -> None
     assert first == second
     assert first == {
         "standard_document_versions": 29,
-        "standard_clause_references": 154,
-        "standard_clause_locators": 216,
-        "standard_clause_packages_db": 68,
-        "standard_clause_package_items": 168,
+        "standard_clause_references": 156,
+        "standard_clause_locators": 218,
+        "standard_clause_packages_db": 69,
+        "standard_clause_package_items": 170,
     }
-    assert bind_project_node_clause_packages(state, project, pack) == 68
-    assert len(state["project_node_clause_packages"]) == 68
+    assert bind_project_node_clause_packages(state, project, pack) == 69
+    assert len(state["project_node_clause_packages"]) == 69
 
     snapshot = clause_package_snapshot_for_project_node(state, project["id"], 1)
     assert snapshot
@@ -90,8 +90,8 @@ def test_clause_collections_persist_to_sqlite(tmp_path) -> None:
         }
 
     assert counts["standard_document_versions"] == 29
-    assert counts["standard_clause_packages"] == 68
-    assert counts["project_node_clause_packages"] >= 68
+    assert counts["standard_clause_packages"] == 69
+    assert counts["project_node_clause_packages"] >= 69
     assert "idx_project_node_clause_packages_lookup" in indexes
     assert "idx_review_run_clause_snapshots_lookup" in indexes
 
