@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from apps.ocr_service import engines as engines_module
@@ -34,6 +35,9 @@ class FakeEngine:
 
 
 def build_service(monkeypatch, *, available_mb: float = 8192) -> service_module.OcrService:
+    for key in tuple(os.environ):
+        if key.startswith(("AWS_", "AZURE_", "GOOGLE_", "ALIBABA_")):
+            monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(service_module, "local_engines", lambda: [FakeEngine()])
     monkeypatch.setattr(
         service_module,
@@ -92,6 +96,19 @@ def test_specialized_stage_result_does_not_poison_primary_readiness(monkeypatch)
     assert after["inferenceStatus"] == "success"
     assert after["lastSuccessfulInferenceAt"] == before["lastSuccessfulInferenceAt"]
     assert after["lastInferenceAttemptAt"] == before["lastInferenceAttemptAt"]
+
+
+def test_cloud_provider_environment_blocks_local_ocr_readiness(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_OCR_OFFLINE_ONLY", "false")
+    service = build_service(monkeypatch)
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+
+    readiness = service.readiness_payload()
+
+    assert readiness["ready"] is False
+    assert "Cloud OCR/provider environment variables are not allowed for local-only OCR." in readiness[
+        "readinessFailures"
+    ]
 
 
 def test_primary_failed_result_still_blocks_deep_readiness(monkeypatch) -> None:
