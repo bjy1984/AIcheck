@@ -869,6 +869,25 @@ test.describe('AIcheck route smoke', () => {
       await expect(auditDirectory.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
       await expect(auditDirectory.getByRole('tab')).toHaveCount(7)
       await expect(page.locator('.audit-item-directory__summary')).toBeVisible()
+
+      const currentItem = auditDirectory.locator('.audit-item-directory__item.is-selected')
+      await currentItem.press('End')
+      const archiveItem = auditDirectory.getByRole('tab', { name: /签发归档/ })
+      await expect(archiveItem).toHaveAttribute('aria-selected', 'true')
+      await expect
+        .poll(async () => {
+          const [archiveBox, directoryBox] = await Promise.all([
+            archiveItem.boundingBox(),
+            auditDirectory.boundingBox()
+          ])
+          if (!archiveBox || !directoryBox) return false
+          return (
+            archiveBox.x >= directoryBox.x - 1 &&
+            archiveBox.x + archiveBox.width <= directoryBox.x + directoryBox.width + 1
+          )
+        })
+        .toBe(true)
+      await archiveItem.press('Home')
       await expectNoPageOverflow(page)
     }
 
@@ -881,7 +900,41 @@ test.describe('AIcheck route smoke', () => {
     const selectedItem = desktopAuditDirectory.locator('.audit-item-directory__item.is-selected')
     await expect(selectedItem).toHaveCount(1)
     await expect(selectedItem).toHaveAttribute('aria-selected', 'true')
-    await expect(page.locator('.audit-item-directory__legend')).toContainText('当前查看')
+    await expect(page.locator('.audit-item-directory__legend')).toContainText('正在查看')
+
+    const directoryTypography = await page.locator('.audit-item-directory').evaluate((element) => {
+      const visibleText = Array.from(element.querySelectorAll<HTMLElement>('*')).filter((item) => {
+        const rect = item.getBoundingClientRect()
+        return (
+          item.children.length === 0 &&
+          Boolean(item.textContent?.trim()) &&
+          rect.width > 0 &&
+          rect.height > 0
+        )
+      })
+      return {
+        minimum: Math.min(
+          ...visibleText.map((item) => Number.parseFloat(getComputedStyle(item).fontSize))
+        ),
+        heading: Number.parseFloat(
+          getComputedStyle(element.querySelector<HTMLElement>('.audit-item-directory__head h2')!)
+            .fontSize
+        ),
+        item: Number.parseFloat(
+          getComputedStyle(element.querySelector<HTMLElement>('.audit-stage-title strong')!)
+            .fontSize
+        )
+      }
+    })
+    expect(directoryTypography).toEqual({ minimum: 12, heading: 15, item: 13 })
+
+    const tabHeights = await desktopAuditDirectory
+      .getByRole('tab')
+      .evaluateAll((elements) =>
+        elements.map((element) => Math.round(element.getBoundingClientRect().height))
+      )
+    expect(Math.min(...tabHeights)).toBeGreaterThanOrEqual(44)
+    await expect(desktopAuditDirectory.locator('[role="tab"][tabindex="0"]')).toHaveCount(1)
 
     const center = page.locator('.center')
     await center.evaluate((element) => {
@@ -918,11 +971,43 @@ test.describe('AIcheck route smoke', () => {
     await expect(evidenceItem).toHaveAttribute('aria-selected', 'true')
     await expect(page).toHaveURL(/auditItem=evidence/)
 
-    await evidenceItem.press('ArrowRight')
+    await evidenceItem.press('ArrowLeft')
+    const ocrItem = directory.getByRole('tab', { name: /OCR 抽取/ })
+    await expect(ocrItem).toHaveAttribute('aria-selected', 'true')
+    await expect(ocrItem).toBeFocused()
+
+    await ocrItem.press('End')
+    const archiveItem = directory.getByRole('tab', { name: /签发归档/ })
+    await expect(archiveItem).toHaveAttribute('aria-selected', 'true')
+
+    await archiveItem.press('Home')
+    const submissionItem = directory.getByRole('tab', { name: /资料提交/ })
+    await expect(submissionItem).toHaveAttribute('aria-selected', 'true')
+
+    await submissionItem.press('ArrowDown')
+    await expect(ocrItem).toHaveAttribute('aria-selected', 'true')
+    await ocrItem.press('ArrowRight')
+    await expect(evidenceItem).toHaveAttribute('aria-selected', 'true')
+
+    const humanReviewItem = directory.getByRole('tab', { name: /人工结论/ })
+    await humanReviewItem.focus()
+    await humanReviewItem.press('Enter')
+    await expect(humanReviewItem).toHaveAttribute('aria-selected', 'true')
+
+    const reportItem = directory.getByRole('tab', { name: /报告复核/ })
+    await reportItem.focus()
+    await reportItem.press('Space')
+    await expect(reportItem).toHaveAttribute('aria-selected', 'true')
+
     const aiReviewItem = directory.getByRole('tab', { name: /AI 复核/ })
+    await aiReviewItem.focus()
+    await aiReviewItem.press('Enter')
     await expect(aiReviewItem).toHaveAttribute('aria-selected', 'true')
+    await expect(aiReviewItem).toBeFocused()
     await expect(page).toHaveURL(/auditItem=ai_review/)
     await expect(page.locator('#inspection-audit-panel-ai_review')).toBeVisible()
+    await expect(directory.locator('[role="tab"][tabindex="0"]')).toHaveCount(1)
+    await expect(aiReviewItem).toHaveAttribute('aria-controls', 'inspection-audit-panel-ai_review')
     await expect
       .poll(() =>
         aiReviewItem.locator('.audit-stage-index').evaluate((element) => {
@@ -938,6 +1023,46 @@ test.describe('AIcheck route smoke', () => {
       'true'
     )
     await expect(page.locator('#inspection-audit-panel-ai_review')).toBeVisible()
+  })
+
+  test('inspection audit directory respects reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await openRoute(
+      page,
+      routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
+    )
+    await openInspectionNodeAuditItem(page, '证据确认')
+
+    await page.evaluate(() => {
+      const state = window as Window & { __auditScrollBehaviors?: string[] }
+      state.__auditScrollBehaviors = []
+      Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
+        if (typeof options === 'object') {
+          state.__auditScrollBehaviors?.push(String(options.behavior || 'auto'))
+        }
+      }
+    })
+
+    const directory = page.getByRole('region', { name: '审计项目录' })
+    const evidenceItem = directory.getByRole('tab', { name: /证据确认/ })
+    await evidenceItem.press('ArrowRight')
+    const aiReviewItem = directory.getByRole('tab', { name: /AI 复核/ })
+    await expect(aiReviewItem).toHaveAttribute('aria-selected', 'true')
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const state = window as Window & { __auditScrollBehaviors?: string[] }
+          return state.__auditScrollBehaviors || []
+        })
+      )
+      .toContain('auto')
+    await expect
+      .poll(() =>
+        aiReviewItem.locator('.audit-stage-index').evaluate((element) => {
+          return getComputedStyle(element, '::after').animationName
+        })
+      )
+      .toBe('none')
   })
 
   test('inspection renders responsible role codes as Chinese labels', async ({ page }) => {

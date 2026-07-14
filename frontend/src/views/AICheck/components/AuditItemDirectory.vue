@@ -35,12 +35,14 @@ const elementStepStatus = (status: InspectionAuditItemStatus) => {
 
 const focusItem = async (key: InspectionAuditItemKey) => {
   await nextTick()
-  directoryRef.value
-    ?.querySelector<HTMLElement>(`[data-audit-item="${key}"]`)
-    ?.focus({ preventScroll: true })
-  directoryRef.value
-    ?.querySelector<HTMLElement>(`[data-audit-item="${key}"]`)
-    ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' })
+  const target = directoryRef.value?.querySelector<HTMLElement>(`[data-audit-item="${key}"]`)
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  target?.focus({ preventScroll: true })
+  target?.scrollIntoView({
+    block: 'nearest',
+    inline: 'center',
+    behavior: reduceMotion ? 'auto' : 'smooth'
+  })
 }
 
 const selectItem = (item: InspectionAuditItem) => {
@@ -77,13 +79,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
     <div class="audit-item-directory__head">
       <div>
         <div class="audit-item-directory__heading">
-          <h2>审计项导航</h2>
+          <h2>审计项</h2>
           <span>{{ items.length }} 项</span>
         </div>
-        <p>选择审计项查看详情，各项独立办理、互不阻塞。</p>
+        <p>选择一项查看详情，各项可独立处理。</p>
       </div>
       <span class="audit-item-directory__legend">
-        <small>当前查看</small>
+        <small>正在查看</small>
         <strong>{{ items[selectedIndex]?.label }}</strong>
       </span>
     </div>
@@ -138,10 +140,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
       :class="['audit-item-directory__summary', `is-${items[selectedIndex].status}`]"
       aria-live="polite"
     >
-      <span class="audit-item-directory__summary-status">
-        <i aria-hidden="true"></i>
-        {{ items[selectedIndex].statusLabel }}
-      </span>
       <div class="audit-item-directory__summary-content">
         <strong>
           {{ items[selectedIndex].label }}
@@ -149,6 +147,10 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
         </strong>
         <p>{{ items[selectedIndex].summary }}</p>
       </div>
+      <span class="audit-item-directory__summary-status">
+        <i aria-hidden="true"></i>
+        {{ items[selectedIndex].statusLabel }}
+      </span>
       <time v-if="items[selectedIndex].updatedAt">更新于 {{ items[selectedIndex].updatedAt }}</time>
     </div>
   </div>
@@ -157,6 +159,10 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 <style scoped>
 .audit-item-directory {
   --audit-item-color: var(--aicheck-text-subtle, #667085);
+  --audit-directory-sky: #f4f8ff;
+  --audit-directory-mint: #f2faf6;
+  --audit-directory-text: #29374a;
+  --audit-directory-muted: #53657a;
 
   display: contents;
   color: var(--aicheck-text, #26364e);
@@ -164,11 +170,15 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .audit-item-directory__head {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 20px 12px;
-  background: var(--aicheck-surface, #fff);
+  padding: 14px 16px 10px;
+  background: linear-gradient(
+    100deg,
+    var(--aicheck-surface, #fff) 0%,
+    var(--audit-directory-sky) 100%
+  );
   border-radius: 12px 12px 0 0;
 }
 
@@ -185,19 +195,19 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .audit-item-directory__head h2 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 650;
-  line-height: 24px;
-  color: var(--aicheck-text-strong, #172033);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--audit-directory-text);
 }
 
 .audit-item-directory__heading > span {
   padding: 1px 7px;
-  font-size: 11px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 18px;
-  color: var(--aicheck-text-muted, #52647d);
-  background: var(--aicheck-surface-muted, #f2f6fb);
+  color: var(--audit-directory-muted);
+  background: color-mix(in srgb, var(--aicheck-primary, #1f66d8) 6%, transparent);
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
 }
@@ -205,75 +215,74 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 .audit-item-directory__head p {
   margin-top: 2px;
   font-size: 12px;
+  font-weight: 400;
   line-height: 18px;
-  color: var(--aicheck-text-muted, #52647d);
+  color: var(--audit-directory-muted);
 }
 
 .audit-item-directory__legend {
   display: inline-flex;
   flex: none;
-  min-height: 32px;
-  padding: 4px 5px 4px 10px;
+  min-height: 30px;
+  padding: 4px 10px;
   font-size: 12px;
-  font-weight: 650;
-  color: var(--aicheck-text-muted, #52647d);
-  background: var(--aicheck-surface-soft, #f8fbff);
+  font-weight: 500;
+  color: var(--audit-directory-muted);
+  background: color-mix(in srgb, var(--aicheck-primary, #1f66d8) 6%, var(--aicheck-surface, #fff));
   border-radius: 999px;
   align-items: center;
   gap: 8px;
 }
 
 .audit-item-directory__legend small {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--aicheck-text-subtle, #667085);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--audit-directory-muted);
 }
 
 .audit-item-directory__legend strong {
-  padding: 2px 9px;
+  padding: 0;
   font-size: 12px;
-  font-weight: 650;
-  line-height: 20px;
+  font-weight: 600;
+  line-height: 18px;
   color: var(--aicheck-primary-strong, #174fa8);
-  background: var(--aicheck-surface, #fff);
-  border-radius: 999px;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
 }
 
 .audit-item-directory__scroll {
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: 9px 8px 7px;
+  padding: 8px 8px 6px;
   overflow: auto hidden;
-  background: var(--aicheck-surface-soft, #f8fbff);
-  border-radius: 10px;
-  box-shadow: 0 8px 20px rgb(15 23 42 / 7%);
+  background: linear-gradient(110deg, var(--audit-directory-sky), var(--audit-directory-mint));
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgb(36 51 73 / 6%);
   isolation: isolate;
   scrollbar-width: thin;
   scroll-snap-type: x proximity;
 }
 
 .audit-item-directory__steps {
-  min-width: 940px;
+  min-width: 896px;
   padding: 2px 0;
 }
 
 .audit-item-directory__item {
   --audit-item-color: var(--aicheck-text-subtle, #667085);
 
-  min-width: 134px;
-  min-height: 112px;
-  padding: 5px 7px 8px;
+  min-width: 128px;
+  min-height: 98px;
+  padding: 4px 6px 7px;
   cursor: pointer;
   background: transparent;
-  border-radius: 10px;
+  border-radius: 12px;
   outline: none;
   scroll-snap-align: center;
+  touch-action: manipulation;
   transition:
     background-color 180ms ease-out,
     box-shadow 180ms ease-out,
-    transform 180ms ease-out;
+    transform 120ms ease-out;
 }
 
 .audit-item-directory__item.is-in_progress {
@@ -293,14 +302,16 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .audit-item-directory__item:hover {
-  background: color-mix(in srgb, var(--audit-item-color) 5%, var(--aicheck-surface, #fff));
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--audit-item-color) 3%, var(--aicheck-surface, #fff));
 }
 
 .audit-item-directory__item.is-selected {
-  background: var(--aicheck-surface, #fff);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--audit-item-color) 12%, transparent);
+  background: color-mix(in srgb, var(--audit-item-color) 5%, var(--aicheck-surface, #fff));
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--audit-item-color) 8%, transparent);
+}
+
+.audit-item-directory__item:active {
+  transform: scale(0.99);
 }
 
 .audit-item-directory__item:focus-visible {
@@ -314,9 +325,9 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .audit-item-directory__item :deep(.el-step__line) {
-  top: 15px;
+  top: 14px;
   height: 1px;
-  background-color: var(--aicheck-border-strong, #c2d1e3) !important;
+  background-color: #d9e2ec !important;
 }
 
 .audit-item-directory__item :deep(.el-step__line-inner) {
@@ -325,8 +336,8 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .audit-item-directory__item :deep(.el-step__icon) {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   background: color-mix(in srgb, var(--audit-item-color) 10%, var(--aicheck-surface, #fff));
   border: 0;
   border-radius: 50%;
@@ -340,10 +351,10 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   position: relative;
   z-index: 1;
   display: grid;
-  width: 27px;
-  height: 27px;
-  font-size: 11px;
-  font-weight: 750;
+  width: 25px;
+  height: 25px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--audit-item-color);
   background: transparent;
   border-radius: 50%;
@@ -361,28 +372,28 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 .is-selected .audit-stage-index::after {
   position: absolute;
   z-index: -1;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   pointer-events: none;
-  background: color-mix(in srgb, var(--audit-item-color) 22%, transparent);
+  background: color-mix(in srgb, var(--audit-item-color) 16%, transparent);
   border-radius: 50%;
   content: '';
-  animation: audit-item-ripple 1.45s ease-out 2;
+  animation: audit-item-ripple 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) 1;
 }
 
 .audit-stage-title {
   display: grid;
   min-width: 0;
-  margin-top: 7px;
+  margin-top: 5px;
   text-align: center;
-  gap: 3px;
+  gap: 2px;
 }
 
 .audit-stage-title strong {
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 20px;
-  color: var(--aicheck-text-strong, #172033);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+  color: var(--audit-directory-text);
   transition: color 180ms ease-out;
 }
 
@@ -393,9 +404,9 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 .audit-stage-title > span {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  color: var(--aicheck-text-muted, #52647d);
+  font-weight: 400;
+  line-height: 17px;
+  color: var(--audit-directory-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -403,14 +414,14 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .audit-stage-status {
   display: inline-flex;
-  min-height: 22px;
-  padding: 1px 7px;
-  margin: 2px auto 0;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 18px;
+  min-height: 20px;
+  padding: 1px 6px;
+  margin: 1px auto 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 17px;
   color: var(--audit-item-color);
-  background: color-mix(in srgb, var(--audit-item-color) 7%, var(--aicheck-surface, #fff));
+  background: transparent;
   border-radius: 999px;
   align-items: center;
   gap: 4px;
@@ -424,27 +435,38 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .audit-stage-status b {
-  min-width: 16px;
-  padding: 0 4px;
-  font-size: 10px;
-  line-height: 14px;
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
   color: var(--aicheck-surface, #fff);
   background: var(--audit-item-color);
   border-radius: 999px;
+}
+
+.is-in_progress .audit-stage-status,
+.is-completed .audit-stage-status {
+  background: color-mix(in srgb, var(--audit-item-color) 4%, var(--aicheck-surface, #fff));
+}
+
+.is-needs_attention .audit-stage-status,
+.is-failed .audit-stage-status {
+  background: color-mix(in srgb, var(--audit-item-color) 6%, var(--aicheck-surface, #fff));
 }
 
 .audit-item-directory__summary {
   --audit-item-color: var(--aicheck-text-subtle, #667085);
 
   display: grid;
-  min-height: 62px;
-  padding: 10px 12px;
-  margin: 10px 0 16px;
+  min-height: 54px;
+  padding: 8px 12px;
+  margin: 8px 0 14px;
   background: color-mix(in srgb, var(--audit-item-color) 4%, var(--aicheck-surface, #fff));
-  border-radius: 8px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  border-radius: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .audit-item-directory__summary.is-in_progress {
@@ -465,13 +487,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .audit-item-directory__summary-status {
   display: inline-flex;
-  min-height: 24px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 18px;
+  min-height: 22px;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 17px;
   color: var(--audit-item-color);
-  background: var(--aicheck-surface, #fff);
+  background: color-mix(in srgb, var(--aicheck-surface, #fff) 72%, transparent);
   border-radius: 999px;
   align-items: center;
   gap: 5px;
@@ -492,15 +514,16 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font-size: 14px;
-  font-weight: 650;
-  color: var(--aicheck-text-strong, #172033);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+  color: var(--audit-directory-text);
 }
 
 .audit-item-directory__summary strong small {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--aicheck-text-muted, #52647d);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--audit-directory-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -508,16 +531,18 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   margin-top: 2px;
   overflow: hidden;
   font-size: 12px;
+  font-weight: 400;
   line-height: 18px;
-  color: var(--aicheck-text-muted, #52647d);
+  color: var(--audit-directory-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .audit-item-directory__summary time {
   flex: none;
-  font-size: 11px;
-  color: var(--aicheck-text-muted, #52647d);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--audit-directory-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -528,13 +553,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 @keyframes audit-item-ripple {
   from {
-    opacity: 0.44;
+    opacity: 0.22;
     transform: scale(1);
   }
 
   to {
     opacity: 0;
-    transform: scale(1.9);
+    transform: scale(1.65);
   }
 }
 
@@ -543,7 +568,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
-    padding: 14px 14px 10px;
+    padding: 12px 14px 9px;
   }
 
   .audit-item-directory__legend {
@@ -551,20 +576,17 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
     justify-content: space-between;
   }
 
-  .audit-item-directory__steps {
-    min-width: 966px;
+  .audit-item-directory__summary {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .audit-item-directory__summary {
-    grid-template-columns: auto minmax(0, 1fr);
+  .audit-item-directory__summary-content {
+    grid-column: 1 / -1;
   }
 
   .audit-item-directory__summary time {
     grid-column: 2;
-  }
-
-  .audit-item-directory__summary time {
-    justify-self: start;
+    justify-self: end;
   }
 }
 

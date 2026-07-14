@@ -11,6 +11,11 @@ const viewports = configuredViewports
   : [390, 768, 1024, 1440]
 const allRoutes = [
   { account: 'inspection', path: '/workbench/inspection', label: '监检工作台' },
+  {
+    account: 'inspection',
+    path: '/workbench/inspection?nodeId=24&auditItem=submission',
+    label: '监检节点审计'
+  },
   { account: 'contractor', path: '/workbench/contractor', label: '施工方工作台' },
   { account: 'ndt', path: '/workbench/ndt', label: '无损检测工作台' },
   { account: 'owner', path: '/workbench/owner', label: '建设方工作台' },
@@ -38,12 +43,32 @@ const passwordFor = (account) => {
 }
 
 const login = async (page, account, path) => {
-  await page.goto(`${baseUrl}/#/login?redirect=${encodeURIComponent(path)}`)
+  const [routePath, routeQuery] = path.split('?')
+  await page.goto(`${baseUrl}/#/login?redirect=${encodeURIComponent(routePath)}`)
   await page.getByRole('textbox', { name: '用户名' }).fill(account)
   await page.getByRole('textbox', { name: '密码' }).fill(passwordFor(account))
   await page.getByRole('button', { name: '登录' }).click()
-  await page.waitForURL((url) => url.hash.includes(path), { timeout: 20_000 })
+  await page.waitForURL((url) => url.hash.includes(routePath), { timeout: 20_000 })
   await page.waitForLoadState('networkidle').catch(() => {})
+  if (routeQuery) {
+    const mobileNavigationTrigger = page.getByRole('button', { name: '审核节点', exact: true })
+    if (await mobileNavigationTrigger.isVisible()) await mobileNavigationTrigger.click()
+    const nodeNavigation = page.locator('#audit-node-navigation')
+    await nodeNavigation.waitFor({ state: 'visible', timeout: 20_000 })
+    const auditNode = nodeNavigation
+      .locator('.node-button')
+      .filter({ hasText: '焊工资格证及持证合格项目' })
+      .first()
+    if ((await auditNode.count()) === 0) {
+      await nodeNavigation.getByRole('treeitem', { name: '焊接（粘接）', exact: true }).click()
+    }
+    await auditNode.click()
+    await page.getByRole('region', { name: '审计项目录' }).waitFor({ timeout: 20_000 })
+    await page
+      .locator('.audit-item-directory:not(.is-loading)')
+      .waitFor({ state: 'attached', timeout: 20_000 })
+    return
+  }
 }
 
 const inspectPage = async (page, viewport) =>
@@ -121,7 +146,7 @@ const inspectPage = async (page, viewport) =>
     })
     const targets = Array.from(
       document.querySelectorAll(
-        "button, a, [role='button'], [role='treeitem'], .standard-tree-node.is-file"
+        "button, a, [role='button'], [role='treeitem'], .audit-item-directory [role='tab'], .standard-tree-node.is-file"
       )
     )
       .filter(visible)
