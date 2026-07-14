@@ -5558,19 +5558,25 @@ def test_persistent_user_login_when_demo_users_disabled(monkeypatch) -> None:
     assert_error(client.post("/api/auth/login", json={"username": "inspection", "password": "inspection"}), "AUTH_REQUIRED")
 
 
-def test_auth_login_is_public_logout_requires_auth_and_security_events_are_flushed(monkeypatch) -> None:
+def test_auth_login_is_public_logout_requires_auth_and_security_events_are_scoped_flushed(monkeypatch) -> None:
     from apps.api import main as api_main
 
-    flush_calls: list[str] = []
+    flush_calls: list[tuple[dict, list[str]]] = []
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
-    monkeypatch.setattr(api_main, "flush_state", lambda: flush_calls.append("flush"))
+    monkeypatch.setattr(
+        api_main,
+        "flush_mutation_records",
+        lambda records, scopes: flush_calls.append((records, scopes)),
+    )
 
     login = assert_ok(client.post("/api/auth/login", json={"username": "ndt", "password": "ndt"}))
 
     assert_ok(client.post("/api/auth/logout", headers={"Authorization": f"Bearer {login['token']}"}))
     assert_error(client.post("/api/auth/logout"), "AUTH_REQUIRED")
     assert_error(client.post("/auth/logout"), "AUTH_REQUIRED")
-    assert flush_calls == ["flush", "flush"]
+    assert len(flush_calls) == 4
+    assert all(set(records) == {"audit_logs"} for records, _scopes in flush_calls)
+    assert all(scopes == [] for _records, scopes in flush_calls)
 
 
 def test_frontend_route_groups_return_success() -> None:

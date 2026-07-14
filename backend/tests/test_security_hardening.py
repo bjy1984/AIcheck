@@ -130,6 +130,29 @@ def test_logout_revokes_current_token(monkeypatch) -> None:
     assert payload(after)["data"]["reason"] == "AUTH_REQUIRED"
 
 
+def test_login_audit_uses_scoped_persistence(monkeypatch) -> None:
+    import apps.api.main as api_main
+
+    full_flushes: list[bool] = []
+    scoped_flushes: list[dict] = []
+    monkeypatch.setattr(api_main, "flush_state", lambda: full_flushes.append(True))
+    monkeypatch.setattr(
+        api_main,
+        "flush_mutation_records",
+        lambda records, scopes: scoped_flushes.append(records),
+    )
+
+    response = client.post(
+        "/api/auth/login",
+        json={"username": "scoped-persistence-probe", "password": "invalid"},
+    )
+
+    assert payload(response)["data"]["reason"] == "AUTH_REQUIRED"
+    assert full_flushes == []
+    assert len(scoped_flushes) == 1
+    assert set(scoped_flushes[0]) == {"audit_logs"}
+
+
 @pytest.mark.asyncio
 async def test_login_rate_limit_blocks_fifth_pair_failure() -> None:
     for _ in range(4):

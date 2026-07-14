@@ -134,10 +134,10 @@ def test_isolated_mode_rejects_foreign_tenant_login(monkeypatch) -> None:
 def test_failed_request_flush_restores_in_memory_tenant_state(monkeypatch) -> None:
     before = repo.clone(repo.state["audit_logs"])
 
-    def fail_flush() -> None:
+    def fail_flush(_records: dict, _scopes: list[str]) -> None:
         raise RuntimeError("simulated persistence failure")
 
-    monkeypatch.setattr("apps.api.main.flush_state", fail_flush)
+    monkeypatch.setattr("apps.api.main.flush_mutation_records", fail_flush)
     with pytest.raises(RuntimeError, match="simulated persistence failure"):
         client.post("/api/auth/login", json={"username": "inspection", "password": "inspection"})
 

@@ -349,6 +349,8 @@ def idempotency_scope(request: Request) -> str | None:
 
 
 def should_flush_state(request: Request) -> bool:
+    if callable(getattr(request.state, "scoped_flush_records", None)):
+        return True
     if bool(getattr(request.state, "force_flush_state", False)):
         return True
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:

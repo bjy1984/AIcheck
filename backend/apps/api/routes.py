@@ -48,7 +48,7 @@ from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.audit_context import current_request_audit_context, reset_request_audit_context, set_request_audit_context
 from libs.audit_runtime import audit_runtime_public_config
-from libs.db.repository import flush_state, load_state, postgres_persistence_configured, repo
+from libs.db.repository import flush_mutation_records, flush_state, load_state, postgres_persistence_configured, repo
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
 from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
@@ -4152,7 +4152,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
             error_code="RATE_LIMITED",
             outcome="denied",
         )
-        request.state.force_flush_state = True
+        request.state.scoped_flush_records = lambda: {}
         response = fail(
             errors.RATE_LIMITED,
             request,
@@ -4176,7 +4176,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
                 error_code="RATE_LIMITED",
                 outcome="denied",
             )
-            request.state.force_flush_state = True
+            request.state.scoped_flush_records = lambda: {}
             response = fail(
                 errors.RATE_LIMITED,
                 request,
@@ -4193,7 +4193,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
             error_code="INVALID_CREDENTIALS",
             outcome="denied",
         )
-        request.state.force_flush_state = True
+        request.state.scoped_flush_records = lambda: {}
         return fail(errors.AUTH_REQUIRED, request, message="账号或密码错误")
     try:
         await security_sessions.clear_login_failures(client_ip, username)
@@ -4222,7 +4222,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
                 error_code="JWT_BACKEND_UNAVAILABLE",
                 outcome="failed",
             )
-            request.state.force_flush_state = True
+            request.state.scoped_flush_records = lambda: {}
             return fail(
                 errors.SECURITY_BACKEND_UNAVAILABLE,
                 request,
@@ -4230,7 +4230,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
                 http_status=503,
             )
         repo.add_audit("登录成功", "Authentication", username)
-        request.state.force_flush_state = True
+        request.state.scoped_flush_records = lambda: {}
         return ok({"token": token, "user": user}, request)
     finally:
         reset_request_audit_context(identity_audit_token)
@@ -4244,7 +4244,7 @@ async def auth_logout(request: Request):
     except SecurityBackendUnavailable:
         return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
     repo.add_audit("退出登录", "Authentication", str(claims.get("sub") or "unknown"))
-    request.state.force_flush_state = True
+    request.state.scoped_flush_records = lambda: {}
     return ok(None, request)
 
 
@@ -4275,7 +4275,11 @@ def auth_change_password(request: Request, body: dict[str, Any] = Body(default_f
     user["authVersion"] = int(user.get("authVersion") or 0) + 1
     bump_record_revision(user)
     audit_id = repo.add_audit("用户修改密码", "User", str(user.get("id") or username))
-    flush_state()
+    audit = repo.find_one("audit_logs", audit_id)
+    records = {"users": [user]}
+    if audit:
+        records["audit_logs"] = [audit]
+    flush_mutation_records(records, [])
     safe_user = public_user(user)
     return ok(
         {
