@@ -868,7 +868,7 @@ test.describe('AIcheck route smoke', () => {
       await expect(auditDirectory).toBeVisible()
       await expect(auditDirectory.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
       await expect(auditDirectory.getByRole('tab')).toHaveCount(7)
-      await expect(auditDirectory.locator('.audit-item-directory__summary')).toBeVisible()
+      await expect(page.locator('.audit-item-directory__summary')).toBeVisible()
       await expectNoPageOverflow(page)
     }
 
@@ -881,9 +881,25 @@ test.describe('AIcheck route smoke', () => {
     const selectedItem = desktopAuditDirectory.locator('.audit-item-directory__item.is-selected')
     await expect(selectedItem).toHaveCount(1)
     await expect(selectedItem).toHaveAttribute('aria-selected', 'true')
-    await expect(desktopAuditDirectory.locator('.audit-item-directory__legend')).toContainText(
-      '当前查看'
-    )
+    await expect(page.locator('.audit-item-directory__legend')).toContainText('当前查看')
+
+    const center = page.locator('.center')
+    await center.evaluate((element) => {
+      element.scrollTop = 700
+    })
+    const stickyTopInset = await center.evaluate((element) => {
+      return Math.round(Number.parseFloat(getComputedStyle(element).paddingTop))
+    })
+    await expect
+      .poll(async () => {
+        const [directoryBox, centerBox] = await Promise.all([
+          desktopAuditDirectory.boundingBox(),
+          center.boundingBox()
+        ])
+        if (!directoryBox || !centerBox) return -1
+        return Math.round(directoryBox.y - centerBox.y)
+      })
+      .toBe(stickyTopInset)
     await expectNoPageOverflow(page)
   })
 

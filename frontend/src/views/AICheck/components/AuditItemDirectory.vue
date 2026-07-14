@@ -73,12 +73,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 </script>
 
 <template>
-  <section
-    ref="directoryRef"
-    class="audit-item-directory"
-    :class="{ 'is-loading': loading }"
-    aria-label="审计项目录"
-  >
+  <div ref="directoryRef" class="audit-item-directory" :class="{ 'is-loading': loading }">
     <div class="audit-item-directory__head">
       <div>
         <div class="audit-item-directory__heading">
@@ -93,7 +88,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
       </span>
     </div>
 
-    <div class="audit-item-directory__scroll">
+    <div class="audit-item-directory__scroll" role="region" aria-label="审计项目录">
       <ElSteps
         :active="-1"
         direction="horizontal"
@@ -156,17 +151,15 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
       </div>
       <time v-if="items[selectedIndex].updatedAt">更新于 {{ items[selectedIndex].updatedAt }}</time>
     </div>
-  </section>
+  </div>
 </template>
 
 <style scoped>
 .audit-item-directory {
   --audit-item-color: var(--aicheck-text-subtle, #667085);
 
-  padding: 18px 20px 16px;
+  display: contents;
   color: var(--aicheck-text, #26364e);
-  background: var(--aicheck-surface, #fff);
-  border-radius: 12px;
 }
 
 .audit-item-directory__head {
@@ -174,6 +167,9 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   gap: 16px;
   align-items: center;
   justify-content: space-between;
+  padding: 18px 20px 12px;
+  background: var(--aicheck-surface, #fff);
+  border-radius: 12px 12px 0 0;
 }
 
 .audit-item-directory__head p,
@@ -245,11 +241,15 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .audit-item-directory__scroll {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   padding: 9px 8px 7px;
-  margin-top: 12px;
   overflow: auto hidden;
   background: var(--aicheck-surface-soft, #f8fbff);
   border-radius: 10px;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 7%);
+  isolation: isolate;
   scrollbar-width: thin;
   scroll-snap-type: x proximity;
 }
@@ -439,7 +439,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   display: grid;
   min-height: 62px;
   padding: 10px 12px;
-  margin-top: 10px;
+  margin: 10px 0 16px;
   background: color-mix(in srgb, var(--audit-item-color) 4%, var(--aicheck-surface, #fff));
   border-radius: 8px;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -521,7 +521,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   font-variant-numeric: tabular-nums;
 }
 
-.audit-item-directory.is-loading {
+.audit-item-directory.is-loading > * {
   pointer-events: none;
   opacity: 0.72;
 }
@@ -539,15 +539,11 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 @media (width <= 900px) {
-  .audit-item-directory {
-    padding-block: 14px;
-    padding-inline: 14px;
-  }
-
   .audit-item-directory__head {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
+    padding: 14px 14px 10px;
   }
 
   .audit-item-directory__legend {
