@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { ElDialog, ElEmpty, ElInput, ElTag } from 'element-plus'
+import {
+  ElAlert,
+  ElButton,
+  ElDialog,
+  ElEmpty,
+  ElInput,
+  ElSkeleton,
+  ElSkeletonItem,
+  ElTag
+} from 'element-plus'
 import { useRouter } from 'vue-router'
 import { searchApi } from '@/api/aicheck'
 import type { OperationArea, SearchResult } from '@/types/aicheck'
@@ -135,6 +144,8 @@ defineExpose({ open, close })
           clearable
           autocomplete="off"
           aria-label="输入搜索关键词"
+          aria-controls="command-search-results"
+          :aria-activedescendant="results.length ? `command-result-${activeIndex}` : undefined"
           @keydown="handleKeydown"
         />
         <kbd>Esc</kbd>
@@ -142,17 +153,39 @@ defineExpose({ open, close })
     </template>
 
     <div class="command-body" aria-live="polite">
-      <div v-if="errorMessage" class="command-error" role="alert">
-        <span>{{ errorMessage }}</span>
-        <button type="button" @click="runSearch">重试</button>
-      </div>
-      <div v-else-if="loading" class="command-loading">正在搜索真实业务数据...</div>
+      <ElAlert
+        v-if="errorMessage"
+        class="command-error"
+        type="error"
+        :title="errorMessage"
+        :closable="false"
+        show-icon
+      >
+        <ElButton size="small" type="danger" plain @click="runSearch">重试</ElButton>
+      </ElAlert>
+      <ElSkeleton v-else-if="loading" class="command-loading" animated :rows="4">
+        <template #template>
+          <div v-for="index in 4" :key="index" class="command-skeleton-row">
+            <ElSkeletonItem variant="circle" class="command-skeleton-icon" />
+            <div>
+              <ElSkeletonItem variant="h3" style="width: 42%" />
+              <ElSkeletonItem variant="text" style="width: 78%" />
+            </div>
+          </div>
+        </template>
+      </ElSkeleton>
       <ElEmpty
         v-else-if="!results.length"
         :description="keyword.trim() ? '没有符合当前权限和范围的结果' : '输入关键词开始搜索'"
         :image-size="72"
       />
-      <div v-else class="command-results" role="listbox" aria-label="搜索结果">
+      <div
+        v-else
+        id="command-search-results"
+        class="command-results"
+        role="listbox"
+        aria-label="搜索结果"
+      >
         <button
           v-for="(result, index) in results"
           :id="`command-result-${index}`"
@@ -231,31 +264,35 @@ kbd {
   border-block: 1px solid #e3eaf3;
 }
 
-.command-loading,
 .command-error {
   display: flex;
-  min-height: 160px;
-  padding: 24px;
-  color: #52647d;
-  align-items: center;
-  justify-content: center;
+  margin: 16px;
 }
 
-.command-error {
-  color: #b42318;
-  background: #fef3f2;
+.command-loading {
+  padding: 16px;
+}
+
+.command-error :deep(.el-alert__content) {
+  display: flex;
   gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
 }
 
-.command-error button {
-  min-height: 36px;
-  padding: 0 12px;
-  font-weight: 600;
-  color: #b42318;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid #f0b4ae;
-  border-radius: 5px;
+.command-skeleton-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  min-height: 68px;
+  padding: 10px 12px;
+  gap: 10px;
+  align-items: center;
+}
+
+.command-skeleton-icon {
+  width: 30px;
+  height: 30px;
 }
 
 .command-results {

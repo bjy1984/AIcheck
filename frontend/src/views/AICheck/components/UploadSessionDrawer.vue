@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ElAlert, ElButton, ElDrawer, ElMessage, ElTable, ElTableColumn } from 'element-plus'
+import {
+  ElAlert,
+  ElButton,
+  ElDrawer,
+  ElMessage,
+  ElTable,
+  ElTableColumn,
+  ElUpload
+} from 'element-plus'
+import type { UploadFile, UploadInstance } from 'element-plus'
 
 const props = defineProps<{
   modelValue: boolean
@@ -20,7 +29,7 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
-const fileInputRef = ref<HTMLInputElement>()
+const uploadRef = ref<UploadInstance>()
 const selectedFiles = ref<File[]>([])
 
 const fileRows = computed(() =>
@@ -35,15 +44,15 @@ const fileRows = computed(() =>
 
 const primaryActionLabel = computed(() => {
   const fileCount = selectedFiles.value.length
-  return fileCount > 0 ? `上传 ${fileCount} 个文件` : '选择文件'
+  return fileCount > 0 ? `上传 ${fileCount} 个文件` : '请先选择文件'
 })
 
 const resetFiles = () => {
   selectedFiles.value = []
-  if (fileInputRef.value) fileInputRef.value.value = ''
+  uploadRef.value?.clearFiles()
 }
 
-const appendFiles = (fileList: FileList | File[]) => {
+const appendFiles = (fileList: File[]) => {
   const incoming = Array.from(fileList)
   if (!incoming.length) return
   const existingKeys = new Set(
@@ -60,18 +69,8 @@ const appendFiles = (fileList: FileList | File[]) => {
   ]
 }
 
-const handleFileChange = (event: Event) => {
-  const input = event.target as HTMLInputElement
-  if (input.files) appendFiles(input.files)
-}
-
-const handleDrop = (event: DragEvent) => {
-  event.preventDefault()
-  if (event.dataTransfer?.files) appendFiles(event.dataTransfer.files)
-}
-
-const openFilePicker = () => {
-  fileInputRef.value?.click()
+const handleUploadChange = (uploadFile: UploadFile) => {
+  if (uploadFile.raw) appendFiles([uploadFile.raw])
 }
 
 const removeFile = (id: string) => {
@@ -84,14 +83,6 @@ const handleSubmit = () => {
     return
   }
   emit('submit', selectedFiles.value)
-}
-
-const handlePrimaryAction = () => {
-  if (!selectedFiles.value.length) {
-    openFilePicker()
-    return
-  }
-  handleSubmit()
 }
 
 const handleRetry = () => {
@@ -128,25 +119,21 @@ watch(
         </div>
       </ElAlert>
 
-      <input
-        ref="fileInputRef"
-        class="native-file-input"
-        type="file"
+      <ElUpload
+        ref="uploadRef"
+        class="file-uploader"
+        drag
         multiple
+        :auto-upload="false"
+        :show-file-list="false"
         accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
-        @change="handleFileChange"
-      />
-
-      <button
-        type="button"
-        class="file-drop-zone"
-        @click="openFilePicker"
-        @dragover.prevent
-        @drop="handleDrop"
+        :on-change="handleUploadChange"
       >
-        <strong>选择或拖拽文件到此处</strong>
-        <span>支持 pdf、doc、docx、xls、xlsx、jpg、png、zip</span>
-      </button>
+        <div class="file-drop-zone">
+          <strong>选择或拖拽文件到此处</strong>
+          <span>支持 pdf、doc、docx、xls、xlsx、jpg、png、zip，可一次选择多个文件</span>
+        </div>
+      </ElUpload>
 
       <div class="upload-table-shell">
         <ElTable class="upload-table" :data="fileRows" border>
@@ -163,7 +150,12 @@ watch(
 
       <div class="drawer-actions">
         <ElButton @click="visible = false">取消</ElButton>
-        <ElButton type="primary" :loading="loading" @click="handlePrimaryAction">
+        <ElButton
+          type="primary"
+          :loading="loading"
+          :disabled="!selectedFiles.length"
+          @click="handleSubmit"
+        >
           {{ primaryActionLabel }}
         </ElButton>
       </div>
@@ -205,14 +197,10 @@ watch(
   line-height: 1.6;
 }
 
-.native-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  clip-path: inset(50%);
+.file-uploader,
+.file-uploader :deep(.el-upload),
+.file-uploader :deep(.el-upload-dragger) {
+  width: 100%;
 }
 
 .file-drop-zone {
@@ -224,18 +212,11 @@ watch(
   min-height: 172px;
   padding: 24px;
   color: #344054;
-  cursor: pointer;
-  background: #f8fbff;
-  border: 1px dashed #9ec5fe;
-  border-radius: 8px;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+  text-align: center;
 }
 
-.file-drop-zone:hover,
-.file-drop-zone:focus-visible {
+.file-uploader :deep(.el-upload-dragger:hover),
+.file-uploader :deep(.el-upload-dragger:focus-visible) {
   background: #eef6ff;
   border-color: #2f6fed;
   outline: none;

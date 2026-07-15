@@ -31,6 +31,29 @@ const checks = [
   }
 ]
 
+const aicheckUiChecks = [
+  {
+    code: 'AICHECK_HANDMADE_ELEMENT_MESSAGE',
+    pattern: /class=["'][^"']*\bel-message\b[^"']*["']/g,
+    message: 'AICheck 页面不得手工仿造 Element Message，请使用 ElMessage 或 ElNotification。'
+  },
+  {
+    code: 'AICHECK_LEGACY_BASE_BUTTON',
+    pattern: /<BaseButton\b/g,
+    message: 'AICheck 页面不得继续引入旧 BaseButton，请使用 Element Plus 按钮。'
+  },
+  {
+    code: 'AICHECK_PSEUDO_ACTION_TEXT',
+    pattern: /<span\s+class=["']action-text["'][^>]*>/g,
+    message: '无事件处理的 action-text 会形成伪交互；请接入真实动作或明确标记为不可用说明。'
+  },
+  {
+    code: 'AICHECK_TOPBAR_HAMBURGER',
+    pattern: /class=["']hamburger["']/g,
+    message: 'AICheck 顶栏不得放置重复的导航收起按钮。'
+  }
+]
+
 const sourceFiles = []
 const walk = async (directory) => {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -45,13 +68,17 @@ await walk(root)
 const findings = []
 for (const path of sourceFiles) {
   const content = await readFile(path, 'utf8')
-  for (const check of checks) {
+  const relativePath = relative(process.cwd(), path)
+  const activeChecks = relativePath.includes('views/AICheck/')
+    ? [...checks, ...aicheckUiChecks]
+    : checks
+  for (const check of activeChecks) {
     check.pattern.lastIndex = 0
     for (const match of content.matchAll(check.pattern)) {
       const line = content.slice(0, match.index).split('\n').length
       findings.push({
         code: check.code,
-        file: relative(process.cwd(), path),
+        file: relativePath,
         line,
         message: check.message,
         excerpt: match[0]

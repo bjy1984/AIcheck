@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ElButton,
+  ElDrawer,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
+  ElEmpty,
+  ElInput,
   ElMenu,
   ElMenuItem,
+  ElRadioButton,
+  ElRadioGroup,
   ElSubMenu
 } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
@@ -15,6 +20,7 @@ import { Icon } from '@/components/Icon'
 import type { OperationArea } from '@/types/aicheck'
 import GlobalCommandPalette from './GlobalCommandPalette.vue'
 import OperationTaskDrawer from './OperationTaskDrawer.vue'
+import StaticShellRightPanel from './StaticShellRightPanel.vue'
 
 type StaticShellTone = 'blue' | 'green' | 'orange' | 'red'
 
@@ -128,10 +134,10 @@ const router = useRouter()
 const userStore = useUserStore()
 const rightPanelOpen = ref(!props.rightCollapsedDefault)
 const rightPanelTriggerRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
-const rightPanelCloseRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
+const navigationOpen = ref(false)
+const navigationTriggerRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
 const treeFiltersOpen = ref(!props.menuFiltersCollapsedDefault)
 const boundaryOpen = ref(!props.boundaryCollapsedDefault)
-const navigationOpen = ref(true)
 const commandPaletteRef = ref<InstanceType<typeof GlobalCommandPalette> | null>(null)
 const taskDrawerRef = ref<InstanceType<typeof OperationTaskDrawer> | null>(null)
 const rightPanelIsDrawer = computed(() => props.rightPanelMode === 'drawer')
@@ -149,6 +155,14 @@ const activeMenuFilter = computed(() => {
 })
 const activeMenuFilterLabel = computed(() => activeMenuFilter.value?.label || '全部')
 const peerNavTitleLabel = computed(() => props.peerNavTitle || '同级功能')
+const menuSearchModel = computed({
+  get: () => props.menuSearchValue || '',
+  set: (value: string) => emit('menu-search-change', value)
+})
+const menuFilterModel = computed({
+  get: () => props.menuFilterValue || props.menuFilters?.[0]?.value || '',
+  set: (value: string) => emit('menu-filter-change', value)
+})
 
 const staticMenuActiveIndex = computed(() => {
   for (const section of props.menuSections) {
@@ -160,6 +174,12 @@ const staticMenuActiveIndex = computed(() => {
   const firstItem = firstSection?.items[0]
   return firstSection && firstItem ? getItemIndex(firstSection, firstItem) : ''
 })
+
+const hasExplicitActiveMenuItem = computed(() =>
+  props.menuSections.some((section) =>
+    section.items.some((item) => item.active || item.route === route.path)
+  )
+)
 
 const staticMenuDefaultOpeneds = computed(() => {
   const opened = ['root']
@@ -182,6 +202,7 @@ const staticMenuDefaultOpeneds = computed(() => {
 })
 
 const handleStaticMenuSelect = (index: string) => {
+  navigationOpen.value = false
   for (const section of props.menuSections) {
     const item = section.items.find((menuItem) => getItemIndex(section, menuItem) === index)
     if (item) {
@@ -201,18 +222,11 @@ const isPeerNavItemActive = (item: StaticShellMenuItem) => {
 }
 
 const handlePeerNavSelect = (item: StaticShellMenuItem) => {
+  navigationOpen.value = false
   emit('menu-select', item)
   if (item.route && item.route !== route.path) {
     router.push(item.route)
   }
-}
-
-const handleMenuSearchInput = (event: Event) => {
-  emit('menu-search-change', (event.target as HTMLInputElement).value)
-}
-
-const handleMenuFilter = (value: string) => {
-  emit('menu-filter-change', value)
 }
 
 const handleTopStatClick = (stat: StaticShellTopStat) => {
@@ -221,19 +235,20 @@ const handleTopStatClick = (stat: StaticShellTopStat) => {
   }
 }
 
-const focusElementRef = (target: typeof rightPanelTriggerRef.value) => {
+const focusRightPanelTrigger = () => {
+  const target = rightPanelTriggerRef.value
+  const element = target instanceof HTMLElement ? target : target?.$el
+  element?.focus?.()
+}
+
+const focusNavigationTrigger = () => {
+  const target = navigationTriggerRef.value
   const element = target instanceof HTMLElement ? target : target?.$el
   element?.focus?.()
 }
 
 const openRightPanel = () => {
   rightPanelOpen.value = true
-  nextTick(() => focusElementRef(rightPanelCloseRef.value))
-}
-
-const closeRightPanel = () => {
-  rightPanelOpen.value = false
-  nextTick(() => focusElementRef(rightPanelTriggerRef.value))
 }
 
 const handleUserCommand = (command: string | number | object) => {
@@ -247,9 +262,6 @@ const handleShellKeydown = (event: KeyboardEvent) => {
     event.preventDefault()
     commandPaletteRef.value?.open()
     return
-  }
-  if (event.key === 'Escape' && rightPanelIsDrawer.value && rightPanelOpen.value) {
-    closeRightPanel()
   }
 }
 
@@ -269,8 +281,7 @@ onBeforeUnmount(() => {
       `shell-${workspaceMode || 'default'}`,
       {
         'right-drawer-mode': rightPanelIsDrawer,
-        'right-panel-open': rightPanelIsDrawer && rightPanelOpen,
-        'navigation-collapsed': !navigationOpen
+        'right-panel-open': rightPanelIsDrawer && rightPanelOpen
       }
     ]"
   >
@@ -278,16 +289,6 @@ onBeforeUnmount(() => {
       <a class="skip-main" href="#aicheck-static-main">跳到主内容</a>
       <header class="topbar">
         <div class="brand">
-          <button
-            class="hamburger"
-            type="button"
-            :aria-label="navigationOpen ? '收起导航' : '展开导航'"
-            :aria-expanded="navigationOpen"
-            aria-controls="aicheck-static-navigation"
-            @click="navigationOpen = !navigationOpen"
-          >
-            <Icon :icon="navigationOpen ? 'vi-ep:fold' : 'vi-ep:expand'" :size="20" />
-          </button>
           <div class="brand-mark">{{ brandMark }}</div>
           <div class="project-title">{{ title }}</div>
           <div v-if="status" :class="['top-status', `pill-${statusTone || 'blue'}`]">
@@ -304,6 +305,17 @@ onBeforeUnmount(() => {
           ><kbd>⌘K</kbd>
         </ElButton>
         <div class="top-actions">
+          <ElButton
+            ref="navigationTriggerRef"
+            class="mobile-navigation-trigger"
+            plain
+            aria-controls="aicheck-static-mobile-navigation"
+            :aria-expanded="navigationOpen"
+            @click="navigationOpen = true"
+          >
+            <Icon icon="vi-ep:menu" :size="17" />
+            <span>导航</span>
+          </ElButton>
           <component
             :is="stat.clickable ? 'button' : 'span'"
             v-for="stat in topStats"
@@ -381,16 +393,14 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div v-if="hasMenuControls" class="tree-controls">
-              <label v-if="menuSearchPlaceholder" class="tree-search">
-                <span class="sr-only">{{ menuSearchPlaceholder }}</span>
-                <input
-                  :value="menuSearchValue || ''"
-                  :placeholder="menuSearchPlaceholder"
-                  type="search"
-                  autocomplete="off"
-                  @input="handleMenuSearchInput"
-                />
-              </label>
+              <ElInput
+                v-if="menuSearchPlaceholder"
+                v-model="menuSearchModel"
+                class="tree-search"
+                :placeholder="menuSearchPlaceholder"
+                :aria-label="menuSearchPlaceholder"
+                clearable
+              />
               <button
                 v-if="menuFilters?.length"
                 class="tree-filter-toggle"
@@ -403,27 +413,28 @@ onBeforeUnmount(() => {
                 <em v-if="activeMenuFilter?.count !== undefined">{{ activeMenuFilter.count }}</em>
                 <small>{{ treeFiltersOpen ? '收起' : '展开' }}</small>
               </button>
-              <div
+              <ElRadioGroup
                 v-if="menuFilters?.length && treeFiltersOpen"
+                v-model="menuFilterModel"
                 class="tree-filter"
                 aria-label="项目筛选"
               >
-                <button
+                <ElRadioButton
                   v-for="filter in menuFilters"
                   :key="filter.value"
-                  type="button"
-                  :class="{ active: (menuFilterValue || menuFilters[0]?.value) === filter.value }"
-                  :aria-pressed="(menuFilterValue || menuFilters[0]?.value) === filter.value"
-                  @click="handleMenuFilter(filter.value)"
+                  :value="filter.value"
                 >
                   <span>{{ filter.label }}</span>
                   <em v-if="filter.count !== undefined">{{ filter.count }}</em>
-                </button>
-              </div>
+                </ElRadioButton>
+              </ElRadioGroup>
             </div>
-            <div v-if="!menuSections.length" class="tree-empty">
-              {{ menuEmptyText || '没有匹配的项目' }}
-            </div>
+            <ElEmpty
+              v-if="!menuSections.length"
+              class="tree-empty"
+              :image-size="48"
+              :description="menuEmptyText || '没有匹配的项目'"
+            />
             <ElMenu
               v-else
               :key="staticMenuActiveIndex"
@@ -477,7 +488,16 @@ onBeforeUnmount(() => {
                     v-for="item in section.items"
                     :key="getItemIndex(section, item)"
                     :index="getItemIndex(section, item)"
-                    :class="['tree-node', { active: item.active }]"
+                    :class="[
+                      'tree-node',
+                      {
+                        active:
+                          item.active ||
+                          item.route === route.path ||
+                          (!hasExplicitActiveMenuItem &&
+                            getItemIndex(section, item) === staticMenuActiveIndex)
+                      }
+                    ]"
                     :title="item.hint ? `${item.label} · ${item.hint}` : item.label"
                     :aria-label="item.hint ? `${item.label}，${item.hint}` : item.label"
                     :aria-current="item.active || item.route === route.path ? 'page' : undefined"
@@ -525,77 +545,155 @@ onBeforeUnmount(() => {
           <slot></slot>
         </main>
 
-        <button
-          v-if="rightPanelIsDrawer && rightPanelOpen"
-          class="right-scrim"
-          type="button"
-          aria-label="收起右侧摘要"
-          @click="closeRightPanel"
-        ></button>
-
         <aside
-          v-if="!rightPanelIsDrawer || rightPanelOpen"
+          v-if="!rightPanelIsDrawer"
           id="static-right-panel"
           class="right"
-          :role="rightPanelIsDrawer ? 'dialog' : 'complementary'"
-          :aria-modal="rightPanelIsDrawer ? 'true' : undefined"
+          role="complementary"
           :aria-label="rightTitle"
         >
-          <div class="right-panel-head">
-            <h2 class="right-title">{{ rightTitle }}</h2>
-            <ElButton
-              v-if="rightPanelIsDrawer"
-              ref="rightPanelCloseRef"
-              class="right-panel-close"
-              text
-              :aria-label="`收起${rightTitle}`"
-              @click="closeRightPanel"
-            >
-              收起
-            </ElButton>
-          </div>
-          <div v-if="rightSubtitle" class="preview-name">{{ rightSubtitle }}</div>
-          <section v-for="card in rightCards" :key="card.title" class="right-card">
-            <h3>{{ card.title }}</h3>
-            <div class="body">
-              <table v-if="card.rows?.length" class="table compact" :aria-label="card.title">
-                <tbody>
-                  <tr v-for="row in card.rows" :key="row.label">
-                    <th>{{ row.label }}</th>
-                    <td>
-                      <div v-if="row.progress !== undefined" class="shell-progress">
-                        <span
-                          :class="row.progressTone || 'blue'"
-                          :style="{ width: `${row.progress}%` }"
-                        ></span>
-                      </div>
-                      <template v-else>
-                        <span v-if="row.value">{{ row.value }}</span>
-                        <span
-                          v-if="row.valueBadge"
-                          :class="['pill inline-pill', row.valueTone || 'blue']"
-                        >
-                          {{ row.valueBadge }}
-                        </span>
-                      </template>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div v-if="card.timeline?.length" class="timeline" :aria-label="card.title">
-                <div v-for="item in card.timeline" :key="item.title" class="time-row">
-                  <span :class="['time-dot', item.tone || 'blue']"></span>
-                  <div>
-                    <strong>{{ item.title }}</strong
-                    ><br />{{ item.description }}
-                  </div>
-                </div>
-              </div>
-              <div v-if="card.note" class="readonly-mask">{{ card.note }}</div>
-            </div>
-          </section>
+          <StaticShellRightPanel
+            :title="rightTitle"
+            :subtitle="rightSubtitle"
+            :cards="rightCards"
+          />
         </aside>
       </div>
+      <ElDrawer
+        v-model="navigationOpen"
+        class="static-shell-navigation-drawer"
+        modal-class="static-shell-navigation-overlay"
+        :title="menuTitle"
+        direction="ltr"
+        size="min(340px, calc(100vw - 32px))"
+        append-to-body
+        destroy-on-close
+        @closed="focusNavigationTrigger"
+      >
+        <nav
+          id="aicheck-static-mobile-navigation"
+          class="mobile-shell-navigation"
+          :aria-label="menuTitle"
+        >
+          <div v-if="peerNavItems?.length" class="peer-nav" :aria-label="peerNavTitleLabel">
+            <div class="peer-nav-title">
+              <span>{{ peerNavTitleLabel }}</span>
+              <small>{{ peerNavItems.length }} 项</small>
+            </div>
+            <button
+              v-for="item in peerNavItems"
+              :key="item.index"
+              type="button"
+              :class="['peer-nav-item', { active: isPeerNavItemActive(item) }]"
+              :aria-current="isPeerNavItemActive(item) ? 'page' : undefined"
+              @click="handlePeerNavSelect(item)"
+            >
+              <span class="peer-nav-marker" aria-hidden="true"></span>
+              <span class="peer-nav-label">
+                <span>{{ item.label }}</span>
+                <small v-if="item.hint">{{ item.hint }}</small>
+              </span>
+              <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
+                {{ item.badge }}
+              </span>
+            </button>
+          </div>
+
+          <div v-if="hasMenuControls" class="tree-controls mobile-tree-controls">
+            <ElInput
+              v-if="menuSearchPlaceholder"
+              v-model="menuSearchModel"
+              class="tree-search"
+              :placeholder="menuSearchPlaceholder"
+              :aria-label="menuSearchPlaceholder"
+              clearable
+            />
+            <ElRadioGroup
+              v-if="menuFilters?.length"
+              v-model="menuFilterModel"
+              class="tree-filter"
+              aria-label="项目筛选"
+            >
+              <ElRadioButton
+                v-for="filter in menuFilters"
+                :key="filter.value"
+                :value="filter.value"
+              >
+                <span>{{ filter.label }}</span>
+                <em v-if="filter.count !== undefined">{{ filter.count }}</em>
+              </ElRadioButton>
+            </ElRadioGroup>
+          </div>
+
+          <ElEmpty
+            v-if="!menuSections.length"
+            class="tree-empty"
+            :image-size="48"
+            :description="menuEmptyText || '没有匹配的项目'"
+          />
+          <ElMenu
+            v-else
+            :key="`mobile-${staticMenuActiveIndex}`"
+            class="mobile-static-menu"
+            :default-active="staticMenuActiveIndex"
+            :default-openeds="staticMenuDefaultOpeneds.slice(1)"
+            :unique-opened="true"
+            :collapse-transition="false"
+            @select="handleStaticMenuSelect"
+          >
+            <ElSubMenu
+              v-for="section in menuSections"
+              :key="getSectionIdentity(section)"
+              :index="getSectionIndex(section)"
+            >
+              <template #title>
+                <span class="mobile-menu-section-title">
+                  <strong>{{ section.title }}</strong>
+                  <small>{{ section.meta }}</small>
+                </span>
+              </template>
+              <ElMenuItem
+                v-for="item in section.items"
+                :key="getItemIndex(section, item)"
+                :index="getItemIndex(section, item)"
+              >
+                <span class="tree-node-marker" aria-hidden="true"></span>
+                <span class="tree-label">{{ item.label }}</span>
+                <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
+                  {{ item.badge }}
+                </span>
+              </ElMenuItem>
+            </ElSubMenu>
+          </ElMenu>
+
+          <details class="mobile-boundary">
+            <summary>
+              <span>{{ boundaryTitle }}</span>
+              <span :class="['pill', boundaryTone || 'green']">{{ boundaryBadge }}</span>
+            </summary>
+            <dl>
+              <div v-for="row in boundaryRows" :key="row.label">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
+              </div>
+            </dl>
+          </details>
+        </nav>
+      </ElDrawer>
+      <ElDrawer
+        v-if="rightPanelIsDrawer"
+        v-model="rightPanelOpen"
+        class="static-shell-right-drawer"
+        modal-class="static-shell-right-overlay"
+        :title="rightTitle"
+        direction="rtl"
+        size="min(420px, calc(100vw - 32px))"
+        append-to-body
+        destroy-on-close
+        @closed="focusRightPanelTrigger"
+      >
+        <StaticShellRightPanel title="" :subtitle="rightSubtitle" :cards="rightCards" />
+      </ElDrawer>
       <GlobalCommandPalette
         ref="commandPaletteRef"
         :scope="searchScope || 'workbench'"
@@ -711,33 +809,10 @@ onBeforeUnmount(() => {
 
 .brand {
   display: grid;
-  grid-template-columns: 24px 34px minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-width: 0;
-}
-
-.hamburger {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  font-size: 22px;
-  line-height: 1;
-  color: #304158;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  place-items: center;
-}
-
-.hamburger:hover,
-.hamburger:focus-visible {
-  color: var(--blue-2);
-  background: #eef5ff;
-  outline: 0;
-  box-shadow: 0 0 0 3px rgb(31 102 216 / 12%);
 }
 
 .brand-mark {
@@ -943,6 +1018,13 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.mobile-navigation-trigger {
+  display: none;
+  min-height: 40px;
+  font-weight: 600;
+  gap: 6px;
+}
+
 .notice-dot {
   display: inline-flex;
   height: 22px;
@@ -1027,16 +1109,6 @@ onBeforeUnmount(() => {
 .right-drawer-mode .workspace,
 .right-drawer-mode.shell-wide .workspace {
   grid-template-columns: minmax(248px, 300px) minmax(0, 1fr);
-}
-
-.navigation-collapsed .workspace,
-.navigation-collapsed.right-drawer-mode .workspace,
-.navigation-collapsed.right-drawer-mode.shell-wide .workspace {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.navigation-collapsed .left {
-  display: none;
 }
 
 .shell-wide .topbar {
@@ -1274,31 +1346,8 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.tree-search input {
-  width: 100%;
-  height: 38px;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #26364e;
-  background: #f8fbff;
-  border: 1px solid #dce6f4;
-  border-radius: 8px;
-  outline: 0;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    background-color 0.18s ease;
-}
-
-.tree-search input::placeholder {
-  color: #8a98ad;
-}
-
-.tree-search input:focus {
-  background: #fff;
-  border-color: #8eb8ff;
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+.tree-search :deep(.el-input__wrapper) {
+  min-height: 38px;
 }
 
 .tree-filter-toggle {
@@ -1362,35 +1411,22 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.tree-filter button {
+.tree-filter :deep(.el-radio-button) {
+  width: 100%;
+  min-width: 0;
+}
+
+.tree-filter :deep(.el-radio-button__inner) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-width: 0;
-  min-height: 30px;
-  padding: 6px 7px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
   font-size: 12px;
-  font-weight: 600;
-  color: #52627a;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid #e1e9f5;
-  border-radius: 8px;
-  transition:
-    color 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    background-color 0.18s ease;
-}
-
-.tree-filter button:hover,
-.tree-filter button:focus-visible,
-.tree-filter button.active {
-  color: var(--blue-2);
-  background: #f4f8ff;
-  border-color: #a9c8ff;
-  outline: 0;
-  box-shadow: 0 6px 14px rgb(37 99 235 / 8%);
+  border: 0;
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px #e1e9f5;
 }
 
 .tree-filter span {
@@ -1888,81 +1924,120 @@ onBeforeUnmount(() => {
   border-left: 1px solid var(--line);
 }
 
-.right-drawer-mode .right {
-  position: fixed;
+:global(.static-shell-right-overlay) {
   top: 68px;
-  right: 0;
-  bottom: 0;
-  z-index: 52;
-  width: min(420px, calc(100vw - 32px));
-  height: auto;
-  padding: 18px 20px 24px;
-  border-left: 1px solid var(--line);
-  box-shadow: -20px 0 42px rgb(15 23 42 / 16%);
 }
 
-.right-scrim {
-  position: fixed;
-  inset: 68px 0 0;
-  z-index: 50;
-  cursor: pointer;
-  background: rgb(15 23 42 / 28%);
-  border: 0;
+:global(.static-shell-right-drawer .el-drawer__body) {
+  padding: 0 20px 24px;
 }
 
-.right-panel-head {
-  display: flex;
+:global(.static-shell-navigation-drawer .el-drawer__body) {
+  padding: 0 12px 20px;
+}
+
+.mobile-shell-navigation {
+  display: grid;
+  min-width: 0;
   gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
 }
 
-.right-panel-close {
-  flex: 0 0 auto;
-  min-height: 36px;
-  font-weight: 600;
-}
-
-.right-title {
-  margin: 0 0 8px;
-  font-size: 21px;
-  line-height: 1.2;
-}
-
-.preview-name {
-  margin-bottom: 12px;
-  font-weight: 600;
-  color: #26364e;
-}
-
-.right-card {
-  margin-top: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--shadow-xs);
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.right-card:hover,
-.right-card:focus-within {
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.right-card h3 {
-  padding: 13px 16px;
+.mobile-shell-navigation .peer-nav {
+  padding: 0 0 12px;
   margin: 0;
-  font-size: 18px;
-  line-height: 1.2;
-  background: var(--panel-soft);
-  border-bottom: 1px solid var(--line-soft);
 }
 
-.right-card .body {
-  padding: 14px 16px;
+.mobile-tree-controls {
+  padding: 0;
+}
+
+.mobile-static-menu {
+  --el-menu-active-color: var(--blue-2);
+  --el-menu-bg-color: transparent;
+  --el-menu-hover-bg-color: #f4f8ff;
+
+  border-right: 0;
+}
+
+.mobile-static-menu :deep(.el-sub-menu__title),
+.mobile-static-menu :deep(.el-menu-item) {
+  height: auto;
+  min-height: 44px;
+  border-radius: 9px;
+}
+
+.mobile-static-menu :deep(.el-menu-item) {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.mobile-static-menu :deep(.el-menu-item.is-active) {
+  font-weight: 600;
+  background: #edf5ff;
+}
+
+.mobile-menu-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  gap: 8px;
+}
+
+.mobile-menu-section-title strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+}
+
+.mobile-menu-section-title small {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mobile-boundary {
+  padding: 0 4px;
+  background: #f7faff;
+  border-radius: 10px;
+}
+
+.mobile-boundary summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mobile-boundary dl {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 12px;
+  margin: 0;
+}
+
+.mobile-boundary dl > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.mobile-boundary dt,
+.mobile-boundary dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.mobile-boundary dt {
+  color: var(--muted);
 }
 
 .table {
@@ -2005,95 +2080,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.inline-pill {
-  margin-left: 6px;
-}
-
-.shell-progress {
-  height: 8px;
-  overflow: hidden;
-  background: #e6edf7;
-  border-radius: 999px;
-}
-
-.shell-progress span {
-  display: block;
-  height: 100%;
-  background: var(--blue);
-  border-radius: inherit;
-}
-
-.shell-progress span.green {
-  background: var(--green);
-}
-
-.shell-progress span.orange {
-  background: var(--orange);
-}
-
-.shell-progress span.red {
-  background: var(--red);
-}
-
-.timeline {
-  display: grid;
-  gap: 12px;
-}
-
-.time-row {
-  display: grid;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: #3f4f66;
-  grid-template-columns: 14px minmax(0, 1fr);
-  gap: 9px;
-}
-
-.time-row strong {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.time-dot {
-  width: 10px;
-  height: 10px;
-  margin-top: 4px;
-  background: var(--blue);
-  border-radius: 50%;
-  box-shadow: 0 0 0 4px var(--blue-soft);
-}
-
-.time-dot.green {
-  background: var(--green);
-  box-shadow: 0 0 0 4px var(--green-soft);
-}
-
-.time-dot.orange {
-  background: var(--orange);
-  box-shadow: 0 0 0 4px var(--orange-soft);
-}
-
-.time-dot.red {
-  background: var(--red);
-  box-shadow: 0 0 0 4px var(--red-soft);
-}
-
-.readonly-mask {
-  padding: 12px;
-  font-weight: 600;
-  line-height: 1.6;
-  color: #6b2b24;
-  background: var(--red-soft);
-  border: 1px solid #ffc5bd;
-  border-radius: 6px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .global-search,
   .tree-node,
-  .right-card,
   .table th,
   .table td {
     transition: none;
@@ -2183,18 +2172,31 @@ onBeforeUnmount(() => {
   }
 
   .top-actions {
-    flex-wrap: wrap;
-    white-space: normal;
+    max-width: 100%;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    white-space: nowrap;
     justify-content: flex-start;
+    scrollbar-width: none;
+  }
+
+  .top-actions::-webkit-scrollbar {
+    display: none;
   }
 
   .brand {
-    grid-template-columns: 24px 34px minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr);
   }
 
   .top-status {
-    grid-column: 1 / -1;
+    grid-column: 2;
     justify-self: start;
+  }
+
+  .global-search,
+  .shell-wide .global-search {
+    width: 100%;
   }
 
   .left,
@@ -2204,14 +2206,11 @@ onBeforeUnmount(() => {
   }
 
   .left {
-    grid-template-rows: auto auto;
-    height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    display: none;
   }
 
-  .tree.static-tree-menu {
-    max-height: 520px;
+  .mobile-navigation-trigger {
+    display: inline-flex;
   }
 
   .center,

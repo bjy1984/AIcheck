@@ -33,8 +33,10 @@ import {
   ElTableColumn,
   ElTabs,
   ElTag,
-  ElTreeSelect
+  ElTreeSelect,
+  ElUpload
 } from 'element-plus'
+import type { UploadFile } from 'element-plus'
 import {
   batchReindexKnowledgeApi,
   cancelKnowledgeTaskApi,
@@ -656,7 +658,6 @@ type SourceUploadFileRow = {
   size: number
   type: string
 }
-const sourceUploadFileInputRef = ref<HTMLInputElement>()
 const sourceUploadDirectoryInputRef = ref<HTMLInputElement>()
 const sourceUploadFiles = ref<SourceUploadFileRow[]>([])
 const sourceUploadProjectId = ref('')
@@ -664,10 +665,8 @@ const standardFileDialogVisible = ref(false)
 const standardFileDialogMode = ref<'edit' | 'replace'>('edit')
 const standardFileEditing = ref<KnowledgeFile | null>(null)
 const standardFileForm = reactive<Required<KnowledgeFileSavePayload>>(emptyStandardFileForm())
-const standardFileReplaceInputRef = ref<HTMLInputElement>()
 const standardFileReplacement = ref<File | null>(null)
 const knowledgeImportVisible = ref(false)
-const knowledgeImportFileInputRef = ref<HTMLInputElement>()
 const knowledgeImportDirectoryInputRef = ref<HTMLInputElement>()
 const knowledgeImportFiles = ref<File[]>([])
 const knowledgeImportDialogTitle = ref('从文件导入业务规则草稿')
@@ -1026,6 +1025,16 @@ const knowledgeImportFileRows = computed(() =>
   }))
 )
 const knowledgeScorecard = computed(() => overview.value.scorecard || null)
+const knowledgeScoreUpdatedAt = computed(
+  () =>
+    overview.value.libraries
+      .map((library) => library.updatedAt)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ||
+    knowledgeConfig.updatedAt ||
+    '--'
+)
 const knowledgeScorecardSections = computed(() => knowledgeScorecard.value?.sections || [])
 const knowledgeScorecardBlockerRows = computed(() =>
   (knowledgeScorecard.value?.blockers || []).slice(0, 8).map((blocker, index) => ({
@@ -1698,15 +1707,11 @@ const openKnowledgeImportDialog = () => {
   knowledgeImportVisible.value = true
 }
 
-const triggerKnowledgeImportFileSelect = () => {
-  knowledgeImportFileInputRef.value?.click()
-}
-
 const triggerKnowledgeImportDirectorySelect = () => {
   knowledgeImportDirectoryInputRef.value?.click()
 }
 
-const addKnowledgeImportFiles = (fileList: FileList | null) => {
+const addKnowledgeImportFiles = (fileList: FileList | File[] | null) => {
   if (!fileList?.length) return
   const nextFiles = [...knowledgeImportFiles.value]
   const existing = new Set(
@@ -1740,6 +1745,10 @@ const handleKnowledgeImportInputChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   addKnowledgeImportFiles(input.files)
   input.value = ''
+}
+
+const handleKnowledgeImportUploadChange = (uploadFile: UploadFile) => {
+  if (uploadFile.raw) addKnowledgeImportFiles([uploadFile.raw])
 }
 
 const removeKnowledgeImportFile = (rowId: string) => {
@@ -1794,15 +1803,11 @@ const syncSourceUploadFileCount = () => {
   }
 }
 
-const triggerSourceUploadFileSelect = () => {
-  sourceUploadFileInputRef.value?.click()
-}
-
 const triggerSourceUploadDirectorySelect = () => {
   sourceUploadDirectoryInputRef.value?.click()
 }
 
-const addSourceUploadFiles = (fileList: FileList | null) => {
+const addSourceUploadFiles = (fileList: FileList | File[] | null) => {
   if (!fileList?.length) return
   const nextRows = [...sourceUploadFiles.value]
   const existing = new Set(
@@ -1840,6 +1845,10 @@ const handleSourceUploadInputChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   addSourceUploadFiles(input.files)
   input.value = ''
+}
+
+const handleSourceUploadChange = (uploadFile: UploadFile) => {
+  if (uploadFile.raw) addSourceUploadFiles([uploadFile.raw])
 }
 
 const removeSourceUploadFile = (rowId: string) => {
@@ -2694,17 +2703,11 @@ const openReplaceStandardFileDialog = (row: KnowledgeFile) => {
   standardFileDialogVisible.value = true
 }
 
-const triggerStandardFileReplaceSelect = () => {
-  standardFileReplaceInputRef.value?.click()
-}
-
-const handleStandardFileReplaceInputChange = (event: Event) => {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+const handleStandardFileReplaceChange = (uploadFile: UploadFile) => {
+  const file = uploadFile.raw
   if (!file) return
   if (!isAllowedKnowledgeImportFile(file)) {
     ElMessage.warning('文件类型不支持')
-    input.value = ''
     return
   }
   standardFileReplacement.value = file
@@ -2716,7 +2719,6 @@ const handleStandardFileReplaceInputChange = (event: Event) => {
   if (!standardFileForm.sourceRelativePath.trim()) {
     standardFileForm.sourceRelativePath = relativePath
   }
-  input.value = ''
 }
 
 const handleSaveStandardFile = async () => {
@@ -2998,7 +3000,7 @@ onMounted(() => {
     >
       <div class="page-toolbar">
         <div>
-          <div class="page-title">AI 知识库管理</div>
+          <h1 class="page-title">AI 知识库管理</h1>
           <div class="page-subtitle"
             >知识工程审计台 · 追踪资料入库、OCR 切片、向量化、PageIndex 与引用质量</div
           >
@@ -3065,12 +3067,26 @@ onMounted(() => {
       <ElCard v-if="canShowKnowledgeContent && knowledgeScorecard" shadow="never" class="panel">
         <template #header>
           <div class="panel-header">
-            <span>知识依据链 100</span>
+            <span>知识依据链治理评分</span>
             <ElTag :type="knowledgeScorecard.ok ? 'success' : 'danger'" effect="plain">
               {{ knowledgeScorecard.ok ? '生产就绪' : '存在阻断' }}
             </ElTag>
           </div>
         </template>
+        <div class="score-scope-notice" role="note" aria-label="评分口径说明">
+          <div>
+            <span>评分对象</span>
+            <strong>知识来源、切片索引、检索探针与引用链</strong>
+          </div>
+          <div>
+            <span>数据范围</span>
+            <strong>知识工程治理域，不代表 FDE 规范库向量完整度</strong>
+          </div>
+          <div>
+            <span>数据时间</span>
+            <strong>{{ knowledgeScoreUpdatedAt }}</strong>
+          </div>
+        </div>
         <div class="scorecard-grid">
           <div class="scorecard-item">
             <span>总分</span>
@@ -3171,7 +3187,13 @@ onMounted(() => {
                     <ElTag type="info" effect="plain">{{ libraries.length }} 个库</ElTag>
                   </div>
                 </template>
-                <ElTable :data="libraries" border height="360" empty-text="暂无知识库索引">
+                <ElTable
+                  class="desktop-library-table"
+                  :data="libraries"
+                  border
+                  height="360"
+                  empty-text="暂无知识库索引"
+                >
                   <ElTableColumn prop="name" label="知识库" min-width="220" />
                   <ElTableColumn prop="fileCount" label="文件" width="88" />
                   <ElTableColumn prop="chunkCount" label="切片" width="100" />
@@ -3201,6 +3223,42 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <div class="mobile-library-list" aria-live="polite">
+                  <article v-for="row in libraries" :key="row.key" class="mobile-library-card">
+                    <header>
+                      <strong>{{ row.name }}</strong>
+                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>文件</dt>
+                        <dd>{{ row.fileCount }}</dd>
+                      </div>
+                      <div>
+                        <dt>切片 / 向量</dt>
+                        <dd>{{ row.chunkCount }} / {{ row.vectorCount }}</dd>
+                      </div>
+                      <div>
+                        <dt>索引版本</dt>
+                        <dd>{{ row.indexVersion || '--' }}</dd>
+                      </div>
+                      <div>
+                        <dt>更新时间</dt>
+                        <dd>{{ row.updatedAt || '--' }}</dd>
+                      </div>
+                    </dl>
+                    <ElProgress :percentage="vectorPercent(row)" :stroke-width="8" />
+                    <ElButton
+                      type="primary"
+                      plain
+                      :loading="actionLoading === `source-${row.key}`"
+                      @click="handleReindexSource(row)"
+                    >
+                      重建索引
+                    </ElButton>
+                  </article>
+                  <ElEmpty v-if="!libraries.length" description="暂无知识库索引" />
+                </div>
               </ElCard>
             </ElCol>
 
@@ -3222,12 +3280,14 @@ onMounted(() => {
                     v-model="sourceFilters.keyword"
                     clearable
                     placeholder="搜索知识源"
+                    aria-label="搜索知识源"
                     @change="handleFilterChange(sourcePagination, loadSources)"
                   />
                   <ElSelect
                     v-model="sourceFilters.sourceType"
                     clearable
                     placeholder="类型"
+                    aria-label="按知识源类型筛选"
                     @change="handleFilterChange(sourcePagination, loadSources)"
                   >
                     <ElOption label="标准规范" value="standard" />
@@ -3238,6 +3298,7 @@ onMounted(() => {
                     v-model="sourceFilters.status"
                     clearable
                     placeholder="状态"
+                    aria-label="按知识源状态筛选"
                     @change="handleFilterChange(sourcePagination, loadSources)"
                   >
                     <ElOption
@@ -4573,9 +4634,16 @@ onMounted(() => {
             >
               <div class="source-upload-panel">
                 <div class="knowledge-import-toolbar source-upload-toolbar">
-                  <ElButton type="primary" plain @click="triggerSourceUploadFileSelect">
-                    选择文件
-                  </ElButton>
+                  <ElUpload
+                    class="inline-file-upload"
+                    multiple
+                    :auto-upload="false"
+                    :show-file-list="false"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.md,.txt"
+                    :on-change="handleSourceUploadChange"
+                  >
+                    <ElButton type="primary" plain>选择文件</ElButton>
+                  </ElUpload>
                   <ElButton type="primary" plain @click="triggerSourceUploadDirectorySelect">
                     选择文件夹
                   </ElButton>
@@ -4584,14 +4652,6 @@ onMounted(() => {
                   </ElButton>
                   <ElTag effect="plain">{{ sourceUploadFiles.length }} 个待上传</ElTag>
                 </div>
-                <input
-                  ref="sourceUploadFileInputRef"
-                  class="hidden-file-input"
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.md,.txt"
-                  @change="handleSourceUploadInputChange"
-                />
                 <input
                   ref="sourceUploadDirectoryInputRef"
                   class="hidden-file-input"
@@ -4740,16 +4800,15 @@ onMounted(() => {
           </ElFormItem>
           <ElFormItem v-if="standardFileDialogMode === 'replace'" label="新版本文件">
             <div class="standard-file-replace-panel">
-              <input
-                ref="standardFileReplaceInputRef"
-                class="hidden-file-input"
-                type="file"
+              <ElUpload
+                class="inline-file-upload"
+                :auto-upload="false"
+                :show-file-list="false"
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.md,.txt"
-                @change="handleStandardFileReplaceInputChange"
-              />
-              <ElButton type="primary" plain @click="triggerStandardFileReplaceSelect">
-                选择文件
-              </ElButton>
+                :on-change="handleStandardFileReplaceChange"
+              >
+                <ElButton type="primary" plain>选择文件</ElButton>
+              </ElUpload>
               <span v-if="standardFileReplacement">
                 {{ standardFileReplacement.name }} ·
                 {{ formatFileSize(standardFileReplacement.size) }}
@@ -4800,9 +4859,16 @@ onMounted(() => {
             />
           </ElFormItem>
           <div class="knowledge-import-toolbar">
-            <ElButton type="primary" plain @click="triggerKnowledgeImportFileSelect">
-              选择文件
-            </ElButton>
+            <ElUpload
+              class="inline-file-upload"
+              multiple
+              :auto-upload="false"
+              :show-file-list="false"
+              accept=".docx,.md,.markdown,.txt,.yaml,.yml,.json"
+              :on-change="handleKnowledgeImportUploadChange"
+            >
+              <ElButton type="primary" plain>选择文件</ElButton>
+            </ElUpload>
             <ElButton type="primary" plain @click="triggerKnowledgeImportDirectorySelect">
               选择文件夹
             </ElButton>
@@ -4811,14 +4877,6 @@ onMounted(() => {
             </ElButton>
             <ElTag effect="plain">{{ knowledgeImportFiles.length }} 个待导入</ElTag>
           </div>
-          <input
-            ref="knowledgeImportFileInputRef"
-            class="hidden-file-input"
-            type="file"
-            multiple
-            accept=".docx,.md,.markdown,.txt,.yaml,.yml,.json"
-            @change="handleKnowledgeImportInputChange"
-          />
           <input
             ref="knowledgeImportDirectoryInputRef"
             class="hidden-file-input"
@@ -5385,6 +5443,7 @@ onMounted(() => {
 }
 
 .page-title {
+  margin: 0;
   font-size: 27px;
   font-weight: 600;
   line-height: 1.2;
@@ -5510,6 +5569,38 @@ onMounted(() => {
   gap: 12px;
 }
 
+.score-scope-notice {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #f4f8ff, #f8fbff);
+  border-radius: 10px;
+}
+
+.score-scope-notice > div {
+  min-width: 0;
+}
+
+.score-scope-notice span,
+.score-scope-notice strong {
+  display: block;
+}
+
+.score-scope-notice span {
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #65758b;
+}
+
+.score-scope-notice strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #21324a;
+}
+
 .scorecard-item {
   min-height: 72px;
   padding: 12px;
@@ -5537,6 +5628,65 @@ onMounted(() => {
 
 .knowledge-tabs {
   padding: 0 2px;
+}
+
+.mobile-library-list {
+  display: none;
+}
+
+.mobile-library-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
+  border-radius: 12px;
+  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+}
+
+.mobile-library-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mobile-library-card header strong {
+  font-size: 15px;
+  line-height: 1.45;
+  color: #172033;
+}
+
+.mobile-library-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 0;
+  margin: 0;
+  border-top: 1px solid #edf1f6;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.mobile-library-card dt,
+.mobile-library-card dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mobile-library-card dt {
+  margin-bottom: 2px;
+  color: #596a80;
+}
+
+.mobile-library-card dd {
+  color: #26364e;
+  overflow-wrap: anywhere;
+}
+
+.mobile-library-card > .el-button {
+  width: 100%;
+  min-height: 44px;
 }
 
 :deep(.knowledge-tabs > .el-tabs__header) {
@@ -6071,6 +6221,19 @@ onMounted(() => {
 }
 
 @media (width <= 768px) {
+  .score-scope-notice {
+    grid-template-columns: 1fr;
+  }
+
+  .desktop-library-table {
+    display: none;
+  }
+
+  .mobile-library-list {
+    display: grid;
+    gap: 10px;
+  }
+
   .knowledge-page {
     padding: 0;
   }

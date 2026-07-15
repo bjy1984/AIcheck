@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from 'vue'
 import type { EChartsOption } from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
   ElButton,
   ElCard,
+  ElCheckbox,
   ElCol,
   ElDescriptions,
   ElDescriptionsItem,
@@ -24,14 +33,19 @@ import {
   ElOption,
   ElPagination,
   ElRow,
+  ElSegmented,
   ElSelect,
   ElSpace,
+  ElStep,
+  ElSteps,
   ElTabPane,
   ElTable,
   ElTableColumn,
   ElTabs,
-  ElTag
+  ElTag,
+  ElUpload
 } from 'element-plus'
+import type { UploadFile } from 'element-plus'
 import {
   applyFdeVectorCorrectionApi,
   approveFdeVectorCorrectionApi,
@@ -105,7 +119,6 @@ import {
   validateFdeBusinessPacksApi,
   verifyFdeOcrAnnotationTaskApi
 } from '@/api/aicheck'
-import { Echart } from '@/components/Echart'
 import { useUserStore } from '@/store/modules/user'
 import type {
   BusinessPackValidateAllPayload,
@@ -145,6 +158,10 @@ import {
   statusLabelMap as sharedStatusLabelMap,
   techTermLabels as sharedTechTermLabels
 } from './components/auditLabels'
+
+const Echart = defineAsyncComponent(() =>
+  import('@/components/Echart').then((module) => module.Echart)
+)
 
 const route = useRoute()
 const router = useRouter()
@@ -252,8 +269,6 @@ const ocrCapabilityPdfPageObjectUrl = ref('')
 const ocrCapabilityPdfPageObjectKey = ref('')
 const ocrCapabilityPdfPagePreviewLoading = ref(false)
 const ocrCapabilityPdfPagePreviewError = ref('')
-const ocrCapabilityFileInputRef = ref<HTMLInputElement | null>(null)
-const ocrAnnotationFileInputRef = ref<HTMLInputElement | null>(null)
 const ocrCapabilityDialogVisible = ref(false)
 const ocrAnnotationFlowDialogVisible = ref(false)
 const ocrSecondaryMenuVisible = ref(false)
@@ -279,7 +294,7 @@ const annotationDetailLoading = ref(false)
 const annotationPreviewLoadFailed = ref(false)
 const annotationPreviewImageReady = ref(false)
 const annotationDraftDirty = ref(false)
-const annotationCanvasTool = ref<'select' | 'pan' | 'fields' | 'tables' | 'seals'>('select')
+const annotationCanvasTool = ref<AnnotationCanvasTool>('select')
 const annotationCanvasZoom = ref(1)
 const annotationObjectSearch = ref('')
 const annotationObjectFilter = ref<AnnotationObjectFilter>('todo')
@@ -2120,6 +2135,15 @@ const annotationTypeOptions: AnnotationTypeOption[] = [
     example: '例：特种设备设计许可印章'
   }
 ]
+const annotationCanvasToolOptions = computed(() => [
+  { label: '选择', value: 'select' },
+  { label: '拖动画布', value: 'pan' },
+  ...annotationTypeOptions.map((item) => ({ label: `框选${item.label}`, value: item.key }))
+])
+const annotationTypeSegmentOptions = annotationTypeOptions.map((item) => ({
+  label: item.label,
+  value: item.key
+}))
 const annotationTotalCount = computed(
   () => annotationFields.value.length + annotationTables.value.length + annotationSeals.value.length
 )
@@ -2205,6 +2229,12 @@ const annotationWorkflowSteps = computed(() => {
     active: index === (activeIndex === -1 ? steps.length - 1 : activeIndex)
   }))
 })
+const annotationWorkflowActiveIndex = computed(() =>
+  Math.max(
+    0,
+    annotationWorkflowSteps.value.findIndex((step) => step.active)
+  )
+)
 const annotationSectionSummaries = computed(() =>
   annotationSections.map((section) => {
     const candidates = Number(selectedAnnotationTask.value?.candidateCounts?.[section] || 0)
@@ -2406,6 +2436,12 @@ const annotationObjectFilterOptions = computed<
     count: annotationItems(section).length
   }))
 ])
+const annotationObjectSegmentOptions = computed(() =>
+  annotationObjectFilterOptions.value.map((option) => ({
+    label: `${option.label} ${option.count}`,
+    value: option.key
+  }))
+)
 const annotationObjectDisplayTitle = (
   section: AnnotationSection,
   item: Record<string, unknown>,
@@ -5620,6 +5656,14 @@ const standardsVectorizationFocusRows = computed(() =>
 const standardsVectorizationSourceFacts = computed(() => {
   const storage = toRecord(standardsVectorization.value?.storage)
   return [
+    {
+      label: '评分对象',
+      value: '规范资料向量完整度'
+    },
+    {
+      label: '评分口径',
+      value: '切片、向量、PageIndex 一致性'
+    },
     {
       label: '知识源',
       value: String(standardsVectorization.value?.sourceName || 'KS-STANDARD-RULES')
@@ -9072,14 +9116,13 @@ const ocrCapabilityFailureMessage = (detail: FdeOcrCapabilityTestDetailPayload |
   return 'OCR 重新预标注失败，请检查 OCR 服务状态后重试。'
 }
 
-const handleOcrCapabilityTestFileChange = (event: Event) => {
-  const input = event.target as HTMLInputElement
+const selectOcrCapabilityTestFile = (file: File | null) => {
   if (ocrCapabilityLocalPreviewUrl.value) {
     URL.revokeObjectURL(ocrCapabilityLocalPreviewUrl.value)
     ocrCapabilityLocalPreviewUrl.value = ''
   }
   clearOcrCapabilityPdfPagePreview()
-  ocrCapabilityTestFile.value = input.files?.[0] || null
+  ocrCapabilityTestFile.value = file
   if (ocrCapabilityTestFile.value) {
     ocrCapabilityLocalPreviewUrl.value = URL.createObjectURL(ocrCapabilityTestFile.value)
     selectedOcrCapabilityTest.value = null
@@ -9088,16 +9131,12 @@ const handleOcrCapabilityTestFileChange = (event: Event) => {
   }
 }
 
-const chooseOcrCapabilityTestFile = () => {
-  ocrCapabilityFileInputRef.value?.click()
+const handleOcrCapabilityTestUploadChange = (uploadFile: UploadFile) => {
+  selectOcrCapabilityTestFile(uploadFile.raw || null)
 }
 
-const chooseOcrAnnotationFile = () => {
-  ocrAnnotationFileInputRef.value?.click()
-}
-
-const handleOcrAnnotationFileChange = (event: Event) => {
-  handleOcrCapabilityTestFileChange(event)
+const handleOcrAnnotationUploadChange = (uploadFile: UploadFile) => {
+  selectOcrCapabilityTestFile(uploadFile.raw || null)
   selectedOcrStatusTab.value = 'annotation'
 }
 
@@ -10552,10 +10591,6 @@ const removeSelectedAnnotationItem = () => {
   removeAnnotationItem(target.section, target.index)
 }
 
-const setAnnotationCanvasTool = (tool: AnnotationCanvasTool) => {
-  annotationCanvasTool.value = tool
-}
-
 const zoomAnnotationCanvas = (delta: number) => {
   annotationCanvasZoom.value = Math.max(
     0.5,
@@ -10956,7 +10991,7 @@ onBeforeUnmount(() => {
     <div class="fde-console" v-loading="loading">
       <div v-if="!isFdeRoute('ocr-quality')" class="page-toolbar">
         <div>
-          <div class="page-title">{{ currentFdeRouteContext.title }}</div>
+          <h1 class="page-title">{{ currentFdeRouteContext.title }}</h1>
           <div class="page-subtitle">{{ currentFdeRouteContext.subtitle }}</div>
           <div class="page-title-tags">
             <ElTag type="info" effect="plain">脱敏默认</ElTag>
@@ -11662,14 +11697,6 @@ onBeforeUnmount(() => {
               </ElTag>
             </div>
 
-            <input
-              ref="ocrAnnotationFileInputRef"
-              class="sr-only-input"
-              type="file"
-              accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
-              @change="handleOcrAnnotationFileChange"
-            />
-
             <div class="ocr-annotation-pipeline__steps">
               <article
                 v-for="step in ocrAnnotationFlowSteps"
@@ -11692,9 +11719,14 @@ onBeforeUnmount(() => {
                   {{ Math.ceil((ocrCapabilityTestFile.size || 0) / 1024) }} KB
                 </small>
                 <small v-else>上传后系统会先自动识别文字、表格和印章。</small>
-                <ElButton type="primary" plain @click="chooseOcrAnnotationFile">
-                  选择文件
-                </ElButton>
+                <ElUpload
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
+                  :on-change="handleOcrAnnotationUploadChange"
+                >
+                  <ElButton type="primary" plain>选择文件</ElButton>
+                </ElUpload>
               </div>
 
               <div class="ocr-annotation-action-card">
@@ -11870,24 +11902,19 @@ onBeforeUnmount(() => {
                   <strong>1. 选择测试文件</strong>
                   <ElTag effect="plain">PDF / 图片</ElTag>
                 </div>
-                <input
-                  ref="ocrCapabilityFileInputRef"
-                  class="sr-only-input"
-                  type="file"
-                  accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
-                  @change="handleOcrCapabilityTestFileChange"
-                />
-                <button
-                  type="button"
+                <ElUpload
                   class="ocr-capability-upload"
-                  @click="chooseOcrCapabilityTestFile"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
+                  :on-change="handleOcrCapabilityTestUploadChange"
                 >
                   <strong>{{ ocrCapabilityTestFile?.name || '点击选择 PDF 或图片' }}</strong>
                   <span v-if="ocrCapabilityTestFile">
                     {{ Math.ceil((ocrCapabilityTestFile.size || 0) / 1024) }} KB
                   </span>
                   <span v-else>建议用真实扫描件、表格照片或盖章资料做测试。</span>
-                </button>
+                </ElUpload>
                 <div class="ocr-capability-form">
                   <label>
                     <span>解析配置</span>
@@ -11924,18 +11951,13 @@ onBeforeUnmount(() => {
                   </label>
                 </div>
                 <div class="ocr-capability-switches">
-                  <label>
-                    <input v-model="ocrCapabilityTestForm.enableTables" type="checkbox" />
-                    表格识别
-                  </label>
-                  <label>
-                    <input v-model="ocrCapabilityTestForm.enableSeals" type="checkbox" />
+                  <ElCheckbox v-model="ocrCapabilityTestForm.enableTables">表格识别</ElCheckbox>
+                  <ElCheckbox v-model="ocrCapabilityTestForm.enableSeals">
                     印章识别（稍慢）
-                  </label>
-                  <label>
-                    <input v-model="ocrCapabilityTestForm.enableFallback" type="checkbox" />
+                  </ElCheckbox>
+                  <ElCheckbox v-model="ocrCapabilityTestForm.enableFallback">
                     复杂页兜底
-                  </label>
+                  </ElCheckbox>
                 </div>
               </section>
               <section
@@ -14961,7 +14983,7 @@ onBeforeUnmount(() => {
             </dl>
           </div>
           <div class="standards-vector-score">
-            <span>质量分</span>
+            <span>向量完整度</span>
             <strong>{{ standardsVectorHealthScore }}</strong>
             <small>{{ standardsVectorizationMetrics.activeIndexVersion || '-' }}</small>
           </div>
@@ -15008,16 +15030,25 @@ onBeforeUnmount(() => {
                   v-model="standardsVectorKeyword"
                   clearable
                   placeholder="搜索标准号、文件名、状态"
+                  aria-label="搜索标准号、文件名或状态"
                   class="standards-vector-search"
                   @clear="loadStandardsVectorization"
                   @keyup.enter="loadStandardsVectorization"
                 />
-                <ElSelect v-model="standardsVectorTypeFilter" class="standards-vector-filter">
+                <ElSelect
+                  v-model="standardsVectorTypeFilter"
+                  class="standards-vector-filter"
+                  aria-label="按规范资料类型筛选"
+                >
                   <ElOption label="全部类型" value="all" />
                   <ElOption label="标准原文" value="standard_reference" />
                   <ElOption label="业务上下文" value="business_rule_context" />
                 </ElSelect>
-                <ElSelect v-model="standardsVectorFocusFilter" class="standards-vector-filter">
+                <ElSelect
+                  v-model="standardsVectorFocusFilter"
+                  class="standards-vector-filter"
+                  aria-label="按规范资料状态筛选"
+                >
                   <ElOption label="全部状态" value="all" />
                   <ElOption label="仅问题" value="issues" />
                   <ElOption label="待审校对" value="pending" />
@@ -15044,6 +15075,7 @@ onBeforeUnmount(() => {
               "
             />
             <ElTable
+              class="desktop-standards-vector-table"
               :data="standardsVectorizationVisibleFiles"
               :row-class-name="standardsVectorFileTableRowClassName"
               border
@@ -15136,6 +15168,53 @@ onBeforeUnmount(() => {
                 </template>
               </ElTableColumn>
             </ElTable>
+            <div class="mobile-standards-vector-list" aria-live="polite">
+              <article
+                v-for="row in standardsVectorizationVisibleFiles"
+                :key="row.id"
+                class="mobile-standards-vector-card"
+              >
+                <header>
+                  <div>
+                    <small>{{ row.contextLabel }}</small>
+                    <strong>{{ row.fileName }}</strong>
+                  </div>
+                  <ElTag :type="row.vectorGap ? 'warning' : 'success'" effect="plain">
+                    {{ row.vectorStatus }}
+                  </ElTag>
+                </header>
+                <p>{{ row.sourceRelativePath }}</p>
+                <dl>
+                  <div>
+                    <dt>切片 / 向量</dt>
+                    <dd>{{ row.chunkCount }} / {{ row.vectorCount }}</dd>
+                  </div>
+                  <div>
+                    <dt>PageIndex</dt>
+                    <dd>{{ row.pageIndexNodeCount }}</dd>
+                  </div>
+                  <div>
+                    <dt>待审校对</dt>
+                    <dd>{{ row.pendingCorrectionCount }}</dd>
+                  </div>
+                  <div>
+                    <dt>问题</dt>
+                    <dd>{{ row.issue }}</dd>
+                  </div>
+                </dl>
+                <ElButton
+                  type="primary"
+                  plain
+                  @click="openStandardsVectorFileDrawer(row.raw || row)"
+                >
+                  查看与校对
+                </ElButton>
+              </article>
+              <ElEmpty
+                v-if="!standardsVectorizationVisibleFiles.length"
+                description="没有匹配的规范资料"
+              />
+            </div>
           </section>
 
           <aside class="standards-vector-side-panel">
@@ -17315,17 +17394,12 @@ onBeforeUnmount(() => {
                           <strong>1. 选择测试文件</strong>
                           <ElTag effect="plain">PDF / 图片</ElTag>
                         </div>
-                        <input
-                          ref="ocrCapabilityFileInputRef"
-                          class="sr-only-input"
-                          type="file"
-                          accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
-                          @change="handleOcrCapabilityTestFileChange"
-                        />
-                        <button
-                          type="button"
+                        <ElUpload
                           class="ocr-capability-upload"
-                          @click="chooseOcrCapabilityTestFile"
+                          :auto-upload="false"
+                          :show-file-list="false"
+                          accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
+                          :on-change="handleOcrCapabilityTestUploadChange"
                         >
                           <strong>{{
                             ocrCapabilityTestFile?.name || '点击选择 PDF 或图片'
@@ -17334,7 +17408,7 @@ onBeforeUnmount(() => {
                             {{ Math.ceil((ocrCapabilityTestFile.size || 0) / 1024) }} KB
                           </span>
                           <span v-else>建议用真实扫描件、表格照片或盖章资料做测试。</span>
-                        </button>
+                        </ElUpload>
                         <div class="ocr-capability-form">
                           <label>
                             <span>解析配置</span>
@@ -17371,18 +17445,15 @@ onBeforeUnmount(() => {
                           </label>
                         </div>
                         <div class="ocr-capability-switches">
-                          <label>
-                            <input v-model="ocrCapabilityTestForm.enableTables" type="checkbox" />
+                          <ElCheckbox v-model="ocrCapabilityTestForm.enableTables">
                             表格识别
-                          </label>
-                          <label>
-                            <input v-model="ocrCapabilityTestForm.enableSeals" type="checkbox" />
+                          </ElCheckbox>
+                          <ElCheckbox v-model="ocrCapabilityTestForm.enableSeals">
                             印章识别（稍慢）
-                          </label>
-                          <label>
-                            <input v-model="ocrCapabilityTestForm.enableFallback" type="checkbox" />
+                          </ElCheckbox>
+                          <ElCheckbox v-model="ocrCapabilityTestForm.enableFallback">
                             复杂页兜底
-                          </label>
+                          </ElCheckbox>
                         </div>
                       </section>
                       <section
@@ -20094,46 +20165,29 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <div class="annotation-workbench" v-loading="annotationDetailLoading">
-          <section class="annotation-guide" aria-label="OCR 标注流程">
-            <article
+          <ElSteps
+            class="annotation-guide"
+            :active="annotationWorkflowActiveIndex"
+            finish-status="success"
+            align-center
+            aria-label="OCR 标注流程"
+          >
+            <ElStep
               v-for="step in annotationWorkflowSteps"
               :key="step.no"
-              :class="{ done: step.done, active: step.active }"
-            >
-              <span>{{ step.no }}</span>
-              <div>
-                <strong>{{ step.title }}</strong>
-                <small>{{ step.hint }}</small>
-              </div>
-            </article>
-          </section>
+              :title="step.title"
+              :description="step.hint"
+              :status="step.done ? 'success' : step.active ? 'process' : 'wait'"
+            />
+          </ElSteps>
 
           <section class="annotation-canvas-toolbar" aria-label="OCR 标注画布工具">
-            <div class="annotation-tool-group" role="toolbar" aria-label="标注工具">
-              <button
-                type="button"
-                :class="{ active: annotationCanvasTool === 'select' }"
-                @click="setAnnotationCanvasTool('select')"
-              >
-                选择
-              </button>
-              <button
-                type="button"
-                :class="{ active: annotationCanvasTool === 'pan' }"
-                @click="setAnnotationCanvasTool('pan')"
-              >
-                拖动画布
-              </button>
-              <button
-                v-for="item in annotationTypeOptions"
-                :key="item.key"
-                type="button"
-                :class="{ active: annotationCanvasTool === item.key }"
-                @click="setAnnotationCanvasTool(item.key)"
-              >
-                框选{{ item.label }}
-              </button>
-            </div>
+            <ElSegmented
+              v-model="annotationCanvasTool"
+              class="annotation-tool-group"
+              :options="annotationCanvasToolOptions"
+              aria-label="标注工具"
+            />
             <div class="annotation-tool-meta">
               <span>{{ annotationCurrentToolLabel }}</span>
               <strong>{{ selectedAnnotationCanvasTitle }}</strong>
@@ -20248,20 +20302,12 @@ onBeforeUnmount(() => {
                     clearable
                     placeholder="搜索文字、印章、表格或坐标"
                   />
-                  <div class="annotation-object-filter" role="tablist" aria-label="筛选标注对象">
-                    <button
-                      v-for="option in annotationObjectFilterOptions"
-                      :key="option.key"
-                      type="button"
-                      :class="{ active: annotationObjectFilter === option.key }"
-                      role="tab"
-                      :aria-selected="annotationObjectFilter === option.key"
-                      @click="annotationObjectFilter = option.key"
-                    >
-                      <span>{{ option.label }}</span>
-                      <strong>{{ option.count }}</strong>
-                    </button>
-                  </div>
+                  <ElSegmented
+                    v-model="annotationObjectFilter"
+                    class="annotation-object-filter"
+                    :options="annotationObjectSegmentOptions"
+                    aria-label="筛选标注对象"
+                  />
                 </div>
                 <div ref="annotationObjectTreeRef" class="annotation-object-tree">
                   <section v-for="section in annotationObjectTreeSections" :key="section.key">
@@ -20609,20 +20655,12 @@ onBeforeUnmount(() => {
                     <strong>手动输入坐标</strong>
                   </div>
                 </summary>
-                <div class="annotation-type-segment" role="tablist" aria-label="选择标注对象类型">
-                  <button
-                    v-for="item in annotationTypeOptions"
-                    :key="item.key"
-                    type="button"
-                    :class="{ active: annotationBoxType === item.key }"
-                    role="tab"
-                    :aria-selected="annotationBoxType === item.key"
-                    @click="annotationBoxType = item.key"
-                  >
-                    <strong>{{ item.label }}</strong>
-                    <small>{{ item.example }}</small>
-                  </button>
-                </div>
+                <ElSegmented
+                  v-model="annotationBoxType"
+                  class="annotation-type-segment"
+                  :options="annotationTypeSegmentOptions"
+                  aria-label="选择标注对象类型"
+                />
                 <p class="annotation-help-text">{{ annotationBoxTypeHint }}</p>
                 <ElForm label-position="top" class="annotation-form">
                   <ElFormItem label="标签 / 识别值">
@@ -20880,6 +20918,7 @@ onBeforeUnmount(() => {
 }
 
 .page-title {
+  margin: 0;
   font-size: var(--aicheck-font-size-page, 24px);
   font-weight: var(--aicheck-font-weight-bold, 700);
   line-height: var(--aicheck-line-height-page, 32px);
@@ -23288,6 +23327,11 @@ onBeforeUnmount(() => {
 
 .ocr-capability-upload {
   width: 100%;
+}
+
+.ocr-capability-upload :deep(.el-upload) {
+  display: block;
+  width: 100%;
   min-height: 118px;
   padding: 18px;
   color: #1e40af;
@@ -23301,9 +23345,12 @@ onBeforeUnmount(() => {
     background 0.2s ease;
 }
 
-.ocr-capability-upload:hover {
+.ocr-capability-upload :deep(.el-upload:hover),
+.ocr-capability-upload :deep(.el-upload:focus-visible) {
   background: #eff6ff;
   border-color: #2563eb;
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .ocr-capability-upload strong,
@@ -25746,6 +25793,84 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.mobile-standards-vector-list {
+  display: none;
+}
+
+.mobile-standards-vector-card {
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+}
+
+.mobile-standards-vector-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-standards-vector-card header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mobile-standards-vector-card header small {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.mobile-standards-vector-card header strong {
+  font-size: 15px;
+  line-height: 1.45;
+  color: #172033;
+  overflow-wrap: anywhere;
+}
+
+.mobile-standards-vector-card > p {
+  margin: 10px 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-standards-vector-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 0;
+  margin: 0 0 10px;
+  border-top: 1px solid #edf1f6;
+}
+
+.mobile-standards-vector-card dt,
+.mobile-standards-vector-card dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mobile-standards-vector-card dt {
+  margin-bottom: 2px;
+  color: #596a80;
+}
+
+.mobile-standards-vector-card dd {
+  color: #26364e;
+  overflow-wrap: anywhere;
+}
+
+.mobile-standards-vector-card > .el-button {
+  width: 100%;
+  min-height: 44px;
+}
+
 .standards-vector-table-panel,
 .standards-vector-side-section {
   padding: 14px;
@@ -27365,79 +27490,18 @@ onBeforeUnmount(() => {
 }
 
 .annotation-guide {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.annotation-guide article {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 9px;
-  min-width: 0;
-  padding: 11px;
+  padding: 12px 8px 8px;
   background: #fff;
   border: 1px solid #dbe8f7;
   border-radius: 8px;
 }
 
-.annotation-guide article.active {
-  background: #eef5ff;
-  border-color: #93b8ff;
-}
-
-.annotation-guide article.done {
-  background: #f3fbf7;
-  border-color: #bfe8ce;
-}
-
-.annotation-guide article > span {
-  display: inline-grid;
-  width: 34px;
-  height: 34px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #1d4ed8;
-  background: #eef5ff;
-  border: 1px solid #cfe0ff;
-  border-radius: 8px;
-  place-items: center;
-}
-
-.annotation-guide article.done > span {
-  color: #15803d;
-  background: #eaf8ef;
-  border-color: #bfe8ce;
-}
-
-.annotation-guide div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.annotation-guide strong,
-.annotation-guide small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.annotation-guide strong {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  color: #172033;
-  white-space: nowrap;
-}
-
-.annotation-guide small {
-  display: -webkit-box;
+.annotation-guide :deep(.el-step__description) {
+  max-width: 180px;
+  margin: 3px auto 0;
   font-size: 12px;
   line-height: 18px;
   color: #64748b;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 
 .annotation-canvas-toolbar {
@@ -27452,7 +27516,6 @@ onBeforeUnmount(() => {
   border-radius: 8px;
 }
 
-.annotation-tool-group,
 .annotation-tool-actions {
   display: flex;
   flex-wrap: wrap;
@@ -27461,29 +27524,14 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.annotation-tool-group button {
+.annotation-tool-group {
+  max-width: 100%;
+}
+
+.annotation-tool-group :deep(.el-segmented__item) {
   min-height: 34px;
-  padding: 6px 11px;
   font-size: 13px;
   font-weight: 600;
-  color: #475569;
-  cursor: pointer;
-  background: #f8fafc;
-  border: 1px solid #dbe8f7;
-  border-radius: 8px;
-}
-
-.annotation-tool-group button:hover,
-.annotation-tool-group button:focus-visible,
-.annotation-tool-group button.active {
-  color: #1d4ed8;
-  background: #eef5ff;
-  border-color: #93b8ff;
-}
-
-.annotation-tool-group button:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
 }
 
 .annotation-tool-meta {
@@ -27794,54 +27842,7 @@ onBeforeUnmount(() => {
 }
 
 .annotation-type-segment {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.annotation-type-segment button {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  min-height: 62px;
-  padding: 9px;
-  text-align: left;
-  cursor: pointer;
-  background: var(--fde-surface-soft);
-  border: 1px solid var(--fde-border-soft);
-  border-radius: 8px;
-}
-
-.annotation-type-segment button:hover,
-.annotation-type-segment button:focus-visible,
-.annotation-type-segment button.active {
-  background: #eef5ff;
-  border-color: #93b8ff;
-}
-
-.annotation-type-segment button:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-.annotation-type-segment strong,
-.annotation-type-segment small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.annotation-type-segment strong {
-  font-size: 14px;
-  font-weight: 600;
-  color: #172033;
-  white-space: nowrap;
-}
-
-.annotation-type-segment small {
-  font-size: 12px;
-  line-height: 16px;
-  color: #64748b;
+  width: 100%;
 }
 
 .annotation-help-text {
@@ -28073,48 +28074,13 @@ onBeforeUnmount(() => {
 }
 
 .annotation-object-filter {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 6px;
+  width: 100%;
 }
 
-.annotation-object-filter button {
-  display: flex;
-  min-width: 0;
+.annotation-object-filter :deep(.el-segmented__item) {
   min-height: 36px;
-  padding: 6px 8px;
-  color: #1f2d3d;
-  cursor: pointer;
-  background: var(--fde-surface-soft);
-  border: 1px solid var(--fde-border-soft);
-  border-radius: 8px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.annotation-object-filter button:hover,
-.annotation-object-filter button:focus-visible,
-.annotation-object-filter button.active {
-  color: #1d4ed8;
-  background: #eef5ff;
-  border-color: #93b8ff;
-}
-
-.annotation-object-filter button:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-.annotation-object-filter span,
-.annotation-object-filter strong {
-  min-width: 0;
-  overflow: hidden;
   font-size: 12px;
   font-weight: 600;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .annotation-object-tree {
@@ -28557,6 +28523,15 @@ onBeforeUnmount(() => {
 }
 
 @media (width <= 768px) {
+  .desktop-standards-vector-table {
+    display: none;
+  }
+
+  .mobile-standards-vector-list {
+    display: grid;
+    gap: 10px;
+  }
+
   .page-toolbar {
     grid-template-columns: minmax(0, 1fr);
   }

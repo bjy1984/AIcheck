@@ -8,11 +8,15 @@ import {
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
+  ElEmpty,
+  ElIcon,
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElNotification,
   ElOption,
   ElPagination,
+  ElProgress,
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
@@ -20,7 +24,14 @@ import {
   ElTableColumn,
   ElTreeV2
 } from 'element-plus'
-import { Document, FolderOpened, View } from '@element-plus/icons-vue'
+import {
+  Document,
+  DocumentChecked,
+  FolderOpened,
+  Guide,
+  MagicStick,
+  View
+} from '@element-plus/icons-vue'
 import {
   adoptAiSuggestionApi,
   archiveReportApi,
@@ -324,7 +335,6 @@ const submissionDialogVisible = ref(false)
 const submissionDialogError = ref('')
 const submissionHistoryVisible = ref(false)
 const submissionHistoryLoading = ref(false)
-const withdrawSuccessMessage = ref('')
 const evidenceDialogVisible = ref(false)
 const rectificationDialogVisible = ref(false)
 const activeRectificationId = ref('')
@@ -500,6 +510,12 @@ const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
 const aiRecheckOutputVisible = ref(false)
 const mobileTreeOpen = ref(false)
+const compactNodeNavigation = ref(false)
+
+const syncCompactNodeNavigation = () => {
+  compactNodeNavigation.value = window.innerWidth <= 900
+  if (!compactNodeNavigation.value) mobileTreeOpen.value = false
+}
 const aiRecheckRunOverride = ref<AiReviewRun>()
 const aiRecheckOutputError = ref('')
 const selectedAiReviewMode = ref<AiReviewMode>('formal')
@@ -763,18 +779,17 @@ const getInspectionNodeMissingText = (
   }
   return hasRequirementDetails ? `缺 ${missingCount} 项资料` : '缺失资料项待明细配置'
 }
-const handleInspectionNodeSort = (key: InspectionNodeSortKey) => {
+const handleInspectionNodeTableSort = ({
+  prop,
+  order
+}: {
+  prop: string
+  order: 'ascending' | 'descending' | null
+}) => {
+  if (!order || !['nodeId', 'material'].includes(prop)) return
   inspectionNodePage.value = 1
-  if (inspectionNodeSortKey.value === key) {
-    inspectionNodeSortDirection.value = inspectionNodeSortDirection.value === 'asc' ? 'desc' : 'asc'
-    return
-  }
-  inspectionNodeSortKey.value = key
-  inspectionNodeSortDirection.value = 'asc'
-}
-const getInspectionNodeSortIndicator = (key: InspectionNodeSortKey) => {
-  if (inspectionNodeSortKey.value !== key) return ''
-  return inspectionNodeSortDirection.value === 'asc' ? '↑' : '↓'
+  inspectionNodeSortKey.value = prop as InspectionNodeSortKey
+  inspectionNodeSortDirection.value = order === 'ascending' ? 'asc' : 'desc'
 }
 const inspectionProjectNodeRows = computed(() => {
   const rows = projectTreeNodes.value.map((node) => {
@@ -1172,6 +1187,49 @@ const compactText = (value?: string, fallback = '暂无配置') => {
   const text = String(value || '').trim()
   return text || fallback
 }
+const splitBasisParagraphs = (value?: string) =>
+  compactText(value)
+    .split(/\r?\n\s*\r?\n|\r?\n(?=(?:Agent\s*思考方式|工具集调用思考)[:：])/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+const basisCriteriaParagraphs = computed(() => splitBasisParagraphs(businessBasis.value?.criteria))
+const basisCriteriaDecisionNote = computed(
+  () =>
+    basisCriteriaParagraphs.value.find((item) =>
+      /(?:不一致|冲突).*(?:为准|优先)|(?:以后者|以前者)为准/.test(item)
+    ) || ''
+)
+const basisCriteriaReferences = computed(() =>
+  basisCriteriaParagraphs.value.filter((item) => item !== basisCriteriaDecisionNote.value)
+)
+const basisMethodParagraphs = computed(() =>
+  splitBasisParagraphs(businessBasis.value?.checkMethod || businessBasis.value?.witnessText)
+)
+const basisAgentParagraphs = computed(() =>
+  basisMethodParagraphs.value.filter((item) =>
+    /^(?:Agent\s*思考方式|工具集调用思考)[:：]/.test(item)
+  )
+)
+const basisCheckSteps = computed(() =>
+  basisMethodParagraphs.value
+    .filter((item) => !basisAgentParagraphs.value.includes(item))
+    .map((item, index) => {
+      const numbered = item.match(/^(\d+)[、.．]\s*(.+)$/s)
+      const validity = item.match(/^有效期[:：]\s*(.+)$/s)
+      return {
+        label: validity ? '有效期核验' : `核查步骤 ${numbered?.[1] || index + 1}`,
+        text: validity?.[1] || numbered?.[2] || item
+      }
+    })
+)
+const basisAgentSteps = computed(() =>
+  basisAgentParagraphs.value
+    .flatMap((item) =>
+      item.replace(/^(?:Agent\s*思考方式|工具集调用思考)[:：]\s*/, '').split(/[；;]/)
+    )
+    .map((item) => item.trim())
+    .filter(Boolean)
+)
 const requirementResponsibleParty = (requirement: {
   responsibleParty?: string
   materialTypeCode?: string
@@ -1721,15 +1779,12 @@ const showSubmissionDialogError = (fallback: string, error?: unknown) => {
   ElMessage.error(message)
 }
 
-let withdrawSuccessTimer: ReturnType<typeof setTimeout> | undefined
-
 const showWithdrawSuccess = () => {
-  const message = '提交项已撤回为草稿挂载，可在提交历史中追溯'
-  withdrawSuccessMessage.value = message
-  if (withdrawSuccessTimer) clearTimeout(withdrawSuccessTimer)
-  withdrawSuccessTimer = setTimeout(() => {
-    withdrawSuccessMessage.value = ''
-  }, 20000)
+  ElNotification.success({
+    title: '撤回成功',
+    message: '提交项已撤回为草稿挂载，可在提交历史中追溯',
+    duration: 5000
+  })
 }
 
 const showBindDialogError = (fallback: string, error?: unknown) => {
@@ -4010,10 +4065,13 @@ watch(
 )
 
 onMounted(() => {
+  syncCompactNodeNavigation()
+  window.addEventListener('resize', syncCompactNodeNavigation)
   loadProjects()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncCompactNodeNavigation)
   stopPostUploadPolling()
   stopAiReviewPolling()
   revokePreviewDrawerObjectUrl()
@@ -4022,14 +4080,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="aicheck-static-viewport" v-loading="loading">
-    <div
-      v-if="withdrawSuccessMessage"
-      class="el-message el-message--success withdraw-success-message"
-      role="alert"
-    >
-      {{ withdrawSuccessMessage }}
-    </div>
     <div class="aicheck-page app-shell">
+      <a class="skip-main" href="#aicheck-workbench-main">跳到主内容</a>
       <header class="topbar">
         <div class="brand">
           <div class="brand-mark">盾</div>
@@ -4093,32 +4145,15 @@ onBeforeUnmount(() => {
         v-else-if="canShowWorkspace"
         :class="['workspace', { 'no-left-nav': role === 'contractor' || role === 'ndt' }]"
       >
-        <button
-          v-if="mobileTreeOpen && role !== 'contractor' && role !== 'ndt'"
-          type="button"
-          class="mobile-tree-backdrop"
-          aria-label="关闭审核节点导航"
-          @click="mobileTreeOpen = false"
-        ></button>
         <aside
-          v-if="role !== 'contractor' && role !== 'ndt'"
+          v-if="role !== 'contractor' && role !== 'ndt' && !compactNodeNavigation"
           id="audit-node-navigation"
-          :class="['left', { 'is-mobile-open': mobileTreeOpen }]"
+          class="left"
         >
           <section class="tree-wrap">
             <div class="section-title">
               <span>项目审核节点</span>
-              <span class="section-tools">
-                {{ role === 'owner' ? '只读 ⓘ' : '↻ ⚙' }}
-                <button
-                  type="button"
-                  class="mobile-tree-close"
-                  aria-label="关闭审核节点导航"
-                  @click="mobileTreeOpen = false"
-                >
-                  ×
-                </button>
-              </span>
+              <span v-if="role === 'owner'" class="section-tools">只读</span>
             </div>
             <ProjectNodeTree
               :groups="visibleTreeGroups"
@@ -4132,6 +4167,8 @@ onBeforeUnmount(() => {
         </aside>
 
         <main
+          id="aicheck-workbench-main"
+          tabindex="-1"
           :class="[
             'center',
             {
@@ -4313,95 +4350,81 @@ onBeforeUnmount(() => {
                   </div>
                   <span class="pill green">{{ inspectionProjectNodeRows.length }} 个节点</span>
                 </div>
-                <div class="inspection-node-table-wrap">
-                  <table class="table compact inspection-node-table">
-                    <thead>
-                      <tr>
-                        <th>
-                          <button
-                            type="button"
-                            class="inspection-node-sort-button"
-                            @click="handleInspectionNodeSort('nodeId')"
-                          >
-                            序号 {{ getInspectionNodeSortIndicator('nodeId') }}
-                          </button>
-                        </th>
-                        <th>节点名称</th>
-                        <th>类别</th>
-                        <th>
-                          <button
-                            type="button"
-                            class="inspection-node-sort-button"
-                            @click="handleInspectionNodeSort('material')"
-                          >
-                            资料齐全度 {{ getInspectionNodeSortIndicator('material') }}
-                          </button>
-                        </th>
-                        <th>七项独立审计状态</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr
-                        v-for="row in pagedInspectionProjectNodeRows"
-                        :key="row.node.id"
-                        :class="{ active: row.node.nodeId === activeNodeId }"
+                <ElTable
+                  class="inspection-node-table"
+                  :data="pagedInspectionProjectNodeRows"
+                  row-key="node.id"
+                  :row-class-name="({ row }) => (row.node.nodeId === activeNodeId ? 'active' : '')"
+                  :default-sort="
+                    inspectionNodeSortKey === 'review'
+                      ? undefined
+                      : {
+                          prop: inspectionNodeSortKey,
+                          order: inspectionNodeSortDirection === 'asc' ? 'ascending' : 'descending'
+                        }
+                  "
+                  empty-text="暂无节点"
+                  @sort-change="handleInspectionNodeTableSort"
+                >
+                  <ElTableColumn prop="nodeId" label="序号" width="84" sortable="custom">
+                    <template #default="{ row }">{{ row.node.nodeId }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn label="节点名称" min-width="180" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <ElButton link type="primary" @click="handleNodeSelect(row.node)">
+                        {{ row.node.name }}
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="类别" width="108" align="center">
+                    <template #default="{ row }">
+                      <span :class="['pill', getPillClass(row.node.inspectionType)]">
+                        {{ row.node.inspectionType }}
+                      </span>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="material" label="资料齐全度" width="250" sortable="custom">
+                    <template #default="{ row }">
+                      <div class="inspection-node-material">
+                        <strong>{{ row.materialDone }}/{{ row.materialTotal }}</strong>
+                        <span>{{ row.materialPercent }}%</span>
+                      </div>
+                      <ElProgress
+                        class="inspection-node-material-progress"
+                        :percentage="row.materialPercent"
+                        :show-text="false"
+                        :stroke-width="7"
+                      />
+                      <small class="inspection-node-missing" :title="row.missingText">
+                        {{ row.missingText }}
+                      </small>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="七项独立审计状态" min-width="540">
+                    <template #default="{ row }">
+                      <div
+                        v-if="inspectionAuditOverviewNodeMap.get(row.node.nodeId)"
+                        class="inspection-audit-matrix"
+                        :aria-label="`${row.node.name}审计项状态`"
                       >
-                        <td>{{ row.node.nodeId }}</td>
-                        <td>
-                          <a
-                            href=""
-                            class="inspection-node-link"
-                            @click.prevent="handleNodeSelect(row.node)"
-                          >
-                            {{ row.node.name }}
-                          </a>
-                        </td>
-                        <td>
-                          <span :class="['pill', getPillClass(row.node.inspectionType)]">
-                            {{ row.node.inspectionType }}
-                          </span>
-                        </td>
-                        <td>
-                          <div class="inspection-node-material">
-                            <strong>{{ row.materialDone }}/{{ row.materialTotal }}</strong>
-                            <span>{{ row.materialPercent }}%</span>
-                          </div>
-                          <div class="inspection-node-material-bar">
-                            <i :style="{ width: `${row.materialPercent}%` }"></i>
-                          </div>
-                          <small class="inspection-node-missing" :title="row.missingText">
-                            {{ row.missingText }}
-                          </small>
-                        </td>
-                        <td class="inspection-audit-matrix-cell">
-                          <div
-                            v-if="inspectionAuditOverviewNodeMap.get(row.node.nodeId)"
-                            class="inspection-audit-matrix"
-                            :aria-label="`${row.node.name}审计项状态`"
-                          >
-                            <button
-                              v-for="item in inspectionAuditOverviewNodeMap.get(row.node.nodeId)
-                                ?.items || []"
-                              :key="item.key"
-                              type="button"
-                              :class="['inspection-audit-matrix-item', `is-${item.status}`]"
-                              :title="`${item.label}：${item.statusLabel}；${item.metric}；${item.summary}`"
-                              @click="handleInspectionMatrixSelect(row.node, item.key)"
-                            >
-                              <span>{{ inspectionAuditItemShortLabels[item.key] }}</span>
-                              <i aria-hidden="true"></i>
-                              <small>{{ item.statusLabel }}</small>
-                            </button>
-                          </div>
-                          <span v-else class="inspection-audit-matrix-loading">状态加载中</span>
-                        </td>
-                      </tr>
-                      <tr v-if="!inspectionProjectNodeRows.length">
-                        <td colspan="5">暂无节点</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                        <button
+                          v-for="item in inspectionAuditOverviewNodeMap.get(row.node.nodeId)
+                            ?.items || []"
+                          :key="item.key"
+                          type="button"
+                          :class="['inspection-audit-matrix-item', `is-${item.status}`]"
+                          :title="`${item.label}：${item.statusLabel}；${item.metric}；${item.summary}`"
+                          @click="handleInspectionMatrixSelect(row.node, item.key)"
+                        >
+                          <span>{{ inspectionAuditItemShortLabels[item.key] }}</span>
+                          <i aria-hidden="true"></i>
+                          <small>{{ item.statusLabel }}</small>
+                        </button>
+                      </div>
+                      <span v-else class="inspection-audit-matrix-loading">状态加载中</span>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
                 <ElPagination
                   v-model:current-page="inspectionNodePage"
                   v-model:page-size="inspectionNodePageSize"
@@ -4434,68 +4457,61 @@ onBeforeUnmount(() => {
                   />
                 </div>
 
-                <div class="overview-file-table-wrap">
-                  <table class="table compact overview-file-table">
-                    <thead>
-                      <tr>
-                        <th>序号</th>
-                        <th>文件名</th>
-                        <th>来源</th>
-                        <th>上传人</th>
-                        <th>资料类别</th>
-                        <th>资料/OCR 状态</th>
-                        <th>上传时间</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="file in pagedInspectionOverviewFiles" :key="file.id">
-                        <td>{{ file.rowNo }}</td>
-                        <td>
-                          <span class="overview-file-name" :title="file.fileName">
-                            {{ file.fileName }}
-                          </span>
-                        </td>
-                        <td>
-                          <span>{{ file.sourceRole }}</span>
-                          <small>{{ file.sourceOrgName }}</small>
-                        </td>
-                        <td>{{ file.uploaderName || '-' }}</td>
-                        <td>{{ file.materialCategoryText }}</td>
-                        <td>
-                          <span :class="['pill', getPillClass(file.fileStatus)]">
-                            {{ file.fileStatus }}
-                          </span>
-                          <small
-                            :class="[
-                              'overview-ocr-status',
-                              `is-${file.ocrReadiness?.status || 'unknown'}`
-                            ]"
-                          >
-                            {{ ocrReadinessLabel(file.ocrReadiness?.status) }}
-                            <template v-if="file.ocrReadiness?.status === 'ready'">
-                              · bbox {{ Math.round((file.ocrReadiness?.bboxCoverage || 0) * 100) }}%
-                            </template>
-                          </small>
-                        </td>
-                        <td>{{ file.uploadTimeText }}</td>
-                        <td>
-                          <ElButton
-                            class="overview-file-action"
-                            text
-                            type="primary"
-                            @click="handleOpenFileDetail(file.id)"
-                          >
-                            查看原文
-                          </ElButton>
-                        </td>
-                      </tr>
-                      <tr v-if="!pagedInspectionOverviewFiles.length">
-                        <td colspan="8">暂无匹配文件</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                <ElTable
+                  class="overview-file-table"
+                  :data="pagedInspectionOverviewFiles"
+                  row-key="id"
+                  empty-text="暂无匹配文件"
+                >
+                  <ElTableColumn prop="rowNo" label="序号" width="72" align="center" />
+                  <ElTableColumn
+                    prop="fileName"
+                    label="文件名"
+                    min-width="220"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn label="来源" min-width="150">
+                    <template #default="{ row }">
+                      <span>{{ row.sourceRole }}</span>
+                      <small class="overview-file-source">{{ row.sourceOrgName }}</small>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="uploaderName" label="上传人" width="112">
+                    <template #default="{ row }">{{ row.uploaderName || '-' }}</template>
+                  </ElTableColumn>
+                  <ElTableColumn
+                    prop="materialCategoryText"
+                    label="资料类别"
+                    min-width="150"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn label="资料/OCR 状态" min-width="176">
+                    <template #default="{ row }">
+                      <span :class="['pill', getPillClass(row.fileStatus)]">
+                        {{ row.fileStatus }}
+                      </span>
+                      <small
+                        :class="[
+                          'overview-ocr-status',
+                          `is-${row.ocrReadiness?.status || 'unknown'}`
+                        ]"
+                      >
+                        {{ ocrReadinessLabel(row.ocrReadiness?.status) }}
+                        <template v-if="row.ocrReadiness?.status === 'ready'">
+                          · bbox {{ Math.round((row.ocrReadiness?.bboxCoverage || 0) * 100) }}%
+                        </template>
+                      </small>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="uploadTimeText" label="上传时间" width="170" />
+                  <ElTableColumn label="操作" width="96" fixed="right">
+                    <template #default="{ row }">
+                      <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
+                        查看原文
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
 
                 <ElPagination
                   v-model:current-page="overviewFilePage"
@@ -4592,13 +4608,22 @@ onBeforeUnmount(() => {
                 <strong>AI 复核输出</strong>
                 <small>{{ aiRecheckOutputMeta }}</small>
               </div>
-              <div v-if="aiRecheckOutputError" class="ai-recheck-output-error">
-                {{ aiRecheckOutputError }}
-              </div>
-              <div v-if="aiRecheckIsLocalFallback" class="ai-recheck-output-warning">
-                当前调度器未启用，未调用外部模型；以下为基于真实证据状态生成的本地降级摘要，不是模型
-                DeepThink。
-              </div>
+              <ElAlert
+                v-if="aiRecheckOutputError"
+                class="ai-recheck-output-alert"
+                type="error"
+                :title="aiRecheckOutputError"
+                :closable="false"
+                show-icon
+              />
+              <ElAlert
+                v-if="aiRecheckIsLocalFallback"
+                class="ai-recheck-output-alert"
+                type="warning"
+                title="当前调度器未启用，未调用外部模型；以下为基于真实证据状态生成的本地降级摘要，不是模型 DeepThink。"
+                :closable="false"
+                show-icon
+              />
               <div class="ai-recheck-output-section">
                 <label>AI 建议（待人工确认）</label>
                 <pre>{{ aiRecheckResultText }}</pre>
@@ -4672,9 +4697,12 @@ onBeforeUnmount(() => {
                   </template>
                 </ElTableColumn>
               </ElTable>
-              <div v-if="!nodeScopedFiles.length" class="inspection-audit-empty">
-                当前节点暂无挂载文档；这不会阻止查看或办理其他审计项。
-              </div>
+              <ElEmpty
+                v-if="!nodeScopedFiles.length"
+                class="inspection-audit-empty"
+                :image-size="72"
+                description="当前节点暂无挂载文档；这不会阻止查看或办理其他审计项。"
+              />
             </div>
           </section>
 
@@ -4702,13 +4730,61 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="basis-block-grid">
-                <article class="basis-block">
-                  <h3>监检判断准则</h3>
-                  <p>{{ compactText(businessBasis?.criteria) }}</p>
+                <article class="basis-block basis-block--criteria">
+                  <div class="basis-block-heading">
+                    <ElIcon class="basis-block-icon"><DocumentChecked /></ElIcon>
+                    <div>
+                      <span class="basis-block-kicker">判定依据</span>
+                      <h3>监检判断准则</h3>
+                    </div>
+                  </div>
+                  <ol class="basis-reference-list">
+                    <li v-for="(item, index) in basisCriteriaReferences" :key="item">
+                      <span class="basis-reference-index">
+                        {{ String(index + 1).padStart(2, '0') }}
+                      </span>
+                      <p>{{ item }}</p>
+                    </li>
+                  </ol>
+                  <div v-if="basisCriteriaDecisionNote" class="basis-decision-note">
+                    <ElIcon><Guide /></ElIcon>
+                    <div>
+                      <strong>冲突适用规则</strong>
+                      <span>{{ basisCriteriaDecisionNote }}</span>
+                    </div>
+                  </div>
                 </article>
-                <article class="basis-block">
-                  <h3>核查方法与工作见证</h3>
-                  <p>{{ compactText(businessBasis?.checkMethod || businessBasis?.witnessText) }}</p>
+                <article class="basis-block basis-block--method">
+                  <div class="basis-block-heading">
+                    <ElIcon class="basis-block-icon"><Guide /></ElIcon>
+                    <div>
+                      <span class="basis-block-kicker">执行路径</span>
+                      <h3>核查方法与工作见证</h3>
+                    </div>
+                  </div>
+                  <div class="basis-method-list">
+                    <div
+                      v-for="(item, index) in basisCheckSteps"
+                      :key="item.text"
+                      class="basis-method-item"
+                    >
+                      <span class="basis-method-step">{{ index + 1 }}</span>
+                      <div>
+                        <small>{{ item.label }}</small>
+                        <p>{{ item.text }}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="basisAgentSteps.length" class="basis-agent-note">
+                    <div class="basis-agent-note__head">
+                      <ElIcon><MagicStick /></ElIcon>
+                      <strong>Agent 核查思路</strong>
+                      <span>辅助说明</span>
+                    </div>
+                    <ul>
+                      <li v-for="item in basisAgentSteps" :key="item">{{ item }}</li>
+                    </ul>
+                  </div>
                 </article>
               </div>
 
@@ -5255,6 +5331,28 @@ onBeforeUnmount(() => {
       </div>
 
       <ElDrawer
+        v-if="role !== 'contractor' && role !== 'ndt' && compactNodeNavigation"
+        v-model="mobileTreeOpen"
+        class="mobile-tree-drawer"
+        title="项目审核节点"
+        direction="ltr"
+        size="min(380px, 88vw)"
+        append-to-body
+        destroy-on-close
+      >
+        <div id="audit-node-navigation" class="mobile-tree-navigation">
+          <ProjectNodeTree
+            :groups="visibleTreeGroups"
+            :active-node-id="activeWorkbenchSection === 'overview' ? 0 : activeNodeId"
+            :show-overview="true"
+            empty-description="暂无项目审核节点"
+            @select="handleNodeSelect"
+            @select-overview="handleProjectOverviewSelect"
+          />
+        </div>
+      </ElDrawer>
+
+      <ElDrawer
         v-model="previewDrawerVisible"
         :title="previewDrawerTitle"
         class="aicheck-preview-drawer"
@@ -5268,8 +5366,6 @@ onBeforeUnmount(() => {
           >
           <div class="preview-source">{{ previewDrawerMeta }}</div>
           <div class="preview-actions">
-            <ElButton class="btn">放大</ElButton>
-            <ElButton class="btn">缩小</ElButton>
             <ElButton class="btn" @click="activeSideTab = 'evidence'">定位证据</ElButton>
             <ElButton
               class="btn"
@@ -5282,7 +5378,6 @@ onBeforeUnmount(() => {
           <div class="doc-preview">
             <div class="doc-toolbar">
               <span>{{ previewDrawerToolbarLabel }}</span>
-              <span>⛶</span>
             </div>
             <div class="doc-canvas">
               <div
@@ -5557,6 +5652,27 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(280px, 404px) minmax(260px, 1fr) minmax(260px, 520px);
   gap: 18px;
   align-items: center;
+}
+
+.skip-main {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 9px 12px;
+  color: #fff;
+  text-decoration: none;
+  background: var(--blue-2);
+  border-radius: 8px;
+  transform: translateY(-160%);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+  transition: transform 0.18s ease;
+}
+
+.skip-main:focus-visible {
+  outline: 3px solid rgb(255 255 255 / 80%);
+  outline-offset: 2px;
+  transform: translateY(0);
 }
 
 .brand {
@@ -6642,38 +6758,13 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
-.inspection-node-table-wrap {
-  margin-top: 10px;
-  overflow: auto hidden;
-  border: 1px solid #e1eaf7;
-  border-radius: 8px;
-}
-
 .inspection-node-table {
-  min-width: 1180px;
-  border: 0;
+  width: 100%;
+  margin-top: 10px;
 }
 
-.inspection-node-table th,
-.inspection-node-table td {
-  vertical-align: middle;
-}
-
-.inspection-node-table th:first-child,
-.inspection-node-table td:first-child {
-  width: 72px;
-  text-align: center;
-}
-
-.inspection-node-table th:nth-child(3),
-.inspection-node-table td:nth-child(3) {
-  width: 108px;
-  text-align: center;
-}
-
-.inspection-node-table th:nth-child(5),
-.inspection-node-table td:nth-child(5) {
-  min-width: 520px;
+.inspection-node-table :deep(.el-table__row.active > td.el-table__cell) {
+  background: #f8fbff;
 }
 
 .inspection-audit-matrix {
@@ -6753,55 +6844,6 @@ h3 {
   color: var(--muted);
 }
 
-.inspection-node-table tbody tr.active {
-  background: #f8fbff;
-}
-
-.inspection-node-sort-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 28px;
-  padding: 0;
-  font: inherit;
-  font-weight: 600;
-  color: inherit;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-}
-
-.inspection-node-sort-button:hover,
-.inspection-node-sort-button:focus-visible {
-  color: #1f66d8;
-  outline: 0;
-}
-
-.inspection-node-link {
-  display: inline-block;
-  max-width: 100%;
-  padding: 0;
-  overflow: hidden;
-  font: inherit;
-  font-weight: 600;
-  color: #1f66d8;
-  text-align: left;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-}
-
-.inspection-node-link:hover,
-.inspection-node-link:focus-visible {
-  color: #0f4fb9;
-  outline: 0;
-}
-
 .inspection-node-material {
   display: flex;
   gap: 8px;
@@ -6822,20 +6864,8 @@ h3 {
   color: #1f66d8;
 }
 
-.inspection-node-material-bar {
-  height: 7px;
+.inspection-node-material-progress {
   margin-top: 6px;
-  overflow: hidden;
-  background: #eef4fb;
-  border-radius: 999px;
-}
-
-.inspection-node-material-bar i {
-  display: block;
-  height: 100%;
-  min-width: 2px;
-  background: #1f66d8;
-  border-radius: inherit;
 }
 
 .inspection-node-missing {
@@ -6977,48 +7007,14 @@ h3 {
   margin: 10px 0 12px;
 }
 
-.overview-file-table-wrap {
-  width: 100%;
-  overflow-x: auto;
-  border: 1px solid #e1eaf7;
-  border-radius: 8px;
-}
-
 .overview-file-table {
-  min-width: 980px;
-  border: 0;
+  width: 100%;
 }
 
-.overview-file-table th,
-.overview-file-table td {
-  vertical-align: middle;
-}
-
-.overview-file-table th:first-child,
-.overview-file-table td:first-child {
-  width: 64px;
-  text-align: center;
-}
-
-.overview-file-table td:nth-child(3) span,
-.overview-file-table td:nth-child(3) small {
+.overview-file-source {
   display: block;
-}
-
-.overview-file-table td:nth-child(3) small {
   margin-top: 2px;
   color: var(--muted);
-}
-
-.overview-file-name {
-  display: inline-block;
-  max-width: 280px;
-  overflow: hidden;
-  font-weight: 600;
-  color: #172033;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
 .overview-file-action {
@@ -7196,8 +7192,9 @@ h3 {
 .basis-block-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
 }
 
 .basis-block,
@@ -7212,17 +7209,68 @@ h3 {
   border-radius: 6px;
 }
 
+.basis-block {
+  min-width: 0;
+  padding: 20px;
+  overflow: hidden;
+  border-color: #e2e9f4;
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgb(43 74 123 / 6%);
+}
+
+.basis-block--criteria {
+  background: linear-gradient(155deg, #fff 0%, #fbfcff 100%);
+}
+
+.basis-block--method {
+  background: linear-gradient(155deg, #fff 0%, #f9fbff 100%);
+}
+
+.basis-block-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e8edf5;
+}
+
+.basis-block-icon {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  font-size: 19px;
+  color: #376fc7;
+  background: #edf4ff;
+  border-radius: 11px;
+}
+
+.basis-block--method .basis-block-icon {
+  color: #6c5fc7;
+  background: #f1efff;
+}
+
+.basis-block-kicker {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  color: #5f6d84;
+}
+
 .basis-block h3,
 .basis-table-block h3,
 .standard-reference-block h3,
 .execution-step h3,
 .conclusion-point h3 {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
   color: var(--ink);
 }
 
-.basis-block p,
 .overall-conclusion p,
 .conclusion-point p {
   margin: 8px 0 0;
@@ -7231,6 +7279,195 @@ h3 {
   line-height: 1.7;
   color: #344054;
   white-space: pre-wrap;
+}
+
+.basis-reference-list {
+  padding: 0;
+  margin: 6px 0 0;
+  list-style: none;
+}
+
+.basis-reference-list li {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.basis-reference-list li:last-child {
+  border-bottom: 0;
+}
+
+.basis-reference-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2f63b5;
+  font-variant-numeric: tabular-nums;
+  background: #edf4ff;
+  border-radius: 9px;
+}
+
+.basis-reference-list p,
+.basis-method-item p {
+  max-width: 72ch;
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.72;
+  color: #344054;
+}
+
+.basis-decision-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin-top: 10px;
+  color: #79520a;
+  background: #fff8e8;
+  border-radius: 10px;
+}
+
+.basis-decision-note > .el-icon {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  font-size: 16px;
+}
+
+.basis-decision-note strong,
+.basis-decision-note span {
+  display: block;
+}
+
+.basis-decision-note strong {
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.basis-decision-note span {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.basis-method-list {
+  position: relative;
+  display: grid;
+  gap: 0;
+  margin-top: 8px;
+}
+
+.basis-method-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 0;
+}
+
+.basis-method-item:not(:last-child)::after {
+  position: absolute;
+  top: 39px;
+  bottom: -5px;
+  left: 13px;
+  width: 2px;
+  background: #e1e7f3;
+  border-radius: 2px;
+  content: '';
+}
+
+.basis-method-step {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6154b5;
+  background: #f0eeff;
+  border-radius: 50%;
+}
+
+.basis-method-item small {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: #626d83;
+}
+
+.basis-agent-note {
+  padding: 14px 16px;
+  margin-top: 10px;
+  color: #37405f;
+  background: linear-gradient(135deg, #f4f1ff 0%, #f2f7ff 100%);
+  border-radius: 11px;
+}
+
+.basis-agent-note__head {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-bottom: 9px;
+}
+
+.basis-agent-note__head .el-icon {
+  font-size: 16px;
+  color: #6658bc;
+}
+
+.basis-agent-note__head strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #3d356e;
+}
+
+.basis-agent-note__head span {
+  padding: 2px 7px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7066a8;
+  background: rgb(255 255 255 / 72%);
+  border-radius: 999px;
+}
+
+.basis-agent-note ul {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.basis-agent-note li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+.basis-agent-note li::before {
+  position: absolute;
+  top: 0.72em;
+  left: 1px;
+  width: 5px;
+  height: 5px;
+  background: #8a7cd8;
+  border-radius: 50%;
+  content: '';
 }
 
 .block-title-row,
@@ -7332,10 +7569,17 @@ h3 {
   align-items: center;
 }
 
-.mobile-tree-trigger,
-.mobile-tree-close,
-.mobile-tree-backdrop {
+.mobile-tree-trigger {
   display: none;
+}
+
+:global(.mobile-tree-drawer .el-drawer__body) {
+  padding: 0 12px 16px;
+}
+
+:global(.mobile-tree-drawer .tree-panel) {
+  height: calc(100dvh - 84px);
+  max-height: none;
 }
 
 .ai-review-mode-control {
@@ -7915,28 +8159,8 @@ h3 {
   white-space: nowrap;
 }
 
-.ai-recheck-output-error {
-  padding: 9px 10px;
+.ai-recheck-output-alert {
   margin: 10px 12px 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: #c83d3d;
-  background: #fff1f1;
-  border: 1px solid #ffc5c5;
-  border-radius: 5px;
-}
-
-.ai-recheck-output-warning {
-  padding: 9px 10px;
-  margin: 10px 12px 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: #8a4b00;
-  background: #fff8e8;
-  border: 1px solid #ffd99a;
-  border-radius: 5px;
 }
 
 .ai-recheck-output-section {
@@ -7989,19 +8213,6 @@ h3 {
   border-radius: 5px;
 }
 
-.withdraw-success-message {
-  position: fixed;
-  top: 22px;
-  left: 50%;
-  z-index: 5000;
-  display: flex;
-  max-width: min(620px, calc(100vw - 32px));
-  min-width: 320px;
-  pointer-events: none;
-  transform: translateX(-50%);
-  justify-content: center;
-}
-
 @media (width <= 1360px) {
   .topbar {
     grid-template-columns: minmax(260px, 360px) minmax(220px, 1fr);
@@ -8052,6 +8263,14 @@ h3 {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .basis-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .basis-block-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .inspection-audit-status-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -8087,63 +8306,11 @@ h3 {
   }
 
   .left {
-    position: fixed;
-    z-index: 2201;
-    width: min(88vw, 380px);
-    height: 100vh;
-    border-right: 1px solid var(--line);
-    border-bottom: 0;
-    visibility: hidden;
-    transform: translateX(-105%);
-    box-shadow: 16px 0 40px rgb(25 42 70 / 18%);
-    transition: transform 0.2s ease;
-    inset: 0 auto 0 0;
-  }
-
-  .left.is-mobile-open {
-    visibility: visible;
-    transform: translateX(0);
-  }
-
-  .mobile-tree-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 2200;
-    display: block;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    cursor: default;
-    background: rgb(18 31 52 / 38%);
-    border: 0;
+    display: none;
   }
 
   .mobile-tree-trigger {
     display: inline-flex;
-  }
-
-  .mobile-tree-close {
-    display: inline-flex;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    font-size: 28px;
-    line-height: 1;
-    color: #52627a;
-    cursor: pointer;
-    background: transparent;
-    border: 0;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .tree-wrap :deep(.tree-panel) {
-    height: calc(100vh - 52px);
-    max-height: none;
-  }
-
-  .section-title {
-    height: 52px;
   }
 
   .center {
@@ -8169,6 +8336,23 @@ h3 {
 }
 
 @media (width <= 560px) {
+  .basis-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .basis-block {
+    padding: 16px;
+  }
+
+  .basis-reference-list p,
+  .basis-method-item p {
+    font-size: 15px;
+  }
+
+  .basis-agent-note li {
+    font-size: 14px;
+  }
+
   .workbench-audit-board,
   .metrics,
   .result-grid {

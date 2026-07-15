@@ -640,9 +640,9 @@ const openInspectionNodeAuditItem = async (
   itemLabel: string,
   nodeName = '焊工资格证及持证合格项目'
 ) => {
-  const nodeLink = page.getByRole('link', { name: new RegExp(nodeName) }).first()
-  await expect(nodeLink).toBeVisible()
-  await nodeLink.click()
+  const nodeControl = page.getByRole('button', { name: new RegExp(nodeName) }).first()
+  await expect(nodeControl).toBeVisible()
+  await nodeControl.click()
   await openInspectionAuditItem(page, itemLabel)
 }
 
@@ -832,6 +832,37 @@ test.describe('AIcheck route smoke', () => {
       )
     )) {
       await openRoute(page, routeCase)
+      await expectNoPageOverflow(page)
+    }
+  })
+
+  test('static admin pages keep content first and expose an accessible mobile drawer', async ({
+    page
+  }) => {
+    await page.setViewportSize({ width: 390, height: 900 })
+
+    for (const routeCase of routeCases.filter((item) =>
+      ['/admin/overview', '/knowledge/overview', '/fde/projects'].includes(item.path)
+    )) {
+      await openRoute(page, routeCase)
+
+      const heading = page.locator('main h1')
+      await expect(heading).toHaveCount(1)
+      await expect(heading).toBeVisible()
+      expect((await heading.boundingBox())?.y || 999).toBeLessThan(320)
+      await expect(page.locator('#aicheck-static-navigation')).toBeHidden()
+
+      const navigationTrigger = page.getByRole('button', { name: '导航', exact: true })
+      await expect(navigationTrigger).toBeVisible()
+      await expect(navigationTrigger).toHaveAttribute('aria-expanded', 'false')
+      await navigationTrigger.click()
+
+      const navigation = page.locator('#aicheck-static-mobile-navigation')
+      await expect(navigation).toBeVisible()
+      await expect(navigationTrigger).toHaveAttribute('aria-expanded', 'true')
+      await page.keyboard.press('Escape')
+      await expect(navigation).toBeHidden()
+      await expect(navigationTrigger).toBeFocused()
       await expectNoPageOverflow(page)
     }
   })
@@ -1156,7 +1187,7 @@ test.describe('AIcheck route smoke', () => {
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
-    await page.getByRole('link', { name: '设计单位许可资质', exact: true }).first().click()
+    await page.getByRole('button', { name: '设计单位许可资质', exact: true }).first().click()
 
     const auditDirectory = page.getByRole('region', { name: '审计项目录' })
     const submissionItem = auditDirectory.getByRole('tab', { name: /资料提交/ })
@@ -1440,7 +1471,7 @@ test.describe('AIcheck live business error mapping', () => {
       .click()
     await page.locator('.node-ai-recheck-button').click()
 
-    const blocker = page.locator('.ai-recheck-output-error')
+    const blocker = page.getByRole('alert').filter({ hasText: 'TASK_RUNNING' })
     await expect(blocker).toBeVisible()
     await expect(blocker).toContainText('错误码：TASK_RUNNING')
     await expect(blocker).toContainText('已有任务正在运行')

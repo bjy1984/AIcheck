@@ -52,8 +52,14 @@ const login = async (page, account, path) => {
   await page.waitForLoadState('networkidle').catch(() => {})
   if (routeQuery) {
     const mobileNavigationTrigger = page.getByRole('button', { name: '审核节点', exact: true })
-    if (await mobileNavigationTrigger.isVisible()) await mobileNavigationTrigger.click()
     const nodeNavigation = page.locator('#audit-node-navigation')
+    const navigationEntry = await Promise.race([
+      mobileNavigationTrigger
+        .waitFor({ state: 'visible', timeout: 20_000 })
+        .then(() => 'mobile-trigger'),
+      nodeNavigation.waitFor({ state: 'visible', timeout: 20_000 }).then(() => 'navigation')
+    ])
+    if (navigationEntry === 'mobile-trigger') await mobileNavigationTrigger.click()
     await nodeNavigation.waitFor({ state: 'visible', timeout: 20_000 })
     const auditNode = nodeNavigation
       .locator('.node-button')
@@ -63,6 +69,9 @@ const login = async (page, account, path) => {
       await nodeNavigation.getByRole('treeitem', { name: '焊接（粘接）', exact: true }).click()
     }
     await auditNode.click()
+    if (navigationEntry === 'mobile-trigger') {
+      await nodeNavigation.waitFor({ state: 'hidden', timeout: 20_000 })
+    }
     await page.getByRole('region', { name: '审计项目录' }).waitFor({ timeout: 20_000 })
     await page
       .locator('.audit-item-directory:not(.is-loading)')

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
+  ElAlert,
   ElButton,
   ElDrawer,
   ElEmpty,
@@ -9,6 +10,7 @@ import {
   ElProgress,
   ElRadioButton,
   ElRadioGroup,
+  ElSkeleton,
   ElTag
 } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -198,11 +200,17 @@ onBeforeUnmount(() => {
       <ElRadioButton value="completed">已完成</ElRadioButton>
     </ElRadioGroup>
 
-    <div v-if="errorMessage" class="task-error" role="alert">
-      <span>{{ errorMessage }}</span>
-      <ElButton type="danger" plain @click="loadTasks">重试</ElButton>
-    </div>
-    <div v-else-if="loading" class="task-loading">正在读取任务状态...</div>
+    <ElAlert
+      v-if="errorMessage"
+      class="task-error"
+      type="error"
+      :title="errorMessage"
+      :closable="false"
+      show-icon
+    >
+      <ElButton size="small" type="danger" plain @click="loadTasks">重试</ElButton>
+    </ElAlert>
+    <ElSkeleton v-else-if="loading" class="task-loading" animated :rows="8" />
     <ElEmpty v-else-if="!filteredTasks.length" description="当前范围没有任务" />
     <div v-else class="task-list">
       <article v-for="task in filteredTasks" :key="`${task.area}-${task.id}`" class="task-row">
@@ -343,31 +351,32 @@ onBeforeUnmount(() => {
 }
 
 .task-provider-wait {
-  margin: 10px 0 0;
   padding: 8px 10px;
-  border-left: 3px solid #8a4b00;
+  margin: 10px 0 0;
   color: #8a4b00;
   background: #fff7e6;
+  border-left: 3px solid #8a4b00;
 }
 
 .task-filters {
   margin: 14px 0;
 }
 
-.task-loading,
 .task-error {
   display: flex;
-  min-height: 160px;
-  padding: 24px;
-  color: #52647d;
-  align-items: center;
-  justify-content: center;
+  margin-top: 12px;
 }
 
-.task-error {
-  color: #b42318;
-  background: #fef3f2;
+.task-error :deep(.el-alert__content) {
+  display: flex;
   gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.task-loading {
+  padding: 20px 4px;
 }
 
 .task-list {

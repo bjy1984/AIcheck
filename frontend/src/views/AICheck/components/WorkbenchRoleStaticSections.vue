@@ -1,5 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import {
+  ElButton,
+  ElEmpty,
+  ElInput,
+  ElOption,
+  ElPagination,
+  ElRadioButton,
+  ElRadioGroup,
+  ElSelect,
+  ElTable,
+  ElTableColumn,
+  ElTag
+} from 'element-plus'
 import type {
   ArchiveItem,
   NdtFeedback,
@@ -24,6 +37,7 @@ type ReviewChainStep = {
 type ContractorFileStatus = '全部' | '待提交' | '审核中' | '需补正' | '已通过' | '已作废'
 type ContractorSortKey = 'updatedDesc' | 'updatedAsc' | 'status' | 'version'
 type ContractorMaterialStatus = '已覆盖' | '部分上传' | '待上传' | '需补正'
+type ElementTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
 type ContractorMaterialRequirement = {
   category: string
   requiredItems: string
@@ -491,13 +505,22 @@ const pagedContractorFileRows = computed(() => {
   return filteredContractorFileRows.value.slice(start, start + contractorPageSize)
 })
 
-const setContractorStatusFilter = (status: ContractorFileStatus) => {
-  contractorStatusFilter.value = status
+const resetContractorFilePage = () => {
   contractorPage.value = 1
 }
 
-const resetContractorFilePage = () => {
-  contractorPage.value = 1
+const getElementTagType = (value?: string): ElementTagType => {
+  if (!value) return 'info'
+  if (['通过', '满足', '完成', '覆盖', '归档'].some((keyword) => value.includes(keyword))) {
+    return 'success'
+  }
+  if (['补正', '失败', '禁止', '风险', '作废'].some((keyword) => value.includes(keyword))) {
+    return 'danger'
+  }
+  if (['待', '审核', '处理中', '排队'].some((keyword) => value.includes(keyword))) {
+    return 'warning'
+  }
+  return 'primary'
 }
 
 const requestUpload = (materialCategory?: string) => {
@@ -612,257 +635,231 @@ const getPillClass = (value?: string) => {
                 {{ materialGapSummary.covered }} / {{ materialGapSummary.total }} 类已有资料
               </span>
             </div>
-            <div class="table-scroll">
-              <table class="table compact material-gap-table">
-                <colgroup>
-                  <col class="material-gap-seq-col" />
-                  <col class="material-gap-category-col" />
-                  <col class="material-gap-action-col" />
-                  <col class="material-gap-required-col" />
-                  <col class="material-gap-uploaded-col" />
-                  <col class="material-gap-missing-col" />
-                  <col class="material-gap-status-col" />
-                  <col class="material-gap-rule-col" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>序号</th>
-                    <th>资料类别</th>
-                    <th>操作</th>
-                    <th>标准要求</th>
-                    <th>已上传</th>
-                    <th>缺口/待核验</th>
-                    <th>状态</th>
-                    <th>关联规则</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(item, index) in visibleMaterialChecklist"
-                    :key="item.category"
-                    :class="{ selected: item.status === '需补正' || item.status === '待上传' }"
+            <ElTable
+              class="material-gap-table"
+              :data="visibleMaterialChecklist"
+              row-key="category"
+              empty-text="当前节点没有标准资料要求"
+            >
+              <ElTableColumn type="index" label="序号" width="64" align="center" />
+              <ElTableColumn prop="category" label="资料类别" width="130" />
+              <ElTableColumn label="操作" width="96">
+                <template #default="{ row }">
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="readOnly"
+                    @click="requestUpload(row.category)"
                   >
-                    <td>{{ index + 1 }}</td>
-                    <td>{{ item.category }}</td>
-                    <td>
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        :disabled="readOnly"
-                        @click="requestUpload(item.category)"
-                      >
-                        上传资料
-                      </button>
-                    </td>
-                    <td>{{ item.requiredItems }}</td>
-                    <td>{{ item.uploadedCount }} 份</td>
-                    <td>{{ item.missing }}</td>
-                    <td>
-                      <span :class="['pill', getPillClass(item.status)]">{{ item.status }}</span>
-                    </td>
-                    <td>{{ item.nodeRefs }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    上传资料
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="requiredItems"
+                label="标准要求"
+                min-width="280"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="已上传" width="94">
+                <template #default="{ row }">{{ row.uploadedCount }} 份</template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="missing"
+                label="缺口/待核验"
+                min-width="260"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="状态" width="100">
+                <template #default="{ row }">
+                  <ElTag :type="getElementTagType(row.status)" effect="light">
+                    {{ row.status }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="nodeRefs"
+                label="关联规则"
+                min-width="140"
+                show-overflow-tooltip
+              />
+            </ElTable>
           </div>
 
           <div class="file-library-tools">
-            <div class="status-filter-row">
-              <button
+            <ElRadioGroup
+              v-model="contractorStatusFilter"
+              class="status-filter-row"
+              aria-label="文件状态筛选"
+              @change="resetContractorFilePage"
+            >
+              <ElRadioButton
                 v-for="status in contractorStatusOptions"
                 :key="status"
-                type="button"
-                :class="['status-filter', { active: contractorStatusFilter === status }]"
-                @click="setContractorStatusFilter(status)"
+                :value="status"
               >
                 {{ status }} {{ contractorStatusCounts[status] }}
-              </button>
-            </div>
+              </ElRadioButton>
+            </ElRadioGroup>
             <div class="filter-row">
-              <input
+              <ElInput
                 v-model="contractorKeyword"
                 class="filter-input"
-                type="search"
+                clearable
                 placeholder="搜索文件名、资料类别、资料项、来源单位、审核环节或反馈编号"
-                @input="resetContractorFilePage"
+                aria-label="搜索项目文件"
+                @update:model-value="resetContractorFilePage"
               />
-              <select
+              <ElSelect
                 v-model="contractorMaterialFilter"
                 class="filter-select"
+                aria-label="资料类别筛选"
                 @change="resetContractorFilePage"
               >
-                <option
+                <ElOption
                   v-for="material in contractorMaterialOptions"
                   :key="material"
+                  :label="material"
                   :value="material"
-                >
-                  {{ material }}
-                </option>
-              </select>
-              <select
+                />
+              </ElSelect>
+              <ElSelect
                 v-model="contractorUsageFilter"
                 class="filter-select"
+                aria-label="文件用途筛选"
                 @change="resetContractorFilePage"
               >
-                <option v-for="usage in contractorUsageOptions" :key="usage" :value="usage">
-                  {{ usage }}
-                </option>
-              </select>
-              <select
+                <ElOption
+                  v-for="usage in contractorUsageOptions"
+                  :key="usage"
+                  :label="usage"
+                  :value="usage"
+                />
+              </ElSelect>
+              <ElSelect
                 v-model="contractorSort"
                 class="filter-select"
+                aria-label="文件排序方式"
                 @change="resetContractorFilePage"
               >
-                <option value="updatedDesc">更新时间从新到旧</option>
-                <option value="updatedAsc">更新时间从旧到新</option>
-                <option value="status">按状态排序</option>
-                <option value="version">按版本排序</option>
-              </select>
+                <ElOption label="更新时间从新到旧" value="updatedDesc" />
+                <ElOption label="更新时间从旧到新" value="updatedAsc" />
+                <ElOption label="按状态排序" value="status" />
+                <ElOption label="按版本排序" value="version" />
+              </ElSelect>
             </div>
           </div>
 
-          <div class="table-scroll">
-            <table class="table contractor-files-table">
-              <thead>
-                <tr>
-                  <th>序号</th>
-                  <th>文件名</th>
-                  <th>资料类别</th>
-                  <th>资料项</th>
-                  <th>必要性</th>
-                  <th>文件用途</th>
-                  <th>来源单位</th>
-                  <th>状态</th>
-                  <th>处理状态</th>
-                  <th>版本</th>
-                  <th>关联审核环节</th>
-                  <th>关联反馈</th>
-                  <th>上传人</th>
-                  <th>更新时间</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(file, index) in pagedContractorFileRows"
-                  :key="file.id"
-                  :class="{ selected: index === 0 }"
-                >
-                  <td>{{ (normalizedContractorPage - 1) * contractorPageSize + index + 1 }}</td>
-                  <td>{{ file.fileName }}</td>
-                  <td>{{ file.materialCategory }}</td>
-                  <td>{{ file.requirementName }}</td>
-                  <td>
-                    <span :class="['pill', getPillClass(file.necessity)]">{{
-                      file.necessity
-                    }}</span>
-                  </td>
-                  <td>{{ file.usage }}</td>
-                  <td>{{ file.sourceOrgName }}</td>
-                  <td
-                    ><span :class="['pill', getPillClass(file.status)]">{{ file.status }}</span></td
+          <ElTable
+            class="contractor-files-table"
+            :data="pagedContractorFileRows"
+            row-key="id"
+            empty-text="当前筛选条件下暂无文件"
+          >
+            <ElTableColumn label="序号" width="64" align="center">
+              <template #default="{ $index }">
+                {{ (normalizedContractorPage - 1) * contractorPageSize + $index + 1 }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
+            <ElTableColumn
+              prop="materialCategory"
+              label="资料类别"
+              min-width="130"
+              show-overflow-tooltip
+            />
+            <ElTableColumn
+              prop="requirementName"
+              label="资料项"
+              min-width="180"
+              show-overflow-tooltip
+            />
+            <ElTableColumn label="必要性" width="100">
+              <template #default="{ row }">
+                <ElTag :type="getElementTagType(row.necessity)" effect="plain">
+                  {{ row.necessity }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn prop="usage" label="文件用途" min-width="130" show-overflow-tooltip />
+            <ElTableColumn
+              prop="sourceOrgName"
+              label="来源单位"
+              min-width="150"
+              show-overflow-tooltip
+            />
+            <ElTableColumn label="状态" width="96">
+              <template #default="{ row }">
+                <ElTag :type="getElementTagType(row.status)" effect="light">
+                  {{ row.status }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="处理状态" width="116">
+              <template #default="{ row }">
+                <ElTag :type="getElementTagType(row.processingStatus)" effect="plain">
+                  {{ row.processingStatus }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn prop="version" label="版本" width="86" />
+            <ElTableColumn
+              prop="relationNode"
+              label="关联审核环节"
+              min-width="180"
+              show-overflow-tooltip
+            />
+            <ElTableColumn prop="feedback" label="关联反馈" min-width="120" />
+            <ElTableColumn prop="uploader" label="上传人" width="112" />
+            <ElTableColumn prop="updatedAt" label="更新时间" width="176" />
+            <ElTableColumn label="操作" width="220" fixed="right">
+              <template #default="{ row }">
+                <div class="table-actions">
+                  <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="readOnly || row.status !== '待提交'"
+                    :title="
+                      row.status === '待提交'
+                        ? '提交当前文件到所选审核环节'
+                        : '当前状态不能重复提交'
+                    "
+                    @click="requestFileSubmit(row)"
                   >
-                  <td>
-                    <span :class="['pill', getPillClass(file.processingStatus)]">
-                      {{ file.processingStatus }}
-                    </span>
-                  </td>
-                  <td>{{ file.version }}</td>
-                  <td>{{ file.relationNode }}</td>
-                  <td>{{ file.feedback }}</td>
-                  <td>{{ file.uploader }}</td>
-                  <td>{{ file.updatedAt }}</td>
-                  <td>
-                    <div class="table-actions">
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        @click="requestFileView(file)"
-                      >
-                        查看
-                      </button>
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        :disabled="readOnly || file.status !== '待提交'"
-                        :title="
-                          file.status === '待提交'
-                            ? '提交当前文件到所选审核环节'
-                            : '当前状态不能重复提交'
-                        "
-                        @click="requestFileSubmit(file)"
-                      >
-                        提交
-                      </button>
-                      <button
-                        type="button"
-                        class="action-text action-button danger-action"
-                        :disabled="readOnly || file.status !== '待提交'"
-                        :title="
-                          file.status === '待提交'
-                            ? '删除未提交文件'
-                            : '文件已提交审核，不能直接删除'
-                        "
-                        @click="requestFileDelete(file)"
-                      >
-                        删除
-                      </button>
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        disabled
-                        title="文件元数据编辑接口尚未接入"
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        disabled
-                        title="当前版本替换上传接口尚未接入"
-                      >
-                        替换
-                      </button>
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        :disabled="readOnly"
-                        @click="requestFileBind(file)"
-                      >
-                        选择环节
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="!pagedContractorFileRows.length">
-                  <td colspan="15">当前筛选条件下暂无文件</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                    提交
+                  </ElButton>
+                  <ElButton
+                    link
+                    type="danger"
+                    :disabled="readOnly || row.status !== '待提交'"
+                    :title="
+                      row.status === '待提交' ? '删除未提交文件' : '文件已提交审核，不能直接删除'
+                    "
+                    @click="requestFileDelete(row)"
+                  >
+                    删除
+                  </ElButton>
+                  <ElButton link type="primary" :disabled="readOnly" @click="requestFileBind(row)">
+                    选择环节
+                  </ElButton>
+                </div>
+              </template>
+            </ElTableColumn>
+            <template #empty>
+              <ElEmpty :image-size="64" description="当前筛选条件下暂无文件" />
+            </template>
+          </ElTable>
 
-          <div class="pagination-row">
-            <span>第 {{ normalizedContractorPage }} / {{ contractorTotalPages }} 页</span>
-            <div class="pagination-actions">
-              <button
-                type="button"
-                class="action-text action-button"
-                :disabled="normalizedContractorPage <= 1"
-                @click="contractorPage -= 1"
-              >
-                上一页
-              </button>
-              <button
-                type="button"
-                class="action-text action-button"
-                :disabled="normalizedContractorPage >= contractorTotalPages"
-                @click="contractorPage += 1"
-              >
-                下一页
-              </button>
-            </div>
-          </div>
+          <ElPagination
+            v-model:current-page="contractorPage"
+            class="contractor-pagination"
+            :page-size="contractorPageSize"
+            :total="filteredContractorFileRows.length"
+            layout="total, prev, pager, next"
+            background
+            small
+          />
         </div>
       </section>
 
@@ -882,75 +879,56 @@ const getPillClass = (value?: string) => {
           >
         </div>
         <div class="card-body">
-          <div class="table-scroll">
-            <table class="table contractor-feedback-table">
-              <thead>
-                <tr>
-                  <th>反馈编号</th>
-                  <th>问题环节</th>
-                  <th>问题说明</th>
-                  <th>反馈状态</th>
-                  <th>关联文件</th>
-                  <th>反馈时间</th>
-                  <th>截止要求</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(feedback, index) in contractorFeedbackRows"
-                  :key="feedback.id"
-                  :class="{ selected: feedback.status === '待处理' || index === 0 }"
-                >
-                  <td>{{ feedback.id }}</td>
-                  <td>{{ feedback.node }}</td>
-                  <td>
-                    <strong>{{ feedback.issue }}</strong>
-                    <div class="table-note">{{ feedback.requirement }}</div>
-                  </td>
-                  <td
-                    ><span :class="['pill', getPillClass(feedback.status)]">{{
-                      feedback.status
-                    }}</span></td
+          <ElTable
+            class="contractor-feedback-table"
+            :data="contractorFeedbackRows"
+            row-key="id"
+            empty-text="暂无审核反馈"
+          >
+            <ElTableColumn prop="id" label="反馈编号" width="160" />
+            <ElTableColumn prop="node" label="问题环节" min-width="170" show-overflow-tooltip />
+            <ElTableColumn label="问题说明" min-width="300">
+              <template #default="{ row }">
+                <strong>{{ row.issue }}</strong>
+                <div class="table-note">{{ row.requirement }}</div>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="反馈状态" width="104">
+              <template #default="{ row }">
+                <ElTag :type="getElementTagType(row.status)" effect="light">
+                  {{ row.status }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="关联文件" width="96">
+              <template #default="{ row }">{{ row.linkedFiles }} 个</template>
+            </ElTableColumn>
+            <ElTableColumn prop="feedbackAt" label="反馈时间" width="176" />
+            <ElTableColumn prop="dueAt" label="截止要求" width="150" />
+            <ElTableColumn label="操作" width="220" fixed="right">
+              <template #default="{ row }">
+                <div class="table-actions">
+                  <ElButton link type="primary" :disabled="readOnly" @click="requestUpload()">
+                    上传补正
+                  </ElButton>
+                  <ElButton link type="primary" :disabled="readOnly" @click="requestBind">
+                    关联文件
+                  </ElButton>
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="readOnly"
+                    @click="requestRectify(row.rectificationId)"
                   >
-                  <td>{{ feedback.linkedFiles }} 个</td>
-                  <td>{{ feedback.feedbackAt }}</td>
-                  <td>{{ feedback.dueAt }}</td>
-                  <td>
-                    <div class="table-actions">
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        :disabled="readOnly"
-                        @click="requestUpload()"
-                      >
-                        上传补正
-                      </button>
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        :disabled="readOnly"
-                        @click="requestBind"
-                      >
-                        关联文件
-                      </button>
-                      <button
-                        type="button"
-                        class="action-text action-button"
-                        :disabled="readOnly"
-                        @click="requestRectify(feedback.rectificationId)"
-                      >
-                        提交反馈
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="!contractorFeedbackRows.length">
-                  <td colspan="8">暂无审核反馈</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                    提交反馈
+                  </ElButton>
+                </div>
+              </template>
+            </ElTableColumn>
+            <template #empty>
+              <ElEmpty :image-size="64" description="暂无审核反馈" />
+            </template>
+          </ElTable>
         </div>
       </section>
     </template>
@@ -1079,7 +1057,7 @@ const getPillClass = (value?: string) => {
                     report.status
                   }}</span></td
                 >
-                <td><span class="action-text">查看/替换</span></td>
+                <td><span class="muted-action">查看/替换暂未开放</span></td>
               </tr>
             </tbody>
           </table>
@@ -1091,9 +1069,11 @@ const getPillClass = (value?: string) => {
           <div class="card-head"><h2>五、检测报告上传</h2></div>
           <div class="card-body">
             <div class="upload-box">
-              ⇧ 上传检测报告、底片清单或图像包
-              <br />
+              <strong>上传检测报告、底片清单或图像包</strong>
               <span class="sub">上传后选择无损检测节点：40、41、42、65</span>
+              <ElButton type="primary" :disabled="readOnly" @click="requestUpload('无损检测资料')">
+                选择文件
+              </ElButton>
             </div>
           </div>
         </section>
@@ -1376,7 +1356,7 @@ const getPillClass = (value?: string) => {
                 <td
                   ><span :class="['pill', getPillClass(step.result)]">{{ step.result }}</span></td
                 >
-                <td><span class="action-text">定位证据</span></td>
+                <td><span class="muted-action">证据定位暂未开放</span></td>
               </tr>
             </tbody>
           </table>
@@ -1573,57 +1553,15 @@ p {
 }
 
 .contractor-feedback-table {
-  min-width: 1120px;
+  width: 100%;
 }
 
 .material-gap-table {
-  min-width: 1280px;
-}
-
-.material-gap-seq-col {
-  width: 64px;
-}
-
-.material-gap-category-col {
-  width: 150px;
-}
-
-.material-gap-action-col {
-  width: 112px;
-}
-
-.material-gap-required-col {
-  width: 260px;
-}
-
-.material-gap-uploaded-col {
-  width: 100px;
-}
-
-.material-gap-missing-col {
-  width: 300px;
-}
-
-.material-gap-status-col {
-  width: 112px;
-}
-
-.material-gap-rule-col {
-  width: 180px;
+  width: 100%;
 }
 
 .contractor-files-table {
-  min-width: 1540px;
-}
-
-.contractor-files-table th:last-child,
-.contractor-files-table td:last-child {
-  position: sticky;
-  right: 0;
-  z-index: 1;
-  width: 180px;
-  background: #fff;
-  box-shadow: -6px 0 10px rgb(15 23 42 / 6%);
+  width: 100%;
 }
 
 .file-library-head-actions {
@@ -1656,11 +1594,6 @@ p {
   cursor: not-allowed;
   background: #f8fafc;
   border-color: var(--line);
-}
-
-.contractor-files-table th:last-child {
-  z-index: 2;
-  background: var(--head);
 }
 
 .table th,
@@ -1832,38 +1765,23 @@ p {
 
 .upload-box {
   display: grid;
+  gap: 12px;
   min-height: 128px;
   padding: 22px;
   font-size: 18px;
   font-weight: 600;
   color: #37506f;
   text-align: center;
-  cursor: pointer;
   background: #f8fbff;
   border: 1px dashed #9db8df;
   border-radius: 6px;
   place-items: center;
 }
 
-.upload-box small {
-  display: block;
-  margin-top: 8px;
+.upload-box .sub {
   font-size: 14px;
   font-weight: 600;
   color: var(--muted);
-}
-
-.upload-box:hover:not(:disabled) {
-  color: var(--blue-2);
-  background: #f3f8ff;
-  border-color: var(--blue);
-}
-
-.upload-box:disabled {
-  color: var(--muted);
-  cursor: not-allowed;
-  background: #f8fafc;
-  border-color: var(--line);
 }
 
 .upload-meta {
@@ -1895,9 +1813,7 @@ p {
 
 .status-filter-row,
 .filter-row,
-.table-actions,
-.pagination-row,
-.pagination-actions {
+.table-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -1911,13 +1827,6 @@ p {
 .filter-input,
 .filter-select {
   min-height: 34px;
-  padding: 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #26364e;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 5px;
 }
 
 .filter-input {
@@ -1929,30 +1838,15 @@ p {
   flex: 0 1 210px;
 }
 
-.status-filter {
-  min-height: 32px;
-  padding: 0 10px;
+.status-filter-row :deep(.el-radio-button__inner) {
+  min-height: 34px;
+  padding: 8px 12px;
   font-size: 13px;
-  font-weight: 600;
-  color: #485a73;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 5px;
 }
 
-.status-filter.active {
-  color: var(--blue-2);
-  background: var(--blue-soft);
-  border-color: #bcd4ff;
-}
-
-.pagination-row {
-  justify-content: space-between;
+.contractor-pagination {
+  justify-content: flex-end;
   margin-top: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
 }
 
 .textarea-like {
@@ -2004,6 +1898,12 @@ p {
 .danger-action:not(:disabled):hover {
   color: #b91c1c;
   background: #fee2e2;
+}
+
+.muted-action {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 @media (prefers-reduced-motion: reduce) {

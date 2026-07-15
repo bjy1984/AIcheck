@@ -1959,6 +1959,16 @@ const handleDeleteProject = async (row: Project) => {
   }
 }
 
+const handleProjectCardCommand = async (command: string, row: Project) => {
+  if (command === 'edit') {
+    openProjectEditDialog(row)
+    return
+  }
+  if (command === 'archive') {
+    await handleDeleteProject(row)
+  }
+}
+
 const resetOrgForm = () => {
   orgForm.id = ''
   orgForm.name = ''
@@ -3044,7 +3054,7 @@ onMounted(() => {
     >
       <div class="page-toolbar">
         <div>
-          <div class="page-title">{{ adminPageTitle }}</div>
+          <h1 class="page-title">{{ adminPageTitle }}</h1>
           <div class="page-subtitle">{{ adminPageSubtitle }}</div>
         </div>
         <ElSpace wrap>
@@ -3167,6 +3177,7 @@ onMounted(() => {
                     v-model="projectFilters.keyword"
                     clearable
                     placeholder="搜索项目名称、编号或区域"
+                    aria-label="搜索项目名称、编号或区域"
                     @keyup.enter="handleProjectFilter"
                     @clear="handleProjectFilter"
                   />
@@ -3174,6 +3185,7 @@ onMounted(() => {
                     v-model="projectFilters.status"
                     clearable
                     placeholder="全部状态"
+                    aria-label="按项目状态筛选"
                     @change="handleProjectFilter"
                     @clear="handleProjectFilter"
                   >
@@ -3201,6 +3213,7 @@ onMounted(() => {
                 </div>
                 <ElTable
                   v-loading="projectsLoading"
+                  class="desktop-project-table"
                   :data="projectTableRows"
                   border
                   height="360"
@@ -3261,6 +3274,59 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <div v-loading="projectsLoading" class="mobile-project-list" aria-live="polite">
+                  <article
+                    v-for="row in projectTableRows"
+                    :key="row.id"
+                    class="mobile-project-card"
+                  >
+                    <header>
+                      <div>
+                        <small>{{ row.code || '未设置项目编号' }}</small>
+                        <strong>{{ row.name }}</strong>
+                      </div>
+                      <ElTag :type="statusType(row.status)" effect="light">{{ row.status }}</ElTag>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>施工单位</dt>
+                        <dd>{{ row.contractorOrgName || '--' }}</dd>
+                      </div>
+                      <div>
+                        <dt>监检机构</dt>
+                        <dd>{{ row.inspectionOrgName || '--' }}</dd>
+                      </div>
+                      <div>
+                        <dt>待办</dt>
+                        <dd>{{ row.todoCount ?? 0 }}</dd>
+                      </div>
+                      <div>
+                        <dt>更新时间</dt>
+                        <dd>{{ row.updatedAt || '--' }}</dd>
+                      </div>
+                    </dl>
+                    <footer>
+                      <ElButton link type="primary" @click="handleOpenProjectDetail(row)">
+                        查看详情
+                      </ElButton>
+                      <ElDropdown
+                        trigger="click"
+                        @command="(command) => handleProjectCardCommand(String(command), row)"
+                      >
+                        <ElButton link type="primary" aria-label="打开项目更多操作">
+                          更多操作
+                        </ElButton>
+                        <template #dropdown>
+                          <ElDropdownMenu>
+                            <ElDropdownItem command="edit">编辑项目</ElDropdownItem>
+                            <ElDropdownItem command="archive" divided>归档/删除</ElDropdownItem>
+                          </ElDropdownMenu>
+                        </template>
+                      </ElDropdown>
+                    </footer>
+                  </article>
+                  <ElEmpty v-if="!projectTableRows.length" description="暂无项目配置" />
+                </div>
                 <ElPagination
                   v-model:current-page="tableStates.projects.page"
                   v-model:page-size="tableStates.projects.pageSize"
@@ -6159,6 +6225,7 @@ onMounted(() => {
 }
 
 .page-title {
+  margin: 0;
   font-size: 27px;
   font-weight: 600;
   line-height: 1.2;
@@ -6707,6 +6774,72 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.mobile-project-list {
+  display: none;
+}
+
+.mobile-project-card {
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--aicheck-border-soft, #e5ecf6);
+  border-radius: 12px;
+  box-shadow: var(--aicheck-shadow-xs, 0 1px 2px rgb(20 34 56 / 5%));
+}
+
+.mobile-project-card header,
+.mobile-project-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-project-card header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mobile-project-card header small {
+  font-size: 12px;
+  color: #596a80;
+}
+
+.mobile-project-card header strong {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.4;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-project-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  padding: 12px 0;
+  margin: 12px 0 8px;
+  border-top: 1px solid #edf1f6;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.mobile-project-card dt,
+.mobile-project-card dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mobile-project-card dt {
+  margin-bottom: 2px;
+  color: #596a80;
+}
+
+.mobile-project-card dd {
+  color: #26364e;
+}
+
 .prompt-template-filter-bar {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(140px, 180px) auto auto;
@@ -6740,6 +6873,15 @@ onMounted(() => {
 
   .project-filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .desktop-project-table {
+    display: none;
+  }
+
+  .mobile-project-list {
+    display: grid;
+    gap: 10px;
   }
 
   .integration-summary-grid {

@@ -229,7 +229,7 @@ const getPillClass = (value?: string | number) => {
                 ><th>关联证据数</th
                 ><td
                   >{{ evidenceLinks.length || 0 }} 条
-                  <span class="action-text">查看证据链</span></td
+                  <span class="muted-action">在证据页签查看</span></td
                 ></tr
               >
             </tbody>
@@ -352,7 +352,7 @@ const getPillClass = (value?: string | number) => {
                 ><th>关联意见</th
                 ><td
                   >{{ getPillClass(contractorFeedback.result) === 'red' ? '1 条' : '链路反馈' }}
-                  <span class="action-text">查看</span></td
+                  <span class="muted-action">详情暂未开放</span></td
                 ></tr
               >
             </tbody>
@@ -682,29 +682,17 @@ const getPillClass = (value?: string | number) => {
   border-color: #ffc5bd;
 }
 
-.action-text {
-  display: inline-flex;
-  min-height: 24px;
-  padding: 0 6px;
+.muted-action {
+  margin-left: 6px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--blue-2);
-  border-radius: 5px;
-  transition:
-    color 0.18s ease,
-    background-color 0.18s ease;
-  align-items: center;
-}
-
-.action-text:hover {
-  color: var(--blue);
-  background: var(--blue-soft);
+  color: var(--muted);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .right-card,
   .table th,
-  .table td,
-  .action-text {
+  .table td {
     transition: none;
   }
 }
