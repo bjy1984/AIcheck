@@ -4002,7 +4002,7 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
         {
             "path": "/fde",
             "component": "#",
-            "redirect": "/fde/projects",
+            "redirect": "/fde/dashboard",
             "name": "FdeConsole",
             "meta": {"title": "FDE 后台", "icon": "vi-ep:operation", "alwaysShow": True, "roles": sorted(FDE_ROLES)},
             "children": [
@@ -4013,8 +4013,8 @@ def simple_routes(role: str | None = None) -> list[dict[str, Any]]:
                     "meta": {"title": item["title"], "hidden": item.get("hidden", False), "roles": sorted(FDE_ROLES)},
                 }
                 for item in [
-                    {"path": "projects", "title": "项目审计工作台"},
-                    {"path": "dashboard", "title": "AI 驾驶舱", "hidden": True},
+                    {"path": "dashboard", "title": "治理总览"},
+                    {"path": "projects", "title": "项目审计工作台", "hidden": True},
                     {"path": "ai-runs", "title": "AI Run 追踪", "hidden": True},
                     {"path": "review-runs", "title": "Agent 审查编排", "hidden": True},
                     {"path": "feedback", "title": "人工反馈与样本池", "hidden": True},
@@ -10884,8 +10884,285 @@ def fde_review_run_audit_package(review_run_id: str, *, raw_access: bool = False
     return package_body
 
 
-def fde_metric(label: str, value: Any, tone: str = "blue", suffix: str = "") -> dict[str, Any]:
-    return {"label": label, "value": value, "tone": tone, "suffix": suffix}
+FDE_STATUS_CATALOG = [
+    {"code": "not_started", "label": "未开始", "tone": "info", "terminal": False},
+    {"code": "in_progress", "label": "处理中", "tone": "primary", "terminal": False},
+    {"code": "needs_attention", "label": "需关注", "tone": "warning", "terminal": False},
+    {"code": "failed", "label": "执行失败", "tone": "danger", "terminal": True},
+    {"code": "failed_to_start", "label": "启动失败", "tone": "danger", "terminal": True},
+    {"code": "completed", "label": "已完成", "tone": "success", "terminal": True},
+]
+
+
+FDE_DOMAIN_CAPABILITIES = [
+    {"key": "dashboard", "label": "治理总览", "group": "overview", "route": "/fde/dashboard", "permission": "fde:dashboard:view"},
+    {"key": "projects", "label": "项目审计", "group": "production", "route": "/fde/projects", "permission": "fde:dashboard:view"},
+    {"key": "ocr-quality", "label": "OCR 质量", "group": "production", "route": "/fde/ocr-quality", "permission": "fde:ocr-quality:view"},
+    {"key": "ai-runs", "label": "AI Run", "group": "production", "route": "/fde/ai-runs", "permission": "fde:ai-run:view-masked"},
+    {"key": "review-runs", "label": "审查编排", "group": "production", "route": "/fde/review-runs", "permission": "fde:ai-run:view-masked"},
+    {"key": "feedback", "label": "反馈样本", "group": "improvement", "route": "/fde/feedback", "permission": "fde:feedback:view"},
+    {"key": "evaluation", "label": "评估验证", "group": "improvement", "route": "/fde/evaluation", "permission": "fde:evaluation:view"},
+    {"key": "business-packs", "label": "业务包", "group": "delivery", "route": "/fde/business-packs", "permission": "fde:business-pack:view"},
+    {"key": "capability-bundles", "label": "能力组合", "group": "delivery", "route": "/fde/capability-bundles", "permission": "fde:business-pack:view"},
+    {"key": "releases", "label": "发布治理", "group": "delivery", "route": "/fde/releases", "permission": "fde:release:view"},
+    {"key": "security", "label": "数据安全", "group": "operations", "route": "/fde/security", "permission": "fde:security:manage"},
+    {"key": "incidents", "label": "事故复盘", "group": "operations", "route": "/fde/incidents", "permission": "fde:incident:manage"},
+    {"key": "costs", "label": "成本预算", "group": "operations", "route": "/fde/costs", "permission": "fde:dashboard:view"},
+    {"key": "acceptance", "label": "客户验收", "group": "operations", "route": "/fde/acceptance", "permission": "fde:business-pack:view"},
+]
+
+
+def fde_metric(
+    label: str,
+    value: Any,
+    tone: str = "blue",
+    suffix: str = "",
+    *,
+    key: str | None = None,
+    numerator: int | float | None = None,
+    denominator: int | float | None = None,
+    sample_size: int | None = None,
+    availability: str = "available",
+    scope: str = "tenant",
+) -> dict[str, Any]:
+    return {
+        "key": key or re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_") or label,
+        "label": label,
+        "value": value,
+        "tone": tone,
+        "suffix": suffix,
+        "unit": suffix or "count",
+        "numerator": numerator,
+        "denominator": denominator,
+        "sampleSize": sample_size,
+        "availability": availability,
+        "scope": scope,
+    }
+
+
+def fde_status_code(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"failed_to_start"}:
+        return "failed_to_start"
+    if normalized in {"failed", "failure", "error", "失败", "识别失败", "rejected"}:
+        return "failed"
+    if normalized in {
+        "completed",
+        "complete",
+        "success",
+        "succeeded",
+        "passed",
+        "done",
+        "已完成",
+        "已识别",
+        "识别完成",
+        "已人工确认",
+        "closed",
+    }:
+        return "completed"
+    if normalized in {
+        "queued",
+        "running",
+        "processing",
+        "submitted",
+        "canary_requested",
+        "canary_running",
+        "shadow_running",
+        "pending",
+        "pending_approval",
+        "排队中",
+        "运行中",
+        "识别中",
+    }:
+        return "in_progress"
+    if normalized in {
+        "blocked",
+        "blocked_by_gate",
+        "waiting_human_review",
+        "needs_human_review",
+        "attention",
+        "warning",
+    }:
+        return "needs_attention"
+    return "not_started"
+
+
+def fde_status_summary(items: list[dict[str, Any]], *, field: str = "status") -> dict[str, int]:
+    summary = {item["code"]: 0 for item in FDE_STATUS_CATALOG}
+    for item in items:
+        code = fde_status_code(item.get(field))
+        summary[code] = summary.get(code, 0) + 1
+    return summary
+
+
+def fde_blocker_record(
+    *,
+    domain: str,
+    category: str,
+    severity: str,
+    code: str,
+    title: str,
+    source_type: str,
+    source_id: Any,
+    route: str,
+    description: str | None = None,
+    project_id: Any = None,
+    detected_at: Any = None,
+    action_label: str = "查看详情",
+) -> dict[str, Any]:
+    stable_source_id = str(source_id or "unknown")
+    return {
+        "id": f"{domain}:{source_type}:{stable_source_id}:{code}",
+        "domain": domain,
+        "category": category,
+        "severity": severity,
+        "code": code,
+        "title": title,
+        "description": description or title,
+        "sourceType": source_type,
+        "sourceId": stable_source_id,
+        "projectId": project_id,
+        "statusCode": "failed" if severity == "critical" else "needs_attention",
+        "statusLabel": "执行失败" if severity == "critical" else "需关注",
+        "statusTone": "danger" if severity == "critical" else "warning",
+        "detectedAt": detected_at,
+        "route": route,
+        "actionLabel": action_label,
+    }
+
+
+def fde_build_blockers(request: Request) -> list[dict[str, Any]]:
+    tenant_id = request_tenant_id(request)
+    blockers: list[dict[str, Any]] = []
+    projects = [item for item in repo.state.get("projects", []) if tenant_id_for_record(item) == tenant_id]
+    for project in projects:
+        for item in fde_project_quality_blockers(str(project.get("id"))):
+            source_id = item.get("targetId") or project.get("id")
+            blockers.append(
+                fde_blocker_record(
+                    domain="projects",
+                    category=str(item.get("type") or "quality"),
+                    severity="critical" if item.get("level") == "danger" else "warning",
+                    code=str(item.get("type") or "PROJECT_QUALITY").upper().replace("-", "_"),
+                    title=str(item.get("title") or "项目质量项待处理"),
+                    description=str(item.get("action") or item.get("title") or "项目质量项待处理"),
+                    source_type="project_quality",
+                    source_id=source_id,
+                    project_id=project.get("id"),
+                    route=f"/fde/projects?projectId={quote(str(project.get('id') or ''))}",
+                    action_label="进入项目审计",
+                )
+            )
+
+    for run in repo.state.get("review_runs", []):
+        if tenant_id_for_record(run) != tenant_id or fde_status_code(run.get("status")) not in {"failed", "failed_to_start"}:
+            continue
+        status_code = fde_status_code(run.get("status"))
+        run_id = run.get("reviewRunId") or run.get("id")
+        blockers.append(
+            fde_blocker_record(
+                domain="review-runs",
+                category="workflow",
+                severity="critical",
+                code="REVIEW_FAILED_TO_START" if status_code == "failed_to_start" else "REVIEW_FAILED",
+                title="审查工作流启动失败" if status_code == "failed_to_start" else "审查工作流执行失败",
+                description=str(run.get("failureReason") or run.get("errorMessage") or "请检查调度、模型与输入资料。"),
+                source_type="review_run",
+                source_id=run_id,
+                project_id=run.get("projectId"),
+                detected_at=run.get("updatedAt") or run.get("finishedAt") or run.get("createdAt"),
+                route=f"/fde/review-runs?reviewRunId={quote(str(run_id or ''))}",
+                action_label="检查审查链",
+            )
+        )
+
+    for run in repo.state.get("ai_runs", []):
+        if tenant_id_for_record(run) != tenant_id or fde_status_code(run.get("status")) not in {"failed", "failed_to_start"}:
+            continue
+        run_id = run.get("id")
+        blockers.append(
+            fde_blocker_record(
+                domain="ai-runs",
+                category="runtime",
+                severity="critical",
+                code="AI_RUN_FAILED",
+                title="AI Run 执行失败",
+                description=str(run.get("failureReason") or run.get("errorMessage") or "请检查模型调用与运行轨迹。"),
+                source_type="ai_run",
+                source_id=run_id,
+                project_id=run.get("projectId"),
+                detected_at=run.get("updatedAt") or run.get("finishedAt") or run.get("createdAt"),
+                route=f"/fde/ai-runs?runId={quote(str(run_id or ''))}",
+                action_label="查看运行轨迹",
+            )
+        )
+
+    for incident in repo.state.get("incidents", []):
+        if tenant_id_for_record(incident) != tenant_id or str(incident.get("status") or "open").lower() == "closed":
+            continue
+        incident_id = incident.get("id")
+        blockers.append(
+            fde_blocker_record(
+                domain="incidents",
+                category="incident",
+                severity="critical" if str(incident.get("severity") or "").lower() in {"critical", "high", "p0", "p1"} else "warning",
+                code="OPEN_INCIDENT",
+                title=str(incident.get("title") or "事故待处理"),
+                description=str(incident.get("description") or incident.get("impact") or "事故尚未关闭。"),
+                source_type="incident",
+                source_id=incident_id,
+                detected_at=incident.get("updatedAt") or incident.get("createdAt"),
+                route=f"/fde/incidents?incidentId={quote(str(incident_id or ''))}",
+                action_label="进入事故复盘",
+            )
+        )
+
+    for report in repo.state.get("evaluation_reports", []):
+        if tenant_id_for_record(report) != tenant_id or fde_status_code(report.get("status")) != "failed":
+            continue
+        report_id = report.get("id") or report.get("evaluationRunId")
+        blockers.append(
+            fde_blocker_record(
+                domain="evaluation",
+                category="quality_gate",
+                severity="critical",
+                code="EVALUATION_FAILED",
+                title="评估报告未通过",
+                description=str(report.get("summary") or report.get("message") or "能力评估未达到发布门槛。"),
+                source_type="evaluation_report",
+                source_id=report_id,
+                detected_at=report.get("updatedAt") or report.get("createdAt"),
+                route=f"/fde/evaluation?reportId={quote(str(report_id or ''))}",
+                action_label="查看失败用例",
+            )
+        )
+
+    for plan in repo.state.get("release_plans", []):
+        if tenant_id_for_record(plan) != tenant_id or str(plan.get("status") or "") != "blocked_by_gate":
+            continue
+        plan_id = plan.get("id")
+        blockers.append(
+            fde_blocker_record(
+                domain="releases",
+                category="release_gate",
+                severity="critical",
+                code="RELEASE_GATE_BLOCKED",
+                title="发布计划被门禁阻断",
+                description="；".join(str(item) for item in plan.get("blockingReasons") or []) or "发布门禁未通过。",
+                source_type="release_plan",
+                source_id=plan_id,
+                detected_at=plan.get("updatedAt") or plan.get("createdAt"),
+                route=f"/fde/releases?releaseId={quote(str(plan_id or ''))}",
+                action_label="检查发布门禁",
+            )
+        )
+
+    deduplicated = {str(item["id"]): item for item in blockers}
+    severity_order = {"critical": 0, "warning": 1, "info": 2}
+    return sorted(
+        deduplicated.values(),
+        key=lambda item: (severity_order.get(str(item.get("severity")), 9), str(item.get("domain")), str(item.get("id"))),
+    )
 
 
 def acceptance_rate(tenant_id: str | None = None) -> float:
@@ -14980,6 +15257,98 @@ def fde_project_node_audit_detail(request: Request, project_id: str, node_id: in
     )
 
 
+@router.get("/fde/meta")
+def fde_meta(request: Request):
+    role, role_error = fde_error_unless_allowed(request)
+    if role_error:
+        return role_error
+    all_domain_permissions = {str(item["permission"]) for item in FDE_DOMAIN_CAPABILITIES}
+    granted_actions = set(repo.role_actions(role or "fde"))
+    if role == "admin":
+        granted_actions.update(all_domain_permissions)
+    capabilities = [
+        {**repo.clone(item), "granted": item["permission"] in granted_actions}
+        for item in FDE_DOMAIN_CAPABILITIES
+    ]
+    return ok(
+        {
+            "schemaVersion": "FdeMeta@1.0.0",
+            "viewer": {
+                "userId": fde_subject_user_id(request),
+                "role": role,
+                "grantedActions": sorted(granted_actions),
+            },
+            "capabilities": capabilities,
+            "boundaries": {
+                "tenantId": request_tenant_id(request),
+                "tenantScoped": True,
+                "businessWriteAllowed": False,
+                "productionApprovalAllowed": role == "admin",
+                "rawModelContentRequiresGrant": True,
+            },
+            "statusCatalog": repo.clone(FDE_STATUS_CATALOG),
+            "navigationGroups": [
+                {"key": "overview", "label": "总览"},
+                {"key": "production", "label": "生产链路"},
+                {"key": "improvement", "label": "改进验证"},
+                {"key": "delivery", "label": "能力发布"},
+                {"key": "operations", "label": "运营交付"},
+            ],
+        },
+        request,
+    )
+
+
+@router.get("/fde/blockers")
+def fde_blockers(
+    request: Request,
+    domain: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    projectId: str | None = None,
+    keyword: str | None = None,
+    page_no: int = Query(default=1, alias="page", ge=1),
+    page_size: int = Query(default=20, alias="pageSize", ge=1, le=200),
+):
+    _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
+    if role_error:
+        return role_error
+    all_items = fde_build_blockers(request)
+    items = all_items
+    if domain:
+        items = [item for item in items if item.get("domain") == domain]
+    if severity:
+        items = [item for item in items if item.get("severity") == severity]
+    if category:
+        items = [item for item in items if item.get("category") == category]
+    if projectId:
+        items = [item for item in items if item.get("projectId") == projectId]
+    if keyword:
+        needle = keyword.strip().lower()
+        items = [
+            item
+            for item in items
+            if needle in " ".join(
+                str(item.get(field) or "").lower()
+                for field in ("title", "description", "code", "sourceId", "projectId")
+            )
+        ]
+    response_page = page(items, page_no, page_size)
+    response_page["summary"] = {
+        "total": len(all_items),
+        "filtered": len(items),
+        "bySeverity": {
+            key: len([item for item in all_items if item.get("severity") == key])
+            for key in ("critical", "warning", "info")
+        },
+        "byDomain": {
+            key: len([item for item in all_items if item.get("domain") == key])
+            for key in sorted({str(item.get("domain")) for item in all_items})
+        },
+    }
+    return ok(response_page, request)
+
+
 @router.get("/fde/dashboard")
 def fde_dashboard(request: Request):
     _, role_error = fde_error_unless_allowed(request, "fde:dashboard:view")
@@ -14987,21 +15356,86 @@ def fde_dashboard(request: Request):
         return role_error
     tenant_id = request_tenant_id(request)
     ai_runs = [item for item in repo.state.get("ai_runs", []) if tenant_id_for_record(item) == tenant_id]
-    failed_runs = [item for item in ai_runs if item.get("status") == "失败"]
-    ocr_documents = [item for item in repo.state.get("documents", []) if tenant_id_for_record(item) == tenant_id]
+    projects = [item for item in repo.state.get("projects", []) if tenant_id_for_record(item) == tenant_id]
+    review_runs = [item for item in repo.state.get("review_runs", []) if tenant_id_for_record(item) == tenant_id]
+    ocr_jobs = [item for item in repo.state.get("ocr_jobs", []) if tenant_id_for_record(item) == tenant_id]
+    terminal_ai_runs = [item for item in ai_runs if fde_status_code(item.get("status")) in {"completed", "failed", "failed_to_start"}]
+    successful_ai_runs = [item for item in terminal_ai_runs if fde_status_code(item.get("status")) == "completed"]
+    ocr_documents = [
+        item
+        for item in repo.state.get("documents", [])
+        if item.get("projectId") and tenant_id_for_record(item) == tenant_id
+    ]
     ocr_success = len([item for item in ocr_documents if item.get("currentOcrStatus") == "已识别"])
-    ocr_total = len(ocr_documents) or 1
+    ocr_total = len(ocr_documents)
+    blockers = fde_build_blockers(request)
+    release_plans = [item for item in repo.state.get("release_plans", []) if tenant_id_for_record(item) == tenant_id]
+    pending_release_approvals = [item for item in release_plans if item.get("status") in {"submitted", "canary_requested"}]
+    pending_access_approvals = [
+        item
+        for item in [*repo.state.get("access_grants", []), *repo.state.get("data_exports", [])]
+        if tenant_id_for_record(item) == tenant_id and item.get("status") in {"requested", "pending", "pending_approval"}
+    ]
+    success_rate = round(len(successful_ai_runs) / len(terminal_ai_runs), 4) if terminal_ai_runs else None
+    ocr_success_rate = round(ocr_success / ocr_total, 4) if ocr_total else None
+    warnings = []
+    if not terminal_ai_runs:
+        warnings.append("AI 成功率暂无终态样本，未使用运行中任务填充分母。")
+    if not ocr_total:
+        warnings.append("当前租户暂无项目资料，OCR 成功率不可用。")
+    source_records = [*projects, *ai_runs, *review_runs, *ocr_jobs, *release_plans]
+    source_max_updated_at = max(
+        (str(item.get("updatedAt") or item.get("finishedAt") or item.get("createdAt") or "") for item in source_records),
+        default="",
+    )
+    generated_at = datetime.now(UTC).isoformat()
     return ok(
         {
+            "schemaVersion": "FdeDashboard@2.0.0",
+            "scope": {"type": "tenant", "tenantId": tenant_id, "timezone": str(os.getenv("AICHECK_SERVER_TZ") or "Asia/Shanghai")},
+            "generatedAt": generated_at,
+            "freshness": {
+                "asOf": generated_at,
+                "stale": False,
+                "sourceMaxUpdatedAt": source_max_updated_at or None,
+            },
+            "totals": {
+                "projects": len(projects),
+                "aiRuns": len(ai_runs),
+                "reviewRuns": len(review_runs),
+                "ocrRuns": len(ocr_jobs),
+                "openBlockers": len(blockers),
+                "pendingApprovals": len(pending_release_approvals) + len(pending_access_approvals),
+            },
             "metrics": [
-                fde_metric("AI Run", len(ai_runs)),
-                fde_metric("成功率", round((len(ai_runs) - len(failed_runs)) / (len(ai_runs) or 1), 4), "green", "%"),
-                fde_metric("采纳率", acceptance_rate(tenant_id), "green", "%"),
-                fde_metric("证据命中率", evidence_hit_rate(tenant_id), "blue", "%"),
-                fde_metric("误报率", false_positive_rate(tenant_id), "orange", "%"),
-                fde_metric("疑似漏报率", suspected_miss_rate(tenant_id), "red", "%"),
-                fde_metric("幻觉率", hallucination_rate(tenant_id), "red", "%"),
-                fde_metric("OCR 成功率", round(ocr_success / ocr_total, 4), "orange", "%"),
+                fde_metric("AI Run", len(ai_runs), key="ai_runs", sample_size=len(ai_runs)),
+                fde_metric(
+                    "成功率",
+                    success_rate,
+                    "green",
+                    "%",
+                    key="ai_success_rate",
+                    numerator=len(successful_ai_runs),
+                    denominator=len(terminal_ai_runs),
+                    sample_size=len(terminal_ai_runs),
+                    availability="available" if terminal_ai_runs else "insufficient_data",
+                ),
+                fde_metric("采纳率", acceptance_rate(tenant_id), "green", "%", key="acceptance_rate"),
+                fde_metric("证据命中率", evidence_hit_rate(tenant_id), "blue", "%", key="evidence_hit_rate"),
+                fde_metric("误报率", false_positive_rate(tenant_id), "orange", "%", key="false_positive_rate"),
+                fde_metric("疑似漏报率", suspected_miss_rate(tenant_id), "red", "%", key="suspected_miss_rate"),
+                fde_metric("幻觉率", hallucination_rate(tenant_id), "red", "%", key="hallucination_rate"),
+                fde_metric(
+                    "OCR 成功率",
+                    ocr_success_rate,
+                    "orange",
+                    "%",
+                    key="ocr_success_rate",
+                    numerator=ocr_success,
+                    denominator=ocr_total,
+                    sample_size=ocr_total,
+                    availability="available" if ocr_total else "insufficient_data",
+                ),
             ],
             "alerts": [
                 {"id": item["id"], "severity": item["severity"], "title": item["title"], "status": item["status"]}
@@ -15018,19 +15452,42 @@ def fde_dashboard(request: Request):
                     "evidenceHitRate": evidence_hit_rate(tenant_id),
                     "hallucinationRate": hallucination_rate(tenant_id),
                 }
-                for agent in repo.state.get("agent_versions", [])
-                if tenant_id_for_record(agent) == tenant_id
+                for agent in repo.state.get("agent_versions", []) if tenant_id_for_record(agent) == tenant_id
             ],
             "cost": {
                 "tokenEstimate": sum(int(item.get("tokenUsage") or 0) for item in ai_runs),
                 "estimatedPrice": round(sum(float(item.get("estimatedPrice") or 0) for item in ai_runs), 4),
-                "budgetStatus": (repo.state.get("cost_budgets") or [{"status": "normal"}])[0].get("status", "normal"),
+                "budgetStatus": next(
+                    (
+                        item.get("status", "normal")
+                        for item in repo.state.get("cost_budgets", [])
+                        if tenant_id_for_record(item) == tenant_id
+                    ),
+                    "normal",
+                ),
             },
             "releaseStatus": {
-                "bundles": len(repo.state.get("capability_bundles", [])),
-                "releasePlans": len(repo.state.get("release_plans", [])),
-                "pendingApprovals": len([item for item in repo.state.get("release_plans", []) if item.get("status") in {"submitted", "canary_requested"}]),
+                "bundles": len(
+                    [item for item in repo.state.get("capability_bundles", []) if tenant_id_for_record(item) == tenant_id]
+                ),
+                "releasePlans": len(release_plans),
+                "pendingApprovals": len(pending_release_approvals),
             },
+            "runStatus": {
+                "aiRun": fde_status_summary(ai_runs),
+                "reviewRun": fde_status_summary(review_runs),
+                "ocrRun": fde_status_summary(ocr_jobs),
+            },
+            "blockerSummary": {
+                "total": len(blockers),
+                "critical": len([item for item in blockers if item.get("severity") == "critical"]),
+                "warning": len([item for item in blockers if item.get("severity") == "warning"]),
+                "byDomain": {
+                    key: len([item for item in blockers if item.get("domain") == key])
+                    for key in sorted({str(item.get("domain")) for item in blockers})
+                },
+            },
+            "dataQuality": {"complete": not warnings, "warnings": warnings},
         },
         request,
     )
@@ -16274,6 +16731,7 @@ def fde_create_legacy_non_certifying_evaluation(
         "metrics": metrics,
         "caseSummary": case_summary,
         "requestedByRole": effective_role_for_request(request)[0],
+        "requestReason": compact_plain_text(body.get("reason"), 1000),
     }
     for result in case_results:
         result["profile"] = LEGACY_NON_CERTIFYING_PROFILE
@@ -16384,6 +16842,7 @@ def fde_create_production_certification_evaluation(
             {str(item.get("reviewRunId")) for item in case_results if item.get("reviewRunId")}
         ),
         "requestedByRole": effective_role_for_request(request)[0],
+        "requestReason": compact_plain_text(body.get("reason"), 1000),
     }
     report = {
         "id": body.get("reportId") or f"EREPORT-{uuid4().hex[:8].upper()}",
@@ -16965,6 +17424,23 @@ def fde_validate_business_packs(request: Request):
     return ok(validate_all_business_packs(), request)
 
 
+@router.get("/fde/business-packs/validation")
+def fde_business_pack_validation(request: Request):
+    _, role_error = fde_error_unless_allowed(request, "fde:business-pack:view")
+    if role_error:
+        return role_error
+    result = validate_all_business_packs()
+    return ok(
+        {
+            **result,
+            "schemaVersion": "FdeBusinessPackValidation@1.0.0",
+            "readOnly": True,
+            "generatedAt": datetime.now(UTC).isoformat(),
+        },
+        request,
+    )
+
+
 @router.get("/fde/business-packs/{pack_id}/diff")
 def fde_business_pack_diff(request: Request, pack_id: str, compareTo: str | None = None, tenantId: str | None = None):
     _, role_error = fde_error_unless_allowed(request, "fde:business-pack:view")
@@ -17048,6 +17524,7 @@ def fde_install_business_pack(
             "rollbackToVersion": body.get("rollbackToVersion"),
             "validationStatus": "passed" if validation.get("ok") else "failed",
             "dryRun": dry_run,
+            "reason": compact_plain_text(body.get("reason"), 1000),
         }
         repo.state["business_pack_installations"].insert(0, installation)
         audit_id = repo.add_audit("FDE 安装业务包", "BusinessPackInstallation", installation["id"])

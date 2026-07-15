@@ -20,7 +20,7 @@ const routeCases: RouteCase[] = [
   },
   { path: '/workbench/owner', title: '建设方工作台', titleLocator: '.aicheck-page .page-title' },
   { path: '/admin/overview', title: '项目管理', titleLocator: '.admin-page .page-title' },
-  { path: '/fde/projects', title: '项目审计工作台', titleLocator: '.fde-console .page-title' },
+  { path: '/fde/dashboard', title: 'FDE 治理总览', titleLocator: '.fde-console .page-title' },
   {
     path: '/knowledge/overview',
     title: 'AI 知识库管理',
@@ -655,7 +655,7 @@ test.describe('AIcheck route smoke', () => {
       { account: 'ndt', path: '/workbench/ndt', title: '无损检测工作台' },
       { account: 'owner', path: '/workbench/owner', title: '建设方工作台' },
       { account: 'admin', path: '/admin/overview', title: '项目与权限配置' },
-      { account: 'fde', path: '/fde/projects', title: '项目审计工作台' }
+      { account: 'fde', path: '/fde/dashboard', title: 'FDE 治理总览' }
     ]
 
     for (const routeCase of cases) {
@@ -827,9 +827,12 @@ test.describe('AIcheck route smoke', () => {
     await page.setViewportSize({ width: 390, height: 900 })
 
     for (const routeCase of routeCases.filter((item) =>
-      ['/workbench/inspection', '/admin/overview', '/knowledge/overview', '/fde/projects'].includes(
-        item.path
-      )
+      [
+        '/workbench/inspection',
+        '/admin/overview',
+        '/knowledge/overview',
+        '/fde/dashboard'
+      ].includes(item.path)
     )) {
       await openRoute(page, routeCase)
       await expectNoPageOverflow(page)
@@ -842,7 +845,7 @@ test.describe('AIcheck route smoke', () => {
     await page.setViewportSize({ width: 390, height: 900 })
 
     for (const routeCase of routeCases.filter((item) =>
-      ['/admin/overview', '/knowledge/overview', '/fde/projects'].includes(item.path)
+      ['/admin/overview', '/knowledge/overview', '/fde/dashboard'].includes(item.path)
     )) {
       await openRoute(page, routeCase)
 
@@ -1437,8 +1440,7 @@ test.describe('AIcheck deep route menu', () => {
       await waitForFdeProjectAuditReady(page)
       await expect(page.locator('.fde-console .page-title')).toContainText(routeCase.title)
       const activeTreeItem = page.locator('.static-tree-menu .tree-node.active').first()
-      await expect(activeTreeItem).toContainText(routeCase.menu)
-      await expect(activeTreeItem).toContainText('当前')
+      await expect(activeTreeItem).toContainText('项目审计')
       await expect(page.locator('.project-audit-focus-facts')).toBeVisible()
       await expect(page.locator('.project-audit-focus-facts')).toContainText('当前节点')
       await expect(page.locator('.route-context')).toContainText(routeCase.context)
@@ -1449,6 +1451,35 @@ test.describe('AIcheck deep route menu', () => {
       await expectNoPageOverflow(page)
       await expectFdeWorkspaceNotClipped(page)
     }
+  })
+
+  test('fde governance navigation exposes five permission-driven domains groups', async ({
+    page
+  }) => {
+    await loginTo(page, '/fde/dashboard')
+    await expect(page.locator('.fde-console .page-title')).toContainText('FDE 治理总览')
+    await expect(page.getByTestId('fde-blocker-center')).toBeVisible()
+
+    for (const group of ['总览', '生产链路', '改进验证', '能力发布', '运营交付']) {
+      await expect(
+        page.locator('.static-tree-menu').getByText(group, { exact: true })
+      ).toBeVisible()
+    }
+
+    await page.locator('.static-tree-menu').getByText('生产链路', { exact: true }).click()
+    await page.locator('.static-tree-menu').getByText('项目审计', { exact: true }).click()
+    await page.waitForURL((url) => url.hash.includes('/fde/projects'))
+    await expect(page.locator('.fde-console .page-title')).toContainText('项目审计工作台')
+  })
+
+  test('legacy standards route redirects to the business-pack standards subview', async ({
+    page
+  }) => {
+    await loginTo(page, '/fde/dashboard')
+    await page.goto('/#/fde/standards-vectorization')
+    await page.waitForURL((url) => url.hash.includes('/fde/business-packs?view=standards'))
+    await expect(page.locator('.business-pack-view-tabs')).toContainText('规范库向量化')
+    await expect(page.locator('.fde-console .page-title')).toContainText('规范库向量化')
   })
 
   test('fde project audit pages do not clip cards at desktop widths', async ({ page }) => {

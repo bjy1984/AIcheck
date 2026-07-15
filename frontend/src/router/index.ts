@@ -67,6 +67,16 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
     }
   },
   {
+    path: '/fde/standards-vectorization',
+    redirect: { path: '/fde/business-packs', query: { view: 'standards' } },
+    name: 'FdeStandardsVectorizationRedirect',
+    meta: {
+      hidden: true,
+      noCache: true,
+      roles: ['fde']
+    }
+  },
+  {
     path: '/fde/:fdePath(.*)*',
     component: AICheckStaticLayout,
     name: 'FdeStaticDeepLink',
@@ -392,7 +402,7 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
   {
     path: '/fde',
     component: AICheckStaticLayout,
-    redirect: '/fde/projects',
+    redirect: '/fde/dashboard',
     name: 'FdeConsole',
     meta: {
       title: 'FDE 后台',
@@ -402,8 +412,8 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
     },
     children: [
       ...[
-        { path: 'projects', name: 'FdeProjects', title: '项目审计工作台', hidden: false },
-        { path: 'dashboard', name: 'FdeDashboard', title: 'AI 驾驶舱', hidden: true },
+        { path: 'dashboard', name: 'FdeDashboard', title: '治理总览', hidden: false },
+        { path: 'projects', name: 'FdeProjects', title: '项目审计工作台', hidden: true },
         { path: 'ai-runs', name: 'FdeAiRuns', title: 'AI Run 追踪', hidden: true },
         { path: 'review-runs', name: 'FdeReviewRuns', title: 'Agent 审查编排', hidden: true },
         { path: 'feedback', name: 'FdeFeedback', title: '人工反馈与样本池', hidden: true },

@@ -1876,6 +1876,10 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.shell-wide .tree-node:not(.active, .is-active) .pill {
+  display: none;
+}
+
 .tree-node:hover,
 .tree-node:focus-visible,
 .tree-node.is-active {
@@ -2269,6 +2273,10 @@ onBeforeUnmount(() => {
 
   .shell-wide .global-search {
     width: min(260px, 100%);
+  }
+
+  .shell-wide .top-stat-badge:nth-of-type(-n + 2) {
+    display: none;
   }
 }
 

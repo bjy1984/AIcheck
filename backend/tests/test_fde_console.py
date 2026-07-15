@@ -168,9 +168,10 @@ def test_fde_login_and_dynamic_routes() -> None:
     routes = assert_ok(client.get("/api/auth/routes?role=fde"))
 
     assert login["user"]["role"] == "fde"
-    assert login["user"]["defaultPath"] == "/fde/projects"
+    assert login["user"]["defaultPath"] == "/fde/dashboard"
     assert [route["path"] for route in routes] == ["/fde"]
-    assert routes[0]["children"][0]["path"] == "projects"
+    assert routes[0]["redirect"] == "/fde/dashboard"
+    assert routes[0]["children"][0]["path"] == "dashboard"
     assert routes[0]["children"][0]["component"] == "views/AICheck/FdeConsole"
 
 
@@ -197,6 +198,102 @@ def test_fde_dashboard_and_masked_ai_run_detail() -> None:
     assert "reasoningProcess" not in detail["llmAudit"]["metadata"]
     assert detail["llmAudit"]["reasoning"]["redactionPolicy"] == "audit_summary_only_no_raw_chain_of_thought"
     assert detail["llmAudit"]["reasoning"]["rawChainOfThoughtAvailable"] is False
+
+
+def test_fde_dashboard_v2_uses_terminal_runs_for_success_rate() -> None:
+    before = assert_ok(client.get("/api/fde/dashboard", headers={"X-Role": "fde"}))
+    success_metric_before = next(item for item in before["metrics"] if item["key"] == "ai_success_rate")
+    repo.state["ai_runs"].append(
+        {
+            "id": "AIRUN-FDE-RUNNING-001",
+            "tenantId": "TENANT-DEFAULT",
+            "projectId": "P-2026-HDCP-001",
+            "status": "running",
+            "createdAt": "2026-07-15 10:00:00",
+        }
+    )
+
+    dashboard = assert_ok(client.get("/api/fde/dashboard", headers={"X-Role": "fde"}))
+    success_metric = next(item for item in dashboard["metrics"] if item["key"] == "ai_success_rate")
+
+    assert dashboard["schemaVersion"] == "FdeDashboard@2.0.0"
+    assert dashboard["scope"]["tenantId"] == "TENANT-DEFAULT"
+    assert dashboard["totals"]["aiRuns"] == before["totals"]["aiRuns"] + 1
+    assert success_metric["denominator"] == success_metric_before["denominator"]
+    assert success_metric["sampleSize"] == success_metric["denominator"]
+    assert dashboard["freshness"]["stale"] is False
+    assert "runStatus" in dashboard
+    assert "dataQuality" in dashboard
+
+
+def test_fde_blockers_include_failed_to_start_and_enforce_tenant_scope() -> None:
+    repo.state["review_runs"].extend(
+        [
+            {
+                "id": "RR-FDE-FAILED-START-001",
+                "reviewRunId": "RR-FDE-FAILED-START-001",
+                "tenantId": "TENANT-DEFAULT",
+                "projectId": "P-2026-HDCP-001",
+                "status": "failed_to_start",
+                "failureReason": "调度器未接受任务",
+                "createdAt": "2026-07-15 10:00:00",
+            },
+            {
+                "id": "RR-OTHER-TENANT-001",
+                "reviewRunId": "RR-OTHER-TENANT-001",
+                "tenantId": "TENANT-OTHER",
+                "projectId": "P-OTHER",
+                "status": "failed_to_start",
+            },
+        ]
+    )
+
+    blockers = assert_ok(
+        client.get(
+            "/api/fde/blockers?domain=review-runs&page=1&pageSize=1",
+            headers={"X-Role": "fde"},
+        )
+    )
+
+    assert blockers["page"] == 1
+    assert blockers["pageSize"] == 1
+    assert blockers["summary"]["filtered"] >= 1
+    assert any(item["code"] == "REVIEW_FAILED_TO_START" for item in blockers["items"])
+    assert all(item["sourceId"] != "RR-OTHER-TENANT-001" for item in blockers["items"])
+    assert blockers["items"][0]["statusTone"] == "danger"
+
+
+def test_fde_meta_exposes_permission_driven_domains_without_role_mutation() -> None:
+    permissions_before = list(repo.role_actions("fde"))
+    meta = assert_ok(client.get("/api/fde/meta", headers={"X-Role": "fde"}))
+
+    assert meta["schemaVersion"] == "FdeMeta@1.0.0"
+    assert len(meta["capabilities"]) == 14
+    assert {item["group"] for item in meta["capabilities"]} == {
+        "overview",
+        "production",
+        "improvement",
+        "delivery",
+        "operations",
+    }
+    assert meta["boundaries"]["businessWriteAllowed"] is False
+    assert any(item["code"] == "failed_to_start" and item["tone"] == "danger" for item in meta["statusCatalog"])
+    assert repo.role_actions("fde") == permissions_before
+
+
+def test_fde_business_pack_validation_get_is_read_only() -> None:
+    installations_before = list(repo.state.get("business_pack_installations", []))
+    audits_before = list(repo.state.get("audit_logs", []))
+
+    validation = assert_ok(
+        client.get("/api/fde/business-packs/validation", headers={"X-Role": "fde"})
+    )
+
+    assert validation["readOnly"] is True
+    assert validation["schemaVersion"] == "FdeBusinessPackValidation@1.0.0"
+    assert validation["results"]
+    assert repo.state.get("business_pack_installations", []) == installations_before
+    assert repo.state.get("audit_logs", []) == audits_before
 
 
 def test_fde_replay_creates_child_run_without_overwriting_parent() -> None:

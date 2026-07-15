@@ -1282,13 +1282,32 @@ export type GenericReviewWorkbenchPayload = {
 }
 
 export type FdeMetric = {
+  key?: string
   label: string
-  value: number | string
+  value: number | string | null
   tone: string
   suffix?: string
+  unit?: string
+  numerator?: number | null
+  denominator?: number | null
+  sampleSize?: number | null
+  availability?: 'available' | 'insufficient_data' | string
+  scope?: string
 }
 
 export type FdeDashboardPayload = {
+  schemaVersion?: string
+  scope?: { type: string; tenantId?: string; timezone?: string }
+  generatedAt?: string
+  freshness?: { asOf?: string; stale?: boolean; sourceMaxUpdatedAt?: string | null }
+  totals?: {
+    projects: number
+    aiRuns: number
+    reviewRuns: number
+    ocrRuns: number
+    openBlockers: number
+    pendingApprovals: number
+  }
   metrics: FdeMetric[]
   alerts: Array<{ id: string; severity: string; title: string; status: string }>
   agentPerformance: Array<{
@@ -1302,6 +1321,75 @@ export type FdeDashboardPayload = {
   }>
   cost: { tokenEstimate: number; estimatedPrice: number; budgetStatus: string }
   releaseStatus: { bundles: number; releasePlans: number; pendingApprovals: number }
+  runStatus?: Record<string, Record<string, number>>
+  blockerSummary?: {
+    total: number
+    critical: number
+    warning: number
+    byDomain: Record<string, number>
+  }
+  dataQuality?: { complete: boolean; warnings: string[] }
+}
+
+export type FdeStatusCatalogItem = {
+  code: string
+  label: string
+  tone: 'info' | 'primary' | 'warning' | 'danger' | 'success' | string
+  terminal: boolean
+}
+
+export type FdeMetaPayload = {
+  schemaVersion: string
+  viewer: { userId?: string; role?: string; grantedActions: string[] }
+  capabilities: Array<{
+    key: string
+    label: string
+    group: string
+    route: string
+    permission: string
+    granted: boolean
+  }>
+  boundaries: {
+    tenantId: string
+    tenantScoped: boolean
+    businessWriteAllowed: boolean
+    productionApprovalAllowed: boolean
+    rawModelContentRequiresGrant: boolean
+  }
+  statusCatalog: FdeStatusCatalogItem[]
+  navigationGroups: Array<{ key: string; label: string }>
+}
+
+export type FdeBlocker = {
+  id: string
+  domain: string
+  category: string
+  severity: 'critical' | 'warning' | 'info' | string
+  code: string
+  title: string
+  description: string
+  sourceType: string
+  sourceId: string
+  projectId?: string | null
+  statusCode: string
+  statusLabel: string
+  statusTone: string
+  detectedAt?: string | null
+  route: string
+  actionLabel: string
+}
+
+export type FdeBlockerPage = {
+  items: FdeBlocker[]
+  page: number
+  pageSize: number
+  total: number
+  summary: {
+    total: number
+    filtered: number
+    bySeverity: Record<string, number>
+    byDomain: Record<string, number>
+  }
 }
 
 export type FdeAiRun = AiReviewRun & {
@@ -4026,6 +4114,22 @@ export const getFdeDashboardApi = (): Promise<IResponse<FdeDashboardPayload>> =>
   return request.get({ url: '/api/fde/dashboard' })
 }
 
+export const getFdeMetaApi = (): Promise<IResponse<FdeMetaPayload>> => {
+  return request.get({ url: '/api/fde/meta' })
+}
+
+export const listFdeBlockersApi = (params?: {
+  domain?: string
+  severity?: string
+  category?: string
+  projectId?: string
+  keyword?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<FdeBlockerPage>> => {
+  return request.get({ url: '/api/fde/blockers', params })
+}
+
 export const listFdeProjectsApi = (): Promise<IResponse<FdeProjectAuditSummary[]>> => {
   return request.get({ url: '/api/fde/projects' })
 }
@@ -4393,6 +4497,7 @@ export const createFdeEvaluationRunApi = (
   data: {
     evaluationSetId: string
     capabilityBundleId?: string
+    reason?: string
   },
   options?: MutationHeaderOptions
 ): Promise<
@@ -4580,6 +4685,18 @@ export const validateFdeBusinessPacksApi = (): Promise<
   return request.post({ url: '/api/fde/business-packs/validate-all' })
 }
 
+export const getFdeBusinessPackValidationApi = (): Promise<
+  IResponse<
+    BusinessPackValidateAllPayload & {
+      schemaVersion?: string
+      readOnly?: boolean
+      generatedAt?: string
+    }
+  >
+> => {
+  return request.get({ url: '/api/fde/business-packs/validation' })
+}
+
 export const getFdeBusinessPackDiffApi = (
   packId: string,
   params?: { compareTo?: string; tenantId?: string }
@@ -4589,7 +4706,7 @@ export const getFdeBusinessPackDiffApi = (
 
 export const installFdeBusinessPackApi = (
   packId: string,
-  data: { tenantId?: string; dryRun?: boolean },
+  data: { tenantId?: string; dryRun?: boolean; reason?: string },
   options?: MutationHeaderOptions
 ): Promise<
   IResponse<{
@@ -4999,6 +5116,7 @@ export const createFdeOcrEvaluationRunApi = (
     caseCount?: number
     cases?: Array<Record<string, unknown>>
     thresholds?: Record<string, unknown>
+    reason?: string
   },
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ run: FdeOcrEvalRun; auditLogId: string }>> => {

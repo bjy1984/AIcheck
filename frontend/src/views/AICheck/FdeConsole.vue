@@ -16,6 +16,8 @@ import {
   ElCard,
   ElCheckbox,
   ElCol,
+  ElCollapse,
+  ElCollapseItem,
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
@@ -35,6 +37,8 @@ import {
   ElRow,
   ElSegmented,
   ElSelect,
+  ElSkeleton,
+  ElSkeletonItem,
   ElSpace,
   ElStep,
   ElSteps,
@@ -67,10 +71,12 @@ import {
   getFdeAiRunApi,
   getFdeAuditEventsApi,
   getFdeBusinessPackDiffApi,
+  getFdeBusinessPackValidationApi,
   getFdeCapabilityBundlesApi,
   getFdeCapabilityBundleDiffApi,
   getFdeCostBudgetsApi,
   getFdeDashboardApi,
+  getFdeMetaApi,
   getFdeEvaluationReportApi,
   getFdeEvaluationSetsApi,
   getFdeMaskingPoliciesApi,
@@ -92,6 +98,7 @@ import {
   listFdeAcceptanceReportsApi,
   listFdeAccessGrantsApi,
   listFdeAiRunsApi,
+  listFdeBlockersApi,
   listFdeFeedbackApi,
   listFdeIncidentsApi,
   listFdeProjectsApi,
@@ -116,7 +123,6 @@ import {
   triageFdeFeedbackApi,
   updateFdeIncidentRcaApi,
   uploadFdeOcrCapabilityTestFileApi,
-  validateFdeBusinessPacksApi,
   verifyFdeOcrAnnotationTaskApi
 } from '@/api/aicheck'
 import { useUserStore } from '@/store/modules/user'
@@ -125,6 +131,7 @@ import type {
   FdeAccessPayload,
   FdeAiRun,
   FdeAiRunDetailPayload,
+  FdeBlocker,
   FdeCapabilityBundlePayload,
   FdeDashboardPayload,
   FdeEvaluationReportPayload,
@@ -132,6 +139,7 @@ import type {
   FdeFeedback,
   FdeOcrAnnotationTask,
   FdeIncidentPayload,
+  FdeMetaPayload,
   FdeOcrCapabilityTestDetailPayload,
   FdeOcrCapabilityTestRun,
   FdeOcrAnnotationPayload,
@@ -150,7 +158,7 @@ import type {
 } from '@/api/aicheck'
 import StaticPageShell from './components/StaticPageShell.vue'
 import OcrAnnotationCanvas from './components/OcrAnnotationCanvas.vue'
-import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import {
   friendlyFieldLabel,
@@ -158,6 +166,7 @@ import {
   statusLabelMap as sharedStatusLabelMap,
   techTermLabels as sharedTechTermLabels
 } from './components/auditLabels'
+import { fdeNavigationGroups, fdeRouteCatalog } from './fde/routeCatalog'
 
 const Echart = defineAsyncComponent(() =>
   import('@/components/Echart').then((module) => module.Echart)
@@ -176,8 +185,11 @@ const fdeUserLabel = computed(
 const loading = ref(false)
 const actionLoading = ref(false)
 const error = ref('')
+const errorOperationId = ref('')
+const dataWarnings = ref<string[]>([])
 const activeFdeTab = ref('dashboard')
 const selectedFdeDashboardTab = ref<'agent' | 'ocr'>('agent')
+const dashboardSecondaryPanels = ref<string[]>([])
 const fdeChartZoom = ref<Record<FdeChartKey, number>>({
   ocrHeatmap: 1,
   vectorSankey: 1,
@@ -193,6 +205,9 @@ const fdeChartPan = ref<Record<FdeChartKey, { x: number; y: number }>>({
   langGraph: { x: 0, y: 0 }
 })
 const dashboard = ref<FdeDashboardPayload | null>(null)
+const fdeMeta = ref<FdeMetaPayload | null>(null)
+const fdeBlockers = ref<FdeBlocker[]>([])
+const fdeBlockerTotal = ref(0)
 const aiRuns = ref<FdeAiRun[]>([])
 const selectedRun = ref<FdeAiRunDetailPayload | null>(null)
 const reviewRuns = ref<FdeReviewRun[]>([])
@@ -347,14 +362,6 @@ type ProjectAuditSubpage =
   | 'agent'
   | 'ocr'
   | 'quality'
-type ProjectAuditTreeFilter =
-  | 'all'
-  | 'blocked'
-  | 'vectorization'
-  | 'pageindex'
-  | 'langgraph'
-  | 'ocr-labeling'
-  | 'evaluation'
 type AgentSubpage = 'runs' | 'reasoning' | 'quality' | 'trace'
 type OcrSubpage = 'overview' | 'capability-test' | 'annotation' | 'runtime' | 'evaluation'
 type OcrStatusTab = 'issue' | 'annotation' | 'runtime' | 'release'
@@ -362,8 +369,6 @@ type OcrStatusDialogType = OcrStatusTab | 'quality'
 type OcrSecondaryTool = 'annotation' | 'runtime' | 'release' | 'quality'
 type OcrPrimaryTaskAction = 'annotation' | 'capability-test' | 'runtime' | 'release'
 const projectAuditSubpage = ref<ProjectAuditSubpage>('overview')
-const projectAuditSearch = ref('')
-const projectAuditFilter = ref<ProjectAuditTreeFilter>('all')
 const fdeProjects = ref<FdeProjectAuditSummary[]>([])
 const selectedFdeProjectId = ref('')
 const selectedFdeNodeId = ref<number | undefined>()
@@ -394,6 +399,34 @@ const maskingPolicies = ref<Array<Record<string, unknown>>>([])
 const bundleDiff = ref<Record<string, unknown> | null>(null)
 const releaseImpact = ref<Record<string, unknown> | null>(null)
 const businessPackDiff = ref<Record<string, unknown> | null>(null)
+type FdeGovernanceActionMode =
+  | 'replay-ai'
+  | 'replay-review'
+  | 'shadow-review'
+  | 'review-feedback'
+  | 'triage-feedback'
+  | 'run-evaluation'
+  | 'install-pack'
+  | 'masking-policy'
+  | 'budget-change'
+  | 'ocr-evaluation'
+const governanceActionDialogVisible = ref(false)
+const governanceActionMode = ref<FdeGovernanceActionMode>('replay-ai')
+const governanceActionForm = ref({
+  targetId: '',
+  reason: '',
+  rootCause: 'prompt_error',
+  feedbackType: 'wrong_evidence',
+  evaluationSetId: '',
+  capabilityBundleId: '',
+  profileId: 'all',
+  targetType: 'ai_run',
+  fieldPath: 'findingDrafts.description',
+  strategy: 'prefix',
+  visibleChars: 80,
+  riskLevel: 'high',
+  proposedLimit: 1000
+})
 
 type FdePageActionKey =
   | 'go-ocr-label'
@@ -481,12 +514,12 @@ const fdeRouteMeta: Record<
   },
   dashboard: {
     group: '总览',
-    label: 'OCR 与 Agent 工作台',
+    label: '治理总览',
     badge: '总览',
     tone: 'blue',
-    title: 'OCR 与 Agent 编排工作台',
-    subtitle: '当前 FDE 面板只保留 OCR 质量标注和 Agent 审查编排两个重点工作流。',
-    nextAction: '优先进入 Agent 编排排查链路，或进入 OCR 标注补齐评估样本。'
+    title: 'FDE 治理总览',
+    subtitle: '汇总当前租户的项目、运行、评估、发布与运营真值，并把跨领域阻断集中到一个入口。',
+    nextAction: '先处理阻断中心的严重事项，再按领域进入运行诊断或质量改进。'
   },
   'ai-runs': {
     group: '运行追踪',
@@ -654,9 +687,24 @@ const currentFdePath = computed(() => {
   return parseFdeHashPath() || parseFdeBrowserPath() || routePath
 })
 
-const currentFdeRouteKey = computed(() =>
-  String(currentFdePath.value.split('/').filter(Boolean).pop() || 'dashboard')
-)
+const currentFdeRouteKey = computed(() => {
+  const key = String(currentFdePath.value.split('/').filter(Boolean).pop() || 'dashboard')
+  const rawView = Array.isArray(route.query.view) ? route.query.view[0] : route.query.view
+  if (key === 'business-packs' && String(rawView || '') === 'standards') {
+    return 'standards-vectorization'
+  }
+  return key
+})
+
+const businessPackView = computed({
+  get: () => (currentFdeRouteKey.value === 'standards-vectorization' ? 'standards' : 'packs'),
+  set: (value: string) => {
+    void router.push({
+      path: '/fde/business-packs',
+      query: value === 'standards' ? { view: 'standards' } : {}
+    })
+  }
+})
 
 const isFdeRoute = (...keys: string[]) => keys.includes(currentFdeRouteKey.value)
 
@@ -1035,15 +1083,6 @@ const buildProjectAuditRouteQuery = (
   return query
 }
 
-const buildProjectAuditRoutePath = (
-  projectId: string,
-  nodeId?: number,
-  subpage: ProjectAuditSubpage = projectAuditSubpage.value
-) => {
-  const query = new URLSearchParams(buildProjectAuditRouteQuery(projectId, nodeId, subpage))
-  return `/fde/projects?${query.toString()}`
-}
-
 const sameProjectAuditRouteQuery = (query: Record<string, string>) => {
   return (
     firstQueryValue(route.query.projectId) === query.projectId &&
@@ -1119,297 +1158,89 @@ const clearAuditDetailRoute = async (detailKey: 'reviewRunId' | 'ocrJobId') => {
   await router.replace({ path: route.path, query })
 }
 
-const rawProjectAuditMenuProjects = computed<FdeProjectAuditSummary[]>(() =>
-  fdeProjects.value.length || !projectAuditWorkspace.value
-    ? fdeProjects.value
-    : [
-        {
-          project: projectAuditWorkspace.value.project,
-          metrics: projectAuditWorkspace.value.metrics,
-          currentNodeId: projectAuditWorkspace.value.selectedNodeId,
-          currentNodeName: projectAuditWorkspace.value.selectedNode?.name,
-          topBlockers: projectAuditWorkspace.value.qualityBlockers,
-          updatedAt: projectAuditWorkspace.value.updatedAt
-        } as FdeProjectAuditSummary
-      ]
-)
-
-const matchesProjectAuditSearch = (item: FdeProjectAuditSummary) => {
-  const keyword = projectAuditSearch.value.trim().toLowerCase()
-  if (!keyword) return true
-  return [
-    item.project.name,
-    item.project.code,
-    item.project.type,
-    item.project.region,
-    item.project.businessPackId,
-    item.currentNodeName
-  ]
-    .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(keyword))
-}
-
-const matchesProjectAuditFilter = (item: FdeProjectAuditSummary) => {
-  const metrics = item.metrics || {}
-  const blockerCount = Number(metrics.blockers || item.topBlockers?.length || 0)
-  if (projectAuditFilter.value === 'blocked') return blockerCount > 0
-  if (projectAuditFilter.value === 'vectorization') return Number(metrics.documents || 0) > 0
-  if (projectAuditFilter.value === 'pageindex') return Number(metrics.reviewRuns || 0) > 0
-  if (projectAuditFilter.value === 'langgraph') return Number(metrics.reviewRuns || 0) > 0
-  if (projectAuditFilter.value === 'ocr-labeling') {
-    return Number(metrics.annotationTasks || metrics.ocrJobs || 0) > 0
-  }
-  if (projectAuditFilter.value === 'evaluation') {
-    return blockerCount > 0 || Number(metrics.reviewRuns || metrics.ocrJobs || 0) > 0
-  }
-  return true
-}
-
-const filteredProjectAuditMenuProjects = computed(() =>
-  rawProjectAuditMenuProjects.value.filter(
-    (item) => matchesProjectAuditSearch(item) && matchesProjectAuditFilter(item)
-  )
-)
-
-const projectAuditMenuFilterOptions = computed(() => {
-  const projects = rawProjectAuditMenuProjects.value
-  const blocked = projects.filter((item) => {
-    const metrics = item.metrics || {}
-    return Number(metrics.blockers || item.topBlockers?.length || 0) > 0
-  }).length
-  const vectorization = projects.filter(
-    (item) => Number((item.metrics || {}).documents || 0) > 0
-  ).length
-  const pageIndex = projects.filter(
-    (item) => Number((item.metrics || {}).reviewRuns || 0) > 0
-  ).length
-  const langGraph = projects.filter(
-    (item) => Number((item.metrics || {}).reviewRuns || 0) > 0
-  ).length
-  const ocrLabeling = projects.filter(
-    (item) => Number((item.metrics || {}).annotationTasks || (item.metrics || {}).ocrJobs || 0) > 0
-  ).length
-  const evaluationReady = projects.filter((item) => {
-    const metrics = item.metrics || {}
-    return (
-      Number(metrics.blockers || item.topBlockers?.length || 0) > 0 ||
-      Number(metrics.reviewRuns || metrics.ocrJobs || 0) > 0
-    )
-  }).length
-  return [
-    { label: '全部', value: 'all', count: projects.length },
-    { label: '有阻断', value: 'blocked', count: blocked },
-    { label: '向量化', value: 'vectorization', count: vectorization },
-    { label: '章节溯源', value: 'pageindex', count: pageIndex },
-    { label: 'Agent 编排', value: 'langgraph', count: langGraph },
-    { label: 'OCR打标', value: 'ocr-labeling', count: ocrLabeling },
-    { label: '评估', value: 'evaluation', count: evaluationReady }
-  ]
-})
-
-const projectAuditMenuEmptyText = computed(() => {
-  const keyword = projectAuditSearch.value.trim()
-  if (keyword) return `没有找到“${keyword}”相关项目`
-  if (projectAuditFilter.value === 'blocked') return '当前没有质量阻断项目'
-  if (projectAuditFilter.value === 'vectorization') return '当前没有可向量化资料'
-  if (projectAuditFilter.value === 'pageindex') return '当前没有章节溯源审计项目'
-  if (projectAuditFilter.value === 'langgraph') return '当前没有 Agent 编排项目'
-  if (projectAuditFilter.value === 'ocr-labeling') return '当前没有 OCR 打标样本'
-  if (projectAuditFilter.value === 'evaluation') return '当前没有可评估项目'
-  return '当前没有可审计项目'
-})
-
-const setProjectAuditSearch = (value: string) => {
-  projectAuditSearch.value = value
-}
-
-const setProjectAuditFilter = (value: string) => {
-  if (
-    [
-      'all',
-      'blocked',
-      'vectorization',
-      'pageindex',
-      'langgraph',
-      'ocr-labeling',
-      'evaluation'
-    ].includes(value)
-  ) {
-    projectAuditFilter.value = value as ProjectAuditTreeFilter
-  }
-}
-
-const projectAuditMenuItemHint = (
-  subpage: ProjectAuditSubpage,
-  metrics: Record<string, unknown>,
-  blockerCount: number,
-  currentNodeName?: string
-) => {
-  if (subpage === 'overview')
-    return `节点：${shortText(currentNodeName, '未选')} · 阻断 ${blockerCount}`
-  if (subpage === 'vectorization') {
-    return `资料 ${Number(metrics.documents || 0)} · 向量 ${Number(metrics.knowledgeVectors || 0)}`
-  }
-  if (subpage === 'pageindex') {
-    return `章节节点 ${Number(metrics.pageIndexNodes || 0)} · 审查任务 ${Number(metrics.reviewRuns || 0)}`
-  }
-  if (subpage === 'langgraph') {
-    return `审查任务 ${Number(metrics.reviewRuns || 0)} · AI 员工链路`
-  }
-  if (subpage === 'ocr-labeling') {
-    return `OCR ${Number(metrics.ocrJobs || 0)} · 样本 ${Number(metrics.annotationTasks || 0)}`
-  }
-  if (subpage === 'evaluation') {
-    return `阻断 ${blockerCount} · 低置信 ${Number(metrics.lowConfidenceFields || 0)}`
-  }
-  return ''
-}
-
 const fdeShellMenuSections = computed(() => {
-  const projects = filteredProjectAuditMenuProjects.value
-  const ocrAnnotationSummary = toRecord(ocrAnnotation.value?.summary)
   const activePath = currentFdePath.value
-  const globalSection = {
-    id: 'fde-global-workbenches',
-    title: '全局控制台',
-    meta: '不绑定项目',
-    defaultOpen: activePath !== '/fde/projects',
-    chips: [
-      {
-        label: 'OCR样本',
-        value: Number(ocrAnnotationSummary.tasks || 0),
-        tone: 'orange' as const
-      },
-      {
-        label: '可评估',
-        value: Number(ocrAnnotationSummary.readyForEval || 0),
-        tone: Number(ocrAnnotationSummary.readyForEval || 0)
-          ? ('green' as const)
-          : ('orange' as const)
-      },
-      {
-        label: '运行',
-        value: ocrRuns.value.length,
-        tone: ocrRuns.value.length ? ('green' as const) : ('blue' as const)
-      }
-    ],
-    items: [
-      {
-        index: '00',
-        label: 'OCR 质量控制台',
-        hint:
-          activePath === '/fde/ocr-quality'
-            ? `样本 ${Number(ocrAnnotationSummary.tasks || 0)} · 可评估 ${Number(ocrAnnotationSummary.readyForEval || 0)}`
-            : '',
-        badge: activePath === '/fde/ocr-quality' ? '当前' : undefined,
-        tone: 'green' as const,
-        route: '/fde/ocr-quality',
-        active: activePath === '/fde/ocr-quality'
-      },
-      {
-        index: '01',
-        label: '规范库向量化',
-        hint:
-          activePath === '/fde/standards-vectorization'
-            ? `文件 ${Number(toRecord(standardsVectorization.value?.metrics).fileCount || 0)} · 向量 ${Number(toRecord(standardsVectorization.value?.metrics).vectorCount || 0)}`
-            : '',
-        badge: activePath === '/fde/standards-vectorization' ? '当前' : undefined,
-        tone: 'green' as const,
-        route: '/fde/standards-vectorization',
-        active: activePath === '/fde/standards-vectorization'
-      },
-      {
-        index: '02',
-        label: 'Agent 审查编排',
-        hint:
-          activePath === '/fde/review-runs'
-            ? `审查任务 ${reviewRuns.value.length} · Agent 编排图`
-            : '',
-        badge: activePath === '/fde/review-runs' ? '当前' : undefined,
-        tone: 'green' as const,
-        route: '/fde/review-runs',
-        active: activePath === '/fde/review-runs'
-      },
-      {
-        index: '03',
-        label: 'FDE 总览',
-        hint: activePath === '/fde/dashboard' ? 'AI 交付与治理摘要' : '',
-        badge: activePath === '/fde/dashboard' ? '当前' : undefined,
-        tone: 'blue' as const,
-        route: '/fde/dashboard',
-        active: activePath === '/fde/dashboard'
-      }
-    ]
-  }
+  const grantedKeys = new Set(
+    (fdeMeta.value?.capabilities || []).filter((item) => item.granted).map((item) => item.key)
+  )
+  const fallbackPermissions = new Set(userStore.getUserInfo?.permissions || [])
+  const hasServerCapabilities = Boolean(fdeMeta.value?.capabilities?.length)
+  const domainBlockers = dashboard.value?.blockerSummary?.byDomain || {}
 
-  if (!projects.length) {
-    return [globalSection]
-  }
-
-  const projectSections = projects.map((item) => {
-    const metrics = item.metrics || {}
-    const blockerCount = Number(metrics.blockers || item.topBlockers?.length || 0)
-    return {
-      id: `project-${item.project.id}`,
-      title: item.project.name,
-      meta: friendlyStatus(item.project.status),
-      chips: [
-        {
-          label: '资料',
-          value: Number(metrics.documents || 0),
-          tone: 'green' as const
-        },
-        {
-          label: 'PI',
-          value: Number(metrics.pageIndexNodes || 0),
-          tone: Number(metrics.pageIndexNodes || 0) ? ('green' as const) : ('orange' as const)
-        },
-        {
-          label: '阻断',
-          value: blockerCount,
-          tone: blockerCount ? ('red' as const) : ('green' as const)
-        }
-      ],
-      items: projectAuditSubpageItems.value.map((subpage, subpageIndex) => {
-        const isActive =
-          activePath === '/fde/projects' &&
-          selectedFdeProjectId.value === item.project.id &&
-          projectAuditSubpage.value === subpage.key
-        return {
-          index: String(subpageIndex + 1).padStart(2, '0'),
-          label: subpage.label,
-          hint: isActive
-            ? projectAuditMenuItemHint(subpage.key, metrics, blockerCount, item.currentNodeName)
-            : '',
-          badge: isActive ? '当前' : undefined,
-          tone:
-            subpage.key === 'evaluation' && blockerCount
-              ? ('red' as const)
-              : subpage.key === 'ocr-labeling'
-                ? ('orange' as const)
-                : subpage.key === 'langgraph'
-                  ? ('green' as const)
-                  : ('blue' as const),
-          projectId: item.project.id,
-          subpage: subpage.key,
-          route: buildProjectAuditRoutePath(item.project.id, undefined, subpage.key),
-          active: isActive
-        }
-      })
-    }
-  })
-  return [globalSection, ...projectSections]
+  return fdeNavigationGroups
+    .map((group) => ({
+      id: `fde-${group.key}`,
+      title: group.label,
+      meta: group.hint,
+      defaultOpen: fdeRouteCatalog.some(
+        (item) => item.group === group.key && activePath === item.route
+      ),
+      items: fdeRouteCatalog
+        .filter((item) => item.group === group.key)
+        .filter((item) =>
+          hasServerCapabilities
+            ? grantedKeys.has(item.key)
+            : !fallbackPermissions.size || fallbackPermissions.has(item.permission)
+        )
+        .map((item) => {
+          const blockerCount = Number(domainBlockers[item.key] || 0)
+          const active = activePath === item.route
+          return {
+            index: item.index,
+            label: item.label,
+            hint: blockerCount ? `${blockerCount} 个待处理阻断` : active ? '当前领域' : '',
+            badge: blockerCount ? String(blockerCount) : active ? '当前' : undefined,
+            tone: blockerCount ? ('red' as const) : item.tone,
+            route: item.route,
+            active
+          }
+        })
+    }))
+    .filter((section) => section.items.length)
 })
 const currentFdeRouteContext = computed(() => {
   return fdeRouteMeta[currentFdeRouteKey.value] || fdeRouteMeta.dashboard
 })
-const currentFdePageActions = computed(() => currentFdeRouteContext.value.actions || [])
+const actionPermissionMap: Partial<Record<FdePageActionKey, string>> = {
+  'go-ocr-label': 'fde:ocr-quality:view',
+  'go-ocr-capability-test': 'fde:ocr-quality:view',
+  'go-ocr-tools': 'fde:ocr-quality:view',
+  'start-ocr-evaluation': 'fde:evaluation:run',
+  'triage-feedback': 'fde:feedback:triage',
+  'create-review-diagnostic-feedback': 'fde:feedback:triage',
+  'start-evaluation': 'fde:evaluation:run',
+  'replay-ai-run': 'fde:ai-run:replay',
+  'replay-review-run': 'fde:ai-run:replay',
+  'shadow-review-run': 'fde:ai-run:replay',
+  'submit-release': 'fde:release:submit',
+  'install-business-pack': 'fde:business-pack:install',
+  'create-mask-policy': 'fde:security:manage',
+  'update-rca': 'fde:incident:manage',
+  'budget-change': 'fde:cost:manage'
+}
+const fdeGrantedActions = computed(
+  () => new Set(fdeMeta.value?.viewer.grantedActions || userStore.getUserInfo?.permissions || [])
+)
+const hasFdePermission = (permission?: string) =>
+  !permission || fdeGrantedActions.value.has(permission)
+const currentFdePageActions = computed(() =>
+  (currentFdeRouteContext.value.actions || []).filter((action) =>
+    hasFdePermission(actionPermissionMap[action.key])
+  )
+)
 const fdeTagType = (tone: string): FdeElTagType => {
   if (tone === 'red') return 'danger'
   if (tone === 'green') return 'success'
   if (tone === 'orange') return 'warning'
   return 'info'
 }
+const fdeConnectionState = computed(() => {
+  if (loading.value) return { label: '同步中', type: 'warning' as const }
+  if (error.value) return { label: '连接异常', type: 'danger' as const }
+  if (dashboard.value) return { label: '数据已同步', type: 'success' as const }
+  return { label: '等待连接', type: 'info' as const }
+})
+const showInitialSkeleton = computed(() => loading.value && !dashboard.value)
 
 const percent = (value?: number | string) => {
   const numeric = Number(value || 0)
@@ -1471,6 +1302,7 @@ const statusLabelMap: Record<string, string> = {
   draft: '草稿',
   draft_persisted: '草稿已保存',
   failed: '失败',
+  failed_to_start: '启动失败',
   fail: '未通过',
   labeled: '待二审',
   monitoring: '监控中',
@@ -1822,7 +1654,11 @@ const statusType = (status?: string) => {
   ) {
     return 'success'
   }
-  if (['失败', 'failed', 'fail', 'blocked_by_gate', 'rejected'].includes(normalized)) {
+  if (
+    ['失败', 'failed', 'failed_to_start', 'fail', 'blocked_by_gate', 'rejected'].includes(
+      normalized
+    )
+  ) {
     return 'danger'
   }
   if (
@@ -4785,26 +4621,48 @@ const ocrCapabilityStatusType = (status: unknown): FdeElTagType =>
   statusType(String(status)) as FdeElTagType
 
 const fdeTopStats = computed(() => [
-  { label: '项目', value: fdeProjects.value.length || 0, tone: 'blue' as const },
-  { label: '审查任务', value: reviewRuns.value.length || 0, tone: 'green' as const },
-  { label: 'OCR任务', value: ocrAnnotationRows.value.length || 0, tone: 'orange' as const }
+  {
+    key: 'projects',
+    label: '项目',
+    value: dashboard.value?.totals?.projects ?? 0,
+    tone: 'blue' as const
+  },
+  {
+    key: 'review-runs',
+    label: '审查任务',
+    value: dashboard.value?.totals?.reviewRuns ?? 0,
+    tone: 'green' as const
+  },
+  {
+    key: 'blockers',
+    label: '阻断',
+    value: dashboard.value?.totals?.openBlockers ?? fdeBlockerTotal.value,
+    tone: 'red' as const,
+    clickable: true,
+    title: '返回治理总览查看阻断中心'
+  },
+  {
+    key: 'approvals',
+    label: '待审批',
+    value: dashboard.value?.totals?.pendingApprovals ?? 0,
+    tone: 'orange' as const
+  }
 ])
 
 const fdeShellRightCards = computed(() => [
   {
-    title: '当前项目',
+    title: '全局治理真值',
     rows: [
-      { label: '项目', value: selectedFdeProject.value?.name || '-' },
-      { label: '节点', value: projectAuditWorkspace.value?.selectedNode?.name || '-' },
-      {
-        label: '状态',
-        value: friendlyStatus(selectedFdeProject.value?.status, '-'),
-        valueTone: projectAuditBlockers.value.length ? ('orange' as const) : ('green' as const)
-      },
+      { label: '项目', value: String(dashboard.value?.totals?.projects ?? 0) },
+      { label: 'AI Run', value: String(dashboard.value?.totals?.aiRuns ?? 0) },
       {
         label: '阻断',
-        value: String(projectAuditBlockers.value.length),
-        valueTone: projectAuditBlockers.value.length ? ('red' as const) : ('green' as const)
+        value: String(dashboard.value?.totals?.openBlockers ?? fdeBlockerTotal.value),
+        valueTone: fdeBlockerTotal.value ? ('red' as const) : ('green' as const)
+      },
+      {
+        label: '数据截至',
+        value: dashboard.value?.freshness?.sourceMaxUpdatedAt || dashboard.value?.generatedAt || '-'
       }
     ]
   },
@@ -4843,10 +4701,16 @@ const fdeShellRightCards = computed(() => [
     ]
   },
   {
-    title: '当前策略',
-    note: 'FDE 面板暂时只展示 OCR 和 Agent 编排；其它治理模块保留路由但从导航隐藏。'
+    title: '职责边界',
+    note: '14 个治理领域按权限开放；FDE 可以诊断、评估和提交治理变更，但不能代替业务角色办理正式审批。'
   }
 ])
+
+const handleFdeTopStatClick = (stat: { key?: string }) => {
+  if (stat.key === 'blockers' && currentFdePath.value !== '/fde/dashboard') {
+    void router.push({ path: '/fde/dashboard', query: { focus: 'blockers' } })
+  }
+}
 
 const metricTone = (label: string, index: number) => {
   if (/失败|风险|幻觉|告警|异常/.test(label)) return 'red'
@@ -4862,6 +4726,20 @@ const dashboardMetricCards = computed(() =>
   }))
 )
 const dashboardMetricHighlights = computed(() => dashboardMetricCards.value.slice(0, 4))
+const formatDashboardMetric = (metric: FdeDashboardPayload['metrics'][number]) => {
+  if (
+    metric.value === null ||
+    metric.value === undefined ||
+    metric.availability === 'insufficient_data'
+  ) {
+    return '暂无数据'
+  }
+  return metric.suffix === '%' ? percent(metric.value) : metric.value
+}
+const fdeDomainLabel = (key: string) =>
+  fdeRouteCatalog.find((item) => item.key === key)?.label || key
+const blockerSeverityType = (severity: string): FdeElTagType =>
+  severity === 'critical' ? 'danger' : severity === 'warning' ? 'warning' : 'info'
 
 const fdeWorkflowCards = computed(() => [
   {
@@ -8708,12 +8586,21 @@ const loadProjectAuditPageData = async () => {
 const loadFdeRoutePageData = async () => {
   const routeKey = currentFdeRouteKey.value
   if (routeKey === 'dashboard') {
-    const [dashboardRes, projectRes] = await Promise.all([
-      getFdeDashboardApi(),
-      listFdeProjectsApi()
-    ])
-    dashboard.value = dashboardRes.data
-    fdeProjects.value = projectRes.data
+    const [dashboardRes, projectRes, reviewResult, ocrQualityResult, annotationResult] =
+      await Promise.allSettled([
+        getFdeDashboardApi(),
+        listFdeProjectsApi(),
+        listFdeReviewRunsApi({ pageSize: 20 }),
+        getFdeOcrQualityApi(),
+        listFdeOcrAnnotationTasksApi()
+      ])
+    if (dashboardRes.status !== 'fulfilled') throw dashboardRes.reason
+    if (projectRes.status !== 'fulfilled') throw projectRes.reason
+    dashboard.value = dashboardRes.value.data
+    fdeProjects.value = projectRes.value.data
+    if (reviewResult.status === 'fulfilled') reviewRuns.value = reviewResult.value.data.items
+    if (ocrQualityResult.status === 'fulfilled') ocrQuality.value = ocrQualityResult.value.data
+    if (annotationResult.status === 'fulfilled') ocrAnnotation.value = annotationResult.value.data
     return
   }
   if (routeKey === 'ai-runs') {
@@ -8782,7 +8669,7 @@ const loadFdeRoutePageData = async () => {
   if (routeKey === 'business-packs') {
     const [dashboardRes, validationRes] = await Promise.all([
       getFdeDashboardApi(),
-      validateFdeBusinessPacksApi()
+      getFdeBusinessPackValidationApi()
     ])
     dashboard.value = dashboardRes.data
     packValidation.value = validationRes.data
@@ -8836,29 +8723,60 @@ const loadFdeRoutePageData = async () => {
   fdeProjects.value = projectRes.data
 }
 
+const loadFdeGovernanceContext = async () => {
+  const [metaResult, blockerResult] = await Promise.allSettled([
+    getFdeMetaApi(),
+    listFdeBlockersApi({ page: 1, pageSize: 100 })
+  ])
+  const warnings: string[] = []
+  if (metaResult.status === 'fulfilled') {
+    fdeMeta.value = metaResult.value.data
+  } else {
+    warnings.push('权限与能力边界暂未同步，导航按登录态权限降级展示。')
+  }
+  if (blockerResult.status === 'fulfilled') {
+    fdeBlockers.value = blockerResult.value.data.items
+    fdeBlockerTotal.value = blockerResult.value.data.summary.total
+  } else {
+    warnings.push('阻断中心暂未同步，其它领域数据仍可查看。')
+  }
+  dataWarnings.value = warnings
+}
+
+let loadRequestSequence = 0
 const loadData = async () => {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   error.value = ''
+  errorOperationId.value = ''
   try {
-    if (currentFdePath.value === '/fde/projects') {
-      await loadProjectAuditPageData()
-    } else if (isFdeRoute('ocr-quality')) {
-      await loadOcrWorkbenchPageData()
-    } else if (isFdeRoute('standards-vectorization')) {
-      const [dashboardRes, projectRes] = await Promise.allSettled([
-        getFdeDashboardApi(),
-        listFdeProjectsApi()
-      ])
-      if (dashboardRes.status === 'fulfilled') dashboard.value = dashboardRes.value.data
-      if (projectRes.status === 'fulfilled') fdeProjects.value = projectRes.value.data
-      await loadStandardsVectorization()
-    } else {
-      await loadFdeRoutePageData()
+    const routeLoad = async () => {
+      if (currentFdePath.value === '/fde/projects') {
+        await loadProjectAuditPageData()
+      } else if (isFdeRoute('ocr-quality')) {
+        await loadOcrWorkbenchPageData()
+      } else if (isFdeRoute('standards-vectorization')) {
+        const [dashboardRes, projectRes] = await Promise.allSettled([
+          getFdeDashboardApi(),
+          listFdeProjectsApi()
+        ])
+        if (dashboardRes.status === 'fulfilled') dashboard.value = dashboardRes.value.data
+        if (projectRes.status === 'fulfilled') fdeProjects.value = projectRes.value.data
+        await loadStandardsVectorization()
+      } else {
+        await loadFdeRoutePageData()
+      }
     }
-  } catch {
-    error.value = 'FDE 后台数据加载失败。'
+    await Promise.all([loadFdeGovernanceContext(), routeLoad()])
+  } catch (err) {
+    if (requestSequence !== loadRequestSequence) return
+    error.value = getAicheckErrorMessage(err, 'FDE 后台数据加载失败。')
+    const responseOperationId = (err as { response?: { data?: { operationId?: string } } })
+      ?.response?.data?.operationId
+    errorOperationId.value =
+      responseOperationId || getLatestAicheckBusinessError()?.operationId || ''
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
@@ -9462,107 +9380,154 @@ const loadBusinessPackDiff = async (packId: string) => {
   businessPackDiff.value = res.data
 }
 
-const replayFirstRun = async () => {
-  if (!activeRunId.value) return
-  actionLoading.value = true
-  try {
-    await replayFdeAiRunApi(activeRunId.value, {
-      runType: 'diagnostic_replay',
-      reason: 'FDE 诊断重跑'
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
+const governanceActionTitles: Record<FdeGovernanceActionMode, string> = {
+  'replay-ai': '诊断重跑 AI Run',
+  'replay-review': '诊断重跑审查任务',
+  'shadow-review': '启动审查 Shadow',
+  'review-feedback': '记录审查诊断修正',
+  'triage-feedback': '反馈归因',
+  'run-evaluation': '发起能力评估',
+  'install-pack': '业务包安装演练',
+  'masking-policy': '新增脱敏策略草稿',
+  'budget-change': '提交预算变更',
+  'ocr-evaluation': '发起 OCR 评估'
 }
 
-const replayFirstReviewRun = async () => {
-  if (!activeReviewRunId.value) return
-  actionLoading.value = true
-  try {
-    await replayFdeReviewRunApi(activeReviewRunId.value, {
-      runMode: 'diagnostic_replay',
-      reason: 'FDE 诊断审查任务编排重跑'
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
+const governanceActionTitle = computed(() => governanceActionTitles[governanceActionMode.value])
+const governanceActionNeedsRootCause = computed(() =>
+  ['review-feedback', 'triage-feedback'].includes(governanceActionMode.value)
+)
+
+const openGovernanceAction = (mode: FdeGovernanceActionMode) => {
+  const targetByMode: Record<FdeGovernanceActionMode, string> = {
+    'replay-ai': activeRunId.value,
+    'replay-review': activeReviewRunId.value,
+    'shadow-review': activeReviewRunId.value,
+    'review-feedback': activeReviewRunId.value,
+    'triage-feedback': activeFeedbackId.value,
+    'run-evaluation': firstEvaluationSetId.value,
+    'install-pack': activeBusinessPackId.value,
+    'masking-policy': 'new-policy',
+    'budget-change': firstBudgetId.value,
+    'ocr-evaluation': String(selectedOcrRun.value?.job?.profileId || 'all')
   }
+  const targetId = targetByMode[mode]
+  if (!targetId) {
+    ElMessage.warning('请先在列表中选择要操作的对象。')
+    return
+  }
+  governanceActionMode.value = mode
+  governanceActionForm.value = {
+    ...governanceActionForm.value,
+    targetId,
+    reason: '',
+    evaluationSetId: mode === 'run-evaluation' ? targetId : firstEvaluationSetId.value,
+    capabilityBundleId: firstBundleId.value,
+    profileId: mode === 'ocr-evaluation' ? targetId : 'all',
+    proposedLimit: Number(toRecord(costGovernance.value?.budgets?.[0]).limit || 1000)
+  }
+  governanceActionDialogVisible.value = true
 }
 
-const shadowFirstReviewRun = async () => {
-  if (!activeReviewRunId.value) return
-  actionLoading.value = true
-  try {
-    await shadowFdeReviewRunApi(activeReviewRunId.value, {
-      reason: 'FDE 验证新 Agent 编排图 / 提示词组合'
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
+const executeGovernanceAction = async () => {
+  const form = governanceActionForm.value
+  const reason = form.reason.trim()
+  if (!reason) {
+    ElMessage.warning('请填写可审计的操作原因。')
+    return
   }
-}
-
-const createReviewDiagnosticFeedback = async () => {
-  if (!activeReviewRunId.value) return
-  actionLoading.value = true
-  try {
-    await createFdeReviewRunFeedbackApi(
-      activeReviewRunId.value,
-      {
-        feedbackType: 'wrong_evidence',
-        rootCause: 'prompt_error',
-        comment: 'FDE 诊断修正：证据范围或依据引用需要复核，不改变正式业务结论。',
-        correctedOutput: [
-          {
-            description: '建议补齐证据页码、bbox、规则编号和知识条款映射后再进入生产采纳。'
-          }
-        ],
-        shouldEnterEvaluationSet: true
-      },
-      { idempotencyKey: `fde-review-feedback-${activeReviewRunId.value}-${Date.now()}` }
-    )
-    await loadReviewRunDetail(activeReviewRunId.value)
-    await loadData()
-  } finally {
-    actionLoading.value = false
+  const targetId = form.targetId
+  const options = {
+    idempotencyKey: ['fde', governanceActionMode.value, targetId, Date.now()].join('-')
   }
-}
-
-const triageFirstFeedback = async () => {
-  if (!activeFeedbackId.value) return
   actionLoading.value = true
   try {
-    await triageFdeFeedbackApi(activeFeedbackId.value, {
-      rootCause: 'prompt_error',
-      status: 'triaged',
-      canUseForEval: true,
-      canUseForTraining: false
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-const startEvaluation = async () => {
-  if (!firstEvaluationSetId.value) return
-  actionLoading.value = true
-  try {
-    const res = await createFdeEvaluationRunApi({
-      evaluationSetId: firstEvaluationSetId.value,
-      capabilityBundleId: firstBundleId.value || undefined
-    })
-    selectedEvaluationReport.value = {
-      report: res.data.report,
-      metrics: [],
-      caseResults: res.data.caseResults || []
+    if (governanceActionMode.value === 'replay-ai') {
+      await replayFdeAiRunApi(targetId, { runType: 'diagnostic_replay', reason }, options)
+    } else if (governanceActionMode.value === 'replay-review') {
+      await replayFdeReviewRunApi(targetId, { runMode: 'diagnostic_replay', reason }, options)
+    } else if (governanceActionMode.value === 'shadow-review') {
+      await shadowFdeReviewRunApi(targetId, { reason }, options)
+    } else if (governanceActionMode.value === 'review-feedback') {
+      await createFdeReviewRunFeedbackApi(
+        targetId,
+        {
+          feedbackType: form.feedbackType,
+          rootCause: form.rootCause,
+          comment: reason,
+          correctedOutput: [{ description: reason }],
+          shouldEnterEvaluationSet: true
+        },
+        options
+      )
+    } else if (governanceActionMode.value === 'triage-feedback') {
+      await triageFdeFeedbackApi(
+        targetId,
+        {
+          rootCause: form.rootCause,
+          status: 'triaged',
+          canUseForEval: true,
+          canUseForTraining: false
+        },
+        options
+      )
+    } else if (governanceActionMode.value === 'run-evaluation') {
+      const res = await createFdeEvaluationRunApi(
+        {
+          evaluationSetId: form.evaluationSetId,
+          capabilityBundleId: form.capabilityBundleId || undefined,
+          reason
+        },
+        options
+      )
+      selectedEvaluationReport.value = {
+        report: res.data.report,
+        metrics: [],
+        caseResults: res.data.caseResults || []
+      }
+    } else if (governanceActionMode.value === 'install-pack') {
+      await installFdeBusinessPackApi(targetId, { dryRun: true, reason }, options)
+    } else if (governanceActionMode.value === 'masking-policy') {
+      await createFdeMaskingPolicyApi(
+        {
+          targetType: form.targetType,
+          fieldPath: form.fieldPath.trim(),
+          strategy: form.strategy,
+          visibleChars: form.visibleChars,
+          riskLevel: form.riskLevel,
+          reason
+        },
+        options
+      )
+    } else if (governanceActionMode.value === 'budget-change') {
+      await proposeFdeCostBudgetChangeApi(
+        targetId,
+        {
+          proposedLimit: form.proposedLimit,
+          proposedPolicy: { alertThreshold: 0.8 },
+          reason
+        },
+        options
+      )
+    } else {
+      await createFdeOcrEvaluationRunApi({ profileId: form.profileId, reason }, options)
     }
+    governanceActionDialogVisible.value = false
+    ElMessage.success(governanceActionTitle.value + '已提交。')
     await loadData()
+  } catch (err) {
+    ElMessage.error(getAicheckErrorMessage(err, governanceActionTitle.value + '失败。'))
   } finally {
     actionLoading.value = false
   }
 }
+
+const replayFirstRun = () => openGovernanceAction('replay-ai')
+const replayFirstReviewRun = () => openGovernanceAction('replay-review')
+const shadowFirstReviewRun = () => openGovernanceAction('shadow-review')
+const createReviewDiagnosticFeedback = () => openGovernanceAction('review-feedback')
+const triageFirstFeedback = () => openGovernanceAction('triage-feedback')
+const startEvaluation = () => openGovernanceAction('run-evaluation')
 
 const requestRawAccess = async () => {
   if (!activeRunId.value) return
@@ -9670,16 +9635,7 @@ const executeReleaseAction = async () => {
 
 const submitReleaseGate = () => openReleaseAction('submit')
 
-const installBusinessPack = async () => {
-  if (!activeBusinessPackId.value) return
-  actionLoading.value = true
-  try {
-    await installFdeBusinessPackApi(activeBusinessPackId.value, { dryRun: true })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
-}
+const installBusinessPack = () => openGovernanceAction('install-pack')
 
 const updateFirstRca = () => {
   const incidentId = activeIncidentId.value
@@ -9747,21 +9703,7 @@ const executeIncidentAction = async () => {
   }
 }
 
-const createMaskingPolicyDraft = async () => {
-  actionLoading.value = true
-  try {
-    await createFdeMaskingPolicyApi({
-      targetType: 'ai_run',
-      fieldPath: 'findingDrafts.description',
-      strategy: 'prefix',
-      visibleChars: 80,
-      riskLevel: 'high'
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
-}
+const createMaskingPolicyDraft = () => openGovernanceAction('masking-policy')
 
 const expireFirstDataExport = async () => {
   if (!firstDataExportId.value) return
@@ -9774,20 +9716,7 @@ const expireFirstDataExport = async () => {
   }
 }
 
-const proposeFirstBudgetChange = async () => {
-  if (!firstBudgetId.value) return
-  actionLoading.value = true
-  try {
-    await proposeFdeCostBudgetChangeApi(firstBudgetId.value, {
-      proposedLimit: 1000,
-      proposedPolicy: { fallbackModel: 'review-chat', alertThreshold: 0.8 },
-      reason: 'FDE 根据近期评测成本提交预算调整建议。'
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
-}
+const proposeFirstBudgetChange = () => openGovernanceAction('budget-change')
 
 const correctFirstOcrField = async () => {
   const field = firstLowConfidenceField.value
@@ -9806,17 +9735,7 @@ const correctFirstOcrField = async () => {
   }
 }
 
-const startOcrEvaluation = async () => {
-  actionLoading.value = true
-  try {
-    await createFdeOcrEvaluationRunApi({
-      profileId: String(selectedOcrRun.value?.job?.profileId || 'all')
-    })
-    await loadData()
-  } finally {
-    actionLoading.value = false
-  }
-}
+const startOcrEvaluation = () => openGovernanceAction('ocr-evaluation')
 
 const cloneRecord = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
@@ -10963,15 +10882,9 @@ onBeforeUnmount(() => {
     task-area="fde"
     :user-label="fdeUserLabel"
     :top-stats="fdeTopStats"
-    menu-title="FDE 菜单"
-    menu-root="AI 交付与治理"
+    menu-title="治理导航"
+    menu-root="FDE 全域治理"
     :menu-sections="fdeShellMenuSections"
-    menu-search-placeholder="搜索项目、编号、节点"
-    :menu-search-value="projectAuditSearch"
-    :menu-filters="projectAuditMenuFilterOptions"
-    :menu-filter-value="projectAuditFilter"
-    :menu-filters-collapsed-default="true"
-    :menu-empty-text="projectAuditMenuEmptyText"
     boundary-title="职责边界"
     boundary-badge="不办业务审批"
     boundary-tone="green"
@@ -10985,10 +10898,12 @@ onBeforeUnmount(() => {
     right-toggle-label="治理摘要"
     workspace-mode="wide"
     @menu-select="handleFdeShellMenuSelect"
-    @menu-search-change="setProjectAuditSearch"
-    @menu-filter-change="setProjectAuditFilter"
+    @top-stat-click="handleFdeTopStatClick"
   >
-    <div class="fde-console" v-loading="loading">
+    <div
+      :class="['fde-console', { 'is-initial-loading': showInitialSkeleton }]"
+      :aria-busy="loading"
+    >
       <div v-if="!isFdeRoute('ocr-quality')" class="page-toolbar">
         <div>
           <h1 class="page-title">{{ currentFdeRouteContext.title }}</h1>
@@ -11022,8 +10937,8 @@ onBeforeUnmount(() => {
           >
             {{ action.label }}
           </ElButton>
-          <ElTag :type="loading ? 'warning' : 'success'" effect="plain">
-            {{ loading ? '加载中' : '已连接' }}
+          <ElTag :type="fdeConnectionState.type" effect="plain">
+            {{ fdeConnectionState.label }}
           </ElTag>
           <ElButton type="primary" plain :loading="loading" @click="loadData">刷新</ElButton>
         </ElSpace>
@@ -11034,9 +10949,37 @@ onBeforeUnmount(() => {
         type="error"
         show-icon
         :closable="false"
-        :title="error"
+        :title="errorOperationId ? `${error}（操作编号：${errorOperationId}）` : error"
         class="mb-12px"
       />
+
+      <ElAlert
+        v-if="dataWarnings.length && !error"
+        type="warning"
+        show-icon
+        :closable="false"
+        :title="dataWarnings.join(' ')"
+        class="mb-12px"
+      />
+
+      <ElSkeleton v-if="showInitialSkeleton" animated :rows="8" class="fde-initial-skeleton">
+        <template #template>
+          <div class="fde-skeleton-metrics">
+            <ElSkeletonItem v-for="index in 4" :key="index" variant="rect" />
+          </div>
+          <ElSkeletonItem variant="h3" style="width: 28%; margin: 24px 0 14px" />
+          <ElSkeletonItem v-for="index in 5" :key="`row-${index}`" variant="text" />
+        </template>
+      </ElSkeleton>
+
+      <ElTabs
+        v-if="currentFdePath === '/fde/business-packs'"
+        v-model="businessPackView"
+        class="business-pack-view-tabs"
+      >
+        <ElTabPane label="业务包治理" name="packs" />
+        <ElTabPane label="规范库向量化" name="standards" />
+      </ElTabs>
 
       <div v-if="isFdeRoute('ocr-quality')" class="ocr-command-center">
         <section class="ocr-online-entry" aria-label="OCR 在线测试入口">
@@ -12556,33 +12499,108 @@ onBeforeUnmount(() => {
           :class="`metric-card metric-card--${metric.tone}`"
         >
           <span>{{ metric.label }}</span>
-          <strong>{{ metric.suffix === '%' ? percent(metric.value) : metric.value }}</strong>
+          <strong>{{ formatDashboardMetric(metric) }}</strong>
+          <small v-if="metric.denominator !== undefined && metric.denominator !== null">
+            样本 {{ metric.sampleSize ?? metric.denominator }} · {{ metric.numerator ?? 0 }}/{{
+              metric.denominator
+            }}
+          </small>
         </div>
       </div>
 
-      <details
+      <ElCollapse
         v-if="
           isFdeRoute('dashboard') && dashboardMetricCards.length > dashboardMetricHighlights.length
         "
+        v-model="dashboardSecondaryPanels"
         class="project-overview-diagnostics fde-dashboard-secondary"
       >
-        <summary>
-          <span>更多总览指标</span>
-          <small
-            >{{ dashboardMetricCards.length - dashboardMetricHighlights.length }} 个低频指标</small
-          >
-        </summary>
-        <div class="metric-grid metric-grid--secondary">
-          <div
-            v-for="metric in dashboardMetricCards.slice(dashboardMetricHighlights.length)"
-            :key="metric.label"
-            :class="`metric-card metric-card--${metric.tone}`"
-          >
-            <span>{{ metric.label }}</span>
-            <strong>{{ metric.suffix === '%' ? percent(metric.value) : metric.value }}</strong>
+        <ElCollapseItem name="secondary-metrics">
+          <template #title>
+            <span class="fde-secondary-metric-title">
+              <span>更多总览指标</span>
+              <small
+                >{{
+                  dashboardMetricCards.length - dashboardMetricHighlights.length
+                }}
+                个低频指标</small
+              >
+            </span>
+          </template>
+          <div class="metric-grid metric-grid--secondary">
+            <div
+              v-for="metric in dashboardMetricCards.slice(dashboardMetricHighlights.length)"
+              :key="metric.label"
+              :class="`metric-card metric-card--${metric.tone}`"
+            >
+              <span>{{ metric.label }}</span>
+              <strong>{{ formatDashboardMetric(metric) }}</strong>
+            </div>
           </div>
+        </ElCollapseItem>
+      </ElCollapse>
+
+      <ElCard
+        v-if="isFdeRoute('dashboard')"
+        id="fde-blocker-center"
+        shadow="never"
+        class="panel fde-blocker-center"
+        data-testid="fde-blocker-center"
+      >
+        <template #header>
+          <div class="panel-header fde-blocker-center__header">
+            <div>
+              <span>阻断中心</span>
+              <small>跨领域聚合，按严重程度排序；点击后进入对应对象。</small>
+            </div>
+            <ElSpace>
+              <ElTag type="danger" effect="light">
+                严重 {{ dashboard?.blockerSummary?.critical ?? 0 }}
+              </ElTag>
+              <ElTag type="warning" effect="light">
+                关注 {{ dashboard?.blockerSummary?.warning ?? 0 }}
+              </ElTag>
+            </ElSpace>
+          </div>
+        </template>
+        <ElTable :data="fdeBlockers.slice(0, 10)" empty-text="当前没有待处理阻断">
+          <ElTableColumn label="等级" width="92">
+            <template #default="{ row }">
+              <ElTag :type="blockerSeverityType(row.severity)" effect="light">
+                {{
+                  row.severity === 'critical'
+                    ? '严重'
+                    : row.severity === 'warning'
+                      ? '关注'
+                      : '提示'
+                }}
+              </ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="领域" width="116">
+            <template #default="{ row }">{{ fdeDomainLabel(row.domain) }}</template>
+          </ElTableColumn>
+          <ElTableColumn label="阻断事项" min-width="280">
+            <template #default="{ row }">
+              <div class="fde-blocker-title">
+                <strong>{{ row.title }}</strong>
+                <small>{{ row.description }}</small>
+              </div>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn prop="sourceId" label="对象" min-width="160" show-overflow-tooltip />
+          <ElTableColumn label="操作" width="126" fixed="right">
+            <template #default="{ row }">
+              <ElButton type="primary" link @click="goFdeRoute(row.route)">
+                {{ row.actionLabel }}
+              </ElButton>
+            </template>
+          </ElTableColumn>
+        </ElTable>
+        <div v-if="fdeBlockerTotal > 10" class="fde-blocker-center__footer">
+          当前展示优先级最高的 10 项，共 {{ fdeBlockerTotal }} 项。
         </div>
-      </details>
+      </ElCard>
 
       <div
         v-if="isFdeRoute('dashboard')"
@@ -20731,6 +20749,142 @@ onBeforeUnmount(() => {
       </ElDialog>
 
       <ElDialog
+        v-model="governanceActionDialogVisible"
+        :title="governanceActionTitle"
+        width="min(640px, 94vw)"
+        append-to-body
+        destroy-on-close
+      >
+        <ElAlert
+          type="warning"
+          show-icon
+          :closable="false"
+          title="提交后会形成可追溯治理记录。请确认对象、参数与原因；不会代替业务角色作出正式审批。"
+          class="mb-12px"
+        />
+        <ElForm label-position="top">
+          <ElFormItem label="操作对象">
+            <ElInput v-model="governanceActionForm.targetId" readonly />
+          </ElFormItem>
+          <template v-if="governanceActionMode === 'run-evaluation'">
+            <ElFormItem label="评估集">
+              <ElSelect v-model="governanceActionForm.evaluationSetId" class="w-100%">
+                <ElOption
+                  v-for="item in evaluation?.sets || []"
+                  :key="String(item.id)"
+                  :label="String(item.name || item.id)"
+                  :value="String(item.id)"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="能力组合">
+              <ElSelect v-model="governanceActionForm.capabilityBundleId" class="w-100%" clearable>
+                <ElOption
+                  v-for="item in bundles?.bundles || []"
+                  :key="String(item.id)"
+                  :label="String(item.name || item.id)"
+                  :value="String(item.id)"
+                />
+              </ElSelect>
+            </ElFormItem>
+          </template>
+          <template v-if="governanceActionMode === 'masking-policy'">
+            <ElRow :gutter="12">
+              <ElCol :span="12">
+                <ElFormItem label="对象类型">
+                  <ElSelect v-model="governanceActionForm.targetType" class="w-100%">
+                    <ElOption label="AI Run" value="ai_run" />
+                    <ElOption label="Review Run" value="review_run" />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+              <ElCol :span="12">
+                <ElFormItem label="风险等级">
+                  <ElSelect v-model="governanceActionForm.riskLevel" class="w-100%">
+                    <ElOption label="高" value="high" />
+                    <ElOption label="中" value="medium" />
+                    <ElOption label="低" value="low" />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+            <ElFormItem label="字段路径">
+              <ElInput
+                v-model="governanceActionForm.fieldPath"
+                placeholder="例如 findingDrafts.description"
+              />
+            </ElFormItem>
+            <ElRow :gutter="12">
+              <ElCol :span="12">
+                <ElFormItem label="策略">
+                  <ElSelect v-model="governanceActionForm.strategy" class="w-100%">
+                    <ElOption label="保留前缀" value="prefix" />
+                    <ElOption label="完全遮盖" value="redact" />
+                    <ElOption label="哈希" value="hash" />
+                  </ElSelect>
+                </ElFormItem>
+              </ElCol>
+              <ElCol :span="12">
+                <ElFormItem label="可见字符">
+                  <ElInputNumber
+                    v-model="governanceActionForm.visibleChars"
+                    :min="0"
+                    :max="500"
+                    class="w-100%"
+                  />
+                </ElFormItem>
+              </ElCol>
+            </ElRow>
+          </template>
+          <ElFormItem v-if="governanceActionMode === 'budget-change'" label="建议额度">
+            <ElInputNumber
+              v-model="governanceActionForm.proposedLimit"
+              :min="0"
+              :precision="2"
+              class="w-100%"
+            />
+          </ElFormItem>
+          <ElFormItem v-if="governanceActionMode === 'ocr-evaluation'" label="OCR Profile">
+            <ElInput v-model="governanceActionForm.profileId" />
+          </ElFormItem>
+          <ElFormItem v-if="governanceActionMode === 'review-feedback'" label="反馈类型">
+            <ElSelect v-model="governanceActionForm.feedbackType" class="w-100%">
+              <ElOption label="证据位置错误" value="wrong_evidence" />
+              <ElOption label="依据引用错误" value="wrong_rule_reference" />
+              <ElOption label="漏检" value="missed_issue" />
+              <ElOption label="误报" value="false_positive" />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem v-if="governanceActionNeedsRootCause" label="根因">
+            <ElSelect v-model="governanceActionForm.rootCause" class="w-100%">
+              <ElOption label="提示词问题" value="prompt_error" />
+              <ElOption label="模型推理问题" value="model_error" />
+              <ElOption label="知识检索问题" value="kb_retrieval_error" />
+              <ElOption label="OCR 识别问题" value="ocr_error" />
+              <ElOption label="规则配置问题" value="rule_error" />
+              <ElOption label="业务包配置问题" value="business_pack_config_error" />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="操作原因" required>
+            <ElInput
+              v-model="governanceActionForm.reason"
+              type="textarea"
+              :rows="4"
+              maxlength="1000"
+              show-word-limit
+              placeholder="说明问题、目标、影响范围和预期验证结果"
+            />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="governanceActionDialogVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="actionLoading" @click="executeGovernanceAction">
+            确认提交
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog
         v-model="releaseActionDialogVisible"
         :title="releaseActionTitle"
         width="min(620px, 92vw)"
@@ -20906,6 +21060,86 @@ onBeforeUnmount(() => {
 
   min-height: 100%;
   color: #1f2937;
+}
+
+.fde-console.is-initial-loading > :not(.page-toolbar, .fde-initial-skeleton) {
+  display: none;
+}
+
+.fde-initial-skeleton {
+  padding: 20px;
+  background: var(--fde-surface);
+  border-radius: 16px;
+  box-shadow: var(--fde-shadow-xs);
+}
+
+.fde-skeleton-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.fde-skeleton-metrics :deep(.el-skeleton__item) {
+  height: 104px;
+  border-radius: 14px;
+}
+
+.business-pack-view-tabs {
+  margin-block-end: 16px;
+  padding-inline: 4px;
+}
+
+.business-pack-view-tabs :deep(.el-tabs__header) {
+  margin: 0;
+}
+
+.fde-blocker-center {
+  margin-block: 18px;
+  background: var(--fde-surface);
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--fde-shadow-sm);
+}
+
+.fde-blocker-center__header,
+.fde-blocker-center__header > div:first-child,
+.fde-blocker-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fde-blocker-center__header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.fde-blocker-center__header small,
+.fde-blocker-title small,
+.fde-blocker-center__footer {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--el-text-color-secondary);
+}
+
+.fde-blocker-title strong {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--el-text-color-primary);
+}
+
+.fde-blocker-title small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fde-blocker-center__footer {
+  padding-block-start: 12px;
+  text-align: right;
 }
 
 .page-toolbar {
@@ -28933,6 +29167,29 @@ onBeforeUnmount(() => {
 
   .pageindex-friendly-facts {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (width <= 768px) {
+  .fde-skeleton-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fde-blocker-center__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fde-console,
+  .fde-console *,
+  .fde-console *::before,
+  .fde-console *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 </style>
