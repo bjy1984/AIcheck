@@ -49,7 +49,7 @@ case "$action" in
     compose exec -T postgres pgbackrest --stanza=aicheck --output=json info > "$receipt_dir/pgbackrest-info.json.tmp"
     mv "$receipt_dir/pgbackrest-info.json.tmp" "$receipt_dir/pgbackrest-info.json"
     if [ "$backup_mode" = "local_only" ]; then
-      compose exec -T postgres /opt/aicheck-backup/verify_local_backup.py \
+      compose exec -T -u 0 postgres /opt/aicheck-backup/verify_local_backup.py \
         --pgbackrest-info /var/lib/aicheck-backup/receipts/pgbackrest-info.json \
         --restore-receipt /var/lib/aicheck-backup/receipts/latest-restore-drill.json \
         --output /var/lib/aicheck-backup/receipts/local-backup-readiness.json
