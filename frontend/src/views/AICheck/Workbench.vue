@@ -4106,7 +4106,15 @@ onBeforeUnmount(() => {
           </section>
         </aside>
 
-        <main class="center">
+        <main
+          :class="[
+            'center',
+            {
+              'has-flush-audit-directory':
+                role === 'inspection' && activeWorkbenchSection === 'node'
+            }
+          ]"
+        >
           <WorkbenchStateBanner
             v-if="readonlyIssue"
             class="readonly-banner"
@@ -6022,10 +6030,20 @@ onBeforeUnmount(() => {
 }
 
 .center {
+  --center-top-gutter: 18px;
+
   height: 100%;
   min-width: 0;
   padding: 18px 20px 24px;
   overflow: hidden auto;
+}
+
+.center.has-flush-audit-directory {
+  padding-top: 0;
+}
+
+.center.has-flush-audit-directory > :first-child {
+  margin-top: var(--center-top-gutter);
 }
 
 .center-support-grid {
@@ -8110,8 +8128,14 @@ h3 {
   }
 
   .center {
+    --center-top-gutter: 14px;
+
     height: auto;
     padding: 14px 12px 18px;
+  }
+
+  .center.has-flush-audit-directory {
+    padding-top: 0;
   }
 
   .center-support-grid {

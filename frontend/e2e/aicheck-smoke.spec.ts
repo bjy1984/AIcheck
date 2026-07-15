@@ -937,12 +937,26 @@ test.describe('AIcheck route smoke', () => {
     await expect(desktopAuditDirectory.locator('[role="tab"][tabindex="0"]')).toHaveCount(1)
 
     const center = page.locator('.center')
+    await expect(center).toHaveClass(/has-flush-audit-directory/)
+    await center.evaluate((element) => {
+      element.scrollTop = 0
+    })
+    const initialPageHeadTopInset = await Promise.all([
+      page.locator('.page-head').boundingBox(),
+      center.boundingBox()
+    ]).then(([pageHeadBox, centerBox]) => {
+      if (!pageHeadBox || !centerBox) return -1
+      return Math.round(pageHeadBox.y - centerBox.y)
+    })
+    expect(initialPageHeadTopInset).toBe(18)
+
     await center.evaluate((element) => {
       element.scrollTop = 700
     })
     const stickyTopInset = await center.evaluate((element) => {
       return Math.round(Number.parseFloat(getComputedStyle(element).paddingTop))
     })
+    expect(stickyTopInset).toBe(0)
     await expect
       .poll(async () => {
         const [directoryBox, centerBox] = await Promise.all([
