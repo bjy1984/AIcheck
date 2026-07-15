@@ -1120,7 +1120,7 @@ test.describe('AIcheck route smoke', () => {
     expect(transitions[0].property).toContain('grid-template-columns')
     expect(transitions[0].duration).toMatch(/^(0\.22s)(, 0\.22s)*$/)
     expect(transitions[1].name).toMatch(/^workbench-page-enter/)
-    expect(transitions[1].duration).toBe('0.19s')
+    expect(transitions[1].duration).toBe('0.26s')
     await expect(center).toHaveAttribute('data-node-transition', 'idle')
   })
 
