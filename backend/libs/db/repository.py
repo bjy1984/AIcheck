@@ -1965,7 +1965,11 @@ class InMemoryRepository:
             if not target_dsn:
                 return
             if self.sync_postgres is not None and self.postgres_dsn == target_dsn:
-                return
+                if not bool(getattr(self.sync_postgres, "closed", False)) and not bool(
+                    getattr(self.sync_postgres, "broken", False)
+                ):
+                    return
+                self.close_sync_postgres()
             try:
                 import psycopg
             except Exception as exc:
@@ -1985,6 +1989,26 @@ class InMemoryRepository:
                     connection.close()
                 except Exception:
                     pass
+
+    def ensure_sync_postgres_connection(self, dsn: str | None = None) -> bool:
+        """Probe and reconnect the shared synchronous PostgreSQL session."""
+
+        with self._sync_postgres_lock:
+            target_dsn = dsn or self.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+            if not target_dsn:
+                return False
+            for _ in range(2):
+                try:
+                    self.configure_sync_postgres(target_dsn)
+                    if self.sync_postgres is None:
+                        return False
+                    row = self.sync_postgres.execute("SELECT 1").fetchone()
+                    self.sync_postgres.rollback()
+                    if row and int(row[0]) == 1:
+                        return True
+                except Exception:
+                    self.close_sync_postgres()
+            return False
 
     def default_sqlite_path(self) -> Path:
         backend_root = Path(__file__).resolve().parents[2]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -100,6 +101,35 @@ class PagingConnection(DetectConcurrentConnection):
         return EmptyCursor()
 
 
+class BrokenConnection:
+    closed = False
+    broken = False
+
+    def execute(self, sql, params=None):
+        raise RuntimeError("connection is lost")
+
+    def close(self):
+        self.closed = True
+
+
+class HealthyConnection:
+    closed = False
+    broken = False
+
+    def __init__(self) -> None:
+        self.rollbacks = 0
+
+    def execute(self, sql, params=None):
+        assert "SELECT 1" in str(sql)
+        return EmptyCursor([(1,)])
+
+    def rollback(self):
+        self.rollbacks += 1
+
+    def close(self):
+        self.closed = True
+
+
 def test_shared_sync_postgres_connection_serializes_concurrent_transactions() -> None:
     repository = InMemoryRepository()
     connection = DetectConcurrentConnection()
@@ -113,6 +143,25 @@ def test_shared_sync_postgres_connection_serializes_concurrent_transactions() ->
             future.result()
 
     assert connection.max_active_transactions == 1
+
+
+def test_sync_postgres_probe_reconnects_a_lost_shared_connection(monkeypatch) -> None:
+    repository = InMemoryRepository()
+    broken = BrokenConnection()
+    healthy = HealthyConnection()
+    repository.sync_postgres = broken
+    repository.postgres_dsn = "postgresql://fake"
+    repository.postgres_enabled = True
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "psycopg",
+        types.SimpleNamespace(connect=lambda dsn, autocommit: healthy),
+    )
+
+    assert repository.ensure_sync_postgres_connection() is True
+    assert broken.closed is True
+    assert repository.sync_postgres is healthy
+    assert healthy.rollbacks == 1
 
 
 def test_scoped_postgres_upsert_never_replaces_unrelated_state() -> None:

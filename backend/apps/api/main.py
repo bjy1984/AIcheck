@@ -796,7 +796,8 @@ def database_schema_readiness() -> dict[str, bool]:
 async def health_response(request: Request):
     payload = await health_payload()
     if strict_production() and (
-        not payload["securityReady"]
+        not payload["databaseConnected"]
+        or not payload["securityReady"]
         or not payload["runtimeReady"]
         or not payload["workflowReady"]
     ):
@@ -820,6 +821,14 @@ async def postgres_transaction_probe(request: Request):
 
 async def health_payload() -> dict[str, object]:
     database_backend = "postgres" if repo.postgres_enabled else "sqlite" if repo.sqlite_enabled else "memory"
+    database_connected = database_backend != "memory"
+    if repo.postgres_enabled and (
+        repo.sync_postgres is not None
+        or repo.postgres_dsn
+        or os.getenv("AICHECK_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+    ):
+        database_connected = await asyncio.to_thread(repo.ensure_sync_postgres_connection)
     rate_limiter_ready = await security_sessions.ready()
     model_attempts = [
         item
@@ -842,7 +851,7 @@ async def health_payload() -> dict[str, object]:
         "status": "ok",
         "service": "api-service",
         "databaseBackend": database_backend,
-        "databaseConnected": database_backend != "memory",
+        "databaseConnected": database_connected,
         "postgresEnabled": repo.postgres_enabled,
         "postgresTransactions": bool(repo.postgres_enabled),
         "sqliteEnabled": repo.sqlite_enabled,
