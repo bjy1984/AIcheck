@@ -2343,7 +2343,7 @@ const runWorkbenchPageTransition = async (applyPageState: () => void) => {
   }
 
   workbenchPageTransitionPhase.value = 'leaving'
-  await new Promise<void>((resolve) => window.setTimeout(resolve, 160))
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 300))
   if (sequence !== workbenchPageTransitionSequence) return false
 
   applyPageState()
@@ -2356,7 +2356,7 @@ const runWorkbenchPageTransition = async (applyPageState: () => void) => {
     if (sequence === workbenchPageTransitionSequence) {
       workbenchPageTransitionPhase.value = 'idle'
     }
-  }, 260)
+  }, 500)
   return true
 }
 
@@ -6398,8 +6398,8 @@ onBeforeUnmount(() => {
   opacity: 1;
   transform: translateY(0);
   transition:
-    opacity 160ms ease-in,
-    transform 160ms ease-in;
+    opacity 300ms ease-in,
+    transform 300ms ease-in;
 }
 
 .center.has-flush-audit-directory {
@@ -6418,7 +6418,7 @@ onBeforeUnmount(() => {
 
 .center.is-workbench-page-entering {
   will-change: opacity, transform;
-  animation: workbench-page-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: workbench-page-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes workbench-page-enter {
