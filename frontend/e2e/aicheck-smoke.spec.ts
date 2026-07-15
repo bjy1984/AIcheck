@@ -874,6 +874,23 @@ test.describe('AIcheck route smoke', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await expect(page.getByRole('button', { name: '打开节点导航' })).toHaveCount(0)
+    const auditStatusCards = page.locator(
+      '.inspection-audit-status-summary .inspection-audit-status-card.el-card'
+    )
+    await expect(auditStatusCards).toHaveCount(5)
+    const auditStatusCardVisual = await auditStatusCards.first().evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        borderWidth: style.borderWidth,
+        borderRadius: style.borderRadius,
+        boxShadow: style.boxShadow,
+        bodyClass: element.firstElementChild?.className || ''
+      }
+    })
+    expect(auditStatusCardVisual.borderWidth).toBe('0px')
+    expect(auditStatusCardVisual.borderRadius).toBe('10px')
+    expect(auditStatusCardVisual.boxShadow).not.toBe('none')
+    expect(auditStatusCardVisual.bodyClass).toContain('el-card__body')
     const certificateNode = page
       .getByRole('button', { name: '设计单位许可资质', exact: true })
       .first()
@@ -1081,6 +1098,7 @@ test.describe('AIcheck route smoke', () => {
 
     await nodeButtons.first().click()
 
+    await expect(center).toHaveAttribute('data-node-transition', 'leaving')
     await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
     await expect(center).toHaveAttribute('data-node-transition', 'entering')
     const transitions = await Promise.all([
@@ -1091,29 +1109,18 @@ test.describe('AIcheck route smoke', () => {
           duration: style.transitionDuration
         }
       }),
-      page.locator('.page-head').evaluate((element) => {
+      center.evaluate((element) => {
         const style = getComputedStyle(element)
         return {
           name: style.animationName,
           duration: style.animationDuration
         }
-      }),
-      center.locator(':scope > :not(.page-head):not(.audit-item-directory)').first().evaluate(
-        (element) => {
-          const style = getComputedStyle(element)
-          return {
-            name: style.animationName,
-            duration: style.animationDuration
-          }
-        }
-      )
+      })
     ])
     expect(transitions[0].property).toContain('grid-template-columns')
     expect(transitions[0].duration).toMatch(/^(0\.22s)(, 0\.22s)*$/)
-    expect(transitions[1].name).toMatch(/^workbench-node-heading-enter/)
-    expect(transitions[1].duration).toBe('0.21s')
-    expect(transitions[2].name).toMatch(/^workbench-node-panel-enter/)
-    expect(transitions[2].duration).toBe('0.22s')
+    expect(transitions[1].name).toMatch(/^workbench-page-enter/)
+    expect(transitions[1].duration).toBe('0.19s')
     await expect(center).toHaveAttribute('data-node-transition', 'idle')
   })
 

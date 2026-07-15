@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
   ElButton,
+  ElCard,
   ElDrawer,
   ElDropdown,
   ElDropdownItem,
@@ -284,10 +285,9 @@ const activeProjectId = ref('')
 const activeNodeId = ref(24)
 const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
 const workbenchMainRef = ref<HTMLElement>()
-const nodeContentTransitioning = ref(false)
-let nodeContentTransitionFrame: number | undefined
-let nodeContentTransitionTimer: number | undefined
-let nodeContentTransitionSequence = 0
+const workbenchPageTransitionPhase = ref<'idle' | 'leaving' | 'entering'>('idle')
+let workbenchPageTransitionTimer: number | undefined
+let workbenchPageTransitionSequence = 0
 const activeInspectionAuditItem = ref<InspectionAuditItemKey>('submission')
 const inspectionAuditOverview = ref<InspectionAuditOverviewPayload>()
 const inspectionAuditWorkspace = ref<InspectionAuditWorkspacePayload>()
@@ -2297,16 +2297,12 @@ const scrollToRoleFeedbackList = async (elementId: string) => {
   document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-const stopNodeContentTransition = () => {
-  if (nodeContentTransitionFrame !== undefined) {
-    window.cancelAnimationFrame(nodeContentTransitionFrame)
-    nodeContentTransitionFrame = undefined
+const stopWorkbenchPageTransition = () => {
+  if (workbenchPageTransitionTimer !== undefined) {
+    window.clearTimeout(workbenchPageTransitionTimer)
+    workbenchPageTransitionTimer = undefined
   }
-  if (nodeContentTransitionTimer !== undefined) {
-    window.clearTimeout(nodeContentTransitionTimer)
-    nodeContentTransitionTimer = undefined
-  }
-  nodeContentTransitioning.value = false
+  workbenchPageTransitionPhase.value = 'idle'
 }
 
 const scrollWorkbenchContentToTop = () => {
@@ -2333,24 +2329,35 @@ const scrollWorkbenchContentToTop = () => {
   })
 }
 
-const startNodeContentTransition = async () => {
-  const sequence = ++nodeContentTransitionSequence
-  stopNodeContentTransition()
+const runWorkbenchPageTransition = async (applyPageState: () => void) => {
+  const sequence = ++workbenchPageTransitionSequence
+  stopWorkbenchPageTransition()
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  if (reduceMotion) {
+    applyPageState()
+    await nextTick()
+    if (sequence !== workbenchPageTransitionSequence) return false
+    scrollWorkbenchContentToTop()
+    return true
+  }
+
+  workbenchPageTransitionPhase.value = 'leaving'
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 110))
+  if (sequence !== workbenchPageTransitionSequence) return false
+
+  applyPageState()
   await nextTick()
-  if (sequence !== nodeContentTransitionSequence) return
-
+  if (sequence !== workbenchPageTransitionSequence) return false
   scrollWorkbenchContentToTop()
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-
-  nodeContentTransitionFrame = window.requestAnimationFrame(() => {
-    nodeContentTransitionFrame = undefined
-    if (sequence !== nodeContentTransitionSequence) return
-    nodeContentTransitioning.value = true
-    nodeContentTransitionTimer = window.setTimeout(() => {
-      nodeContentTransitionTimer = undefined
-      if (sequence === nodeContentTransitionSequence) nodeContentTransitioning.value = false
-    }, 230)
-  })
+  workbenchPageTransitionPhase.value = 'entering'
+  workbenchPageTransitionTimer = window.setTimeout(() => {
+    workbenchPageTransitionTimer = undefined
+    if (sequence === workbenchPageTransitionSequence) {
+      workbenchPageTransitionPhase.value = 'idle'
+    }
+  }, 190)
+  return true
 }
 
 const scrollInspectionAuditPanelToTop = async (itemKey: InspectionAuditItemKey) => {
@@ -2424,16 +2431,16 @@ const handleProjectChange = async () => {
 
 const handleNodeSelect = async (node: ProjectTreeNode) => {
   mobileTreeOpen.value = false
-  activeWorkbenchSection.value = 'node'
-  activeNodeId.value = node.nodeId
-  if (role.value === 'inspection') {
-    const routeItem = isInspectionAuditItemKey(route.query.auditItem)
-      ? route.query.auditItem
-      : undefined
-    activeInspectionAuditItem.value =
-      inspectionAuditItemByNode.value[node.nodeId] || routeItem || 'submission'
-  }
-  await startNodeContentTransition()
+  const routeItem = isInspectionAuditItemKey(route.query.auditItem)
+    ? route.query.auditItem
+    : undefined
+  const nextAuditItem = inspectionAuditItemByNode.value[node.nodeId] || routeItem || 'submission'
+  const switched = await runWorkbenchPageTransition(() => {
+    activeWorkbenchSection.value = 'node'
+    activeNodeId.value = node.nodeId
+    if (role.value === 'inspection') activeInspectionAuditItem.value = nextAuditItem
+  })
+  if (!switched) return
   if (role.value === 'inspection') {
     await updateInspectionRoute({
       nodeId: node.nodeId,
@@ -2451,8 +2458,10 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
 
 const handleProjectOverviewSelect = async () => {
   mobileTreeOpen.value = false
-  activeWorkbenchSection.value = 'overview'
-  await startNodeContentTransition()
+  const switched = await runWorkbenchPageTransition(() => {
+    activeWorkbenchSection.value = 'overview'
+  })
+  if (!switched) return
   if (role.value === 'inspection') {
     await updateInspectionRoute({ overview: true })
   }
@@ -2462,15 +2471,17 @@ const handleInspectionMatrixSelect = async (
   node: ProjectTreeNode,
   auditItem: InspectionAuditItemKey
 ) => {
-  activeInspectionAuditItem.value = auditItem
-  inspectionAuditItemByNode.value = {
-    ...inspectionAuditItemByNode.value,
-    [node.nodeId]: auditItem
-  }
   mobileTreeOpen.value = false
-  activeWorkbenchSection.value = 'node'
-  activeNodeId.value = node.nodeId
-  await startNodeContentTransition()
+  const switched = await runWorkbenchPageTransition(() => {
+    activeInspectionAuditItem.value = auditItem
+    inspectionAuditItemByNode.value = {
+      ...inspectionAuditItemByNode.value,
+      [node.nodeId]: auditItem
+    }
+    activeWorkbenchSection.value = 'node'
+    activeNodeId.value = node.nodeId
+  })
+  if (!switched) return
   await updateInspectionRoute({ nodeId: node.nodeId, auditItem })
   await loadNodePackage(node.nodeId)
 }
@@ -4141,8 +4152,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', syncCompactNodeNavigation)
-  nodeContentTransitionSequence += 1
-  stopNodeContentTransition()
+  workbenchPageTransitionSequence += 1
+  stopWorkbenchPageTransition()
   stopPostUploadPolling()
   stopAiReviewPolling()
   revokePreviewDrawerObjectUrl()
@@ -4265,13 +4276,14 @@ onBeforeUnmount(() => {
           ref="workbenchMainRef"
           id="aicheck-workbench-main"
           tabindex="-1"
-          :data-node-transition="nodeContentTransitioning ? 'entering' : 'idle'"
+          :data-node-transition="workbenchPageTransitionPhase"
           :class="[
             'center',
             {
               'has-flush-audit-directory':
                 role === 'inspection' && activeWorkbenchSection === 'node',
-              'is-node-content-entering': nodeContentTransitioning
+              'is-workbench-page-leaving': workbenchPageTransitionPhase === 'leaving',
+              'is-workbench-page-entering': workbenchPageTransitionPhase === 'entering'
             }
           ]"
         >
@@ -4427,16 +4439,22 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
                 <div class="inspection-audit-status-summary" aria-label="独立审计项状态统计">
-                  <article
+                  <ElCard
                     v-for="row in inspectionAuditStatusSummaryRows"
                     :key="row.key"
+                    shadow="never"
                     :class="['inspection-audit-status-card', `is-${row.key}`]"
                     :aria-label="`${row.label}：${row.value} 个审计项`"
                   >
-                    <span>{{ row.label }}</span>
-                    <strong>{{ row.value }}</strong>
-                    <small>审计项</small>
-                  </article>
+                    <div class="inspection-audit-status-card__label">
+                      <i aria-hidden="true"></i>
+                      <span>{{ row.label }}</span>
+                    </div>
+                    <div class="inspection-audit-status-card__metric">
+                      <strong>{{ row.value }}</strong>
+                      <small>审计项</small>
+                    </div>
+                  </ElCard>
                 </div>
               </article>
 
@@ -6377,6 +6395,11 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 18px 20px 24px;
   overflow: hidden auto;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 110ms ease-in,
+    transform 110ms ease-in;
 }
 
 .center.has-flush-audit-directory {
@@ -6387,32 +6410,21 @@ onBeforeUnmount(() => {
   margin-top: var(--center-top-gutter);
 }
 
-.center.is-node-content-entering > .page-head {
+.center.is-workbench-page-leaving {
   will-change: opacity, transform;
-  animation: workbench-node-heading-enter 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  opacity: 0.72;
+  transform: translateY(-4px);
 }
 
-.center.is-node-content-entering > :not(.page-head, .audit-item-directory) {
+.center.is-workbench-page-entering {
   will-change: opacity, transform;
-  animation: workbench-node-panel-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: workbench-page-enter 190ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes workbench-node-heading-enter {
+@keyframes workbench-page-enter {
   from {
-    opacity: 0.94;
+    opacity: 0.72;
     transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes workbench-node-panel-enter {
-  from {
-    opacity: 0.97;
-    transform: translateY(4px);
   }
 
   to {
@@ -6956,46 +6968,89 @@ h3 {
 
 .inspection-audit-status-card {
   --inspection-status-color: #667085;
+  --inspection-status-surface: #f5f7fa;
 
-  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--inspection-status-surface);
+  border: 0;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 5%);
+}
+
+.inspection-audit-status-card :deep(.el-card__body) {
+  display: flex;
   min-height: 84px;
-  padding: 11px 12px;
-  background: #fff;
-  border: 1px solid color-mix(in srgb, var(--inspection-status-color) 48%, #fff);
-  border-left: 4px solid var(--inspection-status-color);
-  border-radius: 7px;
-  align-content: center;
-  gap: 3px;
+  padding: 12px 14px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .inspection-audit-status-card.is-in_progress {
   --inspection-status-color: #2563eb;
+  --inspection-status-surface: #f1f6ff;
 }
 
 .inspection-audit-status-card.is-needs_attention {
   --inspection-status-color: #b45309;
+  --inspection-status-surface: #fff7e8;
 }
 
 .inspection-audit-status-card.is-failed {
-  --inspection-status-color: #dc2626;
+  --inspection-status-color: #c4322a;
+  --inspection-status-surface: #fff3f1;
 }
 
 .inspection-audit-status-card.is-completed {
-  --inspection-status-color: #16803c;
+  --inspection-status-color: #16804a;
+  --inspection-status-surface: #effaf4;
 }
 
-.inspection-audit-status-card span,
-.inspection-audit-status-card small {
+.inspection-audit-status-card__label,
+.inspection-audit-status-card__metric {
+  display: flex;
+  align-items: center;
+}
+
+.inspection-audit-status-card__label {
+  gap: 7px;
+}
+
+.inspection-audit-status-card__label i {
+  width: 7px;
+  height: 7px;
+  background: var(--inspection-status-color);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--inspection-status-color) 12%, transparent);
+  flex: 0 0 auto;
+}
+
+.inspection-audit-status-card__label span {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
+  line-height: 18px;
   color: var(--inspection-status-color);
 }
 
-.inspection-audit-status-card strong {
-  font-size: 24px;
-  line-height: 28px;
+.inspection-audit-status-card__metric {
+  align-items: baseline;
+  gap: 6px;
+}
+
+.inspection-audit-status-card__metric strong {
+  font-size: 25px;
+  line-height: 30px;
+  letter-spacing: -0.02em;
   color: #172033;
   font-variant-numeric: tabular-nums;
+}
+
+.inspection-audit-status-card__metric small {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 17px;
+  color: #536176;
 }
 
 .inspection-node-table {
@@ -8636,11 +8691,11 @@ h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .center.is-node-content-entering > .page-head,
-  .center.is-node-content-entering > :not(.page-head, .audit-item-directory) {
+  .center.is-workbench-page-entering {
     animation: none;
   }
 
+  .center,
   .workspace,
   .tree-wrap,
   .sidebar-collapse-toggle .el-icon {
