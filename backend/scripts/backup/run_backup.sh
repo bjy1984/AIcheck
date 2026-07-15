@@ -17,7 +17,10 @@ compose() {
 }
 
 pgbackrest() {
-  compose exec -T postgres aicheck-pgbackrest-entrypoint restore-agent pgbackrest "$@"
+  compose exec -T \
+    -e PGBACKREST_PG1_USER="${AICHECK_POSTGRES_USER:-aicheck}" \
+    -e PGBACKREST_PG1_DATABASE="${AICHECK_POSTGRES_DB:-aicheck}" \
+    postgres aicheck-pgbackrest-entrypoint restore-agent pgbackrest "$@"
 }
 
 case "$action" in
