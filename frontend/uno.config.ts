@@ -140,7 +140,8 @@ ${selector}:after {
   transformers: [transformerVariantGroup()],
   content: {
     pipeline: {
-      include: [/\.(vue|svelte|[jt]sx|mdx?|astro|elm|php|phtml|html|ts)($|\?)/]
+      include: [/\.(vue|svelte|[jt]sx|mdx?|astro|elm|php|phtml|html|ts)($|\?)/],
+      exclude: [/src\/components\/IconPicker\/src\/data\/.*\.ts($|\?)/]
     }
   }
 })

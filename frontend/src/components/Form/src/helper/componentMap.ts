@@ -1,4 +1,4 @@
-import type { Component } from 'vue'
+import { defineAsyncComponent, type Component } from 'vue'
 import {
   ElCascader,
   ElCheckboxGroup,
@@ -21,9 +21,6 @@ import {
   ElUpload
 } from 'element-plus'
 import { InputPassword } from '@/components/InputPassword'
-import { Editor } from '@/components/Editor'
-import { JsonEditor } from '@/components/JsonEditor'
-import { IconPicker } from '@/components/IconPicker'
 import { IAgree } from '@/components/IAgree'
 import { ComponentName } from '../types'
 
@@ -48,11 +45,15 @@ const componentMap: Recordable<Component, ComponentName> = {
   TimeSelect: ElTimeSelect,
   SelectV2: ElSelectV2,
   InputPassword: InputPassword,
-  Editor: Editor,
+  Editor: defineAsyncComponent(() => import('@/components/Editor').then((module) => module.Editor)),
   TreeSelect: ElTreeSelect,
   Upload: ElUpload,
-  JsonEditor: JsonEditor,
-  IconPicker: IconPicker,
+  JsonEditor: defineAsyncComponent(() =>
+    import('@/components/JsonEditor').then((module) => module.JsonEditor)
+  ),
+  IconPicker: defineAsyncComponent(() =>
+    import('@/components/IconPicker').then((module) => module.IconPicker)
+  ),
   IAgree: IAgree
 }
 
