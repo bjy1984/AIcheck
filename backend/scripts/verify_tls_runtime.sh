@@ -7,7 +7,8 @@ server_name="${AICHECK_TLS_SERVER_NAME:-39.108.128.107}"
 minimum_validity="${AICHECK_TLS_MIN_VALIDITY_SECONDS:-172800}"
 proxy_container="${AICHECK_TLS_PROXY_CONTAINER:-aicheck-tls-proxy}"
 certificate="$(mktemp)"
-trap 'rm -f "$certificate"' EXIT INT TERM
+chain="$(mktemp)"
+trap 'rm -f "$certificate" "$chain"' EXIT INT TERM
 
 case "$action" in
   verify|reload) ;;
@@ -27,8 +28,8 @@ openssl s_client \
   -servername "$server_name" \
   -verify_ip "$server_name" \
   -verify_return_error \
-  -showcerts </dev/null 2>/dev/null \
-  | openssl x509 -out "$certificate"
+  -showcerts </dev/null >"$chain" 2>/dev/null
+openssl x509 -in "$chain" -out "$certificate"
 
 openssl x509 -in "$certificate" -noout -checkend "$minimum_validity"
 not_after="$(openssl x509 -in "$certificate" -noout -enddate | cut -d= -f2-)"
