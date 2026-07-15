@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -12,8 +12,10 @@ import {
   ElSelect,
   ElTable,
   ElTableColumn,
-  ElTag
+  ElTag,
+  ElTooltip
 } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import type {
   DocumentAsset,
   NdtFeedback,
@@ -25,6 +27,7 @@ import type {
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
+import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 
 type NdtMaterialStatus = '已覆盖' | '待上传' | '需补正'
 type NdtMaterialAction =
@@ -93,6 +96,14 @@ const rectificationForm = reactive({
   rectificationId: '',
   description: '已补充底片包索引和检测记录页码，请复审。'
 })
+const rectificationFormRef = ref<FormInstance>()
+const rectificationRules: FormRules = {
+  rectificationId: [{ required: true, message: '请选择需要反馈的补正事项', trigger: 'change' }],
+  description: [
+    { required: true, message: '请填写本次补正说明', trigger: 'blur' },
+    { min: 4, max: 240, message: '补正说明应为 4–240 个字符', trigger: 'blur' }
+  ]
+}
 
 const pendingReports = computed(() => pendingNdtReports(props.reports))
 const pendingFilms = computed(() => pendingNdtFilms(props.films))
@@ -107,11 +118,36 @@ const submitBlockers = computed(() =>
   })
 )
 const canSubmitNdt = computed(() => pendingReports.value.length > 0 && !submitBlockers.value.length)
+const submitNdtHint = computed(() => {
+  if (submitBlockers.value.length) return submitBlockers.value.join('；')
+  if (!pendingReports.value.length) return '暂无待提交的检测报告'
+  return '提交满足条件的检测报告与底片资料'
+})
 const openFeedback = computed(() => props.feedback.filter((item) => item.status === '待反馈'))
 const defaultFeedback = computed(() => openFeedback.value[0])
+watch(
+  () => defaultFeedback.value?.id,
+  (defaultId) => {
+    if (!openFeedback.value.some((item) => item.id === rectificationForm.rectificationId)) {
+      rectificationForm.rectificationId = defaultId || ''
+    }
+  },
+  { immediate: true }
+)
 const selectedRectificationId = computed(
   () => rectificationForm.rectificationId || defaultFeedback.value?.id || ''
 )
+const ndtMetricCards = computed<AuditSummaryCard[]>(() => [
+  { label: '底片编号', value: props.films.length, hint: '已登记影像索引', tone: 'blue' },
+  { label: '检测记录', value: props.records.length, hint: '已导入检测台账', tone: 'blue' },
+  { label: '检测报告', value: props.reports.length, hint: '当前报告版本', tone: 'green' },
+  {
+    label: '待补正',
+    value: openFeedback.value.length,
+    hint: openFeedback.value.length ? '需按监检意见处理' : '暂无待处理反馈',
+    tone: openFeedback.value.length ? 'orange' : 'gray'
+  }
+])
 const filesByCategory = (category: string) =>
   props.projectFiles.filter((file) => file.materialCategory === category)
 const statusForCategory = (category: string, fallbackCount = 0): NdtMaterialStatus => {
@@ -328,7 +364,10 @@ const handleSubmitNdt = () => {
   })
 }
 
-const handleRectifyNdt = () => {
+const handleRectifyNdt = async (rectificationId?: string) => {
+  if (rectificationId) rectificationForm.rectificationId = rectificationId
+  const valid = await rectificationFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   const feedback = props.feedback.find((item) => item.id === selectedRectificationId.value)
   emit('rectifyNdt', {
     rectificationId: selectedRectificationId.value,
@@ -354,24 +393,7 @@ const handleRectifyNdt = () => {
         </div>
       </template>
 
-      <div class="ndt-metrics">
-        <div>
-          <span>底片编号</span>
-          <strong>{{ films.length }}</strong>
-        </div>
-        <div>
-          <span>检测记录</span>
-          <strong>{{ records.length }}</strong>
-        </div>
-        <div>
-          <span>检测报告</span>
-          <strong>{{ reports.length }}</strong>
-        </div>
-        <div>
-          <span>待补正</span>
-          <strong>{{ openFeedback.length }}</strong>
-        </div>
-      </div>
+      <AuditSummaryGrid class="ndt-metrics" :cards="ndtMetricCards" aria-label="无损检测资料摘要" />
 
       <section class="ndt-checklist">
         <div class="ndt-section-head">
@@ -479,15 +501,23 @@ const handleRectifyNdt = () => {
             <span
               >待提交报告 {{ pendingReports.length }} 份，底片 {{ pendingFilms.length }} 个</span
             >
-            <ElButton
-              type="primary"
-              :disabled="!canSubmitNdt"
-              :loading="loading"
-              :title="submitBlockers.join('；')"
-              @click="handleSubmitNdt"
+            <ElTooltip
+              :content="submitNdtHint"
+              :disabled="canSubmitNdt"
+              placement="top"
+              popper-class="audit-action-tooltip-popper"
             >
-              提交检测资料
-            </ElButton>
+              <span class="ndt-action-tooltip">
+                <ElButton
+                  type="primary"
+                  :disabled="!canSubmitNdt"
+                  :loading="loading"
+                  @click="handleSubmitNdt"
+                >
+                  提交检测资料
+                </ElButton>
+              </span>
+            </ElTooltip>
           </div>
         </div>
         <ElAlert
@@ -598,22 +628,43 @@ const handleRectifyNdt = () => {
             <ElButton link type="primary" @click="emit('openFeedbackDetail', row.id)"
               >详情</ElButton
             >
-            <ElButton
-              link
-              type="warning"
-              :disabled="row.status === '已关闭'"
-              @click="handleRectifyNdt"
+            <ElTooltip
+              content="该反馈已关闭，无需重复提交"
+              :disabled="row.status !== '已关闭'"
+              placement="top"
+              popper-class="audit-action-tooltip-popper"
             >
-              提交反馈
-            </ElButton>
+              <span class="ndt-action-tooltip">
+                <ElButton
+                  link
+                  type="warning"
+                  :disabled="row.status === '已关闭'"
+                  @click="handleRectifyNdt(row.id)"
+                >
+                  提交反馈
+                </ElButton>
+              </span>
+            </ElTooltip>
           </template>
         </ElTableColumn>
       </ElTable>
       <ElEmpty v-else description="暂无监检反馈" class="compact-empty" />
 
-      <ElForm label-position="top" class="rectify-form">
-        <ElFormItem label="补正反馈">
-          <ElSelect v-model="rectificationForm.rectificationId" aria-label="选择补正反馈">
+      <ElForm
+        ref="rectificationFormRef"
+        :model="rectificationForm"
+        :rules="rectificationRules"
+        label-position="top"
+        status-icon
+        class="rectify-form"
+      >
+        <ElFormItem label="补正反馈" prop="rectificationId">
+          <ElSelect
+            v-model="rectificationForm.rectificationId"
+            :disabled="!openFeedback.length"
+            placeholder="选择待处理反馈"
+            aria-label="选择补正反馈"
+          >
             <ElOption
               v-for="item in openFeedback"
               :key="item.id"
@@ -622,7 +673,7 @@ const handleRectifyNdt = () => {
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem label="反馈说明">
+        <ElFormItem label="反馈说明" prop="description">
           <ElInput
             v-model="rectificationForm.description"
             type="textarea"
@@ -642,20 +693,29 @@ const handleRectifyNdt = () => {
         >
           <div class="ndt-error-content">
             <span>{{ rectifyError }}</span>
-            <ElButton link type="primary" :loading="loading" @click="handleRectifyNdt">
+            <ElButton link type="primary" :loading="loading" @click="handleRectifyNdt()">
               重试补正反馈
             </ElButton>
           </div>
         </ElAlert>
-        <ElButton
-          type="warning"
-          plain
-          :disabled="!openFeedback.length"
-          :loading="loading"
-          @click="handleRectifyNdt"
+        <ElTooltip
+          content="暂无待处理的监检反馈"
+          :disabled="Boolean(openFeedback.length)"
+          placement="top"
+          popper-class="audit-action-tooltip-popper"
         >
-          提交补正反馈
-        </ElButton>
+          <span class="ndt-action-tooltip">
+            <ElButton
+              type="warning"
+              plain
+              :disabled="!openFeedback.length"
+              :loading="loading"
+              @click="handleRectifyNdt()"
+            >
+              提交补正反馈
+            </ElButton>
+          </span>
+        </ElTooltip>
       </ElForm>
     </ElCard>
   </div>
@@ -679,6 +739,8 @@ const handleRectifyNdt = () => {
 
 .ndt-panel {
   margin-bottom: 16px;
+  border: 0;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 7%);
 }
 
 .panel-header {
@@ -698,28 +760,9 @@ const handleRectifyNdt = () => {
 }
 
 .ndt-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  --audit-summary-columns: 4;
+
   margin-bottom: 14px;
-}
-
-.ndt-metrics div {
-  padding: 10px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-}
-
-.ndt-metrics span {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  color: #52617a;
-}
-
-.ndt-metrics strong {
-  color: #1f2937;
 }
 
 .section-title {
@@ -792,6 +835,10 @@ const handleRectifyNdt = () => {
   flex-wrap: wrap;
   gap: 6px 10px;
   align-items: center;
+}
+
+.ndt-action-tooltip {
+  display: inline-flex;
 }
 
 .ndt-checklist-table :deep(.el-table__body-wrapper) {

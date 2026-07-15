@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  ElAvatar,
+  ElBadge,
   ElButton,
+  ElCollapse,
+  ElCollapseItem,
+  ElDescriptions,
+  ElDescriptionsItem,
   ElDrawer,
   ElDropdown,
   ElDropdownItem,
@@ -18,6 +24,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/store/modules/user'
 import { Icon } from '@/components/Icon'
 import type { OperationArea } from '@/types/aicheck'
+import AuditStatusTag from './AuditStatusTag.vue'
 import GlobalCommandPalette from './GlobalCommandPalette.vue'
 import OperationTaskDrawer from './OperationTaskDrawer.vue'
 import StaticShellRightPanel from './StaticShellRightPanel.vue'
@@ -163,6 +170,28 @@ const menuFilterModel = computed({
   get: () => props.menuFilterValue || props.menuFilters?.[0]?.value || '',
   set: (value: string) => emit('menu-filter-change', value)
 })
+const treeFilterPanels = computed<string[]>({
+  get: () => (treeFiltersOpen.value ? ['filters'] : []),
+  set: (panels) => {
+    treeFiltersOpen.value = panels.includes('filters')
+  }
+})
+const boundaryPanels = computed<string[]>({
+  get: () => (boundaryOpen.value ? ['boundary'] : []),
+  set: (panels) => {
+    boundaryOpen.value = panels.includes('boundary')
+  }
+})
+const userInitial = computed(() => props.userLabel.trim().slice(0, 1) || '用')
+const elementTone = (tone: StaticShellTone = 'blue') => {
+  const typeMap = {
+    blue: 'primary',
+    green: 'success',
+    orange: 'warning',
+    red: 'danger'
+  } as const
+  return typeMap[tone]
+}
 
 const staticMenuActiveIndex = computed(() => {
   for (const section of props.menuSections) {
@@ -291,9 +320,15 @@ onBeforeUnmount(() => {
         <div class="brand">
           <div class="brand-mark">{{ brandMark }}</div>
           <div class="project-title">{{ title }}</div>
-          <div v-if="status" :class="['top-status', `pill-${statusTone || 'blue'}`]">
+          <AuditStatusTag
+            v-if="status"
+            class="top-status"
+            :tone="statusTone || 'blue'"
+            size="default"
+            round
+          >
             {{ status }}
-          </div>
+          </AuditStatusTag>
         </div>
         <ElButton
           class="global-search"
@@ -316,20 +351,27 @@ onBeforeUnmount(() => {
             <Icon icon="vi-ep:menu" :size="17" />
             <span>导航</span>
           </ElButton>
-          <component
-            :is="stat.clickable ? 'button' : 'span'"
+          <ElBadge
             v-for="stat in topStats"
             :key="stat.key || stat.label"
-            :class="['top-stat-item', { 'is-clickable': stat.clickable }]"
-            :type="stat.clickable ? 'button' : undefined"
-            :title="stat.title || (stat.clickable ? `查看${stat.label}` : undefined)"
-            @click="handleTopStatClick(stat)"
+            class="top-stat-badge"
+            :value="stat.value"
+            :hidden="stat.value === undefined"
+            :type="elementTone(stat.tone || 'red')"
           >
-            {{ stat.label
-            }}<span v-if="stat.value !== undefined" :class="['notice-dot', stat.tone || 'red']">
-              {{ stat.value }}
+            <ElButton
+              v-if="stat.clickable"
+              class="top-stat-item is-clickable"
+              text
+              :title="stat.title || `查看${stat.label}`"
+              @click="handleTopStatClick(stat)"
+            >
+              {{ stat.label }}
+            </ElButton>
+            <span v-else class="top-stat-item">
+              {{ stat.label }}
             </span>
-          </component>
+          </ElBadge>
           <ElButton
             v-if="rightPanelIsDrawer"
             ref="rightPanelTriggerRef"
@@ -345,11 +387,11 @@ onBeforeUnmount(() => {
             任务中心
           </ElButton>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
-            <button class="user" type="button" aria-label="打开用户菜单">
-              <span class="avatar"></span>
+            <ElButton class="user" text aria-label="打开用户菜单">
+              <ElAvatar class="avatar" :size="32">{{ userInitial }}</ElAvatar>
               <span>{{ userLabel }}</span>
-              <span class="user-caret">⌄</span>
-            </button>
+              <Icon class="user-caret" icon="vi-ep:arrow-down" :size="12" />
+            </ElButton>
             <template #dropdown>
               <ElDropdownMenu>
                 <ElDropdownItem disabled>{{ userLabel }}</ElDropdownItem>
@@ -372,11 +414,11 @@ onBeforeUnmount(() => {
                 <span>{{ peerNavTitleLabel }}</span>
                 <small>{{ peerNavItems.length }} 项</small>
               </div>
-              <button
+              <ElButton
                 v-for="item in peerNavItems"
                 :key="item.index"
-                type="button"
                 :class="['peer-nav-item', { active: isPeerNavItemActive(item) }]"
+                text
                 :title="item.hint ? `${item.label} · ${item.hint}` : item.label"
                 :aria-current="isPeerNavItemActive(item) ? 'page' : undefined"
                 @click="handlePeerNavSelect(item)"
@@ -386,11 +428,11 @@ onBeforeUnmount(() => {
                   <span>{{ item.label }}</span>
                   <small v-if="item.hint">{{ item.hint }}</small>
                 </span>
-                <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
+                <AuditStatusTag v-if="item.badge" class="pill" :tone="item.tone || 'blue'" round>
                   {{ item.badge }}
-                </span>
+                </AuditStatusTag>
                 <span v-else></span>
-              </button>
+              </ElButton>
             </div>
             <div v-if="hasMenuControls" class="tree-controls">
               <ElInput
@@ -401,33 +443,33 @@ onBeforeUnmount(() => {
                 :aria-label="menuSearchPlaceholder"
                 clearable
               />
-              <button
+              <ElCollapse
                 v-if="menuFilters?.length"
-                class="tree-filter-toggle"
-                type="button"
-                :aria-expanded="treeFiltersOpen"
-                @click="treeFiltersOpen = !treeFiltersOpen"
+                v-model="treeFilterPanels"
+                class="tree-filter-collapse"
               >
-                <span>项目筛选</span>
-                <strong>{{ activeMenuFilterLabel }}</strong>
-                <em v-if="activeMenuFilter?.count !== undefined">{{ activeMenuFilter.count }}</em>
-                <small>{{ treeFiltersOpen ? '收起' : '展开' }}</small>
-              </button>
-              <ElRadioGroup
-                v-if="menuFilters?.length && treeFiltersOpen"
-                v-model="menuFilterModel"
-                class="tree-filter"
-                aria-label="项目筛选"
-              >
-                <ElRadioButton
-                  v-for="filter in menuFilters"
-                  :key="filter.value"
-                  :value="filter.value"
-                >
-                  <span>{{ filter.label }}</span>
-                  <em v-if="filter.count !== undefined">{{ filter.count }}</em>
-                </ElRadioButton>
-              </ElRadioGroup>
+                <ElCollapseItem name="filters">
+                  <template #title>
+                    <span class="tree-filter-toggle">
+                      <span>项目筛选</span>
+                      <strong>{{ activeMenuFilterLabel }}</strong>
+                      <em v-if="activeMenuFilter?.count !== undefined">
+                        {{ activeMenuFilter.count }}
+                      </em>
+                    </span>
+                  </template>
+                  <ElRadioGroup v-model="menuFilterModel" class="tree-filter" aria-label="项目筛选">
+                    <ElRadioButton
+                      v-for="filter in menuFilters"
+                      :key="filter.value"
+                      :value="filter.value"
+                    >
+                      <span>{{ filter.label }}</span>
+                      <em v-if="filter.count !== undefined">{{ filter.count }}</em>
+                    </ElRadioButton>
+                  </ElRadioGroup>
+                </ElCollapseItem>
+              </ElCollapse>
             </div>
             <ElEmpty
               v-if="!menuSections.length"
@@ -474,13 +516,15 @@ onBeforeUnmount(() => {
                         <span class="tree-group-status">{{ section.meta }}</span>
                       </span>
                       <span v-if="section.chips?.length" class="tree-group-chips">
-                        <span
+                        <AuditStatusTag
                           v-for="chip in section.chips"
                           :key="`${chip.label}-${chip.value}`"
-                          :class="['tree-chip', chip.tone || 'blue']"
+                          class="tree-chip"
+                          :tone="chip.tone || 'blue'"
+                          round
                         >
                           {{ chip.label }} {{ chip.value }}
-                        </span>
+                        </AuditStatusTag>
                       </span>
                     </span>
                   </template>
@@ -507,9 +551,14 @@ onBeforeUnmount(() => {
                       <span class="tree-label">{{ item.label }}</span>
                       <span v-if="item.hint" class="sr-only">{{ item.hint }}</span>
                     </span>
-                    <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
+                    <AuditStatusTag
+                      v-if="item.badge"
+                      class="pill"
+                      :tone="item.tone || 'blue'"
+                      round
+                    >
                       {{ item.badge }}
-                    </span>
+                    </AuditStatusTag>
                     <span v-else></span>
                   </ElMenuItem>
                 </ElSubMenu>
@@ -518,26 +567,34 @@ onBeforeUnmount(() => {
           </section>
 
           <section :class="['node-files', { collapsed: !boundaryOpen }]">
-            <button
-              class="node-file-head"
-              type="button"
-              :aria-expanded="boundaryOpen"
-              @click="boundaryOpen = !boundaryOpen"
-            >
-              <span>{{ boundaryTitle }}</span>
-              <span class="node-file-head-actions">
-                <span :class="['pill', boundaryTone || 'green']">{{ boundaryBadge }}</span>
-                <small>{{ boundaryOpen ? '收起' : '展开' }}</small>
-              </span>
-            </button>
-            <table v-if="boundaryOpen" class="table compact" :aria-label="boundaryTitle">
-              <tbody>
-                <tr v-for="row in boundaryRows" :key="row.label">
-                  <th>{{ row.label }}</th>
-                  <td>{{ row.value }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <ElCollapse v-model="boundaryPanels" class="boundary-collapse">
+              <ElCollapseItem name="boundary">
+                <template #title>
+                  <span class="node-file-head">
+                    <span>{{ boundaryTitle }}</span>
+                    <span class="node-file-head-actions">
+                      <AuditStatusTag class="pill" :tone="boundaryTone || 'green'" round>
+                        {{ boundaryBadge }}
+                      </AuditStatusTag>
+                    </span>
+                  </span>
+                </template>
+                <ElDescriptions
+                  class="boundary-descriptions"
+                  :column="1"
+                  size="small"
+                  :aria-label="boundaryTitle"
+                >
+                  <ElDescriptionsItem
+                    v-for="row in boundaryRows"
+                    :key="row.label"
+                    :label="row.label"
+                  >
+                    {{ row.value }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </ElCollapseItem>
+            </ElCollapse>
           </section>
         </aside>
 
@@ -580,11 +637,11 @@ onBeforeUnmount(() => {
               <span>{{ peerNavTitleLabel }}</span>
               <small>{{ peerNavItems.length }} 项</small>
             </div>
-            <button
+            <ElButton
               v-for="item in peerNavItems"
               :key="item.index"
-              type="button"
               :class="['peer-nav-item', { active: isPeerNavItemActive(item) }]"
+              text
               :aria-current="isPeerNavItemActive(item) ? 'page' : undefined"
               @click="handlePeerNavSelect(item)"
             >
@@ -593,10 +650,10 @@ onBeforeUnmount(() => {
                 <span>{{ item.label }}</span>
                 <small v-if="item.hint">{{ item.hint }}</small>
               </span>
-              <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
+              <AuditStatusTag v-if="item.badge" class="pill" :tone="item.tone || 'blue'" round>
                 {{ item.badge }}
-              </span>
-            </button>
+              </AuditStatusTag>
+            </ElButton>
           </div>
 
           <div v-if="hasMenuControls" class="tree-controls mobile-tree-controls">
@@ -659,25 +716,30 @@ onBeforeUnmount(() => {
               >
                 <span class="tree-node-marker" aria-hidden="true"></span>
                 <span class="tree-label">{{ item.label }}</span>
-                <span v-if="item.badge" :class="['pill', item.tone || 'blue']">
+                <AuditStatusTag v-if="item.badge" class="pill" :tone="item.tone || 'blue'" round>
                   {{ item.badge }}
-                </span>
+                </AuditStatusTag>
               </ElMenuItem>
             </ElSubMenu>
           </ElMenu>
 
-          <details class="mobile-boundary">
-            <summary>
-              <span>{{ boundaryTitle }}</span>
-              <span :class="['pill', boundaryTone || 'green']">{{ boundaryBadge }}</span>
-            </summary>
-            <dl>
-              <div v-for="row in boundaryRows" :key="row.label">
-                <dt>{{ row.label }}</dt>
-                <dd>{{ row.value }}</dd>
-              </div>
-            </dl>
-          </details>
+          <ElCollapse v-model="boundaryPanels" class="mobile-boundary">
+            <ElCollapseItem name="boundary">
+              <template #title>
+                <span class="mobile-boundary-title">
+                  <span>{{ boundaryTitle }}</span>
+                  <AuditStatusTag :tone="boundaryTone || 'green'" round>
+                    {{ boundaryBadge }}
+                  </AuditStatusTag>
+                </span>
+              </template>
+              <ElDescriptions class="mobile-boundary-descriptions" :column="1" size="small">
+                <ElDescriptionsItem v-for="row in boundaryRows" :key="row.label" :label="row.label">
+                  {{ row.value }}
+                </ElDescriptionsItem>
+              </ElDescriptions>
+            </ElCollapseItem>
+          </ElCollapse>
         </nav>
       </ElDrawer>
       <ElDrawer
@@ -853,36 +915,9 @@ onBeforeUnmount(() => {
 }
 
 .top-status {
-  height: 36px;
-  padding: 0 14px;
-}
-
-.pill.blue,
-.pill-blue {
-  color: var(--blue-2);
-  background: var(--blue-soft);
-  border-color: #bcd4ff;
-}
-
-.pill.green,
-.pill-green {
-  color: var(--green);
-  background: var(--green-soft);
-  border-color: #bdebd1;
-}
-
-.pill.orange,
-.pill-orange {
-  color: var(--orange);
-  background: var(--orange-soft);
-  border-color: #ffd399;
-}
-
-.pill.red,
-.pill-red {
-  color: var(--red);
-  background: var(--red-soft);
-  border-color: #ffc5bd;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
 }
 
 .global-search {
@@ -971,10 +1006,28 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
+.top-stat-badge {
+  display: inline-flex;
+  align-items: center;
+}
+
+.top-stat-badge :deep(.el-badge__content) {
+  position: static;
+  margin-left: -5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 2px solid var(--panel);
+  transform: none;
+}
+
 .top-stat-item {
+  --el-button-text-color: #27364d;
+  --el-button-hover-text-color: var(--blue-2);
+  --el-button-hover-bg-color: #f4f8ff;
+
   display: inline-flex;
   min-height: 34px;
-  padding: 0 4px;
+  padding: 0 10px;
   font: inherit;
   font-weight: 600;
   color: inherit;
@@ -986,7 +1039,6 @@ onBeforeUnmount(() => {
 }
 
 .top-stat-item.is-clickable {
-  padding: 0 8px;
   cursor: pointer;
   transition:
     color 0.18s ease,
@@ -1025,38 +1077,12 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.notice-dot {
-  display: inline-flex;
-  height: 22px;
-  min-width: 22px;
-  padding: 0 6px;
-  margin-left: 2px;
-  font-size: 12px;
+.avatar {
+  flex: 0 0 auto;
+  font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: var(--red);
-  border-radius: 999px;
-  align-items: center;
-  justify-content: center;
-}
-
-.notice-dot.blue {
-  background: var(--blue);
-}
-
-.notice-dot.green {
-  background: var(--green);
-}
-
-.notice-dot.orange {
-  background: var(--orange);
-}
-
-.avatar {
-  width: 32px;
-  height: 32px;
   background: linear-gradient(180deg, #4b83f7, #1e5ec8);
-  border-radius: 50%;
 }
 
 .user-menu {
@@ -1064,6 +1090,10 @@ onBeforeUnmount(() => {
 }
 
 .user {
+  --el-button-text-color: #27364d;
+  --el-button-hover-text-color: var(--blue-2);
+  --el-button-hover-bg-color: #f4f8ff;
+
   display: inline-flex;
   min-height: 40px;
   padding: 0 8px 0 4px;
@@ -1077,6 +1107,12 @@ onBeforeUnmount(() => {
     color 0.18s ease,
     background-color 0.18s ease,
     box-shadow 0.18s ease;
+  gap: 8px;
+  align-items: center;
+}
+
+.user :deep(> span) {
+  display: inline-flex;
   gap: 8px;
   align-items: center;
 }
@@ -1242,6 +1278,10 @@ onBeforeUnmount(() => {
 }
 
 .peer-nav-item {
+  --el-button-text-color: #304158;
+  --el-button-hover-text-color: var(--blue-2);
+  --el-button-hover-bg-color: #f5f9ff;
+
   display: grid;
   grid-template-columns: 6px minmax(0, 1fr) auto;
   gap: 5px;
@@ -1263,6 +1303,14 @@ onBeforeUnmount(() => {
     border-color 0.18s ease,
     box-shadow 0.18s ease,
     transform 0.18s ease;
+}
+
+.peer-nav-item :deep(> span) {
+  display: contents;
+}
+
+.peer-nav-item + .peer-nav-item {
+  margin-left: 0;
 }
 
 .peer-nav-item:hover,
@@ -1351,8 +1399,9 @@ onBeforeUnmount(() => {
 }
 
 .tree-filter-toggle {
+  flex: 1;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -1361,7 +1410,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 600;
   color: #40536d;
-  cursor: pointer;
+  cursor: inherit;
   background: linear-gradient(180deg, #fff, #f6f9fd);
   border: 1px solid #dce6f4;
   border-radius: 8px;
@@ -1400,9 +1449,32 @@ onBeforeUnmount(() => {
   border-radius: 999px;
 }
 
-.tree-filter-toggle small {
-  font-size: 12px;
+.tree-filter-collapse {
+  --el-collapse-border-color: transparent;
+  --el-collapse-header-bg-color: transparent;
+  --el-collapse-content-bg-color: transparent;
+
+  border: 0;
+}
+
+.tree-filter-collapse :deep(.el-collapse-item__header) {
+  height: auto;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+}
+
+.tree-filter-collapse :deep(.el-collapse-item__arrow) {
+  margin: 0 8px 0 4px;
   color: var(--muted);
+}
+
+.tree-filter-collapse :deep(.el-collapse-item__wrap) {
+  border: 0;
+}
+
+.tree-filter-collapse :deep(.el-collapse-item__content) {
+  padding: 8px 0 0;
 }
 
 .tree-filter {
@@ -1870,28 +1942,54 @@ onBeforeUnmount(() => {
 }
 
 .node-file-head {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
   min-height: 44px;
-  padding: 0 18px;
+  padding: 0 8px 0 18px;
   font-weight: 600;
   color: #172033;
-  cursor: pointer;
   background: var(--panel);
   border: 0;
-  border-bottom: 1px solid #e7eef8;
   transition:
     color 0.18s ease,
     background-color 0.18s ease;
 }
 
-.node-file-head:hover,
-.node-file-head:focus-visible {
+.boundary-collapse {
+  --el-collapse-border-color: transparent;
+  --el-collapse-header-bg-color: var(--panel);
+  --el-collapse-content-bg-color: var(--panel);
+
+  border: 0;
+}
+
+.boundary-collapse :deep(.el-collapse-item__header) {
+  height: auto;
+  min-height: 44px;
+  border-bottom: 1px solid #e7eef8;
+}
+
+.boundary-collapse :deep(.el-collapse-item__header:hover),
+.boundary-collapse :deep(.el-collapse-item__header:focus-visible) {
   color: var(--blue-2);
   background: #f8fbff;
   outline: 0;
+}
+
+.boundary-collapse :deep(.el-collapse-item__arrow) {
+  margin: 0 14px 0 4px;
+  color: var(--muted);
+}
+
+.boundary-collapse :deep(.el-collapse-item__wrap) {
+  border: 0;
+}
+
+.boundary-collapse :deep(.el-collapse-item__content) {
+  padding: 0;
 }
 
 .node-file-head-actions {
@@ -1905,6 +2003,31 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+}
+
+.boundary-descriptions {
+  padding: 8px 14px 14px;
+}
+
+.boundary-descriptions :deep(.el-descriptions__body) {
+  background: transparent;
+}
+
+.boundary-descriptions :deep(.el-descriptions__cell) {
+  padding-bottom: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.boundary-descriptions :deep(.el-descriptions__label) {
+  width: 76px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.boundary-descriptions :deep(.el-descriptions__content) {
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .center {
@@ -2000,43 +2123,54 @@ onBeforeUnmount(() => {
 }
 
 .mobile-boundary {
+  --el-collapse-border-color: transparent;
+  --el-collapse-header-bg-color: #f7faff;
+  --el-collapse-content-bg-color: #f7faff;
+
   padding: 0 4px;
   background: #f7faff;
   border-radius: 10px;
 }
 
-.mobile-boundary summary {
+.mobile-boundary :deep(.el-collapse-item__header) {
+  height: auto;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+}
+
+.mobile-boundary :deep(.el-collapse-item__wrap) {
+  border: 0;
+}
+
+.mobile-boundary :deep(.el-collapse-item__content) {
+  padding: 0 8px 12px;
+}
+
+.mobile-boundary-title {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px;
-  padding: 0 10px;
+  width: 100%;
+  padding-right: 8px;
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
 }
 
-.mobile-boundary dl {
-  display: grid;
-  gap: 8px;
-  padding: 0 10px 12px;
-  margin: 0;
+.mobile-boundary-descriptions :deep(.el-descriptions__body) {
+  background: transparent;
 }
 
-.mobile-boundary dl > div {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 8px;
-}
-
-.mobile-boundary dt,
-.mobile-boundary dd {
-  margin: 0;
+.mobile-boundary-descriptions :deep(.el-descriptions__cell) {
+  padding-bottom: 8px;
   font-size: 12px;
   line-height: 1.55;
 }
 
-.mobile-boundary dt {
+.mobile-boundary-descriptions :deep(.el-descriptions__label) {
+  width: 64px;
+  font-weight: 600;
   color: var(--muted);
 }
 

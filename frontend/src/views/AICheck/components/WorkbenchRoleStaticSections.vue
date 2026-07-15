@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue'
 import {
   ElButton,
+  ElCard,
+  ElDescriptions,
+  ElDescriptionsItem,
   ElEmpty,
   ElInput,
   ElOption,
@@ -11,7 +14,10 @@ import {
   ElSelect,
   ElTable,
   ElTableColumn,
-  ElTag
+  ElTag,
+  ElTimeline,
+  ElTimelineItem,
+  ElTooltip
 } from 'element-plus'
 import type {
   ArchiveItem,
@@ -26,6 +32,8 @@ import type {
   RoleCode,
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
+import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
+import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 
 type ReviewChainStep = {
   title: string
@@ -213,6 +221,42 @@ const visibleMetrics = computed(() => {
     { key: 'archive', label: '归档资料', value: props.archiveItems.length || '-' }
   ]
 })
+
+const ownerMetricCards = computed<AuditSummaryCard[]>(() =>
+  visibleMetrics.value.slice(0, 4).map((metric) => ({
+    label: metric.label,
+    value: metric.value,
+    hint: '授权项目只读数据',
+    tone: metric.tone || 'blue'
+  }))
+)
+
+const ownerTimelineItems = [
+  {
+    timestamp: '06-20',
+    title: '首批资料上传',
+    description: '施工方完成材料与焊接资料初次提交。',
+    type: 'success' as const
+  },
+  {
+    timestamp: '06-23',
+    title: '检测资料提交',
+    description: '无损检测机构提交检测记录与报告。',
+    type: 'success' as const
+  },
+  {
+    timestamp: '06-25',
+    title: '监检退回材料补正',
+    description: '材料节点存在炉批号差异说明缺失。',
+    type: 'danger' as const
+  },
+  {
+    timestamp: '06-30',
+    title: '预计报告确认',
+    description: '当前报告草稿处于监检复核中。',
+    type: 'warning' as const
+  }
+]
 
 const processRows = computed(() =>
   bindings.value.slice(0, 5).map((binding, index) => ({
@@ -547,6 +591,16 @@ const requestFileDelete = (file: ContractorFileRow) => {
   if (!props.readOnly && file.status === '待提交') emit('file-delete', file.documentId)
 }
 
+const getContractorSubmitHint = (file: ContractorFileRow) => {
+  if (props.readOnly) return '当前项目为只读状态，不能提交文件'
+  return file.status === '待提交' ? '提交当前文件到所选审核环节' : '当前状态不能重复提交'
+}
+
+const getContractorDeleteHint = (file: ContractorFileRow) => {
+  if (props.readOnly) return '当前项目为只读状态，不能删除文件'
+  return file.status === '待提交' ? '删除未提交文件' : '文件已提交审核，不能直接删除'
+}
+
 const requestRectify = (rectificationId?: string) => {
   if (!props.readOnly) emit('rectify', rectificationId)
 }
@@ -565,7 +619,7 @@ const ndtRecordRows = computed(() =>
   }))
 )
 
-const getPillClass = (value?: string) => {
+const getPillClass = (value?: string): AuditStatusTone => {
   if (!value) return 'blue'
   if (
     value.includes('通过') ||
@@ -604,26 +658,27 @@ const getPillClass = (value?: string) => {
 <template>
   <div class="role-static-sections">
     <template v-if="role === 'contractor'">
-      <section class="card">
-        <div class="card-head">
-          <div>
-            <h2>一、项目文件库 / 施工资料台账</h2>
-            <div class="sub">上传、资料分类、提交和可选环节关联统一在项目文件列表中处理。</div>
+      <ElCard class="role-section-card contractor-section-card" shadow="never">
+        <template #header>
+          <div class="card-head">
+            <div>
+              <h2>一、项目文件库 / 施工资料台账</h2>
+              <div class="sub">上传、资料分类、提交和可选环节关联统一在项目文件列表中处理。</div>
+            </div>
+            <div class="file-library-head-actions">
+              <AuditStatusTag tone="blue">
+                {{ filteredContractorFileRows.length }} / {{ contractorFileRows.length }} 个文件
+              </AuditStatusTag>
+              <AuditStatusTag
+                v-if="materialGapSummary.pending || materialGapSummary.correction"
+                tone="red"
+              >
+                {{ materialGapSummary.pending }} 类待上传 ·
+                {{ materialGapSummary.correction }} 类需补正
+              </AuditStatusTag>
+            </div>
           </div>
-          <div class="file-library-head-actions">
-            <span class="pill blue"
-              >{{ filteredContractorFileRows.length }} /
-              {{ contractorFileRows.length }} 个文件</span
-            >
-            <span
-              class="pill red"
-              v-if="materialGapSummary.pending || materialGapSummary.correction"
-            >
-              {{ materialGapSummary.pending }} 类待上传 ·
-              {{ materialGapSummary.correction }} 类需补正
-            </span>
-          </div>
-        </div>
+        </template>
         <div class="card-body">
           <div class="material-checklist">
             <div class="material-checklist-head">
@@ -631,9 +686,9 @@ const getPillClass = (value?: string) => {
                 <h4>标准资料上传</h4>
                 <p> 按业务规则中的标准资料类别对项目文件库进行归类，节点关联可后续补充。 </p>
               </div>
-              <span class="pill blue">
+              <AuditStatusTag tone="blue">
                 {{ materialGapSummary.covered }} / {{ materialGapSummary.total }} 类已有资料
-              </span>
+              </AuditStatusTag>
             </div>
             <ElTable
               class="material-gap-table"
@@ -816,30 +871,40 @@ const getPillClass = (value?: string) => {
               <template #default="{ row }">
                 <div class="table-actions">
                   <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
-                  <ElButton
-                    link
-                    type="primary"
-                    :disabled="readOnly || row.status !== '待提交'"
-                    :title="
-                      row.status === '待提交'
-                        ? '提交当前文件到所选审核环节'
-                        : '当前状态不能重复提交'
-                    "
-                    @click="requestFileSubmit(row)"
+                  <ElTooltip
+                    :content="getContractorSubmitHint(row)"
+                    :disabled="!readOnly && row.status === '待提交'"
+                    placement="top"
+                    popper-class="audit-action-tooltip-popper"
                   >
-                    提交
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="danger"
-                    :disabled="readOnly || row.status !== '待提交'"
-                    :title="
-                      row.status === '待提交' ? '删除未提交文件' : '文件已提交审核，不能直接删除'
-                    "
-                    @click="requestFileDelete(row)"
+                    <span class="table-action-tooltip">
+                      <ElButton
+                        link
+                        type="primary"
+                        :disabled="readOnly || row.status !== '待提交'"
+                        @click="requestFileSubmit(row)"
+                      >
+                        提交
+                      </ElButton>
+                    </span>
+                  </ElTooltip>
+                  <ElTooltip
+                    :content="getContractorDeleteHint(row)"
+                    :disabled="!readOnly && row.status === '待提交'"
+                    placement="top"
+                    popper-class="audit-action-tooltip-popper"
                   >
-                    删除
-                  </ElButton>
+                    <span class="table-action-tooltip">
+                      <ElButton
+                        link
+                        type="danger"
+                        :disabled="readOnly || row.status !== '待提交'"
+                        @click="requestFileDelete(row)"
+                      >
+                        删除
+                      </ElButton>
+                    </span>
+                  </ElTooltip>
                   <ElButton link type="primary" :disabled="readOnly" @click="requestFileBind(row)">
                     选择环节
                   </ElButton>
@@ -861,23 +926,31 @@ const getPillClass = (value?: string) => {
             small
           />
         </div>
-      </section>
+      </ElCard>
 
-      <section id="contractor-feedback-list" class="card">
-        <div class="card-head">
-          <div>
-            <h2>二、审核反馈列表</h2>
-            <div class="sub"
-              >按监检退回补正意见逐项反馈，可上传新文件或关联项目文件库中的已有文件。</div
+      <ElCard
+        id="contractor-feedback-list"
+        class="role-section-card contractor-section-card"
+        shadow="never"
+      >
+        <template #header>
+          <div class="card-head">
+            <div>
+              <h2>二、审核反馈列表</h2>
+              <div class="sub"
+                >按监检退回补正意见逐项反馈，可上传新文件或关联项目文件库中的已有文件。</div
+              >
+            </div>
+            <AuditStatusTag
+              :tone="
+                contractorFeedbackRows.some((item) => item.status !== '已关闭') ? 'orange' : 'green'
+              "
             >
+              {{ contractorFeedbackRows.filter((item) => item.status !== '已关闭').length }}
+              项待处理
+            </AuditStatusTag>
           </div>
-          <span class="pill orange"
-            >{{
-              contractorFeedbackRows.filter((item) => item.status !== '已关闭').length
-            }}
-            项待处理</span
-          >
-        </div>
+        </template>
         <div class="card-body">
           <ElTable
             class="contractor-feedback-table"
@@ -930,7 +1003,7 @@ const getPillClass = (value?: string) => {
             </template>
           </ElTable>
         </div>
-      </section>
+      </ElCard>
     </template>
 
     <template v-else-if="role === 'ndt'">
@@ -1108,158 +1181,137 @@ const getPillClass = (value?: string) => {
     </template>
 
     <template v-else-if="role === 'owner'">
-      <section class="card">
-        <div class="card-head">
-          <h2>一、项目基础信息</h2>
-          <span class="pill green">只读模式</span>
-        </div>
-        <div class="card-body">
-          <div class="metrics owner-metrics">
-            <div v-for="metric in visibleMetrics.slice(0, 4)" :key="metric.key" class="metric">
-              <div class="metric-label">{{ metric.label }}</div>
-              <div :class="['metric-value', metric.tone || getPillClass(String(metric.value))]">{{
-                metric.value
-              }}</div>
+      <ElCard class="role-section-card" shadow="never">
+        <template #header>
+          <div class="card-head">
+            <div>
+              <h2>一、项目基础信息</h2>
+              <div class="sub">集中查看授权项目的核心指标，不提供业务办理入口</div>
+            </div>
+            <AuditStatusTag tone="green" round>只读模式</AuditStatusTag>
+          </div>
+        </template>
+        <AuditSummaryGrid
+          class="owner-summary-grid"
+          :cards="ownerMetricCards"
+          aria-label="建设单位项目基础指标"
+        />
+      </ElCard>
+
+      <ElCard class="role-section-card role-section-card--table" shadow="never">
+        <template #header>
+          <div class="card-head">
+            <div>
+              <h2>二、节点状态总览</h2>
+              <div class="sub">展示授权可见的节点资料摘要，不提供办理入口</div>
             </div>
           </div>
-        </div>
-      </section>
+        </template>
+        <ElTable :data="ownerNodeRows" row-key="node" empty-text="当前没有可查看的节点">
+          <ElTableColumn prop="group" label="业务大类" min-width="132" show-overflow-tooltip />
+          <ElTableColumn prop="node" label="检测节点" min-width="190" show-overflow-tooltip />
+          <ElTableColumn label="资料状态" width="112">
+            <template #default="{ row }">
+              <AuditStatusTag :tone="getPillClass(row.fileStatus)" round>
+                {{ row.fileStatus }}
+              </AuditStatusTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn prop="reviewStatus" label="审查状态" width="116" />
+          <ElTableColumn prop="files" label="挂载资料数" width="110" align="center" />
+          <ElTableColumn prop="warnings" label="异常数量" width="96" align="center" />
+          <ElTableColumn
+            prop="updatedAt"
+            label="最近更新时间"
+            min-width="170"
+            show-overflow-tooltip
+          />
+        </ElTable>
+      </ElCard>
 
-      <section class="card">
-        <div class="card-head">
-          <h2>二、节点状态总览</h2>
-          <div class="sub">展示授权可见的节点资料摘要，不提供办理入口</div>
-        </div>
-        <div class="card-body">
-          <table class="table">
-            <thead>
-              <tr
-                ><th>业务大类</th><th>检测节点</th><th>资料状态</th><th>审查状态</th
-                ><th>挂载资料数</th><th>异常数量</th><th>最近更新时间</th></tr
-              >
-            </thead>
-            <tbody>
-              <tr
-                v-for="(row, index) in ownerNodeRows"
-                :key="row.node"
-                :class="{ selected: index === 0 }"
-              >
-                <td>{{ row.group }}</td>
-                <td>{{ row.node }}</td>
-                <td
-                  ><span :class="['pill', getPillClass(row.fileStatus)]">{{
-                    row.fileStatus
-                  }}</span></td
-                >
-                <td>{{ row.reviewStatus }}</td>
-                <td>{{ row.files }}</td>
-                <td>{{ row.warnings }}</td>
-                <td>{{ row.updatedAt }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <h2>三、业务审查链路只读摘要</h2>
-          <div class="sub">建设方仅查看状态和摘要，不查看办理按钮</div>
-        </div>
-        <div class="card-body">
-          <table class="table">
-            <thead>
-              <tr
-                ><th>检测节点</th><th>审查对象</th><th>业务链路摘要</th><th>建议/状态</th
-                ><th>人工确认</th></tr
-              >
-            </thead>
-            <tbody>
-              <tr
-                v-for="(step, index) in reviewSteps"
-                :key="step.title"
-                :class="{ selected: index === 0 }"
-              >
-                <td>{{ currentNodeLabel }}</td>
-                <td>{{ step.title }}</td>
-                <td>{{ step.desc }}</td>
-                <td
-                  ><span :class="['pill', getPillClass(step.result)]">{{ step.result }}</span></td
-                >
-                <td>{{ step.result.includes('需') ? '已退回责任单位' : '待监检确认' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <ElCard class="role-section-card role-section-card--table" shadow="never">
+        <template #header>
+          <div class="card-head">
+            <div>
+              <h2>三、业务审查链路只读摘要</h2>
+              <div class="sub">建设方仅查看状态和摘要，不显示办理按钮</div>
+            </div>
+          </div>
+        </template>
+        <ElTable :data="reviewSteps" row-key="title" empty-text="当前没有审查链路记录">
+          <ElTableColumn label="检测节点" min-width="176" show-overflow-tooltip>
+            <template #default>{{ currentNodeLabel }}</template>
+          </ElTableColumn>
+          <ElTableColumn prop="title" label="审查对象" min-width="150" show-overflow-tooltip />
+          <ElTableColumn prop="desc" label="业务链路摘要" min-width="280" show-overflow-tooltip />
+          <ElTableColumn label="建议/状态" width="112">
+            <template #default="{ row }">
+              <AuditStatusTag :tone="getPillClass(row.result)" round>
+                {{ row.result }}
+              </AuditStatusTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="人工确认" min-width="150">
+            <template #default="{ row }">
+              {{ row.result.includes('需') ? '已退回责任单位' : '待监检确认' }}
+            </template>
+          </ElTableColumn>
+        </ElTable>
+      </ElCard>
 
       <div class="split">
-        <section class="card">
-          <div class="card-head"><h2>四、关键时间线</h2></div>
-          <div class="card-body">
-            <div class="timeline">
-              <div class="time-row"
-                ><span class="time-dot"></span
-                ><div
-                  ><strong>06-20 首批资料上传</strong><br />施工方完成材料与焊接资料初次提交。</div
-                ></div
-              >
-              <div class="time-row"
-                ><span class="time-dot"></span
-                ><div
-                  ><strong>06-23 检测资料提交</strong><br />无损检测机构提交检测记录与报告。</div
-                ></div
-              >
-              <div class="time-row"
-                ><span class="time-dot red"></span
-                ><div
-                  ><strong>06-25 监检退回材料补正</strong
-                  ><br />材料节点存在炉批号差异说明缺失。</div
-                ></div
-              >
-              <div class="time-row"
-                ><span class="time-dot orange"></span
-                ><div
-                  ><strong>06-30 预计报告确认</strong><br />当前报告草稿处于监检复核中。</div
-                ></div
-              >
-            </div>
-          </div>
-        </section>
-        <section class="card">
-          <div class="card-head"><h2>五、报告与归档状态</h2></div>
-          <div class="card-body">
-            <table class="table compact">
-              <tbody>
-                <tr
-                  ><th>监检报告</th
-                  ><td>{{ latestReport?.title || '工业管道施工监督检验报告 V0.8' }}</td
-                  ><td
-                    ><span :class="['pill', getPillClass(latestReport?.status || '复核中')]">{{
-                      latestReport?.status || '复核中'
-                    }}</span></td
-                  ></tr
-                >
-                <tr
-                  ><th>过程资料包</th><td>{{ latestArchive?.name || '待报告确认后生成归档包' }}</td
-                  ><td
-                    ><span :class="['pill', getPillClass(latestArchive?.status || '待生成')]">{{
-                      latestArchive?.status || '待生成'
-                    }}</span></td
-                  ></tr
-                >
-                <tr
-                  ><th>最近异常</th><td>材料节点需补正、现场抽查照片需补正</td
-                  ><td><span class="pill red">2项</span></td></tr
-                >
-                <tr
-                  ><th>查看权限</th><td>仅可查看授权项目资料摘要和报告预览</td
-                  ><td><span class="pill green">只读</span></td></tr
-                >
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <ElCard class="role-section-card" shadow="never">
+          <template #header>
+            <div class="card-head"><h2>四、关键时间线</h2></div>
+          </template>
+          <ElTimeline class="owner-timeline">
+            <ElTimelineItem
+              v-for="item in ownerTimelineItems"
+              :key="`${item.timestamp}-${item.title}`"
+              :timestamp="item.timestamp"
+              :type="item.type"
+              placement="top"
+            >
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description }}</p>
+            </ElTimelineItem>
+          </ElTimeline>
+        </ElCard>
+        <ElCard class="role-section-card" shadow="never">
+          <template #header>
+            <div class="card-head"><h2>五、报告与归档状态</h2></div>
+          </template>
+          <ElDescriptions class="owner-status-descriptions" :column="1" size="small">
+            <ElDescriptionsItem label="监检报告">
+              <span class="owner-status-row">
+                <span>{{ latestReport?.title || '工业管道施工监督检验报告 V0.8' }}</span>
+                <AuditStatusTag :tone="getPillClass(latestReport?.status || '复核中')" round>
+                  {{ latestReport?.status || '复核中' }}
+                </AuditStatusTag>
+              </span>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="过程资料包">
+              <span class="owner-status-row">
+                <span>{{ latestArchive?.name || '待报告确认后生成归档包' }}</span>
+                <AuditStatusTag :tone="getPillClass(latestArchive?.status || '待生成')" round>
+                  {{ latestArchive?.status || '待生成' }}
+                </AuditStatusTag>
+              </span>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="最近异常">
+              <span class="owner-status-row">
+                <span>材料节点需补正、现场抽查照片需补正</span>
+                <AuditStatusTag tone="red" round>2 项</AuditStatusTag>
+              </span>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="查看权限">
+              <span class="owner-status-row">
+                <span>仅可查看授权项目资料摘要和报告预览</span>
+                <AuditStatusTag tone="green" round>只读</AuditStatusTag>
+              </span>
+            </ElDescriptionsItem>
+          </ElDescriptions>
+        </ElCard>
       </div>
     </template>
 
@@ -1445,6 +1497,85 @@ const getPillClass = (value?: string) => {
   box-shadow: var(--shadow);
 }
 
+.role-section-card {
+  margin-bottom: 12px;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 7%);
+}
+
+.role-section-card :deep(.el-card__header) {
+  padding: 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.role-section-card :deep(.el-card__body) {
+  padding: 14px 16px;
+}
+
+.role-section-card--table :deep(.el-card__body) {
+  padding-top: 8px;
+}
+
+.contractor-section-card :deep(.el-card__body) {
+  padding: 0;
+}
+
+.role-section-card .card-head {
+  border-bottom: 0;
+}
+
+.owner-summary-grid {
+  --audit-summary-columns: 3;
+
+  margin-bottom: 0;
+}
+
+.owner-timeline {
+  padding: 4px 4px 0;
+}
+
+.owner-timeline :deep(.el-timeline-item__timestamp) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.owner-timeline strong {
+  font-size: 14px;
+  color: #27364d;
+}
+
+.owner-timeline p {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.owner-status-descriptions :deep(.el-descriptions__cell) {
+  padding-bottom: 12px;
+}
+
+.owner-status-descriptions :deep(.el-descriptions__label) {
+  width: 84px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.owner-status-row {
+  display: flex;
+  min-width: 0;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.owner-status-row > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .card-head {
   display: flex;
   gap: 12px;
@@ -1496,10 +1627,6 @@ p {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-}
-
-.owner-metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .metric {
@@ -1820,6 +1947,14 @@ p {
   align-items: center;
 }
 
+.table-action-tooltip {
+  display: inline-flex;
+}
+
+.table-action-tooltip :deep(.el-button) {
+  margin-left: 0;
+}
+
 .filter-row {
   justify-content: space-between;
 }
@@ -1904,6 +2039,22 @@ p {
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
+}
+
+@media (width <= 900px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .role-section-card :deep(.el-card__body) {
+    padding: 12px;
+  }
+
+  .owner-status-row {
+    gap: 6px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,8 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
+  ElBreadcrumb,
+  ElBreadcrumbItem,
   ElButton,
   ElCard,
+  ElCollapse,
+  ElCollapseItem,
   ElDrawer,
   ElDropdown,
   ElDropdownItem,
@@ -21,8 +25,10 @@ import {
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSkeleton,
   ElTable,
   ElTableColumn,
+  ElTooltip,
   ElTreeV2
 } from 'element-plus'
 import {
@@ -184,6 +190,7 @@ type EvidenceConfirmationRow = {
   evidence?: EvidenceLink
 }
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
+import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
 import EvidenceLocatorDialog from './components/EvidenceLocatorDialog.vue'
@@ -516,6 +523,7 @@ const rectifications = computed(() => nodePackage.value?.rectifications || [])
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
 const aiRecheckOutputVisible = ref(false)
+const aiTechnicalPanels = ref<string[]>([])
 const mobileTreeOpen = ref(false)
 const compactNodeNavigation = ref(false)
 const desktopTreeCollapsed = ref(false)
@@ -1648,7 +1656,7 @@ const reviewChainSteps = computed(() => {
     }
   ]
 })
-const getPillClass = (value?: string) => {
+const getPillClass = (value?: string): AuditStatusTone => {
   if (!value) return 'blue'
   if (
     value.includes('通过') ||
@@ -4324,28 +4332,31 @@ onBeforeUnmount(() => {
 
           <div class="page-head">
             <div>
-              <div class="crumbs">
-                当前位置：{{ currentRoleConfig.title }} /
-                {{
-                  role === 'contractor'
-                    ? '项目文件库'
-                    : role === 'ndt'
-                      ? '无损检测资料库'
-                      : role === 'inspection' && activeWorkbenchSection === 'overview'
-                        ? '项目总览'
-                        : currentNodeLabel
-                }}
-                <span
+              <ElBreadcrumb class="crumbs" separator="/">
+                <ElBreadcrumbItem>当前位置：{{ currentRoleConfig.title }}</ElBreadcrumbItem>
+                <ElBreadcrumbItem>
+                  {{
+                    role === 'contractor'
+                      ? '项目文件库'
+                      : role === 'ndt'
+                        ? '无损检测资料库'
+                        : role === 'inspection' && activeWorkbenchSection === 'overview'
+                          ? '项目总览'
+                          : currentNodeLabel
+                  }}
+                </ElBreadcrumbItem>
+                <ElBreadcrumbItem
                   v-if="
                     role !== 'contractor' &&
                     role !== 'ndt' &&
                     !(role === 'inspection' && activeWorkbenchSection === 'overview')
                   "
-                  :class="['pill', getPillClass(selectedNode?.inspectionType)]"
                 >
-                  {{ selectedNode?.inspectionType || '-' }}类节点
-                </span>
-              </div>
+                  <AuditStatusTag :tone="getPillClass(selectedNode?.inspectionType)" round>
+                    {{ selectedNode?.inspectionType || '-' }}类节点
+                  </AuditStatusTag>
+                </ElBreadcrumbItem>
+              </ElBreadcrumb>
               <h1 class="page-title">
                 {{
                   role === 'inspection' && activeWorkbenchSection === 'node'
@@ -4380,21 +4391,36 @@ onBeforeUnmount(() => {
               >
                 批量上传文件
               </ElButton>
-              <ElButton
+              <ElTooltip
                 v-if="role === 'ndt' && hasAction('ndt:submit')"
-                class="btn primary"
-                type="primary"
-                :disabled="actionLoading || isReadOnly || !canSubmitNdt"
-                :title="ndtSubmitBlockers.join('；') || '提交满足条件的无损检测资料'"
-                @click="
-                  handleSubmitNdt({
-                    reportIds: pendingNdtReports(ndtReports).map((item) => item.id),
-                    filmIds: pendingNdtFilms(ndtFilms).map((item) => item.id)
-                  })
+                :content="
+                  actionLoading
+                    ? '正在处理当前操作'
+                    : isReadOnly
+                      ? '当前项目为只读状态，不能提交检测资料'
+                      : ndtSubmitBlockers.join('；') ||
+                        (canSubmitNdt ? '提交满足条件的无损检测资料' : '暂无待提交的检测报告')
                 "
+                :disabled="!actionLoading && !isReadOnly && canSubmitNdt"
+                placement="bottom"
+                popper-class="audit-action-tooltip-popper"
               >
-                提交检测资料
-              </ElButton>
+                <span class="workbench-action-tooltip">
+                  <ElButton
+                    class="btn primary"
+                    type="primary"
+                    :disabled="actionLoading || isReadOnly || !canSubmitNdt"
+                    @click="
+                      handleSubmitNdt({
+                        reportIds: pendingNdtReports(ndtReports).map((item) => item.id),
+                        filmIds: pendingNdtFilms(ndtFilms).map((item) => item.id)
+                      })
+                    "
+                  >
+                    提交检测资料
+                  </ElButton>
+                </span>
+              </ElTooltip>
               <ElButton
                 v-if="
                   role !== 'owner' &&
@@ -4460,10 +4486,10 @@ onBeforeUnmount(() => {
                     <strong>审计项状态总览</strong>
                     <small>七个审计项独立统计；需关注或失败不会阻塞其他审计项。</small>
                   </div>
-                  <span class="pill blue">
+                  <AuditStatusTag tone="blue" round>
                     {{ inspectionAuditOverview?.summary.nodeCount || projectTreeNodes.length }}
                     个节点
-                  </span>
+                  </AuditStatusTag>
                 </div>
                 <div class="inspection-audit-status-summary" aria-label="独立审计项状态统计">
                   <ElCard
@@ -4491,7 +4517,9 @@ onBeforeUnmount(() => {
                     <strong>节点处理清单</strong>
                     <small>与左侧项目树一致，按节点查看资料、要求和审查进度。</small>
                   </div>
-                  <span class="pill green">{{ inspectionProjectNodeRows.length }} 个节点</span>
+                  <AuditStatusTag tone="green" round>
+                    {{ inspectionProjectNodeRows.length }} 个节点
+                  </AuditStatusTag>
                 </div>
                 <ElTable
                   class="inspection-node-table"
@@ -4529,9 +4557,9 @@ onBeforeUnmount(() => {
                   </ElTableColumn>
                   <ElTableColumn label="类别" width="108" align="center">
                     <template #default="{ row }">
-                      <span :class="['pill', getPillClass(row.node.inspectionType)]">
+                      <AuditStatusTag :tone="getPillClass(row.node.inspectionType)" round>
                         {{ row.node.inspectionType }}
-                      </span>
+                      </AuditStatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn prop="material" label="资料齐全度" width="250" sortable="custom">
@@ -4572,7 +4600,13 @@ onBeforeUnmount(() => {
                           <small>{{ item.statusLabel }}</small>
                         </button>
                       </div>
-                      <span v-else class="inspection-audit-matrix-loading">状态加载中</span>
+                      <ElSkeleton
+                        v-else
+                        class="inspection-audit-matrix-loading"
+                        :rows="1"
+                        animated
+                        aria-label="正在加载审计项状态"
+                      />
                     </template>
                   </ElTableColumn>
                 </ElTable>
@@ -4596,7 +4630,9 @@ onBeforeUnmount(() => {
                     <strong>施工方/无损检测机构上传文件列表</strong>
                     <small>按项目文件库展示上传资料，支持查找、分页和查看原文。</small>
                   </div>
-                  <span class="pill blue">{{ filteredInspectionOverviewFiles.length }} 份文件</span>
+                  <AuditStatusTag tone="blue" round>
+                    {{ filteredInspectionOverviewFiles.length }} 份文件
+                  </AuditStatusTag>
                 </div>
 
                 <div class="overview-file-toolbar">
@@ -4649,9 +4685,9 @@ onBeforeUnmount(() => {
                   />
                   <ElTableColumn label="资料/OCR 状态" min-width="176">
                     <template #default="{ row }">
-                      <span :class="['pill', getPillClass(row.fileStatus)]">
+                      <AuditStatusTag :tone="getPillClass(row.fileStatus)" round>
                         {{ row.fileStatus }}
-                      </span>
+                      </AuditStatusTag>
                       <small
                         :class="[
                           'overview-ocr-status',
@@ -4685,17 +4721,6 @@ onBeforeUnmount(() => {
                   small
                 />
               </article>
-            </div>
-          </section>
-
-          <section v-if="role === 'owner'" class="card">
-            <div class="card-body">
-              <div class="metrics">
-                <div v-for="metric in metrics.slice(0, 5)" :key="metric.key" class="metric">
-                  <div class="metric-label">{{ metric.label }}</div>
-                  <div :class="['metric-value', metric.tone || 'blue']">{{ metric.value }}</div>
-                </div>
-              </div>
             </div>
           </section>
 
@@ -4790,17 +4815,22 @@ onBeforeUnmount(() => {
                 <label>AI 建议（待人工确认）</label>
                 <pre>{{ aiRecheckResultText }}</pre>
               </div>
-              <details class="ai-recheck-technical-details">
-                <summary>查看模型执行详情</summary>
-                <div class="ai-recheck-output-section">
-                  <label>推理过程</label>
-                  <pre>{{ aiRecheckReasoningText }}</pre>
-                </div>
-                <div class="ai-recheck-output-section">
-                  <label>{{ aiRecheckDeepThinkLabel }}</label>
-                  <pre>{{ aiRecheckDeepThinkText }}</pre>
-                </div>
-              </details>
+              <ElCollapse
+                v-model="aiTechnicalPanels"
+                class="ai-recheck-technical-details"
+                aria-label="模型执行详情"
+              >
+                <ElCollapseItem name="execution-details" title="查看模型执行详情">
+                  <div class="ai-recheck-output-section">
+                    <label>推理过程</label>
+                    <pre>{{ aiRecheckReasoningText }}</pre>
+                  </div>
+                  <div class="ai-recheck-output-section">
+                    <label>{{ aiRecheckDeepThinkLabel }}</label>
+                    <pre>{{ aiRecheckDeepThinkText }}</pre>
+                  </div>
+                </ElCollapseItem>
+              </ElCollapse>
             </div>
           </section>
 
@@ -4835,11 +4865,12 @@ onBeforeUnmount(() => {
                 </ElTableColumn>
                 <ElTableColumn label="执行状态" width="126">
                   <template #default="{ row }">
-                    <span
-                      :class="['pill', getPillClass(ocrReadinessLabel(row.ocrReadiness?.status))]"
+                    <AuditStatusTag
+                      :tone="getPillClass(ocrReadinessLabel(row.ocrReadiness?.status))"
+                      round
                     >
                       {{ ocrReadinessLabel(row.ocrReadiness?.status) }}
-                    </span>
+                    </AuditStatusTag>
                   </template>
                 </ElTableColumn>
                 <ElTableColumn label="字段" width="88">
@@ -4968,47 +4999,50 @@ onBeforeUnmount(() => {
               >
                 <div class="block-title-row">
                   <h3>审查所需资料</h3>
-                  <span class="pill blue">{{ nodeRequirementRows.length }} 项</span>
+                  <AuditStatusTag tone="blue" round>
+                    {{ nodeRequirementRows.length }} 项
+                  </AuditStatusTag>
                 </div>
                 <div class="basis-table-wrap">
-                  <table class="basis-table">
-                    <thead>
-                      <tr>
-                        <th>序号</th>
-                        <th>资料名称</th>
-                        <th>资料类别</th>
-                        <th>责任方</th>
-                        <th>要求</th>
-                        <th>当前匹配</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="row in nodeRequirementRows" :key="row.id">
-                        <td>{{ row.rowNo }}</td>
-                        <td>
-                          <strong>{{ row.name }}</strong>
-                          <small>{{ row.applicability }}</small>
-                        </td>
-                        <td>{{ row.materialType }}</td>
-                        <td>{{ row.responsibleParty }}</td>
-                        <td>{{ row.requiredType }}</td>
-                        <td>
-                          <span :class="['pill', getPillClass(row.status)]">{{ row.status }}</span>
-                          <small v-if="row.matchedFileNames.length">
-                            {{ row.matchedFileNames.slice(0, 2).join('、') }}
-                          </small>
-                        </td>
-                      </tr>
-                      <tr v-if="!nodeRequirementRows.length">
-                        <td colspan="6">暂无资料要求明细</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <ElTable
+                    class="basis-table"
+                    :data="nodeRequirementRows"
+                    row-key="id"
+                    empty-text="暂无资料要求明细"
+                  >
+                    <ElTableColumn prop="rowNo" label="序号" width="72" align="center" />
+                    <ElTableColumn label="资料名称" min-width="220">
+                      <template #default="{ row }">
+                        <strong>{{ row.name }}</strong>
+                        <small class="basis-table-secondary">{{ row.applicability }}</small>
+                      </template>
+                    </ElTableColumn>
+                    <ElTableColumn
+                      prop="materialType"
+                      label="资料类别"
+                      min-width="140"
+                      show-overflow-tooltip
+                    />
+                    <ElTableColumn prop="responsibleParty" label="责任方" width="112" />
+                    <ElTableColumn prop="requiredType" label="要求" width="112" />
+                    <ElTableColumn label="当前匹配" min-width="190">
+                      <template #default="{ row }">
+                        <AuditStatusTag :tone="getPillClass(row.status)" round>
+                          {{ row.status }}
+                        </AuditStatusTag>
+                        <small v-if="row.matchedFileNames.length" class="basis-table-secondary">
+                          {{ row.matchedFileNames.slice(0, 2).join('、') }}
+                        </small>
+                      </template>
+                    </ElTableColumn>
+                  </ElTable>
                 </div>
 
                 <div class="block-title-row inspection-bound-files-title">
                   <h3>当前节点已挂载资料</h3>
-                  <span class="pill blue">{{ nodeScopedFiles.length }} 份</span>
+                  <AuditStatusTag tone="blue" round>
+                    {{ nodeScopedFiles.length }} 份
+                  </AuditStatusTag>
                 </div>
                 <ElTable :data="nodeScopedFiles" border class="inspection-bound-files-table">
                   <ElTableColumn prop="fileName" label="文件" min-width="220" show-overflow-tooltip>
@@ -5032,14 +5066,12 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="currentOcrStatus" label="OCR" width="110" />
                   <ElTableColumn label="状态" width="110">
                     <template #default="{ row }">
-                      <span
-                        :class="[
-                          'pill',
-                          getPillClass(row.primaryBinding?.bindingStatus || row.fileStatus)
-                        ]"
+                      <AuditStatusTag
+                        :tone="getPillClass(row.primaryBinding?.bindingStatus || row.fileStatus)"
+                        round
                       >
                         {{ row.primaryBinding?.bindingStatus || row.fileStatus }}
-                      </span>
+                      </AuditStatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn label="操作" width="96" fixed="right">
@@ -5059,7 +5091,9 @@ onBeforeUnmount(() => {
               >
                 <div class="block-title-row">
                   <h3>证据确认</h3>
-                  <span class="pill blue">{{ evidenceConfirmationRows.length }} 条</span>
+                  <AuditStatusTag tone="blue" round>
+                    {{ evidenceConfirmationRows.length }} 条
+                  </AuditStatusTag>
                 </div>
                 <ElTable
                   class="evidence-confirmation-table"
@@ -5069,7 +5103,9 @@ onBeforeUnmount(() => {
                   <ElTableColumn prop="materialType" label="资料类别" min-width="150" />
                   <ElTableColumn label="状态" width="118">
                     <template #default="{ row }">
-                      <span :class="['pill', getPillClass(row.status)]">{{ row.status }}</span>
+                      <AuditStatusTag :tone="getPillClass(row.status)" round>
+                        {{ row.status }}
+                      </AuditStatusTag>
                     </template>
                   </ElTableColumn>
                   <ElTableColumn prop="fileName" label="候选文件" min-width="190">
@@ -5122,7 +5158,9 @@ onBeforeUnmount(() => {
               >
                 <div class="block-title-row">
                   <h3>引用标准文件</h3>
-                  <span class="pill blue">{{ nodeReferencedStandards.length }} 项</span>
+                  <AuditStatusTag tone="blue" round>
+                    {{ nodeReferencedStandards.length }} 项
+                  </AuditStatusTag>
                 </div>
                 <div v-if="standardReferenceTree.length" class="standard-reference-tree-shell">
                   <ElTreeV2
@@ -5194,7 +5232,9 @@ onBeforeUnmount(() => {
                   <div class="execution-step-main">
                     <div class="execution-step-head">
                       <h3>{{ step.title }}</h3>
-                      <span :class="['pill', getPillClass(step.status)]">{{ step.status }}</span>
+                      <AuditStatusTag :tone="getPillClass(step.status)" round>
+                        {{ step.status }}
+                      </AuditStatusTag>
                     </div>
                     <dl class="execution-step-detail">
                       <div>
@@ -5207,9 +5247,9 @@ onBeforeUnmount(() => {
                       </div>
                     </dl>
                     <div class="evidence-row">
-                      <span v-for="tool in step.tools" :key="tool" class="pill blue">
+                      <AuditStatusTag v-for="tool in step.tools" :key="tool" tone="blue" round>
                         {{ tool }}
-                      </span>
+                      </AuditStatusTag>
                       <button
                         v-for="evidence in step.evidenceLinks"
                         :key="evidence.id"
@@ -5258,9 +5298,9 @@ onBeforeUnmount(() => {
                   <div>
                     <div class="conclusion-point-head">
                       <h3>{{ point.title }}</h3>
-                      <span :class="['pill', getPillClass(point.conclusion)]">
+                      <AuditStatusTag :tone="getPillClass(point.conclusion)" round>
                         {{ point.conclusion }}
-                      </span>
+                      </AuditStatusTag>
                     </div>
                     <p>{{ point.description }}</p>
                     <div v-if="point.evidenceLinks.length" class="evidence-row">
@@ -6495,6 +6535,13 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 
+.crumbs :deep(.el-breadcrumb__inner),
+.crumbs :deep(.el-breadcrumb__separator) {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .page-title,
 h1 {
   margin: 0;
@@ -6570,6 +6617,16 @@ h3 {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.workbench-action-tooltip {
+  display: inline-flex;
+}
+
+:global(.audit-action-tooltip-popper) {
+  max-width: min(420px, calc(100vw - 24px));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .global-search,
@@ -7169,8 +7226,17 @@ h3 {
 }
 
 .inspection-audit-matrix-loading {
-  font-size: 12px;
-  color: var(--muted);
+  width: 100%;
+  min-width: 280px;
+  padding: 4px 0;
+}
+
+.inspection-audit-matrix-loading :deep(.el-skeleton__paragraph) {
+  margin-top: 0;
+}
+
+.inspection-audit-matrix-loading :deep(.el-skeleton__item) {
+  height: 12px;
 }
 
 .inspection-node-material {
@@ -7841,37 +7907,19 @@ h3 {
 .basis-table-wrap {
   margin-top: 12px;
   overflow-x: auto;
-  border: 1px solid var(--line-soft);
   border-radius: 6px;
 }
 
 .basis-table {
   width: 100%;
   min-width: 980px;
-  border-collapse: collapse;
 }
 
-.basis-table th,
-.basis-table td {
-  padding: 12px;
-  text-align: left;
-  vertical-align: top;
-  border-bottom: 1px solid var(--line-soft);
+.basis-table :deep(.el-table__cell) {
+  padding: 10px 0;
 }
 
-.basis-table th {
-  font-size: 14px;
-  color: #42536b;
-  background: #f3f7fc;
-}
-
-.basis-table td {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.basis-table small,
+.basis-table-secondary,
 .standard-reference-chip small {
   display: block;
   margin-top: 4px;
@@ -8526,16 +8574,28 @@ h3 {
 }
 
 .ai-recheck-technical-details {
+  --el-collapse-border-color: transparent;
+  --el-collapse-header-bg-color: transparent;
+  --el-collapse-content-bg-color: transparent;
+
   border-top: 1px solid #dde6f2;
 }
 
-.ai-recheck-technical-details summary {
+.ai-recheck-technical-details :deep(.el-collapse-item__header) {
   min-height: 44px;
   padding: 12px;
   font-size: 13px;
   font-weight: 600;
   color: #35516f;
-  cursor: pointer;
+  border: 0;
+}
+
+.ai-recheck-technical-details :deep(.el-collapse-item__wrap) {
+  border: 0;
+}
+
+.ai-recheck-technical-details :deep(.el-collapse-item__content) {
+  padding-bottom: 0;
 }
 
 .ai-recheck-output-section label {
