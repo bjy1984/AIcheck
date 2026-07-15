@@ -16,14 +16,18 @@ compose() {
     -f "$deploy_dir/$backup_compose_file" "$@"
 }
 
+pgbackrest() {
+  compose exec -T postgres aicheck-pgbackrest-entrypoint restore-agent pgbackrest "$@"
+}
+
 case "$action" in
   init)
-    compose exec -T postgres pgbackrest --stanza=aicheck stanza-create
-    compose exec -T postgres pgbackrest --stanza=aicheck check
+    pgbackrest --stanza=aicheck stanza-create
+    pgbackrest --stanza=aicheck check
     ;;
   full|diff|incr)
-    compose exec -T postgres pgbackrest --stanza=aicheck --type="$action" backup
-    compose exec -T postgres pgbackrest --stanza=aicheck expire
+    pgbackrest --stanza=aicheck --type="$action" backup
+    pgbackrest --stanza=aicheck expire
     ;;
   logical)
     [ "$backup_mode" != "local_only" ] || {
@@ -36,7 +40,7 @@ case "$action" in
     started_epoch="$(date +%s)"
     canary_lsn="$(compose exec -T postgres psql --no-psqlrc -U "${AICHECK_POSTGRES_USER:-aicheck}" -d "${AICHECK_POSTGRES_DB:-aicheck}" -Atqc 'SELECT pg_switch_wal()')"
     database_inventory="$(compose exec -T postgres psql --no-psqlrc -U "${AICHECK_POSTGRES_USER:-aicheck}" -d "${AICHECK_POSTGRES_DB:-aicheck}" -Atqc "SELECT COALESCE(json_agg(datname ORDER BY datname), '[]'::json) FROM pg_database WHERE datallowconn AND NOT datistemplate")"
-    compose exec -T postgres pgbackrest --stanza=aicheck check
+    pgbackrest --stanza=aicheck check
     AICHECK_RESTORE_CANARY_LSN="$canary_lsn" AICHECK_RESTORE_STARTED_EPOCH="$started_epoch" AICHECK_RESTORE_EXPECTED_DATABASES_JSON="$database_inventory" \
       compose --profile restore run --rm \
         -e AICHECK_RESTORE_CANARY_LSN="$canary_lsn" \
@@ -46,7 +50,7 @@ case "$action" in
     ;;
   verify)
     mkdir -p "$receipt_dir"
-    compose exec -T postgres pgbackrest --stanza=aicheck --output=json info > "$receipt_dir/pgbackrest-info.json.tmp"
+    pgbackrest --stanza=aicheck --output=json info > "$receipt_dir/pgbackrest-info.json.tmp"
     mv "$receipt_dir/pgbackrest-info.json.tmp" "$receipt_dir/pgbackrest-info.json"
     if [ "$backup_mode" = "local_only" ]; then
       compose exec -T -u 0 postgres /opt/aicheck-backup/verify_local_backup.py \
