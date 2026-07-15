@@ -1,9 +1,19 @@
 ARG AICHECK_POSTGRES_BASE_IMAGE=pgvector/pgvector:pg16
 FROM ${AICHECK_POSTGRES_BASE_IMAGE}
 
+ARG AICHECK_APT_DEBIAN_MIRROR=
+ARG AICHECK_APT_SECURITY_MIRROR=
+ARG AICHECK_PIP_INDEX_URL=
+
 USER root
 
-RUN apt-get update \
+RUN if [ -n "$AICHECK_APT_DEBIAN_MIRROR" ]; then \
+        sed -i "s|http://deb.debian.org/debian|$AICHECK_APT_DEBIAN_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
+    && if [ -n "$AICHECK_APT_SECURITY_MIRROR" ]; then \
+        sed -i "s|http://deb.debian.org/debian-security|$AICHECK_APT_SECURITY_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         gnupg \
@@ -13,7 +23,11 @@ RUN apt-get update \
         python3-pip \
         python3-venv \
     && python3 -m venv /opt/aicheck-backup-venv \
-    && /opt/aicheck-backup-venv/bin/pip install --no-cache-dir "minio>=7.2,<8" \
+    && if [ -n "$AICHECK_PIP_INDEX_URL" ]; then \
+        /opt/aicheck-backup-venv/bin/pip install --no-cache-dir --index-url "$AICHECK_PIP_INDEX_URL" "minio>=7.2,<8"; \
+    else \
+        /opt/aicheck-backup-venv/bin/pip install --no-cache-dir "minio>=7.2,<8"; \
+    fi \
     && rm -rf /var/lib/apt/lists/* \
     && install -d -o postgres -g postgres -m 0750 /var/log/pgbackrest /var/spool/pgbackrest
 
