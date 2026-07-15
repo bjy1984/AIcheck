@@ -23,6 +23,25 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
 
 
+def git_archive_hash(repo_root: Path, git_sha: str) -> str:
+    """Hash a Git archive without materializing multi-gigabyte LFS exports."""
+    digest = hashlib.sha256()
+    process = subprocess.Popen(
+        ["git", "archive", "--format=tar", git_sha],
+        cwd=repo_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdout is not None
+    for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
+        digest.update(chunk)
+    stderr = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
+    return_code = process.wait()
+    if return_code:
+        raise RuntimeError(f"git archive failed with exit {return_code}: {stderr.strip()}")
+    return "sha256:" + digest.hexdigest()
+
+
 def canonical_bytes(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
@@ -73,11 +92,6 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     dirty_lines = [line for line in git(repo_root, "status", "--porcelain").splitlines() if line]
     if args.require_clean and dirty_lines:
         raise RuntimeError("release manifest requires a clean worktree")
-    source_archive = subprocess.check_output(
-        ["git", "archive", "--format=tar", git_sha],
-        cwd=repo_root,
-    )
-
     frontend_dist = Path(args.frontend_dist).expanduser().resolve() if args.frontend_dist else repo_root / "frontend/dist-pro"
     business_pack_root = repo_root / "backend/business_packs"
     rules_root = repo_root / "rules"
@@ -103,7 +117,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "gitSha": git_sha,
             "dirty": bool(dirty_lines),
             "dirtyPaths": dirty_lines,
-            "archiveHash": sha256_bytes(source_archive),
+            "archiveHash": git_archive_hash(repo_root, git_sha),
         },
         "backend": {
             "imageDigest": args.backend_image_digest or None,
