@@ -2329,14 +2329,23 @@ const scrollWorkbenchContentToTop = () => {
   })
 }
 
-const runWorkbenchPageTransition = async (applyPageState: () => void) => {
+const waitForWorkbenchLayout = () =>
+  new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve())
+    })
+  })
+
+const runWorkbenchPageTransition = async (prepareTargetPage: () => void | Promise<void>) => {
   const sequence = ++workbenchPageTransitionSequence
   stopWorkbenchPageTransition()
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   if (reduceMotion) {
-    applyPageState()
+    await prepareTargetPage()
     await nextTick()
+    if (sequence !== workbenchPageTransitionSequence) return false
+    await waitForWorkbenchLayout()
     if (sequence !== workbenchPageTransitionSequence) return false
     scrollWorkbenchContentToTop()
     return true
@@ -2349,8 +2358,11 @@ const runWorkbenchPageTransition = async (applyPageState: () => void) => {
   workbenchPageTransitionPhase.value = 'hidden'
   await nextTick()
   if (sequence !== workbenchPageTransitionSequence) return false
-  applyPageState()
+  await prepareTargetPage()
+  if (sequence !== workbenchPageTransitionSequence) return false
   await nextTick()
+  if (sequence !== workbenchPageTransitionSequence) return false
+  await waitForWorkbenchLayout()
   if (sequence !== workbenchPageTransitionSequence) return false
   scrollWorkbenchContentToTop()
   workbenchPageTransitionPhase.value = 'entering'
@@ -2438,19 +2450,21 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
     ? route.query.auditItem
     : undefined
   const nextAuditItem = inspectionAuditItemByNode.value[node.nodeId] || routeItem || 'submission'
-  const switched = await runWorkbenchPageTransition(() => {
+  const switched = await runWorkbenchPageTransition(async () => {
     activeWorkbenchSection.value = 'node'
     activeNodeId.value = node.nodeId
     if (role.value === 'inspection') activeInspectionAuditItem.value = nextAuditItem
+    await Promise.all([
+      role.value === 'inspection'
+        ? updateInspectionRoute({
+            nodeId: node.nodeId,
+            auditItem: activeInspectionAuditItem.value
+          })
+        : Promise.resolve(),
+      loadNodePackage(node.nodeId)
+    ])
   })
   if (!switched) return
-  if (role.value === 'inspection') {
-    await updateInspectionRoute({
-      nodeId: node.nodeId,
-      auditItem: activeInspectionAuditItem.value
-    })
-  }
-  await loadNodePackage(node.nodeId)
   if (role.value === 'contractor') {
     await scrollToRoleFeedbackList('contractor-feedback-list')
   }
@@ -2461,13 +2475,13 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
 
 const handleProjectOverviewSelect = async () => {
   mobileTreeOpen.value = false
-  const switched = await runWorkbenchPageTransition(() => {
+  const switched = await runWorkbenchPageTransition(async () => {
     activeWorkbenchSection.value = 'overview'
+    if (role.value === 'inspection') {
+      await updateInspectionRoute({ overview: true })
+    }
   })
   if (!switched) return
-  if (role.value === 'inspection') {
-    await updateInspectionRoute({ overview: true })
-  }
 }
 
 const handleInspectionMatrixSelect = async (
@@ -2475,7 +2489,7 @@ const handleInspectionMatrixSelect = async (
   auditItem: InspectionAuditItemKey
 ) => {
   mobileTreeOpen.value = false
-  const switched = await runWorkbenchPageTransition(() => {
+  const switched = await runWorkbenchPageTransition(async () => {
     activeInspectionAuditItem.value = auditItem
     inspectionAuditItemByNode.value = {
       ...inspectionAuditItemByNode.value,
@@ -2483,10 +2497,12 @@ const handleInspectionMatrixSelect = async (
     }
     activeWorkbenchSection.value = 'node'
     activeNodeId.value = node.nodeId
+    await Promise.all([
+      updateInspectionRoute({ nodeId: node.nodeId, auditItem }),
+      loadNodePackage(node.nodeId)
+    ])
   })
   if (!switched) return
-  await updateInspectionRoute({ nodeId: node.nodeId, auditItem })
-  await loadNodePackage(node.nodeId)
 }
 
 const ensureWritableNode = () => {
@@ -6399,6 +6415,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 18px 20px 24px;
   overflow: hidden auto;
+  overflow-anchor: none;
   opacity: 1;
   transform: translateY(0);
   transition:

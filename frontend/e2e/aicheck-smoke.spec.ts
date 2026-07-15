@@ -1096,6 +1096,23 @@ test.describe('AIcheck route smoke', () => {
     })
     await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
 
+    let releaseTargetNodePackage!: () => void
+    let markTargetNodePackageRequested!: () => void
+    const targetNodePackageGate = new Promise<void>((resolve) => {
+      releaseTargetNodePackage = resolve
+    })
+    const targetNodePackageRequested = new Promise<void>((resolve) => {
+      markTargetNodePackageRequested = resolve
+    })
+    await page.route(
+      /\/api\/projects\/[^/]+\/nodes\/\d+\/package(?:\?.*)?$/,
+      async (route) => {
+        markTargetNodePackageRequested()
+        await targetNodePackageGate
+        await route.continue()
+      },
+      { times: 1 }
+    )
     const hiddenStatePromise = center.evaluate(
       (element) =>
         new Promise<{ opacity: string; translateY: number }>((resolve) => {
@@ -1120,8 +1137,13 @@ test.describe('AIcheck route smoke', () => {
 
     await expect(center).toHaveAttribute('data-node-transition', 'leaving')
     expect(await hiddenStatePromise).toEqual({ opacity: '0', translateY: 12 })
-    await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
+    await targetNodePackageRequested
+    await expect(center).toHaveAttribute('data-node-transition', 'hidden')
+    await page.waitForTimeout(200)
+    await expect(center).toHaveAttribute('data-node-transition', 'hidden')
+    releaseTargetNodePackage()
     await expect(center).toHaveAttribute('data-node-transition', 'entering')
+    await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
     const transitions = await Promise.all([
       page.locator('.workspace').evaluate((element) => {
         const style = getComputedStyle(element)
