@@ -1,0 +1,16 @@
+ARG AICHECK_SERVER_BASE_IMAGE
+FROM ${AICHECK_SERVER_BASE_IMAGE}
+
+# Offline production rebuilds may reuse a previously accepted server image only
+# when requirements.txt has the same digest.  Application files are replaced in
+# full so deleted modules cannot survive from the base release.
+USER root
+WORKDIR /app
+RUN sha256sum /app/requirements.txt | awk '{print $1}' > /tmp/aicheck-base-requirements.sha256 \
+    && find /app -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+COPY --chown=aicheck:aicheck . .
+RUN test "$(cat /tmp/aicheck-base-requirements.sha256)" = "$(sha256sum /app/requirements.txt | awk '{print $1}')" \
+    && rm /tmp/aicheck-base-requirements.sha256
+
+USER aicheck
+EXPOSE 8000 8010
