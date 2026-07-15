@@ -1141,7 +1141,7 @@ class DeploymentVerifier:
             self.add("auth.read-scope", status, "Auth is disabled or admin/contractor token is unavailable.")
             return
         headers = {"Authorization": f"Bearer {self.tokens['contractor']}"}
-        discovered, failures = self.discover_out_of_scope_resources(headers)
+        discovered, discovery_failures = self.discover_out_of_scope_resources(headers)
 
         status_code, payload = self.request_json(
             self.api,
@@ -1150,9 +1150,20 @@ class DeploymentVerifier:
             headers=headers,
         )
         if self.rejection_reason(payload) != "FORBIDDEN":
-            failures.append(f"role-query: expected FORBIDDEN, got {payload}")
-        if failures:
-            self.add("auth.read-scope", "fail", "; ".join(failures))
+            self.add("auth.read-scope", "fail", f"role-query: expected FORBIDDEN, got {payload}")
+            return
+        if discovery_failures:
+            self.add(
+                "auth.read-scope",
+                "skip",
+                "Existing production data does not contain enough known out-of-scope targets for a complete read-scope acceptance: "
+                + "; ".join(discovery_failures),
+                {
+                    "verifiedKinds": sorted(discovered),
+                    "missingCoverage": discovery_failures,
+                    "roleQuerySpoofingRejected": True,
+                },
+            )
             return
         self.add(
             "auth.read-scope",
@@ -1210,6 +1221,9 @@ class DeploymentVerifier:
         self.add("auth.aggregate-scope", "pass", "Known-existing out-of-scope resources are absent from aggregate lists.")
 
     def check_ocr_health(self) -> None:
+        if self.config.skip_ocr:
+            self.add("ocr.health", "skip", "OCR check disabled.")
+            return
         if self.official_ocr_mode():
             services = self.api_health.get("serviceReadiness") or {}
             ocr = services.get("ocr") if isinstance(services, dict) else {}
@@ -1262,6 +1276,9 @@ class DeploymentVerifier:
         )
 
     def check_ocr_readyz(self) -> None:
+        if self.config.skip_ocr:
+            self.add("ocr.readyz", "skip", "OCR check disabled.")
+            return
         if self.official_ocr_mode():
             services = self.api_health.get("serviceReadiness") or {}
             ocr = services.get("ocr") if isinstance(services, dict) else {}
@@ -1314,6 +1331,9 @@ class DeploymentVerifier:
         )
 
     def check_ocr_runtime_doctor(self) -> None:
+        if self.config.skip_ocr:
+            self.add("ocr.runtime-doctor", "skip", "OCR check disabled.")
+            return
         if self.official_ocr_mode():
             services = self.api_health.get("serviceReadiness") or {}
             ocr = services.get("ocr") if isinstance(services, dict) else {}
@@ -1359,6 +1379,9 @@ class DeploymentVerifier:
         )
 
     def check_ocr_parse_contract(self) -> None:
+        if self.config.skip_ocr:
+            self.add("ocr.parse-contract", "skip", "OCR check disabled.")
+            return
         if self.official_ocr_mode():
             if self.config.ocr_object_probe and self.official_ocr_probe_passed:
                 self.add("ocr.parse-contract", "pass", "Queued official OCR object probe validated the parse contract.")
@@ -1391,6 +1414,9 @@ class DeploymentVerifier:
         self.add("ocr.parse-contract", "pass", f"OCR parse contract returned status={data.get('status')}.", data)
 
     def check_ocr_bad_request_contract(self) -> None:
+        if self.config.skip_ocr:
+            self.add("ocr.bad-request", "skip", "OCR check disabled.")
+            return
         if self.official_ocr_mode():
             status_code, payload = self.request_json(
                 self.api,

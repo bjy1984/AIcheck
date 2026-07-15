@@ -620,6 +620,7 @@ def verify_args(**overrides):
         "ocr_object_probe": False,
         "review_run_probe": False,
         "review_run_wait_seconds": 0.0,
+        "ocr_wait_seconds": 240.0,
         "litellm_management_probes": False,
         "litellm_provider_probes": False,
         "qwen_official_probe": False,
@@ -661,6 +662,68 @@ def test_verify_config_rejects_ocr_object_probe_when_ocr_is_skipped() -> None:
         config_from_args(verify_args(ocr_object_probe=True, write_probes=True, skip_ocr=True))
 
     assert "--ocr-object-probe cannot be used with --skip-ocr" in str(exc.value)
+
+
+def test_deployment_verifier_skip_ocr_disables_official_ocr_checks() -> None:
+    config = config_from_args(verify_args(skip_ocr=True, skip_litellm=True, roles=""))
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(api_transport)),
+    )
+    verifier.api_health = {
+        "serviceReadiness": {
+            "ocr": {
+                "configured": True,
+                "providerMode": "official",
+            }
+        }
+    }
+
+    verifier.check_ocr_health()
+    verifier.check_ocr_readyz()
+    verifier.check_ocr_runtime_doctor()
+    verifier.check_ocr_parse_contract()
+    verifier.check_ocr_bad_request_contract()
+
+    assert [item.name for item in verifier.results] == [
+        "ocr.health",
+        "ocr.readyz",
+        "ocr.runtime-doctor",
+        "ocr.parse-contract",
+        "ocr.bad-request",
+    ]
+    assert all(item.status == "skip" for item in verifier.results)
+
+
+def test_read_scope_acceptance_is_skipped_when_existing_samples_are_incomplete(monkeypatch) -> None:
+    config = config_from_args(verify_args(skip_ocr=True, skip_litellm=True, roles="admin,contractor"))
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(api_transport)),
+    )
+    verifier.api_health = {"authRequired": True}
+    verifier.tokens = {"admin": "token-admin", "contractor": "token-contractor"}
+    monkeypatch.setattr(
+        verifier,
+        "discover_out_of_scope_resources",
+        lambda _headers: ({"node": "40"}, ["no known-existing out-of-scope document target"]),
+    )
+    monkeypatch.setattr(
+        verifier,
+        "request_json",
+        lambda *_args, **_kwargs: (200, {"code": 403, "data": {"reason": "FORBIDDEN"}}),
+    )
+
+    verifier.check_read_scope_rejected()
+
+    result = verifier.results[-1]
+    assert result.name == "auth.read-scope"
+    assert result.status == "skip"
+    assert result.data == {
+        "verifiedKinds": ["node"],
+        "missingCoverage": ["no known-existing out-of-scope document target"],
+        "roleQuerySpoofingRejected": True,
+    }
 
 
 def test_verify_config_requires_fde_and_inspection_for_review_run_probe() -> None:
