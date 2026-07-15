@@ -10,7 +10,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 import httpx
@@ -23,7 +23,7 @@ from libs.qwen_runtime import qwen_runtime_config
 from libs.security.auth import ROLE_DEFAULT_PATHS
 
 
-DEFAULT_ROLES = ("admin", "inspection", "contractor", "ndt", "owner")
+DEFAULT_ROLES = ("admin", "inspection", "contractor", "ndt", "owner", "fde")
 REQUIRED_LITELLM_ALIASES = {"default-chat", "review-chat", "deepseek-reasoner", "embedding-default", "compare-fast"}
 SECRET_TEXT_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9._-]{6,}"),
@@ -1028,35 +1028,168 @@ class DeploymentVerifier:
             return
         self.add("auth.action-bypass", "pass", "Unauthorized role actions are rejected without relying on X-Action-Code.")
 
+    @staticmethod
+    def raw_envelope_data(status_code: int, payload: Any) -> Any | None:
+        if status_code != 200 or not isinstance(payload, dict) or payload.get("code") != 0:
+            return None
+        return payload.get("data") if payload.get("data") is not None else {}
+
+    @staticmethod
+    def rejection_reason(payload: Any) -> str:
+        if not isinstance(payload, dict):
+            return ""
+        data = payload.get("data")
+        if isinstance(data, dict):
+            return str(data.get("reason") or "")
+        return str(payload.get("reason") or "")
+
+    @staticmethod
+    def response_leaks_resource(payload: Any) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return False
+        harmless = {"reason", "message", "requestId", "request_id"}
+        return any(key not in harmless for key in data)
+
+    @staticmethod
+    def page_items(data: Any) -> list[dict[str, Any]]:
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict) and isinstance(data.get("items"), list):
+            return [item for item in data["items"] if isinstance(item, dict)]
+        return []
+
+    def admin_scope_candidates(self) -> dict[str, list[str]]:
+        headers = self.auth_headers("admin")
+        candidates: dict[str, list[str]] = {
+            "node": ["40"],
+            "document": ["DOC-20260625-004"],
+            "knowledge-file": ["KF-DOC-20260625-004"],
+            "knowledge-task": ["KT-20260626-001"],
+        }
+
+        status_code, payload = self.request_json(
+            self.api,
+            "GET",
+            f"/api/projects/{self.config.project_id}/tree",
+            headers=headers,
+        )
+        tree = self.raw_envelope_data(status_code, payload)
+        if isinstance(tree, dict):
+            for group in tree.get("groups") or []:
+                if not isinstance(group, dict):
+                    continue
+                for node in group.get("nodes") or []:
+                    if isinstance(node, dict) and node.get("id") is not None:
+                        candidates["node"].append(str(node["id"]))
+
+        list_paths = {
+            "document": f"/api/projects/{self.config.project_id}/documents?page=1&pageSize=200",
+            "knowledge-file": f"/api/knowledge/project-files?projectId={quote(self.config.project_id, safe='')}&page=1&pageSize=200",
+            "knowledge-task": "/api/knowledge/tasks?page=1&pageSize=200",
+        }
+        for kind, path in list_paths.items():
+            status_code, payload = self.request_json(self.api, "GET", path, headers=headers)
+            data = self.raw_envelope_data(status_code, payload)
+            for item in self.page_items(data):
+                identifier = item.get("id") or item.get("taskId")
+                if identifier:
+                    candidates[kind].append(str(identifier))
+
+        return {kind: list(dict.fromkeys(values)) for kind, values in candidates.items()}
+
+    def discover_out_of_scope_resources(self, contractor_headers: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+        admin_headers = self.auth_headers("admin")
+        candidates = self.admin_scope_candidates()
+        path_builders = {
+            "node": lambda value: f"/api/projects/{self.config.project_id}/nodes/{quote(value, safe='')}/package",
+            "document": lambda value: f"/api/projects/{self.config.project_id}/documents/{quote(value, safe='')}",
+            "knowledge-file": lambda value: f"/api/knowledge/files/{quote(value, safe='')}",
+            "knowledge-task": lambda value: f"/api/knowledge/tasks/{quote(value, safe='')}",
+        }
+        discovered: dict[str, str] = {}
+        failures: list[str] = []
+        for kind, builder in path_builders.items():
+            unexpected: list[str] = []
+            for candidate in candidates[kind]:
+                path = builder(candidate)
+                admin_status, admin_payload = self.request_json(self.api, "GET", path, headers=admin_headers)
+                if self.raw_envelope_data(admin_status, admin_payload) is None:
+                    continue
+                status_code, payload = self.request_json(self.api, "GET", path, headers=contractor_headers)
+                reason = self.rejection_reason(payload)
+                if reason in {"FORBIDDEN", "NOT_FOUND"} and not self.response_leaks_resource(payload):
+                    discovered[kind] = candidate
+                    break
+                if self.raw_envelope_data(status_code, payload) is not None:
+                    continue
+                unexpected.append(f"{candidate}={reason or status_code}")
+            if kind in {"node", "document", "knowledge-file"} and kind not in discovered:
+                suffix = f" ({', '.join(unexpected[:3])})" if unexpected else ""
+                failures.append(f"no known-existing out-of-scope {kind} target{suffix}")
+        return discovered, failures
+
     def check_read_scope_rejected(self) -> None:
-        if not self.api_health.get("authRequired") or "contractor" not in self.tokens:
-            self.add("auth.read-scope", "skip", "Auth is disabled or contractor token is unavailable.")
+        if (
+            not self.api_health.get("authRequired")
+            or "contractor" not in self.tokens
+            or "admin" not in self.tokens
+        ):
+            status = "fail" if self.config.strict_production else "skip"
+            self.add("auth.read-scope", status, "Auth is disabled or admin/contractor token is unavailable.")
             return
         headers = {"Authorization": f"Bearer {self.tokens['contractor']}"}
-        forbidden_cases = [
-            ("node-package", f"/api/projects/{self.config.project_id}/nodes/40/package"),
-            ("role-query", f"/api/projects/{self.config.project_id}/workbench/context?role=inspection"),
-            ("document-detail", f"/api/projects/{self.config.project_id}/documents/DOC-20260625-004"),
-            ("knowledge-file", "/api/knowledge/files/KF-DOC-20260625-004"),
-        ]
-        failures = []
-        for label, path in forbidden_cases:
-            status_code, payload = self.request_json(self.api, "GET", path, headers=headers)
-            if not (status_code == 200 and isinstance(payload, dict) and payload.get("data", {}).get("reason") == "FORBIDDEN"):
-                failures.append(f"{label}: {payload}")
+        discovered, failures = self.discover_out_of_scope_resources(headers)
+
+        status_code, payload = self.request_json(
+            self.api,
+            "GET",
+            f"/api/projects/{self.config.project_id}/workbench/context?role=inspection",
+            headers=headers,
+        )
+        if self.rejection_reason(payload) != "FORBIDDEN":
+            failures.append(f"role-query: expected FORBIDDEN, got {payload}")
         if failures:
             self.add("auth.read-scope", "fail", "; ".join(failures))
             return
-        self.add("auth.read-scope", "pass", "Out-of-scope direct reads and role-query spoofing are rejected.")
-        self.check_aggregate_scope(headers)
+        self.add(
+            "auth.read-scope",
+            "pass",
+            "Known-existing out-of-scope reads and role-query spoofing are rejected without resource disclosure.",
+            {"verifiedKinds": sorted(discovered)},
+        )
+        self.check_aggregate_scope(headers, discovered)
 
-    def check_aggregate_scope(self, headers: dict[str, str]) -> None:
-        aggregate_cases = [
-            ("search", f"/api/search?projectId={self.config.project_id}&keyword=RT", {"DOC-20260625-004"}),
-            ("knowledge-files", f"/api/knowledge/project-files?projectId={self.config.project_id}", {"KF-DOC-20260625-004"}),
-            ("knowledge-tasks", "/api/knowledge/tasks", {"KT-20260626-001"}),
-        ]
+    def check_aggregate_scope(self, headers: dict[str, str], discovered: dict[str, str]) -> None:
+        aggregate_cases: list[tuple[str, str, set[str]]] = []
+        document_id = discovered.get("document")
+        if document_id:
+            aggregate_cases.append(
+                (
+                    "search",
+                    f"/api/search?projectId={quote(self.config.project_id, safe='')}&keyword={quote(document_id, safe='')}",
+                    {document_id},
+                )
+            )
+        knowledge_file_id = discovered.get("knowledge-file")
+        if knowledge_file_id:
+            aggregate_cases.append(
+                (
+                    "knowledge-files",
+                    f"/api/knowledge/project-files?projectId={quote(self.config.project_id, safe='')}&page=1&pageSize=200",
+                    {knowledge_file_id},
+                )
+            )
+        knowledge_task_id = discovered.get("knowledge-task")
+        if knowledge_task_id:
+            aggregate_cases.append(
+                ("knowledge-tasks", "/api/knowledge/tasks?page=1&pageSize=200", {knowledge_task_id})
+            )
         failures = []
+        if not aggregate_cases:
+            failures.append("no known-existing aggregate-scope targets")
         for label, path, forbidden_ids in aggregate_cases:
             status_code, payload = self.request_json(self.api, "GET", path, headers=headers)
             data = self.envelope_data(f"auth.aggregate-scope.{label}", status_code, payload)
@@ -1074,7 +1207,7 @@ class DeploymentVerifier:
         if failures:
             self.add("auth.aggregate-scope", "fail", "; ".join(failures))
             return
-        self.add("auth.aggregate-scope", "pass", "Out-of-scope demo resources are absent from aggregate lists.")
+        self.add("auth.aggregate-scope", "pass", "Known-existing out-of-scope resources are absent from aggregate lists.")
 
     def check_ocr_health(self) -> None:
         if self.official_ocr_mode():

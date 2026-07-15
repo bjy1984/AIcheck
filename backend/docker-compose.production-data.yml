@@ -1,12 +1,12 @@
 services:
   api-service:
     volumes:
-      - ${AICHECK_RULES_HOST_PATH:-../rules}:/rules:ro
+      - ${AICHECK_RULES_HOST_PATH:?AICHECK_RULES_HOST_PATH must point to an immutable release directory}:/rules:ro
       - ${AICHECK_OUTPUT_HOST_PATH:-../output}:/output:ro
 
   worker-service:
     volumes:
-      - ${AICHECK_RULES_HOST_PATH:-../rules}:/rules:ro
+      - ${AICHECK_RULES_HOST_PATH:?AICHECK_RULES_HOST_PATH must point to an immutable release directory}:/rules:ro
       - ${AICHECK_OUTPUT_HOST_PATH:-../output}:/output:ro
 
   review-worker-service:

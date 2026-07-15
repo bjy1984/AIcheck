@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from scripts.deployment_report import (
     DeploymentReportBuilder,
     auth_security_contract_check,
+    backup_recoverability_contract_section,
     backend_action_coverage_check,
     backend_mutation_idempotency_check,
     called_function_names,
@@ -95,6 +96,8 @@ def report_args(**overrides):
         "release_gate": False,
         "security_scan_dir": None,
         "ocr_98_gate_report": None,
+        "release_manifest": None,
+        "backup_recoverability_report": None,
         "timeout": 1.0,
         "output_dir": None,
         "json": False,
@@ -295,6 +298,30 @@ def test_release_gate_requires_all_live_write_model_and_security_probes(tmp_path
     assert complete["checks"][1]["status"] == "pass"
     assert complete["checks"][2]["name"] == "release.ocr-98-gate"
     assert complete["checks"][2]["status"] == "pass"
+
+
+def test_backup_recoverability_report_is_integrity_checked(tmp_path: Path) -> None:
+    import hashlib
+
+    document = {
+        "schemaVersion": "aicheck-backup-recoverability-v1",
+        "generatedAt": datetime.now(UTC).isoformat(),
+        "ok": True,
+        "checks": [{"name": "restore.drill", "status": "pass", "detail": "verified", "data": None}],
+    }
+    document["reportHash"] = "sha256:" + hashlib.sha256(
+        json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    path = tmp_path / "backup-recoverability.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    section = backup_recoverability_contract_section(report_args(backup_recoverability_report=str(path)))
+    assert section["ok"] is True
+
+    document["checks"][0]["status"] = "fail"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    section = backup_recoverability_contract_section(report_args(backup_recoverability_report=str(path)))
+    assert section["ok"] is False
 
 
 def test_deployment_report_markdown_contains_summary() -> None:

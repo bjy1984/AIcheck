@@ -311,6 +311,7 @@ const projects = ref<Project[]>([])
 const overview = ref<AdminConfigOverviewPayload>(emptyOverview())
 const integrationContract = ref<IntegrationContractPayload>(emptyIntegrationContract())
 const auditLogs = ref<AuditLogPayload['items']>([])
+const auditIntegrity = ref<AuditLogPayload['integrity']>()
 const auditPagination = reactive(createPagination(10))
 const tablePageSizes = [5, 10, 20, 50]
 const tableStates = reactive({
@@ -1076,6 +1077,31 @@ const adminAuditCards = computed<AuditSummaryCard[]>(() => [
 
 const selectedProjectMembers = computed(() => projectDetail.value?.members || [])
 const auditTableRows = computed(() => sortedRows(auditLogs.value, auditSort))
+const auditIntegrityAlert = computed(() => {
+  const integrity = auditIntegrity.value
+  if (!integrity) return null
+  if (integrity.status === 'tampered') {
+    return {
+      type: 'error' as const,
+      title: '审计链校验异常',
+      description: `发现 ${integrity.failures.length} 个链校验问题，请立即停止签发和归档操作。`
+    }
+  }
+  const legacyCount = integrity.legacyUnverifiedEventCount || 0
+  if (legacyCount > 0) {
+    const sealed = integrity.coverageStatus === 'legacy_unverified_sealed'
+    return {
+      type: sealed ? ('warning' as const) : ('error' as const),
+      title: sealed ? '后续审计链已验证，历史记录已单独封存' : '存在尚未封存的历史审计记录',
+      description: `${integrity.chainedEventCount} 条链上记录已验证；${legacyCount} 条历史记录为 legacy_unverified，不能追溯证明原始真实性。`
+    }
+  }
+  return {
+    type: 'success' as const,
+    title: '审计链覆盖完整',
+    description: `${integrity.verifiedEventCount} 条审计记录已通过连续性和哈希校验。`
+  }
+})
 
 const memberDialogTitle = computed(() =>
   memberDialogMode.value === 'batch' ? '批量项目成员授权' : '项目成员授权'
@@ -1410,6 +1436,7 @@ const loadAuditLogs = async () => {
       auditError.value = getRequestErrorMessage(undefined, '审计日志加载失败，筛选条件已保留。')
       return
     }
+    auditIntegrity.value = res.data.integrity
     auditLogs.value = applyPagination(auditPagination, res.data)
   } catch (error) {
     auditError.value = getRequestErrorMessage(error, '审计日志加载失败，筛选条件已保留。')
@@ -4597,6 +4624,15 @@ onMounted(() => {
                 <ElTag type="info" effect="plain">{{ auditPagination.total }} 条</ElTag>
               </div>
             </template>
+            <ElAlert
+              v-if="auditIntegrityAlert"
+              class="audit-integrity-alert"
+              show-icon
+              :closable="false"
+              :type="auditIntegrityAlert.type"
+              :title="auditIntegrityAlert.title"
+              :description="auditIntegrityAlert.description"
+            />
             <div class="filter-bar">
               <ElInput
                 v-model="auditFilters.keyword"
@@ -6763,6 +6799,10 @@ onMounted(() => {
   grid-template-columns: minmax(220px, 1fr) 140px 150px auto auto;
   gap: 10px;
   align-items: center;
+  margin-bottom: 12px;
+}
+
+.audit-integrity-alert {
   margin-bottom: 12px;
 }
 

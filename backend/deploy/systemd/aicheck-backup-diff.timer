@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily differential AIcheck physical backup
+
+[Timer]
+OnCalendar=Mon..Sat *-*-* 02:05:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=aicheck-backup@diff.service
+
+[Install]
+WantedBy=timers.target

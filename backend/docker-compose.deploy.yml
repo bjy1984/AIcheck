@@ -1,3 +1,9 @@
+x-aicheck-logging: &aicheck-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   api-service:
     build:
@@ -5,6 +11,7 @@ services:
       dockerfile: Dockerfile.server
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
+    logging: *aicheck-logging
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_TENANT_ID: ${AICHECK_TENANT_ID:?AICHECK_TENANT_ID is required}
@@ -49,6 +56,15 @@ services:
       AICHECK_JWT_TTL_MINUTES: ${AICHECK_JWT_TTL_MINUTES:-480}
       AICHECK_JWT_AUDIENCE: ${AICHECK_JWT_AUDIENCE:-aicheck-frontend}
       AICHECK_JWT_ISSUER: ${AICHECK_JWT_ISSUER:-aicheck-api}
+      AICHECK_BUILD_VERSION: ${AICHECK_BUILD_VERSION:?AICHECK_BUILD_VERSION is required}
+      AICHECK_RELEASE_ID: ${AICHECK_RELEASE_ID:?AICHECK_RELEASE_ID is required}
+      AICHECK_GIT_SHA: ${AICHECK_GIT_SHA:?AICHECK_GIT_SHA is required}
+      AICHECK_BACKEND_IMAGE_DIGEST: ${AICHECK_BACKEND_IMAGE_DIGEST:?AICHECK_BACKEND_IMAGE_DIGEST is required}
+      AICHECK_FRONTEND_ASSET_HASH: ${AICHECK_FRONTEND_ASSET_HASH:?AICHECK_FRONTEND_ASSET_HASH is required}
+      AICHECK_RULES_HASH: ${AICHECK_RULES_HASH:?AICHECK_RULES_HASH is required}
+      AICHECK_BUSINESS_PACK_HASH: ${AICHECK_BUSINESS_PACK_HASH:?AICHECK_BUSINESS_PACK_HASH is required}
+      AICHECK_MATERIAL_MAPPING_HASH: ${AICHECK_MATERIAL_MAPPING_HASH:?AICHECK_MATERIAL_MAPPING_HASH is required}
+      AICHECK_RELEASE_MANIFEST_HASH: ${AICHECK_RELEASE_MANIFEST_HASH:?AICHECK_RELEASE_MANIFEST_HASH is required}
     ports:
       - "127.0.0.1:18000:8000"
     depends_on:
@@ -78,6 +94,7 @@ services:
       dockerfile: Dockerfile.server
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO -Q ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     restart: unless-stopped
+    logging: *aicheck-logging
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_TENANT_ID: ${AICHECK_TENANT_ID:?AICHECK_TENANT_ID is required}
@@ -94,6 +111,9 @@ services:
       AICHECK_OCR_BASE_URL: ${AICHECK_OCR_BASE_URL:-http://ocr-service:8010}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+      AICHECK_BUILD_VERSION: ${AICHECK_BUILD_VERSION:?AICHECK_BUILD_VERSION is required}
+      AICHECK_RELEASE_ID: ${AICHECK_RELEASE_ID:?AICHECK_RELEASE_ID is required}
+      AICHECK_GIT_SHA: ${AICHECK_GIT_SHA:?AICHECK_GIT_SHA is required}
     volumes:
       - ./docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
     depends_on:
@@ -123,6 +143,7 @@ services:
       dockerfile: Dockerfile.server
     command: python -m apps.review_worker.main
     restart: unless-stopped
+    logging: *aicheck-logging
     environment:
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
       AICHECK_TENANT_ID: ${AICHECK_TENANT_ID:?AICHECK_TENANT_ID is required}
@@ -153,6 +174,9 @@ services:
       LANGGRAPH_CHECKPOINT_DSN: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${WORKFLOW_POSTGRES_DB:-workflow}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm-service:4000}
       LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+      AICHECK_BUILD_VERSION: ${AICHECK_BUILD_VERSION:?AICHECK_BUILD_VERSION is required}
+      AICHECK_RELEASE_ID: ${AICHECK_RELEASE_ID:?AICHECK_RELEASE_ID is required}
+      AICHECK_GIT_SHA: ${AICHECK_GIT_SHA:?AICHECK_GIT_SHA is required}
     depends_on:
       temporal-service:
         condition: service_healthy
@@ -183,6 +207,7 @@ services:
         AICHECK_OCR_REQUIREMENTS: ${AICHECK_OCR_REQUIREMENTS:-requirements-ocr-core.txt}
     command: uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010
     restart: unless-stopped
+    logging: *aicheck-logging
     environment:
       AICHECK_MINIO_ENDPOINT: ${AICHECK_MINIO_ENDPOINT:-minio:9000}
       AICHECK_MINIO_ACCESS_KEY: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
@@ -253,6 +278,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *aicheck-logging
     ports:
       - "127.0.0.1:16379:6379"
     healthcheck:
@@ -264,6 +290,7 @@ services:
   minio:
     image: minio/minio:RELEASE.2026-06-13T11-33-47Z
     restart: unless-stopped
+    logging: *aicheck-logging
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${AICHECK_MINIO_ACCESS_KEY:-aicheck}
@@ -282,6 +309,7 @@ services:
   postgres:
     image: ${AICHECK_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped
+    logging: *aicheck-logging
     environment:
       POSTGRES_DB: ${AICHECK_POSTGRES_DB:-aicheck}
       POSTGRES_USER: ${AICHECK_POSTGRES_USER:-aicheck}
@@ -302,6 +330,7 @@ services:
   temporal-service:
     image: temporalio/auto-setup:1.26.2
     restart: unless-stopped
+    logging: *aicheck-logging
     environment:
       DB: postgres12
       DB_PORT: 5432
@@ -325,6 +354,7 @@ services:
   temporal-ui:
     image: temporalio/ui:2.31.2
     restart: unless-stopped
+    logging: *aicheck-logging
     environment:
       TEMPORAL_ADDRESS: temporal-service:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:4000,http://127.0.0.1:4000
@@ -337,6 +367,7 @@ services:
   embedding-service:
     image: aicheck-infinity-qwen:local
     restart: unless-stopped
+    logging: *aicheck-logging
     command:
       [
         "v2",
@@ -375,6 +406,7 @@ services:
   litellm-service:
     image: ${AICHECK_LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.84.3@sha256:67c31510b20e60e8eb1670b9c47714c1c519cb04f5e5c077cf1f12073bf8fb30}
     restart: unless-stopped
+    logging: *aicheck-logging
     command: ["--config", "/app/config/litellm.yaml", "--port", "4000", "--host", "0.0.0.0"]
     environment:
       DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${LITELLM_POSTGRES_DB:-litellm}

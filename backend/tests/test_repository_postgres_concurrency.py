@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 from libs.db.repository import InMemoryRepository
 from libs.security.tenant import reset_request_tenant_id, set_request_tenant_id
@@ -72,6 +73,30 @@ class RecordingConnection(DetectConcurrentConnection):
         if statement.startswith("SELECT payload FROM aicheck_state"):
             payload = self.state_rows.get((str(params[-2]), str(params[-1])))
             return EmptyCursor([(payload,)] if payload is not None else [])
+        return EmptyCursor()
+
+
+class PagingConnection(DetectConcurrentConnection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.statements: list[tuple[str, object]] = []
+        now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+        self.rows = [
+            ("AUD-3", {"id": "AUD-3", "action": "发布规则"}, now),
+            ("AUD-2", {"id": "AUD-2", "action": "更新规则"}, now),
+            ("AUD-1", {"id": "AUD-1", "action": "登录"}, now),
+        ]
+
+    def execute(self, sql, params=None):
+        statement = " ".join(str(sql).split())
+        self.statements.append((statement, params))
+        if statement.startswith("SELECT count(*) FROM aicheck_state"):
+            return EmptyCursor([(len(self.rows),)])
+        if statement.startswith("SELECT object_id, payload, updated_at FROM aicheck_state"):
+            if "OFFSET" in statement:
+                limit, offset = int(params[-2]), int(params[-1])
+                return EmptyCursor(self.rows[offset : offset + limit])
+            return EmptyCursor(self.rows[2:])
         return EmptyCursor()
 
 
@@ -161,6 +186,93 @@ def test_scoped_postgres_load_queries_only_selected_collections() -> None:
     )
     assert set(query[1][0]) == {"documents", "document_versions", "ocr_parse_results"}
     assert "knowledge_vectors" not in query[1][0]
+
+
+def test_postgres_state_page_preserves_offset_contract_and_stable_cursor() -> None:
+    repository = InMemoryRepository()
+    connection = PagingConnection()
+    repository.sync_postgres = connection
+    repository.postgres_dsn = "postgresql://fake"
+    repository.postgres_enabled = True
+
+    first = repository.query_state_page_from_sync_postgres(
+        "audit_logs",
+        tenant_id="TENANT-DEFAULT",
+        page=1,
+        page_size=2,
+    )
+    second = repository.query_state_page_from_sync_postgres(
+        "audit_logs",
+        tenant_id="TENANT-DEFAULT",
+        page=2,
+        page_size=2,
+    )
+
+    assert first["paginationMode"] == "offset"
+    assert first["page"] == 1
+    assert first["pageSize"] == 2
+    assert first["total"] == 3
+    assert first["hasMore"] is True
+    assert first["nextCursor"]
+    assert [item["id"] for item in first["items"]] == ["AUD-3", "AUD-2"]
+    assert [item["id"] for item in second["items"]] == ["AUD-1"]
+
+    keyset = repository.query_state_page_from_sync_postgres(
+        "audit_logs",
+        tenant_id="TENANT-DEFAULT",
+        page=2,
+        page_size=2,
+        cursor=first["nextCursor"],
+    )
+    assert keyset["paginationMode"] == "keyset"
+    assert keyset["page"] == 2
+    assert keyset["total"] == 3
+    assert [item["id"] for item in keyset["items"]] == ["AUD-1"]
+
+
+def test_postgres_state_page_filters_keyword_in_sql_and_rejects_bad_cursor() -> None:
+    repository = InMemoryRepository()
+    connection = PagingConnection()
+    repository.sync_postgres = connection
+    repository.postgres_dsn = "postgresql://fake"
+    repository.postgres_enabled = True
+
+    repository.query_state_page_from_sync_postgres(
+        "audit_logs",
+        tenant_id="TENANT-DEFAULT",
+        filters={"result": "成功"},
+        keyword="规则",
+        keyword_fields=("action", "objectType"),
+    )
+    count_statement, count_params = next(
+        (statement, params)
+        for statement, params in connection.statements
+        if statement.startswith("SELECT count(*) FROM aicheck_state")
+    )
+    assert "ILIKE" in count_statement
+    assert count_params == (
+        "TENANT-DEFAULT",
+        "audit_logs",
+        "result",
+        "成功",
+        "action",
+        "%规则%",
+        "objectType",
+        "%规则%",
+    )
+
+    statement_count = len(connection.statements)
+    try:
+        repository.query_state_page_from_sync_postgres(
+            "audit_logs",
+            tenant_id="TENANT-DEFAULT",
+            cursor="not-base64",
+        )
+    except ValueError as exc:
+        assert str(exc) == "Invalid keyset cursor"
+    else:
+        raise AssertionError("invalid cursor must be rejected")
+    assert len(connection.statements) == statement_count
 
 
 def test_ocr_task_postgres_load_scopes_historical_payloads_to_document() -> None:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily encrypted all-database logical backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=600
+Persistent=true
+Unit=aicheck-backup@logical.service
+
+[Install]
+WantedBy=timers.target

@@ -672,12 +672,43 @@ class InMemoryRepository:
                 )
             expected_previous = stored_hash
             expected_sequence = sequence + 1
+        legacy_count = len(tenant_events) - len(chained)
+        legacy_seal = next(
+            (
+                item
+                for item in chained
+                if item.get("reasonCode") == "LEGACY_IMPORT_SEAL"
+                and item.get("objectType") == "legacy_audit_manifest"
+            ),
+            None,
+        )
+        legacy_metadata = legacy_seal.get("metadata") if isinstance(legacy_seal, dict) else None
+        legacy_manifest = None
+        if isinstance(legacy_metadata, dict):
+            legacy_manifest = {
+                "manifestHash": legacy_metadata.get("manifestHash"),
+                "manifestReference": legacy_metadata.get("manifestReference"),
+                "integrityStatus": legacy_metadata.get("legacyIntegrityStatus") or "legacy_unverified",
+                "sealEventId": legacy_seal.get("id"),
+                "sealSequence": legacy_seal.get("sequence"),
+            }
         return {
             "tenantId": tenant_id,
             "status": "verified" if not failures else "tampered",
+            "coverageStatus": (
+                "complete"
+                if legacy_count == 0
+                else "legacy_unverified_sealed"
+                if legacy_manifest
+                else "legacy_unverified_unsealed"
+            ),
             "verifiedEventCount": len(chained) - len(failures),
             "chainedEventCount": len(chained),
-            "legacyUnsealedEventCount": len(tenant_events) - len(chained),
+            "legacyUnverifiedEventCount": legacy_count,
+            # Backwards-compatible alias.  Consumers should migrate to the
+            # semantically accurate legacyUnverifiedEventCount field.
+            "legacyUnsealedEventCount": legacy_count,
+            "legacyManifest": legacy_manifest,
             "failures": failures[:20],
             "headHash": expected_previous if chained else None,
         }
@@ -2832,50 +2863,122 @@ class InMemoryRepository:
         *,
         tenant_id: str,
         filters: dict[str, Any] | None = None,
+        keyword: str | None = None,
+        keyword_fields: tuple[str, ...] | list[str] | None = None,
+        page: int = 1,
         page_size: int = 20,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Read a bounded tenant-scoped keyset page without materializing global state."""
+        """Read a bounded tenant-scoped page without materializing global state.
+
+        Published HTTP APIs use the offset fields (page/pageSize/total).  A
+        non-empty cursor opts into keyset traversal while retaining the common
+        response fields for backwards compatibility.
+        """
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
             if self.sync_postgres is None:
-                return {"items": [], "pageSize": page_size, "hasMore": False, "nextCursor": None}
+                return {
+                    "items": [],
+                    "page": max(1, int(page or 1)),
+                    "pageSize": max(1, min(int(page_size or 20), 200)),
+                    "total": 0,
+                    "hasMore": False,
+                    "nextCursor": None,
+                    "paginationMode": "offset",
+                }
             collection_name = STATE_COLLECTIONS.get(state_key)
             if not collection_name:
                 raise KeyError(f"Unknown state collection: {state_key}")
+            safe_page = max(1, int(page or 1))
             safe_size = max(1, min(int(page_size or 20), 200))
-            clauses = ["tenant_id = %s", "collection = %s"]
-            params: list[Any] = [tenant_id, collection_name]
+            base_clauses = ["tenant_id = %s", "collection = %s"]
+            base_params: list[Any] = [tenant_id, collection_name]
             for field, value in (filters or {}).items():
                 if value is None or value == "":
                     continue
                 if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", str(field)):
                     raise ValueError(f"Unsafe JSON filter field: {field}")
-                clauses.append("payload ->> %s = %s")
-                params.extend([str(field), str(value)])
-            if cursor:
+                base_clauses.append("payload ->> %s = %s")
+                base_params.extend([str(field), str(value)])
+
+            normalized_keyword = str(keyword or "").strip()
+            if normalized_keyword:
+                fields = tuple(keyword_fields or ())
+                if not fields:
+                    raise ValueError("keyword_fields are required when keyword is provided")
+                keyword_clauses: list[str] = []
+                keyword_params: list[Any] = []
+                for field in fields:
+                    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", str(field)):
+                        raise ValueError(f"Unsafe JSON keyword field: {field}")
+                    keyword_clauses.append("COALESCE(payload ->> %s, '') ILIKE %s")
+                    keyword_params.extend([str(field), f"%{normalized_keyword}%"])
+                base_clauses.append(f"({' OR '.join(keyword_clauses)})")
+                base_params.extend(keyword_params)
+
+            normalized_cursor: str | None
+            if cursor is None:
+                normalized_cursor = None
+            elif isinstance(cursor, str):
+                normalized_cursor = cursor.strip() or None
+            else:
+                raise ValueError("Invalid keyset cursor")
+
+            cursor_timestamp: datetime | None = None
+            cursor_object_id: str | None = None
+            if normalized_cursor:
                 try:
-                    padded = cursor + "=" * (-len(cursor) % 4)
-                    cursor_payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-                    cursor_updated_at, cursor_object_id = cursor_payload
+                    padded = normalized_cursor + "=" * (-len(normalized_cursor) % 4)
+                    decoded = base64.b64decode(padded, altchars=b"-_", validate=True)
+                    cursor_payload = json.loads(decoded.decode("utf-8"))
+                    if not isinstance(cursor_payload, list) or len(cursor_payload) != 2:
+                        raise ValueError("cursor payload must contain timestamp and object id")
+                    cursor_updated_at, raw_cursor_object_id = cursor_payload
+                    cursor_timestamp = datetime.fromisoformat(str(cursor_updated_at).replace("Z", "+00:00"))
+                    if cursor_timestamp.tzinfo is None:
+                        raise ValueError("cursor timestamp must include timezone")
+                    cursor_object_id = str(raw_cursor_object_id)
+                    if not cursor_object_id or len(cursor_object_id) > 512 or "\x00" in cursor_object_id:
+                        raise ValueError("cursor object id is invalid")
                 except Exception as exc:
                     raise ValueError("Invalid keyset cursor") from exc
+
+            count_row = self.sync_postgres.execute(
+                f"SELECT count(*) FROM aicheck_state WHERE {' AND '.join(base_clauses)}",
+                tuple(base_params),
+            ).fetchone()
+            total = int(count_row[0]) if count_row else 0
+
+            clauses = list(base_clauses)
+            params = list(base_params)
+            if normalized_cursor:
+                assert cursor_timestamp is not None and cursor_object_id is not None
                 clauses.append("(updated_at, object_id) < (%s::timestamptz, %s)")
-                params.extend([str(cursor_updated_at), str(cursor_object_id)])
-            params.append(safe_size + 1)
+                params.extend([cursor_timestamp.isoformat(), cursor_object_id])
+                limit_params = [safe_size + 1]
+                pagination_mode = "keyset"
+            else:
+                limit_params = [safe_size, (safe_page - 1) * safe_size]
+                pagination_mode = "offset"
+
+            pagination_sql = "LIMIT %s" if normalized_cursor else "LIMIT %s OFFSET %s"
             rows = self.sync_postgres.execute(
                 f"""
                 SELECT object_id, payload, updated_at
                 FROM aicheck_state
                 WHERE {' AND '.join(clauses)}
                 ORDER BY updated_at DESC, object_id DESC
-                LIMIT %s
+                {pagination_sql}
                 """,
-                tuple(params),
+                tuple([*params, *limit_params]),
             ).fetchall()
             self.sync_postgres.commit()
-            has_more = len(rows) > safe_size
             selected = rows[:safe_size]
+            if normalized_cursor:
+                has_more = len(rows) > safe_size
+            else:
+                has_more = ((safe_page - 1) * safe_size) + len(selected) < total
             next_cursor = None
             if has_more and selected:
                 object_id, _, updated_at = selected[-1]
@@ -2883,10 +2986,12 @@ class InMemoryRepository:
                 next_cursor = base64.urlsafe_b64encode(encoded.encode("utf-8")).decode("ascii").rstrip("=")
             return {
                 "items": [self.clone(payload) for _, payload, _ in selected],
+                "page": safe_page,
                 "pageSize": safe_size,
+                "total": total,
                 "hasMore": has_more,
                 "nextCursor": next_cursor,
-                "paginationMode": "keyset",
+                "paginationMode": pagination_mode,
             }
 
     def load_review_run_scope_from_sync_postgres(self, review_run_id: str) -> None:

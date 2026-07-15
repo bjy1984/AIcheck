@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic AIcheck recoverability gate
+
+[Timer]
+OnCalendar=*-*-* 00/6:40:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=aicheck-backup@verify.service
+
+[Install]
+WantedBy=timers.target

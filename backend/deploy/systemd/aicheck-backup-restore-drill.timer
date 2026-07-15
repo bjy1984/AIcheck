@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly isolated AIcheck restore drill
+
+[Timer]
+OnCalendar=*-*-01 05:10:00
+RandomizedDelaySec=1800
+Persistent=true
+Unit=aicheck-backup@restore-drill.service
+
+[Install]
+WantedBy=timers.target

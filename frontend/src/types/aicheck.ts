@@ -683,6 +683,16 @@ export type RuntimeUiContext = {
   strictProduction: boolean
   demoDataAllowed: boolean
   buildVersion: string
+  release: {
+    releaseId: string
+    gitSha: string
+    backendDigest?: string | null
+    frontendAssetHash?: string | null
+    rulesHash?: string | null
+    businessPackHash?: string | null
+    materialMappingHash?: string | null
+    manifestHash?: string | null
+  }
   serverTime: string
   support: {
     label: string

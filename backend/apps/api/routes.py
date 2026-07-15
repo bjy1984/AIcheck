@@ -4085,6 +4085,7 @@ def mock_user_list(request: Request):
 def runtime_ui_context(request: Request):
     is_strict = strict_production()
     environment = os.getenv("AICHECK_ENVIRONMENT") or ("production" if is_strict else "development")
+    build_version = os.getenv("AICHECK_BUILD_VERSION", "unversioned")
     demo_allowed = (
         not is_strict and os.getenv("AICHECK_UI_DEMO_MODE", "false").strip().lower() == "true"
     )
@@ -4093,7 +4094,17 @@ def runtime_ui_context(request: Request):
             "environment": environment,
             "strictProduction": is_strict,
             "demoDataAllowed": demo_allowed,
-            "buildVersion": os.getenv("AICHECK_BUILD_VERSION", "unversioned"),
+            "buildVersion": build_version,
+            "release": {
+                "releaseId": os.getenv("AICHECK_RELEASE_ID") or build_version,
+                "gitSha": os.getenv("AICHECK_GIT_SHA") or build_version,
+                "backendDigest": os.getenv("AICHECK_BACKEND_IMAGE_DIGEST") or None,
+                "frontendAssetHash": os.getenv("AICHECK_FRONTEND_ASSET_HASH") or None,
+                "rulesHash": os.getenv("AICHECK_RULES_HASH") or None,
+                "businessPackHash": os.getenv("AICHECK_BUSINESS_PACK_HASH") or None,
+                "materialMappingHash": os.getenv("AICHECK_MATERIAL_MAPPING_HASH") or None,
+                "manifestHash": os.getenv("AICHECK_RELEASE_MANIFEST_HASH") or None,
+            },
             "serverTime": server_time(),
             "support": {
                 "label": os.getenv("AICHECK_SUPPORT_LABEL", "请联系系统管理员重置密码"),
@@ -15102,6 +15113,7 @@ def fde_ai_runs(
                 "ai_runs",
                 tenant_id=request_tenant_id(request),
                 filters={"projectId": projectId, "status": status},
+                page=page_no,
                 page_size=page_size,
                 cursor=cursor,
             )
@@ -15171,6 +15183,7 @@ def fde_review_runs(
                 "review_runs",
                 tenant_id=request_tenant_id(request),
                 filters={"projectId": projectId, "businessPackId": businessPackId, "status": status},
+                page=page_no,
                 page_size=page_size,
                 cursor=cursor,
             )
@@ -24706,19 +24719,6 @@ def delete_admin_user(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"userId": user_id})
 
 
-@router.get("/admin/{kind}")
-def admin_generic_list(request: Request, kind: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    if kind == "audit-logs":
-        return audit_logs(request, page_no, page_size)
-    if kind == "config-overview":
-        return admin_config_overview(request)
-    if kind == "integration-contract":
-        return integration_contract(request)
-    collection = admin_collection_for(kind)
-    items = repo.state["admin_config"].get(collection, [])
-    return ok(page(repo.clone(items), page_no, page_size), request)
-
-
 @router.post("/admin/{kind}")
 def admin_generic_create(request: Request, kind: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), if_match: str | None = Header(default=None, alias="If-Match")):
     def produce():
@@ -24914,16 +24914,17 @@ def publish_admin_config(
     return idempotent(request, idempotency_key, produce, fingerprint_source={**payload, "previewId": body.get("previewId")})
 
 
-@router.get("/admin/audit-logs")
-def audit_logs(
+def _audit_logs_response(
     request: Request,
-    page_no: int = Query(default=1, alias="page"),
-    page_size: int = Query(default=20, alias="pageSize"),
-    keyword: str | None = None,
-    result: str | None = None,
-    objectType: str | None = None,
-    cursor: str | None = Query(default=None),
+    *,
+    page_no: int,
+    page_size: int,
+    keyword: str | None,
+    result: str | None,
+    object_type: str | None,
+    cursor: str | None,
 ):
+    """Build the audit response from primitive values, outside FastAPI parsing."""
     role, identity_error = effective_role_for_request(request)
     if identity_error:
         return identity_error
@@ -24931,12 +24932,15 @@ def audit_logs(
         return fail(errors.FORBIDDEN, request, message="仅租户管理员可查看全局审计日志。")
     if strict_production() and role != "admin":
         return fail(errors.FORBIDDEN, request, message="仅租户管理员可查看全局审计日志。")
-    if repo.sync_postgres is not None and not keyword:
+    if repo.sync_postgres is not None:
         try:
             result_page = repo.query_state_page_from_sync_postgres(
                 "audit_logs",
                 tenant_id=request_tenant_id(request),
-                filters={"result": result, "objectType": objectType},
+                filters={"result": result, "objectType": object_type},
+                keyword=keyword,
+                keyword_fields=("action", "objectType", "objectId", "actorName"),
+                page=page_no,
                 page_size=page_size,
                 cursor=cursor,
             )
@@ -24951,17 +24955,46 @@ def audit_logs(
     ]
     if result:
         items = [item for item in items if item.get("result") == result]
-    if objectType:
-        items = [item for item in items if item.get("objectType") == objectType]
+    if object_type:
+        items = [item for item in items if item.get("objectType") == object_type]
     items = filter_keyword(items, keyword, ["action", "objectType", "objectId", "actorName"])
     result_page = page(items, page_no, page_size)
     result_page["integrity"] = repo.verify_audit_chain(request_tenant_id(request))
     return ok(result_page, request)
 
 
+@router.get("/admin/audit-logs")
+def audit_logs(
+    request: Request,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+    keyword: str | None = None,
+    result: str | None = None,
+    objectType: str | None = None,
+    cursor: str | None = Query(default=None),
+):
+    return _audit_logs_response(
+        request,
+        page_no=page_no,
+        page_size=page_size,
+        keyword=keyword,
+        result=result,
+        object_type=objectType,
+        cursor=cursor,
+    )
+
+
 @router.get("/audit-logs")
 def global_audit_logs(request: Request, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    return audit_logs(request, page_no, page_size)
+    return _audit_logs_response(
+        request,
+        page_no=page_no,
+        page_size=page_size,
+        keyword=None,
+        result=None,
+        object_type=None,
+        cursor=None,
+    )
 
 
 @router.get("/projects/{project_id}/audit-logs")
@@ -25031,3 +25064,18 @@ def legacy_orgs(request: Request):
 @router.get("/users")
 def legacy_users(request: Request):
     return ok(list_admin_users(), request)
+
+
+# Keep this catch-all route after every concrete /admin GET route.  Starlette
+# resolves routes in registration order, so placing it earlier would shadow
+# endpoints such as /admin/audit-logs and bypass FastAPI parameter parsing.
+@router.get("/admin/{kind}")
+def admin_generic_list(
+    request: Request,
+    kind: str,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+):
+    collection = admin_collection_for(kind)
+    items = repo.state["admin_config"].get(collection, [])
+    return ok(page(repo.clone(items), page_no, page_size), request)

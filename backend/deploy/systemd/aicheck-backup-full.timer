@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly full AIcheck physical backup
+
+[Timer]
+OnCalendar=Sun *-*-* 02:05:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=aicheck-backup@full.service
+
+[Install]
+WantedBy=timers.target

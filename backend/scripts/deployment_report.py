@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import re
+import subprocess
 import sys
 import textwrap
 from dataclasses import asdict
@@ -37,6 +38,7 @@ from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.storage import DEFAULT_BUCKETS, ObjectStorage, parse_storage_url
 from libs.security.auth import ROLE_DEFAULT_PATHS, verify_password
 from scripts.audit_frontend_contract import audit
+from scripts.build_release_manifest import verify_manifest as verify_release_manifest
 from scripts.create_roles import ROLE_SPECS, build_plan, validate_strong_passwords
 from scripts.security_release_gate import validate_scan_directory
 from scripts.validate_deployment_config import DeploymentConfigValidator
@@ -466,10 +468,115 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--release-gate", action="store_true", help="Require every production live/write/model probe without skips.")
     parser.add_argument("--security-scan-dir", help="Directory containing SBOM, Trivy, pip-audit, and pnpm-audit evidence.")
     parser.add_argument("--ocr-98-gate-report", help="Current passing OCR/audit 98+ release-gate JSON report.")
+    parser.add_argument("--release-manifest", help="Immutable release manifest binding source, images, frontend, rules, and business packs.")
+    parser.add_argument("--backup-recoverability-report", help="Fresh passing backup/PITR/replication/restore-drill evidence.")
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--output-dir", help="Optional directory for report.json and report.md.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of Markdown.")
     return parser.parse_args()
+
+
+def release_manifest_contract_section(args: argparse.Namespace) -> dict[str, Any]:
+    path_value = getattr(args, "release_manifest", None)
+    required = bool(getattr(args, "release_gate", False))
+    if not path_value:
+        check = {
+            "name": "release.manifest",
+            "status": "fail" if required else "skip",
+            "detail": "--release-manifest is required for a release gate." if required else "No release manifest supplied.",
+            "data": None,
+        }
+        return {"name": "release-manifest", "ok": not required, "skipped": not required, "checks": [check]}
+    path = Path(path_value).expanduser().resolve()
+    failures: list[str] = []
+    document: dict[str, Any] = {}
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        verify_release_manifest(document)
+    except Exception as exc:
+        failures.append(str(exc))
+    if document:
+        if document.get("schemaVersion") != "aicheck-release-manifest-v1":
+            failures.append("schemaVersion must be aicheck-release-manifest-v1")
+        source = document.get("source") if isinstance(document.get("source"), dict) else {}
+        current_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
+        if source.get("gitSha") != current_sha:
+            failures.append(f"manifest gitSha {source.get('gitSha')!r} does not match current source {current_sha!r}")
+        if source.get("dirty") is not False:
+            failures.append("manifest source must be clean")
+        backend = document.get("backend") if isinstance(document.get("backend"), dict) else {}
+        digest = str(backend.get("imageDigest") or "")
+        if required and not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
+            failures.append("backend imageDigest must be an immutable sha256 digest")
+        required_hashes = {
+            "source archive": source.get("archiveHash"),
+            "frontend assets": ((document.get("frontend") or {}).get("dist") or {}).get("aggregateHash"),
+            "business packs": (backend.get("businessPacks") or {}).get("aggregateHash"),
+            "rules": (document.get("rules") or {}).get("aggregateHash"),
+            "material mapping": (backend.get("materialMapping") or {}).get("sha256"),
+        }
+        for label, value in required_hashes.items():
+            if not isinstance(value, str) or not value.startswith("sha256:"):
+                failures.append(f"{label} hash is missing")
+    check = {
+        "name": "release.manifest",
+        "status": "fail" if failures else "pass",
+        "detail": "; ".join(failures) if failures else "Release manifest is authentic and bound to the current source and immutable artifacts.",
+        "data": {
+            "releaseId": document.get("releaseId"),
+            "manifestHash": document.get("manifestHash"),
+            "gitSha": (document.get("source") or {}).get("gitSha") if document else None,
+        },
+    }
+    return {"name": "release-manifest", "ok": not failures, "checks": [check]}
+
+
+def backup_recoverability_contract_section(args: argparse.Namespace) -> dict[str, Any]:
+    path_value = getattr(args, "backup_recoverability_report", None)
+    required = bool(getattr(args, "release_gate", False))
+    if not path_value:
+        return {
+            "name": "backup-recoverability",
+            "ok": not required,
+            "skipped": not required,
+            "checks": [
+                {
+                    "name": "backup.recoverability",
+                    "status": "fail" if required else "skip",
+                    "detail": "--backup-recoverability-report is required for a release gate." if required else "No recoverability report supplied.",
+                    "data": None,
+                }
+            ],
+        }
+    failures: list[str] = []
+    document: dict[str, Any] = {}
+    try:
+        import hashlib
+
+        document = json.loads(Path(path_value).expanduser().read_text(encoding="utf-8"))
+        expected_hash = str(document.get("reportHash") or "")
+        unsigned = {key: value for key, value in document.items() if key != "reportHash"}
+        actual_hash = "sha256:" + hashlib.sha256(
+            json.dumps(unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if expected_hash != actual_hash:
+            failures.append("recoverability report hash mismatch")
+        if document.get("schemaVersion") != "aicheck-backup-recoverability-v1":
+            failures.append("schemaVersion must be aicheck-backup-recoverability-v1")
+        checks = document.get("checks") if isinstance(document.get("checks"), list) else []
+        if document.get("ok") is not True or not checks or any(
+            not isinstance(item, dict) or item.get("status") != "pass" for item in checks
+        ):
+            failures.append("backup recoverability checks are not all passing")
+    except Exception as exc:
+        failures.append(str(exc))
+    check = {
+        "name": "backup.recoverability",
+        "status": "fail" if failures else "pass",
+        "detail": "; ".join(failures) if failures else "Physical, logical, offsite replication, RPO, RTO, and restore-drill evidence is current.",
+        "data": {"reportHash": document.get("reportHash"), "generatedAt": document.get("generatedAt")},
+    }
+    return {"name": "backup-recoverability", "ok": not failures, "checks": [check]}
 
 
 class DeploymentReportBuilder:
@@ -493,6 +600,10 @@ class DeploymentReportBuilder:
             self.api_contract_section(),
             self.frontend_contract_section(),
         ]
+        if bool(getattr(self.args, "release_manifest", None)) or bool(getattr(self.args, "release_gate", False)):
+            sections.append(release_manifest_contract_section(self.args))
+        if bool(getattr(self.args, "backup_recoverability_report", None)) or bool(getattr(self.args, "release_gate", False)):
+            sections.append(backup_recoverability_contract_section(self.args))
         if bool(getattr(self.args, "release_gate", False)):
             sections.append(release_gate_contract_section(self.args))
         if self.args.include_live:
@@ -667,6 +778,42 @@ class DeploymentReportBuilder:
             "checks": [check, mutation_check, helper_check],
         }
 
+    def release_runtime_check(self, api_client: httpx.Client) -> CheckResult | None:
+        manifest_path = getattr(self.args, "release_manifest", None)
+        if not manifest_path:
+            return None
+        manifest = json.loads(Path(manifest_path).expanduser().read_text(encoding="utf-8"))
+        try:
+            response = api_client.get("/api/runtime/ui-context")
+            payload = response.json()
+        except Exception as exc:
+            return CheckResult("release.runtime-identity", "fail", str(exc))
+        if response.status_code != 200 or not isinstance(payload, dict) or payload.get("code") != 0:
+            return CheckResult("release.runtime-identity", "fail", f"Unexpected runtime identity response: HTTP {response.status_code}")
+        runtime = payload.get("data") or {}
+        release = runtime.get("release") if isinstance(runtime, dict) else {}
+        expected = {
+            "releaseId": manifest.get("releaseId"),
+            "gitSha": (manifest.get("source") or {}).get("gitSha"),
+            "backendDigest": (manifest.get("backend") or {}).get("imageDigest"),
+            "frontendAssetHash": ((manifest.get("frontend") or {}).get("dist") or {}).get("aggregateHash"),
+            "rulesHash": (manifest.get("rules") or {}).get("aggregateHash"),
+            "businessPackHash": ((manifest.get("backend") or {}).get("businessPacks") or {}).get("aggregateHash"),
+            "materialMappingHash": ((manifest.get("backend") or {}).get("materialMapping") or {}).get("sha256"),
+            "manifestHash": manifest.get("manifestHash"),
+        }
+        mismatches = [
+            f"{key}: expected {value!r}, got {(release or {}).get(key)!r}"
+            for key, value in expected.items()
+            if value != (release or {}).get(key)
+        ]
+        return CheckResult(
+            "release.runtime-identity",
+            "fail" if mismatches else "pass",
+            "; ".join(mismatches) if mismatches else "Runtime identity matches the immutable release manifest.",
+            {"releaseId": (release or {}).get("releaseId"), "manifestHash": (release or {}).get("manifestHash")},
+        )
+
     def live_section(self) -> dict[str, Any]:
         roles = [item.strip() for item in str(self.args.roles).split(",") if item.strip()]
         litellm_api_key = os.getenv("LITELLM_API_KEY", "")
@@ -707,6 +854,9 @@ class DeploymentReportBuilder:
                     storage_client=storage_client,
                 )
                 results = verifier.run()
+                runtime_check = self.release_runtime_check(api_client)
+                if runtime_check is not None:
+                    results.append(runtime_check)
             finally:
                 storage_client.close()
                 if ocr_client:

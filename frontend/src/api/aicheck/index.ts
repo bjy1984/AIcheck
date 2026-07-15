@@ -1006,6 +1006,25 @@ export type LlmCompareRunSummary = {
   status?: '排队中' | '运行中' | '完成' | '失败' | '未知'
 }
 
+export type AuditIntegrityPayload = {
+  tenantId: string
+  status: 'verified' | 'tampered'
+  coverageStatus: 'complete' | 'legacy_unverified_sealed' | 'legacy_unverified_unsealed'
+  verifiedEventCount: number
+  chainedEventCount: number
+  legacyUnverifiedEventCount: number
+  legacyUnsealedEventCount?: number
+  headHash?: string | null
+  failures: Array<Record<string, unknown>>
+  legacyManifest?: {
+    manifestHash?: string | null
+    manifestReference?: string | null
+    integrityStatus: 'legacy_unverified'
+    sealEventId?: string | null
+    sealSequence?: number | null
+  } | null
+}
+
 export type AuditLogPayload = {
   items: Array<{
     id: string
@@ -1019,6 +1038,10 @@ export type AuditLogPayload = {
   page: number
   pageSize: number
   total: number
+  hasMore?: boolean
+  nextCursor?: string | null
+  paginationMode?: 'offset' | 'keyset'
+  integrity?: AuditIntegrityPayload
 }
 
 export type AdminTodoRule = {
@@ -3855,6 +3878,7 @@ export const getAuditLogsApi = (params?: {
   objectType?: string
   page?: number
   pageSize?: number
+  cursor?: string
 }): Promise<IResponse<AuditLogPayload>> => {
   return request.get({ url: '/api/admin/audit-logs', params })
 }

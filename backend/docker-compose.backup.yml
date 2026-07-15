@@ -1,0 +1,82 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/postgres-pgbackrest/Dockerfile
+      args:
+        AICHECK_POSTGRES_BASE_IMAGE: ${AICHECK_POSTGRES_BASE_IMAGE:-pgvector/pgvector:pg16}
+    image: ${AICHECK_POSTGRES_BACKUP_IMAGE:-aicheck-postgres-pgbackrest:pg16}
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=aicheck archive-push %p
+      - -c
+      - archive_timeout=60s
+      - -c
+      - restore_command=pgbackrest --stanza=aicheck archive-get %f %p
+      - -c
+      - wal_level=replica
+    stop_grace_period: 2m
+    environment: &pgbackrest-environment
+      AICHECK_BACKUP_SECRET_DIR: /run/secrets/aicheck-backup
+      PGBACKREST_REPO1_S3_BUCKET: ${AICHECK_PGBACKREST_S3_BUCKET:?AICHECK_PGBACKREST_S3_BUCKET is required}
+      PGBACKREST_REPO1_S3_ENDPOINT: ${AICHECK_PGBACKREST_S3_ENDPOINT:?AICHECK_PGBACKREST_S3_ENDPOINT is required}
+      PGBACKREST_REPO1_S3_REGION: ${AICHECK_PGBACKREST_S3_REGION:-us-east-1}
+      PGBACKREST_REPO1_STORAGE_PORT: ${AICHECK_PGBACKREST_STORAGE_PORT:-443}
+      PGBACKREST_REPO1_STORAGE_VERIFY_TLS: ${AICHECK_PGBACKREST_VERIFY_TLS:-y}
+    volumes:
+      - ${AICHECK_BACKUP_SECRET_HOST_PATH:?AICHECK_BACKUP_SECRET_HOST_PATH is required}:/run/secrets/aicheck-backup:ro
+      - pgbackrest-spool:/var/spool/pgbackrest
+      - pgbackrest-log:/var/log/pgbackrest
+
+  backup-agent:
+    image: ${AICHECK_POSTGRES_BACKUP_IMAGE:-aicheck-postgres-pgbackrest:pg16}
+    profiles: ["backup"]
+    entrypoint: ["aicheck-pgbackrest-entrypoint", "backup-agent"]
+    environment:
+      <<: *pgbackrest-environment
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${AICHECK_POSTGRES_USER:-aicheck}
+      PGDATABASE: ${AICHECK_POSTGRES_DB:-aicheck}
+      PGPASSWORD_FILE: /run/secrets/aicheck-backup/postgres_password
+      AICHECK_LOGICAL_BACKUP_BUCKET: ${AICHECK_LOGICAL_BACKUP_BUCKET:-aicheck-db-logical-backups}
+      AICHECK_OFFSITE_MINIO_ENDPOINT: ${AICHECK_OFFSITE_MINIO_ENDPOINT:?AICHECK_OFFSITE_MINIO_ENDPOINT is required}
+      AICHECK_OFFSITE_MINIO_SECURE: ${AICHECK_OFFSITE_MINIO_SECURE:-true}
+      AICHECK_RELEASE_ID: ${AICHECK_RELEASE_ID:?AICHECK_RELEASE_ID is required}
+      AICHECK_GIT_SHA: ${AICHECK_GIT_SHA:?AICHECK_GIT_SHA is required}
+      AICHECK_RELEASE_MANIFEST_HASH: ${AICHECK_RELEASE_MANIFEST_HASH:?AICHECK_RELEASE_MANIFEST_HASH is required}
+    volumes:
+      - ${AICHECK_BACKUP_SECRET_HOST_PATH:?AICHECK_BACKUP_SECRET_HOST_PATH is required}:/run/secrets/aicheck-backup:ro
+      - ${AICHECK_BACKUP_RECEIPT_HOST_PATH:-/home/dev-bjy/aicheck-data/backup-receipts}:/var/lib/aicheck-backup/receipts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["/opt/aicheck-backup/logical_backup.py"]
+
+  restore-drill:
+    image: ${AICHECK_POSTGRES_BACKUP_IMAGE:-aicheck-postgres-pgbackrest:pg16}
+    profiles: ["restore"]
+    user: postgres
+    entrypoint: ["aicheck-pgbackrest-entrypoint", "backup-agent"]
+    environment:
+      <<: *pgbackrest-environment
+      PGUSER: ${AICHECK_POSTGRES_USER:-aicheck}
+      PGPASSWORD_FILE: /run/secrets/aicheck-backup/postgres_password
+      PGDATA: /var/lib/postgresql/restore-drill
+      AICHECK_EXPECTED_DATABASES: ${AICHECK_EXPECTED_DATABASES:-aicheck,litellm,workflow}
+      AICHECK_RESTORE_EXPECTED_DATABASES_JSON: ${AICHECK_RESTORE_EXPECTED_DATABASES_JSON:-}
+      AICHECK_RESTORE_CANARY_LSN: ${AICHECK_RESTORE_CANARY_LSN:-}
+      AICHECK_RESTORE_STARTED_EPOCH: ${AICHECK_RESTORE_STARTED_EPOCH:-}
+    volumes:
+      - ${AICHECK_BACKUP_SECRET_HOST_PATH:?AICHECK_BACKUP_SECRET_HOST_PATH is required}:/run/secrets/aicheck-backup:ro
+      - ${AICHECK_BACKUP_RECEIPT_HOST_PATH:-/home/dev-bjy/aicheck-data/backup-receipts}:/var/lib/aicheck-backup/receipts
+      - restore-drill-data:/var/lib/postgresql/restore-drill
+    command: ["/opt/aicheck-backup/restore_drill.sh"]
+
+volumes:
+  pgbackrest-spool:
+  pgbackrest-log:
+  restore-drill-data:

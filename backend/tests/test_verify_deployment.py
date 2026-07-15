@@ -147,12 +147,18 @@ def api_transport(request: httpx.Request) -> httpx.Response:
     if path in {"/api/search", "/api/knowledge/project-files"}:
         return envelope({"items": [], "total": 0})
     if path.endswith("/nodes/40/package"):
+        if request.headers.get("authorization", "").endswith("token-admin"):
+            return envelope({"node": {"id": 40}})
         return envelope(code=403, reason="FORBIDDEN")
     if path.endswith("/workbench/context"):
         return envelope(code=403, reason="FORBIDDEN")
     if path.endswith("/documents/DOC-20260625-004"):
+        if request.headers.get("authorization", "").endswith("token-admin"):
+            return envelope({"document": {"id": "DOC-20260625-004"}})
         return envelope(code=403, reason="FORBIDDEN")
     if path == "/api/knowledge/files/KF-DOC-20260625-004":
+        if request.headers.get("authorization", "").endswith("token-admin"):
+            return envelope({"file": {"id": "KF-DOC-20260625-004"}})
         return envelope(code=403, reason="FORBIDDEN")
     if path.endswith("/inspection/nodes/24/ai-recheck"):
         auth = request.headers.get("authorization", "")

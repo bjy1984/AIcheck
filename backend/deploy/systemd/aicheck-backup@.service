@@ -1,0 +1,18 @@
+[Unit]
+Description=AIcheck %i backup job
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/aicheck/backup.env
+ExecStart=/usr/local/bin/aicheck-run-backup %i
+User=root
+Group=root
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/home/dev-bjy/aicheck-data/backup-receipts /var/lib/docker
+NoNewPrivileges=true
+TimeoutStartSec=4h

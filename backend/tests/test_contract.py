@@ -8939,12 +8939,80 @@ def test_operability_runtime_context_and_empty_overview_are_truthful(monkeypatch
     runtime = assert_ok(client.get("/runtime/ui-context"))
     assert runtime["demoDataAllowed"] is False
     assert runtime["serverTime"]
+    assert runtime["release"]["releaseId"] == runtime["buildVersion"]
 
     overview = assert_ok(client.get("/operations/overview?area=admin", headers={"X-Role": "admin"}))
     assert overview["totals"]["projects"] == 0
     assert overview["totals"]["users"] == 0
     assert overview["attentionItems"] == []
     assert overview["dataAsOf"] is None
+
+
+def test_concrete_admin_routes_precede_the_dynamic_admin_route() -> None:
+    from apps.api.routes import router
+
+    paths = [
+        str(getattr(route, "path", ""))
+        for route in router.routes
+        if "GET" in (getattr(route, "methods", set()) or set())
+    ]
+    assert paths.index("/admin/audit-logs") < paths.index("/admin/{kind}")
+
+
+def test_admin_audit_logs_use_postgres_page_contract(monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self):
+            now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+            self.rows = [
+                ("AUD-PG-3", {"id": "AUD-PG-3", "action": "发布规则", "result": "成功"}, now),
+                ("AUD-PG-2", {"id": "AUD-PG-2", "action": "更新规则", "result": "成功"}, now),
+                ("AUD-PG-1", {"id": "AUD-PG-1", "action": "登录", "result": "成功"}, now),
+            ]
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            if statement.startswith("SELECT count(*) FROM aicheck_state"):
+                return Cursor([(len(self.rows),)])
+            if statement.startswith("SELECT object_id, payload, updated_at FROM aicheck_state"):
+                limit, offset = int(params[-2]), int(params[-1])
+                return Cursor(self.rows[offset : offset + limit])
+            return Cursor([])
+
+        def commit(self):
+            return None
+
+    connection = Connection()
+    repo.sync_postgres = connection
+    repo.postgres_enabled = True
+    repo.postgres_dsn = "postgresql://test"
+    monkeypatch.setattr(repo, "configure_sync_postgres", lambda dsn=None: None)
+
+    data = assert_ok(client.get("/admin/audit-logs?page=2&pageSize=2", headers={"X-Role": "admin"}))
+    assert data["page"] == 2
+    assert data["pageSize"] == 2
+    assert data["total"] == 3
+    assert [item["id"] for item in data["items"]] == ["AUD-PG-1"]
+    assert data["paginationMode"] == "offset"
+    assert data["integrity"]["coverageStatus"] in {
+        "complete",
+        "legacy_unverified_sealed",
+        "legacy_unverified_unsealed",
+    }
+
+    invalid = client.get("/admin/audit-logs?cursor=not-base64", headers={"X-Role": "admin"})
+    assert_error(invalid, "VALIDATION_ERROR")
 
 
 def test_operations_and_search_enforce_role_and_project_scope() -> None:
