@@ -4032,14 +4032,6 @@ onBeforeUnmount(() => {
     <div class="aicheck-page app-shell">
       <header class="topbar">
         <div class="brand">
-          <button
-            class="hamburger"
-            type="button"
-            aria-label="打开节点导航"
-            @click="mobileTreeOpen = true"
-          >
-            ≡
-          </button>
           <div class="brand-mark">盾</div>
           <ElSelect
             v-model="activeProjectId"
@@ -5569,16 +5561,10 @@ onBeforeUnmount(() => {
 
 .brand {
   display: grid;
-  grid-template-columns: 24px 34px minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-width: 0;
-}
-
-.hamburger {
-  font-size: 22px;
-  line-height: 1;
-  color: #304158;
 }
 
 .brand-mark {
@@ -8087,7 +8073,7 @@ h3 {
   }
 
   .brand {
-    grid-template-columns: 24px 34px minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr);
   }
 
   .top-status {

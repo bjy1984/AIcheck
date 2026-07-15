@@ -841,6 +841,7 @@ test.describe('AIcheck route smoke', () => {
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
+    await expect(page.getByRole('button', { name: '打开节点导航' })).toHaveCount(0)
 
     for (const viewport of [
       { width: 390, height: 900 },
