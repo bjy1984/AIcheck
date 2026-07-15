@@ -2336,18 +2336,20 @@ const waitForWorkbenchLayout = () =>
     })
   })
 
-const runWorkbenchPageTransition = async (prepareTargetPage: () => void | Promise<void>) => {
+const runWorkbenchPageTransition = async (activateTargetPage: () => void | Promise<void>) => {
   const sequence = ++workbenchPageTransitionSequence
   stopWorkbenchPageTransition()
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   if (reduceMotion) {
-    await prepareTargetPage()
+    const targetReady = Promise.resolve(activateTargetPage())
     await nextTick()
     if (sequence !== workbenchPageTransitionSequence) return false
     await waitForWorkbenchLayout()
     if (sequence !== workbenchPageTransitionSequence) return false
     scrollWorkbenchContentToTop()
+    await targetReady
+    if (sequence !== workbenchPageTransitionSequence) return false
     return true
   }
 
@@ -2358,8 +2360,7 @@ const runWorkbenchPageTransition = async (prepareTargetPage: () => void | Promis
   workbenchPageTransitionPhase.value = 'hidden'
   await nextTick()
   if (sequence !== workbenchPageTransitionSequence) return false
-  await prepareTargetPage()
-  if (sequence !== workbenchPageTransitionSequence) return false
+  const targetReady = Promise.resolve(activateTargetPage())
   await nextTick()
   if (sequence !== workbenchPageTransitionSequence) return false
   await waitForWorkbenchLayout()
@@ -2372,6 +2373,8 @@ const runWorkbenchPageTransition = async (prepareTargetPage: () => void | Promis
       workbenchPageTransitionPhase.value = 'idle'
     }
   }, 500)
+  await targetReady
+  if (sequence !== workbenchPageTransitionSequence) return false
   return true
 }
 
@@ -4294,8 +4297,12 @@ onBeforeUnmount(() => {
         <main
           ref="workbenchMainRef"
           id="aicheck-workbench-main"
+          v-loading="nodeLoading && activeWorkbenchSection === 'node'"
           tabindex="-1"
+          :aria-busy="nodeLoading && activeWorkbenchSection === 'node'"
           :data-node-transition="workbenchPageTransitionPhase"
+          element-loading-text="正在加载节点内容…"
+          element-loading-background="rgb(248 251 255 / 82%)"
           :class="[
             'center',
             {

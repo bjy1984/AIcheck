@@ -1090,7 +1090,9 @@ test.describe('AIcheck route smoke', () => {
     if ((await nodeButtons.count()) === 0) {
       await nodeNavigation.getByRole('treeitem', { name: '焊接（粘接）', exact: true }).click()
     }
-    await expect(nodeButtons.first()).toBeVisible()
+    await expect(nodeButtons.nth(1)).toBeVisible()
+    const targetNodeButton = nodeButtons.nth(1)
+    const targetNodeName = String(await targetNodeButton.locator('.node-name').textContent()).trim()
     await center.evaluate((element) => {
       element.scrollTop = element.scrollHeight
     })
@@ -1133,17 +1135,12 @@ test.describe('AIcheck route smoke', () => {
           observer.observe(element, { attributes: true, attributeFilter: ['data-node-transition'] })
         })
     )
-    await nodeButtons.first().click()
+    await targetNodeButton.click()
 
     await expect(center).toHaveAttribute('data-node-transition', 'leaving')
     expect(await hiddenStatePromise).toEqual({ opacity: '0', translateY: 12 })
     await targetNodePackageRequested
-    await expect(center).toHaveAttribute('data-node-transition', 'hidden')
-    await page.waitForTimeout(200)
-    await expect(center).toHaveAttribute('data-node-transition', 'hidden')
-    releaseTargetNodePackage()
     await expect(center).toHaveAttribute('data-node-transition', 'entering')
-    await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
     const transitions = await Promise.all([
       page.locator('.workspace').evaluate((element) => {
         const style = getComputedStyle(element)
@@ -1160,10 +1157,21 @@ test.describe('AIcheck route smoke', () => {
         }
       })
     ])
+    await expect(center).toHaveAttribute('aria-busy', 'true')
+    await expect(center.locator('.el-loading-mask')).toBeVisible()
+    await expect(center.locator('.el-loading-text')).toHaveText('正在加载节点内容…')
+    await expect(center.locator('.page-title')).toContainText(targetNodeName)
+    await page.waitForTimeout(200)
+    await expect(center).toHaveAttribute('aria-busy', 'true')
+    await expect(center.locator('.el-loading-mask')).toBeVisible()
+    await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
     expect(transitions[0].property).toContain('grid-template-columns')
     expect(transitions[0].duration).toMatch(/^(0\.22s)(, 0\.22s)*$/)
     expect(transitions[1].name).toMatch(/^workbench-page-enter/)
     expect(transitions[1].duration).toBe('0.5s')
+    releaseTargetNodePackage()
+    await expect(center).toHaveAttribute('aria-busy', 'false')
+    await expect(center.locator('.el-loading-mask')).toBeHidden()
     await expect(center).toHaveAttribute('data-node-transition', 'idle')
   })
 
