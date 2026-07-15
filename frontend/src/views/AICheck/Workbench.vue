@@ -285,7 +285,7 @@ const activeProjectId = ref('')
 const activeNodeId = ref(24)
 const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
 const workbenchMainRef = ref<HTMLElement>()
-const workbenchPageTransitionPhase = ref<'idle' | 'leaving' | 'entering'>('idle')
+const workbenchPageTransitionPhase = ref<'idle' | 'leaving' | 'hidden' | 'entering'>('idle')
 let workbenchPageTransitionTimer: number | undefined
 let workbenchPageTransitionSequence = 0
 const activeInspectionAuditItem = ref<InspectionAuditItemKey>('submission')
@@ -2346,6 +2346,9 @@ const runWorkbenchPageTransition = async (applyPageState: () => void) => {
   await new Promise<void>((resolve) => window.setTimeout(resolve, 300))
   if (sequence !== workbenchPageTransitionSequence) return false
 
+  workbenchPageTransitionPhase.value = 'hidden'
+  await nextTick()
+  if (sequence !== workbenchPageTransitionSequence) return false
   applyPageState()
   await nextTick()
   if (sequence !== workbenchPageTransitionSequence) return false
@@ -4283,6 +4286,7 @@ onBeforeUnmount(() => {
               'has-flush-audit-directory':
                 role === 'inspection' && activeWorkbenchSection === 'node',
               'is-workbench-page-leaving': workbenchPageTransitionPhase === 'leaving',
+              'is-workbench-page-hidden': workbenchPageTransitionPhase === 'hidden',
               'is-workbench-page-entering': workbenchPageTransitionPhase === 'entering'
             }
           ]"
@@ -6412,8 +6416,14 @@ onBeforeUnmount(() => {
 
 .center.is-workbench-page-leaving {
   will-change: opacity, transform;
-  opacity: 0.72;
-  transform: translateY(-4px);
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+.center.is-workbench-page-hidden {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: none;
 }
 
 .center.is-workbench-page-entering {
@@ -6423,8 +6433,8 @@ onBeforeUnmount(() => {
 
 @keyframes workbench-page-enter {
   from {
-    opacity: 0.72;
-    transform: translateY(6px);
+    opacity: 0;
+    transform: translateY(12px);
   }
 
   to {

@@ -1096,9 +1096,30 @@ test.describe('AIcheck route smoke', () => {
     })
     await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
 
+    const hiddenStatePromise = center.evaluate(
+      (element) =>
+        new Promise<{ opacity: string; translateY: number }>((resolve) => {
+          const captureHiddenState = () => {
+            if (element.getAttribute('data-node-transition') !== 'hidden') return false
+            const style = getComputedStyle(element)
+            resolve({
+              opacity: style.opacity,
+              translateY: new DOMMatrixReadOnly(style.transform).m42
+            })
+            return true
+          }
+          if (captureHiddenState()) return
+          const observer = new MutationObserver(() => {
+            if (!captureHiddenState()) return
+            observer.disconnect()
+          })
+          observer.observe(element, { attributes: true, attributeFilter: ['data-node-transition'] })
+        })
+    )
     await nodeButtons.first().click()
 
     await expect(center).toHaveAttribute('data-node-transition', 'leaving')
+    expect(await hiddenStatePromise).toEqual({ opacity: '0', translateY: 12 })
     await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
     await expect(center).toHaveAttribute('data-node-transition', 'entering')
     const transitions = await Promise.all([
