@@ -26,7 +26,6 @@ import {
 } from 'element-plus'
 import {
   ArrowLeft,
-  ArrowRight,
   Document,
   DocumentChecked,
   FolderOpened,
@@ -2350,7 +2349,7 @@ const startNodeContentTransition = async () => {
     nodeContentTransitionTimer = window.setTimeout(() => {
       nodeContentTransitionTimer = undefined
       if (sequence === nodeContentTransitionSequence) nodeContentTransitioning.value = false
-    }, 210)
+    }, 230)
   })
 }
 
@@ -4229,9 +4228,10 @@ onBeforeUnmount(() => {
           :class="['left', { 'is-collapsed': desktopTreeCollapsed }]"
         >
           <section
-            v-show="!desktopTreeCollapsed"
             id="audit-node-navigation-content"
             class="tree-wrap"
+            :aria-hidden="desktopTreeCollapsed"
+            :inert="desktopTreeCollapsed"
           >
             <div class="section-title">
               <span>项目审核节点</span>
@@ -4256,8 +4256,7 @@ onBeforeUnmount(() => {
             @click="desktopTreeCollapsed = !desktopTreeCollapsed"
           >
             <ElIcon>
-              <ArrowRight v-if="desktopTreeCollapsed" />
-              <ArrowLeft v-else />
+              <ArrowLeft />
             </ElIcon>
           </ElButton>
         </aside>
@@ -6115,6 +6114,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   grid-template-columns: minmax(300px, 404px) minmax(0, 1fr);
+  transition: grid-template-columns 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .workspace.no-left-nav {
@@ -6122,7 +6122,7 @@ onBeforeUnmount(() => {
 }
 
 .workspace.is-left-collapsed {
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: minmax(28px, 28px) minmax(0, 1fr);
 }
 
 .left,
@@ -6137,6 +6137,7 @@ onBeforeUnmount(() => {
   overflow: visible;
   background: #fff;
   border-right: 1px solid var(--line);
+  transition: background-color 180ms ease-out;
   grid-template-rows: minmax(0, 1fr);
 }
 
@@ -6173,11 +6174,34 @@ onBeforeUnmount(() => {
 
 .sidebar-collapse-toggle .el-icon {
   font-size: 16px;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.left.is-collapsed .sidebar-collapse-toggle .el-icon {
+  transform: rotate(180deg);
 }
 
 .tree-wrap {
   min-height: 0;
   overflow: hidden auto;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition:
+    opacity 180ms ease-out 40ms,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s;
+}
+
+.left.is-collapsed .tree-wrap {
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-8px);
+  transition:
+    opacity 120ms ease-in,
+    transform 160ms ease-in,
+    visibility 0s 160ms;
 }
 
 .section-title {
@@ -6368,10 +6392,27 @@ onBeforeUnmount(() => {
   animation: workbench-node-heading-enter 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.center.is-node-content-entering > :not(.page-head, .audit-item-directory) {
+  will-change: opacity, transform;
+  animation: workbench-node-panel-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @keyframes workbench-node-heading-enter {
   from {
     opacity: 0.94;
     transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes workbench-node-panel-enter {
+  from {
+    opacity: 0.97;
+    transform: translateY(4px);
   }
 
   to {
@@ -8595,8 +8636,15 @@ h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .center.is-node-content-entering > .page-head {
+  .center.is-node-content-entering > .page-head,
+  .center.is-node-content-entering > :not(.page-head, .audit-item-directory) {
     animation: none;
+  }
+
+  .workspace,
+  .tree-wrap,
+  .sidebar-collapse-toggle .el-icon {
+    transition: none;
   }
 
   .global-search,

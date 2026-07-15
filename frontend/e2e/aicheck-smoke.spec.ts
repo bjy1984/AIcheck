@@ -868,6 +868,7 @@ test.describe('AIcheck route smoke', () => {
   })
 
   test('inspection node navigation remains usable at responsive breakpoints', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await openRoute(
       page,
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
@@ -957,6 +958,13 @@ test.describe('AIcheck route smoke', () => {
     await expect(desktopNodeNavigation).toBeVisible()
     const collapseTrigger = page.getByRole('button', { name: '收起节点导航' })
     await expect(collapseTrigger).toHaveAttribute('aria-expanded', 'true')
+    await expect
+      .poll(() =>
+        page
+          .locator('.workspace')
+          .evaluate((element) => getComputedStyle(element).transitionDuration)
+      )
+      .toMatch(/^(0s)(, 0s)*$/)
     const collapseAlignment = await Promise.all([
       desktopNodeNavigation.boundingBox(),
       collapseTrigger.boundingBox()
@@ -1075,15 +1083,37 @@ test.describe('AIcheck route smoke', () => {
 
     await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
     await expect(center).toHaveAttribute('data-node-transition', 'entering')
-    const transition = await page.locator('.page-head').evaluate((element) => {
-      const style = getComputedStyle(element)
-      return {
-        name: style.animationName,
-        duration: style.animationDuration
-      }
-    })
-    expect(transition.name).toMatch(/^workbench-node-heading-enter/)
-    expect(transition.duration).toBe('0.21s')
+    const transitions = await Promise.all([
+      page.locator('.workspace').evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          property: style.transitionProperty,
+          duration: style.transitionDuration
+        }
+      }),
+      page.locator('.page-head').evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          name: style.animationName,
+          duration: style.animationDuration
+        }
+      }),
+      center.locator(':scope > :not(.page-head):not(.audit-item-directory)').first().evaluate(
+        (element) => {
+          const style = getComputedStyle(element)
+          return {
+            name: style.animationName,
+            duration: style.animationDuration
+          }
+        }
+      )
+    ])
+    expect(transitions[0].property).toContain('grid-template-columns')
+    expect(transitions[0].duration).toMatch(/^(0\.22s)(, 0\.22s)*$/)
+    expect(transitions[1].name).toMatch(/^workbench-node-heading-enter/)
+    expect(transitions[1].duration).toBe('0.21s')
+    expect(transitions[2].name).toMatch(/^workbench-node-panel-enter/)
+    expect(transitions[2].duration).toBe('0.22s')
     await expect(center).toHaveAttribute('data-node-transition', 'idle')
   })
 
