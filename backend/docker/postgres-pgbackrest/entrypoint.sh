@@ -24,4 +24,9 @@ if [ "$#" -gt 0 ] && [ "$1" = "backup-agent" ]; then
   exec "$@"
 fi
 
+if [ "$#" -gt 0 ] && [ "$1" = "restore-agent" ]; then
+  shift
+  exec gosu postgres "$@"
+fi
+
 exec /usr/local/bin/docker-entrypoint.sh "$@"

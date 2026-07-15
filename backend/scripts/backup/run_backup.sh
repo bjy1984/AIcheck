@@ -5,12 +5,15 @@ action="${1:-verify}"
 deploy_dir="${AICHECK_DEPLOY_DIR:?AICHECK_DEPLOY_DIR is required}"
 env_file="${AICHECK_ENV_FILE:-/etc/aicheck/production.env}"
 receipt_dir="${AICHECK_BACKUP_RECEIPT_DIR:-/home/dev-bjy/aicheck-data/backup-receipts}"
+compose_project="${AICHECK_COMPOSE_PROJECT_NAME:-aicheck}"
+backup_compose_file="${AICHECK_BACKUP_COMPOSE_FILE:-docker-compose.backup.yml}"
+backup_mode="${AICHECK_BACKUP_MODE:-offsite}"
 
 compose() {
-  docker compose --env-file "$env_file" --project-directory "$deploy_dir" \
+  docker compose --env-file "$env_file" --project-directory "$deploy_dir" --project-name "$compose_project" \
     -f "$deploy_dir/docker-compose.deploy.yml" \
     -f "$deploy_dir/docker-compose.production-data.yml" \
-    -f "$deploy_dir/docker-compose.backup.yml" "$@"
+    -f "$deploy_dir/$backup_compose_file" "$@"
 }
 
 case "$action" in
@@ -23,6 +26,10 @@ case "$action" in
     compose exec -T postgres pgbackrest --stanza=aicheck expire
     ;;
   logical)
+    [ "$backup_mode" != "local_only" ] || {
+      echo "logical upload requires the offsite backup mode" >&2
+      exit 2
+    }
     compose --profile backup run --rm backup-agent /opt/aicheck-backup/logical_backup.py
     ;;
   restore-drill)
@@ -41,12 +48,19 @@ case "$action" in
     mkdir -p "$receipt_dir"
     compose exec -T postgres pgbackrest --stanza=aicheck --output=json info > "$receipt_dir/pgbackrest-info.json.tmp"
     mv "$receipt_dir/pgbackrest-info.json.tmp" "$receipt_dir/pgbackrest-info.json"
-    compose --profile backup run --rm backup-agent /opt/aicheck-backup/verify_backup_readiness.py \
-      --pgbackrest-info /var/lib/aicheck-backup/receipts/pgbackrest-info.json \
-      --logical-receipt /var/lib/aicheck-backup/receipts/latest-logical-backup.json \
-      --replication-receipt /var/lib/aicheck-backup/receipts/minio-replication-receipt.json \
-      --restore-receipt /var/lib/aicheck-backup/receipts/latest-restore-drill.json \
-      --output /var/lib/aicheck-backup/receipts/backup-recoverability.json
+    if [ "$backup_mode" = "local_only" ]; then
+      compose exec -T postgres /opt/aicheck-backup/verify_local_backup.py \
+        --pgbackrest-info /var/lib/aicheck-backup/receipts/pgbackrest-info.json \
+        --restore-receipt /var/lib/aicheck-backup/receipts/latest-restore-drill.json \
+        --output /var/lib/aicheck-backup/receipts/local-backup-readiness.json
+    else
+      compose --profile backup run --rm backup-agent /opt/aicheck-backup/verify_backup_readiness.py \
+        --pgbackrest-info /var/lib/aicheck-backup/receipts/pgbackrest-info.json \
+        --logical-receipt /var/lib/aicheck-backup/receipts/latest-logical-backup.json \
+        --replication-receipt /var/lib/aicheck-backup/receipts/minio-replication-receipt.json \
+        --restore-receipt /var/lib/aicheck-backup/receipts/latest-restore-drill.json \
+        --output /var/lib/aicheck-backup/receipts/backup-recoverability.json
+    fi
     ;;
   *)
     echo "usage: $0 {init|full|diff|incr|logical|restore-drill|verify}" >&2

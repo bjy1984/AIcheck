@@ -1,0 +1,56 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/postgres-pgbackrest/Dockerfile
+      args:
+        AICHECK_POSTGRES_BASE_IMAGE: ${AICHECK_POSTGRES_BASE_IMAGE:-pgvector/pgvector:pg16}
+    image: ${AICHECK_POSTGRES_BACKUP_IMAGE:-aicheck-postgres-pgbackrest:pg16-local}
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=aicheck archive-push %p
+      - -c
+      - archive_timeout=60s
+      - -c
+      - restore_command=pgbackrest --stanza=aicheck archive-get %f %p
+      - -c
+      - wal_level=replica
+    stop_grace_period: 2m
+    environment:
+      AICHECK_BACKUP_MODE: local_only
+      AICHECK_BACKUP_SECRET_DIR: /run/secrets/aicheck-backup
+    volumes:
+      - ${AICHECK_BACKUP_SECRET_HOST_PATH:?AICHECK_BACKUP_SECRET_HOST_PATH is required}:/run/secrets/aicheck-backup:ro
+      - ${AICHECK_LOCAL_PGBACKREST_HOST_PATH:-/home/dev-bjy/aicheck-data/pgbackrest-local}:/pgbackrest
+      - ${AICHECK_LOCAL_PGBACKREST_SPOOL_HOST_PATH:-/home/dev-bjy/aicheck-data/pgbackrest-spool}:/var/spool/pgbackrest
+      - ${AICHECK_LOCAL_PGBACKREST_LOG_HOST_PATH:-/home/dev-bjy/aicheck-data/pgbackrest-log}:/var/log/pgbackrest
+      - ${AICHECK_BACKUP_RECEIPT_HOST_PATH:-/home/dev-bjy/aicheck-data/backup-receipts}:/var/lib/aicheck-backup/receipts
+      - ./docker/postgres-pgbackrest/pgbackrest-local.conf:/etc/pgbackrest/pgbackrest.conf:ro
+
+  restore-drill:
+    image: ${AICHECK_POSTGRES_BACKUP_IMAGE:-aicheck-postgres-pgbackrest:pg16-local}
+    profiles: ["restore"]
+    entrypoint: ["aicheck-pgbackrest-entrypoint", "restore-agent"]
+    environment:
+      AICHECK_BACKUP_MODE: local_only
+      AICHECK_BACKUP_SECRET_DIR: /run/secrets/aicheck-backup
+      PGUSER: ${AICHECK_POSTGRES_USER:-aicheck}
+      PGPASSWORD_FILE: /run/secrets/aicheck-backup/postgres_password
+      PGDATA: /var/lib/postgresql/restore-drill
+      AICHECK_EXPECTED_DATABASES: ${AICHECK_EXPECTED_DATABASES:-aicheck,litellm,workflow}
+      AICHECK_RESTORE_EXPECTED_DATABASES_JSON: ${AICHECK_RESTORE_EXPECTED_DATABASES_JSON:-}
+      AICHECK_RESTORE_CANARY_LSN: ${AICHECK_RESTORE_CANARY_LSN:-}
+      AICHECK_RESTORE_STARTED_EPOCH: ${AICHECK_RESTORE_STARTED_EPOCH:-}
+    volumes:
+      - ${AICHECK_BACKUP_SECRET_HOST_PATH:?AICHECK_BACKUP_SECRET_HOST_PATH is required}:/run/secrets/aicheck-backup:ro
+      - ${AICHECK_LOCAL_PGBACKREST_HOST_PATH:-/home/dev-bjy/aicheck-data/pgbackrest-local}:/pgbackrest:ro
+      - ${AICHECK_BACKUP_RECEIPT_HOST_PATH:-/home/dev-bjy/aicheck-data/backup-receipts}:/var/lib/aicheck-backup/receipts
+      - ./docker/postgres-pgbackrest/pgbackrest-local.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - restore-drill-data:/var/lib/postgresql/restore-drill
+    command: ["/opt/aicheck-backup/restore_drill.sh"]
+
+volumes:
+  restore-drill-data:

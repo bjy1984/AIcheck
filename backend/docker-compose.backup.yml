@@ -59,8 +59,7 @@ services:
   restore-drill:
     image: ${AICHECK_POSTGRES_BACKUP_IMAGE:-aicheck-postgres-pgbackrest:pg16}
     profiles: ["restore"]
-    user: postgres
-    entrypoint: ["aicheck-pgbackrest-entrypoint", "backup-agent"]
+    entrypoint: ["aicheck-pgbackrest-entrypoint", "restore-agent"]
     environment:
       <<: *pgbackrest-environment
       PGUSER: ${AICHECK_POSTGRES_USER:-aicheck}

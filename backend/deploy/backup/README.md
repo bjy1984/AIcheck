@@ -95,3 +95,14 @@ python -m scripts.deployment_report \
 
 Any missing/stale receipt, missing database, RPO above 15 minutes, RTO above four hours, or failed restore drill is a
 formal NO-GO. A successful upload without a successful isolated restore is not accepted as a backup.
+
+## Local-only interim mode
+
+When an approved offsite S3/KMS destination is not yet available, use `docker-compose.backup-local.yml` with
+`AICHECK_BACKUP_MODE=local_only`. This enables AES-256 encrypted pgBackRest backups, continuous WAL archiving, and the
+same isolated restore drill on the production host. Enable only the full, differential, restore-drill, and verify
+timers; the logical-upload timer intentionally remains disabled.
+
+The generated `local-backup-readiness.json` always contains `formalRecoverability: false` and `offsiteVerified: false`.
+Local-only mode reduces recovery risk for database or application failure but does not survive loss or compromise of
+the production host and never satisfies the formal production recoverability gate.
