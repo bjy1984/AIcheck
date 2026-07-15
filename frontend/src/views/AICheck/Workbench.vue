@@ -2234,6 +2234,38 @@ const scrollToRoleFeedbackList = async (elementId: string) => {
   document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+const scrollInspectionAuditPanelToTop = async (itemKey: InspectionAuditItemKey) => {
+  await nextTick()
+  const center = document.querySelector<HTMLElement>('.center.has-flush-audit-directory')
+  const directory = center?.querySelector<HTMLElement>('.audit-item-directory__scroll')
+  const panel = center?.querySelector<HTMLElement>(`#inspection-audit-panel-${itemKey}`)
+  if (!center || !directory || !panel) return
+
+  const viewport = document.querySelector<HTMLElement>('.aicheck-static-viewport')
+  const scrollContainer =
+    center.scrollHeight > center.clientHeight + 1
+      ? center
+      : viewport && viewport.scrollHeight > viewport.clientHeight + 1
+        ? viewport
+        : center
+  const containerBox = scrollContainer.getBoundingClientRect()
+  const panelBox = panel.getBoundingClientRect()
+  const directoryBox = directory.getBoundingClientRect()
+  const stickyInset = Number.parseFloat(getComputedStyle(directory).top) || 0
+  const targetTop =
+    scrollContainer.scrollTop +
+    panelBox.top -
+    containerBox.top -
+    stickyInset -
+    directoryBox.height -
+    8
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  scrollContainer.scrollTo({
+    top: Math.max(0, Math.round(targetTop)),
+    behavior: reduceMotion ? 'auto' : 'smooth'
+  })
+}
+
 const updateInspectionRoute = async (
   target: { nodeId?: number; auditItem?: InspectionAuditItemKey; overview?: boolean },
   mode: 'push' | 'replace' = 'push'
@@ -2255,6 +2287,7 @@ const handleInspectionAuditSelect = async (item: InspectionAuditItem) => {
     ...inspectionAuditItemByNode.value,
     [activeNodeId.value]: item.key
   }
+  await scrollInspectionAuditPanelToTop(item.key)
   await updateInspectionRoute({ nodeId: activeNodeId.value, auditItem: item.key })
 }
 

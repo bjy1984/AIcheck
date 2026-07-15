@@ -870,6 +870,26 @@ test.describe('AIcheck route smoke', () => {
       await expect(auditDirectory.getByRole('tab')).toHaveCount(7)
       await expect(page.locator('.audit-item-directory__summary')).toBeVisible()
 
+      const stableLoadingLayer = await auditDirectory.evaluate((element) => {
+        const root = element.parentElement!
+        root.classList.add('is-loading')
+        const style = getComputedStyle(element)
+        const result = {
+          opacity: style.opacity,
+          backgroundColor: style.backgroundColor,
+          position: style.position,
+          zIndex: style.zIndex
+        }
+        root.classList.remove('is-loading')
+        return result
+      })
+      expect(stableLoadingLayer).toEqual({
+        opacity: '1',
+        backgroundColor: 'rgb(244, 248, 255)',
+        position: 'sticky',
+        zIndex: '40'
+      })
+
       const currentItem = auditDirectory.locator('.audit-item-directory__item.is-selected')
       await currentItem.press('End')
       const archiveItem = auditDirectory.getByRole('tab', { name: /签发归档/ })
@@ -994,9 +1014,25 @@ test.describe('AIcheck route smoke', () => {
     const archiveItem = directory.getByRole('tab', { name: /签发归档/ })
     await expect(archiveItem).toHaveAttribute('aria-selected', 'true')
 
+    const center = page.locator('.center')
+    await center.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
     await archiveItem.press('Home')
     const submissionItem = directory.getByRole('tab', { name: /资料提交/ })
     await expect(submissionItem).toHaveAttribute('aria-selected', 'true')
+    const submissionPanel = page.locator('#inspection-audit-panel-submission')
+    await expect(submissionPanel).toBeVisible()
+    await expect
+      .poll(async () => {
+        const [directoryBox, panelBox] = await Promise.all([
+          directory.boundingBox(),
+          submissionPanel.boundingBox()
+        ])
+        if (!directoryBox || !panelBox) return -1
+        return Math.round(panelBox.y - directoryBox.y - directoryBox.height)
+      })
+      .toBe(8)
 
     await submissionItem.press('ArrowDown')
     await expect(ocrItem).toHaveAttribute('aria-selected', 'true')
@@ -1048,12 +1084,25 @@ test.describe('AIcheck route smoke', () => {
     await openInspectionNodeAuditItem(page, '证据确认')
 
     await page.evaluate(() => {
-      const state = window as Window & { __auditScrollBehaviors?: string[] }
+      const state = window as Window & {
+        __auditScrollBehaviors?: string[]
+        __auditPanelScrollBehaviors?: string[]
+      }
       state.__auditScrollBehaviors = []
-      Element.prototype.scrollIntoView = function (options?: boolean | ScrollIntoViewOptions) {
-        if (typeof options === 'object') {
-          state.__auditScrollBehaviors?.push(String(options.behavior || 'auto'))
+      state.__auditPanelScrollBehaviors = []
+      Element.prototype.scrollTo = function (optionsOrX?: number | ScrollToOptions, y?: number) {
+        if (typeof optionsOrX === 'object') {
+          const behavior = String(optionsOrX.behavior || 'auto')
+          if (this.classList.contains('audit-item-directory__scroll')) {
+            state.__auditScrollBehaviors?.push(behavior)
+          } else {
+            state.__auditPanelScrollBehaviors?.push(behavior)
+          }
+          if (optionsOrX.top !== undefined) this.scrollTop = Number(optionsOrX.top)
+          if (optionsOrX.left !== undefined) this.scrollLeft = Number(optionsOrX.left)
+          return
         }
+        this.scrollTop = Number(y || 0)
       }
     })
 
@@ -1067,6 +1116,14 @@ test.describe('AIcheck route smoke', () => {
         page.evaluate(() => {
           const state = window as Window & { __auditScrollBehaviors?: string[] }
           return state.__auditScrollBehaviors || []
+        })
+      )
+      .toContain('auto')
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const state = window as Window & { __auditPanelScrollBehaviors?: string[] }
+          return state.__auditPanelScrollBehaviors || []
         })
       )
       .toContain('auto')

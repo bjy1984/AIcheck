@@ -36,11 +36,19 @@ const elementStepStatus = (status: InspectionAuditItemStatus) => {
 const focusItem = async (key: InspectionAuditItemKey) => {
   await nextTick()
   const target = directoryRef.value?.querySelector<HTMLElement>(`[data-audit-item="${key}"]`)
+  const scroller = target?.closest<HTMLElement>('.audit-item-directory__scroll')
+  if (!target || !scroller) return
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  target?.focus({ preventScroll: true })
-  target?.scrollIntoView({
-    block: 'nearest',
-    inline: 'center',
+  const targetBox = target.getBoundingClientRect()
+  const scrollerBox = scroller.getBoundingClientRect()
+  const targetLeft =
+    scroller.scrollLeft +
+    targetBox.left -
+    scrollerBox.left -
+    (scroller.clientWidth - targetBox.width) / 2
+  target.focus({ preventScroll: true })
+  scroller.scrollTo({
+    left: Math.max(0, Math.round(targetLeft)),
     behavior: reduceMotion ? 'auto' : 'smooth'
   })
 }
@@ -90,7 +98,12 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
       </span>
     </div>
 
-    <div class="audit-item-directory__scroll" role="region" aria-label="审计项目录">
+    <div
+      class="audit-item-directory__scroll"
+      role="region"
+      aria-label="审计项目录"
+      :aria-busy="loading || undefined"
+    >
       <ElSteps
         :active="-1"
         direction="horizontal"
@@ -251,11 +264,17 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 .audit-item-directory__scroll {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 40;
   padding: 8px 8px 6px;
   overflow: auto hidden;
-  background: linear-gradient(110deg, var(--audit-directory-sky), var(--audit-directory-mint));
+  background-color: var(--audit-directory-sky);
+  background-image: linear-gradient(
+    110deg,
+    var(--audit-directory-sky),
+    var(--audit-directory-mint)
+  );
   border-radius: 12px;
+  opacity: 1;
   box-shadow: 0 4px 14px rgb(36 51 73 / 6%);
   isolation: isolate;
   scrollbar-width: thin;
@@ -548,7 +567,11 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .audit-item-directory.is-loading > * {
   pointer-events: none;
-  opacity: 0.72;
+}
+
+.audit-item-directory.is-loading > .audit-item-directory__scroll {
+  cursor: progress;
+  opacity: 1;
 }
 
 @keyframes audit-item-ripple {
