@@ -873,6 +873,14 @@ test.describe('AIcheck route smoke', () => {
       routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
     )
     await expect(page.getByRole('button', { name: '打开节点导航' })).toHaveCount(0)
+    const certificateNode = page
+      .getByRole('button', { name: '设计单位许可资质', exact: true })
+      .first()
+    await expect(certificateNode.locator('.file-type-icon')).toHaveAttribute(
+      'data-file-kind',
+      'certificate'
+    )
+    await expect(certificateNode.locator('.file-type-icon')).toHaveAttribute('aria-hidden', 'true')
 
     for (const viewport of [
       { width: 390, height: 900 },
@@ -945,7 +953,26 @@ test.describe('AIcheck route smoke', () => {
 
     await page.setViewportSize({ width: 1440, height: 1000 })
     await expect(page.getByRole('button', { name: '审核节点', exact: true })).toBeHidden()
-    await expect(page.locator('#audit-node-navigation')).toBeVisible()
+    const desktopNodeNavigation = page.locator('#audit-node-navigation')
+    await expect(desktopNodeNavigation).toBeVisible()
+    const collapseTrigger = page.getByRole('button', { name: '收起节点导航' })
+    await expect(collapseTrigger).toHaveAttribute('aria-expanded', 'true')
+    const collapseAlignment = await Promise.all([
+      desktopNodeNavigation.boundingBox(),
+      collapseTrigger.boundingBox()
+    ]).then(([sidebarBox, triggerBox]) => {
+      if (!sidebarBox || !triggerBox) return -1
+      return Math.round(triggerBox.x + triggerBox.width / 2 - (sidebarBox.x + sidebarBox.width))
+    })
+    expect(Math.abs(collapseAlignment)).toBeLessThanOrEqual(1)
+    await collapseTrigger.click()
+    await expect(page.locator('.workspace')).toHaveClass(/is-left-collapsed/)
+    await expect(desktopNodeNavigation.locator('.tree-wrap')).toBeHidden()
+    const expandTrigger = page.getByRole('button', { name: '展开节点导航' })
+    await expect(expandTrigger).toHaveAttribute('aria-expanded', 'false')
+    await expandTrigger.click()
+    await expect(page.locator('.workspace')).not.toHaveClass(/is-left-collapsed/)
+    await expect(desktopNodeNavigation.locator('.tree-wrap')).toBeVisible()
     const desktopAuditDirectory = page.getByRole('region', { name: '审计项目录' })
     await expect(desktopAuditDirectory.locator('.el-steps')).toHaveClass(/el-steps--horizontal/)
     await expect(desktopAuditDirectory.getByRole('tab')).toHaveCount(7)
@@ -1020,6 +1047,44 @@ test.describe('AIcheck route smoke', () => {
       })
       .toBe(stickyTopInset)
     await expectNoPageOverflow(page)
+  })
+
+  test('inspection tree selection returns content to the top with a subtle transition', async ({
+    page
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await openRoute(
+      page,
+      routeCases.find((routeCase) => routeCase.path === '/workbench/inspection')!
+    )
+
+    const center = page.locator('#aicheck-workbench-main')
+    const nodeNavigation = page.locator('#audit-node-navigation')
+    const nodeButtons = nodeNavigation.locator('.node-button')
+    if ((await nodeButtons.count()) === 0) {
+      await nodeNavigation.getByRole('treeitem', { name: '焊接（粘接）', exact: true }).click()
+    }
+    await expect(nodeButtons.first()).toBeVisible()
+    await center.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+
+    await nodeButtons.first().click()
+
+    await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
+    await expect(center).toHaveAttribute('data-node-transition', 'entering')
+    const transition = await page.locator('.page-head').evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        name: style.animationName,
+        duration: style.animationDuration
+      }
+    })
+    expect(transition.name).toMatch(/^workbench-node-heading-enter/)
+    expect(transition.duration).toBe('0.21s')
+    await expect(center).toHaveAttribute('data-node-transition', 'idle')
   })
 
   test('inspection audit directory supports keyboard selection and restorable deep links', async ({
@@ -1166,6 +1231,14 @@ test.describe('AIcheck route smoke', () => {
         })
       )
       .toBe('none')
+
+    const center = page.locator('#aicheck-workbench-main')
+    await center.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    await page.locator('#audit-node-navigation .node-button').first().click()
+    await expect.poll(() => center.evaluate((element) => element.scrollTop)).toBe(0)
+    await expect(center).toHaveAttribute('data-node-transition', 'idle')
   })
 
   test('inspection renders responsible role codes as Chinese labels', async ({ page }) => {

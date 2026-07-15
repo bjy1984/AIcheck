@@ -25,6 +25,8 @@ import {
   ElTreeV2
 } from 'element-plus'
 import {
+  ArrowLeft,
+  ArrowRight,
   Document,
   DocumentChecked,
   FolderOpened,
@@ -186,6 +188,7 @@ import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
 import EvidenceLocatorDialog from './components/EvidenceLocatorDialog.vue'
 import ExportTaskDrawer from './components/ExportTaskDrawer.vue'
+import FileTypeIcon from './components/FileTypeIcon.vue'
 import FileDetailDialog from './components/FileDetailDialog.vue'
 import GlobalQuickAccessDialog from './components/GlobalQuickAccessDialog.vue'
 import NdtDetailDrawer from './components/NdtDetailDrawer.vue'
@@ -281,6 +284,11 @@ const projectOptions = ref<Project[]>([])
 const activeProjectId = ref('')
 const activeNodeId = ref(24)
 const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
+const workbenchMainRef = ref<HTMLElement>()
+const nodeContentTransitioning = ref(false)
+let nodeContentTransitionFrame: number | undefined
+let nodeContentTransitionTimer: number | undefined
+let nodeContentTransitionSequence = 0
 const activeInspectionAuditItem = ref<InspectionAuditItemKey>('submission')
 const inspectionAuditOverview = ref<InspectionAuditOverviewPayload>()
 const inspectionAuditWorkspace = ref<InspectionAuditWorkspacePayload>()
@@ -511,6 +519,7 @@ const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
 const aiRecheckOutputVisible = ref(false)
 const mobileTreeOpen = ref(false)
 const compactNodeNavigation = ref(false)
+const desktopTreeCollapsed = ref(false)
 
 const syncCompactNodeNavigation = () => {
   compactNodeNavigation.value = window.innerWidth <= 900
@@ -2289,6 +2298,62 @@ const scrollToRoleFeedbackList = async (elementId: string) => {
   document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+const stopNodeContentTransition = () => {
+  if (nodeContentTransitionFrame !== undefined) {
+    window.cancelAnimationFrame(nodeContentTransitionFrame)
+    nodeContentTransitionFrame = undefined
+  }
+  if (nodeContentTransitionTimer !== undefined) {
+    window.clearTimeout(nodeContentTransitionTimer)
+    nodeContentTransitionTimer = undefined
+  }
+  nodeContentTransitioning.value = false
+}
+
+const scrollWorkbenchContentToTop = () => {
+  const main = workbenchMainRef.value
+  if (!main) return
+
+  const mainOverflowY = getComputedStyle(main).overflowY
+  const mainOwnsScroll = ['auto', 'scroll'].includes(mainOverflowY)
+  if (mainOwnsScroll) {
+    main.scrollTo({ top: 0, behavior: 'auto' })
+    return
+  }
+
+  const viewport = main.closest<HTMLElement>('.aicheck-static-viewport')
+  if (!viewport) {
+    main.scrollIntoView({ block: 'start', behavior: 'auto' })
+    return
+  }
+  const viewportBox = viewport.getBoundingClientRect()
+  const mainBox = main.getBoundingClientRect()
+  viewport.scrollTo({
+    top: Math.max(0, Math.round(viewport.scrollTop + mainBox.top - viewportBox.top)),
+    behavior: 'auto'
+  })
+}
+
+const startNodeContentTransition = async () => {
+  const sequence = ++nodeContentTransitionSequence
+  stopNodeContentTransition()
+  await nextTick()
+  if (sequence !== nodeContentTransitionSequence) return
+
+  scrollWorkbenchContentToTop()
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+  nodeContentTransitionFrame = window.requestAnimationFrame(() => {
+    nodeContentTransitionFrame = undefined
+    if (sequence !== nodeContentTransitionSequence) return
+    nodeContentTransitioning.value = true
+    nodeContentTransitionTimer = window.setTimeout(() => {
+      nodeContentTransitionTimer = undefined
+      if (sequence === nodeContentTransitionSequence) nodeContentTransitioning.value = false
+    }, 210)
+  })
+}
+
 const scrollInspectionAuditPanelToTop = async (itemKey: InspectionAuditItemKey) => {
   await nextTick()
   const center = document.querySelector<HTMLElement>('.center.has-flush-audit-directory')
@@ -2368,6 +2433,9 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
       : undefined
     activeInspectionAuditItem.value =
       inspectionAuditItemByNode.value[node.nodeId] || routeItem || 'submission'
+  }
+  await startNodeContentTransition()
+  if (role.value === 'inspection') {
     await updateInspectionRoute({
       nodeId: node.nodeId,
       auditItem: activeInspectionAuditItem.value
@@ -2382,11 +2450,12 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
   }
 }
 
-const handleProjectOverviewSelect = () => {
+const handleProjectOverviewSelect = async () => {
   mobileTreeOpen.value = false
   activeWorkbenchSection.value = 'overview'
+  await startNodeContentTransition()
   if (role.value === 'inspection') {
-    void updateInspectionRoute({ overview: true })
+    await updateInspectionRoute({ overview: true })
   }
 }
 
@@ -2402,6 +2471,7 @@ const handleInspectionMatrixSelect = async (
   mobileTreeOpen.value = false
   activeWorkbenchSection.value = 'node'
   activeNodeId.value = node.nodeId
+  await startNodeContentTransition()
   await updateInspectionRoute({ nodeId: node.nodeId, auditItem })
   await loadNodePackage(node.nodeId)
 }
@@ -4072,6 +4142,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', syncCompactNodeNavigation)
+  nodeContentTransitionSequence += 1
+  stopNodeContentTransition()
   stopPostUploadPolling()
   stopAiReviewPolling()
   revokePreviewDrawerObjectUrl()
@@ -4143,14 +4215,24 @@ onBeforeUnmount(() => {
 
       <div
         v-else-if="canShowWorkspace"
-        :class="['workspace', { 'no-left-nav': role === 'contractor' || role === 'ndt' }]"
+        :class="[
+          'workspace',
+          {
+            'no-left-nav': role === 'contractor' || role === 'ndt',
+            'is-left-collapsed': desktopTreeCollapsed && role !== 'contractor' && role !== 'ndt'
+          }
+        ]"
       >
         <aside
           v-if="role !== 'contractor' && role !== 'ndt' && !compactNodeNavigation"
           id="audit-node-navigation"
-          class="left"
+          :class="['left', { 'is-collapsed': desktopTreeCollapsed }]"
         >
-          <section class="tree-wrap">
+          <section
+            v-show="!desktopTreeCollapsed"
+            id="audit-node-navigation-content"
+            class="tree-wrap"
+          >
             <div class="section-title">
               <span>项目审核节点</span>
               <span v-if="role === 'owner'" class="section-tools">只读</span>
@@ -4164,16 +4246,33 @@ onBeforeUnmount(() => {
               @select-overview="handleProjectOverviewSelect"
             />
           </section>
+          <ElButton
+            class="sidebar-collapse-toggle"
+            circle
+            :aria-label="desktopTreeCollapsed ? '展开节点导航' : '收起节点导航'"
+            aria-controls="audit-node-navigation-content"
+            :aria-expanded="!desktopTreeCollapsed"
+            :title="desktopTreeCollapsed ? '展开节点导航' : '收起节点导航'"
+            @click="desktopTreeCollapsed = !desktopTreeCollapsed"
+          >
+            <ElIcon>
+              <ArrowRight v-if="desktopTreeCollapsed" />
+              <ArrowLeft v-else />
+            </ElIcon>
+          </ElButton>
         </aside>
 
         <main
+          ref="workbenchMainRef"
           id="aicheck-workbench-main"
           tabindex="-1"
+          :data-node-transition="nodeContentTransitioning ? 'entering' : 'idle'"
           :class="[
             'center',
             {
               'has-flush-audit-directory':
-                role === 'inspection' && activeWorkbenchSection === 'node'
+                role === 'inspection' && activeWorkbenchSection === 'node',
+              'is-node-content-entering': nodeContentTransitioning
             }
           ]"
         >
@@ -4371,8 +4470,16 @@ onBeforeUnmount(() => {
                   </ElTableColumn>
                   <ElTableColumn label="节点名称" min-width="180" show-overflow-tooltip>
                     <template #default="{ row }">
-                      <ElButton link type="primary" @click="handleNodeSelect(row.node)">
-                        {{ row.node.name }}
+                      <ElButton
+                        class="inspection-node-name-button"
+                        link
+                        type="primary"
+                        @click="handleNodeSelect(row.node)"
+                      >
+                        <span class="file-name-with-icon inspection-node-name-content">
+                          <FileTypeIcon :file-name="row.node.name" :category="row.node.groupName" />
+                          <span>{{ row.node.name }}</span>
+                        </span>
                       </ElButton>
                     </template>
                   </ElTableColumn>
@@ -4469,7 +4576,18 @@ onBeforeUnmount(() => {
                     label="文件名"
                     min-width="220"
                     show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">
+                      <span class="file-name-with-icon">
+                        <FileTypeIcon
+                          :file-name="row.fileName"
+                          :file-type="row.fileType"
+                          :category="row.materialCategoryText"
+                        />
+                        <span>{{ row.fileName }}</span>
+                      </span>
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn label="来源" min-width="150">
                     <template #default="{ row }">
                       <span>{{ row.sourceRole }}</span>
@@ -4659,7 +4777,18 @@ onBeforeUnmount(() => {
             </div>
             <div class="card-body">
               <ElTable :data="nodeScopedFiles" border class="inspection-ocr-table">
-                <ElTableColumn prop="fileName" label="文件" min-width="230" show-overflow-tooltip />
+                <ElTableColumn prop="fileName" label="文件" min-width="230" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span class="file-name-with-icon">
+                      <FileTypeIcon
+                        :file-name="row.fileName"
+                        :file-type="row.fileType"
+                        :category="row.materialCategory"
+                      />
+                      <span>{{ row.fileName }}</span>
+                    </span>
+                  </template>
+                </ElTableColumn>
                 <ElTableColumn label="执行状态" width="126">
                   <template #default="{ row }">
                     <span
@@ -4838,12 +4967,18 @@ onBeforeUnmount(() => {
                   <span class="pill blue">{{ nodeScopedFiles.length }} 份</span>
                 </div>
                 <ElTable :data="nodeScopedFiles" border class="inspection-bound-files-table">
-                  <ElTableColumn
-                    prop="fileName"
-                    label="文件"
-                    min-width="220"
-                    show-overflow-tooltip
-                  />
+                  <ElTableColumn prop="fileName" label="文件" min-width="220" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <span class="file-name-with-icon">
+                        <FileTypeIcon
+                          :file-name="row.fileName"
+                          :file-type="row.fileType"
+                          :category="row.materialCategory"
+                        />
+                        <span>{{ row.fileName }}</span>
+                      </span>
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn
                     prop="sourceOrgName"
                     label="来源"
@@ -4893,7 +5028,14 @@ onBeforeUnmount(() => {
                       <span :class="['pill', getPillClass(row.status)]">{{ row.status }}</span>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="fileName" label="候选文件" min-width="190" />
+                  <ElTableColumn prop="fileName" label="候选文件" min-width="190">
+                    <template #default="{ row }">
+                      <span class="file-name-with-icon">
+                        <FileTypeIcon :file-name="row.fileName" :category="row.materialType" />
+                        <span>{{ row.fileName }}</span>
+                      </span>
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn
                     prop="evidenceText"
                     label="命中证据"
@@ -5979,18 +6121,58 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.workspace.is-left-collapsed {
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+
 .left,
 .center {
   min-height: 0;
 }
 
 .left {
+  position: relative;
   display: grid;
   height: 100%;
-  overflow: hidden auto;
+  overflow: visible;
   background: #fff;
   border-right: 1px solid var(--line);
   grid-template-rows: minmax(0, 1fr);
+}
+
+.left.is-collapsed {
+  background: #f8fbff;
+}
+
+.sidebar-collapse-toggle.el-button {
+  position: absolute;
+  right: -18px;
+  bottom: 18px;
+  z-index: 50;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  margin: 0;
+  color: #52647d;
+  background: #fff;
+  border-color: #cbd8ea;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 12%);
+}
+
+.sidebar-collapse-toggle.el-button:hover,
+.sidebar-collapse-toggle.el-button:focus-visible {
+  color: var(--blue-2);
+  background: #f4f8ff;
+  border-color: #9db8df;
+  outline: 0;
+  box-shadow:
+    0 4px 12px rgb(15 23 42 / 12%),
+    0 0 0 3px rgb(31 102 216 / 12%);
+}
+
+.sidebar-collapse-toggle .el-icon {
+  font-size: 16px;
 }
 
 .tree-wrap {
@@ -6179,6 +6361,23 @@ onBeforeUnmount(() => {
 
 .center.has-flush-audit-directory > :first-child {
   margin-top: var(--center-top-gutter);
+}
+
+.center.is-node-content-entering > .page-head {
+  will-change: opacity, transform;
+  animation: workbench-node-heading-enter 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes workbench-node-heading-enter {
+  from {
+    opacity: 0.94;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .center-support-grid {
@@ -7009,6 +7208,31 @@ h3 {
 
 .overview-file-table {
   width: 100%;
+}
+
+.file-name-with-icon {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.file-name-with-icon > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-node-name-button {
+  max-width: 100%;
+  justify-content: flex-start;
+}
+
+.inspection-node-name-content {
+  text-align: left;
 }
 
 .overview-file-source {
@@ -8371,6 +8595,10 @@ h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .center.is-node-content-entering > .page-head {
+    animation: none;
+  }
+
   .global-search,
   .top-actions .top-action.el-button,
   .tree-wrap :deep(.node-button),
