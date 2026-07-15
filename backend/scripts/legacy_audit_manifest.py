@@ -81,11 +81,15 @@ def verify_locked_reference(
                 "WORM manifest object content mismatch: "
                 f"expected=sha256:{expected_sha256}, actual=sha256:{object_sha256}"
             )
+    stat = client.stat_object(bucket, object_name, version_id=version_id)
     retention = client.get_object_retention(bucket, object_name, version_id=version_id)
     if retention is None or str(retention.mode).upper() != "COMPLIANCE":
         raise RuntimeError("Legacy manifest object is not protected by COMPLIANCE retention")
-    minimum = datetime.now(timezone.utc) + timedelta(days=retention_days - 1)
+    retention_started_at = getattr(stat, "last_modified", None)
+    if retention_started_at is None:
+        raise RuntimeError("Legacy manifest object creation time is unavailable")
     retain_until = retention.retain_until_date
+    minimum = retention_started_at + timedelta(days=retention_days) - timedelta(minutes=5)
     if retain_until is None or retain_until < minimum:
         raise RuntimeError(f"Legacy manifest retention is shorter than {retention_days} days")
     delete_denied = None
@@ -103,7 +107,9 @@ def verify_locked_reference(
         "objectName": object_name,
         "versionId": version_id,
         "retentionMode": str(retention.mode),
+        "retentionStartedAt": retention_started_at.isoformat(),
         "retainUntil": retain_until.isoformat(),
+        "retentionDurationSeconds": (retain_until - retention_started_at).total_seconds(),
         "deleteDeniedCode": delete_denied,
         "objectSha256": f"sha256:{object_sha256}" if object_sha256 else None,
     }

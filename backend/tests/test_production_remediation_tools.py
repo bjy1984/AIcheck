@@ -138,6 +138,10 @@ def test_reconciliation_plan_rejects_path_traversal_identifier(tmp_path) -> None
 
 
 def test_locked_manifest_verification_reads_exact_versioned_content() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    retention_started_at = datetime.now(timezone.utc) - timedelta(days=2)
+
     class Response:
         def __init__(self, body: bytes) -> None:
             self.body = body
@@ -155,9 +159,10 @@ def test_locked_manifest_verification_reads_exact_versioned_content() -> None:
         mode = "COMPLIANCE"
 
         def __init__(self) -> None:
-            from datetime import datetime, timedelta, timezone
+            self.retain_until_date = retention_started_at + timedelta(days=3650)
 
-            self.retain_until_date = datetime.now(timezone.utc) + timedelta(days=3651)
+    class Stat:
+        last_modified = retention_started_at
 
     class Client:
         def __init__(self, body: bytes) -> None:
@@ -169,6 +174,10 @@ def test_locked_manifest_verification_reads_exact_versioned_content() -> None:
 
         def get_object_retention(self, bucket, object_name, *, version_id):
             return Retention()
+
+        def stat_object(self, bucket, object_name, *, version_id):
+            assert (bucket, object_name, version_id) == ("audit-anchors-v2", "legacy/manifest.json", "V1")
+            return Stat()
 
     class Storage:
         def __init__(self, body: bytes) -> None:
@@ -189,6 +198,8 @@ def test_locked_manifest_verification_reads_exact_versioned_content() -> None:
     )
 
     assert result["objectSha256"].startswith("sha256:")
+    assert result["retentionStartedAt"] == retention_started_at.isoformat()
+    assert result["retentionDurationSeconds"] == 3650 * 24 * 60 * 60
     with pytest.raises(RuntimeError, match="content mismatch"):
         verify_locked_reference(
             Storage(b"tampered"),
