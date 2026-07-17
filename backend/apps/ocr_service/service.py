@@ -180,9 +180,34 @@ ENGINEERING_DRAWING_DOCUMENT_TYPES = {
 }
 GENERIC_PROFILE_IDS = {"", "generic_document", "generic_document_v1"}
 GENERIC_DOCUMENT_TYPES = {"", "generic_document"}
+R24_R34_BUSINESS_PROFILE_IDS = {
+    "pipeline_summary_v1",
+    "welding_consumable_certificate_v1",
+    "welding_consumable_management_v1",
+    "pipe_fit_up_record_v1",
+    "weld_appearance_record_v1",
+    "weld_repair_record_v1",
+    "heat_treatment_procedure_v1",
+    "heat_treatment_instrument_v1",
+    "heat_treatment_record_v1",
+    "hardness_report_v1",
+}
+R24_R34_BUSINESS_DOCUMENT_TYPES = {item.removesuffix("_v1") for item in R24_R34_BUSINESS_PROFILE_IDS}
 AUTO_ROUTE_PROFILE_IDS = {
     *ENGINEERING_DRAWING_PROFILE_IDS,
     "quality_certificate_v1",
+    "manufacturing_supervision_certificate_v1",
+    "type_test_report_v1",
+    "technical_review_approval_v1",
+    "new_material_data_v1",
+    "material_mark_transfer_record_v1",
+    "material_substitution_approval_v1",
+    "valve_test_report_v1",
+    "factory_inspection_report_v1",
+    "material_retest_report_v1",
+    "acceptance_witness_record_v1",
+    "sampling_witness_record_v1",
+    "material_ndt_report_v1",
     "ndt_rt_report_v1",
     "ndt_ut_report_v1",
     "qualification_certificate_v1",
@@ -192,7 +217,20 @@ AUTO_ROUTE_PROFILE_IDS = {
     "welder_certificate_v1",
 }
 BUSINESS_PDF_DEEP_SCAN_PROFILE_IDS = {
+    *R24_R34_BUSINESS_PROFILE_IDS,
     "quality_certificate_v1",
+    "manufacturing_supervision_certificate_v1",
+    "type_test_report_v1",
+    "technical_review_approval_v1",
+    "new_material_data_v1",
+    "material_mark_transfer_record_v1",
+    "material_substitution_approval_v1",
+    "valve_test_report_v1",
+    "factory_inspection_report_v1",
+    "material_retest_report_v1",
+    "acceptance_witness_record_v1",
+    "sampling_witness_record_v1",
+    "material_ndt_report_v1",
     "ndt_rt_report_v1",
     "ndt_ut_report_v1",
     "qualification_certificate_v1",
@@ -200,15 +238,41 @@ BUSINESS_PDF_DEEP_SCAN_PROFILE_IDS = {
     "welder_certificate_v1",
 }
 BUSINESS_PDF_DEEP_SCAN_DOCUMENT_TYPES = {
+    *R24_R34_BUSINESS_DOCUMENT_TYPES,
     "quality_certificate",
+    "manufacturing_supervision_certificate",
+    "type_test_report",
+    "technical_review_approval",
+    "new_material_data",
+    "material_mark_transfer_record",
+    "material_substitution_approval",
+    "valve_test_report",
+    "factory_inspection_report",
+    "material_retest_report",
+    "acceptance_witness_record",
+    "sampling_witness_record",
+    "material_ndt_report",
     "ndt_report",
     "qualification_certificate",
     "welding_procedure_qualification",
     "welder_certificate",
 }
 BUSINESS_PDF_DEEP_SCAN_DEFAULT_MAX_PAGES = {
+    **{profile_id: 12 for profile_id in R24_R34_BUSINESS_PROFILE_IDS},
     "qualification_certificate_v1": 2,
     "quality_certificate_v1": 6,
+    "manufacturing_supervision_certificate_v1": 6,
+    "type_test_report_v1": 8,
+    "technical_review_approval_v1": 8,
+    "new_material_data_v1": 10,
+    "material_mark_transfer_record_v1": 8,
+    "material_substitution_approval_v1": 8,
+    "valve_test_report_v1": 10,
+    "factory_inspection_report_v1": 8,
+    "material_retest_report_v1": 8,
+    "acceptance_witness_record_v1": 8,
+    "sampling_witness_record_v1": 8,
+    "material_ndt_report_v1": 8,
     "ndt_rt_report_v1": 4,
     "ndt_ut_report_v1": 4,
     "welder_certificate_v1": 4,
@@ -2575,8 +2639,16 @@ FIELD_LABEL_ALIASES = {
     "detection_date": ["检测日期", "Date"],
     "issue_date": ["签发日期", "出厂日期", "日期"],
     "manufacturer": ["生产厂家", "制造单位", "厂家"],
+    "product_name": ["产品名称", "品名", "元件名称", "Product Name"],
+    "dealer_name": ["经营单位", "供货单位", "经销单位"],
     "material_grade": ["材料牌号", "材质", "牌号"],
     "batch_no": ["炉批号", "批号", "Heat No"],
+    "heat_no": ["炉号", "Heat No"],
+    "quantity": ["数量", "供货数量", "Quantity"],
+    "delivery_condition": ["交货状态", "供货状态", "Delivery Condition"],
+    "document_form": ["文件形式", "原件/复印件", "正副本"],
+    "inspection_items": ["检验项目", "试验项目", "检测项目"],
+    "test_results": ["试验结果", "检验结果", "检测结果"],
     "standard_no": ["标准号", "执行标准"],
     "inspection_unit": ["检测单位", "检验单位"],
 }
@@ -4107,6 +4179,10 @@ def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]
         return
     if is_welder_certificate_profile(result, profile):
         extract_welder_certificate_fields_and_tables(result)
+        add_profile_quality_diagnostics(result, profile)
+        return
+    if str(profile.get("profileId") or "") in R24_R34_BUSINESS_PROFILE_IDS:
+        extract_r24_r34_labeled_business_fields(result, profile)
         add_profile_quality_diagnostics(result, profile)
         return
 
@@ -5874,6 +5950,15 @@ def is_welder_certificate_profile(result: dict[str, Any], profile: dict[str, Any
     return profile_id == "welder_certificate_v1" or document_type == "welder_certificate"
 
 
+def extract_r24_r34_labeled_business_fields(result: dict[str, Any], profile: dict[str, Any]) -> None:
+    fragments = [item for item in result.get("fragments") or [] if isinstance(item, dict)]
+    text_items = [(str(item.get("text") or "").strip(), item) for item in fragments if str(item.get("text") or "").strip()]
+    for field_code, configured_labels in dict(profile.get("fieldLabels") or {}).items():
+        labels = configured_labels if isinstance(configured_labels, list) else [str(configured_labels)]
+        candidate = value_from_labeled_text(text_items, labels, max_steps=6, max_length=160)
+        add_field_if_missing(result, str(field_code), labels[0], candidate)
+
+
 def quality_certificate_evidence_text(text_items: list[tuple[str, dict[str, Any]]]) -> str:
     joined = "\n".join(text for text, _ in text_items)
     if "质量证明" in joined or "合格证" in joined or "质检专用章" in joined:
@@ -6368,6 +6453,16 @@ def extract_welding_procedure_qualification_fields(result: dict[str, Any]) -> No
         value_from_labeled_text(text_items, ["评定日期", "报告日期", "批准日期", "日期"], DATE_CN_RE, max_steps=6)
         or regex_field_candidate(text_items, DATE_CN_RE),
     )
+    for field_code, label, labels in (
+        ("wps_no", "WPS编号", ["WPS编号", "焊接工艺规程编号"]),
+        ("pqr_no", "PQR编号", ["PQR编号", "焊接工艺评定编号", "评定报告编号"]),
+        ("current_range", "电流范围", ["电流范围", "焊接电流"]),
+        ("voltage_range", "电压范围", ["电压范围", "电弧电压"]),
+        ("welding_speed_range", "焊接速度范围", ["焊接速度范围", "焊接速度"]),
+        ("interpass_temperature_range", "层间温度范围", ["层间温度范围", "层间温度"]),
+        ("approved_by", "批准人员", ["批准", "批准人", "审批"]),
+    ):
+        add_field_if_missing(result, field_code, label, value_from_labeled_text(text_items, labels, max_steps=6, max_length=120))
 
 
 PQR_WPS_NO_RE = re.compile(r"\b(?:PQR|WPS)[A-Z0-9_./-]*\b", re.IGNORECASE)

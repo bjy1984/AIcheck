@@ -120,6 +120,12 @@ def signal_review_run_human_decision(review_run: dict[str, Any], decision: dict[
     return _run_temporal_signal(review_run, "submit_human_decision", decision)
 
 
+def signal_review_run_human_input(review_run: dict[str, Any], human_input: dict[str, Any]) -> dict[str, Any]:
+    if review_run.get("workflowEngine") != "temporal":
+        return {"status": "skipped", "reason": "workflowEngine is not temporal"}
+    return _run_temporal_signal(review_run, "submit_human_input", human_input)
+
+
 def signal_review_run_cancel(review_run: dict[str, Any], reason: Any = None) -> dict[str, Any]:
     if review_run.get("workflowEngine") != "temporal":
         return {"status": "skipped", "reason": "workflowEngine is not temporal"}

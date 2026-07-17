@@ -17,7 +17,7 @@ x-validation-worker: &validation-worker
     AICHECK_OCR_UPLOAD_OBJECTS: "true"
     AICHECK_OCR_PIPELINE_MODE: shadow
     AICHECK_OCR_PIPELINE_VERSION: ${AICHECK_OCR_PIPELINE_VERSION:-ocr-accuracy-first@2}
-    AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-qualification_certificate_v1,construction_record_v1,construction_plan_v1,welding_procedure_qualification_v1,ndt_rt_report_v1,quality_certificate_v1,engineering_drawing_list_v1,drawing_material_list_v1,process_flow_diagram_v1,strength_calculation_v1,design_specification_v1,equipment_list_v1,site_layout_drawing_v1,paint_insulation_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
+    AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST: ${AICHECK_OCR_PIPELINE_PROFILE_ALLOWLIST:-qualification_certificate_v1,construction_record_v1,construction_plan_v1,welding_procedure_qualification_v1,ndt_rt_report_v1,quality_certificate_v1,acceptance_witness_record_v1,sampling_witness_record_v1,material_retest_report_v1,material_ndt_report_v1,engineering_drawing_list_v1,drawing_material_list_v1,process_flow_diagram_v1,strength_calculation_v1,design_specification_v1,equipment_list_v1,site_layout_drawing_v1,paint_insulation_list_v1,piping_characteristic_list_v1,comprehensive_material_list_v1}
     AICHECK_QWEN_CALL_MODE: official_api
     AICHECK_QWEN_ALLOW_SERVER_FALLBACK: "false"
     QWEN_API_BASE: http://qwen-fault-proxy:18020

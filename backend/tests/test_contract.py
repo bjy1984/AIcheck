@@ -3502,6 +3502,7 @@ def test_ocr_fusion_normalizes_common_business_field_aliases() -> None:
             "fields": [
                 {"fieldName": "证书编号", "fieldValue": "QC-001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
                 {"fieldName": "生产厂家", "fieldValue": "河北广浩管件有限公司", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
+                {"fieldName": "产品名称", "fieldValue": "带颈对焊法兰", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
                 {"fieldName": "材质", "fieldValue": "20#", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
                 {"fieldName": "规格型号", "fieldValue": "WN100", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
                 {"fieldName": "炉批号", "fieldValue": "B001", "confidence": 0.9, "bbox": [0, 0, 10, 10]},
@@ -3530,6 +3531,7 @@ def test_ocr_fusion_normalizes_common_business_field_aliases() -> None:
     assert {
         "certificate_no",
         "manufacturer",
+        "product_name",
         "material_grade",
         "specification",
         "batch_no",

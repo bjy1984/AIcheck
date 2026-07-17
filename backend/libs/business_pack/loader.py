@@ -663,8 +663,13 @@ def _validate_standard_clause_packages(
                 errors.append(f"Package {package_id} professional clause documentVersionId does not match its standard catalog record.")
 
         decision_model = package.get("decisionModel") or {}
-        if decision_model.get("ruleExecution") != "deterministic_tools_only":
-            errors.append(f"Package {package_id} must use deterministic_tools_only rule execution.")
+        expected_execution = (
+            "llm_semantic_primary_with_evidence_validation"
+            if package.get("sourceRuleId") == "R19"
+            else "deterministic_tools_only"
+        )
+        if decision_model.get("ruleExecution") != expected_execution:
+            errors.append(f"Package {package_id} must use {expected_execution} rule execution.")
         required_results = {"符合", "不符合", "证据不足", "不适用", "待人工确认"}
         if not required_results <= set(decision_model.get("resultValues") or []):
             errors.append(f"Package {package_id} does not declare the complete conclusion set.")

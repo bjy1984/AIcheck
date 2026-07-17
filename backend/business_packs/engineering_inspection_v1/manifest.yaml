@@ -1,6 +1,6 @@
 id: engineering_inspection_v1
 name: 工业管道
-version: 2026.07.14
+version: 2026.07.16
 domainType: engineering_inspection
 status: published
 pipelineTypeCode: GC类

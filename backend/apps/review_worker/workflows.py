@@ -17,6 +17,7 @@ class ReviewRunWorkflow:
         self._state: dict[str, Any] = {"status": "created", "currentStep": "created"}
         self._tenant_id: str | None = None
         self._review_run_id: str | None = None
+        self._human_input_command: dict[str, Any] | None = None
         self._human_decision: dict[str, Any] | None = None
         self._cancel_command: dict[str, Any] | None = None
         self._processed_command_ids: set[str] = set()
@@ -63,6 +64,55 @@ class ReviewRunWorkflow:
             ),
             task_queue=workflow.info().task_queue,
         )
+        while graph_result.get("status") == "waiting_human_input":
+            self._state = {
+                **activity_input,
+                "status": "waiting_human_input",
+                "currentStep": "waiting_human_input",
+                "humanInputTaskId": graph_result.get("humanInputTaskId"),
+            }
+            await workflow.wait_condition(
+                lambda: self._human_input_command is not None or self._cancel_command is not None
+            )
+            command = dict(self._cancel_command or self._human_input_command or {})
+            application = await self._apply_workflow_command(
+                command,
+                tenant_id=tenant_id,
+                review_run_id=review_run_id,
+                legacy_execution=legacy_execution,
+            )
+            if self._cancel_command is not None:
+                self._state["status"] = str(application.get("reviewRunStatus") or "cancelled")
+                self._state["currentStep"] = "completed"
+                return {
+                    "reviewRunId": review_run_id,
+                    "status": self._state["status"],
+                    "application": application,
+                    "graph": graph_result,
+                }
+            self._human_input_command = None
+            self._state = {
+                **activity_input,
+                "status": "resuming",
+                "currentStep": "run_review_graph",
+            }
+            graph_result = await workflow.execute_activity(
+                run_review_graph_activity,
+                graph_activity_input,
+                start_to_close_timeout=timedelta(minutes=20),
+                retry_policy=RetryPolicy(
+                    initial_interval=timedelta(seconds=10),
+                    backoff_coefficient=2.0,
+                    maximum_interval=timedelta(minutes=2),
+                    maximum_attempts=3,
+                    non_retryable_error_types=[
+                        "ReviewValidationError",
+                        "ReviewBudgetExceeded",
+                        "ReviewGroundingError",
+                    ],
+                ),
+                task_queue=workflow.info().task_queue,
+            )
         if graph_result.get("status") != "waiting_human_review":
             raise ApplicationError(
                 "ReviewRun activity returned without reaching human review.",
@@ -76,6 +126,29 @@ class ReviewRunWorkflow:
         }
         await workflow.wait_condition(lambda: self._human_decision is not None or self._cancel_command is not None)
         command = dict(self._cancel_command or self._human_decision or {})
+        application = await self._apply_workflow_command(
+            command,
+            tenant_id=tenant_id,
+            review_run_id=review_run_id,
+            legacy_execution=legacy_execution,
+        )
+        self._state["status"] = str(application.get("reviewRunStatus") or application.get("status") or "applied")
+        self._state["currentStep"] = "completed"
+        return {
+            "reviewRunId": review_run_id,
+            "status": self._state["status"],
+            "application": application,
+            "graph": graph_result,
+        }
+
+    async def _apply_workflow_command(
+        self,
+        command: dict[str, Any],
+        *,
+        tenant_id: str,
+        review_run_id: str,
+        legacy_execution: bool,
+    ) -> dict[str, Any]:
         if not legacy_execution:
             command_tenant_id = str(command.get("tenantId") or tenant_id)
             command_review_run_id = str(command.get("reviewRunId") or review_run_id)
@@ -88,7 +161,7 @@ class ReviewRunWorkflow:
             command["tenantId"] = tenant_id
             command["reviewRunId"] = review_run_id
         self._state["currentStep"] = "apply_workflow_command"
-        application = await workflow.execute_activity(
+        return await workflow.execute_activity(
             apply_review_workflow_command_activity,
             command,
             start_to_close_timeout=timedelta(minutes=2),
@@ -105,14 +178,20 @@ class ReviewRunWorkflow:
             ),
             task_queue=workflow.info().task_queue,
         )
-        self._state["status"] = str(application.get("reviewRunStatus") or application.get("status") or "applied")
-        self._state["currentStep"] = "completed"
-        return {
-            "reviewRunId": review_run_id,
-            "status": self._state["status"],
-            "application": application,
-            "graph": graph_result,
-        }
+
+    @workflow.signal
+    async def submit_human_input(self, human_input: dict[str, Any]) -> None:
+        command_id = str(human_input.get("commandId") or "")
+        if command_id and command_id in self._processed_command_ids:
+            return
+        if command_id:
+            self._processed_command_ids.add(command_id)
+        if (
+            self._human_input_command is None
+            and self._human_decision is None
+            and self._cancel_command is None
+        ):
+            self._human_input_command = human_input
 
     @workflow.signal
     async def submit_human_decision(self, decision: dict[str, Any]) -> None:
@@ -121,7 +200,7 @@ class ReviewRunWorkflow:
             return
         if command_id:
             self._processed_command_ids.add(command_id)
-        if self._human_decision is None and self._cancel_command is None:
+        if self._human_input_command is None and self._human_decision is None and self._cancel_command is None:
             self._human_decision = decision
 
     @workflow.signal

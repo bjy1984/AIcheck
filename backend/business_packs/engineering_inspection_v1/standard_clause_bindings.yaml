@@ -1,7 +1,7 @@
 standardClauseBindingSet:
   id: engineering-inspection-standard-clause-bindings-v2
   schemaVersion: standard-clause-binding-v1
-  version: 2026.07.14
+  version: 2026.07.16
   lifecycleStatus: published
   sourceBusinessRules: rules/业务规则.md
   runtimePolicy:
@@ -343,7 +343,7 @@ standardClauseBindings:
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(3)
   bindingRole: primary
-  applicability: always
+  applicability: component_not_subject_to_manufacturing_license_supervision_or_type_test
   lifecycleStatus: published
   verificationStatus: source_verified
   knowledgeFileId: KF-KB-CE49677F5B
@@ -368,7 +368,7 @@ standardClauseBindings:
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(4)
   bindingRole: primary
-  applicability: always
+  applicability: foreign_manufactured_component_or_safety_accessory
   lifecycleStatus: published
   verificationStatus: source_verified
   knowledgeFileId: KF-KB-CE49677F5B
@@ -443,7 +443,7 @@ standardClauseBindings:
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(7)
   bindingRole: primary
-  applicability: always
+  applicability: material_retest_or_material_ndt_required
   lifecycleStatus: published
   verificationStatus: source_verified
   knowledgeFileId: KF-KB-CE49677F5B
@@ -468,7 +468,7 @@ standardClauseBindings:
   standardRef: STD-TSG-D7006-2020
   clauseNo: D2.4.1(8)
   bindingRole: primary
-  applicability: always
+  applicability: foreign_grade_material_used
   lifecycleStatus: published
   verificationStatus: source_verified
   knowledgeFileId: KF-KB-CE49677F5B

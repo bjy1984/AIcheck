@@ -21,6 +21,8 @@ pytestmark = pytest.mark.skipif(
 
 graph_calls: list[dict] = []
 applied_commands: list[dict] = []
+r12_graph_calls: list[dict] = []
+r12_applied_commands: list[dict] = []
 
 
 @activity.defn(name="run_review_graph_activity")
@@ -44,6 +46,33 @@ async def recording_command_activity(command: dict) -> dict:
     }
 
 
+@activity.defn(name="run_review_graph_activity")
+async def r12_pause_graph_activity(execution: dict) -> dict:
+    r12_graph_calls.append(dict(execution))
+    if len(r12_graph_calls) == 1:
+        return {
+            "status": "waiting_human_input",
+            "reviewRunId": execution["reviewRunId"],
+            "humanInputTaskId": "HIT-R12-LIVE",
+        }
+    return {
+        "status": "waiting_human_review",
+        "reviewRunId": execution["reviewRunId"],
+    }
+
+
+@activity.defn(name="apply_review_workflow_command_activity")
+async def recording_r12_command_activity(command: dict) -> dict:
+    r12_applied_commands.append(dict(command))
+    return {
+        "status": "applied",
+        "reviewRunStatus": (
+            "resuming" if command.get("commandType") == "submit_human_input" else "accepted_by_human"
+        ),
+        "commandId": command["commandId"],
+    }
+
+
 async def wait_for_human_review(handle) -> dict:
     for _ in range(250):
         state = await handle.query(ReviewRunWorkflow.get_review_state)
@@ -51,6 +80,15 @@ async def wait_for_human_review(handle) -> dict:
             return state
         await asyncio.sleep(0.1)
     raise AssertionError("Temporal workflow did not reach waiting_human_review")
+
+
+async def wait_for_status(handle, expected_status: str) -> dict:
+    for _ in range(250):
+        state = await handle.query(ReviewRunWorkflow.get_review_state)
+        if state.get("status") == expected_status:
+            return state
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"Temporal workflow did not reach {expected_status}")
 
 
 @pytest.mark.asyncio
@@ -139,3 +177,59 @@ async def test_temporal_retries_and_recovers_signal_across_server_restart() -> N
                 os.remove(database_path + suffix)
             except FileNotFoundError:
                 pass
+
+
+@pytest.mark.asyncio
+async def test_temporal_r12_pauses_for_human_input_then_resumes_same_workflow() -> None:
+    r12_graph_calls.clear()
+    r12_applied_commands.clear()
+    environment = await WorkflowEnvironment.start_local(ui=False)
+    task_queue = f"aicheck-r12-live-{uuid4().hex}"
+    tenant_id = "TENANT-R12-LIVE"
+    review_run_id = "RRUN-R12-LIVE"
+    try:
+        async with Worker(
+            environment.client,
+            task_queue=task_queue,
+            workflows=[ReviewRunWorkflow],
+            activities=[r12_pause_graph_activity, recording_r12_command_activity],
+        ):
+            handle = await environment.client.start_workflow(
+                ReviewRunWorkflow.run,
+                {"tenantId": tenant_id, "reviewRunId": review_run_id},
+                id=f"review-run-r12-live-{uuid4().hex}",
+                task_queue=task_queue,
+            )
+            waiting_input = await wait_for_status(handle, "waiting_human_input")
+            assert waiting_input["humanInputTaskId"] == "HIT-R12-LIVE"
+            await handle.signal(
+                ReviewRunWorkflow.submit_human_input,
+                {
+                    "commandId": "WFCMD-R12-HUMAN-INPUT",
+                    "commandType": "submit_human_input",
+                    "tenantId": tenant_id,
+                    "reviewRunId": review_run_id,
+                    "payloadHash": "sha256:r12-human-input",
+                },
+            )
+            await wait_for_status(handle, "waiting_human_review")
+            await handle.signal(
+                ReviewRunWorkflow.submit_human_decision,
+                {
+                    "commandId": "WFCMD-R12-FINAL",
+                    "commandType": "submit_human_decision",
+                    "tenantId": tenant_id,
+                    "reviewRunId": review_run_id,
+                    "payloadHash": "sha256:r12-final",
+                },
+            )
+            result = await handle.result()
+
+        assert result["status"] == "accepted_by_human"
+        assert len(r12_graph_calls) == 2
+        assert [item["commandType"] for item in r12_applied_commands] == [
+            "submit_human_input",
+            "submit_human_decision",
+        ]
+    finally:
+        await environment.shutdown()

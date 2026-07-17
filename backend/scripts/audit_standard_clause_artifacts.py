@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import date
 from pathlib import Path
 import shutil
 import subprocess
@@ -123,7 +124,12 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
         unknown_checks = set(package["atomicCheckIds"]) - check_ids
         if unknown_checks:
             errors.append(f"{package['sourceRuleId']} unknown atomic checks: {sorted(unknown_checks)}")
-        if package["decisionModel"]["ruleExecution"] != "deterministic_tools_only":
+        expected_execution = (
+            "llm_semantic_primary_with_evidence_validation"
+            if package["sourceRuleId"] == "R19"
+            else "deterministic_tools_only"
+        )
+        if package["decisionModel"]["ruleExecution"] != expected_execution:
             errors.append(f"{package['sourceRuleId']} has an invalid decision execution mode")
         if package["sourceRuleId"] == "R69" and package["decisionModel"].get("automatedDecisionAllowed") is not False:
             errors.append("R69 must prohibit an automated evaluation conclusion")
@@ -153,16 +159,25 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
                 if start_page < 1 or end_page < start_page or (page_count and end_page > page_count):
                     errors.append(f"{package['sourceRuleId']} locator outside PDF page range: {clause.get('clauseNo')} {start_page}-{end_page}/{page_count}")
 
-    second_check_expected = {
-        "R03": ("STD-TSG-Z7002-2022", "附件A（核准证样式、填写说明及表A-1核准项目代码）"),
-        "R45": ("STD-SYT-4113.11-2023", "第4-7章"),
-        "R46": ("STD-GBT-21448-2017", "第5-7章、第9章"),
-        "R49": ("STD-GB-50235-2010", "7.1、7.3、7.9"),
-        "R68": ("STD-GB-50235-2010", "第9章（9.1-9.7）"),
-        "R14": ("STD-GBT-8163-2018", "第6-8章"),
-        "R16": ("STD-GBT-13401-2025", "第8章、第10-11章"),
-    }
-    for source_rule, expected_clause in second_check_expected.items():
+    second_check_expected = [
+        ("R03", ("STD-TSG-Z7002-2022", "附件A（核准证样式、填写说明及表A-1核准项目代码）")),
+        ("R45", ("STD-SYT-4113.11-2023", "第4-7章")),
+        ("R46", ("STD-GBT-21448-2017", "第5-7章、第9章")),
+        ("R49", ("STD-GB-50235-2010", "7.1、7.3、7.9")),
+        ("R68", ("STD-GB-50235-2010", "第9章（9.1-9.7）")),
+        ("R14", ("STD-GBT-8163-2018", "第6-8章")),
+        ("R16", ("STD-GBT-12459-2025", "第10-11章")),
+        ("R16", ("STD-GBT-13401-2025", "第8章、第10-11章")),
+        ("R16", ("STD-GBT-8163-2018", "第6-8章")),
+        ("R16", ("STD-GBT-3087-2022", "第6-9章")),
+        ("R16", ("STD-GBT-5310-2023", "第7章、第9-11章")),
+        ("R16", ("STD-GBT-9948-2025", "第7章、第9-11章")),
+        ("R16", ("STD-GBT-14976-2025", "7.3、7.7、第9-11章")),
+        ("R16", ("STD-GBT-12771-2019", "6.9、第8章、9.1-9.2")),
+        ("R17", ("STD-GBT-20801.1-2025", "7.2.1-7.2.7")),
+        ("R18", ("STD-NBT-47013.1-2015", "7.3-7.4")),
+    ]
+    for source_rule, expected_clause in second_check_expected:
         actual = {(item["standardRef"], item["clauseNo"]) for item in by_package[source_rule]["professionalClauses"]}
         if expected_clause not in actual:
             errors.append(f"{source_rule} second-check correction is missing: {expected_clause}")
@@ -178,6 +193,7 @@ def audit() -> tuple[list[str], list[str], dict[str, int]]:
         errors.append(f"human matrix has {len(matrix_rows)} data rows, expected 69")
     notes.append("TSG D7006—2020 PDF第27-32页已与独立维护的规范条款序列逐项比对。")
     notes.append("R10已独立核对为TSG 31—2025第1.9(3)，未再从D2.2间接推定。")
+    notes.append("R16已逐类核对8项产品标准的技术要求、检验规则和质量证明章节，并录入独立PDF页级定位；R17/R18的条件适用条款同步复核。")
     notes.append("R69已依据TSG D7006—2020第2.2.4条及附件G核对；工具仅汇总证据并校验评价报告，评价结论由监检人员确认和签发。")
     notes.append("扫描件可视复核纠正了TSG Z7002附件A、GB 50235第7/9章、SY/T 4113.11第4-7章、GB/T 21448第5-7/9章及产品标准章节落点。")
     notes.append("全部专业条款均已绑定知识文件、文档版本和一个或多个PDF页级locator；组合条款的不连续落点已拆分。")
@@ -201,7 +217,7 @@ def main() -> int:
     for error in errors:
         print("ERROR", error)
     if args.write_report:
-        lines = ["# 标准条款二次检查报告", "", "- 检查时间：2026-07-14", f"- 结果：**{status}**", f"- 统计：{stats}", "", "## 独立检查项", ""]
+        lines = ["# 标准条款二次检查报告", "", f"- 检查时间：{date.today().isoformat()}", f"- 结果：**{status}**", f"- 统计：{stats}", "", "## 独立检查项", ""]
         lines.extend(f"- {item}" for item in notes)
         lines.extend(["", "## 错误", ""])
         lines.extend(["- 无。"] if not errors else [f"- {item}" for item in errors])

@@ -1,6 +1,6 @@
 {
   "entrypoint": "openapi/aicheck.yaml",
-  "operationCount": 22,
+  "operationCount": 25,
   "operations": [
     {
       "operationId": "admin_get_config_overview",
@@ -8,6 +8,14 @@
       "path": "/api/admin/config/overview",
       "tags": [
         "admin"
+      ]
+    },
+    {
+      "operationId": "knowledge_get_network",
+      "method": "GET",
+      "path": "/api/knowledge/network",
+      "tags": [
+        "knowledge"
       ]
     },
     {
@@ -174,6 +182,22 @@
       "path": "/api/projects/{projectId}/workbench/summary",
       "tags": [
         "workbench"
+      ]
+    },
+    {
+      "operationId": "review_get_active_human_input_task",
+      "method": "GET",
+      "path": "/api/review-runs/{reviewRunId}/human-input-tasks/active",
+      "tags": [
+        "review"
+      ]
+    },
+    {
+      "operationId": "review_submit_human_input_response",
+      "method": "POST",
+      "path": "/api/review-runs/{reviewRunId}/human-input-tasks/{taskId}/responses",
+      "tags": [
+        "review"
       ]
     },
     {

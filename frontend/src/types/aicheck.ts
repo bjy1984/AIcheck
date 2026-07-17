@@ -362,7 +362,7 @@ export type AiReviewRun = {
   llmMetadata?: Record<string, unknown>
   reasoningProcess?: string
   llmResultText?: string
-  status: '推理中' | '完成' | '失败' | '已人工确认' | '已驳回' | '已取消'
+  status: '推理中' | '待人工核验' | '完成' | '失败' | '已人工确认' | '已驳回' | '已取消'
   reviewMode?: 'formal' | 'gap_precheck'
   advisoryOnly?: boolean
   confidenceScale?: 'ratio'

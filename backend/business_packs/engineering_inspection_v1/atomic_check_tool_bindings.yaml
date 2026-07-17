@@ -1,9 +1,9 @@
 atomicCheckToolBindingSet:
   id: engineering-inspection-tool-bindings-v1
   schemaVersion: atomic-check-tool-binding-v1
-  version: 2026.07.12
+  version: 2026.07.16
   lifecycleStatus: draft
-  atomicCheckCount: 173
+  atomicCheckCount: 194
   pilotRules:
   - R01
   - R02
@@ -11,7 +11,29 @@ atomicCheckToolBindingSet:
   - R06
   - R07
   - R09
+  - R12
+  - R13
+  - R14
+  - R15
+  - R16
+  - R17
+  - R18
+  - R19
+  - R20
+  - R21
+  - R22
+  - R23
   - R24
+  - R25
+  - R26
+  - R27
+  - R28
+  - R29
+  - R30
+  - R31
+  - R32
+  - R33
+  - R34
   - R60
   - R61
   - R62
@@ -839,46 +861,35 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R13-01
   sourceRuleId: R13
-  requiredFacts: &id003
-  - component.typeTestScope
-  - component.designItems
-  - component.supervisionCertificates
-  - component.requiredSupervision
+  requiredFacts:
+  - r13.designItems
+  - r13.typeTestReports
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - extract_table_records
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - check_cross_document_match
-  - check_scope_coverage
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - classify_r13_component_requirements
+  - evaluate_r13_type_test_coverage
   parameters:
     profile: component_type_test
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R13-02
   sourceRuleId: R13
-  requiredFacts: *id003
+  requiredFacts:
+  - r13.designItems
+  - r13.supervisionCertificates
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - classify_r13_component_requirements
+  - evaluate_r13_supervision_certificate_completeness
   parameters:
     profile: component_type_test
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R13-03
   sourceRuleId: R13
   requiredFacts:
@@ -897,65 +908,55 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R14-01
   sourceRuleId: R14
-  requiredFacts: &id004
-  - component.factoryReport
-  - component.grade
-  - component.material
-  - component.pressureClass
-  - design.materialTable
-  - component.specialReports
+  requiredFacts:
+  - r14.designItems
+  - r14.factoryInspectionReports
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - extract_table_records
-  - check_required
-  - check_cross_document_match
-  - check_sampling_requirement
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - classify_r14_component_applicability
+  - evaluate_r14_component_design_match
   parameters:
     profile: component_factory_inspection
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R14-02
   sourceRuleId: R14
-  requiredFacts: *id004
+  requiredFacts:
+  - r14.designItems
+  - r14.specialInspectionReports
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - check_numeric_range
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - resolve_r14_required_inspection_items
+  - evaluate_r14_special_report_coverage
   parameters:
     profile: component_factory_inspection
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    productInspectionRules:
+      GB/T 12771-2019:
+        requiredItems:
+        - nondestructive_testing
+        basis: GB/T 12771-2019 6.9
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R14-03
   sourceRuleId: R14
-  requiredFacts: *id004
+  requiredFacts:
+  - r14.designItems
+  - r14.pipelineCharacteristics
+  - r14.factoryInspectionReports
+  - r14.specialInspectionReports
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - extract_table_records
-  - check_required
-  - check_cross_document_match
-  - check_numeric_range
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - evaluate_r14_pressure_compatibility
   parameters:
     profile: component_factory_inspection
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R14-04
   sourceRuleId: R14
   requiredFacts:
@@ -974,26 +975,80 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R15-01
   sourceRuleId: R15
   requiredFacts:
-  - foreignComponent.manufacturingLicense
-  - foreignComponent.typeTestCertificate
-  - foreignComponent.designItems
+  - r15.designItems
   tools:
   - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - evaluate_foreign_component
-  - validate_evidence_grounding
+  - extract_table_records
+  - classify_r15_foreign_manufacturing_applicability
+  parameters:
+    profile: foreign_component
+    ruleVersion: r15-foreign-component-tsg31-2025-d7006-2020-v1
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R15-02
+  sourceRuleId: R15
+  requiredFacts:
+  - r15.designItems
+  tools:
+  - classify_r15_regulatory_requirements
   parameters:
     profile: foreign_component
     clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    ruleVersion: r15-foreign-component-tsg31-2025-d7006-2020-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
-- atomicCheckId: AC-R15-02
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R15-03
+  sourceRuleId: R15
+  requiredFacts:
+  - r15.designItems
+  - r15.manufacturingLicenseCandidates
+  - r15.manualRegistryVerifications
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - evaluate_r15_manufacturing_license_coverage
+  parameters:
+    profile: foreign_component
+    requireRegistryVerification: true
+    ruleVersion: r15-foreign-component-tsg31-2025-d7006-2020-v1
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R15-04
+  sourceRuleId: R15
+  requiredFacts:
+  - r15.designItems
+  - r15.typeTestReports
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - extract_table_records
+  - evaluate_r15_type_test_coverage
+  parameters:
+    profile: foreign_component
+    ruleVersion: r15-foreign-component-tsg31-2025-d7006-2020-v1
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R15-05
+  sourceRuleId: R15
+  requiredFacts:
+  - r15.designItems
+  - r15.supervisionCertificates
+  - r15.arrivalInspectionRecords
+  - r15.completeMachineInspectionRecords
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - evaluate_r15_manufacturing_inspection_route
+  parameters:
+    profile: foreign_component
+    ruleVersion: r15-foreign-component-tsg31-2025-d7006-2020-v1
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R15-06
   sourceRuleId: R15
   requiredFacts:
   - judgment.claimedFacts
@@ -1011,49 +1066,92 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R16-01
   sourceRuleId: R16
-  requiredFacts: &id005
-  - component.qualityCertificate
-  - component.supplyCondition
-  - component.composition
-  - component.inspectionItems
-  - component.copySeals
-  - design.acceptanceStandard
+  requiredFacts:
+  - r16.designItems[].standardRef
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_cross_document_match
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - resolve_r16_product_standard_profile
   parameters:
-    profile: component_quality_certificate
+    profile: r16_quality_certificate
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R16-02
   sourceRuleId: R16
-  requiredFacts: *id005
+  requiredFacts:
+  - r16.designItems
+  - r16.qualityCertificates
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - check_cross_document_match
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - evaluate_r16_quality_certificate_batch_coverage
   parameters:
-    profile: component_quality_certificate
+    profile: r16_quality_certificate
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R16-03
   sourceRuleId: R16
   requiredFacts:
+  - r16.qualityCertificates[].documentForm
+  - r16.qualityCertificates[].manufacturerQualitySealPresent
+  - r16.qualityCertificates[].dealerOfficialSealPresent
+  - r16.qualityCertificates[].handlerResponsibleSealPresent
+  tools:
+  - evaluate_r16_quality_certificate_form_and_seals
+  parameters:
+    profile: r16_quality_certificate
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R16-04
+  sourceRuleId: R16
+  requiredFacts:
+  - r16.designItems
+  - r16.qualityCertificates
+  tools:
+  - evaluate_r16_quality_certificate_design_match
+  parameters:
+    profile: r16_quality_certificate
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R16-05
+  sourceRuleId: R16
+  requiredFacts:
+  - r16.designItems[].requiredInspectionItems
+  - r16.qualityCertificates[].inspectionItems
+  - r16.qualityCertificates[].conclusion
+  tools:
+  - evaluate_r16_quality_certificate_content
+  parameters:
+    profile: r16_quality_certificate
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R16-06
+  sourceRuleId: R16
+  requiredFacts:
+  - r16.designItems[].acceptanceLimits
+  - r16.designItems[].physicalMark
+  - r16.qualityCertificates[].testResults
+  tools:
+  - evaluate_r16_quality_certificate_results
+  - evaluate_r16_batch_traceability
+  parameters:
+    profile: r16_quality_certificate
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R16-07
+  sourceRuleId: R16
+  requiredFacts:
   - judgment.claimedFacts
   - judgment.evidenceRefs
   - evidence.pageNo
@@ -1069,28 +1167,75 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R17-01
   sourceRuleId: R17
   requiredFacts:
-  - component.acceptanceRecords
-  - component.witnessRecords
-  - component.samplingRetestReports
-  - sampling.requirements
+  - r17.designItems
+  - r17.acceptanceRecords
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - extract_table_records
-  - check_required
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - evaluate_r17_arrival_acceptance_batch_coverage
   parameters:
-    profile: component_acceptance
+    profile: r17_acceptance
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R17-02
+  sourceRuleId: R17
+  requiredFacts:
+  - r17.acceptanceRecords[].completedSteps
+  - r17.acceptanceRecords[].signatureRoles
+  - r17.acceptanceRecords[].conclusion
+  tools:
+  - evaluate_r17_acceptance_procedure
+  parameters:
+    profile: r17_acceptance
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R17-03
+  sourceRuleId: R17
+  requiredFacts:
+  - r17.designItems[].requiresSamplingRetest
+  - r17.samplingRules
+  tools:
+  - resolve_r17_sampling_retest_requirement
+  parameters:
+    profile: r17_acceptance
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R17-04
+  sourceRuleId: R17
+  requiredFacts:
+  - r17.designItems[].requiresSamplingRetest
+  - r17.witnessRecords
+  - r17.samplingRetestReports
+  tools:
+  - evaluate_r17_sampling_witness_chain
+  parameters:
+    profile: r17_acceptance
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R17-05
+  sourceRuleId: R17
+  requiredFacts:
+  - r17.acceptanceRecords[].conclusion
+  - r17.acceptanceRecords[].disposition
+  tools:
+  - evaluate_r17_nonconformance_control
+  parameters:
+    profile: r17_acceptance
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R17-06
   sourceRuleId: R17
   requiredFacts:
   - judgment.claimedFacts
@@ -1108,44 +1253,91 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R18-01
   sourceRuleId: R18
-  requiredFacts: &id006
-  - material.retestReport
-  - material.ndtReport
-  - material.standardRef
-  - material.testResults
+  requiredFacts:
+  - r18.designItems[].requiresMaterialRetest
+  - r18.designItems[].requiresMaterialNdt
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - classify_r18_material_test_applicability
   parameters:
-    profile: material_retest
+    profile: r18_material_test
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R18-02
   sourceRuleId: R18
-  requiredFacts: *id006
+  requiredFacts:
+  - r18.designItems[].standardRef
+  - r18.designItems[].requiredRetestItems
+  - r18.designItems[].requiredMaterialNdtMethods
+  - r18.designItems[].acceptanceLimits
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_cross_document_match
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - resolve_r18_material_test_requirement_profile
   parameters:
-    profile: material_retest
+    profile: r18_material_test
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R18-03
   sourceRuleId: R18
   requiredFacts:
+  - r18.designItems[].requiresMaterialRetest
+  - r18.retestReports
+  tools:
+  - evaluate_r18_material_retest_report_completeness
+  parameters:
+    profile: r18_material_test
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R18-04
+  sourceRuleId: R18
+  requiredFacts:
+  - r18.designItems[].requiresMaterialNdt
+  - r18.materialNdtReports
+  tools:
+  - evaluate_r18_material_ndt_report_completeness
+  parameters:
+    profile: r18_material_test
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R18-05
+  sourceRuleId: R18
+  requiredFacts:
+  - r18.retestReports[].signatureRoles
+  - r18.materialNdtReports[].signatureRoles
+  tools:
+  - evaluate_r18_material_report_approval_procedure
+  parameters:
+    profile: r18_material_test
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R18-06
+  sourceRuleId: R18
+  requiredFacts:
+  - r18.designItems[].acceptanceLimits
+  - r18.retestReports[].testResults
+  - r18.materialNdtReports[].testResults
+  tools:
+  - evaluate_r18_material_test_results_and_traceability
+  parameters:
+    profile: r18_material_test
+    clauseSource: frozen_standard_clause_package
+    failurePolicy: business_rule_result
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R18-07
+  sourceRuleId: R18
+  requiredFacts:
   - judgment.claimedFacts
   - judgment.evidenceRefs
   - evidence.pageNo
@@ -1161,299 +1353,381 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R19-01
   sourceRuleId: R19
-  requiredFacts: &id007
-  - foreignMaterial.qualityCertificate
-  - foreignMaterial.retestReport
-  - foreignMaterial.enterpriseStandard
-  - foreignMaterial.grade
+  requiredFacts:
+  - r19.documents
+  - r19.designMaterialItems
+  - r19.qualityCertificates
+  - r19.materialGrades
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_required
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - extract_table_records
+  - locate_evidence_fragment
+  - validate_r19_semantic_judgment
   parameters:
     profile: foreign_material_grade
-    clauseSource: frozen_standard_clause_package
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
     failurePolicy: business_rule_result
-  outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+    semanticProfile: r19_applicability_and_scope
+    clauseSource: frozen_standard_clause_package
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R19-02
   sourceRuleId: R19
-  requiredFacts: *id007
+  requiredFacts:
+  - r19.foreignMaterialStandards
+  - r19.similarServiceEvidence
   tools:
   - get_document_ocr_result
-  - extract_document_fields
-  - check_cross_document_match
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - locate_evidence_fragment
+  - validate_r19_semantic_judgment
   parameters:
     profile: foreign_material_grade
-    clauseSource: frozen_standard_clause_package
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
     failurePolicy: business_rule_result
-  outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+    semanticProfile: r19_standard_currency_and_service_experience
+    clauseSource: frozen_standard_clause_package
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R19-03
   sourceRuleId: R19
   requiredFacts:
-  - judgment.claimedFacts
-  - judgment.evidenceRefs
-  - evidence.pageNo
-  - evidence.bboxOrQuotedText
-  - evidence.ocrConfidence
-  - evidence.conflictStatus
+  - r19.foreignMaterialStandard
+  - r19.domesticComparableStandard
+  - r19.enterpriseStandard
+  - r19.qualityCertificates
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - extract_table_records
+  - locate_evidence_fragment
+  - validate_r19_semantic_judgment
+  parameters:
+    profile: foreign_material_grade
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
+    failurePolicy: business_rule_result
+    semanticProfile: r19_composition_and_property_equivalence
+    clauseSource: frozen_standard_clause_package
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R19-04
+  sourceRuleId: R19
+  requiredFacts:
+  - r19.qualityCertificates
+  - r19.materialRetestReports
+  - r19.batchTraceability
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - extract_table_records
+  - locate_evidence_fragment
+  - validate_r19_semantic_judgment
+  parameters:
+    profile: foreign_material_grade
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
+    failurePolicy: business_rule_result
+    semanticProfile: r19_validation_retest
+    clauseSource: frozen_standard_clause_package
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R19-05
+  sourceRuleId: R19
+  requiredFacts:
+  - r19.firstUseStatus
+  - r19.similarServiceEvidence
+  - r19.wpsPqr
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - extract_table_records
+  - locate_evidence_fragment
+  - validate_r19_semantic_judgment
+  parameters:
+    profile: foreign_material_grade
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
+    failurePolicy: business_rule_result
+    semanticProfile: r19_first_use_welding_qualification
+    clauseSource: frozen_standard_clause_package
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R19-06
+  sourceRuleId: R19
+  requiredFacts:
+  - r19.qualityCertificates
+  - r19.materialRetestReports
+  - r19.wpsPqr
+  - r19.archiveLinks
+  tools:
+  - get_document_ocr_result
+  - locate_evidence_fragment
+  - validate_r19_semantic_judgment
+  parameters:
+    profile: foreign_material_grade
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
+    failurePolicy: business_rule_result
+    semanticProfile: r19_retest_and_pqr_archiving
+    clauseSource: frozen_standard_clause_package
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R19-07
+  sourceRuleId: R19
+  requiredFacts:
+  - r19.manufacturerLocation
+  - r19.enterpriseStandard
+  - r19.foreignMaterialStandards
+  - r19.retestRequirements
+  - r19.wpsPqrRequirements
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - locate_evidence_fragment
+  - validate_r19_semantic_judgment
+  parameters:
+    profile: foreign_material_grade
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
+    failurePolicy: business_rule_result
+    semanticProfile: r19_domestic_manufacturer_enterprise_standard
+    clauseSource: frozen_standard_clause_package
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R19-08
+  sourceRuleId: R19
+  requiredFacts:
+  - r19.atomicJudgments[].evidenceRefIds
+  - r19.evidenceIndex
   tools:
   - locate_evidence_fragment
+  - validate_r19_semantic_judgment
   - validate_evidence_grounding
   parameters:
+    profile: foreign_material_grade
+    executionMode: llm_semantic_primary
+    llmJudgmentRequired: true
+    fixedAggregatorRequired: true
+    failurePolicy: evidence_insufficient
+    semanticProfile: r19_evidence_traceability
+    clauseSource: frozen_standard_clause_package
     minConfidence: 0.75
-    requirePage: true
-    requireBboxOrQuotedText: true
-    denyOnConflict: true
-  outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  outputSchema: r19-semantic-judgment-v1
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R20-01
   sourceRuleId: R20
   requiredFacts:
-  - newMaterial.typeTestReport
-  - newMaterial.technicalReview
-  - newMaterial.approvalDocuments
+  - r20.designItems
+  - r20.typeTestReports
+  - r20.technicalReviewApprovals
+  - r20.materialDataDocuments
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_required
-  - evaluate_material_component
-  - validate_evidence_grounding
+  - extract_table_records
+  - classify_r20_new_material_applicability
+  - evaluate_r20_new_material_procedure
   parameters:
     profile: new_material
+    ruleVersion: r20-new-material-tsg31-2025-d7006-2020-v1
     clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R20-02
   sourceRuleId: R20
   requiredFacts:
-  - judgment.claimedFacts
-  - judgment.evidenceRefs
-  - evidence.pageNo
-  - evidence.bboxOrQuotedText
-  - evidence.ocrConfidence
-  - evidence.conflictStatus
+  - r20.designItems
+  - r20.typeTestReports
+  - r20.technicalReviewApprovals
+  - r20.materialDataDocuments
   tools:
   - locate_evidence_fragment
   - validate_evidence_grounding
   parameters:
+    profile: new_material
     minConfidence: 0.75
-    requirePage: true
-    requireBboxOrQuotedText: true
-    denyOnConflict: true
-  outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R21-01
   sourceRuleId: R21
   requiredFacts:
-  - material.originalMark
-  - material.transferredMark
-  - material.transferRecords
-  - material.batchNo
+  - r21.markTransferOccurred
+  - r21.transferRecords
+  - r21.materialInventory
   tools:
   - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_sampling_requirement
-  - check_traceability
-  - validate_evidence_grounding
+  - evaluate_r21_mark_transfer
   parameters:
     profile: material_mark_transfer
+    ruleVersion: r21-mark-transfer-gbt20801.1-2025-d7006-2020-v1
     clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R21-02
   sourceRuleId: R21
   requiredFacts:
-  - judgment.claimedFacts
-  - judgment.evidenceRefs
-  - evidence.pageNo
-  - evidence.bboxOrQuotedText
-  - evidence.ocrConfidence
-  - evidence.conflictStatus
+  - r21.transferRecords
+  - r21.materialInventory
   tools:
   - locate_evidence_fragment
   - validate_evidence_grounding
   parameters:
+    profile: material_mark_transfer
     minConfidence: 0.75
-    requirePage: true
-    requireBboxOrQuotedText: true
-    denyOnConflict: true
-  outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R22-01
   sourceRuleId: R22
   requiredFacts:
-  - materialSubstitution.originalDesignOrganization
-  - materialSubstitution.approvingOrganization
-  - materialSubstitution.writtenApproval
-  - materialSubstitution.substitutedItems
-  tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - evaluate_design_approval_level
-  - validate_evidence_grounding
-  parameters:
-    profile: material_substitution
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
-  outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
-- atomicCheckId: AC-R22-02
-  sourceRuleId: R22
-  requiredFacts:
-  - judgment.claimedFacts
-  - judgment.evidenceRefs
-  - evidence.pageNo
-  - evidence.bboxOrQuotedText
-  - evidence.ocrConfidence
-  - evidence.conflictStatus
-  tools:
-  - locate_evidence_fragment
-  - validate_evidence_grounding
-  parameters:
-    minConfidence: 0.75
-    requirePage: true
-    requireBboxOrQuotedText: true
-    denyOnConflict: true
-  outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
-- atomicCheckId: AC-R23-01
-  sourceRuleId: R23
-  requiredFacts: &id008
-  - valve.constructionRecords
-  - valve.pressureTestReport
-  - valve.testProcedure
-  - valve.testPressure
-  - valve.holdMinutes
-  - valve.testResult
-  - valve.standardRef
+  - r22.materialSubstitutionOccurred
+  - r22.substitutionRecords
+  - r22.actualMaterialUsage
   tools:
   - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - evaluate_valve_test
-  - validate_evidence_grounding
+  - evaluate_r22_material_substitution
   parameters:
-    profile: valve_pressure_test
+    profile: material_substitution
+    ruleVersion: r22-material-substitution-tsg31-2025-d7006-2020-v1
     clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
-- atomicCheckId: AC-R23-02
-  sourceRuleId: R23
-  requiredFacts: *id008
-  tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - check_cross_document_match
-  - check_numeric_range
-  - evaluate_valve_test
-  - validate_evidence_grounding
-  parameters:
-    profile: valve_pressure_test
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
-  outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
-- atomicCheckId: AC-R23-03
-  sourceRuleId: R23
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R22-02
+  sourceRuleId: R22
   requiredFacts:
-  - judgment.claimedFacts
-  - judgment.evidenceRefs
-  - evidence.pageNo
-  - evidence.bboxOrQuotedText
-  - evidence.ocrConfidence
-  - evidence.conflictStatus
+  - r22.substitutionRecords
+  - r22.actualMaterialUsage
   tools:
   - locate_evidence_fragment
   - validate_evidence_grounding
   parameters:
+    profile: material_substitution
     minConfidence: 0.75
-    requirePage: true
-    requireBboxOrQuotedText: true
-    denyOnConflict: true
-  outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R23-01
+  sourceRuleId: R23
+  requiredFacts:
+  - r23.designStandardRefs
+  - r23.contractStandardRefs
+  - r23.designAndContractBasisChecked
+  - r23.testLots
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - extract_table_records
+  - resolve_r23_valve_test_basis
+  - evaluate_r23_valve_sampling
+  parameters:
+    profile: valve_pressure_test
+    ruleVersion: r23-valve-test-gbt20801.1-2025-v1
+    clauseSource: frozen_standard_clause_package
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R23-02
+  sourceRuleId: R23
+  requiredFacts:
+  - r23.constructionRecords
+  - r23.testRecords
+  - r23.standardRequirementProfiles
+  - r23.designStandardRefs
+  - r23.contractStandardRefs
+  - r23.designAndContractBasisChecked
+  tools:
+  - get_document_ocr_result
+  - extract_document_fields
+  - extract_table_records
+  - evaluate_r23_valve_test_records
+  parameters:
+    profile: valve_pressure_test
+    ruleVersion: r23-valve-test-gbt20801.1-2025-v1
+    clauseSource: frozen_standard_clause_package
+    failClosedOnMissingStandardProfile: true
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R23-03
+  sourceRuleId: R23
+  requiredFacts:
+  - r23.testRecords
+  - r23.testLots
+  tools:
+  - locate_evidence_fragment
+  - validate_evidence_grounding
+  parameters:
+    profile: valve_pressure_test
+    minConfidence: 0.75
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R24-01
   sourceRuleId: R24
   requiredFacts:
-  - welderCertificate.identity
-  - welderCertificate.qualificationCodes
-  - welderCertificate.validity
+  - r24.certificates
+  - r24.qualificationCodes
+  - r24.workDate
   tools:
   - extract_welder_certificate
   - decode_welder_qualification
-  - check_date_covers
-  - validate_evidence_grounding
+  - check_welder_work_coverage
   parameters:
-    profile: welder_qualification
-    qualificationProfile: welder-qualification-code-tsg-z6002-v1
+    profile: r24_welder_qualification
+    argumentProfile: r24_certificate_validity_identity
+    transitionEffectiveDate: '2026-08-01'
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R24-02
   sourceRuleId: R24
   requiredFacts:
-  - welderCertificate.identity
-  - actualWeld.welderIdentity
-  - welderCertificate.qualificationCodes
-  - actualWeld.workItems
+  - r24.certificates
+  - r24.qualificationCodes
+  - r24.workItems
   tools:
-  - extract_welder_certificate
   - decode_welder_qualification
-  - check_all_equal
   - check_welder_work_coverage
-  - validate_evidence_grounding
   parameters:
-    profile: welder_qualification
-    coverageProfile: welder-work-coverage-tsg-z6002-v1
+    profile: r24_welder_qualification
+    argumentProfile: r24_method_material_identity
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R24-03
   sourceRuleId: R24
   requiredFacts:
-  - welderCertificate.qualificationCodes
-  - actualWeld.position
+  - r24.qualificationCodes
+  - r24.workItems
   tools:
   - decode_welder_qualification
   - check_welder_work_coverage
-  - validate_evidence_grounding
   parameters:
-    profile: welder_qualification
-    dimension: position
+    profile: r24_welder_qualification
+    argumentProfile: r24_position_coverage
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R24-04
   sourceRuleId: R24
   requiredFacts:
-  - welderCertificate.qualificationCodes
-  - actualWeld.wallThickness
-  - actualWeld.diameter
+  - r24.qualificationCodes
+  - r24.workItems
   tools:
   - decode_welder_qualification
   - check_welder_work_coverage
-  - validate_evidence_grounding
   parameters:
-    profile: welder_qualification
-    dimensions:
-    - thickness
-    - diameter
+    profile: r24_welder_qualification
+    argumentProfile: r24_thickness_diameter_filler_factors
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R24-05
@@ -1477,46 +1751,35 @@ atomicCheckToolBindings:
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R25-01
   sourceRuleId: R25
-  requiredFacts: &id009
-  - wps.parameters
-  - pqr.parameters
-  - actualWeld.conditions
-  - pipeline.wallThickness
+  requiredFacts:
+  - r25.wpsItems
+  - r25.pqrItems
+  - r25.workItems
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - check_cross_document_match
-  - check_wps_pqr_coverage
-  - validate_evidence_grounding
-  parameters:
-    profile: wps_pqr
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
-  outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
-- atomicCheckId: AC-R25-02
-  sourceRuleId: R25
-  requiredFacts: *id009
-  tools:
-  - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_cross_document_match
-  - check_scope_coverage
-  - check_numeric_range
   - check_wps_pqr_coverage
-  - validate_evidence_grounding
   parameters:
-    profile: wps_pqr
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r25_wps_pqr
+    argumentProfile: r25_approval_and_link
+    failClosedOnMissingRange: true
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
+- atomicCheckId: AC-R25-02
+  sourceRuleId: R25
+  requiredFacts:
+  - r25.wpsItems
+  - r25.pqrItems
+  - r25.workItems
+  tools:
+  - extract_table_records
+  - check_wps_pqr_coverage
+  parameters:
+    profile: r25_wps_pqr
+    argumentProfile: r25_parameter_and_actual_coverage
+    failClosedOnMissingRange: true
+  outputSchema: deterministic-tool-result-v1
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R25-03
   sourceRuleId: R25
   requiredFacts:
@@ -1535,45 +1798,37 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R26-01
   sourceRuleId: R26
-  requiredFacts: &id010
-  - weldingConsumable.mtc
-  - weldingConsumable.batchNo
-  - weldingConsumable.grade
-  - weldingConsumable.specification
-  - design.consumableRequirements
-  - weldingConsumable.validity
+  requiredFacts:
+  - r26.qualityCertificates
+  - r26.physicalItems
+  - r26.productStandardProfiles
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - check_required
-  - check_cross_document_match
+  - extract_table_records
   - evaluate_welding_consumable
-  - validate_evidence_grounding
   parameters:
-    profile: welding_consumable_mtc
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r26_welding_consumable_mtc
+    argumentProfile: r26_mtc_results_batch
+    failClosedOnMissingStandardProfile: true
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R26-02
   sourceRuleId: R26
-  requiredFacts: *id010
+  requiredFacts:
+  - r26.qualityCertificates
+  - r26.designRequirements
+  - r26.physicalItems
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - check_cross_document_match
-  - check_date_covers
   - evaluate_welding_consumable
-  - validate_evidence_grounding
   parameters:
-    profile: welding_consumable_mtc
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r26_welding_consumable_mtc
+    argumentProfile: r26_design_and_inventory_period
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R26-03
   sourceRuleId: R26
   requiredFacts:
@@ -1592,42 +1847,34 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R27-01
   sourceRuleId: R27
-  requiredFacts: &id011
-  - consumableStore.temperatureHumidityRecords
-  - consumableStore.bakingRecords
-  - consumableStore.issueRecords
-  - consumableStore.returnRecords
-  - consumableStore.expiryStatus
+  requiredFacts:
+  - r27.managementRecords
+  - r27.controlRequirements
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
   - evaluate_welding_consumable_control
-  - validate_evidence_grounding
   parameters:
-    profile: welding_consumable_control
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r27_welding_consumable_control
+    argumentProfile: r27_record_set
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R27-02
   sourceRuleId: R27
-  requiredFacts: *id011
+  requiredFacts:
+  - r27.managementRecords
+  - r27.controlRequirements
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
+  - extract_table_records
   - evaluate_welding_consumable_control
-  - validate_evidence_grounding
   parameters:
-    profile: welding_consumable_control
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r27_welding_consumable_control
+    argumentProfile: r27_drying_holding_mix_expiry
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R27-03
   sourceRuleId: R27
   requiredFacts:
@@ -1646,28 +1893,20 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R28-01
   sourceRuleId: R28
   requiredFacts:
-  - fitUp.measuredGap
-  - fitUp.misalignment
-  - fitUp.bevelAngle
-  - design.fitUpLimits
+  - r28.fitUpRecords
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_numeric_range
   - evaluate_pipe_fit_up
-  - validate_evidence_grounding
   parameters:
-    profile: pipe_fit_up
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r28_pipe_fit_up
+    argumentProfile: r28_numeric_and_forced_fit
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R28-02
   sourceRuleId: R28
   requiredFacts:
@@ -1686,30 +1925,24 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R29-01
   sourceRuleId: R29
   requiredFacts:
-  - weldRecord.current
-  - weldRecord.voltage
-  - weldRecord.speed
-  - weldRecord.interpassTemperature
-  - weldRecord.weldId
-  - weldRecord.welderId
+  - r29.weldingRecords
+  - r29.certificates
+  - r29.wpsItems
+  - r29.pqrItems
+  - r29.workItems
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_numeric_range
   - evaluate_welding_process
-  - validate_evidence_grounding
   parameters:
-    profile: welding_record
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r29_welding_record
+    argumentProfile: r29_linked_r24_r25_traceability
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R29-02
   sourceRuleId: R29
   requiredFacts:
@@ -1728,45 +1961,32 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R30-01
   sourceRuleId: R30
-  requiredFacts: &id012
-  - weldAppearance.reinforcement
-  - weldAppearance.width
-  - weldAppearance.undercut
-  - weldAppearance.surfaceDefects
-  - weldAppearance.photos
+  requiredFacts:
+  - r30.appearanceRecords
+  - r30.photoRequired
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - extract_table_records
-  - check_required
-  - check_conditional_requirement
   - evaluate_weld_appearance
-  - validate_evidence_grounding
   parameters:
-    profile: weld_appearance
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r30_weld_appearance
+    argumentProfile: r30_record_and_photo
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R30-02
   sourceRuleId: R30
-  requiredFacts: *id012
+  requiredFacts:
+  - r30.appearanceRecords
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_required
   - evaluate_weld_appearance
-  - validate_evidence_grounding
   parameters:
-    profile: weld_appearance
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r30_weld_appearance
+    argumentProfile: r30_table43_and_design_wps
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R30-03
   sourceRuleId: R30
   requiredFacts:
@@ -1785,30 +2005,21 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R31-01
   sourceRuleId: R31
   requiredFacts:
-  - repair.repairCount
-  - repair.application
-  - repair.procedure
-  - repair.specialApproval
-  - repair.retestReport
+  - r31.repairOccurred
+  - r31.repairRecords
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_required
-  - check_conditional_requirement
+  - extract_table_records
   - evaluate_weld_repair
-  - validate_evidence_grounding
   parameters:
-    profile: weld_repair
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r31_weld_repair
+    argumentProfile: r31_repair_procedure_count_ndt
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R31-02
   sourceRuleId: R31
   requiredFacts:
@@ -1827,29 +2038,23 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R32-01
   sourceRuleId: R32
   requiredFacts:
-  - heatTreatmentProcedure.signatureRoles
-  - heatTreatmentProcedure.heatingRate
-  - heatTreatmentProcedure.holdingTemperature
-  - heatTreatmentProcedure.holdingTime
-  - heatTreatmentProcedure.coolingRate
+  - r32.weldItems
+  - r32.procedureCards
+  - r32.qualificationReports
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - recognize_signatures_and_seals
-  - check_signature_completeness
-  - check_numeric_range
+  - extract_table_records
+  - resolve_pwht_applicability
   - evaluate_heat_treatment
-  - validate_evidence_grounding
   parameters:
     profile: heat_treatment_procedure
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    argumentProfile: r32_shared_applicability_and_procedure
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R32-02
   sourceRuleId: R32
   requiredFacts:
@@ -1868,25 +2073,21 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R33-01
   sourceRuleId: R33
   requiredFacts:
-  - thermocouple.calibrationValidity
-  - temperatureController.calibrationValidity
-  - temperatureMeasurement.pointLayout
+  - r33.instrumentRecords
+  - r33.temperaturePointLayouts
+  - r33.reviewDate
   tools:
-  - get_document_ocr_result
   - extract_document_fields
-  - check_required
   - evaluate_heat_treatment_instruments
-  - validate_evidence_grounding
   parameters:
-    profile: heat_treatment_instruments
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    profile: r33_heat_treatment_instruments
+    argumentProfile: r33_calibration_and_layout
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R33-02
   sourceRuleId: R33
   requiredFacts:
@@ -1905,46 +2106,38 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R34-01
   sourceRuleId: R34
-  requiredFacts: &id013
-  - heatTreatmentCurve.timeSeries
-  - heatTreatmentReport.parameters
-  - hardnessReport.values
-  - material.category
-  - design.hardnessLimit
+  requiredFacts:
+  - r34.weldItems
+  - r34.heatTreatmentReports
+  - r34.hardnessReports
   tools:
-  - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_numeric_range
+  - resolve_pwht_applicability
   - evaluate_heat_treatment
-  - validate_evidence_grounding
   parameters:
     profile: heat_treatment_result
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    argumentProfile: r34_curve_report_hardness
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R34-02
   sourceRuleId: R34
-  requiredFacts: *id013
+  requiredFacts:
+  - r34.weldItems
+  - r34.heatTreatmentReports
+  - r34.hardnessReports
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
   - extract_table_records
-  - check_cross_document_match
-  - check_numeric_range
+  - resolve_pwht_applicability
   - evaluate_heat_treatment
-  - validate_evidence_grounding
   parameters:
     profile: heat_treatment_result
-    clauseSource: frozen_standard_clause_package
-    failurePolicy: business_rule_result
+    argumentProfile: r34_material_conditioned_hardness
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R34-03
   sourceRuleId: R34
   requiredFacts:
@@ -1963,7 +2156,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R35-01
   sourceRuleId: R35
   requiredFacts:
@@ -2044,7 +2237,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R37-01
   sourceRuleId: R37
-  requiredFacts: &id014
+  requiredFacts: &id003
   - ndtNonconformance.procedure
   - ndtNonconformance.commission
   - ndtNonconformance.notice
@@ -2063,7 +2256,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R37-02
   sourceRuleId: R37
-  requiredFacts: *id014
+  requiredFacts: *id003
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2684,7 +2877,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R53-01
   sourceRuleId: R53
-  requiredFacts: &id015
+  requiredFacts: &id004
   - installation.alignmentRecords
   - installation.connectionMethod
   - installation.prohibitedMethods
@@ -2705,7 +2898,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R53-02
   sourceRuleId: R53
-  requiredFacts: *id015
+  requiredFacts: *id004
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -2818,7 +3011,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R56-01
   sourceRuleId: R56
-  requiredFacts: &id016
+  requiredFacts: &id005
   - safetyAccessory.license
   - safetyAccessory.typeTest
   - safetyAccessory.qualityCertificate
@@ -2839,7 +3032,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R56-02
   sourceRuleId: R56
-  requiredFacts: *id016
+  requiredFacts: *id005
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3209,7 +3402,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R65-01
   sourceRuleId: R65
-  requiredFacts: &id017
+  requiredFacts: &id006
   - ndtReport.inventory
   - radiographicFilms.inventory
   - weldInventory.totalCount
@@ -3228,7 +3421,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R65-02
   sourceRuleId: R65
-  requiredFacts: *id017
+  requiredFacts: *id006
   tools:
   - get_document_ocr_result
   - extract_document_fields
@@ -3390,7 +3583,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R69-01
   sourceRuleId: R69
-  requiredFacts: &id018
+  requiredFacts: &id007
   - qualitySystemEvaluation.report
   - qualitySystemEvaluation.result
   - qualitySystemEvaluation.evaluator
@@ -3416,7 +3609,7 @@ atomicCheckToolBindings:
   implementationStatus: implemented
 - atomicCheckId: AC-R69-02
   sourceRuleId: R69
-  requiredFacts: *id018
+  requiredFacts: *id007
   tools:
   - locate_evidence_fragment
   - extract_document_fields

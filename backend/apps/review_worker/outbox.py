@@ -14,6 +14,7 @@ from libs.audit_anchor import write_pending_audit_anchors
 
 OUTBOX_COLLECTION = "workflow_outbox"
 COMMAND_SIGNALS = {
+    "submit_human_input": "submit_human_input",
     "submit_human_decision": "submit_human_decision",
     "cancel_review": "cancel_review",
 }

@@ -59,6 +59,7 @@ import {
   getInspectionDateCompareApi,
   getInspectionAuditOverviewApi,
   getInspectionAuditWorkspaceApi,
+  getActiveReviewHumanInputTaskApi,
   getNdtInspectionFeedbackDetailApi,
   getNdtReportDetailApi,
   getReportDetailApi,
@@ -95,6 +96,7 @@ import {
   submitNdtSubmissionApi,
   submitNodePackageApi,
   submitRectificationApi,
+  submitReviewHumanInputResponseApi,
   updateReportApi,
   withdrawSubmissionItemsApi
 } from '@/api/aicheck'
@@ -106,6 +108,10 @@ import type {
   NdtFeedbackDetailPayload,
   NdtReportDetailPayload,
   ProjectTreePayload,
+  R12LicenseCandidate,
+  R12RegistryVerificationInput,
+  R19EvidenceCandidate,
+  R19HumanInputAnswer,
   ReportDetailPayload,
   ReportSection,
   StandardReference,
@@ -113,7 +119,8 @@ import type {
   SubmissionDraftDetailPayload,
   SubmissionDraftSummary,
   SubmissionSummary,
-  UploadSessionPayload
+  UploadSessionPayload,
+  ReviewHumanInputTask
 } from '@/api/aicheck'
 import type {
   ActionCode,
@@ -203,6 +210,8 @@ import NdtWorkflowPanel from './components/NdtWorkflowPanel.vue'
 import NodePackagePanel from './components/NodePackagePanel.vue'
 import ProjectNodeTree from './components/ProjectNodeTree.vue'
 import RectificationDetailDialog from './components/RectificationDetailDialog.vue'
+import R12RegistryVerificationDialog from './components/R12RegistryVerificationDialog.vue'
+import R19SemanticEvidenceDialog from './components/R19SemanticEvidenceDialog.vue'
 import ReportArchivePanel from './components/ReportArchivePanel.vue'
 import ReportDetailDrawer from './components/ReportDetailDrawer.vue'
 import ReviewDecisionPanel from './components/ReviewDecisionPanel.vue'
@@ -544,6 +553,36 @@ const getAiMetadataText = (metadata: Record<string, unknown> | undefined, keys: 
   return ''
 }
 const aiRecheckDisplayRun = computed(() => aiRecheckRunOverride.value || latestAiRun.value)
+const activeHumanInputTask = ref<ReviewHumanInputTask | null>(null)
+const humanInputReviewEtag = ref('')
+const humanInputDialogVisible = ref(false)
+const humanInputLoading = ref(false)
+const humanInputPromptedTaskId = ref('')
+const activeHumanInputTaskType = computed(() => activeHumanInputTask.value?.taskType || '')
+const isR19HumanInputTask = computed(
+  () => activeHumanInputTaskType.value === 'r19_semantic_evidence_confirmation'
+)
+
+const syncActiveReviewHumanInputTask = async () => {
+  const reviewRunId = aiRecheckDisplayRun.value?.reviewRunId
+  if (!reviewRunId || ![12, 19].includes(activeNodeId.value)) {
+    activeHumanInputTask.value = null
+    humanInputReviewEtag.value = ''
+    return
+  }
+  try {
+    const res = await getActiveReviewHumanInputTaskApi(reviewRunId)
+    if (!res) return
+    activeHumanInputTask.value = res.data.task
+    humanInputReviewEtag.value = res.data.reviewRun.etag
+    if (res.data.task && humanInputPromptedTaskId.value !== res.data.task.taskId) {
+      humanInputPromptedTaskId.value = res.data.task.taskId
+      humanInputDialogVisible.value = true
+    }
+  } catch {
+    // Polling will retry; keep the current task card visible if it was already loaded.
+  }
+}
 const aiRecheckIsLocalFallback = computed(() => {
   const metadata = aiRecheckDisplayRun.value?.llmMetadata
   return metadata?.llmCalled === false || metadata?.llmExecution === 'local_disabled_fallback'
@@ -1985,6 +2024,7 @@ const loadNodePackage = async (
       loadInspectionDetails(res.data.node.nodeId),
       loadInspectionAuditWorkspace(res.data.node.nodeId)
     ])
+    await syncActiveReviewHumanInputTask()
   } catch (error) {
     if (!options.silent) {
       nodePackage.value = undefined
@@ -3507,6 +3547,121 @@ const handleLocateEvidence = (evidence: EvidenceLink) => {
   evidenceDialogVisible.value = true
 }
 
+const handleLocateR12Candidate = (candidate: R12LicenseCandidate) => {
+  const linkedEvidence = evidenceLinks.value.find(
+    (item) =>
+      item.documentVersionId === candidate.documentVersionId &&
+      Number(item.pageNo || 1) === Number(candidate.pageNo || 1)
+  )
+  handleLocateEvidence(
+    linkedEvidence || {
+      id: `r12-${candidate.candidateId}`,
+      projectId: activeProjectId.value,
+      nodeId: 12,
+      objectType: 'documentVersion',
+      objectId: candidate.documentVersionId,
+      documentVersionId: candidate.documentVersionId,
+      fileName: candidate.fileName,
+      pageNo: candidate.pageNo,
+      quotedText: candidate.evidence?.quotedText,
+      confidence: candidate.evidence?.confidence
+    }
+  )
+}
+
+const handleLocateR19Evidence = (evidence: R19EvidenceCandidate) => {
+  if (!evidence.documentVersionId) return
+  const linkedEvidence = evidenceLinks.value.find(
+    (item) =>
+      item.documentVersionId === evidence.documentVersionId &&
+      Number(item.pageNo || 1) === Number(evidence.pageNo || 1)
+  )
+  handleLocateEvidence(
+    linkedEvidence || {
+      id: evidence.evidenceRefId,
+      projectId: activeProjectId.value,
+      nodeId: 19,
+      objectType: 'documentVersion',
+      objectId: evidence.documentVersionId,
+      documentVersionId: evidence.documentVersionId,
+      fileName: evidence.fileName,
+      pageNo: evidence.pageNo || 1,
+      quotedText: evidence.quotedText,
+      confidence: evidence.confidence
+    }
+  )
+}
+
+const handleSubmitR12HumanInput = async (payload: {
+  verifications: R12RegistryVerificationInput[]
+  comment?: string
+}) => {
+  const reviewRunId = aiRecheckDisplayRun.value?.reviewRunId
+  const task = activeHumanInputTask.value
+  if (!reviewRunId || !task || !humanInputReviewEtag.value) {
+    ElMessage.warning('人工核验任务已变化，请刷新后重试')
+    return
+  }
+  humanInputLoading.value = true
+  try {
+    const res = await submitReviewHumanInputResponseApi(reviewRunId, task.taskId, payload, {
+      etag: humanInputReviewEtag.value,
+      idempotencyKey: `r12-human-input-${task.taskId}-${task.inputHash}`,
+      silentBusinessError: true,
+      silentHttpError: true
+    })
+    if (!res) {
+      ElMessage.error('官网核验结果提交失败，请检查必填项或刷新任务')
+      return
+    }
+    activeHumanInputTask.value = null
+    humanInputDialogVisible.value = false
+    aiRecheckRunOverride.value = undefined
+    ElMessage.success('官网核验结果已保存，AI 复核将从暂停位置继续')
+    startAiReviewPolling()
+    await loadNodePackage(activeNodeId.value, { silent: true })
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '官网核验结果提交失败，请刷新后重试。'))
+  } finally {
+    humanInputLoading.value = false
+  }
+}
+
+const handleSubmitR19HumanInput = async (payload: {
+  answers: R19HumanInputAnswer[]
+  comment?: string
+}) => {
+  const reviewRunId = aiRecheckDisplayRun.value?.reviewRunId
+  const task = activeHumanInputTask.value
+  if (!reviewRunId || !task || !humanInputReviewEtag.value) {
+    ElMessage.warning('人工确认任务已变化，请刷新后重试')
+    return
+  }
+  humanInputLoading.value = true
+  try {
+    const res = await submitReviewHumanInputResponseApi(reviewRunId, task.taskId, payload, {
+      etag: humanInputReviewEtag.value,
+      idempotencyKey: `r19-human-input-${task.taskId}-${task.inputHash}`,
+      silentBusinessError: true,
+      silentHttpError: true
+    })
+    if (!res) {
+      ElMessage.error('R19 人工确认提交失败，请检查必填项或刷新任务')
+      return
+    }
+    activeHumanInputTask.value = null
+    humanInputDialogVisible.value = false
+    aiRecheckRunOverride.value = undefined
+    ElMessage.success('R19 人工确认已保存，AI 将从暂停位置恢复语义审核')
+    startAiReviewPolling()
+    await loadNodePackage(activeNodeId.value, { silent: true })
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, 'R19 人工确认提交失败，请刷新后重试。'))
+  } finally {
+    humanInputLoading.value = false
+  }
+}
+
 const handleConfirmEvidence = async (evidence: EvidenceLink) => {
   if (!ensureWritableNode()) return
   actionLoading.value = true
@@ -4811,6 +4966,33 @@ onBeforeUnmount(() => {
                 :closable="false"
                 show-icon
               />
+              <div v-if="activeHumanInputTask" class="ai-human-input-card">
+                <div>
+                  <strong>
+                    {{
+                      isR19HumanInputTask
+                        ? 'AI 已暂停，等待 R19 关键事实确认'
+                        : 'AI 已暂停，等待官网人工核验'
+                    }}
+                  </strong>
+                  <span v-if="isR19HumanInputTask">
+                    需要确认
+                    {{
+                      activeHumanInputTask.questionCount ||
+                      activeHumanInputTask.questions?.length ||
+                      0
+                    }}
+                    个语义事实；提交后将作为新证据恢复 R19 Agent，并继续完成八个原子项判断。
+                  </span>
+                  <span v-else>
+                    已识别 {{ activeHumanInputTask.candidateCount || 0 }}
+                    张制造许可证；完成核验后，AI 将继续调用固定 Tool 比对工程元件覆盖范围。
+                  </span>
+                </div>
+                <ElButton type="warning" @click="humanInputDialogVisible = true">
+                  {{ isR19HumanInputTask ? '处理人工确认' : '处理人工核验' }}
+                </ElButton>
+              </div>
               <div class="ai-recheck-output-section">
                 <label>AI 建议（待人工确认）</label>
                 <pre>{{ aiRecheckResultText }}</pre>
@@ -5717,6 +5899,24 @@ onBeforeUnmount(() => {
         :project-id="activeProjectId"
         :evidence="activeEvidence"
         :extracted-fields="extractedFields"
+      />
+
+      <R12RegistryVerificationDialog
+        v-if="!isR19HumanInputTask"
+        v-model="humanInputDialogVisible"
+        :task="activeHumanInputTask"
+        :loading="humanInputLoading"
+        @submit="handleSubmitR12HumanInput"
+        @locate="handleLocateR12Candidate"
+      />
+
+      <R19SemanticEvidenceDialog
+        v-else
+        v-model="humanInputDialogVisible"
+        :task="activeHumanInputTask"
+        :loading="humanInputLoading"
+        @submit="handleSubmitR19HumanInput"
+        @locate="handleLocateR19Evidence"
       />
 
       <FileDetailDialog
@@ -8782,6 +8982,28 @@ h3 {
     font-size: 13px;
     text-align: left;
   }
+}
+
+.ai-human-input-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  background: #fff8e8;
+  border: 1px solid #f3c66c;
+  border-radius: 10px;
+}
+
+.ai-human-input-card > div {
+  display: grid;
+  gap: 4px;
+}
+
+.ai-human-input-card span {
+  font-size: 13px;
+  color: #765827;
 }
 
 @media (prefers-reduced-motion: reduce) {

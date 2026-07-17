@@ -7,6 +7,7 @@ import { NO_RESET_WHITE_LIST } from '@/constants'
 const AICheckStaticLayout = () => import('@/layout/AICheckStaticLayout.vue')
 const AdminOverview = () => import('@/views/AICheck/AdminOverview.vue')
 const KnowledgeOverview = () => import('@/views/AICheck/KnowledgeOverview.vue')
+const KnowledgeNetwork = () => import('@/views/AICheck/KnowledgeNetwork.vue')
 const FdeConsole = () => import('@/views/AICheck/FdeConsole.vue')
 
 export const constantRouterMap: AppRouteRecordRaw[] = [
@@ -363,6 +364,16 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         name: 'KnowledgeRetrieval',
         meta: {
           title: '检索测试',
+          noCache: true,
+          roles: ['admin']
+        }
+      },
+      {
+        path: 'network',
+        component: KnowledgeNetwork,
+        name: 'KnowledgeNetwork',
+        meta: {
+          title: '知识网络',
           noCache: true,
           roles: ['admin']
         }

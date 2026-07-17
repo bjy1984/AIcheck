@@ -353,12 +353,12 @@ nodeTemplates:
   - file:bind
   requiredMaterials:
   - id: REQ-15-01
-    materialTypeCode: overseas_material_certificate
-    name: 境外制造或境外牌号材料证明文件
+    materialTypeCode: foreign_manufactured_component_list
+    name: 境外制造压力管道元件或安全附件清单
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R15，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中境外制造或境外牌号材料证明文件相关核查。
+    note: 依据 R15，用于识别制造单位、制造国家、产品名称、规格型号及境外制造适用性；不得用境外材料牌号证明替代。
   - id: REQ-15-02
     materialTypeCode: manufacturing_license
     name: 制造单位许可证
@@ -373,6 +373,20 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R15，用于支撑境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质中型式试验证书或型式试验报告相关核查。
+  - id: REQ-15-04
+    materialTypeCode: manufacturing_supervision_certificate
+    name: 制造监督检验证书
+    requiredType: 条件必传
+    responsibleParty: 施工方上传
+    applicability: 境外制造产品需要制造监检且已在境外完成制造监检时适用
+    note: 用于按产品、批次或台件核验境外制造阶段的制造监督检验证书。
+  - id: REQ-15-05
+    materialTypeCode: foreign_component_inspection_record
+    name: 到岸检验或随整机安全性能检验记录
+    requiredType: 条件必传
+    responsibleParty: 施工方上传
+    applicability: 不能在境外完成制造监检，或者随锅炉、压力容器整机配套时适用
+    note: 依据 TSG 31-2025 第2.2.1.5条核验到岸检验、使用地检验或随整机安全性能检验路径。
 - nodeId: 16
   code: '16'
   name: 压力管道元件以及安全附件产品质量证明文件
@@ -395,12 +409,12 @@ nodeTemplates:
     applicability: 按当前节点规则适用条件判断
     note: 依据 R16，用于支撑压力管道元件以及安全附件产品质量证明文件中产品质量证明书相关核查。
   - id: REQ-16-02
-    materialTypeCode: material_retest_report
-    name: 材料复验报告
+    materialTypeCode: drawing_material_list
+    name: 设计材料表
     requiredType: 条件必传
-    responsibleParty: 施工方上传
+    responsibleParty: 设计单位上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R16，用于支撑压力管道元件以及安全附件产品质量证明文件中材料复验报告相关核查。
+    note: 依据 R16，用于提供产品、规格、材质、执行标准、交货状态和特殊要求的设计比对基准。
 - nodeId: 17
   code: '17'
   name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验
@@ -414,11 +428,18 @@ nodeTemplates:
   - id: REQ-17-01
     materialTypeCode: acceptance_witness_record
     name: 到货验收见证资料
-    requiredType: 条件必传
+    requiredType: 必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R17，用于支撑压力管道元件以及安全附件产品验收的见证资料、抽样复验中到货验收见证资料相关核查。
   - id: REQ-17-02
+    materialTypeCode: sampling_witness_record
+    name: 抽样复验见证记录
+    requiredType: 条件必传
+    responsibleParty: 施工方上传
+    applicability: 仅在设计、产品标准、验收规则或质量体系要求抽样复验时适用
+    note: 用于建立到货批号、样品编号、见证人员与复验报告之间的追溯链。
+  - id: REQ-17-03
     materialTypeCode: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
@@ -443,12 +464,12 @@ nodeTemplates:
     applicability: 按当前节点规则适用条件判断
     note: 依据 R18，用于支撑材料复验报告、无损检测报告中材料复验报告相关核查。
   - id: REQ-18-02
-    materialTypeCode: ndt_report
-    name: 无损检测报告
-    requiredType: 必传
+    materialTypeCode: material_ndt_report
+    name: 材料本体无损检测报告
+    requiredType: 条件必传
     responsibleParty: 无损检测机构上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R18，用于支撑材料复验报告、无损检测报告中无损检测报告相关核查。
+    note: 仅在设计、产品标准或验收规则明确要求材料本体无损检测时适用；不得使用焊缝无损检测报告替代。
 - nodeId: 19
   code: '19'
   name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果
@@ -460,19 +481,47 @@ nodeTemplates:
   - file:bind
   requiredMaterials:
   - id: REQ-19-01
+    materialTypeCode: drawing_material_list
+    name: 设计材料表
+    requiredType: 条件必传
+    responsibleParty: 设计方或施工方上传
+    applicability: 使用境外牌号材料时适用
+    note: 用于识别境外牌号材料、涉及元件、安全附件、制造单位、批次和工程使用范围。
+  - id: REQ-19-02
+    materialTypeCode: quality_certificate
+    name: 产品质量证明文件
+    requiredType: 条件必传
+    responsibleParty: 施工方上传
+    applicability: 使用境外牌号材料时适用
+    note: 用于核验材料标准、化学成分、性能、批次以及复验和工艺评定结果的归档关联。
+  - id: REQ-19-03
     materialTypeCode: overseas_material_certificate
     name: 境外制造或境外牌号材料证明文件
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R19，用于支撑使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果中境外制造或境外牌号材料证明文件相关核查。
-  - id: REQ-19-02
+  - id: REQ-19-04
     materialTypeCode: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R19，用于支撑使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果中材料复验报告相关核查。
+  - id: REQ-19-05
+    materialTypeCode: enterprise_material_standard
+    name: 境外牌号材料企业标准
+    requiredType: 条件必传
+    responsibleParty: 制造单位或施工方上传
+    applicability: 境内制造单位使用境外牌号材料时适用
+    note: 核验材料技术要求、验收规则、验证性复验、首次使用工艺评定和质量证明归档要求。
+  - id: REQ-19-06
+    materialTypeCode: wps_pqr
+    name: 焊接工艺评定报告和焊接作业指导书
+    requiredType: 条件必传
+    responsibleParty: 施工方或制造单位上传
+    applicability: 境外牌号材料首次使用且涉及焊接时适用
+    note: 用于核验材料组别、焊接方法、厚度和适用范围，并确认工艺评定结果的归档关联。
 - nodeId: 20
   code: '20'
   name: 新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续
@@ -497,6 +546,13 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R20，用于支撑新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续中技术评审和批准手续相关核查。
+  - id: REQ-20-03
+    materialTypeCode: new_material_data
+    name: 新材料必要性能数据
+    requiredType: 条件必传
+    responsibleParty: 施工方上传
+    applicability: TSG 31-2025第2.1.3.2分支适用
+    note: 用于核验化学成分、拉伸、疲劳、断裂韧性以及使用范围所需的其他性能数据。
 - nodeId: 21
   code: '21'
   name: 材料标志移植
@@ -569,6 +625,13 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R23，用于支撑阀门的施工资料和耐压试验记录（报告）中耐压试验记录或报告相关核查。
+  - id: REQ-23-05
+    materialTypeCode: valve_construction_record
+    name: 阀门施工记录
+    requiredType: 条件必传
+    responsibleParty: 施工方上传
+    applicability: 按当前节点规则适用条件判断
+    note: 用于将实际安装阀门编号、类型、DN和PN/Class与耐压试验记录逐台关联。
   - id: REQ-23-02
     materialTypeCode: pressure_test_plan
     name: 耐压试验方案
@@ -625,6 +688,13 @@ nodeTemplates:
     responsibleParty: 监检人员现场补充
     applicability: 按当前节点规则适用条件判断
     note: 依据 R24，用于支撑焊工资格证及持证合格项目 (B类)中外部查询截图相关核查。
+  - id: REQ-24-04
+    materialTypeCode: welding_record
+    name: 实际施焊记录
+    requiredType: 必传
+    responsibleParty: 施工方上传
+    applicability: 用于与焊工资格合格项目逐焊口匹配
+    note: 提供焊工、方法、母材、位置、外径和壁厚等实际作业事实；与R29共用。
 - nodeId: 25
   code: '25'
   name: 焊接（粘接）工艺文件
@@ -649,6 +719,13 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R25，用于支撑焊接（粘接）工艺文件 (C类)中焊接记录和焊缝标识资料相关核查。
+  - id: REQ-25-03
+    materialTypeCode: pipeline_summary
+    name: 管线汇总表
+    requiredType: 必传
+    responsibleParty: 施工方或设计方上传
+    applicability: 用于确定实际母材、管径和壁厚覆盖范围
+    note: 不得仅凭WPS/PQR自身声明替代实际生产条件。
 - nodeId: 26
   code: '26'
   name: 焊接材料质量证明文件
@@ -708,12 +785,12 @@ nodeTemplates:
   - file:bind
   requiredMaterials:
   - id: REQ-28-01
-    materialTypeCode: welding_record
-    name: 焊接记录和焊缝标识资料
+    materialTypeCode: pipe_fit_up_record
+    name: 管道组对检查记录
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R28，用于支撑管道组对 (C类)中焊接记录和焊缝标识资料相关核查。
+    note: 记录错边量、组对间隙、坡口角度、壁厚及是否强行组对。
   - id: REQ-28-02
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
@@ -763,12 +840,12 @@ nodeTemplates:
   - file:bind
   requiredMaterials:
   - id: REQ-30-01
-    materialTypeCode: welding_record
-    name: 焊接记录和焊缝标识资料
+    materialTypeCode: weld_appearance_record
+    name: 焊接接头外观检查记录
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R30，用于支撑焊接接头外观质量 (B类)中焊接记录和焊缝标识资料相关核查。
+    note: 记录检验等级、接头类型、壁厚、余高、宽度、咬边以及表面缺陷检查结果。
   - id: REQ-30-02
     materialTypeCode: field_photo
     name: 现场照片、底片或实物核验证据
@@ -796,9 +873,9 @@ nodeTemplates:
   - id: REQ-31-02
     materialTypeCode: ndt_report
     name: 无损检测报告
-    requiredType: 必传
+    requiredType: 条件必传
     responsibleParty: 无损检测机构上传
-    applicability: 按当前节点规则适用条件判断
+    applicability: 实际发生焊缝返修时适用
     note: 依据 R31，用于支撑焊缝返修 (C类)中无损检测报告相关核查。
 - nodeId: 32
   code: '32'
@@ -824,6 +901,13 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R32，用于支撑焊接接头焊后热处理工艺文件 (C类)中焊接工艺评定报告和焊接作业指导书相关核查。
+  - id: REQ-32-03
+    materialTypeCode: pipeline_summary
+    name: 管线汇总表
+    requiredType: 条件必传
+    responsibleParty: 施工方或设计方上传
+    applicability: 用于解析材料组、控制厚度及焊后热处理适用性
+    note: R32与R34复用同一焊口级热处理适用性事实。
 - nodeId: 33
   code: '33'
   name: 热处理设备用测温记录仪表
@@ -842,12 +926,12 @@ nodeTemplates:
     applicability: 按当前节点规则适用条件判断
     note: 依据 R33，用于支撑热处理设备用测温记录仪表 (C类)中仪表检定或校准证书相关核查。
   - id: REQ-33-02
-    materialTypeCode: heat_treatment_record
-    name: 热处理记录、曲线和硬度检测报告
+    materialTypeCode: temperature_point_layout
+    name: 测温点布置图
     requiredType: 条件必传
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R33，用于支撑热处理设备用测温记录仪表 (C类)中热处理记录、曲线和硬度检测报告相关核查。
+    note: 用于核验测温点数量、位置和焊口对应关系。
 - nodeId: 34
   code: '34'
   name: 热处理记录、报告曲线、硬度检测报告
@@ -872,6 +956,20 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R34，用于支撑热处理记录、报告曲线、硬度检测报告 (C类)中仪表检定或校准证书相关核查。
+  - id: REQ-34-03
+    materialTypeCode: hardness_report
+    name: 硬度检测报告
+    requiredType: 条件必传
+    responsibleParty: 施工方或检测单位上传
+    applicability: 热处理适用时按材料规则和检测方式确定
+    note: 需提供方法/标尺、测点区域、读数、抽检数量以及必要的换算标准。
+  - id: REQ-34-04
+    materialTypeCode: pipeline_summary
+    name: 管线汇总表
+    requiredType: 条件必传
+    responsibleParty: 施工方或设计方上传
+    applicability: 用于复用R32焊后热处理适用性和材料硬度规则
+    note: 固定200HB/225HB仅在表36对应材料及条件成立时使用。
 - nodeId: 35
   code: '35'
   name: 无损检测机构施工现场质量保证体系的实施

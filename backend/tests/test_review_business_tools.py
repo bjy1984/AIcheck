@@ -7,6 +7,35 @@ from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtim
 from libs.review_tools import BUSINESS_TOOL_NAMES
 
 
+R16_R18_TOOL_NAMES = {
+    "resolve_r16_product_standard_profile",
+    "evaluate_r16_quality_certificate_batch_coverage",
+    "evaluate_r16_quality_certificate_form_and_seals",
+    "evaluate_r16_quality_certificate_design_match",
+    "evaluate_r16_quality_certificate_content",
+    "evaluate_r16_quality_certificate_results",
+    "evaluate_r16_batch_traceability",
+    "evaluate_r17_arrival_acceptance_batch_coverage",
+    "evaluate_r17_acceptance_procedure",
+    "resolve_r17_sampling_retest_requirement",
+    "evaluate_r17_sampling_witness_chain",
+    "evaluate_r17_nonconformance_control",
+    "classify_r18_material_test_applicability",
+    "resolve_r18_material_test_requirement_profile",
+    "evaluate_r18_material_retest_report_completeness",
+    "evaluate_r18_material_ndt_report_completeness",
+    "evaluate_r18_material_report_approval_procedure",
+    "evaluate_r18_material_test_results_and_traceability",
+    "classify_r20_new_material_applicability",
+    "evaluate_r20_new_material_procedure",
+    "evaluate_r21_mark_transfer",
+    "evaluate_r22_material_substitution",
+    "resolve_r23_valve_test_basis",
+    "evaluate_r23_valve_sampling",
+    "evaluate_r23_valve_test_records",
+}
+
+
 def call(name: str, arguments: dict) -> dict:
     return dispatch_runtime_tool({}, name, arguments)
 
@@ -14,7 +43,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 48
+    assert len(BUSINESS_TOOL_NAMES) == 88
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -22,6 +51,20 @@ def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> 
         assert output["status"] == "succeeded"
         assert output["result"] == "evidence_insufficient", name
         assert output["toolCallId"]
+
+
+def test_r16_r18_tools_publish_business_specific_agent_input_contracts() -> None:
+    catalog = {item["name"]: item for item in runtime_tool_catalog()}
+
+    assert "qualityCertificates" in catalog["evaluate_r16_quality_certificate_content"]["inputSchema"]
+    assert "acceptanceRecords" in catalog["evaluate_r17_acceptance_procedure"]["inputSchema"]
+    assert "samplingRules" in catalog["resolve_r17_sampling_retest_requirement"]["inputSchema"]
+    assert "materialNdtReports" in catalog["evaluate_r18_material_ndt_report_completeness"]["inputSchema"]
+    assert "technicalReviewApprovals" in catalog["evaluate_r20_new_material_procedure"]["inputSchema"]
+    assert "transferRecords" in catalog["evaluate_r21_mark_transfer"]["inputSchema"]
+    assert "actualMaterialUsage" in catalog["evaluate_r22_material_substitution"]["inputSchema"]
+    assert "constructionRecords" in catalog["evaluate_r23_valve_test_records"]["inputSchema"]
+    assert "standardRequirementProfiles" in catalog["evaluate_r23_valve_test_records"]["inputSchema"]
 
 
 def test_required_and_document_completeness_require_uploaded_bodies() -> None:
@@ -105,6 +148,543 @@ def test_pressure_gauge_requires_highest_point_and_dial_record() -> None:
 
     assert output["result"] == "failed"
     assert any(item["code"] == "at_least_one_gauge_at_highest_point" and not item["passed"] for item in output["checks"])
+
+
+def test_r13_classification_uses_frozen_supervision_and_type_test_directories() -> None:
+    output = call(
+        "classify_r13_component_requirements",
+        {
+            "designItems": [
+                {"componentItemId": "I-SAW", "componentType": "螺旋缝埋弧焊钢管"},
+                {"componentItemId": "I-PE", "componentType": "聚乙烯管"},
+                {"componentItemId": "I-HOT", "componentType": "热扩无缝钢管"},
+                {"componentItemId": "I-VALVE", "componentType": "金属阀门", "nominalPressureMPa": 4.0},
+                {"componentItemId": "I-BOLT", "componentType": "高强螺栓"},
+            ]
+        },
+    )
+
+    assert output["result"] == "passed"
+    matrix = {item["componentItemId"]: item for item in output["requirementMatrix"]}
+    assert matrix["I-SAW"]["requiresManufacturingSupervision"] is True
+    assert matrix["I-SAW"]["supervisionGranularity"] == "batch"
+    assert matrix["I-PE"]["requiresManufacturingSupervision"] is True
+    assert matrix["I-HOT"]["requiresManufacturingSupervision"] is False
+    assert matrix["I-HOT"]["requiresTypeTest"] is True
+    assert matrix["I-VALVE"]["requiresTypeTest"] is True
+    assert matrix["I-BOLT"]["requiresTypeTest"] is False
+
+
+def test_r13_supervision_certificate_is_checked_per_batch_or_unit() -> None:
+    batch_item = {
+        "componentItemId": "I-SAW",
+        "componentType": "埋弧焊钢管",
+        "manufacturerName": "甲制造有限公司",
+        "batchNo": "B-001",
+        "specification": "DN500",
+    }
+    passed = call(
+        "evaluate_r13_supervision_certificate_completeness",
+        {
+            "designItems": [batch_item],
+            "supervisionCertificates": [
+                {
+                    "certificateNo": "SC-1",
+                    "productName": "埋弧焊钢管",
+                    "manufacturerName": "甲制造有限公司",
+                    "batchNo": "B-001",
+                    "conclusion": "合格",
+                }
+            ],
+        },
+    )
+    wrong_batch = call(
+        "evaluate_r13_supervision_certificate_completeness",
+        {
+            "designItems": [batch_item],
+            "supervisionCertificates": [
+                {
+                    "certificateNo": "SC-2",
+                    "productName": "埋弧焊钢管",
+                    "manufacturerName": "甲制造有限公司",
+                    "batchNo": "B-999",
+                    "conclusion": "合格",
+                }
+            ],
+        },
+    )
+    missing_serial = call(
+        "evaluate_r13_supervision_certificate_completeness",
+        {
+            "designItems": [
+                {
+                    "componentItemId": "I-REGULATOR",
+                    "componentType": "燃气调压装置",
+                    "manufacturerName": "乙制造有限公司",
+                    "specification": "DN100",
+                }
+            ],
+            "supervisionCertificates": [],
+        },
+    )
+
+    assert passed["result"] == "passed"
+    assert wrong_batch["result"] == "failed"
+    assert missing_serial["result"] == "evidence_insufficient"
+
+
+def test_r13_type_test_report_must_cover_manufacturer_material_process_and_range() -> None:
+    item = {
+        "componentItemId": "I-SAW",
+        "componentType": "埋弧焊钢管",
+        "manufacturerName": "甲制造有限公司",
+        "material": "L360",
+        "manufacturingProcess": "埋弧焊",
+        "nominalDiameterMM": 500,
+        "nominalPressureMPa": 10,
+    }
+    covering_report = {
+        "reportNo": "TR-1",
+        "productName": "埋弧焊钢管",
+        "manufacturerName": "甲制造有限公司",
+        "testOrganization": "特种设备检测院",
+        "material": "L360",
+        "manufacturingProcess": "埋弧焊",
+        "nominalDiameterMinMM": 100,
+        "nominalDiameterMaxMM": 800,
+        "nominalPressureMinMPa": 1,
+        "nominalPressureMaxMPa": 16,
+        "conclusion": "合格",
+    }
+    passed = call("evaluate_r13_type_test_coverage", {"designItems": [item], "typeTestReports": [covering_report]})
+    out_of_range = call(
+        "evaluate_r13_type_test_coverage",
+        {
+            "designItems": [item],
+            "typeTestReports": [{**covering_report, "reportNo": "TR-2", "nominalDiameterMaxMM": 300}],
+        },
+    )
+    missing_scope = call(
+        "evaluate_r13_type_test_coverage",
+        {
+            "designItems": [item],
+            "typeTestReports": [
+                {
+                    "reportNo": "TR-3",
+                    "productName": "埋弧焊钢管",
+                    "manufacturerName": "甲制造有限公司",
+                    "testOrganization": "特种设备检测院",
+                    "conclusion": "合格",
+                }
+            ],
+        },
+    )
+    pn16_item = {**item, "nominalPressureMPa": None, "pressureClass": "PN16"}
+    pn16_covered = call(
+        "evaluate_r13_type_test_coverage",
+        {
+            "designItems": [pn16_item],
+            "typeTestReports": [
+                {**covering_report, "reportNo": "TR-PN16", "nominalPressureMinMPa": 1.0, "nominalPressureMaxMPa": 1.6}
+            ],
+        },
+    )
+
+    assert passed["result"] == "passed"
+    assert out_of_range["result"] == "failed"
+    assert missing_scope["result"] == "evidence_insufficient"
+    assert pn16_covered["result"] == "passed"
+
+
+def test_r13_unknown_component_never_defaults_to_no_requirement() -> None:
+    output = call(
+        "classify_r13_component_requirements",
+        {"designItems": [{"componentItemId": "I-UNKNOWN", "componentType": "专用连接组件"}]},
+    )
+
+    assert output["result"] == "evidence_insufficient"
+    assert output["requirementMatrix"][0]["supervisionRequirementKnown"] is False
+
+
+def test_r14_classification_routes_only_known_unlicensed_unmonitored_components() -> None:
+    output = call(
+        "classify_r14_component_applicability",
+        {
+            "designItems": [
+                {"componentItemId": "I-BOLT", "componentType": "高强螺栓"},
+                {"componentItemId": "I-VALVE", "componentType": "金属阀门", "nominalPressureMPa": 4.0},
+            ]
+        },
+    )
+
+    assert output["result"] == "evidence_insufficient"
+    matrix = {item["componentItemId"]: item for item in output["applicabilityMatrix"]}
+    assert matrix["I-BOLT"]["r14Applicable"] is True
+    assert matrix["I-VALVE"]["r14Applicable"] is False
+    assert "manufacturing_license_requirement_unknown" in matrix["I-VALVE"]["reasonCodes"]
+    assert "route_to_r13" in matrix["I-VALVE"]["reasonCodes"]
+
+
+def test_r14_factory_report_matches_component_grade_and_material() -> None:
+    design = {
+        "componentItemId": "I-BOLT",
+        "componentType": "高强螺栓",
+        "specification": "M24",
+        "grade": "8.8",
+        "material": "35CrMo",
+        "batchNo": "B-14",
+    }
+    report = {
+        "reportId": "FR-14",
+        "productName": "高强螺栓",
+        "specification": "M24",
+        "grade": "8.8级",
+        "material": "35CrMo",
+        "batchNo": "B-14",
+        "conclusion": "合格",
+    }
+
+    passed = call(
+        "evaluate_r14_component_design_match",
+        {"designItems": [design], "factoryInspectionReports": [report]},
+    )
+    mismatch = call(
+        "evaluate_r14_component_design_match",
+        {"designItems": [design], "factoryInspectionReports": [{**report, "material": "42CrMo"}]},
+    )
+
+    assert passed["result"] == "passed"
+    assert passed["componentResults"][0]["matchedReportId"] == "FR-14"
+    assert mismatch["result"] == "failed"
+
+
+def test_r14_special_reports_follow_design_or_frozen_standard_requirements() -> None:
+    design = {
+        "componentItemId": "I-BOLT",
+        "componentType": "高强螺栓",
+        "specification": "M24",
+        "batchNo": "B-14",
+        "requiredInspectionItems": ["光谱", "硬度"],
+    }
+    reports = [
+        {
+            "reportId": "SP-1",
+            "productName": "高强螺栓",
+            "specification": "M24",
+            "batchNo": "B-14",
+            "reportType": "spectral_analysis",
+            "conclusion": "合格",
+        },
+        {
+            "reportId": "SP-2",
+            "productName": "高强螺栓",
+            "specification": "M24",
+            "batchNo": "B-14",
+            "reportType": "hardness_test",
+            "conclusion": "合格",
+        },
+    ]
+    passed = call(
+        "evaluate_r14_special_report_coverage",
+        {"designItems": [design], "specialInspectionReports": reports},
+    )
+    missing = call(
+        "evaluate_r14_special_report_coverage",
+        {"designItems": [design], "specialInspectionReports": reports[:1]},
+    )
+    unknown = call(
+        "resolve_r14_required_inspection_items",
+        {
+            "designItems": [
+                {"componentItemId": "I-NUT", "componentType": "螺母", "standardRef": "未配置产品标准"}
+            ],
+            "productInspectionRules": {},
+        },
+    )
+
+    assert passed["result"] == "passed"
+    assert missing["result"] == "failed"
+    assert unknown["result"] == "evidence_insufficient"
+
+
+def test_r14_pressure_grade_links_material_table_pipeline_table_and_reports() -> None:
+    design = {
+        "componentItemId": "I-BOLT",
+        "componentType": "高强螺栓",
+        "lineNo": "L-100",
+        "specification": "M24",
+        "batchNo": "B-14",
+        "pressureClass": "PN16",
+    }
+    pipeline = {"pipelineCharacteristicId": "P-100", "lineNo": "L-100", "designPressureMPa": 1.6}
+    report = {
+        "reportId": "FR-14",
+        "productName": "高强螺栓",
+        "specification": "M24",
+        "batchNo": "B-14",
+        "pressureClass": "PN16",
+        "conclusion": "合格",
+    }
+    passed = call(
+        "evaluate_r14_pressure_compatibility",
+        {
+            "designItems": [design],
+            "pipelineCharacteristics": [pipeline],
+            "factoryInspectionReports": [report],
+            "specialInspectionReports": [],
+        },
+    )
+    under_rated = call(
+        "evaluate_r14_pressure_compatibility",
+        {
+            "designItems": [design],
+            "pipelineCharacteristics": [{**pipeline, "designPressureMPa": 2.5}],
+            "factoryInspectionReports": [report],
+            "specialInspectionReports": [],
+        },
+    )
+
+    assert passed["result"] == "passed"
+    assert under_rated["result"] == "failed"
+
+
+def test_r15_distinguishes_foreign_manufacturing_from_foreign_material_grade() -> None:
+    output = call(
+        "classify_r15_foreign_manufacturing_applicability",
+        {
+            "designItems": [
+                {"componentItemId": "I-FOREIGN", "componentType": "无缝钢管", "manufacturingCountry": "Germany"},
+                {"componentItemId": "I-DOMESTIC", "componentType": "弯头", "manufacturingCountry": "中国"},
+                {"componentItemId": "I-MATERIAL", "componentType": "阀门", "originCountry": "Japan"},
+            ]
+        },
+    )
+
+    matrix = {item["componentItemId"]: item for item in output["applicabilityMatrix"]}
+    assert output["result"] == "evidence_insufficient"
+    assert matrix["I-FOREIGN"]["isForeignManufactured"] is True
+    assert matrix["I-DOMESTIC"]["isForeignManufactured"] is False
+    assert matrix["I-MATERIAL"]["isForeignManufactured"] is None
+
+
+def test_r15_regulatory_classification_uses_explicit_frozen_requirements() -> None:
+    output = call(
+        "classify_r15_regulatory_requirements",
+        {
+            "designItems": [
+                {
+                    "componentItemId": "I-R15",
+                    "componentType": "金属阀门",
+                    "manufacturingCountry": "Germany",
+                    "requiresManufacturingLicense": True,
+                    "requiresTypeTest": True,
+                    "requiresManufacturingSupervision": False,
+                }
+            ]
+        },
+    )
+
+    assert output["result"] == "passed"
+    item = output["requirementMatrix"][0]
+    assert item["requiresManufacturingLicense"] is True
+    assert item["requiresTypeTest"] is True
+    assert item["requiresManufacturingSupervision"] is False
+    assert item["alternativeInspectionRouteRequired"] is False
+
+
+def test_r15_manufacturing_license_requires_verified_matching_scope() -> None:
+    item = {
+        "componentItemId": "I-R15-VALVE",
+        "componentType": "金属阀门",
+        "manufacturerName": "ACME Valve GmbH",
+        "manufacturingCountry": "Germany",
+        "requiresManufacturingLicense": True,
+        "requiresTypeTest": True,
+        "requiresManufacturingSupervision": False,
+    }
+    candidate = {
+        "candidateId": "R15LIC-1",
+        "licenseNo": "TS2710X001",
+        "organizationName": "ACME Valve GmbH",
+        "licenseScopeRaw": "压力管道阀门制造",
+    }
+    passed = call(
+        "evaluate_r15_manufacturing_license_coverage",
+        {
+            "designItems": [item],
+            "licenseCandidates": [candidate],
+            "registryVerifications": [
+                {
+                    "candidateId": "R15LIC-1",
+                    "outcome": "verified_match",
+                    "registryStatus": "active",
+                    "registryLicenseNo": "TS2710X001",
+                    "registryOrganizationName": "ACME Valve GmbH",
+                    "registryScopeRaw": "压力管道阀门制造",
+                }
+            ],
+        },
+    )
+    pending = call(
+        "evaluate_r15_manufacturing_license_coverage",
+        {"designItems": [item], "licenseCandidates": [candidate], "registryVerifications": []},
+    )
+    wrong_scope = call(
+        "evaluate_r15_manufacturing_license_coverage",
+        {
+            "designItems": [item],
+            "licenseCandidates": [candidate],
+            "registryVerifications": [
+                {
+                    "candidateId": "R15LIC-1",
+                    "outcome": "verified_match",
+                    "registryStatus": "active",
+                    "registryLicenseNo": "TS2710X001",
+                    "registryOrganizationName": "ACME Valve GmbH",
+                    "registryScopeRaw": "无缝钢管制造",
+                }
+            ],
+        },
+    )
+
+    assert passed["result"] == "passed"
+    assert pending["result"] == "evidence_insufficient"
+    assert wrong_scope["result"] == "failed"
+
+
+def test_r15_license_registry_identity_and_active_status_are_fail_closed() -> None:
+    item = {
+        "componentItemId": "I-R15-PIPE",
+        "componentType": "无缝钢管",
+        "manufacturerName": "ACME Pipe GmbH",
+        "manufacturingCountry": "Germany",
+        "requiresManufacturingLicense": True,
+        "requiresTypeTest": True,
+        "requiresManufacturingSupervision": False,
+    }
+    candidate = {
+        "candidateId": "R15LIC-PIPE",
+        "licenseNo": "TS2710X002",
+        "organizationName": "ACME Pipe GmbH",
+    }
+    unknown_status = call(
+        "evaluate_r15_manufacturing_license_coverage",
+        {
+            "designItems": [item],
+            "licenseCandidates": [candidate],
+            "registryVerifications": [
+                {
+                    "candidateId": "R15LIC-PIPE",
+                    "outcome": "verified_match",
+                    "registryStatus": "unknown",
+                    "registryLicenseNo": "TS2710X002",
+                    "registryOrganizationName": "ACME Pipe GmbH",
+                    "registryScopeRaw": "无缝钢管制造",
+                }
+            ],
+        },
+    )
+    wrong_identity = call(
+        "evaluate_r15_manufacturing_license_coverage",
+        {
+            "designItems": [item],
+            "licenseCandidates": [candidate],
+            "registryVerifications": [
+                {
+                    "candidateId": "R15LIC-PIPE",
+                    "outcome": "verified_match",
+                    "registryStatus": "active",
+                    "registryLicenseNo": "TS2710-WRONG",
+                    "registryOrganizationName": "ACME Pipe GmbH",
+                    "registryScopeRaw": "无缝钢管制造",
+                }
+            ],
+        },
+    )
+
+    assert unknown_status["result"] == "evidence_insufficient"
+    assert wrong_identity["result"] == "failed"
+
+
+def test_r15_non_component_marker_does_not_trigger_license_by_substring() -> None:
+    output = call(
+        "classify_r15_regulatory_requirements",
+        {
+            "designItems": [
+                {
+                    "componentItemId": "I-R15-BOLT",
+                    "componentType": "紧固螺栓",
+                    "manufacturingCountry": "Germany",
+                }
+            ]
+        },
+    )
+
+    item = output["requirementMatrix"][0]
+    assert output["result"] == "passed"
+    assert item["requiresManufacturingLicense"] is False
+    assert item["alternativeInspectionRouteRequired"] is True
+
+
+def test_r15_type_test_and_arrival_inspection_cover_actual_foreign_product() -> None:
+    item = {
+        "componentItemId": "I-R15-SAW",
+        "componentType": "埋弧焊钢管",
+        "manufacturerName": "Overseas Pipe Ltd",
+        "manufacturingCountry": "Japan",
+        "material": "L360",
+        "manufacturingProcess": "埋弧焊",
+        "nominalDiameterMM": 500,
+        "nominalPressureMPa": 10,
+        "batchNo": "B-15",
+        "requiresManufacturingLicense": True,
+        "requiresTypeTest": True,
+        "requiresManufacturingSupervision": True,
+        "manufacturingSupervisionCompletedOverseas": False,
+        "shippedWithBoilerOrPressureVessel": False,
+    }
+    type_test = call(
+        "evaluate_r15_type_test_coverage",
+        {
+            "designItems": [item],
+            "typeTestReports": [
+                {
+                    "reportNo": "TR-R15",
+                    "productName": "埋弧焊钢管",
+                    "manufacturerName": "Overseas Pipe Ltd",
+                    "testOrganization": "型式试验机构",
+                    "material": "L360",
+                    "manufacturingProcess": "埋弧焊",
+                    "nominalDiameterMinMM": 100,
+                    "nominalDiameterMaxMM": 800,
+                    "nominalPressureMinMPa": 1,
+                    "nominalPressureMaxMPa": 16,
+                    "conclusion": "合格",
+                }
+            ],
+        },
+    )
+    route = call(
+        "evaluate_r15_manufacturing_inspection_route",
+        {
+            "designItems": [item],
+            "arrivalInspectionRecords": [
+                {
+                    "recordId": "ARR-R15",
+                    "inspectionRoute": "到岸检验",
+                    "productName": "埋弧焊钢管",
+                    "manufacturerName": "Overseas Pipe Ltd",
+                    "conclusion": "合格",
+                }
+            ],
+            "supervisionCertificates": [],
+            "completeMachineInspectionRecords": [],
+        },
+    )
+
+    assert type_test["result"] == "passed"
+    assert route["result"] == "passed"
+    assert route["routeMatrix"][0]["inspectionRoute"] == "arrival"
 
 
 def test_standard_version_and_traceability() -> None:
@@ -756,8 +1336,9 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     assert too_high["result"] == "failed"
 
 
-@pytest.mark.parametrize("name", sorted(BUSINESS_TOOL_NAMES - {
+@pytest.mark.parametrize("name", sorted(BUSINESS_TOOL_NAMES - ({
     "check_required",
+    "check_license_registry_match",
     "check_scope_coverage",
     "check_cross_document_match",
     "check_signature_completeness",
@@ -777,13 +1358,28 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "evaluate_design_approval_level",
     "evaluate_design_document_approval",
     "evaluate_calculation_document_consistency",
+    "evaluate_component_manufacturer_scope",
+    "classify_r13_component_requirements",
+    "classify_r14_component_applicability",
+    "classify_r15_foreign_manufacturing_applicability",
+    "classify_r15_regulatory_requirements",
     "evaluate_design_change_approval",
     "evaluate_design_special_requirements",
+    "validate_r19_semantic_judgment",
     "verify_design_license_seals",
     "evaluate_rt_film",
     "evaluate_pressure_test",
+    "evaluate_r13_supervision_certificate_completeness",
+    "evaluate_r13_type_test_coverage",
+    "evaluate_r14_component_design_match",
+    "evaluate_r14_pressure_compatibility",
+    "evaluate_r14_special_report_coverage",
+    "resolve_r14_required_inspection_items",
+    "evaluate_r15_manufacturing_inspection_route",
+    "evaluate_r15_manufacturing_license_coverage",
+    "evaluate_r15_type_test_coverage",
     "evaluate_valve_test",
-}))
+} | R16_R18_TOOL_NAMES)))
 def test_remaining_domain_tools_execute_versioned_rules(name: str) -> None:
     output = call(
         name,

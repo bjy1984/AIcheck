@@ -199,7 +199,7 @@ docker compose \
 
 Production ingress must terminate trusted TLS and dynamically resolve Docker upstreams. Render `deploy/nginx/aicheck.conf.template` with `AICHECK_PUBLIC_HOST`, `AICHECK_TLS_CERTIFICATE`, and `AICHECK_TLS_CERTIFICATE_KEY`; the strict release gate rejects a non-HTTPS `--api-base`. Database and LangGraph migrations are an explicit release operation: enable the `migration` Compose profile only after the production preflight, backup, and restore rehearsal have passed. Every migration is frozen in `db/migrations/manifest.json`; editing an applied SQL file or its checksum fails before database mutation. Run `python -m scripts.migrate_backend --verify-only` to validate the source tree, `python -m scripts.migrate_backend --status` to inventory applied, pending, mismatched, or database-only versions without writing, or `python -m scripts.migrate_backend --plan-only` to list pending migrations. Plan-only mode never executes SQL and is not a migration rehearsal; use a restored disposable database for that proof.
 
-The 151 engineering material review points are packaged in `config/material_review_points.json`. Regenerate and verify the asset after editing the source mapping document:
+The 156 engineering material review points are packaged in `config/material_review_points.json`. Regenerate and verify the asset after editing the source mapping document:
 
 ```bash
 PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py

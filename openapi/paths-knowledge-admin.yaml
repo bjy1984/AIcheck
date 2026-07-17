@@ -1,4 +1,94 @@
 paths:
+  /api/knowledge/network:
+    get:
+      tags: [knowledge]
+      operationId: knowledge_get_network
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessPackId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: engineering_inspection_v1
+        - name: includeRuntime
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Compiled ontology knowledge network for a business pack.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [schemaVersion, graphId, checksum, summary, nodeTypes, edgeTypes, nodes, edges]
+                        properties:
+                          schemaVersion:
+                            type: string
+                          graphId:
+                            type: string
+                          checksum:
+                            type: string
+                          summary:
+                            type: object
+                            additionalProperties: true
+                          nodeTypes:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          edgeTypes:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          nodes:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          edges:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      schemaVersion: knowledge-network@1.0.0
+                      graphId: knowledge-network:engineering_inspection_v1
+                      checksum: sha256:example
+                      summary:
+                        nodeCount: 1083
+                        edgeCount: 3693
+                      nodeTypes: []
+                      edgeTypes: []
+                      nodes: []
+                      edges: []
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
   /api/knowledge/overview:
     get:
       tags: [knowledge]

@@ -1,10 +1,10 @@
 {
   "schemaVersion": "aicheck-material-review-points@1",
-  "version": "engineering-inspection-material-map@51fb3299c3a1",
+  "version": "engineering-inspection-material-map@e02b8a446c16",
   "businessPackId": "engineering_inspection_v1",
   "source": "docs/工程监检资料映射表.md",
-  "sourceSha256": "51fb3299c3a1105ac818a84935f7a32da2252ffb8af96bb90b1ee4ee06202da6",
-  "itemCount": 151,
+  "sourceSha256": "e02b8a446c1693e3cf659a76b0abc116c4a4b5f45e68a9574c8d94bc14f3c846",
+  "itemCount": 163,
   "items": [
     {
       "id": "MRP-1-design_license-05AB35",
@@ -1026,13 +1026,20 @@
       "materialTypeCode": "quality_certificate",
       "materialTypeName": "产品质量证明书",
       "fileContent": "产品质量证明书",
-      "evidenceItemText": "制造单位、材质牌号、批号、证书编号、盖章/印章",
+      "evidenceItemText": "制造单位、产品名称、规格、材质牌号、批号/炉号、证书编号、执行标准、交货状态、检验项目与结果、文件形式、制造厂质量检验章；复印件的经营单位公章与经办负责人章",
       "evidenceItems": [
         "制造单位",
+        "产品名称",
+        "规格",
         "材质牌号",
-        "批号",
+        "批号/炉号",
         "证书编号",
-        "盖章/印章"
+        "执行标准",
+        "交货状态",
+        "检验项目与结果",
+        "文件形式",
+        "制造厂质量检验章",
+        "复印件的经营单位公章与经办负责人章"
       ],
       "responsibleParty": "contractor",
       "responsiblePartyLabel": "施工方上传",
@@ -1045,7 +1052,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-16-material_retest_report-CA529C",
+      "id": "MRP-16-drawing_material_list-B04A07",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 16,
       "nodeName": "压力管道元件以及安全附件产品质量证明文件",
@@ -1053,22 +1060,23 @@
       "businessModule": "材料",
       "reviewClass": "C",
       "reviewContent": "压力管道元件以及安全附件产品质量证明文件",
-      "materialCategory": "材料验收与复验",
-      "materialTypeCode": "material_retest_report",
-      "materialTypeName": "材料复验报告",
-      "fileContent": "材料复验报告",
-      "evidenceItemText": "报告编号、样品编号、批号、试验项目、结论",
+      "materialCategory": "设计基础资料",
+      "materialTypeCode": "drawing_material_list",
+      "materialTypeName": "设计材料表",
+      "fileContent": "设计材料表、材料一览表或管道材料表",
+      "evidenceItemText": "产品名称、规格、材质牌号、执行标准、交货状态、验收标准及特殊要求",
       "evidenceItems": [
-        "报告编号",
-        "样品编号",
-        "批号",
-        "试验项目",
-        "结论"
+        "产品名称",
+        "规格",
+        "材质牌号",
+        "执行标准",
+        "交货状态",
+        "验收标准及特殊要求"
       ],
       "responsibleParty": "contractor",
-      "responsiblePartyLabel": "施工方上传",
+      "responsiblePartyLabel": "设计单位上传",
       "requiredType": "条件必传",
-      "mappingRelation": "直接资料类型匹配",
+      "mappingRelation": "作为质保书字段、检验项目和特殊要求的设计比对基准",
       "minConfidence": 0.65,
       "enabled": true,
       "source": "docs/工程监检资料映射表.md",
@@ -1088,18 +1096,22 @@
       "materialTypeCode": "acceptance_witness_record",
       "materialTypeName": "到货验收见证资料",
       "fileContent": "到货验收见证资料",
-      "evidenceItemText": "物项名称、批号、数量、见证人员、验收项目、结论",
+      "evidenceItemText": "物项名称、规格、批号、数量、质量证明核验、身份标识核验、外观/尺寸检查、验收与接收人员、结论、不合格处置",
       "evidenceItems": [
         "物项名称",
+        "规格",
         "批号",
         "数量",
-        "见证人员",
-        "验收项目",
-        "结论"
+        "质量证明核验",
+        "身份标识核验",
+        "外观/尺寸检查",
+        "验收与接收人员",
+        "结论",
+        "不合格处置"
       ],
       "responsibleParty": "contractor",
       "responsiblePartyLabel": "施工方上传",
-      "requiredType": "条件必传",
+      "requiredType": "必传",
       "mappingRelation": "直接资料类型匹配",
       "minConfidence": 0.65,
       "enabled": true,
@@ -1108,7 +1120,38 @@
       "revision": 1
     },
     {
-      "id": "MRP-17-material_retest_report-97DD87",
+      "id": "MRP-17-sampling_witness_record-6BF153",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 17,
+      "nodeName": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
+      "ruleId": "R17",
+      "businessModule": "材料",
+      "reviewClass": "C",
+      "reviewContent": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
+      "materialCategory": "材料验收与复验",
+      "materialTypeCode": "sampling_witness_record",
+      "materialTypeName": "抽样复验见证记录",
+      "fileContent": "抽样/取样见证记录",
+      "evidenceItemText": "记录编号、物项名称、批号、样品编号、见证人员",
+      "evidenceItems": [
+        "记录编号",
+        "物项名称",
+        "批号",
+        "样品编号",
+        "见证人员"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "仅在规则触发抽样复验时形成批号—样品—见证链",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-17-material_retest_report-40D98D",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 17,
       "nodeName": "压力管道元件以及安全附件产品验收的见证资料、抽样复验",
@@ -1139,7 +1182,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-18-material_retest_report-52BACF",
+      "id": "MRP-18-material_retest_report-88BBF6",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 18,
       "nodeName": "材料复验报告、无损检测报告",
@@ -1170,7 +1213,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-18-ndt_report-A8AE79",
+      "id": "MRP-18-material_ndt_report-084961",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 18,
       "nodeName": "材料复验报告、无损检测报告",
@@ -1179,22 +1222,24 @@
       "reviewClass": "C",
       "reviewContent": "材料复验报告、无损检测报告",
       "materialCategory": "无损检测资料",
-      "materialTypeCode": "ndt_report",
-      "materialTypeName": "无损检测报告",
-      "fileContent": "无损检测报告",
-      "evidenceItemText": "报告编号、方法、焊口编号、比例、结论、盖章/印章",
+      "materialTypeCode": "material_ndt_report",
+      "materialTypeName": "材料本体无损检测报告",
+      "fileContent": "材料本体/母材无损检测报告",
+      "evidenceItemText": "报告编号、产品名称、批号、样品编号、检测方法、检测项目、签字角色、结论",
       "evidenceItems": [
         "报告编号",
-        "方法",
-        "焊口编号",
-        "比例",
-        "结论",
-        "盖章/印章"
+        "产品名称",
+        "批号",
+        "样品编号",
+        "检测方法",
+        "检测项目",
+        "签字角色",
+        "结论"
       ],
       "responsibleParty": "ndt",
       "responsiblePartyLabel": "无损检测机构上传",
-      "requiredType": "必传",
-      "mappingRelation": "直接资料类型匹配",
+      "requiredType": "条件必传",
+      "mappingRelation": "仅在设计、产品标准或验收规则明确要求材料本体无损检测时适用，不得以焊缝无损检测报告替代",
       "minConfidence": 0.65,
       "enabled": true,
       "source": "docs/工程监检资料映射表.md",
@@ -1202,7 +1247,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-19-overseas_material_certificate-E2E949",
+      "id": "MRP-19-overseas_material_certificate-3D03D7",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 19,
       "nodeName": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
@@ -1234,7 +1279,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-19-material_retest_report-E17C75",
+      "id": "MRP-19-material_retest_report-11ABA2",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 19,
       "nodeName": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
@@ -1265,7 +1310,134 @@
       "revision": 1
     },
     {
-      "id": "MRP-20-type_test_report-358B48",
+      "id": "MRP-19-drawing_material_list-7651C3",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 19,
+      "nodeName": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "ruleId": "R19",
+      "businessModule": "材料",
+      "reviewClass": "C",
+      "reviewContent": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "materialCategory": "材料验收与复验",
+      "materialTypeCode": "drawing_material_list",
+      "materialTypeName": "设计材料表",
+      "fileContent": "设计材料表",
+      "evidenceItemText": "产品名称、规格、材质牌号、执行标准、交货状态、特殊要求",
+      "evidenceItems": [
+        "产品名称",
+        "规格",
+        "材质牌号",
+        "执行标准",
+        "交货状态",
+        "特殊要求"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "设计方或施工方上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "识别境外牌号材料及工程使用范围",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-19-quality_certificate-F8FB1F",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 19,
+      "nodeName": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "ruleId": "R19",
+      "businessModule": "材料",
+      "reviewClass": "C",
+      "reviewContent": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "materialCategory": "材料验收与复验",
+      "materialTypeCode": "quality_certificate",
+      "materialTypeName": "产品质量证明书",
+      "fileContent": "产品质量证明书",
+      "evidenceItemText": "制造单位、材质牌号、批号、证书编号、盖章/印章",
+      "evidenceItems": [
+        "制造单位",
+        "材质牌号",
+        "批号",
+        "证书编号",
+        "盖章/印章"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "核验材料标准、性能、批次与报告归档关联",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-19-enterprise_material_standard-7BD3E9",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 19,
+      "nodeName": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "ruleId": "R19",
+      "businessModule": "材料",
+      "reviewClass": "C",
+      "reviewContent": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "materialCategory": "材料验收与复验",
+      "materialTypeCode": "enterprise_material_standard",
+      "materialTypeName": "境外牌号材料企业标准",
+      "fileContent": "境外牌号材料企业标准",
+      "evidenceItemText": "标准编号、制造单位、材料牌号、技术要求、验收规则、生效日期",
+      "evidenceItems": [
+        "标准编号",
+        "制造单位",
+        "材料牌号",
+        "技术要求",
+        "验收规则",
+        "生效日期"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "制造单位或施工方上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "仅境内制造单位使用境外牌号材料时适用",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-19-wps_pqr-7455BB",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 19,
+      "nodeName": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "ruleId": "R19",
+      "businessModule": "材料",
+      "reviewClass": "C",
+      "reviewContent": "使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果",
+      "materialCategory": "焊接人员与焊接工艺",
+      "materialTypeCode": "wps_pqr",
+      "materialTypeName": "焊接工艺评定报告和焊接作业指导书",
+      "fileContent": "焊接工艺评定报告和焊接作业指导书",
+      "evidenceItemText": "PQR编号、WPS编号、焊接方法、材料组别、厚度范围、批准单位/人员",
+      "evidenceItems": [
+        "PQR编号",
+        "WPS编号",
+        "焊接方法",
+        "材料组别",
+        "厚度范围",
+        "批准单位/人员"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方或制造单位上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "境外牌号材料首次使用且涉及焊接时适用",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-20-type_test_report-D7B89C",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 20,
       "nodeName": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
@@ -1297,7 +1469,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-20-technical_review_approval-32D478",
+      "id": "MRP-20-technical_review_approval-9C0347",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 20,
       "nodeName": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
@@ -1328,7 +1500,40 @@
       "revision": 1
     },
     {
-      "id": "MRP-21-material_mark_transfer_record-37845C",
+      "id": "MRP-20-new_material_data-519289",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 20,
+      "nodeName": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
+      "ruleId": "R20",
+      "businessModule": "材料",
+      "reviewClass": "C",
+      "reviewContent": "新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续",
+      "materialCategory": "设计变更与特殊标准",
+      "materialTypeCode": "new_material_data",
+      "materialTypeName": "新材料必要性能数据",
+      "fileContent": "新材料必要性能数据",
+      "evidenceItemText": "文件编号、材料牌号、化学成分、拉伸、疲劳、断裂韧性、使用范围性能参数",
+      "evidenceItems": [
+        "文件编号",
+        "材料牌号",
+        "化学成分",
+        "拉伸",
+        "疲劳",
+        "断裂韧性",
+        "使用范围性能参数"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方或材料研制单位上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "TSG 31-2025第2.1.3.2分支适用",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-21-material_mark_transfer_record-E1CE15",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 21,
       "nodeName": "材料标志移植",
@@ -1360,7 +1565,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-21-quality_certificate-3894B0",
+      "id": "MRP-21-quality_certificate-4731A1",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 21,
       "nodeName": "材料标志移植",
@@ -1391,7 +1596,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-21-field_photo-F712B9",
+      "id": "MRP-21-field_photo-C285A6",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 21,
       "nodeName": "材料标志移植",
@@ -1421,7 +1626,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-22-material_substitution_approval-6C14BE",
+      "id": "MRP-22-material_substitution_approval-2BC232",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 22,
       "nodeName": "材料代用",
@@ -1452,7 +1657,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-22-design_change_document-C45206",
+      "id": "MRP-22-design_change_document-201B98",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 22,
       "nodeName": "材料代用",
@@ -1483,7 +1688,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-23-pressure_test_report-438E5B",
+      "id": "MRP-23-pressure_test_report-2756B8",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 23,
       "nodeName": "阀门的施工资料和耐压试验记录（报告）",
@@ -1515,7 +1720,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-23-pressure_test_plan-7DE704",
+      "id": "MRP-23-pressure_test_plan-9386DB",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 23,
       "nodeName": "阀门的施工资料和耐压试验记录（报告）",
@@ -1547,7 +1752,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-23-valve_test_report-64E2EC",
+      "id": "MRP-23-valve_test_report-0F36D7",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 23,
       "nodeName": "阀门的施工资料和耐压试验记录（报告）",
@@ -1579,7 +1784,40 @@
       "revision": 1
     },
     {
-      "id": "MRP-23-quality_certificate-AC9EF4",
+      "id": "MRP-23-valve_construction_record-3DAA8D",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 23,
+      "nodeName": "阀门的施工资料和耐压试验记录（报告）",
+      "ruleId": "R23",
+      "businessModule": "阀门",
+      "reviewClass": "C",
+      "reviewContent": "阀门的施工资料和耐压试验记录（报告）",
+      "materialCategory": "安全附件与阀门",
+      "materialTypeCode": "valve_construction_record",
+      "materialTypeName": "阀门施工记录",
+      "fileContent": "阀门施工记录",
+      "evidenceItemText": "记录编号、阀门编号、类型、DN、PN/Class、管道级别、检验批",
+      "evidenceItems": [
+        "记录编号",
+        "阀门编号",
+        "类型",
+        "DN",
+        "PN/Class",
+        "管道级别",
+        "检验批"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "与耐压试验记录逐台核对阀门身份",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-23-quality_certificate-665DE8",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 23,
       "nodeName": "阀门的施工资料和耐压试验记录（报告）",
@@ -1610,7 +1848,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-24-welder_certificate-228075",
+      "id": "MRP-24-welder_certificate-E849EC",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 24,
       "nodeName": "焊工资格证及持证合格项目",
@@ -1640,7 +1878,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-24-welder_roster-144E11",
+      "id": "MRP-24-welder_roster-EE4835",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 24,
       "nodeName": "焊工资格证及持证合格项目",
@@ -1669,7 +1907,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-24-external_query_screenshot-327D47",
+      "id": "MRP-24-external_query_screenshot-6DFC12",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 24,
       "nodeName": "焊工资格证及持证合格项目",
@@ -1697,7 +1935,40 @@
       "revision": 1
     },
     {
-      "id": "MRP-25-wps_pqr-0822F3",
+      "id": "MRP-24-welding_record-56DD4C",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 24,
+      "nodeName": "焊工资格证及持证合格项目",
+      "ruleId": "R24",
+      "businessModule": "焊接（粘接）",
+      "reviewClass": "B",
+      "reviewContent": "焊工资格证及持证合格项目 (B类)",
+      "materialCategory": "焊接材料与过程记录",
+      "materialTypeCode": "welding_record",
+      "materialTypeName": "焊接记录和焊缝标识资料",
+      "fileContent": "实际施焊记录",
+      "evidenceItemText": "焊口编号、焊工证号、方法、母材、位置、外径、壁厚",
+      "evidenceItems": [
+        "焊口编号",
+        "焊工证号",
+        "方法",
+        "母材",
+        "位置",
+        "外径",
+        "壁厚"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方上传",
+      "requiredType": "必传",
+      "mappingRelation": "与R29共用并逐焊口匹配资格覆盖",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-25-wps_pqr-A6127D",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 25,
       "nodeName": "焊接（粘接）工艺文件",
@@ -1729,7 +2000,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-25-welding_record-908C1D",
+      "id": "MRP-25-welding_record-62F2EE",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 25,
       "nodeName": "焊接（粘接）工艺文件",
@@ -1762,7 +2033,38 @@
       "revision": 1
     },
     {
-      "id": "MRP-26-welding_material_certificate-945BD0",
+      "id": "MRP-25-pipeline_summary-51A332",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 25,
+      "nodeName": "焊接（粘接）工艺文件",
+      "ruleId": "R25",
+      "businessModule": "焊接（粘接）",
+      "reviewClass": "C",
+      "reviewContent": "焊接（粘接）工艺文件 (C类)",
+      "materialCategory": "设计基础资料",
+      "materialTypeCode": "pipeline_summary",
+      "materialTypeName": "管线汇总表",
+      "fileContent": "管线汇总表",
+      "evidenceItemText": "管线号、材料牌号、外径、壁厚、设计参数",
+      "evidenceItems": [
+        "管线号",
+        "材料牌号",
+        "外径",
+        "壁厚",
+        "设计参数"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方或设计方上传",
+      "requiredType": "必传",
+      "mappingRelation": "实际生产条件覆盖基准",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-26-welding_material_certificate-AA0A65",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 26,
       "nodeName": "焊接材料质量证明文件",
@@ -1794,7 +2096,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-26-design_document-706E53",
+      "id": "MRP-26-design_document-B8B164",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 26,
       "nodeName": "焊接材料质量证明文件",
@@ -1827,7 +2129,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-27-welding_material_management_record-6AB94A",
+      "id": "MRP-27-welding_material_management_record-8EADF2",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 27,
       "nodeName": "焊接材料的验收、保管、发放、使用和回收的管理",
@@ -1859,7 +2161,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-27-welding_material_certificate-68DCC8",
+      "id": "MRP-27-welding_material_certificate-EAB733",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 27,
       "nodeName": "焊接材料的验收、保管、发放、使用和回收的管理",
@@ -1891,7 +2193,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-28-welding_record-5F247B",
+      "id": "MRP-28-pipe_fit_up_record-F965A8",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 28,
       "nodeName": "管道组对",
@@ -1900,23 +2202,22 @@
       "reviewClass": "C",
       "reviewContent": "管道组对 (C类)",
       "materialCategory": "焊接材料与过程记录",
-      "materialTypeCode": "welding_record",
-      "materialTypeName": "焊接记录和焊缝标识资料",
-      "fileContent": "焊接记录和焊缝标识资料",
-      "evidenceItemText": "焊口编号、焊工编号、焊接方法、材料、规格、工艺参数、结论",
+      "materialTypeCode": "pipe_fit_up_record",
+      "materialTypeName": "管道组对检查记录",
+      "fileContent": "管道组对检查记录",
+      "evidenceItemText": "焊口编号、壁厚、错边量、间隙、坡口角度、强行组对状态",
       "evidenceItems": [
         "焊口编号",
-        "焊工编号",
-        "焊接方法",
-        "材料",
-        "规格",
-        "工艺参数",
-        "结论"
+        "壁厚",
+        "错边量",
+        "间隙",
+        "坡口角度",
+        "强行组对状态"
       ],
       "responsibleParty": "contractor",
       "responsiblePartyLabel": "施工方上传",
       "requiredType": "条件必传",
-      "mappingRelation": "直接资料类型匹配",
+      "mappingRelation": "直接资料类型匹配并按材料壁厚计算限值",
       "minConfidence": 0.65,
       "enabled": true,
       "source": "docs/工程监检资料映射表.md",
@@ -1924,7 +2225,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-28-field_photo-A375A7",
+      "id": "MRP-28-field_photo-669043",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 28,
       "nodeName": "管道组对",
@@ -1954,7 +2255,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-29-welding_record-A625AB",
+      "id": "MRP-29-welding_record-91FE32",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 29,
       "nodeName": "施焊参数、施焊记录、焊缝标识",
@@ -1987,7 +2288,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-29-wps_pqr-F21383",
+      "id": "MRP-29-wps_pqr-A0D221",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 29,
       "nodeName": "施焊参数、施焊记录、焊缝标识",
@@ -2019,7 +2320,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-29-welder_certificate-2D84FD",
+      "id": "MRP-29-welder_certificate-FCD38D",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 29,
       "nodeName": "施焊参数、施焊记录、焊缝标识",
@@ -2049,7 +2350,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-30-welding_record-F68DEB",
+      "id": "MRP-30-weld_appearance_record-971DC8",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 30,
       "nodeName": "焊接接头外观质量",
@@ -2058,23 +2359,23 @@
       "reviewClass": "B",
       "reviewContent": "焊接接头外观质量 (B类)",
       "materialCategory": "焊接材料与过程记录",
-      "materialTypeCode": "welding_record",
-      "materialTypeName": "焊接记录和焊缝标识资料",
-      "fileContent": "焊接记录和焊缝标识资料",
-      "evidenceItemText": "焊口编号、焊工编号、焊接方法、材料、规格、工艺参数、结论",
+      "materialTypeCode": "weld_appearance_record",
+      "materialTypeName": "焊接接头外观检查记录",
+      "fileContent": "焊接接头外观检查记录",
+      "evidenceItemText": "焊口编号、检验等级、接头类型、壁厚、余高、宽度、咬边和表面缺陷",
       "evidenceItems": [
         "焊口编号",
-        "焊工编号",
-        "焊接方法",
-        "材料",
-        "规格",
-        "工艺参数",
-        "结论"
+        "检验等级",
+        "接头类型",
+        "壁厚",
+        "余高",
+        "宽度",
+        "咬边和表面缺陷"
       ],
       "responsibleParty": "contractor",
       "responsiblePartyLabel": "施工方上传",
       "requiredType": "条件必传",
-      "mappingRelation": "直接资料类型匹配",
+      "mappingRelation": "按表43及设计/WPS更严限值匹配",
       "minConfidence": 0.65,
       "enabled": true,
       "source": "docs/工程监检资料映射表.md",
@@ -2082,7 +2383,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-30-field_photo-2C62B4",
+      "id": "MRP-30-field_photo-4A84A5",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 30,
       "nodeName": "焊接接头外观质量",
@@ -2112,7 +2413,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-31-weld_repair_record-FE60FF",
+      "id": "MRP-31-weld_repair_record-FEF435",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 31,
       "nodeName": "焊缝返修",
@@ -2144,7 +2445,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-31-ndt_report-27DF31",
+      "id": "MRP-31-ndt_report-271217",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 31,
       "nodeName": "焊缝返修",
@@ -2176,7 +2477,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-32-heat_treatment_procedure-AABACC",
+      "id": "MRP-32-heat_treatment_procedure-9F1561",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 32,
       "nodeName": "焊接接头焊后热处理工艺文件",
@@ -2208,7 +2509,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-32-wps_pqr-226DA1",
+      "id": "MRP-32-wps_pqr-78E84E",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 32,
       "nodeName": "焊接接头焊后热处理工艺文件",
@@ -2240,7 +2541,38 @@
       "revision": 1
     },
     {
-      "id": "MRP-33-instrument_calibration_certificate-E09550",
+      "id": "MRP-32-pipeline_summary-E6858F",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 32,
+      "nodeName": "焊接接头焊后热处理工艺文件",
+      "ruleId": "R32",
+      "businessModule": "热处理",
+      "reviewClass": "C",
+      "reviewContent": "焊接接头焊后热处理工艺文件 (C类)",
+      "materialCategory": "设计基础资料",
+      "materialTypeCode": "pipeline_summary",
+      "materialTypeName": "管线汇总表",
+      "fileContent": "管线汇总表",
+      "evidenceItemText": "焊口/管线号、材料组、控制厚度、强度、设计热处理要求",
+      "evidenceItems": [
+        "焊口/管线号",
+        "材料组",
+        "控制厚度",
+        "强度",
+        "设计热处理要求"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方或设计方上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "R32/R34共用热处理适用性基准",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-33-instrument_calibration_certificate-53C5E3",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 33,
       "nodeName": "热处理设备用测温记录仪表",
@@ -2272,7 +2604,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-33-heat_treatment_record-1C078F",
+      "id": "MRP-33-temperature_point_layout-DFD6C3",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 33,
       "nodeName": "热处理设备用测温记录仪表",
@@ -2281,22 +2613,20 @@
       "reviewClass": "C",
       "reviewContent": "热处理设备用测温记录仪表 (C类)",
       "materialCategory": "热处理资料",
-      "materialTypeCode": "heat_treatment_record",
-      "materialTypeName": "热处理记录、曲线和硬度检测报告",
-      "fileContent": "热处理记录、曲线和硬度检测报告",
-      "evidenceItemText": "记录编号、焊口编号、曲线编号、保温温度、保压时间、硬度结果",
+      "materialTypeCode": "temperature_point_layout",
+      "materialTypeName": "热处理测温点布置图",
+      "fileContent": "测温点布置图",
+      "evidenceItemText": "图号、焊口编号、测温点数量及位置、批准人员",
       "evidenceItems": [
-        "记录编号",
+        "图号",
         "焊口编号",
-        "曲线编号",
-        "保温温度",
-        "保压时间",
-        "硬度结果"
+        "测温点数量及位置",
+        "批准人员"
       ],
       "responsibleParty": "contractor",
       "responsiblePartyLabel": "施工方上传",
       "requiredType": "条件必传",
-      "mappingRelation": "直接资料类型匹配",
+      "mappingRelation": "仪表校准与实际布点联查",
       "minConfidence": 0.65,
       "enabled": true,
       "source": "docs/工程监检资料映射表.md",
@@ -2304,7 +2634,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-34-heat_treatment_record-7DF6AB",
+      "id": "MRP-34-heat_treatment_record-79A83E",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 34,
       "nodeName": "热处理记录、报告曲线、硬度检测报告",
@@ -2336,7 +2666,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-34-instrument_calibration_certificate-BC7643",
+      "id": "MRP-34-instrument_calibration_certificate-4E0329",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 34,
       "nodeName": "热处理记录、报告曲线、硬度检测报告",
@@ -2368,7 +2698,70 @@
       "revision": 1
     },
     {
-      "id": "MRP-35-ndt_org_certificate-571974",
+      "id": "MRP-34-hardness_report-911C6B",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 34,
+      "nodeName": "热处理记录、报告曲线、硬度检测报告",
+      "ruleId": "R34",
+      "businessModule": "热处理",
+      "reviewClass": "C",
+      "reviewContent": "热处理记录、报告曲线、硬度检测报告 (C类)",
+      "materialCategory": "热处理资料",
+      "materialTypeCode": "hardness_report",
+      "materialTypeName": "热处理硬度检测报告",
+      "fileContent": "硬度检测报告",
+      "evidenceItemText": "报告编号、焊口编号、方法/标尺、焊缝与热影响区读数、抽检数量、换算标准",
+      "evidenceItems": [
+        "报告编号",
+        "焊口编号",
+        "方法/标尺",
+        "焊缝与热影响区读数",
+        "抽检数量",
+        "换算标准"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方或检测单位上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "材料条件化硬度及抽检覆盖判定",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-34-pipeline_summary-257683",
+      "businessPackId": "engineering_inspection_v1",
+      "nodeId": 34,
+      "nodeName": "热处理记录、报告曲线、硬度检测报告",
+      "ruleId": "R34",
+      "businessModule": "热处理",
+      "reviewClass": "C",
+      "reviewContent": "热处理记录、报告曲线、硬度检测报告 (C类)",
+      "materialCategory": "设计基础资料",
+      "materialTypeCode": "pipeline_summary",
+      "materialTypeName": "管线汇总表",
+      "fileContent": "管线汇总表",
+      "evidenceItemText": "焊口/管线号、材料组、控制厚度、母材硬度、设计硬度要求",
+      "evidenceItems": [
+        "焊口/管线号",
+        "材料组",
+        "控制厚度",
+        "母材硬度",
+        "设计硬度要求"
+      ],
+      "responsibleParty": "contractor",
+      "responsiblePartyLabel": "施工方或设计方上传",
+      "requiredType": "条件必传",
+      "mappingRelation": "复用R32适用性并解析表36规则",
+      "minConfidence": 0.65,
+      "enabled": true,
+      "source": "docs/工程监检资料映射表.md",
+      "updatedAt": "2026-06-26 08:30:00",
+      "revision": 1
+    },
+    {
+      "id": "MRP-35-ndt_org_certificate-9AAD82",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 35,
       "nodeName": "无损检测机构施工现场质量保证体系的实施",
@@ -2398,7 +2791,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-35-quality_system_document-D30DF5",
+      "id": "MRP-35-quality_system_document-360A8B",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 35,
       "nodeName": "无损检测机构施工现场质量保证体系的实施",
@@ -2429,7 +2822,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-36-ndt_plan-58DE2C",
+      "id": "MRP-36-ndt_plan-F8B8FB",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 36,
       "nodeName": "无损检测方案",
@@ -2461,7 +2854,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-36-design_document-CD642C",
+      "id": "MRP-36-design_document-202E62",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 36,
       "nodeName": "无损检测方案",
@@ -2494,7 +2887,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-37-quality_system_document-DFE4D2",
+      "id": "MRP-37-quality_system_document-4FE562",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 37,
       "nodeName": "检测过程中发现问题的处理",
@@ -2525,7 +2918,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-37-ndt_report-A97AC8",
+      "id": "MRP-37-ndt_report-48CC1B",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 37,
       "nodeName": "检测过程中发现问题的处理",
@@ -2557,7 +2950,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-38-ndt_person_certificate-BFB826",
+      "id": "MRP-38-ndt_person_certificate-2EA230",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 38,
       "nodeName": "无损检测人员资格证、执业注册证及持证合格项目",
@@ -2588,7 +2981,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-38-ndt_plan-7A009A",
+      "id": "MRP-38-ndt_plan-7DB978",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 38,
       "nodeName": "无损检测人员资格证、执业注册证及持证合格项目",
@@ -2620,7 +3013,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-39-ndt_procedure-462492",
+      "id": "MRP-39-ndt_procedure-0B22C8",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 39,
       "nodeName": "无损检测工艺文件",
@@ -2652,7 +3045,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-39-ndt_plan-9BD519",
+      "id": "MRP-39-ndt_plan-52BDE2",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 39,
       "nodeName": "无损检测工艺文件",
@@ -2684,7 +3077,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-40-ndt_report-464085",
+      "id": "MRP-40-ndt_report-8447ED",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 40,
       "nodeName": "无损检测记录、报告",
@@ -2716,7 +3109,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-41-radiographic_film-80E498",
+      "id": "MRP-41-radiographic_film-D1CBE8",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 41,
       "nodeName": "射线检测底片抽查",
@@ -2747,7 +3140,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-41-ndt_report-997B66",
+      "id": "MRP-41-ndt_report-24D35A",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 41,
       "nodeName": "射线检测底片抽查",
@@ -2779,7 +3172,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-42-radiographic_film-F84E84",
+      "id": "MRP-42-radiographic_film-173622",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 42,
       "nodeName": "射线检测现场抽查",
@@ -2810,7 +3203,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-42-ndt_report-D548E8",
+      "id": "MRP-42-ndt_report-33898F",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 42,
       "nodeName": "射线检测现场抽查",
@@ -2842,7 +3235,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-42-field_photo-9D5328",
+      "id": "MRP-42-field_photo-5B13BC",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 42,
       "nodeName": "射线检测现场抽查",
@@ -2872,7 +3265,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-43-anticorrosion_insulation_material_certificate-6D83EA",
+      "id": "MRP-43-anticorrosion_insulation_material_certificate-079E12",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 43,
       "nodeName": "防腐及保温材料质量证明文件",
@@ -2903,7 +3296,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-43-design_document-8EF65E",
+      "id": "MRP-43-design_document-881FA1",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 43,
       "nodeName": "防腐及保温材料质量证明文件",
@@ -2936,7 +3329,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-44-anticorrosion_insulation_record-6F9F92",
+      "id": "MRP-44-anticorrosion_insulation_record-67BFD9",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 44,
       "nodeName": "防腐、补口、补伤及保温",
@@ -2968,7 +3361,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-44-field_photo-B4E834",
+      "id": "MRP-44-field_photo-F10A68",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 44,
       "nodeName": "防腐、补口、补伤及保温",
@@ -2998,7 +3391,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-45-anticorrosion_insulation_record-E0DDE1",
+      "id": "MRP-45-anticorrosion_insulation_record-8B9C49",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 45,
       "nodeName": "防腐层电火花检测",
@@ -3030,7 +3423,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-45-instrument_calibration_certificate-8B5326",
+      "id": "MRP-45-instrument_calibration_certificate-A24771",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 45,
       "nodeName": "防腐层电火花检测",
@@ -3062,7 +3455,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-46-cathodic_protection_record-50B5FE",
+      "id": "MRP-46-cathodic_protection_record-41A5D9",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 46,
       "nodeName": "牺牲阳极、外加电流阴极保护、杂散电流排流装置",
@@ -3093,7 +3486,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-46-quality_certificate-C1384F",
+      "id": "MRP-46-quality_certificate-3C0203",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 46,
       "nodeName": "牺牲阳极、外加电流阴极保护、杂散电流排流装置",
@@ -3124,7 +3517,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-47-grounding_test_record-A5EEB5",
+      "id": "MRP-47-grounding_test_record-05BDCA",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 47,
       "nodeName": "静电接地",
@@ -3155,7 +3548,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-47-design_document-AF1E26",
+      "id": "MRP-47-design_document-C1B599",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 47,
       "nodeName": "静电接地",
@@ -3188,7 +3581,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-48-installation_record-F9983C",
+      "id": "MRP-48-installation_record-A6F656",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 48,
       "nodeName": "穿跨越工程的管道结构、焊缝布置",
@@ -3220,7 +3613,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-48-design_document-22D3FA",
+      "id": "MRP-48-design_document-653404",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 48,
       "nodeName": "穿跨越工程的管道结构、焊缝布置",
@@ -3253,7 +3646,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-48-field_photo-644870",
+      "id": "MRP-48-field_photo-9A82D7",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 48,
       "nodeName": "穿跨越工程的管道结构、焊缝布置",
@@ -3283,7 +3676,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-49-installation_record-D2DB11",
+      "id": "MRP-49-installation_record-30C77D",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 49,
       "nodeName": "穿跨越工程施工",
@@ -3315,7 +3708,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-49-design_document-169B2D",
+      "id": "MRP-49-design_document-A68F51",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 49,
       "nodeName": "穿跨越工程施工",
@@ -3348,7 +3741,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-49-field_photo-CB154F",
+      "id": "MRP-49-field_photo-3BCE32",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 49,
       "nodeName": "穿跨越工程施工",
@@ -3378,7 +3771,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-50-installation_record-ED5A1C",
+      "id": "MRP-50-installation_record-9426D3",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 50,
       "nodeName": "套管防腐绝缘",
@@ -3410,7 +3803,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-50-design_document-B844A7",
+      "id": "MRP-50-design_document-666179",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 50,
       "nodeName": "套管防腐绝缘",
@@ -3443,7 +3836,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-50-field_photo-8E706C",
+      "id": "MRP-50-field_photo-05B249",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 50,
       "nodeName": "套管防腐绝缘",
@@ -3473,7 +3866,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-50-anticorrosion_insulation_record-128A98",
+      "id": "MRP-50-anticorrosion_insulation_record-D4CF24",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 50,
       "nodeName": "套管防腐绝缘",
@@ -3505,7 +3898,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-51-installation_record-E72A40",
+      "id": "MRP-51-installation_record-A10300",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 51,
       "nodeName": "绝缘支撑",
@@ -3537,7 +3930,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-51-design_document-2F31CB",
+      "id": "MRP-51-design_document-A0D819",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 51,
       "nodeName": "绝缘支撑",
@@ -3570,7 +3963,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-51-field_photo-90DEA8",
+      "id": "MRP-51-field_photo-D36EDD",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 51,
       "nodeName": "绝缘支撑",
@@ -3600,7 +3993,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-52-installation_record-E7F727",
+      "id": "MRP-52-installation_record-441DC9",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 52,
       "nodeName": "管道现场制作（预制）",
@@ -3632,7 +4025,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-52-welding_record-E6C426",
+      "id": "MRP-52-welding_record-A13CFC",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 52,
       "nodeName": "管道现场制作（预制）",
@@ -3665,7 +4058,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-52-field_photo-F936DE",
+      "id": "MRP-52-field_photo-67A908",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 52,
       "nodeName": "管道现场制作（预制）",
@@ -3695,7 +4088,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-53-installation_record-7BDCF0",
+      "id": "MRP-53-installation_record-BF2890",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 53,
       "nodeName": "管道布管与连接方式、穿跨越",
@@ -3727,7 +4120,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-53-design_document-CE6A48",
+      "id": "MRP-53-design_document-3C2B25",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 53,
       "nodeName": "管道布管与连接方式、穿跨越",
@@ -3760,7 +4153,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-53-field_photo-BE0E43",
+      "id": "MRP-53-field_photo-BE07CC",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 53,
       "nodeName": "管道布管与连接方式、穿跨越",
@@ -3790,7 +4183,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-54-installation_record-1C4F52",
+      "id": "MRP-54-installation_record-04D321",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 54,
       "nodeName": "补偿装置",
@@ -3822,7 +4215,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-54-quality_certificate-BEEFEE",
+      "id": "MRP-54-quality_certificate-A6BF59",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 54,
       "nodeName": "补偿装置",
@@ -3853,7 +4246,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-55-installation_record-A347B2",
+      "id": "MRP-55-installation_record-3842A7",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 55,
       "nodeName": "支撑件",
@@ -3885,7 +4278,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-55-quality_certificate-2AC519",
+      "id": "MRP-55-quality_certificate-80551C",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 55,
       "nodeName": "支撑件",
@@ -3916,7 +4309,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-56-safety_accessory_record-6A6E0C",
+      "id": "MRP-56-safety_accessory_record-3C5CDC",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 56,
       "nodeName": "安全阀、爆破片和紧急切断阀的安装位置、规格和型号",
@@ -3948,7 +4341,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-56-quality_certificate-8D9B87",
+      "id": "MRP-56-quality_certificate-22EFCD",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 56,
       "nodeName": "安全阀、爆破片和紧急切断阀的安装位置、规格和型号",
@@ -3979,7 +4372,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-56-type_test_report-229196",
+      "id": "MRP-56-type_test_report-847F14",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 56,
       "nodeName": "安全阀、爆破片和紧急切断阀的安装位置、规格和型号",
@@ -4011,7 +4404,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-57-safety_accessory_record-3674DD",
+      "id": "MRP-57-safety_accessory_record-AF132F",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 57,
       "nodeName": "安全阀校验报告",
@@ -4043,7 +4436,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-57-instrument_calibration_certificate-0B598D",
+      "id": "MRP-57-instrument_calibration_certificate-788D77",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 57,
       "nodeName": "安全阀校验报告",
@@ -4075,7 +4468,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-58-safety_accessory_record-049388",
+      "id": "MRP-58-safety_accessory_record-66B3EC",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 58,
       "nodeName": "紧急切断阀性能测试报告",
@@ -4107,7 +4500,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-59-pressure_test_plan-7B0386",
+      "id": "MRP-59-pressure_test_plan-74A884",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 59,
       "nodeName": "耐压试验方案",
@@ -4139,7 +4532,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-59-design_document-90DA14",
+      "id": "MRP-59-design_document-71285B",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 59,
       "nodeName": "耐压试验方案",
@@ -4172,7 +4565,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-60-instrument_calibration_certificate-2BCF42",
+      "id": "MRP-60-instrument_calibration_certificate-9AD8F6",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 60,
       "nodeName": "试验用压力表、试验介质、介质温度、环境温度",
@@ -4204,7 +4597,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-60-pressure_test_report-C46623",
+      "id": "MRP-60-pressure_test_report-8E8564",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 60,
       "nodeName": "试验用压力表、试验介质、介质温度、环境温度",
@@ -4236,7 +4629,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-61-pressure_test_report-C59987",
+      "id": "MRP-61-pressure_test_report-D6F040",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 61,
       "nodeName": "耐压试验压力、保压时间及结果",
@@ -4268,7 +4661,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-61-pressure_test_plan-DE81A6",
+      "id": "MRP-61-pressure_test_plan-A0E259",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 61,
       "nodeName": "耐压试验压力、保压时间及结果",
@@ -4300,7 +4693,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-62-pressure_test_report-144D09",
+      "id": "MRP-62-pressure_test_report-C846B8",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 62,
       "nodeName": "耐压试验记录（报告）",
@@ -4332,7 +4725,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-62-pressure_test_plan-DDC06C",
+      "id": "MRP-62-pressure_test_plan-D798B9",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 62,
       "nodeName": "耐压试验记录（报告）",
@@ -4364,7 +4757,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-63-calculation_report-C72C97",
+      "id": "MRP-63-calculation_report-2040F4",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 63,
       "nodeName": "管道系统的柔性(应力)分析",
@@ -4395,7 +4788,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-63-design_document-6F99D6",
+      "id": "MRP-63-design_document-6C8395",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 63,
       "nodeName": "管道系统的柔性(应力)分析",
@@ -4428,7 +4821,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-64-leakage_test_report-68055E",
+      "id": "MRP-64-leakage_test_report-67BDD9",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 64,
       "nodeName": "现场检查替代性试验的过程",
@@ -4460,7 +4853,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-64-design_document-9F47BC",
+      "id": "MRP-64-design_document-DB5FE4",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 64,
       "nodeName": "现场检查替代性试验的过程",
@@ -4493,7 +4886,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-65-ndt_report-6411E9",
+      "id": "MRP-65-ndt_report-03BB2F",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 65,
       "nodeName": "无损检测报告和底片",
@@ -4525,7 +4918,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-65-radiographic_film-6A5693",
+      "id": "MRP-65-radiographic_film-5A9FA2",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 65,
       "nodeName": "无损检测报告和底片",
@@ -4556,7 +4949,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-66-instrument_calibration_certificate-6B8163",
+      "id": "MRP-66-instrument_calibration_certificate-74B132",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 66,
       "nodeName": "试验用压力表、试验介质、介质温度、环境温度、试验压力",
@@ -4588,7 +4981,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-66-pressure_test_report-CBA284",
+      "id": "MRP-66-pressure_test_report-F92DB4",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 66,
       "nodeName": "试验用压力表、试验介质、介质温度、环境温度、试验压力",
@@ -4620,7 +5013,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-66-leakage_test_report-5281D4",
+      "id": "MRP-66-leakage_test_report-73C2F2",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 66,
       "nodeName": "试验用压力表、试验介质、介质温度、环境温度、试验压力",
@@ -4652,7 +5045,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-67-leakage_test_report-7C6872",
+      "id": "MRP-67-leakage_test_report-BA146E",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 67,
       "nodeName": "泄漏试验方法和试验报告",
@@ -4684,7 +5077,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-67-instrument_calibration_certificate-D02D04",
+      "id": "MRP-67-instrument_calibration_certificate-742504",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 67,
       "nodeName": "泄漏试验方法和试验报告",
@@ -4716,7 +5109,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-68-purge_cleaning_record-19686F",
+      "id": "MRP-68-purge_cleaning_record-A12977",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 68,
       "nodeName": "吹扫、清洗",
@@ -4748,7 +5141,7 @@
       "revision": 1
     },
     {
-      "id": "MRP-68-design_document-9C81CA",
+      "id": "MRP-68-design_document-C2BBD3",
       "businessPackId": "engineering_inspection_v1",
       "nodeId": 68,
       "nodeName": "吹扫、清洗",

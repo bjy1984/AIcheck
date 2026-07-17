@@ -9,6 +9,7 @@ from temporalio.exceptions import ApplicationError
 from libs.contracts.responses import server_time
 from libs.db.repository import flush_state_records, load_review_run_state, repo
 from libs.review_orchestrator.execution import (
+    apply_review_human_input_for_review_run,
     append_review_event,
     bump_review_run_revision,
     execute_review_run_inline,
@@ -159,7 +160,25 @@ async def apply_review_workflow_command_activity(command: dict) -> dict:
         }
 
         command_type = str(command.get("commandType") or "")
-        if command_type == "submit_human_decision":
+        if command_type == "submit_human_input":
+            task_id = str(command.get("taskId") or "")
+            input_payload = command.get("inputPayload")
+            result = apply_review_human_input_for_review_run(
+                review_run_id,
+                task_id,
+                input_payload if isinstance(input_payload, dict) else {},
+                actor_id=str(command.get("actorId") or "") or None,
+                actor_name=str(command.get("actorName") or "") or None,
+                command_id=command_id,
+            )
+            if result.get("status") != "applied":
+                raise ApplicationError(
+                    f"ReviewRun human input could not be applied: {result.get('status')}",
+                    type="REVIEW_WORKFLOW_COMMAND_REJECTED",
+                    non_retryable=True,
+                    details=[result],
+                )
+        elif command_type == "submit_human_decision":
             decision = str(command.get("decision") or "")
             decision_payload = command.get("decisionPayload")
             result = human_decision_for_review_run(
@@ -181,7 +200,13 @@ async def apply_review_workflow_command_activity(command: dict) -> dict:
                     details=[result],
                 )
         elif command_type == "cancel_review":
-            if review_run.get("status") not in {"queued", "running", "waiting_human_review"}:
+            if review_run.get("status") not in {
+                "queued",
+                "running",
+                "waiting_human_input",
+                "resuming",
+                "waiting_human_review",
+            }:
                 raise ApplicationError(
                     f"ReviewRun is already terminal: {review_run.get('status')}",
                     type="REVIEW_WORKFLOW_COMMAND_REJECTED",

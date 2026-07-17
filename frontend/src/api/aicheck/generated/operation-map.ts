@@ -4,6 +4,7 @@
 
 export const aicheckOpenApiOperations = {
   "admin_get_config_overview": { method: "GET", path: "/api/admin/config/overview", tags: ["admin"] },
+  "knowledge_get_network": { method: "GET", path: "/api/knowledge/network", tags: ["knowledge"] },
   "knowledge_get_overview": { method: "GET", path: "/api/knowledge/overview", tags: ["knowledge"] },
   "knowledge_retry_task": { method: "POST", path: "/api/knowledge/tasks/{taskId}/retry", tags: ["knowledge"] },
   "archive_list_items": { method: "GET", path: "/api/projects/{projectId}/archive", tags: ["archive"] },
@@ -24,6 +25,8 @@ export const aicheckOpenApiOperations = {
   "workbench_get_project_tree": { method: "GET", path: "/api/projects/{projectId}/tree", tags: ["workbench"] },
   "workbench_get_context": { method: "GET", path: "/api/projects/{projectId}/workbench/context", tags: ["workbench"] },
   "workbench_get_summary": { method: "GET", path: "/api/projects/{projectId}/workbench/summary", tags: ["workbench"] },
+  "review_get_active_human_input_task": { method: "GET", path: "/api/review-runs/{reviewRunId}/human-input-tasks/active", tags: ["review"] },
+  "review_submit_human_input_response": { method: "POST", path: "/api/review-runs/{reviewRunId}/human-input-tasks/{taskId}/responses", tags: ["review"] },
   "workbench_list_projects": { method: "GET", path: "/api/workbench/projects", tags: ["workbench"] }
 } as const
 

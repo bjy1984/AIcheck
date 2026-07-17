@@ -86,6 +86,38 @@ def test_outbox_relay_rejects_unknown_command_type() -> None:
         raise AssertionError("unknown outbox commands must fail closed")
 
 
+def test_outbox_relay_delivers_r12_human_input_signal_without_business_payload() -> None:
+    client = RecordingTemporalClient()
+    command = {
+        "tenantId": "TENANT-A",
+        "objectId": "WFCMD-R12-INPUT",
+        "commandId": "WFCMD-R12-INPUT",
+        "commandType": "submit_human_input",
+        "reviewRunId": "RRUN-R12",
+        "workflowId": "review-run-RRUN-R12",
+        "payloadHash": "sha256-r12-input",
+        "signalPayload": {
+            "inputPayload": {"verifications": [{"candidateId": "SENSITIVE"}]},
+        },
+    }
+
+    asyncio.run(deliver_command(client, command))
+
+    assert client.handle.signals == [
+        (
+            "submit_human_input",
+            {
+                "commandId": "WFCMD-R12-INPUT",
+                "commandType": "submit_human_input",
+                "tenantId": "TENANT-A",
+                "reviewRunId": "RRUN-R12",
+                "payloadHash": "sha256-r12-input",
+            },
+        )
+    ]
+    assert "SENSITIVE" not in repr(client.handle.signals)
+
+
 def test_relay_finish_never_downgrades_an_applied_command() -> None:
     payload = finalized_command_payload(
         {

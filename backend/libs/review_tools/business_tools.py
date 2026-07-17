@@ -10,6 +10,71 @@ from libs.review_orchestrator.deterministic_tools import (
     parse_date,
     result,
 )
+from libs.review_tools.r13_tools import (
+    classify_r13_component_requirements,
+    evaluate_r13_supervision_certificate_completeness,
+    evaluate_r13_type_test_coverage,
+)
+from libs.review_tools.r14_tools import (
+    classify_r14_component_applicability,
+    evaluate_r14_component_design_match,
+    evaluate_r14_pressure_compatibility,
+    evaluate_r14_special_report_coverage,
+    resolve_r14_required_inspection_items,
+)
+from libs.review_tools.r15_tools import (
+    classify_r15_foreign_manufacturing_applicability,
+    classify_r15_regulatory_requirements,
+    evaluate_r15_manufacturing_inspection_route,
+    evaluate_r15_manufacturing_license_coverage,
+    evaluate_r15_type_test_coverage,
+)
+from libs.review_tools.r16_tools import (
+    evaluate_r16_batch_traceability,
+    evaluate_r16_quality_certificate_batch_coverage,
+    evaluate_r16_quality_certificate_content,
+    evaluate_r16_quality_certificate_design_match,
+    evaluate_r16_quality_certificate_form_and_seals,
+    evaluate_r16_quality_certificate_results,
+    resolve_r16_product_standard_profile,
+)
+from libs.review_tools.r17_tools import (
+    evaluate_r17_acceptance_procedure,
+    evaluate_r17_arrival_acceptance_batch_coverage,
+    evaluate_r17_nonconformance_control,
+    evaluate_r17_sampling_witness_chain,
+    resolve_r17_sampling_retest_requirement,
+)
+from libs.review_tools.r18_tools import (
+    classify_r18_material_test_applicability,
+    evaluate_r18_material_ndt_report_completeness,
+    evaluate_r18_material_report_approval_procedure,
+    evaluate_r18_material_retest_report_completeness,
+    evaluate_r18_material_test_results_and_traceability,
+    resolve_r18_material_test_requirement_profile,
+)
+from libs.review_tools.r19_tools import validate_r19_semantic_judgment
+from libs.review_tools.r20_r23_tools import (
+    classify_r20_new_material_applicability,
+    evaluate_r20_new_material_procedure,
+    evaluate_r21_mark_transfer,
+    evaluate_r22_material_substitution,
+    evaluate_r23_valve_sampling,
+    evaluate_r23_valve_test_records,
+    resolve_r23_valve_test_basis,
+)
+from libs.review_tools.r24_r34_tools import (
+    check_wps_pqr_coverage as check_r25_wps_pqr_coverage,
+    evaluate_heat_treatment as evaluate_r32_r34_heat_treatment,
+    evaluate_heat_treatment_instruments as evaluate_r33_heat_treatment_instruments,
+    evaluate_pipe_fit_up as evaluate_r28_pipe_fit_up,
+    evaluate_weld_appearance as evaluate_r30_weld_appearance,
+    evaluate_weld_repair as evaluate_r31_weld_repair,
+    evaluate_welding_consumable as evaluate_r26_welding_consumable,
+    evaluate_welding_consumable_control as evaluate_r27_welding_consumable_control,
+    evaluate_welding_process as evaluate_r29_welding_process,
+    resolve_pwht_applicability,
+)
 
 
 COMMON_TOOL_NAMES = (
@@ -26,6 +91,12 @@ COMMON_TOOL_NAMES = (
 )
 
 DOMAIN_TOOL_NAMES = (
+    "check_license_registry_match",
+    "classify_r13_component_requirements",
+    "classify_r14_component_applicability",
+    "classify_r15_foreign_manufacturing_applicability",
+    "classify_r15_regulatory_requirements",
+    "classify_r18_material_test_applicability",
     "check_ndt_personnel_coverage",
     "check_installation_license_scope",
     "check_wps_pqr_coverage",
@@ -40,7 +111,6 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_design_document_approval",
     "evaluate_design_change_approval",
     "evaluate_design_special_requirements",
-    "evaluate_foreign_component",
     "evaluate_heat_treatment",
     "evaluate_heat_treatment_instruments",
     "evaluate_installation_license_scope",
@@ -54,6 +124,41 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_pipe_fit_up",
     "evaluate_pipeline_installation",
     "evaluate_pressure_test",
+    "evaluate_r13_supervision_certificate_completeness",
+    "evaluate_r13_type_test_coverage",
+    "evaluate_r14_component_design_match",
+    "evaluate_r14_pressure_compatibility",
+    "evaluate_r14_special_report_coverage",
+    "resolve_r14_required_inspection_items",
+    "evaluate_r15_manufacturing_inspection_route",
+    "evaluate_r15_manufacturing_license_coverage",
+    "evaluate_r15_type_test_coverage",
+    "evaluate_r16_batch_traceability",
+    "evaluate_r16_quality_certificate_batch_coverage",
+    "evaluate_r16_quality_certificate_content",
+    "evaluate_r16_quality_certificate_design_match",
+    "evaluate_r16_quality_certificate_form_and_seals",
+    "evaluate_r16_quality_certificate_results",
+    "resolve_r16_product_standard_profile",
+    "evaluate_r17_acceptance_procedure",
+    "evaluate_r17_arrival_acceptance_batch_coverage",
+    "evaluate_r17_nonconformance_control",
+    "evaluate_r17_sampling_witness_chain",
+    "resolve_r17_sampling_retest_requirement",
+    "evaluate_r18_material_ndt_report_completeness",
+    "evaluate_r18_material_report_approval_procedure",
+    "evaluate_r18_material_retest_report_completeness",
+    "evaluate_r18_material_test_results_and_traceability",
+    "resolve_r18_material_test_requirement_profile",
+    "validate_r19_semantic_judgment",
+    "classify_r20_new_material_applicability",
+    "evaluate_r20_new_material_procedure",
+    "evaluate_r21_mark_transfer",
+    "evaluate_r22_material_substitution",
+    "resolve_r23_valve_test_basis",
+    "resolve_pwht_applicability",
+    "evaluate_r23_valve_sampling",
+    "evaluate_r23_valve_test_records",
     "evaluate_rt_film",
     "evaluate_safety_accessory",
     "evaluate_stress_analysis",
@@ -68,8 +173,66 @@ DOMAIN_TOOL_NAMES = (
 
 
 BUSINESS_TOOL_CAPABILITIES = {
+    "check_license_registry_match": (
+        "核对制造许可证 OCR 候选与人工官网核验记录；官网未查到、信息不一致或证照非有效状态时判定不符合，未完成核验时返回证据不足。"
+    ),
     "check_installation_license_scope": (
         "按照GC1、GC2、GCD和A级锅炉安装资质的固定覆盖关系，判断安装许可证是否覆盖项目管道等级。"
+    ),
+    "classify_r20_new_material_applicability": (
+        "按TSG 31-2025第2.1.3条区分非新材料、未列入任何专用材料标准的新材料，以及已列入其他专用材料标准的新材料；分类事实不足时停止自动判定。"
+    ),
+    "evaluate_r20_new_material_procedure": (
+        "逐项核验新材料元件或安全附件的型式试验覆盖；对未列入任何专用材料标准的材料核验技术评审及批准手续，对已列入其他专用材料标准的材料核验必要性能数据。"
+    ),
+    "evaluate_r21_mark_transfer": (
+        "核验材料标志移植记录、原标志至移植标志的追溯链、特殊材料种类抽查覆盖，以及硬印和色标方法限制；未发生标志移植时返回不适用。"
+    ),
+    "evaluate_r22_material_substitution": (
+        "仅对实际实施的材料代用核验原设计单位书面批准、批准时间、代用范围及实际使用一致性；仅有未实施建议时返回不适用。"
+    ),
+    "resolve_r23_valve_test_basis": (
+        "按设计文件、供货合同、缺省GB/T 13927-2022的优先级确定阀门试验依据，并识别设计与合同冲突或不支持的标准。"
+    ),
+    "evaluate_r23_valve_sampling": (
+        "按GB/T 20801.1-2025第7.2.4条计算GC1、GC2、GC3阀门检验数量，核验工厂逐台见证豁免条件及抽样不合格后的整批处置。"
+    ),
+    "evaluate_r23_valve_test_records": (
+        "逐台核验阀门施工记录和耐压试验报告的依据标准、壳体及密封试验介质、压力、保压时间、程序、泄漏与结论；规范参数未冻结时返回证据不足。"
+    ),
+    "check_wps_pqr_coverage": (
+        "核验WPS/PQR审批与对应关系、WPS参数是否位于PQR评定范围内，并逐管线核验实际方法、材料和壁厚及施焊参数覆盖。"
+    ),
+    "evaluate_welding_consumable": (
+        "按设计牌号规格、产品标准限值、MTC化学及力学实测数据、实物批号和超库存期复验记录审核焊材；缺少已冻结产品标准限值时返回证据不足。"
+    ),
+    "evaluate_welding_consumable_control": (
+        "联查焊材验收、保管温湿度、烘干保温、领用、使用与回收记录，识别混用、过期及批号追溯中断。"
+    ),
+    "evaluate_pipe_fit_up": (
+        "按材料类别和壁厚计算错边量限值，核验组对间隙、坡口角度及禁止强行组对要求。"
+    ),
+    "evaluate_welding_process": (
+        "核验施焊记录参数与焊缝标识追溯，并要求R24焊工资格覆盖和R25 WPS/PQR覆盖结果同时成立。"
+    ),
+    "evaluate_weld_appearance": (
+        "按GB/T 20801.1-2025表43的检验等级、接头类型和壁厚核验裂纹、未熔合、气孔夹渣、咬边和余高；宽度仅按设计/WPS明确限值判断。"
+    ),
+    "evaluate_weld_repair": (
+        "核验返修申请、原因与返修工艺、同一部位超过2次的专项措施及技术负责人批准、返修后同方法复检和必要的重新热处理。"
+    ),
+    "resolve_pwht_applicability": (
+        "按材料组、控制厚度、强度和接头例外统一解析焊后热处理适用性，为R32至R34生成稳定适用性键和表36规则档案。"
+    ),
+    "evaluate_heat_treatment": (
+        "分别审核R32热处理工艺卡和R34曲线/报告/硬度：复用统一适用性规则，核验审批、评定依据、温度速率及材料条件化硬度限值。"
+    ),
+    "evaluate_heat_treatment_instruments": (
+        "核验热电偶、温控仪和自动记录仪的校准证书有效性及测温点布置图。"
+    ),
+    "classify_r13_component_requirements": (
+        "依据TSG D7006-2020第1.2.1条、附件A1.2和市场监管总局2021年第41号公告附件1注三、注四，"
+        "逐项判定设计材料表中的压力管道元件是否触发制造监检、型式试验及监检粒度；未知类别返回证据不足。"
     ),
     "decode_ndt_approval_item_codes": (
         "按照TSG Z7002-2022附件A表A-1解码检测机构核准项目代码；未知代码返回证据不足。"
@@ -90,6 +253,100 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_design_special_requirements": (
         "核验设计说明是否对无损检测、防腐、耐压试验和泄漏试验规定了具体要求，并按冻结标准规则逐领域判断符合性。"
     ),
+    "evaluate_r13_supervision_certificate_completeness": (
+        "对需制造监检的埋弧焊钢管、聚乙烯管和指定元件组合装置，按批次或台件核对制造监督检验证书是否齐全、合格且可追溯。"
+    ),
+    "evaluate_r13_type_test_coverage": (
+        "逐项核对型式试验证书或报告的产品类别、制造单位、材料、结构、制造工艺及规格/压力范围是否覆盖设计材料表中的实际元件。"
+    ),
+    "classify_r14_component_applicability": (
+        "逐项确认管道组成件是否不需要制造许可、制造监检和型式试验；任一要求无法分类时返回证据不足，并将需许可或监检/型式试验的元件分别路由至R12或R13。"
+    ),
+    "evaluate_r14_component_design_match": (
+        "按元件类型、规格、批号和管线号关联出厂检验报告，逐项核对元件等级、材质及报告结论是否符合设计材料表。"
+    ),
+    "resolve_r14_required_inspection_items": (
+        "根据设计文件明确要求和已冻结的具体产品标准规则，逐项确定光谱、硬度、金相、无损检测和耐压试验等必检项目；规则未覆盖时禁止推断。"
+    ),
+    "evaluate_r14_special_report_coverage": (
+        "按元件、规格和批号核对必需的光谱、硬度、金相、无损检测及耐压试验报告是否齐全、关联正确且结论合格。"
+    ),
+    "evaluate_r14_pressure_compatibility": (
+        "按管线号关联材料表、管道特性表、出厂检验报告和专项报告，判断元件额定压力等级是否覆盖管线要求；不支持的Class换算返回证据不足。"
+    ),
+    "classify_r15_foreign_manufacturing_applicability": (
+        "仅依据制造国家、制造地点或明确的境外制造结构化事实，逐项判定R15适用性；不得以境外材料牌号替代境外制造事实。"
+    ),
+    "classify_r15_regulatory_requirements": (
+        "依据TSG 31-2025第1.10、2.2.1.5条和TSG D7006-2020附件D D2.4.1，逐项分类制造许可、型式试验和制造监检要求；无法分类时返回证据不足。"
+    ),
+    "evaluate_r15_manufacturing_license_coverage": (
+        "对需要制造许可的境外制造元件逐项核对制造单位、官网人工核验状态和许可范围，确认相应制造许可覆盖工程实际产品。"
+    ),
+    "evaluate_r15_type_test_coverage": (
+        "对有型式试验要求的境外制造元件逐项核对制造单位、产品类别、材料、结构、制造工艺及规格/压力范围。"
+    ),
+    "evaluate_r15_manufacturing_inspection_route": (
+        "对需要制造监检的境外制造元件，按境外完成制造监检、到岸检验或随锅炉/压力容器整机检验三条路径核验证书或检验记录。"
+    ),
+    "resolve_r16_product_standard_profile": (
+        "按设计文件中的产品执行标准，将元件路由到已冻结的GB/T产品标准规则；标准未建模时返回证据不足，禁止由模型猜测。"
+    ),
+    "evaluate_r16_quality_certificate_batch_coverage": (
+        "按产品、规格、炉批号或产品编号逐项核验本工程到货元件是否具有唯一对应的产品质量证明文件。"
+    ),
+    "evaluate_r16_quality_certificate_form_and_seals": (
+        "识别质量证明文件为原件或复印件；原件核验制造单位质量检验章，复印件核验经营单位公章和经办负责人章。"
+    ),
+    "evaluate_r16_quality_certificate_design_match": (
+        "逐批核对质量证明文件中的制造单位、产品、规格、材质、执行标准和交货状态与设计材料表及订货要求。"
+    ),
+    "evaluate_r16_quality_certificate_content": (
+        "依据已冻结的具体产品标准和设计特殊要求，核验质量证明文件必需字段、出厂检验项目及合格结论是否齐全。"
+    ),
+    "evaluate_r16_quality_certificate_results": (
+        "仅使用结构化验收限值核验质量证明文件中的化学、力学及专项检验数值；限值未冻结时返回证据不足。"
+    ),
+    "evaluate_r16_batch_traceability": (
+        "核验设计材料表、产品质量证明文件和实物标识的炉号、批号或产品编号形成同一追溯链。"
+    ),
+    "evaluate_r17_arrival_acceptance_batch_coverage": (
+        "按产品、规格、炉批号或产品编号核验每批到货元件是否存在唯一对应的验收记录。"
+    ),
+    "evaluate_r17_acceptance_procedure": (
+        "核验到货验收是否执行质量证明、身份标识、外观、尺寸和结论记录等质量体系步骤，并具有验收签字。"
+    ),
+    "resolve_r17_sampling_retest_requirement": (
+        "根据设计明确要求或冻结的抽样规则逐批确定是否需要抽样复验；触发条件不明时返回证据不足。"
+    ),
+    "evaluate_r17_sampling_witness_chain": (
+        "对需要抽样复验的批次核对取样见证记录、见证角色、样品编号和复验报告的连续证据链。"
+    ),
+    "evaluate_r17_nonconformance_control": (
+        "对验收不合格批次核验隔离、处置和放行批准记录，防止未受控材料投入使用。"
+    ),
+    "classify_r18_material_test_applicability": (
+        "逐批识别材料复验和材料本体无损检测是否适用；R18仅在规则或设计明确要求进行时进入报告审查。"
+    ),
+    "resolve_r18_material_test_requirement_profile": (
+        "将适用批次绑定到具体产品标准、复验项目、材料无损检测方法和结构化验收限值，规则不完整时禁止判定符合。"
+    ),
+    "evaluate_r18_material_retest_report_completeness": (
+        "对需要材料复验的批次核验复验报告是否存在，并覆盖规则要求的全部复验项目。"
+    ),
+    "evaluate_r18_material_ndt_report_completeness": (
+        "对需要材料本体无损检测的批次核验专用检测报告是否存在，并覆盖要求的检测方法。"
+    ),
+    "evaluate_r18_material_report_approval_procedure": (
+        "核验材料复验及材料无损检测报告的批准程序和试验、审核、批准等签字角色。"
+    ),
+    "evaluate_r18_material_test_results_and_traceability": (
+        "核验复验/NDT报告结论、结构化数值限值以及材料批号—样品号—报告号追溯链。"
+    ),
+    "validate_r19_semantic_judgment": (
+        "校验R19由LLM形成的逐原子项语义判断是否符合输出Schema，是否引用已登记的EvidenceRef和固定ClauseRef；"
+        "本Tool只校验判断记录，不生成或改写业务结论。"
+    ),
     "verify_design_license_seals": (
         "依据TSG 31-2025第3.1.2条，逐份核验重新出具的管道图纸目录和管道布置图上的压力管道设计许可印章。"
     ),
@@ -104,6 +361,187 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             "执行结构化、确定性业务规则；事实或规则参数不足时禁止判定符合。",
         ),
         "inputSchema": (
+            {
+                "licenseCandidates": ["object"],
+                "registryVerifications": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "check_license_registry_match"
+            else {
+                "designItems": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name in {
+                "classify_r15_foreign_manufacturing_applicability",
+                "classify_r15_regulatory_requirements",
+            }
+            else {
+                "designItems": ["object"],
+                "licenseCandidates": ["object"],
+                "registryVerifications": ["object"],
+                "requireRegistryVerification": "boolean?",
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r15_manufacturing_license_coverage"
+            else {
+                "designItems": ["object"],
+                "typeTestReports": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r15_type_test_coverage"
+            else {
+                "designItems": ["object"],
+                "supervisionCertificates": ["object"],
+                "arrivalInspectionRecords": ["object"],
+                "completeMachineInspectionRecords": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r15_manufacturing_inspection_route"
+            else {
+                "designItems": ["object"],
+                "qualityCertificates": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name in {
+                "resolve_r16_product_standard_profile",
+                "evaluate_r16_quality_certificate_batch_coverage",
+                "evaluate_r16_quality_certificate_design_match",
+                "evaluate_r16_quality_certificate_content",
+                "evaluate_r16_quality_certificate_results",
+                "evaluate_r16_batch_traceability",
+            }
+            else {
+                "qualityCertificates": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r16_quality_certificate_form_and_seals"
+            else {
+                "designItems": ["object"],
+                "acceptanceRecords": ["object"],
+                "witnessRecords": ["object"],
+                "samplingRetestReports": ["object"],
+                "samplingRules": "object?",
+                "ruleVersion": "string?",
+            }
+            if name in {
+                "evaluate_r17_arrival_acceptance_batch_coverage",
+                "evaluate_r17_acceptance_procedure",
+                "resolve_r17_sampling_retest_requirement",
+                "evaluate_r17_sampling_witness_chain",
+                "evaluate_r17_nonconformance_control",
+            }
+            else {
+                "designItems": ["object"],
+                "retestReports": ["object"],
+                "materialNdtReports": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name in {
+                "classify_r18_material_test_applicability",
+                "resolve_r18_material_test_requirement_profile",
+                "evaluate_r18_material_retest_report_completeness",
+                "evaluate_r18_material_ndt_report_completeness",
+                "evaluate_r18_material_report_approval_procedure",
+                "evaluate_r18_material_test_results_and_traceability",
+            }
+            else {
+                "atomicCheckId": "string",
+                "judgment": "object",
+                "knownEvidenceRefIds": ["string"],
+                "evidenceIndex": "object?",
+                "ruleVersion": "string?",
+            }
+            if name == "validate_r19_semantic_judgment"
+            else {
+                "designItems": ["object"],
+                "typeTestReports": ["object"],
+                "technicalReviewApprovals": ["object"],
+                "materialDataDocuments": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name in {"classify_r20_new_material_applicability", "evaluate_r20_new_material_procedure"}
+            else {
+                "markTransferOccurred": "boolean?",
+                "transferRecords": ["object"],
+                "materialInventory": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r21_mark_transfer"
+            else {
+                "materialSubstitutionOccurred": "boolean?",
+                "substitutionRecords": ["object"],
+                "actualMaterialUsage": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r22_material_substitution"
+            else {
+                "designStandardRefs": ["string"],
+                "contractStandardRefs": ["string"],
+                "designAndContractBasisChecked": "boolean?",
+                "testLots": ["object"],
+                "constructionRecords": ["object"],
+                "testRecords": ["object"],
+                "standardRequirementProfiles": "object?",
+                "ruleVersion": "string?",
+            }
+            if name in {"resolve_r23_valve_test_basis", "evaluate_r23_valve_sampling", "evaluate_r23_valve_test_records"}
+            else {
+                "designItems": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "classify_r13_component_requirements"
+            else {
+                "designItems": ["object"],
+                "supervisionCertificates": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r13_supervision_certificate_completeness"
+            else {
+                "designItems": ["object"],
+                "typeTestReports": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r13_type_test_coverage"
+            else {
+                "designItems": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "classify_r14_component_applicability"
+            else {
+                "designItems": ["object"],
+                "factoryInspectionReports": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r14_component_design_match"
+            else {
+                "designItems": ["object"],
+                "productInspectionRules": "object",
+                "ruleVersion": "string?",
+            }
+            if name == "resolve_r14_required_inspection_items"
+            else {
+                "designItems": ["object"],
+                "specialInspectionReports": ["object"],
+                "productInspectionRules": "object",
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r14_special_report_coverage"
+            else {
+                "designItems": ["object"],
+                "pipelineCharacteristics": ["object"],
+                "factoryInspectionReports": ["object"],
+                "specialInspectionReports": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_r14_pressure_compatibility"
+            else {
+                "licenseCandidates": ["object"],
+                "registryVerifications": ["object"],
+                "componentItems": ["object"],
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_component_manufacturer_scope"
+            else
             {
                 "approvalMode": "three_level|four_level_conditional",
                 "documents": ["object"],
@@ -177,7 +615,37 @@ BUSINESS_TOOL_NAMES = {item["name"] for item in BUSINESS_TOOL_DESCRIPTORS}
 
 
 def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    dedicated_r24_r34_tools = {
+        "evaluate_welding_consumable",
+        "evaluate_welding_consumable_control",
+        "evaluate_pipe_fit_up",
+        "evaluate_welding_process",
+        "evaluate_weld_appearance",
+        "evaluate_weld_repair",
+        "resolve_pwht_applicability",
+        "evaluate_heat_treatment",
+        "evaluate_heat_treatment_instruments",
+    }
+    # 保留历史显式规则档案调用兼容性；正式R24-R34绑定不再使用该入口。
+    if tool_name in dedicated_r24_r34_tools and arguments.get("requiredFields") and arguments.get("ruleChecks"):
+        return evaluate_rule_profile(tool_name, arguments)
+    if tool_name == "check_wps_pqr_coverage" and arguments.get("qualifiedRanges") and not arguments.get("wpsItems"):
+        return check_wps_pqr_coverage(arguments)
     handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+        "check_license_registry_match": check_license_registry_match,
+        "classify_r13_component_requirements": classify_r13_component_requirements,
+        "classify_r14_component_applicability": classify_r14_component_applicability,
+        "classify_r15_foreign_manufacturing_applicability": classify_r15_foreign_manufacturing_applicability,
+        "classify_r15_regulatory_requirements": classify_r15_regulatory_requirements,
+        "classify_r18_material_test_applicability": classify_r18_material_test_applicability,
+        "validate_r19_semantic_judgment": validate_r19_semantic_judgment,
+        "classify_r20_new_material_applicability": classify_r20_new_material_applicability,
+        "evaluate_r20_new_material_procedure": evaluate_r20_new_material_procedure,
+        "evaluate_r21_mark_transfer": evaluate_r21_mark_transfer,
+        "evaluate_r22_material_substitution": evaluate_r22_material_substitution,
+        "resolve_r23_valve_test_basis": resolve_r23_valve_test_basis,
+        "evaluate_r23_valve_sampling": evaluate_r23_valve_sampling,
+        "evaluate_r23_valve_test_records": evaluate_r23_valve_test_records,
         "check_required": check_required,
         "check_scope_coverage": check_scope_coverage,
         "check_cross_document_match": check_cross_document_match,
@@ -190,7 +658,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "check_traceability": check_traceability,
         "check_ndt_personnel_coverage": check_ndt_personnel_coverage,
         "check_installation_license_scope": check_installation_license_scope,
-        "check_wps_pqr_coverage": check_wps_pqr_coverage,
+        "check_wps_pqr_coverage": check_r25_wps_pqr_coverage,
         "decode_ndt_approval_item_codes": decode_ndt_approval_item_codes,
         "evaluate_installation_license_scope": evaluate_installation_license_scope,
         "evaluate_ndt_organization_scope": evaluate_ndt_organization_scope,
@@ -200,9 +668,45 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_design_change_approval": evaluate_design_change_approval,
         "evaluate_design_special_requirements": evaluate_design_special_requirements,
         "evaluate_calculation_document_consistency": evaluate_calculation_document_consistency,
+        "evaluate_component_manufacturer_scope": evaluate_component_manufacturer_scope,
         "evaluate_rt_film": evaluate_rt_film,
         "evaluate_pressure_test": evaluate_pressure_test,
+        "evaluate_r13_supervision_certificate_completeness": evaluate_r13_supervision_certificate_completeness,
+        "evaluate_r13_type_test_coverage": evaluate_r13_type_test_coverage,
+        "evaluate_r14_component_design_match": evaluate_r14_component_design_match,
+        "evaluate_r14_pressure_compatibility": evaluate_r14_pressure_compatibility,
+        "evaluate_r14_special_report_coverage": evaluate_r14_special_report_coverage,
+        "resolve_r14_required_inspection_items": resolve_r14_required_inspection_items,
+        "evaluate_r15_manufacturing_inspection_route": evaluate_r15_manufacturing_inspection_route,
+        "evaluate_r15_manufacturing_license_coverage": evaluate_r15_manufacturing_license_coverage,
+        "evaluate_r15_type_test_coverage": evaluate_r15_type_test_coverage,
+        "evaluate_r16_batch_traceability": evaluate_r16_batch_traceability,
+        "evaluate_r16_quality_certificate_batch_coverage": evaluate_r16_quality_certificate_batch_coverage,
+        "evaluate_r16_quality_certificate_content": evaluate_r16_quality_certificate_content,
+        "evaluate_r16_quality_certificate_design_match": evaluate_r16_quality_certificate_design_match,
+        "evaluate_r16_quality_certificate_form_and_seals": evaluate_r16_quality_certificate_form_and_seals,
+        "evaluate_r16_quality_certificate_results": evaluate_r16_quality_certificate_results,
+        "resolve_r16_product_standard_profile": resolve_r16_product_standard_profile,
+        "evaluate_r17_acceptance_procedure": evaluate_r17_acceptance_procedure,
+        "evaluate_r17_arrival_acceptance_batch_coverage": evaluate_r17_arrival_acceptance_batch_coverage,
+        "evaluate_r17_nonconformance_control": evaluate_r17_nonconformance_control,
+        "evaluate_r17_sampling_witness_chain": evaluate_r17_sampling_witness_chain,
+        "resolve_r17_sampling_retest_requirement": resolve_r17_sampling_retest_requirement,
+        "evaluate_r18_material_ndt_report_completeness": evaluate_r18_material_ndt_report_completeness,
+        "evaluate_r18_material_report_approval_procedure": evaluate_r18_material_report_approval_procedure,
+        "evaluate_r18_material_retest_report_completeness": evaluate_r18_material_retest_report_completeness,
+        "evaluate_r18_material_test_results_and_traceability": evaluate_r18_material_test_results_and_traceability,
+        "resolve_r18_material_test_requirement_profile": resolve_r18_material_test_requirement_profile,
         "evaluate_valve_test": evaluate_valve_test,
+        "evaluate_welding_consumable": evaluate_r26_welding_consumable,
+        "evaluate_welding_consumable_control": evaluate_r27_welding_consumable_control,
+        "evaluate_pipe_fit_up": evaluate_r28_pipe_fit_up,
+        "evaluate_welding_process": evaluate_r29_welding_process,
+        "evaluate_weld_appearance": evaluate_r30_weld_appearance,
+        "evaluate_weld_repair": evaluate_r31_weld_repair,
+        "resolve_pwht_applicability": resolve_pwht_applicability,
+        "evaluate_heat_treatment": evaluate_r32_r34_heat_treatment,
+        "evaluate_heat_treatment_instruments": evaluate_r33_heat_treatment_instruments,
         "verify_design_license_seals": verify_design_license_seals,
     }
     handler = handlers.get(tool_name)
@@ -237,6 +741,155 @@ def check_scope_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
         accepted = {scope} | coverage_map.get(scope, set())
         checks.append(check(f"scope_{safe_code(scope)}", bool(granted & accepted), sorted(granted), sorted(accepted)))
     return checked_result("check_scope_coverage", {"grantedScopes": sorted(granted), "requiredScopes": sorted(required)}, checks)
+
+
+def check_license_registry_match(arguments: dict[str, Any]) -> dict[str, Any]:
+    candidates = list_of_dicts(arguments.get("licenseCandidates"))
+    verifications = list_of_dicts(arguments.get("registryVerifications"))
+    if not candidates:
+        return insufficient("check_license_registry_match", arguments, "manufacturing_license_candidates_missing")
+    by_candidate = {
+        str(item.get("candidateId")): item
+        for item in verifications
+        if item.get("candidateId")
+    }
+    checks: list[dict[str, Any]] = []
+    incomplete = False
+    failed = False
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidateId") or "")
+        verification = by_candidate.get(candidate_id)
+        if not verification:
+            incomplete = True
+            checks.append(check(f"registry_{safe_code(candidate_id)}_completed", False, None, "manual_registry_verification"))
+            continue
+        outcome = str(verification.get("outcome") or "")
+        if outcome == "unable_to_verify":
+            incomplete = True
+            checks.append(check(f"registry_{safe_code(candidate_id)}_completed", False, outcome, "verified_match"))
+            continue
+        if outcome in {"not_found", "verified_mismatch"}:
+            failed = True
+            checks.append(check(f"registry_{safe_code(candidate_id)}_found_and_matched", False, outcome, "verified_match"))
+            continue
+        correction_reason = str(verification.get("correctionReason") or "").strip()
+        license_matches = _license_no(verification.get("registryLicenseNo")) == _license_no(candidate.get("licenseNo"))
+        organization_matches = _organization(verification.get("registryOrganizationName")) == _organization(
+            candidate.get("organizationName")
+        )
+        identity_passed = (license_matches and organization_matches) or bool(correction_reason)
+        registry_active = str(verification.get("registryStatus") or "unknown") == "active"
+        failed = failed or not identity_passed or not registry_active
+        checks.extend(
+            [
+                check(
+                    f"registry_{safe_code(candidate_id)}_identity",
+                    identity_passed,
+                    {
+                        "registryLicenseNo": verification.get("registryLicenseNo"),
+                        "registryOrganizationName": verification.get("registryOrganizationName"),
+                        "correctionReason": correction_reason or None,
+                    },
+                    {"licenseNo": candidate.get("licenseNo"), "organizationName": candidate.get("organizationName")},
+                ),
+                check(
+                    f"registry_{safe_code(candidate_id)}_active",
+                    registry_active,
+                    verification.get("registryStatus"),
+                    "active",
+                ),
+            ]
+        )
+    output_result = "failed" if failed else "evidence_insufficient" if incomplete else "passed"
+    return result(
+        "check_license_registry_match",
+        output_result,
+        facts={"licenseCandidates": candidates, "registryVerifications": verifications},
+        checks=checks,
+        rule_version=rule_version(arguments),
+    )
+
+
+def evaluate_component_manufacturer_scope(arguments: dict[str, Any]) -> dict[str, Any]:
+    candidates = list_of_dicts(arguments.get("licenseCandidates"))
+    verifications = list_of_dicts(arguments.get("registryVerifications"))
+    component_items = list_of_dicts(arguments.get("componentItems"))
+    if not component_items:
+        return insufficient("evaluate_component_manufacturer_scope", arguments, "project_component_items_missing")
+    by_candidate = {
+        str(item.get("candidateId")): item
+        for item in verifications
+        if item.get("candidateId") and item.get("outcome") == "verified_match"
+    }
+    verified_licenses = [
+        {
+            "candidate": candidate,
+            "verification": by_candidate[str(candidate.get("candidateId"))],
+        }
+        for candidate in candidates
+        if str(candidate.get("candidateId")) in by_candidate
+    ]
+    if not verified_licenses:
+        return insufficient("evaluate_component_manufacturer_scope", arguments, "verified_manufacturing_licenses_missing")
+    checks: list[dict[str, Any]] = []
+    matrix: list[dict[str, Any]] = []
+    incomplete = False
+    failed = False
+    for item in component_items:
+        item_id = str(item.get("componentItemId") or f"item-{len(matrix) + 1}")
+        manufacturer = _organization(item.get("manufacturerName"))
+        component_type = str(item.get("componentType") or "").strip()
+        required_scope = _component_scope_category(component_type)
+        if not manufacturer or not required_scope:
+            incomplete = True
+            checks.append(
+                check(
+                    f"component_{safe_code(item_id)}_classifiable",
+                    False,
+                    {"manufacturerName": item.get("manufacturerName"), "componentType": component_type},
+                    "manufacturer_and_supported_component_type",
+                )
+            )
+            matrix.append({**item, "result": "evidence_insufficient", "reason": "component_mapping_missing"})
+            continue
+        matched = [
+            license_item
+            for license_item in verified_licenses
+            if _organization(license_item["verification"].get("registryOrganizationName")) == manufacturer
+        ]
+        if not matched:
+            failed = True
+            checks.append(check(f"component_{safe_code(item_id)}_manufacturer_license", False, manufacturer, "verified_license"))
+            matrix.append({**item, "requiredScopeCategory": required_scope, "result": "failed", "reason": "manufacturer_license_not_verified"})
+            continue
+        scopes = [str(entry["verification"].get("registryScopeRaw") or "") for entry in matched]
+        covered = any(_scope_covers_component(scope, required_scope) for scope in scopes)
+        failed = failed or not covered
+        checks.append(
+            check(
+                f"component_{safe_code(item_id)}_scope",
+                covered,
+                scopes,
+                required_scope,
+            )
+        )
+        matrix.append(
+            {
+                **item,
+                "requiredScopeCategory": required_scope,
+                "matchedLicenseCandidateIds": [entry["candidate"].get("candidateId") for entry in matched],
+                "registryScopes": scopes,
+                "result": "passed" if covered else "failed",
+            }
+        )
+    output_result = "failed" if failed else "evidence_insufficient" if incomplete else "passed"
+    return result(
+        "evaluate_component_manufacturer_scope",
+        output_result,
+        facts={"componentCoverageMatrix": matrix},
+        checks=checks,
+        rule_version=rule_version(arguments),
+    )
 
 
 def check_cross_document_match(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1285,6 +1938,52 @@ def ceiling(value: Decimal) -> int:
 def safe_code(value: Any) -> str:
     text = normalize_value(value, "text")
     return "".join(character if character.isalnum() else "_" for character in text).strip("_") or "item"
+
+
+def _license_no(value: Any) -> str:
+    return "".join(character for character in str(value or "").upper() if character.isalnum())
+
+
+def _organization(value: Any) -> str:
+    normalized = normalize_value(value, "organization_name")
+    for suffix in ("有限责任公司", "股份有限公司", "有限公司"):
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+            break
+    return normalized
+
+
+def _component_scope_category(component_type: str) -> str | None:
+    normalized = normalize_value(component_type, "text")
+    if not normalized:
+        return None
+    if any(token in normalized for token in ("安全阀", "爆破片", "紧急切断阀", "安全附件")):
+        return "safety_accessory"
+    if "阀" in normalized:
+        return "valve"
+    if "法兰" in normalized:
+        return "forged_flange"
+    if any(token in normalized for token in ("无缝钢管", "无缝管")):
+        return "seamless_steel_pipe"
+    if any(token in normalized for token in ("焊接钢管", "焊管", "螺旋焊管", "直缝钢管")):
+        return "welded_steel_pipe"
+    if any(token in normalized for token in ("弯头", "三通", "四通", "异径", "管帽", "管件", "接头")):
+        return "welded_pipe_fitting" if "焊" in normalized else "pipe_fitting"
+    return None
+
+
+def _scope_covers_component(scope: str, required_scope: str) -> bool:
+    normalized = normalize_value(scope, "text")
+    aliases = {
+        "seamless_steel_pipe": ("无缝钢管", "无缝管"),
+        "welded_steel_pipe": ("焊接钢管", "焊管", "螺旋缝埋弧焊钢管", "直缝埋弧焊钢管"),
+        "pipe_fitting": ("管件制造", "非焊接管件", "锻制管件", "无缝管件"),
+        "welded_pipe_fitting": ("焊接管件", "有缝管件"),
+        "forged_flange": ("锻制法兰", "法兰制造", "钢制锻造法兰"),
+        "valve": ("阀门制造", "压力管道阀门"),
+        "safety_accessory": ("安全附件制造", "安全阀制造", "爆破片装置", "紧急切断阀"),
+    }
+    return any(alias in normalized for alias in aliases.get(required_scope, ()))
 
 
 def date_coverage_checks(arguments: dict[str, Any]) -> list[dict[str, Any]] | None:

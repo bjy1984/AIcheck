@@ -486,6 +486,117 @@ export type AiRecheckPayload = {
   dispatch?: DispatchStatus
 }
 
+export type R12LicenseCandidate = {
+  candidateId: string
+  documentVersionId: string
+  documentId?: string
+  fileName?: string
+  pageNo: number
+  licenseNo?: string
+  organizationName?: string
+  licenseScopeRaw?: string
+  validFrom?: string
+  validUntil?: string
+  issuer?: string
+  ocrConfidence?: number
+  evidence?: {
+    documentVersionId: string
+    pageNo: number
+    bbox?: number[]
+    quotedText?: string
+    confidence?: number
+  }
+}
+
+export type ReviewHumanInputTask = {
+  taskId: string
+  taskType: 'official_registry_license_verification' | 'r19_semantic_evidence_confirmation' | string
+  schemaVersion?: string
+  nodeId: number
+  title: string
+  description: string
+  status: 'pending' | 'completed' | 'stale'
+  required: boolean
+  blocking?: boolean
+  requestedBy?: 'llm_agent' | 'workflow_guard' | string
+  officialRegistryUrl?: string
+  inputHash: string
+  candidateCount?: number
+  candidates?: R12LicenseCandidate[]
+  questionCount?: number
+  questions?: R19HumanInputQuestion[]
+  evidenceCandidateCount?: number
+  evidenceCandidates?: R19EvidenceCandidate[]
+  atomicCheckIds?: string[]
+  reasonCode?: string
+  responseSchemaRef?: string
+  uiSchemaRef?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type R19HumanInputQuestion = {
+  questionId: string
+  title: string
+  instruction: string
+  clauseRefs: string[]
+}
+
+export type R19EvidenceCandidate = {
+  evidenceRefId: string
+  sourceType?: string
+  documentVersionId?: string
+  fileName?: string
+  pageNo?: number
+  bbox?: number[]
+  quotedText?: string
+  confidence?: number
+  questionId?: string
+  sourceRefs?: Array<{ type: string; url?: string; reference?: string; title?: string }>
+  attachmentIds?: string[]
+}
+
+export type R19HumanInputAnswer = {
+  questionId: string
+  outcome: 'confirmed' | 'rejected' | 'unknown'
+  value?: unknown
+  evidenceRefIds?: string[]
+  sourceRefs?: Array<{ type: string; url?: string; reference?: string; title?: string }>
+  attachmentIds?: string[]
+  comment?: string
+  attested: boolean
+}
+
+export type R12RegistryVerificationInput = {
+  candidateId: string
+  outcome: 'verified_match' | 'verified_mismatch' | 'not_found' | 'unable_to_verify'
+  registryLicenseNo?: string
+  registryOrganizationName?: string
+  registryStatus: 'active' | 'expired' | 'revoked' | 'suspended' | 'unknown'
+  registryScopeRaw?: string
+  registryValidFrom?: string
+  registryValidUntil?: string
+  sourceUrl?: string
+  attachmentIds?: string[]
+  comment?: string
+  correctionReason?: string
+  attested: boolean
+}
+
+export type ReviewHumanInputResponsePayload =
+  | { verifications: R12RegistryVerificationInput[]; comment?: string }
+  | { answers: R19HumanInputAnswer[]; comment?: string }
+
+export type ActiveReviewHumanInputTaskPayload = {
+  task: ReviewHumanInputTask | null
+  reviewRun: {
+    reviewRunId: string
+    status: string
+    revision: number
+    etag: string
+  }
+}
+
 export type ReviewOpinionPayload = {
   opinion: ReviewOpinion
   nextStatus: string
@@ -614,6 +725,57 @@ export type KnowledgeOverviewPayload = {
     blockers: string[]
     retrievalProbes?: Array<Record<string, unknown>>
   }
+}
+
+export type KnowledgeNetworkNode = {
+  id: string
+  type: string
+  typeLabel: string
+  family: 'business' | 'evidence' | 'rule' | 'semantic' | 'standard' | 'execution' | string
+  label: string
+  description?: string
+  group?: string
+  status?: string
+  metadata: Record<string, unknown>
+}
+
+export type KnowledgeNetworkEdge = {
+  id: string
+  source: string
+  target: string
+  type: string
+  label: string
+  metadata: Record<string, unknown>
+}
+
+export type KnowledgeNetworkPayload = {
+  schemaVersion: string
+  graphId: string
+  name: string
+  businessPackId: string
+  businessPackVersion: string
+  sourceSnapshotHash?: string
+  checksum: string
+  generatedAt: string
+  summary: {
+    nodeCount: number
+    edgeCount: number
+    nodeTypeCounts: Record<string, number>
+    edgeTypeCounts: Record<string, number>
+  }
+  nodeTypes: Array<{
+    type: string
+    label: string
+    family: string
+    count: number
+  }>
+  edgeTypes: Array<{
+    type: string
+    label: string
+    count: number
+  }>
+  nodes: KnowledgeNetworkNode[]
+  edges: KnowledgeNetworkEdge[]
 }
 
 export type KnowledgeStatus = '启用' | '停用' | '过期' | '待复核'
@@ -2905,6 +3067,33 @@ export const requestAiRecheckApi = (
   })
 }
 
+export const getActiveReviewHumanInputTaskApi = (
+  reviewRunId: string
+): Promise<IResponse<ActiveReviewHumanInputTaskPayload>> => {
+  return request.get({ url: `/api/review-runs/${reviewRunId}/human-input-tasks/active` })
+}
+
+export const submitReviewHumanInputResponseApi = (
+  reviewRunId: string,
+  taskId: string,
+  payload: ReviewHumanInputResponsePayload,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    reviewRun: Record<string, unknown>
+    commandId: string
+    commandStatus?: string
+    graphResult?: Record<string, unknown>
+    auditLogId: string
+  }>
+> => {
+  return request.post({
+    url: `/api/review-runs/${reviewRunId}/human-input-tasks/${taskId}/responses`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const confirmNodeEvidenceLinkApi = (
   projectId: string,
   nodeId: number,
@@ -3368,6 +3557,13 @@ const requestHeaders = (options?: RequestHeaderOptions) => {
 
 export const getKnowledgeOverviewApi = (): Promise<IResponse<KnowledgeOverviewPayload>> => {
   return request.get({ url: '/api/knowledge/overview' })
+}
+
+export const getKnowledgeNetworkApi = (params?: {
+  businessPackId?: string
+  includeRuntime?: boolean
+}): Promise<IResponse<KnowledgeNetworkPayload>> => {
+  return request.get({ url: '/api/knowledge/network', params })
 }
 
 export const listKnowledgeSourcesApi = (params?: {

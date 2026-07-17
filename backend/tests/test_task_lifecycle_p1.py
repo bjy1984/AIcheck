@@ -47,6 +47,9 @@ def test_temporal_workflow_has_bounded_retry_policy() -> None:
     assert "maximum_attempts=3" in source
     assert "non_retryable_error_types" in source
     assert "review_run_id if legacy_execution else activity_input" in source
+    assert 'graph_result.get("status") == "waiting_human_input"' in source
+    assert "self._human_input_command" in source
+    assert '"status": "resuming"' in source
 
 
 def test_temporal_workflow_id_is_stable_and_tenant_namespaced() -> None:
@@ -171,3 +174,86 @@ def test_operations_tasks_exposes_canonical_status_codes() -> None:
     assert item["status"] == "waiting_human_review"
     assert item["statusCode"] == "waiting_human"
     assert item["displayStatus"] == "waiting_human_review"
+
+
+def test_r12_human_input_api_reads_task_and_resumes_inline_review(monkeypatch) -> None:
+    review_run_id = "RRUN-R12-API"
+    task_id = "HIT-R12-API"
+    candidate_id = "R12LIC-API"
+    run = {
+        "id": review_run_id,
+        "reviewRunId": review_run_id,
+        "projectId": "P-2026-HDCP-001",
+        "nodeId": 12,
+        "status": "waiting_human_input",
+        "currentStep": "waiting_r12_registry_verification",
+        "workflowEngine": "inline_temporal_compatible",
+        "workflowId": "review-run-RRUN-R12-API",
+        "inputHash": "sha256:r12-api",
+        "revision": 1,
+        "humanInputTasks": [
+            {
+                "taskId": task_id,
+                "taskType": "official_registry_license_verification",
+                "nodeId": 12,
+                "title": "核验制造许可证官网登记信息",
+                "description": "人工官网查询",
+                "status": "pending",
+                "required": True,
+                "inputHash": "sha256:r12-task-api",
+                "reviewRunInputHash": "sha256:r12-api",
+                "candidateCount": 1,
+                "candidates": [
+                    {
+                        "candidateId": candidate_id,
+                        "documentVersionId": "DV-R12-API",
+                        "pageNo": 1,
+                        "licenseNo": "TS2710504-2027",
+                        "organizationName": "河北管件有限公司",
+                    }
+                ],
+                "responses": [],
+            }
+        ],
+    }
+    repo.state["review_runs"].insert(0, run)
+    monkeypatch.setattr(
+        "apps.api.routes.execute_review_run_inline",
+        lambda _review_run_id: {"reviewRunId": _review_run_id, "status": "waiting_human_review"},
+    )
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+
+    task_response = client.get(
+        f"/api/review-runs/{review_run_id}/human-input-tasks/active",
+        headers=headers,
+    )
+    assert task_response.status_code == 200
+    task_payload = task_response.json()["data"]
+    assert task_payload["task"]["taskId"] == task_id
+
+    submit_response = client.post(
+        f"/api/review-runs/{review_run_id}/human-input-tasks/{task_id}/responses",
+        json={
+            "verifications": [
+                {
+                    "candidateId": candidate_id,
+                    "outcome": "verified_match",
+                    "registryLicenseNo": "TS2710504-2027",
+                    "registryOrganizationName": "河北管件有限公司",
+                    "registryStatus": "active",
+                    "registryScopeRaw": "非焊接管件、锻制法兰",
+                    "sourceUrl": "https://example.test/registry",
+                    "attested": True,
+                }
+            ]
+        },
+        headers={
+            **headers,
+            "If-Match": task_payload["reviewRun"]["etag"],
+            "Idempotency-Key": "r12-human-input-api-test",
+        },
+    )
+
+    assert submit_response.status_code == 200
+    assert run["humanInputTasks"][0]["status"] == "completed"
+    assert run["manualRegistryVerifications"][0]["verifications"][0]["outcome"] == "verified_match"

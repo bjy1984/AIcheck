@@ -20,6 +20,7 @@ REPO_ROOT = BACKEND_ROOT.parent
 PACK_DIR = BACKEND_ROOT / "business_packs" / "engineering_inspection_v1"
 RULES_FILE = PACK_DIR / "rules.yaml"
 DOCS_DIR = REPO_ROOT / "docs"
+TRACE_INSTRUCTION = "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"
 
 
 def catalog_item(
@@ -50,6 +51,10 @@ CATALOG = [
     catalog_item("STD-GBT-20801.1-2025", "GB/T 20801.1—2025", "压力管道规范 工业管道", "rules/standards/GBT+20801.1-2025.pdf", "source_pdf_text_and_visual_check", knowledgeFileId="KF-KB-7ED59299DE", documentVersionId="KDV-7ED59299DE-V1"),
     catalog_item("STD-NBT-47014-2023", "NB/T 47014—2023", "承压设备焊接工艺评定", "rules/standards/NBT47014-2023《承压设备焊接工艺评定》.pdf"),
     catalog_item("STD-JBT-3223-2017", "JB/T 3223—2017", "焊接材料质量管理规程", "rules/standards/JB∕T 3223-2017 焊接材料质量管理规程.pdf"),
+    catalog_item("STD-NBT-47018-2017", "NB/T 47018—2017", "承压设备用焊接材料订货技术条件", "rules/standards/NBT 47018-2017 承压设备用焊接材料订货技术条件.pdf", "source_pdf_visual_check"),
+    catalog_item("STD-GBT-5117-2012", "GB/T 5117—2012", "非合金钢及细晶粒钢焊条", "rules/standards/GBT 5117-2012 非合金钢及细晶粒钢焊条.pdf", "source_pdf_text_and_visual_check"),
+    catalog_item("STD-GBT-8110-2020", "GB/T 8110—2020", "熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝", "rules/standards/GB∕T 8110-2020 熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝.pdf", "source_pdf_text_and_visual_check"),
+    catalog_item("STD-GB-50236-2011", "GB 50236—2011", "现场设备、工业管道焊接工程施工规范", "rules/standards/GB 50236-2011 现场设备、工业管道焊接工程施工规范.pdf", "source_pdf_visual_check"),
     catalog_item("STD-NBT-47013.1-2015", "NB/T 47013.1—2015", "承压设备无损检测 第1部分：通用要求", "rules/standards/NB_T_47013_split/NB_T 47013.1-2015 承压设备无损检测 第1部分 通用要求.pdf", "source_pdf_visual_check"),
     catalog_item("STD-NBT-47013.2-2015", "NB/T 47013.2—2015", "承压设备无损检测 第2部分：射线检测", "rules/standards/NB_T_47013_split/NB_T 47013.2-2015 承压设备无损检测 第2部分 射线检测.pdf", "source_pdf_visual_check"),
     catalog_item("STD-NBT-47013.3-2023", "NB/T 47013.3—2023", "承压设备无损检测 第3部分：超声检测", "rules/standards/NB_T_47013_split/NBT 47013.3-2023 承压设备无损检测 第3部分 超声检测.pdf"),
@@ -85,6 +90,10 @@ KNOWLEDGE_DOCUMENTS = {
     "STD-GBT-20801.1-2025": ("KF-KB-7ED59299DE", "KDV-7ED59299DE-V1"),
     "STD-NBT-47014-2023": ("KF-KB-76FBE61C16", "KDV-76FBE61C16-V1"),
     "STD-JBT-3223-2017": ("KF-KB-BECBD1A8FE", "KDV-BECBD1A8FE-V1"),
+    "STD-NBT-47018-2017": ("KF-KB-BC57659B2D", "KDV-BC57659B2D-V1"),
+    "STD-GBT-5117-2012": ("KF-KB-35C2CDA839", "KDV-35C2CDA839-V1"),
+    "STD-GBT-8110-2020": ("KF-KB-47A96E73DA", "KDV-47A96E73DA-V1"),
+    "STD-GB-50236-2011": ("KF-KB-AFAB84B832", "KDV-AFAB84B832-V1"),
     "STD-NBT-47013.1-2015": ("KF-KB-B0D5FBA01C", "KDV-B0D5FBA01C-V1"),
     "STD-NBT-47013.2-2015": ("KF-KB-A0592BD6C0", "KDV-A0592BD6C0-V1"),
     "STD-NBT-47013.3-2023": ("KF-KB-FD7D9CCF13", "KDV-FD7D9CCF13-V1"),
@@ -164,15 +173,15 @@ SUPPLEMENTAL: dict[str, list[dict[str, str]]] = {
     "R11": [c("STD-TSG-07-2019", "E3.1.4-E3.1.5", "安装质量体系和安装安全性能"), c("STD-GB-50235-2010", "3.1.4(2)", "施工组织设计/施工方案批准与技术、安全交底", status="visual_verified")],
     "R24": [c("STD-TSG-Z6002-2010", "附件A A4.3、表A-1/A-2/A-4/A-6/A-7/A-8/A-9、A9", "焊工项目代号和覆盖范围", status="visual_verified"), c("STD-GBT-20801.1-2025", "7.4.1.1、7.4.1.5", "合格焊工施焊")],
     "R25": [c("STD-NBT-47014-2023", "4.2-4.4、第6章、附件A、附件G", "PQR/WPS评定、覆盖及格式"), c("STD-GBT-20801.1-2025", "7.4.1.1-7.4.1.4", "评定合格工艺与焊接工艺规程内容")],
-    "R26": [c("STD-GBT-20801.1-2025", "7.4.2.1-7.4.2.2", "焊材选用、质量证明和包装标记"), c("STD-JBT-3223-2017", "第6章", "焊材验收和入库")],
+    "R26": [c("STD-GBT-20801.1-2025", "7.4.2.1-7.4.2.2", "焊材选用、质量证明和包装标记"), c("STD-NBT-47018-2017", "4.2-4.4、表1-表2", "质量证明书、批次标识和检验结果", status="visual_verified"), c("STD-GBT-5117-2012", "第6-9章", "非合金钢焊条牌号条件化验收限值", "covered_consumable_is_electrode"), c("STD-GBT-8110-2020", "第6-9章", "气体保护焊实心焊丝牌号条件化验收限值", "covered_consumable_is_solid_wire")],
     "R27": [c("STD-GBT-20801.1-2025", "7.4.2.3-7.4.2.6", "焊材储存、复验、烘干、标识"), c("STD-JBT-3223-2017", "7.1-7.3", "追溯、标记、烘干和保管")],
-    "R28": [c("STD-GBT-20801.1-2025", "7.4.4.3.1-7.4.4.3.5", "错边、间隙、强力组对和附加应力")],
-    "R29": [c("STD-GBT-20801.1-2025", "7.4.1.4、7.4.5.1-7.4.5.13、8.3.4", "施焊参数、过程检查和焊工标识")],
-    "R30": [c("STD-GBT-20801.1-2025", "8.2.2、8.3.2及表43", "焊接接头目视检查和验收")],
-    "R31": [c("STD-GBT-20801.1-2025", "7.4.11.1-7.4.11.5", "返修措施、批准、复检和记录")],
-    "R32": [c("STD-GBT-20801.1-2025", "7.6.3", "焊后热处理工艺参数")],
+    "R28": [c("STD-GBT-20801.1-2025", "7.4.4.3.1-7.4.4.3.5", "错边、间隙、强力组对和附加应力"), c("STD-GB-50236-2011", "6.2-6.4", "坡口、组对及禁止强行组对", status="visual_verified")],
+    "R29": [c("STD-GBT-20801.1-2025", "7.4.1.4、7.4.5.1-7.4.5.13、8.3.4", "施焊参数、过程检查和焊工标识"), c("STD-GB-50236-2011", "13.0.1-13.0.3", "施工记录和焊缝标识", status="visual_verified")],
+    "R30": [c("STD-GBT-20801.1-2025", "8.2.2、8.3.2及表43", "焊接接头目视检查和验收"), c("STD-GB-50236-2011", "8.0.1-8.0.3", "焊接接头外观检查", status="visual_verified")],
+    "R31": [c("STD-GBT-20801.1-2025", "7.4.11.1-7.4.11.5", "返修措施、批准、复检和记录"), c("STD-GB-50236-2011", "4.0.8-4.0.9", "缺陷返修及超过两次的措施", status="visual_verified")],
+    "R32": [c("STD-GBT-20801.1-2025", "7.6.3", "焊后热处理工艺参数"), c("STD-NBT-47014-2023", "第6章、附件A", "热处理条件纳入评定和工艺规程")],
     "R33": [c("STD-GBT-20801.1-2025", "7.6.5.2", "自动测温记录及校准仪表")],
-    "R34": [c("STD-GBT-20801.1-2025", "7.6.5.2、7.6.6", "热处理曲线、报告和硬度")],
+    "R34": [c("STD-GBT-20801.1-2025", "表36、7.6.5.2、7.6.6", "材料条件化热处理适用性、曲线、报告和硬度")],
     "R35": [c("STD-NBT-47013.1-2015", "6.1-6.2、7.1", "无损检测质量管理及档案")],
     "R36": [c("STD-NBT-47013.1-2015", "4.3.1-4.3.2.4、7.2", "方法选择、工艺规程和作业指导书"), c("STD-GBT-20801.1-2025", "8.3.1、8.3.3.1", "检测等级、方法和比例")],
     "R37": [c("STD-NBT-47013.1-2015", "4.5、6.1-6.2", "检测程序与不符合控制"), c("STD-GBT-20801.1-2025", "8.1.3-8.1.4、8.3.3.4", "超标缺陷和累进检查")],
@@ -208,17 +217,45 @@ SUPPLEMENTAL: dict[str, list[dict[str, str]]] = {
     "R67": [c("STD-GBT-20801.1-2025", "8.6.2.2-8.6.2.3、8.7", "敏感泄漏/气密性试验及报告")],
     "R68": [c("STD-GBT-20801.1-2025", "7.9.1-7.9.6", "吹扫清洗方案、介质、顺序和验收"), c("STD-GB-50235-2010", "第9章（9.1-9.7）", "水冲洗、空气/蒸汽吹扫、脱脂、化学/油清洗", status="visual_verified")],
     "R12": [c("STD-TSG-31-2025", "1.10、2.2", "元件制造许可和监督管理"), c("STD-SAMR-2021-41", "附件1：特种设备生产单位许可目录", "元件许可范围", status="visual_verified")],
-    "R13": [c("STD-TSG-31-2025", "1.8、2.1.3", "型式试验和新材料技术评审")],
+    "R13": [
+        c("STD-TSG-D7006-2020", "1.2.1、A1.2-A1.3", "制造监检适用产品、逐批/逐台监检方式和组批规则"),
+        c("STD-SAMR-2021-41", "附件1 注三、注四", "压力管道元件制造许可分类及只需型式试验的产品目录", status="visual_verified"),
+        c("STD-TSG-31-2025", "2.2.1.2-2.2.1.3", "管道组成件制造监检和型式试验合格后方可出厂"),
+    ],
     "R14": [c("STD-GBT-8163-2018", "第6-8章", "试验方法、检验规则、包装标志和质量证明", "product_is_gbt8163", "visual_verified"), c("STD-GBT-12771-2019", "6.9、第8章、9.1-9.2", "无损检测、检验规则、标志和质量证明", "product_is_gbt12771")],
-    "R15": [c("STD-TSG-31-2025", "2.1.2(1)-(6)", "境外牌号材料验证复验、工艺评定和企业标准", "overseas_product_or_material")],
-    "R16": [c("STD-GBT-12459-2025", "第10-11章", "管件标志和产品质量证明", "product_is_gbt12459"), c("STD-GBT-13401-2025", "第8章、第10-11章", "管件检验试验、表面防护包装和质量证明", "product_is_gbt13401", "visual_verified"), c("STD-GBT-14976-2025", "7.3、7.7、第9-11章", "液压/无损检测、试验方法、检验规则和质量证明", "product_is_gbt14976", "visual_verified")],
-    "R17": [c("STD-GBT-20801.1-2025", "8.5", "材料和组成件合格证、质量证明及标记"), c("STD-TSG-07-2019", "M3.4", "材料验收、复验和标识控制")],
-    "R18": [c("STD-TSG-31-2025", "2.1.2(3)", "境外牌号材料验证性复验"), c("STD-NBT-47013.1-2015", "7.3-7.4", "无损检测记录报告")],
+    "R15": [
+        c("STD-TSG-31-2025", "1.10", "管道组成件制造、检验检测单位执行规程及信息化监督管理总则", "foreign_manufactured_component_or_safety_accessory"),
+        c("STD-TSG-31-2025", "2.2.1.5", "境外制造组成件的到岸检验或随整机检验路径", "foreign_manufactured_component_or_safety_accessory"),
+    ],
+    "R16": [
+        c("STD-TSG-31-2025", "2.2.1.4", "管道组成件质量证明、交货状态和批次追溯字段"),
+        c("STD-GB-50235-2010", "4.1.1-4.1.2", "产品质量证明文件及实物标识追溯要求", status="visual_verified"),
+        c("STD-GBT-20801.1-2025", "7.2.1", "材料性能数据、补充检验和标记追溯总要求"),
+        c("STD-GBT-12459-2025", "第10-11章", "管件标志和产品质量证明", "product_is_gbt12459"),
+        c("STD-GBT-13401-2025", "第8章、第10-11章", "管件检验试验、表面防护包装和质量证明", "product_is_gbt13401", "visual_verified"),
+        c("STD-GBT-8163-2018", "第6-8章", "无缝钢管技术要求、试验方法、检验规则和质量证明", "product_is_gbt8163", "visual_verified"),
+        c("STD-GBT-3087-2022", "第6-9章", "低中压锅炉管技术要求、试验方法、检验规则和质量证明", "product_is_gbt3087", "visual_verified"),
+        c("STD-GBT-5310-2023", "第7章、第9-11章", "高压锅炉管技术要求、试验方法、检验规则和质量证明", "product_is_gbt5310", "visual_verified"),
+        c("STD-GBT-9948-2025", "第7章、第9-11章", "石化无缝钢管技术要求、试验方法、检验规则和质量证明", "product_is_gbt9948", "visual_verified"),
+        c("STD-GBT-14976-2025", "7.3、7.7、第9-11章", "液压/无损检测、试验方法、检验规则和质量证明", "product_is_gbt14976", "visual_verified"),
+        c("STD-GBT-12771-2019", "6.9、第8章、9.1-9.2", "不锈钢焊接钢管无损检测、检验规则、标志和质量证明", "product_is_gbt12771", "visual_verified"),
+    ],
+    "R17": [c("STD-GBT-20801.1-2025", "7.2.1-7.2.7", "管道组成件验收、外观尺寸、材质鉴别和抽样检验要求"), c("STD-GBT-20801.1-2025", "8.5", "材料和组成件合格证、质量证明及标记"), c("STD-TSG-07-2019", "M3.4", "材料验收、复验和标识控制")],
+    "R18": [c("STD-NBT-47013.1-2015", "7.3-7.4", "材料本体无损检测记录报告", "material_ndt_required")],
     "R19": [c("STD-TSG-31-2025", "2.1.2(1)-(6)", "境外牌号材料的适用、复验、工艺评定及归档", "overseas_grade_material")],
     "R20": [c("STD-TSG-31-2025", "1.8、2.1.3", "新材料型式试验、技术评审和批准", "new_material_used")],
     "R21": [c("STD-GBT-20801.1-2025", "7.3.2", "材料标记和标记移植"), c("STD-TSG-07-2019", "M3.4", "材料标识和可追溯控制")],
     "R22": [c("STD-TSG-31-2025", "2.1.4", "材料代用取得原设计单位书面批准"), c("STD-TSG-07-2019", "M3.4", "材料代用控制")],
-    "R23": [c("STD-GBT-13927-2022", "5.4、5.6-5.9、6.1-6.3、7.1-7.4", "阀门压力表、介质、压力、持续时间和验收证明"), c("STD-GBT-26480-2011", "第5-8章", "壳体、高压/低压密封试验", "design_specifies_gbt26480", "visual_verified")],
+    "R23": [
+        c("STD-GBT-20801.1-2025", "7.2.4", "阀门检验数量、试验依据优先级、特殊大口径闸阀及夹套试验要求"),
+        c(
+            "STD-GBT-13927-2022",
+            "5.4、5.6-5.9、6.1-6.3、7.1-7.4",
+            "阀门压力、介质、持续时间、方法和验收要求；当前项目源文件仅含封面、目录和前言，正文参数卡补齐前禁止自动判定符合",
+            status="candidate",
+        ),
+        c("STD-GBT-26480-2011", "第5-8章", "壳体、高压/低压密封试验", "design_specifies_gbt26480", "visual_verified"),
+    ],
     "R69": [c("STD-TSG-D7006-2020", "附件G G1-G5", "施工单位资源条件、质量保证体系保持改进、许可制度执行和问题处理的项目评价")],
 }
 
@@ -240,12 +277,20 @@ def add_locator_specs(ref: str, values: dict[str, list[LocatorSpec]]) -> None:
 T = "text_verified"
 V = "visual_verified"
 add_locator_specs("STD-TSG-D7006-2020", {
+    "1.2.1、A1.2-A1.3": [("1.2.1", 5, 5, T), ("A1.2-A1.3", 12, 12, T)],
     "附件G G1-G5": [("附件G G1-G5", 38, 39, T)],
 })
 add_locator_specs("STD-GB-50235-2010", {
     "3.1.4(2)": [("3.1.4(2)", 18, 18, V)],
+    "4.1.1-4.1.2": [("4.1.1-4.1.2", 20, 20, V)],
     "7.1、7.3、7.9": [("7.1", 39, 40, V), ("7.3", 41, 48, V), ("7.9", 49, 51, V)],
     "第9章（9.1-9.7）": [("9.1-9.7", 66, 70, V)],
+})
+add_locator_specs("STD-GB-50236-2011", {
+    "4.0.8-4.0.9": [("4.0.8-4.0.9", 13, 14, V)],
+    "6.2-6.4": [("6.2-6.4", 23, 35, V)],
+    "8.0.1-8.0.3": [("8.0.1-8.0.3", 51, 54, V)],
+    "13.0.1-13.0.3": [("13.0.1-13.0.3", 53, 55, V)],
 })
 add_locator_specs("STD-GBT-12459-2025", {
     "第10-11章": [("第10章", 41, 42, T), ("第11章", 42, 42, T)],
@@ -253,11 +298,26 @@ add_locator_specs("STD-GBT-12459-2025", {
 add_locator_specs("STD-GBT-12771-2019", {
     "6.9、第8章、9.1-9.2": [("6.9", 13, 13, T), ("第8章", 14, 15, T), ("9.1-9.2", 15, 15, T)],
 })
+add_locator_specs("STD-GBT-3087-2022", {
+    "第6-9章": [("第6章", 6, 9, V), ("第7-8章", 9, 10, V), ("第9章", 11, 11, V)],
+})
+add_locator_specs("STD-GBT-5310-2023", {
+    "第7章、第9-11章": [("第7章", 14, 24, V), ("第9章", 26, 26, V), ("第10-11章", 27, 28, V)],
+})
+add_locator_specs("STD-GBT-5117-2012", {
+    "第6-9章": [("第6-9章", 8, 24, T)],
+})
+add_locator_specs("STD-GBT-8110-2020", {
+    "第6-9章": [("第6-9章", 9, 20, T)],
+})
+add_locator_specs("STD-GBT-9948-2025", {
+    "第7章、第9-11章": [("第7章", 14, 23, V), ("第9章", 25, 25, V), ("第10-11章", 26, 26, V)],
+})
 add_locator_specs("STD-GBT-13401-2025", {
     "第8章、第10-11章": [("第8章", 14, 20, T), ("第10-11章", 21, 21, T)],
 })
 add_locator_specs("STD-GBT-13927-2022", {
-    "5.4、5.6-5.9、6.1-6.3、7.1-7.4": [("5.4、5.6-5.9", 2, 2, T), ("6.1-6.3", 2, 3, T), ("7.1-7.4", 3, 3, T)],
+    "5.4、5.6-5.9、6.1-6.3、7.1-7.4": [("目录中的第5-7章（正文缺失）", 2, 3, V)],
 })
 add_locator_specs("STD-GBT-14976-2025", {
     "7.3、7.7、第9-11章": [("7.3", 16, 16, T), ("7.7", 17, 17, T), ("第9章", 21, 21, T), ("第10-11章", 22, 22, T)],
@@ -270,6 +330,9 @@ add_locator_specs("STD-GBT-19285-2026", {
 add_locator_specs("STD-GBT-20801.1-2025", {
     "6.7.5.5": [("6.7.5.5", 76, 76, T)],
     "6.7.5.5、8.6.1.7": [("6.7.5.5", 76, 76, T), ("8.6.1.7", 128, 128, T)],
+    "7.2.1": [("7.2.1", 87, 87, T)],
+    "7.2.1-7.2.7": [("7.2.1-7.2.7", 87, 88, T)],
+    "7.2.4": [("7.2.4", 87, 88, T)],
     "7.3.2": [("7.3.2", 88, 88, T)],
     "7.3.8、7.7.12": [("7.3.8", 92, 92, T), ("7.7.12", 114, 115, T)],
     "7.3、7.4、7.6、第8章": [("7.3、7.4、7.6", 88, 117, T), ("第8章", 118, 130, T)],
@@ -284,7 +347,7 @@ add_locator_specs("STD-GBT-20801.1-2025", {
     "7.4.6、附录G G.6.7.2": [("7.4.6", 97, 97, T), ("附录G G.6.7.2", 235, 235, T)],
     "7.6.3": [("7.6.3", 104, 108, T)],
     "7.6.5.2": [("7.6.5.2", 109, 109, T)],
-    "7.6.5.2、7.6.6": [("7.6.5.2、7.6.6", 109, 109, T)],
+    "表36、7.6.5.2、7.6.6": [("表36", 105, 106, T), ("7.6.5.2、7.6.6", 109, 110, T)],
     "7.7.11、附录P P.4": [("7.7.11", 114, 114, T), ("附录P P.4", 274, 274, T)],
     "7.7.12": [("7.7.12", 114, 115, T)],
     "7.7.13.1-7.7.13.4、附录G G.9": [("7.7.13.1-7.7.13.4", 115, 115, T), ("附录G G.9", 236, 237, T)],
@@ -319,7 +382,9 @@ add_locator_specs("STD-GBT-8163-2018", {
 })
 add_locator_specs("STD-JBT-3223-2017", {
     "7.1-7.3": [("7.1-7.3", 7, 8, V)],
-    "第6章": [("第6章", 5, 7, V)],
+})
+add_locator_specs("STD-NBT-47018-2017", {
+    "4.2-4.4、表1-表2": [("4.2-4.4", 8, 10, V), ("表1-表2", 9, 11, V)],
 })
 add_locator_specs("STD-NBT-47013.1-2015", {
     "4.1.1-4.1.3": [("4.1.1-4.1.3", 7, 7, V)],
@@ -338,9 +403,11 @@ add_locator_specs("STD-NBT-47013.2-2015", {
 })
 add_locator_specs("STD-NBT-47014-2023", {
     "4.2-4.4、第6章、附件A、附件G": [("4.2-4.4", 12, 12, T), ("第6章", 13, 63, T), ("附件A", 64, 77, T), ("附件G", 78, 91, T)],
+    "第6章、附件A": [("第6章", 13, 63, T), ("附件A", 64, 77, T)],
 })
 add_locator_specs("STD-SAMR-2021-41", {
     "附件1：特种设备生产单位许可目录": [("附件1", 3, 12, V)],
+    "附件1 注三、注四": [("附件1 注三", 13, 15, V), ("附件1 注四", 15, 15, V)],
 })
 add_locator_specs("STD-SYT-4113.11-2023", {
     "第4-7章": [("第4-5章", 7, 8, V), ("第6章", 8, 8, V), ("第7章", 9, 9, V)],
@@ -356,13 +423,16 @@ add_locator_specs("STD-TSG-07-2019", {
     "M3.4": [("M3.4", 169, 169, T)],
 })
 add_locator_specs("STD-TSG-31-2025", {
+    "1.10": [("1.10", 7, 7, V)],
     "1.10、2.2": [("1.10", 7, 7, V), ("2.2", 9, 10, V)],
     "1.7、3.1.3.2(1)-(2)": [("1.7", 7, 7, V), ("3.1.3.2(1)-(2)", 19, 19, V)],
     "1.8、2.1.3": [("1.8", 7, 7, V), ("2.1.3", 8, 8, V)],
     "2.1.2(1)-(6)": [("2.1.2(1)-(6)", 8, 8, V)],
-    "2.1.2(3)": [("2.1.2(3)", 8, 8, V)],
     "2.1.4": [("2.1.4", 8, 8, V)],
     "2.1.4、3.1.3.3": [("2.1.4", 8, 8, V), ("3.1.3.3", 19, 19, V)],
+    "2.2.1.2-2.2.1.3": [("2.2.1.2-2.2.1.3", 9, 9, V)],
+    "2.2.1.4": [("2.2.1.4", 9, 9, V)],
+    "2.2.1.5": [("2.2.1.5", 9, 10, V)],
     "3.1.1-3.1.2": [("3.1.1", 18, 18, V), ("3.1.2", 19, 19, V)],
     "3.1.3.1": [("3.1.3.1", 19, 19, V)],
     "3.1.3.1、3.1.3.3": [("3.1.3.1、3.1.3.3", 19, 19, V)],
@@ -386,6 +456,7 @@ add_locator_specs("STD-TSG-Z7002-2022", {
 APPLICABILITY = {
     "R69": ("manual", "每个压力管道施工工程项目均应由监检人员结合全项目监检结果进行评价并签发评价报告。"),
     "R10": ("conditional", "设计文件采用其他标准（GB/T 20801、GB/T 32270、GB/T 34275以外的标准）时适用；否则结论为不适用。"),
+    "R14": ("conditional", "仅对已经确认不需要制造许可、制造监检和型式试验的管道组成件适用；无法完成分类时结论为证据不足，需许可或监检/型式试验时分别转入R12或R13。"),
     "R45": ("conditional", "存在埋地防腐层、补口或补伤时适用。"),
     "R46": ("conditional", "设计设置阴极保护或杂散电流排流装置时适用。"),
     "R48": ("conditional", "工程存在穿越或跨越管段时适用。"),
@@ -399,9 +470,144 @@ APPLICABILITY = {
     "R64": ("conditional", "采用替代性敏感泄漏试验时适用。"),
     "R65": ("conditional", "免除或替代耐压试验时适用。"),
     "R15": ("conditional", "压力管道元件或安全附件为境外制造时适用。"),
+    "R18": ("conditional", "设计文件、安全技术规范、产品标准或验收规则明确要求材料复验或者材料本体无损检测时适用。"),
     "R19": ("conditional", "使用境外牌号材料时适用。"),
     "R20": ("conditional", "使用未列入适用材料标准的新材料时适用。"),
+    "R21": ("conditional", "施工过程中实际发生材料分割、切割或其他需要标志移植的情形时适用；未发生时结论为不适用。"),
+    "R22": ("conditional", "材料代用已经实际实施或拟实施并进入施工使用控制时适用；仅有未实施的采购建议不视为材料代用。"),
+    "R25": ("conditional", "存在焊接或粘接作业时适用，并按实际连接工艺进入相应评定分支。"),
+    "R31": ("conditional", "实际发生焊缝返修时适用；未发生返修时结论为不适用。"),
+    "R32": ("conditional", "先按材料组、控制厚度、接头例外和设计要求解析焊后热处理适用性；不要求热处理时结论为不适用。"),
+    "R33": ("conditional", "工程存在焊后热处理作业时适用。"),
+    "R34": ("conditional", "复用R32焊口级热处理适用性；不要求热处理时结论为不适用。"),
 }
+
+
+ATOMIC_CHECK_OVERRIDES: dict[str, list[tuple[str, str]]] = {
+    "R24": [
+        ("证书有效性和核验来源", "核验焊工资格证原件或经核验复印件、人员身份及作业日期有效性；2026年8月1日前执行TSG Z6002-2010，达到新规生效日后若TSG Z6002-2026规则档案未完成验证则返回证据不足。"),
+        ("方法和母材类别覆盖", "按TSG Z6002附件A逐项解析实际焊接方法和母材类别覆盖；例如FeII可覆盖20钢所属FeI，但不得把示例材料固定为所有工程事实。"),
+        ("焊接位置覆盖", "按项目代号和实际接头位置逐焊口核验位置覆盖；6G可覆盖相应全位置作业，其他代号按对应表格规则处理。"),
+        ("厚度管径及工艺因素覆盖", "按考试试件厚度和外径动态计算覆盖范围，并核验填充金属及附加工艺因素；例如3/57对应的0-6mm和外径25mm以上仅是该代号的计算结果。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R25": [
+        ("WPS/PQR审批与对应", "核验PQR和WPS本体均经审批生效，WPS明确引用支持它的PQR；焊接与粘接应进入各自评定分支，不得混用。"),
+        ("参数及实际生产条件覆盖", "逐项核验WPS电流、电压、焊接速度和层间温度范围处于PQR评定范围内，并将管线汇总表及施焊记录中的母材、方法、管径、壁厚和实际参数与WPS/PQR覆盖范围比对。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R26": [
+        ("MTC实测结果和批次追溯", "核验焊条、焊丝、焊剂MTC包含化学成分和力学性能实测数据，按焊材类别、牌号和执行标准绑定已冻结验收限值，并与实物或验收记录批号一致；产品标准规则未建模时不得判定符合。"),
+        ("设计一致性和库存期限", "核验焊材牌号、规格和产品标准符合设计；超过制造方说明或管理文件规定的库存期限时应有复验合格证据，不得把库存期限误作证书统一有效期。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R27": [
+        ("管理记录完整性和追溯", "联查焊材验收、库房温湿度、烘干保温、领用、实际使用和剩余回收记录，并以牌号和批号建立连续追溯链。"),
+        ("烘干保温、防混用和超期控制", "按设计、产品说明书或冻结管理要求核验烘干温度时间、保温和储存条件，识别混用、错用及超过库存期限未复验的焊材。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R28": [
+        ("组对实测值和禁止强行组对", "按材料类别和壁厚计算GB/T 20801.1-2025第7.4.4.3条错边量限值，核验组对间隙、坡口角度符合设计/WPS，并核验除设计预拉伸外未强行组对。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R29": [
+        ("施焊记录、参数和焊缝标识联查", "核验施工记录包含焊口、焊工、电流、电压、焊接速度、层间温度和清晰焊缝标识；逐焊口复用R24焊工资格覆盖和R25 WPS/PQR覆盖规则，保证真实可追溯。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R30": [
+        ("外观记录和必要照片", "核验外观检查记录对应焊口、检验等级、接头类型和壁厚；设计或监检方案要求照片时核验照片与焊口可追溯。"),
+        ("表面缺陷和尺寸限值", "按GB/T 20801.1-2025表43及设计更严要求核验裂纹、未熔合、表面气孔、外露夹渣、咬边和余高；焊缝宽度仅在设计或WPS给出范围时自动判定，缺少限值时返回证据不足。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R31": [
+        ("返修手续、次数和复检", "核验返修申请、原因分析、合格返修工艺和返修后同方法复检；同一部位返修次数大于2次时核验修订专项措施及技术负责人批准，热处理后返修还应核验重新热处理。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R32": [
+        ("热处理适用性和工艺卡", "按材料组、控制厚度、强度、接头例外及设计要求解析焊口级热处理适用性；适用时核验工艺卡经审批、基于评定报告，并核验升温速率、保温温度、保温时间和降温速率符合表36及第7.6.4条。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R33": [
+        ("测温仪表和布点", "核验热电偶、温控仪和自动温度记录仪均有覆盖使用日期的校准/校验证书，并核验测温点布置图与实际焊口和加热范围对应。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R34": [
+        ("曲线、报告和硬度检测覆盖", "复用R32焊口级热处理适用性；适用时核验自动温度-时间曲线完整无中断、报告参数可追溯，并核验局部热处理100%及炉内热处理每批不少于10%的焊缝和热影响区硬度检测覆盖。"),
+        ("材料条件化硬度判定", "优先执行设计硬度限值；再按GB/T 20801.1-2025表36材料组条件执行200、225、241或250HBW等限值，表中无值时执行不超过母材硬度125%的规则。洛氏/维氏读数必须有换算标准和换算后的HBW，不得把碳钢200HB、合金钢225HB作为无条件通用限值。"),
+        ("证据追溯", TRACE_INSTRUCTION),
+    ],
+    "R20": [
+        ("新材料分类及手续", "逐项区分TSG 31-2025第2.1.3.1和2.1.3.2两类新材料并核验型式试验覆盖；第2.1.3.1分支还应核验技术评审通过及批准手续，第2.1.3.2分支应核验化学成分、拉伸、疲劳、断裂韧性和使用范围性能数据。"),
+        ("证据追溯", "核验结论引用的型式试验报告、技术评审证书、批准文件或材料性能数据的文件、页码/坐标和原文字段可追溯；材料类别不明、证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R21": [
+        ("标志移植控制", "先判定是否实际发生标志移植；发生时核验移植记录、原标志至移植标志的批次追溯、防混料措施、特殊材料种类抽查覆盖以及硬印和色标方法限制，未发生时结论为不适用。"),
+        ("证据追溯", "核验结论引用的标志移植记录、质量证明和实物标志证据可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R22": [
+        ("实际代用及原设计单位批准", "先判定材料代用是否实际实施；仅有未实施采购建议时结论为不适用。实际代用应核验原设计单位书面批准、批准时间早于使用时间、批准范围及替代材料与实际使用一致。"),
+        ("证据追溯", "核验结论引用的设计变更单、原设计单位书面批准文件和材料实际使用记录可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R23": [
+        ("试验依据及数量", "按设计文件、供货合同、缺省GB/T 13927-2022的优先级确定试验依据；按GB/T 20801.1-2025第7.2.4条核验GC1为100%、GC2为10%且不少于1个、GC3为5%且不少于1个，并核验工厂逐台见证豁免及抽样不合格处置。"),
+        ("试验方法程序与结果", "逐台核验施工记录和耐压试验报告中的依据标准、壳体及密封试验介质、压力、保压时间、程序、泄漏和结论符合设计文件及选定标准；标准正文或参数卡不完整时结论只能为证据不足。"),
+        ("证据追溯", "核验结论引用的设计文件、合同、阀门施工记录、耐压试验记录或报告的页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R15": [
+        ("境外制造适用性", "仅依据制造国家、制造地点或明确结构化事实判断是否属于境外制造；不得把境外材料牌号当作境外制造事实。"),
+        ("境外制造监管要求分类", "依据TSG 31-2025第1.10、2.2.1.5条及TSG D7006-2020附件D D2.4.1，逐项分类制造许可、型式试验和制造监检要求。"),
+        ("境外制造许可覆盖", "需要制造许可的境外产品，其制造单位、官网人工核验状态和许可范围应覆盖本工程实际产品。"),
+        ("境外产品型式试验覆盖", "有型式试验要求的境外产品，其证书或报告应覆盖制造单位、产品类别、材料、结构、制造工艺及规格压力范围。"),
+        ("境外制造组成件制造监检路径", "对需要制造监检的境外产品核验境外制造监检、到岸检验或随锅炉压力容器整机安全性能检验的适用路径。"),
+        ("R15证据可追溯性", "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R16": [
+        ("产品标准规则路由", "按设计规定的制造验收标准，将每项管道元件或安全附件绑定到已冻结的具体产品标准规则；标准未建模时不得判定为符合。"),
+        ("质量证明文件批次覆盖", "按产品、规格、炉批号或产品编号逐项核验本工程到货元件是否具有唯一对应的产品质量证明文件。"),
+        ("原件复印件及印章合规", "原件核验制造单位质量检验章；复印件必须同时核验经营单位公章和经办负责人章。"),
+        ("质量证明与设计一致性", "逐批核对制造单位、产品名称、规格、材质、执行标准和交货状态是否符合设计材料表及特殊要求。"),
+        ("质量证明必需内容及出厂检验项目", "按具体产品标准核验质量证明文件核心字段、化学成分、力学性能、出厂检验项目及设计特殊检验项目是否齐全。"),
+        ("检验结果与批次追溯", "使用已冻结的结构化验收限值核验检验结果，并核验设计材料表、质量证明文件和实物标识的炉批号或产品编号一致。"),
+        ("R16证据可追溯性", "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R17": [
+        ("到货验收批次覆盖", "按产品、规格、炉批号或产品编号核验每批到货元件是否具有唯一对应的验收记录。"),
+        ("到货验收程序完整性", "核验质量证明、身份标识、外观、尺寸、结论记录和验收签字等质量体系验收步骤。"),
+        ("抽样复验适用性", "根据设计要求或冻结抽样规则逐批确定是否需要抽样复验；触发条件不明时不得要求或豁免复验。"),
+        ("抽样复验见证链", "仅对明确需要抽样复验的批次，核验取样见证记录、见证角色、样品编号和复验报告的连续证据链。"),
+        ("不合格材料隔离处置", "对验收不合格批次核验隔离、处置和放行批准，防止未受控材料投入使用。"),
+        ("R17证据可追溯性", "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R18": [
+        ("材料复验与材料NDT适用性", "依据设计要求和冻结规则逐批识别是否需要材料复验或材料本体无损检测；R18不作无条件必传审查。"),
+        ("材料试验要求规则绑定", "为适用批次绑定具体产品标准、复验项目、材料NDT方法和结构化验收限值；规则不完整时返回证据不足。"),
+        ("材料复验报告完整性", "仅对明确需要材料复验的批次核验复验报告是否存在并覆盖全部要求的复验项目。"),
+        ("材料本体NDT报告完整性", "仅对明确需要材料本体无损检测的批次核验专用报告和检测方法；焊缝NDT报告不得替代。"),
+        ("材料报告批准程序", "核验材料复验和材料NDT报告的批准程序及试验、审核、批准等签字角色。"),
+        ("材料试验结果与追溯链", "核验报告结论、结构化验收限值以及材料批号—样品号—报告号的追溯关系。"),
+        ("R18证据可追溯性", "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+    "R19": [
+        ("境外牌号材料适用性与使用范围", "根据设计材料表、产品质量证明文件及材料牌号和执行标准，识别本工程是否使用境外牌号材料，并列明涉及元件、安全附件、制造单位、材料牌号、批次和使用范围。"),
+        ("境外材料标准与使用经历", "核验境外材料标准是否为境外压力管道现行标准，并核验该材料是否具有类似工况使用经历；文件不能支持时不得推定满足。"),
+        ("化学成分与性能等同性", "对照境外材料标准、国内相近材料及企业标准，分析化学成分、力学性能、物理性能和工艺性能，确认不低于安全技术规范及相应国内材料标准的基本要求。"),
+        ("验证性复验", "按材料牌号和炉批号关联产品质量证明文件与复验报告，核验化学成分和力学性能复验项目、试样或批次追溯、试验结果及结论。"),
+        ("首次使用焊接工艺评定", "先判断境外牌号材料是否首次使用；首次使用时核验焊接工艺评定覆盖材料组别、焊接方法、厚度和适用范围，非首次使用时应提供可追溯的使用经历依据。"),
+        ("复验与工艺评定归档", "核验验证性复验结果和适用的焊接工艺评定结果是否纳入或者作为附件关联至产品质量证明文件，并形成证书号、报告号和炉批号追溯链。"),
+        ("境内制造单位企业标准", "仅对境内制造单位使用境外牌号材料的情形，核验对应企业标准是否覆盖材料技术要求、验收规则、复验、首次使用工艺评定和质量证明归档要求；境外制造情形不得误判为缺少企业标准。"),
+        ("R19证据可追溯性", "核验每项判断引用的文件版本、页码、坐标或原文片段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"),
+    ],
+}
+
+R19_REQUIRED_EVIDENCE = [
+    "设计材料表",
+    "产品质量证明文件",
+    "境外材料标准及类似工况使用经历证明",
+    "国内相近材料标准或者技术对比资料",
+    "化学成分和力学性能验证性复验报告",
+    "首次使用时的焊接工艺评定",
+    "境内制造单位使用境外牌号材料时制定的企业标准",
+]
 
 
 BATCHES = [
@@ -497,7 +703,7 @@ def build() -> None:
     assert set(KNOWLEDGE_DOCUMENTS) == {item["id"] for item in CATALOG}
 
     catalog = {
-        "standardCatalogSet": {"id": "engineering-inspection-standard-catalog-v1", "schemaVersion": "standard-catalog-v1", "version": "2026.07.14", "lifecycleStatus": "published"},
+        "standardCatalogSet": {"id": "engineering-inspection-standard-catalog-v1", "schemaVersion": "standard-catalog-v1", "version": "2026.07.16", "lifecycleStatus": "published"},
         "standardCatalog": CATALOG,
     }
     dump_yaml(PACK_DIR / "standard_clause_catalog.yaml", catalog)
@@ -507,21 +713,39 @@ def build() -> None:
         rule = by_source[source_id]
         ref, clause, page = primary[source_id]
         normalized = clause.replace(".", "-").replace("(", "-").replace(")", "")
-        primary_locator = make_locator(ref, clause, page, page, "source_verified")
+        primary_locator = make_locator(
+            ref,
+            clause,
+            page,
+            page,
+            "source_verified",
+        )
         knowledge_file_id, document_version_id = KNOWLEDGE_DOCUMENTS[ref]
         bindings.append({
             "bindingId": f"BIND-{source_id}-{normalized}",
             "ruleId": rule["id"], "sourceRuleId": source_id, "nodeId": int(rule["nodeIds"][0]),
-            "standardRef": ref, "clauseNo": clause, "bindingRole": "primary", "applicability": "always" if source_id != "R10" else "other_standard_adopted",
+            "standardRef": ref, "clauseNo": clause, "bindingRole": "primary", "applicability": (
+                "other_standard_adopted"
+                if source_id == "R10"
+                else "component_not_subject_to_manufacturing_license_supervision_or_type_test"
+                if source_id == "R14"
+                else "foreign_manufactured_component_or_safety_accessory"
+                if source_id == "R15"
+                else "material_retest_or_material_ndt_required"
+                if source_id == "R18"
+                else "foreign_grade_material_used"
+                if source_id == "R19"
+                else "always"
+            ),
             "lifecycleStatus": "published", "verificationStatus": "source_verified",
             "knowledgeFileId": knowledge_file_id, "documentVersionId": document_version_id,
             "sourcePage": page, "startPage": page, "endPage": page,
-            "sourceLocatorId": primary_locator["locatorId"], "locatorPrecision": "page",
+            "sourceLocatorId": primary_locator["locatorId"], "locatorPrecision": primary_locator["precision"],
             "locators": [primary_locator],
         })
     binding_data = {
         "standardClauseBindingSet": {
-            "id": "engineering-inspection-standard-clause-bindings-v2", "schemaVersion": "standard-clause-binding-v1", "version": "2026.07.14",
+            "id": "engineering-inspection-standard-clause-bindings-v2", "schemaVersion": "standard-clause-binding-v1", "version": "2026.07.16",
             "lifecycleStatus": "published", "sourceBusinessRules": "rules/业务规则.md",
             "runtimePolicy": {"consumableLifecycleStatuses": ["published"], "requiredVerificationStatus": "source_verified", "primaryBindingCardinality": "exactly_one_per_rule", "freezeIntoReviewRunSnapshot": True},
         },
@@ -536,14 +760,15 @@ def build() -> None:
     for source_id in sorted(expected):
         rule = by_source[source_id]
         node_id = int(rule["nodeIds"][0])
-        checks = clean_checks(rule)
+        override_checks = ATOMIC_CHECK_OVERRIDES.get(source_id)
+        checks = [instruction for _, instruction in override_checks] if override_checks else clean_checks(rule)
         check_ids = []
         for index, text in enumerate(checks, 1):
             check_id = f"AC-{source_id}-{index:02d}"
             check_ids.append(check_id)
             atomic_checks.append({
                 "id": check_id, "sourceRuleId": source_id, "ruleId": rule["id"], "nodeId": node_id,
-                "name": f"{rule['name']}·原子项{index}", "checkType": "evidence_and_deterministic_rule",
+                "name": f"{rule['name']}·{override_checks[index - 1][0]}" if override_checks else f"{rule['name']}·原子项{index}", "checkType": "evidence_and_llm_semantic_judgment" if source_id == "R19" else "evidence_and_deterministic_rule",
                 "instruction": text, "evidenceRequired": True,
                 "failurePolicy": "evidence_insufficient" if index == len(checks) else "business_rule_result",
             })
@@ -562,24 +787,40 @@ def build() -> None:
             "lifecycleStatus": "published", "primaryBindingId": binding_by_rule[source_id]["bindingId"],
             "applicability": {"type": applicability_type, "expression": applicability_text},
             "professionalClauses": professional, "atomicCheckIds": check_ids,
-            "requiredEvidence": list(dict.fromkeys((rule.get("aiExecution") or {}).get("requiredEvidence") or []))[:8],
+            "requiredEvidence": (
+                R19_REQUIRED_EVIDENCE
+                if source_id == "R19"
+                else list(dict.fromkeys((rule.get("aiExecution") or {}).get("requiredEvidence") or []))[:8]
+            ),
             "decisionModel": {
                 "resultValues": ["符合", "不符合", "证据不足", "不适用", "待人工确认"],
-                "ruleExecution": "deterministic_tools_only",
-                "llmRole": "仅汇总全项目证据并校验人工评价报告的完整性；不得生成或覆盖监检人员评价结论" if source_id == "R69" else "调用工具、组织证据、解释已返回结果，不自行改写数值或条款判据",
+                "ruleExecution": "llm_semantic_primary_with_evidence_validation" if source_id == "R19" else "deterministic_tools_only",
+                "llmRole": (
+                    "基于固定条款和已登记证据完成逐原子项跨文件语义判断；不得编造EvidenceRef，节点结果由固定聚合器生成"
+                    if source_id == "R19"
+                    else "仅汇总全项目证据并校验人工评价报告的完整性；不得生成或覆盖监检人员评价结论"
+                    if source_id == "R69"
+                    else "调用工具、组织证据、解释已返回结果，不自行改写数值或条款判据"
+                ),
                 "failClosed": True,
                 "automatedDecisionAllowed": source_id != "R69",
             },
         })
     dump_yaml(PACK_DIR / "atomic_checks.yaml", {
-        "atomicCheckSet": {"id": "engineering-inspection-atomic-checks-v1", "schemaVersion": "atomic-check-v1", "version": "2026.07.14", "lifecycleStatus": "published"},
+        "atomicCheckSet": {"id": "engineering-inspection-atomic-checks-v1", "schemaVersion": "atomic-check-v1", "version": "2026.07.16", "lifecycleStatus": "published"},
         "atomicChecks": atomic_checks,
     })
     dump_yaml(PACK_DIR / "standard_clause_packages.yaml", {
         "standardClausePackageSet": {
-            "id": "engineering-inspection-standard-clause-packages-v1", "schemaVersion": "standard-clause-package-v1", "version": "2026.07.14", "lifecycleStatus": "published",
+            "id": "engineering-inspection-standard-clause-packages-v1", "schemaVersion": "standard-clause-package-v1", "version": "2026.07.16", "lifecycleStatus": "published",
             "batches": [{"id": batch_id, "name": name, "sourceRuleIds": ids} for batch_id, name, ids in BATCHES],
-            "runtimePolicy": {"resolveBy": ["businessPackVersion", "sourceRuleId", "nodeId"], "freezeIntoReviewRunSnapshot": True, "llmMaySelectClause": False, "llmMayChangeDeterministicResult": False},
+            "runtimePolicy": {
+                "resolveBy": ["businessPackVersion", "sourceRuleId", "nodeId"],
+                "freezeIntoReviewRunSnapshot": True,
+                "llmMaySelectClause": False,
+                "llmMayChangeDeterministicResult": False,
+                "llmSemanticPrimarySourceRuleIds": ["R19"],
+            },
         },
         "standardClausePackages": packages,
     })
@@ -587,7 +828,7 @@ def build() -> None:
     catalog_by_id = {item["id"]: item for item in CATALOG}
     lines = [
         "# 业务节点具体标准条款审核矩阵", "",
-        "> 版本：2026.07.14。主条款已经逐条核验并发布；专业补充条款中的 `visual_verified` 表示扫描件已完成人工可视复核，运行时仍以主条款和已固化业务规则为判断入口。", "",
+        "> 版本：2026.07.16。主条款已经逐条核验并发布；专业补充条款中的 `visual_verified` 表示扫描件已完成人工可视复核，运行时仍以主条款和已固化业务规则为判断入口。", "",
         "| 批次 | 规则/节点 | 业务审核节点 | 主条款（直接监检依据） | 专业执行条款 | 适用条件 | 原子项 |", "|---|---:|---|---|---|---|---:|",
     ]
     for package in packages:
@@ -601,7 +842,7 @@ def build() -> None:
     lines.extend([
         "", "## 运行约束", "",
         "- 后端按 `sourceRuleId + nodeId + 业务包版本`读取固定条款包，并将版本快照固化到 ReviewRun。",
-        "- 数值比较、日期覆盖、证照范围、比例、完整性和条件分支必须由确定性工具执行；LLM 只调用工具、串联证据并解释工具返回值。",
+        "- 数值比较、日期覆盖、证照范围、比例、完整性和结构化条件分支必须由确定性工具执行；R19 采用证据约束的 `llm_semantic_primary`，允许模型形成逐原子项语义判断，但固定条款、EvidenceRef 校验和节点聚合不得交给模型。",
         "- 证据不足、字段冲突、条款包不完整或工具失败时，结论只能是“证据不足”或“待人工确认”，不得推断为“符合”。",
         "- 前端展示标准号、条款号、证据定位、原子项执行轨迹、工具输入输出摘要和 AI 结论；`reasoning_content` 可作为模型流式过程日志，但不替代本矩阵的审计判据。",
     ])

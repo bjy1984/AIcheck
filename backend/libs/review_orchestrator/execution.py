@@ -22,6 +22,39 @@ from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_orchestrator.r12_agent import (
+    apply_r12_human_input,
+    build_r12_business_facts,
+    ensure_r12_human_input_task,
+    extract_r12_license_candidates,
+    is_r12_formal_review,
+    validate_r12_human_input,
+)
+from libs.review_orchestrator.r13_facts import build_r13_business_facts
+from libs.review_orchestrator.r14_facts import build_r14_business_facts
+from libs.review_orchestrator.r15_facts import build_r15_business_facts
+from libs.review_orchestrator.r16_facts import build_r16_business_facts
+from libs.review_orchestrator.r17_facts import build_r17_business_facts
+from libs.review_orchestrator.r18_facts import build_r18_business_facts
+from libs.review_orchestrator.r20_r23_facts import (
+    build_r20_business_facts,
+    build_r21_business_facts,
+    build_r22_business_facts,
+    build_r23_business_facts,
+)
+from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
+from libs.review_orchestrator.r19_agent import (
+    R19_EXECUTION_MODE,
+    R19_REVIEW_QUESTIONS,
+    R19_TASK_TYPE,
+    apply_r19_human_input,
+    build_r19_agent_context,
+    context_for_model as r19_context_for_model,
+    ensure_r19_human_input_task,
+    is_r19_formal_review,
+    validate_r19_human_input,
+    validate_r19_semantic_submission,
+)
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
@@ -106,6 +139,17 @@ FORBIDDEN_AGENT_TOOLS = {
 }
 
 ALLOWED_AGENT_TOOLS = {
+    "inspect_r12_license_candidates",
+    "request_official_registry_verification",
+    "inspect_r13_review_facts",
+    "inspect_r14_review_facts",
+    "inspect_r15_review_facts",
+    "inspect_r16_review_facts",
+    "inspect_r17_review_facts",
+    "inspect_r18_review_facts",
+    "inspect_r19_review_context",
+    "request_r19_human_input",
+    "submit_r19_semantic_review",
     "get_project_context",
     "get_node_requirements",
     "get_document_ocr_result",
@@ -509,14 +553,1275 @@ def mark_graph_node(
     return node
 
 
+def plan_r12_human_verification(
+    review_run: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any]]:
+    """Let the LLM control the R12 interaction request, with a deterministic safety guard."""
+
+    ensure_review_state()
+    mode = review_llm_execution_mode()
+    trace: dict[str, Any] = {
+        "controlMode": "deterministic_workflow_guard",
+        "llmExecution": mode,
+        "llmCalled": False,
+        "requestedHumanInput": False,
+        "toolCalls": [],
+    }
+    if mode in {"deterministic", "disabled", "mock"}:
+        return "workflow_guard", trace
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "inspect_r12_license_candidates",
+                "description": "读取 R12 已从上传资料中识别出的制造许可证候选，不进行官网真实性判断。",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "request_official_registry_verification",
+                "description": "当 R12 存在制造许可证候选时，暂停工作流并请求监检人员到官方平台逐证核验。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "candidateIds": {"type": "array", "items": {"type": "string"}},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["candidateIds", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+    ]
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "system",
+            "content": (
+                "你是 R12 压力管道元件制造许可复核 Agent。官网查询必须由监检人员完成；"
+                "你必须先调用 inspect_r12_license_candidates，再调用 request_official_registry_verification。"
+                "不得依据 OCR 自行宣称已完成官网核验。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"当前识别到 {len(candidates)} 个制造许可证候选，请推进 R12 复核。",
+        },
+    ]
+    requested = False
+    reasoning_chunks: list[str] = []
+    model_attempt = {
+        "id": f"MCALL-R12-{uuid4().hex[:10].upper()}",
+        "reviewRunId": review_run.get("reviewRunId"),
+        "aiRunId": review_run.get("aiRunId"),
+        "projectId": review_run.get("projectId"),
+        "nodeId": 12,
+        "stage": "r12_agent_human_input_planning",
+        "callKind": "agent_tool_call",
+        "provider": review_run.get("modelGateway") or "qwen_runtime",
+        "modelAlias": review_run.get("modelAlias"),
+        "status": "running",
+        "promptHash": stable_hash_payload(messages),
+        "createdAt": server_time(),
+        "startedAt": server_time(),
+        "updatedAt": server_time(),
+    }
+    repo.state.setdefault("model_call_attempts", []).insert(0, model_attempt)
+    try:
+        client = qwen_runtime_client()
+        last_response: dict[str, Any] = {}
+        for _ in range(3):
+            response = client.chat_sync(
+                messages,
+                model=str(review_run.get("modelAlias") or "review-chat"),
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.0,
+                max_tokens=600,
+                timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+            )
+            last_response = response
+            choices = response.get("choices") if isinstance(response.get("choices"), list) else []
+            message = (choices[0].get("message") or {}) if choices and isinstance(choices[0], dict) else {}
+            reasoning = message.get("reasoning_content") or message.get("reasoning")
+            if reasoning:
+                reasoning_chunks.append(str(reasoning))
+            tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+            trace["llmCalled"] = True
+            if not tool_calls:
+                break
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.get("content") or "",
+                    "tool_calls": tool_calls,
+                }
+            )
+            for call in tool_calls:
+                function = call.get("function") if isinstance(call, dict) else {}
+                tool_name = str((function or {}).get("name") or "")
+                raw_arguments = (function or {}).get("arguments") or "{}"
+                try:
+                    arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else dict(raw_arguments)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    arguments = {}
+                if tool_name == "inspect_r12_license_candidates":
+                    output = {"candidateCount": len(candidates), "candidates": candidates}
+                elif tool_name == "request_official_registry_verification":
+                    requested = True
+                    output = {
+                        "status": "waiting_human_input_required",
+                        "candidateIds": [item.get("candidateId") for item in candidates],
+                    }
+                else:
+                    output = {"status": "rejected", "errorCode": "R12_AGENT_TOOL_NOT_ALLOWED"}
+                trace["toolCalls"].append(
+                    {"toolName": tool_name, "argumentsHash": stable_hash_payload(arguments), "output": output}
+                )
+                append_tool_call(review_run, "r12_agent_precheck", tool_name, compact_tool_output(output))
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(call.get("id") or f"r12-{len(trace['toolCalls'])}"),
+                        "content": json.dumps(output, ensure_ascii=False, default=str),
+                    }
+                )
+            if requested:
+                break
+        trace.update(
+            {
+                "controlMode": "llm_tool_call_guarded" if requested else "llm_tool_call_with_workflow_guard",
+                "requestedHumanInput": requested,
+                "reasoningContent": "\n".join(reasoning_chunks),
+            }
+        )
+        model_attempt.update(
+            {
+                "status": "succeeded",
+                "responseHash": stable_hash_payload(last_response),
+                "reasoningContent": "\n".join(reasoning_chunks),
+                "toolCallCount": len(trace["toolCalls"]),
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        return ("llm_agent" if requested else "workflow_guard"), trace
+    except Exception as exc:
+        trace.update(
+            {
+                "controlMode": "llm_failed_workflow_guard",
+                "errorType": type(exc).__name__,
+                "reasoningContent": "\n".join(reasoning_chunks),
+            }
+        )
+        model_attempt.update(
+            {
+                "status": "failed",
+                "failureReason": type(exc).__name__,
+                "reasoningContent": "\n".join(reasoning_chunks),
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        return "workflow_guard", trace
+
+
+def plan_r13_tool_review(
+    review_run: dict[str, Any],
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    r13 = facts.get("r13") if isinstance(facts.get("r13"), dict) else {}
+    return _plan_guarded_material_tool_review(
+        review_run,
+        node_id=13,
+        inspect_tool_name="inspect_r13_review_facts",
+        inspect_output={
+            "designItemCount": len(r13.get("designItems") or []),
+            "supervisionCertificateCount": len(r13.get("supervisionCertificates") or []),
+            "typeTestReportCount": len(r13.get("typeTestReports") or []),
+            "designItems": list(r13.get("designItems") or [])[:50],
+        },
+        required_tool_arguments={
+            "classify_r13_component_requirements": {"designItems": r13.get("designItems") or []},
+            "evaluate_r13_supervision_certificate_completeness": {
+                "designItems": r13.get("designItems") or [],
+                "supervisionCertificates": r13.get("supervisionCertificates") or [],
+            },
+            "evaluate_r13_type_test_coverage": {
+                "designItems": r13.get("designItems") or [],
+                "typeTestReports": r13.get("typeTestReports") or [],
+            },
+        },
+        system_prompt=(
+            "你是R13制造监检证书和型式试验覆盖复核Agent。先调用inspect_r13_review_facts读取事实，"
+            "再依次调用分类、制造监检证书齐全性和型式试验覆盖Tool。只能使用Tool返回的结果，"
+            "不得自行改写产品分类、覆盖范围或证书结论。事实不足时保留证据不足。"
+        ),
+        user_prompt="请基于已上传设计材料表、制造监督检验证书和型式试验报告推进R13复核。",
+    )
+
+
+def plan_r14_tool_review(
+    review_run: dict[str, Any],
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    r14 = facts.get("r14") if isinstance(facts.get("r14"), dict) else {}
+    product_rules = {
+        "GB/T 12771-2019": {
+            "requiredItems": ["nondestructive_testing"],
+            "basis": "GB/T 12771-2019 6.9",
+        }
+    }
+    common = {"designItems": r14.get("designItems") or []}
+    return _plan_guarded_material_tool_review(
+        review_run,
+        node_id=14,
+        inspect_tool_name="inspect_r14_review_facts",
+        inspect_output={
+            "designItemCount": len(r14.get("designItems") or []),
+            "pipelineCharacteristicCount": len(r14.get("pipelineCharacteristics") or []),
+            "factoryInspectionReportCount": len(r14.get("factoryInspectionReports") or []),
+            "specialInspectionReportCount": len(r14.get("specialInspectionReports") or []),
+            "designItems": list(r14.get("designItems") or [])[:50],
+        },
+        required_tool_arguments={
+            "classify_r14_component_applicability": common,
+            "evaluate_r14_component_design_match": {
+                **common,
+                "factoryInspectionReports": r14.get("factoryInspectionReports") or [],
+            },
+            "resolve_r14_required_inspection_items": {**common, "productInspectionRules": product_rules},
+            "evaluate_r14_special_report_coverage": {
+                **common,
+                "specialInspectionReports": r14.get("specialInspectionReports") or [],
+                "productInspectionRules": product_rules,
+            },
+            "evaluate_r14_pressure_compatibility": {
+                **common,
+                "pipelineCharacteristics": r14.get("pipelineCharacteristics") or [],
+                "factoryInspectionReports": r14.get("factoryInspectionReports") or [],
+                "specialInspectionReports": r14.get("specialInspectionReports") or [],
+            },
+        },
+        system_prompt=(
+            "你是R14管道组成件出厂检验复核Agent。先读取R14结构化事实，再调用适用性分类、"
+            "等级材质一致性、必检项目解析、专项报告覆盖和压力等级对应Tool。光谱、硬度、金相、"
+            "无损检测和耐压试验不得默认全部必需；只能按设计要求或冻结产品标准规则判断。"
+            "不得绕过R12/R13适用性路由，不得覆盖确定性Tool结果。"
+        ),
+        user_prompt="请基于设计材料表、管道特性表、出厂检验报告和专项报告推进R14复核。",
+    )
+
+
+def plan_r15_tool_review(
+    review_run: dict[str, Any],
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    r15 = facts.get("r15") if isinstance(facts.get("r15"), dict) else {}
+    common = {"designItems": r15.get("designItems") or []}
+    return _plan_guarded_material_tool_review(
+        review_run,
+        node_id=15,
+        inspect_tool_name="inspect_r15_review_facts",
+        inspect_output={
+            "designItemCount": len(r15.get("designItems") or []),
+            "manufacturingLicenseCandidateCount": len(r15.get("manufacturingLicenseCandidates") or []),
+            "manualRegistryVerificationCount": len(r15.get("manualRegistryVerifications") or []),
+            "supervisionCertificateCount": len(r15.get("supervisionCertificates") or []),
+            "typeTestReportCount": len(r15.get("typeTestReports") or []),
+            "arrivalInspectionRecordCount": len(r15.get("arrivalInspectionRecords") or []),
+            "completeMachineInspectionRecordCount": len(r15.get("completeMachineInspectionRecords") or []),
+            "designItems": list(r15.get("designItems") or [])[:50],
+        },
+        required_tool_arguments={
+            "classify_r15_foreign_manufacturing_applicability": common,
+            "classify_r15_regulatory_requirements": common,
+            "evaluate_r15_manufacturing_license_coverage": {
+                **common,
+                "licenseCandidates": r15.get("manufacturingLicenseCandidates") or [],
+                "registryVerifications": r15.get("manualRegistryVerifications") or [],
+                "requireRegistryVerification": True,
+            },
+            "evaluate_r15_type_test_coverage": {
+                **common,
+                "typeTestReports": r15.get("typeTestReports") or [],
+            },
+            "evaluate_r15_manufacturing_inspection_route": {
+                **common,
+                "supervisionCertificates": r15.get("supervisionCertificates") or [],
+                "arrivalInspectionRecords": r15.get("arrivalInspectionRecords") or [],
+                "completeMachineInspectionRecords": r15.get("completeMachineInspectionRecords") or [],
+            },
+        },
+        system_prompt=(
+            "你是R15境外制造压力管道元件和安全附件复核Agent。先读取结构化事实，再严格依次调用境外制造适用性、"
+            "法定要求分类、制造许可覆盖、型式试验覆盖和制造监检路径Tool。境外制造与境外材料牌号必须区分；"
+            "不能在境外完成制造监检时，必须按TSG 31-2025第2.2.1.5条检查到岸检验或随整机检验。"
+            "只能解释确定性Tool结果，不得自行补造产品分类、证书范围或合格结论。"
+        ),
+        user_prompt=(
+            "请依据TSG 31-2025第1.10、2.2.1.5条及TSG D7006-2020附件D D2.4.1，"
+            "对境外制造元件和安全附件推进R15复核。"
+        ),
+    )
+
+
+def plan_r16_tool_review(
+    review_run: dict[str, Any],
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    r16 = facts.get("r16") if isinstance(facts.get("r16"), dict) else {}
+    common = {
+        "designItems": r16.get("designItems") or [],
+        "qualityCertificates": r16.get("qualityCertificates") or [],
+    }
+    return _plan_guarded_material_tool_review(
+        review_run,
+        node_id=16,
+        inspect_tool_name="inspect_r16_review_facts",
+        inspect_output={
+            "designItemCount": len(r16.get("designItems") or []),
+            "qualityCertificateCount": len(r16.get("qualityCertificates") or []),
+            "designItems": list(r16.get("designItems") or [])[:50],
+        },
+        required_tool_arguments={
+            "resolve_r16_product_standard_profile": common,
+            "evaluate_r16_quality_certificate_batch_coverage": common,
+            "evaluate_r16_quality_certificate_form_and_seals": common,
+            "evaluate_r16_quality_certificate_design_match": common,
+            "evaluate_r16_quality_certificate_content": common,
+            "evaluate_r16_quality_certificate_results": common,
+            "evaluate_r16_batch_traceability": common,
+        },
+        system_prompt=(
+            "你是R16产品质量证明文件复核Agent。必须先读取结构化事实，再依次调用产品标准路由、批次覆盖、"
+            "原件/复印件及印章、设计一致性、必需内容、数值结果和追溯链Tool。只能使用Tool结论；"
+            "产品标准或数值限值未冻结时保留证据不足，不得自行查表、估算或补造合格结论。"
+        ),
+        user_prompt="请依据TSG D7006-2020附件D D2.4.1(5)和设计规定的产品标准推进R16复核。",
+    )
+
+
+def plan_r17_tool_review(
+    review_run: dict[str, Any],
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    r17 = facts.get("r17") if isinstance(facts.get("r17"), dict) else {}
+    common = {
+        "designItems": r17.get("designItems") or [],
+        "acceptanceRecords": r17.get("acceptanceRecords") or [],
+        "witnessRecords": r17.get("witnessRecords") or [],
+        "samplingRetestReports": r17.get("samplingRetestReports") or [],
+        "samplingRules": r17.get("samplingRules") or [],
+    }
+    return _plan_guarded_material_tool_review(
+        review_run,
+        node_id=17,
+        inspect_tool_name="inspect_r17_review_facts",
+        inspect_output={
+            "designItemCount": len(r17.get("designItems") or []),
+            "acceptanceRecordCount": len(r17.get("acceptanceRecords") or []),
+            "witnessRecordCount": len(r17.get("witnessRecords") or []),
+            "samplingRetestReportCount": len(r17.get("samplingRetestReports") or []),
+        },
+        required_tool_arguments={
+            "evaluate_r17_arrival_acceptance_batch_coverage": common,
+            "evaluate_r17_acceptance_procedure": common,
+            "resolve_r17_sampling_retest_requirement": common,
+            "evaluate_r17_sampling_witness_chain": common,
+            "evaluate_r17_nonconformance_control": common,
+        },
+        system_prompt=(
+            "你是R17到货验收与抽样复验见证复核Agent。必须先核验逐批验收记录和质量体系验收程序，"
+            "再解析抽样复验适用性；仅对明确需要抽样复验的批次核验见证—样品—报告链，"
+            "最后核验不合格隔离处置。可选复验报告为空不得直接判定缺失，Tool结果不得被模型覆盖。"
+        ),
+        user_prompt="请依据TSG D7006-2020附件D D2.4.1(6)推进R17复核。",
+    )
+
+
+def plan_r18_tool_review(
+    review_run: dict[str, Any],
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    r18 = facts.get("r18") if isinstance(facts.get("r18"), dict) else {}
+    common = {
+        "designItems": r18.get("designItems") or [],
+        "retestReports": r18.get("retestReports") or [],
+        "materialNdtReports": r18.get("materialNdtReports") or [],
+    }
+    return _plan_guarded_material_tool_review(
+        review_run,
+        node_id=18,
+        inspect_tool_name="inspect_r18_review_facts",
+        inspect_output={
+            "designItemCount": len(r18.get("designItems") or []),
+            "retestReportCount": len(r18.get("retestReports") or []),
+            "materialNdtReportCount": len(r18.get("materialNdtReports") or []),
+        },
+        required_tool_arguments={
+            "classify_r18_material_test_applicability": common,
+            "resolve_r18_material_test_requirement_profile": common,
+            "evaluate_r18_material_retest_report_completeness": common,
+            "evaluate_r18_material_ndt_report_completeness": common,
+            "evaluate_r18_material_report_approval_procedure": common,
+            "evaluate_r18_material_test_results_and_traceability": common,
+        },
+        system_prompt=(
+            "你是R18材料复验和材料本体无损检测报告复核Agent。R18不是无条件必审：必须先调用适用性Tool，"
+            "再绑定明确的试验项目、方法和验收限值；仅审查适用批次的报告完整性、批准程序、结果和追溯链。"
+            "焊缝NDT报告不得冒充材料本体NDT报告，限值缺失时必须保留证据不足。"
+        ),
+        user_prompt="请依据TSG D7006-2020附件D D2.4.1(7)推进R18复核。",
+    )
+
+
+def plan_r19_semantic_review(
+    review_run: dict[str, Any],
+    agent_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Run the evidence-bound semantic Agent used for R19's open-format review."""
+
+    ensure_review_state()
+    mode = review_llm_execution_mode()
+    trace: dict[str, Any] = {
+        "controlMode": R19_EXECUTION_MODE,
+        "llmExecution": mode,
+        "llmCalled": False,
+        "submitted": False,
+        "requestedHumanInput": False,
+        "toolCalls": [],
+        "reasoningContent": "",
+        "executionMode": R19_EXECUTION_MODE,
+    }
+    if mode in {"deterministic", "disabled", "mock"}:
+        trace.update(
+            {
+                "controlMode": "r19_llm_unavailable_human_guard",
+                "requestedHumanInput": True,
+                "humanInputRequest": {
+                    "questionIds": [item["questionId"] for item in R19_REVIEW_QUESTIONS],
+                    "reason": "R19 requires semantic review but the LLM execution mode is unavailable.",
+                    "title": "人工确认 R19 境外牌号材料审查事实",
+                },
+            }
+        )
+        return trace
+
+    document_version_ids = {str(item) for item in agent_context.get("documentVersionIds") or [] if item}
+    evidence_index = agent_context.setdefault("evidenceIndex", {})
+    known_evidence_ids = set(str(item) for item in evidence_index)
+    tool_catalog = {str(item.get("name")): item for item in runtime_tool_catalog()}
+
+    def schema_for_runtime(name: str) -> dict[str, Any]:
+        if name == "locate_evidence_fragment":
+            return {
+                "type": "object",
+                "properties": {
+                    "documentVersionIds": {"type": "array", "items": {"type": "string"}},
+                    "queryTerms": {"type": "array", "items": {"type": "string"}},
+                    "minConfidence": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "required": ["documentVersionIds", "queryTerms"],
+                "additionalProperties": False,
+            }
+        if name == "extract_document_fields":
+            return {
+                "type": "object",
+                "properties": {
+                    "documentVersionIds": {"type": "array", "items": {"type": "string"}},
+                    "fieldCodes": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["documentVersionIds"],
+                "additionalProperties": False,
+            }
+        if name == "extract_table_records":
+            return {
+                "type": "object",
+                "properties": {
+                    "documentVersionIds": {"type": "array", "items": {"type": "string"}},
+                    "businessSchemas": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["documentVersionIds"],
+                "additionalProperties": False,
+            }
+        return {
+            "type": "object",
+            "properties": {
+                "documentVersionIds": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["documentVersionIds"],
+            "additionalProperties": False,
+        }
+
+    runtime_names = [
+        "get_document_ocr_result",
+        "extract_document_fields",
+        "extract_table_records",
+        "locate_evidence_fragment",
+    ]
+    tools: list[dict[str, Any]] = [
+        {
+            "type": "function",
+            "function": {
+                "name": "inspect_r19_review_context",
+                "description": (
+                    "读取R19固定审查问题、输入文档索引、OCR证据预览、已完成的人工确认和已登记EvidenceRef。"
+                    "不作符合性判断。"
+                ),
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        },
+        *[
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": str((tool_catalog.get(name) or {}).get("capability") or "读取文档事实和证据。"),
+                    "parameters": schema_for_runtime(name),
+                },
+            }
+            for name in runtime_names
+        ],
+        {
+            "type": "function",
+            "function": {
+                "name": "validate_r19_semantic_judgment",
+                "description": (
+                    "校验单个R19语义判断的结果、解释、条款和EvidenceRef是否满足结构与证据约束；"
+                    "本Tool不修改该判断的业务结果。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "atomicCheckId": {"type": "string"},
+                        "judgment": {"type": "object"},
+                    },
+                    "required": ["atomicCheckId", "judgment"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "request_r19_human_input",
+                "description": (
+                    "当现有文件不能可靠判断R19关键事实、证据冲突或需要专业人员确认时，创建结构化人工任务并暂停。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "questionIds": {"type": "array", "items": {"type": "string"}},
+                        "reason": {"type": "string"},
+                        "title": {"type": "string"},
+                        "instructions": {"type": "string"},
+                    },
+                    "required": ["questionIds", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "submit_r19_semantic_review",
+                "description": (
+                    "提交覆盖AC-R19-01至AC-R19-08的结构化语义判断。passed、failed和not_applicable均必须引用"
+                    "已登记EvidenceRef；节点result由服务端固定聚合，模型不能自行指定。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "atomicJudgments": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "atomicCheckId": {"type": "string"},
+                                    "result": {
+                                        "type": "string",
+                                        "enum": [
+                                            "passed",
+                                            "failed",
+                                            "evidence_insufficient",
+                                            "not_applicable",
+                                            "human_review_required",
+                                        ],
+                                    },
+                                    "explanation": {"type": "string"},
+                                    "reasonCodes": {"type": "array", "items": {"type": "string"}},
+                                    "evidenceRefIds": {"type": "array", "items": {"type": "string"}},
+                                    "clauseRefs": {"type": "array", "items": {"type": "string"}},
+                                    "missingFacts": {"type": "array", "items": {"type": "string"}},
+                                    "recommendedAction": {"type": "string"},
+                                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                                },
+                                "required": [
+                                    "atomicCheckId",
+                                    "result",
+                                    "explanation",
+                                    "evidenceRefIds",
+                                    "clauseRefs",
+                                    "confidence",
+                                ],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "summary": {"type": "string"},
+                        "recommendedActions": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["atomicJudgments", "summary"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+    ]
+    model_context = r19_context_for_model(agent_context)
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "system",
+            "content": (
+                "你是R19境外牌号材料复核Agent。固定依据为TSG D7006-2020附件D D2.4.1(8)和"
+                "TSG 31-2025第2.1.2条。文件格式不固定，因此你负责逐问题进行跨文件语义分析；"
+                "但不得编造文件事实、条款或EvidenceRef。先读取上下文，必要时读取OCR字段/表格并定位证据。"
+                "每个passed、failed或not_applicable判断必须引用已登记EvidenceRef。企业标准仅在境内制造单位"
+                "使用境外牌号材料时适用。现有证据不足、冲突或需要专业判断时调用request_r19_human_input；"
+                "可以可靠完成时调用submit_r19_semantic_review。节点结果由服务端固定聚合。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "task": "完成R19全部八个原子项的证据化语义审查。",
+                    "context": model_context,
+                },
+                ensure_ascii=False,
+                default=str,
+            ),
+        },
+    ]
+    reasoning_chunks: list[str] = []
+    model_attempt = {
+        "id": f"MCALL-R19-{uuid4().hex[:10].upper()}",
+        "reviewRunId": review_run.get("reviewRunId"),
+        "aiRunId": review_run.get("aiRunId"),
+        "projectId": review_run.get("projectId"),
+        "nodeId": 19,
+        "stage": "r19_llm_semantic_primary",
+        "callKind": "agent_tool_call",
+        "provider": review_run.get("modelGateway") or "qwen_runtime",
+        "modelAlias": review_run.get("modelAlias"),
+        "status": "running",
+        "promptHash": stable_hash_payload(messages),
+        "createdAt": server_time(),
+        "startedAt": server_time(),
+        "updatedAt": server_time(),
+    }
+    repo.state.setdefault("model_call_attempts", []).insert(0, model_attempt)
+    last_response: dict[str, Any] = {}
+    try:
+        client = qwen_runtime_client()
+        max_turns = max(4, min(20, int(os.getenv("AICHECK_R19_AGENT_MAX_TURNS", "12"))))
+        for turn in range(1, max_turns + 1):
+            response = client.chat_sync(
+                messages,
+                model=str(review_run.get("modelAlias") or "review-chat"),
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.0,
+                max_tokens=2200,
+                timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+            )
+            last_response = response
+            choices = response.get("choices") if isinstance(response.get("choices"), list) else []
+            message = (choices[0].get("message") or {}) if choices and isinstance(choices[0], dict) else {}
+            reasoning = message.get("reasoning_content") or message.get("reasoning")
+            if reasoning:
+                content = str(reasoning)
+                reasoning_chunks.append(content)
+                append_review_event(
+                    str(review_run.get("reviewRunId") or ""),
+                    event_type="agent.reasoning.delta",
+                    title="R19 模型推理流",
+                    status="running",
+                    node_key="r19_agent_semantic_review",
+                    details={
+                        "turn": turn,
+                        "content": content,
+                        "contentHash": stable_hash_payload(content),
+                        "sourceField": "reasoning_content" if message.get("reasoning_content") else "reasoning",
+                    },
+                )
+            tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+            trace["llmCalled"] = True
+            if not tool_calls:
+                break
+            messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
+            for call in tool_calls:
+                function = call.get("function") if isinstance(call, dict) else {}
+                tool_name = str((function or {}).get("name") or "")
+                raw_arguments = (function or {}).get("arguments") or "{}"
+                try:
+                    arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else dict(raw_arguments)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    arguments = {}
+                if tool_name in runtime_names:
+                    requested_ids = {str(item) for item in arguments.get("documentVersionIds") or [] if item}
+                    if requested_ids - document_version_ids:
+                        output = {"status": "rejected", "errorCode": "R19_DOCUMENT_SCOPE_VIOLATION"}
+                    else:
+                        if not requested_ids:
+                            arguments["documentVersionIds"] = sorted(document_version_ids)
+                        output = dispatch_runtime_tool(repo.state, tool_name, arguments)
+                        for evidence in output.get("evidenceRefs") or []:
+                            if not isinstance(evidence, dict):
+                                continue
+                            evidence_id = str(evidence.get("evidenceRefId") or evidence.get("id") or "")
+                            if evidence_id:
+                                evidence_index[evidence_id] = evidence
+                                known_evidence_ids.add(evidence_id)
+                elif tool_name == "inspect_r19_review_context":
+                    output = r19_context_for_model(agent_context)
+                elif tool_name == "validate_r19_semantic_judgment":
+                    arguments["knownEvidenceRefIds"] = sorted(known_evidence_ids)
+                    arguments["evidenceIndex"] = evidence_index
+                    output = dispatch_runtime_tool(repo.state, tool_name, arguments)
+                elif tool_name == "request_r19_human_input":
+                    registered_ids = {item["questionId"] for item in R19_REVIEW_QUESTIONS}
+                    selected_ids = [
+                        str(item)
+                        for item in arguments.get("questionIds") or []
+                        if str(item) in registered_ids
+                    ]
+                    output = {
+                        "status": "waiting_human_input_required",
+                        "questionIds": selected_ids or sorted(registered_ids),
+                    }
+                    trace["requestedHumanInput"] = True
+                    trace["humanInputRequest"] = {**arguments, "questionIds": output["questionIds"]}
+                elif tool_name == "submit_r19_semantic_review":
+                    validation = validate_r19_semantic_submission(
+                        arguments,
+                        known_evidence_ref_ids=known_evidence_ids,
+                        evidence_index=evidence_index,
+                    )
+                    output = validation
+                    if validation.get("status") == "valid":
+                        trace.update(
+                            {
+                                "submitted": True,
+                                "atomicJudgments": validation.get("atomicJudgments") or [],
+                                "result": validation.get("result"),
+                                "summary": validation.get("summary"),
+                                "recommendedActions": validation.get("recommendedActions") or [],
+                                "knownEvidenceRefIds": sorted(known_evidence_ids),
+                            }
+                        )
+                else:
+                    output = {"status": "rejected", "errorCode": "R19_AGENT_TOOL_NOT_ALLOWED"}
+                compact = compact_tool_output(output)
+                trace["toolCalls"].append(
+                    {
+                        "toolName": tool_name,
+                        "argumentsHash": stable_hash_payload(arguments),
+                        "output": compact,
+                    }
+                )
+                append_tool_call(review_run, "r19_agent_semantic_review", tool_name, compact)
+                append_review_event(
+                    str(review_run.get("reviewRunId") or ""),
+                    event_type="agent.tool_call.completed",
+                    title=f"R19 Tool：{tool_name}",
+                    status=str(output.get("status") or "completed"),
+                    node_key="r19_agent_semantic_review",
+                    details={"turn": turn, "toolName": tool_name, "output": compact},
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(call.get("id") or f"r19-{len(trace['toolCalls'])}"),
+                        "content": json.dumps(output, ensure_ascii=False, default=str),
+                    }
+                )
+            if trace.get("requestedHumanInput") or trace.get("submitted"):
+                break
+
+        if not trace.get("requestedHumanInput") and not trace.get("submitted"):
+            trace.update(
+                {
+                    "controlMode": "r19_llm_incomplete_human_guard",
+                    "requestedHumanInput": True,
+                    "humanInputRequest": {
+                        "questionIds": [item["questionId"] for item in R19_REVIEW_QUESTIONS],
+                        "reason": "R19 Agent reached its execution boundary without a valid evidence-bound submission.",
+                        "title": "人工确认 R19 未完成的语义审查事实",
+                    },
+                }
+            )
+        trace["reasoningContent"] = "\n".join(reasoning_chunks)
+        model_attempt.update(
+            {
+                "status": "succeeded",
+                "responseHash": stable_hash_payload(last_response),
+                "reasoningContent": trace["reasoningContent"],
+                "toolCallCount": len(trace["toolCalls"]),
+                "submitted": bool(trace.get("submitted")),
+                "requestedHumanInput": bool(trace.get("requestedHumanInput")),
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        return trace
+    except Exception as exc:
+        trace.update(
+            {
+                "controlMode": "r19_llm_failed_human_guard",
+                "requestedHumanInput": True,
+                "humanInputRequest": {
+                    "questionIds": [item["questionId"] for item in R19_REVIEW_QUESTIONS],
+                    "reason": f"R19 semantic Agent failed safely: {type(exc).__name__}",
+                    "title": "人工确认 R19 境外牌号材料审查事实",
+                },
+                "errorType": type(exc).__name__,
+                "reasoningContent": "\n".join(reasoning_chunks),
+            }
+        )
+        model_attempt.update(
+            {
+                "status": "failed",
+                "failureReason": type(exc).__name__,
+                "reasoningContent": trace["reasoningContent"],
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        return trace
+
+
+def _plan_guarded_material_tool_review(
+    review_run: dict[str, Any],
+    *,
+    node_id: int,
+    inspect_tool_name: str,
+    inspect_output: dict[str, Any],
+    required_tool_arguments: dict[str, dict[str, Any]],
+    system_prompt: str,
+    user_prompt: str,
+) -> dict[str, Any]:
+    """Run a bounded LLM Tool Loop while keeping deterministic execution as the safety guard."""
+
+    ensure_review_state()
+    mode = review_llm_execution_mode()
+    required_tools = list(required_tool_arguments)
+    trace: dict[str, Any] = {
+        "controlMode": "deterministic_workflow_guard",
+        "llmExecution": mode,
+        "llmCalled": False,
+        "toolCalls": [],
+        "requiredTools": [inspect_tool_name, *required_tools],
+        "missingRequiredTools": [inspect_tool_name, *required_tools],
+    }
+    if mode in {"deterministic", "disabled", "mock"}:
+        return trace
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": (
+                    "读取当前节点已构造的结构化业务事实，不作符合性判断。"
+                    if name == inspect_tool_name
+                    else next(
+                        (
+                            str(item.get("capability") or "执行确定性业务判断。")
+                            for item in runtime_tool_catalog()
+                            if item.get("name") == name
+                        ),
+                        "执行确定性业务判断。",
+                    )
+                ),
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        }
+        for name in [inspect_tool_name, *required_tools]
+    ]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    reasoning_chunks: list[str] = []
+    called_tools: set[str] = set()
+    model_attempt = {
+        "id": f"MCALL-R{node_id}-{uuid4().hex[:10].upper()}",
+        "reviewRunId": review_run.get("reviewRunId"),
+        "aiRunId": review_run.get("aiRunId"),
+        "projectId": review_run.get("projectId"),
+        "nodeId": node_id,
+        "stage": f"r{node_id}_agent_tool_review",
+        "callKind": "agent_tool_call",
+        "provider": review_run.get("modelGateway") or "qwen_runtime",
+        "modelAlias": review_run.get("modelAlias"),
+        "status": "running",
+        "promptHash": stable_hash_payload(messages),
+        "createdAt": server_time(),
+        "startedAt": server_time(),
+        "updatedAt": server_time(),
+    }
+    repo.state.setdefault("model_call_attempts", []).insert(0, model_attempt)
+    last_response: dict[str, Any] = {}
+    try:
+        client = qwen_runtime_client()
+        for _ in range(len(required_tools) + 3):
+            response = client.chat_sync(
+                messages,
+                model=str(review_run.get("modelAlias") or "review-chat"),
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.0,
+                max_tokens=1000,
+                timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+            )
+            last_response = response
+            choices = response.get("choices") if isinstance(response.get("choices"), list) else []
+            message = (choices[0].get("message") or {}) if choices and isinstance(choices[0], dict) else {}
+            reasoning = message.get("reasoning_content") or message.get("reasoning")
+            if reasoning:
+                reasoning_chunks.append(str(reasoning))
+            tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+            trace["llmCalled"] = True
+            if not tool_calls:
+                break
+            messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
+            for call in tool_calls:
+                function = call.get("function") if isinstance(call, dict) else {}
+                tool_name = str((function or {}).get("name") or "")
+                if tool_name == inspect_tool_name:
+                    output = inspect_output
+                elif tool_name in required_tool_arguments:
+                    output = dispatch_runtime_tool(repo.state, tool_name, required_tool_arguments[tool_name])
+                else:
+                    output = {"status": "rejected", "errorCode": f"R{node_id}_AGENT_TOOL_NOT_ALLOWED"}
+                if tool_name in {inspect_tool_name, *required_tools}:
+                    called_tools.add(tool_name)
+                trace["toolCalls"].append(
+                    {"toolName": tool_name, "argumentsHash": stable_hash_payload(required_tool_arguments.get(tool_name, {})), "output": compact_tool_output(output)}
+                )
+                append_tool_call(review_run, f"r{node_id}_agent_precheck", tool_name, compact_tool_output(output))
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(call.get("id") or f"r{node_id}-{len(trace['toolCalls'])}"),
+                        "content": json.dumps(output, ensure_ascii=False, default=str),
+                    }
+                )
+            if called_tools >= {inspect_tool_name, *required_tools}:
+                break
+
+        missing = [name for name in [inspect_tool_name, *required_tools] if name not in called_tools]
+        trace.update(
+            {
+                "controlMode": "llm_tool_call_guarded" if not missing else "llm_tool_call_with_workflow_guard",
+                "missingRequiredTools": missing,
+                "reasoningContent": "\n".join(reasoning_chunks),
+            }
+        )
+        model_attempt.update(
+            {
+                "status": "succeeded",
+                "responseHash": stable_hash_payload(last_response),
+                "reasoningContent": trace["reasoningContent"],
+                "toolCallCount": len(trace["toolCalls"]),
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        return trace
+    except Exception as exc:
+        trace.update(
+            {
+                "controlMode": "llm_failed_workflow_guard",
+                "errorType": type(exc).__name__,
+                "reasoningContent": "\n".join(reasoning_chunks),
+            }
+        )
+        model_attempt.update(
+            {
+                "status": "failed",
+                "failureReason": type(exc).__name__,
+                "reasoningContent": trace["reasoningContent"],
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        return trace
+
+
+def apply_r12_human_input_for_review_run(
+    review_run_id: str,
+    task_id: str,
+    payload: dict[str, Any],
+    *,
+    actor_id: str | None,
+    actor_name: str | None,
+    command_id: str | None = None,
+    commit: bool = True,
+) -> dict[str, Any]:
+    ensure_review_state()
+    review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
+        "review_runs", review_run_id
+    )
+    if not review_run:
+        return {"status": "missing", "reviewRunId": review_run_id}
+    if not commit:
+        return validate_r12_human_input(review_run, task_id, payload)
+    result = apply_r12_human_input(
+        review_run,
+        task_id,
+        payload,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        command_id=command_id,
+    )
+    if result.get("status") != "applied":
+        return result
+    bump_review_run_revision(review_run)
+    ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or ""))
+    if ai_run:
+        ai_run["status"] = "推理中"
+    append_review_event(
+        review_run_id,
+        event_type="human_input.r12_registry_verification_submitted",
+        title="R12 官网人工核验结果已提交",
+        status="resuming",
+        details={
+            "taskId": task_id,
+            "responseId": (result.get("response") or {}).get("responseId"),
+            "candidateCount": len((result.get("response") or {}).get("verifications") or []),
+            "actorId": actor_id,
+            "commandId": command_id,
+        },
+    )
+    return result
+
+
+def apply_review_human_input_for_review_run(
+    review_run_id: str,
+    task_id: str,
+    payload: dict[str, Any],
+    *,
+    actor_id: str | None,
+    actor_name: str | None,
+    command_id: str | None = None,
+    commit: bool = True,
+) -> dict[str, Any]:
+    """Validate or apply any registered blocking human-input task."""
+
+    ensure_review_state()
+    review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
+        "review_runs", review_run_id
+    )
+    if not review_run:
+        return {"status": "missing", "reviewRunId": review_run_id}
+    task = next(
+        (
+            item
+            for item in review_run.get("humanInputTasks") or []
+            if isinstance(item, dict) and str(item.get("taskId") or "") == str(task_id)
+        ),
+        None,
+    )
+    if not task:
+        return {"status": "missing_task", "errors": ["human_input_task_not_found"]}
+    task_type = str(task.get("taskType") or "")
+    if task_type == R19_TASK_TYPE:
+        if not commit:
+            return validate_r19_human_input(review_run, task_id, payload)
+        result = apply_r19_human_input(
+            review_run,
+            task_id,
+            payload,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            command_id=command_id,
+        )
+        if result.get("status") != "applied":
+            return result
+        bump_review_run_revision(review_run)
+        ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or ""))
+        if ai_run:
+            ai_run["status"] = "推理中"
+        append_review_event(
+            review_run_id,
+            event_type="agent.human_input.accepted",
+            title="R19 人工语义证据确认已提交",
+            status="resuming",
+            details={
+                "taskId": task_id,
+                "taskType": task_type,
+                "responseId": (result.get("response") or {}).get("responseId"),
+                "answerCount": len((result.get("response") or {}).get("answers") or []),
+                "actorId": actor_id,
+                "commandId": command_id,
+            },
+        )
+        return result
+    if task_type == "official_registry_license_verification":
+        return apply_r12_human_input_for_review_run(
+            review_run_id,
+            task_id,
+            payload,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            command_id=command_id,
+            commit=commit,
+        )
+    return {"status": "invalid_input", "errors": ["human_input_task_type_not_registered"]}
+
+
 def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
     ensure_review_state()
     review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not review_run:
         return {"reviewRunId": review_run_id, "status": "missing"}
-    if review_run.get("status") in {"waiting_human_review", *REVIEW_RUN_TERMINAL_STATUSES}:
+    if review_run.get("status") in {"waiting_human_input", "waiting_human_review", *REVIEW_RUN_TERMINAL_STATUSES}:
         return {"reviewRunId": review_run_id, "status": review_run.get("status"), "alreadyCompleted": True}
     ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId")))
+    if is_r12_formal_review(review_run):
+        candidates = extract_r12_license_candidates(repo.state, review_run)
+        completed_for_input = any(
+            isinstance(item, dict)
+            and item.get("taskType") == "official_registry_license_verification"
+            and item.get("status") == "completed"
+            and item.get("reviewRunInputHash") == review_run.get("inputHash")
+            for item in review_run.get("humanInputTasks") or []
+        )
+        requested_by, agent_trace = plan_r12_human_verification(review_run, candidates) if candidates and not completed_for_input else (
+            "workflow_guard",
+            {
+                "controlMode": (
+                    "human_registry_verification_completed"
+                    if completed_for_input
+                    else "no_license_candidate_continue_to_rule_engine"
+                ),
+                "llmCalled": False,
+                "requestedHumanInput": False,
+            },
+        )
+        task = ensure_r12_human_input_task(
+            repo.state,
+            review_run,
+            requested_by=requested_by,
+            agent_trace=agent_trace,
+        )
+        if task:
+            review_run["status"] = "waiting_human_input"
+            review_run["currentStep"] = "waiting_r12_registry_verification"
+            review_run["r12AgentControl"] = agent_trace
+            if not task.get("waitingEventRecorded"):
+                task["waitingEventRecorded"] = True
+                append_review_event(
+                    review_run_id,
+                    event_type="human_input.r12_registry_verification_required",
+                    title="R12 等待官网人工核验",
+                    status="waiting_human_input",
+                    details={
+                        "taskId": task.get("taskId"),
+                        "candidateCount": task.get("candidateCount"),
+                        "requestedBy": requested_by,
+                        "controlMode": agent_trace.get("controlMode"),
+                    },
+                )
+            bump_review_run_revision(review_run)
+            if ai_run:
+                ai_run["status"] = "待人工核验"
+                ai_run["reviewRunId"] = review_run_id
+            return {
+                "reviewRunId": review_run_id,
+                "status": "waiting_human_input",
+                "humanInputTaskId": task.get("taskId"),
+            }
+    if is_r19_formal_review(review_run):
+        r19_context = build_r19_agent_context(repo.state, review_run)
+        agent_trace = plan_r19_semantic_review(review_run, r19_context)
+        review_run["r19AgentContext"] = r19_context_for_model(r19_context)
+        review_run["r19AgentControl"] = agent_trace
+        if agent_trace.get("requestedHumanInput"):
+            task = ensure_r19_human_input_task(
+                review_run,
+                agent_trace.get("humanInputRequest") if isinstance(agent_trace.get("humanInputRequest"), dict) else {},
+                requested_by=(
+                    "llm_agent"
+                    if agent_trace.get("llmCalled") and agent_trace.get("controlMode") == R19_EXECUTION_MODE
+                    else "workflow_guard"
+                ),
+                agent_trace=agent_trace,
+                agent_context=r19_context,
+            )
+            if task:
+                review_run["status"] = "waiting_human_input"
+                review_run["currentStep"] = "waiting_r19_semantic_evidence_confirmation"
+                if not task.get("waitingEventRecorded"):
+                    task["waitingEventRecorded"] = True
+                    append_review_event(
+                        review_run_id,
+                        event_type="agent.human_input.required",
+                        title="R19 等待人工确认关键事实",
+                        status="waiting_human_input",
+                        details={
+                            "taskId": task.get("taskId"),
+                            "taskType": task.get("taskType"),
+                            "questionCount": task.get("questionCount"),
+                            "controlMode": agent_trace.get("controlMode"),
+                        },
+                    )
+                bump_review_run_revision(review_run)
+                if ai_run:
+                    ai_run["status"] = "待人工核验"
+                    ai_run["reviewRunId"] = review_run_id
+                return {
+                    "reviewRunId": review_run_id,
+                    "status": "waiting_human_input",
+                    "humanInputTaskId": task.get("taskId"),
+                }
+        if agent_trace.get("submitted"):
+            review_run["r19SemanticReview"] = {
+                "executionMode": R19_EXECUTION_MODE,
+                "result": agent_trace.get("result"),
+                "atomicJudgments": repo.clone(agent_trace.get("atomicJudgments") or []),
+                "summary": agent_trace.get("summary"),
+                "recommendedActions": repo.clone(agent_trace.get("recommendedActions") or []),
+                "knownEvidenceRefIds": repo.clone(agent_trace.get("knownEvidenceRefIds") or []),
+                "createdAt": server_time(),
+            }
+    node_id = int(review_run.get("nodeId") or 0)
+    is_formal_material_agent = (
+        node_id in {13, 14, 15, 16, 17, 18}
+        and str(review_run.get("reviewMode") or "formal") == "formal"
+        and not bool(review_run.get("advisoryOnly"))
+    )
+    if is_formal_material_agent:
+        material_facts = {
+            13: build_r13_business_facts,
+            14: build_r14_business_facts,
+            15: build_r15_business_facts,
+            16: build_r16_business_facts,
+            17: build_r17_business_facts,
+            18: build_r18_business_facts,
+        }[node_id](repo.state, review_run)
+        agent_trace = {
+            13: plan_r13_tool_review,
+            14: plan_r14_tool_review,
+            15: plan_r15_tool_review,
+            16: plan_r16_tool_review,
+            17: plan_r17_tool_review,
+            18: plan_r18_tool_review,
+        }[node_id](review_run, material_facts)
+        review_run[f"r{node_id}AgentControl"] = agent_trace
     review_run["status"] = "running"
     review_run["startedAt"] = review_run.get("startedAt") or server_time()
     bump_review_run_revision(review_run)
@@ -669,6 +1974,33 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         node = repo.node(str(review_run.get("projectId")), int(review_run.get("nodeId") or 0))
         context["project"] = project or {}
         context["node"] = node or {}
+        if int(review_run.get("nodeId") or 0) == 12:
+            context["businessFacts"] = build_r12_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 13:
+            context["businessFacts"] = build_r13_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 14:
+            context["businessFacts"] = build_r14_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 15:
+            context["businessFacts"] = build_r15_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 16:
+            context["businessFacts"] = build_r16_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 17:
+            context["businessFacts"] = build_r17_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 18:
+            context["businessFacts"] = build_r18_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 19:
+            context["businessFacts"] = build_r19_agent_context(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 20:
+            context["businessFacts"] = build_r20_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 21:
+            context["businessFacts"] = build_r21_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 22:
+            context["businessFacts"] = build_r22_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 23:
+            context["businessFacts"] = build_r23_business_facts(repo.state, review_run)
+        elif f"r{int(review_run.get('nodeId') or 0)}" in R24_R34_FACT_BUILDERS:
+            builder = R24_R34_FACT_BUILDERS[f"r{int(review_run.get('nodeId') or 0)}"]
+            context["businessFacts"] = builder(repo.state, review_run)
         clause_snapshot = review_run_clause_snapshot(repo.state, str(review_run.get("reviewRunId") or ""))
         context["clausePackageSnapshot"] = clause_snapshot or {}
         return {
@@ -711,6 +2043,36 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         grounding_input = build_grounded_review_input(repo.state, version_ids)
         fields = grounding_input.get("fields") or []
         evidence_links = grounding_input.get("evidenceLinks") or []
+        if context.get("businessFacts"):
+            business_facts = context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else {}
+            if int(review_run.get("nodeId") or 0) == 19:
+                context["evidenceFacts"] = []
+                business_evidence_refs = [
+                    item
+                    for item in (business_facts.get("evidenceIndex") or {}).values()
+                    if isinstance(item, dict)
+                ]
+            else:
+                judgment = business_facts.get("judgment") if isinstance(business_facts.get("judgment"), dict) else {}
+                context["evidenceFacts"] = [
+                    item for item in judgment.get("claimedFacts") or [] if isinstance(item, dict)
+                ]
+                business_evidence_refs = [
+                    item for item in judgment.get("evidenceRefs") or [] if isinstance(item, dict)
+                ]
+            known_evidence_ids = {
+                str(item.get("id") or item.get("evidenceRefId") or "") for item in evidence_links
+            }
+            evidence_links = [
+                *evidence_links,
+                *[
+                    item
+                    for item in business_evidence_refs
+                    if str(item.get("id") or item.get("evidenceRefId") or "") not in known_evidence_ids
+                ],
+            ]
+            grounding_input["evidenceLinks"] = evidence_links
+            grounding_input.setdefault("summary", {})["evidenceLinkCount"] = len(evidence_links)
         context["groundingInput"] = grounding_input
         context["fields"] = fields
         context["tables"] = grounding_input.get("tables") or []
@@ -789,35 +2151,72 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 query_type="rule_basis_search",
             )
             linked_clause_ids = [item.get("clauseId") for item in rule_basis.get("clauses") or [] if item.get("clauseId")]
-        source_rule_id = str(rule.get("id") or rule.get("ruleKey") or "")
-        tool_plan = compile_node_tool_plan(
-            pack,
-            source_rule_id,
-            available_tools={item["name"] for item in runtime_tool_catalog()},
-            require_published=(
-                str(review_run.get("reviewMode") or "formal") == "formal"
-                and not bool(review_run.get("advisoryOnly"))
-            ),
-        )
-        fact_snapshot = context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else {}
-        tool_execution = execute_node_tool_plan(
-            tool_plan,
-            tool_runner=lambda name, arguments: execute_agent_tool(
-                review_run,
-                node_key,
-                name,
-                arguments,
-                context,
-            ),
-            facts=fact_snapshot,
-            tool_arguments=context.get("atomicToolArguments")
-            if isinstance(context.get("atomicToolArguments"), dict)
-            else {},
-            document_version_ids=list(review_run.get("inputDocumentVersionIds") or []),
-            evidence_facts=context.get("evidenceFacts") if isinstance(context.get("evidenceFacts"), list) else [],
-            evidence_refs=context.get("evidenceLinks") if isinstance(context.get("evidenceLinks"), list) else [],
-        )
-        deterministic_result = tool_execution.get("result") if tool_plan else "evidence_insufficient"
+        source_rule_id = str(rule.get("sourceRuleId") or rule.get("id") or rule.get("ruleKey") or "")
+        semantic_review = review_run.get("r19SemanticReview") if int(review_run.get("nodeId") or 0) == 19 else None
+        if isinstance(semantic_review, dict) and semantic_review.get("atomicJudgments"):
+            atomic_results = []
+            for judgment in semantic_review.get("atomicJudgments") or []:
+                if not isinstance(judgment, dict):
+                    continue
+                atomic_results.append(
+                    {
+                        "atomicCheckId": judgment.get("atomicCheckId"),
+                        "sourceRuleId": "R19",
+                        "result": judgment.get("result"),
+                        "reasonCodes": judgment.get("reasonCodes") or [],
+                        "evidenceRefIds": judgment.get("evidenceRefIds") or [],
+                        "clauseRefs": judgment.get("clauseRefs") or [],
+                        "explanation": judgment.get("explanation"),
+                        "missingFacts": judgment.get("missingFacts") or [],
+                        "recommendedAction": judgment.get("recommendedAction"),
+                        "confidence": judgment.get("confidence"),
+                        "sourceMethod": R19_EXECUTION_MODE,
+                    }
+                )
+            result_counts: dict[str, int] = {}
+            for item in atomic_results:
+                key = str(item.get("result") or "evidence_insufficient")
+                result_counts[key] = result_counts.get(key, 0) + 1
+            tool_execution = {
+                "result": semantic_review.get("result") or "evidence_insufficient",
+                "atomicResults": atomic_results,
+                "summary": {
+                    "atomicCheckCount": len(atomic_results),
+                    "resultCounts": result_counts,
+                    "executionMode": R19_EXECUTION_MODE,
+                    "nodeResultSource": "fixed_aggregator_over_llm_semantic_judgments",
+                },
+            }
+            deterministic_result = str(tool_execution["result"])
+        else:
+            tool_plan = compile_node_tool_plan(
+                pack,
+                source_rule_id,
+                available_tools={item["name"] for item in runtime_tool_catalog()},
+                require_published=(
+                    str(review_run.get("reviewMode") or "formal") == "formal"
+                    and not bool(review_run.get("advisoryOnly"))
+                ),
+            )
+            fact_snapshot = context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else {}
+            tool_execution = execute_node_tool_plan(
+                tool_plan,
+                tool_runner=lambda name, arguments: execute_agent_tool(
+                    review_run,
+                    node_key,
+                    name,
+                    arguments,
+                    context,
+                ),
+                facts=fact_snapshot,
+                tool_arguments=context.get("atomicToolArguments")
+                if isinstance(context.get("atomicToolArguments"), dict)
+                else {},
+                document_version_ids=list(review_run.get("inputDocumentVersionIds") or []),
+                evidence_facts=context.get("evidenceFacts") if isinstance(context.get("evidenceFacts"), list) else [],
+                evidence_refs=context.get("evidenceLinks") if isinstance(context.get("evidenceLinks"), list) else [],
+            )
+            deterministic_result = tool_execution.get("result") if tool_plan else "evidence_insufficient"
         result = {
             "id": f"RCHK-{uuid4().hex[:8].upper()}",
             "reviewRunId": review_run["reviewRunId"],
@@ -826,7 +2225,9 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "result": deterministic_result,
             "severity": rule.get("severity") or "medium",
             "message": (
-                "固定 atomicCheck Tool 执行完成，待人工确认。"
+                "R19 LLM 已完成证据约束的逐原子项语义判断，节点结果由固定聚合器生成，待人工确认。"
+                if isinstance(semantic_review, dict) and semantic_review.get("atomicJudgments")
+                else "固定 atomicCheck Tool 执行完成，待人工确认。"
                 if deterministic_result in {"passed", "failed", "not_applicable"}
                 else "固定 atomicCheck Tool 缺少完整事实、证据或规则参数，禁止自动判定符合。"
             ),
@@ -841,19 +2242,22 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context["currentRule"] = rule
         context["ruleResults"] = [result]
         context["atomicToolExecution"] = tool_execution
-        verification_tool = execute_agent_tool(
-            review_run,
-            node_key,
-            "verify_license_or_certificate",
-            {
-                "documentVersionIds": list(review_run.get("inputDocumentVersionIds") or []),
-                "materialTypeCode": "welder_certificate",
-            },
-            context,
-        )
-        context.setdefault("runtimeToolResults", {})[
-            "verify_license_or_certificate"
-        ] = verification_tool
+        if int(review_run.get("nodeId") or 0) == 19:
+            verification_tool = {"verificationCount": 0, "status": "skipped_for_r19"}
+        else:
+            verification_tool = execute_agent_tool(
+                review_run,
+                node_key,
+                "verify_license_or_certificate",
+                {
+                    "documentVersionIds": list(review_run.get("inputDocumentVersionIds") or []),
+                    "materialTypeCode": "welder_certificate",
+                },
+                context,
+            )
+            context.setdefault("runtimeToolResults", {})[
+                "verify_license_or_certificate"
+            ] = verification_tool
         append_tool_call(
             review_run,
             node_key,
@@ -1934,7 +3338,10 @@ def compact_tool_output(result: dict[str, Any]) -> dict[str, Any]:
         "toolCallId",
         "toolName",
         "status",
+        "result",
+        "ruleVersion",
         "errorCode",
+        "candidateCount",
         "fieldCount",
         "tableCount",
         "sealCount",
@@ -1945,6 +3352,8 @@ def compact_tool_output(result: dict[str, Any]) -> dict[str, Any]:
         "matchedIssuerSealCount",
         "recognizedSealCount",
         "groundingStatus",
+        "summary",
+        "warnings",
     ]
     summary = {key: result.get(key) for key in summary_keys if key in result}
     if result.get("verificationCount") is not None:

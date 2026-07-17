@@ -16,9 +16,11 @@ def compile_node_tool_plan(
 ) -> list[dict[str, Any]]:
     binding_set = pack.get("atomicCheckToolBindingSet") or {}
     lifecycle_status = str(binding_set.get("lifecycleStatus") or "draft").lower()
-    if require_published and lifecycle_status != "published":
+    pilot_rules = {str(item) for item in binding_set.get("pilotRules") or [] if item}
+    if require_published and lifecycle_status != "published" and source_rule_id not in pilot_rules:
         raise ValueError(
-            f"Formal review requires published atomic check tool bindings; current status is {lifecycle_status}."
+            "Formal review requires published atomic check tool bindings or an explicitly enabled "
+            f"pilot rule; current status is {lifecycle_status}, sourceRuleId is {source_rule_id}."
         )
     bindings = [
         item
@@ -40,6 +42,7 @@ def compile_node_tool_plan(
                 "implementationStatus": binding.get("implementationStatus"),
                 "bindingSetVersion": binding_set.get("version"),
                 "bindingSetLifecycleStatus": lifecycle_status,
+                "pilotRuleEnabled": source_rule_id in pilot_rules,
                 "compilable": not missing,
                 "missingTools": missing,
             }
@@ -148,6 +151,154 @@ def build_tool_arguments(
             "standardRules",
             fixed_clauses.get("designSpecialRequirementRules") or {},
         )
+    if tool_name in {"check_license_registry_match", "evaluate_component_manufacturer_scope"}:
+        arguments.setdefault("licenseCandidates", list_fact(facts, "manufacturerLicenseCandidates"))
+        arguments.setdefault("registryVerifications", list_fact(facts, "manualRegistryVerifications"))
+        if tool_name == "evaluate_component_manufacturer_scope":
+            arguments.setdefault("componentItems", list_fact(facts, "componentItems"))
+    if tool_name in {
+        "classify_r13_component_requirements",
+        "evaluate_r13_supervision_certificate_completeness",
+        "evaluate_r13_type_test_coverage",
+    }:
+        r13 = nested_dict(facts, "r13")
+        arguments.setdefault("designItems", list_value(r13.get("designItems")))
+        if tool_name == "evaluate_r13_supervision_certificate_completeness":
+            arguments.setdefault("supervisionCertificates", list_value(r13.get("supervisionCertificates")))
+        elif tool_name == "evaluate_r13_type_test_coverage":
+            arguments.setdefault("typeTestReports", list_value(r13.get("typeTestReports")))
+    if tool_name in {
+        "classify_r14_component_applicability",
+        "evaluate_r14_component_design_match",
+        "resolve_r14_required_inspection_items",
+        "evaluate_r14_special_report_coverage",
+        "evaluate_r14_pressure_compatibility",
+    }:
+        r14 = nested_dict(facts, "r14")
+        arguments.setdefault("designItems", list_value(r14.get("designItems")))
+        if tool_name in {"evaluate_r14_component_design_match", "evaluate_r14_pressure_compatibility"}:
+            arguments.setdefault("factoryInspectionReports", list_value(r14.get("factoryInspectionReports")))
+        if tool_name in {"evaluate_r14_special_report_coverage", "evaluate_r14_pressure_compatibility"}:
+            arguments.setdefault("specialInspectionReports", list_value(r14.get("specialInspectionReports")))
+        if tool_name == "evaluate_r14_pressure_compatibility":
+            arguments.setdefault("pipelineCharacteristics", list_value(r14.get("pipelineCharacteristics")))
+    if tool_name in {
+        "classify_r15_foreign_manufacturing_applicability",
+        "classify_r15_regulatory_requirements",
+        "evaluate_r15_manufacturing_license_coverage",
+        "evaluate_r15_type_test_coverage",
+        "evaluate_r15_manufacturing_inspection_route",
+    }:
+        r15 = nested_dict(facts, "r15")
+        arguments.setdefault("designItems", list_value(r15.get("designItems")))
+        if tool_name == "evaluate_r15_manufacturing_license_coverage":
+            arguments.setdefault("licenseCandidates", list_value(r15.get("manufacturingLicenseCandidates")))
+            arguments.setdefault("registryVerifications", list_value(r15.get("manualRegistryVerifications")))
+        elif tool_name == "evaluate_r15_type_test_coverage":
+            arguments.setdefault("typeTestReports", list_value(r15.get("typeTestReports")))
+        elif tool_name == "evaluate_r15_manufacturing_inspection_route":
+            arguments.setdefault("supervisionCertificates", list_value(r15.get("supervisionCertificates")))
+            arguments.setdefault("arrivalInspectionRecords", list_value(r15.get("arrivalInspectionRecords")))
+            arguments.setdefault(
+                "completeMachineInspectionRecords",
+                list_value(r15.get("completeMachineInspectionRecords")),
+            )
+    if tool_name in {
+        "resolve_r16_product_standard_profile",
+        "evaluate_r16_quality_certificate_batch_coverage",
+        "evaluate_r16_quality_certificate_form_and_seals",
+        "evaluate_r16_quality_certificate_design_match",
+        "evaluate_r16_quality_certificate_content",
+        "evaluate_r16_quality_certificate_results",
+        "evaluate_r16_batch_traceability",
+    }:
+        r16 = nested_dict(facts, "r16")
+        arguments.setdefault("designItems", list_value(r16.get("designItems")))
+        arguments.setdefault("qualityCertificates", list_value(r16.get("qualityCertificates")))
+    if tool_name in {
+        "evaluate_r17_arrival_acceptance_batch_coverage",
+        "evaluate_r17_acceptance_procedure",
+        "resolve_r17_sampling_retest_requirement",
+        "evaluate_r17_sampling_witness_chain",
+        "evaluate_r17_nonconformance_control",
+    }:
+        r17 = nested_dict(facts, "r17")
+        arguments.setdefault("designItems", list_value(r17.get("designItems")))
+        arguments.setdefault("acceptanceRecords", list_value(r17.get("acceptanceRecords")))
+        arguments.setdefault("witnessRecords", list_value(r17.get("witnessRecords")))
+        arguments.setdefault("samplingRetestReports", list_value(r17.get("samplingRetestReports")))
+        arguments.setdefault("samplingRules", list_value(r17.get("samplingRules")))
+    if tool_name in {
+        "classify_r18_material_test_applicability",
+        "resolve_r18_material_test_requirement_profile",
+        "evaluate_r18_material_retest_report_completeness",
+        "evaluate_r18_material_ndt_report_completeness",
+        "evaluate_r18_material_report_approval_procedure",
+        "evaluate_r18_material_test_results_and_traceability",
+    }:
+        r18 = nested_dict(facts, "r18")
+        arguments.setdefault("designItems", list_value(r18.get("designItems")))
+        arguments.setdefault("retestReports", list_value(r18.get("retestReports")))
+        arguments.setdefault("materialNdtReports", list_value(r18.get("materialNdtReports")))
+    if tool_name in {
+        "classify_r20_new_material_applicability",
+        "evaluate_r20_new_material_procedure",
+    }:
+        r20 = nested_dict(facts, "r20")
+        arguments.setdefault("designItems", list_value(r20.get("designItems")))
+        arguments.setdefault("typeTestReports", list_value(r20.get("typeTestReports")))
+        arguments.setdefault("technicalReviewApprovals", list_value(r20.get("technicalReviewApprovals")))
+        arguments.setdefault("materialDataDocuments", list_value(r20.get("materialDataDocuments")))
+    if tool_name == "evaluate_r21_mark_transfer":
+        r21 = nested_dict(facts, "r21")
+        arguments.setdefault("markTransferOccurred", r21.get("markTransferOccurred"))
+        arguments.setdefault("transferRecords", list_value(r21.get("transferRecords")))
+        arguments.setdefault("materialInventory", list_value(r21.get("materialInventory")))
+    if tool_name == "evaluate_r22_material_substitution":
+        r22 = nested_dict(facts, "r22")
+        arguments.setdefault("materialSubstitutionOccurred", r22.get("materialSubstitutionOccurred"))
+        arguments.setdefault("substitutionRecords", list_value(r22.get("substitutionRecords")))
+        arguments.setdefault("actualMaterialUsage", list_value(r22.get("actualMaterialUsage")))
+    if tool_name in {
+        "resolve_r23_valve_test_basis",
+        "evaluate_r23_valve_sampling",
+        "evaluate_r23_valve_test_records",
+    }:
+        r23 = nested_dict(facts, "r23")
+        arguments.setdefault("designStandardRefs", list_value(r23.get("designStandardRefs")))
+        arguments.setdefault("contractStandardRefs", list_value(r23.get("contractStandardRefs")))
+        arguments.setdefault("designAndContractBasisChecked", r23.get("designAndContractBasisChecked"))
+        arguments.setdefault("testLots", list_value(r23.get("testLots")))
+        arguments.setdefault("constructionRecords", list_value(r23.get("constructionRecords")))
+        arguments.setdefault("testRecords", list_value(r23.get("testRecords")))
+        arguments.setdefault(
+            "standardRequirementProfiles",
+            r23.get("standardRequirementProfiles")
+            if isinstance(r23.get("standardRequirementProfiles"), dict)
+            else {},
+        )
+    r24_r34_tool_nodes = {
+        "decode_welder_qualification": ("r24",),
+        "check_welder_work_coverage": ("r24",),
+        "check_wps_pqr_coverage": ("r25",),
+        "evaluate_welding_consumable": ("r26",),
+        "evaluate_welding_consumable_control": ("r27",),
+        "evaluate_pipe_fit_up": ("r28",),
+        "evaluate_welding_process": ("r29",),
+        "evaluate_weld_appearance": ("r30",),
+        "evaluate_weld_repair": ("r31",),
+        "resolve_pwht_applicability": ("r32", "r34"),
+        "evaluate_heat_treatment": ("r32", "r34"),
+        "evaluate_heat_treatment_instruments": ("r33",),
+    }
+    if tool_name in r24_r34_tool_nodes:
+        for node_key in r24_r34_tool_nodes[tool_name]:
+            node_facts = nested_dict(facts, node_key)
+            if not node_facts:
+                continue
+            for key, value in node_facts.items():
+                arguments.setdefault(key, value)
+            break
     profile = str(arguments.get("argumentProfile") or "")
     if tool_name == "check_all_equal" and profile == "r01_design_org_identity":
         arguments.setdefault(

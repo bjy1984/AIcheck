@@ -15,6 +15,7 @@ tags:
   - name: documents
   - name: submissions
   - name: inspection
+  - name: review
   - name: reports
   - name: archive
   - name: exports
@@ -42,6 +43,10 @@ paths:
     $ref: './paths-submissions.yaml#/paths/~1api~1projects~1{projectId}~1submissions~1submit'
   /api/projects/{projectId}/inspection/nodes/{nodeId}/report-review:
     $ref: './paths-inspection.yaml#/paths/~1api~1projects~1{projectId}~1inspection~1nodes~1{nodeId}~1report-review'
+  /api/review-runs/{reviewRunId}/human-input-tasks/active:
+    $ref: './paths-review-run.yaml#/paths/~1api~1review-runs~1{reviewRunId}~1human-input-tasks~1active'
+  /api/review-runs/{reviewRunId}/human-input-tasks/{taskId}/responses:
+    $ref: './paths-review-run.yaml#/paths/~1api~1review-runs~1{reviewRunId}~1human-input-tasks~1{taskId}~1responses'
   /api/projects/{projectId}/reports/{reportId}:
     $ref: './paths-inspection.yaml#/paths/~1api~1projects~1{projectId}~1reports~1{reportId}'
   /api/projects/{projectId}/reports/{reportId}/export:
@@ -60,6 +65,8 @@ paths:
     $ref: './paths-ndt-owner-report.yaml#/paths/~1api~1projects~1{projectId}~1export-tasks~1{exportId}'
   /api/knowledge/overview:
     $ref: './paths-knowledge-admin.yaml#/paths/~1api~1knowledge~1overview'
+  /api/knowledge/network:
+    $ref: './paths-knowledge-admin.yaml#/paths/~1api~1knowledge~1network'
   /api/knowledge/tasks/{taskId}/retry:
     $ref: './paths-knowledge-admin.yaml#/paths/~1api~1knowledge~1tasks~1{taskId}~1retry'
   /api/admin/config/overview:

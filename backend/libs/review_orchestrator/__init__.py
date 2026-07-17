@@ -4,12 +4,15 @@ from .dispatcher import (
     review_orchestration_mode,
     signal_review_run_cancel,
     signal_review_run_human_decision,
+    signal_review_run_human_input,
 )
 from .execution import (
     ALLOWED_AGENT_TOOLS,
     REVIEW_GRAPH_EDGES,
     REVIEW_GRAPH_STEPS,
     create_review_run_from_ai_run,
+    apply_review_human_input_for_review_run,
+    apply_r12_human_input_for_review_run,
     clone_review_run_for_replay,
     execute_review_run_inline,
     execute_agent_tool,
@@ -29,6 +32,8 @@ __all__ = [
     "REVIEW_GRAPH_STEPS",
     "build_review_orchestration_scorecard",
     "create_review_run_from_ai_run",
+    "apply_review_human_input_for_review_run",
+    "apply_r12_human_input_for_review_run",
     "clone_review_run_for_replay",
     "dispatch_existing_review_run",
     "dispatch_review_run",
@@ -45,4 +50,5 @@ __all__ = [
     "runtime_tool_catalog",
     "signal_review_run_cancel",
     "signal_review_run_human_decision",
+    "signal_review_run_human_input",
 ]

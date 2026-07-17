@@ -3045,6 +3045,19 @@ class InMemoryRepository:
                 ai_run_id = str(review_run.get("aiRunId") or "")
                 project_id = str(review_run.get("projectId") or "")
                 node_id = str(review_run.get("nodeId") or "")
+                document_version_ids = [
+                    str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item
+                ]
+                document_scope_collections = [
+                    STATE_COLLECTIONS[state_key]
+                    for state_key in (
+                        "versions",
+                        "ocr_parse_results",
+                        "extracted_fields",
+                        "evidence_links",
+                        "node_evidence_links",
+                    )
+                ]
                 extra_rows = self.sync_postgres.execute(
                     """
                     SELECT collection, object_id, payload
@@ -3058,10 +3071,26 @@ class InMemoryRepository:
                                 AND payload ->> 'projectId' = %s
                                 AND payload ->> 'nodeId' = %s
                            )
+                           OR (
+                                collection = ANY(%s)
+                                AND (
+                                    object_id = ANY(%s)
+                                    OR payload ->> 'documentVersionId' = ANY(%s)
+                                )
+                           )
                       )
                     ORDER BY collection, object_id
                     """,
-                    (configured_tenant_id(), ai_run_id, ai_run_id, project_id, node_id),
+                    (
+                        configured_tenant_id(),
+                        ai_run_id,
+                        ai_run_id,
+                        project_id,
+                        node_id,
+                        document_scope_collections,
+                        document_version_ids,
+                        document_version_ids,
+                    ),
                 ).fetchall()
                 rows.extend(extra_rows)
             self.sync_postgres.commit()
@@ -4054,6 +4083,11 @@ def load_review_run_state(review_run_id: str) -> None:
             "review_findings",
             "tree_nodes",
             "node_evidence_links",
+            "documents",
+            "versions",
+            "extracted_fields",
+            "evidence_links",
+            "ocr_parse_results",
         }
     )
 

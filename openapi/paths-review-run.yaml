@@ -1,0 +1,400 @@
+paths:
+  /api/review-runs/{reviewRunId}/human-input-tasks/active:
+    get:
+      tags: [review]
+      operationId: review_get_active_human_input_task
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewRunId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Active durable human-input task for the ReviewRun, if any.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ActiveHumanInputTaskPayload'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: ok
+                    data:
+                      task:
+                        taskId: HIT-R12-001
+                        taskType: official_registry_license_verification
+                        nodeId: 12
+                        title: 核验制造许可证官网登记信息
+                        status: pending
+                        inputHash: sha256:example
+                        candidateCount: 1
+                        candidates:
+                          - candidateId: R12LIC-001
+                            documentVersionId: DV-001
+                            pageNo: 1
+                            licenseNo: TS2710504-2027
+                      reviewRun:
+                        reviewRunId: RRUN-001
+                        status: waiting_human_input
+                        revision: 3
+                        etag: W/"review-run-RRUN-001-r3"
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+
+  /api/review-runs/{reviewRunId}/human-input-tasks/{taskId}/responses:
+    post:
+      tags: [review]
+      operationId: review_submit_human_input_response
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reviewRunId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: './common.yaml#/components/parameters/IfMatch'
+        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/R12HumanInputResponseRequest'
+                - $ref: '#/components/schemas/R19HumanInputResponseRequest'
+      responses:
+        '200':
+          description: Human input persisted as a workflow command or applied to an inline run.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './common.yaml#/components/schemas/ApiResult'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: true
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    success: true
+                    message: 官网核验结果已持久化为工作流命令，等待恢复 AI 复核。
+                    data:
+                      commandId: WFCMD-001
+                      commandStatus: pending
+                      reviewRun:
+                        reviewRunId: RRUN-001
+                        status: waiting_human_input
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+        '428':
+          description: If-Match is required.
+
+components:
+  schemas:
+    R12LicenseCandidate:
+      type: object
+      required: [candidateId, documentVersionId, pageNo]
+      properties:
+        candidateId:
+          type: string
+        documentVersionId:
+          type: string
+        documentId:
+          type: string
+        fileName:
+          type: string
+        pageNo:
+          type: integer
+          minimum: 1
+        licenseNo:
+          type: string
+        organizationName:
+          type: string
+        licenseScopeRaw:
+          type: string
+        validFrom:
+          type: string
+        validUntil:
+          type: string
+        issuer:
+          type: string
+        ocrConfidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        evidence:
+          type: object
+          additionalProperties: true
+
+    ReviewHumanInputTask:
+      type: object
+      required: [taskId, taskType, nodeId, title, status, inputHash]
+      properties:
+        taskId:
+          type: string
+        taskType:
+          type: string
+          enum: [official_registry_license_verification, r19_semantic_evidence_confirmation]
+        nodeId:
+          type: integer
+          enum: [12, 19]
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, stale]
+        inputHash:
+          type: string
+        requestedBy:
+          type: string
+        officialRegistryUrl:
+          type: string
+        candidateCount:
+          type: integer
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/R12LicenseCandidate'
+        questionCount:
+          type: integer
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/R19HumanInputQuestion'
+        evidenceCandidateCount:
+          type: integer
+        evidenceCandidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/R19EvidenceCandidate'
+        atomicCheckIds:
+          type: array
+          items:
+            type: string
+        responseSchemaRef:
+          type: string
+        uiSchemaRef:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ActiveHumanInputTaskPayload:
+      type: object
+      required: [reviewRun]
+      properties:
+        task:
+          oneOf:
+            - $ref: '#/components/schemas/ReviewHumanInputTask'
+            - type: 'null'
+        reviewRun:
+          type: object
+          required: [reviewRunId, status, revision, etag]
+          properties:
+            reviewRunId:
+              type: string
+            status:
+              type: string
+            revision:
+              type: integer
+            etag:
+              type: string
+
+    R12RegistryVerificationInput:
+      type: object
+      required: [candidateId, outcome, registryStatus, attested]
+      properties:
+        candidateId:
+          type: string
+        outcome:
+          type: string
+          enum: [verified_match, verified_mismatch, not_found, unable_to_verify]
+        registryLicenseNo:
+          type: string
+        registryOrganizationName:
+          type: string
+        registryStatus:
+          type: string
+          enum: [active, expired, revoked, suspended, unknown]
+        registryScopeRaw:
+          type: string
+        registryValidFrom:
+          type: string
+        registryValidUntil:
+          type: string
+        sourceUrl:
+          type: string
+        attachmentIds:
+          type: array
+          items:
+            type: string
+        comment:
+          type: string
+        correctionReason:
+          type: string
+        attested:
+          type: boolean
+          const: true
+
+    R12HumanInputResponseRequest:
+      type: object
+      required: [verifications]
+      properties:
+        verifications:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/R12RegistryVerificationInput'
+        comment:
+          type: string
+          maxLength: 2000
+
+    R19HumanInputQuestion:
+      type: object
+      required: [questionId, title, instruction, clauseRefs]
+      properties:
+        questionId:
+          type: string
+          pattern: '^AC-R19-0[1-8]$'
+        title:
+          type: string
+        instruction:
+          type: string
+        clauseRefs:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    R19EvidenceCandidate:
+      type: object
+      required: [evidenceRefId]
+      properties:
+        evidenceRefId:
+          type: string
+        sourceType:
+          type: string
+        documentVersionId:
+          type: string
+        fileName:
+          type: string
+        pageNo:
+          type: integer
+          minimum: 1
+        bbox:
+          type: array
+          items:
+            type: number
+        quotedText:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        questionId:
+          type: string
+        sourceRefs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        attachmentIds:
+          type: array
+          items:
+            type: string
+
+    R19HumanInputSourceRef:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [url, document, record, other]
+        url:
+          type: string
+          format: uri
+        reference:
+          type: string
+        title:
+          type: string
+
+    R19HumanInputAnswer:
+      type: object
+      required: [questionId, outcome, attested]
+      properties:
+        questionId:
+          type: string
+          pattern: '^AC-R19-0[1-8]$'
+        outcome:
+          type: string
+          enum: [confirmed, rejected, unknown]
+        value: {}
+        evidenceRefIds:
+          type: array
+          items:
+            type: string
+        sourceRefs:
+          type: array
+          items:
+            $ref: '#/components/schemas/R19HumanInputSourceRef'
+        attachmentIds:
+          type: array
+          items:
+            type: string
+        comment:
+          type: string
+          maxLength: 3000
+        attested:
+          type: boolean
+          const: true
+
+    R19HumanInputResponseRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/R19HumanInputAnswer'
+        comment:
+          type: string
+          maxLength: 3000

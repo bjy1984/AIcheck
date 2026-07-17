@@ -256,21 +256,28 @@ const knowledgeShellMenuSectionsBase = [
       },
       {
         index: '07',
+        label: '知识网络',
+        badge: '图谱',
+        tone: 'green',
+        route: '/knowledge/network'
+      },
+      {
+        index: '08',
         label: '推理链路历史日志',
         badge: '日志',
         tone: 'green',
         route: '/knowledge/reasoning'
       },
       {
-        index: '08',
+        index: '09',
         label: '多 LLM 反馈对比',
         badge: '评估',
         tone: 'green',
         route: '/knowledge/compare'
       },
-      { index: '09', label: '知识库配置', badge: '策略', tone: 'blue', route: '/knowledge/config' },
+      { index: '10', label: '知识库配置', badge: '策略', tone: 'blue', route: '/knowledge/config' },
       {
-        index: '10',
+        index: '11',
         label: '操作审计日志',
         badge: '审计',
         tone: 'blue',

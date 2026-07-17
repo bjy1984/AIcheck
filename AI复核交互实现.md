@@ -1418,9 +1418,9 @@ Tool Result 和 Judgment 必须不可被对话覆盖。重跑生成新记录并�
 
 - 69 条已发布、原文核验的主条款绑定；
 - 69 个节点条款包，包含专业补充条款和条件分支；
-- 173 个由业务规则拆出的原子审核项；
+- 189 个由业务规则拆出的原子审核项；
 - 29 份本地标准目录记录；
-- 101 条专业条款引用已补齐 181 个 PDF 页级 locator，组合条款的不连续落点已拆分；
+- 112 条专业条款引用已补齐 202 个 PDF 页级 locator，组合条款的不连续落点已拆分；
 - 节点标准接口优先返回固定主条款和专业条款，并通过 `previewUrl#page=N` 跳转标准原文；
 - R10 已直接绑定 TSG 31—2025 第 1.9(3)，不再用 TSG D7006 D2.2 间接推定；
 - R69 已绑定 TSG D7006—2020 第 2.2.4 条及附件 G，Tool 仅校验证据和人工评价报告，不能自动生成评价结论；
@@ -1448,3 +1448,34 @@ LLM 组织证据与解释结果 → AI结论 → 人工结论
 固定条款已接入现有 SQLite/PostgreSQL `aicheck_state` 持久化模型，形成标准版本、条款引用、locator、节点条款包、项目节点绑定和 ReviewRun 快照七类逻辑集合。项目创建/应用业务包时固化节点绑定；节点预览读取数据库条款包的 `compiledPayload`；创建 ReviewRun 时把实际条款包冻结到 `review_run_clause_snapshots`。
 
 正式工程业务包存在固定条款配置但数据库绑定缺失时，节点预览和 AI 复核失败关闭，不允许用动态检索结果冒充固定依据。具体实现、同步命令和审计方法见 `docs/标准条款数据库固化实现.md`。
+
+## 20. R12 半自动 Agent 试点落地（2026-07-15）
+
+R12 已按“LLM 主控交互、工作流强制守门、固定 Tool 输出业务结论”的路径完成首个中途人工输入试点：
+
+```text
+OCR / Fact Builder
+  → 筛选制造许可证候选（排除焊工证、人员证和仅安装许可页）
+  → LLM Tool Calling：inspect_r12_license_candidates
+  → LLM Tool Calling：request_official_registry_verification
+  → ReviewRun.waiting_human_input
+  → 监检人员官网逐证查询并提交结构化结果
+  → Temporal submit_human_input signal
+  → 恢复原 ReviewRun
+  → check_license_registry_match
+  → evaluate_component_manufacturer_scope
+  → 原子项结果 / AI结论 / 最终人工结论
+```
+
+若模型未调用人工核验 Tool、模型调用失败或系统处于确定性测试模式，工作流守门器仍会创建同样的必办任务，模型不能绕过官网核验。人工结果以追加修订方式保存在 ReviewRun 内，保留 OCR 原值、官网填写值、查询地址、附件 ID、确认人、确认时间和更正原因；输入哈希变化后旧结果不得复用。
+
+本次同时完成：
+
+- `waiting_human_input → resuming → waiting_human_review` 状态与 Temporal 暂停/恢复；
+- 人工输入查询、提交 API 及 `If-Match` / 幂等命令；
+- 前端 R12 官网核验弹窗、证据页定位和等待任务卡片；
+- `check_license_registry_match` 专用确定性 Tool；
+- `evaluate_component_manufacturer_scope` 专用 handler 与逐项覆盖矩阵；
+- R12 正式绑定移除无关的签字、印章 Tool；
+- 原子 Tool 绑定集保持 `draft`，仅通过 `pilotRules` 为 R12 开启正式复核，未完成的其他节点不会被连带发布；
+- 规则编译优先使用业务规则的 `sourceRuleId`，避免 `RULE-...` 与 `R12` 绑定键不一致。

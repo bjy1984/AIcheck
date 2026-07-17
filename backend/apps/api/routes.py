@@ -72,6 +72,7 @@ from libs.knowledge_indexing import (
     offline_hash_embedding,
 )
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
+from libs.knowledge_graph import build_business_pack_knowledge_network
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.material_targeting import (
     build_node_evidence_readiness,
@@ -85,10 +86,12 @@ from libs.ocr_readiness import attach_document_ocr_readiness, build_document_ocr
 from libs.qwen_runtime import qwen_runtime_public_config
 from libs.review_orchestrator import (
     REVIEW_GRAPH_STEPS,
+    apply_review_human_input_for_review_run,
     build_review_orchestration_scorecard,
     clone_review_run_for_replay,
     create_review_run_from_ai_run,
     dispatch_existing_review_run,
+    execute_review_run_inline,
     graph_view_for_review_run,
     human_decision_for_review_run,
     review_run_audit_trace,
@@ -97,6 +100,7 @@ from libs.review_orchestrator import (
     review_run_view,
     signal_review_run_cancel,
     signal_review_run_human_decision,
+    signal_review_run_human_input,
 )
 from libs.runtime_readiness import production_runtime_status
 from libs.security.auth import (
@@ -7283,15 +7287,29 @@ def ai_recheck(
             )
         binding_set = pack.get("atomicCheckToolBindingSet") or {}
         binding_lifecycle = str(binding_set.get("lifecycleStatus") or "draft").lower()
-        if review_mode == "formal" and binding_lifecycle != "published":
+        node_rule_for_binding = next(
+            (item for item in pack.get("ruleSets") or [] if node_id in set(item.get("nodeIds") or [])),
+            {},
+        )
+        node_source_rule_id = str(
+            node_rule_for_binding.get("sourceRuleId")
+            or node_rule_for_binding.get("id")
+            or node_rule_for_binding.get("ruleKey")
+            or ""
+        )
+        pilot_rules = {str(item) for item in binding_set.get("pilotRules") or [] if item}
+        pilot_rule_enabled = node_source_rule_id in pilot_rules
+        if review_mode == "formal" and binding_lifecycle != "published" and not pilot_rule_enabled:
             return fail(
                 errors.CONFLICT,
                 request,
-                message="原子检查工具绑定尚未发布，不能发起正式 AI 复核。",
+                message="当前节点的原子检查工具绑定尚未发布或启用试点，不能发起正式 AI 复核。",
                 data={
                     "bindingSetId": binding_set.get("id"),
                     "bindingSetVersion": binding_set.get("version"),
                     "lifecycleStatus": binding_lifecycle,
+                    "sourceRuleId": node_source_rule_id,
+                    "pilotRuleEnabled": pilot_rule_enabled,
                     "allowedReviewMode": "gap_precheck",
                 },
                 http_status=409,
@@ -7579,6 +7597,159 @@ def get_review_run_graph(request: Request, review_run_id: str):
     return ok({"reviewRunId": review_run_id, **graph_view_for_review_run(review_run_id)}, request)
 
 
+@router.get("/review-runs/{review_run_id}/human-input-tasks/active")
+def get_active_review_run_human_input_task(request: Request, review_run_id: str):
+    refresh_review_run_from_postgres(review_run_id)
+    run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    scope_error = scope_error_for_record(request, run)
+    if scope_error:
+        return scope_error
+    task = next(
+        (
+            item
+            for item in reversed(run.get("humanInputTasks") or [])
+            if isinstance(item, dict) and item.get("status") == "pending"
+        ),
+        None,
+    )
+    return ok(
+        {
+            "task": repo.clone(task) if task else None,
+            "reviewRun": {
+                "reviewRunId": review_run_id,
+                "status": run.get("status"),
+                "revision": record_revision(run),
+                "etag": record_etag("review-run", run),
+            },
+        },
+        request,
+    )
+
+
+@router.post("/review-runs/{review_run_id}/human-input-tasks/{task_id}/responses")
+def submit_review_run_human_input_response(
+    request: Request,
+    review_run_id: str,
+    task_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    def produce():
+        refresh_review_run_from_postgres(review_run_id)
+        run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
+            "review_runs", review_run_id
+        )
+        if not run:
+            return fail(errors.NOT_FOUND, request)
+        scope_error = scope_error_for_record(request, run)
+        if scope_error:
+            return scope_error
+        precondition_error = review_run_precondition_error(request, run, if_match)
+        if precondition_error:
+            return precondition_error
+        validation = apply_review_human_input_for_review_run(
+            review_run_id,
+            task_id,
+            body,
+            actor_id=request_user_id(request),
+            actor_name=request_actor_name(request),
+            commit=False,
+        )
+        if validation.get("status") in {"invalid_state", "stale_input"}:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="人工核验任务状态或输入版本已变化，请刷新后重试。",
+                data=validation,
+                http_status=409,
+            )
+        if validation.get("status") != "valid":
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="人工核验结果不完整或格式不正确。",
+                data=validation,
+            )
+        command = enqueue_review_workflow_command(
+            request,
+            run,
+            command_type="submit_human_input",
+            payload={
+                "tenantId": request_tenant_id(request),
+                "reviewRunId": review_run_id,
+                "taskId": task_id,
+                "inputPayload": repo.clone(body),
+                "actorId": request_user_id(request),
+                "actorName": request_actor_name(request),
+            },
+            idempotency_key=idempotency_key,
+        )
+        if run.get("workflowEngine") == "temporal":
+            run["pendingWorkflowCommand"] = {
+                "commandId": command["commandId"],
+                "commandType": command["commandType"],
+                "status": "pending",
+                "queuedAt": server_time(),
+            }
+            bump_record_revision(run)
+            command["acceptedRevision"] = record_revision(run)
+            audit_id = repo.add_audit("提交 AI 复核人工输入结果", "ReviewRun", review_run_id)
+            request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+            return ok(
+                {
+                    "reviewRun": review_run_view(run),
+                    "commandId": command["commandId"],
+                    "commandStatus": "pending",
+                    "auditLogId": audit_id,
+                },
+                request,
+                message="人工输入已持久化为工作流命令，等待恢复 AI 复核。",
+            )
+        signal_result = signal_review_run_human_input(
+            run,
+            {
+                "commandId": command["commandId"],
+                "commandType": command["commandType"],
+                "tenantId": request_tenant_id(request),
+                "reviewRunId": review_run_id,
+                "payloadHash": command.get("payloadHash"),
+            },
+        )
+        mark_review_workflow_command(command, signal_result)
+        result = apply_review_human_input_for_review_run(
+            review_run_id,
+            task_id,
+            body,
+            actor_id=request_user_id(request),
+            actor_name=request_actor_name(request),
+            command_id=command["commandId"],
+        )
+        if result.get("status") != "applied":
+            return fail(errors.VALIDATION_ERROR, request, data=result)
+        graph_result = execute_review_run_inline(review_run_id)
+        audit_id = repo.add_audit("应用 AI 复核人工输入并恢复复核", "ReviewRun", review_run_id)
+        request.state.scoped_flush_records = lambda: review_run_state_records(review_run_id)
+        return ok(
+            {
+                "reviewRun": review_run_view(result["reviewRun"]),
+                "graphResult": graph_result,
+                "commandId": command["commandId"],
+                "auditLogId": audit_id,
+            },
+            request,
+        )
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"reviewRunId": review_run_id, "taskId": task_id, "body": body},
+    )
+
+
 @router.post("/review-runs/{review_run_id}/human-decision")
 def submit_review_run_human_decision(
     request: Request,
@@ -7708,7 +7879,7 @@ def cancel_review_run(
         precondition_error = review_run_precondition_error(request, run, if_match)
         if precondition_error:
             return precondition_error
-        if run.get("status") not in {"queued", "running", "waiting_human_review"}:
+        if run.get("status") not in {"queued", "running", "waiting_human_input", "resuming", "waiting_human_review"}:
             return fail(
                 errors.CONFLICT,
                 request,
@@ -19753,6 +19924,10 @@ def fde_capability_test_profile_document_type(file_name: str, body: dict[str, An
             "generic_document_v1": "generic_document",
             "piping_characteristic_list_v1": "engineering_table_photo",
             "quality_certificate_v1": "quality_certificate",
+            "acceptance_witness_record_v1": "acceptance_witness_record",
+            "sampling_witness_record_v1": "sampling_witness_record",
+            "material_retest_report_v1": "material_retest_report",
+            "material_ndt_report_v1": "material_ndt_report",
             "ndt_rt_report_v1": "ndt_report",
         }.get(profile_id, "engineering_document")
     return profile_id, document_type
@@ -22020,6 +22195,23 @@ def knowledge_overview(request: Request):
         },
         request,
     )
+
+
+@router.get("/knowledge/network")
+def knowledge_network(
+    request: Request,
+    businessPackId: str = Query(default=DEFAULT_BUSINESS_PACK_ID),
+    includeRuntime: bool = Query(default=True),
+):
+    try:
+        pack = load_business_pack(businessPackId)
+    except (FileNotFoundError, ValueError, KeyError):
+        return fail(errors.NOT_FOUND, request, message="未找到指定业务包，无法构建知识网络。")
+    graph = build_business_pack_knowledge_network(
+        pack,
+        runtime_state=repo.state if includeRuntime else None,
+    )
+    return ok(graph, request)
 
 
 @router.get("/knowledge/sources")

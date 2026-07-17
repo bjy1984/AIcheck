@@ -1,7 +1,7 @@
 standardClausePackageSet:
   id: engineering-inspection-standard-clause-packages-v1
   schemaVersion: standard-clause-package-v1
-  version: 2026.07.14
+  version: 2026.07.16
   lifecycleStatus: published
   batches:
   - id: BATCH-01
@@ -99,6 +99,8 @@ standardClausePackageSet:
     freezeIntoReviewRunSnapshot: true
     llmMaySelectClause: false
     llmMayChangeDeterministicResult: false
+    llmSemanticPrimarySourceRuleIds:
+    - R19
 standardClausePackages:
 - packageId: CLAUSE-PKG-R01
   batchId: BATCH-01
@@ -1092,32 +1094,81 @@ standardClausePackages:
     type: always
     expression: 本业务节点进入复核流程时适用。
   professionalClauses:
+  - standardRef: STD-TSG-D7006-2020
+    clauseNo: 1.2.1、A1.2-A1.3
+    purpose: 制造监检适用产品、逐批/逐台监检方式和组批规则
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-CE49677F5B
+    documentVersionId: KDV-CE49677F5B-V1
+    sourcePage: 5
+    startPage: 5
+    endPage: 12
+    sourceLocatorId: LOC-DDAA6797B840
+    locatorPrecision: page
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-DDAA6797B840
+      clauseNo: 1.2.1
+      sourcePage: 5
+      startPage: 5
+      endPage: 5
+      precision: page
+      verificationStatus: text_verified
+    - locatorId: LOC-EF2F76A4C657
+      clauseNo: A1.2-A1.3
+      sourcePage: 12
+      startPage: 12
+      endPage: 12
+      precision: page
+      verificationStatus: text_verified
+  - standardRef: STD-SAMR-2021-41
+    clauseNo: 附件1 注三、注四
+    purpose: 压力管道元件制造许可分类及只需型式试验的产品目录
+    applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-72C3E5B097
+    documentVersionId: KDV-72C3E5B097-V1
+    sourcePage: 13
+    startPage: 13
+    endPage: 15
+    sourceLocatorId: LOC-14537BADCF78
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-14537BADCF78
+      clauseNo: 附件1 注三
+      sourcePage: 13
+      startPage: 13
+      endPage: 15
+      precision: page_range
+      verificationStatus: visual_verified
+    - locatorId: LOC-C603DCB4372F
+      clauseNo: 附件1 注四
+      sourcePage: 15
+      startPage: 15
+      endPage: 15
+      precision: page
+      verificationStatus: visual_verified
   - standardRef: STD-TSG-31-2025
-    clauseNo: 1.8、2.1.3
-    purpose: 型式试验和新材料技术评审
+    clauseNo: 2.2.1.2-2.2.1.3
+    purpose: 管道组成件制造监检和型式试验合格后方可出厂
     applicability: always
     verificationStatus: source_verified
     knowledgeFileId: KF-KB-E6E1201DF9
     documentVersionId: KDV-E6E1201DF9-V1
-    sourcePage: 7
-    startPage: 7
-    endPage: 8
-    sourceLocatorId: LOC-44927D05F579
+    sourcePage: 9
+    startPage: 9
+    endPage: 9
+    sourceLocatorId: LOC-AAA928A9516D
     locatorPrecision: page
     locatorVerification: source_verified
     locators:
-    - locatorId: LOC-44927D05F579
-      clauseNo: '1.8'
-      sourcePage: 7
-      startPage: 7
-      endPage: 7
-      precision: page
-      verificationStatus: visual_verified
-    - locatorId: LOC-710DC8525D31
-      clauseNo: 2.1.3
-      sourcePage: 8
-      startPage: 8
-      endPage: 8
+    - locatorId: LOC-AAA928A9516D
+      clauseNo: 2.2.1.2-2.2.1.3
+      sourcePage: 9
+      startPage: 9
+      endPage: 9
       precision: page
       verificationStatus: visual_verified
   atomicCheckIds:
@@ -1154,8 +1205,8 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R14-D2-4-1-3
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 仅对已经确认不需要制造许可、制造监检和型式试验的管道组成件适用；无法完成分类时结论为证据不足，需许可或监检/型式试验时分别转入R12或R13。
   professionalClauses:
   - standardRef: STD-GBT-8163-2018
     clauseNo: 第6-8章
@@ -1259,29 +1310,54 @@ standardClausePackages:
     expression: 压力管道元件或安全附件为境外制造时适用。
   professionalClauses:
   - standardRef: STD-TSG-31-2025
-    clauseNo: 2.1.2(1)-(6)
-    purpose: 境外牌号材料验证复验、工艺评定和企业标准
-    applicability: overseas_product_or_material
+    clauseNo: '1.10'
+    purpose: 管道组成件制造、检验检测单位执行规程及信息化监督管理总则
+    applicability: foreign_manufactured_component_or_safety_accessory
     verificationStatus: source_verified
     knowledgeFileId: KF-KB-E6E1201DF9
     documentVersionId: KDV-E6E1201DF9-V1
-    sourcePage: 8
-    startPage: 8
-    endPage: 8
-    sourceLocatorId: LOC-A08148128C9C
+    sourcePage: 7
+    startPage: 7
+    endPage: 7
+    sourceLocatorId: LOC-4EA2960F2433
     locatorPrecision: page
     locatorVerification: source_verified
     locators:
-    - locatorId: LOC-A08148128C9C
-      clauseNo: 2.1.2(1)-(6)
-      sourcePage: 8
-      startPage: 8
-      endPage: 8
+    - locatorId: LOC-4EA2960F2433
+      clauseNo: '1.10'
+      sourcePage: 7
+      startPage: 7
+      endPage: 7
       precision: page
+      verificationStatus: visual_verified
+  - standardRef: STD-TSG-31-2025
+    clauseNo: 2.2.1.5
+    purpose: 境外制造组成件的到岸检验或随整机检验路径
+    applicability: foreign_manufactured_component_or_safety_accessory
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-E6E1201DF9
+    documentVersionId: KDV-E6E1201DF9-V1
+    sourcePage: 9
+    startPage: 9
+    endPage: 10
+    sourceLocatorId: LOC-339411274DF0
+    locatorPrecision: page_range
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-339411274DF0
+      clauseNo: 2.2.1.5
+      sourcePage: 9
+      startPage: 9
+      endPage: 10
+      precision: page_range
       verificationStatus: visual_verified
   atomicCheckIds:
   - AC-R15-01
   - AC-R15-02
+  - AC-R15-03
+  - AC-R15-04
+  - AC-R15-05
+  - AC-R15-06
   requiredEvidence:
   - 制造许可资质、型式试验证书
   - 境外制造的压力管道元件或安全附件清单
@@ -1315,6 +1391,69 @@ standardClausePackages:
     type: always
     expression: 本业务节点进入复核流程时适用。
   professionalClauses:
+  - standardRef: STD-TSG-31-2025
+    clauseNo: 2.2.1.4
+    purpose: 管道组成件质量证明、交货状态和批次追溯字段
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-E6E1201DF9
+    documentVersionId: KDV-E6E1201DF9-V1
+    sourcePage: 9
+    startPage: 9
+    endPage: 9
+    sourceLocatorId: LOC-893784A51A77
+    locatorPrecision: page
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-893784A51A77
+      clauseNo: 2.2.1.4
+      sourcePage: 9
+      startPage: 9
+      endPage: 9
+      precision: page
+      verificationStatus: visual_verified
+  - standardRef: STD-GB-50235-2010
+    clauseNo: 4.1.1-4.1.2
+    purpose: 产品质量证明文件及实物标识追溯要求
+    applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-0E11194CB6
+    documentVersionId: KDV-0E11194CB6-V1
+    sourcePage: 20
+    startPage: 20
+    endPage: 20
+    sourceLocatorId: LOC-9B2211001AA0
+    locatorPrecision: page
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-9B2211001AA0
+      clauseNo: 4.1.1-4.1.2
+      sourcePage: 20
+      startPage: 20
+      endPage: 20
+      precision: page
+      verificationStatus: visual_verified
+  - standardRef: STD-GBT-20801.1-2025
+    clauseNo: 7.2.1
+    purpose: 材料性能数据、补充检验和标记追溯总要求
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-7ED59299DE
+    documentVersionId: KDV-7ED59299DE-V1
+    sourcePage: 87
+    startPage: 87
+    endPage: 87
+    sourceLocatorId: LOC-15DCC35AFB19
+    locatorPrecision: page
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-15DCC35AFB19
+      clauseNo: 7.2.1
+      sourcePage: 87
+      startPage: 87
+      endPage: 87
+      precision: page
+      verificationStatus: text_verified
   - standardRef: STD-GBT-12459-2025
     clauseNo: 第10-11章
     purpose: 管件标志和产品质量证明
@@ -1371,6 +1510,139 @@ standardClausePackages:
       endPage: 21
       precision: page
       verificationStatus: text_verified
+  - standardRef: STD-GBT-8163-2018
+    clauseNo: 第6-8章
+    purpose: 无缝钢管技术要求、试验方法、检验规则和质量证明
+    applicability: product_is_gbt8163
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-FC7BD2864D
+    documentVersionId: KDV-FC7BD2864D-V1
+    sourcePage: 14
+    startPage: 14
+    endPage: 15
+    sourceLocatorId: LOC-30CC546046FB
+    locatorPrecision: page
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-30CC546046FB
+      clauseNo: 第6章
+      sourcePage: 14
+      startPage: 14
+      endPage: 14
+      precision: page
+      verificationStatus: visual_verified
+    - locatorId: LOC-76452CAEFE93
+      clauseNo: 第7-8章
+      sourcePage: 15
+      startPage: 15
+      endPage: 15
+      precision: page
+      verificationStatus: visual_verified
+  - standardRef: STD-GBT-3087-2022
+    clauseNo: 第6-9章
+    purpose: 低中压锅炉管技术要求、试验方法、检验规则和质量证明
+    applicability: product_is_gbt3087
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-A6A3DB4C53
+    documentVersionId: KDV-A6A3DB4C53-V1
+    sourcePage: 6
+    startPage: 6
+    endPage: 11
+    sourceLocatorId: LOC-D9D35C0E4E1E
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-D9D35C0E4E1E
+      clauseNo: 第6章
+      sourcePage: 6
+      startPage: 6
+      endPage: 9
+      precision: page_range
+      verificationStatus: visual_verified
+    - locatorId: LOC-B76278CF9E50
+      clauseNo: 第7-8章
+      sourcePage: 9
+      startPage: 9
+      endPage: 10
+      precision: page_range
+      verificationStatus: visual_verified
+    - locatorId: LOC-9F59C06E17D7
+      clauseNo: 第9章
+      sourcePage: 11
+      startPage: 11
+      endPage: 11
+      precision: page
+      verificationStatus: visual_verified
+  - standardRef: STD-GBT-5310-2023
+    clauseNo: 第7章、第9-11章
+    purpose: 高压锅炉管技术要求、试验方法、检验规则和质量证明
+    applicability: product_is_gbt5310
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-4D1CE27E27
+    documentVersionId: KDV-4D1CE27E27-V1
+    sourcePage: 14
+    startPage: 14
+    endPage: 28
+    sourceLocatorId: LOC-E62CB24D829E
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-E62CB24D829E
+      clauseNo: 第7章
+      sourcePage: 14
+      startPage: 14
+      endPage: 24
+      precision: page_range
+      verificationStatus: visual_verified
+    - locatorId: LOC-A636BFE4B1FF
+      clauseNo: 第9章
+      sourcePage: 26
+      startPage: 26
+      endPage: 26
+      precision: page
+      verificationStatus: visual_verified
+    - locatorId: LOC-3B07A9702E6A
+      clauseNo: 第10-11章
+      sourcePage: 27
+      startPage: 27
+      endPage: 28
+      precision: page_range
+      verificationStatus: visual_verified
+  - standardRef: STD-GBT-9948-2025
+    clauseNo: 第7章、第9-11章
+    purpose: 石化无缝钢管技术要求、试验方法、检验规则和质量证明
+    applicability: product_is_gbt9948
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-DAB23C4B28
+    documentVersionId: KDV-DAB23C4B28-V1
+    sourcePage: 14
+    startPage: 14
+    endPage: 26
+    sourceLocatorId: LOC-0C3C8CADCAE7
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-0C3C8CADCAE7
+      clauseNo: 第7章
+      sourcePage: 14
+      startPage: 14
+      endPage: 23
+      precision: page_range
+      verificationStatus: visual_verified
+    - locatorId: LOC-8E24E66163BD
+      clauseNo: 第9章
+      sourcePage: 25
+      startPage: 25
+      endPage: 25
+      precision: page
+      verificationStatus: visual_verified
+    - locatorId: LOC-6A97EE6A54C9
+      clauseNo: 第10-11章
+      sourcePage: 26
+      startPage: 26
+      endPage: 26
+      precision: page
+      verificationStatus: visual_verified
   - standardRef: STD-GBT-14976-2025
     clauseNo: 7.3、7.7、第9-11章
     purpose: 液压/无损检测、试验方法、检验规则和质量证明
@@ -1413,10 +1685,49 @@ standardClausePackages:
       endPage: 22
       precision: page
       verificationStatus: text_verified
+  - standardRef: STD-GBT-12771-2019
+    clauseNo: 6.9、第8章、9.1-9.2
+    purpose: 不锈钢焊接钢管无损检测、检验规则、标志和质量证明
+    applicability: product_is_gbt12771
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-EF422C04B1
+    documentVersionId: KDV-EF422C04B1-V1
+    sourcePage: 13
+    startPage: 13
+    endPage: 15
+    sourceLocatorId: LOC-235CEC3B4789
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-235CEC3B4789
+      clauseNo: '6.9'
+      sourcePage: 13
+      startPage: 13
+      endPage: 13
+      precision: page
+      verificationStatus: text_verified
+    - locatorId: LOC-25A9CAD6A690
+      clauseNo: 第8章
+      sourcePage: 14
+      startPage: 14
+      endPage: 15
+      precision: page_range
+      verificationStatus: text_verified
+    - locatorId: LOC-45260632CB55
+      clauseNo: 9.1-9.2
+      sourcePage: 15
+      startPage: 15
+      endPage: 15
+      precision: page
+      verificationStatus: text_verified
   atomicCheckIds:
   - AC-R16-01
   - AC-R16-02
   - AC-R16-03
+  - AC-R16-04
+  - AC-R16-05
+  - AC-R16-06
+  - AC-R16-07
   requiredEvidence:
   - 设计文件
   - 产品质量证明文件
@@ -1450,6 +1761,27 @@ standardClausePackages:
     type: always
     expression: 本业务节点进入复核流程时适用。
   professionalClauses:
+  - standardRef: STD-GBT-20801.1-2025
+    clauseNo: 7.2.1-7.2.7
+    purpose: 管道组成件验收、外观尺寸、材质鉴别和抽样检验要求
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-7ED59299DE
+    documentVersionId: KDV-7ED59299DE-V1
+    sourcePage: 87
+    startPage: 87
+    endPage: 88
+    sourceLocatorId: LOC-624C62E4AFAE
+    locatorPrecision: page_range
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-624C62E4AFAE
+      clauseNo: 7.2.1-7.2.7
+      sourcePage: 87
+      startPage: 87
+      endPage: 88
+      precision: page_range
+      verificationStatus: text_verified
   - standardRef: STD-GBT-20801.1-2025
     clauseNo: '8.5'
     purpose: 材料和组成件合格证、质量证明及标记
@@ -1495,6 +1827,10 @@ standardClausePackages:
   atomicCheckIds:
   - AC-R17-01
   - AC-R17-02
+  - AC-R17-03
+  - AC-R17-04
+  - AC-R17-05
+  - AC-R17-06
   requiredEvidence:
   - 验收记录、复验报告
   - 找到产品到货验收记录
@@ -1525,34 +1861,13 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R18-D2-4-1-7
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 设计文件、安全技术规范、产品标准或验收规则明确要求材料复验或者材料本体无损检测时适用。
   professionalClauses:
-  - standardRef: STD-TSG-31-2025
-    clauseNo: 2.1.2(3)
-    purpose: 境外牌号材料验证性复验
-    applicability: always
-    verificationStatus: source_verified
-    knowledgeFileId: KF-KB-E6E1201DF9
-    documentVersionId: KDV-E6E1201DF9-V1
-    sourcePage: 8
-    startPage: 8
-    endPage: 8
-    sourceLocatorId: LOC-B2D64706FA04
-    locatorPrecision: page
-    locatorVerification: source_verified
-    locators:
-    - locatorId: LOC-B2D64706FA04
-      clauseNo: 2.1.2(3)
-      sourcePage: 8
-      startPage: 8
-      endPage: 8
-      precision: page
-      verificationStatus: visual_verified
   - standardRef: STD-NBT-47013.1-2015
     clauseNo: 7.3-7.4
-    purpose: 无损检测记录报告
-    applicability: always
+    purpose: 材料本体无损检测记录报告
+    applicability: material_ndt_required
     verificationStatus: source_verified
     knowledgeFileId: KF-KB-B0D5FBA01C
     documentVersionId: KDV-B0D5FBA01C-V1
@@ -1574,6 +1889,10 @@ standardClausePackages:
   - AC-R18-01
   - AC-R18-02
   - AC-R18-03
+  - AC-R18-04
+  - AC-R18-05
+  - AC-R18-06
+  - AC-R18-07
   requiredEvidence:
   - 材料复验报告、无损检测报告
   - 找到材料复验报告和无损检测报告
@@ -1631,11 +1950,19 @@ standardClausePackages:
   - AC-R19-01
   - AC-R19-02
   - AC-R19-03
+  - AC-R19-04
+  - AC-R19-05
+  - AC-R19-06
+  - AC-R19-07
+  - AC-R19-08
   requiredEvidence:
-  - 审核产品质量证明文件、复验报告
-  - 找到产品质量证明文件、验证性复验报告
-  - 定位质量证明文件、复验报告
-  - 、企业标准和设计材料表
+  - 设计材料表
+  - 产品质量证明文件
+  - 境外材料标准及类似工况使用经历证明
+  - 国内相近材料标准或者技术对比资料
+  - 化学成分和力学性能验证性复验报告
+  - 首次使用时的焊接工艺评定
+  - 境内制造单位使用境外牌号材料时制定的企业标准
   decisionModel:
     resultValues:
     - 符合
@@ -1643,8 +1970,8 @@ standardClausePackages:
     - 证据不足
     - 不适用
     - 待人工确认
-    ruleExecution: deterministic_tools_only
-    llmRole: 调用工具、组织证据、解释已返回结果，不自行改写数值或条款判据
+    ruleExecution: llm_semantic_primary_with_evidence_validation
+    llmRole: 基于固定条款和已登记证据完成逐原子项跨文件语义判断；不得编造EvidenceRef，节点结果由固定聚合器生成
     failClosed: true
     automatedDecisionAllowed: true
 - packageId: CLAUSE-PKG-R20
@@ -1720,8 +2047,8 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R21-D2-4-2
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 施工过程中实际发生材料分割、切割或其他需要标志移植的情形时适用；未发生时结论为不适用。
   professionalClauses:
   - standardRef: STD-GBT-20801.1-2025
     clauseNo: 7.3.2
@@ -1798,8 +2125,8 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R22-D2-4-3
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 材料代用已经实际实施或拟实施并进入施工使用控制时适用；仅有未实施的采购建议不视为材料代用。
   professionalClauses:
   - standardRef: STD-TSG-31-2025
     clauseNo: 2.1.4
@@ -1877,41 +2204,48 @@ standardClausePackages:
     type: always
     expression: 本业务节点进入复核流程时适用。
   professionalClauses:
-  - standardRef: STD-GBT-13927-2022
-    clauseNo: 5.4、5.6-5.9、6.1-6.3、7.1-7.4
-    purpose: 阀门压力表、介质、压力、持续时间和验收证明
+  - standardRef: STD-GBT-20801.1-2025
+    clauseNo: 7.2.4
+    purpose: 阀门检验数量、试验依据优先级、特殊大口径闸阀及夹套试验要求
     applicability: always
     verificationStatus: source_verified
+    knowledgeFileId: KF-KB-7ED59299DE
+    documentVersionId: KDV-7ED59299DE-V1
+    sourcePage: 87
+    startPage: 87
+    endPage: 88
+    sourceLocatorId: LOC-A794DC8B22F5
+    locatorPrecision: page_range
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-A794DC8B22F5
+      clauseNo: 7.2.4
+      sourcePage: 87
+      startPage: 87
+      endPage: 88
+      precision: page_range
+      verificationStatus: text_verified
+  - standardRef: STD-GBT-13927-2022
+    clauseNo: 5.4、5.6-5.9、6.1-6.3、7.1-7.4
+    purpose: 阀门压力、介质、持续时间、方法和验收要求；当前项目源文件仅含封面、目录和前言，正文参数卡补齐前禁止自动判定符合
+    applicability: always
+    verificationStatus: candidate
     knowledgeFileId: KF-KB-FC8054EEB2
     documentVersionId: KDV-FC8054EEB2-V1
     sourcePage: 2
     startPage: 2
     endPage: 3
-    sourceLocatorId: LOC-23347CDD181A
+    sourceLocatorId: LOC-AD276D8DBB76
     locatorPrecision: page_range
-    locatorVerification: source_verified
+    locatorVerification: candidate
     locators:
-    - locatorId: LOC-23347CDD181A
-      clauseNo: 5.4、5.6-5.9
-      sourcePage: 2
-      startPage: 2
-      endPage: 2
-      precision: page
-      verificationStatus: text_verified
-    - locatorId: LOC-5949B5B2A49E
-      clauseNo: 6.1-6.3
+    - locatorId: LOC-AD276D8DBB76
+      clauseNo: 目录中的第5-7章（正文缺失）
       sourcePage: 2
       startPage: 2
       endPage: 3
       precision: page_range
-      verificationStatus: text_verified
-    - locatorId: LOC-FD05F6598F71
-      clauseNo: 7.1-7.4
-      sourcePage: 3
-      startPage: 3
-      endPage: 3
-      precision: page
-      verificationStatus: text_verified
+      verificationStatus: visual_verified
   - standardRef: STD-GBT-26480-2011
     clauseNo: 第5-8章
     purpose: 壳体、高压/低压密封试验
@@ -2090,8 +2424,8 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R25-D2-6-2
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 存在焊接或粘接作业时适用，并按实际连接工艺进入相应评定分支。
   professionalClauses:
   - standardRef: STD-NBT-47014-2023
     clauseNo: 4.2-4.4、第6章、附件A、附件G
@@ -2209,27 +2543,76 @@ standardClausePackages:
       endPage: 93
       precision: page
       verificationStatus: text_verified
-  - standardRef: STD-JBT-3223-2017
-    clauseNo: 第6章
-    purpose: 焊材验收和入库
+  - standardRef: STD-NBT-47018-2017
+    clauseNo: 4.2-4.4、表1-表2
+    purpose: 质量证明书、批次标识和检验结果
     applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-BC57659B2D
+    documentVersionId: KDV-BC57659B2D-V1
+    sourcePage: 8
+    startPage: 8
+    endPage: 11
+    sourceLocatorId: LOC-8875099930C8
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-8875099930C8
+      clauseNo: 4.2-4.4
+      sourcePage: 8
+      startPage: 8
+      endPage: 10
+      precision: page_range
+      verificationStatus: visual_verified
+    - locatorId: LOC-93977AF30644
+      clauseNo: 表1-表2
+      sourcePage: 9
+      startPage: 9
+      endPage: 11
+      precision: page_range
+      verificationStatus: visual_verified
+  - standardRef: STD-GBT-5117-2012
+    clauseNo: 第6-9章
+    purpose: 非合金钢焊条牌号条件化验收限值
+    applicability: covered_consumable_is_electrode
     verificationStatus: source_verified
-    knowledgeFileId: KF-KB-BECBD1A8FE
-    documentVersionId: KDV-BECBD1A8FE-V1
-    sourcePage: 5
-    startPage: 5
-    endPage: 7
-    sourceLocatorId: LOC-7EEFA38EF51D
+    knowledgeFileId: KF-KB-35C2CDA839
+    documentVersionId: KDV-35C2CDA839-V1
+    sourcePage: 8
+    startPage: 8
+    endPage: 24
+    sourceLocatorId: LOC-7F57BDE44233
     locatorPrecision: page_range
     locatorVerification: source_verified
     locators:
-    - locatorId: LOC-7EEFA38EF51D
-      clauseNo: 第6章
-      sourcePage: 5
-      startPage: 5
-      endPage: 7
+    - locatorId: LOC-7F57BDE44233
+      clauseNo: 第6-9章
+      sourcePage: 8
+      startPage: 8
+      endPage: 24
       precision: page_range
-      verificationStatus: visual_verified
+      verificationStatus: text_verified
+  - standardRef: STD-GBT-8110-2020
+    clauseNo: 第6-9章
+    purpose: 气体保护焊实心焊丝牌号条件化验收限值
+    applicability: covered_consumable_is_solid_wire
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-47A96E73DA
+    documentVersionId: KDV-47A96E73DA-V1
+    sourcePage: 9
+    startPage: 9
+    endPage: 20
+    sourceLocatorId: LOC-A3614CAF5FCD
+    locatorPrecision: page_range
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-A3614CAF5FCD
+      clauseNo: 第6-9章
+      sourcePage: 9
+      startPage: 9
+      endPage: 20
+      precision: page_range
+      verificationStatus: text_verified
   atomicCheckIds:
   - AC-R26-01
   - AC-R26-02
@@ -2366,6 +2749,27 @@ standardClausePackages:
       endPage: 95
       precision: page_range
       verificationStatus: text_verified
+  - standardRef: STD-GB-50236-2011
+    clauseNo: 6.2-6.4
+    purpose: 坡口、组对及禁止强行组对
+    applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-AFAB84B832
+    documentVersionId: KDV-AFAB84B832-V1
+    sourcePage: 23
+    startPage: 23
+    endPage: 35
+    sourceLocatorId: LOC-C5D89EF7EFE9
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-C5D89EF7EFE9
+      clauseNo: 6.2-6.4
+      sourcePage: 23
+      startPage: 23
+      endPage: 35
+      precision: page_range
+      verificationStatus: visual_verified
   atomicCheckIds:
   - AC-R28-01
   - AC-R28-02
@@ -2437,6 +2841,27 @@ standardClausePackages:
       endPage: 124
       precision: page
       verificationStatus: text_verified
+  - standardRef: STD-GB-50236-2011
+    clauseNo: 13.0.1-13.0.3
+    purpose: 施工记录和焊缝标识
+    applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-AFAB84B832
+    documentVersionId: KDV-AFAB84B832-V1
+    sourcePage: 53
+    startPage: 53
+    endPage: 55
+    sourceLocatorId: LOC-6FE7B1742516
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-6FE7B1742516
+      clauseNo: 13.0.1-13.0.3
+      sourcePage: 53
+      startPage: 53
+      endPage: 55
+      precision: page_range
+      verificationStatus: visual_verified
   atomicCheckIds:
   - AC-R29-01
   - AC-R29-02
@@ -2500,6 +2925,27 @@ standardClausePackages:
       endPage: 122
       precision: page_range
       verificationStatus: text_verified
+  - standardRef: STD-GB-50236-2011
+    clauseNo: 8.0.1-8.0.3
+    purpose: 焊接接头外观检查
+    applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-AFAB84B832
+    documentVersionId: KDV-AFAB84B832-V1
+    sourcePage: 51
+    startPage: 51
+    endPage: 54
+    sourceLocatorId: LOC-551F7E804E05
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-551F7E804E05
+      clauseNo: 8.0.1-8.0.3
+      sourcePage: 51
+      startPage: 51
+      endPage: 54
+      precision: page_range
+      verificationStatus: visual_verified
   atomicCheckIds:
   - AC-R30-01
   - AC-R30-02
@@ -2534,8 +2980,8 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R31-D2-6-6
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 实际发生焊缝返修时适用；未发生返修时结论为不适用。
   professionalClauses:
   - standardRef: STD-GBT-20801.1-2025
     clauseNo: 7.4.11.1-7.4.11.5
@@ -2558,6 +3004,27 @@ standardClausePackages:
       endPage: 102
       precision: page
       verificationStatus: text_verified
+  - standardRef: STD-GB-50236-2011
+    clauseNo: 4.0.8-4.0.9
+    purpose: 缺陷返修及超过两次的措施
+    applicability: always
+    verificationStatus: visual_verified
+    knowledgeFileId: KF-KB-AFAB84B832
+    documentVersionId: KDV-AFAB84B832-V1
+    sourcePage: 13
+    startPage: 13
+    endPage: 14
+    sourceLocatorId: LOC-297A85FA806F
+    locatorPrecision: page_range
+    locatorVerification: visual_verified
+    locators:
+    - locatorId: LOC-297A85FA806F
+      clauseNo: 4.0.8-4.0.9
+      sourcePage: 13
+      startPage: 13
+      endPage: 14
+      precision: page_range
+      verificationStatus: visual_verified
   atomicCheckIds:
   - AC-R31-01
   - AC-R31-02
@@ -2591,8 +3058,8 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R32-D2-7-1
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 先按材料组、控制厚度、接头例外和设计要求解析焊后热处理适用性；不要求热处理时结论为不适用。
   professionalClauses:
   - standardRef: STD-GBT-20801.1-2025
     clauseNo: 7.6.3
@@ -2613,6 +3080,34 @@ standardClausePackages:
       sourcePage: 104
       startPage: 104
       endPage: 108
+      precision: page_range
+      verificationStatus: text_verified
+  - standardRef: STD-NBT-47014-2023
+    clauseNo: 第6章、附件A
+    purpose: 热处理条件纳入评定和工艺规程
+    applicability: always
+    verificationStatus: source_verified
+    knowledgeFileId: KF-KB-76FBE61C16
+    documentVersionId: KDV-76FBE61C16-V1
+    sourcePage: 13
+    startPage: 13
+    endPage: 77
+    sourceLocatorId: LOC-8B6FDF9825B1
+    locatorPrecision: page_range
+    locatorVerification: source_verified
+    locators:
+    - locatorId: LOC-8B6FDF9825B1
+      clauseNo: 第6章
+      sourcePage: 13
+      startPage: 13
+      endPage: 63
+      precision: page_range
+      verificationStatus: text_verified
+    - locatorId: LOC-ECBD7F29B6FF
+      clauseNo: 附件A
+      sourcePage: 64
+      startPage: 64
+      endPage: 77
       precision: page_range
       verificationStatus: text_verified
   atomicCheckIds:
@@ -2646,8 +3141,8 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R33-D2-7-2
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 工程存在焊后热处理作业时适用。
   professionalClauses:
   - standardRef: STD-GBT-20801.1-2025
     clauseNo: 7.6.5.2
@@ -2702,29 +3197,36 @@ standardClausePackages:
   lifecycleStatus: published
   primaryBindingId: BIND-R34-D2-7-3
   applicability:
-    type: always
-    expression: 本业务节点进入复核流程时适用。
+    type: conditional
+    expression: 复用R32焊口级热处理适用性；不要求热处理时结论为不适用。
   professionalClauses:
   - standardRef: STD-GBT-20801.1-2025
-    clauseNo: 7.6.5.2、7.6.6
-    purpose: 热处理曲线、报告和硬度
+    clauseNo: 表36、7.6.5.2、7.6.6
+    purpose: 材料条件化热处理适用性、曲线、报告和硬度
     applicability: always
     verificationStatus: source_verified
     knowledgeFileId: KF-KB-7ED59299DE
     documentVersionId: KDV-7ED59299DE-V1
-    sourcePage: 109
-    startPage: 109
-    endPage: 109
-    sourceLocatorId: LOC-9A2801CA0834
-    locatorPrecision: page
+    sourcePage: 105
+    startPage: 105
+    endPage: 110
+    sourceLocatorId: LOC-3D7EFCA96233
+    locatorPrecision: page_range
     locatorVerification: source_verified
     locators:
-    - locatorId: LOC-9A2801CA0834
+    - locatorId: LOC-3D7EFCA96233
+      clauseNo: 表36
+      sourcePage: 105
+      startPage: 105
+      endPage: 106
+      precision: page_range
+      verificationStatus: text_verified
+    - locatorId: LOC-9AED0778C644
       clauseNo: 7.6.5.2、7.6.6
       sourcePage: 109
       startPage: 109
-      endPage: 109
-      precision: page
+      endPage: 110
+      precision: page_range
       verificationStatus: text_verified
   atomicCheckIds:
   - AC-R34-01

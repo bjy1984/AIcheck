@@ -1813,14 +1813,14 @@ ruleSets:
   standardText: |-
     TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1
   checkMethod: |-
-    制造许可资质、型式试验证书
+    境外制造适用性、制造许可资质和范围、型式试验适用性和覆盖范围，以及制造监检、到岸检验或随整机检验路径
   witnessText: |-
     制造许可资质、型式试验证书
   sourceWitness: ""
   agentThinking: |-
-    找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。
+    先依据制造国家、制造地点或明确业务事实识别境外制造产品，不得将境外材料牌号作为境外制造事实。逐项分类制造许可、型式试验和制造监检要求，再核验许可证和型式试验证书是否覆盖工程实际产品；需要制造监检的，继续判断已在境外完成制造监检、到岸检验或随锅炉/压力容器整机检验路径。任何适用性、目录分类、证书范围或检验路径事实不明确时返回证据不足。
   toolchainThinking: |-
-    调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。
+    调用R15 Fact Builder构造产品、制造国家、制造单位、证照和检验记录事实；依次调用classify_r15_foreign_manufacturing_applicability、classify_r15_regulatory_requirements、evaluate_r15_manufacturing_license_coverage、evaluate_r15_type_test_coverage和evaluate_r15_manufacturing_inspection_route；最后调用validate_evidence_grounding。LLM只组织调用并解释Tool结果，不得自行判定证书范围。
   referencedStandards:
   - reference: TSG31-2025
     file: rules/standards/TSG31-2025.pdf
@@ -1843,9 +1843,9 @@ ruleSets:
       witnessText: |-
         制造许可资质、型式试验证书
       agentThinking: |-
-        找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。
+        先依据制造国家、制造地点或明确业务事实识别境外制造产品，不得将境外材料牌号作为境外制造事实。逐项分类制造许可、型式试验和制造监检要求，再核验许可证和型式试验证书是否覆盖工程实际产品；需要制造监检的，继续判断已在境外完成制造监检、到岸检验或随锅炉/压力容器整机检验路径。任何适用性、目录分类、证书范围或检验路径事实不明确时返回证据不足。
       toolchainThinking: |-
-        调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。
+        调用R15 Fact Builder构造产品、制造国家、制造单位、证照和检验记录事实；依次调用classify_r15_foreign_manufacturing_applicability、classify_r15_regulatory_requirements、evaluate_r15_manufacturing_license_coverage、evaluate_r15_type_test_coverage和evaluate_r15_manufacturing_inspection_route；最后调用validate_evidence_grounding。LLM只组织调用并解释Tool结果，不得自行判定证书范围。
     requiredEvidence:
     - 制造许可资质、型式试验证书
     - 境外制造的压力管道元件或安全附件清单
@@ -1867,7 +1867,11 @@ ruleSets:
     - 结论
     verificationSteps:
     - 制造许可资质、型式试验证书
-    acceptanceCriteria: []
+    acceptanceCriteria:
+    - 境外制造事实可由制造国家、制造地点或明确结构化事实确认，且未与境外材料牌号混淆。
+    - 需要制造许可的产品，其制造单位和许可范围覆盖本工程实际产品。
+    - 有型式试验要求的产品，其型式试验证书或报告覆盖制造单位、产品类别及规格压力范围。
+    - 需要制造监检的产品已完成境外制造监检、到岸检验或随整机安全性能检验的相应路径。
     humanConfirmation:
     - 证据不足、OCR 置信度不足或结论影响放行时需人工确认。
     promptContext: |-
@@ -1875,8 +1879,8 @@ ruleSets:
       类别：C
       判断准则/标准规范：TSG31-2025中1.10、2.2.1.5；TSG D7006-2020附件D D2.4.1
       方法及内容/工作见证：制造许可资质、型式试验证书
-      Agent思考方式：找到境外制造的压力管道元件或安全附件清单，识别制造单位、产地、产品名称、规格型号和适用标准；再找到制造单位制造许可资质和型式试验证书。判断该境外制造产品是否满足 TSG31-2025 和 TSG D7006-2020 对境外制造压力管道元件、安全附件的要求，证书覆盖范围是否包括本工程实际产品。
-      工具集调用思考：调用 T01、T02 定位境外制造产品清单、制造许可资质、型式试验证书和设计文件；调用 T03、T04 抽取制造单位、产地、规格型号、证书编号和覆盖范围；调用 T05 核验证书；调用 T06 查询 TSG31 和 TSG D7006 条款；调用 T08 比对证书、产品清单和设计文件；调用 T11 处理证书缺失或覆盖不足；调用 T12 输出结论。
+      Agent思考方式：先识别境外制造适用性，再分类制造许可、型式试验和制造监检要求；逐项核验证照范围和境外制造监检、到岸检验或随整机检验路径，事实不足时返回证据不足。
+      工具集调用思考：调用R15 Fact Builder和classify_r15_foreign_manufacturing_applicability、classify_r15_regulatory_requirements、evaluate_r15_manufacturing_license_coverage、evaluate_r15_type_test_coverage、evaluate_r15_manufacturing_inspection_route、validate_evidence_grounding。
 - id: RULE-ENG-INSP-R16
   name: 压力管道元件以及安全附件产品质量证明文件
   ruleKey: engineering-inspection-r16
@@ -1913,18 +1917,18 @@ ruleSets:
   - T11
   - T12
   criteria: |-
-    TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019
+    TSG D7006-2020附件D D2.4.1(5)；TSG 31-2025第2.2.1.4条；GB 50235-2010第4.1.1、4.1.2条；GB/T 20801.1-2025第7.2.1条；设计文件中实际采用的GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022、GB/T 5310-2023、GB/T 9948-2025、GB/T 14976-2025或GB/T 12771-2019产品标准。
   standardText: |-
-    TSG D7006-2020附件D D2.4.1；设计文件中所用管道元件的制造验收标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 8163-2018、GB/T 3087-2022 、GB/T 5310-2023、GB/T 9948-2025、GB/T 5310-2023 、GB/T 14976-2025 、GB/T 12771-2019
+    TSG D7006-2020附件D D2.4.1(5)；TSG 31-2025第2.2.1.4条；GB 50235-2010第4.1.1、4.1.2条；GB/T 20801.1-2025第7.2.1条；设计文件实际采用的产品标准。
   checkMethod: |-
-    产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准
+    按每批（炉号、批号或产品编号）核验质量证明文件。原件核验制造单位质量检验章；复印件核验经营单位公章和经办负责人章。核对制造单位、产品、规格、材质、执行标准、交货状态、化学成分、力学性能、出厂检验项目、设计特殊要求、数值结果及实物追溯标识。
   witnessText: |-
     产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准
   sourceWitness: ""
   agentThinking: |-
-    找到压力管道元件和安全附件产品质量证明文件，识别是否为原件或复印件；若为复印件，检查经营单位公章和经办负责人章。抽取产品名称、规格、材质、批号、供货状态、化学成分、力学性能、出厂检验项目和适用制造验收标准，与设计文件规定的材料验收标准及特殊要求逐项比对。
+    先由Fact Builder形成设计元件和质量证明文件的批次事实；再按设计执行标准路由到冻结产品标准，执行批次覆盖、文件形式与印章、设计一致性、必需字段与检验项目、结构化数值限值和实物追溯判断。规则或限值未建模时返回证据不足。
   toolchainThinking: |-
-    调用 T01、T02 定位产品质量证明文件、设计文件和材料表；调用 T03、T04 抽取规格、材质、批号、成分、性能、供货状态、检验项目和盖章信息；调用 T06 查询对应 GB/T 标准和 TSG D7006 要求；调用 T07 判断检验项目、性能指标和供货状态是否符合；调用 T08 比对质量证明文件与设计材料表；调用 T11 标记缺章、缺项目或指标不符；调用 T12 输出证据链。
+    LLM依次调用resolve_r16_product_standard_profile、evaluate_r16_quality_certificate_batch_coverage、evaluate_r16_quality_certificate_form_and_seals、evaluate_r16_quality_certificate_design_match、evaluate_r16_quality_certificate_content、evaluate_r16_quality_certificate_results、evaluate_r16_batch_traceability和validate_evidence_grounding；LLM仅组织和解释Tool结果。
   referencedStandards:
   - reference: TSG D7006-2020
     file: rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf
@@ -2021,6 +2025,7 @@ ruleSets:
   materialTypeCodes:
   - generic_review_material
   - acceptance_witness_record
+  - sampling_witness_record
   - material_retest_report
   thinkingModeIds:
   - M06
@@ -2038,18 +2043,18 @@ ruleSets:
   - T11
   - T12
   criteria: |-
-    TSG D7006-2020附件D D2.4.1
+    TSG D7006-2020附件D D2.4.1(6)；GB/T 20801.1-2025第7.2.1至7.2.7条；TSG 07-2019 M3.4。
   standardText: |-
     TSG D7006-2020附件D D2.4.1
   checkMethod: |-
-    验收记录、复验报告
+    核验逐批到货验收记录及其质量体系程序；根据设计或冻结抽样规则判断是否需要抽样复验，仅对适用批次核验取样见证、样品编号和复验报告链；验收不合格时核验隔离、处置和放行批准。
   witnessText: |-
     验收记录、复验报告
   sourceWitness: ""
   agentThinking: |-
-    找到产品到货验收记录、验收见证资料和抽样复验报告，抽取验收对象、批号、规格型号、数量、验收项目、见证人员、复验项目、复验结果和结论。判断验收记录是否覆盖本工程到货产品，抽样复验是否按规定或设计要求执行，复验结果是否与质量证明文件和材料表一致。
+    先形成设计元件、验收记录、见证记录和复验报告的批次事实；先判断验收覆盖和程序，再判断抽样复验适用性。可选复验报告为空不得直接判为缺失；仅适用批次核验见证链，并对不合格材料核验隔离处置。
   toolchainThinking: |-
-    调用 T01、T02 定位验收记录、见证资料、复验报告、质量证明文件和材料表；调用 T03、T04 抽取批号、规格、数量、验收项目、复验项目和结论；调用 T06 查询 TSG D7006 验收要求；调用 T07 判断抽样复验项目和结论；调用 T08 比对验收、复验和质量证明文件；调用 T11 标记验收缺项或复验不合格；调用 T12 回写审查意见。
+    LLM依次调用evaluate_r17_arrival_acceptance_batch_coverage、evaluate_r17_acceptance_procedure、resolve_r17_sampling_retest_requirement、evaluate_r17_sampling_witness_chain、evaluate_r17_nonconformance_control和validate_evidence_grounding，仅解释Tool结果。
   referencedStandards:
   - reference: TSG D7006-2020
     file: rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf
@@ -2121,7 +2126,7 @@ ruleSets:
   materialTypeCodes:
   - generic_review_material
   - material_retest_report
-  - ndt_report
+  - material_ndt_report
   thinkingModeIds:
   - M06
   - M07
@@ -2136,18 +2141,18 @@ ruleSets:
   - T11
   - T12
   criteria: |-
-    TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019
+    TSG D7006-2020附件D D2.4.1(7)：仅在需要进行材料复验或材料本体无损检测时适用；试验项目、验收要求和结果应符合安全技术规范、设计文件及实际产品标准。
   standardText: |-
     TSG D7006-2020附件D D2.4.1；对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019
   checkMethod: |-
-    材料复验报告、无损检测报告
+    先判断材料复验和材料本体无损检测适用性；仅对适用批次核验报告、试验项目或检测方法、批准程序、结果、验收限值以及材料批号—样品号—报告号追溯链。焊缝无损检测报告不得替代材料本体无损检测报告。
   witnessText: |-
     材料复验报告、无损检测报告
   sourceWitness: ""
   agentThinking: |-
-    找到材料复验报告和无损检测报告，抽取材料名称、规格、批号、取样位置、复验项目、无损检测方法、检测比例、执行标准、结果和结论。判断复验报告和无损检测报告是否对应材料批次及设计要求，复验项目和检测方法是否符合对应材料标准，结果是否合格。
+    先由Fact Builder形成设计材料、材料复验报告和材料本体NDT报告事实；先调用适用性和要求规则Tool，再分别核验报告完整性、批准程序、结构化结果和追溯链。没有明确触发条件时返回证据不足，不把报告无条件列为必传。
   toolchainThinking: |-
-    调用 T01、T02 定位复验报告、无损检测报告、材料表和质量证明文件；调用 T03、T04 抽取批号、取样位置、复验项目、检测方法、标准和结论；调用 T06 查询 TSG D7006 及对应材料标准；调用 T07 判断复验和无损检测项目是否满足；调用 T08 比对报告与材料批次；调用 T11 处理报告缺失、批次不对应或结果不合格；调用 T12 输出结论。
+    LLM依次调用classify_r18_material_test_applicability、resolve_r18_material_test_requirement_profile、evaluate_r18_material_retest_report_completeness、evaluate_r18_material_ndt_report_completeness、evaluate_r18_material_report_approval_procedure、evaluate_r18_material_test_results_and_traceability和validate_evidence_grounding，仅解释Tool结果。
   referencedStandards:
   - reference: TSG D7006-2020
     file: rules/standards/TSG D7006-2020 压力管道监督检验规则.pdf
@@ -2325,6 +2330,7 @@ ruleSets:
   - generic_review_material
   - type_test_report
   - technical_review_approval
+  - new_material_data
   thinkingModeIds:
   - M06
   - M12
@@ -2620,6 +2626,7 @@ ruleSets:
   - generic_review_material
   - pressure_test_report
   - pressure_test_plan
+  - valve_construction_record
   - valve_test_report
   - quality_certificate
   thinkingModeIds:

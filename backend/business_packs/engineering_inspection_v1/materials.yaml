@@ -59,66 +59,139 @@ materialTypes:
     requiredType: 条件必传
     requiredFields: [start_date, end_date, project_scope]
     evidenceRequired: true
+  - code: drawing_material_list
+    name: 设计材料表
+    requiredType: 条件必传
+    requiredFields: [product_name, specification, material_grade, standard_no, quantity]
+    ocrProfileId: drawing_material_list_v1
+    ocrFieldMappings: [product_name, component_type, specification, material_grade, standard_no, quantity, batch_no, delivery_condition, special_requirements]
+    evidenceRequired: true
   - code: quality_certificate
     name: 产品质量证明书
     requiredType: 必传
-    requiredFields: [manufacturer, material_grade, batch_no, certificate_no, stamp]
-    ocrFieldMappings: [manufacturer, material_grade, batch_no, certificate_no, seal]
+    requiredFields: [manufacturer, product_name, material_grade, specification, batch_no, standard_no, delivery_condition, certificate_no, document_form, conclusion]
+    ocrProfileId: quality_certificate_v1
+    ocrFieldMappings: [certificate_no, manufacturer, dealer_name, product_name, material_grade, specification, quantity, batch_no, heat_no, standard_no, delivery_condition, document_form, inspection_items, test_results, inspection_conclusion, issue_date, manufacturer_quality_seal, dealer_official_seal, handler_responsible_seal]
     evidenceRequired: true
   - code: manufacturing_supervision_certificate
     name: 制造监督检验证书
     requiredType: 条件必传
-    requiredFields: [certificate_no, product_name, manufacturer, specification, conclusion]
+    requiredFields: [certificate_no, product_name, manufacturer, conclusion]
+    ocrProfileId: manufacturing_supervision_certificate_v1
+    ocrFieldMappings: [certificate_no, product_name, manufacturer, specification, material, batch_no, serial_no, conclusion, supervision_organization, issue_date]
     evidenceRequired: true
   - code: type_test_report
     name: 型式试验证书或型式试验报告
     requiredType: 条件必传
-    requiredFields: [report_no, product_name, specification_scope, test_org, conclusion, valid_until]
+    requiredFields: [report_no, product_name, manufacturer, specification_scope, test_organization, conclusion]
+    ocrProfileId: type_test_report_v1
+    ocrFieldMappings: [report_no, certificate_no, product_name, manufacturer, test_organization, specification_scope, material, structure, manufacturing_process, nominal_diameter_min_mm, nominal_diameter_max_mm, nominal_pressure_min_mpa, nominal_pressure_max_mpa, conclusion, certificate_status]
     evidenceRequired: true
   - code: factory_inspection_report
     name: 出厂检验报告
     requiredType: 条件必传
     requiredFields: [report_no, product_name, material_grade, specification, pressure_class, conclusion]
+    ocrProfileId: factory_inspection_report_v1
+    ocrFieldMappings: [report_no, product_name, manufacturer, line_no, specification, component_grade, material_grade, batch_no, pressure_class, nominal_pressure_mpa, test_items, test_results, conclusion, standard_no]
     evidenceRequired: true
   - code: overseas_material_certificate
-    name: 境外制造或境外牌号材料证明文件
+    name: 境外牌号材料证明文件
     requiredType: 条件必传
     requiredFields: [origin_country, manufacturer, material_grade, equivalent_grade, standard_no, conclusion]
+    evidenceRequired: true
+  - code: enterprise_material_standard
+    name: 境外牌号材料企业标准
+    requiredType: 条件必传
+    requiredFields: [standard_no, manufacturer, material_grade, technical_requirements, acceptance_rules, effective_date]
+    evidenceRequired: true
+  - code: foreign_manufactured_component_list
+    name: 境外制造压力管道元件或安全附件清单
+    requiredType: 条件必传
+    requiredFields: [product_name, manufacturer, manufacturing_country, specification]
+    evidenceRequired: true
+  - code: foreign_component_inspection_record
+    name: 境外制造组成件到岸或随整机安全性能检验记录
+    requiredType: 条件必传
+    requiredFields: [record_no, product_name, manufacturer, inspection_route, conclusion]
+    ocrProfileId: foreign_component_inspection_record_v1
+    ocrFieldMappings: [record_no, report_no, certificate_no, product_name, manufacturer, inspection_route, specification, batch_no, serial_no, inspection_organization, conclusion, issue_date]
     evidenceRequired: true
   - code: acceptance_witness_record
     name: 到货验收见证资料
     requiredType: 条件必传
-    requiredFields: [item_name, batch_no, quantity, witness_person, acceptance_items, conclusion]
+    requiredFields: [record_no, product_name, batch_no, quantity, acceptance_items, signature_roles, conclusion]
+    ocrProfileId: acceptance_witness_record_v1
+    ocrFieldMappings: [record_no, product_name, specification, material_grade, batch_no, heat_no, quantity, procedure_approved, completed_steps, acceptance_items, witness_roles, signature_roles, sample_no, conclusion, nonconformance_disposition, isolated, release_approved]
+    evidenceRequired: true
+  - code: sampling_witness_record
+    name: 抽样复验见证记录
+    requiredType: 条件必传
+    requiredFields: [record_no, product_name, batch_no, sample_no, witness_roles]
+    ocrProfileId: sampling_witness_record_v1
+    ocrFieldMappings: [record_no, product_name, specification, material_grade, batch_no, heat_no, quantity, sample_no, witness_roles, signature_roles, conclusion, issue_date]
     evidenceRequired: true
   - code: material_retest_report
     name: 材料复验报告
     requiredType: 条件必传
     requiredFields: [report_no, sample_no, batch_no, test_items, conclusion]
+    ocrProfileId: material_retest_report_v1
+    ocrFieldMappings: [report_no, report_type, product_name, manufacturer, line_no, specification, component_grade, material_grade, batch_no, pressure_class, nominal_pressure_mpa, test_pressure_mpa, test_items, test_results, conclusion, standard_no]
+    evidenceRequired: true
+  - code: material_ndt_report
+    name: 材料本体无损检测报告
+    requiredType: 条件必传
+    requiredFields: [report_no, product_name, batch_no, ndt_methods, test_items, signature_roles, conclusion]
+    ocrProfileId: material_ndt_report_v1
+    ocrFieldMappings: [report_no, product_name, manufacturer, specification, material_grade, batch_no, heat_no, sample_no, ndt_methods, test_items, test_results, standard_no, procedure_approved, signature_roles, conclusion, issue_date]
     evidenceRequired: true
   - code: material_mark_transfer_record
     name: 材料标志移植记录
     requiredType: 条件必传
     requiredFields: [original_mark, transferred_mark, batch_no, material_grade, inspector, conclusion]
+    ocrProfileId: material_mark_transfer_record_v1
+    ocrFieldMappings: [record_no, original_mark, transferred_mark, batch_no, heat_no, material_grade, material_type, special_material, mark_method, identity_chain_verified, confusion_control, harmful_substances_absent, inspector, conclusion, issue_date]
     evidenceRequired: true
   - code: material_substitution_approval
     name: 材料代用批准文件
     requiredType: 条件必传
-    requiredFields: [original_material, substitute_material, approved_by, approval_date, seal]
+    requiredFields: [change_no, original_material, substitute_material, substitution_scope, original_design_organization, approving_organization, written_approval_present, approval_date]
+    ocrProfileId: material_substitution_approval_v1
+    ocrFieldMappings: [change_no, original_material, substitute_material, substitution_scope, original_design_organization, approving_organization, written_approval_present, approval_date, implementation_date, implemented, conclusion]
     evidenceRequired: true
   - code: technical_review_approval
     name: 技术评审和批准手续
     requiredType: 条件必传
-    requiredFields: [review_no, material_name, applicable_scope, approval_org, conclusion]
+    requiredFields: [approval_document_no, material_grade, applicable_scope, technical_review_passed, approval_organization, approval_procedure_completed]
+    ocrProfileId: technical_review_approval_v1
+    ocrFieldMappings: [approval_document_no, material_grade, product_name, applicable_scope, technical_review_passed, approval_organization, approval_procedure_completed, conclusion, issue_date]
+    evidenceRequired: true
+  - code: new_material_data
+    name: 新材料必要性能数据
+    requiredType: 条件必传
+    requiredFields: [document_no, material_grade, data_items]
+    ocrProfileId: new_material_data_v1
+    ocrFieldMappings: [document_no, material_grade, product_name, data_items, chemical_composition, tensile_properties, fatigue_data, fracture_toughness, scope_performance_parameters, conclusion, issue_date]
+    evidenceRequired: true
+  - code: valve_construction_record
+    name: 阀门施工记录
+    requiredType: 条件必传
+    requiredFields: [record_no, valve_no, valve_type, nominal_diameter_mm, nominal_pressure]
+    ocrProfileId: valve_test_report_v1
+    ocrFieldMappings: [record_no, valve_no, valve_type, nominal_diameter_mm, nominal_pressure, valve_body_material_category, pipeline_grade, lot_id, lot_size, tested_count, standard_ref, conclusion, issue_date]
     evidenceRequired: true
   - code: valve_test_report
     name: 阀门施工资料和耐压试验报告
     requiredType: 条件必传
-    requiredFields: [valve_no, model, nominal_pressure, test_pressure, holding_time, conclusion]
+    requiredFields: [report_no, valve_no, valve_type, nominal_diameter_mm, nominal_pressure, standard_ref, construction_record_id, conclusion]
+    ocrProfileId: valve_test_report_v1
+    ocrFieldMappings: [report_no, valve_no, valve_type, nominal_diameter_mm, nominal_pressure, valve_body_material_category, maximum_allowable_working_pressure_mpa, seal_test_level, pipeline_grade, lot_id, lot_size, tested_count, standard_ref, construction_record_id, shell_test_medium, shell_test_pressure_mpa, shell_hold_seconds, shell_procedure_steps, shell_test_result, shell_leakage, seal_test_medium, seal_test_pressure_mpa, seal_hold_seconds, seal_procedure_steps, seal_test_result, seal_leakage, conclusion, issue_date]
     evidenceRequired: true
   - code: welder_certificate
     name: 焊工资格证
     requiredType: 必传
     requiredFields: [name, certificate_no, qualified_items, valid_until]
+    ocrProfileId: welder_certificate_v1
+    ocrFieldMappings: [welder_name, welder_certificate_no, welder_operation_item_code, valid_from, valid_until, issuing_authority]
     evidenceRequired: true
   - code: welder_roster
     name: 焊工名册
@@ -129,41 +202,92 @@ materialTypes:
     name: 焊接工艺评定报告和焊接作业指导书
     requiredType: 条件必传
     requiredFields: [pqr_no, wps_no, welding_method, material_group, thickness_range, approved_by]
+    ocrProfileId: welding_procedure_qualification_v1
+    ocrFieldMappings: [report_no, procedure_no, wps_no, pqr_no, welding_method, base_material, thickness_range, current_range, voltage_range, welding_speed_range, interpass_temperature_range, qualification_date, approved_by]
     evidenceRequired: true
   - code: welding_material_certificate
     name: 焊接材料质量证明文件
     requiredType: 条件必传
     requiredFields: [material_name, brand, specification, batch_no, chemical_composition, mechanical_property]
+    ocrProfileId: welding_consumable_certificate_v1
+    ocrFieldMappings: [certificate_no, material_name, brand, specification, batch_no, standard_ref, chemical_composition, mechanical_properties, stock_valid_until, conclusion]
     evidenceRequired: true
   - code: welding_material_management_record
     name: 焊材验收保管发放回收记录
     requiredType: 条件必传
     requiredFields: [batch_no, storage_condition, drying_record, issue_qty, return_qty, handler]
+    ocrProfileId: welding_consumable_management_v1
+    ocrFieldMappings: [record_no, record_kind, material_grade, batch_no, temperature, humidity, drying_temperature, drying_minutes, issue_qty, use_qty, return_qty, handler, conclusion]
     evidenceRequired: true
   - code: welding_record
     name: 焊接记录和焊缝标识资料
     requiredType: 条件必传
     requiredFields: [weld_no, welder_no, welding_method, material, specification, parameter, conclusion]
+    ocrProfileId: welding_record_v1
+    ocrFieldMappings: [record_no, weld_no, welder_name, welder_cert_no, welding_method, material_grade, outer_diameter, wall_thickness, welding_position, current, voltage, welding_speed, interpass_temperature, weld_mark, conclusion]
+    evidenceRequired: true
+  - code: pipeline_summary
+    name: 管线汇总表
+    requiredType: 条件必传
+    requiredFields: [line_no, material_grade, outer_diameter, wall_thickness]
+    ocrProfileId: pipeline_summary_v1
+    ocrFieldMappings: [line_no, material_grade, material_group, outer_diameter, wall_thickness, design_pressure, design_temperature, inspection_grade, pwht_required]
+    evidenceRequired: true
+  - code: pipe_fit_up_record
+    name: 管道组对检查记录
+    requiredType: 条件必传
+    requiredFields: [record_no, weld_no, wall_thickness, misalignment, root_gap, bevel_angle]
+    ocrProfileId: pipe_fit_up_record_v1
+    ocrFieldMappings: [record_no, weld_no, material_grade, wall_thickness, misalignment, root_gap, gap_min, gap_max, bevel_angle, bevel_angle_min, bevel_angle_max, forced_fit_up, design_prestretch, conclusion]
+    evidenceRequired: true
+  - code: weld_appearance_record
+    name: 焊接接头外观检查记录
+    requiredType: 条件必传
+    requiredFields: [record_no, weld_no, inspection_grade, wall_thickness, reinforcement, width, undercut_depth, conclusion]
+    ocrProfileId: weld_appearance_record_v1
+    ocrFieldMappings: [record_no, weld_no, inspection_grade, joint_type, wall_thickness, reinforcement, width, width_min, width_max, undercut_depth, crack, lack_of_fusion, surface_pore, exposed_slag, photo_ref, conclusion]
     evidenceRequired: true
   - code: weld_repair_record
     name: 焊缝返修记录
     requiredType: 条件必传
     requiredFields: [weld_no, repair_count, repair_procedure, approval, retest_report, conclusion]
+    ocrProfileId: weld_repair_record_v1
+    ocrFieldMappings: [record_no, weld_no, repair_application_no, repair_procedure_no, cause_analysis, same_location_repair_count, revised_special_measures, technical_head_approved, post_repair_ndt_report_no, post_repair_ndt_result, performed_after_pwht, repeat_pwht_completed]
     evidenceRequired: true
   - code: heat_treatment_procedure
     name: 焊后热处理工艺文件
     requiredType: 条件必传
     requiredFields: [procedure_no, weld_no, temperature, holding_time, heating_rate, cooling_rate]
+    ocrProfileId: heat_treatment_procedure_v1
+    ocrFieldMappings: [procedure_no, weld_no, material_group, governing_thickness, qualification_report_no, approved, heating_rate, holding_temperature, holding_minutes, cooling_rate]
     evidenceRequired: true
   - code: heat_treatment_record
     name: 热处理记录、曲线和硬度检测报告
     requiredType: 条件必传
     requiredFields: [record_no, weld_no, curve_no, holding_temperature, holding_time, hardness_result]
+    ocrProfileId: heat_treatment_record_v1
+    ocrFieldMappings: [record_no, weld_no, curve_ref, curve_continuous, heating_rate, holding_temperature, holding_minutes, cooling_rate, conclusion]
     evidenceRequired: true
   - code: instrument_calibration_certificate
     name: 仪表检定或校准证书
     requiredType: 条件必传
     requiredFields: [instrument_name, instrument_no, accuracy, range, calibration_date, valid_until]
+    ocrProfileId: heat_treatment_instrument_v1
+    ocrFieldMappings: [instrument_type, instrument_name, instrument_no, calibration_certificate_no, calibration_date, valid_until, conclusion]
+    evidenceRequired: true
+  - code: temperature_point_layout
+    name: 热处理测温点布置图
+    requiredType: 条件必传
+    requiredFields: [drawing_no, weld_no, temperature_point_count]
+    ocrProfileId: heat_treatment_instrument_v1
+    ocrFieldMappings: [drawing_no, weld_no, temperature_point_count, layout_description, approved_by]
+    evidenceRequired: true
+  - code: hardness_report
+    name: 热处理硬度检测报告
+    requiredType: 条件必传
+    requiredFields: [report_no, weld_no, hardness_method, hardness_readings, conclusion]
+    ocrProfileId: hardness_report_v1
+    ocrFieldMappings: [report_no, weld_no, hardness_method, conversion_standard_ref, tested_joint_count, lot_joint_count, local_heat_treatment, hardness_readings, conclusion]
     evidenceRequired: true
   - code: ndt_plan
     name: 无损检测方案

@@ -64,6 +64,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/review/findings$", "review:save"),
     ("POST", r"/review/findings/[^/]+/(accept|reject)$", "review:save"),
     ("POST", r"/review-runs/[^/]+/human-decision$", "review:save"),
+    ("POST", r"/review-runs/[^/]+/human-input-tasks/[^/]+/responses$", "review:save"),
     ("POST", r"/review-runs/[^/]+/rerun$", "ai:recheck"),
     ("POST", r"/review-runs/[^/]+/cancel$", "ai:recheck"),
     ("POST", r"/ai/runs/[^/]+/feedback$", "ai:adopt"),

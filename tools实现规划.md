@@ -10,8 +10,8 @@
 
 本方案现已在当前工程完成第一轮落地：
 
-- `tools规划.md` 中 61 个唯一 Tool 已全部进入 Runtime Tool Catalog，缺失 Tool 数量为 0。
-- 173 条 atomicCheck Tool 链均可由固定执行器编译，无未注册 Tool；140 条标记为 `implemented`，33 条保留 `pilot_implemented`。
+- `tools规划.md` 中 74 个唯一 Tool 已全部进入 Runtime Tool Catalog，缺失 Tool 数量为 0。
+- 189 条 atomicCheck Tool 链均可由固定执行器编译，无未注册 Tool；122 条标记为 `implemented`，67 条保留 `pilot_implemented`。
 - 新增 10 个通用确定性 Tool，并为资质设计、焊接热处理、NDT、防腐安装、压力泄漏、材料组件等专业 Tool 提供安全执行实现。
 - `run_rule_engine` 已接入固定 Tool Plan；强制 Tool 是否执行不再由 LLM 决定。
 - 专业事实、证据或规则参数不完整时统一 fail-closed，返回 `failed`、`evidence_insufficient` 或 `not_applicable`，不能自动得到“符合”。
@@ -22,9 +22,9 @@
 
 以下为编号整理后的当前绑定基线：
 
-- 已配置 173 条 `atomicCheck → requiredFacts → tools → parameters → outputSchema` 绑定，覆盖附件定义的 R01-R69。
-- 绑定清单中共有 61 个唯一 Tool 名称，均已注册；专业能力是否达到生产放行要求仍按节点单独验收。
-- 33 条绑定标记为 `pilot_implemented`，其余 140 条标记为 `implemented`。
+- 已配置 189 条 `atomicCheck → requiredFacts → tools → parameters → outputSchema` 绑定，覆盖附件定义的 R01-R69。
+- 绑定清单中共有 74 个唯一 Tool 名称，均已注册；专业能力是否达到生产放行要求仍按节点单独验收。
+- 44 条绑定标记为 `pilot_implemented`，其余 133 条标记为 `implemented`。
 - R61 的 `check_pressure_test_parameters` 使用了不完整的压力计算规则，修复前不得用于生产放行。
 - R24、R60、R62 的试点实现也只覆盖有限场景，必须继续保持试点状态。
 - R69 已按 `files/checklist.docx` 补录，但属于人工评价节点；Tool 只校验评价报告和证据完整性，`automatedDecisionAllowed=false`。
@@ -51,7 +51,7 @@ LLM 不负责选择强制 Tool、不提供阈值或公式、不修改 Tool 结�
 
 ### 2.1 实现目标
 
-1. 将 173 条 atomicCheck 绑定转换为可执行、可重复、可测试的 Tool 执行计划。
+1. 将 189 条 atomicCheck 绑定转换为可执行、可重复、可测试的 Tool 执行计划。
 2. 将证据抽取、事实标准化、适用性判断、业务计算、证据门禁和结论聚合分层实现。
 3. 每个判断均可追溯到输入文件版本、页码/坐标或原文、Tool 版本、规则版本和固定条款快照。
 4. 同一输入、同一版本的执行结果必须一致，不依赖 LLM 的随机推理。
@@ -243,7 +243,7 @@ LLM 只能提供事实候选，不能传入或覆盖压力倍数、抽样比例�
 - `check_standard_version_active` 以审查日期和标准生效/废止区间判断，支持版本切换。
 - `check_traceability` 应验证实体链连续性，而不仅检查字段非空。
 
-### 6.3 C 包：资质、设计和施工策划（10 个）
+### 6.3 C 包：资质、设计和施工策划（14 个）
 
 | Tool | 主要节点 | 状态 |
 | --- | --- | --- |
@@ -256,7 +256,11 @@ LLM 只能提供事实候选，不能传入或覆盖压力倍数、抽样比例�
 | `evaluate_design_special_requirements` | R09 | 待实现 |
 | `evaluate_stress_analysis` | R63 | 待实现 |
 | `evaluate_component_manufacturer_scope` | R12 | 待实现 |
-| `evaluate_foreign_component` | R15 | 待实现 |
+| `classify_r15_foreign_manufacturing_applicability` | R15 | 已实现（受限试点） |
+| `classify_r15_regulatory_requirements` | R15 | 已实现（受限试点） |
+| `evaluate_r15_manufacturing_license_coverage` | R15 | 已实现（受限试点） |
+| `evaluate_r15_type_test_coverage` | R15 | 已实现（受限试点） |
+| `evaluate_r15_manufacturing_inspection_route` | R15 | 已实现（受限试点） |
 
 重点业务约束：
 
@@ -264,6 +268,7 @@ LLM 只能提供事实候选，不能传入或覆盖压力倍数、抽样比例�
 - R03 按每家检测机构分别生成一次判断，不把多家机构合并成一个结果。
 - R04/R06 将三级或四级签字的触发条件结构化，不能依赖 atomicCheck 的半句话。
 - R05 的见证材料范围未确认前只输出人工确认，不能自动判定符合。
+- R15 仅以制造国家、制造地点或明确境外制造事实识别适用性，不得以“境外牌号材料”代替；并按 TSG 31—2025 第 1.10、2.2.1.5 及 TSG D7006—2020 D2.4.1 分类制造许可、型式试验与制造监检要求。
 
 ### 6.4 D 包：焊接与热处理（11 个）
 

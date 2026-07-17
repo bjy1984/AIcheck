@@ -1,7 +1,7 @@
 atomicCheckSet:
   id: engineering-inspection-atomic-checks-v1
   schemaVersion: atomic-check-v1
-  version: 2026.07.14
+  version: 2026.07.16
   lifecycleStatus: published
 atomicChecks:
 - id: AC-R01-01
@@ -422,16 +422,52 @@ atomicChecks:
   sourceRuleId: R15
   ruleId: RULE-ENG-INSP-R15
   nodeId: 15
-  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·原子项1
+  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·境外制造适用性
   checkType: evidence_and_deterministic_rule
-  instruction: 制造许可资质、型式试验证书
+  instruction: 仅依据制造国家、制造地点或明确结构化事实判断是否属于境外制造；不得把境外材料牌号当作境外制造事实。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R15-02
   sourceRuleId: R15
   ruleId: RULE-ENG-INSP-R15
   nodeId: 15
-  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·原子项2
+  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·境外制造监管要求分类
+  checkType: evidence_and_deterministic_rule
+  instruction: 依据TSG 31-2025第1.10、2.2.1.5条及TSG D7006-2020附件D D2.4.1，逐项分类制造许可、型式试验和制造监检要求。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R15-03
+  sourceRuleId: R15
+  ruleId: RULE-ENG-INSP-R15
+  nodeId: 15
+  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·境外制造许可覆盖
+  checkType: evidence_and_deterministic_rule
+  instruction: 需要制造许可的境外产品，其制造单位、官网人工核验状态和许可范围应覆盖本工程实际产品。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R15-04
+  sourceRuleId: R15
+  ruleId: RULE-ENG-INSP-R15
+  nodeId: 15
+  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·境外产品型式试验覆盖
+  checkType: evidence_and_deterministic_rule
+  instruction: 有型式试验要求的境外产品，其证书或报告应覆盖制造单位、产品类别、材料、结构、制造工艺及规格压力范围。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R15-05
+  sourceRuleId: R15
+  ruleId: RULE-ENG-INSP-R15
+  nodeId: 15
+  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·境外制造组成件制造监检路径
+  checkType: evidence_and_deterministic_rule
+  instruction: 对需要制造监检的境外产品核验境外制造监检、到岸检验或随锅炉压力容器整机安全性能检验的适用路径。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R15-06
+  sourceRuleId: R15
+  ruleId: RULE-ENG-INSP-R15
+  nodeId: 15
+  name: 境外制造的压力管道元件、安全附件的型式试验证书及其制造单位的制造许可证资质·R15证据可追溯性
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -440,25 +476,61 @@ atomicChecks:
   sourceRuleId: R16
   ruleId: RULE-ENG-INSP-R16
   nodeId: 16
-  name: 压力管道元件以及安全附件产品质量证明文件·原子项1
+  name: 压力管道元件以及安全附件产品质量证明文件·产品标准规则路由
   checkType: evidence_and_deterministic_rule
-  instruction: 审查供货状态、成分、出厂检验项目是否符合对应标准
+  instruction: 按设计规定的制造验收标准，将每项管道元件或安全附件绑定到已冻结的具体产品标准规则；标准未建模时不得判定为符合。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R16-02
   sourceRuleId: R16
   ruleId: RULE-ENG-INSP-R16
   nodeId: 16
-  name: 压力管道元件以及安全附件产品质量证明文件·原子项2
+  name: 压力管道元件以及安全附件产品质量证明文件·质量证明文件批次覆盖
   checkType: evidence_and_deterministic_rule
-  instruction: 产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章
+  instruction: 按产品、规格、炉批号或产品编号逐项核验本工程到货元件是否具有唯一对应的产品质量证明文件。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R16-03
   sourceRuleId: R16
   ruleId: RULE-ENG-INSP-R16
   nodeId: 16
-  name: 压力管道元件以及安全附件产品质量证明文件·原子项3
+  name: 压力管道元件以及安全附件产品质量证明文件·原件复印件及印章合规
+  checkType: evidence_and_deterministic_rule
+  instruction: 原件核验制造单位质量检验章；复印件必须同时核验经营单位公章和经办负责人章。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R16-04
+  sourceRuleId: R16
+  ruleId: RULE-ENG-INSP-R16
+  nodeId: 16
+  name: 压力管道元件以及安全附件产品质量证明文件·质量证明与设计一致性
+  checkType: evidence_and_deterministic_rule
+  instruction: 逐批核对制造单位、产品名称、规格、材质、执行标准和交货状态是否符合设计材料表及特殊要求。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R16-05
+  sourceRuleId: R16
+  ruleId: RULE-ENG-INSP-R16
+  nodeId: 16
+  name: 压力管道元件以及安全附件产品质量证明文件·质量证明必需内容及出厂检验项目
+  checkType: evidence_and_deterministic_rule
+  instruction: 按具体产品标准核验质量证明文件核心字段、化学成分、力学性能、出厂检验项目及设计特殊检验项目是否齐全。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R16-06
+  sourceRuleId: R16
+  ruleId: RULE-ENG-INSP-R16
+  nodeId: 16
+  name: 压力管道元件以及安全附件产品质量证明文件·检验结果与批次追溯
+  checkType: evidence_and_deterministic_rule
+  instruction: 使用已冻结的结构化验收限值核验检验结果，并核验设计材料表、质量证明文件和实物标识的炉批号或产品编号一致。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R16-07
+  sourceRuleId: R16
+  ruleId: RULE-ENG-INSP-R16
+  nodeId: 16
+  name: 压力管道元件以及安全附件产品质量证明文件·R16证据可追溯性
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -467,16 +539,52 @@ atomicChecks:
   sourceRuleId: R17
   ruleId: RULE-ENG-INSP-R17
   nodeId: 17
-  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·原子项1
+  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·到货验收批次覆盖
   checkType: evidence_and_deterministic_rule
-  instruction: 验收记录、复验报告
+  instruction: 按产品、规格、炉批号或产品编号核验每批到货元件是否具有唯一对应的验收记录。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R17-02
   sourceRuleId: R17
   ruleId: RULE-ENG-INSP-R17
   nodeId: 17
-  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·原子项2
+  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·到货验收程序完整性
+  checkType: evidence_and_deterministic_rule
+  instruction: 核验质量证明、身份标识、外观、尺寸、结论记录和验收签字等质量体系验收步骤。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R17-03
+  sourceRuleId: R17
+  ruleId: RULE-ENG-INSP-R17
+  nodeId: 17
+  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·抽样复验适用性
+  checkType: evidence_and_deterministic_rule
+  instruction: 根据设计要求或冻结抽样规则逐批确定是否需要抽样复验；触发条件不明时不得要求或豁免复验。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R17-04
+  sourceRuleId: R17
+  ruleId: RULE-ENG-INSP-R17
+  nodeId: 17
+  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·抽样复验见证链
+  checkType: evidence_and_deterministic_rule
+  instruction: 仅对明确需要抽样复验的批次，核验取样见证记录、见证角色、样品编号和复验报告的连续证据链。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R17-05
+  sourceRuleId: R17
+  ruleId: RULE-ENG-INSP-R17
+  nodeId: 17
+  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·不合格材料隔离处置
+  checkType: evidence_and_deterministic_rule
+  instruction: 对验收不合格批次核验隔离、处置和放行批准，防止未受控材料投入使用。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R17-06
+  sourceRuleId: R17
+  ruleId: RULE-ENG-INSP-R17
+  nodeId: 17
+  name: 压力管道元件以及安全附件产品验收的见证资料、抽样复验·R17证据可追溯性
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -485,25 +593,61 @@ atomicChecks:
   sourceRuleId: R18
   ruleId: RULE-ENG-INSP-R18
   nodeId: 18
-  name: 材料复验报告、无损检测报告·原子项1
+  name: 材料复验报告、无损检测报告·材料复验与材料NDT适用性
   checkType: evidence_and_deterministic_rule
-  instruction: 材料复验报告、无损检测报告
+  instruction: 依据设计要求和冻结规则逐批识别是否需要材料复验或材料本体无损检测；R18不作无条件必传审查。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R18-02
   sourceRuleId: R18
   ruleId: RULE-ENG-INSP-R18
   nodeId: 18
-  name: 材料复验报告、无损检测报告·原子项2
+  name: 材料复验报告、无损检测报告·材料试验要求规则绑定
   checkType: evidence_and_deterministic_rule
-  instruction: 对应的材料标准：GB/T 12459-2025、GB/T 13401-2025、GB/T 14976-2025 、GB/T 12771-2019
+  instruction: 为适用批次绑定具体产品标准、复验项目、材料NDT方法和结构化验收限值；规则不完整时返回证据不足。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R18-03
   sourceRuleId: R18
   ruleId: RULE-ENG-INSP-R18
   nodeId: 18
-  name: 材料复验报告、无损检测报告·原子项3
+  name: 材料复验报告、无损检测报告·材料复验报告完整性
+  checkType: evidence_and_deterministic_rule
+  instruction: 仅对明确需要材料复验的批次核验复验报告是否存在并覆盖全部要求的复验项目。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R18-04
+  sourceRuleId: R18
+  ruleId: RULE-ENG-INSP-R18
+  nodeId: 18
+  name: 材料复验报告、无损检测报告·材料本体NDT报告完整性
+  checkType: evidence_and_deterministic_rule
+  instruction: 仅对明确需要材料本体无损检测的批次核验专用报告和检测方法；焊缝NDT报告不得替代。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R18-05
+  sourceRuleId: R18
+  ruleId: RULE-ENG-INSP-R18
+  nodeId: 18
+  name: 材料复验报告、无损检测报告·材料报告批准程序
+  checkType: evidence_and_deterministic_rule
+  instruction: 核验材料复验和材料NDT报告的批准程序及试验、审核、批准等签字角色。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R18-06
+  sourceRuleId: R18
+  ruleId: RULE-ENG-INSP-R18
+  nodeId: 18
+  name: 材料复验报告、无损检测报告·材料试验结果与追溯链
+  checkType: evidence_and_deterministic_rule
+  instruction: 核验报告结论、结构化验收限值以及材料批号—样品号—报告号的追溯关系。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R18-07
+  sourceRuleId: R18
+  ruleId: RULE-ENG-INSP-R18
+  nodeId: 18
+  name: 材料复验报告、无损检测报告·R18证据可追溯性
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -512,151 +656,196 @@ atomicChecks:
   sourceRuleId: R19
   ruleId: RULE-ENG-INSP-R19
   nodeId: 19
-  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·原子项1
-  checkType: evidence_and_deterministic_rule
-  instruction: 审核产品质量证明文件、复验报告，企业标准
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·境外牌号材料适用性与使用范围
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 根据设计材料表、产品质量证明文件及材料牌号和执行标准，识别本工程是否使用境外牌号材料，并列明涉及元件、安全附件、制造单位、材料牌号、批次和使用范围。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R19-02
   sourceRuleId: R19
   ruleId: RULE-ENG-INSP-R19
   nodeId: 19
-  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·原子项2
-  checkType: evidence_and_deterministic_rule
-  instruction: TSG31-2025中2.1.2，制定相对应的企业标准
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·境外材料标准与使用经历
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 核验境外材料标准是否为境外压力管道现行标准，并核验该材料是否具有类似工况使用经历；文件不能支持时不得推定满足。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R19-03
   sourceRuleId: R19
   ruleId: RULE-ENG-INSP-R19
   nodeId: 19
-  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·原子项3
-  checkType: evidence_and_deterministic_rule
-  instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·化学成分与性能等同性
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 对照境外材料标准、国内相近材料及企业标准，分析化学成分、力学性能、物理性能和工艺性能，确认不低于安全技术规范及相应国内材料标准的基本要求。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R19-04
+  sourceRuleId: R19
+  ruleId: RULE-ENG-INSP-R19
+  nodeId: 19
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·验证性复验
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 按材料牌号和炉批号关联产品质量证明文件与复验报告，核验化学成分和力学性能复验项目、试样或批次追溯、试验结果及结论。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R19-05
+  sourceRuleId: R19
+  ruleId: RULE-ENG-INSP-R19
+  nodeId: 19
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·首次使用焊接工艺评定
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 先判断境外牌号材料是否首次使用；首次使用时核验焊接工艺评定覆盖材料组别、焊接方法、厚度和适用范围，非首次使用时应提供可追溯的使用经历依据。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R19-06
+  sourceRuleId: R19
+  ruleId: RULE-ENG-INSP-R19
+  nodeId: 19
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·复验与工艺评定归档
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 核验验证性复验结果和适用的焊接工艺评定结果是否纳入或者作为附件关联至产品质量证明文件，并形成证书号、报告号和炉批号追溯链。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R19-07
+  sourceRuleId: R19
+  ruleId: RULE-ENG-INSP-R19
+  nodeId: 19
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·境内制造单位企业标准
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 仅对境内制造单位使用境外牌号材料的情形，核验对应企业标准是否覆盖材料技术要求、验收规则、复验、首次使用工艺评定和质量证明归档要求；境外制造情形不得误判为缺少企业标准。
+  evidenceRequired: true
+  failurePolicy: business_rule_result
+- id: AC-R19-08
+  sourceRuleId: R19
+  ruleId: RULE-ENG-INSP-R19
+  nodeId: 19
+  name: 使用境外牌号材料制造的压力管道元件以及安全附件，验证性复验结果·R19证据可追溯性
+  checkType: evidence_and_llm_semantic_judgment
+  instruction: 核验每项判断引用的文件版本、页码、坐标或原文片段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
   failurePolicy: evidence_insufficient
 - id: AC-R20-01
   sourceRuleId: R20
   ruleId: RULE-ENG-INSP-R20
   nodeId: 20
-  name: 新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续·原子项1
+  name: 新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续·新材料分类及手续
   checkType: evidence_and_deterministic_rule
-  instruction: 型式试验报告、技术评审证书
+  instruction: 逐项区分TSG 31-2025第2.1.3.1和2.1.3.2两类新材料并核验型式试验覆盖；第2.1.3.1分支还应核验技术评审通过及批准手续，第2.1.3.2分支应核验化学成分、拉伸、疲劳、断裂韧性和使用范围性能数据。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R20-02
   sourceRuleId: R20
   ruleId: RULE-ENG-INSP-R20
   nodeId: 20
-  name: 新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续·原子项2
+  name: 新材料制造的压力管道元件以及安全附件的型式试验报告、技术评审、批准手续·证据追溯
   checkType: evidence_and_deterministic_rule
-  instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
+  instruction: 核验结论引用的型式试验报告、技术评审证书、批准文件或材料性能数据的文件、页码/坐标和原文字段可追溯；材料类别不明、证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
   failurePolicy: evidence_insufficient
 - id: AC-R21-01
   sourceRuleId: R21
   ruleId: RULE-ENG-INSP-R21
   nodeId: 21
-  name: 材料标志移植·原子项1
+  name: 材料标志移植·标志移植控制
   checkType: evidence_and_deterministic_rule
-  instruction: 标志移植抽查记录
+  instruction: 先判定是否实际发生标志移植；发生时核验移植记录、原标志至移植标志的批次追溯、防混料措施、特殊材料种类抽查覆盖以及硬印和色标方法限制，未发生时结论为不适用。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R21-02
   sourceRuleId: R21
   ruleId: RULE-ENG-INSP-R21
   nodeId: 21
-  name: 材料标志移植·原子项2
+  name: 材料标志移植·证据追溯
   checkType: evidence_and_deterministic_rule
-  instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
+  instruction: 核验结论引用的标志移植记录、质量证明和实物标志证据可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
   failurePolicy: evidence_insufficient
 - id: AC-R22-01
   sourceRuleId: R22
   ruleId: RULE-ENG-INSP-R22
   nodeId: 22
-  name: 材料代用·原子项1
+  name: 材料代用·实际代用及原设计单位批准
   checkType: evidence_and_deterministic_rule
-  instruction: 应当取得原设计单位书面批准设计文件
+  instruction: 先判定材料代用是否实际实施；仅有未实施采购建议时结论为不适用。实际代用应核验原设计单位书面批准、批准时间早于使用时间、批准范围及替代材料与实际使用一致。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R22-02
   sourceRuleId: R22
   ruleId: RULE-ENG-INSP-R22
   nodeId: 22
-  name: 材料代用·原子项2
+  name: 材料代用·证据追溯
   checkType: evidence_and_deterministic_rule
-  instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
+  instruction: 核验结论引用的设计变更单、原设计单位书面批准文件和材料实际使用记录可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
   failurePolicy: evidence_insufficient
 - id: AC-R23-01
   sourceRuleId: R23
   ruleId: RULE-ENG-INSP-R23
   nodeId: 23
-  name: 阀门的施工资料和耐压试验记录（报告）·原子项1
+  name: 阀门的施工资料和耐压试验记录（报告）·试验依据及数量
   checkType: evidence_and_deterministic_rule
-  instruction: 阀门施工记录、耐压试验记录或报告（包含依据标准）
+  instruction: 按设计文件、供货合同、缺省GB/T 13927-2022的优先级确定试验依据；按GB/T 20801.1-2025第7.2.4条核验GC1为100%、GC2为10%且不少于1个、GC3为5%且不少于1个，并核验工厂逐台见证豁免及抽样不合格处置。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R23-02
   sourceRuleId: R23
   ruleId: RULE-ENG-INSP-R23
   nodeId: 23
-  name: 阀门的施工资料和耐压试验记录（报告）·原子项2
+  name: 阀门的施工资料和耐压试验记录（报告）·试验方法程序与结果
   checkType: evidence_and_deterministic_rule
-  instruction: 试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》
+  instruction: 逐台核验施工记录和耐压试验报告中的依据标准、壳体及密封试验介质、压力、保压时间、程序、泄漏和结论符合设计文件及选定标准；标准正文或参数卡不完整时结论只能为证据不足。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R23-03
   sourceRuleId: R23
   ruleId: RULE-ENG-INSP-R23
   nodeId: 23
-  name: 阀门的施工资料和耐压试验记录（报告）·原子项3
+  name: 阀门的施工资料和耐压试验记录（报告）·证据追溯
   checkType: evidence_and_deterministic_rule
-  instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
+  instruction: 核验结论引用的设计文件、合同、阀门施工记录、耐压试验记录或报告的页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
   failurePolicy: evidence_insufficient
 - id: AC-R24-01
   sourceRuleId: R24
   ruleId: RULE-ENG-INSP-R24
   nodeId: 24
-  name: 焊工资格证及持证合格项目·原子项1
+  name: 焊工资格证及持证合格项目·证书有效性和核验来源
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 需提供焊工的有效资格证书原件或复印件，以及证书上明确标注的“合格项目”范围（如焊接方法、母材类别、位置等）
+  instruction: 核验焊工资格证原件或经核验复印件、人员身份及作业日期有效性；2026年8月1日前执行TSG Z6002-2010，达到新规生效日后若TSG Z6002-2026规则档案未完成验证则返回证据不足。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R24-02
   sourceRuleId: R24
   ruleId: RULE-ENG-INSP-R24
   nodeId: 24
-  name: 焊工资格证及持证合格项目·原子项2
+  name: 焊工资格证及持证合格项目·方法和母材类别覆盖
   checkType: evidence_and_deterministic_rule
-  instruction: 监检人员需现场核对人证是否相符，且作业内容（序号29）在证书允许范围内，例：某焊工所焊接的管线材质20钢，规格为89×4.5mm，焊接方法是氩弧焊，焊工证号是GTAW-FeII-6G-3/57-FefS-02/11/12，查TSG Z6002-2010，焊接方法氩弧焊代号GTAW，金属材料类别FeII能覆盖20
+  instruction: 按TSG Z6002附件A逐项解析实际焊接方法和母材类别覆盖；例如FeII可覆盖20钢所属FeI，但不得把示例材料固定为所有工程事实。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R24-03
   sourceRuleId: R24
   ruleId: RULE-ENG-INSP-R24
   nodeId: 24
-  name: 焊工资格证及持证合格项目·原子项3
+  name: 焊工资格证及持证合格项目·焊接位置覆盖
   checkType: evidence_and_deterministic_rule
-  instruction: 焊接位置6G，全位置焊，能覆盖
+  instruction: 按项目代号和实际接头位置逐焊口核验位置覆盖；6G可覆盖相应全位置作业，其他代号按对应表格规则处理。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R24-04
   sourceRuleId: R24
   ruleId: RULE-ENG-INSP-R24
   nodeId: 24
-  name: 焊工资格证及持证合格项目·原子项4
+  name: 焊工资格证及持证合格项目·厚度管径及工艺因素覆盖
   checkType: evidence_and_deterministic_rule
-  instruction: 3/57代号可焊管线壁厚0-6mm，管径25-不限，能覆盖89×4.5mm，即通过
+  instruction: 按考试试件厚度和外径动态计算覆盖范围，并核验填充金属及附加工艺因素；例如3/57对应的0-6mm和外径25mm以上仅是该代号的计算结果。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R24-05
   sourceRuleId: R24
   ruleId: RULE-ENG-INSP-R24
   nodeId: 24
-  name: 焊工资格证及持证合格项目·原子项5
+  name: 焊工资格证及持证合格项目·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -665,25 +854,25 @@ atomicChecks:
   sourceRuleId: R25
   ruleId: RULE-ENG-INSP-R25
   nodeId: 25
-  name: 焊接（粘接）工艺文件·原子项1
+  name: 焊接（粘接）工艺文件·WPS/PQR审批与对应
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 提供经审批生效的《焊接工艺评定报告》(PQR) 和对应的《焊接作业指导书》(WPS)
+  instruction: 核验PQR和WPS本体均经审批生效，WPS明确引用支持它的PQR；焊接与粘接应进入各自评定分支，不得混用。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R25-02
   sourceRuleId: R25
   ruleId: RULE-ENG-INSP-R25
   nodeId: 25
-  name: 焊接（粘接）工艺文件·原子项2
+  name: 焊接（粘接）工艺文件·参数及实际生产条件覆盖
   checkType: evidence_and_deterministic_rule
-  instruction: 重点核查WPS中的参数（电流、电压、速度、层间温度等）是否与PQR一致，且覆盖实际生产条件（与管线汇总表的管道壁厚对比，看焊评是否能覆盖所焊管线壁厚）
+  instruction: 逐项核验WPS电流、电压、焊接速度和层间温度范围处于PQR评定范围内，并将管线汇总表及施焊记录中的母材、方法、管径、壁厚和实际参数与WPS/PQR覆盖范围比对。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R25-03
   sourceRuleId: R25
   ruleId: RULE-ENG-INSP-R25
   nodeId: 25
-  name: 焊接（粘接）工艺文件·原子项3
+  name: 焊接（粘接）工艺文件·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -692,25 +881,25 @@ atomicChecks:
   sourceRuleId: R26
   ruleId: RULE-ENG-INSP-R26
   nodeId: 26
-  name: 焊接材料质量证明文件·原子项1
+  name: 焊接材料质量证明文件·MTC实测结果和批次追溯
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 焊条、焊丝、焊剂等材料的出厂质量证明书（MTC），需包含化学成分、力学性能等数据，并与实物批号对应
+  instruction: 核验焊条、焊丝、焊剂MTC包含化学成分和力学性能实测数据，按焊材类别、牌号和执行标准绑定已冻结验收限值，并与实物或验收记录批号一致；产品标准规则未建模时不得判定符合。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R26-02
   sourceRuleId: R26
   ruleId: RULE-ENG-INSP-R26
   nodeId: 26
-  name: 焊接材料质量证明文件·原子项2
+  name: 焊接材料质量证明文件·设计一致性和库存期限
   checkType: evidence_and_deterministic_rule
-  instruction: 监检时需确认材料牌号、规格符合设计要求，且在有效期内
+  instruction: 核验焊材牌号、规格和产品标准符合设计；超过制造方说明或管理文件规定的库存期限时应有复验合格证据，不得把库存期限误作证书统一有效期。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R26-03
   sourceRuleId: R26
   ruleId: RULE-ENG-INSP-R26
   nodeId: 26
-  name: 焊接材料质量证明文件·原子项3
+  name: 焊接材料质量证明文件·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -719,25 +908,25 @@ atomicChecks:
   sourceRuleId: R27
   ruleId: RULE-ENG-INSP-R27
   nodeId: 27
-  name: 焊接材料的验收、保管、发放、使用和回收的管理·原子项1
+  name: 焊接材料的验收、保管、发放、使用和回收的管理·管理记录完整性和追溯
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 焊材库温湿度记录表、焊条烘干记录、领用登记表、剩余焊材回收记录
+  instruction: 联查焊材验收、库房温湿度、烘干保温、领用、实际使用和剩余回收记录，并以牌号和批号建立连续追溯链。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R27-02
   sourceRuleId: R27
   ruleId: RULE-ENG-INSP-R27
   nodeId: 27
-  name: 焊接材料的验收、保管、发放、使用和回收的管理·原子项2
+  name: 焊接材料的验收、保管、发放、使用和回收的管理·烘干保温、防混用和超期控制
   checkType: evidence_and_deterministic_rule
-  instruction: 重点检查焊材是否按要求烘干、保温，是否存在混用或过期现象
+  instruction: 按设计、产品说明书或冻结管理要求核验烘干温度时间、保温和储存条件，识别混用、错用及超过库存期限未复验的焊材。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R27-03
   sourceRuleId: R27
   ruleId: RULE-ENG-INSP-R27
   nodeId: 27
-  name: 焊接材料的验收、保管、发放、使用和回收的管理·原子项3
+  name: 焊接材料的验收、保管、发放、使用和回收的管理·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -746,16 +935,16 @@ atomicChecks:
   sourceRuleId: R28
   ruleId: RULE-ENG-INSP-R28
   nodeId: 28
-  name: 管道组对·原子项1
+  name: 管道组对·组对实测值和禁止强行组对
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 管道组对检查记录表，包含错边量、间隙、坡口角度等实测数据
+  instruction: 按材料类别和壁厚计算GB/T 20801.1-2025第7.4.4.3条错边量限值，核验组对间隙、坡口角度符合设计/WPS，并核验除设计预拉伸外未强行组对。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R28-02
   sourceRuleId: R28
   ruleId: RULE-ENG-INSP-R28
   nodeId: 28
-  name: 管道组对·原子项2
+  name: 管道组对·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -764,16 +953,16 @@ atomicChecks:
   sourceRuleId: R29
   ruleId: RULE-ENG-INSP-R29
   nodeId: 29
-  name: 施焊参数、施焊记录、焊缝标识·原子项1
+  name: 施焊参数、施焊记录、焊缝标识·施焊记录、参数和焊缝标识联查
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识
+  instruction: 核验施工记录包含焊口、焊工、电流、电压、焊接速度、层间温度和清晰焊缝标识；逐焊口复用R24焊工资格覆盖和R25 WPS/PQR覆盖规则，保证真实可追溯。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R29-02
   sourceRuleId: R29
   ruleId: RULE-ENG-INSP-R29
   nodeId: 29
-  name: 施焊参数、施焊记录、焊缝标识·原子项2
+  name: 施焊参数、施焊记录、焊缝标识·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -782,25 +971,25 @@ atomicChecks:
   sourceRuleId: R30
   ruleId: RULE-ENG-INSP-R30
   nodeId: 30
-  name: 焊接接头外观质量·原子项1
+  name: 焊接接头外观质量·外观记录和必要照片
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 外观检查记录表，必要时附照片
+  instruction: 核验外观检查记录对应焊口、检验等级、接头类型和壁厚；设计或监检方案要求照片时核验照片与焊口可追溯。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R30-02
   sourceRuleId: R30
   ruleId: RULE-ENG-INSP-R30
   nodeId: 30
-  name: 焊接接头外观质量·原子项2
+  name: 焊接接头外观质量·表面缺陷和尺寸限值
   checkType: evidence_and_deterministic_rule
-  instruction: 检查内容包括焊缝余高、宽度、咬边、表面气孔、裂纹等
+  instruction: 按GB/T 20801.1-2025表43及设计更严要求核验裂纹、未熔合、表面气孔、外露夹渣、咬边和余高；焊缝宽度仅在设计或WPS给出范围时自动判定，缺少限值时返回证据不足。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R30-03
   sourceRuleId: R30
   ruleId: RULE-ENG-INSP-R30
   nodeId: 30
-  name: 焊接接头外观质量·原子项3
+  name: 焊接接头外观质量·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -809,16 +998,16 @@ atomicChecks:
   sourceRuleId: R31
   ruleId: RULE-ENG-INSP-R31
   nodeId: 31
-  name: 焊缝返修·原子项1
+  name: 焊缝返修·返修手续、次数和复检
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 返修申请单、返修工艺、返修审手续（同一部位返修次数通常不得超过2次，超过需制定专项方案并经技术负责人批准）、返修后检测报告（如RT/UT）
+  instruction: 核验返修申请、原因分析、合格返修工艺和返修后同方法复检；同一部位返修次数大于2次时核验修订专项措施及技术负责人批准，热处理后返修还应核验重新热处理。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R31-02
   sourceRuleId: R31
   ruleId: RULE-ENG-INSP-R31
   nodeId: 31
-  name: 焊缝返修·原子项2
+  name: 焊缝返修·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -827,16 +1016,16 @@ atomicChecks:
   sourceRuleId: R32
   ruleId: RULE-ENG-INSP-R32
   nodeId: 32
-  name: 焊接接头焊后热处理工艺文件·原子项1
+  name: 焊接接头焊后热处理工艺文件·热处理适用性和工艺卡
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 经审批的热处理工艺卡，明确升温速率、保温温度、保温时间、降温速率等参数
+  instruction: 按材料组、控制厚度、强度、接头例外及设计要求解析焊口级热处理适用性；适用时核验工艺卡经审批、基于评定报告，并核验升温速率、保温温度、保温时间和降温速率符合表36及第7.6.4条。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R32-02
   sourceRuleId: R32
   ruleId: RULE-ENG-INSP-R32
   nodeId: 32
-  name: 焊接接头焊后热处理工艺文件·原子项2
+  name: 焊接接头焊后热处理工艺文件·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -845,16 +1034,16 @@ atomicChecks:
   sourceRuleId: R33
   ruleId: RULE-ENG-INSP-R33
   nodeId: 33
-  name: 热处理设备用测温记录仪表·原子项1
+  name: 热处理设备用测温记录仪表·测温仪表和布点
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 热电偶校准证书、温控仪校验报告、测温点布置图
+  instruction: 核验热电偶、温控仪和自动温度记录仪均有覆盖使用日期的校准/校验证书，并核验测温点布置图与实际焊口和加热范围对应。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R33-02
   sourceRuleId: R33
   ruleId: RULE-ENG-INSP-R33
   nodeId: 33
-  name: 热处理设备用测温记录仪表·原子项2
+  name: 热处理设备用测温记录仪表·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true
@@ -863,25 +1052,25 @@ atomicChecks:
   sourceRuleId: R34
   ruleId: RULE-ENG-INSP-R34
   nodeId: 34
-  name: 热处理记录、报告曲线、硬度检测报告·原子项1
+  name: 热处理记录、报告曲线、硬度检测报告·曲线、报告和硬度检测覆盖
   checkType: evidence_and_deterministic_rule
-  instruction: 工作见证： 自动记录的温度-时间曲线图、热处理报告、硬度测试报告（布氏/洛氏/维氏）
+  instruction: 复用R32焊口级热处理适用性；适用时核验自动温度-时间曲线完整无中断、报告参数可追溯，并核验局部热处理100%及炉内热处理每批不少于10%的焊缝和热影响区硬度检测覆盖。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R34-02
   sourceRuleId: R34
   ruleId: RULE-ENG-INSP-R34
   nodeId: 34
-  name: 热处理记录、报告曲线、硬度检测报告·原子项2
+  name: 热处理记录、报告曲线、硬度检测报告·材料条件化硬度判定
   checkType: evidence_and_deterministic_rule
-  instruction: 标准规范：热处理曲线需完整无中断，硬度值应符合设计说明或GB/T20801.1-2025第7.6.6条要求，一般碳钢布氏硬度≤200HB、合金钢≤225HB
+  instruction: 优先执行设计硬度限值；再按GB/T 20801.1-2025表36材料组条件执行200、225、241或250HBW等限值，表中无值时执行不超过母材硬度125%的规则。洛氏/维氏读数必须有换算标准和换算后的HBW，不得把碳钢200HB、合金钢225HB作为无条件通用限值。
   evidenceRequired: true
   failurePolicy: business_rule_result
 - id: AC-R34-03
   sourceRuleId: R34
   ruleId: RULE-ENG-INSP-R34
   nodeId: 34
-  name: 热处理记录、报告曲线、硬度检测报告·原子项3
+  name: 热处理记录、报告曲线、硬度检测报告·证据追溯
   checkType: evidence_and_deterministic_rule
   instruction: 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。
   evidenceRequired: true

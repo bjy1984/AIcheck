@@ -193,18 +193,47 @@ def decode_welder_qualification(arguments: dict[str, Any]) -> dict[str, Any]:
     codes = [str(item).strip() for item in arguments.get("qualificationCodes") or [] if str(item).strip()]
     decoded = [decode_welder_code(item) for item in codes]
     valid = [item for item in decoded if item.get("parseStatus") == "parsed"]
+    rule_version, transition_warning = welder_rule_version(arguments)
+    if transition_warning:
+        return result(
+            "decode_welder_qualification",
+            "evidence_insufficient",
+            facts={"qualificationCodes": codes, "decodedItems": decoded, "reason": transition_warning},
+            checks=[],
+            rule_version=rule_version,
+        )
     return result(
         "decode_welder_qualification",
         "passed" if codes and len(valid) == len(codes) else "evidence_insufficient",
         facts={"qualificationCodes": codes, "decodedItems": decoded},
         checks=[check("all_codes_decoded", bool(codes) and len(valid) == len(codes), len(valid), len(codes))],
-        rule_version="welder-qualification-code-tsg-z6002-v1",
+        rule_version=rule_version,
     )
 
 
 def check_welder_work_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
-    decoded = [decode_welder_code(str(code)) for code in arguments.get("qualificationCodes") or []]
+    rule_version, transition_warning = welder_rule_version(arguments)
+    if transition_warning:
+        return result(
+            "check_welder_work_coverage",
+            "evidence_insufficient",
+            facts={"reason": transition_warning, "reviewDate": arguments.get("reviewDate")},
+            checks=[],
+            rule_version=rule_version,
+        )
+    certificates = [item for item in arguments.get("certificates") or [] if isinstance(item, dict)]
+    codes = [str(code) for code in arguments.get("qualificationCodes") or []]
+    decoded = [decode_welder_code(code) for code in codes] if not certificates else []
+    for certificate in certificates:
+        for code in certificate.get("qualificationCodes") or certificate.get("qualifiedItems") or []:
+            if isinstance(code, dict):
+                continue
+            item = decode_welder_code(str(code))
+            item["certificateNo"] = certificate.get("welderCertificateNo") or certificate.get("certificateNo")
+            item["welderName"] = certificate.get("welderName") or certificate.get("name")
+            decoded.append(item)
     decoded.extend(item for item in arguments.get("qualifiedItems") or [] if isinstance(item, dict))
+    decoded.extend(item for certificate in certificates for item in certificate.get("qualifiedItems") or [] if isinstance(item, dict))
     qualifications = [item for item in decoded if item.get("parseStatus", "parsed") == "parsed"]
     work_items = [item for item in arguments.get("workItems") or [] if isinstance(item, dict)]
     if not qualifications or not work_items:
@@ -213,19 +242,39 @@ def check_welder_work_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
             "evidence_insufficient",
             facts={"qualifications": qualifications, "workItems": work_items},
             checks=[],
-            rule_version="welder-work-coverage-tsg-z6002-v1",
+            rule_version=rule_version,
         )
     work_checks = []
+    certificate_failed = False
+    certificate_incomplete = False
+    work_date = parse_date(arguments.get("workDate") or arguments.get("reviewDate"))
+    for index, certificate in enumerate(certificates, 1):
+        valid_until = parse_date(certificate.get("validUntil"))
+        valid_from = parse_date(certificate.get("validFrom"))
+        identity = certificate.get("personIdentityMatched")
+        source_verified = certificate.get("originalSeen") is True or certificate.get("verifiedCopy") is True
+        if work_date is None or valid_until is None or identity is None or not source_verified:
+            certificate_incomplete = True
+        if work_date and (valid_until and valid_until < work_date or valid_from and valid_from > work_date) or identity is False:
+            certificate_failed = True
+        work_checks.extend(
+            [
+                check(f"certificate_{index}_valid_on_work_date", work_date is not None and valid_until is not None and (valid_from is None or valid_from <= work_date) and valid_until >= work_date, {"validFrom": valid_from, "validUntil": valid_until}, work_date),
+                check(f"certificate_{index}_person_identity_matches", identity is True, identity, True),
+                check(f"certificate_{index}_original_or_verified_copy", source_verified, source_verified, True),
+            ]
+        )
     for index, work in enumerate(work_items, 1):
         matched = [item for item in qualifications if qualification_covers_work(item, work)]
         work_checks.append(check(f"work_item_{index}_covered", bool(matched), work, [item.get("code") for item in matched]))
-    passed = all(item["passed"] for item in work_checks)
+    coverage_passed = all(item["passed"] for item in work_checks[-len(work_items):])
+    status = "failed" if certificate_failed or not coverage_passed else "evidence_insufficient" if certificate_incomplete else "passed"
     return result(
         "check_welder_work_coverage",
-        "passed" if passed else "failed",
-        facts={"qualifications": qualifications, "workItems": work_items},
+        status,
+        facts={"qualifications": qualifications, "workItems": work_items, "certificates": certificates},
         checks=work_checks,
-        rule_version="welder-work-coverage-tsg-z6002-v1",
+        rule_version=rule_version,
     )
 
 
@@ -469,12 +518,19 @@ def decode_welder_code(code: str) -> dict[str, Any]:
     if len(parts) < 4 or "/" not in parts[3]:
         return {"code": code, "parseStatus": "unsupported", "reason": "unrecognized_code_shape"}
     thickness_code, diameter_code = parts[3].split("/", 1)
-    thickness_limits = {"3": (Decimal("0"), Decimal("6"))}
-    diameter_limits = {"57": (Decimal("25"), None), "159": (Decimal("25"), None)}
-    thickness = thickness_limits.get(re.sub(r"\D", "", thickness_code))
-    diameter = diameter_limits.get(re.sub(r"\D", "", diameter_code))
-    if thickness is None or diameter is None:
+    thickness_value = decimal(re.sub(r"[^0-9.]", "", thickness_code))
+    diameter_value = decimal(re.sub(r"[^0-9.]", "", diameter_code))
+    if thickness_value is None or thickness_value <= 0 or diameter_value is None or diameter_value <= 0:
         return {"code": code, "parseStatus": "unsupported", "reason": "coverage_code_not_in_profile"}
+    thickness = (Decimal("0"), thickness_value * 2 if thickness_value < 12 else None)
+    diameter = (
+        diameter_value
+        if diameter_value < 25
+        else Decimal("25")
+        if diameter_value < 76
+        else Decimal("76"),
+        None,
+    )
     return {
         "code": code,
         "parseStatus": "parsed",
@@ -485,21 +541,45 @@ def decode_welder_code(code: str) -> dict[str, Any]:
         "thicknessMax": thickness[1],
         "diameterMin": diameter[0],
         "diameterMax": diameter[1],
+        "fillerMetal": parts[4].upper() if len(parts) > 4 else None,
+        "processFactors": [factor.upper() for item in parts[5:] for factor in item.split("/") if factor],
     }
 
 
 def qualification_covers_work(qualification: dict[str, Any], work: dict[str, Any]) -> bool:
-    if str(qualification.get("weldingMethod") or "").upper() != str(work.get("weldingMethod") or "").upper():
+    qualification_certificate = normalize_value(qualification.get("certificateNo"), "text")
+    work_certificate = normalize_value(work.get("welderCertificateNo") or work.get("certificateNo"), "text")
+    if work_certificate and qualification_certificate and work_certificate != qualification_certificate:
         return False
-    if normalize_roman(str(qualification.get("materialCategory") or "")).upper() != normalize_roman(str(work.get("materialCategory") or "")).upper():
+    qualification_name = normalize_value(qualification.get("welderName"), "text")
+    work_name = normalize_value(work.get("welderName"), "text")
+    if work_name and qualification_name and work_name != qualification_name:
         return False
+    if welding_method_code(qualification.get("weldingMethod")) != welding_method_code(work.get("weldingMethod")):
+        return False
+    qualified_material = normalize_roman(str(qualification.get("materialCategory") or "")).upper()
+    actual_material = normalize_roman(str(work.get("materialCategory") or material_category_for_grade(work.get("materialGrade")) or "")).upper()
+    material_coverage = {
+        "FEI": {"FEI"},
+        "FEII": {"FEI", "FEII"},
+        "FEIII": {"FEI", "FEII", "FEIII"},
+        "FEIV": {"FEIV"},
+        "FEV": {"FEI", "FEII", "FEIII", "FEV"},
+        "FEVI": {"FEI", "FEII", "FEIII", "FEV", "FEVI"},
+    }
+    if actual_material not in material_coverage.get(qualified_material, {qualified_material}):
+        return False
+    qualified_position = welding_position_code(qualification.get("position"))
+    actual_position = welding_position_code(work.get("position"))
     covered_positions = {
         "1G": {"1G"},
         "2G": {"1G", "2G"},
+        "3G": {"3G"},
+        "4G": {"4G"},
         "5G": {"1G", "5G"},
-        "6G": {"1G", "2G", "5G", "6G"},
-    }.get(str(qualification.get("position") or "").upper(), {str(qualification.get("position") or "").upper()})
-    if str(work.get("position") or "").upper() not in covered_positions:
+        "6G": {"1G", "2G", "3G", "4G", "5G", "6G"},
+    }.get(qualified_position, {qualified_position})
+    if actual_position not in covered_positions:
         return False
     thickness = decimal(work.get("thickness"))
     diameter = decimal(work.get("diameter"))
@@ -507,7 +587,54 @@ def qualification_covers_work(qualification: dict[str, Any], work: dict[str, Any
         return False
     if not within(thickness, decimal(qualification.get("thicknessMin")), decimal(qualification.get("thicknessMax"))):
         return False
-    return within(diameter, decimal(qualification.get("diameterMin")), decimal(qualification.get("diameterMax")))
+    if not within(diameter, decimal(qualification.get("diameterMin")), decimal(qualification.get("diameterMax"))):
+        return False
+    actual_filler = normalize_value(work.get("fillerMetal"), "text")
+    qualified_filler = normalize_value(qualification.get("fillerMetal"), "text")
+    if actual_filler and qualified_filler and actual_filler != qualified_filler:
+        return False
+    actual_factors = {normalize_value(item, "text") for item in work.get("processFactors") or []}
+    qualified_factors = {normalize_value(item, "text") for item in qualification.get("processFactors") or []}
+    return not actual_factors or actual_factors <= qualified_factors
+
+
+def material_category_for_grade(value: Any) -> str | None:
+    grade = re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+    if grade in {"20", "10", "Q235B", "Q235C", "Q235D", "Q245R"}:
+        return "FeI"
+    if grade in {"16MN", "Q345R", "Q345B", "Q345C", "Q345D", "L245", "L290", "L360"}:
+        return "FeII"
+    return None
+
+
+def welding_method_code(value: Any) -> str:
+    text = normalize_value(value, "text").upper()
+    aliases = {
+        "钨极氩弧焊": "GTAW", "氩弧焊": "GTAW", "TIG": "GTAW",
+        "焊条电弧焊": "SMAW", "手工电弧焊": "SMAW",
+        "熔化极气体保护焊": "GMAW", "气体保护焊": "GMAW", "MIG": "GMAW", "MAG": "GMAW",
+        "药芯焊丝电弧焊": "FCAW", "埋弧焊": "SAW", "等离子弧焊": "PAW",
+    }
+    return aliases.get(text, re.sub(r"[^A-Z0-9]", "", text))
+
+
+def welding_position_code(value: Any) -> str:
+    text = normalize_value(value, "text").upper()
+    aliases = {
+        "平焊": "1G", "横焊": "2G", "立焊": "3G", "仰焊": "4G",
+        "水平固定": "5G", "45°固定": "6G", "45度固定": "6G", "全位置": "6G",
+    }
+    return aliases.get(text, re.sub(r"[^A-Z0-9]", "", text))
+
+
+def welder_rule_version(arguments: dict[str, Any]) -> tuple[str, str | None]:
+    review_date = parse_date(arguments.get("reviewDate") or arguments.get("workDate")) or date.today()
+    if review_date >= date(2026, 8, 1):
+        version = "welder-qualification-tsg-z6002-2026-transition-v1"
+        if arguments.get("ruleProfile2026Verified") is not True:
+            return version, "tsg_z6002_2026_effective_profile_not_verified"
+        return version, None
+    return "welder-qualification-tsg-z6002-2010-v2", None
 
 
 def within(value: Decimal, minimum: Decimal | None, maximum: Decimal | None) -> bool:
