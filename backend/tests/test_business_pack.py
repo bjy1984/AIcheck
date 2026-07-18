@@ -145,7 +145,7 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
         for clause in package["professionalClauses"]
     )
     professional_clauses = [clause for package in packages for clause in package["professionalClauses"]]
-    assert len(professional_clauses) == 113
+    assert len(professional_clauses) == 120
     assert all(clause["knowledgeFileId"] and clause["documentVersionId"] for clause in professional_clauses)
     assert all(clause["locators"] for clause in professional_clauses)
     assert all(
@@ -163,7 +163,13 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     assert {item["atomicCheckId"] for item in tool_bindings} == {item["id"] for item in checks}
     assert all(item["requiredFacts"] and item["tools"] and item["outputSchema"] for item in tool_bindings)
     pilot_bindings = [item for item in tool_bindings if item["implementationStatus"] == "pilot_implemented"]
-    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R01", "R02", "R03", "R06", "R07", "R09", "R12", "R13", "R14", "R15", "R16", "R17", "R18", "R19", "R20", "R21", "R22", "R23", "R24", "R60", "R61", "R62"}
+    assert {item["sourceRuleId"] for item in pilot_bindings} == {
+        "R01", "R02", "R03", "R06", "R07", "R09",
+        "R12", "R13", "R14", "R15", "R16", "R17", "R18", "R19",
+        "R20", "R21", "R22", "R23", "R24", "R25", "R26", "R27",
+        "R28", "R29", "R30", "R31", "R32", "R33", "R34",
+        "R60", "R61", "R62",
+    }
     assert all(
         any(
             candidate["sourceRuleId"] == rule_id

@@ -907,7 +907,7 @@ nodeTemplates:
     requiredType: 条件必传
     responsibleParty: 施工方或设计方上传
     applicability: 用于解析材料组、控制厚度及焊后热处理适用性
-    note: R32与R34复用同一焊口级热处理适用性事实。
+    note: R32、R33与R34复用同一焊口级热处理适用性事实。
 - nodeId: 33
   code: '33'
   name: 热处理设备用测温记录仪表
@@ -932,6 +932,13 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 用于核验测温点数量、位置和焊口对应关系。
+  - id: REQ-33-03
+    materialTypeCode: pipeline_summary
+    name: 管线汇总表
+    requiredType: 条件必传
+    responsibleParty: 施工方或设计方上传
+    applicability: 用于继承R32焊口级焊后热处理适用性
+    note: 全部焊口均不要求焊后热处理时，本节点返回不适用。
 - nodeId: 34
   code: '34'
   name: 热处理记录、报告曲线、硬度检测报告

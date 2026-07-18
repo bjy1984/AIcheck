@@ -2077,15 +2077,17 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R33-01
   sourceRuleId: R33
   requiredFacts:
+  - r33.weldItems
   - r33.instrumentRecords
   - r33.temperaturePointLayouts
   - r33.reviewDate
   tools:
   - extract_document_fields
+  - resolve_pwht_applicability
   - evaluate_heat_treatment_instruments
   parameters:
     profile: r33_heat_treatment_instruments
-    argumentProfile: r33_calibration_and_layout
+    argumentProfile: r33_shared_applicability_calibration_and_layout
   outputSchema: deterministic-tool-result-v1
   implementationStatus: pilot_implemented
 - atomicCheckId: AC-R33-02

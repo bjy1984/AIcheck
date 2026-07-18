@@ -12,7 +12,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 - Tool Result 统一返回 `passed / failed / evidence_insufficient / not_applicable`；R19 另允许 `human_review_required`。
 - 64 个重复证据追溯项统一使用 `validate_evidence_grounding`，但仍保留逐 atomicCheck 绑定，确保审计覆盖完整。
 - R69 为人工评价边界：Tool 汇总 R01-R68 结果并校验评价报告字段，最终评价结论只能采用监检人员签发结果。
-- 试点范围：R01-R03、R06-R07、R09、R12-R19、R24、R60-R62。R19 使用 `llm_semantic_primary`，Tool负责取证和结构校验，固定聚合器生成节点 result。
+- 试点范围：R01-R03、R06-R07、R09、R12-R34、R60-R62。R19 使用 `llm_semantic_primary`，Tool负责取证和结构校验，固定聚合器生成节点 result。
 
 ## 2. 试点已实现 Tool
 
@@ -23,6 +23,16 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 | `check_design_license_scope` | R01 | GC1、GC2、GCD 设计许可范围覆盖 |
 | `decode_welder_qualification` | R24 | 解析焊工项目代号 |
 | `check_welder_work_coverage` | R24 | 方法、材料、位置、厚度、管径覆盖 |
+| `check_wps_pqr_coverage` | R25 | WPS/PQR 审批、对应关系、参数与生产条件覆盖 |
+| `evaluate_welding_consumable` | R26 | 焊材质量证明、批号追溯、牌号规格和性能符合性 |
+| `evaluate_welding_consumable_control` | R27 | 焊材验收、保管、烘干、发放、使用和回收闭环 |
+| `evaluate_pipe_fit_up` | R28 | 错边、间隙、坡口和禁止强行组对 |
+| `evaluate_welding_process` | R29 | 施焊参数、焊工资格、WPS 覆盖和焊缝追溯联动 |
+| `evaluate_weld_appearance` | R30 | 外观缺陷、咬边及余高限值 |
+| `evaluate_weld_repair` | R31 | 返修次数、审批、返修工艺和返修后检测 |
+| `resolve_pwht_applicability` | R32/R34 | 基于材料、厚度、接头和设计要求统一判定热处理适用性 |
+| `evaluate_heat_treatment` | R32/R34 | 热处理工艺卡及曲线、硬度结果的确定性审核 |
+| `evaluate_heat_treatment_instruments` | R33 | 测温元件、温控/记录仪表校准和测温点布置 |
 | `check_pressure_gauge_requirements` | R60 | 压力表数量、有效期、精度和量程 |
 | `check_pressure_test_parameters` | R61 | 温度应力比、压力上下限、保压、气压分级升压和结果 |
 | `check_pressure_test_report_consistency` | R62 | 报告、方案与现场参数一致性 |
@@ -309,7 +319,7 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R33-01 | 核验热电偶、温控仪和自动温度记录仪均有覆盖使用日期的校准/校验证书，并核验测温点布置图与实际焊口和加热范围对应。 | `r33.instrumentRecords`<br>`r33.temperaturePointLayouts`<br>`r33.reviewDate` | `extract_document_fields`<br>`evaluate_heat_treatment_instruments` | `profile=r33_heat_treatment_instruments`<br>`argumentProfile=r33_calibration_and_layout` | `deterministic-tool-result-v1` | `pilot_implemented` |
+| AC-R33-01 | 核验热电偶、温控仪和自动温度记录仪均有覆盖使用日期的校准/校验证书，并核验测温点布置图与实际焊口和加热范围对应。 | `r33.weldItems`<br>`r33.instrumentRecords`<br>`r33.temperaturePointLayouts`<br>`r33.reviewDate` | `extract_document_fields`<br>`resolve_pwht_applicability`<br>`evaluate_heat_treatment_instruments` | `profile=r33_heat_treatment_instruments`<br>`argumentProfile=r33_shared_applicability_calibration_and_layout` | `deterministic-tool-result-v1` | `pilot_implemented` |
 | AC-R33-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `pilot_implemented` |
 
 ### R34

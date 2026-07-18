@@ -92,6 +92,6 @@ def test_material_review_asset_is_packaged_and_versioned() -> None:
     status = material_review_asset_status()
 
     assert asset["schemaVersion"] == "aicheck-material-review-points@1"
-    assert asset["itemCount"] == 156
+    assert asset["itemCount"] == 164
     assert asset["sourceSha256"]
     assert status["ready"] is True

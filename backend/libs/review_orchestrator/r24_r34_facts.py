@@ -18,7 +18,7 @@ NODE_CONFIG: dict[str, dict[str, tuple[str, ...]]] = {
     "r30": {"appearanceRecords": ("weld_appearance_record",)},
     "r31": {"repairRecords": ("weld_repair_record",)},
     "r32": {"procedureCards": ("heat_treatment_procedure",), "qualificationReports": ("pqr", "wps_pqr"), "weldItems": ("welding_record", "pipeline_summary")},
-    "r33": {"instrumentRecords": ("heat_treatment_instrument",), "temperaturePointLayouts": ("temperature_point_layout",)},
+    "r33": {"instrumentRecords": ("heat_treatment_instrument",), "temperaturePointLayouts": ("temperature_point_layout",), "weldItems": ("welding_record", "pipeline_summary")},
     "r34": {"heatTreatmentReports": ("heat_treatment_record",), "hardnessReports": ("hardness_report",), "weldItems": ("welding_record", "pipeline_summary")},
 }
 
@@ -185,8 +185,9 @@ def _mapped(v: dict[str, Any], kind: str) -> dict[str, Any]:
         "inspectionGrade": _v(v, "inspectionGrade", "检验等级"), "jointType": _v(v, "jointType", "接头类型"),
         "crack": _bool(_v(v, "crack", "裂纹")), "lackOfFusion": _bool(_v(v, "lackOfFusion", "未熔合")), "surfacePore": _bool(_v(v, "surfacePore", "表面气孔")), "exposedSlag": _bool(_v(v, "exposedSlag", "外露夹渣")),
         "undercutDepth": _v(v, "undercutDepth", "咬边深度"), "reinforcement": _v(v, "reinforcement", "焊缝余高"), "width": _v(v, "width", "焊缝宽度"), "widthMin": _v(v, "widthMin", "宽度下限"), "widthMax": _v(v, "widthMax", "宽度上限"), "photoRef": _v(v, "photoRef", "照片引用"),
-        "repairApplicationNo": _v(v, "repairApplicationNo", "返修申请单号"), "repairProcedureNo": _v(v, "repairProcedureNo", "返修工艺编号"), "causeAnalysis": _v(v, "causeAnalysis", "原因分析"), "sameLocationRepairCount": _v(v, "sameLocationRepairCount", "同一部位返修次数"),
+        "repairApplicationNo": _v(v, "repairApplicationNo", "返修申请单号"), "repairProcedureNo": _v(v, "repairProcedureNo", "返修工艺编号"), "repairProcedureApproved": _bool(_v(v, "repairProcedureApproved", "返修工艺批准")), "causeAnalysis": _v(v, "causeAnalysis", "原因分析"), "sameLocationRepairCount": _v(v, "sameLocationRepairCount", "同一部位返修次数"),
         "revisedSpecialMeasures": _bool(_v(v, "revisedSpecialMeasures", "专项返修措施")), "technicalHeadApproved": _bool(_v(v, "technicalHeadApproved", "技术负责人批准")), "postRepairNdtReportNo": _v(v, "postRepairNdtReportNo", "返修后检测报告编号"), "postRepairNdtResult": _v(v, "postRepairNdtResult", "返修后检测结论"),
+        "originalInspectionMethod": _v(v, "originalInspectionMethod", "原检测方法"), "postRepairNdtMethod": _v(v, "postRepairNdtMethod", "返修后检测方法"),
         "performedAfterPwht": _bool(_v(v, "performedAfterPwht", "热处理后返修")), "repeatPwhtCompleted": _bool(_v(v, "repeatPwhtCompleted", "重新热处理完成")),
         "materialGroup": _v(v, "materialGroup", "材料组别"), "governingThickness": _v(v, "governingThickness", "控制厚度"), "specifiedMinimumTensileStrength": _v(v, "specifiedMinimumTensileStrength", "规定最小抗拉强度"), "chromiumPercent": _v(v, "chromiumPercent", "铬含量"), "carbonPercent": _v(v, "carbonPercent", "碳含量"),
         "designPwhtRequired": _bool(_v(v, "designPwhtRequired", "设计要求热处理")), "holdingTemperature": _v(v, "holdingTemperature", "保温温度"), "holdingMinutes": _v(v, "holdingMinutes", "保温时间"), "heatingRate": _v(v, "heatingRate", "升温速率"), "coolingRate": _v(v, "coolingRate", "降温速率"),

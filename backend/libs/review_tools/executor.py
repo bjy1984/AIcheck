@@ -287,7 +287,7 @@ def build_tool_arguments(
         "evaluate_welding_process": ("r29",),
         "evaluate_weld_appearance": ("r30",),
         "evaluate_weld_repair": ("r31",),
-        "resolve_pwht_applicability": ("r32", "r34"),
+        "resolve_pwht_applicability": ("r32", "r33", "r34"),
         "evaluate_heat_treatment": ("r32", "r34"),
         "evaluate_heat_treatment_instruments": ("r33",),
     }

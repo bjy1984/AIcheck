@@ -26,6 +26,13 @@ R34_VERSION = "r34-pwht-result-hardness-gbt20801.1-2025-v1"
 def check_wps_pqr_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
     process_type = _norm(arguments.get("processType") or "welding")
     if process_type in {"bonding", "粘接", "adhesivebonding"}:
+        if arguments.get("bondingRuleProfileVerified") is not True:
+            return _insufficient(
+                "check_wps_pqr_coverage",
+                "bonding_standard_rule_profile_not_verified",
+                R25_VERSION,
+                arguments,
+            )
         wps_items = _records(arguments.get("bondingProcedureSpecifications") or arguments.get("wpsItems"))
         pqr_items = _records(arguments.get("bondingProcedureQualifications") or arguments.get("pqrItems"))
     else:
@@ -40,6 +47,9 @@ def check_wps_pqr_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
     failed = incomplete = False
     for index, work in enumerate(work_items, 1):
         candidates = [wps for wps in wps_items if _same_if_present(wps, work, "weldingMethod", "method")]
+        actual_wps_no = _first(work, "wpsNo", "procedureNo")
+        if _present(actual_wps_no):
+            candidates = [wps for wps in candidates if _norm(_first(wps, "wpsNo", "documentNo", "id")) == _norm(actual_wps_no)]
         if not candidates:
             failed = True
             matrix.append({"workItemId": _id(work, index), "result": "failed", "reasonCodes": ["covering_wps_missing"]})
@@ -62,7 +72,7 @@ def check_wps_pqr_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
                 work_incomplete = True
                 reasons.append("wps_pqr_approval_or_link_evidence_incomplete")
                 continue
-            pqr = matched_pqrs[0]
+            pqr = next((item for item in matched_pqrs if _bool(_first(item, "approved", "approvalCompleted")) is True), matched_pqrs[0])
             range_status, range_reasons = _wps_pqr_ranges(wps, pqr, work)
             reasons.extend(range_reasons)
             if range_status == "failed":
@@ -71,7 +81,7 @@ def check_wps_pqr_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
                 work_incomplete = True
             else:
                 matched_wps.append(wps_no)
-        status = "failed" if work_failed else "passed" if matched_wps else "evidence_insufficient" if work_incomplete else "failed"
+        status = "passed" if matched_wps else "failed" if work_failed else "evidence_insufficient" if work_incomplete else "failed"
         failed |= status == "failed"
         incomplete |= status == "evidence_insufficient"
         checks.append(check(f"work_{index}_wps_pqr_and_range_coverage", status == "passed", matched_wps, "approved_linked_and_covering"))
@@ -290,7 +300,7 @@ def evaluate_welding_process(arguments: dict[str, Any]) -> dict[str, Any]:
         if any(item and item.get("result") == "failed" for item in linked):
             explicit = True
             reasons.append("r24_or_r25_linked_check_failed")
-        linked_missing = any(item is None or item.get("result") == "evidence_insufficient" for item in linked)
+        linked_missing = any(item is None or item.get("result") not in {"passed", "failed"} for item in linked)
         if linked_missing:
             reasons.append("r24_or_r25_linked_result_missing")
         status = "failed" if explicit else "evidence_insufficient" if missing or not marked or traceable is None or linked_missing else "passed"
@@ -323,7 +333,9 @@ def evaluate_weld_appearance(arguments: dict[str, Any]) -> dict[str, Any]:
                 missing = True
                 reasons.append(f"{defect}_inspection_missing")
         undercut = decimal(_first(record, "undercutDepth", "undercut"))
-        undercut_limit = _design_limit(record, "undercutMax") or _undercut_limit(grade, joint, thickness)
+        undercut_limit = _design_limit(record, "undercutMax")
+        if undercut_limit is None:
+            undercut_limit = _undercut_limit(grade, joint, thickness)
         if undercut is None or undercut_limit is None:
             missing = True
             reasons.append("undercut_value_or_applicable_limit_missing")
@@ -331,7 +343,9 @@ def evaluate_weld_appearance(arguments: dict[str, Any]) -> dict[str, Any]:
             explicit = True
             reasons.append("undercut_exceeds_limit")
         reinforcement = decimal(_first(record, "reinforcement", "weldReinforcement"))
-        reinforcement_limit = _design_limit(record, "reinforcementMax") or _reinforcement_limit(grade, thickness)
+        reinforcement_limit = _design_limit(record, "reinforcementMax")
+        if reinforcement_limit is None:
+            reinforcement_limit = _reinforcement_limit(grade, thickness)
         if reinforcement is None or reinforcement_limit is None:
             missing = True
             reasons.append("reinforcement_value_or_limit_missing")
@@ -366,12 +380,32 @@ def evaluate_weld_repair(arguments: dict[str, Any]) -> dict[str, Any]:
     failed = incomplete = False
     for index, repair in enumerate(repairs, 1):
         count = _integer(_first(repair, "sameLocationRepairCount", "repairCount"))
-        required = ("repairApplicationNo", "repairProcedureNo", "causeAnalysis", "postRepairNdtReportNo", "postRepairNdtResult")
+        required = (
+            "repairApplicationNo",
+            "repairProcedureNo",
+            "causeAnalysis",
+            "originalInspectionMethod",
+            "postRepairNdtReportNo",
+            "postRepairNdtMethod",
+            "postRepairNdtResult",
+        )
         missing = [field for field in required if not _present(_first(repair, field))]
         reasons = [f"{field}_missing" for field in missing]
         explicit = _present(_first(repair, "postRepairNdtResult")) and not _accepted(_first(repair, "postRepairNdtResult"))
         if explicit:
             reasons.append("post_repair_ndt_not_accepted")
+        procedure_approved = _bool(_first(repair, "repairProcedureApproved", "procedureApproved"))
+        if procedure_approved is False:
+            explicit = True
+            reasons.append("repair_procedure_not_approved")
+        elif procedure_approved is not True:
+            missing.append("repairProcedureApproved")
+            reasons.append("repair_procedure_approval_missing")
+        original_method = _norm(_first(repair, "originalInspectionMethod"))
+        post_method = _norm(_first(repair, "postRepairNdtMethod"))
+        if original_method and post_method and original_method != post_method:
+            explicit = True
+            reasons.append("post_repair_ndt_method_differs_from_original")
         if count is None:
             missing.append("sameLocationRepairCount")
             reasons.append("same_location_repair_count_missing")
@@ -423,6 +457,18 @@ def evaluate_heat_treatment(arguments: dict[str, Any]) -> dict[str, Any]:
 def evaluate_heat_treatment_instruments(arguments: dict[str, Any]) -> dict[str, Any]:
     records = _records(arguments.get("instrumentRecords") or arguments.get("records"))
     layouts = _records(arguments.get("temperaturePointLayouts") or arguments.get("layouts"))
+    applicability = _pwht_applicability_from_arguments(arguments)
+    if applicability is not None:
+        if any(item.get("result") == "evidence_insufficient" for item in applicability):
+            return _insufficient("evaluate_heat_treatment_instruments", "pwht_applicability_unresolved", R33_VERSION, arguments)
+        if applicability and not any(item.get("required") is True for item in applicability):
+            return result(
+                "evaluate_heat_treatment_instruments",
+                "not_applicable",
+                facts={"pwhtApplicabilityMatrix": applicability},
+                checks=[],
+                rule_version=R33_VERSION,
+            )
     if not records:
         return _insufficient("evaluate_heat_treatment_instruments", "temperature_instrument_records_missing", R33_VERSION, arguments)
     review_date = parse_date(arguments.get("reviewDate")) or date.today()
@@ -564,6 +610,14 @@ def _evaluate_heat_treatment_result(arguments: dict[str, Any]) -> dict[str, Any]
             if not _present(_first(report, "curveRef", "temperatureTimeCurve")):
                 missing = True
                 reasons.append("temperature_time_curve_missing")
+            parameter_status, parameter_reasons = _pwht_parameter_status(
+                weld,
+                report,
+                applicability.get("ruleProfile") or {},
+            )
+            reasons.extend(parameter_reasons)
+            explicit |= parameter_status == "failed"
+            missing |= parameter_status == "evidence_insufficient"
         if not hardness:
             missing = True
             reasons.append("hardness_report_missing")
@@ -752,13 +806,69 @@ def _wps_pqr_ranges(wps: dict[str, Any], pqr: dict[str, Any], work: dict[str, An
 
 
 def _fit_up_limit(material: str, thickness: Decimal | None) -> Decimal | None:
-    if thickness is None:
+    if thickness is None or not material:
         return None
     if any(token in material for token in ("aluminum", "aluminium", "铝")):
         return Decimal("0.5") if thickness <= 5 else min(thickness * Decimal("0.10"), Decimal("2"))
     if any(token in material for token in ("copper", "nickel", "titanium", "zirconium", "铜", "镍", "钛", "锆")):
         return min(thickness * Decimal("0.10"), Decimal("1"))
     return min(thickness * Decimal("0.10"), Decimal("2"))
+
+
+def _pwht_parameter_status(weld: dict[str, Any], record: dict[str, Any], profile: dict[str, Any]) -> tuple[str, list[str]]:
+    reasons: list[str] = []
+    failed = incomplete = False
+    thickness = decimal(_first(weld, "governingThickness", "thickness", "wallThickness"))
+    heat_treatment_thickness = decimal(_first(weld, "heatTreatmentThickness", "pwhtThickness")) or thickness
+    holding_temperature = decimal(_first(record, "holdingTemperature"))
+    holding_minutes = decimal(_first(record, "holdingMinutes"))
+    heating_rate = decimal(_first(record, "heatingRate"))
+    cooling_rate = decimal(_first(record, "coolingRate"))
+    for field, value in (
+        ("holdingTemperature", holding_temperature),
+        ("holdingMinutes", holding_minutes),
+        ("heatingRate", heating_rate),
+        ("coolingRate", cooling_rate),
+    ):
+        if value is None:
+            incomplete = True
+            reasons.append(f"actual_{field}_missing")
+    temperature_min = decimal(profile.get("temperatureMinC"))
+    temperature_max = decimal(profile.get("temperatureMaxC"))
+    if temperature_min is None or temperature_max is None:
+        incomplete = True
+        reasons.append("holding_temperature_rule_profile_missing")
+    elif holding_temperature is not None and not _between(holding_temperature, temperature_min, temperature_max):
+        failed = True
+        reasons.append("actual_holding_temperature_outside_table36_range")
+    minimum_hold = _minimum_hold_minutes(heat_treatment_thickness, profile)
+    if minimum_hold is None:
+        incomplete = True
+        reasons.append("holding_time_rule_profile_missing")
+    elif holding_minutes is not None and holding_minutes < minimum_hold:
+        failed = True
+        reasons.append("actual_holding_time_below_table36_minimum")
+    if thickness is None or thickness <= 0:
+        incomplete = True
+        reasons.append("governing_thickness_missing_for_rate_limits")
+    else:
+        heating_max = min(Decimal("205") * Decimal("25") / thickness, Decimal("205"))
+        cooling_max = min(Decimal("260") * Decimal("25") / thickness, Decimal("260"))
+        if heating_rate is not None and heating_rate > heating_max:
+            failed = True
+            reasons.append("actual_heating_rate_exceeds_7.6.4_limit")
+        if cooling_rate is not None and cooling_rate > cooling_max:
+            failed = True
+            reasons.append("actual_cooling_rate_exceeds_7.6.4_limit")
+    return ("failed" if failed else "evidence_insufficient" if incomplete else "passed"), reasons
+
+
+def _pwht_applicability_from_arguments(arguments: dict[str, Any]) -> list[dict[str, Any]] | None:
+    supplied = arguments.get("pwhtApplicabilityMatrix")
+    if isinstance(supplied, list):
+        return [item for item in supplied if isinstance(item, dict)]
+    welds = _records(arguments.get("weldItems") or arguments.get("items"))
+    return [_resolve_pwht_item(weld) for weld in welds] if welds else None
 
 
 def _reinforcement_limit(grade: str | None, thickness: Decimal | None) -> Decimal | None:
