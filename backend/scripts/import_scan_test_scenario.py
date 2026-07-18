@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
+import math
 import mimetypes
 import shutil
 import sys
@@ -29,9 +31,24 @@ from libs.material_targeting import run_material_targeting
 
 SCENARIO_TAG = "scan-test-scenario-v1"
 DEFAULT_PROJECT_ID = "P-2026-GDLNG-002"
+HEIC_SUFFIXES = {".heic", ".heif"}
 CONTRACTOR_USER = {"userId": "USER-CONTRACTOR-001", "org": "粤海安装工程有限公司", "name": "李工"}
 NDT_USER = {"userId": "USER-NDT-001", "org": "粤检无损检测", "name": "王工"}
 INSPECTION_REVIEWER = "张工"
+ROLE_PROFILE_DEFAULTS = {
+    "contractor": {
+        "username": "contractor",
+        "roleId": "3",
+        "roleLabel": "施工方",
+        "defaultPath": "/workbench/contractor",
+    },
+    "ndt": {
+        "username": "ndt",
+        "roleId": "4",
+        "roleLabel": "无损检测",
+        "defaultPath": "/workbench/ndt",
+    },
+}
 
 FILE_MAPPINGS: dict[str, dict[str, Any]] = {
     "20260623104523.pdf": {
@@ -256,7 +273,7 @@ def sha256_file(path: Path) -> str:
 
 
 def content_type_for(path: Path) -> str:
-    if path.suffix.lower() == ".heic":
+    if path.suffix.lower() in HEIC_SUFFIXES:
         return "image/heic"
     return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
 
@@ -267,11 +284,97 @@ def load_ocr_items(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def scan_files(scan_dir: Path) -> list[Path]:
-    allowed = {".pdf", ".heic"}
+    allowed = {".pdf", *HEIC_SUFFIXES}
     return sorted(
         [item for item in scan_dir.iterdir() if item.is_file() and item.suffix.lower() in allowed],
         key=lambda item: item.name,
     )
+
+
+def resolve_import_source_path(scan_dir: Path, source_path: Path) -> Path:
+    if source_path.suffix.lower() not in HEIC_SUFFIXES:
+        return source_path
+    png_path = scan_dir / "png" / f"{source_path.stem}.png"
+    if not png_path.is_file():
+        raise FileNotFoundError(f"HEIC source requires a converted PNG: {png_path}")
+    return png_path
+
+
+def vision_bbox_to_xyxy(raw_bbox: Any, width: float, height: float) -> list[float] | None:
+    if not isinstance(raw_bbox, (list, tuple)) or len(raw_bbox) < 4 or width <= 0 or height <= 0:
+        return None
+    try:
+        x, y, box_width, box_height = (float(value) for value in raw_bbox[:4])
+    except (TypeError, ValueError):
+        return None
+    values = (x, y, box_width, box_height, width, height)
+    if not all(math.isfinite(value) for value in values) or box_width <= 0 or box_height <= 0:
+        return None
+    left = x * width
+    top = (1 - y - box_height) * height
+    right = (x + box_width) * width
+    bottom = (1 - y) * height
+    left = max(0.0, min(width, left))
+    top = max(0.0, min(height, top))
+    right = max(0.0, min(width, right))
+    bottom = max(0.0, min(height, bottom))
+    if right <= left or bottom <= top:
+        return None
+    return [round(left, 4), round(top, 4), round(right, 4), round(bottom, 4)]
+
+
+def normalize_ocr_payload(raw: dict[str, Any], source_path: Path) -> dict[str, Any]:
+    normalized = copy.deepcopy(raw)
+    pdf_page_dimensions: list[tuple[float, float]] = []
+    image_dimensions: tuple[float, float] | None = None
+    if source_path.suffix.lower() == ".pdf":
+        import fitz
+
+        with fitz.open(source_path) as document:
+            pdf_page_dimensions = [(float(page.rect.width), float(page.rect.height)) for page in document]
+    else:
+        from PIL import Image
+
+        with Image.open(source_path) as image:
+            image_dimensions = (float(image.width), float(image.height))
+
+    for page_index, page in enumerate(normalized.get("pages") or [], start=1):
+        if not isinstance(page, dict):
+            continue
+        page_no = int(page.get("source_page") or page.get("pageNo") or page_index)
+        if pdf_page_dimensions and 1 <= page_no <= len(pdf_page_dimensions):
+            width, height = pdf_page_dimensions[page_no - 1]
+            coordinate_system = "pdf_points"
+            page.update({"width": width, "height": height})
+        elif image_dimensions:
+            width, height = image_dimensions
+            coordinate_system = "rendered_pixels"
+            page.update(
+                {
+                    "path": str(source_path),
+                    "sourceImageWidth": width,
+                    "sourceImageHeight": height,
+                    "previewWidth": width,
+                    "previewHeight": height,
+                }
+            )
+        else:
+            continue
+        page["coordinateSystem"] = coordinate_system
+        page["ocrCoordinateSystem"] = coordinate_system
+        for observation in page.get("observations") or []:
+            if not isinstance(observation, dict):
+                continue
+            raw_bbox = observation.get("boundingBox")
+            bbox = vision_bbox_to_xyxy(raw_bbox, width, height)
+            if not bbox:
+                continue
+            observation["originalBoundingBox"] = raw_bbox
+            observation["bbox"] = bbox
+            observation["coordinateSystem"] = coordinate_system
+            observation["sourceImageWidth"] = width
+            observation["sourceImageHeight"] = height
+    return normalized
 
 
 def requirement(project_id: str, requirement_id: str | None, node_id: int) -> dict[str, Any] | None:
@@ -296,7 +399,14 @@ def requirement(project_id: str, requirement_id: str | None, node_id: int) -> di
     )
 
 
-def find_document(project_id: str, file_name: str, hash_value: str, size: int) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def find_document(
+    project_id: str,
+    file_name: str,
+    hash_value: str,
+    size: int,
+    *,
+    legacy_file_names: set[str] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     hash_key = f"sha256-{hash_value}"
     for version in repo.state.get("versions", []):
         if version.get("hash") != hash_key:
@@ -304,11 +414,15 @@ def find_document(project_id: str, file_name: str, hash_value: str, size: int) -
         document = repo.find_one("documents", str(version.get("documentId") or ""))
         if document and document.get("projectId") == project_id:
             return document, version
+    accepted_file_names = {file_name, *(legacy_file_names or set())}
     for document in repo.state.get("documents", []):
-        if document.get("projectId") != project_id or document.get("fileName") != file_name:
+        if document.get("projectId") != project_id or document.get("fileName") not in accepted_file_names:
             continue
         version = repo.find_one("versions", str(document.get("currentVersionId") or ""))
-        if version and int(version.get("fileSize") or 0) == size:
+        if version and (
+            document.get("fileName") in (legacy_file_names or set())
+            or int(version.get("fileSize") or 0) == size
+        ):
             return document, version
     return None, None
 
@@ -466,12 +580,26 @@ def scenario_node_ids() -> set[int]:
     return {int(item["nodeId"]) for item in FILE_MAPPINGS.values()}
 
 
-def ensure_document_records(project_id: str, source_path: Path, mapping: dict[str, Any], upload_session_id: str) -> dict[str, Any]:
+def ensure_document_records(
+    project_id: str,
+    source_path: Path,
+    mapping: dict[str, Any],
+    upload_session_id: str,
+    *,
+    original_file_name: str | None = None,
+) -> dict[str, Any]:
     data = source_path.read_bytes()
     hash_value = hashlib.sha256(data).hexdigest()
     size = len(data)
     file_name = source_path.name
-    document, version = find_document(project_id, file_name, hash_value, size)
+    legacy_file_names = {original_file_name} if original_file_name and original_file_name != file_name else set()
+    document, version = find_document(
+        project_id,
+        file_name,
+        hash_value,
+        size,
+        legacy_file_names=legacy_file_names,
+    )
     seed = f"SCAN{hash_value[:8].upper()}"
     created = False
     project = repo.require_project(project_id) or {}
@@ -529,6 +657,7 @@ def ensure_document_records(project_id: str, source_path: Path, mapping: dict[st
             "materialCategory": mapping.get("materialCategory"),
             "fileName": file_name,
             "fileType": content_type_for(source_path),
+            "originalFileName": original_file_name or file_name,
             "sourceOrgName": actor["org"],
             "uploaderName": actor["name"],
             "currentVersionId": version["id"],
@@ -557,6 +686,7 @@ def ensure_document_records(project_id: str, source_path: Path, mapping: dict[st
             "uploadTime": now,
             "isCurrent": True,
             "scenarioTag": SCENARIO_TAG,
+            "originalFileName": original_file_name or file_name,
         }
     )
     knowledge_file = repo.find_one("knowledge_files", f"KF-{document['id']}") or next(
@@ -565,6 +695,7 @@ def ensure_document_records(project_id: str, source_path: Path, mapping: dict[st
     knowledge_file.update(
         {
             "fileName": file_name,
+            "originalFileName": original_file_name or file_name,
             "sourceId": "KS-PROJECT-FILE",
             "sourceName": "项目文件知识库",
             "projectId": project_id,
@@ -617,10 +748,13 @@ def fragments_from_ocr(raw: dict[str, Any]) -> list[dict[str, Any]]:
                     {
                         "pageNo": page_no,
                         "text": str(observation.get("text") or "").strip(),
-                        "bbox": observation.get("boundingBox") or observation.get("bbox"),
+                        "bbox": observation.get("bbox") or observation.get("boundingBox"),
                         "confidence": observation.get("confidence"),
                         "sourceMethod": observation.get("extraction_method") or "scan_ocr_import",
                         "ocrEngine": "macos_vision_ocr_v1",
+                        "coordinateSystem": observation.get("coordinateSystem") or page.get("coordinateSystem"),
+                        "sourceImageWidth": observation.get("sourceImageWidth") or page.get("sourceImageWidth") or page.get("width"),
+                        "sourceImageHeight": observation.get("sourceImageHeight") or page.get("sourceImageHeight") or page.get("height"),
                     }
                 )
             continue
@@ -923,6 +1057,49 @@ def ensure_role_member_scope(project_id: str, role: str, actor: dict[str, str], 
     return existing
 
 
+def ensure_user_profile(role: str, actor: dict[str, str]) -> dict[str, Any] | None:
+    profile_defaults = ROLE_PROFILE_DEFAULTS.get(role)
+    user = repo.find_one("users", actor["userId"])
+    if not profile_defaults and user is None:
+        return None
+    if user is None:
+        username = (profile_defaults or {}).get("username") or role
+        user = {
+            "id": actor["userId"],
+            "username": username,
+            "password": username,
+            "passwordHash": f"plain:{username}",
+            "role": role,
+            "roleId": (profile_defaults or {}).get("roleId"),
+            "roleLabel": (profile_defaults or {}).get("roleLabel") or role,
+            "defaultPath": (profile_defaults or {}).get("defaultPath") or f"/workbench/{role}",
+            "authVersion": 0,
+            "mustChangePassword": False,
+        }
+        repo.state.setdefault("users", []).insert(0, user)
+    user.update(
+        {
+            "role": role,
+            "roleId": (profile_defaults or {}).get("roleId") or user.get("roleId"),
+            "roleLabel": (profile_defaults or {}).get("roleLabel") or user.get("roleLabel") or role,
+            "displayName": actor["name"],
+            "name": actor["name"],
+            "orgUnitName": actor["org"],
+            "orgName": actor["org"],
+            "permissions": repo.role_actions(role),
+            "status": "启用",
+            "defaultPath": (
+                (profile_defaults or {}).get("defaultPath")
+                or user.get("defaultPath")
+                or f"/workbench/{role}"
+            ),
+            "updatedAt": server_time(),
+            "scenarioTag": SCENARIO_TAG,
+        }
+    )
+    return user
+
+
 def create_contractor_submission(project_id: str, node_id: int, bindings: list[dict[str, Any]]) -> dict[str, Any]:
     submission_id = f"SUB-SCAN-{node_id}-{stable_doc_id('|'.join(sorted(item['id'] for item in bindings)))[:8].upper()}"
     snapshot_id = f"SNAP-{submission_id}"
@@ -1134,12 +1311,25 @@ def build_plan(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id: s
         if not raw:
             plan.append({"file": path.name, "status": "skipped", "reason": "没有 OCR 结果"})
             continue
-        hash_value = sha256_file(path)
-        document, version = find_document(project_id, path.name, hash_value, path.stat().st_size)
+        try:
+            import_path = resolve_import_source_path(scan_dir, path)
+        except FileNotFoundError as exc:
+            plan.append({"file": path.name, "status": "skipped", "reason": str(exc)})
+            continue
+        hash_value = sha256_file(import_path)
+        legacy_file_names = {path.name} if path.name != import_path.name else set()
+        document, version = find_document(
+            project_id,
+            import_path.name,
+            hash_value,
+            import_path.stat().st_size,
+            legacy_file_names=legacy_file_names,
+        )
         req = requirement(project_id, mapping.get("requirementId"), int(mapping["nodeId"]))
         plan.append(
             {
-                "file": path.name,
+                "file": import_path.name,
+                "sourceFile": path.name,
                 "status": "ready",
                 "role": mapping["role"],
                 "nodeId": mapping["nodeId"],
@@ -1177,11 +1367,25 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
         raw = raw_ocr.get(path.name)
         if not mapping or not raw:
             continue
+        import_path = resolve_import_source_path(scan_dir, path)
+        normalized_ocr = normalize_ocr_payload(raw, import_path)
         upload_session_id = f"UPS-SCAN-{mapping['role'].upper()}-V1"
-        records = ensure_document_records(project_id, path, mapping, upload_session_id)
-        apply_ocr_and_index(records["document"], records["version"], raw, mapping, with_vectors=with_vectors)
+        records = ensure_document_records(
+            project_id,
+            import_path,
+            mapping,
+            upload_session_id,
+            original_file_name=path.name,
+        )
+        apply_ocr_and_index(
+            records["document"],
+            records["version"],
+            normalized_ocr,
+            mapping,
+            with_vectors=with_vectors,
+        )
         binding = ensure_binding(project_id, records["document"], records["version"], mapping)
-        imported.append({**records, "mapping": mapping, "ocr": raw, "binding": binding})
+        imported.append({**records, "mapping": mapping, "ocr": normalized_ocr, "binding": binding})
         bindings_by_role[mapping["role"]].append(binding)
     make_upload_sessions(project_id, imported)
 
@@ -1207,6 +1411,8 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
         NDT_USER,
         {int(item["nodeId"]) for item in bindings_by_role.get("ndt", [])},
     )
+    contractor_user = ensure_user_profile("contractor", CONTRACTOR_USER)
+    ndt_user = ensure_user_profile("ndt", NDT_USER)
     refresh_knowledge_source_counts()
     project = repo.require_project(project_id)
     if project:
@@ -1217,12 +1423,20 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
     return {
         "clear": clear_stats,
         "importedFiles": len(imported),
+        "convertedHeicFiles": sum(
+            Path(str(item["document"].get("originalFileName") or "")).suffix.lower() in HEIC_SUFFIXES
+            for item in imported
+        ),
         "contractorSubmissions": len(contractor_submissions),
         "ndtSubmission": bool(ndt_submission),
         "bindings": len([item for values in bindings_by_role.values() for item in values]),
         "roleScopes": {
             "contractor": contractor_member.get("nodeScope", []),
             "ndt": ndt_member.get("nodeScope", []),
+        },
+        "users": {
+            "contractor": (contractor_user or {}).get("orgUnitName"),
+            "ndt": (ndt_user or {}).get("orgUnitName"),
         },
     }
 
