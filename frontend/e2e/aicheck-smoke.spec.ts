@@ -709,6 +709,31 @@ test.describe('AIcheck route smoke', () => {
     await expect(page).toHaveURL(/#\/login/)
   })
 
+  test('legacy remembered login data is migrated to a username without restoring a password', async ({
+    page
+  }) => {
+    await page.goto('/#/login', { waitUntil: 'domcontentloaded' })
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          rememberMe: true,
+          loginInfo: {
+            username: 'admin',
+            password: 'legacy-password'
+          }
+        })
+      )
+    })
+    await page.reload({ waitUntil: 'networkidle' })
+
+    await expect(page.locator('input[name="username"]')).toHaveValue('admin')
+    await expect(page.locator('input[name="password"]')).toHaveValue('')
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('user')))
+      .toBe(JSON.stringify({ rememberMe: true, loginInfo: 'admin' }))
+  })
+
   test('business role falls back when redirect targets admin panel', async ({ page }) => {
     await page.goto(`/#/login?redirect=${encodeURIComponent('/admin/overview')}`)
     const loginInputs = page.locator('.auth-form .el-input__inner')

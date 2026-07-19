@@ -16,6 +16,17 @@ interface UserState {
   loginInfo?: string
 }
 
+const normalizeRememberedUsername = (value: unknown): string | undefined => {
+  const username =
+    typeof value === 'string'
+      ? value
+      : value && typeof value === 'object' && 'username' in value
+        ? (value as { username?: unknown }).username
+        : undefined
+  if (typeof username !== 'string') return undefined
+  return username.trim() || undefined
+}
+
 export const useUserStore = defineStore('user', {
   state: (): UserState => {
     return {
@@ -45,7 +56,7 @@ export const useUserStore = defineStore('user', {
       return this.rememberMe
     },
     getLoginInfo(): string | undefined {
-      return this.loginInfo
+      return normalizeRememberedUsername(this.loginInfo)
     }
   },
   actions: {
@@ -88,8 +99,8 @@ export const useUserStore = defineStore('user', {
     setRememberMe(rememberMe: boolean) {
       this.rememberMe = rememberMe
     },
-    setLoginInfo(loginInfo: string | undefined) {
-      this.loginInfo = loginInfo
+    setLoginInfo(loginInfo: unknown) {
+      this.loginInfo = normalizeRememberedUsername(loginInfo)
     }
   },
   persist: [

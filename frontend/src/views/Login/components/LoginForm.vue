@@ -63,6 +63,8 @@ const schema = reactive<FormSchema[]>([
       span: 24
     },
     componentProps: {
+      name: 'username',
+      autocomplete: 'username',
       placeholder: '请输入账号',
       prefixIcon: <Icon icon="vi-ep:user" />
     }
@@ -76,6 +78,8 @@ const schema = reactive<FormSchema[]>([
       span: 24
     },
     componentProps: {
+      name: 'password',
+      autocomplete: 'current-password',
       style: {
         width: '100%'
       },
@@ -192,6 +196,8 @@ const contactAdministrator = () => {
 
 const initLoginInfo = () => {
   const savedUsername = userStore.getLoginInfo
+  // 兼容旧版本把整份登录表单持久化到 loginInfo 的数据，并立即清理异常值。
+  userStore.setLoginInfo(savedUsername)
   if (savedUsername && unref(remember)) {
     setValues({ username: savedUsername })
   }
