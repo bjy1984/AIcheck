@@ -47,14 +47,32 @@ let previewRequestSeq = 0
 const evidenceTypeLabel = computed(() => props.evidence?.objectType || 'nodeEvidenceLink')
 const evidenceProjectId = computed(() => props.projectId || props.evidence?.projectId || '')
 const evidenceDocumentId = computed(() => props.evidence?.documentId || '')
-const filePreview = computed(() => previewDetail.value?.preview)
+const directPreviewUrl = computed(() => String(props.evidence?.previewUrl || ''))
+const previewTypeForSource = (source: string) => {
+  const cleanSource = source.split('#')[0].split('?')[0].toLowerCase()
+  if (cleanSource.endsWith('.pdf') || source.includes('/knowledge/files/')) return 'pdf'
+  if (/\.(png|jpe?g|webp|gif|bmp)$/.test(cleanSource)) return 'image'
+  return 'unsupported'
+}
+const filePreview = computed(
+  () =>
+    (directPreviewUrl.value
+      ? {
+          url: directPreviewUrl.value,
+          previewType: previewTypeForSource(props.evidence?.fileName || directPreviewUrl.value) as
+            | 'pdf'
+            | 'image'
+            | 'unsupported'
+        }
+      : previewDetail.value?.preview) || undefined
+)
 const canLoadFilePreview = computed(
   () =>
     visible.value &&
     !!props.evidence &&
-    props.evidence.objectType !== 'knowledgeClause' &&
-    !!evidenceProjectId.value &&
-    !!evidenceDocumentId.value
+    (props.evidence.objectType === 'knowledgeClause'
+      ? !!directPreviewUrl.value
+      : !!evidenceProjectId.value && !!evidenceDocumentId.value)
 )
 const filePreviewAvailable = computed(
   () => !!filePreview.value?.url && filePreview.value.previewType !== 'unsupported'
@@ -70,12 +88,17 @@ const filePreviewFrameUrl = computed(() => {
 const filePreviewSrc = computed(() => {
   const url = filePreviewFrameUrl.value
   if (!url || filePreview.value?.previewType !== 'pdf') return url
-  const pageNo = Number(props.evidence?.pageNo || 0)
-  return pageNo > 0 ? `${url}#page=${pageNo}` : url
+  const pageNo = Number(
+    props.evidence?.pageNo || directPreviewUrl.value.match(/#page=(\d+)/)?.[1] || 0
+  )
+  const baseUrl = url.split('#')[0]
+  return pageNo > 0 ? `${baseUrl}#page=${pageNo}` : url
 })
 const filePreviewIsImage = computed(() => filePreview.value?.previewType === 'image')
 const filePreviewIsPdf = computed(() => filePreview.value?.previewType === 'pdf')
 const filePreviewUnavailableText = computed(() => {
+  if (props.evidence?.objectType === 'knowledgeClause' && !directPreviewUrl.value)
+    return '该条款尚未关联规范库原文件，请联系知识库管理员补齐文件映射。'
   if (!evidenceDocumentId.value) return '当前证据没有关联项目文件，无法加载原文。'
   if (!filePreview.value?.url) return '当前文件详情没有返回原文地址。'
   if (String(filePreview.value.url).startsWith('mock://'))
@@ -106,14 +129,18 @@ const loadFilePreview = async () => {
   if (!canLoadFilePreview.value) return
   previewLoading.value = true
   try {
-    const detail = await getDocumentDetailApi(evidenceProjectId.value, evidenceDocumentId.value)
-    if (requestSeq !== previewRequestSeq) return
-    previewDetail.value = detail.data
-    const url = String(detail.data.preview?.url || '')
-    if (!url || url.startsWith('mock://') || detail.data.preview?.previewType === 'unsupported')
+    let url = directPreviewUrl.value
+    if (!url) {
+      const detail = await getDocumentDetailApi(evidenceProjectId.value, evidenceDocumentId.value)
+      if (requestSeq !== previewRequestSeq) return
+      previewDetail.value = detail.data
+      url = String(detail.data.preview?.url || '')
+    }
+    if (!url || url.startsWith('mock://') || filePreview.value?.previewType === 'unsupported')
       return
-    if (url.startsWith('/api/')) {
-      const res = await getDocumentOriginalBlobApi(url)
+    const requestUrl = url.split('#')[0]
+    if (requestUrl.startsWith('/api/')) {
+      const res = await getDocumentOriginalBlobApi(requestUrl)
       if (requestSeq !== previewRequestSeq) return
       previewObjectUrl.value = URL.createObjectURL(res.data)
     }
@@ -136,6 +163,7 @@ watch(
       props.evidence?.id,
       props.evidence?.documentId,
       props.evidence?.objectType,
+      props.evidence?.previewUrl,
       props.projectId
     ] as const,
   ([open]) => {
@@ -155,7 +183,12 @@ onBeforeUnmount(() => {
 <template>
   <ElDialog v-model="visible" :title="locationTitle" width="1040px" append-to-body>
     <template v-if="evidence">
-      <ElDescriptions :column="2" border class="evidence-summary">
+      <ElDescriptions
+        v-if="evidence.objectType !== 'knowledgeClause'"
+        :column="2"
+        border
+        class="evidence-summary"
+      >
         <ElDescriptionsItem label="证据类型">
           <ElTag type="info" effect="plain">{{ evidenceTypeLabel }}</ElTag>
         </ElDescriptionsItem>
@@ -176,12 +209,20 @@ onBeforeUnmount(() => {
         </ElDescriptionsItem>
       </ElDescriptions>
 
-      <div class="locator-grid">
+      <div v-else class="standard-file-name">
+        <span>文件名称</span>
+        <strong>{{ evidence.fileName || '-' }}</strong>
+      </div>
+
+      <div :class="['locator-grid', { 'is-standard': evidence.objectType === 'knowledgeClause' }]">
         <section class="preview-box">
           <div class="preview-title">定位预览</div>
-          <div v-if="evidence.objectType === 'knowledgeClause'" class="clause-preview">
+          <div
+            v-if="evidence.objectType === 'knowledgeClause' && !filePreviewAvailable"
+            class="clause-preview"
+          >
             <strong>{{ evidence.objectId }}</strong>
-            <p>{{ evidence.quotedText || '标准条款内容将在真实知识库服务接入后展示。' }}</p>
+            <p>{{ evidence.quotedText || filePreviewUnavailableText }}</p>
           </div>
           <div v-else class="file-preview" v-loading="previewLoading">
             <ElAlert
@@ -226,7 +267,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="detail-box">
+        <section v-if="evidence.objectType !== 'knowledgeClause'" class="detail-box">
           <div class="preview-title">提取信息</div>
           <div class="detail-row">
             <span>引用文本</span>
@@ -256,10 +297,34 @@ onBeforeUnmount(() => {
   margin-bottom: 14px;
 }
 
+.standard-file-name {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.standard-file-name span {
+  color: #667085;
+}
+
+.standard-file-name strong {
+  color: #1f2937;
+}
+
 .locator-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
   gap: 14px;
+}
+
+.locator-grid.is-standard {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .preview-box,

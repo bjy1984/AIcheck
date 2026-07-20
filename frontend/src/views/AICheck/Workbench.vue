@@ -2313,6 +2313,12 @@ const loadProjects = async () => {
         : 'submission'
     }
     await loadProjectBundle({ preserveSelection: preserveRouteSelection })
+    if (role.value === 'inspection' && route.query.openFileLibrary === '1') {
+      handleOpenBindDialog()
+      const nextQuery = { ...route.query }
+      delete nextQuery.openFileLibrary
+      await router.replace({ path: route.path, query: nextQuery })
+    }
     if (role.value === 'inspection' && !route.query.projectId) {
       await updateInspectionRoute(
         preserveRouteSelection
@@ -2834,6 +2840,18 @@ const handleOpenBindDialog = (documentId?: string) => {
   bindDialogDocumentId.value = documentId || ''
   bindDialogError.value = ''
   bindDialogVisible.value = true
+}
+
+const handleOpenAiReviewB = () => {
+  const reviewRunId = String(latestAiRun.value?.reviewRunId || '')
+  void router.push({
+    path: '/ai-review-b',
+    query: {
+      projectId: activeProjectId.value,
+      nodeId: String(activeNodeId.value),
+      ...(reviewRunId ? { reviewRunId } : {})
+    }
+  })
 }
 
 const handleSubmitProjectFile = async (documentId: string) => {
@@ -4587,7 +4605,16 @@ onBeforeUnmount(() => {
                 :disabled="actionLoading || isReadOnly"
                 @click="() => handleOpenBindDialog()"
               >
-                选择挂载节点
+                文件库
+              </ElButton>
+              <ElButton
+                v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+                class="btn ai-review-b-entry"
+                type="primary"
+                @click="handleOpenAiReviewB"
+              >
+                <ElIcon><MagicStick /></ElIcon>
+                AI审查
               </ElButton>
               <ElButton v-if="role === 'owner'" class="btn" @click="handleDownloadArchivePackage">
                 导出状态摘要

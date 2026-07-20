@@ -282,6 +282,12 @@ export type EvidenceLink = {
   fieldName?: string
   quotedText?: string
   confidence?: number
+  previewAvailable?: boolean
+  previewUrl?: string
+  sourceLocatorId?: string
+  sourceRelativePath?: string
+  standardRef?: string
+  clauseNo?: string
   nodeId?: number
   reviewPointId?: string
   supportStatus?: string

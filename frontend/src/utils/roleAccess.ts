@@ -50,6 +50,9 @@ export const isPathAllowedForRole = (path: string, role?: string): boolean => {
   const normalizedRole = normalizeAicheckRole(role)
   if (!path || path === '/') return false
   if (['/login', '/404', '/redirect'].some((prefix) => path.startsWith(prefix))) return true
+  if (path === '/ai-review-b' || path.startsWith('/ai-review-b/')) {
+    return normalizedRole === 'inspection'
+  }
   if (path === '/workbench/generic' || path.startsWith('/workbench/generic/')) {
     return ['admin', 'inspection', 'contractor', 'owner'].includes(normalizedRole)
   }

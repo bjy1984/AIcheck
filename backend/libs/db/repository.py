@@ -56,6 +56,9 @@ STATE_COLLECTIONS = {
     "review_graph_nodes": "review_graph_nodes",
     "review_tool_calls": "review_tool_calls",
     "review_events": "review_events",
+    "review_sessions": "review_sessions",
+    "review_messages": "review_messages",
+    "review_session_events": "review_session_events",
     "workflow_outbox": "workflow_outbox",
     "workflow_inbox": "workflow_inbox",
     "retrieval_traces": "retrieval_traces",
@@ -229,6 +232,9 @@ class InMemoryRepository:
         self.state.setdefault("review_graph_nodes", [])
         self.state.setdefault("review_tool_calls", [])
         self.state.setdefault("review_events", [])
+        self.state.setdefault("review_sessions", [])
+        self.state.setdefault("review_messages", [])
+        self.state.setdefault("review_session_events", [])
         self.state.setdefault("workflow_outbox", [])
         self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
@@ -373,6 +379,9 @@ class InMemoryRepository:
         self.state.setdefault("review_graph_nodes", [])
         self.state.setdefault("review_tool_calls", [])
         self.state.setdefault("review_events", [])
+        self.state.setdefault("review_sessions", [])
+        self.state.setdefault("review_messages", [])
+        self.state.setdefault("review_session_events", [])
         self.state.setdefault("workflow_outbox", [])
         self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
@@ -2208,6 +2217,9 @@ class InMemoryRepository:
         loaded.setdefault("review_graph_nodes", [])
         loaded.setdefault("review_tool_calls", [])
         loaded.setdefault("review_events", [])
+        loaded.setdefault("review_sessions", [])
+        loaded.setdefault("review_messages", [])
+        loaded.setdefault("review_session_events", [])
         loaded.setdefault("retrieval_traces", [])
         loaded.setdefault("rule_check_results", [])
         loaded.setdefault("prompt_templates", [])

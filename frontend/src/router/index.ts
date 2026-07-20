@@ -103,6 +103,30 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
 
 export const asyncRouterMap: AppRouteRecordRaw[] = [
   {
+    path: '/ai-review-b',
+    component: AICheckStaticLayout,
+    name: 'AIReviewB',
+    meta: {
+      title: 'AI 复核工作台（B 版）',
+      hidden: true,
+      noCache: true,
+      roles: ['inspection']
+    },
+    children: [
+      {
+        path: '',
+        component: () => import('@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'),
+        name: 'ConversationalReviewWorkbenchB',
+        meta: {
+          title: 'AI 复核工作台（B 版）',
+          hidden: true,
+          noCache: true,
+          roles: ['inspection']
+        }
+      }
+    ]
+  },
+  {
     path: '/workbench',
     component: AICheckStaticLayout,
     redirect: '/workbench/inspection',
