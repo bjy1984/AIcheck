@@ -1,0 +1,26 @@
+{
+  "schema": "captcha-safe.run-grant-v2.canonical-fixture/1",
+  "key_id": "grant-key-v2-fixture",
+  "payload": {
+    "operator": "operator@example.com",
+    "scene_id": "scene-v2",
+    "region": "cn",
+    "action": "execute_drag",
+    "runtime_kind": "chrome-extension",
+    "client_id": "abcdefghijklmnopabcdefghijklmnop",
+    "release_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "solver_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "policy_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "harness_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "attempt_id": "attempt_v2_fixture",
+    "nonce": "nonce_v2_fixture_1234",
+    "issued_at": 1750000000,
+    "not_before": 1750000000,
+    "expires_at": 1750000090,
+    "document_binding_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "challenge_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "solve_result_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "pointer_distance": 123
+  },
+  "canonical_signing_utf8": "{\"algorithm\":\"Ed25519\",\"key_id\":\"grant-key-v2-fixture\",\"payload\":{\"action\":\"execute_drag\",\"attempt_id\":\"attempt_v2_fixture\",\"challenge_digest\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"client_id\":\"abcdefghijklmnopabcdefghijklmnop\",\"document_binding_digest\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"expires_at\":1750000090,\"harness_digest\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"issued_at\":1750000000,\"nonce\":\"nonce_v2_fixture_1234\",\"not_before\":1750000000,\"operator\":\"operator@example.com\",\"pointer_distance\":123,\"policy_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"region\":\"cn\",\"release_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"runtime_kind\":\"chrome-extension\",\"scene_id\":\"scene-v2\",\"solve_result_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"solver_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"version\":2}"
+}

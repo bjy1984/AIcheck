@@ -1,0 +1,7 @@
+# Runtime baseline: CPython 3.10-3.13 (3.12 recommended).
+# Direct dependencies are pinned; generate a platform-specific hash lock for deployment.
+selenium==4.46.0
+requests==2.34.2
+ddddocr==1.6.1
+Pillow==12.3.0
+cryptography==49.0.0

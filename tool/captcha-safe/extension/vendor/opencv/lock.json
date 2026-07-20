@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "OpenCV.js",
+  "version": "4.13.0",
+  "releaseTag": "4.13.0",
+  "sourceUrl": "https://docs.opencv.org/4.13.0/opencv.js",
+  "licenseSourceUrl": "https://raw.githubusercontent.com/opencv/opencv/4.13.0/LICENSE",
+  "artifactFile": "opencv.js",
+  "artifactBytes": 10965558,
+  "artifactSha256": "67b747b73392a012ad7af59adaef2bf1a1606a843ab75ece4ec19da981bd2138",
+  "upstreamArtifactBytes": 10964323,
+  "upstreamArtifactSha256": "63366510248adf3a7eddf3e793dd825404efb7df3749f4d6f8557c7fa4ca8aa0",
+  "licenseFile": "LICENSE",
+  "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+  "distribution": "official-versioned-documentation-build-with-mv3-csp-patch",
+  "format": "single JavaScript file with embedded WebAssembly data URI",
+  "embeddedWasm": true,
+  "remoteCodeRequiredAtRuntime": false,
+  "dynamicJavascriptExecution": false,
+  "patchScript": "patch-mv3.mjs",
+  "patchCount": 4,
+  "publishedEmscriptenVersion": null
+}

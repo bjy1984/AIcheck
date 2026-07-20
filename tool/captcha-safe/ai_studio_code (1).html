@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; script-src 'self' https://o.alicdn.com https://g.alicdn.com; style-src 'self' 'unsafe-inline' https://*.alicdn.com; img-src 'self' data: blob: https://*.alicdn.com https://*.aliyuncs.com https://*.aliyun.com; font-src 'self' data: https://*.alicdn.com; connect-src 'self' https://*.alicdn.com https://*.aliyuncs.com https://*.aliyun.com; frame-src https://*.alicdn.com https://*.aliyuncs.com https://*.aliyun.com; worker-src 'self' blob:; child-src 'self' blob:; media-src 'none'; manifest-src 'none'"
+    >
+    <title>阿里云验证码安全测试页</title>
+    <link rel="stylesheet" href="./harness.css">
+    <script src="./harness.js" defer></script>
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="page-title">
+      <section class="card">
+        <p class="eyebrow">AUTHORIZED TEST HARNESS</p>
+        <h1 id="page-title">验证码验证</h1>
+        <p class="description">点击按钮后，在阿里云官方弹窗中完成验证。</p>
+
+        <div id="captcha-element" aria-live="polite"></div>
+        <button id="button" type="button" disabled>开始验证</button>
+        <p id="harness-status" class="status" role="status" aria-live="polite">
+          正在初始化验证码…
+        </p>
+        <p class="notice">客户端通过后仍需由服务端校验验证参数。</p>
+      </section>
+    </main>
+    <noscript>此测试页需要启用 JavaScript。</noscript>
+  </body>
+</html>

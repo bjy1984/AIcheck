@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Captcha Safe</title>
+    <link rel="stylesheet" href="popup.css">
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body>
+    <main>
+      <header class="app-header">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M7 3.75h10A2.25 2.25 0 0 1 19.25 6v12A2.25 2.25 0 0 1 17 20.25H7A2.25 2.25 0 0 1 4.75 18V6A2.25 2.25 0 0 1 7 3.75Z"/>
+            <path d="m8.25 12 2.25 2.25 5.25-5.5"/>
+          </svg>
+        </div>
+        <div class="brand-copy">
+          <div class="title-row">
+            <h1>Captcha Safe</h1>
+            <span class="version">v0.6.0</span>
+          </div>
+          <p>CNSE 纯 API 查询助手</p>
+        </div>
+        <span id="drag-test-badge" class="badge neutral"><span class="status-dot"></span>待运行</span>
+      </header>
+
+      <section class="site-card" aria-label="当前支持站点">
+        <span class="site-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.8 12h16.4M12 3.5c2.2 2.3 3.3 5.1 3.3 8.5S14.2 18.2 12 20.5M12 3.5C9.8 5.8 8.7 8.6 8.7 12s1.1 6.2 3.3 8.5"/></svg>
+        </span>
+        <div>
+          <span class="meta-label">目标站点</span>
+          <strong>cnse.e-cqs.cn</strong>
+        </div>
+        <span class="site-state">仅此站点</span>
+      </section>
+
+      <section class="workflow-card" aria-labelledby="workflow-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">一次完成</p>
+            <h2 id="workflow-title">识别并查询单位数据</h2>
+          </div>
+        </div>
+
+        <label class="keyword-field" for="keyword">
+          <span>单位名称</span>
+          <input id="keyword" name="keyword" type="text" maxlength="170" autocomplete="off" placeholder="例如：新疆智仁能源有限公司拜城县察尔齐加气站">
+          <small>直接作为 API 的 keyword 参数，不读取网页输入框。</small>
+        </label>
+
+        <ol class="steps" aria-label="API 查询流程">
+          <li id="step-captcha" class="step">
+            <span class="step-index">1</span>
+            <span><strong>获取验证码</strong><small>GET 图像与 yHeight</small></span>
+          </li>
+          <li id="step-solve" class="step">
+            <span class="step-index">2</span>
+            <span><strong>本地识别</strong><small>OpenCV 计算 moveLength</small></span>
+          </li>
+          <li id="step-query" class="step">
+            <span class="step-index">3</span>
+            <span><strong>请求数据</strong><small>同源 Cookie POST 查询</small></span>
+          </li>
+        </ol>
+
+        <p class="helper-text">无需在网页点击查询或打开验证码。保持 cnse.e-cqs.cn 页面处于当前标签页即可。</p>
+        <button id="run-drag-test" class="primary" type="button">
+          <span class="button-spinner" aria-hidden="true"></span>
+          <span class="button-label">识别并查询</span>
+        </button>
+        <p id="drag-test-result" class="inline-status" role="status" aria-live="polite">输入单位名称后即可执行全 API 查询。</p>
+      </section>
+
+      <section id="summary" class="summary-card" aria-labelledby="summary-title" hidden>
+        <div class="section-heading compact">
+          <div>
+            <p class="section-kicker">查询结果</p>
+            <h2 id="summary-title">执行摘要</h2>
+          </div>
+          <button id="copy-result" class="copy-button" type="button">复制 JSON</button>
+        </div>
+        <p id="query-keyword" class="query-keyword"></p>
+        <dl class="metrics">
+          <div><dt>moveLength</dt><dd id="metric-distance">—</dd></div>
+          <div><dt>置信度</dt><dd id="metric-confidence">—</dd></div>
+          <div><dt>结果数量</dt><dd id="metric-total">—</dd></div>
+        </dl>
+        <div id="result-list" class="result-list" aria-label="单位查询结果"></div>
+        <details class="raw-result">
+          <summary>查看原始 JSON</summary>
+          <pre id="query-data" class="query-data"></pre>
+        </details>
+      </section>
+
+      <footer>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 19 6v5.6c0 4.2-2.7 7.3-7 8.9-4.3-1.6-7-4.7-7-8.9V6l7-2.5Z"/><path d="m9 12 2 2 4-4"/></svg>
+        <span>同源 API 执行；不导出 Cookie，不操作页面验证码</span>
+      </footer>
+    </main>
+  </body>
+</html>

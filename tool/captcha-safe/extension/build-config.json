@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "status": "OPENCV_CNSE_SITE",
+  "extensionId": "bllipfmjmddgmgaabfmfhlkgbdhdiepe",
+  "minimumChromeVersion": 120,
+  "solveEnabled": true,
+  "algorithm": "opencv-edge-template-v1",
+  "opencvVersion": "4.13.0",
+  "externalTargetsAllowed": false,
+  "remoteCodeAllowed": false
+}

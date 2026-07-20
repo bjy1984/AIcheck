@@ -1,0 +1,13 @@
+{
+  "name": "captcha-safe-extension",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/constants.js && node --check src/challenge-detector.js && node --check src/cnse-api-recognizer.js && node --check src/local-protocol.js && node --check src/run-coordinator.js && node --check src/service-worker.js && node --check src/solve-geometry.js && node --check src/solve-runner.js && node --check solver/image-input.js && node --check solver/offscreen.js && node --check solver/opencv-solver.js && node --check popup/popup.js"
+  },
+  "engines": {
+    "node": "24.14.0"
+  }
+}

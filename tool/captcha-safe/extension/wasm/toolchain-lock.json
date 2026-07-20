@@ -1,0 +1,50 @@
+{
+  "codecs": {
+    "libjpegTurbo": {
+      "integrationStatus": "NOT_BUILT",
+      "sourceArchiveSha256": "PENDING",
+      "version": "PENDING"
+    },
+    "libpng": {
+      "integrationStatus": "NOT_BUILT",
+      "sourceArchiveSha256": "PENDING",
+      "version": "PENDING"
+    },
+    "libwebp": {
+      "integrationStatus": "NOT_BUILT",
+      "sourceArchiveSha256": "PENDING",
+      "version": "PENDING"
+    }
+  },
+  "emscripten": {
+    "sdkManifestSha256": "PENDING",
+    "target": "wasm32-unknown-emscripten",
+    "version": "PENDING"
+  },
+  "formalBuildAllowed": false,
+  "llvmWasm": {
+    "executableSha256": "PENDING",
+    "target": "wasm32-unknown-unknown",
+    "version": "PENDING"
+  },
+  "minimalCore": {
+    "algorithmId": "captcha-safe-canny-like-ncc-v1",
+    "artifactSha256": "PENDING",
+    "headerSha256": "e465a050cf8fd8d02ad67fc91124f31a695a1c431aafc117d129acc652e30cc6",
+    "language": "C11",
+    "sourceSha256": "e4af290548c32df0c9b83e09d1f884e40ce6a064d02383e2b3d0c83a1c8c5116"
+  },
+  "notes": [
+    "PENDING is an explicit unverified value, not a wildcard.",
+    "The checked-in C11 core accepts decoded RGB8 only and does not contain OpenCV or codecs.",
+    "No artifact may be marked VERIFIED until versions, source hashes, build hashes, and corpus evidence are pinned."
+  ],
+  "opencv": {
+    "integrationStatus": "NOT_BUILT",
+    "sourceArchiveSha256": "PENDING",
+    "version": "5.0.0"
+  },
+  "schemaVersion": 1,
+  "solverAbiVersion": 1,
+  "solverReadiness": "PENDING"
+}

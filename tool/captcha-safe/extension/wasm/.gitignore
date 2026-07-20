@@ -1,0 +1,10 @@
+/build/
+/dist/
+*.wasm
+*.zip
+*.o
+*.a
+*.so
+*.dylib
+*.dSYM/
+__pycache__/
