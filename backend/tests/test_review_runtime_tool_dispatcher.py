@@ -65,9 +65,11 @@ def test_runtime_tool_catalog_exposes_welder_and_seal_tools() -> None:
     assert "locate_evidence_fragment" in names
     assert "search_cnse_organizations" in names
     assert "search_cnse_persons" in names
+    assert "lookup_standard_status" in names
     assert "recognize_document_seals" in ALLOWED_AGENT_TOOLS
     assert "search_cnse_organizations" in ALLOWED_AGENT_TOOLS
     assert "search_cnse_persons" in ALLOWED_AGENT_TOOLS
+    assert "lookup_standard_status" in ALLOWED_AGENT_TOOLS
     assert "extract_structured_fields" in ALLOWED_AGENT_TOOLS
     assert "verify_license_or_certificate" in ALLOWED_AGENT_TOOLS
 
@@ -345,4 +347,53 @@ def test_runtime_tool_dispatcher_rejects_invalid_cnse_inputs(monkeypatch) -> Non
     assert org["errorCode"] == "VALIDATION_ERROR"
     assert person["status"] == "failed"
     assert person["errorCode"] == "VALIDATION_ERROR"
+
+
+def test_runtime_tool_dispatcher_looks_up_standard_status(monkeypatch) -> None:
+    expected = {
+        "status": "COMPLETED",
+        "citedRef": "GB/T 12771-2008",
+        "canonicalRef": "GB/T 12771-2008",
+        "verdict": "superseded",
+        "matched": {"code": "GB/T 12771-2008", "status": "废止"},
+        "currentExecution": {"code": "GB/T 12771-2019", "status": "现行"},
+        "standardReferences": [
+            {
+                "standardRef": "GB/T 12771-2008",
+                "status": "废止",
+                "effectiveFrom": "2008-11-01",
+                "withdrawnOn": "2020-09-01",
+                "replacedBy": "GB/T 12771-2019",
+            }
+        ],
+        "queryEndpoint": "/search/stdPage",
+        "queriedAt": "2026-07-21T00:00:00Z",
+    }
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_standard_status",
+        lambda standard_ref, review_date=None: expected,
+    )
+
+    result = dispatch_runtime_tool(
+        {},
+        "lookup_standard_status",
+        {"standardRef": " GB/T 12771-2008 ", "reviewDate": "2026-07-21"},
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["toolName"] == "lookup_standard_status"
+    assert result["verdict"] == "superseded"
+    assert result["standardReferences"][0]["replacedBy"] == "GB/T 12771-2019"
+    assert result["result"] == expected
+    assert result["requiresHumanConfirmation"] is True
+
+
+def test_runtime_tool_dispatcher_rejects_invalid_standard_ref(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_standard_status",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("should not query")),
+    )
+    result = dispatch_runtime_tool({}, "lookup_standard_status", {"standardRef": " "})
+    assert result["status"] == "failed"
+    assert result["errorCode"] == "VALIDATION_ERROR"
 

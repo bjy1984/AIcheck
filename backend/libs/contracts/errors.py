@@ -53,6 +53,16 @@ CNSE_SERVICE_MISCONFIGURED = BusinessErrorCode(
     "CNSE_SERVICE_MISCONFIGURED",
     "全国特种设备公示信息查询服务配置无效。",
 )
+STD_SAMR_UPSTREAM_FAILED = BusinessErrorCode(
+    50223,
+    "STD_SAMR_UPSTREAM_FAILED",
+    "全国标准信息公共服务平台暂不可用，请稍后重试。",
+)
+STD_SAMR_SERVICE_MISCONFIGURED = BusinessErrorCode(
+    50333,
+    "STD_SAMR_SERVICE_MISCONFIGURED",
+    "全国标准信息公共服务平台查询服务配置无效。",
+)
 AI_RUN_FAILED = BusinessErrorCode(50210, "AI_RUN_FAILED", "AI 审查任务失败。")
 
 
@@ -90,6 +100,8 @@ ERROR_BY_REASON = {
         CNSE_RECOGNITION_FAILED,
         CNSE_UPSTREAM_FAILED,
         CNSE_SERVICE_MISCONFIGURED,
+        STD_SAMR_UPSTREAM_FAILED,
+        STD_SAMR_SERVICE_MISCONFIGURED,
         AI_RUN_FAILED,
     ]
 }

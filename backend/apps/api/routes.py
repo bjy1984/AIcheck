@@ -8092,6 +8092,32 @@ REVIEW_CONVERSATION_AGENT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "lookup_standard_status",
+            "description": (
+                "查询全国标准信息公共服务平台（std.samr.gov.cn）的标准版本状态、"
+                "实施日期、废止日期和替代关系。用于核验设计文件等引用的标准是否现行有效；"
+                "不得仅凭本地知识库宣称已完成官方查新。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "standardRef": {
+                        "type": "string",
+                        "description": "标准编号，例如 GB/T 12771-2008 或 NB/T 47013.8-2012。",
+                    },
+                    "reviewDate": {
+                        "type": "string",
+                        "description": "审查基准日 YYYY-MM-DD；缺省按当天判断是否已实施。",
+                    },
+                },
+                "required": ["standardRef"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -8188,9 +8214,10 @@ def review_conversation_agent_tool_output(
         "extract_document_fields",
         "search_cnse_organizations",
         "search_cnse_persons",
+        "lookup_standard_status",
     }
     if tool_name in runtime_tool_names:
-        if tool_name in {"search_cnse_organizations", "search_cnse_persons"}:
+        if tool_name in {"search_cnse_organizations", "search_cnse_persons", "lookup_standard_status"}:
             return dispatch_runtime_tool(repo.state, tool_name, arguments or {})
         selected_ids = {str(item) for item in session.get("selectedEvidenceLinkIds") or [] if item}
         allowed_document_ids = {

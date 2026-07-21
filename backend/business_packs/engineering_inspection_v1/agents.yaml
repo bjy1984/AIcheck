@@ -62,8 +62,8 @@ toolCatalog:
     capability: 校验证照真实性字段、有效期、许可范围、合格项目、注册或核准项目代码。
   - id: T06
     name: 标准规范知识库与版本查新工具
-    runtimeTool: search_knowledge_base
-    capability: 查询法规标准条款、版本状态、替代关系、规则优先级和条文摘要。
+    runtimeTool: lookup_standard_status
+    capability: 通过全国标准信息公共服务平台（std.samr.gov.cn）查询标准版本状态、实施日期、废止日期和替代关系；条款原文检索仍使用固定条款包与知识库。
   - id: T07
     name: 规则计算与覆盖关系引擎
     runtimeTool: run_rule_engine
@@ -105,7 +105,7 @@ agentSops:
       - extract_welder_certificate
       - verify_license_or_certificate
       - verify_welder_certificate_authenticity
-      - search_knowledge_base
+      - lookup_standard_status
       - run_rule_engine
       - create_review_finding_draft
     allowedToolIds: [T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12]

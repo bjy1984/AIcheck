@@ -17,6 +17,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from apps.api.cnse_routes import router as cnse_router
+from apps.api.std_samr_routes import router as std_samr_router
 from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router, scope_error_for_record
 from libs.audit_context import current_request_audit_context, reset_request_audit_context, set_request_audit_context
 from libs.contracts import errors
@@ -993,3 +994,5 @@ app.include_router(router)
 app.include_router(router, prefix="/api")
 app.include_router(cnse_router)
 app.include_router(cnse_router, prefix="/api")
+app.include_router(std_samr_router)
+app.include_router(std_samr_router, prefix="/api")

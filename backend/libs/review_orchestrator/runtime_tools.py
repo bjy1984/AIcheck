@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_ocr_result
 from apps.api.cnse_routes import query_cnse_organizations, query_cnse_persons
+from apps.api.std_samr_routes import query_standard_status
 from libs.integrations.cnse_client import (
     CnseConfigurationError,
     CnseProtocolError,
@@ -13,6 +14,13 @@ from libs.integrations.cnse_client import (
     CnseRequestError,
     normalize_id_number,
     normalize_keyword,
+)
+from libs.integrations.std_samr_client import (
+    StdSamrConfigurationError,
+    StdSamrProtocolError,
+    StdSamrRequestError,
+    normalize_standard_ref,
+    parse_review_date,
 )
 from libs.review_orchestrator.deterministic_tools import (
     DETERMINISTIC_TOOL_DESCRIPTORS,
@@ -103,6 +111,14 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         ),
         "inputSchema": {"idNumber": "string"},
     },
+    {
+        "name": "lookup_standard_status",
+        "capability": (
+            "查询全国标准信息公共服务平台（std.samr.gov.cn）的标准版本状态、"
+            "实施日期、废止日期和替代关系；用于核验引用标准是否现行有效。"
+        ),
+        "inputSchema": {"standardRef": "string", "reviewDate": "string?"},
+    },
 ] + DETERMINISTIC_TOOL_DESCRIPTORS + BUSINESS_TOOL_DESCRIPTORS
 
 
@@ -151,6 +167,8 @@ def dispatch_runtime_tool(
         return search_cnse_organizations_tool(args)
     if tool_name == "search_cnse_persons":
         return search_cnse_persons_tool(args)
+    if tool_name == "lookup_standard_status":
+        return lookup_standard_status_tool(args)
     return {
         "toolCallId": runtime_tool_call_id(),
         "toolName": tool_name,
@@ -628,4 +646,56 @@ def search_cnse_persons_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         "person": person,
         "requiresHumanConfirmation": True,
         "summary": "已查询全国特种设备公示从业人员资格信息，最终登记状态以公示平台结果为准。",
+    }
+
+
+def lookup_standard_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    tool_name = "lookup_standard_status"
+    try:
+        normalize_standard_ref(str(arguments.get("standardRef") or ""))
+        review_date = parse_review_date(arguments.get("reviewDate"))
+        standard_ref = str(arguments.get("standardRef") or "").strip()
+    except StdSamrConfigurationError as exc:
+        message = str(exc) if "reviewDate" in str(exc) else "请输入有效的标准编号。"
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="VALIDATION_ERROR",
+            message=message,
+        )
+    try:
+        result = query_standard_status(standard_ref, review_date)
+    except StdSamrConfigurationError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="STD_SAMR_SERVICE_MISCONFIGURED",
+            message="全国标准信息公共服务平台查询服务配置无效。",
+        )
+    except (StdSamrRequestError, StdSamrProtocolError):
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="STD_SAMR_UPSTREAM_FAILED",
+            message="全国标准信息公共服务平台暂不可用，请稍后重试。",
+        )
+    references = result.get("standardReferences") if isinstance(result.get("standardReferences"), list) else []
+    verdict = str(result.get("verdict") or "")
+    summary_map = {
+        "current": "官方平台显示该标准版本现行有效。",
+        "superseded": "官方平台显示该标准版本已废止或被代替，请改用现行执行标准。",
+        "not_yet_effective": "官方平台显示该标准版本尚未实施。",
+        "ambiguous": "官方平台返回多条结果，需人工确认版本。",
+        "not_found": "官方平台未检索到该标准编号，可能未收录（如 TSG）或编号有误。",
+    }
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": tool_name,
+        "status": "succeeded",
+        "result": result,
+        "citedRef": result.get("citedRef"),
+        "canonicalRef": result.get("canonicalRef"),
+        "verdict": verdict,
+        "standardReferences": references,
+        "matched": result.get("matched"),
+        "currentExecution": result.get("currentExecution"),
+        "requiresHumanConfirmation": True,
+        "summary": summary_map.get(verdict, "已查询全国标准信息公共服务平台版本状态。"),
     }
