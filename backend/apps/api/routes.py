@@ -8050,6 +8050,48 @@ REVIEW_CONVERSATION_AGENT_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_cnse_organizations",
+            "description": (
+                "查询全国特种设备公示信息平台的单位许可信息。"
+                "输入单位名称，返回公示登记记录；不得仅凭 OCR 结果宣称已完成官网核验。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "单位名称，例如制造单位、施工单位或许可证上的单位名称。",
+                    }
+                },
+                "required": ["keyword"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_cnse_persons",
+            "description": (
+                "查询全国特种设备公示信息平台的从业人员资格信息。"
+                "输入身份证号，返回焊工等作业人员公示记录；不得仅凭 OCR 结果宣称已完成官网核验。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "idNumber": {
+                        "type": "string",
+                        "description": "从业人员身份证号，通常来自焊工证或人员证书 OCR 结果。",
+                    }
+                },
+                "required": ["idNumber"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -8140,8 +8182,16 @@ def review_conversation_agent_tool_output(
                 }
             )
         return {"status": "succeeded", "basisCount": len(matches), "items": matches[:12], "fixedBinding": True}
-    runtime_tool_names = {"get_document_ocr_result", "locate_evidence_fragment", "extract_document_fields"}
+    runtime_tool_names = {
+        "get_document_ocr_result",
+        "locate_evidence_fragment",
+        "extract_document_fields",
+        "search_cnse_organizations",
+        "search_cnse_persons",
+    }
     if tool_name in runtime_tool_names:
+        if tool_name in {"search_cnse_organizations", "search_cnse_persons"}:
+            return dispatch_runtime_tool(repo.state, tool_name, arguments or {})
         selected_ids = {str(item) for item in session.get("selectedEvidenceLinkIds") or [] if item}
         allowed_document_ids = {
             str(item.get("documentVersionId"))

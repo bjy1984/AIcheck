@@ -3354,6 +3354,14 @@ def compact_tool_output(result: dict[str, Any]) -> dict[str, Any]:
         "groundingStatus",
         "summary",
         "warnings",
+        "keyword",
+        "total",
+        "rowCount",
+        "idNumber",
+        "personName",
+        "issuer",
+        "qualifiedItems",
+        "validUntil",
     ]
     summary = {key: result.get(key) for key in summary_keys if key in result}
     if result.get("verificationCount") is not None:

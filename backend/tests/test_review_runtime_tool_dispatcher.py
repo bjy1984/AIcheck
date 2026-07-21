@@ -63,7 +63,11 @@ def test_runtime_tool_catalog_exposes_welder_and_seal_tools() -> None:
     assert "extract_document_fields" in names
     assert "extract_table_records" in names
     assert "locate_evidence_fragment" in names
+    assert "search_cnse_organizations" in names
+    assert "search_cnse_persons" in names
     assert "recognize_document_seals" in ALLOWED_AGENT_TOOLS
+    assert "search_cnse_organizations" in ALLOWED_AGENT_TOOLS
+    assert "search_cnse_persons" in ALLOWED_AGENT_TOOLS
     assert "extract_structured_fields" in ALLOWED_AGENT_TOOLS
     assert "verify_license_or_certificate" in ALLOWED_AGENT_TOOLS
 
@@ -263,3 +267,82 @@ def test_evidence_grounding_gate_requires_locator_and_confidence() -> None:
     assert passed["result"] == "passed"
     assert passed["outputSchema"] == "evidence-gate-result-v1"
     assert failed["result"] == "evidence_insufficient"
+
+
+def test_runtime_tool_dispatcher_searches_cnse_organizations(monkeypatch) -> None:
+    expected = {
+        "status": "COMPLETED",
+        "keyword": "贵州化工建设有限责任公司",
+        "total": 1,
+        "rows": [{"dwmc": "贵州化工建设有限责任公司", "zsyxq": "2025-04-27"}],
+    }
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_organizations",
+        lambda keyword: expected,
+    )
+
+    result = dispatch_runtime_tool(
+        {},
+        "search_cnse_organizations",
+        {"keyword": " 贵州化工建设有限责任公司 "},
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["toolName"] == "search_cnse_organizations"
+    assert result["keyword"] == "贵州化工建设有限责任公司"
+    assert result["total"] == 1
+    assert result["rowCount"] == 1
+    assert result["result"] == expected
+    assert result["requiresHumanConfirmation"] is True
+
+
+def test_runtime_tool_dispatcher_searches_cnse_persons(monkeypatch) -> None:
+    expected = {
+        "status": "COMPLETED",
+        "idNumber": "430524198608135291",
+        "person": {
+            "ryxm": "廖柏鑫",
+            "sfzh": "430524198608135291",
+            "fzjg": "柳州市行政审批局",
+            "czxm": "GTAW-FeⅣ-6G-6/42-FefS-02/10/12",
+            "yxrqz": "2021-09-22",
+        },
+    }
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_persons",
+        lambda id_number: expected,
+    )
+
+    result = dispatch_runtime_tool(
+        {},
+        "search_cnse_persons",
+        {"idNumber": " 430524198608135291 "},
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["toolName"] == "search_cnse_persons"
+    assert result["idNumber"] == "430524198608135291"
+    assert result["personName"] == "廖柏鑫"
+    assert result["issuer"] == "柳州市行政审批局"
+    assert result["result"] == expected
+    assert result["requiresHumanConfirmation"] is True
+
+
+def test_runtime_tool_dispatcher_rejects_invalid_cnse_inputs(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_organizations",
+        lambda keyword: (_ for _ in ()).throw(AssertionError("should not query")),
+    )
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_persons",
+        lambda id_number: (_ for _ in ()).throw(AssertionError("should not query")),
+    )
+
+    org = dispatch_runtime_tool({}, "search_cnse_organizations", {"keyword": " "})
+    person = dispatch_runtime_tool({}, "search_cnse_persons", {"idNumber": "123"})
+
+    assert org["status"] == "failed"
+    assert org["errorCode"] == "VALIDATION_ERROR"
+    assert person["status"] == "failed"
+    assert person["errorCode"] == "VALIDATION_ERROR"
+

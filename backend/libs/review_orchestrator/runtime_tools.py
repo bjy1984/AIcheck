@@ -5,6 +5,15 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_ocr_result
+from apps.api.cnse_routes import query_cnse_organizations, query_cnse_persons
+from libs.integrations.cnse_client import (
+    CnseConfigurationError,
+    CnseProtocolError,
+    CnseRecognitionError,
+    CnseRequestError,
+    normalize_id_number,
+    normalize_keyword,
+)
 from libs.review_orchestrator.deterministic_tools import (
     DETERMINISTIC_TOOL_DESCRIPTORS,
     DETERMINISTIC_TOOL_NAMES,
@@ -78,6 +87,22 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         ),
         "inputSchema": {"documentVersionIds": ["string"]},
     },
+    {
+        "name": "search_cnse_organizations",
+        "capability": (
+            "查询全国特种设备公示信息平台的单位许可信息。"
+            "输入单位名称，返回公示登记记录、许可项目、发证机关和有效期。"
+        ),
+        "inputSchema": {"keyword": "string"},
+    },
+    {
+        "name": "search_cnse_persons",
+        "capability": (
+            "查询全国特种设备公示信息平台的从业人员资格信息。"
+            "输入身份证号，返回姓名、作业项目、发证机关和有效期等公示记录。"
+        ),
+        "inputSchema": {"idNumber": "string"},
+    },
 ] + DETERMINISTIC_TOOL_DESCRIPTORS + BUSINESS_TOOL_DESCRIPTORS
 
 
@@ -122,6 +147,10 @@ def dispatch_runtime_tool(
         result = verify_license_or_certificate(state, args, context=context)
         result["toolName"] = tool_name
         return result
+    if tool_name == "search_cnse_organizations":
+        return search_cnse_organizations_tool(args)
+    if tool_name == "search_cnse_persons":
+        return search_cnse_persons_tool(args)
     return {
         "toolCallId": runtime_tool_call_id(),
         "toolName": tool_name,
@@ -493,3 +522,110 @@ def dict_items(value: Any) -> list[dict[str, Any]]:
 def runtime_tool_call_id() -> str:
     suffix = datetime.now(timezone.utc).strftime("%H%M%S")
     return f"RTOOL-{uuid4().hex[:8].upper()}-{suffix}"
+
+
+def _cnse_tool_failure(
+    tool_name: str,
+    *,
+    error_code: str,
+    message: str,
+) -> dict[str, Any]:
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": tool_name,
+        "status": "failed",
+        "errorCode": error_code,
+        "message": message,
+    }
+
+
+def search_cnse_organizations_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    tool_name = "search_cnse_organizations"
+    try:
+        keyword = normalize_keyword(str(arguments.get("keyword") or ""))
+    except CnseConfigurationError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="VALIDATION_ERROR",
+            message="请输入有效的单位名称。",
+        )
+    try:
+        result = query_cnse_organizations(keyword)
+    except CnseConfigurationError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="CNSE_SERVICE_MISCONFIGURED",
+            message="全国特种设备公示信息查询服务配置无效。",
+        )
+    except CnseRecognitionError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="CNSE_RECOGNITION_FAILED",
+            message="全国特种设备公示信息查询平台验证码识别失败，请重试。",
+        )
+    except (CnseRequestError, CnseProtocolError):
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="CNSE_UPSTREAM_FAILED",
+            message="全国特种设备公示信息查询平台暂不可用，请稍后重试。",
+        )
+    rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": tool_name,
+        "status": "succeeded",
+        "result": result,
+        "keyword": result.get("keyword"),
+        "total": result.get("total"),
+        "rowCount": len(rows),
+        "rows": rows[:10],
+        "requiresHumanConfirmation": True,
+        "summary": "已查询全国特种设备公示单位信息，最终登记状态以公示平台结果为准。",
+    }
+
+
+def search_cnse_persons_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    tool_name = "search_cnse_persons"
+    try:
+        id_number = normalize_id_number(str(arguments.get("idNumber") or ""))
+    except CnseConfigurationError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="VALIDATION_ERROR",
+            message="请输入有效的身份证号。",
+        )
+    try:
+        result = query_cnse_persons(id_number)
+    except CnseConfigurationError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="CNSE_SERVICE_MISCONFIGURED",
+            message="全国特种设备公示信息查询服务配置无效。",
+        )
+    except CnseRecognitionError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="CNSE_RECOGNITION_FAILED",
+            message="全国特种设备公示信息查询平台验证码识别失败，请重试。",
+        )
+    except (CnseRequestError, CnseProtocolError):
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="CNSE_UPSTREAM_FAILED",
+            message="全国特种设备公示信息查询平台暂不可用，请稍后重试。",
+        )
+    person = result.get("person") if isinstance(result.get("person"), dict) else {}
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": tool_name,
+        "status": "succeeded",
+        "result": result,
+        "idNumber": result.get("idNumber"),
+        "personName": person.get("ryxm"),
+        "issuer": person.get("fzjg"),
+        "qualifiedItems": person.get("czxm"),
+        "validUntil": person.get("yxrqz") or person.get("yxrq"),
+        "person": person,
+        "requiresHumanConfirmation": True,
+        "summary": "已查询全国特种设备公示从业人员资格信息，最终登记状态以公示平台结果为准。",
+    }
