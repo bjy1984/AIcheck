@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_ocr_result
 from apps.api.cnse_routes import query_cnse_organizations, query_cnse_persons
-from apps.api.std_samr_routes import query_standard_status
+from apps.api.std_samr_routes import query_standard_search, query_standard_status
 from libs.integrations.cnse_client import (
     CnseConfigurationError,
     CnseProtocolError,
@@ -119,6 +119,14 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         ),
         "inputSchema": {"standardRef": "string", "reviewDate": "string?"},
     },
+    {
+        "name": "search_samr_standards",
+        "capability": (
+            "在全国标准信息公共服务平台按关键词检索标准条目，"
+            "返回标准号、名称、状态和详情链接。"
+        ),
+        "inputSchema": {"query": "string", "page": "integer?"},
+    },
 ] + DETERMINISTIC_TOOL_DESCRIPTORS + BUSINESS_TOOL_DESCRIPTORS
 
 
@@ -169,6 +177,8 @@ def dispatch_runtime_tool(
         return search_cnse_persons_tool(args)
     if tool_name == "lookup_standard_status":
         return lookup_standard_status_tool(args)
+    if tool_name == "search_samr_standards":
+        return search_samr_standards_tool(args)
     return {
         "toolCallId": runtime_tool_call_id(),
         "toolName": tool_name,
@@ -698,4 +708,50 @@ def lookup_standard_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         "currentExecution": result.get("currentExecution"),
         "requiresHumanConfirmation": True,
         "summary": summary_map.get(verdict, "已查询全国标准信息公共服务平台版本状态。"),
+    }
+
+
+def search_samr_standards_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    tool_name = "search_samr_standards"
+    try:
+        from libs.integrations.std_samr_client import normalize_query
+
+        query = normalize_query(str(arguments.get("query") or ""))
+        page_raw = arguments.get("page", 1)
+        page = int(page_raw) if page_raw is not None else 1
+        if isinstance(page, bool) or not 1 <= page <= 100_000:
+            raise StdSamrConfigurationError("page must be a positive integer")
+    except StdSamrConfigurationError as exc:
+        message = str(exc) if "page" in str(exc) else "请输入有效的检索关键词。"
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="VALIDATION_ERROR",
+            message=message,
+        )
+    try:
+        result = query_standard_search(query, page=page)
+    except StdSamrConfigurationError:
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="STD_SAMR_SERVICE_MISCONFIGURED",
+            message="全国标准信息公共服务平台查询服务配置无效。",
+        )
+    except (StdSamrRequestError, StdSamrProtocolError):
+        return _cnse_tool_failure(
+            tool_name,
+            error_code="STD_SAMR_UPSTREAM_FAILED",
+            message="全国标准信息公共服务平台暂不可用，请稍后重试。",
+        )
+    rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": tool_name,
+        "status": "succeeded",
+        "result": result,
+        "query": result.get("query"),
+        "total": result.get("total"),
+        "rowCount": len(rows),
+        "rows": rows[:10],
+        "requiresHumanConfirmation": True,
+        "summary": "已检索全国标准信息公共服务平台，最终版本状态以官方详情为准。",
     }

@@ -66,10 +66,12 @@ def test_runtime_tool_catalog_exposes_welder_and_seal_tools() -> None:
     assert "search_cnse_organizations" in names
     assert "search_cnse_persons" in names
     assert "lookup_standard_status" in names
+    assert "search_samr_standards" in names
     assert "recognize_document_seals" in ALLOWED_AGENT_TOOLS
     assert "search_cnse_organizations" in ALLOWED_AGENT_TOOLS
     assert "search_cnse_persons" in ALLOWED_AGENT_TOOLS
     assert "lookup_standard_status" in ALLOWED_AGENT_TOOLS
+    assert "search_samr_standards" in ALLOWED_AGENT_TOOLS
     assert "extract_structured_fields" in ALLOWED_AGENT_TOOLS
     assert "verify_license_or_certificate" in ALLOWED_AGENT_TOOLS
 

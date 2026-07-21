@@ -104,6 +104,7 @@ from libs.review_orchestrator import (
     signal_review_run_human_input,
 )
 from libs.review_orchestrator.execution import qwen_runtime_client, review_llm_execution_mode
+from libs.review_orchestrator.llm_tool_schemas import EXTERNAL_REGISTRY_LLM_TOOLS, is_external_registry_tool
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool
 from libs.runtime_readiness import production_runtime_status
 from libs.security.auth import (
@@ -8050,75 +8051,7 @@ REVIEW_CONVERSATION_AGENT_TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_cnse_organizations",
-            "description": (
-                "查询全国特种设备公示信息平台的单位许可信息。"
-                "输入单位名称，返回公示登记记录；不得仅凭 OCR 结果宣称已完成官网核验。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "keyword": {
-                        "type": "string",
-                        "description": "单位名称，例如制造单位、施工单位或许可证上的单位名称。",
-                    }
-                },
-                "required": ["keyword"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_cnse_persons",
-            "description": (
-                "查询全国特种设备公示信息平台的从业人员资格信息。"
-                "输入身份证号，返回焊工等作业人员公示记录；不得仅凭 OCR 结果宣称已完成官网核验。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "idNumber": {
-                        "type": "string",
-                        "description": "从业人员身份证号，通常来自焊工证或人员证书 OCR 结果。",
-                    }
-                },
-                "required": ["idNumber"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "lookup_standard_status",
-            "description": (
-                "查询全国标准信息公共服务平台（std.samr.gov.cn）的标准版本状态、"
-                "实施日期、废止日期和替代关系。用于核验设计文件等引用的标准是否现行有效；"
-                "不得仅凭本地知识库宣称已完成官方查新。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "standardRef": {
-                        "type": "string",
-                        "description": "标准编号，例如 GB/T 12771-2008 或 NB/T 47013.8-2012。",
-                    },
-                    "reviewDate": {
-                        "type": "string",
-                        "description": "审查基准日 YYYY-MM-DD；缺省按当天判断是否已实施。",
-                    },
-                },
-                "required": ["standardRef"],
-                "additionalProperties": False,
-            },
-        },
-    },
-]
+] + EXTERNAL_REGISTRY_LLM_TOOLS
 
 
 def review_conversation_agent_tool_output(
@@ -8215,9 +8148,10 @@ def review_conversation_agent_tool_output(
         "search_cnse_organizations",
         "search_cnse_persons",
         "lookup_standard_status",
+        "search_samr_standards",
     }
     if tool_name in runtime_tool_names:
-        if tool_name in {"search_cnse_organizations", "search_cnse_persons", "lookup_standard_status"}:
+        if is_external_registry_tool(tool_name):
             return dispatch_runtime_tool(repo.state, tool_name, arguments or {})
         selected_ids = {str(item) for item in session.get("selectedEvidenceLinkIds") or [] if item}
         allowed_document_ids = {

@@ -22,6 +22,7 @@ from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.r12_agent import (
     apply_r12_human_input,
     build_r12_business_facts,
@@ -1428,28 +1429,15 @@ def _plan_guarded_material_tool_review(
     if mode in {"deterministic", "disabled", "mock"}:
         return trace
 
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": (
-                    "读取当前节点已构造的结构化业务事实，不作符合性判断。"
-                    if name == inspect_tool_name
-                    else next(
-                        (
-                            str(item.get("capability") or "执行确定性业务判断。")
-                            for item in runtime_tool_catalog()
-                            if item.get("name") == name
-                        ),
-                        "执行确定性业务判断。",
-                    )
-                ),
-                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-            },
-        }
-        for name in [inspect_tool_name, *required_tools]
-    ]
+    inspect_tool = {
+        "type": "function",
+        "function": {
+            "name": inspect_tool_name,
+            "description": "读取当前节点已构造的结构化业务事实，不作符合性判断。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    }
+    tools = [inspect_tool, *build_llm_tools_for_runtime(required_tools)]
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -3362,6 +3350,13 @@ def compact_tool_output(result: dict[str, Any]) -> dict[str, Any]:
         "issuer",
         "qualifiedItems",
         "validUntil",
+        "citedRef",
+        "canonicalRef",
+        "verdict",
+        "standardReferences",
+        "matched",
+        "currentExecution",
+        "query",
     ]
     summary = {key: result.get(key) for key in summary_keys if key in result}
     if result.get("verificationCount") is not None:
