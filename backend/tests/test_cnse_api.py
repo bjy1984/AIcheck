@@ -10,6 +10,7 @@ from PIL import Image
 
 import apps.api.cnse_routes as cnse_routes
 from apps.api.main import app
+from apps.api.cnse_service import app as service_app
 from libs.integrations.cnse_client import CnseApiClient, CnseRequestError
 from libs.integrations.cnse_opencv_solver import OpenCvMatch, solve_opencv_from_bytes
 
@@ -178,3 +179,19 @@ def test_ported_opencv_solver_matches_masked_photometric_coordinates() -> None:
 
     assert (result.left, result.top) == (left, top)
     assert result.strategy == "masked-photometric"
+
+
+def test_dedicated_cnse_service_requires_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_CNSE_API_KEY", "test-cnse-api-key-with-at-least-32-bytes")
+    monkeypatch.setattr(cnse_routes, "query_cnse_organizations", lambda keyword: {})
+
+    with TestClient(service_app) as dedicated_client:
+        health = dedicated_client.get("/api/healthz")
+        unauthorized = dedicated_client.post(
+            "/api/cnse/organizations/search",
+            json={"keyword": "测试单位"},
+        )
+
+    assert health.status_code == 200
+    assert health.json()["data"]["service"] == "aicheck-cnse-api"
+    assert unauthorized.status_code == 401

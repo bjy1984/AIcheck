@@ -102,6 +102,10 @@ including `status`, `algorithm`, `captureMode`, `confidence`, `keyword`, `total`
 policy as the rest of AIcheck. `AICHECK_CNSE_ORIGIN` may only be one of the hard-coded official
 HTTPS origins; `AICHECK_CNSE_MIN_CONFIDENCE` defaults to `0.50`.
 
+For an isolated deployment that exposes only CNSE lookup and health endpoints, run
+`uvicorn apps.api.cnse_service:app`. This entrypoint requires `AICHECK_CNSE_API_KEY`; callers send
+it in `X-API-Key`. It does not expose AIcheck's project, document, review, or administration routes.
+
 ## Tests
 
 ```bash
