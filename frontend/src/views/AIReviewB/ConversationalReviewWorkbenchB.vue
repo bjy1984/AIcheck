@@ -309,6 +309,11 @@ const evidenceToReference = (evidence: EvidenceLink): ReviewBReference => ({
   evidence
 })
 
+const visibleEvidenceFacts = (evidence: EvidenceLink) =>
+  (evidence.evidenceFacts || []).filter(
+    (fact) => fact.formalEvidenceEligible && fact.quotedText
+  )
+
 const workspaceMessageReferences = computed<ReviewBReference[]>(() => [
   ...(workspace.value?.basisSnapshot || [])
     .filter((basis) => basis.sourceLocatorId || basis.clauseId)
@@ -634,7 +639,7 @@ const sendMessage = async (preset?: string) => {
 
 const handleSuggestion = (actionKey: string, message?: ReviewBMessage) => {
   if (actionKey === 'search_evidence') return sendMessage('/检索证据')
-  if (actionKey === 'explain_basis') return sendMessage('/解释依据')
+  if (actionKey === 'explain_basis') return sendMessage('/标准条款')
   if (actionKey === 'draft_opinion') return sendMessage('/草拟意见')
   if (actionKey === 'copy_opinion_draft') {
     const textBlock = message?.contentBlocks.find((block) => block.type === 'text')
@@ -1031,11 +1036,11 @@ onBeforeUnmount(() => {
                 <p>
                   已加载当前节点的固定规则、资料就绪状态和历史 ReviewRun。选择右侧“发起{{
                     startReviewMode === 'formal' ? '正式复核' : '缺项预审'
-                  }}”可启动当前可用流程，也可以先检索证据或解释依据。
+                  }}”可启动当前可用流程，也可以先检索证据或查看标准条款。
                 </p>
                 <div class="welcome-actions">
                   <ElButton size="small" @click="sendMessage('/检索证据')">检索证据</ElButton>
-                  <ElButton size="small" @click="sendMessage('/解释依据')">解释依据</ElButton>
+                  <ElButton size="small" @click="sendMessage('/标准条款')">标准条款</ElButton>
                   <ElButton size="small" @click="sendMessage('/草拟意见')">草拟意见</ElButton>
                 </div>
               </div>
@@ -1090,7 +1095,9 @@ onBeforeUnmount(() => {
                     class="content-card evidence-card"
                   >
                     <h3
-                      ><ElIcon><Files /></ElIcon>证据候选</h3
+                      ><ElIcon><Files /></ElIcon>{{
+                        'title' in block ? block.title || '证据候选' : '证据候选'
+                      }}</h3
                     >
                     <div
                       v-for="evidence in blockItems<EvidenceLink>(block)"
@@ -1105,11 +1112,27 @@ onBeforeUnmount(() => {
                           >第 {{ evidence.pageNo || '-' }} 页 ·
                           {{ evidence.manualStatusLabel || evidence.manualStatus || '候选' }}</small
                         >
+                        <p v-if="evidence.quotedText" class="evidence-quote">
+                          {{ evidence.quotedText }}
+                        </p>
+                        <ul v-if="visibleEvidenceFacts(evidence).length > 1" class="evidence-facts">
+                          <li
+                            v-for="fact in visibleEvidenceFacts(evidence).slice(1, 4)"
+                            :key="`${evidence.id}-${fact.targetCode}-${fact.pageNo}`"
+                          >
+                            <strong>{{ fact.targetName || '证据事实' }}</strong>
+                            <span>{{ fact.quotedText }}</span>
+                          </li>
+                        </ul>
                       </div>
                       <ElButton text type="primary" @click="openEvidence(evidence)"
                         >查看原文</ElButton
                       >
-                      <ElButton text @click="toggleEvidenceSelection(evidence)">
+                      <ElButton
+                        v-if="!('advisory' in block && block.advisory)"
+                        text
+                        @click="toggleEvidenceSelection(evidence)"
+                      >
                         {{ selectedEvidenceIds.has(evidence.id) ? '移出上下文' : '加入上下文' }}
                       </ElButton>
                     </div>
@@ -1222,7 +1245,7 @@ onBeforeUnmount(() => {
           <div class="composer-actions">
             <div>
               <ElButton size="small" @click="sendMessage('/检索证据')">/检索证据</ElButton>
-              <ElButton size="small" @click="sendMessage('/解释依据')">/解释依据</ElButton>
+              <ElButton size="small" @click="sendMessage('/标准条款')">/标准条款</ElButton>
               <ElButton size="small" @click="sendMessage('/草拟意见')">/草拟意见</ElButton>
             </div>
             <ElButton type="primary" :icon="Promotion" :loading="sending" @click="sendMessage()"
@@ -1317,7 +1340,7 @@ onBeforeUnmount(() => {
         <section class="side-card quick-actions">
           <h2>快捷操作</h2>
           <div>
-            <ElButton :icon="Document" @click="sendMessage('/解释依据')">让 AI 解释依据</ElButton>
+            <ElButton :icon="Document" @click="sendMessage('/标准条款')">查看标准条款</ElButton>
             <ElButton :icon="Search" @click="sendMessage('/检索证据')">让 AI 补充证据</ElButton>
             <ElButton :icon="MagicStick" @click="sendMessage('/草拟意见')">生成意见草稿</ElButton>
           </div>
@@ -1358,7 +1381,6 @@ onBeforeUnmount(() => {
             :rows="4"
             maxlength="2000"
             show-word-limit
-            :disabled="!canSubmitHumanDecision"
             placeholder="请输入人工复核意见"
           />
           <ElButton
@@ -1749,6 +1771,34 @@ onBeforeUnmount(() => {
 .evidence-row small {
   margin-top: 3px;
   color: var(--review-muted);
+}
+
+.evidence-quote {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--review-ink);
+}
+
+.evidence-facts {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evidence-facts li {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--review-muted);
+}
+
+.evidence-facts li strong {
+  flex: 0 0 auto;
+  color: var(--review-ink);
 }
 
 .judgment-grid {

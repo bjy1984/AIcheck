@@ -6,6 +6,7 @@ from apps.api.main import app
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
 from libs.integrations import task_dispatcher
+from libs.material_targeting import PARTIAL_STATUS, build_node_evidence_readiness
 
 
 client = TestClient(app)
@@ -28,12 +29,26 @@ def assert_ok(response):
 
 
 def apply_ocr(document: dict, version: dict, *, document_type: str, text: str, fields: list[dict]) -> None:
+    located_fields = [
+        {
+            **field,
+            "bbox": field.get("bbox") or [20.0, 20.0 + index * 30, 520.0, 45.0 + index * 30],
+        }
+        for index, field in enumerate(fields)
+    ]
     result = {
         "status": "success",
         "fileName": document["fileName"],
         "documentType": document_type,
-        "fragments": [{"pageNo": 1, "text": text, "confidence": 0.92}],
-        "fields": fields,
+        "fragments": [
+            {
+                "pageNo": 1,
+                "text": text,
+                "bbox": [10.0, 10.0, 560.0, 260.0],
+                "confidence": 0.92,
+            }
+        ],
+        "fields": located_fields,
     }
     job = repo.create_ocr_job_record(
         document_id=document["id"],
@@ -104,6 +119,7 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
         "application/pdf",
         material_category="资质证照",
     )
+    document["materialTypeCode"] = "design_license"
     result = {
         "status": "success",
         "fileName": document["fileName"],
@@ -111,16 +127,17 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
         "fragments": [
             {
                 "pageNo": 1,
+                "bbox": [10.0, 10.0, 560.0, 180.0],
                 "text": "设计许可证机构名称 华东设计院 许可范围 压力管道设计 许可级别 GA 有效期 2028-12-31 印章清晰",
                 "confidence": 0.96,
             }
         ],
         "fields": [
-            {"fieldName": "设计许可证机构名称", "fieldValue": "华东设计院", "pageNo": 1, "confidence": 0.96},
-            {"fieldName": "许可范围", "fieldValue": "压力管道设计", "pageNo": 1, "confidence": 0.95},
-            {"fieldName": "许可级别", "fieldValue": "GA", "pageNo": 1, "confidence": 0.94},
-            {"fieldName": "有效期", "fieldValue": "2028-12-31", "pageNo": 1, "confidence": 0.95},
-            {"fieldName": "印章", "fieldValue": "清晰", "pageNo": 1, "confidence": 0.92},
+            {"fieldName": "设计许可证机构名称", "fieldValue": "华东设计院", "pageNo": 1, "bbox": [10, 10, 180, 30], "confidence": 0.96},
+            {"fieldName": "许可范围", "fieldValue": "压力管道设计", "pageNo": 1, "bbox": [10, 35, 220, 55], "confidence": 0.95},
+            {"fieldName": "许可级别", "fieldValue": "GA", "pageNo": 1, "bbox": [10, 60, 120, 80], "confidence": 0.94},
+            {"fieldName": "有效期", "fieldValue": "2028-12-31", "pageNo": 1, "bbox": [10, 85, 220, 105], "confidence": 0.95},
+            {"fieldName": "印章", "fieldValue": "清晰", "pageNo": 1, "bbox": [10, 110, 120, 130], "confidence": 0.92},
         ],
     }
     job = repo.create_ocr_job_record(
@@ -138,6 +155,16 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
     )["run"]
     assert targeting["createdLinkCount"] >= 1
     assert targeting["createdBindingCount"] >= 1
+    license_link = next(
+        item
+        for item in targeting["createdLinks"]
+        if item["materialTypeCode"] == "design_license"
+    )
+    assert license_link["formalEvidenceEligible"] is True
+    assert license_link["quotedText"] not in {"设计单位许可证", "资质证照"}
+    assert license_link["fieldName"] not in {"资料类型", "OCR分类依据", "页数"}
+    assert license_link["evidenceFacts"]
+    assert all(item["bbox"] for item in license_link["evidenceFacts"] if item["formalEvidenceEligible"])
 
     readiness = assert_ok(client.get(f"/api/projects/{PROJECT_ID}/nodes/1/evidence-readiness"))
     assert readiness["hasReviewPoints"] is True
@@ -145,6 +172,82 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
     assert any(
         binding["documentVersionId"] == version["id"] and int(binding["nodeId"]) == 1
         for binding in repo.state["bindings"]
+    )
+
+
+def test_unlocatable_fact_is_separated_as_advisory_file() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "设计单位许可证-无定位.pdf",
+        "application/pdf",
+        material_category="资质证照",
+    )
+    document["materialTypeCode"] = "design_license"
+    apply_ocr(
+        document,
+        version,
+        document_type="design_license",
+        text="设计许可证机构名称 华东设计院 许可范围 压力管道设计 有效期至 2028年12月31日",
+        fields=[
+            {"fieldName": "设计许可证机构名称", "fieldValue": "华东设计院", "pageNo": 1, "confidence": 0.96},
+            {"fieldName": "许可范围", "fieldValue": "压力管道设计", "pageNo": 1, "confidence": 0.95},
+        ],
+    )
+    parse_result = next(
+        item
+        for item in repo.state["ocr_parse_results"]
+        if item.get("documentVersionId") == version["id"]
+    )
+    for fragment in parse_result.get("fragments") or []:
+        fragment["bbox"] = None
+    for field in repo.state["extracted_fields"]:
+        if field.get("documentVersionId") == version["id"]:
+            field["bbox"] = None
+
+    targeting = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+    advisory = next(item for item in targeting["createdLinks"] if item["materialTypeCode"] == "design_license")
+
+    assert advisory["formalEvidenceEligible"] is False
+    assert advisory["evidenceTier"] == "advisory"
+    readiness = assert_ok(client.get(f"/api/projects/{PROJECT_ID}/nodes/1/evidence-readiness"))
+    assert advisory["id"] not in {item["id"] for item in readiness["nodeEvidenceLinks"]}
+    assert advisory["id"] in {item["id"] for item in readiness["advisoryEvidenceLinks"]}
+
+
+def test_design_document_cannot_prove_design_license_point() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "管道特性表.png",
+        "image/png",
+        material_category="设计基础资料",
+    )
+    document["materialTypeCode"] = "design_document"
+    apply_ocr(
+        document,
+        version,
+        document_type="design_document",
+        text=(
+            "项目名称 广东LNG支线改造工程 单位名称 广东星燃石化设计院有限公司 "
+            "资质证书编号 A244010070 有效期至 2024年6月21日 管道级别 GC2 设计压力 2.5MPa"
+        ),
+        fields=[
+            {"fieldName": "单位名称", "fieldValue": "广东星燃石化设计院有限公司", "pageNo": 1, "confidence": 0.94},
+            {"fieldName": "证书编号", "fieldValue": "A244010070", "pageNo": 1, "confidence": 0.95},
+            {"fieldName": "有效期至", "fieldValue": "2024年6月21日", "pageNo": 1, "confidence": 0.93},
+            {"fieldName": "管道级别", "fieldValue": "GC2", "pageNo": 1, "confidence": 0.93},
+            {"fieldName": "设计压力", "fieldValue": "2.5MPa", "pageNo": 1, "confidence": 0.93},
+        ],
+    )
+
+    targeting = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+
+    assert not any(
+        int(item["nodeId"]) == 1 and item["materialTypeCode"] == "design_license"
+        for item in targeting["createdLinks"]
     )
 
 
@@ -229,9 +332,9 @@ def test_node2_license_evidence_requires_manual_confirmation() -> None:
         if row["materialTypeCode"] == "construction_license"
     )
     assert confirmed["evidenceLink"]["manualStatus"] == "confirmed"
-    assert confirmed_row["evidenceReviewStatus"] == "已确认但不可定位"
-    assert confirmed_row["fulfilled"] is False
-    assert confirmed["evidenceReadiness"]["unlocatableConfirmedCount"] >= 1
+    assert confirmed_row["evidenceReviewStatus"] == "已确认"
+    assert confirmed_row["fulfilled"] is True
+    assert confirmed["evidenceReadiness"]["unlocatableConfirmedCount"] == 0
 
     rejected = assert_ok(
         client.post(
@@ -354,3 +457,79 @@ def test_scan_import_expands_contractor_member_scope() -> None:
     assert member["userId"] == "USER-CONTRACTOR-001"
     assert member["orgName"] == "粤海安装工程有限公司"
     assert {1, 2, 4, 16, 24, 25, 53}.issubset(set(member["nodeScope"]))
+
+
+def test_domestic_manufacturing_license_does_not_auto_bind_overseas_node() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "国内压力管道元件制造许可证.pdf",
+        "application/pdf",
+        material_category="制造单位许可资质",
+    )
+    document["materialTypeCode"] = "manufacturing_license"
+    apply_ocr(
+        document,
+        version,
+        document_type="manufacturing_license",
+        text=(
+            "中华人民共和国特种设备制造许可证 单位名称 河北广浩管件有限公司 "
+            "许可证编号 TS2710504-2022 许可范围 压力管道管件 有效期至 2022年9月29日"
+        ),
+        fields=[
+            {"fieldName": "单位名称", "fieldValue": "河北广浩管件有限公司", "pageNo": 1, "confidence": 0.96},
+            {"fieldName": "许可证编号", "fieldValue": "TS2710504-2022", "pageNo": 1, "confidence": 0.96},
+            {"fieldName": "许可范围", "fieldValue": "压力管道管件", "pageNo": 1, "confidence": 0.95},
+        ],
+    )
+
+    targeting = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+
+    assert any(int(link["nodeId"]) == 12 for link in targeting["createdLinks"])
+    assert not any(int(link["nodeId"]) == 15 for link in targeting["createdLinks"])
+    assert not any(
+        int(binding.get("nodeId") or 0) == 15 and binding.get("documentVersionId") == version["id"]
+        for binding in repo.state["bindings"]
+    )
+
+
+def test_readiness_counts_consolidated_binding_for_each_review_point() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "设计图纸标题栏.png",
+        "image/png",
+        material_category="设计基础资料",
+    )
+    design_points = [
+        point
+        for point in repo.state["admin_config"]["materialReviewPoints"]
+        if int(point.get("nodeId") or 0) == 1 and point.get("materialTypeCode") == "design_document"
+    ]
+    assert len(design_points) == 2
+    review_point_ids = [str(point["id"]) for point in design_points]
+    repo.state["bindings"].insert(
+        0,
+        {
+            "id": "BIND-CONSOLIDATED-DESIGN",
+            "projectId": PROJECT_ID,
+            "nodeId": 1,
+            "requirementId": review_point_ids[0],
+            "reviewPointIds": review_point_ids,
+            "documentId": document["id"],
+            "documentVersionId": version["id"],
+            "fileName": document["fileName"],
+            "bindingStatus": "已提交",
+        },
+    )
+
+    readiness = build_node_evidence_readiness(repo, PROJECT_ID, 1)
+    rows = {str(row["id"]): row for row in readiness["requirements"]}
+
+    for point_id in review_point_ids:
+        assert rows[point_id]["matchedBindingCount"] == 1
+        assert rows[point_id]["matchedBindingIds"] == ["BIND-CONSOLIDATED-DESIGN"]
+        assert rows[point_id]["matchedFileNames"] == ["设计图纸标题栏.png"]
+        assert rows[point_id]["supportStatus"] == PARTIAL_STATUS
+        assert rows[point_id]["evidenceReviewStatus"] == "已挂载待定位"
+        assert rows[point_id]["fulfilled"] is False

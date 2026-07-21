@@ -19,6 +19,8 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from libs.contracts.responses import server_time
+from libs.business_pack import business_pack_snapshot, load_business_pack
+from libs.business_pack.clause_store import bind_project_node_clause_packages
 from libs.db.repository import flush_state, load_state, repo, stable_doc_id
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
@@ -26,10 +28,12 @@ from libs.knowledge_indexing import (
     STANDARD_INDEX_VERSION,
     offline_hash_embeddings,
 )
+from libs.material_review_assets import load_material_review_asset
 from libs.material_targeting import run_material_targeting
 
 
 SCENARIO_TAG = "scan-test-scenario-v1"
+SCENARIO_BINDING_VERSION = "scan-binding-v2"
 DEFAULT_PROJECT_ID = "P-2026-GDLNG-002"
 HEIC_SUFFIXES = {".heic", ".heif"}
 CONTRACTOR_USER = {"userId": "USER-CONTRACTOR-001", "org": "粤海安装工程有限公司", "name": "李工"}
@@ -50,216 +54,289 @@ ROLE_PROFILE_DEFAULTS = {
     },
 }
 
+
+def binding_target(
+    node_id: int,
+    material_type_code: str,
+    *,
+    review_point_file_content: str | None = None,
+) -> dict[str, Any]:
+    target: dict[str, Any] = {
+        "nodeId": node_id,
+        "materialTypeCode": material_type_code,
+    }
+    if review_point_file_content:
+        target["reviewPointFileContent"] = review_point_file_content
+    return target
+
+
+DESIGN_STAMP_TARGET = binding_target(
+    1,
+    "design_document",
+    review_point_file_content="施工图纸标题栏及设计印章页",
+)
+DESIGN_SCOPE_TARGET = binding_target(
+    1,
+    "design_document",
+    review_point_file_content="设计说明及管道特性表",
+)
+
+
 FILE_MAPPINGS: dict[str, dict[str, Any]] = {
     "20260623104523.pdf": {
         "role": "contractor",
-        "nodeId": 2,
-        "requirementId": "REQ-02-01",
         "materialCategory": "施工单位许可资质",
         "materialTypeCode": "construction_license",
+        "bindingTargets": [binding_target(2, "construction_license")],
     },
     "20260623104555.pdf": {
         "role": "contractor",
-        "nodeId": 12,
-        "requirementId": "REQ-12-01",
-        "materialCategory": "制造单位许可资质",
+        "materialCategory": "制造许可证、安装许可证及焊工资格证",
         "materialTypeCode": "manufacturing_license",
+        "bindingTargets": [
+            binding_target(2, "construction_license"),
+            binding_target(12, "manufacturing_license"),
+            binding_target(24, "welder_certificate"),
+            binding_target(29, "welder_certificate"),
+        ],
     },
     "20260623104703.pdf": {
         "role": "contractor",
-        "nodeId": 16,
-        "requirementId": "REQ-16-01",
-        "materialCategory": "产品质量证明文件",
+        "materialCategory": "管材、管件及焊材质量证明文件",
         "materialTypeCode": "quality_certificate",
+        "bindingTargets": [
+            binding_target(16, "quality_certificate"),
+            binding_target(21, "quality_certificate"),
+            binding_target(26, "welding_material_certificate"),
+            binding_target(27, "welding_material_certificate"),
+        ],
     },
     "20260623104730.pdf": {
         "role": "contractor",
-        "nodeId": 16,
-        "requirementId": "REQ-16-01",
-        "materialCategory": "产品质量证明文件",
-        "materialTypeCode": "quality_certificate",
+        "materialCategory": "压力管道安装交工资料",
+        "materialTypeCode": "installation_record",
+        "bindingTargets": [
+            binding_target(23, "valve_test_report"),
+            binding_target(25, "welding_record"),
+            binding_target(29, "welding_record"),
+            binding_target(30, "weld_appearance_record"),
+            binding_target(44, "anticorrosion_insulation_record"),
+            binding_target(47, "grounding_test_record"),
+            binding_target(52, "installation_record"),
+            binding_target(53, "installation_record"),
+            binding_target(55, "installation_record"),
+            binding_target(60, "pressure_test_report"),
+            binding_target(61, "pressure_test_report"),
+            binding_target(62, "pressure_test_report"),
+            binding_target(66, "pressure_test_report"),
+            binding_target(67, "leakage_test_report"),
+            binding_target(68, "purge_cleaning_record"),
+        ],
     },
     "20260623104828.pdf": {
         "role": "contractor",
-        "nodeId": 16,
-        "requirementId": "REQ-16-01",
-        "materialCategory": "产品质量证明文件",
+        "materialCategory": "法兰、管件、阀门及防腐材料质量证明文件",
         "materialTypeCode": "quality_certificate",
+        "bindingTargets": [
+            binding_target(16, "quality_certificate"),
+            binding_target(23, "quality_certificate"),
+            binding_target(43, "anticorrosion_insulation_material_certificate"),
+        ],
     },
     "20260623105454.pdf": {
         "role": "contractor",
-        "nodeId": 11,
-        "requirementId": "REQ-11-01",
         "materialCategory": "施工组织设计",
         "materialTypeCode": "construction_organization_design",
+        "bindingTargets": [
+            binding_target(11, "construction_organization_design"),
+            binding_target(36, "ndt_plan"),
+            binding_target(39, "ndt_plan"),
+            binding_target(59, "pressure_test_plan"),
+            binding_target(61, "pressure_test_plan"),
+            binding_target(62, "pressure_test_plan"),
+            binding_target(68, "purge_cleaning_record"),
+        ],
     },
     "20260623105534.pdf": {
         "role": "contractor",
-        "nodeId": 12,
-        "requirementId": "REQ-12-01",
-        "materialCategory": "制造单位许可资质",
-        "materialTypeCode": "manufacturing_license",
+        "materialCategory": "焊接工艺评定报告和焊接作业指导书",
+        "materialTypeCode": "wps_pqr",
+        "bindingTargets": [
+            binding_target(16, "quality_certificate"),
+            binding_target(25, "wps_pqr"),
+            binding_target(29, "wps_pqr"),
+        ],
     },
     "20260623105636.pdf": {
         "role": "ndt",
-        "nodeId": 40,
-        "requirementId": "REQ-40-01",
         "materialCategory": "无损检测报告",
         "materialTypeCode": "ndt_report",
+        "bindingTargets": [
+            binding_target(40, "ndt_report"),
+            binding_target(31, "ndt_report"),
+            binding_target(37, "ndt_report"),
+            binding_target(41, "ndt_report"),
+            binding_target(42, "ndt_report"),
+            binding_target(65, "ndt_report"),
+        ],
     },
     "IMG_6508.heic": {
         "role": "contractor",
-        "nodeId": 53,
-        "requirementId": "REQ-53-02",
         "materialCategory": "管道安装材料表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [DESIGN_STAMP_TARGET, binding_target(53, "design_document")],
     },
     "IMG_6509.heic": {
         "role": "contractor",
-        "nodeId": 1,
-        "requirementId": "REQ-01-03",
         "materialCategory": "管道特性表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [DESIGN_STAMP_TARGET, DESIGN_SCOPE_TARGET, binding_target(9, "design_document")],
     },
     "IMG_6510.heic": {
         "role": "contractor",
-        "nodeId": 9,
-        "requirementId": "REQ-09-01",
         "materialCategory": "管道及仪表流程图",
         "materialTypeCode": "design_document",
+        "bindingTargets": [DESIGN_STAMP_TARGET, binding_target(9, "design_document")],
     },
     "IMG_6511.heic": {
         "role": "contractor",
-        "nodeId": 6,
-        "requirementId": "REQ-06-02",
         "materialCategory": "压力管道强度计算书",
         "materialTypeCode": "calculation_report",
+        "bindingTargets": [DESIGN_STAMP_TARGET, binding_target(6, "calculation_report")],
     },
     "IMG_6512.heic": {
         "role": "contractor",
-        "nodeId": 8,
-        "requirementId": "REQ-08-01",
         "materialCategory": "工艺设计说明书",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(8, "design_document"), binding_target(9, "design_document")],
     },
     "IMG_6513.heic": {
         "role": "contractor",
-        "nodeId": 4,
-        "requirementId": "REQ-04-01",
         "materialCategory": "设备一览表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(4, "design_document")],
     },
     "IMG_6514.heic": {
         "role": "contractor",
-        "nodeId": 4,
-        "requirementId": "REQ-04-01",
-        "materialCategory": "工艺设计说明书",
+        "materialCategory": "工艺图纸目录",
         "materialTypeCode": "design_document",
+        "bindingTargets": [DESIGN_STAMP_TARGET, binding_target(4, "design_document")],
     },
     "IMG_6515.heic": {
         "role": "contractor",
-        "nodeId": 4,
-        "requirementId": "REQ-04-01",
         "materialCategory": "工艺设计说明书",
         "materialTypeCode": "design_document",
+        "bindingTargets": [DESIGN_SCOPE_TARGET, binding_target(4, "design_document")],
     },
     "IMG_6516.heic": {
         "role": "contractor",
-        "nodeId": 1,
-        "requirementId": "REQ-01-03",
         "materialCategory": "设计说明书",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(8, "design_document")],
     },
     "IMG_6517.heic": {
         "role": "contractor",
-        "nodeId": 8,
-        "requirementId": "REQ-08-01",
         "materialCategory": "工艺设计说明书",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(8, "design_document")],
     },
     "IMG_6518.heic": {
         "role": "contractor",
-        "nodeId": 8,
-        "requirementId": "REQ-08-01",
         "materialCategory": "工艺设计说明书",
         "materialTypeCode": "design_document",
+        "bindingTargets": [
+            binding_target(8, "design_document"),
+            binding_target(47, "design_document"),
+            binding_target(53, "design_document"),
+        ],
     },
     "IMG_6519.heic": {
         "role": "contractor",
-        "nodeId": 8,
-        "requirementId": "REQ-08-01",
         "materialCategory": "工艺设计说明书",
         "materialTypeCode": "design_document",
+        "bindingTargets": [
+            binding_target(8, "design_document"),
+            binding_target(9, "design_document"),
+            binding_target(43, "design_document"),
+            binding_target(59, "design_document"),
+            binding_target(68, "design_document"),
+        ],
     },
     "IMG_6520.heic": {
         "role": "contractor",
-        "nodeId": 53,
-        "requirementId": "REQ-53-02",
         "materialCategory": "综合材料表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(53, "design_document")],
     },
     "IMG_6521.heic": {
         "role": "contractor",
-        "nodeId": 53,
-        "requirementId": "REQ-53-02",
         "materialCategory": "综合材料表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(53, "design_document")],
     },
     "IMG_6522.heic": {
         "role": "contractor",
-        "nodeId": 53,
-        "requirementId": "REQ-53-02",
         "materialCategory": "综合材料表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(43, "design_document"), binding_target(53, "design_document")],
     },
     "IMG_6523.heic": {
         "role": "contractor",
-        "nodeId": 53,
-        "requirementId": "REQ-53-02",
         "materialCategory": "综合材料表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(47, "design_document"), binding_target(53, "design_document")],
     },
     "IMG_6524.heic": {
         "role": "contractor",
-        "nodeId": 9,
-        "requirementId": "REQ-09-01",
         "materialCategory": "配管平面图",
         "materialTypeCode": "design_document",
+        "bindingTargets": [
+            DESIGN_STAMP_TARGET,
+            binding_target(4, "design_document"),
+            binding_target(53, "design_document"),
+        ],
     },
     "IMG_6526.heic": {
         "role": "contractor",
-        "nodeId": 4,
-        "requirementId": "REQ-04-01",
         "materialCategory": "设计图纸",
         "materialTypeCode": "design_document",
+        "bindingTargets": [
+            DESIGN_STAMP_TARGET,
+            binding_target(4, "design_document"),
+            binding_target(53, "design_document"),
+        ],
     },
     "IMG_6527.heic": {
         "role": "contractor",
-        "nodeId": 4,
-        "requirementId": "REQ-04-01",
         "materialCategory": "设计图纸",
         "materialTypeCode": "design_document",
+        "bindingTargets": [
+            DESIGN_STAMP_TARGET,
+            binding_target(4, "design_document"),
+            binding_target(53, "design_document"),
+        ],
     },
     "IMG_6528.heic": {
         "role": "contractor",
-        "nodeId": 4,
-        "requirementId": "REQ-04-01",
         "materialCategory": "设计图纸",
         "materialTypeCode": "design_document",
+        "bindingTargets": [
+            DESIGN_STAMP_TARGET,
+            binding_target(4, "design_document"),
+            binding_target(53, "design_document"),
+        ],
     },
     "IMG_6529.heic": {
         "role": "contractor",
-        "nodeId": 43,
-        "requirementId": "REQ-43-02",
         "materialCategory": "设备及管道油漆保温一览表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [binding_target(43, "design_document")],
     },
     "IMG_6530.heic": {
         "role": "contractor",
-        "nodeId": 1,
-        "requirementId": "REQ-01-03",
         "materialCategory": "管道特性表",
         "materialTypeCode": "design_document",
+        "bindingTargets": [DESIGN_SCOPE_TARGET, binding_target(9, "design_document")],
     },
 }
 
@@ -377,7 +454,74 @@ def normalize_ocr_payload(raw: dict[str, Any], source_path: Path) -> dict[str, A
     return normalized
 
 
-def requirement(project_id: str, requirement_id: str | None, node_id: int) -> dict[str, Any] | None:
+def mapping_binding_targets(mapping: dict[str, Any]) -> list[dict[str, Any]]:
+    targets = [copy.deepcopy(item) for item in mapping.get("bindingTargets") or [] if isinstance(item, dict)]
+    if targets:
+        return targets
+    if mapping.get("nodeId"):
+        return [
+            {
+                "nodeId": int(mapping["nodeId"]),
+                "requirementId": mapping.get("requirementId"),
+                "materialTypeCode": mapping.get("materialTypeCode"),
+            }
+        ]
+    return []
+
+
+def configured_material_review_points() -> list[dict[str, Any]]:
+    admin_config = repo.state.get("admin_config") or {}
+    return [item for item in admin_config.get("materialReviewPoints") or [] if isinstance(item, dict)]
+
+
+def sync_material_review_points_from_asset() -> dict[str, Any]:
+    asset = load_material_review_asset()
+    items = [copy.deepcopy(item) for item in asset.get("items") or [] if isinstance(item, dict)]
+    if not items:
+        raise RuntimeError("The packaged material review point asset is empty.")
+    admin_config = repo.state.setdefault("admin_config", {})
+    previous = [item for item in admin_config.get("materialReviewPoints") or [] if isinstance(item, dict)]
+    previous_ids = {str(item.get("id") or "") for item in previous}
+    current_ids = {str(item.get("id") or "") for item in items}
+    changed = previous_ids != current_ids or len(previous) != len(items)
+    if changed:
+        admin_config["materialReviewPoints"] = items
+    admin_config["materialReviewPointsAsset"] = {
+        key: asset.get(key)
+        for key in ("schemaVersion", "version", "source", "sourceSha256", "itemCount")
+    }
+    return {
+        "changed": changed,
+        "previousCount": len(previous),
+        "currentCount": len(items),
+        "version": asset.get("version"),
+    }
+
+
+def resolve_binding_target(
+    target: dict[str, Any],
+    review_points: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    node_id = int(target.get("nodeId") or 0)
+    requirement_id = str(target.get("reviewPointId") or target.get("requirementId") or "").strip()
+    material_type_code = str(target.get("materialTypeCode") or "").strip()
+    file_content = str(target.get("reviewPointFileContent") or "").strip()
+    candidates = [item for item in review_points if int(item.get("nodeId") or 0) == node_id]
+    if requirement_id:
+        candidates = [item for item in candidates if str(item.get("id") or "") == requirement_id]
+    if material_type_code:
+        candidates = [item for item in candidates if str(item.get("materialTypeCode") or "") == material_type_code]
+    if file_content:
+        candidates = [item for item in candidates if str(item.get("fileContent") or "") == file_content]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def requirement(project_id: str, target: dict[str, Any]) -> dict[str, Any] | None:
+    review_point = resolve_binding_target(target, configured_material_review_points())
+    if review_point:
+        return review_point
+    requirement_id = str(target.get("requirementId") or "").strip()
+    node_id = int(target.get("nodeId") or 0)
     if requirement_id:
         item = next(
             (
@@ -389,13 +533,21 @@ def requirement(project_id: str, requirement_id: str | None, node_id: int) -> di
         )
         if item:
             return item
-    return next(
-        (
-            req
-            for req in repo.state.get("requirements", [])
-            if req.get("projectId") == project_id and int(req.get("nodeId") or 0) == int(node_id)
-        ),
-        None,
+    candidates = [
+        req
+        for req in repo.state.get("requirements", [])
+        if req.get("projectId") == project_id and int(req.get("nodeId") or 0) == node_id
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def requirement_name(requirement_item: dict[str, Any]) -> str:
+    return str(
+        requirement_item.get("reviewContent")
+        or requirement_item.get("name")
+        or requirement_item.get("materialTypeName")
+        or requirement_item.get("fileContent")
+        or "业务资料审查点"
     )
 
 
@@ -577,7 +729,12 @@ def clear_prior_scan_flow(project_id: str, scan_file_names: set[str]) -> dict[st
 
 
 def scenario_node_ids() -> set[int]:
-    return {int(item["nodeId"]) for item in FILE_MAPPINGS.values()}
+    return {
+        int(target["nodeId"])
+        for mapping in FILE_MAPPINGS.values()
+        for target in mapping_binding_targets(mapping)
+        if target.get("nodeId")
+    }
 
 
 def ensure_document_records(
@@ -669,8 +826,9 @@ def ensure_document_records(
             "actions": ["file:view", "file:bind", "file:preview", "file:download"],
         }
     )
-    if role == "ndt":
-        document["nodeId"] = int(mapping["nodeId"])
+    primary_target = (mapping_binding_targets(mapping) or [{}])[0]
+    if role == "ndt" and primary_target.get("nodeId"):
+        document["nodeId"] = int(primary_target["nodeId"])
     version.update(
         {
             "documentId": document["id"],
@@ -712,8 +870,8 @@ def ensure_document_records(
             "actions": ["knowledge:view", "knowledge:reindex"],
         }
     )
-    if role == "ndt":
-        knowledge_file["nodeId"] = int(mapping["nodeId"])
+    if role == "ndt" and primary_target.get("nodeId"):
+        knowledge_file["nodeId"] = int(primary_target["nodeId"])
     repo.upsert_knowledge_task(
         task_type="ocr",
         target_id=knowledge_file["id"],
@@ -746,6 +904,7 @@ def fragments_from_ocr(raw: dict[str, Any]) -> list[dict[str, Any]]:
             for observation in observations:
                 fragments.append(
                     {
+                        "id": f"FRAG-SCAN-{page_no}-{len(fragments) + 1}",
                         "pageNo": page_no,
                         "text": str(observation.get("text") or "").strip(),
                         "bbox": observation.get("bbox") or observation.get("boundingBox"),
@@ -762,6 +921,7 @@ def fragments_from_ocr(raw: dict[str, Any]) -> list[dict[str, Any]]:
         if text:
             fragments.append(
                 {
+                    "id": f"FRAG-SCAN-{page_no}-{len(fragments) + 1}",
                     "pageNo": page_no,
                     "text": text,
                     "confidence": raw.get("avg_confidence"),
@@ -776,20 +936,65 @@ def all_ocr_text(raw: dict[str, Any]) -> str:
     return "\n".join(str(page.get("text") or "").strip() for page in raw.get("pages") or [] if str(page.get("text") or "").strip())
 
 
-def extract_regex_field(text: str, label: str, patterns: list[str]) -> dict[str, Any] | None:
+def regex_field_value(text: str, patterns: list[str]) -> str | None:
     import re
 
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             values = [group for group in match.groups() if group is not None]
-            value = " 至 ".join(item.strip() for item in values if item.strip()) if len(values) > 1 else match.group(1).strip()
-            return {"fieldName": label, "fieldValue": value, "pageNo": 1, "confidence": 0.8}
+            return " 至 ".join(item.strip() for item in values if item.strip()) if len(values) > 1 else match.group(1).strip()
     return None
 
 
-def fields_from_ocr(raw: dict[str, Any], mapping: dict[str, Any]) -> list[dict[str, Any]]:
+def extract_regex_field(
+    text: str,
+    label: str,
+    patterns: list[str],
+    *,
+    fragments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    for fragment in fragments or []:
+        fragment_text = str(fragment.get("text") or "")
+        value = regex_field_value(fragment_text, patterns)
+        if value is None:
+            continue
+        bbox = fragment.get("bbox")
+        return {
+            "fieldName": label,
+            "fieldValue": value,
+            "pageNo": int(fragment.get("pageNo") or 1),
+            "bbox": bbox,
+            "confidence": float(fragment.get("confidence") or 0.8),
+            "sourceFragmentId": fragment.get("id"),
+            "formalEvidenceEligible": bool(
+                isinstance(bbox, (list, tuple))
+                and len(bbox) >= 4
+                and float(bbox[2]) > float(bbox[0])
+                and float(bbox[3]) > float(bbox[1])
+            ),
+        }
+    value = regex_field_value(text, patterns)
+    if value is None:
+        return None
+    return {
+        "fieldName": label,
+        "fieldValue": value,
+        "pageNo": 1,
+        "bbox": None,
+        "confidence": 0.8,
+        "sourceFragmentId": None,
+        "formalEvidenceEligible": False,
+    }
+
+
+def fields_from_ocr(
+    raw: dict[str, Any],
+    mapping: dict[str, Any],
+    fragments: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     text = all_ocr_text(raw)
+    fragments = fragments if fragments is not None else fragments_from_ocr(raw)
     fields: list[dict[str, Any]] = [
         {
             "fieldName": "资料类型",
@@ -814,16 +1019,16 @@ def fields_from_ocr(raw: dict[str, Any], mapping: dict[str, Any]) -> list[dict[s
         },
     ]
     for field in [
-        extract_regex_field(text, "项目名称", [r"项目名称[:：]\s*([^\n]{4,80})", r"工程名称[:：]\s*([^\n]{4,80})"]),
-        extract_regex_field(text, "证书编号", [r"证书编号[:：]\s*([A-Z0-9\-]+)", r"编号[:：]\s*([A-Z]{1,4}[0-9][A-Z0-9\-]+)"]),
-        extract_regex_field(text, "报告编号", [r"报告编号[:：]\s*([A-Z0-9\-]+)"]),
-        extract_regex_field(text, "图号", [r"图号[:：]?\s*([A-ZQX0-9\-—_]{6,40})"]),
-        extract_regex_field(text, "有效期至", [r"有效期至[:：]?\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)"]),
-        extract_regex_field(text, "机构名称", [r"(?:单位名称|施工单位|安装单位)[:：]\s*([^\n]{4,80})"]),
-        extract_regex_field(text, "许可范围", [r"((?:工业管道|压力管道)[^\n]{0,80}(?:GC1|GC2|GCD)[^\n]{0,40})"]),
-        extract_regex_field(text, "管道级别", [r"(?:压力管道级别|管道级别)[:：为\s]*([A-Z0-9、,，/ ]{2,40})"]),
-        extract_regex_field(text, "施工计划工期", [r"工期目标[:：]\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)[^\n]{0,20}(?:进场|开工)[^\n]{0,20}([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)[^\n]{0,20}(?:竣工|完工|验收)"]),
-        extract_regex_field(text, "安装工期", [r"安装开工日期[:：]?\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)[\s\S]{0,80}安装竣工日期[:：]?\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)"]),
+        extract_regex_field(text, "项目名称", [r"项目名称[:：]\s*([^\n]{4,80})", r"工程名称[:：]\s*([^\n]{4,80})"], fragments=fragments),
+        extract_regex_field(text, "证书编号", [r"证书编号[:：]\s*([A-Z0-9\-]+)", r"编号[:：]\s*([A-Z]{1,4}[0-9][A-Z0-9\-]+)"], fragments=fragments),
+        extract_regex_field(text, "报告编号", [r"报告编号[:：]\s*([A-Z0-9\-]+)"], fragments=fragments),
+        extract_regex_field(text, "图号", [r"图号[:：]?\s*([A-ZQX0-9\-—_]{6,40})"], fragments=fragments),
+        extract_regex_field(text, "有效期至", [r"有效期至[:：]?\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)"], fragments=fragments),
+        extract_regex_field(text, "机构名称", [r"(?:单位名称|施工单位|安装单位)[:：]\s*([^\n]{4,80})"], fragments=fragments),
+        extract_regex_field(text, "许可范围", [r"((?:工业管道|压力管道)[^\n]{0,80}(?:GC1|GC2|GCD)[^\n]{0,40})"], fragments=fragments),
+        extract_regex_field(text, "管道级别", [r"(?:压力管道级别|管道级别)[:：为\s]*([A-Z0-9、,，/ ]{2,40})"], fragments=fragments),
+        extract_regex_field(text, "施工计划工期", [r"工期目标[:：]\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)[^\n]{0,20}(?:进场|开工)[^\n]{0,20}([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)[^\n]{0,20}(?:竣工|完工|验收)"], fragments=fragments),
+        extract_regex_field(text, "安装工期", [r"安装开工日期[:：]?\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)[\s\S]{0,80}安装竣工日期[:：]?\s*([0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)"], fragments=fragments),
     ]:
         if field:
             field["extractionMethod"] = "scan_ocr_import"
@@ -854,7 +1059,7 @@ def apply_ocr_and_index(document: dict[str, Any], version: dict[str, Any], raw: 
         "diagnostics": [],
         "pages": raw.get("pages") or [],
         "fragments": fragments,
-        "fields": fields_from_ocr(raw, mapping),
+        "fields": fields_from_ocr(raw, mapping, fragments),
         "quality": {
             "avgConfidence": raw.get("avg_confidence"),
             "lineCount": raw.get("line_count"),
@@ -938,45 +1143,84 @@ def apply_ocr_and_index(document: dict[str, Any], version: dict[str, Any], raw: 
     return {"applied": applied, "targeting": targeting_result, "slice": slice_result, "vector": vector_result}
 
 
-def ensure_binding(project_id: str, document: dict[str, Any], version: dict[str, Any], mapping: dict[str, Any]) -> dict[str, Any]:
-    req = requirement(project_id, mapping.get("requirementId"), int(mapping["nodeId"]))
-    binding_id = f"BIND-SCAN-{stable_doc_id(document['id'] + str(mapping['nodeId']))[:10].upper()}"
-    existing = repo.find_one("bindings", binding_id)
-    if not existing:
-        existing = {
-            "id": binding_id,
-            "projectId": project_id,
-            "nodeId": int(mapping["nodeId"]),
-            "requirementId": (req or {}).get("id"),
-            "requirementName": (req or {}).get("name"),
-            "documentId": document["id"],
-            "documentVersionId": version["id"],
-            "fileName": document["fileName"],
-            "versionNo": version.get("versionNo") or "V1",
-            "usage": "原始提交" if mapping.get("role") == "contractor" else "检测报告",
-            "sourceOrgName": document["sourceOrgName"],
-            "bindingStatus": "已提交",
-            "boundByName": document.get("uploaderName") or "李工",
-            "boundAt": server_time(),
-            "scenarioTag": SCENARIO_TAG,
-            "actions": ["review:save", "review:return-correction"] if mapping.get("role") == "contractor" else ["ndt:submit"],
+def ensure_bindings(
+    project_id: str,
+    document: dict[str, Any],
+    version: dict[str, Any],
+    mapping: dict[str, Any],
+) -> list[dict[str, Any]]:
+    targets_by_node: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for target in mapping_binding_targets(mapping):
+        targets_by_node[int(target.get("nodeId") or 0)].append(target)
+
+    bindings: list[dict[str, Any]] = []
+    for node_id, targets in sorted(targets_by_node.items()):
+        if not node_id:
+            continue
+        resolved = [requirement(project_id, target) for target in targets]
+        unresolved = [target for target, item in zip(targets, resolved) if item is None]
+        if unresolved:
+            raise RuntimeError(
+                f"Unresolved Scan binding target for {document.get('fileName')}: "
+                f"node={node_id}, targets={unresolved}"
+            )
+        requirements = [item for item in resolved if item is not None]
+        primary = requirements[0]
+        binding_id = f"BIND-SCAN-{stable_doc_id(document['id'] + str(node_id))[:10].upper()}"
+        matches = [
+            item
+            for item in repo.state.get("bindings", [])
+            if item.get("projectId") == project_id
+            and int(item.get("nodeId") or 0) == node_id
+            and item.get("documentVersionId") == version["id"]
+        ]
+        existing = matches[0] if matches else None
+        if len(matches) > 1:
+            duplicate_ids = {str(item.get("id") or "") for item in matches[1:]}
+            repo.state["bindings"] = [
+                item for item in repo.state.get("bindings", []) if str(item.get("id") or "") not in duplicate_ids
+            ]
+        if existing is None:
+            existing = {}
+            repo.state.setdefault("bindings", []).insert(0, existing)
+
+        review_point_ids = {
+            str(item)
+            for item in [*(existing.get("reviewPointIds") or []), *(item.get("id") for item in requirements)]
+            if item
         }
-        repo.state["bindings"].insert(0, existing)
-    else:
         existing.update(
             {
-                "nodeId": int(mapping["nodeId"]),
-                "requirementId": (req or {}).get("id"),
-                "requirementName": (req or {}).get("name"),
+                "id": binding_id,
+                "projectId": project_id,
+                "nodeId": node_id,
+                "requirementId": primary.get("id"),
+                "requirementName": requirement_name(primary),
+                "reviewPointIds": sorted(review_point_ids),
+                "materialTypeCodes": sorted(
+                    {str(item.get("materialTypeCode") or "") for item in requirements if item.get("materialTypeCode")}
+                ),
                 "documentId": document["id"],
                 "documentVersionId": version["id"],
                 "fileName": document["fileName"],
-                "sourceOrgName": document["sourceOrgName"],
+                "versionNo": version.get("versionNo") or "V1",
+                "usage": "原始提交" if mapping.get("role") == "contractor" else "检测报告",
+                "sourceOrgName": document.get("sourceOrgName") or "",
                 "bindingStatus": "已提交",
+                "boundByName": document.get("uploaderName") or "李工",
+                "boundAt": existing.get("boundAt") or server_time(),
+                "source": "scan_explicit_mapping",
                 "scenarioTag": SCENARIO_TAG,
+                "scenarioBindingVersion": SCENARIO_BINDING_VERSION,
+                "actions": (
+                    ["review:save", "review:return-correction"]
+                    if mapping.get("role") == "contractor"
+                    else ["ndt:submit"]
+                ),
             }
         )
-    return existing
+        bindings.append(existing)
+    return bindings
 
 
 def make_upload_sessions(project_id: str, imported: list[dict[str, Any]]) -> None:
@@ -1189,6 +1433,9 @@ def create_ndt_submission(project_id: str, ndt_items: list[dict[str, Any]], ndt_
     if not ndt_items:
         return None
     node_id = 40
+    node_ids = sorted({int(item.get("nodeId") or 0) for item in ndt_bindings if int(item.get("nodeId") or 0)})
+    if node_id not in node_ids:
+        node_ids.insert(0, node_id)
     report_ids: list[str] = []
     for item in ndt_items:
         document = item["document"]
@@ -1197,6 +1444,7 @@ def create_ndt_submission(project_id: str, ndt_items: list[dict[str, Any]], ndt_
             "id": report_id,
             "projectId": project_id,
             "nodeId": node_id,
+            "nodeIds": node_ids,
             "reportNo": "2021SHZH-014RTBG-01",
             "entrustNo": "WT-SCAN-2021SHZH-014",
             "method": "RT",
@@ -1220,6 +1468,7 @@ def create_ndt_submission(project_id: str, ndt_items: list[dict[str, Any]], ndt_
                 "id": f"NDT-REC-SCAN-{stable_doc_id(document['id'])[:8].upper()}",
                 "projectId": project_id,
                 "nodeId": node_id,
+                "nodeIds": node_ids,
                 "recordNo": "REC-RT-SCAN-001",
                 "reportId": report_id,
                 "weldNo": "W-SCAN-RT-001",
@@ -1247,7 +1496,7 @@ def create_ndt_submission(project_id: str, ndt_items: list[dict[str, Any]], ndt_
 
     submission_id = f"NDT-SUB-SCAN-{stable_doc_id('|'.join(report_ids))[:8].upper()}"
     todo_id = f"TODO-SCAN-NDT-{stable_doc_id(submission_id)[:8].upper()}"
-    changed = [repo.set_node_status(project_id, node_id, "待审查")]
+    changed = [repo.set_node_status(project_id, item, "待审查") for item in node_ids]
     todo = {
         "id": todo_id,
         "title": "无损检测资料待审查",
@@ -1267,7 +1516,7 @@ def create_ndt_submission(project_id: str, ndt_items: list[dict[str, Any]], ndt_
         "snapshotId": f"SNAP-{submission_id}",
         "projectId": project_id,
         "nodeId": node_id,
-        "nodeIds": [node_id],
+        "nodeIds": node_ids,
         "submissionType": "ndt",
         "batchName": "Scan 无损检测资料提交",
         "submitterComment": "由 Scan 离线资料迁移生成，无损机构已完成上传并提交。",
@@ -1300,6 +1549,82 @@ def refresh_knowledge_source_counts() -> None:
     source["updatedAt"] = server_time()
 
 
+def refresh_project_node_binding_counts(project_id: str) -> None:
+    counts: dict[int, set[str]] = defaultdict(set)
+    for binding in repo.state.get("bindings", []):
+        if binding.get("projectId") != project_id:
+            continue
+        node_id = int(binding.get("nodeId") or 0)
+        document_id = str(binding.get("documentId") or "")
+        if node_id and document_id:
+            counts[node_id].add(document_id)
+    for node in repo.state.get("project_nodes", []):
+        if node.get("projectId") != project_id:
+            continue
+        node["fileCount"] = len(counts.get(int(node.get("nodeId") or 0), set()))
+        node["updatedAt"] = server_time()
+
+
+def sync_project_clause_packages(project_id: str, *, repository: Any = repo) -> dict[str, Any]:
+    """Keep the Scan fixture project on the current pack and persist its clause bindings."""
+    project = repository.require_project(project_id)
+    if not project:
+        raise ValueError(f"project not found: {project_id}")
+    pack = load_business_pack(str(project.get("businessPackId") or "engineering_inspection_v1"))
+    now = server_time()
+    project.update(
+        {
+            "businessPackId": pack["id"],
+            "businessPackVersion": pack["version"],
+            "domainType": pack["domainType"],
+            "businessPackSnapshotHash": pack["snapshotHash"],
+            "businessPackSnapshot": business_pack_snapshot(pack),
+            "updatedAt": now,
+        }
+    )
+    updated_nodes = 0
+    for node in repository.state.get("tree_nodes", []):
+        if node.get("projectId") != project_id:
+            continue
+        node["businessPackId"] = pack["id"]
+        node["businessPackVersion"] = pack["version"]
+        node["updatedAt"] = now
+        updated_nodes += 1
+    bound_nodes = bind_project_node_clause_packages(
+        repository.state,
+        project,
+        pack,
+        bound_at=now,
+    )
+    return {
+        "businessPackId": pack["id"],
+        "businessPackVersion": pack["version"],
+        "updatedNodes": updated_nodes,
+        "boundClausePackageNodes": bound_nodes,
+    }
+
+
+def validate_file_mappings(review_points: list[dict[str, Any]] | None = None) -> list[str]:
+    points = review_points if review_points is not None else configured_material_review_points()
+    errors: list[str] = []
+    for file_name, mapping in FILE_MAPPINGS.items():
+        targets = mapping_binding_targets(mapping)
+        if not targets:
+            errors.append(f"{file_name}: no binding targets")
+            continue
+        seen: set[tuple[int, str]] = set()
+        for target in targets:
+            resolved = resolve_binding_target(target, points)
+            if resolved is None:
+                errors.append(f"{file_name}: unresolved target {target}")
+                continue
+            key = (int(target.get("nodeId") or 0), str(resolved.get("id") or ""))
+            if key in seen:
+                errors.append(f"{file_name}: duplicate target {resolved.get('id')}")
+            seen.add(key)
+    return errors
+
+
 def build_plan(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id: str) -> list[dict[str, Any]]:
     plan = []
     for path in scan_files(scan_dir):
@@ -1325,16 +1650,23 @@ def build_plan(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id: s
             import_path.stat().st_size,
             legacy_file_names=legacy_file_names,
         )
-        req = requirement(project_id, mapping.get("requirementId"), int(mapping["nodeId"]))
+        binding_plan = []
+        for target in mapping_binding_targets(mapping):
+            req = requirement(project_id, target)
+            binding_plan.append(
+                {
+                    "nodeId": int(target.get("nodeId") or 0),
+                    "requirementId": (req or {}).get("id"),
+                    "requirementName": requirement_name(req) if req else None,
+                }
+            )
         plan.append(
             {
                 "file": import_path.name,
                 "sourceFile": path.name,
                 "status": "ready",
                 "role": mapping["role"],
-                "nodeId": mapping["nodeId"],
-                "requirementId": (req or {}).get("id"),
-                "requirementName": (req or {}).get("name"),
+                "bindings": binding_plan,
                 "materialCategory": mapping.get("materialCategory"),
                 "existingDocumentId": (document or {}).get("id"),
                 "existingVersionId": (version or {}).get("id"),
@@ -1346,19 +1678,24 @@ def build_plan(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id: s
 
 
 def print_plan(plan: list[dict[str, Any]]) -> None:
-    print("file\trole\tnode\trequirement\tmaterial\texisting\tocr")
+    print("file\trole\tbindings\tmaterial\texisting\tocr")
     for item in plan:
         if item["status"] != "ready":
-            print(f"{item['file']}\t-\t-\t-\t-\t{item['status']}\t{item['reason']}")
+            print(f"{item['file']}\t-\t-\t-\t{item['status']}\t{item['reason']}")
             continue
         existing = item.get("existingDocumentId") or "NEW"
+        bindings = "; ".join(
+            f"{binding['nodeId']}:{binding.get('requirementName') or binding.get('requirementId') or 'UNRESOLVED'}"
+            for binding in item.get("bindings") or []
+        )
         print(
-            f"{item['file']}\t{item['role']}\t{item['nodeId']}\t{item.get('requirementName') or item.get('requirementId')}\t"
-            f"{item['materialCategory']}\t{existing}\t{item.get('ocrCategory')}:{item.get('ocrPages')}p"
+            f"{item['file']}\t{item['role']}\t{bindings}\t{item['materialCategory']}\t{existing}\t"
+            f"{item.get('ocrCategory')}:{item.get('ocrPages')}p"
         )
 
 
 def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id: str, *, with_vectors: bool) -> dict[str, Any]:
+    clause_package_sync = sync_project_clause_packages(project_id)
     clear_stats = clear_prior_scan_flow(project_id, set(raw_ocr.keys()))
     imported: list[dict[str, Any]] = []
     bindings_by_role: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1384,9 +1721,9 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
             mapping,
             with_vectors=with_vectors,
         )
-        binding = ensure_binding(project_id, records["document"], records["version"], mapping)
-        imported.append({**records, "mapping": mapping, "ocr": normalized_ocr, "binding": binding})
-        bindings_by_role[mapping["role"]].append(binding)
+        bindings = ensure_bindings(project_id, records["document"], records["version"], mapping)
+        imported.append({**records, "mapping": mapping, "ocr": normalized_ocr, "bindings": bindings})
+        bindings_by_role[mapping["role"]].extend(bindings)
     make_upload_sessions(project_id, imported)
 
     contractor_by_node: dict[int, list[dict[str, Any]]] = defaultdict(list)
@@ -1414,6 +1751,7 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
     contractor_user = ensure_user_profile("contractor", CONTRACTOR_USER)
     ndt_user = ensure_user_profile("ndt", NDT_USER)
     refresh_knowledge_source_counts()
+    refresh_project_node_binding_counts(project_id)
     project = repo.require_project(project_id)
     if project:
         project["status"] = "在监检审查中"
@@ -1421,6 +1759,7 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
         project["updatedAt"] = server_time()
         project["scenarioTag"] = SCENARIO_TAG
     return {
+        "clausePackages": clause_package_sync,
         "clear": clear_stats,
         "importedFiles": len(imported),
         "convertedHeicFiles": sum(
@@ -1470,6 +1809,10 @@ def main() -> int:
         raise SystemExit(f"OCR JSON not found: {ocr_json}")
 
     load_state()
+    material_review_sync = sync_material_review_points_from_asset()
+    mapping_errors = validate_file_mappings()
+    if mapping_errors:
+        raise SystemExit("Invalid Scan binding mappings:\n- " + "\n- ".join(mapping_errors))
     raw_ocr = load_ocr_items(ocr_json)
     plan = build_plan(scan_dir, raw_ocr, args.project_id)
     print_plan(plan)
@@ -1483,6 +1826,7 @@ def main() -> int:
     if backup:
         print(f"sqliteBackup={backup}")
     result = apply_import(scan_dir, raw_ocr, args.project_id, with_vectors=not args.skip_vectors)
+    result["materialReviewPoints"] = material_review_sync
     flush_state()
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

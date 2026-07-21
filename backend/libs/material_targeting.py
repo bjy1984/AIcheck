@@ -264,6 +264,492 @@ def contains_any(haystack: str, keywords: list[str]) -> bool:
     return any(keyword and keyword in haystack for keyword in keywords)
 
 
+METADATA_FIELD_NAMES = {
+    "资料类型",
+    "OCR分类依据",
+    "页数",
+    "文件名",
+    "文档分类",
+    "知识类型",
+}
+STRICT_POINT_SOURCE_TYPES = {
+    "design_document",
+    "design_license",
+    "construction_license",
+    "manufacturing_license",
+}
+
+
+def valid_evidence_bbox(value: Any) -> bool:
+    try:
+        return bool(
+            isinstance(value, (list, tuple))
+            and len(value) >= 4
+            and float(value[2]) > float(value[0])
+            and float(value[3]) > float(value[1])
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def point_source_is_allowed(point: dict[str, Any], document: dict[str, Any]) -> tuple[bool, str | None]:
+    expected = str(point.get("materialTypeCode") or "").strip()
+    declared = str(document.get("materialTypeCode") or "").strip()
+    if expected in STRICT_POINT_SOURCE_TYPES and declared != expected:
+        return False, f"资料来源类型不符合审查点：需要 {expected}，实际为 {declared or '未声明'}"
+    return True, None
+
+
+def evidence_fact_targets(point: dict[str, Any]) -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
+    seen_codes: set[str] = set()
+
+    def add(
+        code: str,
+        label: str,
+        source_item: str,
+        *,
+        field_names: tuple[str, ...],
+        terms: tuple[str, ...],
+    ) -> None:
+        if code in seen_codes:
+            return
+        seen_codes.add(code)
+        targets.append(
+            {
+                "targetCode": code,
+                "targetName": label,
+                "sourceEvidenceItem": source_item,
+                "fieldNames": list(field_names),
+                "matchTerms": list(dict.fromkeys(normalized_text(item) for item in terms if normalized_text(item))),
+            }
+        )
+
+    material_type_code = str(point.get("materialTypeCode") or "")
+    for index, raw_item in enumerate(point.get("evidenceItems") or [], start=1):
+        item = str(raw_item or "").strip()
+        normalized = normalized_text(item)
+        recognized = False
+        if "机构名称" in normalized or "单位名称" in normalized:
+            recognized = True
+            add(
+                "designer_name" if int(point.get("nodeId") or 0) == 1 else "organization_name",
+                "设计单位名称" if int(point.get("nodeId") or 0) == 1 else "单位名称",
+                item,
+                field_names=("设计许可证机构名称", "机构名称", "单位名称", "设计单位名称"),
+                terms=("机构名称", "单位名称", "设计单位名称", "设计院", "设计公司"),
+            )
+        if "证书编号" in normalized or "许可证编号" in normalized:
+            recognized = True
+            add(
+                "license_number",
+                "许可证编号",
+                item,
+                field_names=("证书编号", "许可证编号", "许可证号"),
+                terms=("证书编号", "许可证编号", "许可证号", "资质证书编号"),
+            )
+        if "许可范围" in normalized:
+            recognized = True
+            add(
+                "license_scope",
+                "许可范围",
+                item,
+                field_names=("许可范围", "许可项目", "许可子项目"),
+                terms=("许可范围", "许可项目", "许可子项目", "获准从事", "工业管道"),
+            )
+        if "许可级别" in normalized:
+            recognized = True
+            add(
+                "license_level",
+                "许可级别",
+                item,
+                field_names=("许可级别", "类别级别"),
+                terms=("许可级别", "类别级别", "GC1", "GC2", "GCD"),
+            )
+        if "有效期" in normalized:
+            recognized = True
+            add(
+                "license_validity",
+                "许可证有效期",
+                item,
+                field_names=("有效期", "有效期至", "生效日期", "到期日期"),
+                terms=("有效期", "有效期至", "生效日期", "到期日期"),
+            )
+        if "印章" in normalized:
+            recognized = True
+            add(
+                "design_seal",
+                "设计印章",
+                item,
+                field_names=("印章", "设计印章", "印章单位名称"),
+                terms=("设计印章", "印章单位名称", "印章"),
+            )
+        if "图号" in normalized:
+            recognized = True
+            add(
+                "drawing_number",
+                "图号",
+                item,
+                field_names=("图号", "设计图号"),
+                terms=("图号", "设计图号"),
+            )
+        if "项目名称" in normalized or "工程名称" in normalized:
+            recognized = True
+            add(
+                "project_name",
+                "项目名称",
+                item,
+                field_names=("项目名称", "工程名称"),
+                terms=("项目名称", "工程名称"),
+            )
+        if "施工范围" in normalized and "许可范围" not in normalized:
+            recognized = True
+            add(
+                "design_scope",
+                "设计施工范围",
+                item,
+                field_names=("施工范围", "项目范围", "工程内容"),
+                terms=("施工范围", "项目范围", "工程内容", "卸车管线", "设计范围"),
+            )
+        if (
+            "管道类别" in normalized
+            or "管道级别" in normalized
+            or (normalized == "级别" and "license" not in material_type_code)
+        ):
+            recognized = True
+            add(
+                "pipeline_class",
+                "管道类别/级别",
+                item,
+                field_names=("管道类别", "管道级别", "压力管道级别"),
+                terms=("管道类别", "管道级别", "压力管道级别", "GC1", "GC2", "GCD"),
+            )
+        if "设计压力" in normalized:
+            recognized = True
+            add(
+                "design_pressure",
+                "设计压力",
+                item,
+                field_names=("设计压力",),
+                terms=("设计压力", "工作压力"),
+            )
+        if "温度" in normalized:
+            recognized = True
+            add(
+                "design_temperature",
+                "设计温度",
+                item,
+                field_names=("设计温度", "温度"),
+                terms=("设计温度", "工作温度"),
+            )
+        if "开始日期" in normalized or "开工日期" in normalized:
+            recognized = True
+            add(
+                "construction_start",
+                "计划开工日期",
+                item,
+                field_names=("开始日期", "开工日期", "施工计划工期", "安装工期"),
+                terms=("开始日期", "开工日期", "进场", "工期目标"),
+            )
+        if "结束日期" in normalized or "竣工日期" in normalized:
+            recognized = True
+            add(
+                "construction_end",
+                "计划竣工日期",
+                item,
+                field_names=("结束日期", "竣工日期", "施工计划工期", "安装工期"),
+                terms=("结束日期", "竣工日期", "竣工验收", "完工", "工期目标"),
+            )
+        if "工期" in normalized and "开始日期" not in normalized and "结束日期" not in normalized:
+            recognized = True
+            add(
+                "construction_period",
+                "施工计划工期",
+                item,
+                field_names=("施工计划工期", "安装工期", "工期"),
+                terms=("工期目标", "施工工期", "开工", "进场", "竣工", "完工"),
+            )
+        if not recognized:
+            add(
+                f"evidence_{stable_short_id(point.get('id'), index, item, length=10).lower()}",
+                item,
+                item,
+                field_names=(item,),
+                terms=tuple(keyword_variants(item)),
+            )
+    return targets
+
+
+def generic_excerpt_text(text: Any, point: dict[str, Any], document: dict[str, Any]) -> bool:
+    normalized = normalized_text(text)
+    if not normalized:
+        return True
+    generic_values = {
+        normalized_text(point.get("materialTypeCode")),
+        normalized_text(point.get("materialTypeName")),
+        normalized_text(point.get("materialCategory")),
+        normalized_text(document.get("materialTypeCode")),
+        normalized_text(document.get("materialCategory")),
+        normalized_text(document.get("fileName")),
+    }
+    generic_values.discard("")
+    return normalized in generic_values or normalized.startswith("主类型命中") or normalized.startswith("视觉抽检确认")
+
+
+def target_text_contains_fact(target: dict[str, Any], text: Any) -> bool:
+    raw = str(text or "").strip()
+    normalized = normalized_text(raw)
+    code = str(target.get("targetCode") or "")
+    if not normalized:
+        return False
+    if code in {"designer_name", "organization_name"}:
+        if code == "designer_name":
+            return bool(
+                re.search(r"(?:设计单位名称|单位名称|机构名称)[:：\s]*[^；,，]{0,60}(?:设计院|设计公司|设计研究院)", raw)
+                or re.search(r"[\u4e00-\u9fff]{2,}(?:设计院|设计公司|设计研究院)", raw)
+            )
+        return bool(
+            re.search(r"(?:单位名称|机构名称)[:：\s]*[^；,，]{4,80}", raw)
+            or re.search(r"[\u4e00-\u9fff]{2,}(?:设计院|设计公司|工程公司|有限公司)", raw)
+        )
+    if code == "license_number":
+        return bool(re.search(r"(?:资质证书|许可(?:证)?|证书)(?:编号|号)[:：\s]*[A-Z0-9\-]{5,}", raw, flags=re.IGNORECASE))
+    if code == "license_scope":
+        return bool(re.search(r"(?:许可范围|许可项目|获准从事|工业管道).{0,100}(?:GC1|GC2|GCD|压力管道|工业管道)", raw, flags=re.IGNORECASE))
+    if code == "license_level":
+        return bool(re.search(r"(?:许可级别|类别级别).{0,50}(?:GC1|GC2|GCD|GA|GB)", raw, flags=re.IGNORECASE))
+    if code == "license_validity":
+        return bool(re.search(r"(?:有效期|有效期至|生效日期|到期日期).{0,30}(?:19|20)\d{2}", raw))
+    if code == "design_seal":
+        return "印章" in normalized or "设计专用章" in normalized
+    if code == "drawing_number":
+        return bool(
+            re.search(r"(?:图号|设计图号|DWG\.?\s*NO\.?).{0,30}(?=[A-Z0-9_—\-]*\d)[A-Z0-9][A-Z0-9_—\-]{4,}", raw, flags=re.IGNORECASE)
+            or re.search(r"\b(?:QX|WK)\d{4,}[A-Z0-9_—\-]*\b", raw, flags=re.IGNORECASE)
+        )
+    if code == "project_name":
+        match = re.search(r"(?:项目名称|工程名称)[:：\s；]*([^；\n]{4,120})", raw)
+        return bool(match and re.search(r"项目|工程|站|厂|库|公司|装置|管线", match.group(1)))
+    if code == "design_scope":
+        return bool(re.search(r"(?:施工范围|项目范围|工程内容|设计范围|卸车管线).{2,160}", raw))
+    if code == "pipeline_class":
+        return bool(re.search(r"(?:GC1|GC2|GCD)", raw, flags=re.IGNORECASE))
+    if code == "design_pressure":
+        return bool(re.search(r"(?:设计压力|工作压力).{0,30}\d+(?:\.\d+)?\s*(?:MPa|kPa|Pa)", raw, flags=re.IGNORECASE))
+    if code == "design_temperature":
+        return bool(re.search(r"(?:设计温度|工作温度).{0,30}-?\d+(?:\.\d+)?\s*(?:℃|°C|C)", raw, flags=re.IGNORECASE))
+    if code in {"construction_start", "construction_end", "construction_period"}:
+        return bool(
+            re.search(r"(?:工期|开工|进场|竣工|完工|验收).{0,80}(?:19|20)\d{2}[年\-/]", raw)
+            or re.search(r"(?:19|20)\d{2}年\d{1,2}月\d{1,2}日.{0,80}(?:开工|进场|竣工|完工|验收)", raw)
+        )
+    terms = [normalized_text(item) for item in target.get("matchTerms") or []]
+    return any(term and term in normalized for term in terms)
+
+
+def target_match_score(target: dict[str, Any], field_name: Any, text: Any) -> int:
+    normalized_field = normalized_text(field_name)
+    field_names = [normalized_text(item) for item in target.get("fieldNames") or []]
+    if normalized_field and any(
+        normalized_field == expected or normalized_field in expected or expected in normalized_field
+        for expected in field_names
+        if expected
+    ) and target_text_contains_fact(target, text):
+        return 70
+    if target_text_contains_fact(target, text):
+        return 40
+    return 0
+
+
+def union_bboxes(values: list[Any]) -> list[float] | None:
+    boxes = [value for value in values if valid_evidence_bbox(value)]
+    if not boxes:
+        return None
+    return [
+        min(float(item[0]) for item in boxes),
+        min(float(item[1]) for item in boxes),
+        max(float(item[2]) for item in boxes),
+        max(float(item[3]) for item in boxes),
+    ]
+
+
+def fragment_excerpt(
+    fragments: list[dict[str, Any]],
+    index: int,
+    *,
+    point: dict[str, Any],
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    fragment = fragments[index]
+    text = str(fragment.get("text") or "").strip()
+    page_no = int(fragment.get("pageNo") or 1)
+    selected = [fragment]
+    if len(normalized_text(text)) < 12 or generic_excerpt_text(text, point, document):
+        for adjacent_index in (index - 1, index + 1):
+            if 0 <= adjacent_index < len(fragments):
+                adjacent = fragments[adjacent_index]
+                if int(adjacent.get("pageNo") or 1) == page_no and str(adjacent.get("text") or "").strip():
+                    selected.append(adjacent)
+        selected.sort(key=lambda item: fragments.index(item))
+        text = "；".join(dict.fromkeys(str(item.get("text") or "").strip() for item in selected if str(item.get("text") or "").strip()))
+    return {
+        "quotedText": text[:500],
+        "pageNo": page_no,
+        "bbox": union_bboxes([item.get("bbox") for item in selected]),
+        "confidence": min(
+            [float(item.get("confidence") or 0) for item in selected if item.get("confidence") is not None]
+            or [0.0]
+        ),
+        "fieldName": "OCR文本",
+        "fieldId": None,
+        "sourceType": "fragment",
+        "sourceFragmentIds": [item.get("id") for item in selected if item.get("id")],
+    }
+
+
+def evidence_facts_for_point(
+    point: dict[str, Any],
+    document: dict[str, Any],
+    parse_result: dict[str, Any] | None,
+    fields: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    targets = evidence_fact_targets(point)
+    fragments = [item for item in (parse_result or {}).get("fragments") or [] if isinstance(item, dict)]
+    seals = [item for item in (parse_result or {}).get("seals") or [] if isinstance(item, dict)]
+    facts: list[dict[str, Any]] = []
+    for target in targets:
+        candidates: list[dict[str, Any]] = []
+        for field in fields:
+            field_name = str(field.get("fieldName") or "").strip()
+            field_value = str(field.get("fieldValue") or "").strip()
+            if not field_value or field_name in METADATA_FIELD_NAMES:
+                continue
+            match_score = target_match_score(target, field_name, f"{field_name} {field_value}")
+            if not match_score or generic_excerpt_text(field_value, point, document):
+                continue
+            bbox = field.get("bbox")
+            quoted_text = f"{field_name}：{field_value}"[:500]
+            candidates.append(
+                {
+                    "quotedText": quoted_text,
+                    "pageNo": int(field.get("pageNo") or 1),
+                    "bbox": bbox,
+                    "confidence": float(field.get("confidence") or 0),
+                    "fieldName": field_name,
+                    "fieldId": field.get("id"),
+                    "sourceType": "field",
+                    "sourceFragmentIds": [field.get("sourceFragmentId")] if field.get("sourceFragmentId") else [],
+                    "selectionScore": match_score + (35 if valid_evidence_bbox(bbox) else 0) + min(10, round(float(field.get("confidence") or 0) * 10)),
+                }
+            )
+        for index, fragment in enumerate(fragments):
+            text = str(fragment.get("text") or "").strip()
+            match_score = target_match_score(target, "OCR文本", text)
+            if not match_score or generic_excerpt_text(text, point, document):
+                continue
+            excerpt = fragment_excerpt(fragments, index, point=point, document=document)
+            excerpt["selectionScore"] = match_score + (35 if valid_evidence_bbox(excerpt.get("bbox")) else 0) + min(10, round(float(excerpt.get("confidence") or 0) * 10))
+            candidates.append(excerpt)
+        if target["targetCode"] == "design_seal":
+            for seal in seals:
+                text = str(seal.get("text") or seal.get("sealText") or seal.get("sealName") or "").strip()
+                if not text:
+                    continue
+                bbox = seal.get("bbox")
+                candidates.append(
+                    {
+                        "quotedText": text[:500],
+                        "pageNo": int(seal.get("pageNo") or 1),
+                        "bbox": bbox,
+                        "confidence": float(seal.get("confidence") or 0),
+                        "fieldName": "印章",
+                        "fieldId": seal.get("id"),
+                        "sourceType": "seal",
+                        "sourceFragmentIds": [],
+                        "selectionScore": 80 + (35 if valid_evidence_bbox(bbox) else 0),
+                    }
+                )
+        if not candidates:
+            continue
+        candidates.sort(
+            key=lambda item: (
+                int(item.get("selectionScore") or 0),
+                len(str(item.get("quotedText") or "")),
+            ),
+            reverse=True,
+        )
+        selected = candidates[0]
+        selected.update(
+            {
+                "targetCode": target["targetCode"],
+                "targetName": target["targetName"],
+                "sourceEvidenceItem": target["sourceEvidenceItem"],
+                "formalEvidenceEligible": bool(
+                    selected.get("pageNo") is not None
+                    and valid_evidence_bbox(selected.get("bbox"))
+                    and str(selected.get("quotedText") or "").strip()
+                ),
+            }
+        )
+        facts.append(selected)
+    facts.sort(
+        key=lambda item: (
+            bool(item.get("formalEvidenceEligible")),
+            int(item.get("selectionScore") or 0),
+        ),
+        reverse=True,
+    )
+    return facts, targets
+
+
+def repo_safe_fact(fact: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in fact.items()
+        if key
+        in {
+            "targetCode",
+            "targetName",
+            "sourceEvidenceItem",
+            "quotedText",
+            "pageNo",
+            "bbox",
+            "confidence",
+            "fieldName",
+            "fieldId",
+            "sourceType",
+            "sourceFragmentIds",
+            "formalEvidenceEligible",
+        }
+    }
+
+
+CONDITIONAL_POINT_CONTEXT_GATES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (("境外",), ("境外", "国外", "进口", "overseas", "foreign")),
+    (("新材料",), ("新材料", "新型材料", "首次采用", "首次使用")),
+    (("穿跨越",), ("穿跨越", "穿越", "跨越")),
+    (("替代性试验",), ("替代性试验", "替代试验")),
+    (("采用其他标准",), ("采用其他标准", "其他标准", "符合性申明", "比照表")),
+)
+
+
+def point_context_gate(point: dict[str, Any], fulltext: str) -> tuple[bool, str | None]:
+    point_text = normalized_text(
+        " ".join(
+            str(point.get(key) or "")
+            for key in ("nodeName", "reviewContent", "fileContent", "mappingRelation")
+        )
+    )
+    for gate_terms, evidence_terms in CONDITIONAL_POINT_CONTEXT_GATES:
+        normalized_gate_terms = [normalized_text(item) for item in gate_terms]
+        if not contains_any(point_text, normalized_gate_terms):
+            continue
+        normalized_evidence_terms = [normalized_text(item) for item in evidence_terms]
+        if not contains_any(fulltext, normalized_evidence_terms):
+            return False, f"未命中条件上下文：{'/'.join(gate_terms)}"
+    return True, None
+
+
 def material_type_matches_point(point: dict[str, Any], document: dict[str, Any], fulltext: str) -> tuple[int, str | None]:
     material_type_code = str(point.get("materialTypeCode") or "")
     material_type_name = str(point.get("materialTypeName") or "")
@@ -354,7 +840,38 @@ def score_review_point(
 ) -> dict[str, Any]:
     context = context or document_targeting_context(document, parse_result, extracted_fields)
     fulltext = str(context.get("fulltext") or "")
-    field_texts = [str(item) for item in context.get("fieldTexts") or []]
+
+    source_allowed, source_reason = point_source_is_allowed(point, document)
+    if not source_allowed:
+        return {
+            "reviewPointId": point.get("id"),
+            "nodeId": int(point.get("nodeId") or 0),
+            "score": 0,
+            "confidence": 0.0,
+            "supportStatus": UNMATCHED_STATUS,
+            "matchedEvidenceItems": [],
+            "evidenceCoverage": 0.0,
+            "reasons": [source_reason] if source_reason else [],
+            "evidenceFacts": [],
+            "formalEvidenceFacts": [],
+            "formalEvidenceEligible": False,
+            "evidenceTier": "advisory",
+            "excerpt": {"quotedText": "", "pageNo": 1, "bbox": None, "fieldName": None, "fieldId": None},
+        }
+
+    context_allowed, context_reason = point_context_gate(point, fulltext)
+    if not context_allowed:
+        return {
+            "reviewPointId": point.get("id"),
+            "nodeId": int(point.get("nodeId") or 0),
+            "score": 0,
+            "confidence": 0.0,
+            "supportStatus": UNMATCHED_STATUS,
+            "matchedEvidenceItems": [],
+            "evidenceCoverage": 0.0,
+            "reasons": [context_reason] if context_reason else [],
+            "excerpt": {"quotedText": "", "pageNo": 1, "bbox": None, "fieldName": None, "fieldId": None},
+        }
 
     score = 0
     reasons: list[str] = []
@@ -364,24 +881,30 @@ def score_review_point(
         if material_reason:
             reasons.append(material_reason)
 
-    evidence_items = [str(item) for item in point.get("evidenceItems") or [] if str(item).strip()]
-    matched_evidence: list[str] = []
-    for item in evidence_items:
-        if contains_any(fulltext, keyword_variants(item)):
-            matched_evidence.append(item)
-    evidence_coverage = len(matched_evidence) / len(evidence_items) if evidence_items else 0.0
-    if evidence_items:
+    evidence_facts, evidence_targets = evidence_facts_for_point(
+        point,
+        document,
+        parse_result,
+        extracted_fields,
+    )
+    matched_target_codes = {str(item.get("targetCode") or "") for item in evidence_facts if item.get("targetCode")}
+    matched_evidence = list(
+        dict.fromkeys(
+            str(item.get("sourceEvidenceItem") or "")
+            for item in evidence_facts
+            if str(item.get("sourceEvidenceItem") or "").strip()
+        )
+    )
+    evidence_coverage = len(matched_target_codes) / len(evidence_targets) if evidence_targets else 0.0
+    if evidence_targets:
         score += round(35 * evidence_coverage)
-        if matched_evidence:
-            reasons.append(f"命中 {len(matched_evidence)}/{len(evidence_items)} 个证据项")
+        if matched_target_codes:
+            reasons.append(f"定位 {len(matched_target_codes)}/{len(evidence_targets)} 个事实目标")
 
-    field_hits = 0
-    for field_text in field_texts:
-        if any(contains_any(field_text, keyword_variants(item)) for item in evidence_items):
-            field_hits += 1
+    field_hits = len([item for item in evidence_facts if item.get("sourceType") == "field"])
     if field_hits:
         score += min(15, field_hits * 3)
-        reasons.append(f"结构化字段命中 {field_hits} 项")
+        reasons.append(f"结构化事实命中 {field_hits} 项")
 
     if str(point.get("responsibleParty") or "") == document_party(document):
         score += 10
@@ -400,17 +923,15 @@ def score_review_point(
     score = min(score, 100)
     confidence = round(score / 100, 4)
     material_hit = any(reason.startswith("标准资料类型") or "资料类型" in reason for reason in reasons)
-    if score >= 70 and (material_hit or evidence_coverage > 0):
+    if score >= 70 and evidence_coverage > 0 and (material_hit or evidence_coverage > 0):
         support_status = SUPPORTED_STATUS
     elif score >= 45:
         support_status = PARTIAL_STATUS
     else:
         support_status = UNMATCHED_STATUS
 
-    keywords = []
-    for item in [point.get("materialTypeCode"), point.get("materialTypeName"), *matched_evidence, *evidence_items[:3]]:
-        keywords.extend(keyword_variants(item))
-    excerpt = best_excerpt(parse_result, extracted_fields, keywords)
+    formal_facts = [item for item in evidence_facts if item.get("formalEvidenceEligible") is True]
+    excerpt = repo_safe_fact(formal_facts[0] if formal_facts else evidence_facts[0] if evidence_facts else {})
     return {
         "reviewPointId": point.get("id"),
         "nodeId": int(point.get("nodeId") or 0),
@@ -420,6 +941,10 @@ def score_review_point(
         "matchedEvidenceItems": matched_evidence,
         "evidenceCoverage": round(evidence_coverage, 4),
         "reasons": reasons,
+        "evidenceFacts": [repo_safe_fact(item) for item in evidence_facts],
+        "formalEvidenceFacts": [repo_safe_fact(item) for item in formal_facts],
+        "formalEvidenceEligible": bool(formal_facts),
+        "evidenceTier": "formal" if formal_facts else "advisory",
         "excerpt": excerpt,
     }
 
@@ -486,6 +1011,16 @@ def node_evidence_link_from_match(
 ) -> dict[str, Any]:
     excerpt = match.get("excerpt") or {}
     link_id = f"NEL-{stable_short_id(project_id, point.get('id'), version_id)}"
+    evidence_facts = [
+        {
+            **fact,
+            "documentId": document["id"],
+            "documentVersionId": version_id,
+            "fileName": document.get("fileName"),
+        }
+        for fact in match.get("evidenceFacts") or []
+        if isinstance(fact, dict)
+    ]
     return {
         "id": link_id,
         "projectId": project_id,
@@ -514,6 +1049,10 @@ def node_evidence_link_from_match(
         "confidence": match.get("confidence"),
         "score": match.get("score"),
         "scoreReasons": match.get("reasons") or [],
+        "evidenceFacts": evidence_facts,
+        "formalEvidenceFactCount": len([item for item in evidence_facts if item.get("formalEvidenceEligible") is True]),
+        "formalEvidenceEligible": bool(match.get("formalEvidenceEligible")),
+        "evidenceTier": match.get("evidenceTier") or "advisory",
         "manualStatus": MANUAL_PENDING,
         "manualStatusLabel": MANUAL_STATUS_LABELS[MANUAL_PENDING],
         "source": "material_targeting",
@@ -621,7 +1160,11 @@ def run_material_targeting(
     for candidate in candidates:
         point = candidate.pop("reviewPoint")
         min_confidence = float(point.get("minConfidence") or 0.65)
-        if candidate["supportStatus"] == UNMATCHED_STATUS or float(candidate["confidence"] or 0) < min_confidence:
+        if (
+            candidate["supportStatus"] == UNMATCHED_STATUS
+            or float(candidate["confidence"] or 0) < min_confidence
+            or not candidate.get("evidenceFacts")
+        ):
             continue
         link = node_evidence_link_from_match(project_id, point, document, str(version_id), candidate)
         if link["id"] in previous_manual_state:
@@ -629,7 +1172,7 @@ def run_material_targeting(
         repo.state.setdefault("node_evidence_links", []).insert(0, link)
         created_links.append(link)
         touched_nodes.add(int(point.get("nodeId") or 0))
-        if auto_bind and candidate["supportStatus"] == SUPPORTED_STATUS:
+        if auto_bind and candidate["supportStatus"] == SUPPORTED_STATUS and candidate.get("formalEvidenceEligible") is True:
             binding = upsert_auto_binding(repo, project_id, point, document, str(version_id), candidate)
             if binding:
                 touched_bindings.append(binding)
@@ -648,6 +1191,8 @@ def run_material_targeting(
         "status": "completed",
         "candidateCount": len(candidates),
         "createdLinkCount": len(created_links),
+        "createdFormalLinkCount": len([item for item in created_links if item.get("formalEvidenceEligible") is True]),
+        "createdAdvisoryLinkCount": len([item for item in created_links if item.get("formalEvidenceEligible") is not True]),
         "createdBindingCount": len({item.get("id") for item in touched_bindings}),
         "topCandidates": [
             {
@@ -739,10 +1284,35 @@ def set_node_evidence_link_manual_status(
 def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> dict[str, Any]:
     project = repo.require_project(project_id)
     points = review_points_for_project(repo, project, node_id=node_id)
-    links = node_evidence_links_for_node(repo, project_id, node_id)
+    all_links = node_evidence_links_for_node(repo, project_id, node_id)
+    links = [
+        item
+        for item in all_links
+        if item.get("formalEvidenceEligible") is True or "formalEvidenceEligible" not in item
+    ]
+    advisory_links = [
+        item
+        for item in all_links
+        if item.get("formalEvidenceEligible") is not True and "formalEvidenceEligible" in item
+    ]
     links_by_point: dict[str, list[dict[str, Any]]] = {}
     for link in links:
         links_by_point.setdefault(str(link.get("reviewPointId") or ""), []).append(link)
+
+    bindings_by_point: dict[str, list[dict[str, Any]]] = {}
+    for binding in repo.state.get("bindings", []):
+        if binding.get("projectId") != project_id or int(binding.get("nodeId") or 0) != int(node_id):
+            continue
+        review_point_ids = {
+            str(item).strip()
+            for item in binding.get("reviewPointIds") or []
+            if str(item).strip()
+        }
+        requirement_id = str(binding.get("requirementId") or "").strip()
+        if requirement_id:
+            review_point_ids.add(requirement_id)
+        for point_id in review_point_ids:
+            bindings_by_point.setdefault(point_id, []).append(binding)
 
     rows: list[dict[str, Any]] = []
     missing: list[dict[str, Any]] = []
@@ -758,6 +1328,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
             key=lambda item: float(item.get("confidence") or 0),
             reverse=True,
         )
+        point_bindings = bindings_by_point.get(point_id, [])
         all_confirmed_links = [
             link
             for link in point_links
@@ -790,14 +1361,29 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         elif rejected_links:
             evidence_review_status = MANUAL_STATUS_LABELS[MANUAL_REJECTED]
             rejected_count += 1
+        elif point_bindings:
+            evidence_review_status = "已挂载待定位"
         else:
             evidence_review_status = "未找到"
         row = {
             **repo.clone(point),
             "matchedLinkCount": len(point_links),
-            "matchedBindingCount": len(point_links),
-            "matchedFileNames": sorted({str(link.get("fileName") or "") for link in point_links if link.get("fileName")}),
-            "supportStatus": SUPPORTED_STATUS if fulfilled else PARTIAL_STATUS if partial_links or pending_links else UNMATCHED_STATUS,
+            "matchedBindingCount": len(point_bindings),
+            "matchedBindingIds": [binding["id"] for binding in point_bindings if binding.get("id")],
+            "matchedFileNames": sorted(
+                {
+                    str(item.get("fileName") or "")
+                    for item in [*point_bindings, *point_links]
+                    if item.get("fileName")
+                }
+            ),
+            "supportStatus": (
+                SUPPORTED_STATUS
+                if fulfilled
+                else PARTIAL_STATUS
+                if partial_links or pending_links or point_bindings
+                else UNMATCHED_STATUS
+            ),
             "evidenceReviewStatus": evidence_review_status,
             "confirmedLinkCount": len(confirmed_links),
             "unlocatableConfirmedLinkCount": len(unlocatable_confirmed_links),
@@ -895,6 +1481,8 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         "requirements": rows,
         "missingRequirements": missing,
         "nodeEvidenceLinks": links,
+        "advisoryEvidenceLinks": advisory_links,
+        "advisoryEvidenceCount": len(advisory_links),
         "inputDocumentVersionIds": input_version_ids,
         "supportingDocumentCount": len(input_version_ids),
     }

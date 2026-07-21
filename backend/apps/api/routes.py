@@ -76,6 +76,7 @@ from libs.knowledge_graph import build_business_pack_knowledge_network
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.material_targeting import (
     build_node_evidence_readiness,
+    evidence_link_is_locatable,
     node_evidence_links_for_node,
     recompute_project_material_targeting,
     review_points_for_project,
@@ -2167,6 +2168,8 @@ def confirmed_node_evidence_links(project_id: str, node_id: int) -> list[dict[st
         repo.clone(item)
         for item in node_evidence_links_for_node(repo, project_id, node_id)
         if str(item.get("manualStatus") or "").lower() == "confirmed"
+        and item.get("formalEvidenceEligible", True) is not False
+        and evidence_link_is_locatable(item)
     ]
 
 
@@ -3842,6 +3845,9 @@ def requirement_matches_binding(requirement: dict[str, Any], binding: dict[str, 
     requirement_id = str(requirement.get("id") or "").strip()
     binding_requirement_id = str(binding.get("requirementId") or "").strip()
     if requirement_id and binding_requirement_id and requirement_id == binding_requirement_id:
+        return True
+    binding_review_point_ids = {str(item).strip() for item in binding.get("reviewPointIds") or [] if str(item).strip()}
+    if requirement_id and requirement_id in binding_review_point_ids:
         return True
     requirement_name = str(requirement.get("name") or "").strip()
     binding_requirement_name = str(binding.get("requirementName") or "").strip()
@@ -8570,6 +8576,11 @@ def review_assistant_content_blocks(
         for item in readiness.get("nodeEvidenceLinks", [])
         if record_visible_for_request(request, item)
     ]
+    advisory_evidence_links = [
+        repo.clone(item)
+        for item in readiness.get("advisoryEvidenceLinks", [])
+        if record_visible_for_request(request, item)
+    ]
     review_run = latest_review_run_for_node(
         project_id,
         node_id,
@@ -8589,17 +8600,31 @@ def review_assistant_content_blocks(
         blocks.append(
             {
                 "type": "text",
-                "text": f"已在当前节点授权范围内检索到 {len(evidence_links)} 条证据候选，其中 {sum(1 for item in evidence_links if item.get('manualStatus') == 'confirmed')} 条已确认。候选证据仍需人工确认后才能用于正式结论。",
+                "text": f"已在当前节点授权范围内检索到 {len(evidence_links)} 条可定位证据候选，其中 {sum(1 for item in evidence_links if item.get('manualStatus') == 'confirmed')} 条已确认；另有 {len(advisory_evidence_links)} 个可能相关文件因缺少事实级原文定位，不能用于正式结论。",
             }
         )
         blocks.append(
             {
                 "type": "evidence_card",
+                "title": "可定位证据候选",
                 "evidenceLinkIds": [item.get("id") for item in evidence_links[:12] if item.get("id")],
                 "items": evidence_links[:12],
             }
         )
-    elif any(token in normalized for token in ("解释依据", "/解释依据", "解释规则", "查看条款")):
+        if advisory_evidence_links:
+            blocks.append(
+                {
+                    "type": "evidence_card",
+                    "title": "可能相关文件（缺少事实定位）",
+                    "advisory": True,
+                    "evidenceLinkIds": [item.get("id") for item in advisory_evidence_links[:12] if item.get("id")],
+                    "items": advisory_evidence_links[:12],
+                }
+            )
+    elif any(
+        token in normalized
+        for token in ("标准条款", "/标准条款", "解释依据", "/解释依据", "解释规则", "查看条款")
+    ):
         blocks.append(
             {
                 "type": "text",
@@ -8642,7 +8667,7 @@ def review_assistant_content_blocks(
             {
                 "type": "text",
                 "text": agent_result.get("text")
-                or f"我已加载当前节点“{(repo.node(project_id, node_id) or {}).get('name') or node_id}”的固定规则、证据就绪状态和 ReviewRun。当前运行状态：{run_status}；资料就绪：{readiness.get('satisfiedCount', 0)}/{readiness.get('requiredCount', 0)}，待确认证据：{readiness.get('pendingCount', 0)}。你可以继续让我检索证据、解释依据或草拟意见。",
+                or f"我已加载当前节点“{(repo.node(project_id, node_id) or {}).get('name') or node_id}”的固定规则、证据就绪状态和 ReviewRun。当前运行状态：{run_status}；资料就绪：{readiness.get('satisfiedCount', 0)}/{readiness.get('requiredCount', 0)}，待确认证据：{readiness.get('pendingCount', 0)}。你可以继续让我检索证据、查看标准条款或草拟意见。",
                 "references": review_message_source_references(basis_items, evidence_links),
             }
         )
@@ -8651,7 +8676,7 @@ def review_assistant_content_blocks(
                 "type": "action_suggestions",
                 "actions": [
                     {"actionKey": "search_evidence", "label": "检索证据"},
-                    {"actionKey": "explain_basis", "label": "解释依据"},
+                    {"actionKey": "explain_basis", "label": "标准条款"},
                     {"actionKey": "draft_opinion", "label": "草拟意见"},
                 ],
             }

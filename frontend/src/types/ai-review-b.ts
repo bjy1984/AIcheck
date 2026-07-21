@@ -116,7 +116,13 @@ export type ReviewBWorkspace = {
 export type ReviewBContentBlock =
   | { type: 'text'; text: string; references?: ReviewBReference[] }
   | { type: 'basis_card'; basisRefIds?: string[]; items?: ReviewBBasisItem[] }
-  | { type: 'evidence_card'; evidenceLinkIds?: string[]; items?: EvidenceLink[] }
+  | {
+      type: 'evidence_card'
+      title?: string
+      advisory?: boolean
+      evidenceLinkIds?: string[]
+      items?: EvidenceLink[]
+    }
   | {
       type: 'judgment_summary'
       reviewRunId?: string

@@ -97,7 +97,7 @@ def test_review_b_messages_return_structured_basis_and_pollable_events() -> None
                 "Idempotency-Key": "review-b-message-test",
                 "If-Match": session["etag"],
             },
-            json={"content": "/解释依据"},
+            json={"content": "/标准条款"},
         )
     )
     assert response["status"] == "completed"
@@ -145,6 +145,78 @@ def test_review_b_messages_return_structured_basis_and_pollable_events() -> None
         json={"currentTask": "并发写入不应覆盖新上下文"},
     )
     assert stale_update.status_code == 409
+
+
+def test_review_b_search_evidence_separates_located_candidates_and_advisory_files() -> None:
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    common = {
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "reviewPointId": point["id"],
+        "documentId": "DOC-REVIEW-B-EVIDENCE",
+        "documentVersionId": "DV-REVIEW-B-EVIDENCE",
+        "fileName": "设计单位许可证.pdf",
+        "manualStatus": "pending",
+        "manualStatusLabel": "待确认",
+        "supportStatus": "命中",
+        "confidence": 0.92,
+        "source": "material_targeting",
+    }
+    repo.state["node_evidence_links"].extend(
+        [
+            {
+                **common,
+                "id": "NEL-REVIEW-B-FORMAL",
+                "pageNo": 2,
+                "bbox": [10, 20, 260, 60],
+                "fieldName": "许可范围",
+                "quotedText": "许可范围：压力管道设计 GC2",
+                "formalEvidenceEligible": True,
+                "evidenceTier": "formal",
+            },
+            {
+                **common,
+                "id": "NEL-REVIEW-B-ADVISORY",
+                "pageNo": 1,
+                "bbox": None,
+                "fieldName": "资料类型",
+                "quotedText": "设计单位许可证",
+                "formalEvidenceEligible": False,
+                "evidenceTier": "advisory",
+            },
+        ]
+    )
+    session = create_session()
+
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-evidence-tier-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "/检索证据"},
+        )
+    )
+    cards = [
+        block
+        for block in response["assistantMessage"]["contentBlocks"]
+        if block["type"] == "evidence_card"
+    ]
+
+    assert [card["title"] for card in cards] == [
+        "可定位证据候选",
+        "可能相关文件（缺少事实定位）",
+    ]
+    assert [item["id"] for item in cards[0]["items"]] == ["NEL-REVIEW-B-FORMAL"]
+    assert cards[1]["advisory"] is True
+    assert [item["id"] for item in cards[1]["items"]] == ["NEL-REVIEW-B-ADVISORY"]
+    assert response["assistantMessage"]["execution"]["modelCalled"] is False
 
 
 def test_review_b_free_form_message_uses_configured_qwen_runtime(monkeypatch) -> None:

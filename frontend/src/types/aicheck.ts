@@ -279,6 +279,7 @@ export type EvidenceLink = {
   documentVersionId?: string
   fileName?: string
   pageNo?: number
+  bbox?: number[]
   fieldName?: string
   quotedText?: string
   confidence?: number
@@ -297,6 +298,21 @@ export type EvidenceLink = {
   manualComment?: string
   scoreReasons?: string[]
   evidenceCoverage?: number
+  formalEvidenceEligible?: boolean
+  formalEvidenceFactCount?: number
+  evidenceTier?: 'formal' | 'advisory' | string
+  evidenceFacts?: Array<{
+    targetCode?: string
+    targetName?: string
+    sourceEvidenceItem?: string
+    quotedText?: string
+    pageNo?: number
+    bbox?: number[]
+    confidence?: number
+    fieldName?: string
+    fieldId?: string
+    formalEvidenceEligible?: boolean
+  }>
 }
 
 export type EvidenceSelectionValidation = {
@@ -936,6 +952,8 @@ export type NodeEvidenceReadiness = {
   requirements: NodeRequirementMatch[]
   missingRequirements: NodeRequirementMatch[]
   nodeEvidenceLinks: EvidenceLink[]
+  advisoryEvidenceLinks?: EvidenceLink[]
+  advisoryEvidenceCount?: number
   inputDocumentVersionIds: string[]
   supportingDocumentCount: number
 }
