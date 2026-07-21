@@ -76,6 +76,32 @@ pnpm vite --mode live
 
 The Vite proxy forwards `/api/*` to FastAPI after stripping `/api`, and forwards `/mock/*` unchanged for login compatibility.
 
+## CNSE organization lookup API
+
+The API service contains the server-side port of `tool/captcha-safe`'s CNSE client and OpenCV
+matcher. It fetches the challenge and submits the organization search through one bounded CNSE
+session; callers never receive the challenge images or cookies. Recognition coordinates remain in
+the response as compatibility diagnostics for the original captcha-safe result contract.
+
+`POST /api/cnse/organizations/search` accepts:
+
+```json
+{"keyword": "新疆智仁能源有限公司拜城县察尔齐加气站"}
+```
+
+```bash
+curl -X POST "$AICHECK_BASE_URL/api/cnse/organizations/search" \
+  -H "Authorization: Bearer $AICHECK_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"keyword":"新疆智仁能源有限公司拜城县察尔齐加气站"}'
+```
+
+It returns the standard AIcheck envelope. `data` preserves the captcha-safe public result contract,
+including `status`, `algorithm`, `captureMode`, `confidence`, `keyword`, `total`, `rows`,
+`targetCenter`, and `matchBox`. In production, the endpoint is protected by the same Bearer token
+policy as the rest of AIcheck. `AICHECK_CNSE_ORIGIN` may only be one of the hard-coded official
+HTTPS origins; `AICHECK_CNSE_MIN_CONFIDENCE` defaults to `0.50`.
+
 ## Tests
 
 ```bash
@@ -217,6 +243,7 @@ Key environment variables:
 
 - `AICHECK_DATABASE_URL`, `AICHECK_POSTGRES_DB`, `AICHECK_POSTGRES_USER`, `AICHECK_POSTGRES_PASSWORD`: unified PostgreSQL persistence for AIcheck business data, LiteLLM metadata, Temporal, and LangGraph checkpoint databases.
 - `AICHECK_REDIS_URL`, `AICHECK_TASK_DISPATCH=celery`: Celery broker/result backend and API task dispatch.
+- `AICHECK_CNSE_ORIGIN=https://cnse.e-cqs.cn`, `AICHECK_CNSE_MIN_CONFIDENCE=0.50`: upstream origin and OpenCV confidence gate for `POST /api/cnse/organizations/search`; the origin remains restricted to the built-in official-domain allowlist.
 - `AICHECK_REVIEW_ORCHESTRATION=temporal`, `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `AICHECK_REVIEW_*_TASK_QUEUE`, `AICHECK_REVIEW_LLM_EXECUTION=litellm`, `AICHECK_LANGGRAPH_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_SETUP=false`, `LANGGRAPH_CHECKPOINT_DSN`: Temporal/LangGraph review orchestration, LiteLLM-backed finding generation, checkpoint storage, shadow runs, replay, and human decision/cancel signals.
 - `AICHECK_MINIO_ENDPOINT`, `AICHECK_MINIO_ACCESS_KEY`, `AICHECK_MINIO_SECRET_KEY`: signed upload/download and export artifacts.
 - `AICHECK_OCR_BASE_URL`, `AICHECK_AGENTDESIGN_HOST_PATH`, `AICHECK_AGENTDESIGN_BACKEND`, `AICHECK_OCR_MODELS_HOST_PATH`, `AICHECK_OCR_ALLOW_PLACEHOLDER=false`, `AICHECK_OCR_OFFLINE_ONLY=true`, `AICHECK_OCR_DISABLE_NETWORK=true`: worker-to-OCR calls, host-side reference pipeline, local model artifact mount, and local-only OCR policy. `Dockerfile.ocr` supports two dependency tiers: `requirements-ocr-core.txt` is the default fast deploy tier for PaddleOCR/PaddleX/PyMuPDF/OpenCV, while `requirements-ocr.txt` is the full offline tier that also installs Docling/Transformers/Torch for advanced local document parsing. Set `AICHECK_OCR_REQUIREMENTS=requirements-ocr.txt` only when building the full OCR image intentionally; model weights are mounted read-only instead of downloaded at runtime. `AICHECK_ENABLE_PADDLEOCR_VL` defaults to `false` because VL is a heavy fallback; enable it only for controlled offline evaluation or manually scoped complex-document tests.

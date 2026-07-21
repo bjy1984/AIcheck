@@ -38,6 +38,21 @@ EXPORT_TASK_EXPIRED = BusinessErrorCode(41031, "EXPORT_TASK_EXPIRED", "导出任
 OBJECT_STORAGE_REQUIRED = BusinessErrorCode(50330, "OBJECT_STORAGE_REQUIRED", "生产环境对象存储未就绪。")
 SECURITY_BACKEND_UNAVAILABLE = BusinessErrorCode(50331, "SECURITY_BACKEND_UNAVAILABLE", "安全状态服务暂不可用。")
 EXTERNAL_TOOL_FAILED = BusinessErrorCode(50220, "EXTERNAL_TOOL_FAILED", "外部工具调用失败。")
+CNSE_RECOGNITION_FAILED = BusinessErrorCode(
+    50221,
+    "CNSE_RECOGNITION_FAILED",
+    "全国特种设备公示信息查询平台验证码识别失败，请重试。",
+)
+CNSE_UPSTREAM_FAILED = BusinessErrorCode(
+    50222,
+    "CNSE_UPSTREAM_FAILED",
+    "全国特种设备公示信息查询平台暂不可用，请稍后重试。",
+)
+CNSE_SERVICE_MISCONFIGURED = BusinessErrorCode(
+    50332,
+    "CNSE_SERVICE_MISCONFIGURED",
+    "全国特种设备公示信息查询服务配置无效。",
+)
 AI_RUN_FAILED = BusinessErrorCode(50210, "AI_RUN_FAILED", "AI 审查任务失败。")
 
 
@@ -72,6 +87,9 @@ ERROR_BY_REASON = {
         OBJECT_STORAGE_REQUIRED,
         SECURITY_BACKEND_UNAVAILABLE,
         EXTERNAL_TOOL_FAILED,
+        CNSE_RECOGNITION_FAILED,
+        CNSE_UPSTREAM_FAILED,
+        CNSE_SERVICE_MISCONFIGURED,
         AI_RUN_FAILED,
     ]
 }
