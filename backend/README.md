@@ -79,9 +79,9 @@ The Vite proxy forwards `/api/*` to FastAPI after stripping `/api`, and forwards
 ## CNSE organization lookup API
 
 The API service contains the server-side port of `tool/captcha-safe`'s CNSE client and OpenCV
-matcher. It fetches the challenge and submits the organization search through one bounded CNSE
-session; callers never receive the challenge images or cookies. Recognition coordinates remain in
-the response as compatibility diagnostics for the original captcha-safe result contract.
+matcher. It fetches the challenge and submits organization or person searches through one bounded
+CNSE session; callers never receive the challenge images or cookies. Recognition coordinates remain
+in the response as compatibility diagnostics for the original captcha-safe result contract.
 
 `POST /api/cnse/organizations/search` accepts:
 
@@ -98,9 +98,29 @@ curl -X POST "$AICHECK_BASE_URL/api/cnse/organizations/search" \
 
 It returns the standard AIcheck envelope. `data` preserves the captcha-safe public result contract,
 including `status`, `algorithm`, `captureMode`, `confidence`, `keyword`, `total`, `rows`,
-`targetCenter`, and `matchBox`. In production, the endpoint is protected by the same Bearer token
-policy as the rest of AIcheck. `AICHECK_CNSE_ORIGIN` may only be one of the hard-coded official
-HTTPS origins; `AICHECK_CNSE_MIN_CONFIDENCE` defaults to `0.50`.
+`targetCenter`, and `matchBox`.
+
+`POST /api/cnse/persons/search` accepts a mainland China ID number and queries the public personnel
+qualification registry (the same upstream path used for welder certificates):
+
+```json
+{"idNumber": "430524198608135291"}
+```
+
+```bash
+curl -X POST "$AICHECK_BASE_URL/api/cnse/persons/search" \
+  -H "Authorization: Bearer $AICHECK_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"idNumber":"430524198608135291"}'
+```
+
+Successful `data` keeps the same recognition diagnostics and returns a whitelist `person` object
+(`ryxm`, `sfzh`, `fzjg`, `czxm`, validity fields, etc.). The endpoint rejects upstream payloads whose
+`type` is not `person`.
+
+In production, both endpoints are protected by the same Bearer token policy as the rest of AIcheck.
+`AICHECK_CNSE_ORIGIN` may only be one of the hard-coded official HTTPS origins;
+`AICHECK_CNSE_MIN_CONFIDENCE` defaults to `0.50`.
 
 For an isolated deployment that exposes only CNSE lookup and health endpoints, run
 `uvicorn apps.api.cnse_service:app`. This entrypoint requires `AICHECK_CNSE_API_KEY`; callers send

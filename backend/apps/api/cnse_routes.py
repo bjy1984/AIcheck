@@ -13,11 +13,13 @@ from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.integrations.cnse_client import (
     DEFAULT_ORIGIN,
+    PERSON_FIELDS,
     CnseApiClient,
     CnseConfigurationError,
     CnseProtocolError,
     CnseRecognitionError,
     CnseRequestError,
+    normalize_id_number,
     normalize_keyword,
 )
 
@@ -74,6 +76,52 @@ class CnseOrganizationSearchResponse(BaseModel):
     serverTime: str
 
 
+class CnsePersonSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idNumber: str
+
+
+class CnsePersonRecord(BaseModel):
+    ryxm: str
+    sfzh: str
+    ryxb: str
+    zsbh: str
+    zslb: str
+    cyzl: str
+    fzjg: str
+    fzjgszd: str
+    khdw: str
+    czxm: str
+    pzrq: str
+    yxrqs: str
+    yxrqz: str
+    yxrq: str
+    validFlag: str
+    sjgxsj: str
+
+
+class CnsePersonSearchResult(BaseModel):
+    status: Literal["COMPLETED"]
+    algorithm: str
+    captureMode: Literal["api"]
+    confidence: float
+    moveLength: int
+    apiYHeight: int
+    idNumber: str
+    queryEndpoint: str
+    person: CnsePersonRecord
+    targetCenter: CnseTargetCenter
+    matchBox: CnseMatchBox
+
+
+class CnsePersonSearchResponse(BaseModel):
+    code: Literal[0]
+    data: CnsePersonSearchResult
+    operationId: str
+    serverTime: str
+
+
 def configured_cnse_origin() -> str:
     return str(os.getenv("AICHECK_CNSE_ORIGIN") or DEFAULT_ORIGIN).strip()
 
@@ -99,14 +147,28 @@ def query_cnse_organizations(keyword: str) -> dict[str, Any]:
         return dict(client.query(keyword).to_dict())
 
 
-def log_cnse_failure(request: Request, exc: Exception) -> None:
+def query_cnse_persons(id_number: str) -> dict[str, Any]:
+    """Execute the person challenge/check/search flow in one session."""
+
+    with CnseApiClient(
+        origin=configured_cnse_origin(),
+        min_confidence=configured_cnse_min_confidence(),
+    ) as client:
+        return dict(client.query_person(id_number).to_dict())
+
+
+def log_cnse_failure(request: Request, exc: Exception, *, operation: str) -> None:
     logger.warning(
-        "cnse_organization_search_failed",
+        operation,
         extra={
             "operation_id": getattr(request.state, "operation_id", None),
             "failure_type": type(exc).__name__,
         },
     )
+
+
+# Keep PERSON_FIELDS imported so route models stay aligned with the client whitelist.
+assert set(CnsePersonRecord.model_fields) == set(PERSON_FIELDS)
 
 
 @router.post(
@@ -128,12 +190,42 @@ async def search_cnse_organizations(body: CnseOrganizationSearchRequest, request
     try:
         result = await asyncio.to_thread(query_cnse_organizations, keyword)
     except CnseConfigurationError as exc:
-        log_cnse_failure(request, exc)
+        log_cnse_failure(request, exc, operation="cnse_organization_search_failed")
         return fail(errors.CNSE_SERVICE_MISCONFIGURED, request, http_status=503)
     except CnseRecognitionError as exc:
-        log_cnse_failure(request, exc)
+        log_cnse_failure(request, exc, operation="cnse_organization_search_failed")
         return fail(errors.CNSE_RECOGNITION_FAILED, request, http_status=502)
     except (CnseRequestError, CnseProtocolError) as exc:
-        log_cnse_failure(request, exc)
+        log_cnse_failure(request, exc, operation="cnse_organization_search_failed")
+        return fail(errors.CNSE_UPSTREAM_FAILED, request, http_status=502)
+    return ok(result, request)
+
+
+@router.post(
+    "/cnse/persons/search",
+    response_model=CnsePersonSearchResponse,
+    responses={
+        502: {"description": "CNSE upstream or CAPTCHA recognition failed."},
+        503: {"description": "CNSE integration configuration is invalid."},
+    },
+    summary="查询全国特种设备公示从业人员资格信息",
+)
+async def search_cnse_persons(body: CnsePersonSearchRequest, request: Request):
+    """Query CNSE person registry without exposing CAPTCHA challenge or session."""
+
+    try:
+        id_number = normalize_id_number(body.idNumber)
+    except CnseConfigurationError:
+        return fail(errors.VALIDATION_ERROR, request, message="请输入有效的身份证号。")
+    try:
+        result = await asyncio.to_thread(query_cnse_persons, id_number)
+    except CnseConfigurationError as exc:
+        log_cnse_failure(request, exc, operation="cnse_person_search_failed")
+        return fail(errors.CNSE_SERVICE_MISCONFIGURED, request, http_status=503)
+    except CnseRecognitionError as exc:
+        log_cnse_failure(request, exc, operation="cnse_person_search_failed")
+        return fail(errors.CNSE_RECOGNITION_FAILED, request, http_status=502)
+    except (CnseRequestError, CnseProtocolError) as exc:
+        log_cnse_failure(request, exc, operation="cnse_person_search_failed")
         return fail(errors.CNSE_UPSTREAM_FAILED, request, http_status=502)
     return ok(result, request)
