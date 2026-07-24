@@ -289,6 +289,16 @@ export const asyncRouterMap: AppRouteRecordRaw[] = [
         }
       },
       {
+        path: 'report-templates',
+        component: AdminOverview,
+        name: 'AdminReportTemplates',
+        meta: {
+          title: '报告模板管理',
+          noCache: true,
+          roles: ['admin']
+        }
+      },
+      {
         path: 'fine-config',
         component: AdminOverview,
         name: 'AdminFineConfig',

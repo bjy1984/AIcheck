@@ -130,6 +130,25 @@ def business_pack_project_fields(pack: dict[str, Any] | None = None) -> dict[str
     }
 
 
+def report_template_seed() -> list[dict[str, Any]]:
+    templates: list[dict[str, Any]] = []
+    for summary in list_business_packs():
+        pack = load_business_pack(summary["id"])
+        for template in pack.get("reportTemplates") or []:
+            templates.append(
+                {
+                    **deepcopy(template),
+                    "businessPackId": pack["id"],
+                    "businessPackVersion": pack["version"],
+                    "status": "production",
+                    "createdAt": "2026-06-26 08:00:00",
+                    "updatedAt": "2026-06-26 08:00:00",
+                    "revision": 1,
+                }
+            )
+    return templates
+
+
 def build_tree(project_id: str = PROJECT_ID) -> list[dict[str, Any]]:
     project = next((item for item in PROJECTS if item.get("id") == project_id), None)
     pack = load_business_pack(project.get("businessPackId")) if project and project.get("businessPackId") else DEFAULT_BUSINESS_PACK
@@ -2255,6 +2274,7 @@ def fresh_state() -> dict[str, Any]:
         "agent_versions": deepcopy(AGENT_VERSIONS),
         "prompt_versions": deepcopy(PROMPT_VERSIONS),
         "prompt_templates": deepcopy(PROMPT_TEMPLATES),
+        "report_templates": report_template_seed(),
         "model_route_versions": deepcopy(MODEL_ROUTE_VERSIONS),
         "ocr_profile_versions": deepcopy(OCR_PROFILE_VERSIONS),
         "ocr_jobs": [],

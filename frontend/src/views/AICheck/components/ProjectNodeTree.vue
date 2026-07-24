@@ -320,7 +320,7 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
   border-radius: 8px;
   grid-template-columns: 30px minmax(0, 1fr) auto;
   gap: 8px;
-  align-items: center;
+  align-items: start;
 }
 
 .node-button:hover,
@@ -360,12 +360,11 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
 
 .node-name {
   display: block;
-  overflow: hidden;
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .node-meta {

@@ -90,6 +90,7 @@ const emit = defineEmits<{
   openReportDetail: [reportId: string]
   openFeedbackDetail: [feedbackId: string]
   uploadMaterial: [materialCategory: string]
+  uploadReport: []
 }>()
 
 const rectificationForm = reactive({
@@ -351,6 +352,10 @@ const scrollToNdtSection = (sectionId: string) => {
 
 const handleMaterialAction = (action: NdtMaterialAction) => {
   if (action.key === 'upload') {
+    if (action.category === '检测报告') {
+      emit('uploadReport')
+      return
+    }
     emit('uploadMaterial', action.category)
     return
   }

@@ -1745,7 +1745,6 @@ test.describe('AIcheck business writeback flows', () => {
     const uploadCases = [
       { button: '上传底片/影像', category: '底片与影像资料' },
       { button: '上传检测记录', category: '检测记录' },
-      { button: '上传检测报告', category: '检测报告' },
       { button: '上传补正', category: '问题处理闭环' }
     ]
 
@@ -1757,6 +1756,15 @@ test.describe('AIcheck business writeback flows', () => {
       await expect(uploadDialog).toContainText('选择或拖拽文件')
       await uploadDialog.getByRole('button', { name: '取消' }).click()
     }
+
+    await page.getByRole('button', { name: '上传检测报告' }).first().click()
+    const reportUploadDrawer = visibleOverlay(page, '上传无损检测报告')
+    await expect(reportUploadDrawer).toBeVisible()
+    await expect(reportUploadDrawer.getByLabel('报告编号')).toBeVisible()
+    await expect(reportUploadDrawer.getByLabel('检测方法')).toBeVisible()
+    await expect(reportUploadDrawer).toContainText('关联底片/影像')
+    await expect(reportUploadDrawer.getByRole('button', { name: '上传并生成检测报告' })).toBeVisible()
+    await reportUploadDrawer.getByRole('button', { name: '取消' }).click()
 
     await page.setViewportSize({ width: 390, height: 900 })
     await expectNoPageOverflow(page)

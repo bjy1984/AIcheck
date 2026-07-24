@@ -415,6 +415,20 @@ export type AdminProjectCreateResult = {
 
 export type NdtReportUploadPayload = UploadSessionPayload
 
+export type NdtReportUploadRequest = {
+  nodeId: number
+  files: Array<{ fileName: string; fileSize: number; fileType: string }>
+  reportNo: string
+  method: NdtReport['method']
+  standardCode: string
+  evaluatorName: string
+  conclusion: string
+  entrustNo?: string
+  detectionRatio?: string
+  reviewerName?: string
+  relatedFilmIds?: string[]
+}
+
 export type NdtRecordImportPayload = {
   imported: number
   failed: Array<{ row: number; reason: string }>
@@ -1141,6 +1155,33 @@ export type PromptTemplateSavePayload = Partial<Omit<PromptTemplate, 'revision' 
   name: string
   systemPrompt: string
   userPromptTemplate: string
+}
+
+export type ReportTemplateSection = {
+  code: string
+  title: string
+  source: string
+}
+
+export type ReportTemplate = {
+  id: string
+  name: string
+  version: string
+  status: 'draft' | 'production' | 'retired' | '草稿' | '已发布' | '已停用'
+  businessPackId: string
+  businessPackVersion?: string
+  exportTypes: Array<'report' | 'archive-package' | 'evidence-package'>
+  sections: ReportTemplateSection[]
+  createdAt?: string
+  updatedAt: string
+  publishedAt?: string
+  revision?: number
+  etag?: string
+}
+
+export type ReportTemplateSavePayload = Partial<Omit<ReportTemplate, 'revision' | 'etag'>> & {
+  name: string
+  sections: ReportTemplateSection[]
 }
 
 export type LlmComparePayload = {
@@ -3414,22 +3455,7 @@ export const getNdtReportDetailApi = (
 
 export const createNdtReportUploadSessionApi = (
   projectId: string,
-  payload: {
-    files: Array<{ fileName: string; fileSize: number; fileType: string }>
-    relatedFilmIds?: string[]
-  } & Partial<
-    Pick<
-      NdtReport,
-      | 'reportNo'
-      | 'entrustNo'
-      | 'method'
-      | 'detectionRatio'
-      | 'standardCode'
-      | 'evaluatorName'
-      | 'reviewerName'
-      | 'conclusion'
-    >
-  >,
+  payload: NdtReportUploadRequest,
   options?: MutationHeaderOptions
 ): Promise<IResponse<NdtReportUploadPayload>> => {
   return request.post({
@@ -4122,6 +4148,67 @@ export const deletePromptTemplateApi = (
 ): Promise<IResponse<{ deleted: boolean; templateId: string; auditLogId: string }>> => {
   return request.delete({
     url: `/api/admin/prompt-templates/${templateId}`,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const listReportTemplatesApi = (params?: {
+  keyword?: string
+  status?: string
+  businessPackId?: string
+  page?: number
+  pageSize?: number
+}): Promise<IResponse<PagePayload<ReportTemplate>>> => {
+  return request.get({ url: '/api/admin/report-templates', params })
+}
+
+export const getReportTemplateApi = (
+  templateId: string
+): Promise<IResponse<{ template: ReportTemplate }>> => {
+  return request.get({ url: `/api/admin/report-templates/${templateId}` })
+}
+
+export const createReportTemplateApi = (
+  payload: ReportTemplateSavePayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ template: ReportTemplate; auditLogId: string }>> => {
+  return request.post({
+    url: '/api/admin/report-templates',
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const updateReportTemplateApi = (
+  templateId: string,
+  payload: Partial<ReportTemplateSavePayload>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ template: ReportTemplate; auditLogId: string }>> => {
+  return request.put({
+    url: `/api/admin/report-templates/${templateId}`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const publishReportTemplateApi = (
+  templateId: string,
+  payload: { reason?: string } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ template: ReportTemplate; auditLogId: string }>> => {
+  return request.post({
+    url: `/api/admin/report-templates/${templateId}/publish`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const deleteReportTemplateApi = (
+  templateId: string,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ deleted: boolean; templateId: string; auditLogId: string }>> => {
+  return request.delete({
+    url: `/api/admin/report-templates/${templateId}`,
     headers: mutationHeaders(options)
   })
 }

@@ -128,6 +128,188 @@ def is_external_registry_tool(tool_name: str) -> bool:
     return tool_name in EXTERNAL_REGISTRY_TOOL_NAMES
 
 
+# Conversation Agent 可调用的运行时 Tool（不含写操作 / 正式结论文档提交）。
+# 与 ReviewRun 同级：均可辅助人工做名称、范围、有效期等判定；人工最终结论仍须显式提交。
+CONVERSATION_AGENT_RUNTIME_TOOL_NAMES: list[str] = [
+    "get_document_ocr_result",
+    "recognize_document_seals",
+    "recognize_signatures_and_seals",
+    "extract_document_fields",
+    "extract_table_records",
+    "locate_evidence_fragment",
+    "extract_structured_fields",
+    "extract_welder_certificate",
+    "verify_license_or_certificate",
+    "verify_welder_certificate_authenticity",
+    "check_all_equal",
+    "check_date_covers",
+    "check_design_license_scope",
+    "check_installation_license_scope",
+    "validate_evidence_grounding",
+    "decode_welder_qualification",
+    "check_welder_work_coverage",
+    "check_pressure_gauge_requirements",
+    "check_pressure_test_parameters",
+    "check_pressure_test_report_consistency",
+]
+
+
+_DETERMINISTIC_LLM_PARAMETERS: dict[str, dict[str, Any]] = {
+    "check_all_equal": {
+        "type": "object",
+        "properties": {
+            "values": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string"},
+                        "value": {},
+                    },
+                    "required": ["source", "value"],
+                    "additionalProperties": True,
+                },
+                "description": "待比较的多来源值，例如许可证单位名、图纸标题栏单位名、印章单位名。",
+            },
+            "normalizer": {
+                "type": "string",
+                "description": "归一化方式，例如 organization_name、text、date。",
+            },
+            "requiredCount": {"type": "integer", "minimum": 2},
+        },
+        "required": ["values"],
+        "additionalProperties": False,
+    },
+    "check_date_covers": {
+        "type": "object",
+        "properties": {
+            "validFrom": {"type": "string", "description": "有效期起 YYYY-MM-DD，可选。"},
+            "validUntil": {"type": "string", "description": "有效期止 YYYY-MM-DD。"},
+            "periodStart": {"type": "string", "description": "业务周期起 YYYY-MM-DD。"},
+            "periodEnd": {"type": "string", "description": "业务周期止 YYYY-MM-DD。"},
+        },
+        "required": ["validUntil", "periodStart", "periodEnd"],
+        "additionalProperties": False,
+    },
+    "check_design_license_scope": {
+        "type": "object",
+        "properties": {
+            "licenseScopes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "许可证范围代码，例如 GC1、GC2、GCD。",
+            },
+            "requiredPipelineGrades": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "项目要求的管道级别。",
+            },
+        },
+        "required": ["licenseScopes", "requiredPipelineGrades"],
+        "additionalProperties": False,
+    },
+    "check_installation_license_scope": {
+        "type": "object",
+        "properties": {
+            "licenseScopes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "安装许可范围代码。",
+            },
+            "requiredPipelineGrades": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "项目要求的管道级别。",
+            },
+            "ruleVersion": {"type": "string"},
+        },
+        "required": ["licenseScopes", "requiredPipelineGrades"],
+        "additionalProperties": False,
+    },
+    "validate_evidence_grounding": {
+        "type": "object",
+        "properties": {
+            "facts": {"type": "array", "items": {"type": "object"}},
+            "evidenceRefs": {"type": "array", "items": {"type": "object"}},
+            "minConfidence": {"type": "number", "minimum": 0, "maximum": 1},
+        },
+        "required": ["facts", "evidenceRefs"],
+        "additionalProperties": False,
+    },
+    "decode_welder_qualification": {
+        "type": "object",
+        "properties": {
+            "qualificationCodes": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["qualificationCodes"],
+        "additionalProperties": False,
+    },
+    "check_welder_work_coverage": {
+        "type": "object",
+        "properties": {
+            "qualificationCodes": {"type": "array", "items": {"type": "string"}},
+            "workItems": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["qualificationCodes", "workItems"],
+        "additionalProperties": False,
+    },
+    "check_pressure_gauge_requirements": {
+        "type": "object",
+        "properties": {
+            "gauges": {"type": "array", "items": {"type": "object"}},
+            "maxTestPressure": {"type": "number"},
+            "testDate": {"type": "string"},
+            "medium": {"type": "string"},
+            "mediumTemperature": {"type": "number"},
+            "ambientTemperature": {"type": "number"},
+        },
+        "required": [
+            "gauges",
+            "maxTestPressure",
+            "testDate",
+            "medium",
+            "mediumTemperature",
+            "ambientTemperature",
+        ],
+        "additionalProperties": False,
+    },
+    "check_pressure_test_parameters": {
+        "type": "object",
+        "properties": {
+            "method": {"type": "string", "enum": ["liquid", "gas"]},
+            "designPressure": {"type": "number"},
+            "testPressure": {"type": "number"},
+            "holdMinutes": {"type": "number"},
+            "testResult": {"type": "string"},
+            "maximumAllowableTestPressure": {"type": "number"},
+            "allowableStressAtTestTemperature": {"type": "number"},
+            "allowableStressAtDesignTemperature": {"type": "number"},
+            "pneumaticYieldLimitPressure": {"type": "number"},
+            "pressureSteps": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": [
+            "method",
+            "designPressure",
+            "testPressure",
+            "holdMinutes",
+            "testResult",
+            "maximumAllowableTestPressure",
+        ],
+        "additionalProperties": False,
+    },
+    "check_pressure_test_report_consistency": {
+        "type": "object",
+        "properties": {
+            "report": {"type": "object"},
+            "observed": {"type": "object"},
+            "tolerance": {"type": "number"},
+        },
+        "required": ["report", "observed"],
+        "additionalProperties": False,
+    },
+}
+
+
 def llm_tool_schema_for_runtime(tool_name: str) -> dict[str, Any] | None:
     """Return an OpenAI function tool schema for a known runtime tool name."""
 
@@ -139,8 +321,13 @@ def llm_tool_schema_for_runtime(tool_name: str) -> dict[str, Any] | None:
 
     catalog = {item["name"]: item for item in runtime_tool_catalog()}
     descriptor = catalog.get(tool_name)
-    if descriptor is None:
+    if descriptor is None and tool_name not in _DETERMINISTIC_LLM_PARAMETERS:
         return None
+
+    if tool_name in _DETERMINISTIC_LLM_PARAMETERS:
+        parameters = _DETERMINISTIC_LLM_PARAMETERS[tool_name]
+        capability = str((descriptor or {}).get("capability") or "执行确定性审查辅助判断。")
+        return llm_function_tool(tool_name, capability, parameters)
 
     if tool_name == "locate_evidence_fragment":
         parameters = {
@@ -205,4 +392,33 @@ def build_llm_tools_for_runtime(tool_names: list[str]) -> list[dict[str, Any]]:
         schema = llm_tool_schema_for_runtime(name)
         if schema is not None:
             tools.append(schema)
+    return tools
+
+
+def build_review_conversation_agent_tools(
+    *,
+    context_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Assemble Conversation Agent tools: context helpers + runtime catalog + registries."""
+
+    seen: set[str] = set()
+    tools: list[dict[str, Any]] = []
+    for item in context_tools:
+        name = str(((item.get("function") or {}).get("name") or ""))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        tools.append(item)
+    for item in build_llm_tools_for_runtime(CONVERSATION_AGENT_RUNTIME_TOOL_NAMES):
+        name = str(((item.get("function") or {}).get("name") or ""))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        tools.append(item)
+    for item in EXTERNAL_REGISTRY_LLM_TOOLS:
+        name = str(((item.get("function") or {}).get("name") or ""))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        tools.append(item)
     return tools

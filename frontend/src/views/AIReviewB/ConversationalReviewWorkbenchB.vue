@@ -51,6 +51,7 @@ import {
   getReviewBWorkspaceApi,
   listReviewBEventsApi,
   listReviewBMessagesApi,
+  streamReviewBEventsApi,
   runReviewBSessionActionApi,
   sendReviewBMessageApi,
   submitReviewBHumanDecisionApi
@@ -106,6 +107,8 @@ const humanDecision = ref<'accept' | 'edit' | 'reject'>('accept')
 const humanComment = ref('')
 const extractedFields = ref<ExtractedField[]>([])
 let pollTimer: number | undefined
+let liveTraceTimer: number | undefined
+let liveTraceAbort: AbortController | undefined
 
 const TIMELINE_BOTTOM_THRESHOLD = 80
 
@@ -128,6 +131,13 @@ const executionEvents = computed(() =>
   events.value.filter((event) => event.eventType !== 'session.created')
 )
 const latestExecutionEvents = computed(() => executionEvents.value.slice(-8).reverse())
+const liveAgentTrace = computed(() => {
+  const agentEvents = executionEvents.value.filter((event) =>
+    String(event.eventType || '').startsWith('agent.')
+  )
+  return agentEvents.slice(-12)
+})
+const liveAgentTraceLatest = computed(() => liveAgentTrace.value.at(-1))
 const displayUser = computed(
   () => userStore.getUserInfo?.displayName || userStore.getUserInfo?.username || '监检人员'
 )
@@ -175,7 +185,11 @@ const executionActive = computed(
 )
 const showExecutionActivity = computed(() => executionActive.value || conversationStarted.value)
 const executionSummary = computed(() => {
-  if (sending.value) return '正在理解问题并核查当前节点上下文…'
+  if (sending.value) {
+    const latest = liveAgentTraceLatest.value
+    if (latest?.title) return latest.title
+    return '正在理解问题并核查当前节点上下文…'
+  }
   if (reviewStarting.value) return '正在启动 AI 复核流程…'
   const execution = latestAssistantExecution.value
   if (execution?.mode === 'llm_agent') {
@@ -426,6 +440,51 @@ const loadSessionData = async (reset = false) => {
   if (shouldFollowLatest) await scrollTimelineToEnd(true)
 }
 
+const pollLiveAgentTrace = async () => {
+  if (!session.value?.id) return
+  try {
+    const eventRes = await listReviewBEventsApi(session.value.id, 0)
+    mergeEvents(eventRes.data.events)
+  } catch {
+    // 发送中的旁路轮询失败不影响主请求。
+  }
+}
+
+const startLivePolling = () => {
+  if (liveTraceTimer) return
+  void pollLiveAgentTrace()
+  liveTraceTimer = window.setInterval(() => void pollLiveAgentTrace(), 400)
+}
+
+const startLiveAgentTrace = () => {
+  stopLiveAgentTrace()
+  activityExpanded.value = true
+  const sessionId = session.value?.id
+  if (!sessionId) return
+  // 优先走 SSE 增量推送；连接失败或中途断开时降级为快速轮询。
+  liveTraceAbort = new AbortController()
+  const abort = liveTraceAbort
+  streamReviewBEventsApi(
+    sessionId,
+    events.value.at(-1)?.sequence || 0,
+    (event) => mergeEvents([event]),
+    abort.signal
+  ).catch(() => {
+    if (!abort.signal.aborted) startLivePolling()
+  })
+}
+
+const stopLiveAgentTrace = () => {
+  if (liveTraceAbort) {
+    liveTraceAbort.abort()
+    liveTraceAbort = undefined
+  }
+  if (liveTraceTimer) {
+    window.clearInterval(liveTraceTimer)
+    liveTraceTimer = undefined
+  }
+}
+
 const ensureSession = async () => {
   if (workspace.value?.session || !activeProjectId.value || !activeNodeId.value) return
   await createReviewBSessionApi(
@@ -618,6 +677,7 @@ const sendMessage = async (preset?: string) => {
   sending.value = true
   executionStarted.value = true
   activityExpanded.value = true
+  startLiveAgentTrace()
   try {
     const res = await sendReviewBMessageApi(session.value.id, text, {
       etag: session.value.etag
@@ -632,6 +692,7 @@ const sendMessage = async (preset?: string) => {
   } catch (error) {
     ElMessage.error(getAicheckErrorMessage(error, 'AI 辅助消息发送失败。'))
   } finally {
+    stopLiveAgentTrace()
     sending.value = false
     activityExpanded.value = false
   }
@@ -938,6 +999,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (pollTimer) window.clearInterval(pollTimer)
+  stopLiveAgentTrace()
 })
 </script>
 
@@ -1218,10 +1280,25 @@ onBeforeUnmount(() => {
                   :stroke-width="4"
                   :show-text="false"
                 />
-                <ol v-if="latestExecutionEvents.length">
-                  <li v-for="event in latestExecutionEvents" :key="event.eventId">
+                <ol v-if="(sending ? liveAgentTrace : latestExecutionEvents).length">
+                  <li
+                    v-for="event in sending ? liveAgentTrace : latestExecutionEvents"
+                    :key="event.eventId"
+                  >
                     <span class="execution-event-dot"></span>
-                    <span>{{ event.title || event.eventType }}</span>
+                    <span>
+                      {{ event.title || event.eventType }}
+                      <small
+                        v-if="
+                          event.payload &&
+                          typeof event.payload === 'object' &&
+                          'summary' in event.payload &&
+                          event.payload.summary
+                        "
+                      >
+                        · {{ String(event.payload.summary) }}
+                      </small>
+                    </span>
                     <time>{{ formatTime(event.occurredAt) }}</time>
                   </li>
                 </ol>
@@ -1505,7 +1582,7 @@ onBeforeUnmount(() => {
 
 .review-b-layout {
   display: grid;
-  grid-template-columns: 292px minmax(650px, 1fr) 330px;
+  grid-template-columns: minmax(300px, 404px) minmax(650px, 1fr) 330px;
   min-height: calc(100vh - 72px);
 }
 
@@ -2196,7 +2273,7 @@ onBeforeUnmount(() => {
 
 @media (width <= 1380px) {
   .review-b-layout {
-    grid-template-columns: 258px minmax(610px, 1fr) 302px;
+    grid-template-columns: minmax(280px, 360px) minmax(610px, 1fr) 302px;
   }
 
   .brand {

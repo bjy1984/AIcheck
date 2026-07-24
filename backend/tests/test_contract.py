@@ -6125,6 +6125,25 @@ def test_project_management_etag_idempotency_and_versioned_responses() -> None:
     )
     assert participant["project"]["revision"] == updated["project"]["revision"] + 1
     assert participant_replay["project"]["etag"] == participant["project"]["etag"]
+    assert participant["participantUnit"]["unitName"] == "版本化参建单位"
+    assert participant["participantUnit"]["id"] == f"PU-{project_id}-owner"
+    listed_participants = assert_ok(client.get(f"/projects/{project_id}/participants"))
+    saved_owner = next(item for item in listed_participants if item["unitType"] == "owner")
+    assert saved_owner["unitName"] == "版本化参建单位"
+
+    patched_participant = assert_ok(
+        client.patch(
+            f"/projects/{project_id}/participants/{saved_owner['id']}",
+            json={"contactName": "王工", "contactPhone": "13800000000"},
+            headers={
+                "If-Match": participant["project"]["etag"],
+                "Idempotency-Key": "participant-patch-once",
+            },
+        )
+    )
+    assert patched_participant["participantUnit"]["contactName"] == "王工"
+    assert patched_participant["participantUnit"]["contactPhone"] == "13800000000"
+    participant = patched_participant
 
     initialized = assert_ok(
         client.post(
@@ -6154,17 +6173,23 @@ def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
             headers={"If-Match": project["etag"], "Idempotency-Key": "upload-session-once"},
         )
     )
+    upload_target = upload["uploadUrls"][0]
+    upload_body = b"%PDF-idempotent-upload".ljust(1024, b"0")
+    assert_ok(client.put(upload_target["url"], content=upload_body, headers=upload_target["headers"]))
+    completed_files = [
+        {"documentVersionId": upload_target["documentVersionId"], "fileSize": len(upload_body)}
+    ]
     completed = assert_ok(
         client.post(
             f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
-            json={"completedFiles": []},
+            json={"completedFiles": completed_files},
             headers={"If-Match": project["etag"], "Idempotency-Key": "upload-complete-once"},
         )
     )
     completed_replay = assert_ok(
         client.post(
             f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
-            json={"completedFiles": []},
+            json={"completedFiles": completed_files},
             headers={"If-Match": project["etag"], "Idempotency-Key": "upload-complete-once"},
         )
     )
@@ -6244,6 +6269,14 @@ def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
         )
     )
     removable_target = removable_upload["uploadUrls"][0]
+    removable_body = b"%PDF-removable-upload".ljust(1024, b"0")
+    assert_ok(
+        client.put(
+            removable_target["url"],
+            content=removable_body,
+            headers=removable_target["headers"],
+        )
+    )
     complete_url = (
         f"/projects/{project_id}/documents/upload-session/"
         f"{removable_upload['uploadSessionId']}/complete"
@@ -6251,7 +6284,14 @@ def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
     assert_ok(
         client.post(
             complete_url,
-            json={"completedFiles": []},
+            json={
+                "completedFiles": [
+                    {
+                        "documentVersionId": removable_target["documentVersionId"],
+                        "fileSize": len(removable_body),
+                    }
+                ]
+            },
             headers={"If-Match": project["etag"], "Idempotency-Key": "document-delete-complete"},
         )
     )
@@ -6724,6 +6764,109 @@ def test_prompt_template_management_api_and_audit_metadata() -> None:
         client.delete(
             f"/admin/prompt-templates/{template['id']}",
             headers={"If-Match": published["template"]["etag"], "Idempotency-Key": "prompt-template-delete-production"},
+        ),
+        "VALIDATION_ERROR",
+    )
+
+
+def test_report_template_management_publish_and_report_generation_snapshot() -> None:
+    templates = assert_ok(client.get("/admin/report-templates?pageSize=100"))
+    assert templates["total"] >= 1
+    assert templates["items"][0]["sections"]
+
+    invalid = client.post(
+        "/admin/report-templates",
+        json={"name": "无章节模板", "sections": []},
+        headers={"Idempotency-Key": "report-template-invalid"},
+    )
+    assert_error(invalid, "VALIDATION_ERROR")
+
+    payload = {
+        "name": "合同测试报告模板",
+        "version": "2026.07-test",
+        "status": "draft",
+        "businessPackId": "engineering_inspection_v1",
+        "businessPackVersion": "2026.07-test",
+        "exportTypes": ["report", "archive-package"],
+        "sections": [
+            {"code": "contract_summary", "title": "合同测试概况", "source": "project"},
+            {"code": "contract_evidence", "title": "合同测试证据", "source": "evidence_links"},
+        ],
+    }
+    create_headers = {"Idempotency-Key": "report-template-create-once"}
+    created = assert_ok(client.post("/admin/report-templates", json=payload, headers=create_headers))
+    replayed = assert_ok(client.post("/admin/report-templates", json=payload, headers=create_headers))
+    assert replayed["template"]["id"] == created["template"]["id"]
+    assert replayed["auditLogId"] == created["auditLogId"]
+
+    template = created["template"]
+    updated = assert_ok(
+        client.patch(
+            f"/admin/report-templates/{template['id']}",
+            json={"name": "合同测试报告模板（已编辑）"},
+            headers={
+                "If-Match": template["etag"],
+                "Idempotency-Key": "report-template-update-once",
+            },
+        )
+    )
+    assert updated["template"]["revision"] == template["revision"] + 1
+
+    published = assert_ok(
+        client.post(
+            f"/admin/report-templates/{template['id']}/publish",
+            json={"reason": "合同测试发布"},
+            headers={
+                "If-Match": updated["template"]["etag"],
+                "Idempotency-Key": "report-template-publish-once",
+            },
+        )
+    )
+    assert published["template"]["status"] == "production"
+    production_templates = assert_ok(
+        client.get(
+            "/admin/report-templates?businessPackId=engineering_inspection_v1&status=production&pageSize=100"
+        )
+    )
+    assert [item["id"] for item in production_templates["items"]] == [template["id"]]
+
+    project_id = "P-2026-HDCP-001"
+    seed_reviewed_node_24(project_id)
+    generated = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/24/report-review",
+            json={"includeEvidence": True, "reportScope": "currentNode"},
+            headers={"Idempotency-Key": "report-template-generation-once"},
+        )
+    )
+    report = generated["report"]
+    assert report["templateId"] == template["id"]
+    assert report["templateVersion"] == "2026.07-test"
+    assert report["templateSnapshot"]["name"] == "合同测试报告模板（已编辑）"
+    assert [section["key"] for section in report["sections"]] == [
+        "contract_summary",
+        "contract_evidence",
+    ]
+
+    assert_error(
+        client.patch(
+            f"/admin/report-templates/{template['id']}",
+            json={"name": "不允许直接编辑生产模板"},
+            headers={
+                "If-Match": published["template"]["etag"],
+                "Idempotency-Key": "report-template-update-production",
+            },
+        ),
+        "VALIDATION_ERROR",
+    )
+
+    assert_error(
+        client.delete(
+            f"/admin/report-templates/{template['id']}",
+            headers={
+                "If-Match": published["template"]["etag"],
+                "Idempotency-Key": "report-template-delete-production",
+            },
         ),
         "VALIDATION_ERROR",
     )
@@ -8269,9 +8412,31 @@ def test_upload_and_ndt_validation_errors_match_contract() -> None:
     assert not str(upload["uploadUrls"][0]["url"]).startswith("mock://")
     assert len(repo.state["ndt_reports"]) == report_count
     assert len(repo.state["documents"]) == document_count + 1
+    upload_target = upload["uploadUrls"][0]
+    incomplete = client.post(
+        f"/projects/{project_id}/ndt/reports/upload-session/{upload['uploadSessionId']}/complete",
+        json={
+            "completedFiles": [
+                {"documentVersionId": upload_target["documentVersionId"], "fileSize": 2048}
+            ]
+        },
+        headers={"If-Match": project["etag"], "Idempotency-Key": "ndt-report-complete-incomplete"},
+    )
+    assert_error(incomplete, "VALIDATION_ERROR")
+    assert len(repo.state["ndt_reports"]) == report_count
+    upload_body = b"%PDF-ndt-report-upload".ljust(2048, b"0")
+    assert_ok(client.put(upload_target["url"], content=upload_body, headers=upload_target["headers"]))
     complete = assert_ok(
         client.post(
             f"/projects/{project_id}/ndt/reports/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {
+                        "documentVersionId": upload_target["documentVersionId"],
+                        "fileSize": len(upload_body),
+                    }
+                ]
+            },
             headers={"If-Match": project["etag"], "Idempotency-Key": "ndt-report-complete-once"},
         )
     )
@@ -8308,6 +8473,7 @@ def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
 def test_ndt_submit_updates_reports_films_and_traceable_snapshot() -> None:
     project_id = "P-2026-HDCP-001"
     mark_ndt_report_ready("NDT-RPT-001")
+    repo.find_one("ndt_reports", "NDT-RPT-001")["conclusion"] = "RT II级合格"
     project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
     film = assert_ok(
         client.post(
@@ -8715,8 +8881,21 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
         )
     )
     created = upload["uploadUrls"][0]
+    body = b"%PDF-1.4\n" + (b"0" * (1024 - len(b"%PDF-1.4\n")))
+    stored = assert_ok(client.put(created["url"], content=body, headers=created["headers"]))
+    assert stored["fileSize"] == len(body)
     complete = assert_ok(
-        client.post(f"/projects/P-2026-HDCP-001/documents/upload-session/{upload['uploadSessionId']}/complete")
+        client.post(
+            f"/projects/P-2026-HDCP-001/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {
+                        "documentVersionId": created["documentVersionId"],
+                        "fileSize": len(body),
+                    }
+                ]
+            },
+        )
     )
 
     assert complete["queuedTasks"][0]["mode"] == "inline"

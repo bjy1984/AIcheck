@@ -46,9 +46,11 @@ import {
   bindDocumentsToNodeApi,
   completeTodoApi,
   completeDocumentUploadSessionApi,
+  completeNdtReportUploadSessionApi,
   confirmNodeEvidenceLinkApi,
   createNdtFilmApi,
   createDocumentUploadSessionApi,
+  createNdtReportUploadSessionApi,
   deleteProjectDocumentApi,
   getArchivePackageApi,
   getArchiveItemDetailApi,
@@ -107,6 +109,7 @@ import type {
   DocumentPreviewPayload,
   NdtFeedbackDetailPayload,
   NdtReportDetailPayload,
+  NdtReportUploadRequest,
   ProjectTreePayload,
   R12LicenseCandidate,
   R12RegistryVerificationInput,
@@ -206,6 +209,7 @@ import FileTypeIcon from './components/FileTypeIcon.vue'
 import FileDetailDialog from './components/FileDetailDialog.vue'
 import GlobalQuickAccessDialog from './components/GlobalQuickAccessDialog.vue'
 import NdtDetailDrawer from './components/NdtDetailDrawer.vue'
+import NdtReportUploadDrawer from './components/NdtReportUploadDrawer.vue'
 import NdtWorkflowPanel from './components/NdtWorkflowPanel.vue'
 import NodePackagePanel from './components/NodePackagePanel.vue'
 import ProjectNodeTree from './components/ProjectNodeTree.vue'
@@ -351,6 +355,7 @@ const previewDrawerOriginalError = ref('')
 const uploadDrawerVisible = ref(false)
 const uploadDrawerError = ref('')
 const uploadDrawerMaterialCategory = ref('')
+const ndtReportUploadVisible = ref(false)
 const bindDialogVisible = ref(false)
 const bindDialogError = ref('')
 const bindDialogDocumentId = ref('')
@@ -1826,6 +1831,13 @@ const uploadFileToSignedUrl = async (target: DocumentUploadTarget, file: File) =
       `${file.name} 上传失败：${response.status} ${response.statusText || '存储服务拒绝写入'}`
     )
   }
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json()) as { code?: number; message?: string }
+    if (Number(payload.code ?? 0) !== 0) {
+      throw new Error(payload.message || `${file.name} 上传被业务规则拒绝`)
+    }
+  }
 }
 
 const showSubmissionDialogError = (fallback: string, error?: unknown) => {
@@ -1857,6 +1869,12 @@ const showNdtFilmError = (fallback: string, error?: unknown) => {
 const showNdtRecordImportError = (fallback: string, error?: unknown) => {
   const message = getAicheckErrorMessage(error, fallback)
   ndtRecordImportError.value = message
+  ElMessage.error(message)
+}
+
+const showNdtReportUploadError = (fallback: string, error?: unknown) => {
+  const message = getAicheckErrorMessage(error, fallback)
+  ndtReportUploadError.value = message
   ElMessage.error(message)
 }
 
@@ -2798,6 +2816,70 @@ const handleCreateUploadSession = async (files: File[]) => {
     await loadProjectBundle()
   } catch (error) {
     showUploadDrawerError('文件上传失败，请检查对象存储、网络连接和当前项目权限。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleOpenNdtReportUpload = () => {
+  if (!ensureWritableProject()) return
+  ndtReportUploadError.value = ''
+  ndtReportUploadVisible.value = true
+}
+
+const handleCreateNdtReportUpload = async (
+  payload: Omit<NdtReportUploadRequest, 'nodeId' | 'files'> & { files: File[] }
+) => {
+  if (!ensureWritableProject()) return
+  if (!payload.files.length) {
+    ElMessage.warning('请选择一份检测报告文件')
+    return
+  }
+  actionLoading.value = true
+  ndtReportUploadError.value = ''
+  try {
+    const files = payload.files.map((file) => ({
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: inferUploadFileType(file)
+    }))
+    const res = await createNdtReportUploadSessionApi(
+      activeProjectId.value,
+      {
+        ...payload,
+        nodeId: activeNodeId.value,
+        files
+      },
+      { etag: currentProject.value?.etag }
+    )
+    if (!res || res.data.uploadUrls.length !== payload.files.length) {
+      throw new Error('专用上传会话返回的文件数量与本地选择不一致。')
+    }
+    await Promise.all(
+      payload.files.map((file, index) => uploadFileToSignedUrl(res.data.uploadUrls[index], file))
+    )
+    const completeRes = await completeNdtReportUploadSessionApi(
+      activeProjectId.value,
+      res.data.uploadSessionId,
+      res.data.uploadUrls.map((target, index) => ({
+        documentVersionId: target.documentVersionId,
+        fileSize: payload.files[index]?.size
+      })),
+      {
+        etag: currentProject.value?.etag,
+        idempotencyKey: `ndt-report-upload-complete-${res.data.uploadSessionId}`
+      }
+    )
+    const createdReports = completeRes?.data.reports || []
+    if (createdReports.length !== payload.files.length) {
+      throw new Error('报告文件已上传，但后端未生成对应的无损检测报告记录。')
+    }
+    ndtReportUploadVisible.value = false
+    ndtReportUploadError.value = ''
+    ElMessage.success(`检测报告 ${createdReports[0]?.reportNo || ''} 已上传并进入 OCR 队列`)
+    await Promise.all([loadProjectBundle(), loadNdtData()])
+  } catch (error) {
+    showNdtReportUploadError('检测报告上传失败，请检查报告字段、关联底片和文件状态。', error)
   } finally {
     actionLoading.value = false
   }
@@ -4309,6 +4391,13 @@ watch(
 )
 
 watch(
+  () => ndtReportUploadVisible.value,
+  (open) => {
+    if (!open) ndtReportUploadError.value = ''
+  }
+)
+
+watch(
   () => submissionDialogVisible.value,
   (open) => {
     if (!open) {
@@ -5632,6 +5721,7 @@ onBeforeUnmount(() => {
             @create-film="handleCreateNdtFilm"
             @import-records="handleImportNdtRecords"
             @upload-material="handleOpenUploadDrawer"
+            @upload-report="handleOpenNdtReportUpload"
             @submit-ndt="handleSubmitNdt"
             @rectify-ndt="handleRectifyNdt"
             @open-report-detail="handleOpenNdtReportDetail"
@@ -5896,6 +5986,15 @@ onBeforeUnmount(() => {
         :loading="actionLoading"
         :operation-error="uploadDrawerError"
         @submit="handleCreateUploadSession"
+      />
+
+      <NdtReportUploadDrawer
+        v-model="ndtReportUploadVisible"
+        :node-name="selectedNode?.name"
+        :films="ndtFilms"
+        :loading="actionLoading"
+        :operation-error="ndtReportUploadError"
+        @submit="handleCreateNdtReportUpload"
       />
 
       <DocumentBindDialog

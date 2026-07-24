@@ -306,7 +306,14 @@ def test_review_b_agent_runs_bounded_read_only_tool_loop(monkeypatch) -> None:
                 "get_review_context",
                 "search_node_evidence",
                 "get_fixed_basis",
+                "check_design_license_scope",
+                "check_date_covers",
+                "check_all_equal",
+                "extract_table_records",
             }
+            assert '"nodeEvidence"' in messages[-1]["content"] or any(
+                '"nodeEvidence"' in str(message.get("content") or "") for message in messages
+            )
             if self.turn == 1:
                 return {
                     "id": "chatcmpl-agent-turn-1",
@@ -383,6 +390,244 @@ def test_review_b_agent_runs_bounded_read_only_tool_loop(monkeypatch) -> None:
     assert "agent.tool_call.completed" in event_types
     assert "agent.execution.completed" in event_types
     assert "agent.model_call.failed" not in event_types
+
+
+def _tool_call_response(turn: int) -> dict:
+    return {
+        "id": f"chatcmpl-agent-turn-{turn}",
+        "provider": "test-qwen",
+        "model": "qwen-agent-test",
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": f"call-loop-{turn}",
+                            "type": "function",
+                            "function": {"name": "get_review_context", "arguments": "{}"},
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 50, "completion_tokens": 8},
+    }
+
+
+def test_review_b_agent_forces_final_answer_at_max_turns(monkeypatch) -> None:
+    class GreedyToolRuntime:
+        def __init__(self) -> None:
+            self.turn = 0
+            self.tool_choices = []
+
+        def chat_sync(self, messages, model, **kwargs):
+            self.turn += 1
+            self.tool_choices.append(kwargs["tool_choice"])
+            if kwargs["tool_choice"] == "none":
+                assert "轮次上限" in str(messages[-1].get("content") or "")
+                return {
+                    "id": "chatcmpl-agent-final",
+                    "provider": "test-qwen",
+                    "model": "qwen-agent-test",
+                    "choices": [{"message": {"content": "已基于工具结果收束：资料就绪度不足，建议人工补齐后复核。"}}],
+                    "usage": {"prompt_tokens": 60, "completion_tokens": 16},
+                }
+            return _tool_call_response(self.turn)
+
+    runtime = GreedyToolRuntime()
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_AGENT_MAX_TURNS", "3")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: runtime)
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-agent-forced-final-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查名称一致性。"},
+        )
+    )
+    execution = response["assistantMessage"]["execution"]
+    assert execution["mode"] == "llm_agent"
+    assert execution["turnCount"] == 3
+    assert runtime.tool_choices == ["auto", "auto", "none"]
+    text_blocks = [
+        block["text"]
+        for block in response["assistantMessage"]["contentBlocks"]
+        if block.get("type") == "text"
+    ]
+    assert any("已基于工具结果收束" in text for text in text_blocks)
+    # 第二轮重复调用同参工具应命中缓存去重。
+    events = assert_ok(
+        client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+    )["events"]
+    duplicate_flags = [
+        item["payload"].get("duplicate")
+        for item in events
+        if item["eventType"] == "agent.tool_call.completed"
+    ]
+    assert duplicate_flags == [False, True]
+
+
+def test_review_b_agent_fallback_keeps_tool_results(monkeypatch) -> None:
+    class BrokenFinalRuntime:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        def chat_sync(self, messages, model, **kwargs):
+            self.turn += 1
+            if kwargs["tool_choice"] == "none":
+                # 最终收束轮输出为空，触发降级。
+                return {
+                    "id": "chatcmpl-agent-empty",
+                    "provider": "test-qwen",
+                    "model": "qwen-agent-test",
+                    "choices": [{"message": {"content": ""}}],
+                    "usage": {},
+                }
+            return _tool_call_response(self.turn)
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_AGENT_MAX_TURNS", "2")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: BrokenFinalRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-agent-fallback-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查名称一致性。"},
+        )
+    )
+    execution = response["assistantMessage"]["execution"]
+    assert execution["mode"] == "deterministic_fallback"
+    assert execution["toolCallCount"] == 1
+    text_blocks = [
+        block["text"]
+        for block in response["assistantMessage"]["contentBlocks"]
+        if block.get("type") == "text"
+    ]
+    assert any("已完成的工具核查结果" in text for text in text_blocks)
+    assert any("get_review_context" in text for text in text_blocks)
+
+
+def test_review_b_event_stream_emits_events_and_completes() -> None:
+    session = create_session()
+    with client.stream(
+        "GET",
+        f"/api/review-sessions/{session['id']}/events/stream",
+        params={"timeout_seconds": 1},
+        headers=HEADERS,
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        body = "".join(response.iter_text())
+    assert "session.created" in body
+    assert "event: done" in body
+
+
+def test_review_b_agent_formal_judgment_tool_runs_atomic_chain(monkeypatch) -> None:
+    class FormalJudgmentRuntime:
+        def __init__(self) -> None:
+            self.turn = 0
+            self.tool_payloads: list[str] = []
+
+        def chat_sync(self, messages, model, **kwargs):
+            self.turn += 1
+            assert {item["function"]["name"] for item in kwargs["tools"]} >= {
+                "run_node_formal_judgment",
+                "assemble_node_judgment_facts",
+            }
+            if self.turn == 1:
+                return {
+                    "id": "chatcmpl-formal-turn-1",
+                    "provider": "test-qwen",
+                    "model": "qwen-agent-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-formal-judgment",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "run_node_formal_judgment",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 90, "completion_tokens": 10},
+                }
+            self.tool_payloads = [
+                str(message.get("content") or "")
+                for message in messages
+                if message.get("role") == "tool"
+            ]
+            return {
+                "id": "chatcmpl-formal-turn-2",
+                "provider": "test-qwen",
+                "model": "qwen-agent-test",
+                "choices": [{"message": {"content": "已完成整体核查，详见核查结论表格。"}}],
+                "usage": {"prompt_tokens": 130, "completion_tokens": 30},
+            }
+
+    runtime = FormalJudgmentRuntime()
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: runtime)
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-formal-judgment-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请对当前节点做整体核查。"},
+        )
+    )
+    execution = response["assistantMessage"]["execution"]
+    assert execution["mode"] == "llm_agent"
+    assert execution["toolCallCount"] == 1
+    # 工具结果进入模型上下文，且带 advisory 标注供模型转述。
+    assert runtime.tool_payloads
+    assert '"advisory": true' in runtime.tool_payloads[0]
+    assert "bindingSetLifecycleStatus" in runtime.tool_payloads[0]
+
+    events = assert_ok(
+        client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+    )["events"]
+    completed = [
+        item
+        for item in events
+        if item["eventType"] == "agent.tool_call.completed"
+        and item["payload"].get("toolName") == "run_node_formal_judgment"
+    ]
+    assert completed
+    assert str(completed[0]["payload"].get("summary") or "").startswith("正式判定链")
+
+
+def test_review_b_formal_judgment_rejects_agent_type_nodes() -> None:
+    project = repo.require_project(PROJECT_ID) or {}
+    for node_id in (12, 19):
+        output = routes_module.review_conversation_formal_judgment(
+            project=project,
+            node={"nodeId": node_id},
+            evidence_links=[],
+        )
+        assert output["status"] == "rejected"
+        assert output["errorCode"] == "REVIEW_AGENT_NODE_REQUIRES_HUMAN_TASK"
 
 
 def test_review_b_message_references_preserve_evidence_locator() -> None:

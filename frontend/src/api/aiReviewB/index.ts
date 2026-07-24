@@ -1,4 +1,6 @@
 import request from '@/axios'
+import { PATH_URL } from '@/axios/service'
+import { useUserStoreWithOut } from '@/store/modules/user'
 import type {
   ReviewBAuditView,
   ReviewBEvent,
@@ -111,6 +113,55 @@ export const listReviewBEventsApi = (
     url: `/api/review-sessions/${sessionId}/events`,
     params: { after }
   })
+}
+
+/**
+ * SSE 事件流消费：使用 fetch + ReadableStream（EventSource 无法携带鉴权头）。
+ * 每收到一条事件就回调 onEvent；连接结束或异常时正常返回，由调用方决定是否降级为轮询。
+ */
+export const streamReviewBEventsApi = async (
+  sessionId: string,
+  after: number,
+  onEvent: (event: ReviewBEvent) => void,
+  signal: AbortSignal
+): Promise<void> => {
+  const userStore = useUserStoreWithOut()
+  const userInfo = userStore.getUserInfo
+  const response = await fetch(
+    `${PATH_URL}/api/review-sessions/${sessionId}/events/stream?after=${after}`,
+    {
+      headers: {
+        [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? '',
+        'X-Role': userInfo?.role ?? '',
+        'X-User-Id': userInfo?.id ?? ''
+      },
+      signal
+    }
+  )
+  if (!response.ok || !response.body) {
+    throw new Error(`SSE stream failed: ${response.status}`)
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const chunks = buffer.split('\n\n')
+    buffer = chunks.pop() ?? ''
+    for (const chunk of chunks) {
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const parsed = JSON.parse(line.slice(6))
+          if (parsed && parsed.eventId) onEvent(parsed as ReviewBEvent)
+        } catch {
+          // 忽略心跳与非 JSON 数据行。
+        }
+      }
+    }
+  }
 }
 
 export const getReviewBAuditViewApi = (

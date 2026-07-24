@@ -1,5 +1,6 @@
 from apps.api.routes import REVIEW_CONVERSATION_AGENT_TOOLS
 from libs.review_orchestrator.llm_tool_schemas import (
+    CONVERSATION_AGENT_RUNTIME_TOOL_NAMES,
     EXTERNAL_REGISTRY_LLM_TOOLS,
     EXTERNAL_REGISTRY_TOOL_NAMES,
     build_llm_tools_for_runtime,
@@ -14,6 +15,20 @@ def test_review_conversation_agent_tools_include_external_registry() -> None:
     assert "lookup_standard_status" in names
     assert "search_samr_standards" in names
     assert "search_cnse_organizations" in names
+    assert "check_design_license_scope" in names
+    assert "check_date_covers" in names
+    assert "check_all_equal" in names
+    assert "extract_table_records" in names
+    assert "recognize_signatures_and_seals" in names
+    assert "validate_evidence_grounding" in names
+    assert "check_installation_license_scope" in names
+
+
+def test_conversation_agent_runtime_tool_names_cover_r01_judgment_tools() -> None:
+    assert "check_all_equal" in CONVERSATION_AGENT_RUNTIME_TOOL_NAMES
+    assert "check_design_license_scope" in CONVERSATION_AGENT_RUNTIME_TOOL_NAMES
+    assert "check_date_covers" in CONVERSATION_AGENT_RUNTIME_TOOL_NAMES
+    assert "validate_evidence_grounding" in CONVERSATION_AGENT_RUNTIME_TOOL_NAMES
 
 
 def test_external_registry_llm_tools_include_std_samr_and_cnse() -> None:

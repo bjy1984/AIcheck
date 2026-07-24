@@ -77,6 +77,7 @@ STATE_COLLECTIONS = {
     "agent_versions": "agent_versions",
     "prompt_versions": "prompt_versions",
     "prompt_templates": "prompt_templates",
+    "report_templates": "report_templates",
     "model_route_versions": "model_route_versions",
     "ocr_profile_versions": "ocr_profile_versions",
     "ocr_jobs": "ocr_jobs",
@@ -240,6 +241,7 @@ class InMemoryRepository:
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
         self.state.setdefault("prompt_templates", [])
+        self.state.setdefault("report_templates", [])
         self.state.setdefault("cost_budget_change_requests", [])
         self.state.setdefault("masking_policies", [])
         self.postgres_dsn: str | None = None
@@ -387,6 +389,7 @@ class InMemoryRepository:
         self.state.setdefault("retrieval_traces", [])
         self.state.setdefault("rule_check_results", [])
         self.state.setdefault("prompt_templates", [])
+        self.state.setdefault("report_templates", [])
         self.state.setdefault("cost_budget_change_requests", [])
         self.state.setdefault("masking_policies", [])
 
@@ -2223,6 +2226,7 @@ class InMemoryRepository:
         loaded.setdefault("retrieval_traces", [])
         loaded.setdefault("rule_check_results", [])
         loaded.setdefault("prompt_templates", [])
+        loaded.setdefault("report_templates", [])
         loaded.setdefault("cost_budget_change_requests", [])
         loaded.setdefault("masking_policies", [])
         return loaded
@@ -2233,6 +2237,9 @@ class InMemoryRepository:
         seeded = fresh_state()
         if not loaded.get("prompt_templates"):
             loaded["prompt_templates"] = seeded.get("prompt_templates", [])
+            changed = True
+        if not loaded.get("report_templates"):
+            loaded["report_templates"] = seeded.get("report_templates", [])
             changed = True
         if not loaded.get("admin_config", {}).get("materialReviewPoints"):
             loaded.setdefault("admin_config", {})["materialReviewPoints"] = self.clone(

@@ -156,6 +156,26 @@ class ObjectStorage:
             response_headers={"response-content-disposition": f'attachment; filename="{file_name}"'} if file_name else None,
         )
 
+    def object_metadata(self, bucket: str, object_name: str) -> dict[str, Any] | None:
+        """Return authoritative object metadata after a direct-to-storage upload."""
+
+        client = self.client()
+        if client is None:
+            if self.required:
+                raise ObjectStorageUnavailable("对象存储不可用，无法确认上传文件。")
+            return None
+        try:
+            stat = client.stat_object(self.bucket_name(bucket), self.object_name(object_name))
+        except Exception as exc:
+            if self.required:
+                raise ObjectStorageUnavailable(f"对象存储文件确认失败：{exc}") from exc
+            return None
+        return {
+            "size": int(getattr(stat, "size", 0) or 0),
+            "etag": str(getattr(stat, "etag", "") or "").strip() or None,
+            "contentType": str(getattr(stat, "content_type", "") or "").strip() or None,
+        }
+
     def put_bytes(self, bucket: str, object_name: str, data: bytes, *, content_type: str) -> str | None:
         client = self.client()
         if client is None:

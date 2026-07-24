@@ -22,7 +22,12 @@ from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fin
 from libs.audit_context import current_request_audit_context, reset_request_audit_context, set_request_audit_context
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
-from libs.db.postgres import close_postgres, init_postgres_if_configured, run_transaction_probe
+from libs.db.postgres import (
+    bootstrap_local_roles_if_configured,
+    close_postgres,
+    init_postgres_if_configured,
+    run_transaction_probe,
+)
 from libs.db.repository import (
     flush_mutation_records,
     flush_state,
@@ -72,6 +77,7 @@ def tenant_mutation_lock(tenant_id: str) -> asyncio.Lock:
 async def lifespan(app: FastAPI):
     await init_postgres_if_configured(app)
     load_state()
+    bootstrap_local_roles_if_configured()
     validate_security_runtime()
     if strict_production() and not await security_sessions.ready():
         raise RuntimeError("Redis security backend is unavailable")
@@ -269,7 +275,7 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
             if should_flush_state(request):
                 scoped_records = getattr(request.state, "scoped_flush_records", None)
                 if callable(scoped_records):
-                    records = scoped_records()
+                    records = scoped_records() or {}
                     operation_id = getattr(request.state, "operation_id", None)
                     audit_records = [
                         item

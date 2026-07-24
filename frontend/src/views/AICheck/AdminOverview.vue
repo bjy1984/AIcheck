@@ -44,11 +44,13 @@ import {
   createAdminProjectApi,
   createAdminUserApi,
   createPromptTemplateApi,
+  createReportTemplateApi,
   deleteAdminOrgUnitApi,
   deleteAdminProjectApi,
   deleteAdminUserApi,
   deleteAdminConfigItemApi,
   deletePromptTemplateApi,
+  deleteReportTemplateApi,
   deleteProjectMemberApi,
   getAdminConfigOverviewApi,
   getAdminIntegrationContractApi,
@@ -57,16 +59,19 @@ import {
   getAuditLogsApi,
   listAdminProjectsApi,
   listPromptTemplatesApi,
+  listReportTemplatesApi,
   listBusinessPacksApi,
   previewAdminConfigDiffApi,
   previewAdminConfigPublishApi,
   publishAdminConfigApi,
   publishPromptTemplateApi,
+  publishReportTemplateApi,
   saveAdminConfigItemApi,
   updateAdminOrgUnitApi,
   updateAdminProjectApi,
   updateAdminUserApi,
   updatePromptTemplateApi,
+  updateReportTemplateApi,
   updateProjectMemberApi,
   validateAllBusinessPacksApi
 } from '@/api/aicheck'
@@ -91,7 +96,9 @@ import type {
   KnowledgeRuleVersionDiffPayload,
   ProjectMember,
   PromptTemplate,
-  PromptTemplateSavePayload
+  PromptTemplateSavePayload,
+  ReportTemplate,
+  ReportTemplateSavePayload
 } from '@/api/aicheck'
 import type { ActionCode, ExportTask, Project, RoleCode } from '@/types/aicheck'
 import { useUserStore } from '@/store/modules/user'
@@ -162,7 +169,7 @@ const adminShellMenuSectionsBase = [
   },
   {
     title: '规则与业务配置',
-    meta: '5页',
+    meta: '6页',
     items: [
       {
         index: '04',
@@ -194,6 +201,13 @@ const adminShellMenuSectionsBase = [
       },
       {
         index: '08',
+        label: '报告模板管理',
+        badge: '报告',
+        tone: 'green',
+        route: '/admin/report-templates'
+      },
+      {
+        index: '09',
         label: '细项配置',
         badge: '字段',
         tone: 'orange',
@@ -283,6 +297,7 @@ const adminTabRouteMap = {
   rule: '/admin/rules',
   'material-review-point': '/admin/material-review-points',
   'prompt-template': '/admin/prompt-templates',
+  'report-template': '/admin/report-templates',
   'fine-config': '/admin/fine-config',
   integration: '/admin/integration',
   audit: '/admin/audit'
@@ -299,6 +314,7 @@ const adminRouteTabMap: Record<string, AdminTabKey> = {
   '/admin/rules': 'rule',
   '/admin/material-review-points': 'material-review-point',
   '/admin/prompt-templates': 'prompt-template',
+  '/admin/report-templates': 'report-template',
   '/admin/fine-config': 'fine-config',
   '/admin/integration': 'integration',
   '/admin/audit': 'audit'
@@ -325,6 +341,7 @@ const tableStates = reactive({
   materialReviewPoints: createTableState(10),
   workflowStateMachines: createTableState(8),
   promptTemplates: createTableState(8),
+  reportTemplates: createTableState(8),
   todoRules: createTableState(8),
   messageTemplates: createTableState(8),
   toolSources: createTableState(8),
@@ -427,6 +444,10 @@ const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }
     title: 'Prompt 模板管理',
     subtitle: '管理 System Prompt、User Prompt、Plan 编排和 Critic 模板版本'
   },
+  'report-template': {
+    title: '报告模板管理',
+    subtitle: '维护报告章节、导出类型和业务包版本，并发布供报告生成使用'
+  },
   'fine-config': {
     title: '细项配置',
     subtitle: '管理待办、消息、工具源和证据字段映射'
@@ -518,6 +539,13 @@ const promptTemplateSaving = ref(false)
 const promptTemplateDialogVisible = ref(false)
 const promptTemplateDialogMode = ref<'create' | 'edit'>('create')
 const promptTemplateOperationError = ref('')
+const reportTemplates = ref<ReportTemplate[]>([])
+const reportTemplateLoading = ref(false)
+const reportTemplateError = ref('')
+const reportTemplateSaving = ref(false)
+const reportTemplateDialogVisible = ref(false)
+const reportTemplateDialogMode = ref<'create' | 'edit'>('create')
+const reportTemplateOperationError = ref('')
 
 const auditFilters = reactive({
   keyword: activeTab.value === 'audit' ? routeQueryText('q') : '',
@@ -592,6 +620,11 @@ const projectStatusOptions: Project['status'][] = [
 ]
 
 const promptTemplateFilters = reactive({
+  keyword: '',
+  status: ''
+})
+
+const reportTemplateFilters = reactive({
   keyword: '',
   status: ''
 })
@@ -728,6 +761,18 @@ const promptTemplateForm = reactive({
   plannerPromptTemplate: '',
   criticPromptTemplate: '',
   outputSchemaText: '',
+  etag: ''
+})
+
+const reportTemplateForm = reactive({
+  id: '',
+  name: '',
+  version: '2026.06',
+  status: 'draft' as ReportTemplate['status'],
+  businessPackId: DEFAULT_PIPELINE_BUSINESS_PACK_ID,
+  businessPackVersion: '2026.06',
+  exportTypes: ['report'] as ReportTemplate['exportTypes'],
+  sectionsText: '',
   etag: ''
 })
 
@@ -1359,6 +1404,81 @@ const buildPromptTemplatePayload = (): PromptTemplateSavePayload | null => {
   }
 }
 
+const defaultReportSections = () =>
+  JSON.stringify(
+    [
+      { code: 'project_summary', title: '项目概况', source: 'project' },
+      { code: 'review_findings', title: '资料审查情况', source: 'review_findings' },
+      { code: 'correction_summary', title: '补正闭环', source: 'corrections' },
+      { code: 'evidence_refs', title: '证据引用', source: 'evidence_links' }
+    ],
+    null,
+    2
+  )
+
+const resetReportTemplateForm = (template?: ReportTemplate) => {
+  reportTemplateForm.id = template?.id || ''
+  reportTemplateForm.name = template?.name || '工程监检资料审查报告'
+  reportTemplateForm.version = template?.version || '2026.06'
+  reportTemplateForm.status = template?.status || 'draft'
+  reportTemplateForm.businessPackId = template?.businessPackId || DEFAULT_PIPELINE_BUSINESS_PACK_ID
+  reportTemplateForm.businessPackVersion = template?.businessPackVersion || '2026.06'
+  reportTemplateForm.exportTypes = template?.exportTypes?.length
+    ? [...template.exportTypes]
+    : ['report']
+  reportTemplateForm.sectionsText = template?.sections
+    ? JSON.stringify(template.sections, null, 2)
+    : defaultReportSections()
+  reportTemplateForm.etag = template?.etag || ''
+  reportTemplateOperationError.value = ''
+}
+
+const buildReportTemplatePayload = (): ReportTemplateSavePayload | null => {
+  if (!reportTemplateForm.name.trim()) {
+    ElMessage.warning('请填写报告模板名称')
+    return null
+  }
+  if (!reportTemplateForm.exportTypes.length) {
+    ElMessage.warning('请至少选择一种导出类型')
+    return null
+  }
+  try {
+    const sections = JSON.parse(reportTemplateForm.sectionsText)
+    if (
+      !Array.isArray(sections) ||
+      !sections.length ||
+      sections.some(
+        (item) =>
+          !item ||
+          typeof item !== 'object' ||
+          typeof item.code !== 'string' ||
+          !item.code.trim() ||
+          typeof item.title !== 'string' ||
+          !item.title.trim()
+      )
+    ) {
+      ElMessage.warning('章节 JSON 必须是非空数组，每项必须包含 code 和 title')
+      return null
+    }
+    return {
+      name: reportTemplateForm.name.trim(),
+      version: reportTemplateForm.version.trim() || '2026.06',
+      status: reportTemplateForm.status,
+      businessPackId: reportTemplateForm.businessPackId.trim() || DEFAULT_PIPELINE_BUSINESS_PACK_ID,
+      businessPackVersion: reportTemplateForm.businessPackVersion.trim() || undefined,
+      exportTypes: [...reportTemplateForm.exportTypes],
+      sections: sections.map((item) => ({
+        code: String(item.code).trim(),
+        title: String(item.title).trim(),
+        source: String(item.source || '').trim()
+      }))
+    }
+  } catch {
+    ElMessage.warning('章节配置不是有效 JSON')
+    return null
+  }
+}
+
 const diffChangeTypeLabel = (type: 'added' | 'changed' | 'removed') => {
   const map = {
     added: '新增',
@@ -1584,6 +1704,145 @@ const handleDeletePromptTemplate = async (template: PromptTemplate) => {
   }
 }
 
+const loadReportTemplates = async () => {
+  reportTemplateLoading.value = true
+  reportTemplateError.value = ''
+  try {
+    const res = await listReportTemplatesApi({
+      keyword: reportTemplateFilters.keyword || undefined,
+      status: reportTemplateFilters.status || undefined,
+      page: tableStates.reportTemplates.page,
+      pageSize: tableStates.reportTemplates.pageSize
+    })
+    if (!res) {
+      reportTemplateError.value = getRequestErrorMessage(
+        undefined,
+        '报告模板列表加载失败，已保留当前筛选条件。'
+      )
+      return
+    }
+    reportTemplates.value = applyPagination(tableStates.reportTemplates, res.data)
+  } catch (error) {
+    reportTemplateError.value = getRequestErrorMessage(
+      error,
+      '报告模板列表加载失败，已保留当前筛选条件。'
+    )
+  } finally {
+    reportTemplateLoading.value = false
+  }
+}
+
+const handleReportTemplateFilter = () => {
+  tableStates.reportTemplates.page = 1
+  loadReportTemplates()
+}
+
+const handleReportTemplateSortChange = (event: { prop?: string; order?: TableSortOrder }) => {
+  tableStates.reportTemplates.prop = event.prop || ''
+  tableStates.reportTemplates.order = event.order || null
+}
+
+const openReportTemplateDialog = (template?: ReportTemplate) => {
+  reportTemplateDialogMode.value = template ? 'edit' : 'create'
+  resetReportTemplateForm(template)
+  reportTemplateDialogVisible.value = true
+}
+
+const handleSaveReportTemplate = async () => {
+  const payload = buildReportTemplatePayload()
+  if (!payload) return
+  reportTemplateSaving.value = true
+  reportTemplateOperationError.value = ''
+  try {
+    const res =
+      reportTemplateDialogMode.value === 'create'
+        ? await createReportTemplateApi(payload)
+        : await updateReportTemplateApi(reportTemplateForm.id, payload, {
+            etag: reportTemplateForm.etag
+          })
+    if (!res) {
+      reportTemplateOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('报告模板保存')
+      )
+      return
+    }
+    ElMessage.success(
+      reportTemplateDialogMode.value === 'create' ? '报告模板已新增' : '报告模板已保存'
+    )
+    reportTemplateDialogVisible.value = false
+    await Promise.all([loadReportTemplates(), loadAuditLogs()])
+  } catch (error) {
+    reportTemplateOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('报告模板保存')
+    )
+  } finally {
+    reportTemplateSaving.value = false
+  }
+}
+
+const handlePublishReportTemplate = async (template: ReportTemplate) => {
+  reportTemplateSaving.value = true
+  reportTemplateOperationError.value = ''
+  try {
+    const res = await publishReportTemplateApi(
+      template.id,
+      { reason: '后台发布报告模板。' },
+      { etag: template.etag }
+    )
+    if (!res) {
+      reportTemplateOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('报告模板发布')
+      )
+      return
+    }
+    ElMessage.success('报告模板已发布并用于后续报告生成')
+    await Promise.all([loadReportTemplates(), loadAuditLogs()])
+  } catch (error) {
+    reportTemplateOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('报告模板发布')
+    )
+  } finally {
+    reportTemplateSaving.value = false
+  }
+}
+
+const handleDeleteReportTemplate = async (template: ReportTemplate) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除报告模板「${template.name}」？生产状态模板不能删除。`,
+      '删除报告模板',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  reportTemplateSaving.value = true
+  reportTemplateOperationError.value = ''
+  try {
+    const res = await deleteReportTemplateApi(template.id, { etag: template.etag })
+    if (!res) {
+      reportTemplateOperationError.value = getRequestErrorMessage(
+        undefined,
+        buildOperationFailureMessage('报告模板删除')
+      )
+      return
+    }
+    ElMessage.success('报告模板已删除')
+    await Promise.all([loadReportTemplates(), loadAuditLogs()])
+  } catch (error) {
+    reportTemplateOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('报告模板删除')
+    )
+  } finally {
+    reportTemplateSaving.value = false
+  }
+}
+
 const loadProjectDetail = async (projectId: string) => {
   projectDetailLoading.value = true
   projectDetailError.value = ''
@@ -1684,7 +1943,9 @@ const loadData = async () => {
             ? loadIntegrationContract()
             : activeTab.value === 'prompt-template'
               ? loadPromptTemplates()
-              : Promise.resolve(true)
+              : activeTab.value === 'report-template'
+                ? loadReportTemplates()
+                : Promise.resolve(true)
     const [tabResult, configRes] = await Promise.all([tabRequest, getAdminConfigOverviewApi()])
     if (configRes) {
       const nextOverview = { ...configRes.data }
@@ -4172,6 +4433,149 @@ onMounted(() => {
           </ElCard>
         </ElTabPane>
 
+        <ElTabPane label="报告模板管理" name="report-template">
+          <ElCard shadow="never" class="panel" v-loading="reportTemplateLoading">
+            <template #header>
+              <div class="panel-header">
+                <span>报告模板管理</span>
+                <ElSpace>
+                  <ElTag type="info" effect="plain"
+                    >{{ tableStates.reportTemplates.total }} 个</ElTag
+                  >
+                  <ElButton type="primary" plain size="small" @click="openReportTemplateDialog()">
+                    新增模板
+                  </ElButton>
+                </ElSpace>
+              </div>
+            </template>
+            <div v-if="reportTemplateOperationError" class="local-error local-error--compact">
+              <ElAlert
+                type="error"
+                show-icon
+                :closable="false"
+                :title="reportTemplateOperationError"
+              />
+            </div>
+            <div v-if="reportTemplateError" class="local-error local-error--compact">
+              <ElAlert type="error" show-icon :closable="false" :title="reportTemplateError" />
+              <ElButton
+                type="primary"
+                plain
+                :loading="reportTemplateLoading"
+                @click="loadReportTemplates"
+              >
+                重新加载
+              </ElButton>
+            </div>
+            <div class="prompt-template-filter-bar">
+              <ElInput
+                v-model="reportTemplateFilters.keyword"
+                clearable
+                placeholder="搜索模板名称、版本或业务包"
+                @keyup.enter="handleReportTemplateFilter"
+              />
+              <ElSelect
+                v-model="reportTemplateFilters.status"
+                clearable
+                placeholder="状态"
+                @change="handleReportTemplateFilter"
+              >
+                <ElOption label="草稿" value="draft" />
+                <ElOption label="生产" value="production" />
+                <ElOption label="已停用" value="retired" />
+              </ElSelect>
+              <ElButton
+                type="primary"
+                :loading="reportTemplateLoading"
+                @click="handleReportTemplateFilter"
+              >
+                筛选
+              </ElButton>
+              <ElButton :loading="reportTemplateLoading" @click="loadReportTemplates">
+                刷新
+              </ElButton>
+            </div>
+            <ElTable
+              :data="sortedRows(reportTemplates, tableStates.reportTemplates)"
+              border
+              height="430"
+              empty-text="暂无报告模板"
+              @sort-change="handleReportTemplateSortChange"
+            >
+              <ElTableColumn
+                prop="name"
+                label="模板名称"
+                min-width="230"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn prop="version" label="版本" width="110" sortable="custom" />
+              <ElTableColumn prop="status" label="状态" width="100" sortable="custom">
+                <template #default="{ row }">
+                  <ElTag :type="promptTemplateStatusType(row.status)" size="small" effect="plain">
+                    {{ promptTemplateStatusLabel(row.status) }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="businessPackId"
+                label="业务包"
+                min-width="210"
+                show-overflow-tooltip
+                sortable="custom"
+              />
+              <ElTableColumn label="章节" width="90">
+                <template #default="{ row }">{{ row.sections?.length || 0 }} 项</template>
+              </ElTableColumn>
+              <ElTableColumn label="导出类型" min-width="230" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.exportTypes?.join('、') || '-' }}</template>
+              </ElTableColumn>
+              <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
+              <ElTableColumn label="操作" width="180" fixed="right">
+                <template #default="{ row }">
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="['production', '已发布'].includes(row.status)"
+                    @click="openReportTemplateDialog(row)"
+                  >
+                    编辑
+                  </ElButton>
+                  <ElButton
+                    link
+                    type="success"
+                    :disabled="['production', '已发布'].includes(row.status)"
+                    :loading="reportTemplateSaving"
+                    @click="handlePublishReportTemplate(row)"
+                  >
+                    发布
+                  </ElButton>
+                  <ElButton
+                    link
+                    type="danger"
+                    :disabled="['production', '已发布'].includes(row.status)"
+                    :loading="reportTemplateSaving"
+                    @click="handleDeleteReportTemplate(row)"
+                  >
+                    删除
+                  </ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElPagination
+              v-model:current-page="tableStates.reportTemplates.page"
+              v-model:page-size="tableStates.reportTemplates.pageSize"
+              class="table-pagination"
+              background
+              :page-sizes="tablePageSizes"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="tableStates.reportTemplates.total"
+              @size-change="handleReportTemplateFilter"
+              @current-change="loadReportTemplates"
+            />
+          </ElCard>
+        </ElTabPane>
+
         <ElTabPane label="细项配置" name="fine-config">
           <ElRow :gutter="16">
             <ElCol :xl="12" :lg="12" :md="24" :sm="24" :xs="24">
@@ -5603,6 +6007,87 @@ onMounted(() => {
             type="primary"
             :loading="promptTemplateSaving"
             @click="handleSavePromptTemplate"
+          >
+            保存模板
+          </ElButton>
+        </div>
+      </ElDrawer>
+
+      <ElDrawer
+        v-model="reportTemplateDialogVisible"
+        :title="reportTemplateDialogMode === 'create' ? '新增报告模板' : '编辑报告模板'"
+        size="min(820px, 94vw)"
+      >
+        <ElForm label-position="top" class="prompt-template-form">
+          <ElAlert
+            type="info"
+            show-icon
+            :closable="false"
+            title="发布后将替换同一业务包的生产模板；已生成报告保留当时的模板快照。"
+          />
+          <div v-if="reportTemplateOperationError" class="local-error local-error--compact">
+            <ElAlert
+              type="error"
+              show-icon
+              :closable="false"
+              :title="reportTemplateOperationError"
+            />
+          </div>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="12">
+              <ElFormItem label="模板名称">
+                <ElInput v-model="reportTemplateForm.name" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="6">
+              <ElFormItem label="版本">
+                <ElInput v-model="reportTemplateForm.version" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="6">
+              <ElFormItem label="状态">
+                <ElSelect v-model="reportTemplateForm.status">
+                  <ElOption label="草稿" value="draft" />
+                  <ElOption label="已停用" value="retired" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :xs="24" :sm="16">
+              <ElFormItem label="业务包 ID">
+                <ElInput v-model="reportTemplateForm.businessPackId" />
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="业务包版本">
+                <ElInput v-model="reportTemplateForm.businessPackVersion" />
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElFormItem label="允许的导出类型">
+            <ElCheckboxGroup v-model="reportTemplateForm.exportTypes">
+              <ElCheckbox value="report">报告</ElCheckbox>
+              <ElCheckbox value="archive-package">归档包</ElCheckbox>
+              <ElCheckbox value="evidence-package">证据包</ElCheckbox>
+            </ElCheckboxGroup>
+          </ElFormItem>
+          <ElFormItem label="章节配置 JSON">
+            <ElInput
+              v-model="reportTemplateForm.sectionsText"
+              type="textarea"
+              :rows="16"
+              resize="vertical"
+              placeholder='[{"code":"project_summary","title":"项目概况","source":"project"}]'
+            />
+          </ElFormItem>
+        </ElForm>
+        <div class="drawer-footer">
+          <ElButton @click="reportTemplateDialogVisible = false">取消</ElButton>
+          <ElButton
+            type="primary"
+            :loading="reportTemplateSaving"
+            @click="handleSaveReportTemplate"
           >
             保存模板
           </ElButton>
