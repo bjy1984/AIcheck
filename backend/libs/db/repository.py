@@ -36,7 +36,13 @@ from libs.security.tenant import (
     tenant_id_for_record,
 )
 
-from .seed import ROLE_ACTIONS, ROLE_NODE_MAP, ensure_inspection_project_members, fresh_state
+from .seed import (
+    ROLE_ACTIONS,
+    ROLE_NODE_MAP,
+    ensure_inspection_project_members,
+    ensure_test_project_members,
+    fresh_state,
+)
 
 
 STATE_COLLECTIONS = {
@@ -2316,6 +2322,12 @@ class InMemoryRepository:
             loaded.get("tree_nodes", []),
         ):
             changed = True
+        if ensure_test_project_members(
+            loaded.get("projects", []),
+            loaded.setdefault("project_members", []),
+            loaded.get("tree_nodes", []),
+        ):
+            changed = True
         return changed
 
     def persistence_object_id(self, collection_name: str, doc: dict[str, Any], index: int) -> str:
@@ -2552,11 +2564,16 @@ class InMemoryRepository:
             for scope, payload in idempotency_rows
         }
         self.apply_tenant_scope()
-        backfilled = (
-            self.apply_seed_compatibility_defaults(self.state)
-            if selected_state_keys is None and demo_data_enabled()
-            else False
-        )
+        backfilled = False
+        if selected_state_keys is None:
+            if demo_data_enabled():
+                backfilled = self.apply_seed_compatibility_defaults(self.state)
+            else:
+                backfilled = ensure_test_project_members(
+                    self.state.get("projects", []),
+                    self.state.setdefault("project_members", []),
+                    self.state.get("tree_nodes", []),
+                )
         if not has_project_seed and demo_data_enabled():
             self.flush_to_sqlite()
         elif backfilled:
@@ -2887,11 +2904,16 @@ class InMemoryRepository:
                 for item in self.state.get("knowledge_vectors", [])
                 if isinstance(item, dict) and item.get("id")
             }
-            backfilled = (
-                self.apply_seed_compatibility_defaults(self.state)
-                if selected_state_keys is None and demo_data_enabled()
-                else False
-            )
+            backfilled = False
+            if selected_state_keys is None:
+                if demo_data_enabled():
+                    backfilled = self.apply_seed_compatibility_defaults(self.state)
+                else:
+                    backfilled = ensure_test_project_members(
+                        self.state.get("projects", []),
+                        self.state.setdefault("project_members", []),
+                        self.state.get("tree_nodes", []),
+                    )
             # psycopg starts a transaction for the SELECTs above when autocommit is off.
             # End that read transaction before any writer tries to flush the JSONB state.
             self.sync_postgres.commit()

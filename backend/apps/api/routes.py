@@ -2775,8 +2775,8 @@ def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
     user_id = request_user_id(request)
     if not user_id:
         return None
-    auth_user = getattr(request.state, "auth_user", None) if claims else None
-    auth_org_name = str((auth_user or {}).get("orgName") or (auth_user or {}).get("orgUnitName") or "").strip()
+    # Membership is keyed by userId + role. orgName on the member record is display/metadata
+    # and may differ across projects for the same test account (e.g. HDCP vs GDLNG contractor orgs).
     member = next(
         (
             item
@@ -2786,11 +2786,6 @@ def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
             and item.get("userId") == user_id
             and item.get("role") == role
             and item.get("status") == "启用"
-            and (
-                not auth_org_name
-                or not str(item.get("orgName") or "").strip()
-                or str(item.get("orgName") or "").strip() == auth_org_name
-            )
         ),
         None,
     )
