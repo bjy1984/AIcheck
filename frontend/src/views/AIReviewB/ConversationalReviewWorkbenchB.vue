@@ -324,9 +324,7 @@ const evidenceToReference = (evidence: EvidenceLink): ReviewBReference => ({
 })
 
 const visibleEvidenceFacts = (evidence: EvidenceLink) =>
-  (evidence.evidenceFacts || []).filter(
-    (fact) => fact.formalEvidenceEligible && fact.quotedText
-  )
+  (evidence.evidenceFacts || []).filter((fact) => fact.formalEvidenceEligible && fact.quotedText)
 
 const workspaceMessageReferences = computed<ReviewBReference[]>(() => [
   ...(workspace.value?.basisSnapshot || [])
@@ -1157,9 +1155,8 @@ onBeforeUnmount(() => {
                     class="content-card evidence-card"
                   >
                     <h3
-                      ><ElIcon><Files /></ElIcon>{{
-                        'title' in block ? block.title || '证据候选' : '证据候选'
-                      }}</h3
+                      ><ElIcon><Files /></ElIcon
+                      >{{ 'title' in block ? block.title || '证据候选' : '证据候选' }}</h3
                     >
                     <div
                       v-for="evidence in blockItems<EvidenceLink>(block)"
