@@ -8,6 +8,7 @@ from temporalio.worker import Worker
 
 from apps.review_worker.activities import apply_review_workflow_command_activity, run_review_graph_activity
 from apps.review_worker.outbox import database_url, run_audit_anchor_loop, run_outbox_relay, run_worker_heartbeat_loop
+from apps.review_worker.raw_vault_relay import run_raw_vault_relay
 from apps.review_worker.workflows import ReviewRunWorkflow
 
 
@@ -33,7 +34,8 @@ async def main() -> None:
     relay_task = asyncio.create_task(run_outbox_relay(client), name="review-workflow-outbox-relay")
     anchor_task = asyncio.create_task(run_audit_anchor_loop(), name="audit-chain-anchor-writer")
     heartbeat_task = asyncio.create_task(run_worker_heartbeat_loop(), name="review-worker-heartbeat")
-    tasks = {worker_task, relay_task, anchor_task, heartbeat_task}
+    raw_vault_task = asyncio.create_task(run_raw_vault_relay(), name="raw-vault-relay")
+    tasks = {worker_task, relay_task, anchor_task, heartbeat_task, raw_vault_task}
     try:
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:

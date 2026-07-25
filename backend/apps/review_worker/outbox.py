@@ -285,6 +285,7 @@ def write_worker_heartbeat(dsn: str) -> None:
         "taskQueue": os.getenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow"),
         "outboxRelay": True,
         "auditAnchorWriter": True,
+        "rawVaultRelay": True,
     }
     with psycopg.connect(dsn, autocommit=False) as connection:
         connection.execute(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,14 @@ from urllib.parse import unquote, urlencode, urlparse
 from libs.contracts.responses import SERVER_TZ
 
 
-LOGICAL_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts", "audit-anchors")
+LOGICAL_BUCKETS = (
+    "documents",
+    "previews",
+    "exports",
+    "ocr-artifacts",
+    "audit-anchors",
+    "agent-raw-vault",
+)
 DEFAULT_BUCKETS = LOGICAL_BUCKETS
 BUCKET_ENV_KEYS = {
     "documents": "AICHECK_MINIO_DOCUMENTS_BUCKET",
@@ -18,11 +26,23 @@ BUCKET_ENV_KEYS = {
     "exports": "AICHECK_MINIO_EXPORTS_BUCKET",
     "ocr-artifacts": "AICHECK_MINIO_OCR_ARTIFACTS_BUCKET",
     "audit-anchors": "AICHECK_MINIO_AUDIT_ANCHORS_BUCKET",
+    "agent-raw-vault": "AICHECK_RAW_VAULT_BUCKET",
 }
 
 
 class ObjectStorageUnavailable(RuntimeError):
     """Raised when production mode requires object storage but no signed URL can be created."""
+
+
+@dataclass(frozen=True)
+class StoredObjectVersion:
+    bucket: str
+    object_name: str
+    version_id: str | None
+    etag: str | None
+    byte_length: int
+    sha256: str
+    legal_hold: bool
 
 
 class ObjectStorage:
@@ -107,7 +127,7 @@ class ObjectStorage:
         object_lock_enabled = os.getenv("AICHECK_AUDIT_ANCHOR_OBJECT_LOCK", "false").lower() == "true"
         for logical, bucket in self.bucket_names.items():
             if not client.bucket_exists(bucket):
-                if logical == "audit-anchors" and object_lock_enabled:
+                if (logical == "audit-anchors" and object_lock_enabled) or logical == "agent-raw-vault":
                     client.make_bucket(bucket, object_lock=True)
                 else:
                     client.make_bucket(bucket)
@@ -206,6 +226,71 @@ class ObjectStorage:
                 query["etag"] = str(result.etag)
             reference = f"{reference}?{urlencode(query)}"
         return reference
+
+    def put_locked_bytes(
+        self,
+        bucket: str,
+        object_name: str,
+        data: bytes,
+        *,
+        content_type: str,
+    ) -> StoredObjectVersion:
+        client = self.client()
+        if client is None:
+            raise ObjectStorageUnavailable("Raw Vault 对象存储不可用。")
+        self.ensure_buckets()
+        import hashlib
+        import io
+
+        physical_bucket = self.bucket_name(bucket)
+        physical_object_name = self.object_name(object_name)
+        result = client.put_object(
+            physical_bucket,
+            physical_object_name,
+            io.BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
+        version_id = str(getattr(result, "version_id", "") or "").strip() or None
+        if not version_id:
+            raise ObjectStorageUnavailable("Raw Vault bucket 未返回版本 ID，无法保证永久留存。")
+        response = client.get_object(
+            physical_bucket,
+            physical_object_name,
+            version_id=version_id,
+        )
+        try:
+            stored = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+        expected_hash = "sha256:" + hashlib.sha256(data).hexdigest()
+        stored_hash = "sha256:" + hashlib.sha256(stored).hexdigest()
+        if stored != data or stored_hash != expected_hash:
+            raise ObjectStorageUnavailable("Raw Vault 对象回读校验失败。")
+        client.enable_object_legal_hold(
+            physical_bucket,
+            physical_object_name,
+            version_id=version_id,
+        )
+        legal_hold = bool(
+            client.is_object_legal_hold_enabled(
+                physical_bucket,
+                physical_object_name,
+                version_id=version_id,
+            )
+        )
+        if not legal_hold:
+            raise ObjectStorageUnavailable("Raw Vault 对象 Legal Hold 未生效。")
+        return StoredObjectVersion(
+            bucket=physical_bucket,
+            object_name=physical_object_name,
+            version_id=version_id,
+            etag=str(getattr(result, "etag", "") or "").strip() or None,
+            byte_length=len(stored),
+            sha256=stored_hash,
+            legal_hold=True,
+        )
 
     def remove_object(self, bucket: str, object_name: str) -> bool:
         client = self.client()
