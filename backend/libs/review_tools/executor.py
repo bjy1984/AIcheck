@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Callable
+from uuid import uuid4
+
+from libs.raw_vault import (
+    RawCapture,
+    RawCaptureContext,
+    capture_tool_error,
+    capture_tool_request,
+    capture_tool_result,
+)
 
 
 ToolRunner = Callable[[str, dict[str, Any]], dict[str, Any]]
@@ -59,6 +68,9 @@ def execute_node_tool_plan(
     document_version_ids: list[str] | None = None,
     evidence_facts: list[dict[str, Any]] | None = None,
     evidence_refs: list[dict[str, Any]] | None = None,
+    raw_capture: RawCapture | None = None,
+    raw_context: RawCaptureContext | None = None,
+    turn: int | None = None,
 ) -> dict[str, Any]:
     facts = facts or {}
     tool_arguments = tool_arguments or {}
@@ -86,7 +98,41 @@ def execute_node_tool_plan(
                 evidence_facts=evidence_facts or [],
                 evidence_refs=evidence_refs or [],
             )
-            outputs.append(tool_runner(tool_name, arguments))
+            tool_call_id = f"TOOL-{uuid4().hex[:16].upper()}"
+            capture_context = (
+                RawCaptureContext(**{**raw_context.__dict__, "turn": turn})
+                if raw_context is not None and turn is not None
+                else raw_context
+            )
+            if capture_context is not None:
+                capture_tool_request(
+                    raw_capture,
+                    capture_context,
+                    tool_name,
+                    arguments,
+                    provider_tool_call_id=tool_call_id,
+                )
+            try:
+                output = tool_runner(tool_name, arguments)
+            except Exception as exc:
+                if capture_context is not None:
+                    capture_tool_error(
+                        raw_capture,
+                        capture_context,
+                        tool_name,
+                        exc,
+                        provider_tool_call_id=tool_call_id,
+                    )
+                raise
+            if capture_context is not None:
+                capture_tool_result(
+                    raw_capture,
+                    capture_context,
+                    tool_name,
+                    output,
+                    provider_tool_call_id=tool_call_id,
+                )
+            outputs.append(output)
         atomic_results.append(
             {
                 "atomicCheckId": item.get("atomicCheckId"),

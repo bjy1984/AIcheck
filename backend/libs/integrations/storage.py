@@ -292,6 +292,21 @@ class ObjectStorage:
             legal_hold=True,
         )
 
+    def get_bytes(self, bucket: str, object_name: str, *, version_id: str | None = None) -> bytes:
+        client = self.client()
+        if client is None:
+            raise ObjectStorageUnavailable("对象存储不可用，无法读取 Raw Vault。")
+        response = client.get_object(
+            self.bucket_name(bucket),
+            self.object_name(object_name),
+            version_id=version_id,
+        )
+        try:
+            return bytes(response.read())
+        finally:
+            response.close()
+            response.release_conn()
+
     def remove_object(self, bucket: str, object_name: str) -> bool:
         client = self.client()
         if client is None:

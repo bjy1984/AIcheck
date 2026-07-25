@@ -55,6 +55,7 @@ from libs.integrations.errors import IntegrationServiceError, safe_reason
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
+from libs.raw_vault import raw_context_from_record
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
     OFFLINE_EMBEDDING_MODEL,
@@ -2018,6 +2019,12 @@ def qwen_structured_pipeline_call(
             temperature=0.0,
             max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "8192")),
             timeout=float(os.getenv("AICHECK_OCR_QWEN_TIMEOUT_SECONDS", "180")),
+            _raw_capture_context=raw_context_from_record(
+                {**run, "pipelineRunId": run.get("id")},
+                model_call_attempt_id=str(attempt["id"]),
+                stage=str(attempt["stage"]),
+                turn=1,
+            ),
         )
         usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
         normalized_usage = normalize_model_usage(usage)
@@ -3265,6 +3272,12 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             messages,
             model=run.get("model") or "review-chat",
             temperature=0.1,
+            _raw_capture_context=raw_context_from_record(
+                run,
+                run_stream_id=str(run.get("reviewRunId") or run.get("id")),
+                stage="worker_review_chat",
+                turn=1,
+            ),
         )
         answer = QwenRuntimeClient.first_message_text(response) or "AI 复核完成，建议人工确认关键证据链。"
         message = ((response.get("choices") or [{}])[0].get("message") or {}) if isinstance(response.get("choices"), list) else {}
@@ -3441,6 +3454,12 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
                 messages,
                 model=model,
                 temperature=0.1,
+                _raw_capture_context=raw_context_from_record(
+                    run,
+                    run_stream_id=str(run.get("reviewRunId") or run.get("id")),
+                    stage="worker_model_comparison",
+                    turn=len(results) + 1,
+                ),
             )
             answer = QwenRuntimeClient.first_message_text(response)
             unsupported = unsupported_claims(answer or "", [str(item) for item in grounding_input.get("evidenceTextCorpus") or []])

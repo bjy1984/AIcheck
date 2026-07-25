@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 from uuid import uuid4
@@ -480,3 +480,205 @@ def raw_capture_from_environment() -> RawCapture | None:
         return None
     bucket = os.getenv("AICHECK_RAW_VAULT_BUCKET", DEFAULT_RAW_VAULT_BUCKET)
     return RawCapture(store=PostgresRawVaultStore(dsn, bucket=bucket))
+
+
+def raw_context_from_record(
+    record: dict[str, Any],
+    *,
+    run_stream_id: str | None = None,
+    model_call_attempt_id: str | None = None,
+    stage: str | None = None,
+    turn: int | None = None,
+) -> RawCaptureContext:
+    stream = str(
+        run_stream_id
+        or record.get("reviewRunId")
+        or record.get("pipelineRunId")
+        or record.get("aiRunId")
+        or record.get("id")
+        or ""
+    )
+    if not stream:
+        raise ValueError("raw vault run_stream_id is required")
+    return RawCaptureContext(
+        tenant_id=str(record.get("tenantId") or os.getenv("AICHECK_TENANT_ID") or "default"),
+        run_stream_id=stream,
+        project_id=str(record.get("projectId") or "") or None,
+        review_run_id=str(record.get("reviewRunId") or "") or None,
+        ai_run_id=str(record.get("aiRunId") or "") or None,
+        model_call_attempt_id=model_call_attempt_id,
+        stage=stage or (str(record.get("stage") or "") or None),
+        turn=turn,
+    )
+
+
+def postgres_events_for_run(
+    dsn: str,
+    tenant_id: str,
+    run_id: str,
+) -> tuple[list[CapturedRawEvent], int]:
+    import psycopg
+
+    with psycopg.connect(dsn) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, run_stream_id, event_type, sequence, has_payload,
+                   previous_event_hash, event_hash, metadata, created_at,
+                   project_id, review_run_id, ai_run_id, model_call_attempt_id,
+                   provider_tool_call_id, stage, turn, payload_media_type,
+                   payload_byte_length, payload_hash, object_bucket, object_key
+            FROM raw_vault_events
+            WHERE tenant_id = %s AND (review_run_id = %s OR run_stream_id = %s)
+            ORDER BY sequence
+            """,
+            (tenant_id, run_id, run_id),
+        ).fetchall()
+        events = [
+            CapturedRawEvent(
+                id=str(row[0]),
+                schema_version=RAW_EVENT_SCHEMA_VERSION,
+                tenant_id=tenant_id,
+                run_stream_id=str(row[1]),
+                event_type=str(row[2]),
+                sequence=int(row[3]),
+                has_payload=bool(row[4]),
+                previous_event_hash=str(row[5]),
+                event_hash=str(row[6]),
+                metadata=dict(row[7] or {}),
+                created_at=row[8].isoformat(),
+                project_id=row[9],
+                review_run_id=row[10],
+                ai_run_id=row[11],
+                model_call_attempt_id=row[12],
+                provider_tool_call_id=row[13],
+                stage=row[14],
+                turn=row[15],
+                payload_media_type=row[16],
+                payload_byte_length=row[17],
+                payload_hash=row[18],
+                object_bucket=row[19],
+                object_key=row[20],
+            )
+            for row in rows
+        ]
+        pending = connection.execute(
+            """
+            SELECT count(*)
+            FROM raw_vault_outbox o
+            JOIN raw_vault_events e ON e.tenant_id = o.tenant_id AND e.id = o.event_id
+            WHERE o.tenant_id = %s AND (e.review_run_id = %s OR e.run_stream_id = %s)
+              AND o.status <> 'hash_mismatch'
+            """,
+            (tenant_id, run_id, run_id),
+        ).fetchone()
+        return events, int(pending[0] if pending else 0)
+
+
+def postgres_pending_payload(dsn: str, tenant_id: str, event_id: str) -> bytes | None:
+    import psycopg
+
+    with psycopg.connect(dsn) as connection:
+        row = connection.execute(
+            "SELECT payload FROM raw_vault_outbox WHERE tenant_id = %s AND event_id = %s",
+            (tenant_id, event_id),
+        ).fetchone()
+        return bytes(row[0]) if row else None
+
+
+def capture_agent_turn(
+    capture: RawCapture | None,
+    context: RawCaptureContext,
+    event_type: str,
+    *,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    model_parameters: dict[str, Any] | None = None,
+) -> CapturedRawEvent | RawCaptureFailure | None:
+    if capture is None:
+        return None
+    return capture.capture_best_effort(
+        context,
+        event_type,
+        canonical_json_bytes(
+            {
+                "messages": messages,
+                "tools": tools or [],
+                "modelParameters": model_parameters or {},
+                "turn": context.turn,
+                "stage": context.stage,
+            }
+        ),
+        "application/json",
+    )
+
+
+def capture_tool_request(
+    capture: RawCapture | None,
+    context: RawCaptureContext,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    provider_tool_call_id: str,
+    raw_arguments: str | bytes | None = None,
+) -> CapturedRawEvent | RawCaptureFailure | None:
+    if capture is None:
+        return None
+    payload = (
+        raw_arguments.encode("utf-8")
+        if isinstance(raw_arguments, str)
+        else bytes(raw_arguments)
+        if raw_arguments is not None
+        else canonical_json_bytes(arguments)
+    )
+    return capture.capture_best_effort(
+        replace(context, provider_tool_call_id=provider_tool_call_id),
+        "tool.call.requested",
+        payload,
+        "application/json",
+        {"toolName": tool_name, "parsedArguments": arguments},
+    )
+
+
+def capture_tool_result(
+    capture: RawCapture | None,
+    context: RawCaptureContext,
+    tool_name: str,
+    result: Any,
+    *,
+    provider_tool_call_id: str,
+) -> CapturedRawEvent | RawCaptureFailure | None:
+    if capture is None:
+        return None
+    return capture.capture_best_effort(
+        replace(context, provider_tool_call_id=provider_tool_call_id),
+        "tool.call.completed",
+        canonical_json_bytes(result),
+        "application/json",
+        {"toolName": tool_name},
+    )
+
+
+def capture_tool_error(
+    capture: RawCapture | None,
+    context: RawCaptureContext,
+    tool_name: str,
+    exc: Exception,
+    *,
+    provider_tool_call_id: str,
+) -> CapturedRawEvent | RawCaptureFailure | None:
+    if capture is None:
+        return None
+    return capture.capture_best_effort(
+        replace(context, provider_tool_call_id=provider_tool_call_id),
+        "tool.call.failed",
+        canonical_json_bytes(
+            {
+                "exceptionType": type(exc).__name__,
+                "message": str(exc)[:500],
+                "phase": "tool_execution",
+                "toolName": tool_name,
+            }
+        ),
+        "application/json",
+        {"toolName": tool_name},
+    )
