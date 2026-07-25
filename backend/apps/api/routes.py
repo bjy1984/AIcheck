@@ -132,6 +132,17 @@ from libs.review_orchestrator.r20_r23_facts import (
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.raw_vault import (
+    capture_agent_turn,
+    capture_tool_error,
+    capture_tool_request,
+    capture_tool_result,
+    postgres_events_for_run,
+    postgres_pending_payload,
+    raw_context_from_record,
+    verify_event_chain,
+)
+from libs.raw_vault_export import build_raw_vault_export, build_raw_vault_summary
 from libs.runtime_readiness import production_runtime_status
 from libs.security.auth import (
     ROLE_DEFAULT_PATHS,
@@ -9054,6 +9065,36 @@ def review_conversation_llm_answer(
                 },
             )
             model_call_started_at = time.monotonic()
+            raw_context = raw_context_from_record(
+                {
+                    **session,
+                    "tenantId": tenant_id_for_record(session),
+                    "reviewRunId": (review_run or {}).get("reviewRunId")
+                    or (review_run or {}).get("id"),
+                    "projectId": project.get("id"),
+                },
+                run_stream_id=str(
+                    (review_run or {}).get("reviewRunId")
+                    or (review_run or {}).get("id")
+                    or session.get("id")
+                ),
+                model_call_attempt_id=f"{execution_id}-T{turn}",
+                stage="review_conversation_agent",
+                turn=turn,
+            )
+            capture_agent_turn(
+                getattr(client, "raw_capture", None),
+                raw_context,
+                "agent.turn.before_model",
+                messages=messages,
+                tools=REVIEW_CONVERSATION_AGENT_TOOLS,
+                model_parameters={
+                    "model": "review-chat",
+                    "toolChoice": "none" if final_turn else "auto",
+                    "temperature": 0.1,
+                    "maxTokens": 1200,
+                },
+            )
             response = client.chat_sync(
                 messages,
                 model="review-chat",
@@ -9065,6 +9106,7 @@ def review_conversation_llm_answer(
                     10.0,
                     float(os.getenv("AICHECK_REVIEW_CONVERSATION_TIMEOUT_SECONDS", "60")),
                 ),
+                _raw_capture_context=raw_context,
             )
             model_call_duration_ms = int((time.monotonic() - model_call_started_at) * 1000)
             last_provider = response.get("provider") or last_provider
@@ -9078,6 +9120,18 @@ def review_conversation_llm_answer(
             tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
             if final_turn:
                 tool_calls = []
+            assistant_message = {
+                "role": "assistant",
+                "content": message.get("content") or "",
+                "tool_calls": tool_calls,
+            }
+            capture_agent_turn(
+                getattr(client, "raw_capture", None),
+                raw_context,
+                "agent.turn.after_model",
+                messages=[*messages, assistant_message],
+                tools=REVIEW_CONVERSATION_AGENT_TOOLS,
+            )
             append_review_session_event(
                 session,
                 event_type="agent.model_call.completed",
@@ -9131,13 +9185,7 @@ def review_conversation_llm_answer(
                         "usage": total_usage,
                     },
                 }
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": message.get("content") or "",
-                    "tool_calls": tool_calls,
-                }
-            )
+            messages.append(assistant_message)
             for call in tool_calls:
                 function = call.get("function") if isinstance(call, dict) else {}
                 tool_name = str((function or {}).get("name") or "")
@@ -9146,6 +9194,15 @@ def review_conversation_llm_answer(
                     arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else dict(raw_arguments)
                 except (TypeError, ValueError, json.JSONDecodeError):
                     arguments = {}
+                provider_tool_call_id = str(call.get("id") or f"{execution_id}-{tool_call_count + 1}")
+                capture_tool_request(
+                    getattr(client, "raw_capture", None),
+                    raw_context,
+                    tool_name,
+                    arguments,
+                    provider_tool_call_id=provider_tool_call_id,
+                    raw_arguments=raw_arguments if isinstance(raw_arguments, str) else None,
+                )
                 tool_call_count += 1
                 call_signature = stable_hash_payload({"tool": tool_name, "arguments": arguments})
                 duplicate_call = call_signature in executed_tool_cache
@@ -9167,20 +9224,37 @@ def review_conversation_llm_answer(
                     output["duplicateCall"] = True
                     output["notice"] = "该工具已用相同参数调用过，本次直接返回缓存结果，请勿再重复调用。"
                 else:
-                    output = review_conversation_agent_tool_output(
-                        tool_name,
-                        arguments,
-                        session=session,
-                        project=project,
-                        node=node,
-                        basis=basis,
-                        basis_items=basis_items,
-                        readiness=readiness,
-                        evidence_links=evidence_links,
-                        review_run=review_run,
-                    )
+                    try:
+                        output = review_conversation_agent_tool_output(
+                            tool_name,
+                            arguments,
+                            session=session,
+                            project=project,
+                            node=node,
+                            basis=basis,
+                            basis_items=basis_items,
+                            readiness=readiness,
+                            evidence_links=evidence_links,
+                            review_run=review_run,
+                        )
+                    except Exception as exc:
+                        capture_tool_error(
+                            getattr(client, "raw_capture", None),
+                            raw_context,
+                            tool_name,
+                            exc,
+                            provider_tool_call_id=provider_tool_call_id,
+                        )
+                        raise
                     if isinstance(output, dict):
                         executed_tool_cache[call_signature] = repo.clone(output)
+                capture_tool_result(
+                    getattr(client, "raw_capture", None),
+                    raw_context,
+                    tool_name,
+                    output,
+                    provider_tool_call_id=provider_tool_call_id,
+                )
                 tool_duration_ms = int((time.monotonic() - tool_started_at) * 1000)
                 compact_output = repo.clone(output)
                 tool_summary = review_conversation_tool_result_summary(tool_name, output if isinstance(output, dict) else {})
@@ -9217,7 +9291,7 @@ def review_conversation_llm_answer(
                 messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": str(call.get("id") or f"{execution_id}-{tool_call_count}"),
+                        "tool_call_id": provider_tool_call_id,
                         "content": review_conversation_tool_message_content(compact_output),
                     }
                 )
@@ -17362,6 +17436,129 @@ def fde_project_audit_summary(project: dict[str, Any]) -> dict[str, Any]:
         "topBlockers": blockers[:3],
         "updatedAt": server_time(),
     }
+
+
+def _raw_vault_events(request: Request, review_run_id: str):
+    dsn = os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not dsn:
+        return [], 0
+    return postgres_events_for_run(dsn, request_tenant_id(request), review_run_id)
+
+
+def _raw_vault_payload(request: Request, event_id: str, events) -> bytes | None:
+    event = next((item for item in events if item.id == event_id), None)
+    if event is None or not event.has_payload:
+        return None
+    dsn = os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    pending = (
+        postgres_pending_payload(dsn, request_tenant_id(request), event_id)
+        if dsn
+        else None
+    )
+    if pending is not None:
+        return pending
+    version_id = next(
+        (
+            item.metadata.get("versionId")
+            for item in events
+            if item.event_type == "archive.payload.archived"
+            and item.metadata.get("sourceEventId") == event_id
+        ),
+        None,
+    )
+    return object_storage.get_bytes(
+        str(event.object_bucket),
+        str(event.object_key),
+        version_id=str(version_id) if version_id else None,
+    )
+
+
+@router.get("/fde/review-runs/{review_run_id}/raw-vault")
+def fde_raw_vault_summary(request: Request, review_run_id: str):
+    _, role_error = fde_error_unless_allowed(request)
+    if role_error:
+        return role_error
+    events, pending = _raw_vault_events(request, review_run_id)
+    summary = build_raw_vault_summary(events, pending_count=pending)
+    if not events:
+        summary.update({"reviewRunId": review_run_id, "status": "legacy_not_captured"})
+    repo.add_audit("查看 Agent 原始运行档案", "ReviewRun", review_run_id)
+    return ok(summary, request)
+
+
+@router.get("/fde/raw-vault/events/{event_id}/payload")
+def fde_raw_vault_payload(request: Request, event_id: str):
+    _, role_error = fde_error_unless_allowed(request)
+    if role_error:
+        return role_error
+    dsn = os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not dsn:
+        return fail(errors.NOT_FOUND, request)
+    tenant_id = request_tenant_id(request)
+    import psycopg
+
+    with psycopg.connect(dsn) as connection:
+        row = connection.execute(
+            "SELECT COALESCE(review_run_id, run_stream_id) FROM raw_vault_events WHERE tenant_id=%s AND id=%s",
+            (tenant_id, event_id),
+        ).fetchone()
+    if not row:
+        return fail(errors.NOT_FOUND, request)
+    events, _ = postgres_events_for_run(dsn, tenant_id, str(row[0]))
+    payload = _raw_vault_payload(request, event_id, events)
+    event = next((item for item in events if item.id == event_id), None)
+    if payload is None or event is None:
+        return fail(errors.NOT_FOUND, request)
+    repo.add_audit("读取 Agent 原始事件载荷", "RawVaultEvent", event_id)
+    return Response(
+        content=payload,
+        media_type=event.payload_media_type or "application/octet-stream",
+        headers={"X-Raw-Payload-SHA256": str(event.payload_hash)},
+    )
+
+
+@router.post("/fde/review-runs/{review_run_id}/raw-vault/verify")
+def fde_verify_raw_vault(request: Request, review_run_id: str):
+    _, role_error = fde_error_unless_allowed(request)
+    if role_error:
+        return role_error
+    events, _ = _raw_vault_events(request, review_run_id)
+    result = verify_event_chain(
+        events,
+        payload_loader=lambda event_id: _raw_vault_payload(request, event_id, events),
+    )
+    repo.add_audit("校验 Agent 原始运行档案", "ReviewRun", review_run_id)
+    return ok(
+        {
+            "status": result.status,
+            "eventCount": result.event_count,
+            "chainHead": result.chain_head,
+            "findings": result.findings,
+        },
+        request,
+    )
+
+
+@router.get("/fde/review-runs/{review_run_id}/raw-vault/export")
+def fde_export_raw_vault(request: Request, review_run_id: str):
+    _, role_error = fde_error_unless_allowed(request)
+    if role_error:
+        return role_error
+    events, _ = _raw_vault_events(request, review_run_id)
+    if not events:
+        return fail(errors.NOT_FOUND, request)
+    archive = build_raw_vault_export(
+        events,
+        payload_loader=lambda event_id: _raw_vault_payload(request, event_id, events),
+    )
+    repo.add_audit("导出 Agent 原始运行档案", "ReviewRun", review_run_id)
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{review_run_id}-raw-vault.zip"'
+        },
+    )
 
 
 @router.get("/fde/projects")

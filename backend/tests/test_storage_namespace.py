@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from libs.integrations.storage import ObjectStorage
+from libs.integrations.storage import ObjectStorage, StoredObjectVersion
 
 
 class FakeMinio:
@@ -11,7 +11,7 @@ class FakeMinio:
     def bucket_exists(self, bucket: str) -> bool:
         return bucket in self.buckets
 
-    def make_bucket(self, bucket: str) -> None:
+    def make_bucket(self, bucket: str, **_kwargs) -> None:
         self.buckets.add(bucket)
 
     def put_object(self, bucket: str, object_name: str, *_args, **_kwargs) -> None:
@@ -50,3 +50,74 @@ def test_explicit_bucket_name_works_without_prefix(monkeypatch) -> None:
     storage = ObjectStorage()
 
     assert storage.bucket_name("documents") == "isolated-documents"
+
+
+def test_locked_raw_vault_write_verifies_bytes_and_legal_hold(monkeypatch) -> None:
+    stored: dict[tuple[str, str], bytes] = {}
+
+    class Result:
+        version_id = "version-1"
+        etag = "etag-1"
+
+    class Response:
+        def __init__(self, data: bytes) -> None:
+            self.data = data
+
+        def read(self) -> bytes:
+            return self.data
+
+        def close(self) -> None:
+            pass
+
+        def release_conn(self) -> None:
+            pass
+
+    class LockedClient(FakeMinio):
+        def put_object(self, bucket: str, object_name: str, stream, *_args, **_kwargs):
+            stored[(bucket, object_name)] = stream.read()
+            return Result()
+
+        def get_object(self, bucket: str, object_name: str, *, version_id: str | None = None):
+            assert version_id == "version-1"
+            return Response(stored[(bucket, object_name)])
+
+        def enable_object_legal_hold(
+            self,
+            bucket: str,
+            object_name: str,
+            version_id: str | None = None,
+        ) -> None:
+            self.puts.append(("legal-hold", bucket, object_name, version_id))
+
+        def is_object_legal_hold_enabled(
+            self,
+            bucket: str,
+            object_name: str,
+            version_id: str | None = None,
+        ) -> bool:
+            self.puts.append(("legal-hold-check", bucket, object_name, version_id))
+            return True
+
+    monkeypatch.setenv("AICHECK_MINIO_ENDPOINT", "minio:9000")
+    monkeypatch.setenv("AICHECK_RAW_VAULT_BUCKET", "raw-locked")
+    storage = ObjectStorage()
+    storage._client = LockedClient()
+
+    result = storage.put_locked_bytes(
+        "agent-raw-vault",
+        "TENANT-A/RRUN-1/event.json",
+        b"exact bytes",
+        content_type="application/json",
+    )
+
+    assert isinstance(result, StoredObjectVersion)
+    assert result.bucket == "raw-locked"
+    assert result.version_id == "version-1"
+    assert result.byte_length == 11
+    assert result.legal_hold is True
+    assert (
+        "legal-hold",
+        "raw-locked",
+        "TENANT-A/RRUN-1/event.json",
+        "version-1",
+    ) in storage._client.puts

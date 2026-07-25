@@ -6,6 +6,11 @@ from typing import Any
 import httpx
 
 from libs.integrations.errors import IntegrationServiceError
+from libs.integrations.raw_http_capture import (
+    post_json_with_raw_capture,
+    post_json_with_raw_capture_async,
+)
+from libs.raw_vault import RawCapture, RawCaptureContext, raw_capture_from_environment
 
 
 class LiteLLMClient:
@@ -14,6 +19,7 @@ class LiteLLMClient:
         base_url: str | None = None,
         api_key: str | None = None,
         transport: Any | None = None,
+        raw_capture: RawCapture | None = None,
     ) -> None:
         self.base_url = (base_url or os.getenv("LITELLM_BASE_URL") or "http://litellm-service:4000").rstrip("/")
         configured_key = api_key or os.getenv("LITELLM_API_KEY")
@@ -23,15 +29,22 @@ class LiteLLMClient:
         if self.api_key == "sk-aicheck-dev" and production_mode_enabled():
             raise RuntimeError("Default development LiteLLM key is not allowed in production mode")
         self.transport = transport
+        self.raw_capture = raw_capture if raw_capture is not None else raw_capture_from_environment()
 
     async def chat(self, messages: list[dict[str, str]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
+        raw_context = kwargs.pop("_raw_capture_context", None)
         client_kwargs = self._client_kwargs(timeout=60)
         try:
             async with httpx.AsyncClient(**client_kwargs) as client:
-                response = await client.post(
+                response = await post_json_with_raw_capture_async(
+                    client,
                     f"{self.base_url}/v1/chat/completions",
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={"model": model, "messages": messages, **kwargs},
+                    payload={"model": model, "messages": messages, **kwargs},
+                    capture=self.raw_capture,
+                    context=raw_context,
+                    provider="LiteLLM",
+                    operation="chat.completions",
                 )
         except httpx.HTTPError as exc:
             raise IntegrationServiceError("LiteLLM", "chat.completions", reason=exc.__class__.__name__) from exc
@@ -51,13 +64,19 @@ class LiteLLMClient:
         return self._response_json(response, "embeddings")
 
     def chat_sync(self, messages: list[dict[str, str]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
+        raw_context: RawCaptureContext | None = kwargs.pop("_raw_capture_context", None)
         client_kwargs = self._client_kwargs(timeout=60)
         try:
             with httpx.Client(**client_kwargs) as client:
-                response = client.post(
+                response = post_json_with_raw_capture(
+                    client,
                     f"{self.base_url}/v1/chat/completions",
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={"model": model, "messages": messages, **kwargs},
+                    payload={"model": model, "messages": messages, **kwargs},
+                    capture=self.raw_capture,
+                    context=raw_context,
+                    provider="LiteLLM",
+                    operation="chat.completions",
                 )
         except httpx.HTTPError as exc:
             raise IntegrationServiceError("LiteLLM", "chat.completions", reason=exc.__class__.__name__) from exc

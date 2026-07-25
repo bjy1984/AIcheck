@@ -10,6 +10,8 @@ import yaml
 
 from libs.integrations.errors import IntegrationServiceError, safe_reason
 from libs.integrations.litellm_client import LiteLLMClient
+from libs.integrations.raw_http_capture import post_json_with_raw_capture
+from libs.raw_vault import RawCapture, RawCaptureContext, raw_capture_from_environment
 
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "qwen_runtime.yaml"
@@ -127,10 +129,12 @@ class QwenRuntimeClient:
         config: dict[str, Any] | None = None,
         transport: Any | None = None,
         server_client: LiteLLMClient | None = None,
+        raw_capture: RawCapture | None = None,
     ) -> None:
         self.config = config or qwen_runtime_config()
         self.transport = transport
         self.server_client = server_client
+        self.raw_capture = raw_capture if raw_capture is not None else raw_capture_from_environment()
 
     def chat_sync(self, messages: list[dict[str, Any]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
         if self.config["mode"] == "server":
@@ -149,10 +153,11 @@ class QwenRuntimeClient:
         return LiteLLMClient.first_message_text(response)
 
     def _server_chat_sync(self, messages: list[dict[str, Any]], model: str, **kwargs: Any) -> dict[str, Any]:
-        client = self.server_client or LiteLLMClient()
+        client = self.server_client or LiteLLMClient(raw_capture=self.raw_capture)
         return client.chat_sync(messages, model=model, **kwargs)
 
     def _official_chat_sync(self, messages: list[dict[str, Any]], role_or_model: str, **kwargs: Any) -> dict[str, Any]:
+        raw_context: RawCaptureContext | None = kwargs.pop("_raw_capture_context", None)
         base_url = str(self.config.get("baseUrl") or "").rstrip("/")
         api_key_env = str(self.config.get("apiKeyEnv") or "QWEN_API_KEY")
         api_key = os.getenv(api_key_env)
@@ -166,10 +171,15 @@ class QwenRuntimeClient:
             client_kwargs["transport"] = self.transport
         try:
             with httpx.Client(**client_kwargs) as client:
-                response = client.post(
+                response = post_json_with_raw_capture(
+                    client,
                     f"{base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    json={"model": model, "messages": messages, **kwargs},
+                    payload={"model": model, "messages": messages, **kwargs},
+                    capture=self.raw_capture,
+                    context=raw_context,
+                    provider="Qwen official API",
+                    operation="chat.completions",
                 )
         except httpx.HTTPError as exc:
             raise IntegrationServiceError(

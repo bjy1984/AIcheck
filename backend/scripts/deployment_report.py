@@ -75,6 +75,9 @@ READ_ONLY_POST_ROUTES = {
     ("POST", "/api/business-packs/validate-all"),
     ("POST", "/fde/business-packs/validate-all"),
     ("POST", "/api/fde/business-packs/validate-all"),
+    ("POST", "/fde/review-runs/{review_run_id}/raw-vault/verify"),
+    ("POST", "/api/fde/review-runs/{review_run_id}/raw-vault/verify"),
+    ("POST", "/api/fde/review-runs/${reviewRunId}/raw-vault/verify"),
     ("POST", "/knowledge/retrieval-test"),
     ("POST", "/api/knowledge/retrieval-test"),
     ("POST", "/admin/config-diff/preview"),
@@ -178,7 +181,14 @@ CRITICAL_POSTGRES_INDEXES = [
     {"table": "aicheck_singletons", "fields": ["tenant_id", "name"], "unique": True},
     {"table": "idempotency_records", "fields": ["tenant_id", "scope"], "unique": True},
 ]
-REQUIRED_STORAGE_BUCKETS = ("documents", "previews", "exports", "ocr-artifacts", "audit-anchors")
+REQUIRED_STORAGE_BUCKETS = (
+    "documents",
+    "previews",
+    "exports",
+    "ocr-artifacts",
+    "audit-anchors",
+    "agent-raw-vault",
+)
 REQUIRED_STORAGE_METHODS = {
     "ensure_buckets": {
         "params": [],

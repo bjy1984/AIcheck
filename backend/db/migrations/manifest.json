@@ -5,6 +5,11 @@
       "version": "0001_backend_audit_hardening",
       "sha256": "dcec5ebd532a09c3d55e4ce3685530c7fb2446665836900dbdee9362b914fc23",
       "immutable": true
+    },
+    {
+      "version": "0002_agent_raw_event_vault",
+      "sha256": "0cff3107ba3e826fcbabb5bb91d9c34ccbdd8230fb7e0c53cac15d0d4cb8ae00",
+      "immutable": true
     }
   ]
 }

@@ -73,6 +73,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/ai/runs/[^/]+/feedback$", "ai:adopt"),
     ("POST", r"/fde/ai-runs/[^/]+/replay$", "fde:ai-run:replay"),
     ("POST", r"/fde/review-runs/[^/]+/(replay|shadow-run)$", "fde:ai-run:replay"),
+    ("POST", r"/fde/review-runs/[^/]+/raw-vault/verify$", "fde:dashboard:view"),
     ("POST", r"/fde/document-ai/shadow-runs/[^/]+/pipeline-comparison$", "fde:ai-run:replay"),
     ("POST", r"/fde/review-runs/[^/]+/feedback$", "fde:feedback:triage"),
     ("POST", r"/fde/access-grants/request$", "fde:security:manage"),
