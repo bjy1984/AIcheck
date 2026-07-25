@@ -73,7 +73,7 @@ Node IDs, rule IDs, stages, and Agent versions are event metadata. They do not s
 
 Application code receives insert and select behavior only. PostgreSQL rejects update and delete operations on this table through database-level enforcement. Corrections and state changes are represented by later events.
 
-Capture events are inserted immediately with a deterministic target bucket and object key, but without a MinIO version ID. A later `archive.payload.archived` event records the verified MinIO version ID. Delivery state is therefore never updated on the original event.
+Events declare whether they carry a raw payload. Payload-bearing capture events are inserted immediately with a deterministic target bucket and object key, but without a MinIO version ID. A later metadata-only `archive.payload.archived` event records the verified MinIO version ID. Metadata-only integrity events participate in the Hash chain but do not create another outbox payload, preventing recursive archival. Delivery state is therefore never updated on the original event.
 
 ### 3. Durable Delivery Outbox
 
@@ -188,6 +188,7 @@ Every event includes:
   "eventType": "llm.response.received",
   "turn": 2,
   "sequence": 8,
+  "hasPayload": true,
   "payloadMediaType": "application/json",
   "payloadByteLength": 18452,
   "payloadHash": "sha256:...",
@@ -199,11 +200,11 @@ Every event includes:
 }
 ```
 
-Nullable correlation fields are omitted when they do not apply. `sequence` is strictly increasing within a raw run stream. Concurrent writers acquire a run-scoped PostgreSQL advisory transaction lock before assigning the next sequence and chain head.
+Nullable correlation and payload-location fields are omitted when they do not apply. `sequence` is strictly increasing within a raw run stream. Concurrent writers acquire a run-scoped PostgreSQL advisory transaction lock before assigning the next sequence and chain head.
 
 `eventHash` binds the immutable event metadata, `payloadHash`, and `previousEventHash`. It does not include mutable delivery-attempt fields, which live in the outbox.
 
-`archive.payload.archived` carries the source event ID, verified object version ID, stored byte length, stored payload hash, and delivery timestamp. `archive.payload.retry_scheduled` carries retry metadata without changing either the source event or a prior delivery event.
+`archive.payload.archived` is a metadata-only event carrying the source event ID, verified object version ID, stored byte length, stored payload hash, and delivery timestamp. `archive.payload.retry_scheduled` is also metadata-only and carries retry metadata without changing either the source event or a prior delivery event. Neither metadata-only event creates an outbox row.
 
 ## Data Flow
 
