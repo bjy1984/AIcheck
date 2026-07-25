@@ -446,6 +446,7 @@ class DeploymentConfigValidator:
                 "AICHECK_OCR_BASE_URL",
                 "AICHECK_EMBEDDING_PROVIDER",
                 "AICHECK_EMBEDDING_API_BASE",
+                "AICHECK_RAW_VAULT_BUCKET",
             },
             "worker-service": {
                 "AICHECK_STRICT_PRODUCTION",
@@ -486,6 +487,9 @@ class DeploymentConfigValidator:
                 "AICHECK_QWEN_ALLOW_SERVER_FALLBACK",
                 "QWEN_API_BASE",
                 "QWEN_API_KEY",
+                "AICHECK_RAW_VAULT_BUCKET",
+                "AICHECK_RAW_VAULT_POLL_SECONDS",
+                "AICHECK_RAW_VAULT_BATCH_SIZE",
             },
             "workflow-migrate": {
                 "LANGGRAPH_CHECKPOINT_DSN",

@@ -2170,6 +2170,22 @@ python scripts/verify_deployment.py --strict-production --roles admin,inspection
 
 如果升级包含数据结构变化，先做 PostgreSQL 三个数据库和 MinIO 备份。当前后端启动时会自动补齐 PostgreSQL 状态表和索引；上线窗口内如发现数据结构不兼容，应按第 10 节恢复整套备份，而不是只回滚代码。
 
+### Agent 原始运行档案
+
+生产环境必须保留 `raw_vault_events`、`raw_vault_outbox` 和
+`AICHECK_RAW_VAULT_BUCKET`。该 MinIO 桶必须在创建时启用版本控制和 Object
+Lock；归档中继会回读校验每个对象并设置 Legal Hold，应用不提供修改或删除接口。
+
+业务执行优先：对象存储短时不可用时，模型或工具不会重复执行，原始字节继续保留在
+PostgreSQL outbox，运行状态显示 `archive_incomplete`。监控 `/api/healthz` 的
+`rawVault.pendingCount`、`pendingBytes`、`oldestPendingAgeSeconds` 和
+`integrityFailureCount`；严格生产就绪同时要求迁移表、锁定桶和
+`rawVaultRelay` worker 心跳正常。
+
+备份与恢复必须同时覆盖 PostgreSQL 和完整的 MinIO 版本历史。恢复后从 FDE 导出
+Raw Vault ZIP，并使用 `python scripts/verify_raw_vault_export.py <archive.zip>`
+重算载荷哈希、事件链和清单根，校验通过后才能重新开放审查业务。
+
 ## 12. 常见问题
 
 ### 前端仍然显示 mock 数据
