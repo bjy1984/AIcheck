@@ -9,6 +9,7 @@ from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.raw_http_capture import (
     post_json_with_raw_capture,
     post_json_with_raw_capture_async,
+    stream_chat_completion_with_raw_capture,
 )
 from libs.raw_vault import RawCapture, RawCaptureContext, raw_capture_from_environment
 
@@ -65,7 +66,32 @@ class LiteLLMClient:
 
     def chat_sync(self, messages: list[dict[str, str]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
         raw_context: RawCaptureContext | None = kwargs.pop("_raw_capture_context", None)
+        stream_handler = kwargs.pop("stream_handler", None)
         client_kwargs = self._client_kwargs(timeout=60)
+        if stream_handler is not None:
+            # SSE 串流模式：增量转发给 stream_handler，最终组装为与非串流一致的响应结构。
+            stream_payload: dict[str, Any] = {"model": model, "messages": messages, "stream": True, **kwargs}
+            if os.getenv("AICHECK_LLM_STREAM_INCLUDE_USAGE", "true").strip().lower() != "false":
+                stream_payload.setdefault("stream_options", {"include_usage": True})
+            try:
+                with httpx.Client(**client_kwargs) as client:
+                    return stream_chat_completion_with_raw_capture(
+                        client,
+                        f"{self.base_url}/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {self.api_key}"},
+                        payload=stream_payload,
+                        capture=self.raw_capture,
+                        context=raw_context,
+                        provider="LiteLLM",
+                        operation="chat.completions",
+                        on_delta=stream_handler,
+                    )
+            except httpx.HTTPStatusError as exc:
+                raise IntegrationServiceError(
+                    "LiteLLM", "chat.completions", status_code=exc.response.status_code
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise IntegrationServiceError("LiteLLM", "chat.completions", reason=exc.__class__.__name__) from exc
         try:
             with httpx.Client(**client_kwargs) as client:
                 response = post_json_with_raw_capture(

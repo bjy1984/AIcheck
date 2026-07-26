@@ -141,16 +141,27 @@ export type ReviewBContentBlock =
     }
   | { type: string; [key: string]: unknown }
 
+export type ReviewBTokenUsage = {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+}
+
 export type ReviewBMessage = {
   id: string
   sessionId: string
   sequence: number
   role: 'user' | 'assistant' | 'system'
   messageType: string
+  /** running：后台 Agent 执行中（占位消息）；completed/cancelled/failed：已终态。 */
+  status?: 'running' | 'completed' | 'cancelled' | 'failed' | string
   contentBlocks: ReviewBContentBlock[]
   execution?: {
     executionId?: string
-    mode: 'llm_agent' | 'deterministic_command' | 'deterministic_fallback' | string
+    mode: 'llm_agent' | 'deterministic_command' | 'deterministic_fallback' | 'cancelled' | string
     modelCalled: boolean
     agentEnabled: boolean
     toolCallCount: number
@@ -158,7 +169,7 @@ export type ReviewBMessage = {
     provider?: string | null
     model?: string | null
     failureReason?: string | null
-    usage?: Record<string, number>
+    usage?: ReviewBTokenUsage
   }
   reviewRunId?: string | null
   createdBy?: string

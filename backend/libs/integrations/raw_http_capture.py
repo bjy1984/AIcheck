@@ -92,3 +92,131 @@ async def post_json_with_raw_capture_async(
         {**metadata, "statusCode": response.status_code},
     )
     return response
+
+
+def stream_chat_completion_with_raw_capture(
+    client: httpx.Client,
+    url: str,
+    *,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    capture: RawCapture | None,
+    context: RawCaptureContext | None,
+    provider: str,
+    operation: str,
+    on_delta: Any = None,
+) -> dict[str, Any]:
+    """以 SSE 串流执行 OpenAI 兼容 chat/completions，组装为一次性响应结构并全程留痕。
+
+    on_delta(kind, text)：kind ∈ {"content", "reasoning"}，仅转发供应商实际返回的增量，
+    不伪造任何内容。工具调用分片按 index 聚合还原为完整 tool_calls。
+    组装结果带 "streamed": true 标记，usage 依赖供应商支持 stream_options.include_usage。
+    """
+    body = json_transport_bytes(payload)
+    metadata: dict[str, Any] = {"provider": provider, "operation": operation, "stream": True}
+    _capture(capture, context, "llm.request.prepared", body, "application/json", metadata)
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_calls_acc: dict[int, dict[str, Any]] = {}
+    finish_reason: Any = None
+    usage: dict[str, Any] | None = None
+    response_id: Any = None
+    model_name: Any = None
+    try:
+        with client.stream("POST", url, headers=headers, content=body) as response:
+            if response.status_code >= 400:
+                error_body = response.read()
+                _capture(
+                    capture,
+                    context,
+                    "llm.response.error",
+                    error_body,
+                    response.headers.get("content-type", "application/octet-stream"),
+                    {**metadata, "statusCode": response.status_code},
+                )
+                raise httpx.HTTPStatusError(
+                    f"stream request failed with status {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+            for line in response.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    chunk = json.loads(data)
+                except ValueError:
+                    continue
+                if not isinstance(chunk, dict):
+                    continue
+                response_id = response_id or chunk.get("id")
+                model_name = model_name or chunk.get("model")
+                if isinstance(chunk.get("usage"), dict):
+                    usage = chunk["usage"]
+                for choice in chunk.get("choices") or []:
+                    if not isinstance(choice, dict):
+                        continue
+                    finish_reason = choice.get("finish_reason") or finish_reason
+                    delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else {}
+                    piece = delta.get("content")
+                    if piece:
+                        content_parts.append(str(piece))
+                        if on_delta is not None:
+                            on_delta("content", str(piece))
+                    reasoning_piece = delta.get("reasoning_content") or delta.get("reasoning")
+                    if reasoning_piece:
+                        reasoning_parts.append(str(reasoning_piece))
+                        if on_delta is not None:
+                            on_delta("reasoning", str(reasoning_piece))
+                    for fragment in delta.get("tool_calls") or []:
+                        if not isinstance(fragment, dict):
+                            continue
+                        try:
+                            index = int(fragment.get("index") or 0)
+                        except (TypeError, ValueError):
+                            index = 0
+                        slot = tool_calls_acc.setdefault(
+                            index,
+                            {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+                        )
+                        if fragment.get("id"):
+                            slot["id"] = fragment["id"]
+                        function = (
+                            fragment.get("function") if isinstance(fragment.get("function"), dict) else {}
+                        )
+                        if function.get("name"):
+                            slot["function"]["name"] = str(function["name"])
+                        if function.get("arguments"):
+                            slot["function"]["arguments"] += str(function["arguments"])
+    except httpx.HTTPStatusError:
+        raise
+    except httpx.HTTPError as exc:
+        error_body = canonical_json_bytes(
+            {"exceptionType": type(exc).__name__, "phase": "transport", "provider": provider, "stream": True}
+        )
+        _capture(capture, context, "llm.transport.error", error_body, "application/json", metadata)
+        raise
+    message: dict[str, Any] = {"role": "assistant", "content": "".join(content_parts)}
+    if reasoning_parts:
+        message["reasoning_content"] = "".join(reasoning_parts)
+    if tool_calls_acc:
+        message["tool_calls"] = [tool_calls_acc[key] for key in sorted(tool_calls_acc)]
+    assembled: dict[str, Any] = {
+        "id": response_id,
+        "model": model_name,
+        "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
+        "streamed": True,
+    }
+    if usage:
+        assembled["usage"] = usage
+    _capture(
+        capture,
+        context,
+        "llm.response.assembled_from_stream",
+        json_transport_bytes(assembled),
+        "application/json",
+        {**metadata, "statusCode": 200},
+    )
+    return assembled

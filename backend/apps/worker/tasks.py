@@ -3522,3 +3522,43 @@ def export_package(self, export_id: str) -> dict[str, Any]:
         repo.append_task_log(task, "info", "导出任务完成。")
     flush_state()
     return {"exportId": export_id, "status": task.get("status") if task else "missing"}
+
+
+@celery_app.task(bind=True, max_retries=0)
+def review_conversation_execute(
+    self,
+    session_id: str,
+    assistant_message_id: str,
+    user_text: str,
+    context: dict[str, Any],
+    execution_id: str,
+) -> dict[str, Any]:
+    """Version B 对话 Agent 的队列执行入口：在 worker 进程内运行 Agent Loop。
+
+    上下文快照由 API 进程构建后原样传入（纯 JSON 数据）；worker 只负责执行与回填。
+    不做 Celery 层自动重试：模型级有限重试已在 Loop 内部实现，任务级重复执行会
+    产生重复回答。跨进程取消经 agent_executions.cancelRequested 生效。
+    """
+    load_state()
+    # 延迟导入：避免 worker 启动即加载 API 层；对话 Agent 辅助函数目前仍在 routes.py，
+    # 抽离到 libs/review_conversation/ 是后续正式工作流化的一部分。
+    from apps.api import routes as api_routes
+
+    entry: dict[str, Any] = {
+        "executionId": execution_id,
+        "sessionId": session_id,
+        "cancelEvent": threading.Event(),
+        "startedAtMonotonic": time.monotonic(),
+        "startedAt": server_time(),
+        "thread": None,
+    }
+    with api_routes.REVIEW_SESSION_EXECUTION_LOCK:
+        api_routes.REVIEW_SESSION_ACTIVE_EXECUTIONS[session_id] = entry
+    api_routes.run_review_conversation_execution(
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
+        user_text=user_text,
+        context=context,
+        execution_entry=entry,
+    )
+    return {"executionId": execution_id, "sessionId": session_id}

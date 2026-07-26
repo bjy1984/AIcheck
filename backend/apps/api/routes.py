@@ -86,6 +86,7 @@ from libs.material_targeting import (
     run_material_targeting,
     set_node_evidence_link_manual_status,
 )
+from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness, build_document_ocr_readiness
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
 from libs.review_orchestrator import (
@@ -268,6 +269,7 @@ REVIEW_LIVE_STATE_KEYS = {
     "review_sessions",
     "review_messages",
     "review_session_events",
+    "agent_executions",
     "retrieval_traces",
     "rule_check_results",
     "ai_feedback",
@@ -7906,6 +7908,30 @@ def ensure_review_session_state() -> None:
     repo.state.setdefault("review_sessions", [])
     repo.state.setdefault("review_messages", [])
     repo.state.setdefault("review_session_events", [])
+    repo.state.setdefault("agent_executions", [])
+    repo.state.setdefault("review_session_tool_memory", [])
+
+
+def persist_review_session_records(**records_by_state_key: list[dict[str, Any]]) -> None:
+    """把会话相关记录即时提交到共享持久化存储。
+
+    多 worker 部署下，SSE/轮询读取端点通过 live-read refresh 从 Postgres 取事件与消息，
+    因此写入方必须在产生记录时立即定向落库，而不是等请求结束的整体 flush。
+    即时同步失败不中断业务（请求级 flush 仍是兜底）。
+    """
+    if not postgres_persistence_configured():
+        return
+    payload = {
+        state_key: [repo.clone(item) for item in items if isinstance(item, dict)]
+        for state_key, items in records_by_state_key.items()
+        if items
+    }
+    if not payload:
+        return
+    try:
+        flush_mutation_records(payload, [])
+    except Exception:  # noqa: BLE001 - 定向同步失败时由请求级 flush 兜底
+        pass
 
 
 def review_session_view(session: dict[str, Any]) -> dict[str, Any]:
@@ -8027,6 +8053,8 @@ def append_review_session_event(
         "createdAt": server_time(),
     }
     repo.state["review_session_events"].append(event)
+    # 事件即时落库：后台执行线程产生的事件必须立刻对其他 worker 的 SSE/轮询可见。
+    persist_review_session_records(review_session_events=[event])
     return event
 
 
@@ -8343,6 +8371,354 @@ REVIEW_CONVERSATION_CONTEXT_TOOLS = [
 REVIEW_CONVERSATION_AGENT_TOOLS = build_review_conversation_agent_tools(
     context_tools=REVIEW_CONVERSATION_CONTEXT_TOOLS,
 )
+
+# ---- Conversation Agent 会话级执行注册表（进程内） ----
+# 同一 ReviewSession 同一时刻只允许一个 Agent 执行；cancel_execution 动作通过
+# cancelEvent 协同取消，Agent Loop 在每轮模型调用前与每个工具调用前检查该信号。
+REVIEW_SESSION_EXECUTION_LOCK = threading.Lock()
+REVIEW_SESSION_ACTIVE_EXECUTIONS: dict[str, dict[str, Any]] = {}
+REVIEW_SESSION_EXECUTION_STALE_SECONDS = float(
+    os.getenv("AICHECK_REVIEW_CONVERSATION_EXECUTION_STALE_SECONDS", "900")
+)
+
+
+class ReviewConversationCancelled(Exception):
+    """用户请求停止当前 Conversation Agent 回答。"""
+
+
+def acquire_review_session_execution(session_id: str, execution_id: str) -> dict[str, Any] | None:
+    """注册会话级执行槽。成功返回执行记录；该会话已有活跃执行时返回 None。
+
+    执行线程已退出或超过陈旧阈值的残留槽位会被回收，避免异常退出后会话永久锁死。
+
+    Postgres 模式下同时做跨进程 best-effort 互斥：其他 worker 心跳仍新鲜的 running
+    执行记录视为占用。注意「检查—再登记」并非原子操作，仍存在毫秒级竞态窗口；
+    完全原子性需要 DB 唯一约束或 advisory lock（见 AGENT_IMPLEMENTATION_REVIEW.md）。
+    """
+    if postgres_persistence_configured():
+        try:
+            refresh_state_from_postgres_for_live_read({"agent_executions"})
+        except Exception:  # noqa: BLE001 - 刷新失败退回本地视图
+            pass
+        for record in repo.state.get("agent_executions", []):
+            if (
+                str(record.get("sessionId") or "") == session_id
+                and str(record.get("status") or "") == "running"
+                and str(record.get("id") or "") != execution_id
+                and agent_execution_heartbeat_fresh(record)
+            ):
+                return None
+    now = time.monotonic()
+    with REVIEW_SESSION_EXECUTION_LOCK:
+        existing = REVIEW_SESSION_ACTIVE_EXECUTIONS.get(session_id)
+        if existing is not None:
+            started = float(existing.get("startedAtMonotonic") or 0.0)
+            thread = existing.get("thread")
+            thread_alive = bool(thread is not None and thread.is_alive())
+            if thread_alive and now - started < REVIEW_SESSION_EXECUTION_STALE_SECONDS:
+                return None
+            REVIEW_SESSION_ACTIVE_EXECUTIONS.pop(session_id, None)
+        entry: dict[str, Any] = {
+            "executionId": execution_id,
+            "sessionId": session_id,
+            "cancelEvent": threading.Event(),
+            "startedAtMonotonic": now,
+            "startedAt": server_time(),
+            "thread": None,
+        }
+        REVIEW_SESSION_ACTIVE_EXECUTIONS[session_id] = entry
+        return entry
+
+
+def release_review_session_execution(session_id: str, execution_id: str) -> None:
+    with REVIEW_SESSION_EXECUTION_LOCK:
+        existing = REVIEW_SESSION_ACTIVE_EXECUTIONS.get(session_id)
+        if existing is not None and existing.get("executionId") == execution_id:
+            REVIEW_SESSION_ACTIVE_EXECUTIONS.pop(session_id, None)
+
+
+def active_review_session_execution_view(session_id: str) -> dict[str, Any] | None:
+    with REVIEW_SESSION_EXECUTION_LOCK:
+        entry = REVIEW_SESSION_ACTIVE_EXECUTIONS.get(session_id)
+        if entry is None:
+            return None
+        return {
+            "executionId": entry.get("executionId"),
+            "startedAt": entry.get("startedAt"),
+        }
+
+
+def review_conversation_execution_mode() -> str:
+    """background：请求立即返回占位消息，Agent Loop 在后台线程执行；inline：同步执行（兼容/测试）。"""
+    return (
+        os.getenv("AICHECK_REVIEW_CONVERSATION_EXECUTION_MODE", "background").strip().lower()
+    )
+
+
+# 斜线命令精确匹配：只有显式以斜线命令开头的输入才路由到确定性回答。
+# 自然语言问题（即使包含“检索证据”“查看条款”等字样）一律交给 Agent 处理，
+# 避免快捷命令劫持普通提问。
+REVIEW_CONVERSATION_SLASH_COMMANDS: dict[str, str] = {
+    "/检索证据": "search_evidence",
+    "/补充证据": "search_evidence",
+    "/标准条款": "explain_basis",
+    "/解释依据": "explain_basis",
+    "/解释规则": "explain_basis",
+    "/查看条款": "explain_basis",
+    "/草拟意见": "draft_opinion",
+    "/意见草稿": "draft_opinion",
+}
+
+
+def review_conversation_slash_command(user_text: str) -> str | None:
+    stripped = user_text.strip()
+    if not stripped.startswith("/"):
+        return None
+    head = stripped.split(maxsplit=1)[0]
+    return REVIEW_CONVERSATION_SLASH_COMMANDS.get(head)
+
+
+# ---- 持久化 Agent 执行记录（agent_executions） ----
+
+
+def record_agent_execution_started(
+    *,
+    execution_id: str,
+    session: dict[str, Any],
+    assistant_message_id: str,
+    review_run_id: str | None,
+    execution_mode: str,
+) -> dict[str, Any]:
+    ensure_review_session_state()
+    record = {
+        "id": execution_id,
+        "schemaVersion": "ReviewAgentExecution@1",
+        "sessionId": session.get("id"),
+        "projectId": session.get("projectId"),
+        "nodeId": session.get("nodeId"),
+        "reviewRunId": review_run_id,
+        "assistantMessageId": assistant_message_id,
+        "executionMode": execution_mode,
+        "status": "running",
+        "cancelRequested": False,
+        "turnCount": 0,
+        "toolCallCount": 0,
+        "failureReason": None,
+        "startedAt": server_time(),
+        "startedEpoch": time.time(),
+        "heartbeatAt": server_time(),
+        "heartbeatEpoch": time.time(),
+        "finishedAt": None,
+        "tenantId": tenant_id_for_record(session),
+        "createdAt": server_time(),
+        "updatedAt": server_time(),
+    }
+    repo.state["agent_executions"].insert(0, record)
+    persist_review_session_records(agent_executions=[record])
+    return record
+
+
+def finalize_agent_execution_record(execution_id: str, **updates: Any) -> dict[str, Any] | None:
+    record = repo.find_one("agent_executions", execution_id)
+    if not record:
+        return None
+    record.update(updates)
+    if not record.get("finishedAt"):
+        record["finishedAt"] = server_time()
+    record["updatedAt"] = server_time()
+    persist_review_session_records(agent_executions=[record])
+    return record
+
+
+def recover_interrupted_agent_executions(session: dict[str, Any]) -> None:
+    """进程重启后，把仍标记为 running 但没有内存执行槽的执行记录收敛为 interrupted。
+
+    同时把对应的占位 assistant 消息终结为 failed，避免前端永远等待。
+    """
+    ensure_review_session_state()
+    session_id = str(session.get("id") or "")
+    with REVIEW_SESSION_EXECUTION_LOCK:
+        active = REVIEW_SESSION_ACTIVE_EXECUTIONS.get(session_id)
+        active_id = str((active or {}).get("executionId") or "")
+    for record in repo.state.get("agent_executions", []):
+        if str(record.get("sessionId") or "") != session_id:
+            continue
+        if str(record.get("status") or "") != "running":
+            continue
+        if str(record.get("id") or "") == active_id:
+            continue
+        if agent_execution_heartbeat_fresh(record):
+            # 心跳仍新鲜：该执行由其他进程（另一 worker / Celery）持有，不得误判为中断。
+            continue
+        record["status"] = "interrupted"
+        record["failureReason"] = "EXECUTION_INTERRUPTED"
+        record["finishedAt"] = server_time()
+        record["updatedAt"] = server_time()
+        persist_review_session_records(agent_executions=[record])
+        message = repo.find_one(
+            "review_messages", str(record.get("assistantMessageId") or "")
+        )
+        if message is not None and message.get("status") == "running":
+            message["status"] = "failed"
+            message["contentBlocks"] = [
+                {
+                    "type": "text",
+                    "text": "该回答执行因服务重启中断，请重新发送问题。",
+                }
+            ]
+            message["execution"] = {
+                **(message.get("execution") or {}),
+                "failureReason": "EXECUTION_INTERRUPTED",
+            }
+            message["sequence"] = next_review_session_sequence("review_messages", session_id)
+            message["updatedAt"] = server_time()
+            persist_review_session_records(review_messages=[message])
+        append_review_session_event(
+            session,
+            event_type="agent.execution.interrupted",
+            title="检测到中断的 AI 执行，已标记为失败",
+            payload={"executionId": record.get("id")},
+        )
+
+
+# ---- 会话级工具结果记忆 ----
+# 同一会话内，不同消息之间复用只读/确定性工具结果；上下文动作（选证据、切换
+# ReviewRun 等）会递增 toolMemoryRevision，旧版本条目自动失效。
+
+REVIEW_SESSION_TOOL_MEMORY_LIMIT = max(
+    8, int(os.getenv("AICHECK_REVIEW_CONVERSATION_TOOL_MEMORY_LIMIT", "40"))
+)
+# 聚合整条判定链的工具不进入记忆：体量大、且应反映最新证据状态。
+REVIEW_SESSION_TOOL_MEMORY_EXCLUDED_TOOLS = {"run_node_formal_judgment"}
+
+
+def review_session_tool_memory_revision(session: dict[str, Any]) -> int:
+    return int(session.get("toolMemoryRevision") or 0)
+
+
+def load_review_session_tool_memory(session: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    ensure_review_session_state()
+    revision = review_session_tool_memory_revision(session)
+    memory: dict[str, dict[str, Any]] = {}
+    for item in repo.state.get("review_session_tool_memory", []):
+        if item.get("sessionId") != session.get("id"):
+            continue
+        if int(item.get("memoryRevision") if item.get("memoryRevision") is not None else -1) != revision:
+            continue
+        signature = str(item.get("signature") or "")
+        if signature:
+            memory[signature] = item
+    return memory
+
+
+def store_review_session_tool_memory(
+    session: dict[str, Any],
+    *,
+    signature: str,
+    tool_name: str,
+    summary: str,
+    output: dict[str, Any],
+) -> None:
+    ensure_review_session_state()
+    entries = repo.state["review_session_tool_memory"]
+    session_id = session.get("id")
+    revision = review_session_tool_memory_revision(session)
+    existing = next(
+        (
+            item
+            for item in entries
+            if item.get("sessionId") == session_id
+            and item.get("signature") == signature
+            and int(item.get("memoryRevision") if item.get("memoryRevision") is not None else -1) == revision
+        ),
+        None,
+    )
+    if existing is not None:
+        existing["summary"] = summary
+        existing["output"] = compact_llm_payload(repo.clone(output))
+        existing["updatedAt"] = server_time()
+        return
+    entries.insert(
+        0,
+        {
+            "id": f"RTMEM-{uuid4().hex[:10].upper()}",
+            "sessionId": session_id,
+            "memoryRevision": revision,
+            "signature": signature,
+            "toolName": tool_name,
+            "summary": summary,
+            "output": compact_llm_payload(repo.clone(output)),
+            "createdAt": server_time(),
+            "updatedAt": server_time(),
+        },
+    )
+    session_entries = [item for item in entries if item.get("sessionId") == session_id]
+    for stale in session_entries[REVIEW_SESSION_TOOL_MEMORY_LIMIT:]:
+        entries.remove(stale)
+
+
+# ---- 心跳、跨进程取消与模型错误分类 ----
+
+REVIEW_SESSION_HEARTBEAT_STALE_SECONDS = max(
+    30.0, float(os.getenv("AICHECK_REVIEW_CONVERSATION_HEARTBEAT_STALE_SECONDS", "180"))
+)
+
+
+def agent_execution_heartbeat_fresh(record: dict[str, Any]) -> bool:
+    """心跳仍新鲜（epoch 秒差在阈值内）视为该执行仍在某个进程内存活。"""
+    epoch = record.get("heartbeatEpoch") or record.get("startedEpoch")
+    try:
+        value = float(epoch)
+    except (TypeError, ValueError):
+        # 无 epoch（旧记录或数据损坏）视为不新鲜，允许恢复流程收敛。
+        return False
+    return (time.time() - value) < REVIEW_SESSION_HEARTBEAT_STALE_SECONDS
+
+
+def touch_agent_execution_heartbeat(execution_id: str) -> None:
+    record = repo.find_one("agent_executions", execution_id)
+    if record is None:
+        return
+    record["heartbeatEpoch"] = time.time()
+    record["heartbeatAt"] = server_time()
+    record["updatedAt"] = server_time()
+    persist_review_session_records(agent_executions=[record])
+
+
+def review_conversation_cancel_requested(execution_id: str) -> bool:
+    """跨进程取消：cancel_execution 动作把 cancelRequested 写入执行记录，
+    Loop 每轮从共享存储刷新后检查，Celery worker / 其他进程也能被取消。"""
+    if not execution_id:
+        return False
+    if postgres_persistence_configured():
+        try:
+            refresh_state_from_postgres_for_live_read({"agent_executions"})
+        except Exception:  # noqa: BLE001 - 刷新失败时退回本地视图
+            pass
+    record = repo.find_one("agent_executions", execution_id)
+    return bool(record is not None and record.get("cancelRequested"))
+
+
+def review_conversation_model_failure_kind(exc: Exception) -> tuple[str, bool]:
+    """把模型调用异常归类为 (failureReason, 是否可重试)。
+
+    可重试：超时/连接类传输错误、HTTP 5xx、HTTP 429；不可重试：其余 4xx 与业务性错误。
+    """
+    if isinstance(exc, IntegrationServiceError):
+        if exc.status_code is not None:
+            status = int(exc.status_code)
+            retryable = status >= 500 or status == 429
+            return f"MODEL_HTTP_{status}", retryable
+        upper = str(exc.reason or exc.__class__.__name__).upper()
+        if "TIMEOUT" in upper:
+            return "MODEL_TIMEOUT", True
+        if any(token in upper for token in ("CONNECT", "NETWORK", "READ", "POOL", "REMOTEPROTOCOL")):
+            return "MODEL_NETWORK", True
+        return upper[:60] or "MODEL_ERROR", False
+    if isinstance(exc, TimeoutError):
+        return "MODEL_TIMEOUT", True
+    return str(exc.__class__.__name__)[:60], False
+
 
 DOCUMENT_SCOPED_CONVERSATION_TOOLS = {
     "get_document_ocr_result",
@@ -8914,6 +9290,8 @@ def review_conversation_llm_answer(
     review_run: dict[str, Any] | None,
     readiness: dict[str, Any],
     basis: dict[str, Any],
+    cancel_event: threading.Event | None = None,
+    execution_id: str | None = None,
 ) -> dict[str, Any]:
     mode = os.getenv(
         "AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION",
@@ -8949,6 +9327,7 @@ def review_conversation_llm_answer(
         for item in evidence_links
         if str(item.get("id") or "") in selected_ids
     ][:12]
+    session_tool_memory = load_review_session_tool_memory(session)
     recent_messages = []
     for item in repo.state.get("review_messages", []):
         if item.get("sessionId") != session.get("id"):
@@ -8981,7 +9360,10 @@ def review_conversation_llm_answer(
             }
             for item in basis_items[:12]
         ],
+        "fixedBasisTotal": len(basis_items),
         "nodeEvidence": evidence_context,
+        "nodeEvidenceTotal": len(evidence_links),
+        "nodeEvidenceTruncated": len(evidence_links) > len(evidence_context),
         "selectedEvidence": selected_evidence_context,
         "reviewRun": {
             "reviewRunId": (review_run or {}).get("reviewRunId") or (review_run or {}).get("id"),
@@ -8990,6 +9372,10 @@ def review_conversation_llm_answer(
             "findingDrafts": repo.clone((review_run or {}).get("findingDrafts") or [])[:8],
         },
         "recentConversation": recent_messages[-6:],
+        "previousToolFindings": [
+            {"toolName": item.get("toolName"), "summary": item.get("summary")}
+            for item in list(session_tool_memory.values())[:12]
+        ],
         "question": user_text,
     }
     messages: list[dict[str, Any]] = [
@@ -9018,6 +9404,9 @@ def review_conversation_llm_answer(
                 "[显示文本](basis:basisRefId) 或 [显示文本](evidence:evidenceLinkId)，其中显示文本"
                 "必须使用标准编号加条款号或证据文件名，不得直接展示 LOC 等内部定位编号，不得编造"
                 "引用 ID。表格中的依据行统一命名为“适用标准条款”。不要输出隐藏推理过程。"
+                "上下文中的 previousToolFindings 是本会话早前已完成的工具核查摘要，可直接引用其结论，"
+                "不要重复调用相同工具。nodeEvidenceTruncated 为 true 时说明证据清单已截断，"
+                "可用 search_node_evidence 按关键词检索未列出的证据。"
                 "请用简洁中文给出可核查的结论、依据和建议下一步。"
             ),
         },
@@ -9026,28 +9415,107 @@ def review_conversation_llm_answer(
             "content": json.dumps(context, ensure_ascii=False, default=str),
         },
     ]
-    execution_id = f"RAGENT-{uuid4().hex[:10].upper()}"
+    execution_id = execution_id or f"RAGENT-{uuid4().hex[:10].upper()}"
     max_turns = max(2, min(12, int(os.getenv("AICHECK_REVIEW_CONVERSATION_AGENT_MAX_TURNS", "8"))))
     tool_call_count = 0
     last_provider = None
     last_model = None
     last_turn = 0
-    total_usage: dict[str, int] = {}
+    total_usage = {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+    }
+    usage_available = False
     execution_started_at = time.monotonic()
     # 已执行工具调用缓存（去重）与工具成果轨迹（供超轮降级时拼接部分成果）。
+    # 缓存以会话级工具记忆做种子：同一会话早前消息的同参工具结果可直接复用。
     executed_tool_cache: dict[str, dict[str, Any]] = {}
+    memory_seeded_signatures: set[str] = set()
+    for memory_signature, memory_item in session_tool_memory.items():
+        memory_output = memory_item.get("output")
+        if isinstance(memory_output, dict):
+            executed_tool_cache[memory_signature] = repo.clone(memory_output)
+            memory_seeded_signatures.add(memory_signature)
     tool_trace: list[dict[str, str]] = []
+    # Token 预算与上下文压缩：估算超预算时，把最旧的工具结果替换为一行摘要；
+    # 压缩后仍超预算则提前强制输出最终结论。
+    input_token_budget = max(
+        4000, int(os.getenv("AICHECK_REVIEW_CONVERSATION_INPUT_TOKEN_BUDGET", "24000"))
+    )
+    compactable_tool_messages: list[dict[str, Any]] = []
+    # 估算校准：以供应商每轮实际返回的 usage.inputTokens 对字符估算做比例校准。
+    estimator_calibration = {"ratio": 1.0}
+
+    def _raw_prompt_chars_estimate() -> int:
+        # 粗略估算：中文约 1 字符/词元，ASCII 约 3-4 字符/词元，取 2 字符/词元的折中。
+        return sum(len(str(item.get("content") or "")) for item in messages) // 2
+
+    def _estimated_prompt_tokens() -> int:
+        return int(_raw_prompt_chars_estimate() * estimator_calibration["ratio"])
+
+    # 逐 token 串流（供应商支持时）与模型有限重试配置。
+    streaming_enabled = os.getenv(
+        "AICHECK_REVIEW_CONVERSATION_STREAMING", "true"
+    ).strip().lower() not in {"false", "0", "off"}
+    model_attempts = 1 + max(
+        0, min(2, int(os.getenv("AICHECK_REVIEW_CONVERSATION_MODEL_RETRIES", "1")))
+    )
     try:
         client = qwen_runtime_client()
         for turn in range(1, max_turns + 1):
             last_turn = turn
-            final_turn = turn == max_turns
+            if (cancel_event is not None and cancel_event.is_set()) or review_conversation_cancel_requested(execution_id):
+                raise ReviewConversationCancelled()
+            # 心跳：供跨进程互斥与恢复流程判断该执行仍存活。
+            touch_agent_execution_heartbeat(execution_id)
+            # 上下文压缩：估算超出输入预算时，从最旧的工具结果开始压缩为一行摘要。
+            compacted_count = 0
+            while _estimated_prompt_tokens() > input_token_budget and compactable_tool_messages:
+                stale = compactable_tool_messages.pop(0)
+                messages[stale["index"]]["content"] = (
+                    f"[工具结果已压缩] {stale['toolName']}：{stale['summary']}"
+                )
+                compacted_count += 1
+            if compacted_count:
+                append_review_session_event(
+                    session,
+                    event_type="agent.context.compacted",
+                    title=f"上下文超出 Token 预算，已压缩 {compacted_count} 条工具结果",
+                    payload={
+                        "executionId": execution_id,
+                        "turn": turn,
+                        "compactedCount": compacted_count,
+                        "estimatedPromptTokens": _estimated_prompt_tokens(),
+                        "inputTokenBudget": input_token_budget,
+                    },
+                )
+            budget_exhausted = (
+                _estimated_prompt_tokens() > input_token_budget
+                and not compactable_tool_messages
+            )
+            final_turn = turn == max_turns or budget_exhausted
             if final_turn:
+                if turn == max_turns:
+                    forced_reason = "已到达工具调用轮次上限"
+                else:
+                    forced_reason = "上下文长度已达 Token 预算上限"
+                    append_review_session_event(
+                        session,
+                        event_type="agent.budget.exhausted",
+                        title="Token 预算耗尽，强制输出最终结论",
+                        payload={
+                            "executionId": execution_id,
+                            "turn": turn,
+                            "estimatedPromptTokens": _estimated_prompt_tokens(),
+                            "inputTokenBudget": input_token_budget,
+                        },
+                    )
                 messages.append(
                     {
                         "role": "user",
                         "content": (
-                            "已到达工具调用轮次上限。请立即基于以上已获得的工具结果输出最终结论，"
+                            f"{forced_reason}。请立即基于以上已获得的工具结果输出最终结论，"
                             "不要再请求任何工具；如证据不足请明确说明缺口。"
                         ),
                     }
@@ -9095,31 +9563,126 @@ def review_conversation_llm_answer(
                     "maxTokens": 1200,
                 },
             )
-            response = client.chat_sync(
-                messages,
-                model="review-chat",
-                tools=REVIEW_CONVERSATION_AGENT_TOOLS,
-                tool_choice="none" if final_turn else "auto",
-                temperature=0.1,
-                max_tokens=1200,
-                timeout=max(
-                    10.0,
-                    float(os.getenv("AICHECK_REVIEW_CONVERSATION_TIMEOUT_SECONDS", "60")),
-                ),
-                _raw_capture_context=raw_context,
-            )
+            # 串流增量：把供应商实际返回的逐 token 片段缓冲后转发为 delta 事件。
+            stream_state: dict[str, Any] = {
+                "emitted": {"content": 0, "reasoning": 0},
+                "buffers": {"content": "", "reasoning": ""},
+            }
+
+            def _flush_stream_delta(kind: str, *, force: bool = False, turn: int = turn) -> None:
+                buffer = stream_state["buffers"].get(kind) or ""
+                if not buffer or (not force and len(buffer) < 320):
+                    return
+                stream_state["buffers"][kind] = ""
+                stream_state["emitted"][kind] += len(buffer)
+                append_review_session_event(
+                    session,
+                    event_type="agent.message.delta" if kind == "content" else "agent.reasoning.delta",
+                    title="回答内容增量" if kind == "content" else "模型推理流",
+                    payload={
+                        "executionId": execution_id,
+                        "turn": turn,
+                        "content": buffer[:2000],
+                        "streamed": True,
+                    },
+                )
+
+            def _stream_handler(kind: str, text: str) -> None:
+                if kind not in ("content", "reasoning"):
+                    return
+                stream_state["buffers"][kind] += str(text)
+                _flush_stream_delta(kind)
+
+            prompt_chars_estimate = _raw_prompt_chars_estimate()
+            response = None
+            for attempt in range(1, model_attempts + 1):
+                # 首次尝试可用串流；重试一律退回非串流，避免串流兼容性问题烧掉重试机会。
+                use_stream = streaming_enabled and attempt == 1
+                try:
+                    response = client.chat_sync(
+                        messages,
+                        model="review-chat",
+                        tools=REVIEW_CONVERSATION_AGENT_TOOLS,
+                        tool_choice="none" if final_turn else "auto",
+                        temperature=0.1,
+                        max_tokens=1200,
+                        timeout=max(
+                            10.0,
+                            float(os.getenv("AICHECK_REVIEW_CONVERSATION_TIMEOUT_SECONDS", "60")),
+                        ),
+                        _raw_capture_context=raw_context,
+                        **({"stream_handler": _stream_handler} if use_stream else {}),
+                    )
+                    break
+                except Exception as exc:  # noqa: BLE001 - 分类后决定是否重试
+                    failure_kind, retryable = review_conversation_model_failure_kind(exc)
+                    if attempt >= model_attempts or not retryable:
+                        raise
+                    append_review_session_event(
+                        session,
+                        event_type="agent.model_call.retried",
+                        title=f"模型调用失败（{failure_kind}），准备第 {attempt + 1} 次尝试",
+                        payload={
+                            "executionId": execution_id,
+                            "turn": turn,
+                            "attempt": attempt,
+                            "failureReason": failure_kind,
+                            "streamedAttempt": use_stream,
+                        },
+                    )
+                    time.sleep(min(4.0, 0.8 * attempt))
+            _flush_stream_delta("reasoning", force=True)
+            _flush_stream_delta("content", force=True)
             model_call_duration_ms = int((time.monotonic() - model_call_started_at) * 1000)
             last_provider = response.get("provider") or last_provider
             last_model = response.get("model") or last_model
             usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
-            for key, value in usage.items():
-                if isinstance(value, (int, float)):
-                    total_usage[key] = int(total_usage.get(key, 0) + value)
+            normalized_usage = normalize_model_usage(usage)
+            for key in ("inputTokens", "outputTokens", "totalTokens"):
+                total_usage[key] += int(normalized_usage.get(key) or 0)
+            usage_available = usage_available or any(total_usage.values())
+            # 用真实 usage 校准字符估算：后续预算判断以校准后的估算为准。
+            actual_input_tokens = int(normalized_usage.get("inputTokens") or 0)
+            if actual_input_tokens > 0 and prompt_chars_estimate > 0:
+                estimator_calibration["ratio"] = min(
+                    3.0, max(0.5, actual_input_tokens / float(prompt_chars_estimate))
+                )
             choices = response.get("choices") if isinstance(response.get("choices"), list) else []
             message = (choices[0].get("message") or {}) if choices and isinstance(choices[0], dict) else {}
             tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
             if final_turn:
                 tool_calls = []
+            # 内容增量串流：把供应商实际返回的推理流与正文增量即时推送到事件流，
+            # 前端在等待终态期间可渐进渲染；不伪造供应商未返回的内容。
+            reasoning_delta = str(
+                message.get("reasoning_content") or message.get("reasoning") or ""
+            ).strip()
+            if reasoning_delta and not stream_state["emitted"]["reasoning"]:
+                append_review_session_event(
+                    session,
+                    event_type="agent.reasoning.delta",
+                    title="模型推理流",
+                    payload={
+                        "executionId": execution_id,
+                        "turn": turn,
+                        "content": reasoning_delta[:2000],
+                        "sourceField": "reasoning_content"
+                        if message.get("reasoning_content")
+                        else "reasoning",
+                    },
+                )
+            content_delta = str(message.get("content") or "").strip()
+            if content_delta and not stream_state["emitted"]["content"]:
+                append_review_session_event(
+                    session,
+                    event_type="agent.message.delta",
+                    title="回答内容增量",
+                    payload={
+                        "executionId": execution_id,
+                        "turn": turn,
+                        "content": content_delta[:2000],
+                    },
+                )
             assistant_message = {
                 "role": "assistant",
                 "content": message.get("content") or "",
@@ -9166,7 +9729,7 @@ def review_conversation_llm_answer(
                         "toolCallCount": tool_call_count,
                         "provider": last_provider,
                         "model": last_model,
-                        "usage": total_usage,
+                        **({"usage": repo.clone(total_usage)} if usage_available else {}),
                         "durationMs": int((time.monotonic() - execution_started_at) * 1000),
                         "forcedFinalTurn": final_turn,
                     },
@@ -9182,11 +9745,13 @@ def review_conversation_llm_answer(
                         "turnCount": turn,
                         "provider": last_provider,
                         "model": last_model,
-                        "usage": total_usage,
+                        **({"usage": repo.clone(total_usage)} if usage_available else {}),
                     },
                 }
             messages.append(assistant_message)
             for call in tool_calls:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ReviewConversationCancelled()
                 function = call.get("function") if isinstance(call, dict) else {}
                 tool_name = str((function or {}).get("name") or "")
                 raw_arguments = (function or {}).get("arguments") or "{}"
@@ -9222,7 +9787,14 @@ def review_conversation_llm_answer(
                 if duplicate_call:
                     output = repo.clone(executed_tool_cache[call_signature])
                     output["duplicateCall"] = True
-                    output["notice"] = "该工具已用相同参数调用过，本次直接返回缓存结果，请勿再重复调用。"
+                    if call_signature in memory_seeded_signatures:
+                        output["fromSessionMemory"] = True
+                        output["notice"] = (
+                            "该工具在本会话早前消息中已用相同参数执行过，直接复用缓存结果；"
+                            "如上下文已变化请调整参数或改用其他工具。"
+                        )
+                    else:
+                        output["notice"] = "该工具已用相同参数调用过，本次直接返回缓存结果，请勿再重复调用。"
                 else:
                     try:
                         output = review_conversation_agent_tool_output(
@@ -9237,7 +9809,9 @@ def review_conversation_llm_answer(
                             evidence_links=evidence_links,
                             review_run=review_run,
                         )
-                    except Exception as exc:
+                    except ReviewConversationCancelled:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - 单工具错误隔离
                         capture_tool_error(
                             getattr(client, "raw_capture", None),
                             raw_context,
@@ -9245,9 +9819,18 @@ def review_conversation_llm_answer(
                             exc,
                             provider_tool_call_id=provider_tool_call_id,
                         )
-                        raise
-                    if isinstance(output, dict):
+                        # 结构化错误作为工具结果返回给模型：单个工具故障不终结整个回答。
+                        output = {
+                            "status": "failed",
+                            "errorCode": str(
+                                getattr(exc, "reason", None) or exc.__class__.__name__
+                            )[:80],
+                            "message": "工具执行失败，请改用其他工具或基于已有结果继续；不要重复原样调用。",
+                        }
+                    if isinstance(output, dict) and str(output.get("status") or "") != "failed":
+                        # 失败结果不进缓存：允许模型换参数或下轮重试同一工具。
                         executed_tool_cache[call_signature] = repo.clone(output)
+                        memory_seeded_signatures.discard(call_signature)
                 capture_tool_result(
                     getattr(client, "raw_capture", None),
                     raw_context,
@@ -9259,10 +9842,25 @@ def review_conversation_llm_answer(
                 compact_output = repo.clone(output)
                 tool_summary = review_conversation_tool_result_summary(tool_name, output if isinstance(output, dict) else {})
                 tool_trace.append({"toolName": tool_name, "summary": tool_summary})
+                # 写入会话级工具记忆：成功的只读/确定性结果供本会话后续消息复用。
+                if (
+                    not duplicate_call
+                    and isinstance(output, dict)
+                    and tool_name not in REVIEW_SESSION_TOOL_MEMORY_EXCLUDED_TOOLS
+                    and str(output.get("status") or "succeeded") not in {"failed", "rejected"}
+                ):
+                    store_review_session_tool_memory(
+                        session,
+                        signature=call_signature,
+                        tool_name=tool_name,
+                        summary=tool_summary,
+                        output=output,
+                    )
+                tool_failed = isinstance(output, dict) and str(output.get("status") or "") == "failed"
                 append_review_session_event(
                     session,
                     event_type="agent.tool_call.completed",
-                    title=f"工具完成：{tool_name}",
+                    title=(f"工具失败：{tool_name}" if tool_failed else f"工具完成：{tool_name}"),
                     payload={
                         "executionId": execution_id,
                         "turn": turn,
@@ -9295,13 +9893,54 @@ def review_conversation_llm_answer(
                         "content": review_conversation_tool_message_content(compact_output),
                     }
                 )
+                compactable_tool_messages.append(
+                    {
+                        "index": len(messages) - 1,
+                        "toolName": tool_name,
+                        "summary": tool_summary,
+                    }
+                )
         raise IntegrationServiceError(
             "QwenRuntime",
             "review.conversation.agent",
             reason="AGENT_MAX_TURNS_EXCEEDED",
         )
+    except ReviewConversationCancelled:
+        append_review_session_event(
+            session,
+            event_type="agent.execution.cancelled",
+            title="已按用户请求停止本次回答",
+            payload={
+                "executionId": execution_id,
+                "toolCallCount": tool_call_count,
+                "turnCount": last_turn,
+                "durationMs": int((time.monotonic() - execution_started_at) * 1000),
+            },
+        )
+        # 取消时保留已完成的工具成果，作为部分结论返回给用户。
+        lines = ["本次回答已按你的要求停止。"]
+        if tool_trace:
+            lines.append("以下是停止前已完成的工具核查结果，供人工参考：")
+            for index, item in enumerate(tool_trace[-12:], start=1):
+                lines.append(f"{index}. {item['toolName']}：{item['summary']}")
+            lines.append("以上结果均来自只读/确定性工具，最终结论仍需人工确认。")
+        return {
+            "text": "\n".join(lines),
+            "execution": {
+                "executionId": execution_id,
+                "mode": "cancelled",
+                "modelCalled": bool(last_provider or last_model),
+                "agentEnabled": True,
+                "toolCallCount": tool_call_count,
+                "turnCount": last_turn,
+                "provider": last_provider,
+                "model": last_model,
+                "failureReason": "USER_CANCELLED",
+                **({"usage": repo.clone(total_usage)} if usage_available else {}),
+            },
+        }
     except Exception as exc:
-        failure_reason = str(getattr(exc, "reason", None) or exc.__class__.__name__)[:160]
+        failure_reason = review_conversation_model_failure_kind(exc)[0][:160]
         append_review_session_event(
             session,
             event_type="agent.model_call.failed",
@@ -9335,15 +9974,20 @@ def review_conversation_llm_answer(
                 "provider": last_provider,
                 "model": last_model,
                 "failureReason": failure_reason,
+                **({"usage": repo.clone(total_usage)} if usage_available else {}),
             },
         }
 
 
-def review_assistant_content_blocks(
+def review_assistant_request_context(
     request: Request,
     session: dict[str, Any],
-    user_text: str,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+) -> dict[str, Any]:
+    """在请求线程内收集 Agent 执行所需的上下文快照（含请求级可见性过滤）。
+
+    后台执行线程不持有 Request；证据可见性等请求相关过滤必须在此处完成，
+    线程内只使用这里返回的普通数据。
+    """
     project_id = str(session.get("projectId") or "")
     node_id = int(session.get("nodeId") or 0)
     project = repo.require_project(project_id) or {}
@@ -9365,8 +10009,50 @@ def review_assistant_content_blocks(
         node_id,
         review_run_id=str(session.get("activeReviewRunId") or "") or None,
     )
+    return {
+        "project": project,
+        "node": repo.node(project_id, node_id) or {},
+        "basis": basis,
+        "basis_items": basis_items,
+        "readiness": readiness,
+        "evidence_links": evidence_links,
+        "advisory_evidence_links": advisory_evidence_links,
+        "review_run": review_run,
+    }
+
+
+def review_run_judgment_summary_block(review_run: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not review_run:
+        return None
+    return {
+        "type": "judgment_summary",
+        "reviewRunId": review_run.get("reviewRunId") or review_run.get("id"),
+        "status": str(review_run.get("status") or "未发起"),
+        "currentStep": review_run.get("currentStep"),
+        "findingCount": len(review_run.get("findingDrafts") or []),
+    }
+
+
+def review_assistant_deterministic_blocks(
+    session: dict[str, Any],
+    user_text: str,
+    *,
+    context: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    """仅当输入精确以斜线命令开头时同步生成确定性回答；否则返回 None（转交 Agent）。
+
+    自然语言问题即使包含“检索证据”“查看条款”等字样也不会被快捷命令劫持。
+    """
+    command = review_conversation_slash_command(user_text)
+    if command is None:
+        return None
+    basis = context["basis"]
+    basis_items = context["basis_items"]
+    readiness = context["readiness"]
+    evidence_links = context["evidence_links"]
+    advisory_evidence_links = context["advisory_evidence_links"]
+    review_run = context["review_run"]
     run_status = str((review_run or {}).get("status") or "未发起")
-    normalized = user_text.strip().lower()
     blocks: list[dict[str, Any]] = []
     execution: dict[str, Any] = {
         "mode": "deterministic_command",
@@ -9375,7 +10061,7 @@ def review_assistant_content_blocks(
         "toolCallCount": 0,
         "turnCount": 0,
     }
-    if any(token in normalized for token in ("检索证据", "/检索证据", "补充证据")):
+    if command == "search_evidence":
         blocks.append(
             {
                 "type": "text",
@@ -9400,10 +10086,7 @@ def review_assistant_content_blocks(
                     "items": advisory_evidence_links[:12],
                 }
             )
-    elif any(
-        token in normalized
-        for token in ("标准条款", "/标准条款", "解释依据", "/解释依据", "解释规则", "查看条款")
-    ):
+    elif command == "explain_basis":
         blocks.append(
             {
                 "type": "text",
@@ -9417,7 +10100,7 @@ def review_assistant_content_blocks(
                 "items": basis_items,
             }
         )
-    elif any(token in normalized for token in ("草拟意见", "/草拟意见", "意见草稿")):
+    elif command == "draft_opinion":
         drafts = [item for item in (review_run or {}).get("findingDrafts") or [] if isinstance(item, dict)]
         draft_text = "\n".join(str(item.get("description") or item.get("title") or "") for item in drafts[:3] if item.get("description") or item.get("title"))
         if not draft_text:
@@ -9430,47 +10113,174 @@ def review_assistant_content_blocks(
             }
         )
     else:
+        return None
+    judgment_block = review_run_judgment_summary_block(review_run)
+    if judgment_block:
+        blocks.append(judgment_block)
+    return blocks, execution
+
+
+def review_agent_answer_blocks(
+    agent_result: dict[str, Any],
+    *,
+    session: dict[str, Any],
+    context: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """把 Agent 执行结果组装为消息内容块（含默认降级文案、引用和 ReviewRun 摘要）。"""
+    readiness = context["readiness"]
+    review_run = context["review_run"]
+    run_status = str((review_run or {}).get("status") or "未发起")
+    node = context["node"]
+    node_id = int(session.get("nodeId") or 0)
+    execution = repo.clone(
+        agent_result.get("execution")
+        or {
+            "mode": "deterministic_fallback",
+            "modelCalled": False,
+            "agentEnabled": False,
+            "toolCallCount": 0,
+            "turnCount": 0,
+        }
+    )
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "text",
+            "text": agent_result.get("text")
+            or f"我已加载当前节点“{node.get('name') or node_id}”的固定规则、证据就绪状态和 ReviewRun。当前运行状态：{run_status}；资料就绪：{readiness.get('satisfiedCount', 0)}/{readiness.get('requiredCount', 0)}，待确认证据：{readiness.get('pendingCount', 0)}。你可以继续让我检索证据、查看标准条款或草拟意见。",
+            "references": review_message_source_references(
+                context["basis_items"], context["evidence_links"]
+            ),
+        },
+        {
+            "type": "action_suggestions",
+            "actions": [
+                {"actionKey": "search_evidence", "label": "检索证据"},
+                {"actionKey": "explain_basis", "label": "标准条款"},
+                {"actionKey": "draft_opinion", "label": "草拟意见"},
+            ],
+        },
+    ]
+    judgment_block = review_run_judgment_summary_block(review_run)
+    if judgment_block:
+        blocks.append(judgment_block)
+    return blocks, execution
+
+
+def run_review_conversation_execution(
+    *,
+    session_id: str,
+    assistant_message_id: str,
+    user_text: str,
+    context: dict[str, Any],
+    execution_entry: dict[str, Any],
+) -> None:
+    """执行 Conversation Agent Loop 并把结果回填到占位 assistant 消息。
+
+    background 模式下运行在独立线程中，不得访问 Request；请求相关上下文均已在
+    review_assistant_request_context 捕获为普通数据。完成或失败后重新给消息分配
+    sequence，保证增量拉取（sequence > after）的客户端能看到最终内容。
+    """
+    execution_id = str(execution_entry.get("executionId") or "")
+    try:
+        session = repo.find_one("review_sessions", session_id)
+        message = repo.find_one("review_messages", assistant_message_id)
+        if not session or not message:
+            return
         agent_result = review_conversation_llm_answer(
             session,
             user_text,
-            project=project,
-            node=repo.node(project_id, node_id) or {},
-            basis_items=basis_items,
-            evidence_links=evidence_links,
-            review_run=review_run,
-            readiness=readiness,
-            basis=basis,
+            project=context["project"],
+            node=context["node"],
+            basis_items=context["basis_items"],
+            evidence_links=context["evidence_links"],
+            review_run=context["review_run"],
+            readiness=context["readiness"],
+            basis=context["basis"],
+            cancel_event=execution_entry.get("cancelEvent"),
+            execution_id=execution_id,
         )
-        execution = repo.clone(agent_result.get("execution") or execution)
-        blocks.append(
-            {
-                "type": "text",
-                "text": agent_result.get("text")
-                or f"我已加载当前节点“{(repo.node(project_id, node_id) or {}).get('name') or node_id}”的固定规则、证据就绪状态和 ReviewRun。当前运行状态：{run_status}；资料就绪：{readiness.get('satisfiedCount', 0)}/{readiness.get('requiredCount', 0)}，待确认证据：{readiness.get('pendingCount', 0)}。你可以继续让我检索证据、查看标准条款或草拟意见。",
-                "references": review_message_source_references(basis_items, evidence_links),
+        blocks, execution = review_agent_answer_blocks(
+            agent_result, session=session, context=context
+        )
+        message["contentBlocks"] = blocks
+        message["execution"] = execution
+        message["status"] = "cancelled" if execution.get("mode") == "cancelled" else "completed"
+        message["sequence"] = next_review_session_sequence("review_messages", session_id)
+        message["updatedAt"] = server_time()
+        session["revision"] = record_revision(session) + 1
+        session["updatedAt"] = server_time()
+        append_review_session_event(
+            session,
+            event_type="agent.message.completed",
+            title="AI 复核助手已回复",
+            payload={
+                "messageId": message["id"],
+                "contentBlockCount": len(blocks),
+                "execution": repo.clone(execution),
+            },
+            review_run_id=str(message.get("reviewRunId") or "") or None,
+        )
+        finalize_agent_execution_record(
+            execution_id,
+            status=str(message.get("status") or "completed"),
+            turnCount=int(execution.get("turnCount") or 0),
+            toolCallCount=int(execution.get("toolCallCount") or 0),
+            provider=execution.get("provider"),
+            model=execution.get("model"),
+            usage=repo.clone(execution.get("usage")) if execution.get("usage") else None,
+            failureReason=execution.get("failureReason"),
+            finishedAt=server_time(),
+        )
+        # 定向持久化：最终消息与会话状态立即对其他 worker 可见。
+        persist_review_session_records(
+            review_messages=[message],
+            review_sessions=[session],
+        )
+    except Exception as exc:  # noqa: BLE001 - 兜底：占位消息不能永远停留在 running
+        failure_reason = str(getattr(exc, "reason", None) or exc.__class__.__name__)[:160]
+        message = repo.find_one("review_messages", assistant_message_id)
+        session = repo.find_one("review_sessions", session_id)
+        if message:
+            message["status"] = "failed"
+            message["contentBlocks"] = [
+                {
+                    "type": "text",
+                    "text": "本次 AI 回答执行失败，请稍后重试；已完成的执行动态见时间线。",
+                }
+            ]
+            message["execution"] = {
+                "executionId": execution_id,
+                "mode": "deterministic_fallback",
+                "modelCalled": False,
+                "agentEnabled": True,
+                "toolCallCount": 0,
+                "turnCount": 0,
+                "failureReason": failure_reason,
             }
+            message["sequence"] = next_review_session_sequence("review_messages", session_id)
+            message["updatedAt"] = server_time()
+        if session:
+            session["revision"] = record_revision(session) + 1
+            session["updatedAt"] = server_time()
+            append_review_session_event(
+                session,
+                event_type="agent.message.failed",
+                title="AI 回复生成失败",
+                payload={"messageId": assistant_message_id, "failureReason": failure_reason},
+            )
+        finalize_agent_execution_record(
+            execution_id,
+            status="failed",
+            failureReason=failure_reason,
+            finishedAt=server_time(),
         )
-        blocks.append(
-            {
-                "type": "action_suggestions",
-                "actions": [
-                    {"actionKey": "search_evidence", "label": "检索证据"},
-                    {"actionKey": "explain_basis", "label": "标准条款"},
-                    {"actionKey": "draft_opinion", "label": "草拟意见"},
-                ],
-            }
-        )
-    if review_run:
-        blocks.append(
-            {
-                "type": "judgment_summary",
-                "reviewRunId": review_run.get("reviewRunId") or review_run.get("id"),
-                "status": run_status,
-                "currentStep": review_run.get("currentStep"),
-                "findingCount": len(review_run.get("findingDrafts") or []),
-            }
-        )
-    return blocks, execution
+        if message:
+            persist_review_session_records(review_messages=[message])
+        if session:
+            persist_review_session_records(review_sessions=[session])
+    finally:
+        # 定向持久化已在成功/失败分支完成；此处只需释放会话执行槽。
+        release_review_session_execution(session_id, execution_id)
 
 
 @router.get("/review-sessions/{session_id}/messages")
@@ -9480,6 +10290,8 @@ def list_review_session_messages(
     after: int = Query(default=0, ge=0),
 ):
     ensure_review_session_state()
+    # live read：其他 worker 后台线程finalize的消息需先从共享存储刷新（进程级节流）。
+    refresh_review_live_state_shared()
     session = repo.find_one("review_sessions", session_id)
     if not session:
         return fail(errors.NOT_FOUND, request)
@@ -9539,12 +10351,25 @@ def create_review_session_message(
         if content_error or not content:
             return fail(errors.VALIDATION_ERROR, request, message=content_error or "对话内容不能为空。")
         now = server_time()
-        review_run = latest_review_run_for_node(
-            str(session.get("projectId") or ""),
-            int(session.get("nodeId") or 0),
-            review_run_id=str(session.get("activeReviewRunId") or "") or None,
-        )
+        # 进程重启后可能遗留 running 状态的执行记录：先收敛，避免会话被永久占用。
+        recover_interrupted_agent_executions(session)
+        context = review_assistant_request_context(request, session)
+        review_run = context["review_run"]
         review_run_id = str((review_run or {}).get("reviewRunId") or (review_run or {}).get("id") or "") or None
+        deterministic = review_assistant_deterministic_blocks(session, content, context=context)
+        execution_entry: dict[str, Any] | None = None
+        if deterministic is None:
+            # 自由文本走 Agent 执行：先占用会话级执行槽，保证同一会话串行执行。
+            execution_id = f"RAGENT-{uuid4().hex[:10].upper()}"
+            execution_entry = acquire_review_session_execution(session_id, execution_id)
+            if execution_entry is None:
+                return fail(
+                    errors.CONFLICT,
+                    request,
+                    message="当前会话已有一次 AI 回答正在执行，请等待其完成或先停止当前回答。",
+                    data={"activeExecution": active_review_session_execution_view(session_id)},
+                    http_status=409,
+                )
         user_message = {
             "id": f"RMSG-{uuid4().hex[:10].upper()}",
             "sessionId": session_id,
@@ -9565,19 +10390,70 @@ def create_review_session_message(
             payload={"messageId": user_message["id"]},
             review_run_id=review_run_id,
         )
-        assistant_blocks, assistant_execution = review_assistant_content_blocks(
-            request,
-            session,
-            content,
-        )
+        if deterministic is not None:
+            assistant_blocks, assistant_execution = deterministic
+            assistant_message = {
+                "id": f"RMSG-{uuid4().hex[:10].upper()}",
+                "sessionId": session_id,
+                "sequence": next_review_session_sequence("review_messages", session_id),
+                "role": "assistant",
+                "messageType": "review_response",
+                "status": "completed",
+                "contentBlocks": assistant_blocks,
+                "execution": assistant_execution,
+                "reviewRunId": review_run_id,
+                "createdAt": server_time(),
+                "tenantId": request_tenant_id(request),
+            }
+            repo.state["review_messages"].append(assistant_message)
+            session["currentTask"] = content[:300]
+            session["activeReviewRunId"] = review_run_id
+            session["revision"] = record_revision(session) + 1
+            session["contextRevision"] = int(session.get("contextRevision") or 1) + 1
+            session["updatedAt"] = server_time()
+            append_review_session_event(
+                session,
+                event_type="agent.message.completed",
+                title="AI 复核助手已回复",
+                payload={
+                    "messageId": assistant_message["id"],
+                    "contentBlockCount": len(assistant_message["contentBlocks"]),
+                    "execution": repo.clone(assistant_execution),
+                },
+                review_run_id=review_run_id,
+            )
+            return ok(
+                {
+                    "messageId": user_message["id"],
+                    "status": "completed",
+                    "userMessage": review_message_view(user_message),
+                    "assistantMessage": review_message_view(assistant_message),
+                    "session": review_session_view(session),
+                },
+                request,
+            )
+        # Agent 分支：先落占位 assistant 消息并受理，再执行 Agent Loop。
         assistant_message = {
             "id": f"RMSG-{uuid4().hex[:10].upper()}",
             "sessionId": session_id,
             "sequence": next_review_session_sequence("review_messages", session_id),
             "role": "assistant",
             "messageType": "review_response",
-            "contentBlocks": assistant_blocks,
-            "execution": assistant_execution,
+            "status": "running",
+            "contentBlocks": [
+                {
+                    "type": "text",
+                    "text": "AI 复核助手正在核查中…执行动态见时间线，可随时停止本次回答。",
+                }
+            ],
+            "execution": {
+                "executionId": execution_entry["executionId"],
+                "mode": "llm_agent",
+                "modelCalled": False,
+                "agentEnabled": True,
+                "toolCallCount": 0,
+                "turnCount": 0,
+            },
             "reviewRunId": review_run_id,
             "createdAt": server_time(),
             "tenantId": request_tenant_id(request),
@@ -9588,21 +10464,118 @@ def create_review_session_message(
         session["revision"] = record_revision(session) + 1
         session["contextRevision"] = int(session.get("contextRevision") or 1) + 1
         session["updatedAt"] = server_time()
+        execution_mode = review_conversation_execution_mode()
+        record_agent_execution_started(
+            execution_id=str(execution_entry["executionId"]),
+            session=session,
+            assistant_message_id=assistant_message["id"],
+            review_run_id=review_run_id,
+            execution_mode=execution_mode,
+        )
+        # 受理即持久化：用户消息、占位消息与会话状态立即对其他 worker 可见。
+        persist_review_session_records(
+            review_messages=[user_message, assistant_message],
+            review_sessions=[session],
+        )
+        if execution_mode == "inline":
+            # 同步兼容模式：在请求线程内完成执行（内部会释放执行槽并回填消息）。
+            run_review_conversation_execution(
+                session_id=session_id,
+                assistant_message_id=assistant_message["id"],
+                user_text=content,
+                context=context,
+                execution_entry=execution_entry,
+            )
+            finalized = repo.find_one("review_messages", assistant_message["id"]) or assistant_message
+            return ok(
+                {
+                    "messageId": user_message["id"],
+                    "status": str(finalized.get("status") or "completed"),
+                    "userMessage": review_message_view(user_message),
+                    "assistantMessage": review_message_view(finalized),
+                    "session": review_session_view(session),
+                },
+                request,
+            )
+        if execution_mode == "celery":
+            # 正式工作流化第一步：执行派发到 Celery worker（需 AICHECK_TASK_DISPATCH=celery）。
+            # 跨进程互斥与取消由 agent_executions 心跳/cancelRequested 承担。
+            dispatch = task_dispatcher.dispatch_review_conversation(
+                session_id=session_id,
+                assistant_message_id=assistant_message["id"],
+                user_text=content,
+                context=repo.clone(context),
+                execution_id=str(execution_entry["executionId"]),
+            )
+            if dispatch.get("taskId") or dispatch.get("result") is not None:
+                append_review_session_event(
+                    session,
+                    event_type="agent.execution.accepted",
+                    title="AI 回答已受理，已派发到任务队列",
+                    payload={
+                        "messageId": assistant_message["id"],
+                        "executionId": execution_entry["executionId"],
+                        "dispatch": {
+                            key: dispatch.get(key)
+                            for key in ("mode", "taskId", "queue", "statusReason")
+                            if dispatch.get(key) is not None
+                        },
+                    },
+                    review_run_id=review_run_id,
+                )
+                # 执行在独立进程进行：释放本进程内存槽，互斥转由 DB 心跳承担。
+                release_review_session_execution(session_id, str(execution_entry["executionId"]))
+                return ok(
+                    {
+                        "messageId": user_message["id"],
+                        "status": "accepted",
+                        "userMessage": review_message_view(user_message),
+                        "assistantMessage": review_message_view(
+                            repo.find_one("review_messages", assistant_message["id"]) or assistant_message
+                        ),
+                        "session": review_session_view(session),
+                    },
+                    request,
+                )
+            # 派发失败（broker 不可用 / AICHECK_TASK_DISPATCH 未开启）：回退为进程内后台线程。
+            append_review_session_event(
+                session,
+                event_type="agent.execution.dispatch_failed",
+                title="任务队列派发失败，回退为进程内执行",
+                payload={
+                    "executionId": execution_entry["executionId"],
+                    "statusReason": str(dispatch.get("statusReason") or "dispatch_unavailable"),
+                },
+                review_run_id=review_run_id,
+            )
         append_review_session_event(
             session,
-            event_type="agent.message.completed",
-            title="AI 复核助手已回复",
+            event_type="agent.execution.accepted",
+            title="AI 回答已受理，正在后台执行",
             payload={
                 "messageId": assistant_message["id"],
-                "contentBlockCount": len(assistant_message["contentBlocks"]),
-                "execution": repo.clone(assistant_execution),
+                "executionId": execution_entry["executionId"],
             },
             review_run_id=review_run_id,
         )
+        worker = threading.Thread(
+            target=run_review_conversation_execution,
+            kwargs={
+                "session_id": session_id,
+                "assistant_message_id": assistant_message["id"],
+                "user_text": content,
+                "context": context,
+                "execution_entry": execution_entry,
+            },
+            name=f"review-conversation-{execution_entry['executionId']}",
+            daemon=True,
+        )
+        execution_entry["thread"] = worker
+        worker.start()
         return ok(
             {
                 "messageId": user_message["id"],
-                "status": "completed",
+                "status": "accepted",
                 "userMessage": review_message_view(user_message),
                 "assistantMessage": review_message_view(assistant_message),
                 "session": review_session_view(session),
@@ -9643,6 +10616,40 @@ def run_review_session_action(
         scope_error = review_session_scope_error(request, session)
         if scope_error:
             return scope_error
+        if action_key == "cancel_execution":
+            # 协同取消信号：不修改会话上下文，因此不要求 If-Match，也不递增 revision。
+            entry: dict[str, Any] | None = None
+            with REVIEW_SESSION_EXECUTION_LOCK:
+                entry = REVIEW_SESSION_ACTIVE_EXECUTIONS.get(session_id)
+                if entry is not None:
+                    entry["cancelEvent"].set()
+            if entry is None:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message="当前会话没有正在执行的 AI 回答。",
+                )
+            cancelled_record = repo.find_one(
+                "agent_executions", str(entry.get("executionId") or "")
+            )
+            if cancelled_record is not None:
+                cancelled_record["cancelRequested"] = True
+                cancelled_record["updatedAt"] = server_time()
+                persist_review_session_records(agent_executions=[cancelled_record])
+            append_review_session_event(
+                session,
+                event_type="agent.execution.cancel_requested",
+                title="已请求停止当前 AI 回答",
+                payload={"executionId": entry.get("executionId")},
+            )
+            return ok(
+                {
+                    "session": review_session_view(session),
+                    "cancelRequested": True,
+                    "executionId": entry.get("executionId"),
+                },
+                request,
+            )
         precondition_error = review_session_precondition_error(request, session, if_match)
         if precondition_error:
             return precondition_error
@@ -9688,6 +10695,8 @@ def run_review_session_action(
             return fail(errors.VALIDATION_ERROR, request, message="不支持的会话动作。")
         session["revision"] = record_revision(session) + 1
         session["contextRevision"] = int(session.get("contextRevision") or 1) + 1
+        # 上下文动作使会话级工具记忆失效：证据/ReviewRun/任务变化后旧结果不可复用。
+        session["toolMemoryRevision"] = review_session_tool_memory_revision(session) + 1
         session["updatedAt"] = server_time()
         append_review_session_event(
             session,
@@ -9695,6 +10704,7 @@ def run_review_session_action(
             title="会话上下文已更新",
             payload={"actionKey": action_key},
         )
+        persist_review_session_records(review_sessions=[session])
         return ok({"session": review_session_view(session)}, request)
 
     return idempotent(
@@ -9703,6 +10713,37 @@ def run_review_session_action(
         produce,
         fingerprint_source={"sessionId": session_id, "actionKey": action_key, "body": body},
     )
+
+
+# SSE/轮询读取端点做 live read 时需要从共享持久化存储刷新的集合。
+REVIEW_SESSION_EVENT_LIVE_KEYS = {
+    "review_sessions",
+    "review_messages",
+    "review_session_events",
+    "review_events",
+    "review_runs",
+    "agent_executions",
+}
+
+_REVIEW_LIVE_REFRESH_LOCK = threading.Lock()
+_REVIEW_LIVE_REFRESH_MONOTONIC = 0.0
+
+
+def refresh_review_live_state_shared(min_interval_seconds: float = 0.4) -> None:
+    """进程级共享节流的 live-read 刷新。
+
+    N 个 SSE / 轮询客户端共享一次 DB 读取（节流窗口内直接命中本地快照），
+    避免客户端数量线性放大 DB 压力。无 Postgres 时为 no-op。
+    """
+    global _REVIEW_LIVE_REFRESH_MONOTONIC
+    if repo.sync_postgres is None:
+        return
+    now = time.monotonic()
+    with _REVIEW_LIVE_REFRESH_LOCK:
+        if now - _REVIEW_LIVE_REFRESH_MONOTONIC < min_interval_seconds:
+            return
+        _REVIEW_LIVE_REFRESH_MONOTONIC = now
+    refresh_state_from_postgres_for_live_read(REVIEW_SESSION_EVENT_LIVE_KEYS)
 
 
 def review_session_event_snapshot(session_id: str, session: dict[str, Any]) -> list[dict[str, Any]]:
@@ -9774,6 +10815,8 @@ def list_review_session_events(
     after: int = Query(default=0, ge=0),
 ):
     ensure_review_session_state()
+    # live read：后台线程/其他 worker 追加的事件先从共享存储刷新再出快照（进程级节流）。
+    refresh_review_live_state_shared()
     session = repo.find_one("review_sessions", session_id)
     if not session:
         return fail(errors.NOT_FOUND, request)
@@ -9821,6 +10864,10 @@ def stream_review_session_events(
         while time.monotonic() < deadline:
             if await request.is_disconnected():
                 return
+            # 共享持久化存储 live read：跨 worker 的事件通过 Postgres 汇聚；
+            # 同步 DB 读取放到线程池且进程级节流，N 个客户端共享一次刷新。
+            if repo.sync_postgres is not None:
+                await asyncio.to_thread(refresh_review_live_state_shared)
             ordered = review_session_event_snapshot(session_id, session)
             fresh = [
                 item
@@ -9835,7 +10882,7 @@ def stream_review_session_events(
             elif time.monotonic() - last_heartbeat > 10:
                 yield ": ping\n\n"
                 last_heartbeat = time.monotonic()
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(0.5 if repo.sync_postgres is not None else 0.25)
         yield "event: done\ndata: {}\n\n"
 
     return StreamingResponse(
@@ -9843,6 +10890,29 @@ def stream_review_session_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/review-sessions/{session_id}/agent-executions")
+def list_review_session_agent_executions(request: Request, session_id: str):
+    """按会话查询持久化 Agent 执行记录（审计/恢复用）。"""
+    ensure_review_session_state()
+    refresh_review_live_state_shared()
+    session = repo.find_one("review_sessions", session_id)
+    if not session:
+        return fail(errors.NOT_FOUND, request)
+    scope_error = review_session_scope_error(request, session)
+    if scope_error:
+        return scope_error
+    executions = sorted(
+        [
+            repo.clone(item)
+            for item in repo.state.get("agent_executions", [])
+            if str(item.get("sessionId") or "") == session_id
+        ],
+        key=lambda item: str(item.get("startedAt") or ""),
+        reverse=True,
+    )
+    return ok({"sessionId": session_id, "executions": executions[:50]}, request)
 
 
 @router.get("/review-runs/{review_run_id}/audit-view")

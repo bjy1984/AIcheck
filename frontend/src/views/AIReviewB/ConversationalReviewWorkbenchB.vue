@@ -73,6 +73,7 @@ import ProjectNodeTree from '@/views/AICheck/components/ProjectNodeTree.vue'
 import R12RegistryVerificationDialog from '@/views/AICheck/components/R12RegistryVerificationDialog.vue'
 import R19SemanticEvidenceDialog from '@/views/AICheck/components/R19SemanticEvidenceDialog.vue'
 import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
+import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,6 +90,7 @@ const auditView = ref<ReviewBAuditView>()
 const loading = ref(false)
 const nodeLoading = ref(false)
 const sending = ref(false)
+const cancelling = ref(false)
 const actionLoading = ref(false)
 const reviewStarting = ref(false)
 const polling = ref(false)
@@ -368,6 +370,11 @@ const messageExecutionLabel = (message: ReviewBMessage) => {
   if (execution.mode === 'deterministic_command') return '本地受控命令 · 未调用模型'
   if (execution.mode === 'deterministic_fallback') return '确定性降级 · 模型回答未完成'
   return execution.modelCalled ? '模型调用已完成' : '未调用模型'
+}
+
+const messageTokenUsageLabel = (message: ReviewBMessage) => {
+  if (message.role !== 'assistant') return ''
+  return formatReviewTokenUsage(message.execution?.usage)
 }
 
 const mergeMessages = (incoming: ReviewBMessage[]) => {
@@ -669,15 +676,72 @@ const handleStartReview = async () => {
   }
 }
 
+/**
+ * 后台执行期间，把 agent.message.delta / agent.reasoning.delta 事件渐进渲染进占位消息。
+ * 串流片段（payload.streamed=true）按序原样拼接（不加分隔符）；推理流与正文分区展示。
+ */
+const applyStreamingDeltas = (messageId: string) => {
+  const placeholder = messages.value.find((item) => item.id === messageId)
+  if (!placeholder || placeholder.status !== 'running') return
+  const executionId = placeholder.execution?.executionId
+  if (!executionId) return
+  let reasoning = ''
+  let content = ''
+  for (const event of [...events.value].sort((a, b) => a.sequence - b.sequence)) {
+    if (event.eventType !== 'agent.message.delta' && event.eventType !== 'agent.reasoning.delta') {
+      continue
+    }
+    const payload = (event.payload || {}) as {
+      executionId?: string
+      content?: string
+      streamed?: boolean
+    }
+    if (payload.executionId !== executionId) continue
+    const piece = String(payload.content || '')
+    if (!piece) continue
+    if (event.eventType === 'agent.reasoning.delta') reasoning += piece
+    else content += piece
+  }
+  if (!reasoning && !content) return
+  const parts: string[] = []
+  if (reasoning) parts.push(`〔推理〕${reasoning.trim()}`)
+  if (content) parts.push(content.trim())
+  placeholder.contentBlocks = [{ type: 'text', text: `${parts.join('\n\n')}\n\n——正在继续核查…` }]
+}
+
+/** 后台执行模式下等待占位 assistant 消息终态；完成消息会重新分配 sequence，因此始终取全量快照。 */
+const waitForAssistantCompletion = async (sessionId: string, messageId: string) => {
+  const deadline = Date.now() + 6 * 60 * 1000
+  for (;;) {
+    const current = messages.value.find((item) => item.id === messageId)
+    if (current && current.status && current.status !== 'running') return
+    if (Date.now() > deadline) {
+      ElMessage.warning('AI 回答仍在执行中，可稍后回到本会话查看结果。')
+      return
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 800))
+    if (session.value?.id !== sessionId) return
+    try {
+      const res = await listReviewBMessagesApi(sessionId, 0)
+      mergeMessages(res.data.messages)
+      applyStreamingDeltas(messageId)
+      await scrollTimelineToEnd()
+    } catch {
+      // 等待期间的轮询失败不终止等待，下一轮继续重试。
+    }
+  }
+}
+
 const sendMessage = async (preset?: string) => {
   const text = (preset || composer.value).trim()
   if (!text || !session.value?.id || sending.value) return
+  const sessionId = session.value.id
   sending.value = true
   executionStarted.value = true
   activityExpanded.value = true
   startLiveAgentTrace()
   try {
-    const res = await sendReviewBMessageApi(session.value.id, text, {
+    const res = await sendReviewBMessageApi(sessionId, text, {
       etag: session.value.etag
     })
     mergeMessages([res.data.userMessage, res.data.assistantMessage])
@@ -685,6 +749,11 @@ const sendMessage = async (preset?: string) => {
     workspace.value = workspace.value
       ? { ...workspace.value, session: res.data.session }
       : undefined
+    await scrollTimelineToEnd(true)
+    if (res.data.status === 'accepted' || res.data.assistantMessage?.status === 'running') {
+      // 后台执行：请求已受理，等待 Agent 执行完成或被停止。
+      await waitForAssistantCompletion(sessionId, res.data.assistantMessage.id)
+    }
     await Promise.all([loadSessionData(false), refreshLiveState()])
     await scrollTimelineToEnd(true)
   } catch (error) {
@@ -693,6 +762,19 @@ const sendMessage = async (preset?: string) => {
     stopLiveAgentTrace()
     sending.value = false
     activityExpanded.value = false
+  }
+}
+
+const stopCurrentAnswer = async () => {
+  if (!session.value?.id || cancelling.value) return
+  cancelling.value = true
+  try {
+    await runReviewBSessionActionApi(session.value.id, 'cancel_execution', {})
+    ElMessage.info('已请求停止当前回答，正在等待 Agent 停止…')
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '停止请求发送失败。'))
+  } finally {
+    cancelling.value = false
   }
 }
 
@@ -1246,6 +1328,9 @@ onBeforeUnmount(() => {
                 >
                   {{ messageExecutionLabel(message) }}
                 </p>
+                <p v-if="messageTokenUsageLabel(message)" class="message-token-usage">
+                  {{ messageTokenUsageLabel(message) }}
+                </p>
               </div>
             </article>
 
@@ -1322,9 +1407,14 @@ onBeforeUnmount(() => {
               <ElButton size="small" @click="sendMessage('/标准条款')">/标准条款</ElButton>
               <ElButton size="small" @click="sendMessage('/草拟意见')">/草拟意见</ElButton>
             </div>
-            <ElButton type="primary" :icon="Promotion" :loading="sending" @click="sendMessage()"
-              >发送</ElButton
-            >
+            <div>
+              <ElButton v-if="sending" :loading="cancelling" @click="stopCurrentAnswer"
+                >停止回答</ElButton
+              >
+              <ElButton type="primary" :icon="Promotion" :loading="sending" @click="sendMessage()"
+                >发送</ElButton
+              >
+            </div>
           </div>
         </section>
 
@@ -1798,6 +1888,13 @@ onBeforeUnmount(() => {
 
 .message-execution-meta.is-fallback::before {
   background: #e19a36;
+}
+
+.message-token-usage {
+  margin: 3px 0 0 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #98a2b3;
 }
 
 .content-card {

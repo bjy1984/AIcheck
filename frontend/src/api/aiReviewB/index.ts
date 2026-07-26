@@ -86,10 +86,17 @@ export const sendReviewBMessageApi = (
 
 export const runReviewBSessionActionApi = (
   sessionId: string,
-  actionKey: 'select_evidence' | 'remove_evidence' | 'set_active_review_run' | 'set_current_task',
+  actionKey:
+    | 'select_evidence'
+    | 'remove_evidence'
+    | 'set_active_review_run'
+    | 'set_current_task'
+    | 'cancel_execution',
   data: Record<string, unknown>,
   options?: MutationOptions
-): Promise<IResponse<{ session: ReviewBSession }>> => {
+): Promise<
+  IResponse<{ session: ReviewBSession; cancelRequested?: boolean; executionId?: string }>
+> => {
   return request.post({
     url: `/api/review-sessions/${sessionId}/actions/${actionKey}`,
     data,
