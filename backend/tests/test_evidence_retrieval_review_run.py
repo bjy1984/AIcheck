@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from libs.db.repository import repo
 from libs.review_grounding import build_grounded_review_input
 from libs.review_orchestrator import execution
@@ -26,6 +28,7 @@ def _candidate(
         "pageNo": page_no,
         "bbox": bbox or [10, 20, 100, 40],
         "quotedText": quoted_text,
+        "chunkId": f"CHUNK-{candidate_id}",
         "formalEvidenceEligible": True,
         "manualStatus": "pending",
         "manualStatusLabel": "待确认",
@@ -202,6 +205,7 @@ def test_material_evidence_merge_updates_grounding_input(monkeypatch) -> None:
     )
     context = _context()
     context["groundingInput"] = {
+        "documentVersionIds": ["DV-FROZEN"],
         "evidenceLinks": repo.clone(context["evidenceLinks"]),
         "evidenceTextCorpus": ["人工确认的许可证编号 TS-001"],
         "summary": {"evidenceLinkCount": 1},
@@ -258,6 +262,105 @@ def test_material_evidence_merge_recomputes_grounding_status(monkeypatch) -> Non
     assert context["groundingInput"]["summary"]["blockingIssueCount"] == 0
     assert context["groundingInput"]["summary"]["groundingStatus"] == "grounded"
     assert context["groundingInput"]["reviewWarnings"] == []
+
+
+def test_material_evidence_merge_preserves_risk_beyond_truncated_fields(monkeypatch) -> None:
+    fields = [
+        {
+            "id": f"FIELD-{index}",
+            "documentVersionId": "DV-FROZEN",
+            "fieldName": "许可证编号",
+            "fieldValue": f"TS-{index:03d}",
+            "pageNo": 3,
+            "bbox": [10, 20, 100, 40],
+            "confidence": 0.99,
+        }
+        for index in range(1, 81)
+    ]
+    fields.append(
+        {
+            "id": "FIELD-81",
+            "documentVersionId": "DV-FROZEN",
+            "fieldName": "许可证有效期",
+            "fieldValue": "无法确认",
+            "pageNo": 4,
+            "bbox": None,
+            "confidence": 0.5,
+        }
+    )
+    grounding_input = build_grounded_review_input(
+        {
+            "extracted_fields": fields,
+            "ocr_parse_results": [],
+            "evidence_links": [],
+        },
+        {"DV-FROZEN"},
+    )
+    assert len(grounding_input["fields"]) == 80
+    monkeypatch.setattr(
+        execution,
+        "search_project_evidence",
+        lambda search_repo, **kwargs: _live_result(_candidate("EVC-LIVE")),
+    )
+    context = _context()
+    context["evidenceLinks"] = []
+    context["groundingInput"] = grounding_input
+
+    execution.run_step(_review_run(), "retrieve_material_evidence", context)
+
+    issue_codes = {item["code"] for item in context["groundingInput"]["blockingIssues"]}
+    assert issue_codes == {
+        "OCR_GROUNDING_LOW_CONFIDENCE",
+        "OCR_GROUNDING_POSITION_MISSING",
+    }
+    assert context["groundingInput"]["groundingStatus"] == "insufficient_evidence"
+    assert context["groundingInput"]["summary"]["lowConfidenceEvidenceCount"] == 1
+    assert context["groundingInput"]["summary"]["missingPositionEvidenceCount"] == 1
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        {**_candidate("EVC-ADVISORY"), "formalEvidenceEligible": False},
+        {**_candidate("EVC-NO-BBOX"), "bbox": None},
+    ],
+    ids=["advisory", "missing-bbox"],
+)
+def test_non_formal_live_evidence_does_not_promote_grounding(monkeypatch, candidate) -> None:
+    grounding_input = build_grounded_review_input(
+        {
+            "extracted_fields": [
+                {
+                    "id": "FIELD-1",
+                    "documentVersionId": "DV-FROZEN",
+                    "fieldName": "许可证编号",
+                    "fieldValue": "TS-001",
+                    "pageNo": 3,
+                    "bbox": [10, 20, 100, 40],
+                    "confidence": 0.99,
+                }
+            ],
+            "ocr_parse_results": [],
+            "evidence_links": [],
+        },
+        {"DV-FROZEN"},
+    )
+    monkeypatch.setattr(
+        execution,
+        "search_project_evidence",
+        lambda search_repo, **kwargs: _live_result(candidate),
+    )
+    context = _context()
+    context["evidenceLinks"] = []
+    context["groundingInput"] = grounding_input
+
+    execution.run_step(_review_run(), "retrieve_material_evidence", context)
+
+    assert context["groundingInput"]["groundingStatus"] == "insufficient_evidence"
+    assert [item["code"] for item in context["groundingInput"]["blockingIssues"]] == [
+        "OCR_GROUNDING_EVIDENCE_LINK_MISSING"
+    ]
+    assert context["groundingInput"]["summary"]["blockingIssueCount"] == 1
 
 
 def test_pure_llm_material_evidence_step_skips_ocr_retrieval(monkeypatch) -> None:

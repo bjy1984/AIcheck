@@ -164,6 +164,8 @@ def refresh_grounded_review_input(
     grounding_input: dict[str, Any],
     evidence_links: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    from libs.evidence_retrieval import evidence_eligibility
+
     refreshed = dict(grounding_input)
     fields = _dict_items(refreshed.get("fields"))
     tables = _dict_items(refreshed.get("tables"))
@@ -176,6 +178,13 @@ def refresh_grounded_review_input(
         for item in refreshed.get("documentVersionIds") or []
         if str(item or "").strip()
     }
+    formal_links = [
+        item
+        for item in normalized_links
+        if item.get("formalEvidenceEligible") is True
+        and str(item.get("documentVersionId") or "") in requested_version_ids
+        and evidence_eligibility(item)[0]
+    ]
     available_version_ids = {
         str(item.get("documentVersionId"))
         for group in (fields, tables, seals, fragments, quality, normalized_links)
@@ -188,7 +197,7 @@ def refresh_grounded_review_input(
         tables,
         seals,
         fragments,
-        normalized_links,
+        formal_links,
     )
     low_confidence = _low_confidence_items(fields, tables, seals, fragments)
     missing_position = [
@@ -201,7 +210,7 @@ def refresh_grounded_review_input(
     critical_quality = _critical_quality_items(fields, tables, seals, fragments, quality)
     blocking_issues = _blocking_grounding_issues(
         evidence_texts=evidence_texts,
-        evidence_links=normalized_links,
+        evidence_links=formal_links,
         low_confidence=low_confidence,
         missing_position=missing_position,
         table_content_missing=table_content_missing,
@@ -209,33 +218,77 @@ def refresh_grounded_review_input(
         critical_quality=critical_quality,
         missing_version_ids=missing_version_ids,
     )
+    original_blocking_issues = _dict_items(refreshed.get("blockingIssues"))
+    if formal_links:
+        original_blocking_issues = [
+            item
+            for item in original_blocking_issues
+            if item.get("code") != "OCR_GROUNDING_EVIDENCE_LINK_MISSING"
+        ]
+    merged_issues: list[dict[str, Any]] = []
+    issue_indexes: dict[str, int] = {}
+    for issue in [*blocking_issues, *original_blocking_issues]:
+        code = str(issue.get("code") or "")
+        existing_index = issue_indexes.get(code) if code else None
+        if existing_index is None:
+            merged_issues.append(dict(issue))
+            if code:
+                issue_indexes[code] = len(merged_issues) - 1
+            continue
+        current = merged_issues[existing_index]
+        if issue.get("count") is not None:
+            current["count"] = max(int(current.get("count") or 0), int(issue.get("count") or 0))
+        if issue.get("documentVersionIds"):
+            current["documentVersionIds"] = sorted(
+                {
+                    *[str(item) for item in current.get("documentVersionIds") or []],
+                    *[str(item) for item in issue.get("documentVersionIds") or []],
+                }
+            )
+    blocking_issues = merged_issues
     grounding_status = "grounded" if not blocking_issues else "insufficient_evidence"
     refreshed["evidenceLinks"] = normalized_links
     refreshed["evidenceTextCorpus"] = evidence_texts[:240]
     refreshed["blockingIssues"] = blocking_issues
     refreshed["groundingStatus"] = grounding_status
+    original_summary = refreshed.get("summary") if isinstance(refreshed.get("summary"), dict) else {}
+
+    def preserved_count(key: str, current: int) -> int:
+        return max(int(original_summary.get(key) or 0), current)
+
     refreshed["summary"] = {
-        **(refreshed.get("summary") if isinstance(refreshed.get("summary"), dict) else {}),
-        "fieldCount": len(fields),
-        "tableCount": len(tables),
-        "sealCount": len(seals),
-        "fragmentCount": len(fragments),
+        **original_summary,
+        "fieldCount": preserved_count("fieldCount", len(fields)),
+        "tableCount": preserved_count("tableCount", len(tables)),
+        "sealCount": preserved_count("sealCount", len(seals)),
+        "fragmentCount": preserved_count("fragmentCount", len(fragments)),
         "evidenceLinkCount": len(normalized_links),
-        "lowConfidenceEvidenceCount": len(low_confidence),
-        "missingPositionEvidenceCount": len(missing_position),
-        "tableContentMissingCount": len(table_content_missing),
-        "sealTextRiskCount": len(seal_text_risk),
-        "criticalQualityFlagCount": len(critical_quality),
-        "missingDocumentVersionCount": len(missing_version_ids),
+        "lowConfidenceEvidenceCount": preserved_count("lowConfidenceEvidenceCount", len(low_confidence)),
+        "missingPositionEvidenceCount": preserved_count("missingPositionEvidenceCount", len(missing_position)),
+        "tableContentMissingCount": preserved_count("tableContentMissingCount", len(table_content_missing)),
+        "sealTextRiskCount": preserved_count("sealTextRiskCount", len(seal_text_risk)),
+        "criticalQualityFlagCount": preserved_count("criticalQualityFlagCount", len(critical_quality)),
+        "missingDocumentVersionCount": preserved_count("missingDocumentVersionCount", len(missing_version_ids)),
         "blockingIssueCount": len(blocking_issues),
         "groundingStatus": grounding_status,
     }
-    refreshed["reviewWarnings"] = _grounding_warnings(
+    review_warnings = _grounding_warnings(
         grounding_status,
         low_confidence,
         missing_position,
         blocking_issues,
     )
+    if grounding_status != "grounded":
+        warning_codes = {str(item.get("code") or "") for item in review_warnings}
+        for warning in _dict_items(refreshed.get("reviewWarnings")):
+            code = str(warning.get("code") or "")
+            if code in warning_codes or (
+                formal_links and code == "OCR_GROUNDING_EVIDENCE_LINK_MISSING"
+            ):
+                continue
+            review_warnings.append(dict(warning))
+            warning_codes.add(code)
+    refreshed["reviewWarnings"] = review_warnings
     return refreshed
 
 
