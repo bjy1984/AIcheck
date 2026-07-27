@@ -73,6 +73,7 @@ import ProjectNodeTree from '@/views/AICheck/components/ProjectNodeTree.vue'
 import R12RegistryVerificationDialog from '@/views/AICheck/components/R12RegistryVerificationDialog.vue'
 import R19SemanticEvidenceDialog from '@/views/AICheck/components/R19SemanticEvidenceDialog.vue'
 import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
+import { canSelectReviewEvidence } from '@/views/AIReviewB/evidenceSelection'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 
 const route = useRoute()
@@ -834,6 +835,7 @@ const openMessageReference = (reference: ReviewBReference) => {
 }
 
 const toggleEvidenceSelection = async (evidence: EvidenceLink) => {
+  if (!canSelectReviewEvidence(evidence)) return
   if (!session.value?.id) return
   actionLoading.value = true
   const selected = selectedEvidenceIds.value.has(evidence.id)
@@ -1270,7 +1272,10 @@ onBeforeUnmount(() => {
                         >查看原文</ElButton
                       >
                       <ElButton
-                        v-if="!('advisory' in block && block.advisory)"
+                        v-if="
+                          !('advisory' in block && block.advisory) &&
+                          canSelectReviewEvidence(evidence)
+                        "
                         text
                         @click="toggleEvidenceSelection(evidence)"
                       >

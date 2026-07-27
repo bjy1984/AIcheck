@@ -10120,12 +10120,12 @@ def review_assistant_deterministic_blocks(
                 )
                 allowed_versions = set(allowed_version_ids)
                 live_formal = [
-                    repo.clone(item)
+                    {**repo.clone(item), "selectable": False}
                     for item in live_result.get("formalCandidates") or []
                     if str(item.get("documentVersionId") or "") in allowed_versions
                 ]
                 live_advisory = [
-                    repo.clone(item)
+                    {**repo.clone(item), "selectable": False}
                     for item in live_result.get("advisoryCandidates") or []
                     if str(item.get("documentVersionId") or "") in allowed_versions
                 ]
@@ -10165,7 +10165,11 @@ def review_assistant_deterministic_blocks(
                 "fallbackReason": fallback_reason if fallback_used else None,
                 "degraded": degraded,
                 "query": query,
-                "evidenceLinkIds": [item.get("id") for item in formal_items if item.get("id")],
+                "evidenceLinkIds": [
+                    item.get("id")
+                    for item in formal_items
+                    if item.get("id") and item.get("selectable") is not False
+                ],
                 "items": formal_items,
             }
         )
@@ -10180,7 +10184,11 @@ def review_assistant_deterministic_blocks(
                     "fallbackReason": fallback_reason if fallback_used else None,
                     "degraded": degraded,
                     "query": query,
-                    "evidenceLinkIds": [item.get("id") for item in advisory_items if item.get("id")],
+                    "evidenceLinkIds": [
+                        item.get("id")
+                        for item in advisory_items
+                        if item.get("id") and item.get("selectable") is not False
+                    ],
                     "items": advisory_items,
                 }
             )

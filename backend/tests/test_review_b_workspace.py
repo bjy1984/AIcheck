@@ -299,11 +299,15 @@ def test_review_b_search_evidence_separates_located_candidates_and_advisory_file
     assert live_call["document_version_ids"] == ["DV-REVIEW-B-EVIDENCE"]
     assert cards[0]["retrievalTraceId"] == "RTR-LIVE-1"
     assert cards[0]["fallbackUsed"] is False
+    assert cards[0]["evidenceLinkIds"] == []
     assert [item["id"] for item in cards[0]["items"]] == ["EVC-LIVE-FORMAL"]
+    assert cards[0]["items"][0]["selectable"] is False
     assert cards[0]["items"][0]["fusedScore"] > 0
     assert cards[1]["advisory"] is True
     assert cards[1]["retrievalTraceId"] == "RTR-LIVE-1"
+    assert cards[1]["evidenceLinkIds"] == []
     assert [item["id"] for item in cards[1]["items"]] == ["EVC-LIVE-ADVISORY"]
+    assert cards[1]["items"][0]["selectable"] is False
     assert response["assistantMessage"]["execution"]["modelCalled"] is False
 
 
@@ -381,6 +385,10 @@ def test_review_b_search_evidence_falls_back_to_precomputed_cards(monkeypatch) -
     assert [item["id"] for item in cards[1]["items"]] == [
         "NEL-REVIEW-B-FALLBACK-ADVISORY"
     ]
+    assert cards[0]["evidenceLinkIds"] == ["NEL-REVIEW-B-FALLBACK-FORMAL"]
+    assert cards[1]["evidenceLinkIds"] == ["NEL-REVIEW-B-FALLBACK-ADVISORY"]
+    assert "selectable" not in cards[0]["items"][0]
+    assert "selectable" not in cards[1]["items"][0]
     assert all(card["fallbackUsed"] is True for card in cards)
     assert all(card["retrievalTraceId"] is None for card in cards)
     assert all(card["fallbackReason"] == "live_retrieval_exception" for card in cards)

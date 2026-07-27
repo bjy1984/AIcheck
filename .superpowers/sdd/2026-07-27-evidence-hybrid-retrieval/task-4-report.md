@@ -62,3 +62,41 @@ The warning is the existing FastAPI/Starlette `httpx` deprecation warning.
   unavailable. The focused and full review workspace pytest runs passed.
 - Both owned source files had substantial pre-existing worktree changes. Those
   changes remain in the worktree and are not part of the Task 4 commit.
+
+## Fix round 1 — live candidates are read-only
+
+Independent review found that live `EVC-*` candidate IDs were exposed through
+`evidenceLinkIds`, while the selection endpoint accepts only persisted node
+evidence links. The fix keeps slash-command retrieval side-effect free:
+
+- every in-scope live candidate is returned with `selectable: false`;
+- live cards omit those temporary IDs from `evidenceLinkIds`;
+- fallback/precomputed NEL items keep their legacy selectable-by-default
+  behavior and persistent IDs;
+- the B workspace hides the context-selection button for non-selectable items,
+  and the action handler independently refuses them;
+- locator fields remain unchanged, so live candidates can still open their
+  source document.
+
+RED evidence:
+
+```text
+backend response test:
+AssertionError: assert ['EVC-LIVE-FORMAL'] == []
+
+frontend selection test:
+ERR_MODULE_NOT_FOUND: evidenceSelection
+```
+
+GREEN verification:
+
+```text
+.venv/bin/pytest -q tests/test_review_b_workspace.py -k 'search_evidence'
+5 passed, 34 deselected, 1 warning
+
+pnpm exec tsx src/views/AIReviewB/evidenceSelection.test.ts
+passed
+
+pnpm exec vue-tsc --noEmit --skipLibCheck
+passed
+```

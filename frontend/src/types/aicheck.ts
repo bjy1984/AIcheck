@@ -266,6 +266,7 @@ export type NodeFileBinding = {
 
 export type EvidenceLink = {
   id: string
+  selectable?: boolean
   projectId?: string
   objectType?:
     | 'documentVersion'
