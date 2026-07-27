@@ -3768,6 +3768,7 @@ class InMemoryRepository:
         top_k: int = 5,
         source_id: str | None = None,
         index_version: str | None = None,
+        document_version_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
@@ -3782,6 +3783,12 @@ class InMemoryRepository:
             if index_version:
                 filters.append("index_version = %s")
                 params.append(index_version)
+            if document_version_ids is not None:
+                version_ids = sorted({str(item) for item in document_version_ids if item})
+                if not version_ids:
+                    return []
+                filters.append("document_version_id = ANY(%s)")
+                params.append(version_ids)
             where = "WHERE " + " AND ".join(filters) if filters else ""
             rows = self.sync_postgres.execute(
                 f"""
@@ -3834,8 +3841,12 @@ class InMemoryRepository:
         top_k: int = 5,
         source_id: str | None = None,
         index_version: str | None = None,
+        document_version_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         if not embedding:
+            return []
+        version_ids = {str(item) for item in document_version_ids if item} if document_version_ids is not None else None
+        if version_ids is not None and not version_ids:
             return []
         hits: list[dict[str, Any]] = []
         query_embedding = [float(item) for item in embedding]
@@ -3843,6 +3854,8 @@ class InMemoryRepository:
             if source_id and row.get("sourceId") != source_id:
                 continue
             if index_version and row.get("indexVersion") != index_version:
+                continue
+            if version_ids is not None and str(row.get("documentVersionId") or "") not in version_ids:
                 continue
             row_embedding = row.get("embedding")
             if not isinstance(row_embedding, list) or len(row_embedding) != len(query_embedding):
