@@ -160,6 +160,85 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
     }
 
 
+def refresh_grounded_review_input(
+    grounding_input: dict[str, Any],
+    evidence_links: list[dict[str, Any]],
+) -> dict[str, Any]:
+    refreshed = dict(grounding_input)
+    fields = _dict_items(refreshed.get("fields"))
+    tables = _dict_items(refreshed.get("tables"))
+    seals = _dict_items(refreshed.get("seals"))
+    fragments = _dict_items(refreshed.get("fragments"))
+    quality = _dict_items(refreshed.get("quality"))
+    normalized_links = _dict_items(evidence_links)
+    requested_version_ids = {
+        str(item)
+        for item in refreshed.get("documentVersionIds") or []
+        if str(item or "").strip()
+    }
+    available_version_ids = {
+        str(item.get("documentVersionId"))
+        for group in (fields, tables, seals, fragments, quality, normalized_links)
+        for item in group
+        if item.get("documentVersionId")
+    }
+    missing_version_ids = sorted(requested_version_ids - available_version_ids)
+    evidence_texts = _evidence_texts(
+        fields,
+        tables,
+        seals,
+        fragments,
+        normalized_links,
+    )
+    low_confidence = _low_confidence_items(fields, tables, seals, fragments)
+    missing_position = [
+        item
+        for item in [*fields, *tables, *seals, *fragments]
+        if not _has_position(item)
+    ]
+    table_content_missing = [item for item in tables if not _table_has_content(item)]
+    seal_text_risk = [item for item in seals if _seal_text_has_risk(item)]
+    critical_quality = _critical_quality_items(fields, tables, seals, fragments, quality)
+    blocking_issues = _blocking_grounding_issues(
+        evidence_texts=evidence_texts,
+        evidence_links=normalized_links,
+        low_confidence=low_confidence,
+        missing_position=missing_position,
+        table_content_missing=table_content_missing,
+        seal_text_risk=seal_text_risk,
+        critical_quality=critical_quality,
+        missing_version_ids=missing_version_ids,
+    )
+    grounding_status = "grounded" if not blocking_issues else "insufficient_evidence"
+    refreshed["evidenceLinks"] = normalized_links
+    refreshed["evidenceTextCorpus"] = evidence_texts[:240]
+    refreshed["blockingIssues"] = blocking_issues
+    refreshed["groundingStatus"] = grounding_status
+    refreshed["summary"] = {
+        **(refreshed.get("summary") if isinstance(refreshed.get("summary"), dict) else {}),
+        "fieldCount": len(fields),
+        "tableCount": len(tables),
+        "sealCount": len(seals),
+        "fragmentCount": len(fragments),
+        "evidenceLinkCount": len(normalized_links),
+        "lowConfidenceEvidenceCount": len(low_confidence),
+        "missingPositionEvidenceCount": len(missing_position),
+        "tableContentMissingCount": len(table_content_missing),
+        "sealTextRiskCount": len(seal_text_risk),
+        "criticalQualityFlagCount": len(critical_quality),
+        "missingDocumentVersionCount": len(missing_version_ids),
+        "blockingIssueCount": len(blocking_issues),
+        "groundingStatus": grounding_status,
+    }
+    refreshed["reviewWarnings"] = _grounding_warnings(
+        grounding_status,
+        low_confidence,
+        missing_position,
+        blocking_issues,
+    )
+    return refreshed
+
+
 def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: dict[str, Any]) -> list[dict[str, Any]]:
     evidence_links = [item for item in grounding_input.get("evidenceLinks") or [] if isinstance(item, dict)]
     evidence_link_map = {str(item.get("id")): item for item in evidence_links if item.get("id")}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from libs.db.repository import repo
+from libs.review_grounding import build_grounded_review_input
 from libs.review_orchestrator import execution
 
 
@@ -158,6 +159,40 @@ def test_merge_material_evidence_deduplicates_existing_links_and_prefers_confirm
     assert merged == [confirmed]
 
 
+def test_merge_material_evidence_recognizes_evidence_ref_id() -> None:
+    confirmed = {
+        **_candidate("IGNORED"),
+        "id": None,
+        "candidateId": None,
+        "evidenceId": None,
+        "evidenceRefId": "EV-REF-1",
+        "manualStatus": "confirmed",
+        "manualStatusLabel": "已确认",
+    }
+    live = [_candidate("EV-REF-1", page_no=9, quoted_text="不得追加的重复证据")]
+
+    merged = execution.merge_material_evidence([confirmed], live)
+
+    assert merged == [confirmed]
+
+
+def test_merge_material_evidence_reindexes_after_confirmed_replaces_pending() -> None:
+    pending = _candidate("EV-SAME", page_no=2, quoted_text="待确认旧定位")
+    confirmed = {
+        **_candidate("EV-SAME", page_no=5, quoted_text="人工确认新定位"),
+        "manualStatus": "confirmed",
+        "manualStatusLabel": "已确认",
+    }
+    live_same_locator = _candidate("EVC-OTHER", page_no=5, quoted_text="人工确认新定位")
+
+    merged = execution.merge_material_evidence(
+        [pending, confirmed],
+        [live_same_locator],
+    )
+
+    assert merged == [confirmed]
+
+
 def test_material_evidence_merge_updates_grounding_input(monkeypatch) -> None:
     new_candidate = _candidate("EVC-LIVE", page_no=4, quoted_text="许可范围 GC1")
     monkeypatch.setattr(
@@ -183,6 +218,84 @@ def test_material_evidence_merge_updates_grounding_input(monkeypatch) -> None:
         "许可范围 GC1",
     ]
     assert context["groundingInput"]["summary"]["evidenceLinkCount"] == 2
+
+
+def test_material_evidence_merge_recomputes_grounding_status(monkeypatch) -> None:
+    grounding_input = build_grounded_review_input(
+        {
+            "extracted_fields": [
+                {
+                    "id": "FIELD-1",
+                    "documentVersionId": "DV-FROZEN",
+                    "fieldName": "许可证编号",
+                    "fieldValue": "TS-001",
+                    "pageNo": 3,
+                    "bbox": [10, 20, 100, 40],
+                    "confidence": 0.99,
+                }
+            ],
+            "ocr_parse_results": [],
+            "evidence_links": [],
+        },
+        {"DV-FROZEN"},
+    )
+    assert [item["code"] for item in grounding_input["blockingIssues"]] == [
+        "OCR_GROUNDING_EVIDENCE_LINK_MISSING"
+    ]
+    monkeypatch.setattr(
+        execution,
+        "search_project_evidence",
+        lambda search_repo, **kwargs: _live_result(_candidate("EVC-LIVE")),
+    )
+    context = _context()
+    context["evidenceLinks"] = []
+    context["groundingInput"] = grounding_input
+
+    execution.run_step(_review_run(), "retrieve_material_evidence", context)
+
+    assert context["groundingInput"]["groundingStatus"] == "grounded"
+    assert context["groundingInput"]["blockingIssues"] == []
+    assert context["groundingInput"]["summary"]["blockingIssueCount"] == 0
+    assert context["groundingInput"]["summary"]["groundingStatus"] == "grounded"
+    assert context["groundingInput"]["reviewWarnings"] == []
+
+
+def test_pure_llm_material_evidence_step_skips_ocr_retrieval(monkeypatch) -> None:
+    def forbidden_search(search_repo, **kwargs):
+        raise AssertionError("pure LLM mode must not retrieve OCR material evidence")
+
+    monkeypatch.setattr(execution, "search_project_evidence", forbidden_search)
+    review_run = {**_review_run(), "auditInputMode": "pure_llm"}
+    context: dict = {}
+    execution.run_step(review_run, "load_ocr_result", context)
+    original_grounding = repo.clone(context["groundingInput"])
+
+    details = execution.run_step(review_run, "retrieve_material_evidence", context)
+
+    assert context["groundingInput"] == original_grounding
+    assert context["evidenceLinks"] == []
+    assert context["materialEvidenceRetrieval"] == {
+        "retrievalTraceId": None,
+        "formalCandidates": [],
+        "advisoryCandidates": [],
+        "allCandidates": [],
+        "degraded": False,
+        "fallbackUsed": False,
+        "skipped": True,
+        "skipReason": "ocr_evidence_disabled",
+    }
+    assert details == {
+        "retrievalTraceId": None,
+        "candidateCount": 0,
+        "formalCandidateCount": 0,
+        "advisoryCandidateCount": 0,
+        "evidenceLinkCount": 0,
+        "fallbackUsed": False,
+        "degraded": False,
+        "skipped": True,
+        "skipReason": "ocr_evidence_disabled",
+        "auditInputMode": "pure_llm",
+    }
 
 
 def test_material_evidence_retrieval_failure_falls_back_without_blocking(monkeypatch) -> None:

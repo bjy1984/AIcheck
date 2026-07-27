@@ -2016,7 +2016,13 @@ def build_material_evidence_query(review_run: dict[str, Any], context: dict[str,
 
 
 def _material_evidence_id(item: dict[str, Any]) -> str:
-    return str(item.get("evidenceId") or item.get("id") or item.get("candidateId") or "").strip()
+    return str(
+        item.get("evidenceId")
+        or item.get("evidenceRefId")
+        or item.get("id")
+        or item.get("candidateId")
+        or ""
+    ).strip()
 
 
 def _material_evidence_locator(item: dict[str, Any]) -> tuple[str, Any, tuple[Any, ...], str] | None:
@@ -2028,22 +2034,33 @@ def _material_evidence_locator(item: dict[str, Any]) -> tuple[str, Any, tuple[An
     return document_version_id, item.get("pageNo"), tuple(bbox), quoted_text
 
 
+def _material_evidence_match_index(
+    items: list[dict[str, Any]],
+    candidate: dict[str, Any],
+) -> int | None:
+    evidence_id = _material_evidence_id(candidate)
+    if evidence_id:
+        for index, item in enumerate(items):
+            if _material_evidence_id(item) == evidence_id:
+                return index
+    locator = _material_evidence_locator(candidate)
+    if locator is not None:
+        for index, item in enumerate(items):
+            if _material_evidence_locator(item) == locator:
+                return index
+    return None
+
+
 def merge_material_evidence(
     existing: list[dict[str, Any]],
     live_candidates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     merged: list[dict[str, Any]] = []
-    id_indexes: dict[str, int] = {}
-    locator_indexes: dict[tuple[str, Any, tuple[Any, ...], str], int] = {}
     for raw_item in existing:
         if not isinstance(raw_item, dict):
             continue
         item = repo.clone(raw_item)
-        evidence_id = _material_evidence_id(item)
-        locator = _material_evidence_locator(item)
-        existing_index = id_indexes.get(evidence_id) if evidence_id else None
-        if existing_index is None and locator is not None:
-            existing_index = locator_indexes.get(locator)
+        existing_index = _material_evidence_match_index(merged, item)
         if existing_index is not None:
             if (
                 str(item.get("manualStatus") or "") == "confirmed"
@@ -2052,11 +2069,6 @@ def merge_material_evidence(
                 merged[existing_index] = item
             continue
         merged.append(item)
-        new_index = len(merged) - 1
-        if evidence_id:
-            id_indexes[evidence_id] = new_index
-        if locator is not None:
-            locator_indexes[locator] = new_index
     for candidate in live_candidates:
         if not isinstance(candidate, dict):
             continue
@@ -2066,22 +2078,13 @@ def merge_material_evidence(
             "manualStatusLabel": "待确认",
             "requiresHumanConfirmation": True,
         }
-        evidence_id = _material_evidence_id(pending)
-        locator = _material_evidence_locator(pending)
-        existing_index = id_indexes.get(evidence_id) if evidence_id else None
-        if existing_index is None and locator is not None:
-            existing_index = locator_indexes.get(locator)
+        existing_index = _material_evidence_match_index(merged, pending)
         if existing_index is not None:
             if str(merged[existing_index].get("manualStatus") or "") == "confirmed":
                 continue
             merged[existing_index] = {**merged[existing_index], **pending}
             continue
         merged.append(pending)
-        new_index = len(merged) - 1
-        if evidence_id:
-            id_indexes[evidence_id] = new_index
-        if locator is not None:
-            locator_indexes[locator] = new_index
     return sorted(
         merged,
         key=lambda item: 0 if str(item.get("manualStatus") or "") == "confirmed" else 1,
@@ -2237,6 +2240,29 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "groundingStatus": grounding_input.get("groundingStatus"),
         }
     if node_key == "retrieve_material_evidence":
+        if not audit_runtime["useOcrEvidence"]:
+            context["materialEvidenceRetrieval"] = {
+                "retrievalTraceId": None,
+                "formalCandidates": [],
+                "advisoryCandidates": [],
+                "allCandidates": [],
+                "degraded": False,
+                "fallbackUsed": False,
+                "skipped": True,
+                "skipReason": "ocr_evidence_disabled",
+            }
+            return {
+                "retrievalTraceId": None,
+                "candidateCount": 0,
+                "formalCandidateCount": 0,
+                "advisoryCandidateCount": 0,
+                "evidenceLinkCount": len(context.get("evidenceLinks") or []),
+                "fallbackUsed": False,
+                "degraded": False,
+                "skipped": True,
+                "skipReason": "ocr_evidence_disabled",
+                "auditInputMode": audit_runtime["mode"],
+            }
         try:
             retrieval = search_project_evidence(
                 repo,
@@ -2281,18 +2307,12 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context["evidenceLinks"] = evidence_links
         grounding_input = context.get("groundingInput")
         if isinstance(grounding_input, dict):
-            grounding_input["evidenceLinks"] = repo.clone(evidence_links)
-            evidence_text_corpus = [
-                str(item)
-                for item in grounding_input.get("evidenceTextCorpus") or []
-                if str(item).strip()
-            ]
-            for evidence in evidence_links:
-                quoted_text = str(evidence.get("quotedText") or "").strip()
-                if quoted_text and quoted_text not in evidence_text_corpus:
-                    evidence_text_corpus.append(quoted_text)
-            grounding_input["evidenceTextCorpus"] = evidence_text_corpus
-            grounding_input.setdefault("summary", {})["evidenceLinkCount"] = len(evidence_links)
+            from libs.review_grounding import refresh_grounded_review_input
+
+            context["groundingInput"] = refresh_grounded_review_input(
+                grounding_input,
+                evidence_links,
+            )
         context["materialEvidenceRetrieval"] = {
             **retrieval,
             "retrievalTraceId": trace.get("retrievalTraceId") or trace.get("id"),
