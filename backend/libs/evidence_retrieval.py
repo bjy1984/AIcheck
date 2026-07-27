@@ -32,9 +32,13 @@ def _record_id(record: dict[str, Any]) -> str:
 
 
 def _document_is_effective(document: dict[str, Any]) -> bool:
-    status = str(document.get("status") or "").strip().lower()
+    statuses = {
+        str(document.get(field) or "").strip().lower()
+        for field in ("status", "fileStatus")
+        if str(document.get(field) or "").strip()
+    }
     return (
-        status not in INEFFECTIVE_DOCUMENT_STATUSES
+        statuses.isdisjoint(INEFFECTIVE_DOCUMENT_STATUSES)
         and document.get("effective") is not False
         and document.get("isEffective") is not False
         and not document.get("withdrawnAt")

@@ -423,3 +423,35 @@ def test_evidence_trace_has_stable_tenant_and_dense_diagnostics(monkeypatch) -> 
     assert result["trace"]["filters"]["tenantId"] == "TENANT-EVIDENCE"
     assert result["trace"]["denseRetrieval"]["embeddingModel"] is None
     assert result["trace"]["denseRetrieval"]["indexVersion"] is None
+
+
+def test_evidence_withdrawn_document_is_excluded() -> None:
+    """Ignoring canonical fileStatus must expose withdrawn document evidence."""
+    repository = evidence_repository()
+    repository.state["documents"][0]["fileStatus"] = "已撤回"
+
+    result = search_project_evidence(
+        repository,
+        project_id="P-1",
+        node_id=1,
+        document_version_ids=["DV-P1"],
+        query="许可证",
+    )
+
+    assert result["allCandidates"] == []
+
+
+def test_evidence_void_document_is_excluded() -> None:
+    """Ignoring canonical fileStatus must expose void document evidence."""
+    repository = evidence_repository()
+    repository.state["documents"][0]["fileStatus"] = "已作废"
+
+    result = search_project_evidence(
+        repository,
+        project_id="P-1",
+        node_id=1,
+        document_version_ids=["DV-P1"],
+        query="许可证",
+    )
+
+    assert result["allCandidates"] == []
