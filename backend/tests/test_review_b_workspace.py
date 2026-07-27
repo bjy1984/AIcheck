@@ -50,6 +50,27 @@ def create_session() -> dict:
     return payload["session"]
 
 
+def call_review_agent_tool(
+    tool_name: str,
+    arguments: dict,
+    *,
+    evidence_links: list[dict],
+) -> dict:
+    project = repo.require_project(PROJECT_ID) or {}
+    return routes_module.review_conversation_agent_tool_output(
+        tool_name,
+        arguments,
+        session={"projectId": PROJECT_ID, "nodeId": NODE_ID},
+        project=project,
+        node=repo.node(PROJECT_ID, NODE_ID) or {"nodeId": NODE_ID},
+        basis={},
+        basis_items=[],
+        readiness={},
+        evidence_links=evidence_links,
+        review_run=None,
+    )
+
+
 def test_review_b_workspace_creates_and_recovers_node_session() -> None:
     before = assert_ok(
         client.get(
@@ -777,6 +798,232 @@ def test_review_b_agent_runs_bounded_read_only_tool_loop(monkeypatch) -> None:
     assert "agent.tool_call.completed" in event_types
     assert "agent.execution.completed" in event_types
     assert "agent.model_call.failed" not in event_types
+
+
+def test_review_b_agent_search_uses_hybrid_evidence_service(monkeypatch) -> None:
+    visible_link = {
+        "id": "NEL-AGENT-VISIBLE",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "documentId": "DOC-AGENT-VISIBLE",
+        "documentVersionId": "DV-AGENT-VISIBLE",
+        "fileName": "设计单位许可证.pdf",
+        "manualStatus": "pending",
+        "pageNo": 2,
+        "bbox": [10, 20, 260, 60],
+        "quotedText": "许可范围：压力管道设计 GC2",
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+    }
+    called = {}
+    formal = {
+        **visible_link,
+        "id": "EVC-AGENT-FORMAL",
+        "candidateId": "EVC-AGENT-FORMAL",
+        "bm25Rank": 1,
+        "denseRank": 2,
+        "fusedScore": 0.027,
+    }
+    advisory = {
+        **visible_link,
+        "id": "EVC-AGENT-ADVISORY",
+        "candidateId": "EVC-AGENT-ADVISORY",
+        "pageNo": 1,
+        "bbox": None,
+        "quotedText": "设计单位许可证",
+        "formalEvidenceEligible": False,
+        "evidenceTier": "advisory",
+        "rejectionReasons": ["missing_bbox"],
+        "bm25Rank": 2,
+        "denseRank": 1,
+        "fusedScore": 0.026,
+    }
+    out_of_scope = {
+        **formal,
+        "id": "EVC-AGENT-OUT-OF-SCOPE",
+        "candidateId": "EVC-AGENT-OUT-OF-SCOPE",
+        "documentVersionId": "DV-AGENT-HIDDEN",
+    }
+
+    def fake_search_project_evidence(repository, **kwargs):
+        called.update(kwargs)
+        return {
+            "formalCandidates": [formal, out_of_scope],
+            "advisoryCandidates": [advisory],
+            "allCandidates": [formal, advisory, out_of_scope],
+            "trace": {"retrievalTraceId": "RTR-AGENT-1"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        fake_search_project_evidence,
+    )
+    output = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证有效期"},
+        evidence_links=[visible_link],
+    )
+
+    assert called["project_id"] == PROJECT_ID
+    assert called["node_id"] == NODE_ID
+    assert called["document_version_ids"] == ["DV-AGENT-VISIBLE"]
+    assert called["query"] == "许可证有效期"
+    assert output["projectId"] == PROJECT_ID
+    assert output["retrievalTraceId"] == "RTR-AGENT-1"
+    assert output["fallbackUsed"] is False
+    assert output["candidateCount"] == 2
+    assert output["formalCandidateCount"] == 1
+    assert output["advisoryCandidateCount"] == 1
+    assert [item["candidateId"] for item in output["candidates"]] == [
+        "EVC-AGENT-FORMAL",
+        "EVC-AGENT-ADVISORY",
+    ]
+    assert output["candidates"][0]["bm25Rank"] == 1
+    assert output["candidates"][0]["denseRank"] == 2
+    assert output["candidates"][0]["fusedScore"] == 0.027
+    assert output["candidates"][0]["evidenceTier"] == "formal"
+    assert output["candidates"][1]["evidenceTier"] == "advisory"
+
+
+def test_review_b_agent_search_falls_back_only_on_service_exception(monkeypatch) -> None:
+    visible_links = [
+        {
+            "id": "NEL-AGENT-FALLBACK-FORMAL",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "documentId": "DOC-AGENT-FALLBACK",
+            "documentVersionId": "DV-AGENT-FALLBACK",
+            "fileName": "设计单位许可证.pdf",
+            "manualStatus": "pending",
+            "pageNo": 2,
+            "bbox": [10, 20, 260, 60],
+            "quotedText": "许可范围：压力管道设计 GC2",
+            "formalEvidenceEligible": True,
+            "evidenceTier": "formal",
+        },
+        {
+            "id": "NEL-AGENT-FALLBACK-ADVISORY",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "documentId": "DOC-AGENT-FALLBACK",
+            "documentVersionId": "DV-AGENT-FALLBACK",
+            "fileName": "设计单位许可证.pdf",
+            "manualStatus": "pending",
+            "pageNo": 1,
+            "bbox": None,
+            "quotedText": "设计单位许可证",
+            "formalEvidenceEligible": False,
+            "evidenceTier": "advisory",
+            "rejectionReasons": ["missing_bbox"],
+        },
+    ]
+
+    def broken_search_project_evidence(repository, **kwargs):
+        raise RuntimeError("retrieval unavailable")
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        broken_search_project_evidence,
+    )
+    output = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证有效期"},
+        evidence_links=visible_links,
+    )
+
+    assert output["fallbackUsed"] is True
+    assert output["fallbackReason"] == "live_retrieval_exception"
+    assert output["retrievalTraceId"] is None
+    assert output["candidateCount"] == 2
+    assert [item["candidateId"] for item in output["candidates"]] == [
+        "NEL-AGENT-FALLBACK-FORMAL",
+        "NEL-AGENT-FALLBACK-ADVISORY",
+    ]
+    assert [item["evidenceLinkId"] for item in output["candidates"]] == [
+        "NEL-AGENT-FALLBACK-FORMAL",
+        "NEL-AGENT-FALLBACK-ADVISORY",
+    ]
+    assert output["formalCandidateCount"] == 1
+    assert output["advisoryCandidateCount"] == 1
+
+
+def test_review_b_agent_search_successful_no_hit_returns_zero_candidates(
+    monkeypatch,
+) -> None:
+    visible_link = {
+        "id": "NEL-AGENT-NO-HIT",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "documentId": "DOC-AGENT-NO-HIT",
+        "documentVersionId": "DV-AGENT-NO-HIT",
+        "fileName": "设计单位许可证.pdf",
+        "manualStatus": "pending",
+        "pageNo": 2,
+        "bbox": [10, 20, 260, 60],
+        "quotedText": "许可范围：压力管道设计 GC2",
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+    }
+
+    def empty_search_project_evidence(repository, **kwargs):
+        return {
+            "formalCandidates": [],
+            "advisoryCandidates": [],
+            "allCandidates": [],
+            "trace": {"retrievalTraceId": "RTR-AGENT-NO-HIT"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        empty_search_project_evidence,
+    )
+    output = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "不存在的证据"},
+        evidence_links=[visible_link],
+    )
+
+    assert output["retrievalTraceId"] == "RTR-AGENT-NO-HIT"
+    assert output["candidateCount"] == 0
+    assert output["candidates"] == []
+    assert output["queryMissed"] is True
+    assert output["fallbackUsed"] is False
+    assert output["fallbackReason"] is None
+
+
+def test_review_b_agent_search_never_calls_service_with_empty_allowlist(
+    monkeypatch,
+) -> None:
+    called = False
+
+    def forbidden_project_wide_search(repository, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("project-wide search must not run")
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        forbidden_project_wide_search,
+    )
+    output = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证"},
+        evidence_links=[],
+    )
+
+    assert called is False
+    assert output["candidateCount"] == 0
+    assert output["candidates"] == []
+    assert output["fallbackUsed"] is False
+    assert output["fallbackReason"] == "empty_visible_evidence_scope"
 
 
 def _tool_call_response(turn: int) -> dict:
