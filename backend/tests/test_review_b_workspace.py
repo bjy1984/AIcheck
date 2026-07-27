@@ -888,6 +888,109 @@ def test_review_b_agent_search_uses_hybrid_evidence_service(monkeypatch) -> None
     assert output["candidates"][1]["evidenceTier"] == "advisory"
 
 
+def test_review_b_agent_search_uses_visible_manual_status_scope(monkeypatch) -> None:
+    confirmed_link = {
+        "id": "NEL-AGENT-CONFIRMED",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "documentId": "DOC-AGENT-CONFIRMED",
+        "documentVersionId": "DV-AGENT-CONFIRMED",
+        "fileName": "已确认许可证.pdf",
+        "manualStatus": "confirmed",
+        "manualStatusLabel": "已确认",
+        "pageNo": 2,
+        "bbox": [10, 20, 260, 60],
+        "quotedText": "许可证有效期至 2028-12-31",
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+    }
+    pending_link = {
+        **confirmed_link,
+        "id": "NEL-AGENT-PENDING",
+        "documentId": "DOC-AGENT-PENDING",
+        "documentVersionId": "DV-AGENT-PENDING",
+        "fileName": "待确认许可证.pdf",
+        "manualStatus": "pending",
+        "manualStatusLabel": "待确认",
+    }
+    live_candidates = [
+        {
+            **confirmed_link,
+            "id": "EVC-AGENT-CONFIRMED",
+            "candidateId": "EVC-AGENT-CONFIRMED",
+            "manualStatus": "pending",
+            "manualStatusLabel": "待确认",
+            "bm25Rank": 1,
+            "denseRank": 1,
+            "fusedScore": 0.027,
+        },
+        {
+            **pending_link,
+            "id": "EVC-AGENT-PENDING",
+            "candidateId": "EVC-AGENT-PENDING",
+            "manualStatus": "pending",
+            "manualStatusLabel": "待确认",
+            "bm25Rank": 2,
+            "denseRank": 2,
+            "fusedScore": 0.026,
+        },
+    ]
+    calls = []
+
+    def fake_search_project_evidence(repository, **kwargs):
+        calls.append(kwargs)
+        return {
+            "formalCandidates": live_candidates,
+            "advisoryCandidates": [],
+            "allCandidates": live_candidates,
+            "trace": {"retrievalTraceId": f"RTR-STATUS-{len(calls)}"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        fake_search_project_evidence,
+    )
+    confirmed = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证", "manualStatus": "confirmed"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+    pending = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证", "manualStatus": "pending"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+    unfiltered = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+
+    assert calls[0]["document_version_ids"] == ["DV-AGENT-CONFIRMED"]
+    assert calls[1]["document_version_ids"] == ["DV-AGENT-PENDING"]
+    assert calls[2]["document_version_ids"] == [
+        "DV-AGENT-CONFIRMED",
+        "DV-AGENT-PENDING",
+    ]
+    assert [item["candidateId"] for item in confirmed["candidates"]] == [
+        "EVC-AGENT-CONFIRMED"
+    ]
+    assert confirmed["candidates"][0]["manualStatus"] == "confirmed"
+    assert confirmed["candidates"][0]["manualStatusLabel"] == "已确认"
+    assert [item["candidateId"] for item in pending["candidates"]] == [
+        "EVC-AGENT-PENDING"
+    ]
+    assert pending["candidates"][0]["manualStatus"] == "pending"
+    assert pending["candidates"][0]["manualStatusLabel"] == "待确认"
+    assert [item["manualStatus"] for item in unfiltered["candidates"]] == [
+        "confirmed",
+        "pending",
+    ]
+
+
 def test_review_b_agent_search_falls_back_only_on_service_exception(monkeypatch) -> None:
     visible_links = [
         {
@@ -901,8 +1004,6 @@ def test_review_b_agent_search_falls_back_only_on_service_exception(monkeypatch)
             "pageNo": 2,
             "bbox": [10, 20, 260, 60],
             "quotedText": "许可范围：压力管道设计 GC2",
-            "formalEvidenceEligible": True,
-            "evidenceTier": "formal",
         },
         {
             "id": "NEL-AGENT-FALLBACK-ADVISORY",
@@ -947,6 +1048,10 @@ def test_review_b_agent_search_falls_back_only_on_service_exception(monkeypatch)
         "NEL-AGENT-FALLBACK-FORMAL",
         "NEL-AGENT-FALLBACK-ADVISORY",
     ]
+    assert output["candidates"][0]["formalEvidenceEligible"] is True
+    assert output["candidates"][0]["evidenceTier"] == "formal"
+    assert output["candidates"][1]["formalEvidenceEligible"] is False
+    assert output["candidates"][1]["evidenceTier"] == "advisory"
     assert output["formalCandidateCount"] == 1
     assert output["advisoryCandidateCount"] == 1
 
