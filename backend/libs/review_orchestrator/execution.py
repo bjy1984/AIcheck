@@ -15,9 +15,11 @@ from libs.business_pack.clause_store import (
 from libs.contracts.responses import server_time
 from libs.audit_runtime import audit_runtime_config, audit_runtime_for_run, audit_runtime_public_config
 from libs.db.repository import flush_state_records, repo
+from libs.evidence_retrieval import search_project_evidence
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
+from libs.material_targeting import evidence_fact_targets, review_points_for_project
 from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
@@ -63,6 +65,7 @@ from libs.security.tenant import current_tenant_id, tenant_id_for_record
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
     {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
     {"key": "load_ocr_result", "label": "加载 OCR 证据", "taskQueue": "review.graph"},
+    {"key": "retrieve_material_evidence", "label": "检索材料证据", "taskQueue": "review.retrieval"},
     {"key": "run_rule_engine", "label": "执行确定性规则", "taskQueue": "review.validation"},
     {"key": "retrieve_knowledge", "label": "检索知识依据", "taskQueue": "review.retrieval"},
     {"key": "build_prompt", "label": "构造审查 Prompt", "taskQueue": "review.graph"},
@@ -1973,6 +1976,118 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         }
 
 
+def build_material_evidence_query(review_run: dict[str, Any], context: dict[str, Any]) -> str:
+    parts: list[str] = []
+
+    def add(value: Any) -> None:
+        text = re.sub(r"\s+", " ", str(value or "")).strip()
+        if text and text not in parts:
+            parts.append(text)
+
+    add((context.get("node") or {}).get("name"))
+    review_points = context.get("reviewPoints")
+    if not isinstance(review_points, list):
+        review_points = review_points_for_project(
+            repo,
+            context.get("project") if isinstance(context.get("project"), dict) else None,
+            node_id=int(review_run.get("nodeId") or 0),
+        )
+    for point in review_points:
+        if not isinstance(point, dict):
+            continue
+        add(point.get("reviewContent"))
+        add(point.get("fileContent"))
+        add(point.get("evidenceItemText"))
+        for evidence_item in point.get("evidenceItems") or []:
+            add(evidence_item)
+        fact_targets = point.get("factTargets")
+        if not isinstance(fact_targets, list):
+            fact_targets = evidence_fact_targets(point)
+        for target in fact_targets:
+            if not isinstance(target, dict):
+                continue
+            add(target.get("targetName"))
+            for field_name in target.get("fieldNames") or []:
+                add(field_name)
+            for term in target.get("matchTerms") or []:
+                add(term)
+    query = " ".join(parts)[:512].strip()
+    return query or f"{(context.get('node') or {}).get('name') or '节点'} 材料证据"
+
+
+def _material_evidence_id(item: dict[str, Any]) -> str:
+    return str(item.get("evidenceId") or item.get("id") or item.get("candidateId") or "").strip()
+
+
+def _material_evidence_locator(item: dict[str, Any]) -> tuple[str, Any, tuple[Any, ...], str] | None:
+    document_version_id = str(item.get("documentVersionId") or "").strip()
+    quoted_text = str(item.get("quotedText") or "").strip()
+    bbox = item.get("bbox")
+    if not document_version_id or item.get("pageNo") is None or not isinstance(bbox, (list, tuple)):
+        return None
+    return document_version_id, item.get("pageNo"), tuple(bbox), quoted_text
+
+
+def merge_material_evidence(
+    existing: list[dict[str, Any]],
+    live_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    id_indexes: dict[str, int] = {}
+    locator_indexes: dict[tuple[str, Any, tuple[Any, ...], str], int] = {}
+    for raw_item in existing:
+        if not isinstance(raw_item, dict):
+            continue
+        item = repo.clone(raw_item)
+        evidence_id = _material_evidence_id(item)
+        locator = _material_evidence_locator(item)
+        existing_index = id_indexes.get(evidence_id) if evidence_id else None
+        if existing_index is None and locator is not None:
+            existing_index = locator_indexes.get(locator)
+        if existing_index is not None:
+            if (
+                str(item.get("manualStatus") or "") == "confirmed"
+                and str(merged[existing_index].get("manualStatus") or "") != "confirmed"
+            ):
+                merged[existing_index] = item
+            continue
+        merged.append(item)
+        new_index = len(merged) - 1
+        if evidence_id:
+            id_indexes[evidence_id] = new_index
+        if locator is not None:
+            locator_indexes[locator] = new_index
+    for candidate in live_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        pending = {
+            **repo.clone(candidate),
+            "manualStatus": "pending",
+            "manualStatusLabel": "待确认",
+            "requiresHumanConfirmation": True,
+        }
+        evidence_id = _material_evidence_id(pending)
+        locator = _material_evidence_locator(pending)
+        existing_index = id_indexes.get(evidence_id) if evidence_id else None
+        if existing_index is None and locator is not None:
+            existing_index = locator_indexes.get(locator)
+        if existing_index is not None:
+            if str(merged[existing_index].get("manualStatus") or "") == "confirmed":
+                continue
+            merged[existing_index] = {**merged[existing_index], **pending}
+            continue
+        merged.append(pending)
+        new_index = len(merged) - 1
+        if evidence_id:
+            id_indexes[evidence_id] = new_index
+        if locator is not None:
+            locator_indexes[locator] = new_index
+    return sorted(
+        merged,
+        key=lambda item: 0 if str(item.get("manualStatus") or "") == "confirmed" else 1,
+    )
+
+
 def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any]) -> dict[str, Any]:
     audit_runtime = audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
@@ -2120,6 +2235,84 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "fragmentCount": summary.get("fragmentCount", 0),
             "evidenceLinkCount": summary.get("evidenceLinkCount", len(evidence_links)),
             "groundingStatus": grounding_input.get("groundingStatus"),
+        }
+    if node_key == "retrieve_material_evidence":
+        try:
+            retrieval = search_project_evidence(
+                repo,
+                project_id=str(review_run.get("projectId") or ""),
+                node_id=int(review_run.get("nodeId") or 0),
+                document_version_ids=list(review_run.get("inputDocumentVersionIds") or []),
+                query=build_material_evidence_query(review_run, context),
+                review_run_id=str(review_run.get("reviewRunId") or ""),
+            )
+        except Exception as exc:  # noqa: BLE001 - evidence retrieval degrades to precomputed evidence.
+            context["materialEvidenceRetrieval"] = {
+                "retrievalTraceId": None,
+                "formalCandidates": [],
+                "advisoryCandidates": [],
+                "allCandidates": [],
+                "degraded": True,
+                "fallbackUsed": True,
+                "fallbackReason": "material_evidence_retrieval_failed",
+                "errorType": type(exc).__name__,
+            }
+            return {
+                "retrievalTraceId": None,
+                "candidateCount": 0,
+                "formalCandidateCount": 0,
+                "advisoryCandidateCount": 0,
+                "evidenceLinkCount": len(context.get("evidenceLinks") or []),
+                "fallbackUsed": True,
+                "degraded": True,
+                "fallbackReason": "material_evidence_retrieval_failed",
+            }
+        trace = retrieval.get("trace") if isinstance(retrieval.get("trace"), dict) else {}
+        live_candidates = retrieval.get("allCandidates")
+        if not isinstance(live_candidates, list):
+            live_candidates = [
+                *(retrieval.get("formalCandidates") or []),
+                *(retrieval.get("advisoryCandidates") or []),
+            ]
+        evidence_links = merge_material_evidence(
+            context.get("evidenceLinks") or [],
+            live_candidates,
+        )
+        context["evidenceLinks"] = evidence_links
+        grounding_input = context.get("groundingInput")
+        if isinstance(grounding_input, dict):
+            grounding_input["evidenceLinks"] = repo.clone(evidence_links)
+            evidence_text_corpus = [
+                str(item)
+                for item in grounding_input.get("evidenceTextCorpus") or []
+                if str(item).strip()
+            ]
+            for evidence in evidence_links:
+                quoted_text = str(evidence.get("quotedText") or "").strip()
+                if quoted_text and quoted_text not in evidence_text_corpus:
+                    evidence_text_corpus.append(quoted_text)
+            grounding_input["evidenceTextCorpus"] = evidence_text_corpus
+            grounding_input.setdefault("summary", {})["evidenceLinkCount"] = len(evidence_links)
+        context["materialEvidenceRetrieval"] = {
+            **retrieval,
+            "retrievalTraceId": trace.get("retrievalTraceId") or trace.get("id"),
+            "fallbackUsed": False,
+        }
+        return {
+            "retrievalTraceId": trace.get("retrievalTraceId") or trace.get("id"),
+            "candidateCount": trace.get("candidateCount", len(live_candidates)),
+            "formalCandidateCount": trace.get(
+                "formalCandidateCount",
+                len(retrieval.get("formalCandidates") or []),
+            ),
+            "advisoryCandidateCount": trace.get(
+                "advisoryCandidateCount",
+                len(retrieval.get("advisoryCandidates") or []),
+            ),
+            "evidenceLinkCount": len(evidence_links),
+            "fallbackUsed": False,
+            "degraded": bool(retrieval.get("degraded")),
+            "fallbackReason": retrieval.get("fallbackReason"),
         }
     if node_key == "run_rule_engine":
         project = context.get("project") or repo.require_project(str(review_run.get("projectId") or "")) or {}
@@ -3426,6 +3619,11 @@ def compact_retrieval_trace(trace: dict[str, Any]) -> dict[str, Any]:
         ],
         "pageIndexNodeCount": len(page_index_tree.get("selectedNodes") or []),
         "pageIndexLinkedClauseIds": page_index_tree.get("linkedClauseIds") or [],
+        "candidateCount": trace.get("candidateCount", 0),
+        "formalCandidateCount": trace.get("formalCandidateCount", 0),
+        "advisoryCandidateCount": trace.get("advisoryCandidateCount", 0),
+        "degraded": bool(trace.get("degraded")),
+        "fallbackReason": trace.get("fallbackReason"),
     }
 
 
@@ -3466,6 +3664,12 @@ def graph_view_for_review_run(review_run_id: str) -> dict[str, Any]:
         for item in repo.state["retrieval_traces"]
         if item.get("reviewRunId") == review_run_id
     ]
+    material_retrieval_traces = [
+        item for item in retrieval_traces if item.get("queryType") == "material_evidence_search"
+    ]
+    knowledge_retrieval_traces = [
+        item for item in retrieval_traces if item.get("queryType") != "material_evidence_search"
+    ]
     tool_calls_by_node: dict[str, list[dict[str, Any]]] = {}
     for call in tool_calls:
         tool_calls_by_node.setdefault(str(call.get("nodeKey")), []).append(call)
@@ -3476,14 +3680,22 @@ def graph_view_for_review_run(review_run_id: str) -> dict[str, Any]:
         artifact_counts = {
             "toolCalls": len(node_tool_calls),
             "ruleResults": len(rule_results) if node_key == "run_rule_engine" else 0,
-            "retrievalTraces": len(retrieval_traces) if node_key == "retrieve_knowledge" else 0,
+            "retrievalTraces": (
+                len(material_retrieval_traces)
+                if node_key == "retrieve_material_evidence"
+                else len(knowledge_retrieval_traces)
+                if node_key == "retrieve_knowledge"
+                else 0
+            ),
             "validationFailures": validation_failure_count(node.get("details")),
         }
         node["artifactCounts"] = artifact_counts
         if node_key == "run_rule_engine":
             node["ruleResults"] = rule_results
+        if node_key == "retrieve_material_evidence":
+            node["retrievalTraces"] = material_retrieval_traces
         if node_key == "retrieve_knowledge":
-            node["retrievalTraces"] = retrieval_traces
+            node["retrievalTraces"] = knowledge_retrieval_traces
         if node_key.endswith("_validation") or node_key in {"critic_review", "quality_gate"}:
             details = node.get("details") if isinstance(node.get("details"), dict) else {}
             node["validationSummary"] = {
@@ -3501,6 +3713,7 @@ def graph_view_for_review_run(review_run_id: str) -> dict[str, Any]:
             "toolCalls": len(tool_calls),
             "ruleCheckResults": len(rule_results),
             "retrievalTraces": len(retrieval_traces),
+            "materialEvidenceRetrievalTraces": len(material_retrieval_traces),
             "pageIndexTraces": sum(1 for item in retrieval_traces if item.get("selectedRoute") == "pageindex_tree_search"),
             "findingDrafts": len(review_run.get("findingDrafts") or []),
             "validationFailures": validation_failures,
@@ -3508,6 +3721,7 @@ def graph_view_for_review_run(review_run_id: str) -> dict[str, Any]:
         "artifacts": {
             "ruleCheckResults": rule_results,
             "retrievalTraces": retrieval_traces,
+            "materialEvidenceRetrievalTraces": material_retrieval_traces,
             "findingDrafts": [
                 {
                     "id": item.get("id"),
