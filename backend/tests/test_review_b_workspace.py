@@ -157,7 +157,9 @@ def test_review_b_messages_return_structured_basis_and_pollable_events() -> None
     assert stale_update.status_code == 409
 
 
-def test_review_b_search_evidence_separates_located_candidates_and_advisory_files() -> None:
+def test_review_b_search_evidence_separates_located_candidates_and_advisory_files(
+    monkeypatch,
+) -> None:
     point = next(
         item
         for item in repo.state["admin_config"]["materialReviewPoints"]
@@ -198,9 +200,79 @@ def test_review_b_search_evidence_separates_located_candidates_and_advisory_file
                 "formalEvidenceEligible": False,
                 "evidenceTier": "advisory",
             },
+            {
+                **common,
+                "id": "NEL-REVIEW-B-HIDDEN",
+                "tenantId": "TENANT-NOT-VISIBLE",
+                "documentVersionId": "DV-REVIEW-B-HIDDEN",
+                "pageNo": 3,
+                "bbox": [10, 20, 260, 60],
+                "quotedText": "不可见租户证据",
+                "formalEvidenceEligible": True,
+                "evidenceTier": "formal",
+            },
         ]
     )
     session = create_session()
+    live_call = {}
+
+    def fake_search_project_evidence(repository, **kwargs):
+        live_call.update(kwargs)
+        return {
+            "formalCandidates": [
+                {
+                    **common,
+                    "id": "EVC-LIVE-FORMAL",
+                    "pageNo": 2,
+                    "bbox": [10, 20, 260, 60],
+                    "quotedText": "许可证有效期至 2028-12-31",
+                    "formalEvidenceEligible": True,
+                    "evidenceTier": "formal",
+                    "bm25Rank": 1,
+                    "denseRank": 2,
+                    "fusedScore": 0.027,
+                },
+                {
+                    **common,
+                    "id": "EVC-LIVE-OUT-OF-SCOPE",
+                    "documentVersionId": "DV-REVIEW-B-OUT-OF-SCOPE",
+                    "pageNo": 4,
+                    "bbox": [10, 20, 260, 60],
+                    "quotedText": "服务误返的范围外候选",
+                    "formalEvidenceEligible": True,
+                    "evidenceTier": "formal",
+                    "bm25Rank": 2,
+                    "denseRank": None,
+                    "fusedScore": 0.016,
+                },
+            ],
+            "advisoryCandidates": [
+                {
+                    **common,
+                    "id": "EVC-LIVE-ADVISORY",
+                    "pageNo": 1,
+                    "bbox": None,
+                    "quotedText": "设计单位许可证",
+                    "formalEvidenceEligible": False,
+                    "evidenceTier": "advisory",
+                    "rejectionReasons": ["missing_bbox"],
+                    "bm25Rank": 2,
+                    "denseRank": 1,
+                    "fusedScore": 0.026,
+                }
+            ],
+            "allCandidates": [],
+            "trace": {"retrievalTraceId": "RTR-LIVE-1"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        fake_search_project_evidence,
+        raising=False,
+    )
 
     response = assert_ok(
         client.post(
@@ -210,7 +282,7 @@ def test_review_b_search_evidence_separates_located_candidates_and_advisory_file
                 "Idempotency-Key": "review-b-evidence-tier-test",
                 "If-Match": session["etag"],
             },
-            json={"content": "/检索证据"},
+            json={"content": "/检索证据 许可证有效期"},
         )
     )
     cards = [
@@ -223,10 +295,270 @@ def test_review_b_search_evidence_separates_located_candidates_and_advisory_file
         "可定位证据候选",
         "可能相关文件（缺少事实定位）",
     ]
-    assert [item["id"] for item in cards[0]["items"]] == ["NEL-REVIEW-B-FORMAL"]
+    assert live_call["query"] == "许可证有效期"
+    assert live_call["document_version_ids"] == ["DV-REVIEW-B-EVIDENCE"]
+    assert cards[0]["retrievalTraceId"] == "RTR-LIVE-1"
+    assert cards[0]["fallbackUsed"] is False
+    assert [item["id"] for item in cards[0]["items"]] == ["EVC-LIVE-FORMAL"]
+    assert cards[0]["items"][0]["fusedScore"] > 0
     assert cards[1]["advisory"] is True
-    assert [item["id"] for item in cards[1]["items"]] == ["NEL-REVIEW-B-ADVISORY"]
+    assert cards[1]["retrievalTraceId"] == "RTR-LIVE-1"
+    assert [item["id"] for item in cards[1]["items"]] == ["EVC-LIVE-ADVISORY"]
     assert response["assistantMessage"]["execution"]["modelCalled"] is False
+
+
+def test_review_b_search_evidence_falls_back_to_precomputed_cards(monkeypatch) -> None:
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    common = {
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "reviewPointId": point["id"],
+        "documentId": "DOC-REVIEW-B-FALLBACK",
+        "documentVersionId": "DV-REVIEW-B-FALLBACK",
+        "fileName": "设计单位许可证.pdf",
+        "manualStatus": "pending",
+        "manualStatusLabel": "待确认",
+        "supportStatus": "命中",
+        "confidence": 0.92,
+        "source": "material_targeting",
+    }
+    repo.state["node_evidence_links"].extend(
+        [
+            {
+                **common,
+                "id": "NEL-REVIEW-B-FALLBACK-FORMAL",
+                "pageNo": 2,
+                "bbox": [10, 20, 260, 60],
+                "quotedText": "许可范围：压力管道设计 GC2",
+                "formalEvidenceEligible": True,
+                "evidenceTier": "formal",
+            },
+            {
+                **common,
+                "id": "NEL-REVIEW-B-FALLBACK-ADVISORY",
+                "pageNo": 1,
+                "bbox": None,
+                "quotedText": "设计单位许可证",
+                "formalEvidenceEligible": False,
+                "evidenceTier": "advisory",
+            },
+        ]
+    )
+
+    def broken_search_project_evidence(repository, **kwargs):
+        raise RuntimeError("retrieval unavailable")
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        broken_search_project_evidence,
+    )
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-evidence-fallback-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "/检索证据 许可证有效期"},
+        )
+    )
+    cards = [
+        block
+        for block in response["assistantMessage"]["contentBlocks"]
+        if block["type"] == "evidence_card"
+    ]
+
+    assert [item["id"] for item in cards[0]["items"]] == [
+        "NEL-REVIEW-B-FALLBACK-FORMAL"
+    ]
+    assert [item["id"] for item in cards[1]["items"]] == [
+        "NEL-REVIEW-B-FALLBACK-ADVISORY"
+    ]
+    assert all(card["fallbackUsed"] is True for card in cards)
+    assert all(card["retrievalTraceId"] is None for card in cards)
+    assert all(card["fallbackReason"] == "live_retrieval_exception" for card in cards)
+
+
+def test_review_b_search_evidence_without_tail_builds_node_query(monkeypatch) -> None:
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    visible_link = {
+        "id": "NEL-REVIEW-B-DEFAULT-QUERY",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "reviewPointId": point["id"],
+        "documentId": "DOC-REVIEW-B-DEFAULT-QUERY",
+        "documentVersionId": "DV-REVIEW-B-DEFAULT-QUERY",
+        "fileName": "设计单位许可证.pdf",
+        "manualStatus": "pending",
+        "pageNo": 2,
+        "bbox": [10, 20, 260, 60],
+        "quotedText": "许可范围：压力管道设计 GC2",
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+    }
+    repo.state["node_evidence_links"].append(visible_link)
+    live_call = {}
+
+    def fake_search_project_evidence(repository, **kwargs):
+        live_call.update(kwargs)
+        candidate = {
+            **visible_link,
+            "id": "EVC-REVIEW-B-DEFAULT-QUERY",
+            "bm25Rank": 1,
+            "denseRank": None,
+            "fusedScore": 0.016,
+        }
+        return {
+            "formalCandidates": [candidate],
+            "advisoryCandidates": [],
+            "allCandidates": [candidate],
+            "trace": {"retrievalTraceId": "RTR-LIVE-DEFAULT-QUERY"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        fake_search_project_evidence,
+    )
+    session = create_session()
+    assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-evidence-default-query-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "/检索证据"},
+        )
+    )
+
+    assert live_call["query"]
+    assert "核对设计单位许可证" in live_call["query"]
+    assert live_call["document_version_ids"] == ["DV-REVIEW-B-DEFAULT-QUERY"]
+
+
+def test_review_b_search_evidence_falls_back_when_live_result_has_no_usable_candidates(
+    monkeypatch,
+) -> None:
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    repo.state["node_evidence_links"].append(
+        {
+            "id": "NEL-REVIEW-B-NO-LIVE-HIT",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "reviewPointId": point["id"],
+            "documentId": "DOC-REVIEW-B-NO-LIVE-HIT",
+            "documentVersionId": "DV-REVIEW-B-NO-LIVE-HIT",
+            "fileName": "设计单位许可证.pdf",
+            "manualStatus": "pending",
+            "pageNo": 2,
+            "bbox": [10, 20, 260, 60],
+            "quotedText": "许可范围：压力管道设计 GC2",
+            "formalEvidenceEligible": True,
+            "evidenceTier": "formal",
+        }
+    )
+
+    def empty_search_project_evidence(repository, **kwargs):
+        return {
+            "formalCandidates": [],
+            "advisoryCandidates": [],
+            "allCandidates": [],
+            "trace": {"retrievalTraceId": "RTR-LIVE-NO-HIT"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        empty_search_project_evidence,
+    )
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-evidence-no-live-hit-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "/检索证据 不存在的证据"},
+        )
+    )
+    card = next(
+        block
+        for block in response["assistantMessage"]["contentBlocks"]
+        if block["type"] == "evidence_card"
+    )
+
+    assert [item["id"] for item in card["items"]] == ["NEL-REVIEW-B-NO-LIVE-HIT"]
+    assert card["fallbackUsed"] is True
+    assert card["fallbackReason"] == "live_retrieval_no_usable_candidates"
+    assert card["retrievalTraceId"] == "RTR-LIVE-NO-HIT"
+
+
+def test_review_b_search_evidence_never_calls_live_service_with_empty_allowlist(
+    monkeypatch,
+) -> None:
+    repo.state["node_evidence_links"] = []
+    called = False
+
+    def forbidden_project_wide_search(repository, **kwargs):
+        nonlocal called
+        called = True
+        return {
+            "formalCandidates": [],
+            "advisoryCandidates": [],
+            "allCandidates": [],
+            "trace": {"retrievalTraceId": "RTR-PROJECT-WIDE"},
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        forbidden_project_wide_search,
+    )
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-evidence-empty-scope-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "/检索证据 许可证"},
+        )
+    )
+    card = next(
+        block
+        for block in response["assistantMessage"]["contentBlocks"]
+        if block["type"] == "evidence_card"
+    )
+
+    assert called is False
+    assert card["items"] == []
+    assert card["fallbackUsed"] is True
+    assert card["fallbackReason"] == "empty_visible_evidence_scope"
 
 
 def test_review_b_free_form_message_uses_configured_qwen_runtime(monkeypatch) -> None:

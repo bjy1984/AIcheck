@@ -55,6 +55,7 @@ from libs.db.repository import flush_mutation_records, flush_state, load_state, 
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
 from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
+from libs.evidence_retrieval import search_project_evidence
 from libs.fde_certification import (
     CERTIFICATION_REPORT_SCHEMA_VERSION,
     LEGACY_NON_CERTIFYING_PROFILE,
@@ -10033,6 +10034,35 @@ def review_run_judgment_summary_block(review_run: dict[str, Any] | None) -> dict
     }
 
 
+def review_evidence_search_query(
+    session: dict[str, Any],
+    user_text: str,
+    *,
+    context: dict[str, Any],
+) -> str:
+    parts = user_text.strip().split(maxsplit=1)
+    if len(parts) == 2 and parts[1].strip():
+        return parts[1].strip()
+    node = context.get("node") or {}
+    query_parts = [
+        str(node.get("name") or node.get("nodeName") or node.get("title") or "").strip(),
+        str(session.get("currentTask") or "").strip(),
+    ]
+    for requirement in sorted(
+        context.get("readiness", {}).get("requirements") or [],
+        key=lambda item: str(item.get("id") or item.get("reviewPointId") or ""),
+    ):
+        query_parts.append(
+            str(
+                requirement.get("reviewContent")
+                or requirement.get("fileContent")
+                or ""
+            ).strip()
+        )
+    query = " ".join(dict.fromkeys(part for part in query_parts if part))
+    return query or f"节点 {int(session.get('nodeId') or 0)} 材料证据"
+
+
 def review_assistant_deterministic_blocks(
     session: dict[str, Any],
     user_text: str,
@@ -10062,28 +10092,96 @@ def review_assistant_deterministic_blocks(
         "turnCount": 0,
     }
     if command == "search_evidence":
+        allowed_version_ids = sorted(
+            {
+                str(item.get("documentVersionId") or "").strip()
+                for item in [*evidence_links, *advisory_evidence_links]
+                if str(item.get("documentVersionId") or "").strip()
+            }
+        )
+        query = review_evidence_search_query(
+            session,
+            user_text,
+            context=context,
+        )
+        live_formal: list[dict[str, Any]] = []
+        live_advisory: list[dict[str, Any]] = []
+        retrieval_trace_id: str | None = None
+        degraded = False
+        fallback_reason: str | None = None
+        if allowed_version_ids:
+            try:
+                live_result = search_project_evidence(
+                    repo,
+                    project_id=str(session.get("projectId") or ""),
+                    node_id=int(session.get("nodeId") or 0),
+                    document_version_ids=allowed_version_ids,
+                    query=query,
+                )
+                allowed_versions = set(allowed_version_ids)
+                live_formal = [
+                    repo.clone(item)
+                    for item in live_result.get("formalCandidates") or []
+                    if str(item.get("documentVersionId") or "") in allowed_versions
+                ]
+                live_advisory = [
+                    repo.clone(item)
+                    for item in live_result.get("advisoryCandidates") or []
+                    if str(item.get("documentVersionId") or "") in allowed_versions
+                ]
+                trace = live_result.get("trace") or {}
+                retrieval_trace_id = str(
+                    trace.get("retrievalTraceId") or trace.get("id") or ""
+                ) or None
+                degraded = bool(live_result.get("degraded") or trace.get("degraded"))
+                fallback_reason = (
+                    live_result.get("fallbackReason") or trace.get("fallbackReason")
+                )
+            except Exception:  # noqa: BLE001 - slash command retains precomputed fallback.
+                fallback_reason = "live_retrieval_exception"
+        else:
+            fallback_reason = "empty_visible_evidence_scope"
+
+        fallback_used = not (live_formal or live_advisory)
+        if fallback_used:
+            formal_items = evidence_links[:12]
+            advisory_items = advisory_evidence_links[:12]
+            fallback_reason = fallback_reason or "live_retrieval_no_usable_candidates"
+        else:
+            formal_items = live_formal[:12]
+            advisory_items = live_advisory[:12]
         blocks.append(
             {
                 "type": "text",
-                "text": f"已在当前节点授权范围内检索到 {len(evidence_links)} 条可定位证据候选，其中 {sum(1 for item in evidence_links if item.get('manualStatus') == 'confirmed')} 条已确认；另有 {len(advisory_evidence_links)} 个可能相关文件因缺少事实级原文定位，不能用于正式结论。",
+                "text": f"已在当前节点授权范围内检索到 {len(formal_items)} 条可定位证据候选，其中 {sum(1 for item in formal_items if item.get('manualStatus') == 'confirmed')} 条已确认；另有 {len(advisory_items)} 个可能相关文件因缺少事实级原文定位，不能用于正式结论。",
             }
         )
         blocks.append(
             {
                 "type": "evidence_card",
                 "title": "可定位证据候选",
-                "evidenceLinkIds": [item.get("id") for item in evidence_links[:12] if item.get("id")],
-                "items": evidence_links[:12],
+                "retrievalTraceId": retrieval_trace_id,
+                "fallbackUsed": fallback_used,
+                "fallbackReason": fallback_reason if fallback_used else None,
+                "degraded": degraded,
+                "query": query,
+                "evidenceLinkIds": [item.get("id") for item in formal_items if item.get("id")],
+                "items": formal_items,
             }
         )
-        if advisory_evidence_links:
+        if advisory_items:
             blocks.append(
                 {
                     "type": "evidence_card",
                     "title": "可能相关文件（缺少事实定位）",
                     "advisory": True,
-                    "evidenceLinkIds": [item.get("id") for item in advisory_evidence_links[:12] if item.get("id")],
-                    "items": advisory_evidence_links[:12],
+                    "retrievalTraceId": retrieval_trace_id,
+                    "fallbackUsed": fallback_used,
+                    "fallbackReason": fallback_reason if fallback_used else None,
+                    "degraded": degraded,
+                    "query": query,
+                    "evidenceLinkIds": [item.get("id") for item in advisory_items if item.get("id")],
+                    "items": advisory_items,
                 }
             )
     elif command == "explain_basis":
