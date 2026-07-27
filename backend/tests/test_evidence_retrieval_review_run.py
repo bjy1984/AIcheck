@@ -264,6 +264,53 @@ def test_material_evidence_merge_recomputes_grounding_status(monkeypatch) -> Non
     assert context["groundingInput"]["reviewWarnings"] == []
 
 
+def test_legacy_precomputed_evidence_remains_grounded_when_live_retrieval_is_empty(monkeypatch) -> None:
+    grounding_input = build_grounded_review_input(
+        {
+            "extracted_fields": [
+                {
+                    "id": "FIELD-1",
+                    "documentVersionId": "DV-FROZEN",
+                    "fieldName": "许可证编号",
+                    "fieldValue": "TS-001",
+                    "pageNo": 3,
+                    "bbox": [10, 20, 100, 40],
+                    "confidence": 0.99,
+                }
+            ],
+            "ocr_parse_results": [],
+            "evidence_links": [
+                {
+                    "id": "EV-LEGACY",
+                    "documentId": "DOC-001",
+                    "documentVersionId": "DV-FROZEN",
+                    "pageNo": 3,
+                    "bbox": [10, 20, 100, 40],
+                    "quotedText": "许可证编号 TS-001",
+                    "confidence": 0.99,
+                }
+            ],
+        },
+        {"DV-FROZEN"},
+    )
+    assert grounding_input["groundingStatus"] == "grounded"
+    assert "formalEvidenceEligible" not in grounding_input["evidenceLinks"][0]
+    monkeypatch.setattr(
+        execution,
+        "search_project_evidence",
+        lambda search_repo, **kwargs: _live_result(),
+    )
+    context = _context()
+    context["evidenceLinks"] = repo.clone(grounding_input["evidenceLinks"])
+    context["groundingInput"] = grounding_input
+
+    execution.run_step(_review_run(), "retrieve_material_evidence", context)
+
+    assert context["groundingInput"]["groundingStatus"] == "grounded"
+    assert context["groundingInput"]["blockingIssues"] == []
+    assert context["groundingInput"]["evidenceLinks"] == grounding_input["evidenceLinks"]
+
+
 def test_material_evidence_merge_preserves_risk_beyond_truncated_fields(monkeypatch) -> None:
     fields = [
         {

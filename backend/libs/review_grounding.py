@@ -178,12 +178,27 @@ def refresh_grounded_review_input(
         for item in refreshed.get("documentVersionIds") or []
         if str(item or "").strip()
     }
+
+    def link_is_formal_or_legacy_locatable(item: dict[str, Any]) -> bool:
+        if item.get("formalEvidenceEligible") is False:
+            return False
+        if str(item.get("documentVersionId") or "") not in requested_version_ids:
+            return False
+        if item.get("formalEvidenceEligible") is True:
+            return evidence_eligibility(item)[0]
+        page_no = _safe_float(item.get("pageNo"), default=None)
+        return bool(
+            page_no is not None
+            and page_no.is_integer()
+            and page_no >= 1
+            and _has_bbox(item.get("bbox"))
+            and str(item.get("quotedText") or "").strip()
+        )
+
     formal_links = [
         item
         for item in normalized_links
-        if item.get("formalEvidenceEligible") is True
-        and str(item.get("documentVersionId") or "") in requested_version_ids
-        and evidence_eligibility(item)[0]
+        if link_is_formal_or_legacy_locatable(item)
     ]
     available_version_ids = {
         str(item.get("documentVersionId"))
