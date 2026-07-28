@@ -1706,6 +1706,37 @@ export type FdeReviewRunDetailPayload = {
   }
 }
 
+export type FdeRawVaultEvent = {
+  id: string
+  eventType: string
+  sequence: number
+  stage?: string
+  turn?: number
+  hasPayload: boolean
+  payloadHash?: string
+  payloadByteLength?: number
+  payloadMediaType?: string
+  eventHash: string
+  previousEventHash: string
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export type FdeRawVaultSummary = {
+  reviewRunId?: string
+  runStreamId?: string
+  status:
+    | 'complete'
+    | 'archive_incomplete'
+    | 'unrecoverable_gap'
+    | 'hash_mismatch'
+    | 'legacy_not_captured'
+  chainHead?: string
+  eventCount: number
+  pendingCount: number
+  events: FdeRawVaultEvent[]
+}
+
 export type FdeReviewRunAuditPackagePayload = {
   schemaVersion: string
   packageId?: string
@@ -4589,6 +4620,45 @@ export const getFdeReviewRunAuditPackageApi = (
   reviewRunId: string
 ): Promise<IResponse<FdeReviewRunAuditPackagePayload>> => {
   return request.get({ url: `/api/fde/review-runs/${reviewRunId}/audit-package` })
+}
+
+export const getFdeRawVaultApi = (reviewRunId: string): Promise<IResponse<FdeRawVaultSummary>> => {
+  return request.get({ url: `/api/fde/review-runs/${reviewRunId}/raw-vault` })
+}
+
+export const getFdeRawVaultPayloadApi = (eventId: string): Promise<{ data: Blob }> => {
+  return request.get({
+    url: `/api/fde/raw-vault/events/${eventId}/payload`,
+    responseType: 'blob',
+    headers: {
+      'X-Silent-Http-Error': 'true',
+      'X-Silent-Business-Error': 'true'
+    }
+  }) as unknown as Promise<{ data: Blob }>
+}
+
+export const verifyFdeRawVaultApi = (
+  reviewRunId: string
+): Promise<
+  IResponse<{
+    status: 'verified' | 'hash_mismatch'
+    eventCount: number
+    chainHead?: string
+    findings: Array<Record<string, unknown>>
+  }>
+> => {
+  return request.post({ url: `/api/fde/review-runs/${reviewRunId}/raw-vault/verify` })
+}
+
+export const exportFdeRawVaultApi = (reviewRunId: string): Promise<{ data: Blob }> => {
+  return request.get({
+    url: `/api/fde/review-runs/${reviewRunId}/raw-vault/export`,
+    responseType: 'blob',
+    headers: {
+      'X-Silent-Http-Error': 'true',
+      'X-Silent-Business-Error': 'true'
+    }
+  }) as unknown as Promise<{ data: Blob }>
 }
 
 export const listFdeAccessGrantsApi = (): Promise<IResponse<Array<Record<string, unknown>>>> => {

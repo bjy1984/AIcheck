@@ -38,6 +38,8 @@ DEFAULT_PROJECT_ID = "P-2026-GDLNG-002"
 HEIC_SUFFIXES = {".heic", ".heif"}
 CONTRACTOR_USER = {"userId": "USER-CONTRACTOR-001", "org": "粤海安装工程有限公司", "name": "李工"}
 NDT_USER = {"userId": "USER-NDT-001", "org": "粤检无损检测", "name": "王工"}
+OWNER_USER = {"userId": "USER-OWNER-001", "org": "华东管网建设公司", "name": "赵经理"}
+INSPECTION_USER = {"userId": "USER-INSPECTION-001", "org": "省特检院一部", "name": "张工"}
 INSPECTION_REVIEWER = "张工"
 ROLE_PROFILE_DEFAULTS = {
     "contractor": {
@@ -51,6 +53,18 @@ ROLE_PROFILE_DEFAULTS = {
         "roleId": "4",
         "roleLabel": "无损检测",
         "defaultPath": "/workbench/ndt",
+    },
+    "owner": {
+        "username": "owner",
+        "roleId": "5",
+        "roleLabel": "建设方",
+        "defaultPath": "/workbench/owner",
+    },
+    "inspection": {
+        "username": "inspection",
+        "roleId": "2",
+        "roleLabel": "监检人员",
+        "defaultPath": "/workbench/inspection",
     },
 }
 
@@ -1301,6 +1315,98 @@ def ensure_role_member_scope(project_id: str, role: str, actor: dict[str, str], 
     return existing
 
 
+def sync_actor_membership_orgs(actor: dict[str, str], role: str) -> int:
+    """Keep every project membership for this actor aligned with the login orgName.
+
+    authorized_node_scope rejects members whose orgName differs from the user profile,
+    which previously hid NDT / contractor projects after org renames.
+    """
+    changed = 0
+    for member in repo.state.get("project_members", []):
+        if member.get("userId") != actor["userId"] or member.get("role") != role:
+            continue
+        if (
+            member.get("orgName") == actor["org"]
+            and member.get("name") == actor["name"]
+            and member.get("status") == "启用"
+        ):
+            continue
+        member["orgName"] = actor["org"]
+        member["name"] = actor["name"]
+        member["status"] = "启用"
+        member["updatedAt"] = server_time()
+        changed += 1
+    return changed
+
+
+def project_tree_node_ids(project_id: str) -> set[int]:
+    return {
+        int(item["nodeId"])
+        for item in repo.state.get("tree_nodes", [])
+        if item.get("projectId") == project_id and item.get("nodeId") is not None
+    }
+
+
+def ensure_owner_progress_report(project_id: str, node_ids: set[int]) -> dict[str, Any] | None:
+    """Give建设方 a visible report/archive entry for the Scan scenario project."""
+    existing = next(
+        (
+            item
+            for item in repo.state.get("reports", [])
+            if item.get("projectId") == project_id and item.get("scenarioTag") == SCENARIO_TAG
+        ),
+        None,
+    )
+    report_node_ids = sorted(node_ids) or [1, 16, 24, 40]
+    report = existing or {
+        "id": f"RPT-SCAN-{stable_doc_id(project_id)[:8].upper()}",
+        "projectId": project_id,
+    }
+    report.update(
+        {
+            "title": "广东 LNG 支线改造工程监检过程报告（Scan 测试）",
+            "reportNo": "RPT-GDLNG-SCAN-001",
+            "status": "编制中",
+            "nodeIds": report_node_ids[:12],
+            "version": "V0.1",
+            "ownerOrgName": OWNER_USER["org"],
+            "inspectionOrgName": INSPECTION_USER["org"],
+            "summary": "施工方与无损检测资料已提交，监检审查进行中；供建设方查看进度。",
+            "updatedAt": server_time(),
+            "createdAt": report.get("createdAt") or server_time(),
+            "actions": ["report:view", "report:export"],
+            "scenarioTag": SCENARIO_TAG,
+        }
+    )
+    if existing is None:
+        repo.state.setdefault("reports", []).insert(0, report)
+    archive = next(
+        (
+            item
+            for item in repo.state.get("archive_items", [])
+            if item.get("projectId") == project_id and item.get("scenarioTag") == SCENARIO_TAG
+        ),
+        None,
+    )
+    if archive is None:
+        repo.state.setdefault("archive_items", []).insert(
+            0,
+            {
+                "id": f"ARC-SCAN-{stable_doc_id(project_id)[:8].upper()}",
+                "projectId": project_id,
+                "nodeId": report_node_ids[0],
+                "title": "Scan 测试过程资料包",
+                "category": "过程报告",
+                "status": "待归档",
+                "reportId": report["id"],
+                "updatedAt": server_time(),
+                "actions": ["archive:view"],
+                "scenarioTag": SCENARIO_TAG,
+            },
+        )
+    return report
+
+
 def ensure_user_profile(role: str, actor: dict[str, str]) -> dict[str, Any] | None:
     profile_defaults = ROLE_PROFILE_DEFAULTS.get(role)
     user = repo.find_one("users", actor["userId"])
@@ -1748,8 +1854,33 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
         NDT_USER,
         {int(item["nodeId"]) for item in bindings_by_role.get("ndt", [])},
     )
+    shared_scope = {
+        int(item["nodeId"])
+        for item in bindings_by_role.get("contractor", []) + bindings_by_role.get("ndt", [])
+    }
+    owner_member = ensure_role_member_scope(
+        project_id,
+        "owner",
+        OWNER_USER,
+        shared_scope | {1, 16, 24, 40, 59, 68},
+    )
+    inspection_member = ensure_role_member_scope(
+        project_id,
+        "inspection",
+        INSPECTION_USER,
+        project_tree_node_ids(project_id) or shared_scope,
+    )
     contractor_user = ensure_user_profile("contractor", CONTRACTOR_USER)
     ndt_user = ensure_user_profile("ndt", NDT_USER)
+    owner_user = ensure_user_profile("owner", OWNER_USER)
+    inspection_user = ensure_user_profile("inspection", INSPECTION_USER)
+    membership_org_sync = {
+        "contractor": sync_actor_membership_orgs(CONTRACTOR_USER, "contractor"),
+        "ndt": sync_actor_membership_orgs(NDT_USER, "ndt"),
+        "owner": sync_actor_membership_orgs(OWNER_USER, "owner"),
+        "inspection": sync_actor_membership_orgs(INSPECTION_USER, "inspection"),
+    }
+    owner_report = ensure_owner_progress_report(project_id, shared_scope)
     refresh_knowledge_source_counts()
     refresh_project_node_binding_counts(project_id)
     project = repo.require_project(project_id)
@@ -1758,6 +1889,10 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
         project["currentNodeId"] = 40 if ndt_submission else (contractor_submissions[0]["nodeIds"][0] if contractor_submissions else project.get("currentNodeId"))
         project["updatedAt"] = server_time()
         project["scenarioTag"] = SCENARIO_TAG
+        project["ownerOrgName"] = OWNER_USER["org"]
+        project["contractorOrgName"] = CONTRACTOR_USER["org"]
+        project["ndtOrgName"] = NDT_USER["org"]
+        project["inspectionOrgName"] = INSPECTION_USER["org"]
     return {
         "clausePackages": clause_package_sync,
         "clear": clear_stats,
@@ -1769,13 +1904,19 @@ def apply_import(scan_dir: Path, raw_ocr: dict[str, dict[str, Any]], project_id:
         "contractorSubmissions": len(contractor_submissions),
         "ndtSubmission": bool(ndt_submission),
         "bindings": len([item for values in bindings_by_role.values() for item in values]),
+        "ownerReportId": (owner_report or {}).get("id"),
+        "membershipOrgSync": membership_org_sync,
         "roleScopes": {
             "contractor": contractor_member.get("nodeScope", []),
             "ndt": ndt_member.get("nodeScope", []),
+            "owner": owner_member.get("nodeScope", []),
+            "inspection": inspection_member.get("nodeScope", []),
         },
         "users": {
-            "contractor": (contractor_user or {}).get("orgUnitName"),
-            "ndt": (ndt_user or {}).get("orgUnitName"),
+            "contractor": (contractor_user or {}).get("orgName"),
+            "ndt": (ndt_user or {}).get("orgName"),
+            "owner": (owner_user or {}).get("orgName"),
+            "inspection": (inspection_user or {}).get("orgName"),
         },
     }
 

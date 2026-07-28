@@ -15,7 +15,8 @@ def test_migration_manifest_freezes_every_sql_file() -> None:
     verified = migrate_backend.validate_migration_manifest()
 
     assert verified == {
-        "0001_backend_audit_hardening": "dcec5ebd532a09c3d55e4ce3685530c7fb2446665836900dbdee9362b914fc23"
+        "0001_backend_audit_hardening": "dcec5ebd532a09c3d55e4ce3685530c7fb2446665836900dbdee9362b914fc23",
+        "0002_agent_raw_event_vault": "0cff3107ba3e826fcbabb5bb91d9c34ccbdd8230fb7e0c53cac15d0d4cb8ae00",
     }
 
 
@@ -43,23 +44,27 @@ def test_backend_migration_enforces_tenant_keys_and_append_only_audit(isolated_p
     assert pending["current"] is False
     assert pending["summary"] == {
         "applied": 0,
-        "pending": 1,
+        "pending": 2,
         "checksum_mismatch": 0,
         "database_only": 0,
     }
     assert apply_migrations(isolated_postgres_url, plan_only=True) == [
-        "0001_backend_audit_hardening"
+        "0001_backend_audit_hardening",
+        "0002_agent_raw_event_vault",
     ]
     with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
         assert connection.execute(
             "SELECT to_regclass('schema_migrations') IS NULL"
         ).fetchone()[0]
-    assert apply_migrations(isolated_postgres_url) == ["0001_backend_audit_hardening"]
+    assert apply_migrations(isolated_postgres_url) == [
+        "0001_backend_audit_hardening",
+        "0002_agent_raw_event_vault",
+    ]
     assert apply_migrations(isolated_postgres_url) == []
     current = migrate_backend.migration_status(isolated_postgres_url)
     assert current["compatible"] is True
     assert current["current"] is True
-    assert current["summary"]["applied"] == 1
+    assert current["summary"]["applied"] == 2
     with psycopg.connect(isolated_postgres_url, autocommit=False) as connection:
         primary_key_columns = [
             str(name)
@@ -111,6 +116,30 @@ def test_backend_migration_enforces_tenant_keys_and_append_only_audit(isolated_p
                 """
             )
         connection.rollback()
+        connection.execute(
+            """
+            INSERT INTO raw_vault_events (
+                tenant_id, id, run_stream_id, event_type, sequence, has_payload,
+                payload_media_type, payload_byte_length, payload_hash,
+                object_bucket, object_key, previous_event_hash, event_hash, metadata
+            ) VALUES (
+                'TENANT-MIGRATION-A', 'RAWEVT-MIGRATION-1', 'RRUN-SAME',
+                'llm.request.prepared', 1, true, 'application/json', 2,
+                'sha256:req', 'agent-raw-vault',
+                'TENANT-MIGRATION-A/RRUN-SAME/000001-RAWEVT-MIGRATION-1.json',
+                'GENESIS', 'sha256:raw-event', '{}'::jsonb
+            )
+            """
+        )
+        with pytest.raises(psycopg.errors.RaiseException, match="raw_vault_events are append-only"):
+            connection.execute(
+                """
+                UPDATE raw_vault_events
+                SET event_type = 'tampered'
+                WHERE tenant_id = 'TENANT-MIGRATION-A' AND id = 'RAWEVT-MIGRATION-1'
+                """
+            )
+        connection.rollback()
 
 
 @pytest.mark.skipif(not POSTGRES_URL, reason="AICHECK_TEST_POSTGRES_URL is required for migration integration tests")
@@ -153,7 +182,10 @@ def test_backend_migration_upgrades_legacy_single_tenant_tables(isolated_postgre
         )
         connection.commit()
 
-    assert apply_migrations(isolated_postgres_url) == ["0001_backend_audit_hardening"]
+    assert apply_migrations(isolated_postgres_url) == [
+        "0001_backend_audit_hardening",
+        "0002_agent_raw_event_vault",
+    ]
 
     with psycopg.connect(isolated_postgres_url, autocommit=False) as connection:
         rows = connection.execute(

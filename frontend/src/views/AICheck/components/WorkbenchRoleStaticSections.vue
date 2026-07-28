@@ -44,14 +44,12 @@ type ReviewChainStep = {
 
 type ContractorFileStatus = '全部' | '待提交' | '审核中' | '需补正' | '已通过' | '已作废'
 type ContractorSortKey = 'updatedDesc' | 'updatedAsc' | 'status' | 'version'
-type ContractorMaterialStatus = '已覆盖' | '部分上传' | '待上传' | '需补正'
 type ElementTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
 type ContractorMaterialRequirement = {
   category: string
   requiredItems: string
   keywords: string[]
-  missingHint: string
-  nodeRefs: string
+  uploadHint: string
 }
 type ContractorFileRow = {
   id: string
@@ -59,7 +57,6 @@ type ContractorFileRow = {
   fileName: string
   materialCategory: string
   requirementName: string
-  necessity: '必传' | '条件必传' | '可选'
   usage: string
   version: string
   status: Exclude<ContractorFileStatus, '全部'>
@@ -130,73 +127,79 @@ const contractorStatusOptions: ContractorFileStatus[] = [
 const contractorMaterialRequirements: ContractorMaterialRequirement[] = [
   {
     category: '资质证照',
-    requiredItems: '施工单位安装许可证、设计单位资质、焊工资格证、元件制造许可',
+    requiredItems: '施工单位安装许可证、设计单位许可证或资质、焊工资格证、元件制造许可证及相关证明',
     keywords: ['许可证', '资质', '焊工', '制造许可', '许可资质'],
-    missingHint: '核验施工/设计/检测/制造单位资质和人员证书是否覆盖项目范围',
-    nodeRefs: 'R01、R02、R03、R24、R12'
+    uploadHint: '建议上传完整页面，清晰显示单位名称、许可范围、证书编号和有效期。'
   },
   {
     category: '设计资料',
-    requiredItems: '图纸目录、设计说明、数据表、材料表、布置图、强度/应力计算',
+    requiredItems:
+      '图纸目录、设计说明、数据表、材料表、布置图、强度或应力计算书、设计变更及审批资料',
     keywords: ['设计', '图纸', '施工图', '说明书', '数据表', '特性表', '材料表', '计算书'],
-    missingHint: '补齐设计基础资料、计算书、设计变更或特殊标准符合性说明',
-    nodeRefs: 'R04、R06、R08、R09、R63'
+    uploadHint: '建议按图号和版本归集，并保留图签、签字盖章页以及对应的变更记录。'
   },
   {
     category: '施工方案',
-    requiredItems: '施工组织设计、施工方案、试压/泄漏/吹扫清洗专项方案',
+    requiredItems:
+      '施工组织设计、进度计划、施工方案及审批、安全与技术交底、试压/泄漏/吹扫清洗专项方案',
     keywords: ['施工方案', '施工组织', '试压方案', '泄漏试验', '吹扫', '清洗方案'],
-    missingHint: '确认方案审批页、建设单位批复和专项试验方案是否齐全',
-    nodeRefs: 'R11、R59、R67、R68'
-  },
-  {
-    category: '焊接资料',
-    requiredItems: 'WPS/PQR、焊材证明、焊材烘干/领用、组对、焊接记录、返修闭环',
-    keywords: ['焊接', '焊材', 'WPS', 'PQR', '焊缝', '返修', '组对'],
-    missingHint: '补齐焊材过程记录、焊缝编号、外观检查和返修闭环资料',
-    nodeRefs: 'R25、R26、R27、R28、R29、R30、R31'
-  },
-  {
-    category: '热处理资料',
-    requiredItems: '热处理工艺卡、评定报告、仪表校验、曲线、热处理报告、硬度报告',
-    keywords: ['热处理', '硬度', '温控', '热电偶', '曲线'],
-    missingHint: '若不涉及热处理，应在资料状态中标记不适用；涉及时需上传完整过程资料',
-    nodeRefs: 'R32、R33、R34'
-  },
-  {
-    category: '防腐保温资料',
-    requiredItems: '防腐/保温材料证明、施工记录、补口补伤、电火花检测、阴保资料',
-    keywords: ['防腐', '保温', '涂料', '补口', '补伤', '电火花', '阴极保护', '静电接地'],
-    missingHint: '核验材料批号、厚度、漏点检测、电火花仪器检定和阴保验收资料',
-    nodeRefs: 'R43-R47、R50、R51'
-  },
-  {
-    category: '安装交工资料',
-    requiredItems: '元件检查、安装记录、支吊架、穿跨越、单线图、静电接地、交工资料',
-    keywords: ['交工', '安装记录', '支吊架', '穿跨越', '单线图', '元件检查', '接地'],
-    missingHint: '补齐安装过程记录、穿跨越记录、支撑件和单线图等交工资料',
-    nodeRefs: 'R48-R55'
-  },
-  {
-    category: '安全附件与阀门',
-    requiredItems: '安全阀/爆破片/紧急切断阀资料、校验报告、阀门试验记录',
-    keywords: ['安全阀', '爆破片', '紧急切断', '阀门', '校验', '压力试验'],
-    missingHint: '核验安全附件产品资料、安装位置、校验报告和阀门耐压试验记录',
-    nodeRefs: 'R56、R57、R58、R23'
-  },
-  {
-    category: '试验与吹扫资料',
-    requiredItems: '压力表检定、耐压试验、泄漏试验、吹扫清洗记录、现场确认资料',
-    keywords: ['耐压', '压力表', '泄漏', '吹扫', '清洗', '试验记录', '试验报告'],
-    missingHint: '补齐压力表检定、试验参数、过程照片/视频和监检确认记录',
-    nodeRefs: 'R60、R61、R62、R66、R67、R68'
+    uploadHint: '建议将正文、编制审核批准页及建设单位意见作为一套资料上传。'
   },
   {
     category: '材料证明与复验',
-    requiredItems: '产品质量证明、出厂检验、到货验收、抽样复验、材料复验、标志移植',
-    keywords: ['质量证明', '材质', '材料', '复验', '出厂检验', '验收', '标志移植'],
-    missingHint: '核验产品质量证明、验收见证、抽样复验和材料追溯资料',
-    nodeRefs: 'R13-R21'
+    requiredItems:
+      '产品质量证明、出厂检验、制造监检或型式试验、到货验收、抽样复验、标志移植、材料代用资料',
+    keywords: ['质量证明', '材质', '材料', '复验', '出厂检验', '验收', '标志移植', '材料代用'],
+    uploadHint: '建议按材料类别、规格和批号归集；复印件应保留确认章，并能追溯到使用部位。'
+  },
+  {
+    category: '安全附件与阀门',
+    requiredItems: '阀门质量证明和试验记录、安全阀/爆破片/紧急切断阀产品资料、安装记录及校验资料',
+    keywords: ['安全阀', '爆破片', '紧急切断', '阀门', '校验', '压力试验'],
+    uploadHint: '建议资料清晰标注设备编号、规格参数、安装位置、试验或校验结论及签字日期。'
+  },
+  {
+    category: '焊接资料',
+    requiredItems:
+      'WPS/PQR、焊材质量证明及烘干/领用/退库记录、组对记录、焊接记录、焊缝编号、外观检查、返修资料',
+    keywords: ['焊接', '焊材', 'WPS', 'PQR', '焊缝', '返修', '组对'],
+    uploadHint: '建议按焊缝编号成套整理，使焊工、工艺、焊材、检验和返修记录能够相互对应。'
+  },
+  {
+    category: '热处理资料',
+    requiredItems: '热处理工艺卡、工艺评定、仪表校验资料、热处理曲线、热处理报告、硬度报告',
+    keywords: ['热处理', '硬度', '温控', '热电偶', '曲线'],
+    uploadHint: '项目涉及热处理时，建议将工艺、设备仪表、过程曲线、结果报告和硬度记录成套上传。'
+  },
+  {
+    category: '防腐保温资料',
+    requiredItems: '防腐/保温材料质量证明、施工与验收记录、补口补伤记录、电火花检测、阴极保护资料',
+    keywords: ['防腐', '保温', '涂料', '补口', '补伤', '电火花', '阴极保护'],
+    uploadHint: '建议按管段或线路归集材料、施工、检测与验收资料，并注明材料批号和施工部位。'
+  },
+  {
+    category: '安装交工资料',
+    requiredItems:
+      '元件进场检查、预制与安装记录、支吊架、膨胀装置、穿跨越、套管绝缘、单线图、静电接地、交工资料',
+    keywords: [
+      '交工',
+      '安装记录',
+      '预制',
+      '支吊架',
+      '膨胀',
+      '穿跨越',
+      '套管绝缘',
+      '单线图',
+      '元件检查',
+      '接地'
+    ],
+    uploadHint: '建议按管线号或单线图整理过程记录，确保记录中的设备、管段和安装位置可对应。'
+  },
+  {
+    category: '试验与吹扫资料',
+    requiredItems: '压力表/温度仪表检定校准、耐压试验、泄漏试验、吹扫清洗方案与记录、现场确认资料',
+    keywords: ['耐压', '压力表', '泄漏', '吹扫', '清洗', '试验记录', '试验报告'],
+    uploadHint: '建议将方案、仪表校准、过程记录、结果签认和现场照片等按同一次试验成套上传。'
   }
 ]
 
@@ -335,12 +338,6 @@ const inferMaterialCategory = (text: string) => {
   )
 }
 
-const inferNecessity = (category: string): ContractorFileRow['necessity'] => {
-  if (['热处理资料', '防腐保温资料', '安全附件与阀门'].includes(category)) return '条件必传'
-  if (category === '其他资料') return '可选'
-  return '必传'
-}
-
 const rectificationIdForBinding = (bindingId?: string) => {
   if (!bindingId) return '--'
   return rectifications.value.find((item) => item.bindingIds?.includes(bindingId))?.id || '--'
@@ -361,7 +358,6 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       fileName: file.fileName,
       materialCategory,
       requirementName: binding?.requirementName || '--',
-      necessity: inferNecessity(materialCategory),
       usage: binding?.usage || '--',
       version: binding?.versionNo || '--',
       status,
@@ -383,11 +379,6 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       normalizeSearchText(binding.fileName, binding.usage, binding.requirementName)
     ),
     requirementName: binding.requirementName || '--',
-    necessity: inferNecessity(
-      inferMaterialCategory(
-        normalizeSearchText(binding.fileName, binding.usage, binding.requirementName)
-      )
-    ),
     usage: binding.usage,
     version: binding.versionNo,
     status: mapContractorFileStatus('已上传', binding.bindingStatus),
@@ -399,61 +390,6 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
     uploader: '--',
     updatedAt: binding.boundAt
   }))
-})
-
-const contractorMaterialChecklist = computed(() => {
-  const groupedRequirements = requirements.value.reduce((groups, requirement) => {
-    const category = inferMaterialCategory(requirement.name)
-    const values = groups.get(category) || []
-    values.push(requirement)
-    groups.set(category, values)
-    return groups
-  }, new Map<string, typeof requirements.value>())
-  return contractorMaterialRequirements
-    .filter((requirement) => groupedRequirements.has(requirement.category))
-    .map((requirement) => {
-      const categoryRequirements = groupedRequirements.get(requirement.category) || []
-      const files = contractorFileRows.value.filter(
-        (file) => file.materialCategory === requirement.category
-      )
-      const correctionCount = files.filter((file) => file.status === '需补正').length
-      const status: ContractorMaterialStatus = correctionCount
-        ? '需补正'
-        : files.length
-          ? '已覆盖'
-          : '待上传'
-      return {
-        ...requirement,
-        requiredItems: categoryRequirements.map((item) => item.name).join('、') || '--',
-        nodeRefs: categoryRequirements.map((item) => String(item.nodeId)).join('、') || '--',
-        uploadedCount: files.length,
-        correctionCount,
-        status,
-        missing:
-          files.length && !correctionCount
-            ? '已上传资料待监检核验'
-            : correctionCount
-              ? `${correctionCount} 份资料需按反馈补正`
-              : `当前节点仍缺少：${categoryRequirements.map((item) => item.name).join('、')}`
-      }
-    })
-})
-
-const materialGapSummary = computed(() => {
-  const pending = contractorMaterialChecklist.value.filter(
-    (item) => item.status === '待上传'
-  ).length
-  const correction = contractorMaterialChecklist.value.filter(
-    (item) => item.status === '需补正'
-  ).length
-  const covered = contractorMaterialChecklist.value.filter(
-    (item) => item.status === '已覆盖'
-  ).length
-  return { pending, correction, covered, total: contractorMaterialChecklist.value.length }
-})
-
-const visibleMaterialChecklist = computed(() => {
-  return contractorMaterialChecklist.value
 })
 
 const contractorFeedbackRows = computed(() => {
@@ -515,7 +451,6 @@ const filteredContractorFileRows = computed(() => {
       file.fileName,
       file.materialCategory,
       file.requirementName,
-      file.necessity,
       file.usage,
       file.sourceOrgName,
       file.relationNode,
@@ -669,13 +604,6 @@ const getPillClass = (value?: string): AuditStatusTone => {
               <AuditStatusTag tone="blue">
                 {{ filteredContractorFileRows.length }} / {{ contractorFileRows.length }} 个文件
               </AuditStatusTag>
-              <AuditStatusTag
-                v-if="materialGapSummary.pending || materialGapSummary.correction"
-                tone="red"
-              >
-                {{ materialGapSummary.pending }} 类待上传 ·
-                {{ materialGapSummary.correction }} 类需补正
-              </AuditStatusTag>
             </div>
           </div>
         </template>
@@ -683,21 +611,18 @@ const getPillClass = (value?: string): AuditStatusTone => {
           <div class="material-checklist">
             <div class="material-checklist-head">
               <div>
-                <h4>标准资料上传</h4>
-                <p> 按业务规则中的标准资料类别对项目文件库进行归类，节点关联可后续补充。 </p>
+                <h4>资料分类与上传指引</h4>
+                <p>按资料用途选择分类，并参考提示成套上传；分类仅用于资料整理和上传参考。</p>
               </div>
-              <AuditStatusTag tone="blue">
-                {{ materialGapSummary.covered }} / {{ materialGapSummary.total }} 类已有资料
-              </AuditStatusTag>
             </div>
             <ElTable
               class="material-gap-table"
-              :data="visibleMaterialChecklist"
+              :data="contractorMaterialRequirements"
               row-key="category"
-              empty-text="当前节点没有标准资料要求"
+              empty-text="暂无资料分类指引"
             >
               <ElTableColumn type="index" label="序号" width="64" align="center" />
-              <ElTableColumn prop="category" label="资料类别" width="130" />
+              <ElTableColumn prop="category" label="资料类别" width="150" />
               <ElTableColumn label="操作" width="96">
                 <template #default="{ row }">
                   <ElButton
@@ -712,30 +637,14 @@ const getPillClass = (value?: string): AuditStatusTone => {
               </ElTableColumn>
               <ElTableColumn
                 prop="requiredItems"
-                label="标准要求"
-                min-width="280"
+                label="建议包含资料"
+                min-width="360"
                 show-overflow-tooltip
               />
-              <ElTableColumn label="已上传" width="94">
-                <template #default="{ row }">{{ row.uploadedCount }} 份</template>
-              </ElTableColumn>
               <ElTableColumn
-                prop="missing"
-                label="缺口/待核验"
-                min-width="260"
-                show-overflow-tooltip
-              />
-              <ElTableColumn label="状态" width="100">
-                <template #default="{ row }">
-                  <ElTag :type="getElementTagType(row.status)" effect="light">
-                    {{ row.status }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                prop="nodeRefs"
-                label="关联规则"
-                min-width="140"
+                prop="uploadHint"
+                label="上传提示"
+                min-width="320"
                 show-overflow-tooltip
               />
             </ElTable>
@@ -829,13 +738,6 @@ const getPillClass = (value?: string): AuditStatusTone => {
               min-width="180"
               show-overflow-tooltip
             />
-            <ElTableColumn label="必要性" width="100">
-              <template #default="{ row }">
-                <ElTag :type="getElementTagType(row.necessity)" effect="plain">
-                  {{ row.necessity }}
-                </ElTag>
-              </template>
-            </ElTableColumn>
             <ElTableColumn prop="usage" label="文件用途" min-width="130" show-overflow-tooltip />
             <ElTableColumn
               prop="sourceOrgName"

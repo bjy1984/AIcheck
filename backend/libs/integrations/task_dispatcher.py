@@ -302,3 +302,49 @@ def dispatch_export(export_id: str) -> dict[str, Any]:
         result = export_package.delay(export_id)
         return {"mode": mode, "taskId": result.id}
     return {"mode": mode, "taskId": None}
+
+
+def dispatch_review_conversation(
+    *,
+    session_id: str,
+    assistant_message_id: str,
+    user_text: str,
+    context: dict[str, Any],
+    execution_id: str,
+) -> dict[str, Any]:
+    """派发 Version B 对话 Agent 执行到任务队列。
+
+    context 为 API 进程在请求线程内构建的纯数据快照（含请求级可见性过滤结果），
+    worker 侧不再重建请求上下文；跨进程互斥与取消由 agent_executions 心跳承担。
+    """
+    mode = dispatch_mode()
+    if mode == "inline":
+        from apps.worker.tasks import review_conversation_execute
+
+        return {
+            "mode": mode,
+            "result": review_conversation_execute.run(
+                session_id, assistant_message_id, user_text, context, execution_id
+            ),
+        }
+    if mode == "celery":
+        from apps.worker.tasks import review_conversation_execute
+
+        result = review_conversation_execute.apply_async(
+            args=[session_id, assistant_message_id, user_text, context, execution_id],
+            queue="llm.remote",
+            priority=broker_priority(8),
+            task_id=deterministic_task_id("review-conversation", execution_id),
+        )
+        return {
+            "mode": mode,
+            "taskId": result.id,
+            "queue": "llm.remote",
+            "priority": 8,
+            "statusReason": "review_conversation_queued",
+        }
+    return {
+        "mode": mode,
+        "taskId": None,
+        "statusReason": "review_conversation_requires_task_dispatch",
+    }

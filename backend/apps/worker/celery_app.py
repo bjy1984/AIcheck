@@ -38,6 +38,7 @@ celery_app.conf.update(
         "apps.worker.tasks.document_ai_shadow_extract": {"queue": "document-ai.shadow"},
         "apps.worker.tasks.document_audit_pipeline_comparison": {"queue": "audit-pipeline.compare"},
         "apps.worker.tasks.ai_recheck": {"queue": "llm.remote", "priority": broker_priority(10)},
+        "apps.worker.tasks.review_conversation_execute": {"queue": "llm.remote", "priority": broker_priority(8)},
         "apps.worker.tasks.llm_compare": {"queue": "llm.remote", "priority": broker_priority(5)},
         "apps.worker.tasks.export_package": {"queue": "business.light", "priority": broker_priority(3)},
     },

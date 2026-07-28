@@ -158,6 +158,7 @@ import type {
 } from '@/api/aicheck'
 import StaticPageShell from './components/StaticPageShell.vue'
 import OcrAnnotationCanvas from './components/OcrAnnotationCanvas.vue'
+import FdeRawVaultPanel from './components/FdeRawVaultPanel.vue'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import {
@@ -19748,6 +19749,13 @@ onBeforeUnmount(() => {
           </div>
 
           <ElTabs class="audit-drawer-tabs">
+            <ElTabPane label="原始运行档案" name="raw-vault" lazy>
+              <FdeRawVaultPanel
+                :review-run-id="
+                  String(selectedReviewRun.run.reviewRunId || selectedReviewRun.run.id || '')
+                "
+              />
+            </ElTabPane>
             <ElTabPane label="LLM 输入输出" name="llm-io">
               <ElAlert
                 class="mb-12px"

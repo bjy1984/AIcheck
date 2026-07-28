@@ -5,7 +5,8 @@ from typing import Any
 
 from libs.integrations.storage import object_storage
 
-from .repository import repo
+from .repository import flush_state, repo
+from .seed import ensure_test_project_members
 
 
 def postgres_dsn() -> str | None:
@@ -57,6 +58,12 @@ def bootstrap_local_roles_if_configured() -> None:
     project_id = os.getenv("AICHECK_DEFAULT_PROJECT_ID", "P-2026-HDCP-001")
     passwords = resolve_role_passwords(roles)
     apply_role_bootstrap_to_state(roles, project_id, passwords=passwords, rotate_passwords=False)
+    ensure_test_project_members(
+        repo.state.get("projects", []),
+        repo.state.setdefault("project_members", []),
+        repo.state.get("tree_nodes", []),
+    )
+    flush_state()
 
 
 async def close_postgres(app: Any) -> None:

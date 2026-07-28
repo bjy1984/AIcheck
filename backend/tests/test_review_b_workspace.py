@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import threading
+import time
+
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api import routes as routes_module
 from apps.api.main import app
 from libs.db.repository import repo
+
+
+@pytest.fixture(autouse=True)
+def _inline_conversation_execution(monkeypatch):
+    """既有用例沿用同步（inline）契约；background 异步执行在专门用例中覆盖。"""
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_EXECUTION_MODE", "inline")
 
 
 client = TestClient(app)
@@ -284,13 +294,46 @@ def test_review_b_free_form_message_uses_configured_qwen_runtime(monkeypatch) ->
         "turnCount": 1,
         "provider": "test-qwen",
         "model": "qwen-review-test",
-        "usage": {"prompt_tokens": 120, "completion_tokens": 28},
+        "usage": {
+            "inputTokens": 120,
+            "outputTokens": 28,
+            "totalTokens": 148,
+        },
     }
 
     events = assert_ok(
         client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
     )["events"]
     assert "agent.model_call.completed" in {item["eventType"] for item in events}
+
+
+def test_review_b_agent_omits_usage_when_provider_reports_none(monkeypatch) -> None:
+    class UnmeteredRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            return {
+                "id": "chatcmpl-agent-unmetered",
+                "provider": "test-qwen",
+                "model": "qwen-agent-test",
+                "choices": [{"message": {"content": "当前调用未返回 Token 计量信息。"}}],
+                "usage": {},
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: UnmeteredRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-agent-unmetered-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请说明当前节点状态。"},
+        )
+    )
+
+    assert "usage" not in response["assistantMessage"]["execution"]
 
 
 def test_review_b_agent_runs_bounded_read_only_tool_loop(monkeypatch) -> None:
@@ -378,7 +421,11 @@ def test_review_b_agent_runs_bounded_read_only_tool_loop(monkeypatch) -> None:
     assert execution["agentEnabled"] is True
     assert execution["toolCallCount"] == 1
     assert execution["turnCount"] == 2
-    assert execution["usage"] == {"prompt_tokens": 190, "completion_tokens": 34}
+    assert execution["usage"] == {
+        "inputTokens": 190,
+        "outputTokens": 34,
+        "totalTokens": 224,
+    }
 
     events = assert_ok(
         client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
@@ -509,6 +556,11 @@ def test_review_b_agent_fallback_keeps_tool_results(monkeypatch) -> None:
     execution = response["assistantMessage"]["execution"]
     assert execution["mode"] == "deterministic_fallback"
     assert execution["toolCallCount"] == 1
+    assert execution["usage"] == {
+        "inputTokens": 50,
+        "outputTokens": 8,
+        "totalTokens": 58,
+    }
     text_blocks = [
         block["text"]
         for block in response["assistantMessage"]["contentBlocks"]
@@ -748,3 +800,740 @@ def test_review_b_workspace_exposes_review_run_human_task_and_audit_view() -> No
     assert workspace["permissions"]["canSubmitHumanDecision"] is False
     assert audit["reviewRun"]["reviewRunId"] == review_run_id
     assert audit["activeHumanInputTask"]["taskId"] == "HIT-REVIEW-B-001"
+
+
+def _wait_for_assistant_completion(
+    session_id: str, message_id: str, timeout_seconds: float = 8.0
+) -> dict:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        payload = assert_ok(
+            client.get(f"/api/review-sessions/{session_id}/messages", headers=HEADERS)
+        )
+        message = next(
+            (item for item in payload["messages"] if item["id"] == message_id), None
+        )
+        if message and message.get("status") != "running":
+            return message
+        time.sleep(0.05)
+    raise AssertionError("assistant message did not finalize in time")
+
+
+def test_review_b_background_execution_returns_running_placeholder(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_EXECUTION_MODE", "background")
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+
+    class FakeQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "后台执行完成的最终结论。"}}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 6},
+            }
+
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FakeQwenRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-async-accept-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查当前节点证据。"},
+        )
+    )
+    assert response["status"] == "accepted"
+    assert response["assistantMessage"]["status"] == "running"
+    assert response["assistantMessage"]["execution"]["mode"] == "llm_agent"
+
+    finalized = _wait_for_assistant_completion(
+        session["id"], response["assistantMessage"]["id"]
+    )
+    assert finalized["status"] == "completed"
+    assert finalized["execution"]["mode"] == "llm_agent"
+    assert any(
+        "最终结论" in str(block.get("text") or "") for block in finalized["contentBlocks"]
+    )
+    # 完成后重新分配 sequence，保证增量拉取（sequence > after）能看到最终内容。
+    assert finalized["sequence"] > response["assistantMessage"]["sequence"]
+
+    event_types = {
+        item["eventType"]
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+    }
+    assert "agent.execution.accepted" in event_types
+    assert "agent.message.completed" in event_types
+
+
+def test_review_b_second_message_rejected_while_execution_active(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_EXECUTION_MODE", "background")
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    release = threading.Event()
+
+    class BlockingQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            release.wait(timeout=5)
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "执行完成。"}}],
+            }
+
+    monkeypatch.setattr(
+        routes_module, "qwen_runtime_client", lambda: BlockingQwenRuntime()
+    )
+    session = create_session()
+    accepted = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-busy-first",
+                "If-Match": session["etag"],
+            },
+            json={"content": "整体核查当前节点。"},
+        )
+    )
+    assert accepted["status"] == "accepted"
+
+    busy = client.post(
+        f"/api/review-sessions/{session['id']}/messages",
+        headers={
+            **HEADERS,
+            "Idempotency-Key": "review-b-busy-second",
+            "If-Match": accepted["session"]["etag"],
+        },
+        json={"content": "再问一个问题。"},
+    )
+    assert busy.status_code == 409
+    assert busy.json()["code"] != 0
+
+    release.set()
+    _wait_for_assistant_completion(session["id"], accepted["assistantMessage"]["id"])
+
+
+def test_review_b_cancel_action_stops_background_execution(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_EXECUTION_MODE", "background")
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    release = threading.Event()
+
+    class SlowToolLoopRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            release.wait(timeout=5)
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call-cancel-1",
+                                    "function": {
+                                        "name": "get_review_context",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        routes_module, "qwen_runtime_client", lambda: SlowToolLoopRuntime()
+    )
+    session = create_session()
+    accepted = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-cancel-first",
+                "If-Match": session["etag"],
+            },
+            json={"content": "整体核查当前节点。"},
+        )
+    )
+    assert accepted["status"] == "accepted"
+
+    cancel = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/actions/cancel_execution",
+            headers={**HEADERS, "Idempotency-Key": "review-b-cancel-action"},
+            json={},
+        )
+    )
+    assert cancel["cancelRequested"] is True
+    release.set()
+
+    finalized = _wait_for_assistant_completion(
+        session["id"], accepted["assistantMessage"]["id"]
+    )
+    assert finalized["status"] == "cancelled"
+    assert finalized["execution"]["mode"] == "cancelled"
+    assert finalized["execution"]["failureReason"] == "USER_CANCELLED"
+
+    event_types = {
+        item["eventType"]
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+    }
+    assert "agent.execution.cancel_requested" in event_types
+    assert "agent.execution.cancelled" in event_types
+
+
+def test_review_b_cancel_action_without_active_execution_fails() -> None:
+    session = create_session()
+    response = client.post(
+        f"/api/review-sessions/{session['id']}/actions/cancel_execution",
+        headers={**HEADERS, "Idempotency-Key": "review-b-cancel-idle"},
+        json={},
+    )
+    assert response.status_code != 200 or response.json()["code"] != 0
+
+
+def test_review_b_natural_language_with_command_words_goes_to_agent(monkeypatch) -> None:
+    """自然语言问题即使包含“补充证据/查看条款”字样，也不应被斜线命令劫持。"""
+
+    class FakeQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "这是 Agent 的回答。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FakeQwenRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-slash-exact-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "为什么不能补充证据？帮我查看条款相关的问题。"},
+        )
+    )
+    assert response["assistantMessage"]["execution"]["mode"] == "llm_agent"
+    text_blocks = [
+        block["text"]
+        for block in response["assistantMessage"]["contentBlocks"]
+        if block["type"] == "text"
+    ]
+    assert text_blocks == ["这是 Agent 的回答。"]
+
+
+def test_review_b_session_tool_memory_reuses_results_across_messages(monkeypatch) -> None:
+    calls = {"count": 0}
+    observed = {"previous_findings_in_context": False, "memory_notice_in_tool_result": False}
+
+    class MemoryQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-mem-1",
+                                        "function": {
+                                            "name": "get_review_context",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            if calls["count"] == 2:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [{"message": {"content": "第一条消息的结论。"}}],
+                }
+            if calls["count"] == 3:
+                observed["previous_findings_in_context"] = (
+                    '"previousToolFindings"' in str(messages[1].get("content") or "")
+                    and "get_review_context" in str(messages[1].get("content") or "")
+                )
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-mem-2",
+                                        "function": {
+                                            "name": "get_review_context",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            observed["memory_notice_in_tool_result"] = any(
+                "fromSessionMemory" in str(item.get("content") or "")
+                for item in messages
+                if item.get("role") == "tool"
+            )
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "第二条消息的结论。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: MemoryQwenRuntime())
+    session = create_session()
+    first = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-memory-first",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核对当前节点的规则与就绪状态。"},
+        )
+    )
+    assert first["assistantMessage"]["execution"]["toolCallCount"] == 1
+    second = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-memory-second",
+                "If-Match": first["session"]["etag"],
+            },
+            json={"content": "再确认一次上下文情况。"},
+        )
+    )
+    assert second["assistantMessage"]["execution"]["mode"] == "llm_agent"
+    assert calls["count"] == 4
+    assert observed["previous_findings_in_context"] is True
+    assert observed["memory_notice_in_tool_result"] is True
+
+
+def test_review_b_token_budget_forces_early_final_answer(monkeypatch) -> None:
+    """初始上下文即超预算时，应发出 budget.exhausted 事件并在首轮强制收束。"""
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    for index in range(12):
+        repo.state["node_evidence_links"].append(
+            {
+                "id": f"NEL-BUDGET-{index:02d}",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "reviewPointId": point["id"],
+                "documentId": f"DOC-BUDGET-{index:02d}",
+                "documentVersionId": f"DV-BUDGET-{index:02d}",
+                "fileName": f"预算测试证据{index:02d}.pdf",
+                "manualStatus": "pending",
+                "supportStatus": "命中",
+                "confidence": 0.9,
+                "source": "material_targeting",
+                "pageNo": 1,
+                "fieldName": "内容",
+                "quotedText": "证" * 600,
+                "formalEvidenceEligible": True,
+                "evidenceTier": "formal",
+            }
+        )
+
+    class BudgetQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            assert kwargs.get("tool_choice") == "none"
+            assert "Token 预算上限" in str(messages[-1].get("content") or "")
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "预算受限下的最终结论。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_INPUT_TOKEN_BUDGET", "4000")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: BudgetQwenRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-budget-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请全面核查当前节点全部证据。"},
+        )
+    )
+    execution = response["assistantMessage"]["execution"]
+    assert execution["mode"] == "llm_agent"
+    assert execution["turnCount"] == 1
+    assert execution["toolCallCount"] == 0
+    event_types = {
+        item["eventType"]
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+    }
+    assert "agent.budget.exhausted" in event_types
+
+
+def test_review_b_agent_executions_recorded_and_queryable(monkeypatch) -> None:
+    class FakeQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "执行记录测试回答。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FakeQwenRuntime())
+    session = create_session()
+
+    # 斜线命令走确定性路径，不产生 Agent 执行记录。
+    slash = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-exec-slash",
+                "If-Match": session["etag"],
+            },
+            json={"content": "/标准条款"},
+        )
+    )
+    assert slash["status"] == "completed"
+    empty = assert_ok(
+        client.get(
+            f"/api/review-sessions/{session['id']}/agent-executions", headers=HEADERS
+        )
+    )
+    assert empty["executions"] == []
+
+    free_form = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-exec-agent",
+                "If-Match": slash["session"]["etag"],
+            },
+            json={"content": "请核查当前节点。"},
+        )
+    )
+    executions = assert_ok(
+        client.get(
+            f"/api/review-sessions/{session['id']}/agent-executions", headers=HEADERS
+        )
+    )["executions"]
+    assert len(executions) == 1
+    record = executions[0]
+    assert record["status"] == "completed"
+    assert record["executionMode"] == "inline"
+    assert record["assistantMessageId"] == free_form["assistantMessage"]["id"]
+    assert record["turnCount"] >= 1
+    assert record["finishedAt"]
+
+
+def test_review_b_content_delta_events_are_emitted(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    class DeltaQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "初步说明：我先核对当前上下文。",
+                                "reasoning_content": "需要先读取节点上下文再判断。",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-delta-1",
+                                        "function": {
+                                            "name": "get_review_context",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "最终结论：证据不足，需人工确认。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: DeltaQwenRuntime())
+    session = create_session()
+    assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-delta-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查当前节点证据情况。"},
+        )
+    )
+    events = assert_ok(
+        client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+    )["events"]
+    message_deltas = [
+        item for item in events if item["eventType"] == "agent.message.delta"
+    ]
+    reasoning_deltas = [
+        item for item in events if item["eventType"] == "agent.reasoning.delta"
+    ]
+    assert any("初步说明" in str(item["payload"].get("content") or "") for item in message_deltas)
+    assert any("最终结论" in str(item["payload"].get("content") or "") for item in message_deltas)
+    assert any(
+        "节点上下文" in str(item["payload"].get("content") or "") for item in reasoning_deltas
+    )
+    assert all(item["payload"].get("executionId") for item in message_deltas)
+
+
+def test_review_b_single_tool_failure_does_not_kill_answer(monkeypatch) -> None:
+    """单工具错误隔离：工具抛异常应转为结构化失败结果回馈模型，回答仍完成。"""
+    calls = {"count": 0}
+    observed = {"failed_tool_result_in_context": False}
+
+    class ToolFailureRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-fail-1",
+                                        "function": {
+                                            "name": "get_review_context",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            observed["failed_tool_result_in_context"] = any(
+                '"status": "failed"' in str(item.get("content") or "")
+                or '"failed"' in str(item.get("content") or "")
+                for item in messages
+                if item.get("role") == "tool"
+            )
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "尽管工具失败，仍给出结论：证据不足。"}}],
+            }
+
+    def broken_tool_output(tool_name, arguments, **kwargs):
+        raise RuntimeError("tool exploded")
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: ToolFailureRuntime())
+    monkeypatch.setattr(
+        routes_module, "review_conversation_agent_tool_output", broken_tool_output
+    )
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-tool-isolation",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查当前节点。"},
+        )
+    )
+    execution = response["assistantMessage"]["execution"]
+    assert execution["mode"] == "llm_agent"
+    assert execution["toolCallCount"] == 1
+    assert observed["failed_tool_result_in_context"] is True
+    events = assert_ok(
+        client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+    )["events"]
+    failed_tool_events = [
+        item
+        for item in events
+        if item["eventType"] == "agent.tool_call.completed"
+        and item["payload"].get("status") == "failed"
+    ]
+    assert failed_tool_events
+
+
+def test_review_b_model_timeout_retries_once(monkeypatch) -> None:
+    from libs.integrations.errors import IntegrationServiceError
+
+    calls = {"count": 0}
+
+    class FlakyRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise IntegrationServiceError(
+                    "QwenRuntime", "chat.completions", reason="TIMEOUTEXCEPTION"
+                )
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "重试后成功的回答。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FlakyRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-model-retry",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查当前节点。"},
+        )
+    )
+    execution = response["assistantMessage"]["execution"]
+    assert execution["mode"] == "llm_agent"
+    assert execution["turnCount"] == 1
+    assert calls["count"] == 2
+    event_types = {
+        item["eventType"]
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+    }
+    assert "agent.model_call.retried" in event_types
+
+
+def test_review_b_streamed_deltas_replace_per_turn_emission(monkeypatch) -> None:
+    """串流模式：stream_handler 片段缓冲后发出 streamed delta，且不再重复发整轮 delta。"""
+
+    class StreamingRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            handler = kwargs.get("stream_handler")
+            assert handler is not None, "首次尝试应携带 stream_handler"
+            handler("content", "第一段")
+            handler("content", "第二段结论完成。")
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "第一段第二段结论完成。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: StreamingRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-streamed-delta",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查当前节点。"},
+        )
+    )
+    assert response["assistantMessage"]["execution"]["mode"] == "llm_agent"
+    message_deltas = [
+        item
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+        if item["eventType"] == "agent.message.delta"
+    ]
+    assert len(message_deltas) == 1
+    assert message_deltas[0]["payload"].get("streamed") is True
+    assert message_deltas[0]["payload"].get("content") == "第一段第二段结论完成。"
+
+
+def test_review_b_celery_mode_falls_back_to_thread_when_dispatch_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_EXECUTION_MODE", "celery")
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.delenv("AICHECK_TASK_DISPATCH", raising=False)
+
+    class FakeQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "Celery 回退路径的回答。"}}],
+            }
+
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FakeQwenRuntime())
+    session = create_session()
+    accepted = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-celery-fallback",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查当前节点。"},
+        )
+    )
+    assert accepted["status"] == "accepted"
+    finalized = _wait_for_assistant_completion(
+        session["id"], accepted["assistantMessage"]["id"]
+    )
+    assert finalized["status"] == "completed"
+    event_types = {
+        item["eventType"]
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+    }
+    assert "agent.execution.dispatch_failed" in event_types
+    assert "agent.message.completed" in event_types
+    executions = assert_ok(
+        client.get(
+            f"/api/review-sessions/{session['id']}/agent-executions", headers=HEADERS
+        )
+    )["executions"]
+    assert executions[0]["status"] == "completed"
+    assert executions[0]["heartbeatAt"]
+    assert executions[0]["heartbeatEpoch"] > 0

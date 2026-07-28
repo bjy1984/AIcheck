@@ -2031,6 +2031,35 @@ PROJECT_MEMBERS = [
 INSPECTION_TEST_USER_ID = "USER-INSPECTION-001"
 INSPECTION_TEST_USER_NAME = "张工"
 INSPECTION_TEST_ORG_NAME = "省特检院一部"
+TEST_PROJECT_IDS = ("P-2026-HDCP-001", "P-2026-GDLNG-002")
+TEST_PROJECT_ROLE_PROFILES = {
+    "inspection": {
+        "userId": INSPECTION_TEST_USER_ID,
+        "name": INSPECTION_TEST_USER_NAME,
+        "orgName": INSPECTION_TEST_ORG_NAME,
+        "nodeScope": [],
+    },
+    "contractor": {
+        "userId": "USER-CONTRACTOR-001",
+        "name": "李工",
+        # Align with Scan 测试场景（P-2026-GDLNG-002）与 import_scan_test_scenario.CONTRACTOR_USER
+        "orgName": "粤海安装工程有限公司",
+        "nodeScope": [16, 24, 25],
+    },
+    "ndt": {
+        "userId": "USER-NDT-001",
+        "name": "王工",
+        # Align with Scan 测试场景 NDT_USER
+        "orgName": "粤检无损检测",
+        "nodeScope": [35, 36, 40, 41, 42],
+    },
+    "owner": {
+        "userId": "USER-OWNER-001",
+        "name": "赵经理",
+        "orgName": "华东管网建设公司",
+        "nodeScope": [1, 16, 24, 40, 59, 68],
+    },
+}
 
 
 def _stable_inspection_member_id(project_id: str, used_ids: set[str]) -> str:
@@ -2129,18 +2158,116 @@ def ensure_inspection_project_members(
                 changed = True
     return changed
 
+
+def ensure_test_project_members(
+    projects: list[dict[str, Any]],
+    project_members: list[dict[str, Any]],
+    tree_nodes: list[dict[str, Any]] | None = None,
+) -> bool:
+    """Keep the four default business-role test accounts authorized for both demo projects."""
+    changed = False
+    projects_by_id = {
+        str(project.get("id")): project
+        for project in projects
+        if str(project.get("id") or "") in TEST_PROJECT_IDS
+    }
+    tree_nodes_by_project: dict[str, list[int]] = {}
+    for node in tree_nodes or []:
+        project_id = str(node.get("projectId") or "")
+        node_id = node.get("nodeId")
+        if project_id in projects_by_id and node_id is not None:
+            tree_nodes_by_project.setdefault(project_id, []).append(int(node_id))
+
+    for project_id in TEST_PROJECT_IDS:
+        project = projects_by_id.get(project_id)
+        if not project:
+            continue
+        pack = load_business_pack(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+        actions_by_role = role_actions_map(pack)
+        project_node_ids = tree_nodes_by_project.get(project_id) or [
+            int(node["nodeId"]) for node in build_project_tree(project_id, pack)
+        ]
+        for role, profile in TEST_PROJECT_ROLE_PROFILES.items():
+            member = next(
+                (
+                    item
+                    for item in project_members
+                    if item.get("projectId") == project_id
+                    and item.get("userId") == profile["userId"]
+                    and item.get("role") == role
+                ),
+                None,
+            )
+            default_node_scope = (
+                project_node_ids
+                if role == "inspection"
+                else [
+                    node_id
+                    for node_id in profile["nodeScope"]
+                    if not project_node_ids or node_id in project_node_ids
+                ]
+            )
+            node_scope = list(
+                dict.fromkeys(
+                    [
+                        *((member.get("nodeScope") or []) if member else []),
+                        *default_node_scope,
+                    ]
+                )
+            )
+            role_actions = actions_by_role.get(role) or ROLE_ACTIONS[role]
+            actions = list(
+                dict.fromkeys(
+                    [
+                        *role_actions,
+                        *((member.get("actions") or []) if member else []),
+                    ]
+                )
+            )
+            project_org_name = {
+                "contractor": project.get("contractorOrgName"),
+                "ndt": project.get("ndtOrgName"),
+                "owner": project.get("ownerOrgName"),
+                "inspection": project.get("inspectionOrgName"),
+            }.get(role)
+            desired = {
+                "projectId": project_id,
+                "userId": profile["userId"],
+                "name": profile["name"],
+                "orgName": str(project_org_name or profile["orgName"] or "").strip() or profile["orgName"],
+                "role": role,
+                "nodeScope": node_scope,
+                "actions": actions,
+                "status": "启用",
+                "updatedAt": project.get("updatedAt") or "2026-06-26 09:30:00",
+            }
+            if member is None:
+                project_members.append(
+                    {
+                        "id": f"PM-{role.upper()}-{project_id}",
+                        **desired,
+                    }
+                )
+                changed = True
+                continue
+            for key, value in desired.items():
+                if member.get(key) != value:
+                    member[key] = value
+                    changed = True
+    return changed
+
 ADMIN_CONFIG = {
     "orgUnits": [
         {"id": "ORG-OWNER-001", "name": "华东管网建设公司", "type": "owner", "contactName": "赵经理", "contactPhone": "13800000001", "status": "启用", "projectCount": 1},
-        {"id": "ORG-CONTRACTOR-001", "name": "中石化安装有限公司", "type": "contractor", "contactName": "李工", "contactPhone": "13800000002", "status": "启用", "projectCount": 1},
-        {"id": "ORG-NDT-001", "name": "华测检测有限公司", "type": "ndt", "contactName": "王工", "contactPhone": "13800000003", "status": "启用", "projectCount": 1},
+        {"id": "ORG-CONTRACTOR-001", "name": "粤海安装工程有限公司", "type": "contractor", "contactName": "李工", "contactPhone": "13800000002", "status": "启用", "projectCount": 1},
+        {"id": "ORG-NDT-001", "name": "粤检无损检测", "type": "ndt", "contactName": "王工", "contactPhone": "13800000003", "status": "启用", "projectCount": 1},
         {"id": "ORG-INSPECTION-001", "name": "省特检院一部", "type": "inspection", "contactName": "张工", "contactPhone": "13800000004", "status": "启用", "projectCount": 1},
         {"id": "ORG-FDE-001", "name": "AI 交付治理组", "type": "fde", "contactName": "FDE", "contactPhone": "13800000061", "status": "启用", "projectCount": 0},
     ],
     "users": [
         {"id": "USER-INSPECTION-001", "username": "inspection", "name": "张工", "orgName": "省特检院一部", "role": "inspection", "mobile": "13800000004", "status": "启用", "lastLoginAt": "2026-06-26 09:05:00"},
-        {"id": "USER-CONTRACTOR-001", "username": "contractor", "name": "李工", "orgName": "中石化安装有限公司", "role": "contractor", "mobile": "13800000002", "status": "启用", "lastLoginAt": "2026-06-26 08:50:00"},
-        {"id": "USER-NDT-001", "username": "ndt", "name": "王工", "orgName": "华测检测有限公司", "role": "ndt", "mobile": "13800000003", "status": "启用", "lastLoginAt": "2026-06-25 17:10:00"},
+        {"id": "USER-CONTRACTOR-001", "username": "contractor", "name": "李工", "orgName": "粤海安装工程有限公司", "role": "contractor", "mobile": "13800000002", "status": "启用", "lastLoginAt": "2026-06-26 08:50:00"},
+        {"id": "USER-NDT-001", "username": "ndt", "name": "王工", "orgName": "粤检无损检测", "role": "ndt", "mobile": "13800000003", "status": "启用", "lastLoginAt": "2026-06-25 17:10:00"},
         {"id": "USER-OWNER-001", "username": "owner", "name": "赵经理", "orgName": "华东管网建设公司", "role": "owner", "mobile": "13800000001", "status": "启用", "lastLoginAt": "2026-06-25 16:40:00"},
         {"id": "USER-ADMIN-001", "username": "admin", "name": "系统管理员", "orgName": "省特检院平台组", "role": "admin", "mobile": "13800000000", "status": "启用", "lastLoginAt": "2026-06-26 10:00:00"},
         {"id": "USER-FDE-001", "username": "fde", "name": "FDE 工程师", "orgName": "AI 交付治理组", "role": "fde", "mobile": "13800000061", "status": "启用", "lastLoginAt": "2026-06-26 10:30:00"},
@@ -2236,6 +2363,7 @@ def fresh_state() -> dict[str, Any]:
     standard_knowledge_tasks = deepcopy(STANDARD_KNOWLEDGE_SEED["knowledgeTasks"])
     project_members = deepcopy(PROJECT_MEMBERS)
     ensure_inspection_project_members(PROJECTS, project_members, tree_nodes)
+    ensure_test_project_members(PROJECTS, project_members, tree_nodes)
     state = {
         "projects": deepcopy(PROJECTS),
         "tree_nodes": tree_nodes,

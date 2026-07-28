@@ -57,6 +57,7 @@ from libs.review_orchestrator.r19_agent import (
     validate_r19_semantic_submission,
 )
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.raw_vault import raw_context_from_record
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
@@ -642,6 +643,12 @@ def plan_r12_human_verification(
                 temperature=0.0,
                 max_tokens=600,
                 timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+                _raw_capture_context=raw_context_from_record(
+                    review_run,
+                    model_call_attempt_id=str(model_attempt["id"]),
+                    stage=str(model_attempt["stage"]),
+                    turn=len(trace["toolCalls"]) + 1,
+                ),
             )
             last_response = response
             choices = response.get("choices") if isinstance(response.get("choices"), list) else []
@@ -1236,6 +1243,12 @@ def plan_r19_semantic_review(
                 temperature=0.0,
                 max_tokens=2200,
                 timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+                _raw_capture_context=raw_context_from_record(
+                    review_run,
+                    model_call_attempt_id=str(model_attempt["id"]),
+                    stage=str(model_attempt["stage"]),
+                    turn=turn,
+                ),
             )
             last_response = response
             choices = response.get("choices") if isinstance(response.get("choices"), list) else []
@@ -1473,6 +1486,12 @@ def _plan_guarded_material_tool_review(
                 temperature=0.0,
                 max_tokens=1000,
                 timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+                _raw_capture_context=raw_context_from_record(
+                    review_run,
+                    model_call_attempt_id=str(model_attempt["id"]),
+                    stage=str(model_attempt["stage"]),
+                    turn=len(trace["toolCalls"]) + 1,
+                ),
             )
             last_response = response
             choices = response.get("choices") if isinstance(response.get("choices"), list) else []
@@ -2675,6 +2694,12 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
             response_format={"type": "json_object"},
             max_tokens=budget_policy["maxOutputTokens"],
             timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+            _raw_capture_context=raw_context_from_record(
+                review_run,
+                model_call_attempt_id=str(attempt["id"]),
+                stage=str(attempt["stage"]),
+                turn=1,
+            ),
         )
     except IntegrationServiceError as exc:
         attempt.update(

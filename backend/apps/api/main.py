@@ -111,7 +111,13 @@ app.add_middleware(
         "X-Role",
         "X-User-Id",
     ],
-    expose_headers=["ETag", "Idempotency-Replayed", "Retry-After", "X-Operation-Id"],
+    expose_headers=[
+        "ETag",
+        "Idempotency-Replayed",
+        "Retry-After",
+        "X-Operation-Id",
+        "X-Raw-Payload-SHA256",
+    ],
 )
 
 
@@ -752,6 +758,8 @@ async def readiness_response():
         "workflow": bool(health.get("workflowReady")),
         **database_schema_readiness(),
     }
+    if strict_production():
+        checks["rawVault"] = bool((health.get("rawVault") or {}).get("ready"))
     ready = all(checks.values())
     return JSONResponse(
         {"status": "ready" if ready else "not_ready", "ready": ready, "checks": checks},
@@ -808,6 +816,7 @@ async def health_response(request: Request):
         or not payload["securityReady"]
         or not payload["runtimeReady"]
         or not payload["workflowReady"]
+        or not (payload.get("rawVault") or {}).get("ready")
     ):
         return fail(
             errors.SECURITY_BACKEND_UNAVAILABLE,
@@ -855,6 +864,7 @@ async def health_payload() -> dict[str, object]:
     workflow_ready = bool(temporal.get("ready")) and (
         review_orchestration_mode() != "temporal" or worker_ready
     )
+    raw_vault = await asyncio.to_thread(raw_vault_health_status)
     return {
         "status": "ok",
         "service": "api-service",
@@ -869,6 +879,7 @@ async def health_payload() -> dict[str, object]:
         "workflowReady": workflow_ready,
         "temporal": temporal,
         "workflowMetrics": workflow_metrics,
+        "rawVault": raw_vault,
         "objectStorageEnabled": object_storage.enabled,
         "officialOcrTelemetry": {
             "lastSuccessfulInferenceAt": (latest_success or {}).get("finishedAt")
@@ -880,6 +891,83 @@ async def health_payload() -> dict[str, object]:
         **production_runtime_status(),
         **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
     }
+
+
+def raw_vault_health_status() -> dict[str, object]:
+    dsn = os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    configured = bool(dsn and object_storage.enabled)
+    status: dict[str, object] = {
+        "configured": configured,
+        "ready": False,
+        "schemaReady": False,
+        "relayReady": False,
+        "bucketLocked": False,
+        "legalHoldCapable": False,
+        "pendingCount": 0,
+        "pendingBytes": 0,
+        "oldestPendingAgeSeconds": None,
+        "integrityFailureCount": 0,
+    }
+    if not configured:
+        return status
+    try:
+        client = object_storage.client()
+        bucket = object_storage.bucket_name("agent-raw-vault")
+        if client is not None and client.bucket_exists(bucket):
+            lock_config = client.get_object_lock_config(bucket)
+            lock_status = str(getattr(lock_config, "status", "") or "").upper()
+            status["bucketLocked"] = lock_status == "ENABLED"
+            status["legalHoldCapable"] = status["bucketLocked"]
+    except Exception:
+        pass
+    try:
+        import psycopg
+
+        with psycopg.connect(str(dsn)) as connection:
+            schema_row = connection.execute(
+                """
+                SELECT to_regclass('raw_vault_events') IS NOT NULL,
+                       to_regclass('raw_vault_outbox') IS NOT NULL
+                """
+            ).fetchone()
+            status["schemaReady"] = bool(schema_row and schema_row[0] and schema_row[1])
+            backlog = connection.execute(
+                """
+                SELECT count(*), COALESCE(sum(octet_length(payload)), 0),
+                       EXTRACT(EPOCH FROM now() - min(created_at)),
+                       count(*) FILTER (WHERE status = 'hash_mismatch')
+                FROM raw_vault_outbox
+                """
+            ).fetchone()
+            if backlog:
+                status["pendingCount"] = int(backlog[0] or 0)
+                status["pendingBytes"] = int(backlog[1] or 0)
+                status["oldestPendingAgeSeconds"] = (
+                    float(backlog[2]) if backlog[2] is not None else None
+                )
+                status["integrityFailureCount"] = int(backlog[3] or 0)
+            heartbeat = connection.execute(
+                """
+                SELECT 1
+                FROM service_heartbeats
+                WHERE service_role = 'review-worker'
+                  AND last_seen_at >= now() - interval '60 seconds'
+                  AND COALESCE((payload ->> 'rawVaultRelay')::boolean, false)
+                LIMIT 1
+                """
+            ).fetchone()
+            status["relayReady"] = bool(heartbeat)
+    except Exception as exc:
+        status["reason"] = f"{type(exc).__name__}: raw vault readiness probe failed"
+    status["ready"] = bool(
+        status["configured"]
+        and status["schemaReady"]
+        and status["relayReady"]
+        and status["bucketLocked"]
+        and status["legalHoldCapable"]
+        and int(status["integrityFailureCount"] or 0) == 0
+    )
+    return status
 
 
 def review_workflow_metrics() -> dict[str, object]:

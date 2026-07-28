@@ -55,6 +55,7 @@ from libs.integrations.errors import IntegrationServiceError, safe_reason
 from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
+from libs.raw_vault import raw_context_from_record
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
     OFFLINE_EMBEDDING_MODEL,
@@ -2018,6 +2019,12 @@ def qwen_structured_pipeline_call(
             temperature=0.0,
             max_tokens=int(os.getenv("AICHECK_OCR_QWEN_MAX_TOKENS", "8192")),
             timeout=float(os.getenv("AICHECK_OCR_QWEN_TIMEOUT_SECONDS", "180")),
+            _raw_capture_context=raw_context_from_record(
+                {**run, "pipelineRunId": run.get("id")},
+                model_call_attempt_id=str(attempt["id"]),
+                stage=str(attempt["stage"]),
+                turn=1,
+            ),
         )
         usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
         normalized_usage = normalize_model_usage(usage)
@@ -3265,6 +3272,12 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             messages,
             model=run.get("model") or "review-chat",
             temperature=0.1,
+            _raw_capture_context=raw_context_from_record(
+                run,
+                run_stream_id=str(run.get("reviewRunId") or run.get("id")),
+                stage="worker_review_chat",
+                turn=1,
+            ),
         )
         answer = QwenRuntimeClient.first_message_text(response) or "AI 复核完成，建议人工确认关键证据链。"
         message = ((response.get("choices") or [{}])[0].get("message") or {}) if isinstance(response.get("choices"), list) else {}
@@ -3441,6 +3454,12 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
                 messages,
                 model=model,
                 temperature=0.1,
+                _raw_capture_context=raw_context_from_record(
+                    run,
+                    run_stream_id=str(run.get("reviewRunId") or run.get("id")),
+                    stage="worker_model_comparison",
+                    turn=len(results) + 1,
+                ),
             )
             answer = QwenRuntimeClient.first_message_text(response)
             unsupported = unsupported_claims(answer or "", [str(item) for item in grounding_input.get("evidenceTextCorpus") or []])
@@ -3503,3 +3522,43 @@ def export_package(self, export_id: str) -> dict[str, Any]:
         repo.append_task_log(task, "info", "导出任务完成。")
     flush_state()
     return {"exportId": export_id, "status": task.get("status") if task else "missing"}
+
+
+@celery_app.task(bind=True, max_retries=0)
+def review_conversation_execute(
+    self,
+    session_id: str,
+    assistant_message_id: str,
+    user_text: str,
+    context: dict[str, Any],
+    execution_id: str,
+) -> dict[str, Any]:
+    """Version B 对话 Agent 的队列执行入口：在 worker 进程内运行 Agent Loop。
+
+    上下文快照由 API 进程构建后原样传入（纯 JSON 数据）；worker 只负责执行与回填。
+    不做 Celery 层自动重试：模型级有限重试已在 Loop 内部实现，任务级重复执行会
+    产生重复回答。跨进程取消经 agent_executions.cancelRequested 生效。
+    """
+    load_state()
+    # 延迟导入：避免 worker 启动即加载 API 层；对话 Agent 辅助函数目前仍在 routes.py，
+    # 抽离到 libs/review_conversation/ 是后续正式工作流化的一部分。
+    from apps.api import routes as api_routes
+
+    entry: dict[str, Any] = {
+        "executionId": execution_id,
+        "sessionId": session_id,
+        "cancelEvent": threading.Event(),
+        "startedAtMonotonic": time.monotonic(),
+        "startedAt": server_time(),
+        "thread": None,
+    }
+    with api_routes.REVIEW_SESSION_EXECUTION_LOCK:
+        api_routes.REVIEW_SESSION_ACTIVE_EXECUTIONS[session_id] = entry
+    api_routes.run_review_conversation_execution(
+        session_id=session_id,
+        assistant_message_id=assistant_message_id,
+        user_text=user_text,
+        context=context,
+        execution_entry=entry,
+    )
+    return {"executionId": execution_id, "sessionId": session_id}

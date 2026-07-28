@@ -25,6 +25,7 @@ backend/ocr_eval/public_datasets/
 backend/ocr_eval/public_reports/
 .deploy-backups/
 .deploy-import/
+.worktrees/
 backend/reports/
 backend/docker-compose.server.yml
 backend/docker-compose.production-data.yml.bak-*

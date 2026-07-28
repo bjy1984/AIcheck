@@ -321,6 +321,54 @@ def test_seed_compatibility_backfills_inspection_authorization_for_existing_proj
     assert inspection_project_ids == project_ids
 
 
+def test_seed_compatibility_authorizes_default_test_users_for_both_demo_projects() -> None:
+    loaded = deepcopy(repo.state)
+    test_user_ids = {
+        "USER-INSPECTION-001",
+        "USER-CONTRACTOR-001",
+        "USER-NDT-001",
+        "USER-OWNER-001",
+    }
+    test_project_ids = {"P-2026-HDCP-001", "P-2026-GDLNG-002"}
+    loaded["project_members"] = [
+        member
+        for member in loaded["project_members"]
+        if not (
+            member.get("userId") in test_user_ids
+            and member.get("projectId") in test_project_ids
+        )
+    ]
+
+    changed = repo.apply_seed_compatibility_defaults(loaded)
+
+    assert changed is True
+    projects_by_id = {
+        str(project.get("id")): project
+        for project in loaded.get("projects", [])
+        if str(project.get("id") or "") in test_project_ids
+    }
+    expected_org_by_role = {
+        "inspection": lambda project: project.get("inspectionOrgName") or "省特检院一部",
+        "contractor": lambda project: project.get("contractorOrgName") or "粤海安装工程有限公司",
+        "ndt": lambda project: project.get("ndtOrgName") or "粤检无损检测",
+        "owner": lambda project: project.get("ownerOrgName") or "华东管网建设公司",
+    }
+    for user_id in test_user_ids:
+        memberships = [
+            member
+            for member in loaded["project_members"]
+            if member.get("userId") == user_id
+            and member.get("projectId") in test_project_ids
+            and member.get("status") == "启用"
+        ]
+        assert {member["projectId"] for member in memberships} == test_project_ids
+        assert all(member.get("nodeScope") for member in memberships)
+        for member in memberships:
+            project = projects_by_id[str(member["projectId"])]
+            role = str(member.get("role") or "")
+            assert member.get("orgName") == expected_org_by_role[role](project)
+
+
 def test_healthz_reports_runtime_flags(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
     monkeypatch.setenv("AICHECK_ENABLE_DEMO_USERS", "false")
