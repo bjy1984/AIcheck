@@ -222,6 +222,34 @@ def _add_approvals(document: Document, approvals: Iterable[dict]) -> None:
     )
 
 
+def _add_evidence_panel(document: Document, panel: dict) -> None:
+    paragraph = document.add_paragraph()
+    run = paragraph.add_run(panel.get("label", "测试模拟证据面板"))
+    _set_run_font(run, HEADING_FONT, 10.5, bold=True)
+    run.font.color.rgb = RGBColor.from_string(THEME["alert"])
+    table = document.add_table(rows=2, cols=1)
+    table.style = "Table Grid"
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    top, bottom = table.cell(0, 0), table.cell(1, 0)
+    _shade(top, "18212B")
+    _shade(bottom, "2C3845")
+    top.text = panel.get(
+        "pattern", "█▓▒░  ───────  ░▒▓██▓▒░  ───────  ░▒▓█"
+    )
+    bottom.text = (
+        f"对象：{panel.get('object', '')}　"
+        f"{panel.get('annotation', '')}"
+    )
+    for cell, size in ((top, 15), (bottom, 9)):
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        _set_cell_margins(cell, top=120, bottom=120)
+        for cell_paragraph in cell.paragraphs:
+            cell_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for cell_run in cell_paragraph.runs:
+                _set_run_font(cell_run, BODY_FONT, size, bold=True)
+                cell_run.font.color.rgb = RGBColor(255, 255, 255)
+
+
 def render_docx(content: dict, master: dict, output: Path) -> Path:
     output.mkdir(parents=True, exist_ok=True)
     document = Document()
@@ -263,6 +291,9 @@ def render_docx(content: dict, master: dict, output: Path) -> Path:
 
     for table_data in content.get("tables", []):
         _add_business_table(document, table_data)
+
+    for panel in content.get("evidence_panels", []):
+        _add_evidence_panel(document, panel)
 
     if content.get("references"):
         heading = document.add_paragraph(style="Heading 1")

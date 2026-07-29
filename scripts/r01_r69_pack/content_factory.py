@@ -532,7 +532,11 @@ def _s03_events() -> list[dict[str, Any]]:
 
 
 def _pwht_curve() -> list[dict[str, Any]]:
-    values = [200, 350, 500, 640, 672, 681, 686, 682, 679, 675, 670, 665, 655, 520, 380, 220]
+    values = [
+        200, 350, 500, 640,
+        672, 681, 686, 682, 679, 675, 670, 675, 671, 676, 681, 678, 670,
+        655, 520, 380, 220,
+    ]
     return [
         {
             "weld": "W-S03-003",
@@ -584,6 +588,14 @@ def _customize_s03(content: dict[str, Any], spec: DocumentSpec,
             ),
         ]
     elif spec.logical_id == "S03-NDT-INITIAL-001":
+        content["evidence_panels"] = [
+            {
+                "label": "测试模拟底片图，不得作为真实检测底片",
+                "object": "W-S03-003",
+                "annotation": "2点钟方向／距基准42 mm／模拟未熔合6 mm",
+                "pattern": "█▓▒░  ──  ░▒▓██▓▒░  ▲  ░▒▓█  ──  ░▒▓█",
+            }
+        ]
         content["tables"].append(
             _table(
                 "首次RT结果",
@@ -794,6 +806,15 @@ def _customize_s06(content: dict[str, Any], spec: DocumentSpec,
             )
         )
     elif spec.logical_id == "S06-NDT-001":
+        content["evidence_panels"] = [
+            {
+                "label": "测试模拟底片图，不得作为真实检测底片",
+                "object": weld,
+                "annotation": "100% RT模拟影像面板／未见超标缺陷",
+                "pattern": "█▓▒░  ───────  ░▒▓██▓▒░  ───────  ░▒▓█",
+            }
+            for weld in ["W-S06-001", "W-S06-002", "W-S06-003"]
+        ]
         content["tables"].append(
             _table(
                 "100%检测结果",

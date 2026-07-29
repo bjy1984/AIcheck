@@ -75,7 +75,24 @@ class WeldingScenarioTest(ScenarioTestBase):
             ],
         )
         self.assertTrue(result.pwht_curve_is_continuous("W-S03-003"))
+        curve = result.scenario_data["S03"]["pwhtCurve"]
+        holding_minutes = [
+            row["minute"]
+            for row in curve
+            if row["weld"] == "W-S03-003"
+            and 660 <= row["tc1"] <= 700
+            and 660 <= row["tc2"] <= 700
+        ]
+        self.assertGreaterEqual(max(holding_minutes) - min(holding_minutes), 60)
         self.assertLessEqual(result.max_hardness("W-S03-003"), 225)
+        initial = next(
+            doc for doc in result.documents
+            if doc["logical_id"] == "S03-NDT-INITIAL-001"
+        )
+        self.assertEqual(
+            initial["evidence_panels"][0]["label"],
+            "测试模拟底片图，不得作为真实检测底片",
+        )
 
 
 class InstallationScenarioTest(ScenarioTestBase):
