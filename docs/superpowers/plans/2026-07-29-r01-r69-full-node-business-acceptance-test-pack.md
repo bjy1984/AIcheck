@@ -6,7 +6,7 @@
 
 **Architecture:** A deterministic standalone Python generator reads the existing OCR/project sources and business-pack node configuration, merges them with isolated S01–S06 test scenario data, and renders DOCX, XLSX, PDF, and marked JPG artifacts. A separate validator checks node coverage, object references, chronology, file pairing, test markings, and rendered-file health before producing the V00 completeness report.
 
-**Tech Stack:** Python 3.11+, standard library `dataclasses`/`json`/`unittest`, `python-docx` 1.2.0, `openpyxl` 3.1.5, ReportLab 4.4.9, Pillow 12.2.0, pypdf 6.10.0, LibreOffice `soffice`, Poppler `pdftoppm`.
+**Tech Stack:** Python 3.11+, standard library `dataclasses`/`json`/`unittest`, `python-docx` 1.2.0, ReportLab 4.4.9, Pillow 12.2.0, pypdf 6.10.0, Node.js with `@oai/artifact-tool` 2.8.6+, LibreOffice `soffice`, Poppler `pdftoppm`.
 
 ## Global Constraints
 
@@ -29,10 +29,14 @@
 
 ```bash
 PACK_PY=/Users/hankieyooly/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3
+PACK_NODE=/Users/hankieyooly/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node
+PACK_NODE_MODULES=/Users/hankieyooly/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules
 PACK_SOFFICE=/Users/hankieyooly/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/soffice
 PACK_PDFTOPPM=/Users/hankieyooly/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/pdftoppm
 ```
 
+- XLSX authoring uses only `@oai/artifact-tool`; Python may prepare JSON payloads but must not author workbooks with openpyxl, xlsxwriter, or pandas.
+- `scripts/r01_r69_pack/node_modules` is a symlink to `$PACK_NODE_MODULES` and is never committed.
 - Git commands stage only the paths named in each task; existing unrelated worktree changes remain untouched.
 
 ## File Structure
@@ -48,7 +52,7 @@ scripts/r01_r69_pack/
 ├── catalog.py                  # 58 logical-document catalog and 166 requirement bindings
 ├── render_common.py            # fonts, page metadata, headers, test markings
 ├── render_docx.py              # DOCX renderer
-├── render_xlsx.py              # XLSX renderer
+├── render_xlsx.mjs             # artifact-tool XLSX renderer and sheet preview
 ├── render_graphics.py          # S04 diagram and photo placeholder
 ├── convert_pdf.py              # isolated LibreOffice conversion and PDF health checks
 ├── build_pack.py               # deterministic orchestration entry point
@@ -436,7 +440,7 @@ git commit -m "feat: define R01-R69 document catalog"
 **Files:**
 - Create: `scripts/r01_r69_pack/render_common.py`
 - Create: `scripts/r01_r69_pack/render_docx.py`
-- Create: `scripts/r01_r69_pack/render_xlsx.py`
+- Create: `scripts/r01_r69_pack/render_xlsx.mjs`
 - Create: `scripts/r01_r69_pack/render_graphics.py`
 - Create: `scripts/r01_r69_pack/convert_pdf.py`
 - Create: `scripts/r01_r69_pack/tests/test_renderers.py`
@@ -481,13 +485,13 @@ Expected: missing renderer imports.
 
 - [ ] **Step 3: Implement shared Chinese document styling**
 
-Use A4 portrait by default, 25 mm margins, Chinese fonts selected from installed CJK fonts, 14 pt centered titles, 10.5 pt body text, 9 pt tables, repeating table headers, gray header watermark text, red footer warning, file number/revision/date metadata, and a non-signature approval table containing names/roles plus `电子记录（测试）`.
+Use the named `engineering_a4` override of the `standard_business_brief` preset: A4 portrait, 25 mm margins, Chinese fonts selected from installed CJK fonts, 14 pt centered titles, 10.5 pt body text, 9 pt tables, repeating table headers, gray header watermark text, red footer warning, file number/revision/date metadata, and a non-signature approval table containing names/roles plus `电子记录（测试）`.
 
 Do not draw seal circles, handwritten marks, QR codes, or certificate borders.
 
-- [ ] **Step 4: Implement DOCX and XLSX renderers**
+- [ ] **Step 4: Implement DOCX and artifact-tool XLSX renderers**
 
-DOCX renderer supports narrative sections, key/value tables, normal tables, approval history, references, and page fields. XLSX renderer supports multiple named sheets, frozen panes, filters, print titles, print areas, page headers/footers, cell validation, and conditional highlighting for process exceptions.
+DOCX renderer supports narrative sections, key/value tables, normal tables, approval history, references, and page fields. The Node XLSX renderer imports `Workbook` and `SpreadsheetFile` from `@oai/artifact-tool`, consumes a JSON workbook payload produced by Python, and supports multiple named sheets, frozen panes, filters, typed dates/numbers, formulas, page headers/footers, cell validation, and conditional highlighting for process exceptions. It renders every populated sheet to PNG before exporting the final XLSX.
 
 Every XLSX sheet must show the warning in rows 1–2 and start the business table at row 4.
 
@@ -515,7 +519,7 @@ Expected: all renderer tests pass and temporary artifacts are readable.
 ```bash
 git add scripts/r01_r69_pack/render_common.py \
   scripts/r01_r69_pack/render_docx.py \
-  scripts/r01_r69_pack/render_xlsx.py \
+  scripts/r01_r69_pack/render_xlsx.mjs \
   scripts/r01_r69_pack/render_graphics.py \
   scripts/r01_r69_pack/convert_pdf.py \
   scripts/r01_r69_pack/tests/test_renderers.py
