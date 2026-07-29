@@ -198,9 +198,6 @@ def _add_business_table(document: Document, table_data: dict) -> None:
         for cell in cells:
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
             _set_cell_margins(cell)
-    document.add_paragraph()
-
-
 def _add_approvals(document: Document, approvals: Iterable[dict]) -> None:
     approvals = list(approvals)
     if not approvals:

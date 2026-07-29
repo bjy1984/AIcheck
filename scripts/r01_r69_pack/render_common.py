@@ -9,9 +9,9 @@ from pypdf import PdfReader
 
 TEST_WARNING = "测试专用／合成资料／不得用于真实工程"
 TEST_WARNING_ASCII = "TEST-ONLY / SYNTHETIC / NOT FOR REAL ENGINEERING USE"
-BODY_FONT = "Hiragino Sans GB"
-HEADING_FONT = "Heiti SC"
-SERIF_FONT = "Songti SC"
+BODY_FONT = "Arial Unicode MS"
+HEADING_FONT = "Arial Unicode MS"
+SERIF_FONT = "Arial Unicode MS"
 
 THEME = {
     "ink": "233142",

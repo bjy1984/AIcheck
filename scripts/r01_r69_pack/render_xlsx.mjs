@@ -59,14 +59,14 @@ async function buildWorkbook(payload, outputPath, previewDir) {
     ]];
     sheet.getRange(`A1:${lastColumn}1`).format = {
       fill: "#264A73",
-      font: { bold: true, color: "#FFFFFF", size: 15, name: "Hiragino Sans GB" },
+      font: { bold: true, color: "#FFFFFF", size: 15, name: "Arial Unicode MS" },
       horizontalAlignment: "center",
       verticalAlignment: "center",
       rowHeight: 30,
     };
     sheet.getRange(`A2:${lastColumn}2`).format = {
       fill: "#FCE8E6",
-      font: { bold: true, color: "#B3261E", size: 9, name: "Hiragino Sans GB" },
+      font: { bold: true, color: "#B3261E", size: 9, name: "Arial Unicode MS" },
       horizontalAlignment: "center",
       verticalAlignment: "center",
       wrapText: true,
@@ -80,7 +80,7 @@ async function buildWorkbook(payload, outputPath, previewDir) {
         sheet.getRange(`A${cursor}`).values = [[table.name]];
         sheet.getRange(`A${cursor}:${lastColumn}${cursor}`).format = {
           fill: "#EAF0F6",
-          font: { bold: true, color: "#264A73", size: 10, name: "Hiragino Sans GB" },
+          font: { bold: true, color: "#264A73", size: 10, name: "Arial Unicode MS" },
         };
         cursor += 1;
       }
@@ -91,7 +91,7 @@ async function buildWorkbook(payload, outputPath, previewDir) {
       sheet.getRange(`A${cursor}:${tableLast}${cursor}`).values = [headers];
       sheet.getRange(`A${cursor}:${tableLast}${cursor}`).format = {
         fill: "#264A73",
-        font: { bold: true, color: "#FFFFFF", size: 9, name: "Hiragino Sans GB" },
+        font: { bold: true, color: "#FFFFFF", size: 9, name: "Arial Unicode MS" },
         horizontalAlignment: "center",
         verticalAlignment: "center",
         wrapText: true,
@@ -105,7 +105,7 @@ async function buildWorkbook(payload, outputPath, previewDir) {
           return normalized.slice(0, headers.length);
         });
         sheet.getRange(`A${start}:${tableLast}${end}`).format = {
-          font: { size: 9, name: "Hiragino Sans GB", color: "#233142" },
+          font: { size: 9, name: "Arial Unicode MS", color: "#233142" },
           verticalAlignment: "center",
           wrapText: true,
           borders: {

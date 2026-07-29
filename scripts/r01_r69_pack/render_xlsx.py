@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
@@ -18,7 +19,9 @@ def render_xlsx(content: dict, master: dict, output: Path) -> Path:
     del master  # Workbook payload is self-contained.
     output.mkdir(parents=True, exist_ok=True)
     destination = output / output_file_name(content, "xlsx")
-    preview_dir = output / ".xlsx-previews" / destination.stem
+    preview_dir = (
+        Path.cwd() / "tmp/r01-r69-xlsx-previews" / destination.stem
+    )
     script = Path(__file__).with_name("render_xlsx.mjs")
     with tempfile.TemporaryDirectory(prefix="r01-r69-xlsx-") as temp:
         payload = Path(temp) / "payload.json"
@@ -32,5 +35,8 @@ def render_xlsx(content: dict, master: dict, output: Path) -> Path:
             capture_output=True,
             text=True,
         )
+    inspect_log = destination.with_name(destination.name + ".inspect.ndjson")
+    if inspect_log.exists():
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(inspect_log), str(preview_dir / inspect_log.name))
     return destination
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
@@ -18,9 +19,25 @@ PDFTOPPM = Path(
     "/Users/hankieyooly/.cache/codex-runtimes/"
     "codex-primary-runtime/dependencies/bin/override/pdftoppm"
 )
+LO_FONT_DIR = Path(
+    "/Users/hankieyooly/.cache/codex-runtimes/"
+    "codex-primary-runtime/dependencies/native/libreoffice-headless/libreoffice/"
+    "LibreOfficeDev.app/Contents/Resources/fonts/truetype"
+)
+SYSTEM_CJK_FONT = Path("/Library/Fonts/Arial Unicode.ttf")
+
+
+def ensure_libreoffice_cjk_font() -> None:
+    """Make the installed CJK font visible to the isolated LO bundle."""
+    destination = LO_FONT_DIR / "ArialUnicode.ttf"
+    if destination.exists() or not SYSTEM_CJK_FONT.exists():
+        return
+    LO_FONT_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(SYSTEM_CJK_FONT, destination)
 
 
 def convert_office_to_pdf(source: Path, output_dir: Path) -> Path:
+    ensure_libreoffice_cjk_font()
     output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="r01-r69-lo-profile-") as profile:
         subprocess.run(
