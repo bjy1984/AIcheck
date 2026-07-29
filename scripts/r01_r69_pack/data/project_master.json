@@ -1,0 +1,288 @@
+{
+  "project": {
+    "name": "珠海恒基达鑫国际化工仓储股份有限公司一、二期装车站新增两套卸车系统项目",
+    "owner": "珠海恒基达鑫国际化工仓储股份有限公司",
+    "designOrganization": "广东星燃石化设计院有限公司",
+    "drawingPrefix": "QX201903S-13-Y",
+    "designStage": "施工图",
+    "originalRevision": "2",
+    "originalDate": "2021-03",
+    "pipelineClass": "GC2",
+    "testPackDate": "2026-07-29"
+  },
+  "organizations": [
+    {
+      "id": "OWNER-HJDX",
+      "name": "珠海恒基达鑫国际化工仓储股份有限公司",
+      "role": "建设单位",
+      "synthetic": false
+    },
+    {
+      "id": "DESIGN-XR",
+      "name": "广东星燃石化设计院有限公司",
+      "role": "设计单位",
+      "synthetic": false
+    },
+    {
+      "id": "TEST-INSTALLATION-ORG",
+      "name": "TEST-压力管道安装单位",
+      "role": "施工单位",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-NDT-ORG",
+      "name": "TEST-无损检测机构",
+      "role": "无损检测单位",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-LAB-ORG",
+      "name": "TEST-材料与理化试验机构",
+      "role": "试验单位",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-SUPERVISION-ORG",
+      "name": "TEST-监督检验角色单位",
+      "role": "监检角色",
+      "synthetic": true
+    }
+  ],
+  "people": [
+    {
+      "id": "TEST-PER-DES-01",
+      "name": "测试设计负责人甲",
+      "role": "设计",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-PER-CHK-01",
+      "name": "测试校核负责人乙",
+      "role": "校核",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-PER-APR-01",
+      "name": "测试批准负责人丙",
+      "role": "批准",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-PER-QA-01",
+      "name": "测试质量责任人员丁",
+      "role": "质量保证",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-PER-WELD-01",
+      "name": "测试焊工甲",
+      "role": "焊工",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-PER-NDT-01",
+      "name": "测试检测人员乙",
+      "role": "无损检测",
+      "synthetic": true
+    }
+  ],
+  "certificates": [
+    {
+      "id": "TEST-CERT-INSTALL-GC2-001",
+      "holder_id": "TEST-INSTALLATION-ORG",
+      "certificate_type": "压力管道安装资质测试数据",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-CERT-NDT-001",
+      "holder_id": "TEST-NDT-ORG",
+      "certificate_type": "无损检测机构资质测试数据",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-CERT-WELDER-001",
+      "holder_id": "TEST-PER-WELD-01",
+      "certificate_type": "焊工作业资格测试数据",
+      "synthetic": true
+    },
+    {
+      "id": "TEST-CERT-NDT-PER-001",
+      "holder_id": "TEST-PER-NDT-01",
+      "certificate_type": "检测人员资格测试数据",
+      "synthetic": true
+    }
+  ],
+  "materialBatches": [
+    {
+      "id": "MAT-B00-20-001",
+      "scenario": "B00",
+      "grade": "20#",
+      "standard": "GB/T 8163",
+      "heatNumber": "TEST-HEAT-B00-001"
+    },
+    {
+      "id": "MAT-S01-TP316L-001",
+      "scenario": "S01",
+      "grade": "ASTM A312 TP316L",
+      "standard": "ASTM A312/A312M",
+      "heatNumber": "TEST-HEAT-S01-F001"
+    },
+    {
+      "id": "MAT-S01-NM01-001",
+      "scenario": "S01",
+      "grade": "TEST-NM01",
+      "standard": "TEST-QX-NM01-2026",
+      "heatNumber": "TEST-HEAT-S01-N001"
+    },
+    {
+      "id": "MAT-S02-S30408-001",
+      "scenario": "S02",
+      "grade": "S30408",
+      "standard": "GB/T 14976",
+      "heatNumber": "TEST-HEAT-S02-001"
+    },
+    {
+      "id": "MAT-S03-15CRMO-001",
+      "scenario": "S03",
+      "grade": "15CrMoG",
+      "standard": "GB/T 5310",
+      "heatNumber": "TEST-HEAT-S03-001"
+    }
+  ],
+  "lines": [
+    {
+      "id": "PL8301",
+      "scenario": "B00",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ108×4",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "PL8302",
+      "scenario": "B00",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ108×4",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "PL8303",
+      "scenario": "B00/S02",
+      "materialBatchIds": ["MAT-B00-20-001", "MAT-S02-S30408-001"],
+      "specification": "Φ108×4 / 测试段Φ108×4.5",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "PL8304",
+      "scenario": "B00",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ108×4",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "PL8305",
+      "scenario": "B00/S05",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ108×4",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "PL8306",
+      "scenario": "B00/S06",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ108×4",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "VT8301",
+      "scenario": "B00",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ57×3.5",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "VT8302",
+      "scenario": "B00",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ57×3.5",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "PL8307-TEST",
+      "scenario": "S01",
+      "materialBatchIds": ["MAT-S01-TP316L-001", "MAT-S01-NM01-001"],
+      "specification": "Φ89×4.5",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    },
+    {
+      "id": "ST8301-TEST",
+      "scenario": "S03",
+      "materialBatchIds": ["MAT-S03-15CRMO-001"],
+      "specification": "Φ76×16",
+      "designPressureMpa": 2.5,
+      "designTemperatureC": 300
+    },
+    {
+      "id": "PL8308-TEST",
+      "scenario": "S04",
+      "materialBatchIds": ["MAT-B00-20-001"],
+      "specification": "Φ108×4；套管Φ273×7",
+      "designPressureMpa": 0.55,
+      "designTemperatureC": 50
+    }
+  ],
+  "welds": [
+    {"id": "W-B00-001", "scenario": "B00", "lineId": "PL8301", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-11", "status": "合格"},
+    {"id": "W-B00-002", "scenario": "B00", "lineId": "PL8301", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-11", "status": "合格"},
+    {"id": "W-B00-003", "scenario": "B00", "lineId": "PL8302", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-12", "status": "合格"},
+    {"id": "W-B00-004", "scenario": "B00", "lineId": "PL8302", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-12", "status": "合格"},
+    {"id": "W-B00-005", "scenario": "B00", "lineId": "PL8303", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-13", "status": "合格"},
+    {"id": "W-B00-006", "scenario": "B00", "lineId": "PL8304", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-14", "status": "合格"},
+    {"id": "W-B00-007", "scenario": "B00", "lineId": "PL8304", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-14", "status": "合格"},
+    {"id": "W-B00-008", "scenario": "B00", "lineId": "VT8301", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-15", "status": "合格"},
+    {"id": "W-B00-009", "scenario": "B00", "lineId": "VT8302", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-15", "status": "合格"},
+    {"id": "W-B00-010", "scenario": "B00", "lineId": "PL8305", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-16", "status": "合格"},
+    {"id": "W-B00-011", "scenario": "B00", "lineId": "PL8306", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-16", "status": "合格"},
+    {"id": "W-B00-012", "scenario": "B00", "lineId": "PL8306", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-05-16", "status": "合格"},
+    {"id": "W-S01-001", "scenario": "S01", "lineId": "PL8307-TEST", "materialBatchId": "MAT-S01-TP316L-001", "completedOn": "2026-06-02", "status": "合格"},
+    {"id": "W-S01-002", "scenario": "S01", "lineId": "PL8307-TEST", "materialBatchId": "MAT-S01-TP316L-001", "completedOn": "2026-06-02", "status": "合格"},
+    {"id": "W-S01-003", "scenario": "S01", "lineId": "PL8307-TEST", "materialBatchId": "MAT-S01-NM01-001", "completedOn": "2026-06-03", "status": "合格"},
+    {"id": "W-S02-001", "scenario": "S02", "lineId": "PL8303", "materialBatchId": "MAT-S02-S30408-001", "completedOn": "2026-06-08", "status": "合格"},
+    {"id": "W-S02-002", "scenario": "S02", "lineId": "PL8303", "materialBatchId": "MAT-S02-S30408-001", "completedOn": "2026-06-08", "status": "合格"},
+    {"id": "W-S02-003", "scenario": "S02", "lineId": "PL8303", "materialBatchId": "MAT-S02-S30408-001", "completedOn": "2026-06-09", "status": "合格"},
+    {"id": "W-S03-001", "scenario": "S03", "lineId": "ST8301-TEST", "materialBatchId": "MAT-S03-15CRMO-001", "completedOn": "2026-06-15", "status": "硬度合格"},
+    {"id": "W-S03-002", "scenario": "S03", "lineId": "ST8301-TEST", "materialBatchId": "MAT-S03-15CRMO-001", "completedOn": "2026-06-15", "status": "硬度合格"},
+    {"id": "W-S03-003", "scenario": "S03", "lineId": "ST8301-TEST", "materialBatchId": "MAT-S03-15CRMO-001", "completedOn": "2026-06-16", "status": "返修后硬度合格", "repairCount": 1},
+    {"id": "W-S03-004", "scenario": "S03", "lineId": "ST8301-TEST", "materialBatchId": "MAT-S03-15CRMO-001", "completedOn": "2026-06-16", "status": "硬度合格"},
+    {"id": "W-S04-001", "scenario": "S04", "lineId": "PL8308-TEST", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-06-22", "status": "合格"},
+    {"id": "W-S04-002", "scenario": "S04", "lineId": "PL8308-TEST", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-06-22", "status": "合格"},
+    {"id": "W-S04-003", "scenario": "S04", "lineId": "PL8308-TEST", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-06-23", "status": "合格"},
+    {"id": "W-S05-001", "scenario": "S05", "lineId": "PL8305", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-06-29", "status": "合格"},
+    {"id": "W-S05-002", "scenario": "S05", "lineId": "PL8305", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-06-29", "status": "合格"},
+    {"id": "W-S06-001", "scenario": "S06", "lineId": "PL8306", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-07-06", "status": "RT/MT合格"},
+    {"id": "W-S06-002", "scenario": "S06", "lineId": "PL8306", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-07-06", "status": "RT/MT合格"},
+    {"id": "W-S06-003", "scenario": "S06", "lineId": "PL8306", "materialBatchId": "MAT-B00-20-001", "completedOn": "2026-07-07", "status": "RT/MT合格"}
+  ],
+  "scenarioTimeline": [
+    {"date": "2026-05-01", "event": "标准查新与设计输入确认"},
+    {"date": "2026-05-04", "event": "基础设计与施工方案批准"},
+    {"date": "2026-05-08", "event": "基础材料验收"},
+    {"date": "2026-05-11", "event": "基础施工开始"},
+    {"date": "2026-06-01", "event": "S01设计变更批准"},
+    {"date": "2026-06-05", "event": "S02材料代用批准"},
+    {"date": "2026-06-12", "event": "S03焊接与热处理方案批准"},
+    {"date": "2026-06-20", "event": "S04穿越设计批准"},
+    {"date": "2026-06-27", "event": "S05安全附件设计批准"},
+    {"date": "2026-07-03", "event": "S06耐压替代批准"},
+    {"date": "2026-07-12", "event": "泄漏试验与吹扫完成"},
+    {"date": "2026-07-15", "event": "资料闭环与最终合格"}
+  ]
+}
