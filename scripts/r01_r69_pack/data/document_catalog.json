@@ -1,0 +1,2259 @@
+{
+  "schemaVersion": "r01-r69-document-catalog@1",
+  "logicalDocumentCount": 58,
+  "physicalFileCount": 114,
+  "documents": [
+    {
+      "logicalId": "M00-README-001",
+      "folder": "M00",
+      "outputSubfolder": "00_使用说明与总目录",
+      "title": "使用说明",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-M00-001",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/M00.json#M00-README-001",
+      "fileStem": "M00_M00-README-001_TEST-M00-001_使用说明"
+    },
+    {
+      "logicalId": "M00-MASTER-001",
+      "folder": "M00",
+      "outputSubfolder": "M00_项目主数据与总目录",
+      "title": "项目主数据",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-M00-002",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/M00.json#M00-MASTER-001",
+      "fileStem": "M00_M00-MASTER-001_TEST-M00-002_项目主数据"
+    },
+    {
+      "logicalId": "M00-STD-001",
+      "folder": "M00",
+      "outputSubfolder": "M00_项目主数据与总目录",
+      "title": "标准版本台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-M00-003",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [
+        8
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/M00.json#M00-STD-001",
+      "fileStem": "M00_M00-STD-001_TEST-M00-003_标准版本台账"
+    },
+    {
+      "logicalId": "M00-DIR-001",
+      "folder": "M00",
+      "outputSubfolder": "00_使用说明与总目录",
+      "title": "资料总目录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-M00-004",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/M00.json#M00-DIR-001",
+      "fileStem": "M00_M00-DIR-001_TEST-M00-004_资料总目录"
+    },
+    {
+      "logicalId": "B00-DESIGN-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "基础设计输入摘要",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "QX201903S-13-Y-TEST-B00-001",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        9
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/B00.json#B00-DESIGN-001",
+      "fileStem": "B00_B00-DESIGN-001_QX201903S-13-Y-TEST-B00-001_基础设计输入摘要"
+    },
+    {
+      "logicalId": "B00-CONSTRUCTION-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "施工组织设计",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-002",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        10
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/B00.json#B00-CONSTRUCTION-001",
+      "fileStem": "B00_B00-CONSTRUCTION-001_TEST-B00-002_施工组织设计"
+    },
+    {
+      "logicalId": "B00-QUALITY-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "质量计划",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-003",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/B00.json#B00-QUALITY-001",
+      "fileStem": "B00_B00-QUALITY-001_TEST-B00-003_质量计划"
+    },
+    {
+      "logicalId": "B00-QUAL-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "单位人员资质台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-004",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        1,
+        2,
+        3
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/B00.json#B00-QUAL-001",
+      "fileStem": "B00_B00-QUAL-001_TEST-B00-004_单位人员资质台账"
+    },
+    {
+      "logicalId": "B00-LINES-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "基础管线台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-005",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        4,
+        5,
+        6,
+        7,
+        9
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/B00.json#B00-LINES-001",
+      "fileStem": "B00_B00-LINES-001_TEST-B00-005_基础管线台账"
+    },
+    {
+      "logicalId": "B00-MATERIAL-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "材料验收台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-006",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        11,
+        12,
+        13,
+        14
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/B00.json#B00-MATERIAL-001",
+      "fileStem": "B00_B00-MATERIAL-001_TEST-B00-006_材料验收台账"
+    },
+    {
+      "logicalId": "B00-VALVE-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "阀门耐压试验记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-007",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        23
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/B00.json#B00-VALVE-001",
+      "fileStem": "B00_B00-VALVE-001_TEST-B00-007_阀门耐压试验记录"
+    },
+    {
+      "logicalId": "B00-WELD-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "PQR-WPS基础包",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-008",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        24,
+        25,
+        26,
+        27
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/B00.json#B00-WELD-001",
+      "fileStem": "B00_B00-WELD-001_TEST-B00-008_PQR-WPS基础包"
+    },
+    {
+      "logicalId": "B00-WELD-LEDGER-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "焊口与检验台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-009",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        28,
+        29,
+        30
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/B00.json#B00-WELD-LEDGER-001",
+      "fileStem": "B00_B00-WELD-LEDGER-001_TEST-B00-009_焊口与检验台账"
+    },
+    {
+      "logicalId": "B00-NDT-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "基础无损检测报告",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-010",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        35,
+        36,
+        37,
+        38,
+        39
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/B00.json#B00-NDT-001",
+      "fileStem": "B00_B00-NDT-001_TEST-B00-010_基础无损检测报告"
+    },
+    {
+      "logicalId": "B00-TEST-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "压力与泄漏试验方案",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-011",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        59,
+        60,
+        61,
+        62
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/B00.json#B00-TEST-001",
+      "fileStem": "B00_B00-TEST-001_TEST-B00-011_压力与泄漏试验方案"
+    },
+    {
+      "logicalId": "B00-INSTALL-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "安装试验吹扫综合记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-B00-012",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        66,
+        67,
+        68
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/B00.json#B00-INSTALL-001",
+      "fileStem": "B00_B00-INSTALL-001_TEST-B00-012_安装试验吹扫综合记录"
+    },
+    {
+      "logicalId": "S01-DESIGN-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "境外与新材料设计变更",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "QX201903S-13-Y-TEST-S01-001",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S01.json#S01-DESIGN-001",
+      "fileStem": "S01_S01-DESIGN-001_QX201903S-13-Y-TEST-S01-001_境外与新材料设计变更"
+    },
+    {
+      "logicalId": "S01-FOREIGN-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "境外制造与型式资料",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S01-002",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        15,
+        16
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S01.json#S01-FOREIGN-001",
+      "fileStem": "S01_S01-FOREIGN-001_TEST-S01-002_境外制造与型式资料"
+    },
+    {
+      "logicalId": "S01-MATERIAL-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "企业标准与材料证明",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S01-003",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        17
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S01.json#S01-MATERIAL-001",
+      "fileStem": "S01_S01-MATERIAL-001_TEST-S01-003_企业标准与材料证明"
+    },
+    {
+      "logicalId": "S01-RETEST-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "验证性复验记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S01-004",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        18,
+        19
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S01.json#S01-RETEST-001",
+      "fileStem": "S01_S01-RETEST-001_TEST-S01-004_验证性复验记录"
+    },
+    {
+      "logicalId": "S01-REVIEW-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "新材料评审批准",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S01-005",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        20
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S01.json#S01-REVIEW-001",
+      "fileStem": "S01_S01-REVIEW-001_TEST-S01-005_新材料评审批准"
+    },
+    {
+      "logicalId": "S01-ACCEPT-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "到货验收记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S01-006",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        21
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S01.json#S01-ACCEPT-001",
+      "fileStem": "S01_S01-ACCEPT-001_TEST-S01-006_到货验收记录"
+    },
+    {
+      "logicalId": "S01-MARK-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "标志移植台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S01-007",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        21
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S01.json#S01-MARK-001",
+      "fileStem": "S01_S01-MARK-001_TEST-S01-007_标志移植台账"
+    },
+    {
+      "logicalId": "S02-DESIGN-001",
+      "folder": "S02",
+      "outputSubfolder": "S02_材料代用",
+      "title": "材料代用设计变更",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "QX201903S-13-Y-TEST-S02-001",
+      "revision": "0",
+      "date": "2026-06-10",
+      "rNodes": [
+        22
+      ],
+      "relatedLines": [
+        "PL8303"
+      ],
+      "relatedWelds": [
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S02-S30408-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S02.json#S02-DESIGN-001",
+      "fileStem": "S02_S02-DESIGN-001_QX201903S-13-Y-TEST-S02-001_材料代用设计变更"
+    },
+    {
+      "logicalId": "S02-CALC-001",
+      "folder": "S02",
+      "outputSubfolder": "S02_材料代用",
+      "title": "技术比较与强度校核",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S02-002",
+      "revision": "0",
+      "date": "2026-06-10",
+      "rNodes": [
+        22
+      ],
+      "relatedLines": [
+        "PL8303"
+      ],
+      "relatedWelds": [
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S02-S30408-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S02.json#S02-CALC-001",
+      "fileStem": "S02_S02-CALC-001_TEST-S02-002_技术比较与强度校核"
+    },
+    {
+      "logicalId": "S02-APPROVAL-001",
+      "folder": "S02",
+      "outputSubfolder": "S02_材料代用",
+      "title": "材料代用书面批准",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S02-003",
+      "revision": "0",
+      "date": "2026-06-10",
+      "rNodes": [
+        22
+      ],
+      "relatedLines": [
+        "PL8303"
+      ],
+      "relatedWelds": [
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S02-S30408-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S02.json#S02-APPROVAL-001",
+      "fileStem": "S02_S02-APPROVAL-001_TEST-S02-003_材料代用书面批准"
+    },
+    {
+      "logicalId": "S02-WPS-001",
+      "folder": "S02",
+      "outputSubfolder": "S02_材料代用",
+      "title": "替代材料与WPS适用性",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S02-004",
+      "revision": "0",
+      "date": "2026-06-10",
+      "rNodes": [
+        22
+      ],
+      "relatedLines": [
+        "PL8303"
+      ],
+      "relatedWelds": [
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S02-S30408-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S02.json#S02-WPS-001",
+      "fileStem": "S02_S02-WPS-001_TEST-S02-004_替代材料与WPS适用性"
+    },
+    {
+      "logicalId": "S02-INSTALL-001",
+      "folder": "S02",
+      "outputSubfolder": "S02_材料代用",
+      "title": "替代材料验收安装记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S02-005",
+      "revision": "0",
+      "date": "2026-06-10",
+      "rNodes": [
+        22
+      ],
+      "relatedLines": [
+        "PL8303"
+      ],
+      "relatedWelds": [
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S02-S30408-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S02.json#S02-INSTALL-001",
+      "fileStem": "S02_S02-INSTALL-001_TEST-S02-005_替代材料验收安装记录"
+    },
+    {
+      "logicalId": "S03-DESIGN-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "热处理管线设计变更与计算",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "QX201903S-13-Y-TEST-S03-001",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        32
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S03.json#S03-DESIGN-001",
+      "fileStem": "S03_S03-DESIGN-001_QX201903S-13-Y-TEST-S03-001_热处理管线设计变更与计算"
+    },
+    {
+      "logicalId": "S03-WPS-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "PQR-WPS专项包",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-002",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        32
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S03.json#S03-WPS-001",
+      "fileStem": "S03_S03-WPS-001_TEST-S03-002_PQR-WPS专项包"
+    },
+    {
+      "logicalId": "S03-WELDER-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "焊工焊材台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-003",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        24,
+        25,
+        26,
+        27
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S03.json#S03-WELDER-001",
+      "fileStem": "S03_S03-WELDER-001_TEST-S03-003_焊工焊材台账"
+    },
+    {
+      "logicalId": "S03-WELDLOG-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "焊口施焊台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-004",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        31
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S03.json#S03-WELDLOG-001",
+      "fileStem": "S03_S03-WELDLOG-001_TEST-S03-004_焊口施焊台账"
+    },
+    {
+      "logicalId": "S03-NDT-INITIAL-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "首次无损检测不合格报告",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-005",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        31
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S03.json#S03-NDT-INITIAL-001",
+      "fileStem": "S03_S03-NDT-INITIAL-001_TEST-S03-005_首次无损检测不合格报告"
+    },
+    {
+      "logicalId": "S03-REPAIR-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "返修方案与记录",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-006",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        31
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S03.json#S03-REPAIR-001",
+      "fileStem": "S03_S03-REPAIR-001_TEST-S03-006_返修方案与记录"
+    },
+    {
+      "logicalId": "S03-NDT-REPEAT-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "返修复检合格报告",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-007",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        31
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S03.json#S03-NDT-REPEAT-001",
+      "fileStem": "S03_S03-NDT-REPEAT-001_TEST-S03-007_返修复检合格报告"
+    },
+    {
+      "logicalId": "S03-PWHT-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "热处理工艺与仪表",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-008",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        32,
+        33
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S03.json#S03-PWHT-001",
+      "fileStem": "S03_S03-PWHT-001_TEST-S03-008_热处理工艺与仪表"
+    },
+    {
+      "logicalId": "S03-PWHT-RECORD-001",
+      "folder": "S03",
+      "outputSubfolder": "S03_焊缝返修与热处理",
+      "title": "热处理曲线与硬度记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S03-009",
+      "revision": "0",
+      "date": "2026-06-19",
+      "rNodes": [
+        34
+      ],
+      "relatedLines": [
+        "ST8301-TEST"
+      ],
+      "relatedWelds": [
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004"
+      ],
+      "relatedMaterials": [
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S03.json#S03-PWHT-RECORD-001",
+      "fileStem": "S03_S03-PWHT-RECORD-001_TEST-S03-009_热处理曲线与硬度记录"
+    },
+    {
+      "logicalId": "S04-DESIGN-001",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "穿越与阴极保护设计变更",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "QX201903S-13-Y-TEST-S04-001",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        46,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S04.json#S04-DESIGN-001",
+      "fileStem": "S04_S04-DESIGN-001_QX201903S-13-Y-TEST-S04-001_穿越与阴极保护设计变更"
+    },
+    {
+      "logicalId": "S04-DIAGRAM-001",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "穿越结构与焊缝布置图",
+      "sourceFormat": "pdf",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S04-002",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        48,
+        49,
+        53
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "diagram",
+      "contentRef": "content/S04.json#S04-DIAGRAM-001",
+      "fileStem": "S04_S04-DIAGRAM-001_TEST-S04-002_穿越结构与焊缝布置图"
+    },
+    {
+      "logicalId": "S04-EQUIP-001",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "设备材料台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S04-003",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        46,
+        47,
+        50,
+        51
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S04.json#S04-EQUIP-001",
+      "fileStem": "S04_S04-EQUIP-001_TEST-S04-003_设备材料台账"
+    },
+    {
+      "logicalId": "S04-INSTALL-001",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "穿越施工与安装记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S04-004",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S04.json#S04-INSTALL-001",
+      "fileStem": "S04_S04-INSTALL-001_TEST-S04-004_穿越施工与安装记录"
+    },
+    {
+      "logicalId": "S04-CP-001",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "防腐阴保调试记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S04-005",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        46,
+        47
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S04.json#S04-CP-001",
+      "fileStem": "S04_S04-CP-001_TEST-S04-005_防腐阴保调试记录"
+    },
+    {
+      "logicalId": "S04-PHOTO-001",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "施工照片",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S04-006",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        48,
+        49,
+        53
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S04.json#S04-PHOTO-001",
+      "fileStem": "S04_S04-PHOTO-001_TEST-S04-006_施工照片"
+    },
+    {
+      "logicalId": "S05-DESIGN-001",
+      "folder": "S05",
+      "outputSubfolder": "S05_安全附件",
+      "title": "安全附件设计变更与选型",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "QX201903S-13-Y-TEST-S05-001",
+      "revision": "0",
+      "date": "2026-07-01",
+      "rNodes": [
+        56
+      ],
+      "relatedLines": [
+        "PL8305"
+      ],
+      "relatedWelds": [
+        "W-S05-001",
+        "W-S05-002"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S05.json#S05-DESIGN-001",
+      "fileStem": "S05_S05-DESIGN-001_QX201903S-13-Y-TEST-S05-001_安全附件设计变更与选型"
+    },
+    {
+      "logicalId": "S05-ACCESSORY-001",
+      "folder": "S05",
+      "outputSubfolder": "S05_安全附件",
+      "title": "产品质量与型式资料",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S05-002",
+      "revision": "0",
+      "date": "2026-07-01",
+      "rNodes": [
+        56
+      ],
+      "relatedLines": [
+        "PL8305"
+      ],
+      "relatedWelds": [
+        "W-S05-001",
+        "W-S05-002"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S05.json#S05-ACCESSORY-001",
+      "fileStem": "S05_S05-ACCESSORY-001_TEST-S05-002_产品质量与型式资料"
+    },
+    {
+      "logicalId": "S05-INSTALL-001",
+      "folder": "S05",
+      "outputSubfolder": "S05_安全附件",
+      "title": "安全附件到货安装记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S05-003",
+      "revision": "0",
+      "date": "2026-07-01",
+      "rNodes": [
+        56
+      ],
+      "relatedLines": [
+        "PL8305"
+      ],
+      "relatedWelds": [
+        "W-S05-001",
+        "W-S05-002"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S05.json#S05-INSTALL-001",
+      "fileStem": "S05_S05-INSTALL-001_TEST-S05-003_安全附件到货安装记录"
+    },
+    {
+      "logicalId": "S05-PSV-001",
+      "folder": "S05",
+      "outputSubfolder": "S05_安全附件",
+      "title": "安全阀校验报告",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S05-004",
+      "revision": "0",
+      "date": "2026-07-01",
+      "rNodes": [
+        57
+      ],
+      "relatedLines": [
+        "PL8305"
+      ],
+      "relatedWelds": [
+        "W-S05-001",
+        "W-S05-002"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S05.json#S05-PSV-001",
+      "fileStem": "S05_S05-PSV-001_TEST-S05-004_安全阀校验报告"
+    },
+    {
+      "logicalId": "S05-ESDV-001",
+      "folder": "S05",
+      "outputSubfolder": "S05_安全附件",
+      "title": "紧急切断阀与爆破片记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S05-005",
+      "revision": "0",
+      "date": "2026-07-01",
+      "rNodes": [
+        58
+      ],
+      "relatedLines": [
+        "PL8305"
+      ],
+      "relatedWelds": [
+        "W-S05-001",
+        "W-S05-002"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S05.json#S05-ESDV-001",
+      "fileStem": "S05_S05-ESDV-001_TEST-S05-005_紧急切断阀与爆破片记录"
+    },
+    {
+      "logicalId": "S06-ANALYSIS-001",
+      "folder": "S06",
+      "outputSubfolder": "S06_耐压免除或替代",
+      "title": "耐压替代设计论证与应力分析",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "QX201903S-13-Y-TEST-S06-001",
+      "revision": "0",
+      "date": "2026-07-10",
+      "rNodes": [
+        63
+      ],
+      "relatedLines": [
+        "PL8306"
+      ],
+      "relatedWelds": [
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S06.json#S06-ANALYSIS-001",
+      "fileStem": "S06_S06-ANALYSIS-001_QX201903S-13-Y-TEST-S06-001_耐压替代设计论证与应力分析"
+    },
+    {
+      "logicalId": "S06-APPROVAL-001",
+      "folder": "S06",
+      "outputSubfolder": "S06_耐压免除或替代",
+      "title": "耐压替代申请审批",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S06-002",
+      "revision": "0",
+      "date": "2026-07-10",
+      "rNodes": [
+        63,
+        64,
+        65
+      ],
+      "relatedLines": [
+        "PL8306"
+      ],
+      "relatedWelds": [
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S06.json#S06-APPROVAL-001",
+      "fileStem": "S06_S06-APPROVAL-001_TEST-S06-002_耐压替代申请审批"
+    },
+    {
+      "logicalId": "S06-ALTERNATIVE-001",
+      "folder": "S06",
+      "outputSubfolder": "S06_耐压免除或替代",
+      "title": "替代检验试验方案",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S06-003",
+      "revision": "0",
+      "date": "2026-07-10",
+      "rNodes": [
+        64
+      ],
+      "relatedLines": [
+        "PL8306"
+      ],
+      "relatedWelds": [
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S06.json#S06-ALTERNATIVE-001",
+      "fileStem": "S06_S06-ALTERNATIVE-001_TEST-S06-003_替代检验试验方案"
+    },
+    {
+      "logicalId": "S06-NDT-001",
+      "folder": "S06",
+      "outputSubfolder": "S06_耐压免除或替代",
+      "title": "百分百RT-MT报告与底片",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S06-004",
+      "revision": "0",
+      "date": "2026-07-10",
+      "rNodes": [
+        65
+      ],
+      "relatedLines": [
+        "PL8306"
+      ],
+      "relatedWelds": [
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/S06.json#S06-NDT-001",
+      "fileStem": "S06_S06-NDT-001_TEST-S06-004_百分百RT-MT报告与底片"
+    },
+    {
+      "logicalId": "S06-FINAL-001",
+      "folder": "S06",
+      "outputSubfolder": "S06_耐压免除或替代",
+      "title": "替代试验泄漏最终确认",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-S06-005",
+      "revision": "0",
+      "date": "2026-07-10",
+      "rNodes": [
+        64,
+        66,
+        67
+      ],
+      "relatedLines": [
+        "PL8306"
+      ],
+      "relatedWelds": [
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/S06.json#S06-FINAL-001",
+      "fileStem": "S06_S06-FINAL-001_TEST-S06-005_替代试验泄漏最终确认"
+    },
+    {
+      "logicalId": "V00-NODE-MATRIX-001",
+      "folder": "V00",
+      "outputSubfolder": "V00_R01-R69覆盖验证",
+      "title": "R01-R69资料覆盖矩阵",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-V00-001",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/V00.json#V00-NODE-MATRIX-001",
+      "fileStem": "V00_V00-NODE-MATRIX-001_TEST-V00-001_R01-R69资料覆盖矩阵"
+    },
+    {
+      "logicalId": "V00-REQ-MATRIX-001",
+      "folder": "V00",
+      "outputSubfolder": "V00_R01-R69覆盖验证",
+      "title": "166项资料要求覆盖明细",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-V00-002",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/V00.json#V00-REQ-MATRIX-001",
+      "fileStem": "V00_V00-REQ-MATRIX-001_TEST-V00-002_166项资料要求覆盖明细"
+    },
+    {
+      "logicalId": "V00-SOURCE-DIFF-001",
+      "folder": "V00",
+      "outputSubfolder": "V00_R01-R69覆盖验证",
+      "title": "资料来源与差异台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-V00-003",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/V00.json#V00-SOURCE-DIFF-001",
+      "fileStem": "V00_V00-SOURCE-DIFF-001_TEST-V00-003_资料来源与差异台账"
+    },
+    {
+      "logicalId": "V00-CHECKSUM-001",
+      "folder": "V00",
+      "outputSubfolder": "V00_R01-R69覆盖验证",
+      "title": "文件校验清单",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-V00-004",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/V00.json#V00-CHECKSUM-001",
+      "fileStem": "V00_V00-CHECKSUM-001_TEST-V00-004_文件校验清单"
+    },
+    {
+      "logicalId": "V00-REPORT-001",
+      "folder": "V00",
+      "outputSubfolder": "V00_R01-R69覆盖验证",
+      "title": "资料包完整性检查报告",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-V00-005",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/V00.json#V00-REPORT-001",
+      "fileStem": "V00_V00-REPORT-001_TEST-V00-005_资料包完整性检查报告"
+    }
+  ]
+}

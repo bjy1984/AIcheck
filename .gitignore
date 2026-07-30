@@ -37,3 +37,6 @@ audit-reports/ocr-hardening-*/
 output/**/*.inspect.ndjson
 output/knowledge_uploads/
 output/document_uploads/
+
+# Local bundled runtime link used by the standalone R01-R69 XLSX renderer.
+scripts/r01_r69_pack/node_modules
