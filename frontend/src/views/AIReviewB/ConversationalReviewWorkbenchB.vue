@@ -2048,7 +2048,7 @@ onBeforeUnmount(() => {
 
 .execution-check {
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .execution-copy {
