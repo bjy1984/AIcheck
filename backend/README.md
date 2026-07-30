@@ -16,6 +16,62 @@ Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 - `postgres`, `redis`, `minio`: unified PostgreSQL databases for AIcheck/LiteLLM/workflow, task queue/cache, and object storage for documents/previews/exports/OCR artifacts.
 - Docker Compose healthchecks are declared for API, worker, review worker, OCR, PostgreSQL, Redis, MinIO, Temporal, local embedding, and LiteLLM; service dependencies use `condition: service_healthy` for startup ordering.
 
+## MinerU precise OCR
+
+MinerU is an explicit remote OCR adapter. The existing local `ocr-service`
+remains the default and stays offline. MinerU runs only through its dedicated
+endpoints or when a document version has `ocrOptions.provider="mineru"`.
+Every MinerU request uses the precise parsing API with fixed
+`model_version="vlm"` and enables OCR, formula recognition, and table
+recognition.
+
+The asynchronous endpoints are available with or without the `/api` prefix:
+
+```text
+POST /internal/ocr/mineru/tasks
+POST /internal/ocr/mineru/tasks/upload
+GET  /internal/ocr/mineru/tasks/{jobId}
+```
+
+Submit a public HTTPS URL without query parameters:
+
+```json
+{
+  "url": "https://files.example/document.pdf",
+  "fileName": "document.pdf",
+  "profileId": "generic_document_v1",
+  "language": "ch",
+  "pageRanges": "1-3"
+}
+```
+
+Or submit an existing object-storage reference:
+
+```json
+{
+  "storageKey": "minio://documents/project/document.pdf",
+  "fileName": "document.pdf",
+  "profileId": "generic_document_v1"
+}
+```
+
+For a raw upload, send the file bytes as the request body. The
+`X-AICheck-Ocr-Metadata-B64` header is base64-encoded UTF-8 JSON containing at
+least `fileName`; uploads are limited to 200MB and are stored in the
+`ocr-artifacts` bucket before dispatch.
+
+The worker downloads MinerU's result Zip, validates every member, converts
+`*_content_list.json` and `*_middle.json` into rendered-pixel OCR evidence,
+normalizes tables and seal candidates, and persists the result through the
+existing `ocr_jobs`, `ocr_parse_results`, and document OCR contracts. Bound
+document/version jobs apply the result to business data; independent jobs do
+not mutate documents.
+
+Set the `AICHECK_MINERU_*` variables in `backend/.env` and run an
+`ocr-remote-worker-service` consuming the `ocr.remote` queue. Compose supplies
+the MinerU credential only to that remote worker; neither `api-service` nor the
+local `ocr-service` receives it.
+
 ## Multi-tenant persistence and durable review commands
 
 Production uses `AICHECK_TENANT_MODE=shared`. Authenticated request and worker tenant identity is carried through a

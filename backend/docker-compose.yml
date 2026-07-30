@@ -116,7 +116,7 @@ services:
       dockerfile: Dockerfile
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_BUSINESS_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1 -Q business.light
     restart: unless-stopped
-    environment:
+    environment: &worker-environment
       AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}
       AICHECK_ENABLE_DEMO_DATA: ${AICHECK_ENABLE_DEMO_DATA:-false}
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
@@ -213,6 +213,19 @@ services:
   cpu-heavy-worker-service:
     <<: *worker-service
     command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1 -Q cpu.heavy
+
+  ocr-remote-worker-service:
+    <<: *worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q ocr.remote
+    environment:
+      <<: *worker-environment
+      AICHECK_MINERU_BASE_URL: ${AICHECK_MINERU_BASE_URL:-https://mineru.net}
+      AICHECK_MINERU_API_KEY: ${AICHECK_MINERU_API_KEY:?AICHECK_MINERU_API_KEY is required}
+      AICHECK_MINERU_MODEL_VERSION: vlm
+      AICHECK_MINERU_TIMEOUT_SECONDS: ${AICHECK_MINERU_TIMEOUT_SECONDS:-60}
+      AICHECK_MINERU_POLL_INTERVAL_SECONDS: ${AICHECK_MINERU_POLL_INTERVAL_SECONDS:-3}
+      AICHECK_MINERU_JOB_TIMEOUT_SECONDS: ${AICHECK_MINERU_JOB_TIMEOUT_SECONDS:-1800}
+      AICHECK_MINERU_MAX_DOWNLOAD_BYTES: ${AICHECK_MINERU_MAX_DOWNLOAD_BYTES:-536870912}
 
   llm-remote-worker-service:
     <<: *worker-service
