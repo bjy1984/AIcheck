@@ -331,13 +331,13 @@ def build_mineru_result(
             )
             structure = html_table_to_structure(html)
             for cell in structure.get("cells") or []:
-                cell["confidence"] = None
+                cell["confidence"] = 0.0
             table = {
                 "tableId": f"MINERU-TABLE-{identity}",
                 "candidateId": f"MINERU-CAND-{identity}",
                 "sourceCandidateIds": [f"MINERU-CAND-{identity}"],
                 "html": html,
-                "confidence": None,
+                "confidence": 0.0,
                 "candidateOnly": not bool(structure.get("rows")),
                 **common,
                 **structure,
@@ -371,7 +371,7 @@ def build_mineru_result(
                     "candidateId": f"MINERU-CAND-{identity}",
                     "sourceCandidateIds": [f"MINERU-CAND-{identity}"],
                     "imagePath": raw_item.get("img_path"),
-                    "confidence": None,
+                    "confidence": 0.0,
                     "candidateOnly": True,
                     "canSatisfyRequiredSeal": False,
                     "formalEvidenceEligible": False,
@@ -412,7 +412,7 @@ def build_mineru_result(
                 "text": text,
                 "blockType": block_type,
                 "readingOrder": reading_order,
-                "confidence": None,
+                "confidence": 0.0,
                 **common,
             }
         )

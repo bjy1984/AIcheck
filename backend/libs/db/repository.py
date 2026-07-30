@@ -12,6 +12,7 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from libs.audit_context import current_request_audit_context
@@ -195,6 +196,26 @@ def blank_state() -> dict[str, Any]:
 
 def runtime_initial_state() -> dict[str, Any]:
     return fresh_state() if demo_data_enabled() else blank_state()
+
+
+def redact_url_query(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = urlsplit(str(value))
+    except ValueError:
+        return None
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, "", "")
+    )
+
+
+def sanitize_mineru_options(options: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: deepcopy(options[key])
+        for key in ("provider", "language", "pageRanges", "noCache", "cacheTolerance")
+        if key in options and options[key] is not None
+    }
 
 
 class InMemoryRepository:
@@ -1444,22 +1465,34 @@ class InMemoryRepository:
         profile_id: str | None = None,
         document_type: str | None = None,
         record_id: str | None = None,
+        provider: str | None = None,
+        source_url: str | None = None,
+        options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if record_id:
             existing = self.find_one("ocr_jobs", record_id)
             if existing:
                 return existing
         now = server_time()
+        safe_source_url = redact_url_query(source_url)
         job = {
             "id": record_id or f"OCRJOB-BIZ-{uuid4().hex[:10].upper()}",
             "jobId": None,
             "documentId": document_id,
             "documentVersionId": version_id,
-            "storageKey": storage_key,
+            "storageKey": safe_source_url if source_url else storage_key,
             "fileName": file_name,
             "profileId": profile_id,
             "documentType": document_type,
+            "provider": provider,
+            "sourceUrl": safe_source_url,
+            "sourceType": "url" if source_url else "storage",
+            "options": sanitize_mineru_options(options or {}),
             "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "providerTaskId": None,
+            "providerTaskType": None,
             "createdAt": now,
             "startedAt": None,
             "updatedAt": now,
@@ -1472,6 +1505,45 @@ class InMemoryRepository:
             "immutable": True,
         }
         self.state.setdefault("ocr_jobs", []).insert(0, job)
+        return job
+
+    def update_ocr_job_record(
+        self,
+        job: dict[str, Any] | None,
+        *,
+        status: str | None = None,
+        stage: str | None = None,
+        progress: int | None = None,
+        provider_task_id: str | None = None,
+        provider_task_type: str | None = None,
+        diagnostics: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        if not job:
+            return None
+        now = server_time()
+        if status is not None:
+            job["status"] = status
+            if status == "running":
+                job["startedAt"] = job.get("startedAt") or now
+            if status in {"success", "failed", "canceled"}:
+                job["finishedAt"] = job.get("finishedAt") or now
+        if stage is not None:
+            job["stage"] = stage
+        if progress is not None:
+            terminal = (status or job.get("status")) in {
+                "success",
+                "failed",
+                "canceled",
+            }
+            upper_bound = 100 if terminal else 99
+            job["progress"] = max(0, min(int(progress), upper_bound))
+        if provider_task_id is not None:
+            job["providerTaskId"] = provider_task_id
+        if provider_task_type is not None:
+            job["providerTaskType"] = provider_task_type
+        if diagnostics is not None:
+            job["diagnostics"] = self.clone(diagnostics)
+        job["updatedAt"] = now
         return job
 
     def mark_ocr_job_running(self, job: dict[str, Any] | None, *, pipeline_run_id: str | None = None) -> None:
@@ -1542,6 +1614,8 @@ class InMemoryRepository:
         job["parseResultId"] = parse_result_id
         job["finishedAt"] = now
         job["updatedAt"] = now
+        job["stage"] = "completed" if result_record["status"] == "success" else "failed"
+        job["progress"] = 100
         job["engineRuns"] = result_record["engineRuns"]
         job["diagnostics"] = result_record["diagnostics"]
         job["resultSummary"] = {

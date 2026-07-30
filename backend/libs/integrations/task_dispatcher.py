@@ -118,6 +118,38 @@ def dispatch_ocr_pipeline_official(run_id: str) -> dict[str, Any]:
     )
 
 
+def dispatch_mineru_ocr(job_record_id: str) -> dict[str, Any]:
+    mode = dispatch_mode()
+    if mode == "inline":
+        from apps.worker.tasks import mineru_ocr_extract
+
+        return {
+            "mode": mode,
+            "result": mineru_ocr_extract.run(job_record_id),
+        }
+    if mode == "celery":
+        from apps.worker.tasks import mineru_ocr_extract
+
+        result = mineru_ocr_extract.apply_async(
+            args=[job_record_id],
+            queue="ocr.remote",
+            priority=broker_priority(9),
+            task_id=deterministic_task_id("mineru-ocr", job_record_id),
+        )
+        return {
+            "mode": mode,
+            "taskId": result.id,
+            "queue": "ocr.remote",
+            "priority": 9,
+            "statusReason": "mineru_ocr_queued",
+        }
+    return {
+        "mode": mode,
+        "taskId": None,
+        "statusReason": "mineru_ocr_requires_task_dispatch",
+    }
+
+
 def dispatch_ocr_pipeline_qwen(run_id: str) -> dict[str, Any]:
     mode = dispatch_mode()
     if mode == "celery":

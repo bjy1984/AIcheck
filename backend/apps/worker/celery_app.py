@@ -32,6 +32,7 @@ celery_app.conf.update(
         "apps.worker.tasks.recognize_seals": {"queue": "cpu.heavy", "priority": broker_priority(9)},
         "apps.worker.tasks.slice_knowledge": {"queue": "cpu.heavy", "priority": broker_priority(2)},
         "apps.worker.tasks.embed_knowledge": {"queue": "cpu.heavy", "priority": broker_priority(1)},
+        "apps.worker.tasks.mineru_ocr_extract": {"queue": "ocr.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_official_extract": {"queue": "ocr.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_qwen_extract": {"queue": "llm.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_finalize": {"queue": "business.light", "priority": broker_priority(9)},

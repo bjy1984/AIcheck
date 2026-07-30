@@ -53,6 +53,7 @@ from libs.integrations.document_ai_client import DocumentAiClient
 from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.errors import IntegrationServiceError, safe_reason
 from libs.integrations.litellm_client import LiteLLMClient
+from libs.integrations.mineru_client import MinerUClient, MinerUError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
 from libs.raw_vault import raw_context_from_record
@@ -67,6 +68,11 @@ from libs.knowledge_indexing import (
     units_from_local_file,
 )
 from libs.material_targeting import run_material_targeting
+from libs.mineru_ocr import (
+    MinerUNormalizationError,
+    MinerUNormalizedBundle,
+    normalize_mineru_zip,
+)
 from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.ocr_accuracy_pipeline import (
     SEAL_ENGINES,
@@ -738,6 +744,367 @@ def mark_local_pipeline_stages(
         "queued",
         engine_status={},
     )
+
+
+def _persist_mineru_job(job: dict[str, Any]) -> None:
+    flush_state_records({"ocr_jobs": [job]})
+
+
+def mineru_source_path(
+    job: dict[str, Any],
+) -> tuple[Path | None, Path | None]:
+    storage_key = str(job.get("storageKey") or "")
+    parsed = parse_storage_url(storage_key)
+    suffix = Path(str(job.get("fileName") or "")).suffix
+    if parsed:
+        downloaded = object_storage.download_to_temp(
+            parsed[0],
+            parsed[1],
+            suffix=suffix,
+        )
+        return downloaded, downloaded.parent if downloaded else None
+    local_path = local_path_from_storage_key(storage_key, WORKSPACE_ROOT)
+    if local_path and local_path.is_file():
+        return local_path, None
+    direct_path = Path(storage_key)
+    if direct_path.is_file():
+        return direct_path, None
+    return None, None
+
+
+def _mineru_progress_value(status: dict[str, Any]) -> int:
+    state = str(status.get("state") or "")
+    if state == "pending":
+        return 20
+    if state == "converting":
+        return 65
+    if state == "done":
+        return 70
+    progress = status.get("extract_progress")
+    if state == "running" and isinstance(progress, dict):
+        completed = int(progress.get("extracted_pages") or 0)
+        total = int(progress.get("total_pages") or 0)
+        if total > 0:
+            return min(60, 25 + int(35 * completed / total))
+    return 35
+
+
+def _store_mineru_artifacts(
+    job: dict[str, Any],
+    bundle: MinerUNormalizedBundle,
+) -> dict[str, dict[str, Any]]:
+    references: dict[str, dict[str, Any]] = {}
+    for artifact_key, artifact in bundle.artifacts.items():
+        safe_name = Path(artifact.name).name
+        object_name = (
+            f"pipelines/mineru/{job['id']}/{safe_name}"
+        )
+        storage_url = object_storage.put_bytes(
+            "ocr-artifacts",
+            object_name,
+            artifact.data,
+            content_type=artifact.content_type,
+        )
+        references[artifact_key] = {
+            "objectName": object_name,
+            "storageUrl": storage_url,
+            "contentType": artifact.content_type,
+            "byteLength": len(artifact.data),
+            "sha256": artifact.sha256,
+        }
+    job["artifactReferences"] = references
+    return references
+
+
+def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
+    client = MinerUClient()
+    source_temp_root: Path | None = None
+    try:
+        options = job.get("options")
+        options = options if isinstance(options, dict) else {}
+        if job.get("sourceType") == "url":
+            source_url = str(job.get("sourceUrl") or "")
+            if not source_url:
+                raise MinerUNormalizationError(
+                    "MINERU_SOURCE_MISSING",
+                    "MinerU URL source is missing.",
+                )
+            repo.update_ocr_job_record(
+                job,
+                status="running",
+                stage="submit",
+                progress=5,
+            )
+            _persist_mineru_job(job)
+            submission = client.submit_url(
+                source_url,
+                data_id=str(job["id"]),
+                options=options,
+            )
+        else:
+            repo.update_ocr_job_record(
+                job,
+                status="running",
+                stage="upload",
+                progress=5,
+            )
+            _persist_mineru_job(job)
+            source_path, source_temp_root = mineru_source_path(job)
+            if not source_path or not source_path.is_file():
+                raise MinerUNormalizationError(
+                    "MINERU_SOURCE_MISSING",
+                    "MinerU source file is unavailable.",
+                )
+            submission = client.submit_file(
+                source_path,
+                data_id=str(job["id"]),
+                options=options,
+            )
+        repo.update_ocr_job_record(
+            job,
+            status="running",
+            stage="poll",
+            progress=20,
+            provider_task_id=str(submission["providerTaskId"]),
+            provider_task_type=str(submission["kind"]),
+        )
+        _persist_mineru_job(job)
+
+        def progress_callback(status: dict[str, Any]) -> None:
+            repo.update_ocr_job_record(
+                job,
+                status="running",
+                stage="poll",
+                progress=_mineru_progress_value(status),
+            )
+            _persist_mineru_job(job)
+
+        provider_result = client.wait_for_result(
+            submission,
+            progress_callback=progress_callback,
+        )
+        result_url = str(provider_result.get("full_zip_url") or "")
+        if not result_url:
+            raise MinerUNormalizationError(
+                "MINERU_RESULT_URL_MISSING",
+                "MinerU result URL is missing.",
+            )
+        repo.update_ocr_job_record(
+            job,
+            status="running",
+            stage="download",
+            progress=70,
+        )
+        _persist_mineru_job(job)
+        zip_bytes = client.download_result(result_url)
+        repo.update_ocr_job_record(
+            job,
+            status="running",
+            stage="normalize",
+            progress=80,
+        )
+        _persist_mineru_job(job)
+        bundle = normalize_mineru_zip(
+            zip_bytes,
+            storage_key=str(job.get("storageKey") or ""),
+            file_name=str(job.get("fileName") or "document.pdf"),
+            profile_id=(
+                str(job.get("profileId")) if job.get("profileId") else None
+            ),
+            document_type=(
+                str(job.get("documentType"))
+                if job.get("documentType")
+                else None
+            ),
+            provider_task_id=str(job.get("providerTaskId") or ""),
+        )
+        repo.update_ocr_job_record(
+            job,
+            status="running",
+            stage="persist",
+            progress=90,
+        )
+        _persist_mineru_job(job)
+        artifact_references = _store_mineru_artifacts(job, bundle)
+        result = deepcopy(bundle.result)
+        metadata = result.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            result["metadata"] = metadata
+        metadata["artifactReferences"] = deepcopy(artifact_references)
+        return result
+    finally:
+        if source_temp_root is not None:
+            shutil.rmtree(source_temp_root, ignore_errors=True)
+
+
+def _mineru_failure_code(job: dict[str, Any], exc: Exception) -> str:
+    if isinstance(exc, (MinerUError, MinerUNormalizationError)):
+        return str(exc.code)
+    return {
+        "submit": "MINERU_SUBMIT_FAILED",
+        "upload": "MINERU_SUBMIT_FAILED",
+        "poll": "MINERU_JOB_FAILED",
+        "download": "MINERU_RESULT_DOWNLOAD_FAILED",
+        "normalize": "MINERU_RESULT_INVALID",
+        "persist": "MINERU_PERSIST_FAILED",
+    }.get(str(job.get("stage") or ""), "MINERU_JOB_FAILED")
+
+
+@celery_app.task(bind=True, max_retries=3)
+def mineru_ocr_extract(
+    self,
+    job_record_id: str,
+) -> dict[str, Any]:
+    refresh_worker_state(
+        {"ocr_jobs", "ocr_parse_results", "documents", "versions"}
+    )
+    job = repo.find_one("ocr_jobs", job_record_id)
+    if not job:
+        return {
+            "jobId": job_record_id,
+            "status": "failed",
+            "diagnostics": [
+                {
+                    "code": "MINERU_JOB_NOT_FOUND",
+                    "level": "error",
+                    "retryable": False,
+                }
+            ],
+        }
+    if job.get("provider") != "mineru":
+        diagnostics = [
+            {
+                "code": "MINERU_PROVIDER_INVALID",
+                "level": "error",
+                "retryable": False,
+            }
+        ]
+        repo.update_ocr_job_record(
+            job,
+            status="failed",
+            stage="failed",
+            progress=100,
+            diagnostics=diagnostics,
+        )
+        _persist_mineru_job(job)
+        return {
+            "jobId": job_record_id,
+            "status": "failed",
+            "diagnostics": diagnostics,
+        }
+    document_id = str(job.get("documentId") or "")
+    version_id = str(job.get("documentVersionId") or "")
+    if document_id and version_id:
+        refresh_ocr_worker_state(document_id, version_id)
+        job = repo.find_one("ocr_jobs", job_record_id) or job
+    repo.update_ocr_job_record(
+        job,
+        status="running",
+        stage="submit",
+        progress=1,
+    )
+    _persist_mineru_job(job)
+    try:
+        result = run_mineru_job(job)
+        result_record = repo.finish_ocr_job_record(job, result)
+        bound_document = (
+            repo.find_one("documents", document_id) if document_id else None
+        )
+        bound_version = (
+            repo.find_one("versions", version_id) if version_id else None
+        )
+        applied = None
+        if (
+            bound_document is not None
+            and bound_version is not None
+            and str(bound_version.get("documentId") or "") == document_id
+        ):
+            applied = repo.apply_ocr_result(document_id, version_id, result)
+            flush_state_records(
+                ocr_result_state_records(document_id, version_id)
+            )
+        else:
+            flush_state_records(
+                {
+                    "ocr_jobs": [job],
+                    "ocr_parse_results": [result_record]
+                    if result_record
+                    else [],
+                }
+            )
+        return {
+            "jobId": job_record_id,
+            "status": "success",
+            "parseResultId": (
+                (result_record or {}).get("parseResultId")
+                or result.get("parseResultId")
+            ),
+            "applied": applied,
+            "artifactReferences": deepcopy(
+                job.get("artifactReferences") or {}
+            ),
+        }
+    except Exception as exc:
+        code = _mineru_failure_code(job, exc)
+        retryable = bool(getattr(exc, "retryable", False))
+        diagnostics = [
+            {
+                "code": code,
+                "level": "error",
+                "retryable": retryable,
+            }
+        ]
+        retry_index = int(getattr(self.request, "retries", 0) or 0)
+        called_directly = bool(
+            getattr(self.request, "called_directly", False)
+        )
+        if retryable and not called_directly and retry_index < 3:
+            repo.update_ocr_job_record(
+                job,
+                status="queued",
+                stage="retrying",
+                progress=min(int(job.get("progress") or 0), 99),
+                diagnostics=diagnostics,
+            )
+            _persist_mineru_job(job)
+            countdown = (10, 30, 90)[min(retry_index, 2)]
+            raise self.retry(exc=exc, countdown=countdown)
+        failure_result = {
+            "storageKey": job.get("storageKey"),
+            "fileName": job.get("fileName"),
+            "status": "failed",
+            "outcomeStatus": "failed",
+            "diagnostics": diagnostics,
+            "fragments": [],
+            "layoutBlocks": [],
+            "tables": [],
+            "seals": [],
+            "signatures": [],
+            "fields": [],
+            "engineRuns": [
+                {
+                    "engine": "mineru_vlm",
+                    "status": "failed",
+                    "errorCode": code,
+                }
+            ],
+            "metadata": {"provider": "mineru", "model": "vlm"},
+        }
+        result_record = repo.finish_ocr_job_record(job, failure_result)
+        flush_state_records(
+            {
+                "ocr_jobs": [job],
+                "ocr_parse_results": [result_record]
+                if result_record
+                else [],
+            }
+        )
+        return {
+            "jobId": job_record_id,
+            "status": "failed",
+            "diagnostics": diagnostics,
+        }
 
 
 @celery_app.task(bind=True, max_retries=3)

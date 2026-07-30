@@ -117,6 +117,19 @@ def test_normalizes_mineru_vlm_into_local_ocr_contract() -> None:
     }
 
 
+def test_missing_provider_confidence_uses_conservative_numeric_score() -> None:
+    result = _normalize(_zip_bytes()).result
+
+    evidence = result["fragments"] + result["tables"] + result["seals"]
+    assert evidence
+    assert all(item["confidence"] == 0.0 for item in evidence)
+    assert all(
+        cell["confidence"] == 0.0
+        for table in result["tables"]
+        for cell in table["cells"]
+    )
+
+
 def test_maps_supported_content_types_in_stable_reading_order() -> None:
     content = [
         {
@@ -319,4 +332,3 @@ def test_zip_member_count_and_expansion_limits_are_enforced(
     with pytest.raises(MinerUNormalizationError) as expanded:
         _normalize(_zip_bytes())
     assert expanded.value.code == "MINERU_ZIP_EXPANSION_TOO_LARGE"
-
