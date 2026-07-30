@@ -4,7 +4,6 @@ from pathlib import Path
 
 import yaml
 
-
 BACKEND = Path(__file__).resolve().parents[1]
 COMPOSE_FILES = (
     "docker-compose.yml",

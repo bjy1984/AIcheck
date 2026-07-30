@@ -106,6 +106,117 @@ def test_submit_file_puts_bytes_without_content_type(tmp_path: Path) -> None:
     assert seen[1].content == b"%PDF-test"
 
 
+def test_submit_file_checkpoints_batch_before_upload_failure(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"%PDF-test")
+    checkpoints: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "batch_id": "BATCH-CHECKPOINT",
+                        "file_urls": ["https://upload.example/signed-secret"],
+                    },
+                },
+            )
+        assert checkpoints == [
+            {
+                "kind": "batch",
+                "providerTaskId": "BATCH-CHECKPOINT",
+                "uploadState": "allocated",
+            }
+        ]
+        return httpx.Response(503)
+
+    client = MinerUClient(_config(), transport=httpx.MockTransport(handler))
+
+    with pytest.raises(MinerUProtocolError) as raised:
+        client.submit_file(
+            source,
+            data_id="OCRJOB-1",
+            options={},
+            submission_callback=checkpoints.append,
+        )
+
+    assert raised.value.code == "MINERU_UPLOAD_FAILED"
+    assert checkpoints[0]["providerTaskId"] == "BATCH-CHECKPOINT"
+    assert checkpoints[0]["uploadState"] == "allocated"
+
+
+def test_submit_file_retries_signed_upload_and_checkpoints_completion(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"%PDF-test")
+    checkpoints: list[dict[str, str]] = []
+    put_statuses = iter([503, 200])
+    put_attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal put_attempts
+        if request.method == "POST":
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "batch_id": "BATCH-RETRY",
+                        "file_urls": ["https://upload.example/signed-secret"],
+                    },
+                },
+            )
+        put_attempts += 1
+        return httpx.Response(next(put_statuses))
+
+    client = MinerUClient(_config(), transport=httpx.MockTransport(handler))
+
+    submission = client.submit_file(
+        source,
+        data_id="OCRJOB-1",
+        options={},
+        submission_callback=checkpoints.append,
+    )
+
+    assert submission == {"kind": "batch", "providerTaskId": "BATCH-RETRY"}
+    assert put_attempts == 2
+    assert [item["uploadState"] for item in checkpoints] == [
+        "allocated",
+        "uploaded",
+    ]
+
+
+def test_submission_state_preserves_waiting_file() -> None:
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "extract_result": [
+                        {
+                            "state": "waiting-file",
+                        }
+                    ]
+                },
+            },
+        )
+    )
+    client = MinerUClient(_config(), transport=transport)
+
+    assert (
+        client.submission_state(
+            {"kind": "batch", "providerTaskId": "BATCH-WAITING"}
+        )
+        == "waiting-file"
+    )
+
+
 @pytest.mark.parametrize(
     ("submission", "expected_path", "response_data"),
     [
@@ -227,11 +338,11 @@ def test_provider_and_http_errors_are_classified_and_sanitized(
     retryable: bool,
 ) -> None:
     if provider_code is None:
-        response_factory = lambda: httpx.Response(  # noqa: E731
+        response_factory = lambda: httpx.Response(
             status_code, text="Token sk-test-secret invalid"
         )
     else:
-        response_factory = lambda: httpx.Response(  # noqa: E731
+        response_factory = lambda: httpx.Response(
             status_code,
             json={
                 "code": provider_code,
@@ -320,4 +431,3 @@ def test_load_config_requires_key_and_vlm_model() -> None:
             }
         )
     assert invalid.value.code == "MINERU_MODEL_INVALID"
-

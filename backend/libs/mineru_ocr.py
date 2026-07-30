@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import stat
 import zipfile
 from collections.abc import Mapping
@@ -12,8 +13,9 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.engines import html_table_to_structure
+from apps.ocr_service.profiles import profile_for
+from apps.ocr_service.service import enrich_parse_result
 from libs.contracts.responses import server_time
-
 
 MAX_ZIP_MEMBERS = 5_000
 MAX_ZIP_MEMBER_BYTES = 128 * 1024 * 1024
@@ -322,6 +324,25 @@ def build_mineru_result(
             "sourceBbox": raw_item.get("bbox"),
             "sourceEngine": "mineru_vlm",
             "formalEvidenceEligible": mapped_bbox is not None,
+            "coordinateTransformStatus": (
+                "mapped"
+                if mapped_bbox is not None
+                else (
+                    "unmapped"
+                    if raw_item.get("bbox") is not None
+                    else "not_provided"
+                )
+            ),
+            "coordinateTransform": (
+                {
+                    "scaleX": float(page_by_no[page_no]["width"])
+                    / 1000.0,
+                    "scaleY": float(page_by_no[page_no]["height"])
+                    / 1000.0,
+                }
+                if mapped_bbox is not None and page_no in page_by_no
+                else None
+            ),
         }
         if item_type == "table":
             html = str(
@@ -390,6 +411,15 @@ def build_mineru_result(
                     **common,
                 }
             )
+            diagnostics.append(
+                _diagnostic(
+                    "requires_seal_ocr_text",
+                    "MinerU seal candidate requires OCR text before it can satisfy a required seal.",
+                    severity="warning",
+                    pageNo=page_no,
+                    sourceIndex=source_index,
+                )
+            )
             continue
         text = _content_text(raw_item)
         layout_blocks.append(
@@ -407,6 +437,7 @@ def build_mineru_result(
         candidate_id = f"MINERU-CAND-{identity}"
         fragments.append(
             {
+                "fragmentId": f"MINERU-FRAG-{identity}",
                 "candidateId": candidate_id,
                 "sourceCandidateIds": [candidate_id],
                 "text": text,
@@ -418,7 +449,7 @@ def build_mineru_result(
         )
     if coordinate_unmapped:
         reasons.append("coordinate_transform_unmapped")
-    return {
+    result = {
         "parseResultId": f"PARSE-{uuid4().hex[:12].upper()}",
         "storageKey": storage_key,
         "fileName": file_name,
@@ -478,6 +509,44 @@ def build_mineru_result(
         },
         "createdAt": server_time(),
     }
+    provider_manifest = dict(result["modelManifest"])
+    provider_metadata = dict(result["metadata"])
+    provider_engine_runs = list(result["engineRuns"])
+    adapter_quality = dict(result["quality"])
+    enriched = enrich_parse_result(
+        result,
+        profile=profile_for(profile_id, document_type),
+        document_version_id=None,
+        business_pack_id=None,
+        model_manifest=provider_manifest,
+    )
+    enriched["parserVersion"] = "mineru-vlm-adapter@1"
+    enriched["engineVersion"] = "mineru-vlm"
+    enriched["modelManifest"] = provider_manifest
+    enriched["engineRuns"] = provider_engine_runs
+    enriched.setdefault("metadata", {}).update(provider_metadata)
+    enriched_quality = enriched.setdefault("quality", {})
+    enriched_quality["reasons"] = list(
+        dict.fromkeys(
+            [
+                *(adapter_quality.get("reasons") or []),
+                *(enriched_quality.get("reasons") or []),
+            ]
+        )
+    )
+    blocking_reasons = []
+    for reason in [
+        *(adapter_quality.get("blockingReasons") or []),
+        *(enriched_quality.get("blockingReasons") or []),
+    ]:
+        if reason not in blocking_reasons:
+            blocking_reasons.append(reason)
+    enriched_quality["blockingReasons"] = blocking_reasons
+    if coordinate_unmapped:
+        enriched_quality["status"] = "needs_human_review"
+        enriched["outcomeStatus"] = "partial"
+        enriched["formalEvidenceReady"] = False
+    return enriched
 
 
 def build_mineru_artifacts(
@@ -545,7 +614,7 @@ def _load_json(data: bytes, *, expected_type: type[Any]) -> Any:
 
 
 def _content_text(item: Mapping[str, Any]) -> str:
-    for key in ("text", "latex", "content", "code"):
+    for key in ("text", "latex", "content", "code_body", "code"):
         value = item.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -557,8 +626,23 @@ def _content_text(item: Mapping[str, Any]) -> str:
                 value = value.get("text")
             if str(value or "").strip():
                 values.append(str(value).strip())
-        return "\n".join(values)
-    return ""
+        if values:
+            return "\n".join(values)
+    values = []
+    for key in (
+        "image_caption",
+        "image_footnote",
+        "table_caption",
+        "table_footnote",
+    ):
+        value = item.get(key)
+        candidates = value if isinstance(value, list) else [value]
+        for candidate in candidates:
+            if isinstance(candidate, Mapping):
+                candidate = candidate.get("text")
+            if str(candidate or "").strip():
+                values.append(str(candidate).strip())
+    return "\n".join(values)
 
 
 def _map_bbox(
@@ -577,24 +661,24 @@ def _map_bbox(
     if any(value is None for value in values):
         return None, "mineru_normalized_1000"
     x1, y1, x2, y2 = (float(value) for value in values if value is not None)
-    if x1 < 0 or y1 < 0 or x2 < x1 or y2 < y1:
+    if (
+        x1 < 0
+        or y1 < 0
+        or x2 <= x1
+        or y2 <= y1
+        or max(x1, y1, x2, y2) > 1000
+    ):
         return None, "mineru_normalized_1000"
-    scale = 1.0 if max(x1, y1, x2, y2) <= 1 else 1000.0
-    source_coordinate_system = (
-        "mineru_normalized_1"
-        if scale == 1.0
-        else "mineru_normalized_1000"
-    )
     width = float(page["width"])
     height = float(page["height"])
     return (
         [
-            round(x1 / scale * width, 4),
-            round(y1 / scale * height, 4),
-            round(x2 / scale * width, 4),
-            round(y2 / scale * height, 4),
+            round(x1 / 1000.0 * width, 4),
+            round(y1 / 1000.0 * height, 4),
+            round(x2 / 1000.0 * width, 4),
+            round(y2 / 1000.0 * height, 4),
         ],
-        source_coordinate_system,
+        "mineru_normalized_1000",
     )
 
 
@@ -650,6 +734,6 @@ def _safe_float(value: Any) -> float | None:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    if number != number or number in {float("inf"), float("-inf")}:
+    if not math.isfinite(number):
         return None
     return number

@@ -112,6 +112,11 @@ from libs.official_ocr_pipeline import official_ocr_extract, profile_result_comp
 from libs.pipeline_lock import pipeline_task_lock
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
+from libs.security.tenant import (
+    current_tenant_id,
+    reset_request_tenant_id,
+    set_request_tenant_id,
+)
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
@@ -750,6 +755,153 @@ def _persist_mineru_job(job: dict[str, Any]) -> None:
     flush_state_records({"ocr_jobs": [job]})
 
 
+def _finalize_mineru_pipeline(
+    job: dict[str, Any],
+    result: dict[str, Any],
+    result_record: dict[str, Any] | None,
+) -> None:
+    run_id = str(job.get("pipelineRunId") or "")
+    if not run_id:
+        return
+    run = repo.find_one("ocr_pipeline_runs", run_id)
+    if not run:
+        return
+    profile = profile_for(
+        str(result.get("profileId") or job.get("profileId") or "") or None,
+        str(
+            result.get("documentType")
+            or job.get("documentType")
+            or ""
+        )
+        or None,
+    )
+    quality = (
+        result.get("quality")
+        if isinstance(result.get("quality"), dict)
+        else {}
+    )
+    outcome_status = str(result.get("outcomeStatus") or "partial")
+    raw_blocking_reasons = quality.get("blockingReasons")
+    blocking_reasons = [
+        deepcopy(reason)
+        if isinstance(reason, dict)
+        else {"code": str(reason)}
+        for reason in (
+            raw_blocking_reasons or []
+        )
+    ]
+    failed = str(result.get("status") or "") != "success"
+    if failed:
+        repo.mark_ocr_pipeline_stage(
+            run,
+            "text_scan",
+            "failed",
+            engine_status=pipeline_engine_status(result),
+            blocking_reasons=blocking_reasons,
+            failure_reason="mineru_ocr_failed",
+        )
+        repo.finish_ocr_pipeline_run(
+            run,
+            status="failed",
+            blocking_reasons=blocking_reasons,
+            recommended_action="检查 MinerU 远程任务后重试。",
+        )
+        return
+
+    repo.mark_ocr_pipeline_stage(run, "prepare", "success")
+    has_text = bool(result.get("fragments") or result.get("fields"))
+    normalized_reference = (
+        job.get("artifactReferences", {}).get("normalized_json", {})
+        if isinstance(job.get("artifactReferences"), dict)
+        else {}
+    )
+    repo.mark_ocr_pipeline_stage(
+        run,
+        "text_scan",
+        "success" if has_text else "partial",
+        engine_status=pipeline_engine_status(result),
+        blocking_reasons=[] if has_text else [{"code": "OCR_TEXT_EMPTY"}],
+        artifact_url=normalized_reference.get("storageUrl"),
+        artifact_hash=normalized_reference.get("sha256"),
+    )
+    required_tables = bool(profile.get("requiredTables"))
+    repo.mark_ocr_pipeline_stage(
+        run,
+        "structure_scan",
+        (
+            "success"
+            if required_tables and result.get("tables")
+            else "partial"
+            if required_tables
+            else "skipped"
+        ),
+        engine_status={"mineru_vlm": {"status": "success"}},
+        blocking_reasons=(
+            []
+            if not required_tables or result.get("tables")
+            else [{"code": "REQUIRED_TABLE_MISSING"}]
+        ),
+    )
+    seal_required = bool((profile.get("sealRules") or {}).get("required"))
+    formal_seal = any(
+        bool(item.get("canSatisfyRequiredSeal"))
+        for item in result.get("seals") or []
+        if isinstance(item, dict)
+    )
+    repo.mark_ocr_pipeline_stage(
+        run,
+        "seal_signature_scan",
+        (
+            "success"
+            if seal_required and formal_seal
+            else "partial"
+            if seal_required
+            else "skipped"
+        ),
+        engine_status={"mineru_vlm": {"status": "success"}},
+        blocking_reasons=(
+            []
+            if not seal_required or formal_seal
+            else [{"code": "SEAL_TEXT_LOW_CONFIDENCE"}]
+        ),
+    )
+    repo.mark_ocr_pipeline_stage(
+        run,
+        "evidence_fusion",
+        "success" if outcome_status == "completed" else "partial",
+        blocking_reasons=blocking_reasons,
+    )
+    run.update(
+        {
+            "providerMode": "explicit_remote",
+            "provider": "mineru",
+            "model": "vlm",
+            "cloudGrounded": True,
+            "parseResultId": (
+                (result_record or {}).get("parseResultId")
+                or result.get("parseResultId")
+            ),
+            "artifactUrls": {
+                **(run.get("artifactUrls") or {}),
+                "mineru": deepcopy(job.get("artifactReferences") or {}),
+            },
+        }
+    )
+    repo.finish_ocr_pipeline_run(
+        run,
+        status=(
+            "completed" if outcome_status == "completed" else "partial"
+        ),
+        blocking_reasons=blocking_reasons,
+        recommended_action=(
+            None
+            if outcome_status == "completed"
+            else "复核 MinerU 未满足的必填证据。"
+        ),
+        formal_evidence_ready=outcome_status == "completed",
+    )
+
+
 def mineru_source_path(
     job: dict[str, Any],
 ) -> tuple[Path | None, Path | None]:
@@ -789,6 +941,25 @@ def _mineru_progress_value(status: dict[str, Any]) -> int:
     return 35
 
 
+def _mineru_provider_progress(
+    status: dict[str, Any],
+) -> dict[str, int] | None:
+    progress = status.get("extract_progress")
+    if not isinstance(progress, dict):
+        return None
+    try:
+        extracted_pages = int(progress.get("extracted_pages") or 0)
+        total_pages = int(progress.get("total_pages") or 0)
+    except (TypeError, ValueError):
+        return None
+    if extracted_pages < 0 or total_pages < 0:
+        return None
+    return {
+        "extractedPages": extracted_pages,
+        "totalPages": total_pages,
+    }
+
+
 def _store_mineru_artifacts(
     job: dict[str, Any],
     bundle: MinerUNormalizedBundle,
@@ -805,6 +976,11 @@ def _store_mineru_artifacts(
             artifact.data,
             content_type=artifact.content_type,
         )
+        if not storage_url:
+            raise MinerUNormalizationError(
+                "MINERU_PERSIST_FAILED",
+                "MinerU artifact storage is unavailable.",
+            )
         references[artifact_key] = {
             "objectName": object_name,
             "storageUrl": storage_url,
@@ -822,7 +998,34 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
     try:
         options = job.get("options")
         options = options if isinstance(options, dict) else {}
-        if job.get("sourceType") == "url":
+        provider_task_id = str(job.get("providerTaskId") or "")
+        provider_task_type = str(job.get("providerTaskType") or "")
+        submission: dict[str, Any] | None = None
+        if provider_task_id:
+            if provider_task_type not in {"task", "batch"}:
+                raise MinerUNormalizationError(
+                    "MINERU_PROVIDER_TASK_INVALID",
+                    "MinerU provider task metadata is invalid.",
+                )
+            checkpoint = {
+                "kind": provider_task_type,
+                "providerTaskId": provider_task_id,
+            }
+            if (
+                provider_task_type == "batch"
+                and job.get("providerUploadState") != "uploaded"
+            ):
+                provider_state = client.submission_state(checkpoint)
+                if provider_state != "waiting-file":
+                    repo.update_ocr_job_record(
+                        job,
+                        provider_upload_state="uploaded",
+                    )
+                    _persist_mineru_job(job)
+                    submission = checkpoint
+            else:
+                submission = checkpoint
+        if submission is None and job.get("sourceType") == "url":
             source_url = str(job.get("sourceUrl") or "")
             if not source_url:
                 raise MinerUNormalizationError(
@@ -841,7 +1044,7 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
                 data_id=str(job["id"]),
                 options=options,
             )
-        else:
+        elif submission is None:
             repo.update_ocr_job_record(
                 job,
                 status="running",
@@ -855,11 +1058,38 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
                     "MINERU_SOURCE_MISSING",
                     "MinerU source file is unavailable.",
                 )
+
+            def submission_callback(
+                checkpoint: dict[str, str],
+            ) -> None:
+                repo.update_ocr_job_record(
+                    job,
+                    status="running",
+                    stage="upload",
+                    progress=10,
+                    provider_task_id=str(
+                        checkpoint["providerTaskId"]
+                    ),
+                    provider_task_type=str(checkpoint["kind"]),
+                    provider_upload_state=(
+                        str(checkpoint["uploadState"])
+                        if checkpoint.get("uploadState")
+                        else None
+                    ),
+                )
+                _persist_mineru_job(job)
+
             submission = client.submit_file(
                 source_path,
                 data_id=str(job["id"]),
                 options=options,
+                submission_callback=submission_callback,
             )
+            repo.update_ocr_job_record(
+                job,
+                provider_upload_state="uploaded",
+            )
+            _persist_mineru_job(job)
         repo.update_ocr_job_record(
             job,
             status="running",
@@ -871,6 +1101,9 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
         _persist_mineru_job(job)
 
         def progress_callback(status: dict[str, Any]) -> None:
+            provider_progress = _mineru_provider_progress(status)
+            if provider_progress is not None:
+                job["providerProgress"] = provider_progress
             repo.update_ocr_job_record(
                 job,
                 status="running",
@@ -951,8 +1184,7 @@ def _mineru_failure_code(job: dict[str, Any], exc: Exception) -> str:
     }.get(str(job.get("stage") or ""), "MINERU_JOB_FAILED")
 
 
-@celery_app.task(bind=True, max_retries=3)
-def mineru_ocr_extract(
+def _execute_mineru_ocr_extract(
     self,
     job_record_id: str,
 ) -> dict[str, Any]:
@@ -993,6 +1225,15 @@ def mineru_ocr_extract(
             "status": "failed",
             "diagnostics": diagnostics,
         }
+    if job.get("status") in {"success", "failed", "canceled"}:
+        response = {
+            "jobId": job_record_id,
+            "status": str(job.get("status")),
+            "alreadyCompleted": True,
+        }
+        if job.get("parseResultId"):
+            response["parseResultId"] = job.get("parseResultId")
+        return response
     document_id = str(job.get("documentId") or "")
     version_id = str(job.get("documentVersionId") or "")
     if document_id and version_id:
@@ -1008,6 +1249,7 @@ def mineru_ocr_extract(
     try:
         result = run_mineru_job(job)
         result_record = repo.finish_ocr_job_record(job, result)
+        _finalize_mineru_pipeline(job, result, result_record)
         bound_document = (
             repo.find_one("documents", document_id) if document_id else None
         )
@@ -1045,14 +1287,16 @@ def mineru_ocr_extract(
                 job.get("artifactReferences") or {}
             ),
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Celery task boundary persists a safe failure.
         code = _mineru_failure_code(job, exc)
         retryable = bool(getattr(exc, "retryable", False))
+        failed_stage = str(job.get("stage") or "unknown")
         diagnostics = [
             {
                 "code": code,
                 "level": "error",
                 "retryable": retryable,
+                "stage": failed_stage,
             }
         ]
         retry_index = int(getattr(self.request, "retries", 0) or 0)
@@ -1092,19 +1336,46 @@ def mineru_ocr_extract(
             "metadata": {"provider": "mineru", "model": "vlm"},
         }
         result_record = repo.finish_ocr_job_record(job, failure_result)
-        flush_state_records(
-            {
+        _finalize_mineru_pipeline(job, failure_result, result_record)
+        if document_id and version_id:
+            failure_records = ocr_result_state_records(
+                document_id,
+                version_id,
+            )
+        else:
+            failure_records = {
                 "ocr_jobs": [job],
                 "ocr_parse_results": [result_record]
                 if result_record
                 else [],
             }
-        )
+        flush_state_records(failure_records)
         return {
             "jobId": job_record_id,
             "status": "failed",
             "diagnostics": diagnostics,
         }
+
+
+@celery_app.task(bind=True, max_retries=3)
+@pipeline_task_lock(
+    "mineru-ocr",
+    lambda _self, job_record_id, tenant_id=None: (
+        f"{tenant_id or current_tenant_id()}:{job_record_id}"
+    ),
+)
+def mineru_ocr_extract(
+    self,
+    job_record_id: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    tenant_context = set_request_tenant_id(
+        str(tenant_id or current_tenant_id())
+    )
+    try:
+        return _execute_mineru_ocr_extract(self, job_record_id)
+    finally:
+        reset_request_tenant_id(tenant_context)
 
 
 @celery_app.task(bind=True, max_retries=3)
@@ -1255,6 +1526,12 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 "model": "vlm",
                 "cloudGrounded": True,
             }
+        )
+        ocr_job_record["pipelineRunId"] = pipeline_run.get("id")
+        persist_ocr_pipeline_progress(
+            pipeline_run,
+            task=task,
+            ocr_job=ocr_job_record,
         )
         dispatch = task_dispatcher.dispatch_mineru_ocr(
             str(ocr_job_record["id"])

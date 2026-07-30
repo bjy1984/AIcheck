@@ -51,9 +51,16 @@ Or submit an existing object-storage reference:
 {
   "storageKey": "minio://documents/project/document.pdf",
   "fileName": "document.pdf",
+  "documentId": "DOC-001",
+  "documentVersionId": "VER-001",
   "profileId": "generic_document_v1"
 }
 ```
+
+Direct `storageKey` requests must bind an authorized document/version and the
+key must exactly match that version. Public URL and raw-upload tasks are
+independent and never overwrite a bound document. Send an `Idempotency-Key`
+header on POST requests to prevent duplicate storage or dispatch.
 
 For a raw upload, send the file bytes as the request body. The
 `X-AICheck-Ocr-Metadata-B64` header is base64-encoded UTF-8 JSON containing at
@@ -64,8 +71,8 @@ The worker downloads MinerU's result Zip, validates every member, converts
 `*_content_list.json` and `*_middle.json` into rendered-pixel OCR evidence,
 normalizes tables and seal candidates, and persists the result through the
 existing `ocr_jobs`, `ocr_parse_results`, and document OCR contracts. Bound
-document/version jobs apply the result to business data; independent jobs do
-not mutate documents.
+`storageKey` jobs apply the result to business data; independent URL/upload
+jobs do not mutate documents.
 
 Set the `AICHECK_MINERU_*` variables in `backend/.env` and run an
 `ocr-remote-worker-service` consuming the `ocr.remote` queue. Compose supplies

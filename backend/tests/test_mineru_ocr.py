@@ -97,6 +97,12 @@ def test_normalizes_mineru_vlm_into_local_ocr_contract() -> None:
         468.0,
     ]
     assert result["fragments"][0]["coordinateSystem"] == "rendered_pixels"
+    assert result["fragments"][0]["fragmentId"].startswith("MINERU-FRAG-")
+    assert result["fragments"][0]["coordinateTransformStatus"] == "mapped"
+    assert result["fragments"][0]["coordinateTransform"] == {
+        "scaleX": 1.2,
+        "scaleY": 1.8,
+    }
     assert (
         result["fragments"][0]["sourceCoordinateSystem"]
         == "mineru_normalized_1000"
@@ -106,6 +112,10 @@ def test_normalizes_mineru_vlm_into_local_ocr_contract() -> None:
     assert result["tables"][0]["normalizedRows"][0]["管线号"] == "PL001"
     assert result["seals"][0]["candidateOnly"] is True
     assert result["seals"][0]["canSatisfyRequiredSeal"] is False
+    assert any(
+        item["code"] == "requires_seal_ocr_text"
+        for item in result["diagnostics"]
+    )
     assert "provider_confidence_unavailable" in result["quality"]["reasons"]
     assert bundle.artifacts["markdown"].data.startswith(b"#")
     assert set(bundle.artifacts) == {
@@ -184,6 +194,43 @@ def test_maps_supported_content_types_in_stable_reading_order() -> None:
     }
 
 
+def test_reads_real_mineru_code_list_and_image_caption_fields() -> None:
+    result = _normalize(
+        _zip_bytes(
+            content=[
+                {
+                    "type": "code",
+                    "code_body": "print('mineru')",
+                    "bbox": [10, 10, 500, 100],
+                    "page_idx": 0,
+                },
+                {
+                    "type": "list",
+                    "list_items": [
+                        {"text": "第一项"},
+                        {"text": "第二项"},
+                    ],
+                    "bbox": [10, 110, 500, 250],
+                    "page_idx": 0,
+                },
+                {
+                    "type": "image",
+                    "image_caption": ["设备布置图"],
+                    "image_footnote": ["示意"],
+                    "bbox": [10, 260, 900, 900],
+                    "page_idx": 0,
+                },
+            ]
+        )
+    ).result
+
+    assert [item["text"] for item in result["fragments"]] == [
+        "print('mineru')",
+        "第一项\n第二项",
+        "设备布置图\n示意",
+    ]
+
+
 def test_multiple_pages_use_one_based_page_numbers() -> None:
     result = _normalize(
         _zip_bytes(
@@ -239,6 +286,74 @@ def test_unmappable_bbox_is_flagged_without_fabricated_pixels() -> None:
     )
 
 
+def test_bbox_outside_mineru_normalized_range_is_not_mapped() -> None:
+    result = _normalize(
+        _zip_bytes(
+            content=[
+                {
+                    "type": "text",
+                    "text": "越界坐标",
+                    "bbox": [0, 0, 1200, 100],
+                    "page_idx": 0,
+                }
+            ]
+        )
+    ).result
+
+    assert result["fragments"][0]["bbox"] is None
+    assert (
+        result["fragments"][0]["formalEvidenceEligible"] is False
+    )
+    assert "coordinate_transform_unmapped" in result["quality"]["reasons"]
+
+
+def test_zero_area_bbox_is_not_formal_evidence() -> None:
+    result = _normalize(
+        _zip_bytes(
+            content=[
+                {
+                    "type": "text",
+                    "text": "零面积",
+                    "bbox": [100, 100, 100, 200],
+                    "page_idx": 0,
+                }
+            ]
+        )
+    ).result
+
+    assert result["fragments"][0]["bbox"] is None
+    assert (
+        result["fragments"][0]["coordinateTransformStatus"]
+        == "unmapped"
+    )
+    assert result["fragments"][0]["formalEvidenceEligible"] is False
+
+
+def test_required_profile_does_not_report_completed_without_fields() -> None:
+    bundle = normalize_mineru_zip(
+        _zip_bytes(
+            content=[
+                {
+                    "type": "text",
+                    "text": "普通正文，不含质量证明书必填字段。",
+                    "bbox": [10, 10, 900, 100],
+                    "page_idx": 0,
+                }
+            ]
+        ),
+        storage_key="minio://documents/doc.pdf",
+        file_name="doc.pdf",
+        profile_id="quality_certificate_v1",
+        document_type="quality_certificate",
+        provider_task_id="TASK-REQUIRED",
+    )
+
+    assert bundle.result["outcomeStatus"] == "partial"
+    assert "REQUIRED_FIELD_MISSING" in bundle.result["quality"]["reasons"]
+    assert bundle.result["modelManifest"]["provider"] == "mineru"
+    assert bundle.result["parserVersion"] == "mineru-vlm-adapter@1"
+
+
 def test_empty_table_is_preserved_as_candidate_with_diagnostic() -> None:
     result = _normalize(
         _zip_bytes(
@@ -258,6 +373,32 @@ def test_empty_table_is_preserved_as_candidate_with_diagnostic() -> None:
     assert result["tables"][0]["rows"] == 0
     assert any(
         item["code"] == "table_structure_unavailable"
+        for item in result["diagnostics"]
+    )
+    assert not any(
+        item["code"] == "requires_seal_ocr_text"
+        for item in result["diagnostics"]
+    )
+
+
+def test_seal_candidate_requires_text_diagnostic_without_table() -> None:
+    result = _normalize(
+        _zip_bytes(
+            content=[
+                {
+                    "type": "image",
+                    "sub_type": "seal",
+                    "img_path": "images/seal.png",
+                    "bbox": [100, 100, 300, 300],
+                    "page_idx": 0,
+                }
+            ]
+        )
+    ).result
+
+    assert len(result["seals"]) == 1
+    assert any(
+        item["code"] == "requires_seal_ocr_text"
         for item in result["diagnostics"]
     )
 

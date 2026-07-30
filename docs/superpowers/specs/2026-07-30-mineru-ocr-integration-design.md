@@ -126,7 +126,8 @@ JSON 请求支持以下二选一输入：
 - `url` 和 `storageKey` 必须且只能提供一个。
 - `model_version` 不接受客户端输入，服务端始终发送 `vlm`。
 - 服务端始终发送 `is_ocr=true`、`enable_formula=true`、`enable_table=true`。
-- `documentId` 和 `documentVersionId` 同时存在时，任务成功后允许应用到业务文档；否则仅保存 Job、ParseResult 和产物。
+- 只有 `storageKey` 可绑定 `documentId` 和 `documentVersionId`，且必须与该版本的对象键完全一致；公网 URL 和原始上传始终作为独立任务，不能覆盖业务文档。
+- POST 请求支持 `Idempotency-Key`，相同授权上下文、请求指纹和幂等键不会重复存储或派发。
 
 成功响应立即返回本地 `jobId`、`status=queued` 和轮询地址，不等待 MinerU 完成。
 
@@ -136,8 +137,8 @@ JSON 请求支持以下二选一输入：
 
 - 请求体是文件字节。
 - `X-AICheck-Ocr-Metadata-B64` 携带 Base64URL 编码的 JSON 元数据。
-- 元数据包括 `fileName`、可选文档标识、Profile 和选项。
-- API 先把原文件写入受控对象存储，再创建远程 Job。
+- 元数据包括 `fileName`、Profile 和选项，不接受业务文档绑定。
+- API 先完整校验元数据，再把原文件写入受控对象存储并创建远程 Job。
 - 不在 Job 参数中保存临时本地路径。
 
 #### `GET /internal/ocr/mineru/tasks/{job_id}`
@@ -310,8 +311,9 @@ MinerU VLM 结构化输出可能不给出可用分数。缺少 Provider 分数�
 
 - `provider="mineru"`
 - `model="vlm"`
-- `providerTaskType="single"` 或 `batch`
+- `providerTaskType="task"` 或 `batch`
 - MinerU `task_id` 或 `batch_id`
+- 文件批次的 `providerUploadState="allocated"` 或 `uploaded`
 - 阶段、进度和重试计数
 
 不保存 Token、Authorization header 或签名上传 URL。
@@ -398,6 +400,10 @@ Docker Compose 只把 MinerU 变量传给 API 服务和 `ocr.remote` Worker，�
 - 不重试：Token 错误、Token 过期、参数错误、格式不支持、文件为空、超限、无权限。
 - 可重试：网络超时、HTTP 429/5xx、服务异常、队列已满、模型暂时不可用。
 - 终态失败：MinerU 任务 `state=failed`。
+
+签名上传地址只保留在单次客户端调用的内存中，同一地址最多尝试三次。若文件批次在
+`allocated` 状态中断，后续 Worker 先探测批次：`waiting-file` 时重新申请上传批次，
+已经进入其他状态时继续原批次，避免把未上传的批次误当作可轮询任务。
 
 所有错误转换为本地 `diagnostics`，包含稳定错误码、阶段和安全消息。
 

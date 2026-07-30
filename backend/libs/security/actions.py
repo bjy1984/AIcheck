@@ -39,6 +39,11 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/attachments$", "file:upload"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/file-bindings$", "file:bind"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/ai-recheck$", "ai:recheck"),
+    (
+        "POST",
+        r"/internal/ocr/mineru/tasks(?:/upload)?$",
+        "ai:recheck",
+    ),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/review-sessions$", "review:save"),
     ("POST", r"/review-sessions/[^/]+/messages$", "review:save"),
     ("POST", r"/review-sessions/[^/]+/actions/[^/]+$", "review:save"),

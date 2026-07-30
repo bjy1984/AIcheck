@@ -1478,6 +1478,7 @@ class InMemoryRepository:
         job = {
             "id": record_id or f"OCRJOB-BIZ-{uuid4().hex[:10].upper()}",
             "jobId": None,
+            "tenantId": configured_tenant_id(),
             "documentId": document_id,
             "documentVersionId": version_id,
             "storageKey": safe_source_url if source_url else storage_key,
@@ -1493,6 +1494,7 @@ class InMemoryRepository:
             "progress": 0,
             "providerTaskId": None,
             "providerTaskType": None,
+            "providerUploadState": None,
             "createdAt": now,
             "startedAt": None,
             "updatedAt": now,
@@ -1516,6 +1518,7 @@ class InMemoryRepository:
         progress: int | None = None,
         provider_task_id: str | None = None,
         provider_task_type: str | None = None,
+        provider_upload_state: str | None = None,
         diagnostics: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         if not job:
@@ -1541,6 +1544,8 @@ class InMemoryRepository:
             job["providerTaskId"] = provider_task_id
         if provider_task_type is not None:
             job["providerTaskType"] = provider_task_type
+        if provider_upload_state is not None:
+            job["providerUploadState"] = provider_upload_state
         if diagnostics is not None:
             job["diagnostics"] = self.clone(diagnostics)
         job["updatedAt"] = now
@@ -3999,7 +4004,12 @@ def fields_from_fragments(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "pageNo": first_present(fragment, "pageNo", default=1),
                 "bbox": fragment.get("bbox"),
                 "confidence": first_present(fragment, "confidence", default=0.8),
-                "extractionMethod": "PaddleOCR",
+                "extractionMethod": first_present(
+                    fragment,
+                    "extractionMethod",
+                    "sourceEngine",
+                    default="ocr_fragment_fallback",
+                ),
             }
         )
     return fields

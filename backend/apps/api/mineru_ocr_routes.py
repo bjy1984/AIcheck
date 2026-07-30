@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import ipaddress
 import json
 import mimetypes
@@ -17,10 +18,9 @@ from fastapi import APIRouter, Request
 from libs.contracts import errors
 from libs.contracts.errors import BusinessErrorCode
 from libs.contracts.responses import fail, ok
-from libs.db.repository import flush_state_records, repo
+from libs.db.repository import flush_state_records, load_state, repo
 from libs.integrations import task_dispatcher
 from libs.integrations.storage import object_storage
-
 
 router = APIRouter(tags=["MinerU OCR"])
 
@@ -56,30 +56,18 @@ def create_mineru_task(
 ):
     try:
         source = validate_mineru_task_payload(payload)
-        job = create_mineru_job_record(source)
+        if scope_error := mineru_document_scope_error(request, source):
+            return scope_error
     except MinerUApiError as exc:
         return fail(exc.error, request, message=str(exc))
-    dispatch = task_dispatcher.dispatch_mineru_ocr(str(job["id"]))
-    if not dispatch.get("taskId") and dispatch.get("mode") != "inline":
-        repo.update_ocr_job_record(
-            job,
-            status="failed",
-            stage="dispatch",
-            progress=100,
-            diagnostics=[
-                {
-                    "code": "MINERU_DISPATCH_UNAVAILABLE",
-                    "level": "error",
-                    "retryable": True,
-                }
-            ],
-        )
-    else:
-        job["dispatchTaskId"] = dispatch.get("taskId")
-        job["dispatchMode"] = dispatch.get("mode")
-        job["updatedAt"] = job.get("updatedAt")
-    flush_state_records({"ocr_jobs": [job]})
-    return ok(public_mineru_job(job, dispatch=dispatch), request)
+    from apps.api.routes import idempotent
+
+    return idempotent(
+        request,
+        request.headers.get("Idempotency-Key"),
+        lambda: queue_mineru_job(request, source),
+        fingerprint_source=source,
+    )
 
 
 @router.post("/internal/ocr/mineru/tasks/upload")
@@ -88,14 +76,49 @@ async def upload_mineru_task(request: Request):
         metadata = decode_upload_metadata(
             request.headers.get("X-AICheck-Ocr-Metadata-B64")
         )
-        body = await limited_request_body(request, limit=MAX_UPLOAD_BYTES)
-        storage_key = store_mineru_upload(body, metadata)
         source = validate_mineru_task_payload(
-            {**metadata, "storageKey": storage_key}
+            {
+                **metadata,
+                "storageKey": (
+                    "minio://ocr-artifacts/pipelines/mineru/uploads/"
+                    f"pending/{metadata.get('fileName') or ''}"
+                ),
+            },
+            allow_managed_upload=True,
         )
-        job = create_mineru_job_record(source)
+        if scope_error := mineru_document_scope_error(request, source):
+            return scope_error
+        body = await limited_request_body(request, limit=MAX_UPLOAD_BYTES)
     except MinerUApiError as exc:
         return fail(exc.error, request, message=str(exc))
+    from apps.api.routes import idempotent
+
+    def producer():
+        try:
+            storage_key = store_mineru_upload(body, metadata)
+        except MinerUApiError as exc:
+            return fail(exc.error, request, message=str(exc))
+        managed_source = {**source, "storageKey": storage_key}
+        return queue_mineru_job(request, managed_source)
+
+    return idempotent(
+        request,
+        request.headers.get("Idempotency-Key"),
+        producer,
+        fingerprint_source={
+            "metadata": source,
+            "bodySha256": hashlib.sha256(body).hexdigest(),
+        },
+    )
+
+
+def queue_mineru_job(
+    request: Request,
+    source: dict[str, Any],
+):
+    job = create_mineru_job_record(source)
+    stamp_mineru_job_actor(job, request)
+    flush_state_records({"ocr_jobs": [job]})
     dispatch = task_dispatcher.dispatch_mineru_ocr(str(job["id"]))
     if not dispatch.get("taskId") and dispatch.get("mode") != "inline":
         repo.update_ocr_job_record(
@@ -120,6 +143,7 @@ async def upload_mineru_task(request: Request):
 
 @router.get("/internal/ocr/mineru/tasks/{job_id}")
 def get_mineru_task(request: Request, job_id: str):
+    load_state({"ocr_jobs", "ocr_parse_results"})
     job = repo.find_one("ocr_jobs", job_id)
     if not job or job.get("provider") != "mineru":
         return fail(
@@ -127,11 +151,75 @@ def get_mineru_task(request: Request, job_id: str):
             request,
             message="MinerU OCR Job 不存在。",
         )
+    if access_error := mineru_job_access_error(request, job):
+        return access_error
     return ok(public_mineru_job(job), request)
+
+
+def request_actor(request: Request) -> tuple[str | None, str | None]:
+    claims = getattr(request.state, "auth", None) or {}
+    actor_id = str(
+        claims.get("sub")
+        or claims.get("userId")
+        or request.headers.get("X-User-Id")
+        or ""
+    ).strip()
+    role = str(
+        claims.get("role")
+        or request.headers.get("X-Role")
+        or ""
+    ).strip()
+    return actor_id or None, role or None
+
+
+def stamp_mineru_job_actor(
+    job: dict[str, Any],
+    request: Request,
+) -> None:
+    actor_id, role = request_actor(request)
+    job["requestedBy"] = actor_id or "system"
+    job["requestedByRole"] = role or "system"
+
+
+def mineru_document_scope_error(
+    request: Request,
+    source: dict[str, Any],
+):
+    document_id = str(source.get("documentId") or "")
+    if not document_id:
+        return None
+    document = repo.find_one("documents", document_id)
+    if not document:
+        return fail(errors.NOT_FOUND, request)
+    from apps.api.routes import scope_error_for_record
+
+    return scope_error_for_record(request, document)
+
+
+def mineru_job_access_error(
+    request: Request,
+    job: dict[str, Any],
+):
+    document_id = str(job.get("documentId") or "")
+    if document_id:
+        return mineru_document_scope_error(request, job)
+    requested_by = str(job.get("requestedBy") or "")
+    if not requested_by or requested_by == "system":
+        return None
+    actor_id, role = request_actor(request)
+    if role == "admin" or actor_id == requested_by:
+        return None
+    return fail(
+        errors.FORBIDDEN,
+        request,
+        message="无权查看该 MinerU OCR Job。",
+    )
 
 
 def validate_mineru_task_payload(
     payload: dict[str, Any],
+    *,
+    allow_managed_upload: bool = False,
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise MinerUApiError("请求体必须是 JSON 对象。")
@@ -159,10 +247,12 @@ def validate_mineru_task_payload(
     _validate_file_name(file_name)
     if url:
         validate_public_https_url(url)
+        _validate_source_extension(url, file_name)
     else:
         parsed_storage = urlsplit(storage_key)
-        if parsed_storage.scheme not in {"minio", "local"}:
-            raise MinerUApiError("storageKey 必须使用 minio:// 或 local://。")
+        if parsed_storage.scheme != "minio":
+            raise MinerUApiError("storageKey 必须使用 minio://。")
+        _validate_source_extension(storage_key, file_name)
     options: dict[str, Any] = {}
     for key in _OPTION_NAMES:
         value = (
@@ -183,6 +273,11 @@ def validate_mineru_task_payload(
         raise MinerUApiError(
             "documentId 与 documentVersionId 必须同时提供。"
         )
+    if document_id and (url or allow_managed_upload):
+        raise MinerUApiError(
+            "公网 URL 或原始上传任务不能直接覆盖已绑定文档；"
+            "请使用与文档版本完全一致的 storageKey。"
+        )
     if document_id:
         document = repo.find_one("documents", document_id)
         version = repo.find_one("versions", version_id)
@@ -192,6 +287,18 @@ def validate_mineru_task_payload(
             or str(version.get("documentId") or "") != document_id
         ):
             raise MinerUApiError("文档绑定不存在。")
+        if (
+            storage_key
+            and not allow_managed_upload
+            and str(version.get("storageKey") or "") != storage_key
+        ):
+            raise MinerUApiError(
+                "storageKey 必须与绑定的文档版本完全一致。"
+            )
+    elif storage_key and not allow_managed_upload:
+        raise MinerUApiError(
+            "直接使用 storageKey 时必须绑定 documentId 与 documentVersionId。"
+        )
     return {
         "url": url or None,
         "storageKey": storage_key or url,
@@ -253,6 +360,7 @@ def public_mineru_job(
         "documentVersionId": job.get("documentVersionId") or None,
         "providerTaskId": job.get("providerTaskId"),
         "providerTaskType": job.get("providerTaskType"),
+        "providerProgress": job.get("providerProgress") or {},
         "parseResultId": job.get("parseResultId"),
         "resultSummary": job.get("resultSummary") or {},
         "artifactReferences": job.get("artifactReferences") or {},
@@ -271,9 +379,16 @@ def decode_upload_metadata(value: str | None) -> dict[str, Any]:
     if not value or len(value) > 24 * 1024:
         raise MinerUApiError("上传元数据缺失或过大。")
     try:
-        raw = base64.b64decode(value, validate=True)
+        encoded = value.encode("ascii")
+        padding = b"=" * ((4 - len(encoded) % 4) % 4)
+        raw = base64.b64decode(
+            encoded + padding,
+            altchars=b"-_",
+            validate=True,
+        )
         metadata = json.loads(raw.decode("utf-8"))
     except (
+        UnicodeEncodeError,
         binascii.Error,
         UnicodeDecodeError,
         json.JSONDecodeError,
@@ -402,6 +517,19 @@ def _validate_file_name(file_name: str) -> None:
     if Path(file_name).suffix.lower() not in _SUPPORTED_EXTENSIONS:
         raise MinerUApiError(
             "MinerU 不支持该文件类型。",
+            error=errors.UNSUPPORTED_FILE_TYPE,
+        )
+
+
+def _validate_source_extension(source: str, file_name: str) -> None:
+    source_suffix = Path(urlsplit(source).path).suffix.lower()
+    file_suffix = Path(file_name).suffix.lower()
+    if source_suffix and (
+        source_suffix not in _SUPPORTED_EXTENSIONS
+        or source_suffix != file_suffix
+    ):
+        raise MinerUApiError(
+            "来源文件类型与 fileName 不一致或不受支持。",
             error=errors.UNSUPPORTED_FILE_TYPE,
         )
 

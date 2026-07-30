@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -383,7 +384,12 @@ async def request_fingerprint(request: Request) -> str:
         try:
             parsed_body = json.loads(body.decode("utf-8"))
         except Exception:
-            parsed_body = body.decode("utf-8", errors="replace")
+            parsed_body = {
+                "kind": "binary",
+                "contentType": request.headers.get("Content-Type"),
+                "contentLength": len(body),
+                "sha256": hashlib.sha256(body).hexdigest(),
+            }
     return idempotency_fingerprint(
         {
             "query": sorted((key, value) for key, value in request.query_params.multi_items()),

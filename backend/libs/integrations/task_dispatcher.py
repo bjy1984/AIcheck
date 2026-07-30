@@ -6,6 +6,7 @@ from typing import Any
 
 from libs.capacity_guard import cpu_heavy_dispatch_status
 from libs.ocr_runtime import official_ocr_enabled, ocr_runtime_config
+from libs.security.tenant import current_tenant_id
 from libs.task_priority import broker_priority
 
 
@@ -120,21 +121,25 @@ def dispatch_ocr_pipeline_official(run_id: str) -> dict[str, Any]:
 
 def dispatch_mineru_ocr(job_record_id: str) -> dict[str, Any]:
     mode = dispatch_mode()
+    tenant_id = current_tenant_id()
     if mode == "inline":
         from apps.worker.tasks import mineru_ocr_extract
 
         return {
             "mode": mode,
-            "result": mineru_ocr_extract.run(job_record_id),
+            "result": mineru_ocr_extract.run(job_record_id, tenant_id),
         }
     if mode == "celery":
         from apps.worker.tasks import mineru_ocr_extract
 
         result = mineru_ocr_extract.apply_async(
-            args=[job_record_id],
+            args=[job_record_id, tenant_id],
             queue="ocr.remote",
             priority=broker_priority(9),
-            task_id=deterministic_task_id("mineru-ocr", job_record_id),
+            task_id=deterministic_task_id(
+                "mineru-ocr",
+                f"{tenant_id}:{job_record_id}",
+            ),
         )
         return {
             "mode": mode,

@@ -9,8 +9,8 @@ from typing import Any
 
 import httpx
 
-
 _RETRYABLE_PROVIDER_CODES = {"-10001", "-60007", "-60009"}
+_SIGNED_UPLOAD_ATTEMPTS = 3
 _OPTION_NAMES = {
     "language": "language",
     "pageRanges": "page_ranges",
@@ -167,6 +167,9 @@ class MinerUClient:
         *,
         data_id: str,
         options: Mapping[str, Any],
+        submission_callback: (
+            Callable[[dict[str, str]], None] | None
+        ) = None,
     ) -> dict[str, Any]:
         body = mineru_request_options(options)
         body["files"] = [
@@ -185,26 +188,59 @@ class MinerUClient:
                 "MINERU_UPLOAD_URL_MISSING",
                 "MinerU response omitted upload data.",
             )
+        submission = {
+            "kind": "batch",
+            "providerTaskId": batch_id,
+        }
+        if submission_callback is not None:
+            submission_callback({**submission, "uploadState": "allocated"})
         try:
-            upload = self.client.put(
-                str(upload_urls[0]),
-                content=path.read_bytes(),
-            )
-        except (OSError, httpx.HTTPError) as exc:
+            content = path.read_bytes()
+        except OSError as exc:
             raise MinerUProtocolError(
                 "MINERU_UPLOAD_FAILED",
                 "MinerU file upload failed.",
-                retryable=True,
             ) from exc
-        if upload.status_code >= 400:
+        for attempt in range(_SIGNED_UPLOAD_ATTEMPTS):
+            try:
+                upload = self.client.put(
+                    str(upload_urls[0]),
+                    content=content,
+                )
+            except (OSError, httpx.HTTPError) as exc:
+                if attempt + 1 < _SIGNED_UPLOAD_ATTEMPTS:
+                    continue
+                raise MinerUProtocolError(
+                    "MINERU_UPLOAD_FAILED",
+                    "MinerU file upload failed.",
+                    retryable=True,
+                ) from exc
+            retryable = (
+                upload.status_code == 429 or upload.status_code >= 500
+            )
+            if upload.status_code < 400:
+                break
+            if retryable and attempt + 1 < _SIGNED_UPLOAD_ATTEMPTS:
+                continue
             raise MinerUProtocolError(
                 "MINERU_UPLOAD_FAILED",
                 "MinerU file upload failed.",
-                retryable=(
-                    upload.status_code == 429 or upload.status_code >= 500
-                ),
+                retryable=retryable,
             )
-        return {"kind": "batch", "providerTaskId": batch_id}
+        if submission_callback is not None:
+            submission_callback({**submission, "uploadState": "uploaded"})
+        return submission
+
+    def submission_state(
+        self,
+        submission: Mapping[str, Any],
+    ) -> str:
+        return str(
+            self._task_status(
+                submission,
+                preserve_waiting_file=True,
+            )["state"]
+        )
 
     def wait_for_result(
         self,
@@ -316,6 +352,8 @@ class MinerUClient:
     def _task_status(
         self,
         submission: Mapping[str, Any],
+        *,
+        preserve_waiting_file: bool = False,
     ) -> dict[str, Any]:
         provider_task_id = str(submission.get("providerTaskId") or "")
         kind = str(submission.get("kind") or "")
@@ -349,9 +387,18 @@ class MinerUClient:
                 "MinerU returned invalid task status.",
             )
         state = str(data.get("state") or "").lower()
-        if state == "waiting-file":
+        if state == "waiting-file" and not preserve_waiting_file:
             state = "pending"
-        if state not in {"pending", "running", "converting", "done", "failed"}:
+        valid_states = {
+            "pending",
+            "running",
+            "converting",
+            "done",
+            "failed",
+        }
+        if preserve_waiting_file:
+            valid_states.add("waiting-file")
+        if state not in valid_states:
             raise MinerUProtocolError(
                 "MINERU_STATUS_INVALID",
                 "MinerU returned invalid task status.",

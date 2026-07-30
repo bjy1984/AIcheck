@@ -10,6 +10,11 @@ from libs.db.repository import InMemoryRepository
 from libs.integrations import task_dispatcher
 from libs.integrations.mineru_client import MinerUProtocolError
 from libs.mineru_ocr import MinerUArtifact
+from libs.security.tenant import (
+    current_tenant_id,
+    reset_request_tenant_id,
+    set_request_tenant_id,
+)
 
 
 def _result(storage_key: str) -> dict[str, object]:
@@ -43,7 +48,11 @@ def _result(storage_key: str) -> dict[str, object]:
         "seals": [],
         "signatures": [],
         "fields": [],
-        "quality": {"status": "usable", "reasons": []},
+        "quality": {
+            "status": "usable",
+            "reasons": ["provider_confidence_unavailable"],
+            "blockingReasons": [],
+        },
         "diagnostics": [],
         "engineRuns": [{"engine": "mineru_vlm", "status": "success"}],
         "metadata": {"provider": "mineru", "model": "vlm"},
@@ -117,6 +126,30 @@ def test_repository_tracks_safe_mineru_job_metadata() -> None:
     assert job["progress"] == 100
 
 
+def test_fragment_fallback_fields_keep_mineru_provenance() -> None:
+    repository = InMemoryRepository()
+    repository.state["documents"].append({"id": "DOC-PROVENANCE"})
+    repository.state["versions"].append(
+        {
+            "id": "VER-PROVENANCE",
+            "documentId": "DOC-PROVENANCE",
+        }
+    )
+
+    repository.apply_ocr_result(
+        "DOC-PROVENANCE",
+        "VER-PROVENANCE",
+        _result("minio://documents/doc.pdf"),
+    )
+
+    field = next(
+        item
+        for item in repository.state["extracted_fields"]
+        if item["documentVersionId"] == "VER-PROVENANCE"
+    )
+    assert field["extractionMethod"] == "mineru_vlm"
+
+
 def test_mineru_worker_persists_artifacts_and_applies_bound_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -138,14 +171,40 @@ def test_mineru_worker_persists_artifacts_and_applies_bound_result(
         provider="mineru",
         options={"provider": "mineru"},
     )
+    pipeline_run = repository.create_or_resume_ocr_pipeline_run(
+        run_key="DOC-MINERU-1:VER-MINERU-1",
+        document_id="DOC-MINERU-1",
+        version_id="VER-MINERU-1",
+        storage_key="minio://documents/doc.pdf",
+        storage_bucket="documents",
+        file_name="doc.pdf",
+        profile_id="generic_document_v1",
+        document_type="generic_document",
+        mode="active",
+        pipeline_version="test",
+    )
+    pipeline_run["ocrJobRecordId"] = job["id"]
+    job["pipelineRunId"] = pipeline_run["id"]
     progress_snapshots: list[tuple[str, int]] = []
     stored_names: list[str] = []
 
     class FakeClient:
-        def submit_file(self, path, *, data_id, options):
+        def submit_file(
+            self,
+            path,
+            *,
+            data_id,
+            options,
+            submission_callback,
+        ):
             assert Path(path).read_bytes() == b"%PDF-test"
             assert data_id == job["id"]
-            return {"kind": "batch", "providerTaskId": "BATCH-1"}
+            submission = {
+                "kind": "batch",
+                "providerTaskId": "BATCH-1",
+            }
+            submission_callback(submission)
+            return submission
 
         def wait_for_result(self, submission, *, progress_callback):
             progress_callback(
@@ -208,6 +267,10 @@ def test_mineru_worker_persists_artifacts_and_applies_bound_result(
         "currentOcrStatus"
     ] == "已识别"
     assert progress_snapshots == [("poll", 42)]
+    assert job["providerProgress"] == {
+        "extractedPages": 1,
+        "totalPages": 2,
+    }
     assert stored_names == [
         f"pipelines/mineru/{job['id']}/mineru-result.zip",
         f"pipelines/mineru/{job['id']}/normalized-result.json",
@@ -215,6 +278,17 @@ def test_mineru_worker_persists_artifacts_and_applies_bound_result(
     assert job["artifactReferences"]["original_zip"]["sha256"].startswith(
         "c7c5"
     )
+    assert pipeline_run["status"] == "completed"
+    assert pipeline_run["parseResultId"] == "PARSE-MINERU-1"
+    assert pipeline_run["provider"] == "mineru"
+    assert pipeline_run["blockingReasons"] == []
+    assert pipeline_run["formalEvidenceReady"] is True
+    stage_status = {
+        stage["stage"]: stage["status"]
+        for stage in repository.ocr_pipeline_stages(pipeline_run["id"])
+    }
+    assert stage_status["text_scan"] == "success"
+    assert stage_status["evidence_fusion"] == "success"
 
 
 def test_unbound_url_job_never_mutates_business_documents(
@@ -258,7 +332,9 @@ def test_unbound_url_job_never_mutates_business_documents(
     monkeypatch.setattr(
         tasks.object_storage,
         "put_bytes",
-        lambda *_args, **_kwargs: None,
+        lambda _bucket, object_name, *_args, **_kwargs: (
+            f"minio://ocr-artifacts/{object_name}"
+        ),
     )
     monkeypatch.setattr(
         repository,
@@ -272,7 +348,7 @@ def test_unbound_url_job_never_mutates_business_documents(
     assert submitted == ["https://files.example/doc.pdf"]
 
 
-def test_nonretryable_mineru_failure_is_persisted_without_secret(
+def test_artifact_storage_unavailable_fails_job_instead_of_losing_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repository = InMemoryRepository()
@@ -288,6 +364,74 @@ def test_nonretryable_mineru_failure_is_persisted_without_secret(
 
     class FakeClient:
         def submit_url(self, *_args, **_kwargs):
+            return {"kind": "task", "providerTaskId": "TASK-1"}
+
+        def wait_for_result(self, _submission, *, progress_callback):
+            return {
+                "state": "done",
+                "extract_progress": None,
+                "full_zip_url": "https://cdn.example/result.zip",
+            }
+
+        def download_result(self, _url):
+            return b"zip"
+
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "MinerUClient", FakeClient)
+    monkeypatch.setattr(
+        tasks,
+        "normalize_mineru_zip",
+        lambda *_args, **_kwargs: _bundle(job["storageKey"]),
+    )
+    monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
+    monkeypatch.setattr(
+        tasks.object_storage,
+        "put_bytes",
+        lambda *_args, **_kwargs: None,
+    )
+
+    output = tasks.mineru_ocr_extract.run(job["id"])
+
+    assert output["status"] == "failed"
+    assert output["diagnostics"][0]["code"] == "MINERU_PERSIST_FAILED"
+    assert job["status"] == "failed"
+
+
+def test_nonretryable_mineru_failure_is_persisted_without_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = InMemoryRepository()
+    repository.state["documents"].append({"id": "DOC-FAIL"})
+    repository.state["versions"].append(
+        {"id": "VER-FAIL", "documentId": "DOC-FAIL"}
+    )
+    job = repository.create_ocr_job_record(
+        document_id="DOC-FAIL",
+        version_id="VER-FAIL",
+        storage_key="https://files.example/doc.pdf",
+        file_name="doc.pdf",
+        provider="mineru",
+        source_url="https://files.example/doc.pdf",
+        options={},
+    )
+    pipeline_run = repository.create_or_resume_ocr_pipeline_run(
+        run_key="DOC-FAIL:VER-FAIL",
+        document_id="DOC-FAIL",
+        version_id="VER-FAIL",
+        storage_key="https://files.example/doc.pdf",
+        storage_bucket=None,
+        file_name="doc.pdf",
+        profile_id="generic_document_v1",
+        document_type="generic_document",
+        mode="active",
+        pipeline_version="test",
+    )
+    pipeline_run["ocrJobRecordId"] = job["id"]
+    job["pipelineRunId"] = pipeline_run["id"]
+    persisted: list[dict[str, list[dict[str, object]]]] = []
+
+    class FakeClient:
+        def submit_url(self, *_args, **_kwargs):
             raise MinerUProtocolError(
                 "A0202",
                 "MinerU rejected the request.",
@@ -296,7 +440,11 @@ def test_nonretryable_mineru_failure_is_persisted_without_secret(
 
     monkeypatch.setattr(tasks, "repo", repository)
     monkeypatch.setattr(tasks, "MinerUClient", FakeClient)
-    monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
+    monkeypatch.setattr(
+        tasks,
+        "flush_state_records",
+        lambda records: persisted.append(records),
+    )
 
     output = tasks.mineru_ocr_extract.run(job["id"])
 
@@ -308,11 +456,16 @@ def test_nonretryable_mineru_failure_is_persisted_without_secret(
                 "code": "A0202",
                 "level": "error",
                 "retryable": False,
+                "stage": "submit",
             }
         ],
     }
     assert job["status"] == "failed"
     assert "sk-" not in str(job)
+    assert job["diagnostics"][0]["stage"] == "submit"
+    assert pipeline_run["status"] == "failed"
+    assert "ocr_pipeline_runs" in persisted[-1]
+    assert "ocr_stage_runs" in persisted[-1]
 
 
 def test_dispatch_mineru_ocr_targets_remote_queue(
@@ -326,7 +479,11 @@ def test_dispatch_mineru_ocr_targets_remote_queue(
         lambda **kwargs: calls.append(kwargs) or SimpleNamespace(id="CELERY-1"),
     )
 
-    output = task_dispatcher.dispatch_mineru_ocr("OCRJOB-1")
+    tenant_token = set_request_tenant_id("TENANT-MINERU")
+    try:
+        output = task_dispatcher.dispatch_mineru_ocr("OCRJOB-1")
+    finally:
+        reset_request_tenant_id(tenant_token)
 
     assert output == {
         "mode": "celery",
@@ -335,8 +492,274 @@ def test_dispatch_mineru_ocr_targets_remote_queue(
         "priority": 9,
         "statusReason": "mineru_ocr_queued",
     }
-    assert calls[0]["args"] == ["OCRJOB-1"]
+    assert calls[0]["args"] == ["OCRJOB-1", "TENANT-MINERU"]
     assert calls[0]["queue"] == "ocr.remote"
+
+
+def test_mineru_worker_resumes_existing_provider_task_without_resubmit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = {
+        "id": "OCRJOB-RESUME-1",
+        "sourceType": "url",
+        "sourceUrl": "https://files.example/doc.pdf",
+        "storageKey": "https://files.example/doc.pdf",
+        "fileName": "doc.pdf",
+        "providerTaskId": "TASK-EXISTING",
+        "providerTaskType": "task",
+        "options": {},
+    }
+    waited: list[dict[str, str]] = []
+
+    class FakeClient:
+        def submit_url(self, *_args, **_kwargs):
+            raise AssertionError("existing provider task must not be resubmitted")
+
+        def wait_for_result(self, submission, *, progress_callback):
+            waited.append(submission)
+            return {
+                "state": "done",
+                "full_zip_url": "https://cdn.example/result.zip",
+            }
+
+        def download_result(self, _url):
+            return b"zip"
+
+    monkeypatch.setattr(tasks, "MinerUClient", FakeClient)
+    monkeypatch.setattr(tasks, "_persist_mineru_job", lambda _job: None)
+    monkeypatch.setattr(
+        tasks,
+        "normalize_mineru_zip",
+        lambda *_args, **_kwargs: _bundle(job["storageKey"]),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_store_mineru_artifacts",
+        lambda *_args, **_kwargs: {},
+    )
+
+    result = tasks.run_mineru_job(job)
+
+    assert result["status"] == "success"
+    assert waited == [
+        {
+            "kind": "task",
+            "providerTaskId": "TASK-EXISTING",
+        }
+    ]
+
+
+def test_mineru_worker_reissues_batch_when_checkpoint_is_waiting_for_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "doc.pdf"
+    source.write_bytes(b"%PDF-test")
+    job = {
+        "id": "OCRJOB-REISSUE-1",
+        "sourceType": "storage",
+        "storageKey": "minio://documents/doc.pdf",
+        "fileName": "doc.pdf",
+        "providerTaskId": "BATCH-STALE",
+        "providerTaskType": "batch",
+        "providerUploadState": "allocated",
+        "options": {},
+    }
+    submitted: list[str] = []
+    waited: list[dict[str, str]] = []
+
+    class FakeClient:
+        def submission_state(self, submission):
+            assert submission["providerTaskId"] == "BATCH-STALE"
+            return "waiting-file"
+
+        def submit_file(
+            self,
+            path,
+            *,
+            data_id,
+            options,
+            submission_callback,
+        ):
+            submitted.append(str(path))
+            submission = {
+                "kind": "batch",
+                "providerTaskId": "BATCH-REISSUED",
+            }
+            submission_callback(
+                {**submission, "uploadState": "allocated"}
+            )
+            submission_callback(
+                {**submission, "uploadState": "uploaded"}
+            )
+            return submission
+
+        def wait_for_result(self, submission, *, progress_callback):
+            waited.append(submission)
+            return {
+                "state": "done",
+                "full_zip_url": "https://cdn.example/result.zip",
+            }
+
+        def download_result(self, _url):
+            return b"zip"
+
+    monkeypatch.setattr(tasks, "MinerUClient", FakeClient)
+    monkeypatch.setattr(
+        tasks,
+        "mineru_source_path",
+        lambda _job: (source, None),
+    )
+    monkeypatch.setattr(tasks, "_persist_mineru_job", lambda _job: None)
+    monkeypatch.setattr(
+        tasks,
+        "normalize_mineru_zip",
+        lambda *_args, **_kwargs: _bundle(job["storageKey"]),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_store_mineru_artifacts",
+        lambda *_args, **_kwargs: {},
+    )
+
+    result = tasks.run_mineru_job(job)
+
+    assert result["status"] == "success"
+    assert submitted == [str(source)]
+    assert job["providerTaskId"] == "BATCH-REISSUED"
+    assert job["providerUploadState"] == "uploaded"
+    assert waited == [
+        {
+            "kind": "batch",
+            "providerTaskId": "BATCH-REISSUED",
+        }
+    ]
+
+
+def test_failed_pipeline_uses_only_explicit_blocking_reasons(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = InMemoryRepository()
+    job = repository.create_ocr_job_record(
+        document_id="",
+        version_id="",
+        storage_key="https://files.example/doc.pdf",
+        file_name="doc.pdf",
+        provider="mineru",
+        source_url="https://files.example/doc.pdf",
+        options={},
+    )
+    pipeline_run = repository.create_or_resume_ocr_pipeline_run(
+        run_key="MINERU-EXPLICIT-BLOCKERS",
+        document_id="",
+        version_id="",
+        storage_key="https://files.example/doc.pdf",
+        storage_bucket=None,
+        file_name="doc.pdf",
+        profile_id="generic_document_v1",
+        document_type="generic_document",
+        mode="active",
+        pipeline_version="test",
+    )
+    job["pipelineRunId"] = pipeline_run["id"]
+    monkeypatch.setattr(tasks, "repo", repository)
+
+    tasks._finalize_mineru_pipeline(
+        job,
+        {
+            "status": "failed",
+            "outcomeStatus": "failed",
+            "quality": {
+                "reasons": [
+                    {
+                        "code": "MINERU_DIAGNOSTIC_ONLY",
+                        "level": "warning",
+                    }
+                ]
+            },
+        },
+        None,
+    )
+
+    assert pipeline_run["blockingReasons"] == []
+
+
+def test_terminal_mineru_job_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = InMemoryRepository()
+    job = repository.create_ocr_job_record(
+        document_id="",
+        version_id="",
+        storage_key="https://files.example/doc.pdf",
+        file_name="doc.pdf",
+        provider="mineru",
+        source_url="https://files.example/doc.pdf",
+        options={},
+    )
+    job.update(
+        {
+            "status": "success",
+            "stage": "completed",
+            "progress": 100,
+            "parseResultId": "PARSE-EXISTING",
+        }
+    )
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "refresh_worker_state", lambda *_args: None)
+    monkeypatch.setattr(
+        tasks,
+        "run_mineru_job",
+        lambda _job: pytest.fail("terminal job must not execute again"),
+    )
+
+    output = tasks.mineru_ocr_extract.run(job["id"])
+
+    assert output == {
+        "jobId": job["id"],
+        "status": "success",
+        "parseResultId": "PARSE-EXISTING",
+        "alreadyCompleted": True,
+    }
+
+
+def test_mineru_worker_uses_dispatched_tenant_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = InMemoryRepository()
+    tenant_token = set_request_tenant_id("TENANT-REMOTE")
+    try:
+        job = repository.create_ocr_job_record(
+            document_id="",
+            version_id="",
+            storage_key="https://files.example/doc.pdf",
+            file_name="doc.pdf",
+            provider="mineru",
+            source_url="https://files.example/doc.pdf",
+            options={},
+        )
+    finally:
+        reset_request_tenant_id(tenant_token)
+    observed: list[str] = []
+    original_tenant = current_tenant_id()
+
+    def fail_in_tenant(_job):
+        observed.append(current_tenant_id())
+        raise MinerUProtocolError(
+            "A0202",
+            "Rejected.",
+            retryable=False,
+        )
+
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "refresh_worker_state", lambda *_args: None)
+    monkeypatch.setattr(tasks, "run_mineru_job", fail_in_tenant)
+    monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
+
+    tasks.mineru_ocr_extract.run(job["id"], "TENANT-REMOTE")
+
+    assert observed == ["TENANT-REMOTE"]
+    assert current_tenant_id() == original_tenant
 
 
 @pytest.mark.parametrize(
@@ -369,13 +792,14 @@ def test_document_ocr_routes_only_explicit_mineru_provider_remotely(
     ]
     remote_jobs: list[str] = []
     local_calls: list[str] = []
+    lifecycle_events: list[str] = []
     monkeypatch.setattr(tasks, "repo", repository)
     monkeypatch.setattr(tasks, "refresh_ocr_worker_state", lambda *_args: None)
     monkeypatch.setattr(tasks, "pipeline_enabled", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         tasks,
         "persist_ocr_pipeline_progress",
-        lambda *_args, **_kwargs: None,
+        lambda *_args, **_kwargs: lifecycle_events.append("persist"),
     )
     monkeypatch.setattr(
         tasks,
@@ -385,7 +809,8 @@ def test_document_ocr_routes_only_explicit_mineru_provider_remotely(
     monkeypatch.setattr(
         tasks.task_dispatcher,
         "dispatch_mineru_ocr",
-        lambda job_id: remote_jobs.append(job_id)
+        lambda job_id: lifecycle_events.append("dispatch")
+        or remote_jobs.append(job_id)
         or {
             "mode": "celery",
             "taskId": "CELERY-MINERU-1",
@@ -414,6 +839,8 @@ def test_document_ocr_routes_only_explicit_mineru_provider_remotely(
         job = repository.find_one("ocr_jobs", output["ocrJobRecordId"])
         assert job["provider"] == "mineru"
         assert job["options"]["provider"] == "mineru"
+        assert job["pipelineRunId"] == output["pipelineRunId"]
+        assert lifecycle_events[:2] == ["persist", "dispatch"]
     else:
         assert output["status"] == "success"
         assert remote_jobs == []
