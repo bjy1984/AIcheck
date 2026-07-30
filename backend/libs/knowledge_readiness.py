@@ -79,6 +79,16 @@ def source_index_section(state: dict[str, Any]) -> dict[str, Any]:
         points += 5
     else:
         blockers.append(f"{len(failed_tasks) - len(governed_failures)} failed knowledge tasks lack retry governance")
+    hash_fallback_files = [
+        item
+        for item in state.get("knowledge_files") or []
+        if isinstance(item, dict) and "hash_fallback" in str(item.get("vectorStatusReason") or "")
+    ]
+    if hash_fallback_files:
+        blockers.append(
+            f"{len(hash_fallback_files)} knowledge files were vectorized with the offline-hash fallback; "
+            "reindex them with the configured embedding model"
+        )
     return section("source-index", points, 25, blockers)
 
 

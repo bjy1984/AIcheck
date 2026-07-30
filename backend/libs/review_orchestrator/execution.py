@@ -18,11 +18,17 @@ from libs.db.repository import flush_state_records, repo
 from libs.evidence_retrieval import search_project_evidence
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
+from libs.knowledge_dense import dense_knowledge_hits
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 from libs.material_targeting import evidence_fact_targets, review_points_for_project
 from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
-from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
+from libs.review_grounding import (
+    apply_grounding_guardrails,
+    build_grounded_review_input,
+    grounding_prompt_block,
+    kb_citation_related,
+)
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.r12_agent import (
@@ -2492,14 +2498,19 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "certificateVerificationCount": verification_tool.get("verificationCount", 0),
         }
     if node_key == "retrieve_knowledge":
+        retrieval_query = build_review_retrieval_query(review_run, context)
+        dense_hits, dense_meta = dense_knowledge_hits(repo, retrieval_query, top_k=10)
         retrieval = retrieve_knowledge_clauses(
             repo.state,
-            query=f"{context.get('node', {}).get('name') or '节点'} 审查依据",
+            query=retrieval_query,
             review_run_id=review_run["reviewRunId"],
             business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
             node_id=int(review_run.get("nodeId") or 0),
             kb_version=str(review_run.get("kbVersion") or "inspection_kb@1.0.0"),
             top_k=5,
+            dense_hits=dense_hits,
+            dense_meta=dense_meta,
+            preferred_route="hybrid_review_basis_search",
         )
         trace = retrieval["trace"]
         repo.state["retrieval_traces"].append(trace)
@@ -2659,6 +2670,34 @@ def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
     return repo.clone(candidates[0] if candidates else templates[0])
 
 
+def build_review_retrieval_query(review_run: dict[str, Any], context: dict[str, Any]) -> str:
+    """Compose a content-aware retrieval query from the node, the active rule,
+    and the material's extracted fields, instead of the static
+    "{node name} 审查依据" template that returned the same clauses for every run."""
+    node = context.get("node") or {}
+    rule = context.get("currentRule") or next(iter(context.get("ruleResults") or []), {}) or {}
+    parts: list[str] = []
+    node_name = str(node.get("name") or "").strip()
+    if node_name:
+        parts.append(node_name)
+    for key in ("name", "ruleName", "standardText", "criteria", "checkMethod", "witnessText"):
+        value = str(rule.get(key) or "").strip()
+        if value and value not in parts:
+            parts.append(value)
+    field_terms: list[str] = []
+    for field in (context.get("fields") or [])[:12]:
+        if not isinstance(field, dict):
+            continue
+        for key in ("fieldName", "fieldValue"):
+            value = str(field.get(key) or "").strip()
+            if value and len(value) <= 60 and value not in field_terms:
+                field_terms.append(value)
+    if field_terms:
+        parts.append(" ".join(field_terms[:16]))
+    query = re.sub(r"\s+", " ", " ".join(part for part in parts if part)).strip()[:512]
+    return query or f"{node_name or '节点'} 审查依据"
+
+
 def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
@@ -2684,6 +2723,26 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         rule=current_rule,
         prompt_template=prompt_template,
     )
+    knowledge_clauses = context.get("knowledgeClauses") or []
+    if not knowledge_clauses:
+        # Resumed/partial runs may only carry the persisted trace.
+        first_trace = next(iter(context.get("retrievalTraces") or []), {}) or {}
+        knowledge_clauses = first_trace.get("selectedClauses") or []
+    retrieved_clauses = [
+        {
+            "clauseId": item.get("clauseId"),
+            "clauseNo": item.get("clauseNo"),
+            "title": item.get("title"),
+            "sectionPath": item.get("sectionPath") or [],
+            "kbDocId": item.get("kbDocId"),
+            "kbVersion": item.get("kbVersion"),
+            "pageNo": item.get("pageNo"),
+            "retrievalMode": item.get("retrievalMode"),
+            "text": str(item.get("text") or "")[:600],
+        }
+        for item in knowledge_clauses[:8]
+        if isinstance(item, dict)
+    ]
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
         "auditInputMode": audit_runtime["mode"],
@@ -2698,6 +2757,10 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
+            "kbRefs.clauseIds must cite clause IDs from retrievedClauses (set retrievalTraceId to the "
+            "matching id in retrievalTraceIds) or from fixedClausePackage (omit retrievalTraceId), "
+            "and every kbRef must include kbVersion.",
+            "Ground standard-basis reasoning in the retrievedClauses text; do not invent clause contents.",
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
             *grounding_block["requirements"],
@@ -2710,6 +2773,8 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
         "ruleResults": context.get("ruleResults") or [],
         "fixedClausePackage": context.get("clausePackageSnapshot") or {},
+        "retrievedClauses": retrieved_clauses,
+        "retrievedClauseIds": [item["clauseId"] for item in retrieved_clauses if item.get("clauseId")],
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
         "evidenceLinkIds": [item.get("id") for item in context.get("evidenceLinks") or []],
         "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
@@ -3347,6 +3412,15 @@ def validate_review_references(
         for item in retrieval_traces
         if isinstance(item, dict)
     }
+    clause_text_by_id: dict[str, str] = {}
+    for item in retrieval_traces:
+        if not isinstance(item, dict):
+            continue
+        for clause in item.get("selectedClauses") or []:
+            if isinstance(clause, dict) and clause.get("clauseId"):
+                clause_text_by_id[str(clause.get("clauseId"))] = str(clause.get("text") or "")
+    kb_citation_checked = 0
+    kb_citation_unrelated = 0
     checked_refs = 0
     for draft_index, draft in enumerate(drafts):
         rule_refs = draft.get("ruleRefs") if isinstance(draft.get("ruleRefs"), list) else []
@@ -3374,9 +3448,26 @@ def validate_review_references(
             if trace_id and str(trace_id) not in trace_ids:
                 failures.append({"code": "KB_RETRIEVAL_TRACE_NOT_FOUND", "index": draft_index, "refIndex": ref_index, "retrievalTraceId": trace_id})
             allowed_clause_ids = clause_ids_by_trace.get(str(trace_id), set()) if trace_id else set()
+            finding_text = " ".join(str(draft.get(key) or "") for key in ("title", "description"))
             for clause_id in ref.get("clauseIds") or []:
                 if allowed_clause_ids and str(clause_id) not in allowed_clause_ids:
                     failures.append({"code": "KB_CLAUSE_NOT_IN_TRACE", "index": draft_index, "refIndex": ref_index, "clauseId": clause_id})
+                    continue
+                clause_text = clause_text_by_id.get(str(clause_id))
+                if clause_text is None or not finding_text.strip():
+                    continue
+                kb_citation_checked += 1
+                if not kb_citation_related(finding_text, clause_text):
+                    kb_citation_unrelated += 1
+                    warnings.append(
+                        {
+                            "code": "KB_CLAUSE_TEXT_UNRELATED",
+                            "index": draft_index,
+                            "refIndex": ref_index,
+                            "clauseId": clause_id,
+                            "message": "Cited clause text does not appear to support the finding text.",
+                        }
+                    )
             if not ref.get("kbVersion"):
                 failures.append({"code": "KB_REF_MISSING_VERSION", "index": draft_index, "refIndex": ref_index})
     return validation_payload(
@@ -3384,7 +3475,15 @@ def validate_review_references(
         checked=checked_refs,
         failures=failures,
         warnings=warnings,
-        metrics={"ruleResultCount": len(rule_results), "retrievalTraceCount": len(retrieval_traces)},
+        metrics={
+            "ruleResultCount": len(rule_results),
+            "retrievalTraceCount": len(retrieval_traces),
+            "kbCitationCheckedCount": kb_citation_checked,
+            "kbCitationUnrelatedCount": kb_citation_unrelated,
+            "kbCitationPrecision": (
+                round(1.0 - kb_citation_unrelated / kb_citation_checked, 4) if kb_citation_checked else None
+            ),
+        },
     )
 
 

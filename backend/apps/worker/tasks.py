@@ -61,7 +61,10 @@ from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
     STANDARD_INDEX_VERSION,
     active_embedding_target,
+    chunk_text as sentence_chunk_text,
+    embedding_input_for_chunk,
     local_path_from_storage_key,
+    merge_small_fragments,
     noise_like_text,
     offline_hash_embeddings,
     units_from_local_file,
@@ -390,15 +393,17 @@ def split_text_fragments(
     max_chars: int = 1600,
     metadata: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    normalized = " ".join(str(text or "").split())
+    # Preserve line/paragraph structure and split on sentence boundaries instead
+    # of collapsing all whitespace and hard-slicing at byte offsets.
+    lines = [line.strip() for line in str(text or "").splitlines()]
+    normalized = "\n".join(line for line in lines if line).strip()
     if not normalized:
         return []
-    chunks = []
-    for offset in range(0, len(normalized), max_chars):
-        chunk_text = normalized[offset : offset + max_chars].strip()
-        if chunk_text:
-            chunks.append({"pageNo": page_no, "text": chunk_text, **(metadata or {})})
-    return chunks
+    return [
+        {"pageNo": page_no, "text": piece, **(metadata or {})}
+        for piece in sentence_chunk_text(normalized, max_chars)
+        if piece.strip()
+    ]
 
 
 def latest_successful_ocr_parse_result(version_id: str | None) -> dict[str, Any] | None:
@@ -487,18 +492,25 @@ def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, A
                 "sourceFragmentId": fragment.get("id") or fragment.get("fragmentId") or f"p{page_no}-f{fragment_index}",
             }
             fragments.extend(split_text_fragments(text, page_no=page_no, metadata=metadata))
-    return fragments
+    # OCR emits line-level fragments; merge consecutive small ones per page into
+    # paragraph blocks so retrieval does not surface context-free snippets.
+    return merge_small_fragments(fragments)
 
 
 def embedding_batches_for_chunks(chunks: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str, str, int, str | None]:
     texts = [str(chunk.get("text") or "") for chunk in chunks]
+    # Semantic embeddings get a file/section context prefix so vectors carry
+    # which standard and section each chunk belongs to (AICHECK_EMBEDDING_CONTEXT_PREFIX
+    # to disable; changing this requires /knowledge/reindex). The offline-hash
+    # path keeps raw text so hash queries stay consistent.
+    semantic_texts = [embedding_input_for_chunk(chunk) for chunk in chunks]
     force_offline = env_bool("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", False)
     client = EmbeddingClient()
     if client.enabled and not force_offline:
         vectors: list[dict[str, Any]] = []
         try:
-            for offset in range(0, len(texts), EMBED_BATCH_SIZE):
-                for item in client.embed_sync(texts[offset : offset + EMBED_BATCH_SIZE]):
+            for offset in range(0, len(semantic_texts), EMBED_BATCH_SIZE):
+                for item in client.embed_sync(semantic_texts[offset : offset + EMBED_BATCH_SIZE]):
                     if not isinstance(item, dict):
                         continue
                     vectors.append({**item, "index": offset + int(item.get("index") or 0)})

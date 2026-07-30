@@ -1,0 +1,1145 @@
+diff -urN a/backend/apps/api/routes.py b/backend/apps/api/routes.py
+--- a/backend/apps/api/routes.py	2026-07-26 17:00:55.724644339 +0000
++++ b/backend/apps/api/routes.py	2026-07-26 17:00:55.728083086 +0000
+@@ -63,7 +63,6 @@
+     summarize_production_certification,
+ )
+ from libs.integrations import task_dispatcher
+-from libs.integrations.embedding_client import EmbeddingClient
+ from libs.integrations.errors import IntegrationServiceError
+ from libs.integrations.ocr_client import OcrClient
+ from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
+@@ -72,9 +71,9 @@
+     STANDARD_INDEX_VERSION,
+     active_embedding_target,
+     noise_like_text,
+-    offline_hash_embedding,
+ )
+ from libs.knowledge_readiness import build_knowledge_rule_scorecard
++from libs.knowledge_dense import dense_knowledge_hits
+ from libs.knowledge_graph import build_business_pack_knowledge_network
+ from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
+ from libs.material_targeting import (
+@@ -11814,6 +11813,7 @@
+             rule.get("witnessText") or rule.get("checkMethod"),
+         ]
+     ).strip() or "审查依据"
++    dense_hits, dense_meta = dense_knowledge_hits(repo, query, top_k=10)
+     retrieval = retrieve_knowledge_clauses(
+         repo.state,
+         query=query,
+@@ -11821,6 +11821,9 @@
+         node_id=node_id,
+         top_k=5,
+         query_type="node_standard_basis",
++        dense_hits=dense_hits,
++        dense_meta=dense_meta,
++        preferred_route="hybrid_review_basis_search",
+     )
+     standards_payload = fixed_standard_references_for_node(project, node_id)
+     project_pack = (project or {}).get("businessPackSnapshot") or business_pack_for_project(project)
+@@ -20373,6 +20376,7 @@
+         selected_clause_ids = [str(item) for item in (override.get("actualClauseIds") or override.get("selectedClauseIds") or [])]
+         selected_route = str(override.get("selectedRoute") or case.get("expectedRoute") or "manual_override")
+     else:
++        dense_hits, dense_meta = dense_knowledge_hits(repo, query, top_k=max(10, top_k * 2))
+         retrieval = retrieve_knowledge_clauses(
+             repo.state,
+             query=query,
+@@ -20381,6 +20385,8 @@
+             node_id=node_id,
+             top_k=top_k,
+             query_type="fde_evaluation_retrieval",
++            dense_hits=dense_hits,
++            dense_meta=dense_meta,
+         )
+         trace = retrieval["trace"]
+         trace["evaluationRunId"] = evaluation_run_id
+@@ -27463,56 +27469,39 @@
+     question = compact_plain_text(body.get("question"), 1000)
+     if not question:
+         return fail(errors.VALIDATION_ERROR, request, message="检索问题不能为空。")
+-    dense_hits: list[dict[str, Any]] = []
+-    embedding_model = OFFLINE_EMBEDDING_MODEL
+-    index_version = body.get("indexVersion") or STANDARD_INDEX_VERSION
+-    vector_status_reason = None
+-    if os.getenv("AICHECK_RETRIEVAL_DENSE_DISABLE", "false").lower() != "true":
+-        query_embedding = None
+-        embedding_client = EmbeddingClient()
+-        if embedding_client.enabled and os.getenv("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", "false").lower() != "true":
+-            try:
+-                vectors = embedding_client.embed_sync([str(question)], timeout=30)
+-                query_embedding = (vectors[0] if vectors else {}).get("embedding")
+-                embedding_model = embedding_client.model_id
+-                index_version = body.get("indexVersion") or embedding_client.index_version
+-            except Exception:
+-                vector_status_reason = "remote_embedding_unavailable_hash_fallback"
+-        if not isinstance(query_embedding, list) or not query_embedding:
+-            query_embedding = offline_hash_embedding(str(question))
+-            embedding_model = OFFLINE_EMBEDDING_MODEL
+-            index_version = body.get("indexVersion") or STANDARD_INDEX_VERSION
+-        search_args = {
+-            "top_k": int(body.get("topK") or 5),
+-            "source_id": body.get("sourceId"),
+-            "index_version": index_version,
+-        }
+-        if repo.postgres_enabled and repo.sync_postgres is not None:
+-            dense_hits = repo.search_knowledge_vectors(query_embedding, **search_args)
+-        if not dense_hits:
+-            dense_hits = repo.search_local_knowledge_vectors(query_embedding, **search_args)
++    started_at = time.perf_counter()
++    top_k = int(body.get("topK") or 5)
++    dense_hits, dense_meta = dense_knowledge_hits(
++        repo,
++        str(question),
++        top_k=max(top_k, 10),
++        source_id=body.get("sourceId"),
++        index_version=str(body.get("indexVersion") or "") or None,
++    )
+     retrieval = retrieve_knowledge_clauses(
+         repo.state,
+         query=str(question),
+         business_pack_id=body.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID,
+         node_id=int(body.get("nodeId")) if str(body.get("nodeId") or "").isdigit() else None,
+         kb_version=body.get("kbVersion"),
+-        top_k=int(body.get("topK") or 5),
++        top_k=top_k,
+         query_type="interactive_retrieval_test",
+-        dense_chunk_ids=[str(item.get("chunkId")) for item in dense_hits if item.get("chunkId")],
++        dense_hits=dense_hits,
++        dense_meta=dense_meta,
+     )
+     return ok(
+         {
+             "answerDraft": answer_draft_from_clauses(str(question), retrieval["clauses"]),
+             "hits": retrieval["trace"]["selectedClauses"],
+             "retrievalTrace": retrieval["trace"],
+-            "latencyMs": 12,
++            "latencyMs": int((time.perf_counter() - started_at) * 1000),
+             "denseHits": dense_hits,
+-            "embeddingModel": embedding_model,
+-            "indexVersion": index_version,
++            "denseDegraded": bool(dense_meta.get("denseDegraded")),
++            "embeddingModel": dense_meta.get("embeddingModel") or OFFLINE_EMBEDDING_MODEL,
++            "indexVersion": dense_meta.get("indexVersion") or body.get("indexVersion") or STANDARD_INDEX_VERSION,
+             "activeEmbeddingModel": active_embedding_target()["embeddingModel"],
+             "activeIndexVersion": active_embedding_target()["indexVersion"],
+-            "vectorStatusReason": vector_status_reason or "ok",
++            "vectorStatusReason": dense_meta.get("reason") or "ok",
+             "usedIndexVersions": sorted({item.get("kbVersion") for item in retrieval["clauses"] if item.get("kbVersion")}),
+         },
+         request,
+@@ -27528,6 +27517,7 @@
+     page_no: int = Query(default=1, alias="page"),
+     page_size: int = Query(default=20, alias="pageSize"),
+ ):
++    dense_hits, dense_meta = dense_knowledge_hits(repo, keyword or "审查依据", top_k=10)
+     retrieval = retrieve_knowledge_clauses(
+         repo.state,
+         query=keyword or "审查依据",
+@@ -27535,6 +27525,8 @@
+         node_id=nodeId,
+         top_k=max(page_no * page_size, page_size),
+         query_type="clause_list",
++        dense_hits=dense_hits,
++        dense_meta=dense_meta,
+     )
+     items = retrieval["trace"]["selectedClauses"]
+     return ok(page(items, page_no, page_size), request)
+diff -urN a/backend/apps/worker/tasks.py b/backend/apps/worker/tasks.py
+--- a/backend/apps/worker/tasks.py	2026-07-26 17:00:55.748472881 +0000
++++ b/backend/apps/worker/tasks.py	2026-07-26 17:00:55.750749897 +0000
+@@ -61,7 +61,10 @@
+     OFFLINE_EMBEDDING_MODEL,
+     STANDARD_INDEX_VERSION,
+     active_embedding_target,
++    chunk_text as sentence_chunk_text,
++    embedding_input_for_chunk,
+     local_path_from_storage_key,
++    merge_small_fragments,
+     noise_like_text,
+     offline_hash_embeddings,
+     units_from_local_file,
+@@ -390,15 +393,17 @@
+     max_chars: int = 1600,
+     metadata: dict[str, Any] | None = None,
+ ) -> list[dict[str, Any]]:
+-    normalized = " ".join(str(text or "").split())
++    # Preserve line/paragraph structure and split on sentence boundaries instead
++    # of collapsing all whitespace and hard-slicing at byte offsets.
++    lines = [line.strip() for line in str(text or "").splitlines()]
++    normalized = "\n".join(line for line in lines if line).strip()
+     if not normalized:
+         return []
+-    chunks = []
+-    for offset in range(0, len(normalized), max_chars):
+-        chunk_text = normalized[offset : offset + max_chars].strip()
+-        if chunk_text:
+-            chunks.append({"pageNo": page_no, "text": chunk_text, **(metadata or {})})
+-    return chunks
++    return [
++        {"pageNo": page_no, "text": piece, **(metadata or {})}
++        for piece in sentence_chunk_text(normalized, max_chars)
++        if piece.strip()
++    ]
+ 
+ 
+ def latest_successful_ocr_parse_result(version_id: str | None) -> dict[str, Any] | None:
+@@ -487,18 +492,25 @@
+                 "sourceFragmentId": fragment.get("id") or fragment.get("fragmentId") or f"p{page_no}-f{fragment_index}",
+             }
+             fragments.extend(split_text_fragments(text, page_no=page_no, metadata=metadata))
+-    return fragments
++    # OCR emits line-level fragments; merge consecutive small ones per page into
++    # paragraph blocks so retrieval does not surface context-free snippets.
++    return merge_small_fragments(fragments)
+ 
+ 
+ def embedding_batches_for_chunks(chunks: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str, str, int, str | None]:
+     texts = [str(chunk.get("text") or "") for chunk in chunks]
++    # Semantic embeddings get a file/section context prefix so vectors carry
++    # which standard and section each chunk belongs to (AICHECK_EMBEDDING_CONTEXT_PREFIX
++    # to disable; changing this requires /knowledge/reindex). The offline-hash
++    # path keeps raw text so hash queries stay consistent.
++    semantic_texts = [embedding_input_for_chunk(chunk) for chunk in chunks]
+     force_offline = env_bool("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", False)
+     client = EmbeddingClient()
+     if client.enabled and not force_offline:
+         vectors: list[dict[str, Any]] = []
+         try:
+-            for offset in range(0, len(texts), EMBED_BATCH_SIZE):
+-                for item in client.embed_sync(texts[offset : offset + EMBED_BATCH_SIZE]):
++            for offset in range(0, len(semantic_texts), EMBED_BATCH_SIZE):
++                for item in client.embed_sync(semantic_texts[offset : offset + EMBED_BATCH_SIZE]):
+                     if not isinstance(item, dict):
+                         continue
+                     vectors.append({**item, "index": offset + int(item.get("index") or 0)})
+diff -urN a/backend/libs/db/repository.py b/backend/libs/db/repository.py
+--- a/backend/libs/db/repository.py	2026-07-26 17:00:55.759927932 +0000
++++ b/backend/libs/db/repository.py	2026-07-26 17:00:55.762209289 +0000
+@@ -3644,21 +3644,26 @@
+             if isinstance(payload, dict):
+                 self._idempotency_baseline[scope] = self.canonical_persistence_payload(payload)
+ 
+-    def ensure_pgvector_schema(self) -> bool:
++    def ensure_pgvector_schema(self, dimensions: int | None = None) -> bool:
++        dims = int(dimensions or OFFLINE_VECTOR_DIMENSIONS)
++        if dims <= 0:
++            return False
++        table = pgvector_table_for_dimensions(dims)
++        suffix = "" if table == "knowledge_vector_index" else f"_{dims}"
+         with self._sync_postgres_lock:
+             if self.sync_postgres is None:
+                 return False
+             try:
+                 if production_runtime_ddl_disabled():
+                     present = self.sync_postgres.execute(
+-                        "SELECT to_regclass('public.knowledge_vector_index')"
++                        f"SELECT to_regclass('public.{table}')"
+                     ).fetchone()
+                     self.sync_postgres.commit()
+                     return bool(present and present[0])
+                 self.sync_postgres.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                 self.sync_postgres.execute(
+-                    """
+-                    CREATE TABLE IF NOT EXISTS knowledge_vector_index (
++                    f"""
++                    CREATE TABLE IF NOT EXISTS {table} (
+                         tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
+                         id text NOT NULL,
+                         file_id text,
+@@ -3666,31 +3671,34 @@
+                         document_id text,
+                         document_version_id text,
+                         source_id text,
+-                        embedding vector(1024) NOT NULL,
++                        embedding vector({dims}) NOT NULL,
+                         dimensions integer NOT NULL,
+                         embedding_model text NOT NULL,
+                         index_version text NOT NULL,
+-                        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
++                        metadata jsonb NOT NULL DEFAULT '{{}}'::jsonb,
+                         updated_at timestamptz NOT NULL DEFAULT now(),
+                         PRIMARY KEY (tenant_id, id)
+                     )
+                     """
+                 )
+                 self.sync_postgres.execute(
+-                    "ALTER TABLE knowledge_vector_index ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT'"
+-                )
+-                self.sync_postgres.execute(
+-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_kvi_tenant_id ON knowledge_vector_index (tenant_id, id)"
++                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT'"
+                 )
+                 self.sync_postgres.execute(
+-                    "CREATE INDEX IF NOT EXISTS idx_kvi_tenant_source ON knowledge_vector_index (tenant_id, source_id)"
++                    f"CREATE UNIQUE INDEX IF NOT EXISTS uq_kvi_tenant_id{suffix} ON {table} (tenant_id, id)"
+                 )
+                 self.sync_postgres.execute(
+-                    "CREATE INDEX IF NOT EXISTS idx_kvi_tenant_index_version ON knowledge_vector_index (tenant_id, index_version)"
++                    f"CREATE INDEX IF NOT EXISTS idx_kvi_tenant_source{suffix} ON {table} (tenant_id, source_id)"
+                 )
+                 self.sync_postgres.execute(
+-                    "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)"
++                    f"CREATE INDEX IF NOT EXISTS idx_kvi_tenant_index_version{suffix} ON {table} (tenant_id, index_version)"
+                 )
++                # pgvector HNSW indexes support at most 2000 dimensions; larger
++                # embeddings (e.g. Qwen3-8B @ 4096) fall back to exact scan.
++                if dims <= 2000:
++                    self.sync_postgres.execute(
++                        f"CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine{suffix} ON {table} USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)"
++                    )
+                 self.sync_postgres.commit()
+                 return True
+             except Exception:
+@@ -3701,23 +3709,31 @@
+                 return False
+ 
+     def flush_knowledge_vectors_to_pgvector(self) -> None:
++        if self.sync_postgres is None or not self.ensure_pgvector_schema():
++            return
++        ensured_tables: set[str] = {"knowledge_vector_index"}
+         with self._sync_postgres_lock:
+-            if self.sync_postgres is None or not self.ensure_pgvector_schema():
+-                return
+             try:
+                 persisted_ids: list[str] = []
+                 for row in self.state.get("knowledge_vectors", []) or []:
+-                    if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
++                    row_dims = int(row.get("dimensions") or 0)
++                    if row_dims <= 0:
+                         continue
++                    table = pgvector_table_for_dimensions(row_dims)
++                    if table not in ensured_tables:
++                        # RLock: ensure_pgvector_schema re-enters the same lock safely.
++                        if not self.ensure_pgvector_schema(row_dims):
++                            continue
++                        ensured_tables.add(table)
+                     payload = vector_payload_for_pg(row)
+                     embedding = payload.get("embedding")
+-                    if not isinstance(embedding, list) or not embedding:
++                    if not isinstance(embedding, list) or len(embedding) != row_dims:
+                         continue
+                     persisted_ids.append(str(payload["id"]))
+                     embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
+                     self.sync_postgres.execute(
+-                        """
+-                        INSERT INTO knowledge_vector_index (
++                        f"""
++                        INSERT INTO {table} (
+                             tenant_id, id, file_id, chunk_id, document_id, document_version_id, source_id,
+                             embedding, dimensions, embedding_model, index_version, metadata, updated_at
+                         )
+@@ -3753,10 +3769,11 @@
+                     )
+                 stale_ids = sorted(self._pgvector_baseline_ids - set(persisted_ids))
+                 if stale_ids:
+-                    self.sync_postgres.execute(
+-                        "DELETE FROM knowledge_vector_index WHERE tenant_id = %s AND id = ANY(%s)",
+-                        (configured_tenant_id(), stale_ids),
+-                    )
++                    for table in sorted(ensured_tables):
++                        self.sync_postgres.execute(
++                            f"DELETE FROM {table} WHERE tenant_id = %s AND id = ANY(%s)",
++                            (configured_tenant_id(), stale_ids),
++                        )
+                 self.sync_postgres.commit()
+                 self._pgvector_baseline_ids = set(persisted_ids)
+             except Exception:
+@@ -3775,8 +3792,10 @@
+     ) -> list[dict[str, Any]]:
+         with self._sync_postgres_lock:
+             self.configure_sync_postgres()
+-            if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
++            query_dims = len(embedding)
++            if self.sync_postgres is None or query_dims <= 0 or not self.ensure_pgvector_schema(query_dims):
+                 return []
++            table = pgvector_table_for_dimensions(query_dims)
+             embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
+             filters = ["tenant_id = %s"]
+             params: list[Any] = [configured_tenant_id()]
+@@ -3792,7 +3811,7 @@
+                 SELECT id, file_id, chunk_id, document_id, document_version_id, source_id,
+                        dimensions, embedding_model, index_version, metadata,
+                        embedding <=> %s::vector AS distance
+-                FROM knowledge_vector_index
++                FROM {table}
+                 {where}
+                 ORDER BY embedding <=> %s::vector
+                 LIMIT %s
+@@ -3890,6 +3909,16 @@
+         return config
+ 
+ 
++def pgvector_table_for_dimensions(dimensions: int) -> str:
++    """Per-dimension vector tables: the legacy 1024-dim table keeps its name for
++    backward compatibility; other embedding sizes (Qwen3-4B @ 2560, 8B @ 4096)
++    get their own table so switching models no longer silently drops vectors."""
++    dims = int(dimensions or OFFLINE_VECTOR_DIMENSIONS)
++    if dims == OFFLINE_VECTOR_DIMENSIONS:
++        return "knowledge_vector_index"
++    return f"knowledge_vector_index_{dims}"
++
++
+ def stable_doc_id(value: str) -> str:
+     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
+ 
+diff -urN a/backend/libs/knowledge_dense.py b/backend/libs/knowledge_dense.py
+--- a/backend/libs/knowledge_dense.py	2026-07-26 17:01:14.469839151 +0000
++++ b/backend/libs/knowledge_dense.py	2026-07-26 17:00:55.789331922 +0000
+@@ -17,6 +17,21 @@
+     return value.strip().lower() in {"1", "true", "yes", "on"}
+ 
+ 
++DEFAULT_QUERY_INSTRUCTION = "给定工程检验审查问题，检索最相关的标准条款和审查依据"
++
++
++def query_text_for_model(query: str, model_id: str) -> str:
++    """Qwen3-Embedding is instruction-tuned with asymmetric query/document
++    prompts — instructed queries measurably improve retrieval. Documents are
++    embedded plain; only the query side gets the instruction."""
++    if not _env_bool("AICHECK_EMBEDDING_QUERY_INSTRUCTION", True):
++        return query
++    if "qwen3-embedding" not in str(model_id or "").lower():
++        return query
++    task = str(os.getenv("AICHECK_EMBEDDING_QUERY_INSTRUCTION_TEXT") or DEFAULT_QUERY_INSTRUCTION)
++    return f"Instruct: {task}\nQuery: {query}"
++
++
+ def dense_knowledge_hits(
+     repo: Any,
+     query: str,
+@@ -53,7 +68,7 @@
+     query_embedding: list[float] | None = None
+     if client.enabled and not force_offline:
+         try:
+-            vectors = client.embed_sync([str(query or "")], timeout=timeout)
++            vectors = client.embed_sync([query_text_for_model(str(query or ""), client.model_id)], timeout=timeout)
+             candidate = (vectors[0] if vectors else {}).get("embedding")
+             if isinstance(candidate, list) and candidate:
+                 query_embedding = candidate
+diff -urN a/backend/libs/knowledge_indexing.py b/backend/libs/knowledge_indexing.py
+--- a/backend/libs/knowledge_indexing.py	2026-07-26 17:00:55.736830852 +0000
++++ b/backend/libs/knowledge_indexing.py	2026-07-26 17:00:55.738986163 +0000
+@@ -402,33 +402,155 @@
+                     "sourceFragmentId": fragment_id,
+                 }
+             )
+-    return units
++    return merge_small_fragments(units)
+ 
+ 
+-def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
++def chunk_overlap_chars() -> int:
++    try:
++        value = int(os.getenv("AICHECK_CHUNK_OVERLAP_CHARS", "200"))
++    except (TypeError, ValueError):
++        value = 200
++    return max(0, value)
++
++
++def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS, *, overlap_chars: int | None = None) -> list[str]:
+     normalized = str(text or "").strip()
+     if not normalized:
+         return []
+     if len(normalized) <= max_chars:
+         return [normalized]
++    if overlap_chars is None:
++        overlap_chars = chunk_overlap_chars()
++    overlap_chars = max(0, min(int(overlap_chars), max_chars // 3))
++    parts = [part.strip() for part in re.split(r"(?<=[。；;.!?？])\s*|\n+", normalized) if part.strip()]
+     pieces: list[str] = []
+-    current = ""
+-    for part in re.split(r"(?<=[。；;.!?？])\s*|\n+", normalized):
+-        part = part.strip()
+-        if not part:
+-            continue
+-        if len(current) + len(part) + 1 > max_chars and current:
+-            pieces.append(current)
+-            current = part
+-        else:
+-            current = f"{current}\n{part}".strip() if current else part
++    current: list[str] = []
++    current_len = 0
++    for part in parts:
++        if current and current_len + len(part) + 1 > max_chars:
++            pieces.append("\n".join(current))
++            if overlap_chars > 0 and len(current) > 1:
++                # Sentence-boundary overlap: seed the next chunk with the tail of
++                # the previous one so clause conditions are not severed from
++                # their numeric limits at chunk boundaries.
++                tail: list[str] = []
++                tail_len = 0
++                for previous in reversed(current):
++                    if tail_len + len(previous) > overlap_chars:
++                        break
++                    tail.insert(0, previous)
++                    tail_len += len(previous)
++                current = tail
++                current_len = tail_len
++            else:
++                current = []
++                current_len = 0
++        current.append(part)
++        current_len += len(part) + (1 if len(current) > 1 else 0)
+     if current:
+-        pieces.append(current)
++        piece = "\n".join(current)
++        if not pieces or pieces[-1] != piece:
++            pieces.append(piece)
+     if not pieces:
+-        pieces = [normalized[index : index + max_chars] for index in range(0, len(normalized), max_chars)]
++        step = max(1, max_chars - overlap_chars)
++        pieces = [normalized[index : index + max_chars] for index in range(0, len(normalized), step)]
+     return pieces
+ 
+ 
++def fragment_merge_min_chars() -> int:
++    try:
++        value = int(os.getenv("AICHECK_CHUNK_MIN_MERGE_CHARS", "280"))
++    except (TypeError, ValueError):
++        value = 280
++    return max(0, value)
++
++
++def _merge_bbox(left: Any, right: Any) -> Any:
++    boxes = [box for box in (left, right) if isinstance(box, (list, tuple)) and len(box) == 4]
++    if not boxes:
++        return left or right
++    try:
++        values = [[float(item) for item in box] for box in boxes]
++    except (TypeError, ValueError):
++        return left or right
++    return [
++        min(box[0] for box in values),
++        min(box[1] for box in values),
++        max(box[2] for box in values),
++        max(box[3] for box in values),
++    ]
++
++
++def merge_small_fragments(
++    units: list[dict[str, Any]],
++    *,
++    min_chars: int | None = None,
++    max_chars: int = MAX_CHUNK_CHARS,
++) -> list[dict[str, Any]]:
++    """Merge consecutive same-page line/fragment-level units into paragraph
++    blocks. OCR pipelines emit one unit per recognized line; embedding those
++    tiny snippets in isolation pollutes retrieval with context-free chunks."""
++    if min_chars is None:
++        min_chars = fragment_merge_min_chars()
++    if min_chars <= 0:
++        return units
++    merged: list[dict[str, Any]] = []
++    buffer: dict[str, Any] | None = None
++    for unit in units:
++        if not isinstance(unit, dict):
++            continue
++        text = str(unit.get("text") or "")
++        if buffer is not None:
++            buffer_text = str(buffer.get("text") or "")
++            same_page = int(buffer.get("pageNo") or 1) == int(unit.get("pageNo") or 1)
++            small = len(buffer_text) < min_chars or len(text) < min_chars
++            fits = len(buffer_text) + len(text) + 1 <= max_chars
++            new_section = bool(detect_heading(text.splitlines()[0] if text else ""))
++            if same_page and small and fits and not new_section:
++                buffer["text"] = f"{buffer_text}\n{text}".strip()
++                buffer["bbox"] = _merge_bbox(buffer.get("bbox"), unit.get("bbox"))
++                buffer_roi = buffer.get("roi") if isinstance(buffer.get("roi"), dict) else None
++                unit_roi = unit.get("roi") if isinstance(unit.get("roi"), dict) else None
++                if buffer_roi and unit_roi:
++                    buffer_roi["boxes"] = list(buffer_roi.get("boxes") or []) + list(unit_roi.get("boxes") or [])
++                elif unit_roi and not buffer_roi:
++                    buffer["roi"] = unit_roi
++                confidences = [
++                    value
++                    for value in (buffer.get("ocrConfidence"), unit.get("ocrConfidence"))
++                    if isinstance(value, (int, float))
++                ]
++                if confidences:
++                    buffer["ocrConfidence"] = min(confidences)
++                continue
++            merged.append(buffer)
++        buffer = dict(unit)
++    if buffer is not None:
++        merged.append(buffer)
++    return merged
++
++
++def embedding_context_prefix_enabled() -> bool:
++    value = os.getenv("AICHECK_EMBEDDING_CONTEXT_PREFIX")
++    if value is None:
++        return True
++    return value.strip().lower() in {"1", "true", "yes", "on"}
++
++
++def embedding_input_for_chunk(chunk: dict[str, Any]) -> str:
++    """Text to embed for a document chunk: prefix the file name / section path so
++    the vector carries which standard and section the text belongs to. The raw
++    chunk text stays unchanged for display, grounding, and hashing."""
++    text = str(chunk.get("text") or "")
++    if not embedding_context_prefix_enabled():
++        return text
++    section_path = [str(item).strip() for item in chunk.get("sectionPath") or [] if str(item or "").strip()]
++    prefix = " / ".join(section_path[-3:])
++    if not prefix:
++        return text
++    return f"{prefix}\n{text}"
++
++
+ def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, index_version: str = STANDARD_INDEX_VERSION) -> list[dict[str, Any]]:
+     chunks: list[dict[str, Any]] = []
+     sequence = 1
+diff -urN a/backend/libs/knowledge_readiness.py b/backend/libs/knowledge_readiness.py
+--- a/backend/libs/knowledge_readiness.py	2026-07-26 17:00:55.702996933 +0000
++++ b/backend/libs/knowledge_readiness.py	2026-07-26 17:00:55.705394559 +0000
+@@ -79,6 +79,16 @@
+         points += 5
+     else:
+         blockers.append(f"{len(failed_tasks) - len(governed_failures)} failed knowledge tasks lack retry governance")
++    hash_fallback_files = [
++        item
++        for item in state.get("knowledge_files") or []
++        if isinstance(item, dict) and "hash_fallback" in str(item.get("vectorStatusReason") or "")
++    ]
++    if hash_fallback_files:
++        blockers.append(
++            f"{len(hash_fallback_files)} knowledge files were vectorized with the offline-hash fallback; "
++            "reindex them with the configured embedding model"
++        )
+     return section("source-index", points, 25, blockers)
+ 
+ 
+diff -urN a/backend/libs/knowledge_retrieval.py b/backend/libs/knowledge_retrieval.py
+--- a/backend/libs/knowledge_retrieval.py	2026-07-26 17:00:55.692212543 +0000
++++ b/backend/libs/knowledge_retrieval.py	2026-07-26 17:00:55.694442720 +0000
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import json
++import os
+ import re
+ import unicodedata
+ from functools import lru_cache
+@@ -119,6 +120,112 @@
+     return deduped
+ 
+ 
++@lru_cache(maxsize=1)
++def _jieba_module() -> Any:
++    try:
++        import jieba  # type: ignore
++
++        jieba.setLogLevel(60)
++        return jieba
++    except Exception:
++        return None
++
++
++@lru_cache(maxsize=20000)
++def lexical_terms(text: str) -> tuple[str, ...]:
++    """Word-level terms for BM25: jieba search-mode segmentation when available,
++    falling back to sliding CJK bigrams + ASCII tokens. Sliding bigrams (not the
++    greedy 1-4 char chunker) keep query/document terms alignable at any offset."""
++    raw = str(text or "").lower()
++    if not raw.strip():
++        return ()
++    jieba = _jieba_module()
++    if jieba is not None:
++        terms = [term.strip() for term in jieba.cut_for_search(raw)]
++        return tuple(term for term in terms if term and (len(term) > 1 or term.isascii()))
++    terms: list[str] = []
++    for run in re.findall(r"[一-鿿]+|[a-z0-9_.:/-]+", raw):
++        if run[0].isascii():
++            terms.append(run)
++        elif len(run) == 1:
++            terms.append(run)
++        else:
++            terms.extend(run[index : index + 2] for index in range(len(run) - 1))
++    return tuple(terms)
++
++
++def clause_lexical_haystack(clause: dict[str, Any]) -> str:
++    return " ".join(
++        str(part or "")
++        for part in [
++            clause.get("clauseId"),
++            clause.get("clauseNo"),
++            clause.get("title"),
++            clause.get("text"),
++            " ".join(str(item or "") for item in clause.get("tags") or []),
++        ]
++    )
++
++
++def bm25_scores_for_clauses(
++    candidates: list[dict[str, Any]],
++    query: str,
++    *,
++    k1: float = 1.5,
++    b: float = 0.75,
++) -> dict[str, float]:
++    """Okapi BM25 over the candidate corpus: per-query IDF, term-frequency
++    saturation, and document-length normalization — replacing the previous
++    substring-count scoring that had no IDF and favored long chunks."""
++    import math
++
++    query_terms = [term for term in dict.fromkeys(lexical_terms(str(query or ""))) if term]
++    if not candidates or not query_terms:
++        return {}
++    doc_terms: list[tuple[str, dict[str, int], int]] = []
++    for clause in candidates:
++        terms = lexical_terms(clause_lexical_haystack(clause))
++        counts: dict[str, int] = {}
++        for term in terms:
++            counts[term] = counts.get(term, 0) + 1
++        doc_terms.append((str(clause.get("clauseId")), counts, len(terms)))
++    total_docs = len(doc_terms)
++    avg_len = max(1.0, sum(length for _, _, length in doc_terms) / total_docs)
++    df: dict[str, int] = {}
++    for term in query_terms:
++        df[term] = sum(1 for _, counts, _ in doc_terms if term in counts)
++    scores: dict[str, float] = {}
++    for clause_id, counts, length in doc_terms:
++        score = 0.0
++        for term in query_terms:
++            tf = counts.get(term, 0)
++            if tf <= 0:
++                continue
++            idf = math.log(1.0 + (total_docs - df[term] + 0.5) / (df[term] + 0.5))
++            score += idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * length / avg_len))
++        if score > 0:
++            scores[clause_id] = score
++    return scores
++
++
++def clause_scope_bonus(
++    clause: dict[str, Any],
++    *,
++    node_id: int | None = None,
++    business_pack_id: str | None = None,
++) -> float:
++    scope = clause.get("scope") or {}
++    node_ids = {int(item) for item in scope.get("nodeIds") or [] if str(item).isdigit()}
++    score = 0.0
++    if node_id is not None and (scope.get("nodeId") == node_id or node_id in node_ids):
++        score += 3.0
++    if business_pack_id and scope.get("businessPackId") == business_pack_id:
++        score += 1.0
++    if clause.get("sourceEvidenceLinkId"):
++        score += 0.5
++    return score
++
++
+ def normalize_clause_ref(value: Any) -> str:
+     return str(value or "").strip().replace("第", "").replace("条", "").lower()
+ 
+@@ -836,6 +943,124 @@
+     }
+ 
+ 
++def rrf_fusion_config() -> dict[str, float]:
++    try:
++        k = float(os.getenv("AICHECK_RETRIEVAL_RRF_K", "60"))
++    except (TypeError, ValueError):
++        k = 60.0
++    try:
++        dense_weight = float(os.getenv("AICHECK_RETRIEVAL_DENSE_WEIGHT", "0.7"))
++    except (TypeError, ValueError):
++        dense_weight = 0.7
++    return {"k": max(1.0, k), "denseWeight": max(0.0, dense_weight)}
++
++
++def dense_rank_map(
++    dense_hits: list[dict[str, Any]] | None,
++    dense_chunk_ids: list[str] | None,
++) -> dict[str, int]:
++    """Ordered chunkId -> 1-based rank from dense hits (or the legacy id list)."""
++    ranks: dict[str, int] = {}
++    if dense_hits:
++        ordered: list[str] = []
++        for item in dense_hits:
++            if isinstance(item, dict):
++                ordered.append(str(item.get("chunkId") or ""))
++            else:
++                ordered.append(str(item or ""))
++        for chunk_id in ordered:
++            if chunk_id and chunk_id not in ranks:
++                ranks[chunk_id] = len(ranks) + 1
++        return ranks
++    for chunk_id in dense_chunk_ids or []:
++        key = str(chunk_id or "")
++        if key and key not in ranks:
++            ranks[key] = len(ranks) + 1
++    return ranks
++
++
++def apply_cross_encoder_rerank(
++    state: dict[str, Any],
++    query: str,
++    scored: list[dict[str, Any]],
++    *,
++    top_k: int = 5,
++) -> dict[str, Any]:
++    """Rerank the fused top window with a cross-encoder when configured.
++
++    Controlled by knowledge_config.rerankEnabled (default on) plus the
++    AICHECK_RERANK_API_BASE endpoint; degrades gracefully — a failed or absent
++    reranker leaves the fused ordering untouched and records why.
++    """
++    info: dict[str, Any] = {
++        "configEnabled": True,
++        "endpointConfigured": False,
++        "applied": False,
++        "status": "skipped",
++        "model": None,
++        "windowSize": 0,
++        "reason": None,
++    }
++    config = state.get("knowledge_config") if isinstance(state.get("knowledge_config"), dict) else {}
++    if config.get("rerankEnabled") is False:
++        info.update({"configEnabled": False, "reason": "rerank_disabled_by_config"})
++        return info
++    if not scored:
++        info["reason"] = "no_candidates"
++        return info
++    try:
++        from libs.integrations.reranker_client import RerankerClient
++
++        client = RerankerClient()
++    except Exception:
++        info.update({"status": "degraded", "reason": "reranker_client_unavailable"})
++        return info
++    info["endpointConfigured"] = client.enabled
++    if not client.enabled:
++        info["reason"] = "rerank_endpoint_not_configured"
++        return info
++    window = scored[: max(int(top_k or 5) * 4, 20)]
++    documents = [
++        " ".join(
++            part
++            for part in [
++                str(item.get("title") or ""),
++                str(item.get("text") or "")[:1200],
++            ]
++            if part
++        )
++        for item in window
++    ]
++    try:
++        results = client.rerank(str(query or ""), documents)
++    except Exception as exc:
++        info.update({"status": "degraded", "reason": exc.__class__.__name__})
++        return info
++    for result in results:
++        index = int(result.get("index", -1))
++        if 0 <= index < len(window):
++            window[index]["rerankScore"] = round(float(result.get("relevanceScore") or 0.0), 6)
++    scored.sort(
++        key=lambda item: (
++            item.get("retrievalMode") == "exact_clause_lookup",
++            item.get("retrievalMode") == "pageindex_tree_local",
++            item.get("rerankScore") is not None,
++            float(item.get("rerankScore") if item.get("rerankScore") is not None else 0.0),
++            float(item.get("fusedScore") or 0),
++        ),
++        reverse=True,
++    )
++    info.update(
++        {
++            "applied": True,
++            "status": "ok",
++            "model": client.model_id,
++            "windowSize": len(window),
++        }
++    )
++    return info
++
++
+ def retrieve_knowledge_clauses(
+     state: dict[str, Any],
+     *,
+@@ -847,13 +1072,24 @@
+     top_k: int = 5,
+     query_type: str = "review_basis_search",
+     dense_chunk_ids: list[str] | None = None,
++    dense_hits: list[dict[str, Any]] | None = None,
++    dense_meta: dict[str, Any] | None = None,
++    preferred_route: str | None = None,
+ ) -> dict[str, Any]:
+     tokens = query_tokens(query)
+     router_signals = build_router_signals(query, tokens)
+     selected_route = classify_retrieval_route(query, tokens)
++    if preferred_route and selected_route != "exact_clause_lookup":
++        # Callers such as the review orchestrator use long, content-rich queries;
++        # a route hint keeps them on the hybrid route instead of tripping the
++        # query-length PageIndex heuristic. Exact clause lookups always win.
++        selected_route = preferred_route
++        router_signals["preferredRoute"] = preferred_route
+     exact_refs = list(router_signals.get("exactClauseRefs") or [])
+     query_alias_matches = list(router_signals.get("standardAliases") or [])
+-    dense_ids = {str(item) for item in dense_chunk_ids or [] if item}
++    dense_ranks = dense_rank_map(dense_hits, dense_chunk_ids)
++    dense_ids = set(dense_ranks)
++    fusion = rrf_fusion_config()
+     candidates = knowledge_clause_candidates(state, kb_version=kb_version)
+     page_index_result = (
+         page_index_tree_search(
+@@ -874,9 +1110,11 @@
+         for clause_id in node.get("linkedClauseIds") or []:
+             if clause_id and node_ref:
+                 page_index_node_ids_by_clause.setdefault(str(clause_id), []).append(node_ref)
++    bm25_by_clause = bm25_scores_for_clauses(candidates, query)
+     scored: list[dict[str, Any]] = []
+     for clause in candidates:
+-        base_score = clause_score(clause, tokens, node_id=node_id, business_pack_id=business_pack_id)
++        bm25_score = bm25_by_clause.get(str(clause.get("clauseId")), 0.0)
++        base_score = bm25_score + clause_scope_bonus(clause, node_id=node_id, business_pack_id=business_pack_id)
+         route_score = 0.0
+         retrieval_mode = "hybrid_bm25_dense_local"
+         if selected_route == "exact_clause_lookup":
+@@ -892,26 +1130,50 @@
+             if route_score > 0:
+                 retrieval_mode = "pageindex_tree_local"
+         score = base_score + route_score
+-        if str(clause.get("clauseId")) in dense_ids:
+-            score += 35.0
++        dense_rank = dense_ranks.get(str(clause.get("clauseId")))
++        if dense_rank is not None and retrieval_mode == "hybrid_bm25_dense_local":
++            # Tag as dense-assisted, but never demote exact/pageindex route modes,
++            # which carry sort priority and audit meaning.
+             retrieval_mode = "hybrid_dense_local"
+         alias_matches = standard_alias_candidate_matches(clause, query, query_matches=query_alias_matches)
+         score += standard_number_match_score(clause, query)
+         score += max((float(match.get("boost") or 0.0) for match in alias_matches), default=0.0)
+         score += source_title_overlap_score(clause, query)
+         score += retrieval_quality_bias(clause, query)
+-        if score <= 0 and tokens:
++        if score <= 0 and tokens and dense_rank is None:
+             continue
+-        scored.append({**clause, "score": round(score or 0.1, 4), "retrievalMode": retrieval_mode, "aliasMatches": alias_matches})
++        scored.append(
++            {
++                **clause,
++                "score": round(score or 0.1, 4),
++                "bm25Score": round(bm25_score, 4),
++                "retrievalMode": retrieval_mode,
++                "aliasMatches": alias_matches,
++                "denseRank": dense_rank,
++            }
++        )
++    # Reciprocal Rank Fusion: fuse the lexical ranking with the dense ranking
++    # instead of adding incomparable score scales. Without dense hits this
++    # reduces exactly to the lexical ordering.
++    lexical_sorted = sorted(scored, key=lambda item: float(item.get("score") or 0.0), reverse=True)
++    for lexical_rank, item in enumerate(lexical_sorted, start=1):
++        fused = 1.0 / (fusion["k"] + lexical_rank)
++        dense_rank = item.get("denseRank")
++        if dense_rank is not None:
++            fused += fusion["denseWeight"] / (fusion["k"] + float(dense_rank))
++        item["lexicalRank"] = lexical_rank
++        item["fusedScore"] = round(fused, 8)
+     scored.sort(
+         key=lambda item: (
+             item.get("retrievalMode") == "exact_clause_lookup",
+             item.get("retrievalMode") == "pageindex_tree_local",
++            float(item.get("fusedScore") or 0),
+             float(item.get("score") or 0),
+             item.get("sourceEvidenceLinkId") is not None,
+         ),
+         reverse=True,
+     )
++    rerank_info = apply_cross_encoder_rerank(state, query, scored, top_k=top_k)
+     selected = scored[: max(1, int(top_k or 5))]
+     if not selected and candidates:
+         selected = [{**candidates[0], "score": 0.1, "retrievalMode": "clause_fallback"}]
+@@ -922,9 +1184,13 @@
+         "reviewRunId": review_run_id,
+         "query": query,
+         "queryType": query_type,
+-        "routerVersion": "knowledge-router-v2",
++        "routerVersion": "knowledge-router-v3-rrf",
+         "selectedRoute": selected_route,
+         "routerSignals": router_signals,
++        "denseRetrieval": dense_meta
++        or {"status": "not_provided", "denseDegraded": False, "hitCount": len(dense_ids)},
++        "fusion": {"method": "rrf", "k": fusion["k"], "denseWeight": fusion["denseWeight"]},
++        "rerank": rerank_info,
+         "queryRouter": {
+             "selectedRoute": selected_route,
+             "signals": router_signals,
+@@ -939,7 +1205,24 @@
+             {"type": "exact_clause_lookup", "enabled": selected_route == "exact_clause_lookup", "clauseRefs": exact_refs},
+             {"type": "standard_alias_registry", "enabled": bool(query_alias_matches), "matchCount": len(query_alias_matches), "matches": query_alias_matches[:5]},
+             {"type": "clause_index", "topK": min(top_k, 5), "candidateCount": len(candidates)},
+-            {"type": "hybrid_bm25_dense", "topK": top_k, "implementation": "offline_hash_pgvector_or_json", "denseHitCount": len(dense_ids)},
++            {
++                "type": "hybrid_bm25_dense",
++                "topK": top_k,
++                "implementation": "rrf_bm25_dense_pgvector_or_json",
++                "lexicalScoring": "okapi_bm25_jieba_or_ngram",
++                "denseHitCount": len(dense_ids),
++                "fusion": {"method": "rrf", "k": fusion["k"], "denseWeight": fusion["denseWeight"]},
++                "denseRetrieval": dense_meta
++                or {"status": "not_provided", "denseDegraded": False, "hitCount": len(dense_ids)},
++            },
++            {
++                "type": "cross_encoder_rerank",
++                "enabled": bool(rerank_info.get("endpointConfigured")) and bool(rerank_info.get("configEnabled")),
++                "applied": bool(rerank_info.get("applied")),
++                "model": rerank_info.get("model"),
++                "windowSize": rerank_info.get("windowSize"),
++                "status": rerank_info.get("status"),
++            },
+             {
+                 "type": "pageindex_tree",
+                 "enabled": selected_route == "pageindex_tree_search",
+@@ -960,6 +1243,11 @@
+                 "pageNo": item.get("pageNo"),
+                 "bbox": item.get("bbox"),
+                 "score": item.get("score"),
++                "bm25Score": item.get("bm25Score"),
++                "fusedScore": item.get("fusedScore"),
++                "lexicalRank": item.get("lexicalRank"),
++                "denseRank": item.get("denseRank"),
++                "rerankScore": item.get("rerankScore"),
+                 "retrievalMode": item.get("retrievalMode"),
+                 "aliasMatches": item.get("aliasMatches") or [],
+                 "qualityFlags": item.get("qualityFlags") or [],
+diff -urN a/backend/libs/review_orchestrator/execution.py b/backend/libs/review_orchestrator/execution.py
+--- a/backend/libs/review_orchestrator/execution.py	2026-07-26 17:00:55.713663030 +0000
++++ b/backend/libs/review_orchestrator/execution.py	2026-07-26 17:00:55.715909789 +0000
+@@ -17,6 +17,7 @@
+ from libs.db.repository import flush_state_records, repo
+ from libs.integrations.errors import IntegrationServiceError
+ from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
++from libs.knowledge_dense import dense_knowledge_hits
+ from libs.knowledge_retrieval import retrieve_knowledge_clauses
+ from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
+ from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
+@@ -2279,14 +2280,19 @@
+             "certificateVerificationCount": verification_tool.get("verificationCount", 0),
+         }
+     if node_key == "retrieve_knowledge":
++        retrieval_query = build_review_retrieval_query(review_run, context)
++        dense_hits, dense_meta = dense_knowledge_hits(repo, retrieval_query, top_k=10)
+         retrieval = retrieve_knowledge_clauses(
+             repo.state,
+-            query=f"{context.get('node', {}).get('name') or '节点'} 审查依据",
++            query=retrieval_query,
+             review_run_id=review_run["reviewRunId"],
+             business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
+             node_id=int(review_run.get("nodeId") or 0),
+             kb_version=str(review_run.get("kbVersion") or "inspection_kb@1.0.0"),
+             top_k=5,
++            dense_hits=dense_hits,
++            dense_meta=dense_meta,
++            preferred_route="hybrid_review_basis_search",
+         )
+         trace = retrieval["trace"]
+         repo.state["retrieval_traces"].append(trace)
+@@ -2446,6 +2452,34 @@
+     return repo.clone(candidates[0] if candidates else templates[0])
+ 
+ 
++def build_review_retrieval_query(review_run: dict[str, Any], context: dict[str, Any]) -> str:
++    """Compose a content-aware retrieval query from the node, the active rule,
++    and the material's extracted fields, instead of the static
++    "{node name} 审查依据" template that returned the same clauses for every run."""
++    node = context.get("node") or {}
++    rule = context.get("currentRule") or next(iter(context.get("ruleResults") or []), {}) or {}
++    parts: list[str] = []
++    node_name = str(node.get("name") or "").strip()
++    if node_name:
++        parts.append(node_name)
++    for key in ("name", "ruleName", "standardText", "criteria", "checkMethod", "witnessText"):
++        value = str(rule.get(key) or "").strip()
++        if value and value not in parts:
++            parts.append(value)
++    field_terms: list[str] = []
++    for field in (context.get("fields") or [])[:12]:
++        if not isinstance(field, dict):
++            continue
++        for key in ("fieldName", "fieldValue"):
++            value = str(field.get(key) or "").strip()
++            if value and len(value) <= 60 and value not in field_terms:
++                field_terms.append(value)
++    if field_terms:
++        parts.append(" ".join(field_terms[:16]))
++    query = re.sub(r"\s+", " ", " ".join(part for part in parts if part)).strip()[:512]
++    return query or f"{node_name or '节点'} 审查依据"
++
++
+ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+     audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
+     context["auditRuntime"] = audit_runtime
+@@ -2471,6 +2505,26 @@
+         rule=current_rule,
+         prompt_template=prompt_template,
+     )
++    knowledge_clauses = context.get("knowledgeClauses") or []
++    if not knowledge_clauses:
++        # Resumed/partial runs may only carry the persisted trace.
++        first_trace = next(iter(context.get("retrievalTraces") or []), {}) or {}
++        knowledge_clauses = first_trace.get("selectedClauses") or []
++    retrieved_clauses = [
++        {
++            "clauseId": item.get("clauseId"),
++            "clauseNo": item.get("clauseNo"),
++            "title": item.get("title"),
++            "sectionPath": item.get("sectionPath") or [],
++            "kbDocId": item.get("kbDocId"),
++            "kbVersion": item.get("kbVersion"),
++            "pageNo": item.get("pageNo"),
++            "retrievalMode": item.get("retrievalMode"),
++            "text": str(item.get("text") or "")[:600],
++        }
++        for item in knowledge_clauses[:8]
++        if isinstance(item, dict)
++    ]
+     user_payload = {
+         "task": "Generate ReviewFindingDraftList JSON only.",
+         "auditInputMode": audit_runtime["mode"],
+@@ -2485,6 +2539,10 @@
+             "Every finding must require human confirmation.",
+             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
+             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
++            "kbRefs.clauseIds must cite clause IDs from retrievedClauses (set retrievalTraceId to the "
++            "matching id in retrievalTraceIds) or from fixedClausePackage (omit retrievalTraceId), "
++            "and every kbRef must include kbVersion.",
++            "Ground standard-basis reasoning in the retrievedClauses text; do not invent clause contents.",
+             "When more evidence is needed, plan only with availableRuntimeTools "
+             "and do not invent tools.",
+             *grounding_block["requirements"],
+@@ -2497,6 +2555,8 @@
+         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
+         "ruleResults": context.get("ruleResults") or [],
+         "fixedClausePackage": context.get("clausePackageSnapshot") or {},
++        "retrievedClauses": retrieved_clauses,
++        "retrievedClauseIds": [item["clauseId"] for item in retrieved_clauses if item.get("clauseId")],
+         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
+         "evidenceLinkIds": [item.get("id") for item in context.get("evidenceLinks") or []],
+         "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
+diff -urN a/backend/pyproject.toml b/backend/pyproject.toml
+--- a/backend/pyproject.toml	2026-07-26 17:00:55.781017759 +0000
++++ b/backend/pyproject.toml	2026-07-26 17:00:55.783158402 +0000
+@@ -16,6 +16,7 @@
+   "redis>=5.0.0",
+   "minio>=7.2.0",
+   "httpx>=0.27.0",
++  "jieba>=0.42.1",
+   "PyYAML>=6.0.0",
+   "Pillow>=10.4.0",
+   "numpy>=1.26,<3",
+diff -urN a/backend/requirements.txt b/backend/requirements.txt
+--- a/backend/requirements.txt	2026-07-26 17:00:55.770592976 +0000
++++ b/backend/requirements.txt	2026-07-26 17:00:55.772899103 +0000
+@@ -10,6 +10,7 @@
+ redis>=5.0.0
+ minio>=7.2.0
+ httpx>=0.27.0
++jieba>=0.42.1
+ PyYAML>=6.0.0
+ aiohttp>=3.14.1
+ python-dotenv>=1.2.2

@@ -1861,6 +1861,7 @@ def test_review_b_token_budget_forces_early_final_answer(monkeypatch) -> None:
         def chat_sync(self, messages, model, **kwargs):
             assert kwargs.get("tool_choice") == "none"
             assert "Token 预算上限" in str(messages[-1].get("content") or "")
+            assert '"contextTrimmed": true' in str(messages[1].get("content") or "")
             return {
                 "provider": "test-qwen",
                 "model": "qwen-review-test",
@@ -2229,3 +2230,720 @@ def test_review_b_celery_mode_falls_back_to_thread_when_dispatch_disabled(monkey
     assert executions[0]["status"] == "completed"
     assert executions[0]["heartbeatAt"]
     assert executions[0]["heartbeatEpoch"] > 0
+
+
+def test_review_b_episodic_memory_injected_with_guardrails(monkeypatch) -> None:
+    """跨会话情节记忆：历史人工裁定与历史 AI 结论应注入上下文，且系统提示带防锚定护栏。"""
+    repo.state["review_runs"].insert(
+        0,
+        {
+            "reviewRunId": "RRUN-EPISODIC-1",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "status": "已完成",
+            "currentStep": "done",
+            "findingDrafts": [],
+            "humanDecision": {
+                "decision": "accept",
+                "comment": "历史裁定：设计许可证覆盖完整施工周期，符合要求。",
+                "decidedAt": "2026-07-20 10:00:00",
+            },
+            "createdAt": "2026-07-20 09:00:00",
+            "updatedAt": "2026-07-20 10:00:00",
+        },
+    )
+    repo.state.setdefault("review_opinions", []).insert(
+        0,
+        {
+            "id": "RO-EPISODIC-1",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "result": "满足要求",
+            "opinion": "上次人工复核意见：证据链完整。",
+            "createdAt": "2026-07-21 08:00:00",
+        },
+    )
+    observed = {}
+
+    class FakeQwenRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            context_text = str(messages[-1].get("content") or "")
+            system_text = str(messages[0].get("content") or "")
+            observed["has_episodic"] = '"episodicMemory"' in context_text
+            observed["has_human_decision"] = "历史裁定：设计许可证覆盖完整施工周期" in context_text
+            observed["has_opinion"] = "上次人工复核意见" in context_text
+            observed["has_prior_run"] = '"prior_ai_run_unverified"' in context_text
+            observed["guardrail"] = "不得直接照抄" in system_text
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "结合历史裁定与当前证据的回答。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FakeQwenRuntime())
+    session = create_session()
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-episodic-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "这个节点之前是怎么判的？现在还符合吗？"},
+        )
+    )
+    assert response["assistantMessage"]["execution"]["mode"] == "llm_agent"
+    assert observed == {
+        "has_episodic": True,
+        "has_human_decision": True,
+        "has_opinion": True,
+        "has_prior_run": True,
+        "guardrail": True,
+    }, observed
+
+
+def test_review_b_tool_memory_entries_are_tenant_scoped(monkeypatch) -> None:
+    """记忆条目携带 tenantId；读取侧按会话租户过滤，跨租户条目不可见。"""
+
+    class FakeQwenRuntime:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def chat_sync(self, messages, model, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-tenant-1",
+                                        "function": {
+                                            "name": "get_review_context",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "已核对上下文。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FakeQwenRuntime())
+    session = create_session()
+    assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-tenant-memory-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核对当前节点上下文。"},
+        )
+    )
+    entries = [
+        item
+        for item in repo.state["review_session_tool_memory"]
+        if item.get("sessionId") == session["id"]
+    ]
+    assert entries and "tenantId" in entries[0], entries[:1]
+    session_record = repo.find_one("review_sessions", session["id"])
+    loaded = routes_module.load_review_session_tool_memory(session_record)
+    assert loaded, "memory should be visible for the same tenant"
+    for item in entries:
+        item["tenantId"] = "TENANT-OTHER"
+    assert routes_module.load_review_session_tool_memory(session_record) == {}
+
+
+def test_review_b_memory_fine_grained_invalidation(monkeypatch) -> None:
+    """上下文动作只失效依赖变化范围的记忆：纯函数工具结果跨动作存活。"""
+    calls = {"n": 0}
+    CHECK_ARGS = '{"validUntil": "2027-01-01", "periodStart": "2026-01-01", "periodEnd": "2026-12-31"}'
+
+    class TwoToolRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            calls["n"] += 1
+            if calls["n"] in (1, 3):
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": f"c-check-{calls['n']}",
+                                        "function": {
+                                            "name": "check_date_covers",
+                                            "arguments": CHECK_ARGS,
+                                        },
+                                    },
+                                    {
+                                        "id": f"c-ctx-{calls['n']}",
+                                        "function": {
+                                            "name": "get_review_context",
+                                            "arguments": "{}",
+                                        },
+                                    },
+                                ],
+                            }
+                        }
+                    ],
+                }
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": f"结论 {calls['n']}"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: TwoToolRuntime())
+    session = create_session()
+    first = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-finegrain-msg1",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查有效期覆盖并读取上下文。"},
+        )
+    )
+    entries = [
+        item
+        for item in repo.state["review_session_tool_memory"]
+        if item.get("sessionId") == session["id"]
+    ]
+    assert {item["toolName"] for item in entries} == {"check_date_covers", "get_review_context"}
+    check_entry = next(item for item in entries if item["toolName"] == "check_date_covers")
+    context_entry = next(item for item in entries if item["toolName"] == "get_review_context")
+    assert check_entry["dependsOn"] == []
+    assert "__session_context__" in context_entry["dependsOn"]
+
+    acted = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/actions/set_current_task",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-finegrain-action",
+                "If-Match": first["session"]["etag"],
+            },
+            json={"currentTask": "改核对焊工资格"},
+        )
+    )
+    remaining = [
+        item["toolName"]
+        for item in repo.state["review_session_tool_memory"]
+        if item.get("sessionId") == session["id"]
+    ]
+    assert remaining == ["check_date_covers"], remaining
+    invalidated_events = [
+        item
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+        if item["eventType"] == "session.memory.invalidated"
+    ]
+    assert invalidated_events and invalidated_events[-1]["payload"]["invalidatedCount"] == 1
+    assert "__session_context__" in invalidated_events[-1]["payload"]["scopes"]
+
+    assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-finegrain-msg2",
+                "If-Match": acted["session"]["etag"],
+            },
+            json={"content": "再核查一次有效期覆盖与上下文。"},
+        )
+    )
+    completed = [
+        item["payload"].get("duplicate")
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+        if item["eventType"] == "agent.tool_call.completed"
+    ]
+    # msg1 两次 fresh；msg2 中纯函数工具命中记忆（True）、上下文工具因失效需重新执行（False）
+    assert completed[-2:] == [True, False], completed
+
+
+def test_review_b_conversation_digest_rolls_and_carries_gaps(monkeypatch) -> None:
+    """滚动会话摘要：逐轮记录问题/结论/工具/证据缺口，随会话持久化并注入后续上下文。"""
+    calls = {"n": 0, "digest_in_context": False, "gap_carried": False}
+
+    class DigestRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "c-digest-1",
+                                        "function": {
+                                            "name": "get_review_context",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            if calls["n"] == 2:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "初步结论：许可范围符合。\n证据不足：缺少施工进度计划，无法确认有效期覆盖。"
+                            }
+                        }
+                    ],
+                }
+            context_text = str(messages[-1].get("content") or "")
+            calls["digest_in_context"] = '"conversationDigest"' in context_text
+            calls["gap_carried"] = "缺少施工进度计划" in context_text
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "已承接前述缺口继续核查。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: DigestRuntime())
+    session = create_session()
+    first = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-digest-msg1",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查许可范围与有效期覆盖。"},
+        )
+    )
+    session_record = repo.find_one("review_sessions", session["id"])
+    digest = session_record.get("conversationDigest")
+    assert digest and len(digest["exchanges"]) == 1, digest
+    exchange = digest["exchanges"][0]
+    assert exchange["question"].startswith("请核查许可范围")
+    assert exchange["answerSummary"].startswith("初步结论")
+    assert exchange["toolsUsed"] == ["get_review_context"]
+    assert any("缺少施工进度计划" in gap for gap in digest["gaps"]), digest["gaps"]
+
+    slash = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-digest-slash",
+                "If-Match": first["session"]["etag"],
+            },
+            json={"content": "/标准条款"},
+        )
+    )
+    digest = repo.find_one("review_sessions", session["id"])["conversationDigest"]
+    assert len(digest["exchanges"]) == 2
+    assert digest["exchanges"][-1]["mode"] == "deterministic_command"
+
+    assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-digest-msg3",
+                "If-Match": slash["session"]["etag"],
+            },
+            json={"content": "上面提到的缺口现在怎么处理？"},
+        )
+    )
+    assert calls["digest_in_context"] is True
+    assert calls["gap_carried"] is True
+    digest = repo.find_one("review_sessions", session["id"])["conversationDigest"]
+    assert len(digest["exchanges"]) == 3
+
+
+def test_review_b_fact_ledger_dedup_conflict_and_invalidation(monkeypatch) -> None:
+    """事实台账：跨工具事实级去重（佐证累计）、同属性冲突标记与事件、依赖失效。"""
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    repo.state["node_evidence_links"].append(
+        {
+            "id": "NEL-FACT-1",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "reviewPointId": point["id"],
+            "documentId": "DOC-FACT-1",
+            "documentVersionId": "DV-FACT-1",
+            "fileName": "安装单位许可证.pdf",
+            "manualStatus": "pending",
+            "supportStatus": "命中",
+            "confidence": 0.9,
+            "source": "material_targeting",
+            "pageNo": 1,
+            "fieldName": "单位名称",
+            "quotedText": "某某安装公司",
+            "formalEvidenceEligible": True,
+            "evidenceTier": "formal",
+        }
+    )
+    calls = {"n": 0, "ledger_in_context": False, "conflict_in_context": False}
+    TOOL_OUTPUTS = {
+        "extract_structured_fields": {
+            "status": "succeeded",
+            "fields": [
+                {
+                    "fieldCode": "unitName",
+                    "fieldValue": "某某安装公司",
+                    "pageNo": 1,
+                    "documentVersionId": "DV-FACT-1",
+                }
+            ],
+        },
+        "get_document_ocr_result": {
+            "status": "succeeded",
+            "fields": [
+                {"code": "unitName", "value": "某某安装公司", "documentVersionId": "DV-FACT-1"}
+            ],
+        },
+        "extract_document_fields": {
+            "status": "succeeded",
+            "fields": [
+                {"code": "unitName", "value": "另一安装公司", "documentVersionId": "DV-FACT-1"}
+            ],
+        },
+    }
+
+    def fake_tool_output(tool_name, arguments, **kwargs):
+        return repo.clone(TOOL_OUTPUTS[tool_name])
+
+    class FactRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return {
+                    "provider": "test-qwen",
+                    "model": "qwen-review-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": f"cf-{index}",
+                                        "function": {
+                                            "name": name,
+                                            "arguments": '{"documentVersionIds": ["DV-FACT-1"]}',
+                                        },
+                                    }
+                                    for index, name in enumerate(TOOL_OUTPUTS)
+                                ],
+                            }
+                        }
+                    ],
+                }
+            if calls["n"] == 3:
+                context_text = str(messages[-1].get("content") or "")
+                calls["ledger_in_context"] = (
+                    '"factLedger"' in context_text and "某某安装公司" in context_text
+                )
+                calls["conflict_in_context"] = '"conflict": true' in context_text
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": f"结论 {calls['n']}"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: FactRuntime())
+    monkeypatch.setattr(routes_module, "review_conversation_agent_tool_output", fake_tool_output)
+    session = create_session()
+    first = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-fact-msg1",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请提取安装单位名称。"},
+        )
+    )
+    facts = [
+        item
+        for item in repo.state["review_session_facts"]
+        if item.get("sessionId") == session["id"]
+    ]
+    assert len(facts) == 2, facts
+    corroborated = next(item for item in facts if item["value"] == "某某安装公司")
+    conflicting = next(item for item in facts if item["value"] == "另一安装公司")
+    assert corroborated["corroborationCount"] == 2
+    assert set(corroborated["sources"]) == {"extract_structured_fields", "get_document_ocr_result"}
+    assert corroborated["conflict"] is True and conflicting["conflict"] is True
+    assert "DV-FACT-1" in corroborated["dependsOn"]
+    conflict_events = [
+        item
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+        if item["eventType"] == "session.fact.conflict"
+    ]
+    assert conflict_events and conflict_events[-1]["payload"]["attribute"] == "unitName"
+
+    second = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-fact-msg2",
+                "If-Match": first["session"]["etag"],
+            },
+            json={"content": "单位名称核对结果如何？"},
+        )
+    )
+    assert calls["ledger_in_context"] is True and calls["conflict_in_context"] is True
+
+    acted = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/actions/select_evidence",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-fact-action",
+                "If-Match": second["session"]["etag"],
+            },
+            json={"evidenceLinkId": "NEL-FACT-1"},
+        )
+    )
+    remaining = [
+        item
+        for item in repo.state["review_session_facts"]
+        if item.get("sessionId") == session["id"]
+    ]
+    assert remaining == [], remaining
+    invalidated = [
+        item
+        for item in assert_ok(
+            client.get(f"/api/review-sessions/{session['id']}/events", headers=HEADERS)
+        )["events"]
+        if item["eventType"] == "session.memory.invalidated"
+    ]
+    assert invalidated and invalidated[-1]["payload"]["invalidatedFactCount"] == 2
+    assert acted["session"]["id"] == session["id"]
+
+
+def test_review_b_context_assembly_is_relevance_ranked(monkeypatch) -> None:
+    """上下文组装按问题相关性选入：新近度排不进配额的相关证据应被相关性捞回。"""
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    for index in range(30):
+        repo.state["node_evidence_links"].append(
+            {
+                "id": f"NEL-RANK-{index:02d}",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "reviewPointId": point["id"],
+                "documentId": f"DOC-RANK-{index:02d}",
+                "documentVersionId": f"DV-RANK-{index:02d}",
+                "fileName": f"无关文件{index:02d}.pdf",
+                "manualStatus": "pending",
+                "supportStatus": "命中",
+                "confidence": 0.8,
+                "source": "material_targeting",
+                "pageNo": 1,
+                "fieldName": "内容",
+                "quotedText": "常规记录",
+                "formalEvidenceEligible": True,
+                "evidenceTier": "formal",
+            }
+        )
+    # 目标证据放在候选列表最末：纯新近度截取必然排除，只有相关性排序能选入。
+    repo.state["node_evidence_links"].append(
+        {
+            "id": "NEL-RANK-TARGET",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "reviewPointId": point["id"],
+            "documentId": "DOC-RANK-TARGET",
+            "documentVersionId": "DV-RANK-TARGET",
+            "fileName": "焊工资格证书.pdf",
+            "manualStatus": "pending",
+            "supportStatus": "命中",
+            "confidence": 0.95,
+            "source": "material_targeting",
+            "pageNo": 2,
+            "fieldName": "资格代码",
+            "quotedText": "焊工张三 资格代码 SMAW-6G",
+            "formalEvidenceEligible": True,
+            "evidenceTier": "formal",
+        }
+    )
+    observed = {}
+
+    class RankRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            context_text = str(messages[1].get("content") or "")
+            observed["target_selected"] = "焊工张三" in context_text
+            observed["truncated_flag"] = '"nodeEvidenceTruncated": true' in context_text
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "已按相关证据核查焊工资格。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: RankRuntime())
+    session = create_session()
+    assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-rank-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查焊工张三的资格证书是否覆盖 SMAW 工艺。"},
+        )
+    )
+    assert observed == {"target_selected": True, "truncated_flag": True}, observed
+
+
+def test_review_b_organization_lessons_lifecycle_and_governed_injection(monkeypatch) -> None:
+    """治理化组织记忆：反馈蒸馏为 draft；仅 published 注入提示；角色门禁与幂等蒸馏。"""
+    repo.state.setdefault("ai_feedback", []).extend(
+        [
+            {
+                "id": "AFB-LESSON-1",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "feedbackType": "hallucination",
+                "comment": "结论未引用任何证据定位",
+            },
+            {
+                "id": "AFB-LESSON-2",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "feedbackType": "rejected_false_positive",
+                "comment": "许可范围被误判为不符合",
+            },
+        ]
+    )
+    distilled = assert_ok(
+        client.post(
+            "/api/review-lessons/distill",
+            headers={**HEADERS, "Idempotency-Key": "review-b-lesson-distill"},
+            json={"nodeId": NODE_ID},
+        )
+    )
+    assert distilled["createdCount"] == 2
+    assert all(item["status"] == "draft" for item in distilled["lessons"])
+    again = assert_ok(
+        client.post(
+            "/api/review-lessons/distill",
+            headers={**HEADERS, "Idempotency-Key": "review-b-lesson-distill-2"},
+            json={"nodeId": NODE_ID},
+        )
+    )
+    assert again["createdCount"] == 0  # 幂等：同一反馈不重复蒸馏
+
+    forbidden = client.post(
+        "/api/review-lessons/distill",
+        headers={"X-Role": "contractor", "X-User-Id": "USER-C", "Idempotency-Key": "review-b-lesson-forbidden"},
+        json={},
+    )
+    assert forbidden.status_code == 403
+
+    observed = {"draft_leaked": None, "published_injected": None, "governance_prompt": None}
+
+    class LessonRuntime:
+        def chat_sync(self, messages, model, **kwargs):
+            context_text = str(messages[1].get("content") or "")
+            system_text = str(messages[0].get("content") or "")
+            observed["draft_leaked"] = "结论未引用任何证据定位" in context_text
+            observed["published_injected"] = "许可范围被误判为不符合" in context_text
+            observed["governance_prompt"] = "organizationLessons" in system_text
+            return {
+                "provider": "test-qwen",
+                "model": "qwen-review-test",
+                "choices": [{"message": {"content": "遵循已发布教训的回答。"}}],
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", lambda: LessonRuntime())
+    session = create_session()
+    first = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-lesson-msg1",
+                "If-Match": session["etag"],
+            },
+            json={"content": "请核查当前节点。"},
+        )
+    )
+    # 全部为 draft：任何教训都不得注入
+    assert observed["draft_leaked"] is False and observed["published_injected"] is False
+
+    false_positive_lesson = next(
+        item for item in distilled["lessons"] if item["feedbackType"] == "rejected_false_positive"
+    )
+    published = assert_ok(
+        client.post(
+            f"/api/review-lessons/{false_positive_lesson['id']}/publish",
+            headers={**HEADERS, "Idempotency-Key": "review-b-lesson-publish"},
+        )
+    )
+    assert published["lesson"]["status"] == "published"
+    assert published["lesson"]["approvedBy"] == "USER-INSPECTION-001"
+
+    assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-lesson-msg2",
+                "If-Match": first["session"]["etag"],
+            },
+            json={"content": "再核查一次当前节点。"},
+        )
+    )
+    # published 注入、draft 仍被隔离、系统提示带治理说明
+    assert observed["published_injected"] is True
+    assert observed["draft_leaked"] is False
+    assert observed["governance_prompt"] is True
+
+    listed = assert_ok(
+        client.get("/api/review-lessons", params={"status": "draft"}, headers=HEADERS)
+    )
+    assert len(listed["lessons"]) == 1  # hallucination 教训仍为 draft

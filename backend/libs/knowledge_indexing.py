@@ -402,31 +402,153 @@ def units_from_fragments(file: dict[str, Any], fragments: list[dict[str, Any]]) 
                     "sourceFragmentId": fragment_id,
                 }
             )
-    return units
+    return merge_small_fragments(units)
 
 
-def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
+def chunk_overlap_chars() -> int:
+    try:
+        value = int(os.getenv("AICHECK_CHUNK_OVERLAP_CHARS", "200"))
+    except (TypeError, ValueError):
+        value = 200
+    return max(0, value)
+
+
+def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS, *, overlap_chars: int | None = None) -> list[str]:
     normalized = str(text or "").strip()
     if not normalized:
         return []
     if len(normalized) <= max_chars:
         return [normalized]
+    if overlap_chars is None:
+        overlap_chars = chunk_overlap_chars()
+    overlap_chars = max(0, min(int(overlap_chars), max_chars // 3))
+    parts = [part.strip() for part in re.split(r"(?<=[。；;.!?？])\s*|\n+", normalized) if part.strip()]
     pieces: list[str] = []
-    current = ""
-    for part in re.split(r"(?<=[。；;.!?？])\s*|\n+", normalized):
-        part = part.strip()
-        if not part:
-            continue
-        if len(current) + len(part) + 1 > max_chars and current:
-            pieces.append(current)
-            current = part
-        else:
-            current = f"{current}\n{part}".strip() if current else part
+    current: list[str] = []
+    current_len = 0
+    for part in parts:
+        if current and current_len + len(part) + 1 > max_chars:
+            pieces.append("\n".join(current))
+            if overlap_chars > 0 and len(current) > 1:
+                # Sentence-boundary overlap: seed the next chunk with the tail of
+                # the previous one so clause conditions are not severed from
+                # their numeric limits at chunk boundaries.
+                tail: list[str] = []
+                tail_len = 0
+                for previous in reversed(current):
+                    if tail_len + len(previous) > overlap_chars:
+                        break
+                    tail.insert(0, previous)
+                    tail_len += len(previous)
+                current = tail
+                current_len = tail_len
+            else:
+                current = []
+                current_len = 0
+        current.append(part)
+        current_len += len(part) + (1 if len(current) > 1 else 0)
     if current:
-        pieces.append(current)
+        piece = "\n".join(current)
+        if not pieces or pieces[-1] != piece:
+            pieces.append(piece)
     if not pieces:
-        pieces = [normalized[index : index + max_chars] for index in range(0, len(normalized), max_chars)]
+        step = max(1, max_chars - overlap_chars)
+        pieces = [normalized[index : index + max_chars] for index in range(0, len(normalized), step)]
     return pieces
+
+
+def fragment_merge_min_chars() -> int:
+    try:
+        value = int(os.getenv("AICHECK_CHUNK_MIN_MERGE_CHARS", "280"))
+    except (TypeError, ValueError):
+        value = 280
+    return max(0, value)
+
+
+def _merge_bbox(left: Any, right: Any) -> Any:
+    boxes = [box for box in (left, right) if isinstance(box, (list, tuple)) and len(box) == 4]
+    if not boxes:
+        return left or right
+    try:
+        values = [[float(item) for item in box] for box in boxes]
+    except (TypeError, ValueError):
+        return left or right
+    return [
+        min(box[0] for box in values),
+        min(box[1] for box in values),
+        max(box[2] for box in values),
+        max(box[3] for box in values),
+    ]
+
+
+def merge_small_fragments(
+    units: list[dict[str, Any]],
+    *,
+    min_chars: int | None = None,
+    max_chars: int = MAX_CHUNK_CHARS,
+) -> list[dict[str, Any]]:
+    """Merge consecutive same-page line/fragment-level units into paragraph
+    blocks. OCR pipelines emit one unit per recognized line; embedding those
+    tiny snippets in isolation pollutes retrieval with context-free chunks."""
+    if min_chars is None:
+        min_chars = fragment_merge_min_chars()
+    if min_chars <= 0:
+        return units
+    merged: list[dict[str, Any]] = []
+    buffer: dict[str, Any] | None = None
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        text = str(unit.get("text") or "")
+        if buffer is not None:
+            buffer_text = str(buffer.get("text") or "")
+            same_page = int(buffer.get("pageNo") or 1) == int(unit.get("pageNo") or 1)
+            small = len(buffer_text) < min_chars or len(text) < min_chars
+            fits = len(buffer_text) + len(text) + 1 <= max_chars
+            new_section = bool(detect_heading(text.splitlines()[0] if text else ""))
+            if same_page and small and fits and not new_section:
+                buffer["text"] = f"{buffer_text}\n{text}".strip()
+                buffer["bbox"] = _merge_bbox(buffer.get("bbox"), unit.get("bbox"))
+                buffer_roi = buffer.get("roi") if isinstance(buffer.get("roi"), dict) else None
+                unit_roi = unit.get("roi") if isinstance(unit.get("roi"), dict) else None
+                if buffer_roi and unit_roi:
+                    buffer_roi["boxes"] = list(buffer_roi.get("boxes") or []) + list(unit_roi.get("boxes") or [])
+                elif unit_roi and not buffer_roi:
+                    buffer["roi"] = unit_roi
+                confidences = [
+                    value
+                    for value in (buffer.get("ocrConfidence"), unit.get("ocrConfidence"))
+                    if isinstance(value, (int, float))
+                ]
+                if confidences:
+                    buffer["ocrConfidence"] = min(confidences)
+                continue
+            merged.append(buffer)
+        buffer = dict(unit)
+    if buffer is not None:
+        merged.append(buffer)
+    return merged
+
+
+def embedding_context_prefix_enabled() -> bool:
+    value = os.getenv("AICHECK_EMBEDDING_CONTEXT_PREFIX")
+    if value is None:
+        return True
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def embedding_input_for_chunk(chunk: dict[str, Any]) -> str:
+    """Text to embed for a document chunk: prefix the file name / section path so
+    the vector carries which standard and section the text belongs to. The raw
+    chunk text stays unchanged for display, grounding, and hashing."""
+    text = str(chunk.get("text") or "")
+    if not embedding_context_prefix_enabled():
+        return text
+    section_path = [str(item).strip() for item in chunk.get("sectionPath") or [] if str(item or "").strip()]
+    prefix = " / ".join(section_path[-3:])
+    if not prefix:
+        return text
+    return f"{prefix}\n{text}"
 
 
 def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, index_version: str = STANDARD_INDEX_VERSION) -> list[dict[str, Any]]:

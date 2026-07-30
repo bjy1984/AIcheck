@@ -396,6 +396,25 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
     return guarded
 
 
+def kb_citation_related(finding_text: str, clause_text: str) -> bool:
+    """Heuristic check that a cited knowledge clause plausibly supports the
+    finding text: any extracted claim token (codes, dates, orgs, grounding
+    terms) present in the clause, or sufficient CJK bigram overlap."""
+    clause_norm = _normalized_text(clause_text)
+    if not clause_norm:
+        return False
+    tokens = _claim_tokens(finding_text)
+    if any(_normalized_text(token) and _normalized_text(token) in clause_norm for token in tokens):
+        return True
+    finding_norm = _normalized_text(finding_text)
+    compact = "".join(re.findall(r"[一-鿿]+", finding_norm))
+    grams = {compact[index : index + 2] for index in range(len(compact) - 1)}
+    if not grams:
+        return False
+    overlap = sum(1 for gram in grams if gram in clause_norm)
+    return overlap >= max(3, len(grams) // 8)
+
+
 def unsupported_claims(text: str, evidence_texts: list[str]) -> list[dict[str, Any]]:
     if not POSITIVE_CLAIM_RE.search(text or ""):
         return []

@@ -66,6 +66,7 @@ STATE_COLLECTIONS = {
     "review_messages": "review_messages",
     "review_session_events": "review_session_events",
     "agent_executions": "agent_executions",
+    "review_session_tool_memory": "review_session_tool_memory",
     "workflow_outbox": "workflow_outbox",
     "workflow_inbox": "workflow_inbox",
     "retrieval_traces": "retrieval_traces",
@@ -244,6 +245,7 @@ class InMemoryRepository:
         self.state.setdefault("review_messages", [])
         self.state.setdefault("review_session_events", [])
         self.state.setdefault("agent_executions", [])
+        self.state.setdefault("review_session_tool_memory", [])
         self.state.setdefault("workflow_outbox", [])
         self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
@@ -393,6 +395,7 @@ class InMemoryRepository:
         self.state.setdefault("review_messages", [])
         self.state.setdefault("review_session_events", [])
         self.state.setdefault("agent_executions", [])
+        self.state.setdefault("review_session_tool_memory", [])
         self.state.setdefault("workflow_outbox", [])
         self.state.setdefault("workflow_inbox", [])
         self.state.setdefault("retrieval_traces", [])
@@ -2233,6 +2236,7 @@ class InMemoryRepository:
         loaded.setdefault("review_messages", [])
         loaded.setdefault("review_session_events", [])
         loaded.setdefault("agent_executions", [])
+        loaded.setdefault("review_session_tool_memory", [])
         loaded.setdefault("retrieval_traces", [])
         loaded.setdefault("rule_check_results", [])
         loaded.setdefault("prompt_templates", [])
@@ -3640,21 +3644,26 @@ class InMemoryRepository:
             if isinstance(payload, dict):
                 self._idempotency_baseline[scope] = self.canonical_persistence_payload(payload)
 
-    def ensure_pgvector_schema(self) -> bool:
+    def ensure_pgvector_schema(self, dimensions: int | None = None) -> bool:
+        dims = int(dimensions or OFFLINE_VECTOR_DIMENSIONS)
+        if dims <= 0:
+            return False
+        table = pgvector_table_for_dimensions(dims)
+        suffix = "" if table == "knowledge_vector_index" else f"_{dims}"
         with self._sync_postgres_lock:
             if self.sync_postgres is None:
                 return False
             try:
                 if production_runtime_ddl_disabled():
                     present = self.sync_postgres.execute(
-                        "SELECT to_regclass('public.knowledge_vector_index')"
+                        f"SELECT to_regclass('public.{table}')"
                     ).fetchone()
                     self.sync_postgres.commit()
                     return bool(present and present[0])
                 self.sync_postgres.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 self.sync_postgres.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS knowledge_vector_index (
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {table} (
                         tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT',
                         id text NOT NULL,
                         file_id text,
@@ -3662,31 +3671,34 @@ class InMemoryRepository:
                         document_id text,
                         document_version_id text,
                         source_id text,
-                        embedding vector(1024) NOT NULL,
+                        embedding vector({dims}) NOT NULL,
                         dimensions integer NOT NULL,
                         embedding_model text NOT NULL,
                         index_version text NOT NULL,
-                        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+                        metadata jsonb NOT NULL DEFAULT '{{}}'::jsonb,
                         updated_at timestamptz NOT NULL DEFAULT now(),
                         PRIMARY KEY (tenant_id, id)
                     )
                     """
                 )
                 self.sync_postgres.execute(
-                    "ALTER TABLE knowledge_vector_index ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT'"
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'TENANT-DEFAULT'"
                 )
                 self.sync_postgres.execute(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_kvi_tenant_id ON knowledge_vector_index (tenant_id, id)"
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS uq_kvi_tenant_id{suffix} ON {table} (tenant_id, id)"
                 )
                 self.sync_postgres.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_kvi_tenant_source ON knowledge_vector_index (tenant_id, source_id)"
+                    f"CREATE INDEX IF NOT EXISTS idx_kvi_tenant_source{suffix} ON {table} (tenant_id, source_id)"
                 )
                 self.sync_postgres.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_kvi_tenant_index_version ON knowledge_vector_index (tenant_id, index_version)"
+                    f"CREATE INDEX IF NOT EXISTS idx_kvi_tenant_index_version{suffix} ON {table} (tenant_id, index_version)"
                 )
-                self.sync_postgres.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine ON knowledge_vector_index USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)"
-                )
+                # pgvector HNSW indexes support at most 2000 dimensions; larger
+                # embeddings (e.g. Qwen3-8B @ 4096) fall back to exact scan.
+                if dims <= 2000:
+                    self.sync_postgres.execute(
+                        f"CREATE INDEX IF NOT EXISTS idx_kvi_embedding_cosine{suffix} ON {table} USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)"
+                    )
                 self.sync_postgres.commit()
                 return True
             except Exception:
@@ -3697,23 +3709,31 @@ class InMemoryRepository:
                 return False
 
     def flush_knowledge_vectors_to_pgvector(self) -> None:
+        if self.sync_postgres is None or not self.ensure_pgvector_schema():
+            return
+        ensured_tables: set[str] = {"knowledge_vector_index"}
         with self._sync_postgres_lock:
-            if self.sync_postgres is None or not self.ensure_pgvector_schema():
-                return
             try:
                 persisted_ids: list[str] = []
                 for row in self.state.get("knowledge_vectors", []) or []:
-                    if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
+                    row_dims = int(row.get("dimensions") or 0)
+                    if row_dims <= 0:
                         continue
+                    table = pgvector_table_for_dimensions(row_dims)
+                    if table not in ensured_tables:
+                        # RLock: ensure_pgvector_schema re-enters the same lock safely.
+                        if not self.ensure_pgvector_schema(row_dims):
+                            continue
+                        ensured_tables.add(table)
                     payload = vector_payload_for_pg(row)
                     embedding = payload.get("embedding")
-                    if not isinstance(embedding, list) or not embedding:
+                    if not isinstance(embedding, list) or len(embedding) != row_dims:
                         continue
                     persisted_ids.append(str(payload["id"]))
                     embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
                     self.sync_postgres.execute(
-                        """
-                        INSERT INTO knowledge_vector_index (
+                        f"""
+                        INSERT INTO {table} (
                             tenant_id, id, file_id, chunk_id, document_id, document_version_id, source_id,
                             embedding, dimensions, embedding_model, index_version, metadata, updated_at
                         )
@@ -3749,10 +3769,11 @@ class InMemoryRepository:
                     )
                 stale_ids = sorted(self._pgvector_baseline_ids - set(persisted_ids))
                 if stale_ids:
-                    self.sync_postgres.execute(
-                        "DELETE FROM knowledge_vector_index WHERE tenant_id = %s AND id = ANY(%s)",
-                        (configured_tenant_id(), stale_ids),
-                    )
+                    for table in sorted(ensured_tables):
+                        self.sync_postgres.execute(
+                            f"DELETE FROM {table} WHERE tenant_id = %s AND id = ANY(%s)",
+                            (configured_tenant_id(), stale_ids),
+                        )
                 self.sync_postgres.commit()
                 self._pgvector_baseline_ids = set(persisted_ids)
             except Exception:
@@ -3772,8 +3793,10 @@ class InMemoryRepository:
     ) -> list[dict[str, Any]]:
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
-            if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
+            query_dims = len(embedding)
+            if self.sync_postgres is None or query_dims <= 0 or not self.ensure_pgvector_schema(query_dims):
                 return []
+            table = pgvector_table_for_dimensions(query_dims)
             embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
             filters = ["tenant_id = %s"]
             params: list[Any] = [configured_tenant_id()]
@@ -3795,7 +3818,7 @@ class InMemoryRepository:
                 SELECT id, file_id, chunk_id, document_id, document_version_id, source_id,
                        dimensions, embedding_model, index_version, metadata,
                        embedding <=> %s::vector AS distance
-                FROM knowledge_vector_index
+                FROM {table}
                 {where}
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
@@ -3850,7 +3873,11 @@ class InMemoryRepository:
             return []
         hits: list[dict[str, Any]] = []
         query_embedding = [float(item) for item in embedding]
+        tenant_id = configured_tenant_id()
         for row in self.state.get("knowledge_vectors", []) or []:
+            row_tenant = str(row.get("tenantId") or row.get("tenant_id") or "")
+            if row_tenant and row_tenant != tenant_id:
+                continue
             if source_id and row.get("sourceId") != source_id:
                 continue
             if index_version and row.get("indexVersion") != index_version:
@@ -3897,6 +3924,16 @@ class InMemoryRepository:
         ]
         config["ruleVersions"] = self.clone(self.state["rule_versions"])
         return config
+
+
+def pgvector_table_for_dimensions(dimensions: int) -> str:
+    """Per-dimension vector tables: the legacy 1024-dim table keeps its name for
+    backward compatibility; other embedding sizes (Qwen3-4B @ 2560, 8B @ 4096)
+    get their own table so switching models no longer silently drops vectors."""
+    dims = int(dimensions or OFFLINE_VECTOR_DIMENSIONS)
+    if dims == OFFLINE_VECTOR_DIMENSIONS:
+        return "knowledge_vector_index"
+    return f"knowledge_vector_index_{dims}"
 
 
 def stable_doc_id(value: str) -> str:
