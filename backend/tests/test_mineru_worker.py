@@ -338,3 +338,83 @@ def test_dispatch_mineru_ocr_targets_remote_queue(
     assert calls[0]["args"] == ["OCRJOB-1"]
     assert calls[0]["queue"] == "ocr.remote"
 
+
+@pytest.mark.parametrize(
+    ("ocr_options", "expected_provider"),
+    [
+        ({"provider": "mineru"}, "mineru"),
+        ({}, "local"),
+    ],
+)
+def test_document_ocr_routes_only_explicit_mineru_provider_remotely(
+    ocr_options: dict[str, str],
+    expected_provider: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = InMemoryRepository()
+    repository.state["documents"] = [
+        {
+            "id": "DOC-PROVIDER-1",
+            "fileName": "doc.pdf",
+            "ocrProfileId": "generic_document_v1",
+        }
+    ]
+    repository.state["versions"] = [
+        {
+            "id": "VER-PROVIDER-1",
+            "documentId": "DOC-PROVIDER-1",
+            "storageKey": "minio://documents/doc.pdf",
+            "ocrOptions": ocr_options,
+        }
+    ]
+    remote_jobs: list[str] = []
+    local_calls: list[str] = []
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "refresh_ocr_worker_state", lambda *_args: None)
+    monkeypatch.setattr(tasks, "pipeline_enabled", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        tasks,
+        "persist_ocr_pipeline_progress",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "flush_state_records",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        tasks.task_dispatcher,
+        "dispatch_mineru_ocr",
+        lambda job_id: remote_jobs.append(job_id)
+        or {
+            "mode": "celery",
+            "taskId": "CELERY-MINERU-1",
+            "queue": "ocr.remote",
+        },
+    )
+
+    def local_result(storage_key, **_kwargs):
+        local_calls.append(storage_key)
+        return _result(storage_key)
+
+    monkeypatch.setattr(tasks, "parse_with_ocr_service", local_result)
+
+    output = tasks.parse_document.run(
+        "DOC-PROVIDER-1",
+        "VER-PROVIDER-1",
+        "minio://documents/doc.pdf",
+        "doc.pdf",
+    )
+
+    if expected_provider == "mineru":
+        assert output["status"] == "queued"
+        assert output["provider"] == "mineru"
+        assert len(remote_jobs) == 1
+        assert local_calls == []
+        job = repository.find_one("ocr_jobs", output["ocrJobRecordId"])
+        assert job["provider"] == "mineru"
+        assert job["options"]["provider"] == "mineru"
+    else:
+        assert output["status"] == "success"
+        assert remote_jobs == []
+        assert local_calls == ["minio://documents/doc.pdf"]

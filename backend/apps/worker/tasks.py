@@ -1131,6 +1131,9 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     ocr_options: dict[str, Any] = {}
     if isinstance((version or {}).get("ocrOptions"), dict):
         ocr_options.update(deepcopy(version["ocrOptions"]))
+    requested_provider = str(
+        ocr_options.get("provider") or ""
+    ).strip().lower()
     if not has_business_ocr_profile:
         ocr_options.update(
             {
@@ -1191,8 +1194,145 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         file_name=file_name,
         profile_id=resolved_profile_id,
         document_type=document_type,
+        provider="mineru" if requested_provider == "mineru" else None,
+        options=ocr_options if requested_provider == "mineru" else None,
     )
     pipeline_run["ocrJobRecordId"] = ocr_job_record.get("id")
+    if requested_provider not in {"", "local", "mineru"}:
+        failure_result = {
+            "storageKey": storage_key,
+            "fileName": file_name,
+            "status": "failed",
+            "outcomeStatus": "failed",
+            "diagnostics": [
+                {
+                    "code": "OCR_PROVIDER_UNSUPPORTED",
+                    "level": "error",
+                }
+            ],
+            "fragments": [],
+            "layoutBlocks": [],
+            "tables": [],
+            "seals": [],
+            "signatures": [],
+            "fields": [],
+            "engineRuns": [],
+        }
+        repo.finish_ocr_job_record(ocr_job_record, failure_result)
+        repo.mark_ocr_pipeline_stage(
+            pipeline_run,
+            "text_scan",
+            "failed",
+            blocking_reasons=[
+                {"code": "OCR_PROVIDER_UNSUPPORTED"}
+            ],
+        )
+        repo.finish_ocr_pipeline_run(
+            pipeline_run,
+            status="failed",
+            blocking_reasons=[
+                {"code": "OCR_PROVIDER_UNSUPPORTED"}
+            ],
+            recommended_action="Use provider local or mineru.",
+        )
+        persist_ocr_pipeline_progress(
+            pipeline_run,
+            task=task,
+            ocr_job=ocr_job_record,
+        )
+        return {
+            **failure_result,
+            "documentId": document_id,
+            "versionId": version_id,
+            "pipelineRunId": pipeline_run.get("id"),
+            "ocrJobRecordId": ocr_job_record.get("id"),
+        }
+    if requested_provider == "mineru":
+        pipeline_run.update(
+            {
+                "providerMode": "explicit_remote",
+                "provider": "mineru",
+                "model": "vlm",
+                "cloudGrounded": True,
+            }
+        )
+        dispatch = task_dispatcher.dispatch_mineru_ocr(
+            str(ocr_job_record["id"])
+        )
+        pipeline_run["mineruDispatch"] = dispatch
+        if not dispatch.get("taskId") and dispatch.get("mode") != "inline":
+            diagnostics = [
+                {
+                    "code": "MINERU_DISPATCH_UNAVAILABLE",
+                    "level": "error",
+                    "retryable": True,
+                }
+            ]
+            repo.update_ocr_job_record(
+                ocr_job_record,
+                status="failed",
+                stage="dispatch",
+                progress=100,
+                diagnostics=diagnostics,
+            )
+            repo.mark_ocr_pipeline_stage(
+                pipeline_run,
+                "text_scan",
+                "failed",
+                blocking_reasons=diagnostics,
+            )
+            repo.finish_ocr_pipeline_run(
+                pipeline_run,
+                status="failed",
+                blocking_reasons=diagnostics,
+                recommended_action=(
+                    "Check the ocr.remote worker and retry."
+                ),
+            )
+            persist_ocr_pipeline_progress(
+                pipeline_run,
+                task=task,
+                ocr_job=ocr_job_record,
+            )
+            return {
+                "documentId": document_id,
+                "versionId": version_id,
+                "status": "failed",
+                "provider": "mineru",
+                "pipelineRunId": pipeline_run.get("id"),
+                "ocrJobRecordId": ocr_job_record.get("id"),
+                "dispatch": dispatch,
+                "diagnostics": diagnostics,
+            }
+        if task:
+            task["progress"] = max(int(task.get("progress") or 0), 15)
+            task["updatedAt"] = server_time()
+            repo.append_task_log(task, "info", "MinerU OCR queued.")
+        persist_ocr_pipeline_progress(
+            pipeline_run,
+            task=task,
+            ocr_job=ocr_job_record,
+        )
+        inline_result = (
+            dispatch.get("result")
+            if dispatch.get("mode") == "inline"
+            and isinstance(dispatch.get("result"), dict)
+            else None
+        )
+        return {
+            "documentId": document_id,
+            "versionId": version_id,
+            "status": (
+                str(inline_result.get("status") or "failed")
+                if inline_result
+                else "queued"
+            ),
+            "provider": "mineru",
+            "model": "vlm",
+            "pipelineRunId": pipeline_run.get("id"),
+            "ocrJobRecordId": ocr_job_record.get("id"),
+            "dispatch": dispatch,
+        }
     runtime = ocr_runtime_config()
     current_pipeline_mode = str(pipeline_run.get("mode") or pipeline_mode())
     official_shadow = official_ocr_enabled(runtime) and current_pipeline_mode == "shadow"
