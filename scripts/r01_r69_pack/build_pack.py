@@ -10,7 +10,7 @@ from typing import Any
 
 from .catalog import DocumentSpec, load_catalog
 from .content_factory import load_content_library, load_scenario_data
-from .convert_pdf import convert_office_to_pdf
+from .convert_pdf import convert_office_to_pdf, convert_xlsx_to_pdf
 from .render_docx import render_docx
 from .render_graphics import render_pdf_graphic, render_test_photo
 from .render_xlsx import render_xlsx
@@ -117,12 +117,69 @@ def _render_document(
         return [source, convert_office_to_pdf(source, output_dir)]
     if spec.source_format == "xlsx":
         source = render_xlsx(content, master, output_dir)
-        return [source, convert_office_to_pdf(source, output_dir)]
+        sheet_names = [
+            str(sheet.get("name", "记录"))[:31]
+            for sheet in content.get("workbook", {}).get("sheets", [])
+        ] or ["记录"]
+        return [
+            source,
+            convert_xlsx_to_pdf(source, output_dir, sheet_names),
+        ]
     if spec.source_format == "pdf":
         return [render_pdf_graphic(content, master, output_dir)]
     if spec.source_format == "jpg":
         return [render_test_photo(content, output_dir)]
     raise ValueError(f"Unsupported source format: {spec.source_format}")
+
+
+def _populate_checksum_rows(
+    content: dict[str, Any],
+    catalog,
+    output_root: Path,
+) -> None:
+    rows: list[list[Any]] = []
+    sequence = 0
+    for spec in catalog.documents:
+        for extension in spec.physical_extensions():
+            sequence += 1
+            path = (
+                output_root
+                / spec.output_subfolder
+                / f"{spec.file_stem}.{extension}"
+            )
+            if spec.logical_id == "V00-CHECKSUM-001":
+                digest = "SELF-REFERENCE-EXCLUDED"
+                status = "自引用排除"
+            elif path.exists():
+                digest = sha256(path)
+                status = "已校验"
+            else:
+                digest = ""
+                status = "缺失"
+            rows.append(
+                [
+                    sequence,
+                    spec.logical_id,
+                    path.name,
+                    extension.upper(),
+                    digest,
+                    status,
+                ]
+            )
+    content["workbook"]["sheets"] = [
+        {
+            "name": "文件校验",
+            "headers": [
+                "序号",
+                "逻辑编号",
+                "文件名",
+                "格式",
+                "SHA-256",
+                "校验状态",
+            ],
+            "rows": rows,
+        }
+    ]
 
 
 def build_selected(
@@ -148,7 +205,15 @@ def build_selected(
     files: list[Path] = []
     if render and not errors:
         output_root = output or workspace / "files" / PACK_FOLDER
-        for spec in specs:
+        ordered_specs = sorted(
+            specs,
+            key=lambda spec: spec.logical_id == "V00-CHECKSUM-001",
+        )
+        for spec in ordered_specs:
+            if spec.logical_id == "V00-CHECKSUM-001":
+                _populate_checksum_rows(
+                    library[spec.logical_id], catalog, output_root
+                )
             files.extend(
                 _render_document(spec, library[spec.logical_id], master, output_root)
             )

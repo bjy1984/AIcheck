@@ -5,8 +5,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from PIL import Image
+
 from scripts.r01_r69_pack.convert_pdf import (
+    _sheet_page_images,
     convert_office_to_pdf,
+    convert_xlsx_to_pdf,
     validate_pdf,
 )
 from scripts.r01_r69_pack.render_common import TEST_WARNING, has_test_marking
@@ -76,7 +80,11 @@ class RendererTest(unittest.TestCase):
             self.assertTrue(docx_path.exists())
             self.assertTrue(xlsx_path.exists())
             docx_pdf = convert_office_to_pdf(docx_path, out)
-            xlsx_pdf = convert_office_to_pdf(xlsx_path, out)
+            xlsx_pdf = convert_xlsx_to_pdf(
+                xlsx_path,
+                out,
+                [sheet["name"] for sheet in content["workbook"]["sheets"]],
+            )
             self.assertEqual(validate_pdf(docx_pdf), [])
             self.assertEqual(validate_pdf(xlsx_pdf), [])
             self.assertTrue(has_test_marking(docx_path))
@@ -100,6 +108,18 @@ class RendererTest(unittest.TestCase):
             self.assertTrue(photo_path.exists())
             self.assertTrue(has_test_marking(pdf_path))
             self.assertTrue(has_test_marking(photo_path))
+
+    def test_xlsx_continuation_page_repeats_four_row_header(self):
+        image = Image.new("RGB", (400, 1000), "white")
+        for x in range(image.width):
+            for y in range(100, 108):
+                image.putpixel((x, y), (38, 74, 115))
+            for y in range(250, 252):
+                image.putpixel((x, y), (242, 242, 242))
+        pages = _sheet_page_images(image)
+        self.assertGreater(len(pages), 1)
+        self.assertEqual(pages[1].getpixel((200, 104)), (38, 74, 115))
+        self.assertEqual(pages[0].height, 252)
 
 
 if __name__ == "__main__":
