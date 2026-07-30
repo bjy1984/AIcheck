@@ -32,6 +32,7 @@ backend/docker-compose.production-data.yml.bak-*
 frontend/nginx.aicheck.conf
 audit-reports/ocr-regression-*/
 audit-reports/ocr-hardening-*/
+.worktrees/
 
 output/**/*.inspect.ndjson
 output/knowledge_uploads/
