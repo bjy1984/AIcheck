@@ -8686,6 +8686,68 @@ def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
     assert submission["nextStatus"] == "待审查"
 
 
+def test_exact_multi_node_document_submission_does_not_bind_the_active_node() -> None:
+    project_id = "P-2026-HDCP-001"
+    document_id = "DOC-20260625-001"
+    version_id = "DV-20260625-001-V2"
+    active_node_binding_count = len(
+        [
+            item
+            for item in repo.bindings_for_project(project_id)
+            if item["documentId"] == document_id and int(item["nodeId"]) == 16
+        ]
+    )
+    bound = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/bindings",
+            json={
+                "nodeIds": [21, 24, 69],
+                "bindings": [
+                    {
+                        "documentId": document_id,
+                        "documentVersionId": version_id,
+                        "usage": "原始提交",
+                    }
+                ],
+            },
+            headers={"Idempotency-Key": "exact-multi-node-bind"},
+        )
+    )
+    created = {
+        int(repo.find_one("bindings", binding_id)["nodeId"]): repo.find_one("bindings", binding_id)
+        for binding_id in bound["affectedIds"]
+    }
+    assert sorted(created) == [21, 24, 69]
+    created[24]["bindingStatus"] = "已通过"
+
+    submitted = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={
+                "nodeIds": [21, 69],
+                "bindingIds": [created[21]["id"], created[69]["id"]],
+                "batchName": "文件真实挂载范围提交",
+            },
+            headers={"Idempotency-Key": "exact-multi-node-submit"},
+        )
+    )
+    assert submitted["bindingIds"] == [created[21]["id"], created[69]["id"]]
+    assert created[21]["bindingStatus"] == "已提交"
+    assert created[24]["bindingStatus"] == "已通过"
+    assert created[69]["bindingStatus"] == "已提交"
+    assert len(
+        [
+            item
+            for item in repo.bindings_for_project(project_id)
+            if item["documentId"] == document_id and int(item["nodeId"]) == 16
+        ]
+    ) == active_node_binding_count
+    stored_submission = next(
+        item for item in repo.state["submissions"] if item["submissionId"] == submitted["submissionId"]
+    )
+    assert stored_submission["nodeIds"] == [21, 69]
+
+
 def test_ndt_submit_updates_reports_films_and_traceable_snapshot() -> None:
     project_id = "P-2026-HDCP-001"
     mark_ndt_report_ready("NDT-RPT-001")

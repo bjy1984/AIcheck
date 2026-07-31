@@ -71,9 +71,24 @@ assert.deepEqual(buildDocumentSubmissionPayload(mixedFile), {
 })
 assert.equal(buildDocumentSubmissionPayload(documentWithBindings([])), undefined)
 assert.equal(documentBindingSummary(documentWithBindings([])), '未关联')
-assert.equal(documentBindingSummary(documentWithBindings([binding('B-R21', 21, '草稿挂载')])), '待提交')
-assert.equal(documentBindingSummary(documentWithBindings([binding('B-R21', 21, '已提交')])), '审核中')
-assert.equal(documentBindingSummary(documentWithBindings([binding('B-R21', 21, '已通过')])), '已通过')
+assert.equal(
+  documentBindingSummary(documentWithBindings([binding('B-R21', 21, '草稿挂载')])),
+  '待提交'
+)
+assert.equal(
+  documentBindingSummary(documentWithBindings([binding('B-R21', 21, '已提交')])),
+  '审核中'
+)
+assert.equal(
+  documentBindingSummary(documentWithBindings([binding('B-R21', 21, '已通过')])),
+  '已通过'
+)
+assert.equal(
+  documentBindingSummary(
+    documentWithBindings([binding('B-R21', 21, '已提交'), binding('B-R69', 69, '已通过')])
+  ),
+  '审核中'
+)
 
 const duplicateNodeFile = documentWithBindings([
   binding('B-R21-A', 21, '草稿挂载'),
@@ -84,3 +99,17 @@ assert.deepEqual(buildDocumentSubmissionPayload(duplicateNodeFile), {
   nodeIds: [21, 69],
   bindingIds: ['B-R21-A', 'B-R21-B', 'B-R69']
 })
+
+assert.deepEqual(
+  buildDocumentSubmissionPayload(
+    documentWithBindings([
+      binding('B-R69', 69, '需补正'),
+      binding('B-R21', 21, '草稿挂载'),
+      binding('B-R24', 24, '已通过')
+    ])
+  ),
+  {
+    nodeIds: [21, 69],
+    bindingIds: ['B-R69', 'B-R21']
+  }
+)

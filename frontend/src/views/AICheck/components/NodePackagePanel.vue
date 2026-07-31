@@ -13,6 +13,7 @@ import {
 } from 'element-plus'
 import type { NodePackagePayload } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+import { documentBindingSummary } from '@/utils/acceptanceFlows'
 
 const props = defineProps<{
   packageData?: NodePackagePayload
@@ -35,7 +36,7 @@ const requirements = computed(() => props.packageData?.requirements || [])
 const bindings = computed(() => props.packageData?.bindings || [])
 const projectFiles = computed(() => props.packageData?.projectFiles || [])
 const projectFileStatus = (file: NodePackagePayload['projectFiles'][number]) =>
-  file.primaryBinding?.bindingStatus || file.bindings?.[0]?.bindingStatus || file.fileStatus
+  documentBindingSummary(file)
 const boundProgress = computed(() => {
   const total = selectedNode.value?.requiredProgress.total || requirements.value.length || 0
   const done = selectedNode.value?.requiredProgress.done || bindings.value.length

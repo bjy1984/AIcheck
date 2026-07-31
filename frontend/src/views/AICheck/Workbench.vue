@@ -157,6 +157,7 @@ import type {
 } from '@/types/aicheck'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
 import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
+import { buildDocumentSubmissionPayload, documentBindingSummary } from '@/utils/acceptanceFlows'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 
 type InspectionNodeSortKey = 'review' | 'nodeId' | 'material'
@@ -966,10 +967,9 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
   if (role.value === 'contractor') {
     const projectFileCount = nodePackage.value?.projectFiles.length || bindings.value.length
     const correctionCount = rectifications.value.filter((item) => item.status !== '已关闭').length
-    const pendingSubmitCount = (nodePackage.value?.projectFiles || []).filter((file) => {
-      const binding = file.primaryBinding || file.bindings?.[0]
-      return !binding || ['草稿挂载', '需补正'].includes(binding.bindingStatus)
-    }).length
+    const pendingSubmitCount = (nodePackage.value?.projectFiles || []).filter((file) =>
+      ['未关联', '待提交', '需补正'].includes(documentBindingSummary(file))
+    ).length
     return [
       {
         label: '办理对象',
@@ -3001,9 +3001,23 @@ const handleOpenAiReviewB = () => {
 }
 
 const handleSubmitProjectFile = async (documentId: string) => {
-  if (!ensureWritableNode()) return
+  if (!ensureWritableProject()) return
   if (!documentId) {
     ElMessage.warning('请选择需要提交的项目文件')
+    return
+  }
+  const file = nodePackage.value?.projectFiles.find((item) => item.id === documentId)
+  if (!file) {
+    ElMessage.warning('项目文件库中未找到该文件，请刷新后重试')
+    return
+  }
+  const submissionPayload = buildDocumentSubmissionPayload(file)
+  if (!submissionPayload) {
+    if (!file.bindings?.length) {
+      ElMessage.warning('请先关联审核环节')
+    } else {
+      ElMessage.warning('该文件没有待提交或待补正的挂载')
+    }
     return
   }
   actionLoading.value = true
@@ -3011,23 +3025,21 @@ const handleSubmitProjectFile = async (documentId: string) => {
     const res = await submitNodePackageApi(
       activeProjectId.value,
       {
-        nodeId: activeNodeId.value,
-        nodeIds: [activeNodeId.value],
-        bindingIds: [],
-        documentIds: [documentId],
-        batchName: `节点 ${activeNodeId.value} 文件直接提交`,
-        submitterComment: '从项目文件库直接提交。'
+        nodeIds: submissionPayload.nodeIds,
+        bindingIds: submissionPayload.bindingIds,
+        batchName: `${file.fileName} 多节点文件提交`,
+        submitterComment: '从项目文件库提交该文件的全部待提交挂载。'
       },
       {
         etag: currentProject.value?.etag,
-        idempotencyKey: `project-file-submit-${activeProjectId.value}-${activeNodeId.value}-${documentId}`
+        idempotencyKey: `project-file-submit-${activeProjectId.value}-${documentId}-${submissionPayload.bindingIds.join('-')}`
       }
     )
     if (!res) {
       showActionError('项目文件提交失败，请检查文件状态、节点范围和当前项目权限。')
       return
     }
-    ElMessage.success('项目文件已提交，等待监检审核')
+    ElMessage.success(`项目文件已提交至 ${submissionPayload.nodeIds.length} 个审核节点`)
     await loadProjectBundle()
     await loadSubmissionHistory()
   } catch (error) {
