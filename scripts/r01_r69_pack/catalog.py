@@ -248,7 +248,7 @@ def _definition_rows() -> list[tuple[str, str, str, str, list[int], str]]:
         ("S04-EQUIP-001", "S04", "设备材料台账", "xlsx", [46, 47, 50, 51], FOLDER_PATHS["S04"]),
         ("S04-INSTALL-001", "S04", "穿越施工与安装记录", "xlsx", [48, 49, 50, 51, 52, 53, 54, 55], FOLDER_PATHS["S04"]),
         ("S04-CP-001", "S04", "防腐阴保调试记录", "xlsx", [46, 47], FOLDER_PATHS["S04"]),
-        ("S04-PHOTO-001", "S04", "道路穿越施工核验图", "jpg", [48], FOLDER_PATHS["S04"]),
+        ("S04-PHOTO-001", "S04", "施工照片", "jpg", [48], FOLDER_PATHS["S04"]),
         ("S04-PHOTO-002", "S04", "穿越开挖与就位核验图", "jpg", [49], FOLDER_PATHS["S04"]),
         ("S04-PHOTO-003", "S04", "套管防腐绝缘核验图", "jpg", [50], FOLDER_PATHS["S04"]),
         ("S04-PHOTO-004", "S04", "绝缘支撑安装核验图", "jpg", [51], FOLDER_PATHS["S04"]),

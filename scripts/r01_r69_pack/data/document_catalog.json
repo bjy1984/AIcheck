@@ -2153,7 +2153,7 @@
       "logicalId": "S04-PHOTO-001",
       "folder": "S04",
       "outputSubfolder": "S04_阴极保护与穿跨越",
-      "title": "道路穿越施工核验图",
+      "title": "施工照片",
       "sourceFormat": "jpg",
       "submitFormat": "jpg",
       "documentNumber": "TEST-S04-006",
@@ -2175,7 +2175,7 @@
       ],
       "templateKind": "photo",
       "contentRef": "content/S04.json#S04-PHOTO-001",
-      "fileStem": "S04_S04-PHOTO-001_TEST-S04-006_道路穿越施工核验图"
+      "fileStem": "S04_S04-PHOTO-001_TEST-S04-006_施工照片"
     },
     {
       "logicalId": "S04-PHOTO-002",

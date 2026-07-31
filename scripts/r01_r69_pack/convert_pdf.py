@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from .render_common import TEST_WARNING, TEST_WARNING_ASCII
+from .render_common import SIGNATURE_MARKERS, TEST_WARNING, TEST_WARNING_ASCII
 
 
 SOFFICE = Path(
@@ -58,7 +58,10 @@ def _mark_pdf(path: Path, title: str) -> None:
     writer.add_metadata(
         {
             "/Title": title,
-            "/Subject": f"{TEST_WARNING} | {TEST_WARNING_ASCII}",
+            "/Subject": (
+                f"{TEST_WARNING} | {TEST_WARNING_ASCII} | "
+                + " | ".join(SIGNATURE_MARKERS)
+            ),
             "/Author": "TEST-资料编制系统",
         }
     )

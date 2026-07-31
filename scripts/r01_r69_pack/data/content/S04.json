@@ -693,11 +693,11 @@
     "S04-PHOTO-001": {
       "logical_id": "S04-PHOTO-001",
       "folder": "S04",
-      "title": "道路穿越施工核验图",
+      "title": "施工照片",
       "document_number": "TEST-S04-006",
       "revision": "0",
       "date": "2026-06-25",
-      "file_stem": "S04_S04-PHOTO-001_TEST-S04-006_道路穿越施工核验图",
+      "file_stem": "S04_S04-PHOTO-001_TEST-S04-006_施工照片",
       "source_format": "jpg",
       "r_nodes": [
         48
@@ -800,7 +800,7 @@
               [
                 1,
                 "PL8308-TEST",
-                "道路穿越施工核验图",
+                "施工照片",
                 "合格",
                 "TEST-S04-006"
               ]

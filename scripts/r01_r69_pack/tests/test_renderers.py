@@ -18,7 +18,12 @@ from scripts.r01_r69_pack.convert_pdf import (
     convert_xlsx_to_pdf,
     validate_pdf,
 )
-from scripts.r01_r69_pack.render_common import TEST_WARNING, has_test_marking
+from scripts.r01_r69_pack.content_factory import load_content_library
+from scripts.r01_r69_pack.render_common import (
+    TEST_WARNING,
+    has_signature_marking,
+    has_test_marking,
+)
 from scripts.r01_r69_pack.render_docx import render_docx
 from scripts.r01_r69_pack.render_graphics import (
     render_pdf_graphic,
@@ -100,6 +105,10 @@ class RendererTest(unittest.TestCase):
             self.assertTrue(has_test_marking(xlsx_path))
             self.assertTrue(has_test_marking(docx_pdf))
             self.assertTrue(has_test_marking(xlsx_pdf))
+            self.assertTrue(has_signature_marking(docx_path))
+            self.assertTrue(has_signature_marking(xlsx_path))
+            self.assertTrue(has_signature_marking(docx_pdf))
+            self.assertTrue(has_signature_marking(xlsx_pdf))
 
     def test_libreoffice_font_setup_uses_writable_temp_directory(self):
         with TemporaryDirectory() as tmp:
@@ -126,6 +135,8 @@ class RendererTest(unittest.TestCase):
             self.assertTrue(photo_path.exists())
             self.assertTrue(has_test_marking(pdf_path))
             self.assertTrue(has_test_marking(photo_path))
+            self.assertTrue(has_signature_marking(pdf_path))
+            self.assertTrue(has_signature_marking(photo_path))
             pdf_text = "\n".join(
                 page.extract_text() or "" for page in PdfReader(pdf_path).pages
             )
@@ -178,6 +189,14 @@ class RendererTest(unittest.TestCase):
                     if name.endswith(".xml")
                 ).decode("utf-8", errors="ignore")
                 self.assertIn("电子签署（测试）", xml)
+
+    def test_docx_signature_block_does_not_create_sparse_trailing_page(self):
+        content = load_content_library(DATA / "content")["S02-WPS-001"]
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            docx_path = render_docx(content, self.master, out)
+            pdf_path = convert_office_to_pdf(docx_path, out)
+            self.assertLessEqual(len(PdfReader(pdf_path).pages), 2)
 
     def test_evidence_image_kinds_are_distinct_and_marked(self):
         with TemporaryDirectory() as tmp:

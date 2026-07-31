@@ -10,7 +10,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 
-from .render_common import TEST_WARNING, output_file_name
+from .render_common import SIGNATURE_MARKERS, TEST_WARNING, output_file_name
 from .test_seal import render_test_seal_png, signature_contract
 
 
@@ -107,12 +107,13 @@ def render_test_photo(content: dict, output: Path) -> Path:
         image = _render_field_photo_image(content)
     _add_test_badge(image, content)
     exif = Image.Exif()
-    exif[270] = f"{TEST_WARNING}|{kind}"
+    signature_marker = SIGNATURE_MARKERS[0]
+    exif[270] = f"{TEST_WARNING}|{signature_marker}|{kind}"
     image.convert("RGB").save(
         path,
         quality=92,
         exif=exif,
-        comment=f"{TEST_WARNING}|{kind}".encode("utf-8"),
+        comment=f"{TEST_WARNING}|{signature_marker}|{kind}".encode("utf-8"),
     )
     return path
 

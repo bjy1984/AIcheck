@@ -9,6 +9,7 @@ from pypdf import PdfReader
 
 TEST_WARNING = "测试专用／合成资料／不得用于真实工程"
 TEST_WARNING_ASCII = "TEST-ONLY / SYNTHETIC / NOT FOR REAL ENGINEERING USE"
+SIGNATURE_MARKERS = ("测试专用章", "电子签署（测试）")
 BODY_FONT = "Arial Unicode MS"
 HEADING_FONT = "Arial Unicode MS"
 SERIF_FONT = "Arial Unicode MS"
@@ -67,4 +68,38 @@ def has_test_marking(path: Path) -> bool:
             exif = image.getexif()
             metadata = " ".join(str(value) for value in exif.values())
             return TEST_WARNING in f"{comment} {metadata}"
+    return False
+
+
+def has_signature_marking(path: Path) -> bool:
+    """Return whether an artifact contains the safe, test-only signature form."""
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        reader = PdfReader(path)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        metadata = " ".join(str(value) for value in (reader.metadata or {}).values())
+        payload = f"{text}\n{metadata}"
+        return any(marker in payload for marker in SIGNATURE_MARKERS)
+    if suffix in {".docx", ".xlsx"}:
+        media_prefix = "word/media/" if suffix == ".docx" else "xl/media/"
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            payload = b"\n".join(
+                archive.read(name)
+                for name in names
+                if name.endswith(".xml") or name.endswith(".rels")
+            )
+        text = payload.decode("utf-8", errors="ignore")
+        return (
+            any(marker in text for marker in SIGNATURE_MARKERS)
+            and any(name.startswith(media_prefix) for name in names)
+        )
+    if suffix in {".jpg", ".jpeg", ".png"}:
+        with Image.open(path) as image:
+            comment = image.info.get("comment", b"")
+            if isinstance(comment, bytes):
+                comment = comment.decode("utf-8", errors="ignore")
+            exif = image.getexif()
+            payload = f"{comment} {' '.join(str(value) for value in exif.values())}"
+            return any(marker in payload for marker in SIGNATURE_MARKERS)
     return False

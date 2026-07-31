@@ -20,7 +20,7 @@ from .render_common import (
     THEME,
     output_file_name,
 )
-from .test_seal import render_test_seal_png, signature_contract
+from .test_seal import render_test_seal_png
 
 
 def _set_run_font(run, font: str, size: float, *, bold: bool = False) -> None:
@@ -245,30 +245,15 @@ def _add_approvals(
                     str(row.get("role", "责任角色")),
                 )
             ),
-            width=Cm(3.1),
+            width=Cm(1.8),
         )
         for cell in cells:
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-            _set_cell_margins(cell)
+            _set_cell_margins(cell, top=20, bottom=20)
             for cell_paragraph in cell.paragraphs:
                 for cell_run in cell_paragraph.runs:
                     if cell_run.text:
                         _set_run_font(cell_run, BODY_FONT, 8.5)
-
-    contract = signature_contract(content)
-    stamp_paragraph = document.add_paragraph()
-    stamp_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    text_run = stamp_paragraph.add_run(
-        f"{contract['record']}｜{contract['label']}　"
-    )
-    _set_run_font(text_run, BODY_FONT, 8.5, bold=True)
-    text_run.font.color.rgb = RGBColor.from_string(THEME["alert"])
-    stamp_run = stamp_paragraph.add_run()
-    stamp_run.add_picture(
-        BytesIO(render_test_seal_png(contract["label"], contract["role"])),
-        width=Cm(4.2),
-    )
-
 
 def _add_evidence_panel(document: Document, panel: dict) -> None:
     paragraph = document.add_paragraph()
