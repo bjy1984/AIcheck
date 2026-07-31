@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from libs import evidence_retrieval
+from libs import evidence_retrieval, knowledge_retrieval
 from libs.db.repository import InMemoryRepository
 from libs.evidence_retrieval import search_project_evidence
 from libs.knowledge_dense import dense_knowledge_hits
@@ -455,3 +455,61 @@ def test_evidence_void_document_is_excluded() -> None:
     )
 
     assert result["allCandidates"] == []
+
+
+def search_evidence_without_jieba(
+    monkeypatch,
+    repository: InMemoryRepository,
+    *,
+    query: str,
+) -> dict:
+    monkeypatch.setattr(knowledge_retrieval, "_jieba_module", lambda: None)
+    monkeypatch.setattr(
+        evidence_retrieval,
+        "dense_knowledge_hits",
+        lambda *args, **kwargs: (
+            [],
+            {"status": "ok", "denseDegraded": False, "hitCount": 0},
+        ),
+    )
+    knowledge_retrieval.lexical_terms.cache_clear()
+    try:
+        return search_project_evidence(
+            repository,
+            project_id="P-1",
+            node_id=1,
+            document_version_ids=["DV-P1"],
+            query=query,
+        )
+    finally:
+        knowledge_retrieval.lexical_terms.cache_clear()
+
+
+def test_evidence_no_jieba_matches_punctuated_standard_number(monkeypatch) -> None:
+    """Normalizing only the query must lose an exact GB/T standard match."""
+    repository = evidence_repository()
+    repository.state["knowledge_files"][0]["fileName"] = "GB/T 3087-2022.pdf"
+    repository.state["knowledge_chunks"][0]["text"] = "检验依据 GB/T 3087-2022"
+
+    result = search_evidence_without_jieba(
+        monkeypatch,
+        repository,
+        query="GB/T 3087-2022",
+    )
+
+    assert [item["chunkId"] for item in result["allCandidates"]] == ["CHK-BM25"]
+
+
+def test_evidence_no_jieba_matches_hyphenated_path(monkeypatch) -> None:
+    """Normalizing only the query must lose an exact path/file-name match."""
+    repository = evidence_repository()
+    repository.state["knowledge_files"][0]["fileName"] = "docs/license-v2.pdf"
+    repository.state["knowledge_chunks"][0]["text"] = "归档路径 docs/license-v2.pdf"
+
+    result = search_evidence_without_jieba(
+        monkeypatch,
+        repository,
+        query="docs/license-v2.pdf",
+    )
+
+    assert [item["chunkId"] for item in result["allCandidates"]] == ["CHK-BM25"]

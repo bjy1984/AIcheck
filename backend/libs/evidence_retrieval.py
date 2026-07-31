@@ -272,7 +272,10 @@ def search_project_evidence(
     )
     bm25_started = perf_counter()
     bm25_scores = bm25_scores_for_texts(
-        [(str(chunk.get("id") or ""), evidence_lexical_text(chunk)) for chunk in scoped_chunks],
+        [
+            (str(chunk.get("id") or ""), evidence_lexical_query(evidence_lexical_text(chunk)))
+            for chunk in scoped_chunks
+        ],
         evidence_lexical_query(effective_query),
     )
     lexical_order = sorted(bm25_scores, key=lambda chunk_id: (-bm25_scores[chunk_id], chunk_id))
