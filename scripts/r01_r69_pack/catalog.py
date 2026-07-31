@@ -65,21 +65,21 @@ class DocumentCatalog:
     ) -> list[str]:
         errors: list[str] = []
         expected_counts = {
-            "M00": 4,
-            "B00": 12,
-            "S01": 7,
+            "M00": 7,
+            "B00": 19,
+            "S01": 8,
             "S02": 5,
             "S03": 9,
-            "S04": 6,
+            "S04": 11,
             "S05": 5,
-            "S06": 5,
-            "V00": 5,
+            "S06": 6,
+            "V00": 6,
         }
-        if len(self.documents) != 58:
-            errors.append(f"逻辑资料应为58份，实际为{len(self.documents)}")
-        if self.expected_physical_file_count() != 114:
+        if len(self.documents) != 76:
+            errors.append(f"逻辑资料应为76份，实际为{len(self.documents)}")
+        if self.expected_physical_file_count() != 136:
             errors.append(
-                "实际文件应为114个，"
+                "实际文件应为136个，"
                 f"目录预计为{self.expected_physical_file_count()}个"
             )
         if self.logical_counts_by_folder() != expected_counts:
@@ -97,12 +97,15 @@ class DocumentCatalog:
         duplicates([doc.file_stem for doc in self.documents], "文件名")
 
         covered = {node for doc in self.documents for node in doc.r_nodes}
-        if covered != set(range(1, 69)):
-            missing = sorted(set(range(1, 69)) - covered)
-            extra = sorted(covered - set(range(1, 69)))
+        if covered != set(range(1, 70)):
+            missing = sorted(set(range(1, 70)) - covered)
+            extra = sorted(covered - set(range(1, 70)))
             errors.append(f"节点覆盖错误，缺少{missing}，多出{extra}")
-        if any(69 in doc.r_nodes for doc in self.documents):
-            errors.append("R69不得绑定外部文件")
+        r69_documents = [
+            doc.logical_id for doc in self.documents if 69 in doc.r_nodes
+        ]
+        if r69_documents != ["V00-R69-001"]:
+            errors.append("R69只能绑定V00内部工作流执行记录")
 
         line_ids = {line.id for line in master.lines}
         weld_ids = {weld.id for weld in master.welds}
@@ -196,6 +199,9 @@ def _definition_rows() -> list[tuple[str, str, str, str, list[int], str]]:
         ("M00-MASTER-001", "M00", "项目主数据", "xlsx", [], FOLDER_PATHS["M00"]),
         ("M00-STD-001", "M00", "标准版本台账", "xlsx", [8], FOLDER_PATHS["M00"]),
         ("M00-DIR-001", "M00", "资料总目录", "xlsx", [], "00_使用说明与总目录"),
+        ("M00-SOURCE-001", "M00", "原始证据来源与页级绑定台账", "xlsx", [], FOLDER_PATHS["M00"]),
+        ("M00-DATA-001", "M00", "数据一致性差异与闭环报告", "docx", [], FOLDER_PATHS["M00"]),
+        ("M00-SEAL-001", "M00", "测试专用签章样式与使用登记台账", "xlsx", [], FOLDER_PATHS["M00"]),
         ("B00-DESIGN-001", "B00", "基础设计输入摘要", "docx", [1, 2, 4, 5, 6, 7, 9], FOLDER_PATHS["B00"]),
         ("B00-CONSTRUCTION-001", "B00", "施工组织设计", "docx", [10], FOLDER_PATHS["B00"]),
         ("B00-QUALITY-001", "B00", "质量计划", "docx", [], FOLDER_PATHS["B00"]),
@@ -208,6 +214,13 @@ def _definition_rows() -> list[tuple[str, str, str, str, list[int], str]]:
         ("B00-NDT-001", "B00", "基础无损检测报告", "docx", [35, 36, 37, 38, 39], FOLDER_PATHS["B00"]),
         ("B00-TEST-001", "B00", "压力与泄漏试验方案", "docx", [59, 60, 61, 62], FOLDER_PATHS["B00"]),
         ("B00-INSTALL-001", "B00", "安装试验吹扫综合记录", "xlsx", [40, 41, 42, 43, 44, 45, 66, 67, 68], FOLDER_PATHS["B00"]),
+        ("B00-PHOTO-001", "B00", "管道组对现场核验图", "jpg", [28], FOLDER_PATHS["B00"]),
+        ("B00-PHOTO-002", "B00", "焊缝外观现场核验图", "jpg", [30], FOLDER_PATHS["B00"]),
+        ("B00-PHOTO-003", "B00", "无损检测现场核验图", "jpg", [42], FOLDER_PATHS["B00"]),
+        ("B00-PHOTO-004", "B00", "防腐补伤现场核验图", "jpg", [44], FOLDER_PATHS["B00"]),
+        ("B00-FILM-001", "B00", "PL8303射线检测模拟底片", "jpg", [41], FOLDER_PATHS["B00"]),
+        ("B00-FILM-002", "B00", "PL8306射线检测模拟底片", "jpg", [42], FOLDER_PATHS["B00"]),
+        ("B00-QUERY-001", "B00", "焊工资格外部查询测试截图", "jpg", [24], FOLDER_PATHS["B00"]),
         ("S01-DESIGN-001", "S01", "境外与新材料设计变更", "docx", [15, 16, 17, 18, 19, 20, 21], FOLDER_PATHS["S01"]),
         ("S01-FOREIGN-001", "S01", "境外制造与型式资料", "docx", [15, 16], FOLDER_PATHS["S01"]),
         ("S01-MATERIAL-001", "S01", "企业标准与材料证明", "docx", [17], FOLDER_PATHS["S01"]),
@@ -215,6 +228,7 @@ def _definition_rows() -> list[tuple[str, str, str, str, list[int], str]]:
         ("S01-REVIEW-001", "S01", "新材料评审批准", "docx", [20], FOLDER_PATHS["S01"]),
         ("S01-ACCEPT-001", "S01", "到货验收记录", "xlsx", [21], FOLDER_PATHS["S01"]),
         ("S01-MARK-001", "S01", "标志移植台账", "xlsx", [21], FOLDER_PATHS["S01"]),
+        ("S01-PHOTO-001", "S01", "到货与标志移植核验图", "jpg", [21], FOLDER_PATHS["S01"]),
         ("S02-DESIGN-001", "S02", "材料代用设计变更", "docx", [22], FOLDER_PATHS["S02"]),
         ("S02-CALC-001", "S02", "技术比较与强度校核", "docx", [22], FOLDER_PATHS["S02"]),
         ("S02-APPROVAL-001", "S02", "材料代用书面批准", "docx", [22], FOLDER_PATHS["S02"]),
@@ -234,7 +248,12 @@ def _definition_rows() -> list[tuple[str, str, str, str, list[int], str]]:
         ("S04-EQUIP-001", "S04", "设备材料台账", "xlsx", [46, 47, 50, 51], FOLDER_PATHS["S04"]),
         ("S04-INSTALL-001", "S04", "穿越施工与安装记录", "xlsx", [48, 49, 50, 51, 52, 53, 54, 55], FOLDER_PATHS["S04"]),
         ("S04-CP-001", "S04", "防腐阴保调试记录", "xlsx", [46, 47], FOLDER_PATHS["S04"]),
-        ("S04-PHOTO-001", "S04", "施工照片", "jpg", [48, 49, 53], FOLDER_PATHS["S04"]),
+        ("S04-PHOTO-001", "S04", "道路穿越施工核验图", "jpg", [48], FOLDER_PATHS["S04"]),
+        ("S04-PHOTO-002", "S04", "穿越开挖与就位核验图", "jpg", [49], FOLDER_PATHS["S04"]),
+        ("S04-PHOTO-003", "S04", "套管防腐绝缘核验图", "jpg", [50], FOLDER_PATHS["S04"]),
+        ("S04-PHOTO-004", "S04", "绝缘支撑安装核验图", "jpg", [51], FOLDER_PATHS["S04"]),
+        ("S04-PHOTO-005", "S04", "穿越焊接连接核验图", "jpg", [52], FOLDER_PATHS["S04"]),
+        ("S04-PHOTO-006", "S04", "穿越布管完成核验图", "jpg", [53], FOLDER_PATHS["S04"]),
         ("S05-DESIGN-001", "S05", "安全附件设计变更与选型", "docx", [56], FOLDER_PATHS["S05"]),
         ("S05-ACCESSORY-001", "S05", "产品质量与型式资料", "docx", [56], FOLDER_PATHS["S05"]),
         ("S05-INSTALL-001", "S05", "安全附件到货安装记录", "xlsx", [56], FOLDER_PATHS["S05"]),
@@ -245,11 +264,13 @@ def _definition_rows() -> list[tuple[str, str, str, str, list[int], str]]:
         ("S06-ALTERNATIVE-001", "S06", "替代检验试验方案", "docx", [64], FOLDER_PATHS["S06"]),
         ("S06-NDT-001", "S06", "百分百RT-MT报告与底片", "docx", [65], FOLDER_PATHS["S06"]),
         ("S06-FINAL-001", "S06", "替代试验泄漏最终确认", "xlsx", [64, 66, 67], FOLDER_PATHS["S06"]),
+        ("S06-FILM-001", "S06", "最终封闭焊口射线检测模拟底片", "jpg", [65], FOLDER_PATHS["S06"]),
         ("V00-NODE-MATRIX-001", "V00", "R01-R69资料覆盖矩阵", "xlsx", [], FOLDER_PATHS["V00"]),
         ("V00-REQ-MATRIX-001", "V00", "166项资料要求覆盖明细", "xlsx", [], FOLDER_PATHS["V00"]),
         ("V00-SOURCE-DIFF-001", "V00", "资料来源与差异台账", "xlsx", [], FOLDER_PATHS["V00"]),
         ("V00-CHECKSUM-001", "V00", "文件校验清单", "xlsx", [], FOLDER_PATHS["V00"]),
         ("V00-REPORT-001", "V00", "资料包完整性检查报告", "docx", [], FOLDER_PATHS["V00"]),
+        ("V00-R69-001", "V00", "R69质量保证体系实施状况工作流执行记录", "xlsx", [69], FOLDER_PATHS["V00"]),
     ]
 
 
