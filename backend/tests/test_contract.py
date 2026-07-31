@@ -6193,6 +6193,89 @@ def test_inspection_attachment_can_be_uploaded_bound_and_submitted_to_current_no
     )
 
 
+def test_r69_requires_inspection_workflow_evidence_and_keeps_human_decision_gate() -> None:
+    project_id = "P-2026-HDCP-001"
+    inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    before = assert_ok(client.get(f"/projects/{project_id}/nodes/69/package", headers=inspection_headers))
+    assert [item["id"] for item in before["requirements"]] == ["REQ-69-01"]
+    assert before["node"]["requiredProgress"] == {"done": 0, "total": 1}
+    assert before["node"]["requirementsSummary"]["missingCount"] == 1
+
+    blocked = assert_error(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/69/review-opinions",
+            json={"result": "满足要求", "opinion": "不得在无证据时保存", "evidenceLinkIds": []},
+            headers=inspection_headers,
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert blocked["data"]["evidenceValidation"]["requiresEvidenceSelection"] is True
+
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/69/attachments",
+            json={
+                "files": [
+                    {
+                        "fileName": "B00-R69-001_质量保证体系实施状况评价工作流记录.xlsx",
+                        "fileSize": 28,
+                        "fileType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    }
+                ]
+            },
+            headers=inspection_headers,
+        )
+    )
+    target = upload["uploadUrls"][0]
+    workbook_bytes = b"PK\x03\x04r69-workflow-evidence"
+    assert_ok(client.put(target["url"], content=workbook_bytes, headers=target["headers"]))
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {
+                        "documentVersionId": target["documentVersionId"],
+                        "fileSize": len(workbook_bytes),
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "r69-workflow-complete"},
+        )
+    )
+    bound = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/69/file-bindings",
+            json={
+                "bindings": [
+                    {
+                        "documentId": target["documentId"],
+                        "documentVersionId": target["documentVersionId"],
+                        "usage": "监检资料",
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "r69-workflow-bind"},
+        )
+    )
+    binding_id = bound["affectedIds"][0]
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={"nodeIds": [69], "bindingIds": [binding_id], "batchName": "R69 人工评价证据"},
+            headers={**inspection_headers, "Idempotency-Key": "r69-workflow-submit"},
+        )
+    )
+
+    after = assert_ok(client.get(f"/projects/{project_id}/nodes/69/package", headers=inspection_headers))
+    assert after["node"]["requiredProgress"] == {"done": 1, "total": 1}
+    assert after["node"]["requirementsSummary"]["missingCount"] == 0
+    r69_binding = next(item for item in after["bindings"] if item["id"] == binding_id)
+    assert r69_binding["requirementId"] == "REQ-69-01"
+    assert r69_binding["bindingStatus"] == "已提交"
+    assert not after["reviewOpinions"]
+
+
 def test_if_match_conflict_and_review_admin_guard() -> None:
     conflict = client.patch(
         "/projects/P-2026-HDCP-001",
