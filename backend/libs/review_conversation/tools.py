@@ -7,24 +7,29 @@
 from __future__ import annotations
 
 import json
+from typing import Any
+
 from libs.db.repository import repo
-from libs.review_orchestrator.llm_tool_schemas import CONVERSATION_AGENT_RUNTIME_TOOL_NAMES
-from libs.review_orchestrator.llm_tool_schemas import EXTERNAL_REGISTRY_LLM_TOOLS
-from libs.review_orchestrator.llm_tool_schemas import build_review_conversation_agent_tools
-from libs.review_orchestrator.llm_tool_schemas import is_external_registry_tool
+from libs.review_orchestrator.llm_tool_schemas import (
+    CONVERSATION_AGENT_RUNTIME_TOOL_NAMES,
+    EXTERNAL_REGISTRY_LLM_TOOLS,
+    build_review_conversation_agent_tools,
+    is_external_registry_tool,
+)
 from libs.review_orchestrator.r13_facts import build_r13_business_facts
 from libs.review_orchestrator.r14_facts import build_r14_business_facts
 from libs.review_orchestrator.r15_facts import build_r15_business_facts
 from libs.review_orchestrator.r16_facts import build_r16_business_facts
 from libs.review_orchestrator.r17_facts import build_r17_business_facts
 from libs.review_orchestrator.r18_facts import build_r18_business_facts
-from libs.review_orchestrator.r20_r23_facts import build_r20_business_facts
-from libs.review_orchestrator.r20_r23_facts import build_r21_business_facts
-from libs.review_orchestrator.r20_r23_facts import build_r22_business_facts
-from libs.review_orchestrator.r20_r23_facts import build_r23_business_facts
+from libs.review_orchestrator.r20_r23_facts import (
+    build_r20_business_facts,
+    build_r21_business_facts,
+    build_r22_business_facts,
+    build_r23_business_facts,
+)
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
 from libs.review_orchestrator.readiness import valid_bbox
-from typing import Any, Iterable
 
 
 def _r():

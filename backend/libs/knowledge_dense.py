@@ -73,7 +73,7 @@ def dense_knowledge_hits(
             candidate = (vectors[0] if vectors else {}).get("embedding")
             if isinstance(candidate, list) and candidate:
                 query_embedding = candidate
-        except Exception:
+        except Exception:  # noqa: BLE001 - remote embedding failure degrades to BM25.
             query_embedding = None
         if query_embedding is None:
             # Fail loud: skip dense entirely rather than hash-querying a semantic index.
@@ -109,7 +109,7 @@ def dense_knowledge_hits(
             hits = repo.search_knowledge_vectors(query_embedding, **search_args)
         if not hits:
             hits = repo.search_local_knowledge_vectors(query_embedding, **search_args)
-    except Exception:
+    except Exception:  # noqa: BLE001 - vector-store failure degrades to BM25.
         meta.update({"status": "degraded", "denseDegraded": True, "reason": "vector_search_failed"})
         return [], meta
     meta["hitCount"] = len(hits)

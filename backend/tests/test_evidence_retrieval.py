@@ -36,7 +36,7 @@ class RecordingCursor:
         self.query = ""
         self.params: tuple[object, ...] = ()
 
-    def execute(self, query: str, params: tuple[object, ...]) -> "RecordingCursor":
+    def execute(self, query: str, params: tuple[object, ...]) -> RecordingCursor:
         self.query = query
         self.params = params
         return self
