@@ -147,6 +147,19 @@ def _valid_bbox(value: Any) -> bool:
     )
 
 
+def _json_safe_bbox(value: Any) -> Any:
+    if not isinstance(value, (list, tuple)):
+        return value
+    for coordinate in value:
+        try:
+            numeric_coordinate = float(coordinate)
+        except (TypeError, ValueError):
+            continue
+        if not isfinite(numeric_coordinate):
+            return None
+    return value
+
+
 def evidence_eligibility(candidate: dict[str, Any]) -> tuple[bool, list[str]]:
     reasons: list[str] = []
     if not str(candidate.get("documentId") or "").strip():
@@ -227,6 +240,7 @@ def normalize_evidence_candidate(
         "requiresHumanConfirmation": True,
     }
     eligible, rejection_reasons = evidence_eligibility(candidate)
+    candidate["bbox"] = _json_safe_bbox(candidate.get("bbox"))
     candidate.update(
         {
             "formalEvidenceEligible": eligible,

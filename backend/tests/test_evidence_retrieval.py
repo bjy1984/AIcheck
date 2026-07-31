@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from starlette.responses import JSONResponse
 
 from libs import evidence_retrieval, knowledge_retrieval
 from libs.db.repository import InMemoryRepository
@@ -232,6 +233,7 @@ def test_evidence_non_finite_bbox_is_advisory(bbox: list[float]) -> None:
     assert result["formalCandidates"] == []
     assert result["advisoryCandidates"][0]["formalEvidenceEligible"] is False
     assert result["advisoryCandidates"][0]["rejectionReasons"] == ["invalid_bbox"]
+    assert JSONResponse(result).status_code == 200
 
 
 def test_evidence_finite_positive_bbox_remains_formal() -> None:
