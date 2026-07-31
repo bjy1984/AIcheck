@@ -2,9 +2,13 @@
 
 ## 背景
 
-项目当前默认使用本地 OCR 服务。仓库中存在未启用的阿里云千问 OCR 通道，但 `backend/.env` 没有配置对应的 OCR Provider 变量，因此本次接入不替代正在运行的千问 OCR。
+项目同时保留本地 OCR 服务和 MinerU 远程 OCR。统一 OCR 流程通过
+`AICHECK_OCR_DEFAULT_PROVIDER` 选择缺省 Provider，允许值为 `local` 或 `mineru`，
+部署缺省值为 `mineru`。
 
-本次新增 MinerU 精准解析远程适配层。独立 MinerU 接口或现有 OCR 请求显式传入 `options.provider="mineru"` 时调用 MinerU；其他请求继续走现有本地 OCR。
+独立 MinerU 接口始终调用 MinerU。现有统一 OCR 请求显式传入
+`options.provider` 时覆盖缺省配置；未显式传入时使用
+`AICHECK_OCR_DEFAULT_PROVIDER`。
 
 参考文档：
 
@@ -15,15 +19,14 @@
 
 1. 接入 MinerU 精准解析 API，模型固定为 `vlm`。
 2. 提供独立异步 OCR 接口，支持公网 URL、项目 `storageKey` 和直接上传文件。
-3. 允许现有 OCR 流程通过 `options.provider="mineru"` 显式选择 MinerU。
-4. 解析 MinerU 返回的 Zip、Markdown 和结构化 JSON。
+3. 允许现有 OCR 流程通过配置或 `options.provider` 在本地 OCR 与 MinerU 之间选择，默认 MinerU。
+4. 解析 MinerU 返回的新旧 Zip 布局、Markdown 和结构化 JSON。
 5. 将结果转换为现有 OCR 证据契约并写入 `ocr_jobs`、`ocr_parse_results` 和 `ocr-artifacts`。
 6. 请求绑定业务文档版本时，通过现有 `apply_ocr_result()` 更新本地字段、表格、证据和文档 OCR 状态。
 7. 将 MinerU 密钥保存在 `backend/.env`，不写入 Git、日志、响应或持久化任务参数。
 
 ## 非目标
 
-- 不改变未指定 Provider 的本地 OCR 行为。
 - 不把 MinerU 加入本地 OCR 服务的自动失败回退。
 - 不把远程调用放入当前 `offline-only` 的本地 OCR 容器。
 - 不支持调用方切换 MinerU 模型版本。
@@ -72,7 +75,9 @@
 职责：
 
 - 安全下载并解压 `full_zip_url`。
-- 定位 `full.md`、`*_content_list.json`、`*_middle.json` 和相关图片。
+- 定位 `full.md`、`*_content_list.json`、页面布局 JSON 和相关图片。
+- 页面布局优先使用旧格式 `*_middle.json`；缺失时使用当前 VLM 格式的
+  `layout.json`。两者都缺失时返回 `MINERU_PAGE_LAYOUT_MISSING`。
 - 将 MinerU 页、内容块、表格、公式和印章候选转换为现有 OCR 结构。
 - 生成质量标记、诊断信息、引擎执行记录和 Provider 元数据。
 - 返回可直接交给 `finish_ocr_job_record()` 的结果。
@@ -151,15 +156,18 @@ JSON 请求支持以下二选一输入：
 - 成功时返回 `parseResultId`、结果摘要和产物引用。
 - 失败时返回本地 `diagnostics`，不返回敏感上游请求数据。
 
-### 显式 Provider 路由
+### Provider 路由
 
-现有 OCR 流程只在以下条件成立时改走 MinerU：
+现有 OCR 流程按以下优先级选择 Provider：
 
 ```python
-options.get("provider") == "mineru"
+options.get("provider") or AICHECK_OCR_DEFAULT_PROVIDER
 ```
 
-路由发生在 API/Worker 远程适配层，不发生在本地 OCR 微服务内部。未指定、空值或其他值继续使用现有本地 OCR。
+只接受 `local` 或 `mineru`。显式 `options.provider` 优先；未指定或空值时读取
+`AICHECK_OCR_DEFAULT_PROVIDER`，该变量未设置时使用 `mineru`。非法显式值或非法配置值
+均以 `OCR_PROVIDER_UNSUPPORTED` 失败，不静默回落。路由发生在 Worker 调度层，不发生在
+本地 OCR 微服务内部。
 
 MinerU 请求沿用现有 OCR Pipeline 的业务标识和持久化流程，因此业务调用方不需要消费另一套结果结构。
 
@@ -196,10 +204,12 @@ MinerU 请求沿用现有 OCR Pipeline 的业务标识和持久化流程，因�
 Zip 内文件名前缀不作为固定常量。归一化器按后缀发现：
 
 - 唯一的 `*_content_list.json`
-- 唯一的 `*_middle.json`
+- 优先选择唯一的 `*_middle.json`；不存在时选择唯一且 basename 为
+  `layout.json` 的当前 VLM 页面布局
 - `full.md`，或唯一的 `.md` 主文件
 
-缺少 `content_list` 或内容不可解析时任务失败。缺少 Markdown 时仍可基于结构化 JSON 成功，但添加诊断信息。
+缺少 `content_list`、两种页面布局都缺失或内容不可解析时任务失败。缺少 Markdown 时
+仍可基于结构化 JSON 成功，但添加诊断信息。
 
 ### 页映射
 
@@ -353,7 +363,8 @@ repo.apply_ocr_result(document_id, document_version_id, result_record)
 - 原始结果 Zip
 - Markdown
 - content list
-- middle JSON
+- 实际使用的页面布局 JSON：旧格式保存为 `middle_json`，当前 VLM 格式保存为
+  `layout_json`
 - 标准化结果 JSON
 
 数据库只保存对象引用、SHA-256、内容类型和字节数。对象名使用本地 Job ID，不使用外部 URL 中的路径。
@@ -364,6 +375,7 @@ repo.apply_ocr_result(document_id, document_version_id, result_record)
 
 ```dotenv
 AICHECK_MINERU_API_KEY=<real-token>
+AICHECK_OCR_DEFAULT_PROVIDER=mineru
 ```
 
 版本控制中的 `backend/.env.example`：
@@ -372,14 +384,17 @@ AICHECK_MINERU_API_KEY=<real-token>
 AICHECK_MINERU_BASE_URL=https://mineru.net
 AICHECK_MINERU_API_KEY=replace-with-mineru-api-key
 AICHECK_MINERU_MODEL_VERSION=vlm
+AICHECK_OCR_DEFAULT_PROVIDER=mineru
 AICHECK_MINERU_TIMEOUT_SECONDS=60
 AICHECK_MINERU_POLL_INTERVAL_SECONDS=3
 AICHECK_MINERU_JOB_TIMEOUT_SECONDS=1800
 ```
 
 `AICHECK_MINERU_MODEL_VERSION` 的部署值必须为 `vlm`；其他值在启动检查或请求前被拒绝。
+`AICHECK_OCR_DEFAULT_PROVIDER` 只允许 `local` 或 `mineru`，未设置时为 `mineru`。
 
-Docker Compose 只把 MinerU 变量传给 API 服务和 `ocr.remote` Worker，不传给本地 OCR 容器。
+Docker Compose 把 Provider 选择变量传给负责统一 OCR 调度的 Worker；MinerU 密钥只传给
+`ocr.remote` Worker，不传给 API 服务、本地 OCR Worker 或本地 OCR 容器。
 
 ## 验证和安全
 
@@ -455,9 +470,10 @@ Docker Compose 只把 MinerU 变量传给 API 服务和 `ocr.remote` Worker，�
 
 ### 路由测试
 
-- 未指定 Provider 仍调用现有本地 OCR。
+- 未指定 Provider 时使用配置值，配置未设置时调用 MinerU。
+- `provider=local` 只调用现有本地 OCR。
 - `provider=mineru` 只派发远程 MinerU 任务。
-- 未知 Provider 返回验证错误，不静默回退。
+- 未知显式 Provider 或非法配置值返回验证错误，不静默回退。
 - 独立 URL、storageKey 和上传接口都创建 MinerU Job。
 - 多输入或无输入被拒绝。
 
@@ -480,10 +496,12 @@ Docker Compose 只把 MinerU 变量传给 API 服务和 `ocr.remote` Worker，�
 1. `backend/.env` 存在 `AICHECK_MINERU_API_KEY`，文件仍被 Git 忽略。
 2. 独立接口支持 URL、storageKey 和直接上传。
 3. 所有 MinerU 请求固定使用精准解析 API 和 `vlm`。
-4. 未指定 Provider 的现有 OCR 请求行为不变。
-5. `options.provider="mineru"` 可完成远程提交、轮询、结果下载和本地持久化。
+4. 缺省 Provider 为 MinerU；`options.provider="local"` 和
+   `options.provider="mineru"` 都能覆盖配置。
+5. MinerU 可完成远程提交、轮询、结果下载和本地持久化。
 6. MinerU Markdown、内容块、页码、坐标、表格和印章候选转换为本地 OCR 结构。
-7. 结果写入 `ocr_jobs` 和 `ocr_parse_results`，原始产物写入 `ocr-artifacts`。
-8. 绑定业务文档版本时调用现有 OCR 应用流程；独立请求不污染业务文档。
-9. 错误、超时和不安全输入产生稳定诊断且不泄露秘密。
-10. 新增测试及相关现有 OCR 回归测试全部通过。
+7. 新格式 `layout.json` 和旧格式 `*_middle.json` 都能完成页面尺寸、坐标和制品适配。
+8. 结果写入 `ocr_jobs` 和 `ocr_parse_results`，原始产物写入 `ocr-artifacts`。
+9. 绑定业务文档版本时调用现有 OCR 应用流程；独立请求不污染业务文档。
+10. 错误、超时和不安全输入产生稳定诊断且不泄露秘密。
+11. 新增测试及相关现有 OCR 回归测试全部通过。
