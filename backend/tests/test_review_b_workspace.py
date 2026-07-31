@@ -1098,6 +1098,104 @@ def test_review_b_agent_search_status_filter_matches_same_version_evidence_ident
     assert pending["candidates"][0]["manualStatus"] == "pending"
 
 
+def test_review_b_agent_search_locator_fallback_requires_valid_bbox(
+    monkeypatch,
+) -> None:
+    shared = {
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "documentId": "DOC-AGENT-LOCATOR-BBOX",
+        "documentVersionId": "DV-AGENT-LOCATOR-BBOX",
+        "fileName": "定位框有效性.pdf",
+        "manualStatus": "confirmed",
+        "manualStatusLabel": "已确认",
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+    }
+    invalid_bboxes = [
+        [],
+        [10, 20, 260],
+        [10, 20, 260, 60, 999],
+        ["left", 20, 260, 60],
+        [10, 20, 10, 60],
+        [10, 20, 260, 20],
+    ]
+    invalid_links = [
+        {
+            **shared,
+            "id": f"NEL-AGENT-INVALID-BBOX-{index}",
+            "pageNo": index,
+            "bbox": bbox,
+            "quotedText": f"无效定位框证据 {index}",
+        }
+        for index, bbox in enumerate(invalid_bboxes, start=1)
+    ]
+    invalid_candidates = [
+        {
+            **link,
+            "id": f"EVC-AGENT-INVALID-BBOX-{index}",
+            "candidateId": f"EVC-AGENT-INVALID-BBOX-{index}",
+        }
+        for index, link in enumerate(invalid_links, start=1)
+    ]
+    valid_link = {
+        **shared,
+        "id": "NEL-AGENT-VALID-BBOX",
+        "pageNo": 20,
+        "bbox": [10, 20, 260, 60],
+        "quotedText": "有效四坐标定位证据",
+    }
+    valid_locator_candidate = {
+        **valid_link,
+        "id": "EVC-AGENT-VALID-BBOX",
+        "candidateId": "EVC-AGENT-VALID-BBOX",
+    }
+    id_link = {
+        **shared,
+        "id": "NEL-AGENT-ID-WITH-INVALID-BBOX",
+        "pageNo": 21,
+        "bbox": [],
+        "quotedText": "显式证据 ID 优先于定位框",
+    }
+    id_candidate = {
+        **id_link,
+        "id": "EVC-AGENT-ID-WITH-INVALID-BBOX",
+        "candidateId": "EVC-AGENT-ID-WITH-INVALID-BBOX",
+        "evidenceLinkId": "NEL-AGENT-ID-WITH-INVALID-BBOX",
+    }
+    live_candidates = [
+        *invalid_candidates,
+        valid_locator_candidate,
+        id_candidate,
+    ]
+
+    def fake_search_project_evidence(repository, **kwargs):
+        return {
+            "formalCandidates": live_candidates,
+            "advisoryCandidates": [],
+            "allCandidates": live_candidates,
+            "trace": {"retrievalTraceId": "RTR-LOCATOR-BBOX"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        fake_search_project_evidence,
+    )
+    output = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "定位框", "manualStatus": "confirmed"},
+        evidence_links=[*invalid_links, valid_link, id_link],
+    )
+
+    assert [item["candidateId"] for item in output["candidates"]] == [
+        "EVC-AGENT-VALID-BBOX",
+        "EVC-AGENT-ID-WITH-INVALID-BBOX",
+    ]
+
+
 def test_review_b_agent_search_exception_fallback_keeps_same_version_status_identity(
     monkeypatch,
 ) -> None:

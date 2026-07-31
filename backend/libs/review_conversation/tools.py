@@ -23,6 +23,7 @@ from libs.review_orchestrator.r20_r23_facts import build_r21_business_facts
 from libs.review_orchestrator.r20_r23_facts import build_r22_business_facts
 from libs.review_orchestrator.r20_r23_facts import build_r23_business_facts
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
+from libs.review_orchestrator.readiness import valid_bbox
 from typing import Any, Iterable
 
 
@@ -424,7 +425,7 @@ def review_conversation_agent_tool_output(
             if (
                 not version_id
                 or page_no is None
-                or not isinstance(bbox, (list, tuple))
+                or not valid_bbox(bbox)
                 or not quoted_text
             ):
                 return None
