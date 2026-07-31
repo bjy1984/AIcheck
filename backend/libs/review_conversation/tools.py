@@ -391,28 +391,68 @@ def review_conversation_agent_tool_output(
     if tool_name == "search_node_evidence":
         query = str(arguments.get("query") or "").strip()
         manual_status = str(arguments.get("manualStatus") or "").strip().lower()
-        visible_statuses_by_version: dict[str, dict[str, str | None]] = {}
+        visible_evidence_by_version: dict[str, list[dict[str, Any]]] = {}
         for item in evidence_links:
             version_id = str(item.get("documentVersionId") or "").strip()
-            status = str(item.get("manualStatus") or "").strip().lower()
             if not version_id:
                 continue
-            if status:
-                visible_statuses_by_version.setdefault(version_id, {})[status] = (
-                    str(item.get("manualStatusLabel") or "").strip() or None
-                )
-        allowed_version_ids = sorted(
-            {
-                str(item.get("documentVersionId") or "").strip()
-                for item in evidence_links
-                if str(item.get("documentVersionId") or "").strip()
-                and (
-                    not manual_status
-                    or str(item.get("manualStatus") or "").strip().lower()
-                    == manual_status
-                )
-            }
+            visible_evidence_by_version.setdefault(version_id, []).append(item)
+        allowed_version_ids = sorted(visible_evidence_by_version)
+
+        identity_fields = (
+            "evidenceLinkId",
+            "evidenceRefId",
+            "evidenceId",
+            "id",
+            "candidateId",
         )
+
+        def evidence_identity_values(item: dict[str, Any]) -> set[str]:
+            return {
+                str(item.get(field) or "").strip()
+                for field in identity_fields
+                if str(item.get(field) or "").strip()
+            }
+
+        def evidence_locator(
+            item: dict[str, Any],
+        ) -> tuple[str, str, tuple[Any, ...], str] | None:
+            version_id = str(item.get("documentVersionId") or "").strip()
+            page_no = item.get("pageNo")
+            bbox = item.get("bbox")
+            quoted_text = str(item.get("quotedText") or "").strip()
+            if (
+                not version_id
+                or page_no is None
+                or not isinstance(bbox, (list, tuple))
+                or not quoted_text
+            ):
+                return None
+            return version_id, str(page_no), tuple(bbox), quoted_text
+
+        def matching_visible_evidence(
+            item: dict[str, Any],
+        ) -> list[dict[str, Any]]:
+            version_id = str(item.get("documentVersionId") or "").strip()
+            visible_items = visible_evidence_by_version.get(version_id) or []
+            identity_values = evidence_identity_values(item)
+            if identity_values:
+                identity_matches = [
+                    visible_item
+                    for visible_item in visible_items
+                    if identity_values & evidence_identity_values(visible_item)
+                ]
+                if identity_matches:
+                    return identity_matches
+            locator = evidence_locator(item)
+            if locator is None:
+                return []
+            return [
+                visible_item
+                for visible_item in visible_items
+                if evidence_locator(visible_item) == locator
+            ]
+
         project_id = str(project.get("id") or session.get("projectId") or "")
         node_id = int(node.get("nodeId") or session.get("nodeId") or 0)
         if not allowed_version_ids:
@@ -462,30 +502,35 @@ def review_conversation_agent_tool_output(
         allowed_versions = set(allowed_version_ids)
         candidates = []
         for item in raw_candidates:
-            version_id = str(item.get("documentVersionId") or "")
+            version_id = str(item.get("documentVersionId") or "").strip()
             if version_id not in allowed_versions:
                 continue
+            visible_matches = matching_visible_evidence(item)
+            if manual_status:
+                visible_matches = [
+                    visible_item
+                    for visible_item in visible_matches
+                    if str(visible_item.get("manualStatus") or "").strip().lower()
+                    == manual_status
+                ]
+                if not visible_matches:
+                    continue
+            matched_visible = visible_matches[0] if visible_matches else None
             candidate = repo.clone(item)
             candidate["candidateId"] = (
                 candidate.get("candidateId")
                 or candidate.get("evidenceId")
                 or candidate.get("id")
             )
-            visible_statuses = visible_statuses_by_version.get(version_id) or {}
-            effective_status = manual_status or next(
-                (
-                    status
-                    for status in ("confirmed", "pending", "rejected")
-                    if status in visible_statuses
-                ),
-                next(iter(visible_statuses), ""),
-            )
-            candidate["manualStatus"] = effective_status or None
-            candidate["manualStatusLabel"] = (
-                visible_statuses.get(effective_status)
-                if effective_status
-                else None
-            )
+            if matched_visible is not None:
+                candidate["manualStatus"] = (
+                    str(matched_visible.get("manualStatus") or "").strip().lower()
+                    or None
+                )
+                candidate["manualStatusLabel"] = (
+                    str(matched_visible.get("manualStatusLabel") or "").strip()
+                    or None
+                )
             if fallback_used:
                 candidate["evidenceLinkId"] = (
                     candidate.get("evidenceLinkId") or candidate.get("id")
@@ -687,4 +732,3 @@ def review_conversation_agent_tool_output(
         "errorCode": "REVIEW_AGENT_TOOL_NOT_ALLOWED",
         "message": f"Tool {tool_name} is not available in the B-version review conversation.",
     }
-

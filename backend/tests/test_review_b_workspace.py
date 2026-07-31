@@ -969,12 +969,13 @@ def test_review_b_agent_search_uses_visible_manual_status_scope(monkeypatch) -> 
         evidence_links=[confirmed_link, pending_link],
     )
 
-    assert calls[0]["document_version_ids"] == ["DV-AGENT-CONFIRMED"]
-    assert calls[1]["document_version_ids"] == ["DV-AGENT-PENDING"]
-    assert calls[2]["document_version_ids"] == [
+    expected_visible_versions = [
         "DV-AGENT-CONFIRMED",
         "DV-AGENT-PENDING",
     ]
+    assert calls[0]["document_version_ids"] == expected_visible_versions
+    assert calls[1]["document_version_ids"] == expected_visible_versions
+    assert calls[2]["document_version_ids"] == expected_visible_versions
     assert [item["candidateId"] for item in confirmed["candidates"]] == [
         "EVC-AGENT-CONFIRMED"
     ]
@@ -989,6 +990,181 @@ def test_review_b_agent_search_uses_visible_manual_status_scope(monkeypatch) -> 
         "confirmed",
         "pending",
     ]
+
+
+def test_review_b_agent_search_status_filter_matches_same_version_evidence_identity(
+    monkeypatch,
+) -> None:
+    shared = {
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "documentId": "DOC-AGENT-SHARED-STATUS",
+        "documentVersionId": "DV-AGENT-SHARED-STATUS",
+        "fileName": "同版许可证.pdf",
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+    }
+    confirmed_link = {
+        **shared,
+        "id": "NEL-AGENT-SHARED-CONFIRMED",
+        "manualStatus": "confirmed",
+        "manualStatusLabel": "已确认",
+        "pageNo": 2,
+        "bbox": [10, 20, 260, 60],
+        "quotedText": "许可证有效期至 2028-12-31",
+    }
+    pending_link = {
+        **shared,
+        "id": "NEL-AGENT-SHARED-PENDING",
+        "manualStatus": "pending",
+        "manualStatusLabel": "待确认",
+        "pageNo": 3,
+        "bbox": [10, 70, 260, 110],
+        "quotedText": "许可范围：压力管道设计 GC2",
+    }
+    confirmed_candidate = {
+        **confirmed_link,
+        "id": "EVC-AGENT-SHARED-CONFIRMED",
+        "candidateId": "EVC-AGENT-SHARED-CONFIRMED",
+        "evidenceLinkId": "NEL-AGENT-SHARED-CONFIRMED",
+        "manualStatus": "pending",
+        "manualStatusLabel": "待确认",
+        "bm25Rank": 1,
+        "denseRank": 1,
+        "fusedScore": 0.027,
+    }
+    pending_candidate = {
+        **pending_link,
+        "id": "EVC-AGENT-SHARED-PENDING",
+        "candidateId": "EVC-AGENT-SHARED-PENDING",
+        "bm25Rank": 2,
+        "denseRank": 2,
+        "fusedScore": 0.026,
+    }
+    unmatched_candidate = {
+        **pending_candidate,
+        "id": "EVC-AGENT-SHARED-UNMATCHED",
+        "candidateId": "EVC-AGENT-SHARED-UNMATCHED",
+        "pageNo": 4,
+        "bbox": [10, 120, 260, 160],
+        "quotedText": "服务新增但未关联可见 evidence 的候选",
+        "bm25Rank": 3,
+        "denseRank": 3,
+        "fusedScore": 0.025,
+    }
+    calls = []
+
+    def fake_search_project_evidence(repository, **kwargs):
+        calls.append(kwargs)
+        candidates = [
+            confirmed_candidate,
+            pending_candidate,
+            unmatched_candidate,
+        ]
+        return {
+            "formalCandidates": candidates,
+            "advisoryCandidates": [],
+            "allCandidates": candidates,
+            "trace": {"retrievalTraceId": f"RTR-SHARED-STATUS-{len(calls)}"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        fake_search_project_evidence,
+    )
+    confirmed = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证", "manualStatus": "confirmed"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+    pending = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证", "manualStatus": "pending"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+
+    assert calls[0]["document_version_ids"] == ["DV-AGENT-SHARED-STATUS"]
+    assert calls[1]["document_version_ids"] == ["DV-AGENT-SHARED-STATUS"]
+    assert [item["candidateId"] for item in confirmed["candidates"]] == [
+        "EVC-AGENT-SHARED-CONFIRMED"
+    ]
+    assert confirmed["candidates"][0]["manualStatus"] == "confirmed"
+    assert [item["candidateId"] for item in pending["candidates"]] == [
+        "EVC-AGENT-SHARED-PENDING"
+    ]
+    assert pending["candidates"][0]["manualStatus"] == "pending"
+
+
+def test_review_b_agent_search_exception_fallback_keeps_same_version_status_identity(
+    monkeypatch,
+) -> None:
+    shared = {
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "documentId": "DOC-AGENT-SHARED-FALLBACK",
+        "documentVersionId": "DV-AGENT-SHARED-FALLBACK",
+        "fileName": "同版许可证.pdf",
+        "pageNo": 2,
+        "bbox": [10, 20, 260, 60],
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+    }
+    confirmed_link = {
+        **shared,
+        "id": "NEL-AGENT-SHARED-FALLBACK-CONFIRMED",
+        "manualStatus": "confirmed",
+        "manualStatusLabel": "已确认",
+        "quotedText": "许可证有效期至 2028-12-31",
+    }
+    pending_link = {
+        **shared,
+        "id": "NEL-AGENT-SHARED-FALLBACK-PENDING",
+        "manualStatus": "pending",
+        "manualStatusLabel": "待确认",
+        "pageNo": 3,
+        "bbox": [10, 70, 260, 110],
+        "quotedText": "许可范围：压力管道设计 GC2",
+    }
+
+    def broken_search_project_evidence(repository, **kwargs):
+        raise RuntimeError("retrieval unavailable")
+
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        broken_search_project_evidence,
+    )
+    confirmed = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证", "manualStatus": "confirmed"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+    pending = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证", "manualStatus": "pending"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+    unfiltered = call_review_agent_tool(
+        "search_node_evidence",
+        {"query": "许可证"},
+        evidence_links=[confirmed_link, pending_link],
+    )
+
+    assert [item["evidenceLinkId"] for item in confirmed["candidates"]] == [
+        "NEL-AGENT-SHARED-FALLBACK-CONFIRMED"
+    ]
+    assert [item["evidenceLinkId"] for item in pending["candidates"]] == [
+        "NEL-AGENT-SHARED-FALLBACK-PENDING"
+    ]
+    assert [item["manualStatus"] for item in unfiltered["candidates"]] == [
+        "confirmed",
+        "pending",
+    ]
+    assert confirmed["fallbackUsed"] is True
+    assert pending["fallbackUsed"] is True
 
 
 def test_review_b_agent_search_falls_back_only_on_service_exception(monkeypatch) -> None:
