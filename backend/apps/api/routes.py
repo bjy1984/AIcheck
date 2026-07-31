@@ -400,6 +400,29 @@ def validate_upload_files(
         if not (file_type_tokens(file) & allowed_types):
             error = errors.UNSUPPORTED_NDT_FILE_TYPE if ndt else errors.UNSUPPORTED_FILE_TYPE
             return fail(error, request, message=f"{file_name} 文件类型不支持。", data={"fileName": file_name, "fileType": file.get("fileType")})
+        raw_ocr_options = file.get("ocrOptions")
+        if raw_ocr_options is not None:
+            if not isinstance(raw_ocr_options, dict):
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message=f"{file_name} 的 ocrOptions 必须是对象。",
+                    data={"fileName": file_name},
+                )
+            ocr_options = dict(raw_ocr_options)
+            provider = str(ocr_options.get("provider") or "").strip().lower()
+            if provider and provider not in {"local", "mineru"}:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message=f"{file_name} 的 OCR provider 仅支持 local 或 mineru。",
+                    data={"fileName": file_name, "provider": provider},
+                )
+            if provider:
+                ocr_options["provider"] = provider
+            else:
+                ocr_options.pop("provider", None)
+            file["ocrOptions"] = ocr_options
     return None
 
 

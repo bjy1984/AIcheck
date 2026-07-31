@@ -46,9 +46,37 @@ def test_local_ocr_service_remains_offline_without_mineru_configuration() -> Non
         assert offline_value is True or "true" in str(offline_value).lower()
 
 
+def test_compose_workers_default_unified_ocr_to_mineru() -> None:
+    for name in COMPOSE_FILES:
+        services = _compose(name)["services"]
+        worker_environment = services["worker-service"]["environment"]
+        assert worker_environment[
+            "AICHECK_OCR_DEFAULT_PROVIDER"
+        ].endswith(":-mineru}"), name
+        assert "AICHECK_MINERU_API_KEY" not in worker_environment, name
+        assert "AICHECK_OCR_DEFAULT_PROVIDER" not in (
+            services["ocr-service"].get("environment") or {}
+        ), name
+        consumers = [
+            (service_name, service)
+            for service_name, service in services.items()
+            if "ocr.parse_document" in str(service.get("command") or "")
+        ]
+        assert consumers, f"{name}: no ocr.parse_document consumer"
+        for service_name, service in consumers:
+            environment = service.get("environment") or {}
+            assert environment[
+                "AICHECK_OCR_DEFAULT_PROVIDER"
+            ].endswith(":-mineru}"), f"{name}:{service_name}"
+            assert "AICHECK_MINERU_API_KEY" not in environment, (
+                f"{name}:{service_name}"
+            )
+
+
 def test_env_example_documents_fixed_vlm_provider() -> None:
     text = (BACKEND / ".env.example").read_text(encoding="utf-8")
 
+    assert "AICHECK_OCR_DEFAULT_PROVIDER=mineru" in text
     assert "AICHECK_MINERU_API_KEY=replace-with-mineru-api-key" in text
     assert "AICHECK_MINERU_MODEL_VERSION=vlm" in text
     assert "AICHECK_MINERU_BASE_URL=https://mineru.net" in text

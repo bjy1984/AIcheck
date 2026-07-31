@@ -100,7 +100,7 @@ IDEMPOTENT_DELEGATE_CALLS = {
 }
 REQUIRED_WORKER_TASKS = {
     "parse_document": {
-        "queue": "ocr.local-light",
+        "queue": "ocr.parse_document",
         "dispatcher": "dispatch_parse_document",
     },
     "recognize_seals": {

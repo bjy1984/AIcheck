@@ -99,6 +99,7 @@ services:
     logging: *aicheck-logging
     environment: &deploy-worker-environment
       AICHECK_DATABASE_URL: postgresql://${AICHECK_POSTGRES_USER:-aicheck}:${AICHECK_POSTGRES_PASSWORD:?AICHECK_POSTGRES_PASSWORD is required}@postgres:5432/${AICHECK_POSTGRES_DB:-aicheck}
+      AICHECK_OCR_DEFAULT_PROVIDER: ${AICHECK_OCR_DEFAULT_PROVIDER:-mineru}
       AICHECK_TENANT_ID: ${AICHECK_TENANT_ID:?AICHECK_TENANT_ID is required}
       AICHECK_TENANT_MODE: ${AICHECK_TENANT_MODE:-isolated}
       AICHECK_REDIS_URL: ${AICHECK_REDIS_URL:-redis://redis:6379/0}

@@ -401,7 +401,7 @@ def test_render_and_local_heavy_variants_are_bounded(tmp_path: Path, monkeypatch
     assert routed_seal[0]["purpose"] == "seal"
 
 
-def test_dispatcher_routes_official_prepare_to_light_queue(monkeypatch) -> None:
+def test_dispatcher_routes_ocr_prepare_to_provider_neutral_queue(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "celery")
     monkeypatch.setenv("AICHECK_OCR_PROVIDER_MODE", "hybrid_auto")
     monkeypatch.setenv("AICHECK_ALIYUN_OCR_API_KEY", "test-key")
@@ -415,5 +415,5 @@ def test_dispatcher_routes_official_prepare_to_light_queue(monkeypatch) -> None:
 
     monkeypatch.setattr(tasks.parse_document, "apply_async", apply_async)
     result = task_dispatcher.dispatch_parse_document("DOC-1", "VER-1", "minio://documents/a.pdf", "a.pdf")
-    assert result["queue"] == "ocr.local-light"
-    assert captured["queue"] == "ocr.local-light"
+    assert result["queue"] == "ocr.parse_document"
+    assert captured["queue"] == "ocr.parse_document"

@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -1378,6 +1379,24 @@ def mineru_ocr_extract(
         reset_request_tenant_id(tenant_context)
 
 
+def default_ocr_provider(
+    env: Mapping[str, str] | None = None,
+) -> str:
+    source = env if env is not None else os.environ
+    configured = str(
+        source.get("AICHECK_OCR_DEFAULT_PROVIDER") or ""
+    ).strip()
+    return (configured or "mineru").lower()
+
+
+def resolve_ocr_provider(
+    options: Mapping[str, Any],
+    env: Mapping[str, str] | None = None,
+) -> str:
+    explicit = str(options.get("provider") or "").strip().lower()
+    return explicit or default_ocr_provider(env)
+
+
 @celery_app.task(bind=True, max_retries=3)
 @pipeline_task_lock("ocr-document", lambda _self, _document_id, version_id, *_args, **_kwargs: str(version_id))
 def parse_document(self, document_id: str, version_id: str, storage_key: str, file_name: str | None = None) -> dict[str, Any]:
@@ -1402,9 +1421,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     ocr_options: dict[str, Any] = {}
     if isinstance((version or {}).get("ocrOptions"), dict):
         ocr_options.update(deepcopy(version["ocrOptions"]))
-    requested_provider = str(
-        ocr_options.get("provider") or ""
-    ).strip().lower()
+    requested_provider = resolve_ocr_provider(ocr_options)
     if not has_business_ocr_profile:
         ocr_options.update(
             {
@@ -1466,7 +1483,11 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         profile_id=resolved_profile_id,
         document_type=document_type,
         provider="mineru" if requested_provider == "mineru" else None,
-        options=ocr_options if requested_provider == "mineru" else None,
+        options=(
+            {**ocr_options, "provider": "mineru"}
+            if requested_provider == "mineru"
+            else None
+        ),
     )
     pipeline_run["ocrJobRecordId"] = ocr_job_record.get("id")
     if requested_provider not in {"", "local", "mineru"}:

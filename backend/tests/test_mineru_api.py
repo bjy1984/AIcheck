@@ -598,6 +598,70 @@ def test_raw_upload_stores_bytes_and_creates_storage_job(
     assert stored[0][2] == b"%PDF-upload"
 
 
+@pytest.mark.parametrize("provider", ["local", "mineru"])
+def test_unified_upload_session_persists_explicit_ocr_provider(
+    provider: str,
+    api_repository: InMemoryRepository,
+) -> None:
+    api_repository.state["projects"] = [
+        {
+            "id": "PROJECT-OCR-PROVIDER",
+            "name": "OCR Provider Test",
+            "status": "进行中",
+        }
+    ]
+    response = client.post(
+        "/projects/PROJECT-OCR-PROVIDER/documents/upload-session",
+        json={
+            "files": [
+                {
+                    "fileName": f"{provider}.pdf",
+                    "fileSize": 1024,
+                    "fileType": "application/pdf",
+                    "ocrOptions": {"provider": provider},
+                }
+            ]
+        },
+    )
+
+    assert response.json()["code"] == 0
+    version_id = response.json()["data"]["uploadUrls"][0][
+        "documentVersionId"
+    ]
+    version = api_repository.find_one("versions", version_id)
+    assert version["ocrOptions"] == {"provider": provider}
+
+
+def test_unified_upload_session_rejects_invalid_ocr_provider(
+    api_repository: InMemoryRepository,
+) -> None:
+    api_repository.state["projects"] = [
+        {
+            "id": "PROJECT-OCR-PROVIDER",
+            "name": "OCR Provider Test",
+            "status": "进行中",
+        }
+    ]
+    version_count = len(api_repository.state["versions"])
+
+    response = client.post(
+        "/projects/PROJECT-OCR-PROVIDER/documents/upload-session",
+        json={
+            "files": [
+                {
+                    "fileName": "invalid.pdf",
+                    "fileSize": 1024,
+                    "fileType": "application/pdf",
+                    "ocrOptions": {"provider": "unsupported"},
+                }
+            ]
+        },
+    )
+
+    assert response.json()["code"] != 0
+    assert len(api_repository.state["versions"]) == version_count
+
+
 @pytest.mark.parametrize(
     ("header", "body"),
     [

@@ -15,6 +15,7 @@ def _zip_bytes(
     *,
     content: list[dict[str, object]] | None = None,
     middle: dict[str, object] | None = None,
+    include_middle: bool = True,
     markdown: str | None = "# 压力管道安装记录",
     extra_members: dict[str, bytes] | None = None,
 ) -> bytes:
@@ -56,10 +57,11 @@ def _zip_bytes(
             "nested/document_content_list.json",
             json.dumps(content, ensure_ascii=False),
         )
-        archive.writestr(
-            "nested/document_middle.json",
-            json.dumps(middle, ensure_ascii=False),
-        )
+        if include_middle:
+            archive.writestr(
+                "nested/document_middle.json",
+                json.dumps(middle, ensure_ascii=False),
+            )
         archive.writestr("nested/images/seal.png", b"png")
         for name, data in (extra_members or {}).items():
             archive.writestr(name, data)
@@ -125,6 +127,115 @@ def test_normalizes_mineru_vlm_into_local_ocr_contract() -> None:
         "middle_json",
         "normalized_json",
     }
+
+
+def test_normalizes_current_vlm_layout_json_without_middle_json() -> None:
+    bundle = _normalize(
+        _zip_bytes(
+            include_middle=False,
+            extra_members={
+                "layout.json": json.dumps(
+                    {
+                        "pdf_info": [
+                            {
+                                "page_idx": 0,
+                                "page_size": [595, 841],
+                            }
+                        ]
+                    }
+                ).encode("utf-8")
+            },
+        )
+    )
+
+    assert bundle.result["pages"][0]["width"] == 595.0
+    assert bundle.result["pages"][0]["height"] == 841.0
+    assert "layout_json" in bundle.artifacts
+    assert "middle_json" not in bundle.artifacts
+
+
+def test_legacy_middle_json_wins_when_both_layout_formats_exist() -> None:
+    bundle = _normalize(
+        _zip_bytes(
+            extra_members={
+                "layout.json": json.dumps(
+                    {
+                        "pdf_info": [
+                            {
+                                "page_idx": 0,
+                                "page_size": [595, 841],
+                            }
+                        ]
+                    }
+                ).encode("utf-8")
+            }
+        )
+    )
+
+    assert bundle.result["pages"][0]["width"] == 1200.0
+    assert "middle_json" in bundle.artifacts
+    assert "layout_json" not in bundle.artifacts
+
+
+def test_missing_all_page_layout_artifacts_has_stable_error() -> None:
+    with pytest.raises(MinerUNormalizationError) as raised:
+        _normalize(_zip_bytes(include_middle=False))
+
+    assert raised.value.code == "MINERU_PAGE_LAYOUT_MISSING"
+
+
+def test_multiple_layout_json_members_are_rejected_as_ambiguous() -> None:
+    layout = json.dumps(
+        {"pdf_info": [{"page_idx": 0, "page_size": [595, 841]}]}
+    ).encode("utf-8")
+
+    with pytest.raises(MinerUNormalizationError) as raised:
+        _normalize(
+            _zip_bytes(
+                include_middle=False,
+                extra_members={
+                    "layout.json": layout,
+                    "nested/layout.json": layout,
+                },
+            )
+        )
+
+    assert raised.value.code == "MINERU_ARTIFACT_AMBIGUOUS"
+
+
+@pytest.mark.parametrize("artifact_kind", ["middle", "layout"])
+@pytest.mark.parametrize(
+    "page_layout",
+    [
+        {},
+        {"pdf_info": []},
+        {"pdf_info": [{"page_idx": 0, "page_size": [0, 841]}]},
+        {
+            "pdf_info": [
+                {"page_idx": 0, "page_size": [595, 841]},
+                {"page_idx": 0, "page_size": [595, 841]},
+            ]
+        },
+    ],
+)
+def test_invalid_page_layout_content_is_rejected(
+    artifact_kind: str,
+    page_layout: dict[str, object],
+) -> None:
+    if artifact_kind == "middle":
+        archive = _zip_bytes(middle=page_layout)
+    else:
+        archive = _zip_bytes(
+            include_middle=False,
+            extra_members={
+                "layout.json": json.dumps(page_layout).encode("utf-8")
+            },
+        )
+
+    with pytest.raises(MinerUNormalizationError) as raised:
+        _normalize(archive)
+
+    assert raised.value.code == "MINERU_PAGE_LAYOUT_INVALID"
 
 
 def test_missing_provider_confidence_uses_conservative_numeric_score() -> None:

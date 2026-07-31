@@ -5,7 +5,6 @@ import os
 from typing import Any
 
 from libs.capacity_guard import cpu_heavy_dispatch_status
-from libs.ocr_runtime import official_ocr_enabled, ocr_runtime_config
 from libs.security.tenant import current_tenant_id
 from libs.task_priority import broker_priority
 
@@ -41,10 +40,7 @@ def dispatch_parse_document(document_id: str, version_id: str, storage_key: str,
 
         return {"mode": mode, "result": parse_document.run(document_id, version_id, storage_key, file_name)}
     if mode == "celery":
-        runtime = ocr_runtime_config()
-        queue = "ocr.local-light" if official_ocr_enabled(runtime) else "cpu.heavy"
-        if queue == "cpu.heavy" and (blocker := cpu_heavy_dispatch_blocker(mode)):
-            return blocker
+        queue = "ocr.parse_document"
         from apps.worker.tasks import parse_document
 
         result = parse_document.apply_async(

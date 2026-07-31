@@ -18,12 +18,35 @@ Deployment guide: see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ## MinerU precise OCR
 
-MinerU is an explicit remote OCR adapter. The existing local `ocr-service`
-remains the default and stays offline. MinerU runs only through its dedicated
-endpoints or when a document version has `ocrOptions.provider="mineru"`.
+MinerU is an independent remote OCR adapter. Unified document OCR selects its
+provider with `AICHECK_OCR_DEFAULT_PROVIDER=mineru|local`; Compose defaults to
+`mineru`, while an explicit `ocrOptions.provider` overrides that setting. The
+existing local `ocr-service` remains available with `provider="local"` and stays
+offline. MinerU's dedicated endpoints always use MinerU regardless of the
+unified default.
 Every MinerU request uses the precise parsing API with fixed
 `model_version="vlm"` and enables OCR, formula recognition, and table
 recognition.
+
+For unified document uploads, set the provider per file when an override is
+needed; omitting `ocrOptions` uses the configured default:
+
+```json
+{
+  "files": [
+    {
+      "fileName": "document.pdf",
+      "fileSize": 1024,
+      "fileType": "application/pdf",
+      "ocrOptions": {"provider": "local"}
+    }
+  ]
+}
+```
+
+Provider-neutral preparation tasks use the `ocr.parse_document` queue. Its
+keyless worker resolves the provider, then sends MinerU work to the dedicated
+`ocr.remote` worker when selected.
 
 The asynchronous endpoints are available with or without the `/api` prefix:
 
@@ -68,13 +91,15 @@ least `fileName`; uploads are limited to 200MB and are stored in the
 `ocr-artifacts` bucket before dispatch.
 
 The worker downloads MinerU's result Zip, validates every member, converts
-`*_content_list.json` and `*_middle.json` into rendered-pixel OCR evidence,
+`*_content_list.json` plus legacy `*_middle.json` or current VLM `layout.json`
+into rendered-pixel OCR evidence,
 normalizes tables and seal candidates, and persists the result through the
 existing `ocr_jobs`, `ocr_parse_results`, and document OCR contracts. Bound
 `storageKey` jobs apply the result to business data; independent URL/upload
 jobs do not mutate documents.
 
-Set the `AICHECK_MINERU_*` variables in `backend/.env` and run an
+Set `AICHECK_OCR_DEFAULT_PROVIDER` and the `AICHECK_MINERU_*` variables in
+`backend/.env`, then run an
 `ocr-remote-worker-service` consuming the `ocr.remote` queue. Compose supplies
 the MinerU credential only to that remote worker; neither `api-service` nor the
 local `ocr-service` receives it.
@@ -333,6 +358,8 @@ Key environment variables:
 - `AICHECK_CNSE_ORIGIN=https://cnse.e-cqs.cn`, `AICHECK_CNSE_MIN_CONFIDENCE=0.50`: upstream origin and OpenCV confidence gate for `POST /api/cnse/organizations/search`; the origin remains restricted to the built-in official-domain allowlist.
 - `AICHECK_REVIEW_ORCHESTRATION=temporal`, `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `AICHECK_REVIEW_*_TASK_QUEUE`, `AICHECK_REVIEW_LLM_EXECUTION=litellm`, `AICHECK_LANGGRAPH_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_DISABLE=false`, `AICHECK_LANGGRAPH_CHECKPOINT_SETUP=false`, `LANGGRAPH_CHECKPOINT_DSN`: Temporal/LangGraph review orchestration, LiteLLM-backed finding generation, checkpoint storage, shadow runs, replay, and human decision/cancel signals.
 - `AICHECK_MINIO_ENDPOINT`, `AICHECK_MINIO_ACCESS_KEY`, `AICHECK_MINIO_SECRET_KEY`: signed upload/download and export artifacts.
+- `AICHECK_OCR_DEFAULT_PROVIDER=mineru|local`: unified document OCR provider. The runtime and Compose default is `mineru`; a request-level `ocrOptions.provider` takes precedence. Set it to `local` to restore the offline local OCR path without changing request payloads.
+- `AICHECK_MINERU_API_KEY`, `AICHECK_MINERU_BASE_URL`, `AICHECK_MINERU_MODEL_VERSION=vlm`, `AICHECK_MINERU_*_TIMEOUT_SECONDS`: MinerU precise-parsing configuration. Keep the API key only in `backend/.env`; Compose passes it only to `ocr-remote-worker-service`.
 - `AICHECK_OCR_BASE_URL`, `AICHECK_AGENTDESIGN_HOST_PATH`, `AICHECK_AGENTDESIGN_BACKEND`, `AICHECK_OCR_MODELS_HOST_PATH`, `AICHECK_OCR_ALLOW_PLACEHOLDER=false`, `AICHECK_OCR_OFFLINE_ONLY=true`, `AICHECK_OCR_DISABLE_NETWORK=true`: worker-to-OCR calls, host-side reference pipeline, local model artifact mount, and local-only OCR policy. `Dockerfile.ocr` supports two dependency tiers: `requirements-ocr-core.txt` is the default fast deploy tier for PaddleOCR/PaddleX/PyMuPDF/OpenCV, while `requirements-ocr.txt` is the full offline tier that also installs Docling/Transformers/Torch for advanced local document parsing. Set `AICHECK_OCR_REQUIREMENTS=requirements-ocr.txt` only when building the full OCR image intentionally; model weights are mounted read-only instead of downloaded at runtime. `AICHECK_ENABLE_PADDLEOCR_VL` defaults to `false` because VL is a heavy fallback; enable it only for controlled offline evaluation or manually scoped complex-document tests.
 - `AICHECK_PADDLEOCR_DET_MODEL_DIR`, `AICHECK_PADDLEOCR_REC_MODEL_DIR`, `AICHECK_PPSTRUCTURE_*_MODEL_DIR`, `AICHECK_SEAL_DET_MODEL_DIR`, `AICHECK_SEAL_REC_MODEL_DIR`: explicit local model folders for text OCR, PP-StructureV3 table/layout, and optional PaddleX seal recognition. Missing PP-Structure folders keep the table engine unavailable instead of downloading at runtime; the piping profile can still infer a basic table from OCR text coordinates.
 - `AICHECK_ENABLE_OPENCV_TABLE_GRID=true`, `AICHECK_OPENCV_TABLE_GRID_MAX_CELLS=1800`: enable the local OpenCV table-grid detector. It runs against the `table_line_enhanced` candidate image, uses adaptive/edge/color line masks, and can align OCR text rows to detected grid evidence when PP-StructureV3 is unavailable.

@@ -872,7 +872,7 @@ def test_worker_task_contract_check_fails_missing_route_retry_and_dispatcher() -
     assert "recognize_seals" in check["data"]["missingTasks"]
     assert {
         "task": "parse_document",
-        "expectedQueue": "ocr.local-light",
+        "expectedQueue": "ocr.parse_document",
         "actualQueue": "wrong.queue",
     } in check["data"]["routeMismatches"]
     assert {"task": "parse_document", "reason": "missing Exception autoretry"} in check["data"]["retryMissing"]

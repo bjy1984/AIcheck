@@ -9,6 +9,7 @@ import pytest
 os.environ.setdefault("AICHECK_ENABLE_DEMO_DATA", "true")
 os.environ.setdefault("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true")
 os.environ.setdefault("AICHECK_OCR_PROVIDER_MODE", "local")
+os.environ.setdefault("AICHECK_OCR_DEFAULT_PROVIDER", "local")
 
 from libs.security.session import security_sessions
 

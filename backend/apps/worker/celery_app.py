@@ -25,7 +25,7 @@ celery_app = Celery(
 
 celery_app.conf.update(
     task_routes={
-        "apps.worker.tasks.parse_document": {"queue": "ocr.local-light", "priority": broker_priority(7)},
+        "apps.worker.tasks.parse_document": {"queue": "ocr.parse_document", "priority": broker_priority(7)},
         "apps.worker.tasks.ocr_pipeline_structure_scan": {"queue": "cpu.heavy", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_seal_scan": {"queue": "cpu.heavy", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_evidence_fusion": {"queue": "business.light", "priority": broker_priority(9)},

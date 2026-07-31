@@ -35,7 +35,7 @@ def test_accuracy_pipeline_timeouts_allow_cpu_heavy_engines_to_finish() -> None:
 def test_accuracy_pipeline_official_ocr_workers_and_runtime_are_isolated() -> None:
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.accuracy-pipeline.yml").read_text(encoding="utf-8"))
     services = compose["services"]
-    assert "ocr.local-light" in services["ocr-local-worker-service"]["command"]
+    assert "ocr.parse_document" in services["ocr-local-worker-service"]["command"]
     assert "--concurrency=1" in services["ocr-local-worker-service"]["command"]
     assert "ocr.remote" in services["ocr-remote-worker-service"]["command"]
     assert "--concurrency=2" in services["ocr-remote-worker-service"]["command"]

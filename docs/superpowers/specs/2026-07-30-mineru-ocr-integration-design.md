@@ -169,6 +169,11 @@ options.get("provider") or AICHECK_OCR_DEFAULT_PROVIDER
 均以 `OCR_PROVIDER_UNSUPPORTED` 失败，不静默回落。路由发生在 Worker 调度层，不发生在
 本地 OCR 微服务内部。
 
+统一文档上传接口在每个 `files[]` 条目中接受
+`ocrOptions.provider="local"|"mineru"`，验证后持久化到对应文档版本。所有统一 OCR
+准备任务固定进入 Provider 中立的 `ocr.parse_document` 队列；该无密钥 Worker 解析
+Provider 后，只有 MinerU 分支继续派发到 `ocr.remote`。
+
 MinerU 请求沿用现有 OCR Pipeline 的业务标识和持久化流程，因此业务调用方不需要消费另一套结果结构。
 
 ## 数据流

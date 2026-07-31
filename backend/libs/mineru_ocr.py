@@ -74,16 +74,11 @@ def normalize_mineru_zip(
         required=True,
         missing_code="MINERU_CONTENT_LIST_MISSING",
     )
-    middle_name = unique_artifact_name(
-        members,
-        "_middle.json",
-        required=True,
-        missing_code="MINERU_MIDDLE_JSON_MISSING",
-    )
+    layout_name, layout_artifact_key = page_layout_artifact(members)
     markdown_name = primary_markdown_name(members)
     content = _load_json(members[content_name], expected_type=list)
-    middle = _load_json(members[middle_name], expected_type=dict)
-    pages = mineru_pages(middle)
+    layout = _load_json(members[layout_name], expected_type=dict)
+    pages = mineru_pages(layout)
     result = build_mineru_result(
         content,
         pages=pages,
@@ -97,7 +92,8 @@ def normalize_mineru_zip(
     artifacts = build_mineru_artifacts(
         zip_bytes,
         content_bytes=members[content_name],
-        middle_bytes=members[middle_name],
+        page_layout_bytes=members[layout_name],
+        page_layout_artifact_key=layout_artifact_key,
         markdown_bytes=members[markdown_name] if markdown_name else None,
         result=result,
     )
@@ -202,6 +198,35 @@ def unique_artifact_name(
     return matches[0]
 
 
+def page_layout_artifact(
+    members: Mapping[str, bytes],
+) -> tuple[str, str]:
+    middle_name = unique_artifact_name(
+        members,
+        "_middle.json",
+        required=False,
+        missing_code="MINERU_PAGE_LAYOUT_MISSING",
+    )
+    if middle_name:
+        return middle_name, "middle_json"
+    layout_names = sorted(
+        name
+        for name in members
+        if PurePosixPath(name).name.lower() == "layout.json"
+    )
+    if len(layout_names) > 1:
+        raise MinerUNormalizationError(
+            "MINERU_ARTIFACT_AMBIGUOUS",
+            "MinerU result archive contains ambiguous artifacts.",
+        )
+    if not layout_names:
+        raise MinerUNormalizationError(
+            "MINERU_PAGE_LAYOUT_MISSING",
+            "MinerU result archive omitted a required page layout.",
+        )
+    return layout_names[0], "layout_json"
+
+
 def primary_markdown_name(members: Mapping[str, bytes]) -> str | None:
     exact = sorted(
         name
@@ -216,13 +241,27 @@ def primary_markdown_name(members: Mapping[str, bytes]) -> str | None:
 
 def mineru_pages(middle: Mapping[str, Any]) -> list[dict[str, Any]]:
     raw_pages = middle.get("pdf_info")
-    if not isinstance(raw_pages, list):
-        raw_pages = []
+    if not isinstance(raw_pages, list) or not raw_pages:
+        raise MinerUNormalizationError(
+            "MINERU_PAGE_LAYOUT_INVALID",
+            "MinerU page layout does not contain valid page metadata.",
+        )
     pages: list[dict[str, Any]] = []
+    page_numbers: set[int] = set()
     for fallback_index, raw_page in enumerate(raw_pages):
         if not isinstance(raw_page, Mapping):
-            continue
-        page_index = _safe_int(raw_page.get("page_idx"), fallback_index)
+            raise MinerUNormalizationError(
+                "MINERU_PAGE_LAYOUT_INVALID",
+                "MinerU page layout contains an invalid page.",
+            )
+        raw_page_index = raw_page.get("page_idx", fallback_index)
+        try:
+            page_index = int(raw_page_index)
+        except (TypeError, ValueError) as exc:
+            raise MinerUNormalizationError(
+                "MINERU_PAGE_LAYOUT_INVALID",
+                "MinerU page layout contains an invalid page number.",
+            ) from exc
         size = raw_page.get("page_size")
         if isinstance(size, Mapping):
             width = _safe_float(size.get("width"))
@@ -233,13 +272,23 @@ def mineru_pages(middle: Mapping[str, Any]) -> list[dict[str, Any]]:
         else:
             width = None
             height = None
-        if page_index < 0 or width is None or height is None:
-            continue
-        if width <= 0 or height <= 0:
-            continue
+        page_no = page_index + 1
+        if (
+            page_index < 0
+            or width is None
+            or height is None
+            or width <= 0
+            or height <= 0
+            or page_no in page_numbers
+        ):
+            raise MinerUNormalizationError(
+                "MINERU_PAGE_LAYOUT_INVALID",
+                "MinerU page layout contains invalid or duplicate page metadata.",
+            )
+        page_numbers.add(page_no)
         pages.append(
             {
-                "pageNo": page_index + 1,
+                "pageNo": page_no,
                 "width": width,
                 "height": height,
                 "coordinateSystem": "rendered_pixels",
@@ -553,7 +602,8 @@ def build_mineru_artifacts(
     zip_bytes: bytes,
     *,
     content_bytes: bytes,
-    middle_bytes: bytes,
+    page_layout_bytes: bytes,
+    page_layout_artifact_key: str,
     markdown_bytes: bytes | None,
     result: Mapping[str, Any],
 ) -> dict[str, MinerUArtifact]:
@@ -568,9 +618,13 @@ def build_mineru_artifacts(
             content_bytes,
             "application/json",
         ),
-        "middle_json": (
-            "mineru-middle.json",
-            middle_bytes,
+        page_layout_artifact_key: (
+            (
+                "mineru-middle.json"
+                if page_layout_artifact_key == "middle_json"
+                else "mineru-layout.json"
+            ),
+            page_layout_bytes,
             "application/json",
         ),
         "normalized_json": (

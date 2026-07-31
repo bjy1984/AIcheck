@@ -763,17 +763,32 @@ def test_mineru_worker_uses_dispatched_tenant_context(
 
 
 @pytest.mark.parametrize(
-    ("ocr_options", "expected_provider"),
+    ("ocr_options", "configured_default", "expected_provider"),
     [
-        ({"provider": "mineru"}, "mineru"),
-        ({}, "local"),
+        ({"provider": "mineru"}, "local", "mineru"),
+        ({"provider": "local"}, "mineru", "local"),
+        ({}, None, "mineru"),
+        ({}, "   ", "mineru"),
+        ({}, "local", "local"),
+        ({}, "unsupported", "unsupported"),
     ],
 )
-def test_document_ocr_routes_only_explicit_mineru_provider_remotely(
+def test_document_ocr_resolves_explicit_or_configured_provider(
     ocr_options: dict[str, str],
+    configured_default: str | None,
     expected_provider: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if configured_default is None:
+        monkeypatch.delenv(
+            "AICHECK_OCR_DEFAULT_PROVIDER",
+            raising=False,
+        )
+    else:
+        monkeypatch.setenv(
+            "AICHECK_OCR_DEFAULT_PROVIDER",
+            configured_default,
+        )
     repository = InMemoryRepository()
     repository.state["documents"] = [
         {
@@ -831,7 +846,17 @@ def test_document_ocr_routes_only_explicit_mineru_provider_remotely(
         "doc.pdf",
     )
 
-    if expected_provider == "mineru":
+    if expected_provider == "unsupported":
+        assert output["status"] == "failed"
+        assert output["diagnostics"] == [
+            {
+                "code": "OCR_PROVIDER_UNSUPPORTED",
+                "level": "error",
+            }
+        ]
+        assert remote_jobs == []
+        assert local_calls == []
+    elif expected_provider == "mineru":
         assert output["status"] == "queued"
         assert output["provider"] == "mineru"
         assert len(remote_jobs) == 1

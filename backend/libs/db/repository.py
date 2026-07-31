@@ -950,6 +950,7 @@ class InMemoryRepository:
         material_category: str | None = None,
         file_size: int = 0,
         content_hash: str | None = None,
+        ocr_options: dict[str, Any] | None = None,
         seed: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
         seed = seed or uuid4().hex[:8].upper()
@@ -991,6 +992,8 @@ class InMemoryRepository:
             "uploadTime": now,
             "isCurrent": True,
         }
+        if ocr_options:
+            version["ocrOptions"] = deepcopy(ocr_options)
         knowledge_file = {
             "id": f"KF-{document_id}",
             "fileName": file_name,
@@ -1062,6 +1065,11 @@ class InMemoryRepository:
                 material_category=file.get("materialCategory"),
                 file_size=int(file.get("fileSize") or 0),
                 content_hash=str(file.get("contentHash") or "").strip() or None,
+                ocr_options=(
+                    file.get("ocrOptions")
+                    if isinstance(file.get("ocrOptions"), dict)
+                    else None
+                ),
             )
             content_type = file.get("fileType") or "application/octet-stream"
             fallback_url = f"mock://upload/{session_id}/{doc['id']}"
