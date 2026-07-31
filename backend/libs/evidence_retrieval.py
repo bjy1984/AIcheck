@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from math import isfinite
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
@@ -139,7 +140,11 @@ def _valid_bbox(value: Any) -> bool:
         left, top, right, bottom = (float(item) for item in value)
     except (TypeError, ValueError):
         return False
-    return right > left and bottom > top
+    return (
+        all(isfinite(item) for item in (left, top, right, bottom))
+        and right > left
+        and bottom > top
+    )
 
 
 def evidence_eligibility(candidate: dict[str, Any]) -> tuple[bool, list[str]]:

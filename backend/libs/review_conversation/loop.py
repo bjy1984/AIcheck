@@ -63,6 +63,7 @@ def review_conversation_llm_answer(
     cancel_event: threading.Event | None = None,
     execution_id: str | None = None,
     episodic_memory: dict[str, Any] | None = None,
+    advisory_evidence_links: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     mode = os.getenv(
         "AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION",
@@ -651,6 +652,7 @@ def review_conversation_llm_answer(
                             readiness=readiness,
                             evidence_links=evidence_links,
                             review_run=review_run,
+                            advisory_evidence_links=advisory_evidence_links or [],
                         )
                     except _r().ReviewConversationCancelled:
                         raise

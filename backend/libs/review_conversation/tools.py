@@ -372,6 +372,7 @@ def review_conversation_agent_tool_output(
     readiness: dict[str, Any],
     evidence_links: list[dict[str, Any]],
     review_run: dict[str, Any] | None,
+    advisory_evidence_links: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if tool_name == "get_review_context":
         return {
@@ -403,7 +404,13 @@ def review_conversation_agent_tool_output(
             if not version_id:
                 continue
             visible_evidence_by_version.setdefault(version_id, []).append(item)
-        allowed_version_ids = sorted(visible_evidence_by_version)
+        allowed_version_ids = sorted(
+            {
+                str(item.get("documentVersionId") or "").strip()
+                for item in [*evidence_links, *(advisory_evidence_links or [])]
+                if str(item.get("documentVersionId") or "").strip()
+            }
+        )
 
         identity_fields = (
             "evidenceLinkId",

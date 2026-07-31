@@ -8639,7 +8639,12 @@ def review_assistant_deterministic_blocks(
         else:
             fallback_reason = "empty_visible_evidence_scope"
 
-        fallback_used = not (live_formal or live_advisory)
+        has_live_candidates = bool(live_formal or live_advisory)
+        fallback_used = (
+            fallback_reason
+            in {"live_retrieval_exception", "empty_visible_evidence_scope"}
+            or (degraded and not has_live_candidates)
+        )
         if fallback_used:
             formal_items = evidence_links[:12]
             advisory_items = advisory_evidence_links[:12]

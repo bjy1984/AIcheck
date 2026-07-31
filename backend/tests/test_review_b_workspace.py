@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 
@@ -480,7 +481,7 @@ def test_review_b_search_evidence_without_tail_builds_node_query(monkeypatch) ->
     assert live_call["document_version_ids"] == ["DV-REVIEW-B-DEFAULT-QUERY"]
 
 
-def test_review_b_search_evidence_falls_back_when_live_result_has_no_usable_candidates(
+def test_review_b_search_evidence_successful_no_hit_renders_empty_live_result(
     monkeypatch,
 ) -> None:
     point = next(
@@ -539,9 +540,9 @@ def test_review_b_search_evidence_falls_back_when_live_result_has_no_usable_cand
         if block["type"] == "evidence_card"
     )
 
-    assert [item["id"] for item in card["items"]] == ["NEL-REVIEW-B-NO-LIVE-HIT"]
-    assert card["fallbackUsed"] is True
-    assert card["fallbackReason"] == "live_retrieval_no_usable_candidates"
+    assert card["items"] == []
+    assert card["fallbackUsed"] is False
+    assert card["fallbackReason"] is None
     assert card["retrievalTraceId"] == "RTR-LIVE-NO-HIT"
 
 
@@ -886,6 +887,143 @@ def test_review_b_agent_search_uses_hybrid_evidence_service(monkeypatch) -> None
     assert output["candidates"][0]["fusedScore"] == 0.027
     assert output["candidates"][0]["evidenceTier"] == "formal"
     assert output["candidates"][1]["evidenceTier"] == "advisory"
+
+
+def test_review_b_agent_search_includes_advisory_only_visible_version(
+    monkeypatch,
+) -> None:
+    point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == NODE_ID
+    )
+    advisory_link = {
+        "id": "NEL-AGENT-ADVISORY-ONLY",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "reviewPointId": point["id"],
+        "documentId": "DOC-AGENT-ADVISORY-ONLY",
+        "documentVersionId": "DV-AGENT-ADVISORY-ONLY",
+        "fileName": "待定位许可证.pdf",
+        "manualStatus": "pending",
+        "manualStatusLabel": "待确认",
+        "pageNo": 1,
+        "bbox": None,
+        "quotedText": "设计单位许可证",
+        "formalEvidenceEligible": False,
+        "evidenceTier": "advisory",
+        "rejectionReasons": ["missing_bbox"],
+    }
+    repo.state["node_evidence_links"].append(advisory_link)
+    in_scope_candidate = {
+        **advisory_link,
+        "id": "EVC-AGENT-ADVISORY-ONLY-FORMAL",
+        "candidateId": "EVC-AGENT-ADVISORY-ONLY-FORMAL",
+        "pageNo": 3,
+        "bbox": [10, 20, 260, 60],
+        "quotedText": "许可证有效期至 2028-12-31",
+        "formalEvidenceEligible": True,
+        "evidenceTier": "formal",
+        "rejectionReasons": [],
+        "bm25Rank": 1,
+        "denseRank": 1,
+        "fusedScore": 0.027,
+    }
+    out_of_scope_candidate = {
+        **in_scope_candidate,
+        "id": "EVC-AGENT-ADVISORY-ONLY-OUT-OF-SCOPE",
+        "candidateId": "EVC-AGENT-ADVISORY-ONLY-OUT-OF-SCOPE",
+        "documentVersionId": "DV-AGENT-OUT-OF-SCOPE",
+    }
+    service_call = {}
+
+    def fake_search_project_evidence(repository, **kwargs):
+        service_call.update(kwargs)
+        candidates = [in_scope_candidate, out_of_scope_candidate]
+        return {
+            "formalCandidates": candidates,
+            "advisoryCandidates": [],
+            "allCandidates": candidates,
+            "trace": {"retrievalTraceId": "RTR-AGENT-ADVISORY-ONLY"},
+            "degraded": False,
+            "fallbackReason": None,
+        }
+
+    tool_output = {}
+
+    class AdvisoryOnlySearchRuntime:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        def chat_sync(self, messages, model, **kwargs):
+            self.turn += 1
+            if self.turn == 1:
+                return {
+                    "id": "chatcmpl-agent-advisory-only-1",
+                    "provider": "test-qwen",
+                    "model": "qwen-agent-test",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-agent-advisory-only-search",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "search_node_evidence",
+                                            "arguments": json.dumps(
+                                                {"query": "许可证有效期"},
+                                                ensure_ascii=False,
+                                            ),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 80, "completion_tokens": 12},
+                }
+            tool_message = next(
+                message for message in reversed(messages) if message.get("role") == "tool"
+            )
+            tool_output.update(json.loads(tool_message["content"]))
+            return {
+                "id": "chatcmpl-agent-advisory-only-2",
+                "provider": "test-qwen",
+                "model": "qwen-agent-test",
+                "choices": [{"message": {"content": "已检索当前节点可见版本。"}}],
+                "usage": {"prompt_tokens": 110, "completion_tokens": 18},
+            }
+
+    monkeypatch.setenv("AICHECK_REVIEW_CONVERSATION_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr(routes_module, "qwen_runtime_client", AdvisoryOnlySearchRuntime)
+    monkeypatch.setattr(
+        routes_module,
+        "search_project_evidence",
+        fake_search_project_evidence,
+    )
+    session = create_session()
+
+    response = assert_ok(
+        client.post(
+            f"/api/review-sessions/{session['id']}/messages",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-agent-advisory-only-scope-test",
+                "If-Match": session["etag"],
+            },
+            json={"content": "检索许可证有效期证据。"},
+        )
+    )
+
+    assert response["status"] == "completed"
+    assert service_call["document_version_ids"] == ["DV-AGENT-ADVISORY-ONLY"]
+    assert [item["candidateId"] for item in tool_output["candidates"]] == [
+        "EVC-AGENT-ADVISORY-ONLY-FORMAL"
+    ]
+    assert tool_output["candidates"][0]["manualStatus"] == "pending"
+    assert tool_output["candidates"][0]["formalEvidenceEligible"] is True
 
 
 def test_review_b_agent_search_uses_visible_manual_status_scope(monkeypatch) -> None:

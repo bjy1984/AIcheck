@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from libs import evidence_retrieval, knowledge_retrieval
 from libs.db.repository import InMemoryRepository
 from libs.evidence_retrieval import search_project_evidence
@@ -204,6 +206,49 @@ def test_evidence_without_bbox_is_advisory() -> None:
 
     assert result["formalCandidates"] == []
     assert result["advisoryCandidates"][0]["rejectionReasons"] == ["missing_bbox"]
+
+
+@pytest.mark.parametrize(
+    "bbox",
+    [
+        [float("nan"), 20.0, 110.0, 60.0],
+        [10.0, 20.0, float("inf"), 60.0],
+        [float("-inf"), 20.0, 110.0, 60.0],
+    ],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_evidence_non_finite_bbox_is_advisory(bbox: list[float]) -> None:
+    """Accepting any non-finite coordinate must expose it as formal evidence."""
+    repository = evidence_repository(chunk_bbox=bbox)
+
+    result = search_project_evidence(
+        repository,
+        project_id="P-1",
+        node_id=1,
+        document_version_ids=["DV-P1"],
+        query="许可证",
+    )
+
+    assert result["formalCandidates"] == []
+    assert result["advisoryCandidates"][0]["formalEvidenceEligible"] is False
+    assert result["advisoryCandidates"][0]["rejectionReasons"] == ["invalid_bbox"]
+
+
+def test_evidence_finite_positive_bbox_remains_formal() -> None:
+    """Rejecting finite positive-area coordinates must demote valid evidence."""
+    repository = evidence_repository(chunk_bbox=[10.0, 20.0, 110.0, 60.0])
+
+    result = search_project_evidence(
+        repository,
+        project_id="P-1",
+        node_id=1,
+        document_version_ids=["DV-P1"],
+        query="许可证",
+    )
+
+    assert result["advisoryCandidates"] == []
+    assert result["formalCandidates"][0]["formalEvidenceEligible"] is True
+    assert result["formalCandidates"][0]["rejectionReasons"] == []
 
 
 def test_evidence_rrf_fuses_bm25_and_dense_rankings(monkeypatch) -> None:

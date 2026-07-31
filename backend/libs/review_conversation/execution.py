@@ -288,6 +288,7 @@ def run_review_conversation_execution(
             cancel_event=execution_entry.get("cancelEvent"),
             execution_id=execution_id,
             episodic_memory=context.get("episodic_memory"),
+            advisory_evidence_links=context.get("advisory_evidence_links") or [],
         )
         blocks, execution = _r().review_agent_answer_blocks(
             agent_result, session=session, context=context
