@@ -127,6 +127,11 @@ def evidence_lexical_text(chunk: dict[str, Any]) -> str:
     )
 
 
+def evidence_lexical_query(query: str) -> str:
+    """Treat punctuation as separators so it cannot become BM25 evidence."""
+    return " ".join("".join(character if character.isalnum() else " " for character in query).split())
+
+
 def _valid_bbox(value: Any) -> bool:
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return False
@@ -268,7 +273,7 @@ def search_project_evidence(
     bm25_started = perf_counter()
     bm25_scores = bm25_scores_for_texts(
         [(str(chunk.get("id") or ""), evidence_lexical_text(chunk)) for chunk in scoped_chunks],
-        effective_query,
+        evidence_lexical_query(effective_query),
     )
     lexical_order = sorted(bm25_scores, key=lambda chunk_id: (-bm25_scores[chunk_id], chunk_id))
     bm25_ranks = {chunk_id: rank for rank, chunk_id in enumerate(lexical_order, start=1)}
