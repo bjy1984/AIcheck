@@ -3002,6 +3002,19 @@ export const createDocumentUploadSessionApi = (
   })
 }
 
+export const createInspectionAttachmentUploadSessionApi = (
+  projectId: string,
+  nodeId: number,
+  files: DocumentUploadSessionFile[],
+  options?: MutationHeaderOptions
+): Promise<IResponse<UploadSessionPayload>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/attachments`,
+    data: { files },
+    headers: mutationHeaders(options)
+  })
+}
+
 export const completeDocumentUploadSessionApi = (
   projectId: string,
   sessionId: string,
@@ -3027,6 +3040,19 @@ export const bindDocumentsToNodeApi = (
   return request.post({
     url: `/api/projects/${projectId}/documents/bindings`,
     data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const bindInspectionDocumentsApi = (
+  projectId: string,
+  nodeId: number,
+  bindings: Array<Pick<NodeFileBinding, 'documentId' | 'documentVersionId' | 'usage'>>,
+  options?: MutationHeaderOptions
+): Promise<IResponse<MockMutationResult>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/file-bindings`,
+    data: { bindings },
     headers: mutationHeaders(options)
   })
 }

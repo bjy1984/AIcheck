@@ -6108,6 +6108,91 @@ def test_owner_write_forbidden_and_archived_readonly() -> None:
     )
 
 
+def test_inspection_attachment_can_be_uploaded_bound_and_submitted_to_current_node() -> None:
+    project_id = "P-2026-HDCP-001"
+    inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/21/attachments",
+            json={
+                "files": [
+                    {
+                        "fileName": "S01-PHOTO-001_标志移植现场核验图.jpg",
+                        "fileSize": 36,
+                        "fileType": "image/jpeg",
+                    }
+                ]
+            },
+            headers=inspection_headers,
+        )
+    )
+    target = upload["uploadUrls"][0]
+    image_bytes = b"\xff\xd8\xff\xe0inspection-photo-no-ocr\xff\xd9"
+    assert_ok(client.put(target["url"], content=image_bytes, headers=target["headers"]))
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {
+                        "documentVersionId": target["documentVersionId"],
+                        "fileSize": len(image_bytes),
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "inspection-photo-complete"},
+        )
+    )
+    document = repo.find_one("documents", target["documentId"])
+    assert document["materialCategory"] == "监检现场补充证据"
+    assert document["sourceOrgName"] == "省特检院一部"
+    assert repo.fields_for_versions({target["documentVersionId"]}) == []
+
+    bound = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/21/file-bindings",
+            json={
+                "bindings": [
+                    {
+                        "documentId": target["documentId"],
+                        "documentVersionId": target["documentVersionId"],
+                        "usage": "监检资料",
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "inspection-photo-bind"},
+        )
+    )
+    assert len(bound["affectedIds"]) == 1
+    binding_id = bound["affectedIds"][0]
+
+    submitted = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={"nodeIds": [21], "bindingIds": [binding_id], "batchName": "R21 监检现场资料"},
+            headers={**inspection_headers, "Idempotency-Key": "inspection-photo-submit"},
+        )
+    )
+    assert submitted["bindingIds"] == [binding_id]
+    stored_binding = repo.find_one("bindings", binding_id)
+    assert stored_binding["usage"] == "监检资料"
+    assert stored_binding["bindingStatus"] == "已提交"
+    assert repo.node(project_id, 21)["status"] == "待审查"
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/21/attachments",
+            json={
+                "files": [
+                    {"fileName": "forbidden.jpg", "fileSize": 3, "fileType": "image/jpeg"}
+                ]
+            },
+            headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+        ),
+        "FORBIDDEN",
+    )
+
+
 def test_if_match_conflict_and_review_admin_guard() -> None:
     conflict = client.patch(
         "/projects/P-2026-HDCP-001",

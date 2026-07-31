@@ -7448,12 +7448,25 @@ def inspection_attachments(
     x_role: str | None = Header(default=None, alias="X-Role"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    effective_role, role_error = effective_role_for_request(request, x_role)
+    if role_error:
+        return role_error
+    if effective_role != "inspection":
+        return fail(errors.FORBIDDEN, request, message="只有监检人员可以上传监检资料。")
     guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
     if guard:
         return guard
     if not body.get("files"):
         return fail(errors.VALIDATION_ERROR, request, message="请选择需要上传的监检资料。")
-    return create_upload_session(request, project_id, {"files": body["files"]}, idempotency_key, x_role)
+    files = [
+        {
+            **item,
+            "materialCategory": item.get("materialCategory") or "监检现场补充证据",
+        }
+        for item in body["files"]
+        if isinstance(item, dict)
+    ]
+    return create_upload_session(request, project_id, {"files": files}, idempotency_key, x_role)
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/file-bindings")
@@ -7465,6 +7478,11 @@ def inspection_file_bindings(
     x_role: str | None = Header(default=None, alias="X-Role"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    effective_role, role_error = effective_role_for_request(request, x_role)
+    if role_error:
+        return role_error
+    if effective_role != "inspection":
+        return fail(errors.FORBIDDEN, request, message="只有监检人员可以挂载监检资料。")
     body = {**body, "nodeId": node_id}
     return bind_documents(request, project_id, body, idempotency_key, x_role)
 

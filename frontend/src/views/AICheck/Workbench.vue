@@ -44,12 +44,14 @@ import {
   adoptAiSuggestionApi,
   archiveReportApi,
   bindDocumentsToNodeApi,
+  bindInspectionDocumentsApi,
   completeTodoApi,
   completeDocumentUploadSessionApi,
   completeNdtReportUploadSessionApi,
   confirmNodeEvidenceLinkApi,
   createNdtFilmApi,
   createDocumentUploadSessionApi,
+  createInspectionAttachmentUploadSessionApi,
   createNdtReportUploadSessionApi,
   deleteProjectDocumentApi,
   getArchivePackageApi,
@@ -355,6 +357,7 @@ const previewDrawerOriginalError = ref('')
 const uploadDrawerVisible = ref(false)
 const uploadDrawerError = ref('')
 const uploadDrawerMaterialCategory = ref('')
+const uploadDrawerMode = ref<'project' | 'inspection'>('project')
 const ndtReportUploadVisible = ref(false)
 const bindDialogVisible = ref(false)
 const bindDialogError = ref('')
@@ -2760,8 +2763,17 @@ const openLocalArchiveDownloadTask = (item: ArchiveItem) => {
 
 const handleOpenUploadDrawer = (materialCategory?: string) => {
   if (!ensureWritableProject()) return
+  uploadDrawerMode.value = 'project'
   uploadDrawerError.value = ''
   uploadDrawerMaterialCategory.value = materialCategory || ''
+  uploadDrawerVisible.value = true
+}
+
+const handleOpenInspectionUploadDrawer = () => {
+  if (!ensureWritableNode()) return
+  uploadDrawerMode.value = 'inspection'
+  uploadDrawerError.value = ''
+  uploadDrawerMaterialCategory.value = '监检现场补充证据'
   uploadDrawerVisible.value = true
 }
 
@@ -2782,9 +2794,17 @@ const handleCreateUploadSession = async (files: File[]) => {
         ? { materialCategory: uploadDrawerMaterialCategory.value }
         : {})
     }))
-    const res = await createDocumentUploadSessionApi(activeProjectId.value, uploadFiles, {
-      etag: currentProject.value?.etag
-    })
+    const res =
+      uploadDrawerMode.value === 'inspection'
+        ? await createInspectionAttachmentUploadSessionApi(
+            activeProjectId.value,
+            activeNodeId.value,
+            uploadFiles,
+            { etag: currentProject.value?.etag }
+          )
+        : await createDocumentUploadSessionApi(activeProjectId.value, uploadFiles, {
+            etag: currentProject.value?.etag
+          })
     if (!res) {
       showUploadDrawerError('上传会话创建失败，请检查文件类型、大小和当前项目权限。')
       return
@@ -2809,6 +2829,50 @@ const handleCreateUploadSession = async (files: File[]) => {
     )
     if (!completeRes) {
       throw new Error('上传完成确认失败，请刷新项目文件库后重试。')
+    }
+    if (uploadDrawerMode.value === 'inspection') {
+      const bindRes = await bindInspectionDocumentsApi(
+        activeProjectId.value,
+        activeNodeId.value,
+        res.data.uploadUrls.map((target) => ({
+          documentId: target.documentId,
+          documentVersionId: target.documentVersionId,
+          usage: '监检资料'
+        })),
+        {
+          etag: currentProject.value?.etag,
+          idempotencyKey: `inspection-upload-bind-${res.data.uploadSessionId}`
+        }
+      )
+      const bindingIds = bindRes?.data.affectedIds || []
+      if (bindingIds.length !== files.length) {
+        throw new Error('监检文件已上传，但未生成完整的节点挂载关系。')
+      }
+      const submitRes = await submitNodePackageApi(
+        activeProjectId.value,
+        {
+          nodeIds: [activeNodeId.value],
+          bindingIds,
+          batchName: `R${String(activeNodeId.value).padStart(2, '0')} 监检资料`,
+          submitterComment: '监检人员上传并提交现场或评价证据。'
+        },
+        {
+          etag: currentProject.value?.etag,
+          idempotencyKey: `inspection-upload-submit-${res.data.uploadSessionId}`
+        }
+      )
+      if (!submitRes || submitRes.data.bindingIds?.length !== bindingIds.length) {
+        throw new Error('监检文件已挂载，但提交快照未包含全部文件。')
+      }
+      uploadDrawerError.value = ''
+      uploadDrawerVisible.value = false
+      ElMessage.success(`已上传并提交 ${files.length} 份监检资料`)
+      await Promise.all([
+        loadProjectBundle(),
+        loadInspectionAuditWorkspace(activeNodeId.value),
+        loadSubmissionHistory()
+      ])
+      return
     }
     uploadDrawerError.value = ''
     ElMessage.success(`已上传 ${files.length} 个文件，OCR 和索引处理已进入队列`)
@@ -4653,6 +4717,19 @@ onBeforeUnmount(() => {
               >
                 批量上传文件
               </ElButton>
+              <ElButton
+                v-if="
+                  role === 'inspection' &&
+                  activeWorkbenchSection === 'node' &&
+                  hasAction('file:upload')
+                "
+                class="btn primary"
+                type="primary"
+                :disabled="actionLoading || isReadOnly"
+                @click="handleOpenInspectionUploadDrawer"
+              >
+                上传监检资料
+              </ElButton>
               <ElTooltip
                 v-if="role === 'ndt' && hasAction('ndt:submit')"
                 :content="
@@ -5981,6 +6058,7 @@ onBeforeUnmount(() => {
 
       <UploadSessionDrawer
         v-model="uploadDrawerVisible"
+        :title="uploadDrawerMode === 'inspection' ? '上传监检资料' : '上传项目文件'"
         :node-name="selectedNode?.name"
         :material-category="uploadDrawerMaterialCategory"
         :loading="actionLoading"

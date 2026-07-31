@@ -13,6 +13,7 @@ import type { UploadFile, UploadInstance } from 'element-plus'
 
 const props = defineProps<{
   modelValue: boolean
+  title?: string
   nodeName?: string
   materialCategory?: string
   loading: boolean
@@ -98,7 +99,12 @@ watch(
 </script>
 
 <template>
-  <ElDrawer v-model="visible" title="上传项目文件" size="min(560px, 94vw)" append-to-body>
+  <ElDrawer
+    v-model="visible"
+    :title="title || '上传项目文件'"
+    size="min(560px, 94vw)"
+    append-to-body
+  >
     <div class="drawer-body">
       <div v-if="materialCategory" class="target-category">
         <span>资料类别</span>
