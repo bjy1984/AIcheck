@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 
@@ -19,6 +20,7 @@ from .render_common import (
     THEME,
     output_file_name,
 )
+from .test_seal import render_test_seal_png, signature_contract
 
 
 def _set_run_font(run, font: str, size: float, *, bold: bool = False) -> None:
@@ -198,27 +200,73 @@ def _add_business_table(document: Document, table_data: dict) -> None:
         for cell in cells:
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
             _set_cell_margins(cell)
-def _add_approvals(document: Document, approvals: Iterable[dict]) -> None:
+def _add_approvals(
+    document: Document,
+    approvals: Iterable[dict],
+    content: dict,
+) -> None:
     approvals = list(approvals)
     if not approvals:
         return
     paragraph = document.add_paragraph()
     run = paragraph.add_run("编审记录")
     _set_run_font(run, HEADING_FONT, 10.5, bold=True)
-    _add_business_table(
-        document,
-        {
-            "headers": ["角色", "人员", "日期", "记录方式"],
-            "rows": [
-                [
-                    row.get("role", ""),
-                    row.get("name", ""),
-                    row.get("date", ""),
-                    row.get("record", "电子记录（测试）"),
-                ]
-                for row in approvals
-            ],
-        },
+    table = document.add_table(rows=1, cols=4)
+    table.style = "Table Grid"
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = True
+    headers = ["角色", "人员", "日期", "签署形态"]
+    for index, header in enumerate(headers):
+        cell = table.rows[0].cells[index]
+        cell.text = header
+        _shade(cell, THEME["navy"])
+        for header_run in cell.paragraphs[0].runs:
+            _set_run_font(header_run, BODY_FONT, 8.5, bold=True)
+            header_run.font.color.rgb = RGBColor(255, 255, 255)
+    _set_repeat_table_header(table.rows[0])
+    for row in approvals:
+        cells = table.add_row().cells
+        values = [
+            row.get("role", ""),
+            row.get("name", ""),
+            row.get("date", ""),
+        ]
+        for index, value in enumerate(values):
+            cells[index].text = str(value)
+        signature_cell = cells[3]
+        signature_cell.text = "电子签署（测试）"
+        signature_paragraph = signature_cell.paragraphs[0]
+        signature_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        signature_run = signature_paragraph.add_run()
+        signature_run.add_picture(
+            BytesIO(
+                render_test_seal_png(
+                    "电子签署（测试）",
+                    str(row.get("role", "责任角色")),
+                )
+            ),
+            width=Cm(3.1),
+        )
+        for cell in cells:
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            _set_cell_margins(cell)
+            for cell_paragraph in cell.paragraphs:
+                for cell_run in cell_paragraph.runs:
+                    if cell_run.text:
+                        _set_run_font(cell_run, BODY_FONT, 8.5)
+
+    contract = signature_contract(content)
+    stamp_paragraph = document.add_paragraph()
+    stamp_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    text_run = stamp_paragraph.add_run(
+        f"{contract['record']}｜{contract['label']}　"
+    )
+    _set_run_font(text_run, BODY_FONT, 8.5, bold=True)
+    text_run.font.color.rgb = RGBColor.from_string(THEME["alert"])
+    stamp_run = stamp_paragraph.add_run()
+    stamp_run.add_picture(
+        BytesIO(render_test_seal_png(contract["label"], contract["role"])),
+        width=Cm(4.2),
     )
 
 
@@ -304,7 +352,7 @@ def render_docx(content: dict, master: dict, output: Path) -> Path:
             run = paragraph.add_run(str(reference))
             _set_run_font(run, BODY_FONT, 9.5)
 
-    _add_approvals(document, content.get("approvals", []))
+    _add_approvals(document, content.get("approvals", []), content)
 
     path = output / output_file_name(content, "docx")
     document.save(path)

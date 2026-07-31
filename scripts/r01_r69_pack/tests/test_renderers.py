@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import zipfile
 
 from PIL import Image
+from pypdf import PdfReader
 
 from scripts.r01_r69_pack import convert_pdf
 from scripts.r01_r69_pack.convert_pdf import (
@@ -22,6 +25,10 @@ from scripts.r01_r69_pack.render_graphics import (
     render_test_photo,
 )
 from scripts.r01_r69_pack.render_xlsx import render_xlsx
+from scripts.r01_r69_pack.test_seal import (
+    render_test_seal_png,
+    signature_contract,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -119,6 +126,92 @@ class RendererTest(unittest.TestCase):
             self.assertTrue(photo_path.exists())
             self.assertTrue(has_test_marking(pdf_path))
             self.assertTrue(has_test_marking(photo_path))
+            pdf_text = "\n".join(
+                page.extract_text() or "" for page in PdfReader(pdf_path).pages
+            )
+            self.assertIn("测试专用章", pdf_text)
+
+    def test_docx_and_xlsx_embed_safe_test_signature_graphics(self):
+        content = {
+            "logical_id": "TEST-SIGN-001",
+            "folder": "B00",
+            "title": "测试签章渲染记录",
+            "document_number": "TEST-SIGN-001",
+            "revision": "A",
+            "date": "2026-07-15",
+            "sections": [{"heading": "1 结论", "paragraphs": [TEST_WARNING]}],
+            "tables": [],
+            "approvals": [
+                {"role": "批准", "name": "测试批准负责人丙", "date": "2026-07-15"}
+            ],
+            "workbook": {
+                "sheets": [
+                    {"name": "记录", "headers": ["对象", "结果"], "rows": [["PL8303", "合格"]]}
+                ]
+            },
+        }
+        contract = signature_contract(content)
+        self.assertIn("测试专用", contract["label"])
+        seal = render_test_seal_png(contract["label"], contract["role"])
+        self.assertGreater(len(seal), 1000)
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            docx_path = render_docx(content, self.master, out)
+            xlsx_path = render_xlsx(content, self.master, out)
+            with zipfile.ZipFile(docx_path) as archive:
+                self.assertTrue(
+                    any(name.startswith("word/media/") for name in archive.namelist())
+                )
+                xml = b"".join(
+                    archive.read(name)
+                    for name in archive.namelist()
+                    if name.endswith(".xml")
+                ).decode("utf-8", errors="ignore")
+                self.assertIn("电子签署（测试）", xml)
+            with zipfile.ZipFile(xlsx_path) as archive:
+                self.assertTrue(
+                    any(name.startswith("xl/media/") for name in archive.namelist())
+                )
+                xml = b"".join(
+                    archive.read(name)
+                    for name in archive.namelist()
+                    if name.endswith(".xml")
+                ).decode("utf-8", errors="ignore")
+                self.assertIn("电子签署（测试）", xml)
+
+    def test_evidence_image_kinds_are_distinct_and_marked(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            paths = []
+            sizes = []
+            for kind, stem in (
+                ("field_photo", "TEST-PHOTO"),
+                ("radiographic_film", "TEST-FILM"),
+                ("external_query_screenshot", "TEST-QUERY"),
+            ):
+                path = render_test_photo(
+                    {
+                        "logical_id": stem,
+                        "file_stem": stem,
+                        "title": stem,
+                        "graphic_kind": kind,
+                        "evidence_object": "PL8303／W-B00-001",
+                    },
+                    out,
+                )
+                paths.append(path)
+                with Image.open(path) as image:
+                    sizes.append(image.size)
+                    comment = image.info.get("comment", b"")
+                    if isinstance(comment, bytes):
+                        comment = comment.decode("utf-8")
+                    self.assertIn(kind, comment)
+                self.assertTrue(has_test_marking(path))
+            self.assertEqual(len(set(sizes)), 3)
+            self.assertEqual(
+                len({hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}),
+                3,
+            )
 
     def test_xlsx_continuation_page_repeats_four_row_header(self):
         image = Image.new("RGB", (400, 1000), "white")

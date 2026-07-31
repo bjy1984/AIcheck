@@ -46,7 +46,7 @@ async function buildWorkbook(payload, outputPath, previewDir) {
     const sheet = workbook.worksheets.add(sheetName);
     const tables = normalizeRows(sheetData);
     const maxColumns = Math.max(
-      2,
+      5,
       ...tables.map((table) => table.headers.length),
       ...tables.flatMap((table) => table.rows.map((row) => row.length)),
     );
@@ -128,6 +128,32 @@ async function buildWorkbook(payload, outputPath, previewDir) {
       cursor += rows.length + 2;
     }
 
+    const signature = payload.signature_contract ?? {};
+    if (signature.data_url) {
+      const signatureRow = cursor;
+      const textLastColumn = columnLetter(Math.min(2, maxColumns - 1));
+      sheet.mergeCells(`A${signatureRow}:${textLastColumn}${signatureRow}`);
+      sheet.getRange(`A${signatureRow}`).values = [[
+        `电子签署（测试）｜${signature.label ?? "资料验收测试专用章"}`,
+      ]];
+      sheet.getRange(`A${signatureRow}:${lastColumn}${signatureRow + 3}`).format = {
+        fill: "#FFF3F1",
+        font: { bold: true, color: "#B3261E", size: 9, name: "Arial Unicode MS" },
+        verticalAlignment: "center",
+        wrapText: true,
+        borders: { preset: "outside", style: "thin", color: "#E6A7A2" },
+      };
+      sheet.getRange(`A${signatureRow}:${lastColumn}${signatureRow + 3}`).format.rowHeight = 24;
+      sheet.images.add({
+        dataUrl: signature.data_url,
+        anchor: {
+          from: { row: signatureRow - 1, col: Math.max(1, maxColumns - 2) },
+          extent: { widthPx: 230, heightPx: 92 },
+        },
+      });
+      cursor += 5;
+    }
+
     sheet.getRange(`A1:${lastColumn}${Math.max(cursor, 6)}`).format.autofitColumns();
     for (let column = 0; column < maxColumns; column += 1) {
       const letter = columnLetter(column);
@@ -153,6 +179,14 @@ async function buildWorkbook(payload, outputPath, previewDir) {
       new Uint8Array(await preview.arrayBuffer()),
     );
   }
+
+  const formulaErrors = await workbook.inspect({
+    kind: "match",
+    searchTerm: "#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A",
+    options: { useRegex: true, maxResults: 300 },
+    summary: "final formula error scan",
+  });
+  await fs.writeFile(`${outputPath}.inspect.ndjson`, formulaErrors.ndjson ?? "");
 
   const output = await SpreadsheetFile.exportXlsx(workbook);
   await output.save(outputPath);
