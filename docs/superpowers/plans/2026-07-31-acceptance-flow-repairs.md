@@ -153,7 +153,7 @@ git commit -m "feat: expose structured NDT film registration"
 **Interfaces:**
 - Produces API wrappers `createInspectionAttachmentUploadSessionApi(projectId, nodeId, files, options)` and `bindInspectionDocumentsApi(projectId, nodeId, bindings, options)`.
 - Uses existing signed PUT, `completeDocumentUploadSessionApi`, and `submitNodePackageApi`.
-- The binding response uses `affectedIds` as the exact submission `bindingIds`.
+- The binding response uses `affectedIds` as the exact submission `bindingIds`; a role-specific `/inspection/nodes/{nodeId}/file-bindings/submit` endpoint creates the formal snapshot without granting generic `submission:submit`.
 
 - [ ] **Step 1: Write the failing backend integration test**
 
@@ -177,7 +177,7 @@ Expected: FAIL on the missing role-specific permission or lost attachment contex
 Keep the existing routes and make only the failing contract change:
 
 - Preserve every file's `materialCategory`, defaulting to `监检现场补充证据`.
-- Enforce inspection role plus `file:upload`, `file:bind`, and `submission:submit` through existing guards and node scope.
+- Enforce inspection role plus `file:upload` and `file:bind` through existing guards and node scope; keep generic `submission:submit` unavailable to inspection.
 - Preserve `affectedIds` from `bind_documents`; do not invent document IDs or bindings.
 - Do not require OCR fields for JPG completion.
 
@@ -198,7 +198,7 @@ create inspection attachment session
 → signed PUT for each selected file
 → complete the session
 → bind all returned document/version pairs to activeNodeId with usage 监检资料
-→ submit bindRes.data.affectedIds for activeNodeId
+→ submit bindRes.data.affectedIds through the inspection-only binding submission endpoint
 → refresh project bundle, audit workspace, and submission history
 ```
 

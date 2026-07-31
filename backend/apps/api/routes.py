@@ -7448,14 +7448,14 @@ def inspection_attachments(
     x_role: str | None = Header(default=None, alias="X-Role"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    effective_role, role_error = effective_role_for_request(request, x_role)
-    if role_error:
-        return role_error
-    if effective_role != "inspection":
-        return fail(errors.FORBIDDEN, request, message="只有监检人员可以上传监检资料。")
     guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
     if guard:
         return guard
+    effective_role, role_error = effective_role_for_request(request, x_role)
+    if role_error:
+        return role_error
+    if effective_role not in {None, "inspection"}:
+        return fail(errors.FORBIDDEN, request, message="只有监检人员可以上传监检资料。")
     if not body.get("files"):
         return fail(errors.VALIDATION_ERROR, request, message="请选择需要上传的监检资料。")
     files = [
@@ -7478,13 +7478,69 @@ def inspection_file_bindings(
     x_role: str | None = Header(default=None, alias="X-Role"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+    if guard:
+        return guard
+    effective_role, role_error = effective_role_for_request(request, x_role)
+    if role_error:
+        return role_error
+    if effective_role not in {None, "inspection"}:
+        return fail(errors.FORBIDDEN, request, message="只有监检人员可以挂载监检资料。")
+    body = {**body, "nodeId": node_id}
+    return bind_documents(request, project_id, body, idempotency_key, x_role)
+
+
+@router.post("/projects/{project_id}/inspection/nodes/{node_id}/file-bindings/submit")
+def submit_inspection_file_bindings(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+    if guard:
+        return guard
     effective_role, role_error = effective_role_for_request(request, x_role)
     if role_error:
         return role_error
     if effective_role != "inspection":
-        return fail(errors.FORBIDDEN, request, message="只有监检人员可以挂载监检资料。")
-    body = {**body, "nodeId": node_id}
-    return bind_documents(request, project_id, body, idempotency_key, x_role)
+        return fail(errors.FORBIDDEN, request, message="只有监检人员可以提交监检资料。")
+    binding_ids = [str(item) for item in body.get("bindingIds") or [] if item]
+    if not binding_ids:
+        return fail(errors.EMPTY_BINDINGS, request)
+    binding_by_id = {
+        item["id"]: item
+        for item in repo.bindings_for_node(project_id, node_id)
+        if item["id"] in set(binding_ids)
+    }
+    invalid_ids = sorted(set(binding_ids) - set(binding_by_id))
+    if invalid_ids:
+        return fail(errors.NOT_FOUND, request, data={"invalidBindingIds": invalid_ids})
+    invalid_usage_ids = sorted(
+        item["id"] for item in binding_by_id.values() if item.get("usage") != "监检资料"
+    )
+    if invalid_usage_ids:
+        return fail(
+            errors.FORBIDDEN,
+            request,
+            message="监检人员只能提交自己形成的监检资料挂载。",
+            data={"invalidBindingIds": invalid_usage_ids},
+        )
+    submission_body = {
+        "nodeIds": [node_id],
+        "bindingIds": binding_ids,
+        "batchName": body.get("batchName") or f"R{node_id:02d} 监检资料",
+        "submitterComment": body.get("submitterComment") or "监检人员提交现场或评价证据。",
+    }
+    return submit_node_package(
+        request,
+        project_id,
+        submission_body,
+        idempotency_key=idempotency_key,
+        x_role=x_role,
+    )
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck")

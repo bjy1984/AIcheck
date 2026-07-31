@@ -3057,6 +3057,19 @@ export const bindInspectionDocumentsApi = (
   })
 }
 
+export const submitInspectionDocumentBindingsApi = (
+  projectId: string,
+  nodeId: number,
+  payload: { bindingIds: string[]; batchName?: string; submitterComment?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<SubmissionPayload>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/file-bindings/submit`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const deleteProjectDocumentApi = (
   projectId: string,
   documentId: string,

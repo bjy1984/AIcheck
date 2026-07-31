@@ -4,7 +4,7 @@ roles:
     platformRole: reviewer
     defaultPath: /workbench/inspection
     defaultNodeId: 24
-    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, submission:submit, review:save, review:return-correction, ai:recheck, ai:adopt, ai:reject, llm:compare, report:generate, report:review, report:export, report:archive, report:view, archive:view, archive:download, todo:update, message:update]
+    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, review:save, review:return-correction, ai:recheck, ai:adopt, ai:reject, llm:compare, report:generate, report:review, report:export, report:archive, report:view, archive:view, archive:download, todo:update, message:update]
   - code: contractor
     label: 施工方
     platformRole: submitter

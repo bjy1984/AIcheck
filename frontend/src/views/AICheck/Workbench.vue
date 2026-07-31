@@ -98,6 +98,7 @@ import {
   searchApi,
   submitNdtRectificationApi,
   submitNdtSubmissionApi,
+  submitInspectionDocumentBindingsApi,
   submitNodePackageApi,
   submitRectificationApi,
   submitReviewHumanInputResponseApi,
@@ -2848,10 +2849,10 @@ const handleCreateUploadSession = async (files: File[]) => {
       if (bindingIds.length !== files.length) {
         throw new Error('监检文件已上传，但未生成完整的节点挂载关系。')
       }
-      const submitRes = await submitNodePackageApi(
+      const submitRes = await submitInspectionDocumentBindingsApi(
         activeProjectId.value,
+        activeNodeId.value,
         {
-          nodeIds: [activeNodeId.value],
           bindingIds,
           batchName: `R${String(activeNodeId.value).padStart(2, '0')} 监检资料`,
           submitterComment: '监检人员上传并提交现场或评价证据。'

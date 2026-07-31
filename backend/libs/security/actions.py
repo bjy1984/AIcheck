@@ -38,6 +38,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/rectifications$", "rectification:submit"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/attachments$", "file:upload"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/file-bindings$", "file:bind"),
+    ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/file-bindings/submit$", "file:bind"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/ai-recheck$", "ai:recheck"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/review-sessions$", "review:save"),
     ("POST", r"/review-sessions/[^/]+/messages$", "review:save"),

@@ -6168,8 +6168,8 @@ def test_inspection_attachment_can_be_uploaded_bound_and_submitted_to_current_no
 
     submitted = assert_ok(
         client.post(
-            f"/projects/{project_id}/submissions",
-            json={"nodeIds": [21], "bindingIds": [binding_id], "batchName": "R21 监检现场资料"},
+            f"/projects/{project_id}/inspection/nodes/21/file-bindings/submit",
+            json={"bindingIds": [binding_id], "batchName": "R21 监检现场资料"},
             headers={**inspection_headers, "Idempotency-Key": "inspection-photo-submit"},
         )
     )
@@ -6261,8 +6261,8 @@ def test_r69_requires_inspection_workflow_evidence_and_keeps_human_decision_gate
     binding_id = bound["affectedIds"][0]
     assert_ok(
         client.post(
-            f"/projects/{project_id}/submissions",
-            json={"nodeIds": [69], "bindingIds": [binding_id], "batchName": "R69 人工评价证据"},
+            f"/projects/{project_id}/inspection/nodes/69/file-bindings/submit",
+            json={"bindingIds": [binding_id], "batchName": "R69 人工评价证据"},
             headers={**inspection_headers, "Idempotency-Key": "r69-workflow-submit"},
         )
     )
