@@ -78,6 +78,9 @@ def _load_yaml_with_backend_python(source: Path) -> dict[str, Any]:
 
 
 def _document_for(node: int, material_type: str) -> str:
+    attachment = _attachment_for(node, material_type)
+    if attachment:
+        return attachment
     if node <= 3:
         return "B00-QUAL-001"
     if node <= 9:
@@ -124,6 +127,56 @@ def _document_for(node: int, material_type: str) -> str:
     return "B00-INSTALL-001"
 
 
+def _attachment_for(node: int, material_type: str) -> str | None:
+    if material_type == "field_photo":
+        return {
+            21: "S01-PHOTO-001",
+            28: "B00-PHOTO-001",
+            30: "B00-PHOTO-002",
+            42: "B00-PHOTO-003",
+            44: "B00-PHOTO-004",
+            48: "S04-PHOTO-001",
+            49: "S04-PHOTO-002",
+            50: "S04-PHOTO-003",
+            51: "S04-PHOTO-004",
+            52: "S04-PHOTO-005",
+            53: "S04-PHOTO-006",
+        }.get(node)
+    if material_type == "radiographic_film":
+        return {
+            41: "B00-FILM-001",
+            42: "B00-FILM-002",
+            65: "S06-FILM-001",
+        }.get(node)
+    if material_type == "external_query_screenshot" and node == 24:
+        return "B00-QUERY-001"
+    return None
+
+
+def _source_locator(node: int) -> str:
+    if node <= 9:
+        return "files/设计资料.pdf#p1-p10"
+    if node in {12, 13, 14, 26, 27, 43}:
+        return "files/材质证书.pdf#p1-p7"
+    if node in {24, 29}:
+        return "files/资质证书.pdf#p1-p6"
+    if node in {35, 37, 38, 40, 41, 42}:
+        return "Scan/20260623105636.pdf#p1-p5"
+    if node in {44, 45, 47, 59, 60, 61, 62, 68}:
+        return "files/交工资料.pdf#p1-p24"
+    return ""
+
+
+def _evidence_locator(
+    node: int,
+    requirement_id: str,
+    logical_document_id: str,
+) -> str:
+    generated = f"{logical_document_id}#{requirement_id}"
+    source = _source_locator(node)
+    return f"{generated} | {source}" if source else generated
+
+
 def snapshot_nodes(source: Path, output: Path) -> dict[str, Any]:
     payload = _load_yaml_with_backend_python(source)
     nodes: list[dict[str, Any]] = []
@@ -156,7 +209,9 @@ def snapshot_nodes(source: Path, output: Path) -> dict[str, Any]:
                     ),
                     "status": "已提供",
                     "logicalDocumentId": logical_document_id,
-                    "locator": f"{logical_document_id}#{requirement['id']}",
+                    "locator": _evidence_locator(
+                        code, requirement["id"], logical_document_id
+                    ),
                     "rationale": "",
                 }
             )
