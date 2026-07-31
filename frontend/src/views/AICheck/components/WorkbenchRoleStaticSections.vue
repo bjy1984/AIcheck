@@ -34,6 +34,7 @@ import type {
 } from '@/types/aicheck'
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
+import { documentBindingSummary } from '@/utils/acceptanceFlows'
 
 type ReviewChainStep = {
   title: string
@@ -42,7 +43,7 @@ type ReviewChainStep = {
   result: string
 }
 
-type ContractorFileStatus = '全部' | '待提交' | '审核中' | '需补正' | '已通过' | '已作废'
+type ContractorFileStatus = '全部' | '未关联' | '待提交' | '审核中' | '需补正' | '已通过' | '已作废'
 type ContractorSortKey = 'updatedDesc' | 'updatedAsc' | 'status' | 'version'
 type ElementTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
 type ContractorMaterialRequirement = {
@@ -117,6 +118,7 @@ const contractorPageSize = 5
 
 const contractorStatusOptions: ContractorFileStatus[] = [
   '全部',
+  '未关联',
   '待提交',
   '审核中',
   '需补正',
@@ -296,14 +298,11 @@ const ownerNodeRows = computed(() => {
 })
 
 const mapContractorFileStatus = (
-  fileStatus?: string,
-  relationStatus?: string
+  file: NodePackagePayload['projectFiles'][number]
 ): Exclude<ContractorFileStatus, '全部'> => {
+  const fileStatus = file.fileStatus
   if (fileStatus === '已作废' || fileStatus === '已替换') return '已作废'
-  if (relationStatus === '已通过') return '已通过'
-  if (relationStatus === '需补正') return '需补正'
-  if (relationStatus === '已提交') return '审核中'
-  return '待提交'
+  return documentBindingSummary(file)
 }
 
 const bindingForProjectFile = (file: NodePackagePayload['projectFiles'][number]) =>
@@ -311,9 +310,13 @@ const bindingForProjectFile = (file: NodePackagePayload['projectFiles'][number])
   file.bindings?.[0] ||
   bindings.value.find((item) => item.documentId === file.id)
 
-const getRelationNodeText = (binding?: (typeof bindings.value)[number]) => {
-  if (!binding) return '未关联审核环节'
-  return `${binding.nodeId}. ${binding.requirementName || props.node?.name || '审核环节'}`
+const getRelationNodeText = (fileBindings?: typeof bindings.value) => {
+  if (!fileBindings?.length) return '未关联审核环节'
+  return fileBindings
+    .map(
+      (binding) => `${binding.nodeId}. ${binding.requirementName || props.node?.name || '审核环节'}`
+    )
+    .join('；')
 }
 
 const normalizeSearchText = (...parts: Array<string | undefined>) => parts.join(' ').toLowerCase()
@@ -346,7 +349,7 @@ const rectificationIdForBinding = (bindingId?: string) => {
 const contractorFileRows = computed<ContractorFileRow[]>(() => {
   const rows = projectFiles.value.map((file) => {
     const binding = bindingForProjectFile(file)
-    const status = mapContractorFileStatus(file.fileStatus, binding?.bindingStatus)
+    const status = mapContractorFileStatus(file)
     const materialCategory =
       file.materialCategory ||
       inferMaterialCategory(
@@ -362,7 +365,7 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       version: binding?.versionNo || '--',
       status,
       sourceOrgName: file.sourceOrgName,
-      relationNode: getRelationNodeText(binding),
+      relationNode: getRelationNodeText(file.bindings),
       feedback: binding?.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
       ocr: file.currentOcrStatus,
       processingStatus: pipelineStatusForFile(file),
@@ -381,9 +384,16 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
     requirementName: binding.requirementName || '--',
     usage: binding.usage,
     version: binding.versionNo,
-    status: mapContractorFileStatus('已上传', binding.bindingStatus),
+    status:
+      binding.bindingStatus === '需补正'
+        ? '需补正'
+        : binding.bindingStatus === '草稿挂载'
+          ? '待提交'
+          : binding.bindingStatus === '已通过'
+            ? '已通过'
+            : '审核中',
     sourceOrgName: binding.sourceOrgName,
-    relationNode: getRelationNodeText(binding),
+    relationNode: getRelationNodeText([binding]),
     feedback: binding.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
     ocr: '--',
     processingStatus: '--',
@@ -519,21 +529,30 @@ const requestFileBind = (file: ContractorFileRow) => {
 }
 
 const requestFileSubmit = (file: ContractorFileRow) => {
-  if (!props.readOnly && file.status === '待提交') emit('file-submit', file.documentId)
+  if (!props.readOnly && ['待提交', '需补正'].includes(file.status)) {
+    emit('file-submit', file.documentId)
+  }
 }
 
 const requestFileDelete = (file: ContractorFileRow) => {
-  if (!props.readOnly && file.status === '待提交') emit('file-delete', file.documentId)
+  if (!props.readOnly && ['未关联', '待提交'].includes(file.status)) {
+    emit('file-delete', file.documentId)
+  }
 }
 
 const getContractorSubmitHint = (file: ContractorFileRow) => {
   if (props.readOnly) return '当前项目为只读状态，不能提交文件'
-  return file.status === '待提交' ? '提交当前文件到所选审核环节' : '当前状态不能重复提交'
+  if (file.status === '未关联') return '请先选择审核环节'
+  return ['待提交', '需补正'].includes(file.status)
+    ? '提交当前文件的全部待提交或待补正挂载'
+    : '当前状态不能重复提交'
 }
 
 const getContractorDeleteHint = (file: ContractorFileRow) => {
   if (props.readOnly) return '当前项目为只读状态，不能删除文件'
-  return file.status === '待提交' ? '删除未提交文件' : '文件已提交审核，不能直接删除'
+  return ['未关联', '待提交'].includes(file.status)
+    ? '删除未提交文件'
+    : '文件已提交审核，不能直接删除'
 }
 
 const requestRectify = (rectificationId?: string) => {
@@ -775,7 +794,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                   <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
                   <ElTooltip
                     :content="getContractorSubmitHint(row)"
-                    :disabled="!readOnly && row.status === '待提交'"
+                    :disabled="!readOnly && ['待提交', '需补正'].includes(row.status)"
                     placement="top"
                     popper-class="audit-action-tooltip-popper"
                   >
@@ -783,7 +802,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                       <ElButton
                         link
                         type="primary"
-                        :disabled="readOnly || row.status !== '待提交'"
+                        :disabled="readOnly || !['待提交', '需补正'].includes(row.status)"
                         @click="requestFileSubmit(row)"
                       >
                         提交
@@ -792,7 +811,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                   </ElTooltip>
                   <ElTooltip
                     :content="getContractorDeleteHint(row)"
-                    :disabled="!readOnly && row.status === '待提交'"
+                    :disabled="!readOnly && ['未关联', '待提交'].includes(row.status)"
                     placement="top"
                     popper-class="audit-action-tooltip-popper"
                   >
@@ -800,7 +819,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                       <ElButton
                         link
                         type="danger"
-                        :disabled="readOnly || row.status !== '待提交'"
+                        :disabled="readOnly || !['未关联', '待提交'].includes(row.status)"
                         @click="requestFileDelete(row)"
                       >
                         删除

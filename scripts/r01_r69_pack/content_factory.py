@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
+
+from pypdf import PdfReader
 
 from .catalog import DocumentSpec, load_catalog
 
@@ -15,17 +18,160 @@ PROJECT_NAME = (
 )
 
 STANDARDS = [
-    ["TSG D7006—2020", "压力管道监督检验规则", "基础监检资料结构", "现行来源核验"],
-    ["TSG 31—2025", "特种设备使用管理规则", "使用登记与安全附件资料", "现行来源核验"],
-    ["GB/T 20801.1—2025", "压力管道规范 工业管道 第1部分：总则", "设计与通用要求", "现行来源核验"],
-    ["GB/T 20801.3", "压力管道规范 工业管道 第3部分：设计和计算", "强度与应力校核", "按项目适用版本"],
-    ["GB/T 20801.4", "压力管道规范 工业管道 第4部分：制作与安装", "材料、焊接、安装", "按项目适用版本"],
-    ["GB/T 20801.5", "压力管道规范 工业管道 第5部分：检验与试验", "NDT、压力与泄漏试验", "按项目适用版本"],
-    ["NB/T 47013.2", "承压设备无损检测 第2部分：射线检测", "RT检测", "按检测日期适用版本"],
-    ["NB/T 47013.4", "承压设备无损检测 第4部分：磁粉检测", "MT检测", "按检测日期适用版本"],
-    ["NB/T 47013.8—2025", "承压设备无损检测 第8部分：泄漏检测", "泄漏检测", "现行来源核验"],
-    ["TSG 92—2026", "特种设备事故隐患判定相关安全技术规范", "资料闭环检查", "2026发布版核验"],
+    [
+        "TSG D7006—2020", "压力管道监督检验规则", "安装监督检验资料结构",
+        "项目来源与现行查新", "2020-09-01", "B00／V00",
+        "https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/tzgg/zjwh/202005/W020200521635020831543.pdf",
+    ],
+    [
+        "TSG 31—2025", "工业管道安全技术规程", "工业管道设计、安装、检验与使用",
+        "2026测试记录日期现行", "2026-01-01", "S01—S06／V00",
+        "https://www.samr.gov.cn/tzsbj/tzgg/zjwh/art/2026/art_ed12d58e1b4a4f668ff80268b375ef59.html",
+    ],
+    [
+        "TSG 92—2026", "承压类特种设备安全附件安全技术规程", "安全附件设计、选用、安装与校验",
+        "2026测试记录日期现行", "2026-07-01", "S05",
+        "https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/aqjsgf/art/2026/art_24e7ccdf5d4d4176bc2a65ab34ec2842.html",
+    ],
+    [
+        "TSG 08—2026", "特种设备使用管理规则", "使用登记与质量安全主体责任",
+        "2026测试记录日期现行", "2026-05-01", "V00／R69",
+        "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/tzsbs/art/2026/art_ccfd987974c9490ab5d8c0792593f1d3.html",
+    ],
+    [
+        "GB/T 20801.1—2025", "压力管道规范 第1部分：工业管道", "2026测试设计与通用要求",
+        "现行；全部代替2020版六部分", "2026-05-01", "S01—S06",
+        "https://std.samr.gov.cn/gb/search/gbDetailed?id=42BA7D06A208E936E06397BE0A0ACDC9",
+    ],
+    [
+        "GB/T 20801.1～6—2020", "压力管道规范 工业管道（原六部分）", "2021项目设计基准",
+        "仅保留项目日期适用事实", "2020-10-01", "B00来源事实",
+        "https://std.samr.gov.cn/search/stdPage?q=GB%2FT20801",
+    ],
+    [
+        "NB/T 47014—2023", "承压设备焊接工艺评定", "2026测试焊接工艺评定",
+        "测试记录日期现行", "2024-06-28", "S02／S03",
+        "https://zfxxgk.nea.gov.cn/1310759283_17047031765681n.pdf",
+    ],
+    [
+        "NB/T 47013.2—2015", "承压设备无损检测 第2部分：射线检测", "2021原始RT报告与测试RT",
+        "来源报告明确采用；测试适用性查新", "2015-09-01", "B00／S03／S06",
+        "files/交工资料.pdf",
+    ],
+    [
+        "NB/T 47013.4—2015", "承压设备无损检测 第4部分：磁粉检测", "测试MT检测",
+        "按测试日期适用性核验", "2015-09-01", "S06",
+        "项目采用版本；需由标准查新渠道复核",
+    ],
+    [
+        "NB/T 47013.8—2025", "承压设备无损检测 第8部分：泄漏检测", "泄漏检测",
+        "测试记录日期现行", "2026-06-18", "S06",
+        "https://www.nea.gov.cn/20251230/ef9d5d59dc9e4cffa7c712d516967857/20251230ef9d5d59dc9e4cffa7c712d516967857_11f4145a70726d44bfaad3650bf12c570d.pdf",
+    ],
+    [
+        "TSG Z6002—2010", "特种设备焊接操作人员考核细则", "本包记录日期焊工资格",
+        "2026-07-15仍有效", "2011-02-01", "B00／S01—S06",
+        "files/TSGZ6002-2010《焊接人员考核细则》.pdf",
+    ],
+    [
+        "TSG Z6002—2026", "特种设备焊接操作人员考核细则", "后续焊工资格规则",
+        "已发布；本包日期尚未实施", "2026-08-01", "版本提醒",
+        "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/tzsbs/art/2026/art_4153ad05135445e1b342d6a80814ad72.html",
+    ],
+    [
+        "GB 50235—2010", "工业金属管道工程施工规范", "施工与安装",
+        "项目与测试通用", "2011-06-01", "B00／S01—S06",
+        "files/GB 50235-2010 工业金属管道工程施工规范.pdf",
+    ],
+    [
+        "GB 50236—2011", "现场设备、工业管道焊接工程施工规范", "焊接施工",
+        "项目与测试通用", "2011-10-01", "B00／S02／S03／S06",
+        "files/GB 50236-2011 现场设备、工业管道焊接工程施工规范.pdf",
+    ],
 ]
+
+
+WORKSPACE = Path(__file__).resolve().parents[2]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def source_evidence_rows(
+    master: dict[str, Any],
+    workspace: Path = WORKSPACE,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for source in master.get("sourceEvidence", []):
+        row = deepcopy(source)
+        path = workspace / row["path"]
+        row["exists"] = path.exists()
+        row["sha256"] = _sha256_file(path) if path.exists() else ""
+        row["actualPageCount"] = (
+            len(PdfReader(path).pages) if path.exists() else 0
+        )
+        row["status"] = (
+            "已绑定"
+            if row["exists"] and row["actualPageCount"] == row["pageCount"]
+            else "异常"
+        )
+        rows.append(row)
+    return rows
+
+
+def seal_registry_rows(catalog_rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for row in catalog_rows:
+        logical_id = row["logicalId"]
+        folder = row["folder"]
+        if "NDT" in logical_id or "FILM" in logical_id:
+            role = "检测报告"
+        elif folder == "S05":
+            role = "安全附件"
+        elif folder in {"B00", "S01", "S02", "S03", "S04", "S06"}:
+            role = "工程质量"
+        else:
+            role = "资料验收"
+        rows.append(
+            {
+                "logicalId": logical_id,
+                "title": row["title"],
+                "sourceFormat": row["sourceFormat"].upper(),
+                "role": role,
+                "sealLabel": f"{role}测试专用章",
+                "sourceLocation": "源文件签署区或附件核验徽标",
+                "pdfInheritance": (
+                    "同版本PDF继承" if row["sourceFormat"] in {"docx", "xlsx"}
+                    else "独立文件直接显示"
+                ),
+                "status": "已登记",
+            }
+        )
+    return rows
+
+
+IMAGE_EVIDENCE_OBJECTS = {
+    "S01-PHOTO-001": "R21／PL8307-TEST／到货与标志移植",
+    "B00-PHOTO-001": "R28／PL8303／W-B00-003组对",
+    "B00-PHOTO-002": "R30／PL8306／W-B00-010外观",
+    "B00-PHOTO-003": "R42／PL8306／射线检测现场",
+    "B00-PHOTO-004": "R44／PL8303／防腐补口补伤",
+    "S04-PHOTO-001": "R48／PL8308-TEST／道路穿越结构",
+    "S04-PHOTO-002": "R49／PL8308-TEST／开挖与就位",
+    "S04-PHOTO-003": "R50／PL8308-TEST／套管防腐绝缘",
+    "S04-PHOTO-004": "R51／PL8308-TEST／绝缘支撑安装",
+    "S04-PHOTO-005": "R52／PL8308-TEST／焊接连接",
+    "S04-PHOTO-006": "R53／PL8308-TEST／布管完成",
+    "B00-FILM-001": "R41／PL8303／W-B00-003／片号TEST-B00-F01",
+    "B00-FILM-002": "R42／PL8306／W-B00-010／片号TEST-B00-F02",
+    "S06-FILM-001": "R65／W-S06-001／片号TEST-S06-F01",
+    "B00-QUERY-001": "R24／来源焊工资格档案TS21********937",
+}
 
 
 def _approval_rows(date: str) -> list[dict[str, str]]:
@@ -228,7 +374,7 @@ def _customize_m00(content: dict[str, Any], spec: DocumentSpec,
         content["workbook"]["sheets"] = [
             _sheet(
                 "标准台账",
-                ["标准号", "名称", "适用内容", "查新状态"],
+                ["标准号", "名称", "适用内容", "查新状态", "实施日期", "适用分册", "官方或项目来源"],
                 STANDARDS,
             )
         ]
@@ -254,13 +400,126 @@ def _customize_m00(content: dict[str, Any], spec: DocumentSpec,
                 "覆盖统计",
                 ["统计项", "数量", "结论"],
                 [
-                    ["逻辑资料", len(catalog_rows), "58，符合"],
+                    ["逻辑资料", len(catalog_rows), "76，符合"],
                     [
                         "物理文件",
                         sum(2 if row["sourceFormat"] in {"docx", "xlsx"} else 1 for row in catalog_rows),
-                        "114，符合",
+                        "136，符合",
                     ],
+                    ["引用原始PDF", 12, "12，符合"],
+                    ["验收证据域文件", 148, "148，符合"],
                     ["资料要求", len(requirement_rows), "166，符合"],
+                ],
+            ),
+        ]
+    elif spec.logical_id == "M00-SOURCE-001":
+        sources = source_evidence_rows(master)
+        content["workbook"]["sheets"] = [
+            _sheet(
+                "原始文件",
+                [
+                    "来源编号", "相对路径", "证据类别", "登记页数", "实测页数",
+                    "SHA-256", "OCR状态", "敏感性", "绑定状态",
+                ],
+                [
+                    [
+                        row["id"], row["path"], row["category"], row["pageCount"],
+                        row["actualPageCount"], row["sha256"], row["ocrStatus"],
+                        row["sensitivity"], row["status"],
+                    ]
+                    for row in sources
+                ],
+            ),
+            _sheet(
+                "页级绑定",
+                ["要求编号", "节点", "要求名称", "逻辑资料", "生成与原件定位"],
+                [
+                    [
+                        row["requirementId"], f"R{int(row['node']):02d}",
+                        row["materialName"], row["logicalDocumentId"], row["locator"],
+                    ]
+                    for row in requirement_rows
+                    if ".pdf#p" in row.get("locator", "")
+                ],
+            ),
+            _sheet(
+                "身份复用",
+                ["编号", "主体", "角色", "属性", "使用边界"],
+                [
+                    [
+                        row["id"], row["name"], row["role"],
+                        "合成" if row["synthetic"] else "来源复用",
+                        "仅限来源年份" if not row["synthetic"] else "仅限测试场景",
+                    ]
+                    for row in master["organizations"] + master["people"]
+                ],
+            ),
+        ]
+    elif spec.logical_id == "M00-DATA-001":
+        content["sections"] = [
+            {
+                "heading": "1 闭环目的",
+                "paragraphs": [
+                    "本报告将施工图事实、2021年交工事实和2026测试场景事实分域管理，"
+                    "对壁厚、介质、管线范围、无损检测单位及证书时效五类差异逐项闭环。",
+                    "任何差异均不通过静默覆盖处理；原件保持不变，生成资料按对象、日期和适用范围引用。",
+                ],
+            },
+            {
+                "heading": "2 一致性原则",
+                "bullets": [
+                    "设计基线用于解释原图意图；交工记录用于证明实际安装；测试变更仅适用于对应S分册。",
+                    "低置信OCR只作为待复核提示，不替代原始图像或多文件互证结论。",
+                    "来源证书只支撑其原有效期内事实，不作为2026测试场景的现行资质。",
+                ],
+            },
+            {
+                "heading": "3 结论",
+                "paragraphs": [
+                    "五类数据差异均已登记来源、适用范围、处理方式和闭环状态；基础项目与条件场景未发生数据串用。",
+                    TEST_WARNING,
+                ],
+            },
+        ]
+        content["tables"] = [
+            _table(
+                "数据差异闭环表",
+                ["类别", "来源事实", "适用范围", "处理方式", "状态"],
+                [
+                    [
+                        row["category"], row["sourceFact"], row["scope"],
+                        row["resolution"], row["status"],
+                    ]
+                    for row in master["sourceTruth"]
+                ],
+            )
+        ]
+    elif spec.logical_id == "M00-SEAL-001":
+        registry = seal_registry_rows(catalog_rows)
+        content["workbook"]["sheets"] = [
+            _sheet(
+                "签章登记",
+                [
+                    "逻辑编号", "资料名称", "源格式", "责任类型", "显示文字",
+                    "源文件位置", "PDF状态", "登记状态",
+                ],
+                [
+                    [
+                        row["logicalId"], row["title"], row["sourceFormat"],
+                        row["role"], row["sealLabel"], row["sourceLocation"],
+                        row["pdfInheritance"], row["status"],
+                    ]
+                    for row in registry
+                ],
+            ),
+            _sheet(
+                "安全边界",
+                ["控制项", "要求", "结论"],
+                [
+                    ["显示标识", "必须含TEST或测试专用", "符合"],
+                    ["印章版式", "矩形测试徽标，不使用法定公章圆环", "符合"],
+                    ["个人签名", "只用电子签署（测试），不模拟手写", "符合"],
+                    ["防伪元素", "不生成二维码、防伪码或官方徽记", "符合"],
                 ],
             ),
         ]
@@ -889,15 +1148,13 @@ def _customize_v00(content: dict[str, Any], spec: DocumentSpec,
         content["workbook"]["sheets"] = [
             _sheet(
                 "来源差异",
-                ["数据项", "来源／设置", "使用方式", "差异控制"],
+                ["数据项", "来源事实", "适用范围", "差异控制", "状态"],
                 [
-                    ["项目名称", "既有施工图", "原样复用", "无差异"],
-                    ["设计单位", "既有施工图", "原样复用", "无差异"],
-                    ["图号", "QX201903S-13-Y-07、-10", "基础事实", "无差异"],
-                    ["原设计参数", "20#／Φ108×4／0.55 MPa", "B00保持", "无差异"],
-                    ["新增单位人员", "TEST前缀", "测试身份", "不得用于真实工程"],
-                    ["S01—S06", "测试专用设计变更", "独立场景", "不污染基础资料"],
-                    ["施工照片", "占位附件", "存在性／可读性", "未执行OCR"],
+                    [
+                        row["category"], row["sourceFact"], row["scope"],
+                        row["resolution"], row["status"],
+                    ]
+                    for row in master["sourceTruth"]
                 ],
             )
         ]
@@ -926,8 +1183,10 @@ def _customize_v00(content: dict[str, Any], spec: DocumentSpec,
             [
                 "R01—R69节点：69个；R01—R68均有业务资料；R69为工作流节点。",
                 f"资料要求：{len(requirement_rows)}项；均有状态和定位／适用性说明。",
-                f"逻辑资料：{len(catalog_rows)}份；物理文件：114个。",
+                f"逻辑资料：{len(catalog_rows)}份；生成物理文件：136个；引用原始PDF：12个；验收证据域：148个文件。",
                 f"对象主数据：管线{len(master['lines'])}条、焊口{len(master['welds'])}道、主要材料{len(master['materialBatches'])}批。",
+                "图像证据：现场核验图11张、测试模拟底片3张、外部查询测试截图1张。",
+                "签章形态：76份逻辑资料均登记测试专用签章或附件核验徽标。",
             ],
         )
         content["sections"][-1]["paragraphs"] = [
@@ -936,6 +1195,54 @@ def _customize_v00(content: dict[str, Any], spec: DocumentSpec,
             "施工照片按存在性附件提交，未执行OCR。",
             TEST_WARNING,
         ]
+    elif spec.logical_id == "V00-R69-001":
+        workflow = [
+            [1, "2026-07-14 09:00", "资料抽样", "质量保证测试角色", "抽取设计、资质、材料、焊接、NDT、试验资料", "完成"],
+            [2, "2026-07-14 10:20", "发现定位缺页", "资料审核测试角色", "SRC-QUAL-001资格页定位缺少页码", "异常"],
+            [3, "2026-07-14 13:30", "补录页码与哈希", "资料编制测试角色", "补录p1-p6并登记SHA-256", "已整改"],
+            [4, "2026-07-14 15:10", "复核合格", "质量保证测试角色", "路径、页码、哈希和敏感性状态一致", "合格"],
+            [5, "2026-07-15 09:00", "合格闭环", "批准测试角色", "质量保证体系实施状况评价完成", "合格闭环"],
+        ]
+        content["workbook"]["sheets"] = [
+            _sheet(
+                "执行记录",
+                ["序号", "时间", "状态", "责任角色", "执行／证据", "结果"],
+                workflow,
+            ),
+            _sheet(
+                "抽样范围",
+                ["抽样类别", "逻辑资料", "原始证据", "评价结论"],
+                [
+                    ["设计", "B00-DESIGN-001", "files/设计资料.pdf#p1-p10", "符合"],
+                    ["资质", "B00-QUAL-001", "files/资质证书.pdf#p1-p6", "整改后符合"],
+                    ["材料", "B00-MATERIAL-001", "files/材质证书.pdf#p1-p7", "符合"],
+                    ["交工", "B00-INSTALL-001", "files/交工资料.pdf#p1-p24", "符合"],
+                    ["RT", "B00-NDT-001", "Scan/20260623105636.pdf#p1-p5", "符合"],
+                ],
+            ),
+            _sheet(
+                "最终评价",
+                ["评价项", "结论", "关闭证据"],
+                [
+                    ["体系文件与实施记录", "符合", "B00-QUALITY-001／执行记录"],
+                    ["异常整改复核", "符合", "页码与SHA-256已补录"],
+                    ["最终状态", "合格闭环", "2026-07-15批准测试记录"],
+                ],
+            ),
+        ]
+
+
+def _customize_evidence_image(content: dict[str, Any], spec: DocumentSpec) -> None:
+    content["evidence_object"] = IMAGE_EVIDENCE_OBJECTS[spec.logical_id]
+    if "PHOTO" in spec.logical_id:
+        content["graphic_kind"] = "field_photo"
+        content["attachment_statement"] = "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
+    elif "FILM" in spec.logical_id:
+        content["graphic_kind"] = "radiographic_film"
+        content["attachment_statement"] = "测试模拟底片，不得作为真实检测底片或检测结论。"
+    else:
+        content["graphic_kind"] = "external_query_screenshot"
+        content["attachment_statement"] = "离线测试界面，未连接官方系统，不代表官方查询结果。"
 
 
 def build_content_payloads(
@@ -970,6 +1277,8 @@ def build_content_payloads(
             _customize_v00(
                 content, spec, master, catalog_rows, requirement_rows
             )
+        if spec.source_format == "jpg":
+            _customize_evidence_image(content, spec)
         grouped.setdefault(
             spec.folder,
             {
@@ -980,6 +1289,21 @@ def build_content_payloads(
             },
         )["documents"][spec.logical_id] = content
 
+    grouped["M00"]["scenarioData"] = {
+        "sourceEvidence": source_evidence_rows(master),
+        "dataClosures": deepcopy(master["sourceTruth"]),
+        "signatureRegistry": seal_registry_rows(catalog_rows),
+        "photoOcrAttempts": 0,
+    }
+    grouped["V00"]["scenarioData"] = {
+        "r69Workflow": [
+            {"date": "2026-07-14T10:20:00", "status": "发现定位缺页"},
+            {"date": "2026-07-14T13:30:00", "status": "补录页码与哈希"},
+            {"date": "2026-07-14T15:10:00", "status": "复核合格"},
+            {"date": "2026-07-15T09:00:00", "status": "合格闭环"},
+        ],
+        "finalStatus": "合格闭环",
+    }
     grouped["S02"]["scenarioData"] = {
         "events": [
             {"date": "2026-06-05", "status": "设计批准"},
@@ -1013,6 +1337,7 @@ def build_content_payloads(
         "acceptanceEvidenceIds": [
             "S06-APPROVAL-001",
             "S06-NDT-001",
+            "S06-FILM-001",
             "S06-FINAL-001",
         ],
         "coverage": {

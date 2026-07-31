@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 import zipfile
 
@@ -12,10 +13,10 @@ from PIL import Image
 from pypdf import PdfReader
 
 from .catalog import FOLDER_PATHS, load_catalog
-from .content_factory import load_scenario_data
+from .content_factory import STANDARDS, load_scenario_data
 from .model import load_project_master
 from .node_snapshot import load_node_snapshot
-from .render_common import has_test_marking
+from .render_common import has_signature_marking, has_test_marking
 
 
 PDFTOPPM = Path(
@@ -66,6 +67,89 @@ def _file_health(path: Path) -> list[str]:
     except Exception as exc:
         errors.append(f"文件不可读：{exc}")
     return errors
+
+
+def _searchable_payload(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".docx", ".xlsx"}:
+        with zipfile.ZipFile(path) as archive:
+            return b"\n".join(
+                archive.read(name)
+                for name in archive.namelist()
+                if name.endswith(".xml") or name.endswith(".rels")
+            ).decode("utf-8", errors="ignore")
+    if suffix == ".pdf":
+        reader = PdfReader(path)
+        metadata = " ".join(str(value) for value in (reader.metadata or {}).values())
+        return metadata + "\n" + "\n".join(
+            page.extract_text() or "" for page in reader.pages
+        )
+    if suffix in {".jpg", ".jpeg", ".png"}:
+        with Image.open(path) as image:
+            comment = image.info.get("comment", b"")
+            if isinstance(comment, bytes):
+                comment = comment.decode("utf-8", errors="ignore")
+            return f"{comment} {' '.join(str(value) for value in image.getexif().values())}"
+    return ""
+
+
+def _validate_source_evidence(
+    source_rows: list[dict],
+    source_root: Path,
+    errors: list[str],
+) -> None:
+    if len(source_rows) != 12:
+        errors.append(f"引用原始证据应为12份，实际为{len(source_rows)}份")
+    for row in source_rows:
+        path = source_root / row["path"]
+        if not path.exists():
+            errors.append(f"缺少引用原始证据：{row['path']}")
+            continue
+        if _sha256(path) != row.get("sha256"):
+            errors.append(f"原始证据哈希不一致：{row['path']}")
+        try:
+            page_count = len(PdfReader(path).pages)
+        except Exception as exc:
+            errors.append(f"原始证据不可读：{row['path']}：{exc}")
+            continue
+        if page_count != row.get("pageCount"):
+            errors.append(
+                f"原始证据页数不一致：{row['path']}，"
+                f"登记{row.get('pageCount')}页，实际{page_count}页"
+            )
+        if row.get("status") != "已绑定":
+            errors.append(f"原始证据未绑定：{row['path']}")
+
+
+def _validate_control_closures(
+    scenario_data: dict[str, dict],
+    data_dir: Path,
+    errors: list[str],
+) -> None:
+    closures = scenario_data["M00"].get("dataClosures", [])
+    expected_categories = {"壁厚", "介质", "管线范围", "无损检测单位", "证书时效"}
+    if {row.get("category") for row in closures} != expected_categories:
+        errors.append("数据一致性闭环项不完整")
+    if any(row.get("status") != "已闭环" for row in closures):
+        errors.append("数据一致性存在未闭环项")
+
+    registry = scenario_data["M00"].get("signatureRegistry", [])
+    if len(registry) != 76 or any(row.get("status") != "已登记" for row in registry):
+        errors.append("测试专用签章登记台账不完整")
+
+    r69 = scenario_data["V00"]
+    statuses = [row.get("status") for row in r69.get("r69Workflow", [])]
+    if statuses != ["发现定位缺页", "补录页码与哈希", "复核合格", "合格闭环"]:
+        errors.append("R69工作流异常整改链不完整或顺序错误")
+    if r69.get("finalStatus") != "合格闭环":
+        errors.append("R69工作流未合格闭环")
+
+    m00_content = json.loads(
+        (data_dir / "content/M00.json").read_text(encoding="utf-8")
+    )
+    standard_rows = m00_content["documents"]["M00-STD-001"]["workbook"]["sheets"][0]["rows"]
+    if standard_rows != STANDARDS:
+        errors.append("标准版本台账与已核定标准清单不一致")
 
 
 def _validate_scenarios(
@@ -142,13 +226,18 @@ def _validate_scenarios(
         errors.append("S06未合格闭环")
 
 
-def validate_pack(root: Path) -> ValidationReport:
+def validate_pack(
+    root: Path,
+    *,
+    source_root: Path | None = None,
+) -> ValidationReport:
     package_dir = Path(__file__).parent
     data_dir = package_dir / "data"
     master = load_project_master(data_dir / "project_master.json")
     catalog = load_catalog(data_dir / "document_catalog.json")
     snapshot = load_node_snapshot(data_dir / "requirement_map.json")
     scenario_data = load_scenario_data(data_dir / "content")
+    source_root = source_root or Path(__file__).resolve().parents[2]
     errors: list[str] = []
     checksums: dict[str, str] = {}
 
@@ -198,11 +287,19 @@ def validate_pack(root: Path) -> ValidationReport:
             + "、".join(str(path.relative_to(root)) for path in sorted(extras))
         )
 
+    signed_generated_files = 0
+    national_id_pattern = re.compile(r"(?<![0-9A-Fa-f])\d{18}(?![0-9A-Fa-f])")
     for path in actual_files:
         for error in _file_health(path):
             errors.append(f"{path.name}：{error}")
         if not has_test_marking(path):
             errors.append(f"{path.name}：缺少测试专用标识")
+        if has_signature_marking(path):
+            signed_generated_files += 1
+        else:
+            errors.append(f"{path.name}：缺少测试签章形态")
+        if national_id_pattern.search(_searchable_payload(path)):
+            errors.append(f"{path.name}：疑似含未脱敏18位身份证号")
         checksums[str(path.relative_to(root))] = _sha256(path)
 
     errors.extend(master.validate())
@@ -220,19 +317,32 @@ def validate_pack(root: Path) -> ValidationReport:
     ):
         errors.append("存在未解析的资料要求")
     _validate_scenarios(scenario_data, errors)
+    source_rows = scenario_data["M00"].get("sourceEvidence", [])
+    _validate_source_evidence(source_rows, source_root, errors)
+    _validate_control_closures(scenario_data, data_dir, errors)
+
+    field_photos = sum("-PHOTO-" in spec.logical_id for spec in catalog.documents)
+    radiographic_films = sum("-FILM-" in spec.logical_id for spec in catalog.documents)
+    external_queries = sum("-QUERY-" in spec.logical_id for spec in catalog.documents)
 
     metrics = {
         "nodes": len(snapshot.nodes),
         "requirements": len(snapshot.requirements),
         "logical_documents": len(catalog.documents),
         "physical_files": len(actual_files),
+        "referenced_source_files": len(source_rows),
+        "evidence_universe_files": len(actual_files) + len(source_rows),
+        "field_photos": field_photos,
+        "radiographic_films": radiographic_films,
+        "external_query_screenshots": external_queries,
+        "signed_generated_files": signed_generated_files,
         "lines": len(master.lines),
         "welds": len(master.welds),
         "material_batches": len(master.material_batches),
     }
-    if metrics["physical_files"] != 114:
+    if metrics["physical_files"] != 136:
         errors.append(
-            f"物理文件数量应为114，实际为{metrics['physical_files']}"
+            f"物理文件数量应为136，实际为{metrics['physical_files']}"
         )
     return ValidationReport(
         errors=errors,

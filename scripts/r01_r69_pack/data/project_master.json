@@ -8,7 +8,7 @@
     "originalRevision": "2",
     "originalDate": "2021-03",
     "pipelineClass": "GC2",
-    "testPackDate": "2026-07-29"
+    "testPackDate": "2026-07-15"
   },
   "organizations": [
     {
@@ -21,6 +21,42 @@
       "id": "DESIGN-XR",
       "name": "广东星燃石化设计院有限公司",
       "role": "设计单位",
+      "synthetic": false
+    },
+    {
+      "id": "INSTALL-GZHG",
+      "name": "贵州化工建设有限责任公司",
+      "role": "2021年施工单位",
+      "synthetic": false
+    },
+    {
+      "id": "NDT-NJJX",
+      "name": "南京金鑫检测工程有限责任公司",
+      "role": "交工资料登记无损检测单位",
+      "synthetic": false
+    },
+    {
+      "id": "NDT-GZSH",
+      "name": "广州声华科技股份有限公司",
+      "role": "2021年RT报告签发单位",
+      "synthetic": false
+    },
+    {
+      "id": "SUPV-GD-ZH",
+      "name": "广东省特种设备检测研究院珠海检测院",
+      "role": "2021年安装监督检验单位",
+      "synthetic": false
+    },
+    {
+      "id": "MFR-GH",
+      "name": "河北广浩管件有限公司",
+      "role": "来源管件制造单位",
+      "synthetic": false
+    },
+    {
+      "id": "MFR-LB",
+      "name": "烟台鲁宝钢管有限责任公司",
+      "role": "来源钢管制造单位",
       "synthetic": false
     },
     {
@@ -49,6 +85,30 @@
     }
   ],
   "people": [
+    {
+      "id": "PER-YDH",
+      "name": "杨道红",
+      "role": "来源设计许可印章人员",
+      "synthetic": false
+    },
+    {
+      "id": "PER-ZWH",
+      "name": "赵伟辉",
+      "role": "2021年交工记录焊工",
+      "synthetic": false
+    },
+    {
+      "id": "PER-PBX",
+      "name": "庞柏鑫",
+      "role": "2021年交工记录焊工",
+      "synthetic": false
+    },
+    {
+      "id": "PER-ZJX",
+      "name": "赵俊祥",
+      "role": "来源焊工资格证人员",
+      "synthetic": false
+    },
     {
       "id": "TEST-PER-DES-01",
       "name": "测试设计负责人甲",
@@ -110,6 +170,177 @@
       "holder_id": "TEST-PER-NDT-01",
       "certificate_type": "检测人员资格测试数据",
       "synthetic": true
+    },
+    {
+      "id": "TS1810648-2021",
+      "holder_id": "DESIGN-XR",
+      "certificate_type": "来源压力管道设计许可证号",
+      "synthetic": false
+    },
+    {
+      "id": "TS3810436-2021",
+      "holder_id": "INSTALL-GZHG",
+      "certificate_type": "来源压力管道安装许可证号",
+      "synthetic": false
+    },
+    {
+      "id": "TS3810436-2025",
+      "holder_id": "INSTALL-GZHG",
+      "certificate_type": "来源特种设备生产许可证号",
+      "synthetic": false
+    },
+    {
+      "id": "TS2710504-2022",
+      "holder_id": "MFR-GH",
+      "certificate_type": "来源压力管道元件制造许可证号",
+      "synthetic": false
+    },
+    {
+      "id": "TS2710692-2023",
+      "holder_id": "MFR-LB",
+      "certificate_type": "来源无缝钢管制造许可证号",
+      "synthetic": false
+    },
+    {
+      "id": "TS2100000099937",
+      "holder_id": "PER-ZJX",
+      "certificate_type": "来源焊工资格档案编号",
+      "synthetic": false
+    }
+  ],
+  "sourceEvidence": [
+    {
+      "id": "SRC-DESIGN-001",
+      "path": "files/设计资料.pdf",
+      "pageCount": 10,
+      "category": "设计文件与设计印章",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "一般工程资料"
+    },
+    {
+      "id": "SRC-QUAL-001",
+      "path": "files/资质证书.pdf",
+      "pageCount": 6,
+      "category": "单位与人员资质",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "含个人身份信息；生成资料须脱敏"
+    },
+    {
+      "id": "SRC-MATERIAL-001",
+      "path": "files/材质证书.pdf",
+      "pageCount": 7,
+      "category": "材料质量证明",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "一般工程资料"
+    },
+    {
+      "id": "SRC-HANDOVER-001",
+      "path": "files/交工资料.pdf",
+      "pageCount": 24,
+      "category": "交工与施工记录",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "含签章与人员信息"
+    },
+    {
+      "id": "SRC-SCAN-001",
+      "path": "Scan/20260623104523.pdf",
+      "pageCount": 1,
+      "category": "施工许可扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "单位证照"
+    },
+    {
+      "id": "SRC-SCAN-002",
+      "path": "Scan/20260623104555.pdf",
+      "pageCount": 5,
+      "category": "制造许可与焊工资格扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "含个人身份信息；生成资料须脱敏"
+    },
+    {
+      "id": "SRC-SCAN-003",
+      "path": "Scan/20260623104703.pdf",
+      "pageCount": 7,
+      "category": "材料质量证明扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "一般工程资料"
+    },
+    {
+      "id": "SRC-SCAN-004",
+      "path": "Scan/20260623104730.pdf",
+      "pageCount": 24,
+      "category": "交工资料扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "含签章与人员信息"
+    },
+    {
+      "id": "SRC-SCAN-005",
+      "path": "Scan/20260623104828.pdf",
+      "pageCount": 12,
+      "category": "焊接工艺评定扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "一般工程资料"
+    },
+    {
+      "id": "SRC-SCAN-006",
+      "path": "Scan/20260623105454.pdf",
+      "pageCount": 19,
+      "category": "施工方案扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "含签章与人员信息"
+    },
+    {
+      "id": "SRC-SCAN-007",
+      "path": "Scan/20260623105534.pdf",
+      "pageCount": 12,
+      "category": "安装施工记录扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "含签章与人员信息"
+    },
+    {
+      "id": "SRC-SCAN-008",
+      "path": "Scan/20260623105636.pdf",
+      "pageCount": 5,
+      "category": "射线检测报告扫描件",
+      "ocrStatus": "图像型PDF；已有大模型OCR摘要",
+      "sensitivity": "含签章与人员信息"
+    }
+  ],
+  "sourceTruth": [
+    {
+      "category": "壁厚",
+      "sourceFact": "施工图设计基线Φ108×4；2021交工与RT证据PL8303/PL8306为Φ108×5",
+      "scope": "设计值与实施值分栏使用",
+      "resolution": "不静默覆盖；按对象和资料阶段追溯",
+      "status": "已闭环"
+    },
+    {
+      "category": "介质",
+      "sourceFact": "交工资料确认PL8303/PL8306为丙醇；设计扫描OCR存在丙酮/丙醇低置信差异",
+      "scope": "交工对象采用丙醇；设计OCR差异保留复核标记",
+      "resolution": "不以低置信OCR替代原图",
+      "status": "已闭环"
+    },
+    {
+      "category": "管线范围",
+      "sourceFact": "施工图范围8条基础管线；交工原件主要覆盖PL8303和PL8306",
+      "scope": "PL8303-100与PL8306-100作为交工别名",
+      "resolution": "设计范围与交工证据范围分别统计",
+      "status": "已闭环"
+    },
+    {
+      "category": "无损检测单位",
+      "sourceFact": "交工资料登记南京金鑫；具体RT报告由广州声华签发",
+      "scope": "分别记录汇总登记角色和报告签发角色",
+      "resolution": "两单位不合并、不互相替代",
+      "status": "已闭环"
+    },
+    {
+      "category": "证书时效",
+      "sourceFact": "既有设计、施工、制造和焊工资质均为来源年份证据",
+      "scope": "只支撑2021来源事实",
+      "resolution": "2026条件场景继续使用TEST前缀资质数据",
+      "status": "已闭环"
     }
   ],
   "materialBatches": [

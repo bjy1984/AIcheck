@@ -1861,3 +1861,12 @@ nodeTemplates:
   defaultStatus: 待提交
   actions:
   - project:view
+  - file:bind
+  requiredMaterials:
+  - id: REQ-69-01
+    materialTypeCode: quality_system_document
+    name: 施工单位质量保证体系实施状况评价工作流记录
+    requiredType: 必传
+    responsibleParty: 监检人员现场补充
+    applicability: 始终适用
+    note: 覆盖当前项目、R01-R68状态、评价人员、评价日期、评价结果和签发信息。

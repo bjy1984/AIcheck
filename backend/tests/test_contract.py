@@ -6108,6 +6108,174 @@ def test_owner_write_forbidden_and_archived_readonly() -> None:
     )
 
 
+def test_inspection_attachment_can_be_uploaded_bound_and_submitted_to_current_node() -> None:
+    project_id = "P-2026-HDCP-001"
+    inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/21/attachments",
+            json={
+                "files": [
+                    {
+                        "fileName": "S01-PHOTO-001_标志移植现场核验图.jpg",
+                        "fileSize": 36,
+                        "fileType": "image/jpeg",
+                    }
+                ]
+            },
+            headers=inspection_headers,
+        )
+    )
+    target = upload["uploadUrls"][0]
+    image_bytes = b"\xff\xd8\xff\xe0inspection-photo-no-ocr\xff\xd9"
+    assert_ok(client.put(target["url"], content=image_bytes, headers=target["headers"]))
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {
+                        "documentVersionId": target["documentVersionId"],
+                        "fileSize": len(image_bytes),
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "inspection-photo-complete"},
+        )
+    )
+    document = repo.find_one("documents", target["documentId"])
+    assert document["materialCategory"] == "监检现场补充证据"
+    assert document["sourceOrgName"] == "省特检院一部"
+    assert repo.fields_for_versions({target["documentVersionId"]}) == []
+
+    bound = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/21/file-bindings",
+            json={
+                "bindings": [
+                    {
+                        "documentId": target["documentId"],
+                        "documentVersionId": target["documentVersionId"],
+                        "usage": "监检资料",
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "inspection-photo-bind"},
+        )
+    )
+    assert len(bound["affectedIds"]) == 1
+    binding_id = bound["affectedIds"][0]
+
+    submitted = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/21/file-bindings/submit",
+            json={"bindingIds": [binding_id], "batchName": "R21 监检现场资料"},
+            headers={**inspection_headers, "Idempotency-Key": "inspection-photo-submit"},
+        )
+    )
+    assert submitted["bindingIds"] == [binding_id]
+    stored_binding = repo.find_one("bindings", binding_id)
+    assert stored_binding["usage"] == "监检资料"
+    assert stored_binding["bindingStatus"] == "已提交"
+    assert repo.node(project_id, 21)["status"] == "待审查"
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/21/attachments",
+            json={
+                "files": [
+                    {"fileName": "forbidden.jpg", "fileSize": 3, "fileType": "image/jpeg"}
+                ]
+            },
+            headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+        ),
+        "FORBIDDEN",
+    )
+
+
+def test_r69_requires_inspection_workflow_evidence_and_keeps_human_decision_gate() -> None:
+    project_id = "P-2026-HDCP-001"
+    inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    before = assert_ok(client.get(f"/projects/{project_id}/nodes/69/package", headers=inspection_headers))
+    assert [item["id"] for item in before["requirements"]] == ["REQ-69-01"]
+    assert before["node"]["requiredProgress"] == {"done": 0, "total": 1}
+    assert before["node"]["requirementsSummary"]["missingCount"] == 1
+
+    blocked = assert_error(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/69/review-opinions",
+            json={"result": "满足要求", "opinion": "不得在无证据时保存", "evidenceLinkIds": []},
+            headers=inspection_headers,
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert blocked["data"]["evidenceValidation"]["requiresEvidenceSelection"] is True
+
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/69/attachments",
+            json={
+                "files": [
+                    {
+                        "fileName": "B00-R69-001_质量保证体系实施状况评价工作流记录.xlsx",
+                        "fileSize": 28,
+                        "fileType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    }
+                ]
+            },
+            headers=inspection_headers,
+        )
+    )
+    target = upload["uploadUrls"][0]
+    workbook_bytes = b"PK\x03\x04r69-workflow-evidence"
+    assert_ok(client.put(target["url"], content=workbook_bytes, headers=target["headers"]))
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {
+                        "documentVersionId": target["documentVersionId"],
+                        "fileSize": len(workbook_bytes),
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "r69-workflow-complete"},
+        )
+    )
+    bound = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/69/file-bindings",
+            json={
+                "bindings": [
+                    {
+                        "documentId": target["documentId"],
+                        "documentVersionId": target["documentVersionId"],
+                        "usage": "监检资料",
+                    }
+                ]
+            },
+            headers={**inspection_headers, "Idempotency-Key": "r69-workflow-bind"},
+        )
+    )
+    binding_id = bound["affectedIds"][0]
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/69/file-bindings/submit",
+            json={"bindingIds": [binding_id], "batchName": "R69 人工评价证据"},
+            headers={**inspection_headers, "Idempotency-Key": "r69-workflow-submit"},
+        )
+    )
+
+    after = assert_ok(client.get(f"/projects/{project_id}/nodes/69/package", headers=inspection_headers))
+    assert after["node"]["requiredProgress"] == {"done": 1, "total": 1}
+    assert after["node"]["requirementsSummary"]["missingCount"] == 0
+    r69_binding = next(item for item in after["bindings"] if item["id"] == binding_id)
+    assert r69_binding["requirementId"] == "REQ-69-01"
+    assert r69_binding["bindingStatus"] == "已提交"
+    assert not after["reviewOpinions"]
+
+
 def test_if_match_conflict_and_review_admin_guard() -> None:
     conflict = client.patch(
         "/projects/P-2026-HDCP-001",
@@ -8516,6 +8684,68 @@ def test_cross_node_submission_scope_expands_empty_binding_ids() -> None:
         )
     )
     assert submission["nextStatus"] == "待审查"
+
+
+def test_exact_multi_node_document_submission_does_not_bind_the_active_node() -> None:
+    project_id = "P-2026-HDCP-001"
+    document_id = "DOC-20260625-001"
+    version_id = "DV-20260625-001-V2"
+    active_node_binding_count = len(
+        [
+            item
+            for item in repo.bindings_for_project(project_id)
+            if item["documentId"] == document_id and int(item["nodeId"]) == 16
+        ]
+    )
+    bound = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/bindings",
+            json={
+                "nodeIds": [21, 24, 69],
+                "bindings": [
+                    {
+                        "documentId": document_id,
+                        "documentVersionId": version_id,
+                        "usage": "原始提交",
+                    }
+                ],
+            },
+            headers={"Idempotency-Key": "exact-multi-node-bind"},
+        )
+    )
+    created = {
+        int(repo.find_one("bindings", binding_id)["nodeId"]): repo.find_one("bindings", binding_id)
+        for binding_id in bound["affectedIds"]
+    }
+    assert sorted(created) == [21, 24, 69]
+    created[24]["bindingStatus"] = "已通过"
+
+    submitted = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={
+                "nodeIds": [21, 69],
+                "bindingIds": [created[21]["id"], created[69]["id"]],
+                "batchName": "文件真实挂载范围提交",
+            },
+            headers={"Idempotency-Key": "exact-multi-node-submit"},
+        )
+    )
+    assert submitted["bindingIds"] == [created[21]["id"], created[69]["id"]]
+    assert created[21]["bindingStatus"] == "已提交"
+    assert created[24]["bindingStatus"] == "已通过"
+    assert created[69]["bindingStatus"] == "已提交"
+    assert len(
+        [
+            item
+            for item in repo.bindings_for_project(project_id)
+            if item["documentId"] == document_id and int(item["nodeId"]) == 16
+        ]
+    ) == active_node_binding_count
+    stored_submission = next(
+        item for item in repo.state["submissions"] if item["submissionId"] == submitted["submissionId"]
+    )
+    assert stored_submission["nodeIds"] == [21, 69]
 
 
 def test_ndt_submit_updates_reports_films_and_traceable_snapshot() -> None:

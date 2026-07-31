@@ -1,7 +1,7 @@
 {
   "schemaVersion": "r01-r69-document-catalog@1",
-  "logicalDocumentCount": 58,
-  "physicalFileCount": 114,
+  "logicalDocumentCount": 76,
+  "physicalFileCount": 136,
   "documents": [
     {
       "logicalId": "M00-README-001",
@@ -272,6 +272,207 @@
       "templateKind": "ledger",
       "contentRef": "content/M00.json#M00-DIR-001",
       "fileStem": "M00_M00-DIR-001_TEST-M00-004_资料总目录"
+    },
+    {
+      "logicalId": "M00-SOURCE-001",
+      "folder": "M00",
+      "outputSubfolder": "M00_项目主数据与总目录",
+      "title": "原始证据来源与页级绑定台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-M00-005",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/M00.json#M00-SOURCE-001",
+      "fileStem": "M00_M00-SOURCE-001_TEST-M00-005_原始证据来源与页级绑定台账"
+    },
+    {
+      "logicalId": "M00-DATA-001",
+      "folder": "M00",
+      "outputSubfolder": "M00_项目主数据与总目录",
+      "title": "数据一致性差异与闭环报告",
+      "sourceFormat": "docx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-M00-006",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "narrative",
+      "contentRef": "content/M00.json#M00-DATA-001",
+      "fileStem": "M00_M00-DATA-001_TEST-M00-006_数据一致性差异与闭环报告"
+    },
+    {
+      "logicalId": "M00-SEAL-001",
+      "folder": "M00",
+      "outputSubfolder": "M00_项目主数据与总目录",
+      "title": "测试专用签章样式与使用登记台账",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-M00-007",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/M00.json#M00-SEAL-001",
+      "fileStem": "M00_M00-SEAL-001_TEST-M00-007_测试专用签章样式与使用登记台账"
     },
     {
       "logicalId": "B00-DESIGN-001",
@@ -835,6 +1036,314 @@
       "fileStem": "B00_B00-INSTALL-001_TEST-B00-012_安装试验吹扫综合记录"
     },
     {
+      "logicalId": "B00-PHOTO-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "管道组对现场核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-B00-013",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        28
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/B00.json#B00-PHOTO-001",
+      "fileStem": "B00_B00-PHOTO-001_TEST-B00-013_管道组对现场核验图"
+    },
+    {
+      "logicalId": "B00-PHOTO-002",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "焊缝外观现场核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-B00-014",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        30
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/B00.json#B00-PHOTO-002",
+      "fileStem": "B00_B00-PHOTO-002_TEST-B00-014_焊缝外观现场核验图"
+    },
+    {
+      "logicalId": "B00-PHOTO-003",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "无损检测现场核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-B00-015",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        42
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/B00.json#B00-PHOTO-003",
+      "fileStem": "B00_B00-PHOTO-003_TEST-B00-015_无损检测现场核验图"
+    },
+    {
+      "logicalId": "B00-PHOTO-004",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "防腐补伤现场核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-B00-016",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        44
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/B00.json#B00-PHOTO-004",
+      "fileStem": "B00_B00-PHOTO-004_TEST-B00-016_防腐补伤现场核验图"
+    },
+    {
+      "logicalId": "B00-FILM-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "PL8303射线检测模拟底片",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-B00-017",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        41
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/B00.json#B00-FILM-001",
+      "fileStem": "B00_B00-FILM-001_TEST-B00-017_PL8303射线检测模拟底片"
+    },
+    {
+      "logicalId": "B00-FILM-002",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "PL8306射线检测模拟底片",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-B00-018",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        42
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/B00.json#B00-FILM-002",
+      "fileStem": "B00_B00-FILM-002_TEST-B00-018_PL8306射线检测模拟底片"
+    },
+    {
+      "logicalId": "B00-QUERY-001",
+      "folder": "B00",
+      "outputSubfolder": "B00_基础项目资料",
+      "title": "焊工资格外部查询测试截图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-B00-019",
+      "revision": "0",
+      "date": "2026-05-20",
+      "rNodes": [
+        24
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/B00.json#B00-QUERY-001",
+      "fileStem": "B00_B00-QUERY-001_TEST-B00-019_焊工资格外部查询测试截图"
+    },
+    {
       "logicalId": "S01-DESIGN-001",
       "folder": "S01",
       "outputSubfolder": "S01_境外材料与新材料",
@@ -1044,6 +1553,35 @@
       "templateKind": "ledger",
       "contentRef": "content/S01.json#S01-MARK-001",
       "fileStem": "S01_S01-MARK-001_TEST-S01-007_标志移植台账"
+    },
+    {
+      "logicalId": "S01-PHOTO-001",
+      "folder": "S01",
+      "outputSubfolder": "S01_境外材料与新材料",
+      "title": "到货与标志移植核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S01-008",
+      "revision": "0",
+      "date": "2026-06-04",
+      "rNodes": [
+        21
+      ],
+      "relatedLines": [
+        "PL8307-TEST"
+      ],
+      "relatedWelds": [
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003"
+      ],
+      "relatedMaterials": [
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S01.json#S01-PHOTO-001",
+      "fileStem": "S01_S01-PHOTO-001_TEST-S01-008_到货与标志移植核验图"
     },
     {
       "logicalId": "S02-DESIGN-001",
@@ -1622,9 +2160,7 @@
       "revision": "0",
       "date": "2026-06-25",
       "rNodes": [
-        48,
-        49,
-        53
+        48
       ],
       "relatedLines": [
         "PL8308-TEST"
@@ -1640,6 +2176,146 @@
       "templateKind": "photo",
       "contentRef": "content/S04.json#S04-PHOTO-001",
       "fileStem": "S04_S04-PHOTO-001_TEST-S04-006_施工照片"
+    },
+    {
+      "logicalId": "S04-PHOTO-002",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "穿越开挖与就位核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S04-007",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        49
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S04.json#S04-PHOTO-002",
+      "fileStem": "S04_S04-PHOTO-002_TEST-S04-007_穿越开挖与就位核验图"
+    },
+    {
+      "logicalId": "S04-PHOTO-003",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "套管防腐绝缘核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S04-008",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        50
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S04.json#S04-PHOTO-003",
+      "fileStem": "S04_S04-PHOTO-003_TEST-S04-008_套管防腐绝缘核验图"
+    },
+    {
+      "logicalId": "S04-PHOTO-004",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "绝缘支撑安装核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S04-009",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        51
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S04.json#S04-PHOTO-004",
+      "fileStem": "S04_S04-PHOTO-004_TEST-S04-009_绝缘支撑安装核验图"
+    },
+    {
+      "logicalId": "S04-PHOTO-005",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "穿越焊接连接核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S04-010",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        52
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S04.json#S04-PHOTO-005",
+      "fileStem": "S04_S04-PHOTO-005_TEST-S04-010_穿越焊接连接核验图"
+    },
+    {
+      "logicalId": "S04-PHOTO-006",
+      "folder": "S04",
+      "outputSubfolder": "S04_阴极保护与穿跨越",
+      "title": "穿越布管完成核验图",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S04-011",
+      "revision": "0",
+      "date": "2026-06-25",
+      "rNodes": [
+        53
+      ],
+      "relatedLines": [
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S04.json#S04-PHOTO-006",
+      "fileStem": "S04_S04-PHOTO-006_TEST-S04-011_穿越布管完成核验图"
     },
     {
       "logicalId": "S05-DESIGN-001",
@@ -1919,6 +2595,34 @@
       "templateKind": "ledger",
       "contentRef": "content/S06.json#S06-FINAL-001",
       "fileStem": "S06_S06-FINAL-001_TEST-S06-005_替代试验泄漏最终确认"
+    },
+    {
+      "logicalId": "S06-FILM-001",
+      "folder": "S06",
+      "outputSubfolder": "S06_耐压免除或替代",
+      "title": "最终封闭焊口射线检测模拟底片",
+      "sourceFormat": "jpg",
+      "submitFormat": "jpg",
+      "documentNumber": "TEST-S06-006",
+      "revision": "0",
+      "date": "2026-07-10",
+      "rNodes": [
+        65
+      ],
+      "relatedLines": [
+        "PL8306"
+      ],
+      "relatedWelds": [
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001"
+      ],
+      "templateKind": "photo",
+      "contentRef": "content/S06.json#S06-FILM-001",
+      "fileStem": "S06_S06-FILM-001_TEST-S06-006_最终封闭焊口射线检测模拟底片"
     },
     {
       "logicalId": "V00-NODE-MATRIX-001",
@@ -2254,6 +2958,75 @@
       "templateKind": "narrative",
       "contentRef": "content/V00.json#V00-REPORT-001",
       "fileStem": "V00_V00-REPORT-001_TEST-V00-005_资料包完整性检查报告"
+    },
+    {
+      "logicalId": "V00-R69-001",
+      "folder": "V00",
+      "outputSubfolder": "V00_R01-R69覆盖验证",
+      "title": "R69质量保证体系实施状况工作流执行记录",
+      "sourceFormat": "xlsx",
+      "submitFormat": "pdf",
+      "documentNumber": "TEST-V00-006",
+      "revision": "0",
+      "date": "2026-07-15",
+      "rNodes": [
+        69
+      ],
+      "relatedLines": [
+        "PL8301",
+        "PL8302",
+        "PL8303",
+        "PL8304",
+        "PL8305",
+        "PL8306",
+        "VT8301",
+        "VT8302",
+        "PL8307-TEST",
+        "ST8301-TEST",
+        "PL8308-TEST"
+      ],
+      "relatedWelds": [
+        "W-B00-001",
+        "W-B00-002",
+        "W-B00-003",
+        "W-B00-004",
+        "W-B00-005",
+        "W-B00-006",
+        "W-B00-007",
+        "W-B00-008",
+        "W-B00-009",
+        "W-B00-010",
+        "W-B00-011",
+        "W-B00-012",
+        "W-S01-001",
+        "W-S01-002",
+        "W-S01-003",
+        "W-S02-001",
+        "W-S02-002",
+        "W-S02-003",
+        "W-S03-001",
+        "W-S03-002",
+        "W-S03-003",
+        "W-S03-004",
+        "W-S04-001",
+        "W-S04-002",
+        "W-S04-003",
+        "W-S05-001",
+        "W-S05-002",
+        "W-S06-001",
+        "W-S06-002",
+        "W-S06-003"
+      ],
+      "relatedMaterials": [
+        "MAT-B00-20-001",
+        "MAT-S01-TP316L-001",
+        "MAT-S01-NM01-001",
+        "MAT-S02-S30408-001",
+        "MAT-S03-15CRMO-001"
+      ],
+      "templateKind": "ledger",
+      "contentRef": "content/V00.json#V00-R69-001",
+      "fileStem": "V00_V00-R69-001_TEST-V00-006_R69质量保证体系实施状况工作流执行记录"
     }
   ]
 }

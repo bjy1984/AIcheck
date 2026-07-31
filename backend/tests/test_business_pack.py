@@ -66,7 +66,6 @@ def test_engineering_pack_nodes_all_have_document_requirements() -> None:
     pack = load_business_pack("engineering_inspection_v1")
     nodes = build_project_tree("P-ENG-REQ", pack)
     requirements = build_project_requirements(pack, project_id="P-ENG-REQ")
-    evaluation_only_node_ids = {69}
     requirement_codes_by_node: dict[int, set[str]] = {}
     for requirement in requirements:
         requirement_codes_by_node.setdefault(int(requirement["nodeId"]), set()).add(requirement["materialTypeCode"])
@@ -76,15 +75,23 @@ def test_engineering_pack_nodes_all_have_document_requirements() -> None:
     missing_nodes = [
         int(node["nodeId"])
         for node in nodes
-        if int(node["nodeId"]) not in evaluation_only_node_ids
-        and int(node["nodeId"]) not in requirement_codes_by_node
+        if int(node["nodeId"]) not in requirement_codes_by_node
     ]
     assert missing_nodes == []
 
     assert {"design_license", "design_document"} <= requirement_codes_by_node[1]
     assert {"quality_system_document", "ndt_report"} <= requirement_codes_by_node[37]
     assert {"ndt_report", "radiographic_film"} <= requirement_codes_by_node[65]
-    assert 69 not in requirement_codes_by_node
+    assert requirement_codes_by_node[69] == {"quality_system_document"}
+    r69_node = next(node for node in nodes if int(node["nodeId"]) == 69)
+    assert "file:bind" in r69_node["actions"]
+    r69_requirements = [item for item in requirements if int(item["nodeId"]) == 69]
+    assert len(r69_requirements) == 1
+    assert r69_requirements[0]["id"] == "REQ-69-01"
+    assert r69_requirements[0]["name"] == "施工单位质量保证体系实施状况评价工作流记录"
+    assert r69_requirements[0]["requiredType"] == "必传"
+    assert r69_requirements[0]["responsibleParty"] == "监检人员现场补充"
+    assert r69_requirements[0]["applicability"] == "始终适用"
 
 
 def test_engineering_pack_has_fixed_standard_clause_bindings() -> None:

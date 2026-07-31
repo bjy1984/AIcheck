@@ -4,6 +4,7 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElDialog,
   ElEmpty,
   ElForm,
   ElFormItem,
@@ -27,11 +28,13 @@ import type {
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
+import { resolveNdtMaterialAction } from '@/utils/acceptanceFlows'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 
 type NdtMaterialStatus = '已覆盖' | '待上传' | '需补正'
 type NdtMaterialAction =
   | { key: 'upload'; label: string; category: string }
+  | { key: 'register'; label: string; category: string }
   | { key: 'rectify'; label: string }
 type NdtMaterialChecklistItem = {
   category: string
@@ -97,6 +100,29 @@ const rectificationForm = reactive({
   rectificationId: '',
   description: '已补充底片包索引和检测记录页码，请复审。'
 })
+const filmDialogVisible = ref(false)
+const filmForm = reactive({
+  filmNo: '',
+  weldNo: '',
+  method: 'RT' as NdtFilm['method'],
+  pipelineNo: '',
+  reportNo: '',
+  entrustNo: '',
+  filmPackageNo: '',
+  imageFileName: '',
+  testDate: '',
+  detectionRatio: '100%',
+  standardCode: 'NB/T 47013.2-2015',
+  evaluationLevel: 'Ⅱ级',
+  evaluatorName: '',
+  reviewerName: ''
+})
+const filmFormRef = ref<FormInstance>()
+const filmRules: FormRules = {
+  filmNo: [{ required: true, message: '请填写底片编号', trigger: 'blur' }],
+  weldNo: [{ required: true, message: '请填写焊口编号', trigger: 'blur' }],
+  method: [{ required: true, message: '请选择检测方法', trigger: 'change' }]
+}
 const rectificationFormRef = ref<FormInstance>()
 const rectificationRules: FormRules = {
   rectificationId: [{ required: true, message: '请选择需要反馈的补正事项', trigger: 'change' }],
@@ -134,6 +160,15 @@ watch(
     }
   },
   { immediate: true }
+)
+watch(
+  () => props.films.length,
+  (count, previousCount) => {
+    if (filmDialogVisible.value && count > previousCount) {
+      filmDialogVisible.value = false
+      filmFormRef.value?.resetFields()
+    }
+  }
 )
 const selectedRectificationId = computed(
   () => rectificationForm.rectificationId || defaultFeedback.value?.id || ''
@@ -214,7 +249,10 @@ const ndtMaterialChecklist = computed(() => {
         ? '需补正'
         : statusForCategory('底片与影像资料', props.films.length),
       nodeRefs: 'R40、R65',
-      actions: [{ key: 'upload', label: '上传底片/影像', category: '底片与影像资料' }]
+      actions: [
+        { key: 'register', label: '新增底片编号', category: '底片与影像资料' },
+        { key: 'upload', label: '上传底片/影像', category: '底片与影像资料' }
+      ]
     },
     {
       category: '检测记录',
@@ -351,15 +389,42 @@ const scrollToNdtSection = (sectionId: string) => {
 }
 
 const handleMaterialAction = (action: NdtMaterialAction) => {
-  if (action.key === 'upload') {
-    if (action.category === '检测报告') {
-      emit('uploadReport')
-      return
-    }
-    emit('uploadMaterial', action.category)
+  const category = 'category' in action ? action.category : ''
+  const route = resolveNdtMaterialAction(category, action.key)
+  if (route === 'register-film') {
+    filmDialogVisible.value = true
+    return
+  }
+  if (route === 'upload-report') {
+    emit('uploadReport')
+    return
+  }
+  if (route === 'upload-material') {
+    emit('uploadMaterial', category)
     return
   }
   scrollToNdtSection('ndt-feedback-list')
+}
+
+const handleCreateFilm = async () => {
+  const valid = await filmFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  emit('createFilm', {
+    filmNo: filmForm.filmNo.trim(),
+    weldNo: filmForm.weldNo.trim(),
+    method: filmForm.method,
+    pipelineNo: filmForm.pipelineNo.trim(),
+    reportNo: filmForm.reportNo.trim(),
+    entrustNo: filmForm.entrustNo.trim(),
+    filmPackageNo: filmForm.filmPackageNo.trim(),
+    imageFileName: filmForm.imageFileName.trim(),
+    testDate: filmForm.testDate.trim(),
+    detectionRatio: filmForm.detectionRatio.trim(),
+    standardCode: filmForm.standardCode.trim(),
+    evaluationLevel: filmForm.evaluationLevel.trim(),
+    evaluatorName: filmForm.evaluatorName.trim(),
+    reviewerName: filmForm.reviewerName.trim()
+  })
 }
 
 const handleSubmitNdt = () => {
@@ -385,6 +450,86 @@ const handleRectifyNdt = async (rectificationId?: string) => {
 
 <template>
   <div class="ndt-workspace">
+    <ElDialog
+      v-model="filmDialogVisible"
+      title="新增底片编号"
+      width="720px"
+      destroy-on-close
+      append-to-body
+    >
+      <ElAlert
+        v-if="filmError"
+        type="error"
+        title="底片编号登记失败"
+        :description="filmError"
+        :closable="false"
+        show-icon
+        class="ndt-film-error"
+      />
+      <ElForm
+        ref="filmFormRef"
+        :model="filmForm"
+        :rules="filmRules"
+        label-position="top"
+        status-icon
+        class="ndt-film-form"
+      >
+        <ElFormItem label="底片编号" prop="filmNo">
+          <ElInput v-model="filmForm.filmNo" placeholder="例如 RT-S03-001" />
+        </ElFormItem>
+        <ElFormItem label="焊口编号" prop="weldNo">
+          <ElInput v-model="filmForm.weldNo" placeholder="例如 W-S03-RT-001" />
+        </ElFormItem>
+        <ElFormItem label="检测方法" prop="method">
+          <ElSelect v-model="filmForm.method" aria-label="检测方法">
+            <ElOption
+              v-for="method in ['RT', 'UT', 'MT', 'PT']"
+              :key="method"
+              :label="method"
+              :value="method"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="关联管线">
+          <ElInput v-model="filmForm.pipelineNo" placeholder="管线或管段编号" />
+        </ElFormItem>
+        <ElFormItem label="报告编号">
+          <ElInput v-model="filmForm.reportNo" placeholder="检测报告编号" />
+        </ElFormItem>
+        <ElFormItem label="委托单号">
+          <ElInput v-model="filmForm.entrustNo" placeholder="检测委托单号" />
+        </ElFormItem>
+        <ElFormItem label="底片包号">
+          <ElInput v-model="filmForm.filmPackageNo" placeholder="底片包索引编号" />
+        </ElFormItem>
+        <ElFormItem label="影像文件名">
+          <ElInput v-model="filmForm.imageFileName" placeholder="与随后上传的 JPG 文件名一致" />
+        </ElFormItem>
+        <ElFormItem label="检测日期">
+          <ElInput v-model="filmForm.testDate" placeholder="YYYY-MM-DD" />
+        </ElFormItem>
+        <ElFormItem label="检测比例">
+          <ElInput v-model="filmForm.detectionRatio" placeholder="例如 100%" />
+        </ElFormItem>
+        <ElFormItem label="执行标准">
+          <ElInput v-model="filmForm.standardCode" />
+        </ElFormItem>
+        <ElFormItem label="评定级别">
+          <ElInput v-model="filmForm.evaluationLevel" />
+        </ElFormItem>
+        <ElFormItem label="检测人员">
+          <ElInput v-model="filmForm.evaluatorName" />
+        </ElFormItem>
+        <ElFormItem label="复核人员">
+          <ElInput v-model="filmForm.reviewerName" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="filmDialogVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="loading" @click="handleCreateFilm">登记底片</ElButton>
+      </template>
+    </ElDialog>
+
     <ElCard shadow="never" class="panel ndt-panel">
       <template #header>
         <div class="panel-header">
@@ -734,6 +879,16 @@ const handleRectifyNdt = async (rectificationId?: string) => {
 .ndt-workspace {
   display: grid;
   gap: 12px;
+}
+
+.ndt-film-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.ndt-film-error {
+  margin-bottom: 14px;
 }
 
 .ndt-workspace :deep(.el-button),
