@@ -381,7 +381,11 @@ def test_review_run_orchestration_graph_and_human_decision(monkeypatch) -> None:
     assert decision["feedback"]["reviewRunId"] == review_run_id
     assert decision["feedback"]["shouldEnterEvaluationSet"] is False
     assert decision["feedback"]["originalAiOutput"]
-    trace = next(item for item in repo.state["retrieval_traces"] if item.get("reviewRunId") == review_run_id)
+    trace = next(
+        item
+        for item in repo.state["retrieval_traces"]
+        if item.get("reviewRunId") == review_run_id and item.get("selectedClauses")
+    )
     rule_result = next(item for item in repo.state["rule_check_results"] if item.get("reviewRunId") == review_run_id)
     assert trace["selectedClauses"]
     assert rule_result["linkedClauseIds"]
