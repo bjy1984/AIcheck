@@ -20,15 +20,15 @@ export const resolveNdtMaterialAction = (
 }
 
 export const submittableDocumentBindings = (file: DocumentAsset): NodeFileBinding[] =>
-  (file.bindings || []).filter((item) =>
-    ['草稿挂载', '需补正'].includes(item.bindingStatus)
-  )
+  (file.bindings || []).filter((item) => ['草稿挂载', '需补正'].includes(item.bindingStatus))
 
 export const buildDocumentSubmissionPayload = (file: DocumentAsset) => {
   const bindings = submittableDocumentBindings(file)
   if (!bindings.length) return undefined
   return {
-    nodeIds: Array.from(new Set(bindings.map((item) => item.nodeId))).sort((left, right) => left - right),
+    nodeIds: Array.from(new Set(bindings.map((item) => item.nodeId))).sort(
+      (left, right) => left - right
+    ),
     bindingIds: bindings.map((item) => item.id)
   }
 }
