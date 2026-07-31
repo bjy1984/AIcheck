@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
+import json
 from pathlib import Path
 import unittest
 
+from scripts.r01_r69_pack import build_pack
 from scripts.r01_r69_pack.build_pack import build_selected
 from scripts.r01_r69_pack.content_factory import STANDARDS, load_content_library
 
@@ -47,6 +50,60 @@ class BaseScenarioTest(ScenarioTestBase):
         self.assertEqual(standards["TSG 92—2026"][4], "2026-07-01")
         self.assertEqual(standards["TSG 08—2026"][4], "2026-05-01")
         self.assertIn("samr.gov.cn", standards["TSG 31—2025"][6])
+
+    def test_completeness_control_chains_are_populated(self):
+        result = self.dry_build("M00", "V00")
+        m00 = result.scenario_data["M00"]
+        v00 = result.scenario_data["V00"]
+        self.assertIn("sourceEvidence", m00)
+        self.assertIn("dataClosures", m00)
+        self.assertIn("signatureRegistry", m00)
+        self.assertIn("r69Workflow", v00)
+        self.assertEqual(len(m00["sourceEvidence"]), 12)
+        self.assertTrue(
+            all(
+                row["path"] and row["pageCount"] and row["sha256"]
+                for row in m00["sourceEvidence"]
+            )
+        )
+        self.assertEqual(
+            {row["category"] for row in m00["dataClosures"]},
+            {"壁厚", "介质", "管线范围", "无损检测单位", "证书时效"},
+        )
+        self.assertTrue(
+            all(row["status"] == "已闭环" for row in m00["dataClosures"])
+        )
+        self.assertEqual(len(m00["signatureRegistry"]), 76)
+        self.assertEqual(
+            [row["status"] for row in v00["r69Workflow"]],
+            ["发现定位缺页", "补录页码与哈希", "复核合格", "合格闭环"],
+        )
+
+    def test_image_payloads_cover_photo_film_and_query_contracts(self):
+        images = [
+            document
+            for document in self.library.values()
+            if document["source_format"] == "jpg"
+        ]
+        kinds = [document.get("graphic_kind") for document in images]
+        self.assertEqual(kinds.count("field_photo"), 11)
+        self.assertEqual(kinds.count("radiographic_film"), 3)
+        self.assertEqual(kinds.count("external_query_screenshot"), 1)
+        self.assertTrue(all(document.get("evidence_object") for document in images))
+
+    def test_build_refreshes_source_evidence_hashes(self):
+        self.assertTrue(hasattr(build_pack, "populate_source_evidence_rows"))
+        content = deepcopy(self.library["M00-SOURCE-001"])
+        master = json.loads(
+            (ROOT / "scripts/r01_r69_pack/data/project_master.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        build_pack.populate_source_evidence_rows(content, master, ROOT)
+        rows = content["workbook"]["sheets"][0]["rows"]
+        self.assertEqual(len(rows), 12)
+        self.assertTrue(all(len(row[5]) == 64 for row in rows))
+        self.assertTrue(all(row[8] == "已绑定" for row in rows))
 
 
 class MaterialScenarioTest(ScenarioTestBase):

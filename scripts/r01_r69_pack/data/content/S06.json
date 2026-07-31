@@ -5,6 +5,7 @@
     "acceptanceEvidenceIds": [
       "S06-APPROVAL-001",
       "S06-NDT-001",
+      "S06-FILM-001",
       "S06-FINAL-001"
     ],
     "coverage": {
@@ -914,7 +915,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R65／W-S06-001／片号TEST-S06-F01",
+      "graphic_kind": "radiographic_film",
+      "attachment_statement": "测试模拟底片，不得作为真实检测底片或检测结论。"
     }
   }
 }

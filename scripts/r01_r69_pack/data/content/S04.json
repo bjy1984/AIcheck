@@ -807,7 +807,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R48／PL8308-TEST／道路穿越结构",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "S04-PHOTO-002": {
       "logical_id": "S04-PHOTO-002",
@@ -926,7 +929,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R49／PL8308-TEST／开挖与就位",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "S04-PHOTO-003": {
       "logical_id": "S04-PHOTO-003",
@@ -1045,7 +1051,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R50／PL8308-TEST／套管防腐绝缘",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "S04-PHOTO-004": {
       "logical_id": "S04-PHOTO-004",
@@ -1164,7 +1173,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R51／PL8308-TEST／绝缘支撑安装",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "S04-PHOTO-005": {
       "logical_id": "S04-PHOTO-005",
@@ -1283,7 +1295,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R52／PL8308-TEST／焊接连接",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "S04-PHOTO-006": {
       "logical_id": "S04-PHOTO-006",
@@ -1402,7 +1417,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R53／PL8308-TEST／布管完成",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     }
   }
 }

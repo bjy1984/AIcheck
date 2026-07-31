@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import DocumentSpec, load_catalog
-from .content_factory import load_content_library, load_scenario_data
+from .content_factory import (
+    load_content_library,
+    load_scenario_data,
+    seal_registry_rows,
+    source_evidence_rows,
+)
 from .convert_pdf import convert_office_to_pdf, convert_xlsx_to_pdf
 from .render_docx import render_docx
 from .render_graphics import render_pdf_graphic, render_test_photo
@@ -182,6 +187,54 @@ def _populate_checksum_rows(
     ]
 
 
+def populate_source_evidence_rows(
+    content: dict[str, Any],
+    master: dict[str, Any],
+    workspace: Path,
+) -> None:
+    sources = source_evidence_rows(master, workspace)
+    content["workbook"]["sheets"][0]["rows"] = [
+        [
+            row["id"],
+            row["path"],
+            row["category"],
+            row["pageCount"],
+            row["actualPageCount"],
+            row["sha256"],
+            row["ocrStatus"],
+            row["sensitivity"],
+            row["status"],
+        ]
+        for row in sources
+    ]
+
+
+def populate_seal_registry_rows(content: dict[str, Any], catalog) -> None:
+    catalog_rows = [
+        {
+            "logicalId": spec.logical_id,
+            "folder": spec.folder,
+            "title": spec.title,
+            "sourceFormat": spec.source_format,
+        }
+        for spec in catalog.documents
+    ]
+    registry = seal_registry_rows(catalog_rows)
+    content["workbook"]["sheets"][0]["rows"] = [
+        [
+            row["logicalId"],
+            row["title"],
+            row["sourceFormat"],
+            row["role"],
+            row["sealLabel"],
+            row["sourceLocation"],
+            row["pdfInheritance"],
+            row["status"],
+        ]
+        for row in registry
+    ]
+
+
 def build_selected(
     workspace: Path,
     folders: set[str],
@@ -210,6 +263,14 @@ def build_selected(
             key=lambda spec: spec.logical_id == "V00-CHECKSUM-001",
         )
         for spec in ordered_specs:
+            if spec.logical_id == "M00-SOURCE-001":
+                populate_source_evidence_rows(
+                    library[spec.logical_id], master, workspace
+                )
+            elif spec.logical_id == "M00-SEAL-001":
+                populate_seal_registry_rows(
+                    library[spec.logical_id], catalog
+                )
             if spec.logical_id == "V00-CHECKSUM-001":
                 _populate_checksum_rows(
                     library[spec.logical_id], catalog, output_root

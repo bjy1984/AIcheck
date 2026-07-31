@@ -1098,7 +1098,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R21／PL8307-TEST／到货与标志移植",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     }
   }
 }

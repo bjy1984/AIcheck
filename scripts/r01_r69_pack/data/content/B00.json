@@ -2354,7 +2354,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R28／PL8303／W-B00-003组对",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "B00-PHOTO-002": {
       "logical_id": "B00-PHOTO-002",
@@ -2488,7 +2491,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R30／PL8306／W-B00-010外观",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "B00-PHOTO-003": {
       "logical_id": "B00-PHOTO-003",
@@ -2622,7 +2628,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R42／PL8306／射线检测现场",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "B00-PHOTO-004": {
       "logical_id": "B00-PHOTO-004",
@@ -2756,7 +2765,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R44／PL8303／防腐补口补伤",
+      "graphic_kind": "field_photo",
+      "attachment_statement": "仅检查存在性与可读性；不执行OCR；不代表真实现场。"
     },
     "B00-FILM-001": {
       "logical_id": "B00-FILM-001",
@@ -2890,7 +2902,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R41／PL8303／W-B00-003／片号TEST-B00-F01",
+      "graphic_kind": "radiographic_film",
+      "attachment_statement": "测试模拟底片，不得作为真实检测底片或检测结论。"
     },
     "B00-FILM-002": {
       "logical_id": "B00-FILM-002",
@@ -3024,7 +3039,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R42／PL8306／W-B00-010／片号TEST-B00-F02",
+      "graphic_kind": "radiographic_film",
+      "attachment_statement": "测试模拟底片，不得作为真实检测底片或检测结论。"
     },
     "B00-QUERY-001": {
       "logical_id": "B00-QUERY-001",
@@ -3158,7 +3176,10 @@
             ]
           }
         ]
-      }
+      },
+      "evidence_object": "R24／来源焊工资格档案TS21********937",
+      "graphic_kind": "external_query_screenshot",
+      "attachment_statement": "离线测试界面，未连接官方系统，不代表官方查询结果。"
     }
   }
 }
