@@ -7,7 +7,9 @@ import unittest
 
 from PIL import Image
 
+from scripts.r01_r69_pack import convert_pdf
 from scripts.r01_r69_pack.convert_pdf import (
+    LO_FONT_DIR,
     _sheet_page_images,
     convert_office_to_pdf,
     convert_xlsx_to_pdf,
@@ -91,6 +93,15 @@ class RendererTest(unittest.TestCase):
             self.assertTrue(has_test_marking(xlsx_path))
             self.assertTrue(has_test_marking(docx_pdf))
             self.assertTrue(has_test_marking(xlsx_pdf))
+
+    def test_libreoffice_font_setup_uses_writable_temp_directory(self):
+        with TemporaryDirectory() as tmp:
+            self.assertTrue(hasattr(convert_pdf, "libreoffice_environment"))
+            env = convert_pdf.libreoffice_environment(Path(tmp))
+            font_dir = Path(env["SAL_FONTPATH"])
+            self.assertTrue(font_dir.is_dir())
+            self.assertTrue(font_dir.joinpath("ArialUnicode.ttf").exists())
+            self.assertFalse(str(font_dir).startswith(str(LO_FONT_DIR)))
 
     def test_graphics_and_every_artifact_have_test_marking(self):
         content = {

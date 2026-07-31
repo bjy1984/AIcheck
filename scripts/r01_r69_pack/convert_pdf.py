@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -28,17 +29,25 @@ LO_FONT_DIR = Path(
     "codex-primary-runtime/dependencies/native/libreoffice-headless/libreoffice/"
     "LibreOfficeDev.app/Contents/Resources/fonts/truetype"
 )
-SYSTEM_CJK_FONT = Path("/Library/Fonts/Arial Unicode.ttf")
+SYSTEM_CJK_FONTS = (
+    Path("/Library/Fonts/Arial Unicode.ttf"),
+    Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+)
 XLSX_PREVIEW_ROOT = Path.cwd() / "tmp/r01-r69-xlsx-previews"
 
 
-def ensure_libreoffice_cjk_font() -> None:
-    """Make the installed CJK font visible to the isolated LO bundle."""
-    destination = LO_FONT_DIR / "ArialUnicode.ttf"
-    if destination.exists() or not SYSTEM_CJK_FONT.exists():
-        return
-    LO_FONT_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(SYSTEM_CJK_FONT, destination)
+def libreoffice_environment(font_root: Path) -> dict[str, str]:
+    """Return an LO environment using only a task-writable font directory."""
+    font_dir = font_root / "fonts"
+    font_dir.mkdir(parents=True, exist_ok=True)
+    source = next((path for path in SYSTEM_CJK_FONTS if path.exists()), None)
+    if source is not None:
+        destination = font_dir / "ArialUnicode.ttf"
+        if not destination.exists():
+            shutil.copyfile(source, destination)
+    environment = os.environ.copy()
+    environment["SAL_FONTPATH"] = str(font_dir)
+    return environment
 
 
 def _mark_pdf(path: Path, title: str) -> None:
@@ -60,9 +69,11 @@ def _mark_pdf(path: Path, title: str) -> None:
 
 
 def convert_office_to_pdf(source: Path, output_dir: Path) -> Path:
-    ensure_libreoffice_cjk_font()
     output_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="r01-r69-lo-profile-") as profile:
+    with tempfile.TemporaryDirectory(prefix="r01-r69-lo-runtime-") as runtime:
+        runtime_path = Path(runtime)
+        profile = runtime_path / "profile"
+        profile.mkdir()
         subprocess.run(
             [
                 str(SOFFICE),
@@ -77,6 +88,7 @@ def convert_office_to_pdf(source: Path, output_dir: Path) -> Path:
             check=True,
             capture_output=True,
             text=True,
+            env=libreoffice_environment(runtime_path),
         )
     path = output_dir / f"{source.stem}.pdf"
     if not path.exists():
