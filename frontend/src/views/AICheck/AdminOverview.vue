@@ -5179,10 +5179,7 @@ onMounted(() => {
               </ElCol>
               <ElCol :xs="24" :sm="12">
                 <ElFormItem label="区域（选填）">
-                  <ElInput
-                    v-model="projectWizardForm.region"
-                    placeholder="例如：广东省广州市"
-                  />
+                  <ElInput v-model="projectWizardForm.region" placeholder="例如：广东省广州市" />
                 </ElFormItem>
               </ElCol>
             </ElRow>
