@@ -28522,7 +28522,7 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             "ndt": "ndtOrgName",
             "inspection": "inspectionOrgName",
         }
-        required_fields = ["name", "region"] + [
+        required_fields = ["name"] + [
             role_org_fields[item["userRole"]]
             for item in assignments
             if item["userRole"] in role_org_fields

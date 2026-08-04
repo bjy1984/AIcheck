@@ -9018,7 +9018,10 @@ def test_project_creation_rejects_missing_or_invalid_real_configuration_without_
         client.post("/admin/projects", json={"code": "P-INVALID-EMPTY", "name": "缺配置项目"}),
         "VALIDATION_ERROR",
     )
-    assert "region" in missing["data"]["missingFields"]
+    missing_fields = missing["data"]["missingFields"]
+    assert "region" not in missing_fields
+    assert "ownerOrgName" in missing_fields
+    assert "contractorOrgName" in missing_fields
     assert len(repo.state["projects"]) == initial_projects
     assert len(repo.state["project_members"]) == initial_members
 
