@@ -182,10 +182,26 @@ def test_admin_user_creation_requires_strong_password() -> None:
     response = client.post(
         "/api/admin/users",
         headers={"If-Match": "*", "Idempotency-Key": "weak-user"},
-        json={"username": "weak-user", "name": "Weak", "role": "owner"},
+        json={
+            "username": "weak-user",
+            "name": "Weak",
+            "role": "owner",
+            "password": "weak",
+        },
     )
     assert payload(response)["data"]["reason"] == "VALIDATION_ERROR"
     assert payload(response)["data"]["field"] == "password"
+
+
+def test_admin_user_creation_default_password_skips_forced_change() -> None:
+    response = client.post(
+        "/api/admin/users",
+        headers={"If-Match": "*", "Idempotency-Key": "default-pw-user"},
+        json={"username": "default-pw-user", "name": "Default", "role": "admin"},
+    )
+    body = payload(response)
+    assert body["code"] == 0
+    assert body["data"]["user"]["mustChangePassword"] is False
 
 
 def test_auth_migration_dry_run_and_apply_never_exposes_passwords() -> None:

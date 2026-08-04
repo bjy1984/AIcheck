@@ -18,6 +18,7 @@ import { resolveRoleEntryPath } from '@/utils/roleAccess'
 import { getRuntimeUiContextApi } from '@/api/aicheck'
 import type { RuntimeUiContext } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { resetRouter } from '@/router'
 
 const { required } = useValidator()
 
@@ -257,6 +258,9 @@ const signIn = async () => {
           const loginResult = res.data
           userStore.setToken(loginResult.token ? `Bearer ${loginResult.token}` : '')
           userStore.setUserInfo(loginResult.user)
+          // 切换账号前先清掉上一会话残留的动态路由，避免落到 404
+          resetRouter()
+          permissionStore.setIsAddRouters(false)
           if (loginResult.user.mustChangePassword) {
             await push('/change-password')
             return
@@ -275,7 +279,7 @@ const signIn = async () => {
             push({
               path: resolveRoleEntryPath(
                 loginResult.user.role,
-                redirect.value || loginResult.defaultPath
+                redirect.value || loginResult.defaultPath || loginResult.user.defaultPath
               )
             })
           }

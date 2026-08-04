@@ -35,6 +35,7 @@ const reasonHints: Record<string, string> = {
   NDT_RECTIFICATION_REQUIRED: '请选择监检反馈事项并填写补正反馈说明后再提交。',
   EMPTY_BINDINGS: '请先选择至少一份项目资料，再执行挂载。',
   EMPTY_NODE_PACKAGE: '当前节点没有可提交资料，请补充资料或检查挂载状态。',
+  EMPTY_PROJECT_PACKAGE: '请选择至少一份可提交到资料池的项目文件后再提交。',
   WITHDRAW_LOCKED: '已通过或锁定资料不能撤回，请刷新节点状态后确认可操作项。',
   TASK_NOT_RETRYABLE: '当前任务状态不允许重试，请刷新任务列表确认最新状态。',
   TASK_NOT_CANCELABLE: '当前任务状态不允许取消，请刷新任务列表确认最新状态。',
@@ -75,9 +76,15 @@ const getHint = (reason: string) => {
 }
 
 const formatBusinessError = (payload: AicheckBusinessErrorPayload, fallback: string) => {
-  const message =
-    typeof payload.message === 'string' && payload.message.trim() ? payload.message : fallback
+  const customMessage =
+    typeof payload.message === 'string' && payload.message.trim() ? payload.message.trim() : ''
+  const message = customMessage || fallback
   const reason = getReason(payload)
+  // Backend already sent an actionable business message for generic CONFLICT
+  // (e.g. duplicate username). Do not append catch-all recovery text or error codes.
+  if (reason === 'CONFLICT' && customMessage) {
+    return customMessage
+  }
   const hint = getHint(reason)
   const code = getCode(payload)
   const meta = reason || code ? `（错误码：${reason || code}）` : ''

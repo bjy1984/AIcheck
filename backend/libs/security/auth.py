@@ -21,6 +21,7 @@ JWT_SECRET = "aicheck-dev-secret-change-me-unsafe"
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "aicheck-api"
 JWT_AUDIENCE = "aicheck-frontend"
+DEFAULT_INITIAL_PASSWORD = "anyuekeji.123"
 COMMON_PASSWORDS = {
     "123456",
     "12345678",

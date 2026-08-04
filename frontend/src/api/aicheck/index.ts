@@ -3119,8 +3119,9 @@ export const submitNodePackageApi = (
   payload: {
     nodeId?: number
     nodeIds?: number[]
-    bindingIds: string[]
+    bindingIds?: string[]
     documentIds?: string[]
+    submissionType?: 'document' | 'project'
     submitterComment?: string
     batchName?: string
   },

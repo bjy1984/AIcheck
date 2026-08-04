@@ -3014,8 +3014,10 @@ const handleSubmitProjectFile = async (documentId: string) => {
   }
   const submissionPayload = buildDocumentSubmissionPayload(file)
   if (!submissionPayload) {
-    if (!file.bindings?.length) {
-      ElMessage.warning('请先关联审核环节')
+    if (file.poolSubmissionStatus === '已提交' && !(file.bindings || []).length) {
+      ElMessage.warning('该文件已提交到项目资料池')
+    } else if (!file.bindings?.length) {
+      ElMessage.warning('当前文件状态不允许提交')
     } else {
       ElMessage.warning('该文件没有待提交或待补正的挂载')
     }
@@ -3023,24 +3025,40 @@ const handleSubmitProjectFile = async (documentId: string) => {
   }
   actionLoading.value = true
   try {
+    const isProjectSubmit = submissionPayload.mode === 'project'
     const res = await submitNodePackageApi(
       activeProjectId.value,
-      {
-        nodeIds: submissionPayload.nodeIds,
-        bindingIds: submissionPayload.bindingIds,
-        batchName: `${file.fileName} 多节点文件提交`,
-        submitterComment: '从项目文件库提交该文件的全部待提交挂载。'
-      },
+      isProjectSubmit
+        ? {
+            submissionType: 'project',
+            documentIds: submissionPayload.documentIds,
+            bindingIds: [],
+            nodeIds: [],
+            batchName: `${file.fileName} 项目资料池提交`,
+            submitterComment: '从项目文件库提交到监检资料池，不关联审核环节。'
+          }
+        : {
+            nodeIds: submissionPayload.nodeIds,
+            bindingIds: submissionPayload.bindingIds,
+            batchName: `${file.fileName} 多节点文件提交`,
+            submitterComment: '从项目文件库提交该文件的全部待提交挂载。'
+          },
       {
         etag: currentProject.value?.etag,
-        idempotencyKey: `project-file-submit-${activeProjectId.value}-${documentId}-${submissionPayload.bindingIds.join('-')}`
+        idempotencyKey: isProjectSubmit
+          ? `project-pool-submit-${activeProjectId.value}-${documentId}`
+          : `project-file-submit-${activeProjectId.value}-${documentId}-${submissionPayload.bindingIds.join('-')}`
       }
     )
     if (!res) {
       showActionError('项目文件提交失败，请检查文件状态、节点范围和当前项目权限。')
       return
     }
-    ElMessage.success(`项目文件已提交至 ${submissionPayload.nodeIds.length} 个审核节点`)
+    ElMessage.success(
+      isProjectSubmit
+        ? '项目文件已提交到资料池，等待监检处理'
+        : `项目文件已提交至 ${submissionPayload.nodeIds.length} 个审核节点`
+    )
     await loadProjectBundle()
     await loadSubmissionHistory()
   } catch (error) {

@@ -296,7 +296,12 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
                     scope = getattr(request.state, "idempotency_scope", None)
                     flush_mutation_records(records, [scope] if scope else [])
                 else:
-                    flush_state()
+                    state_keys = getattr(request.state, "flush_state_keys", None)
+                    singleton_keys = getattr(request.state, "flush_singleton_keys", None)
+                    flush_state(
+                        selected_state_keys=set(state_keys) if state_keys is not None else None,
+                        selected_singleton_keys=set(singleton_keys) if singleton_keys is not None else None,
+                    )
             return response
         except BaseException:
             restore_failed_request_state(request)

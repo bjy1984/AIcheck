@@ -28,6 +28,7 @@ NDT_FILE_TOO_LARGE = BusinessErrorCode(40018, "NDT_FILE_TOO_LARGE", "无损检�
 UNSUPPORTED_NDT_FILE_TYPE = BusinessErrorCode(40019, "UNSUPPORTED_NDT_FILE_TYPE", "无损检测报告或影像包格式不支持。")
 EMPTY_BINDINGS = BusinessErrorCode(40020, "EMPTY_BINDINGS", "资料挂载未选择有效资料。")
 EMPTY_NODE_PACKAGE = BusinessErrorCode(40021, "EMPTY_NODE_PACKAGE", "当前节点没有可提交资料。")
+EMPTY_PROJECT_PACKAGE = BusinessErrorCode(40026, "EMPTY_PROJECT_PACKAGE", "当前没有可提交到资料池的项目文件。")
 NDT_FILM_REQUIRED = BusinessErrorCode(40022, "NDT_FILM_REQUIRED", "无损检测底片编号、焊口编号和检测方法不能为空。")
 NDT_RECORD_REQUIRED = BusinessErrorCode(40023, "NDT_RECORD_REQUIRED", "无损检测记录编号、焊口编号和检测方法不能为空。")
 NDT_REPORT_REQUIRED = BusinessErrorCode(40024, "NDT_REPORT_REQUIRED", "无损检测资料提交缺少可提交检测报告。")
@@ -87,6 +88,7 @@ ERROR_BY_REASON = {
         UNSUPPORTED_NDT_FILE_TYPE,
         EMPTY_BINDINGS,
         EMPTY_NODE_PACKAGE,
+        EMPTY_PROJECT_PACKAGE,
         NDT_FILM_REQUIRED,
         NDT_RECORD_REQUIRED,
         NDT_REPORT_REQUIRED,

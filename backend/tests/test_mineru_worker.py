@@ -384,6 +384,7 @@ def test_artifact_storage_unavailable_fails_job_instead_of_losing_result(
         lambda *_args, **_kwargs: _bundle(job["storageKey"]),
     )
     monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
+    monkeypatch.setattr(tasks.object_storage, "endpoint", "127.0.0.1:9000")
     monkeypatch.setattr(
         tasks.object_storage,
         "put_bytes",

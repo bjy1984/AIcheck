@@ -21,3 +21,20 @@ test('explains how to recover when the Redis security backend is unavailable', (
   assert.match(message, /本地开发模式/)
   assert.match(message, /SECURITY_BACKEND_UNAVAILABLE/)
 })
+
+test('keeps actionable CONFLICT business messages without recovery clutter', () => {
+  const message = getAicheckErrorMessage(
+    {
+      response: {
+        data: {
+          code: 40900,
+          message: '用户名已存在，请更换用户名。',
+          data: { reason: 'CONFLICT' }
+        }
+      }
+    },
+    '用户保存失败'
+  )
+
+  assert.equal(message, '用户名已存在，请更换用户名。')
+})

@@ -2453,9 +2453,17 @@ class InMemoryRepository:
             for scope, payload in self.state.get("idempotency", {}).items()
         }
 
-    def current_persistence_documents(self) -> dict[tuple[str, str], dict[str, Any]]:
+    def current_persistence_documents(
+        self,
+        selected_state_keys: set[str] | None = None,
+    ) -> dict[tuple[str, str], dict[str, Any]]:
         documents: dict[tuple[str, str], dict[str, Any]] = {}
-        for state_key, collection_name in STATE_COLLECTIONS.items():
+        state_items = (
+            ((key, STATE_COLLECTIONS[key]) for key in selected_state_keys if key in STATE_COLLECTIONS)
+            if selected_state_keys is not None
+            else STATE_COLLECTIONS.items()
+        )
+        for state_key, collection_name in state_items:
             for index, doc in enumerate(self.state.get(state_key, [])):
                 if not isinstance(doc, dict):
                     continue
@@ -2670,16 +2678,153 @@ class InMemoryRepository:
         elif backfilled:
             self.flush_to_sqlite()
 
-    def flush_to_sqlite(self) -> None:
+    def _build_flush_dirty_plan(
+        self,
+        *,
+        selected_state_keys: set[str] | None = None,
+        selected_singleton_keys: set[str] | None = None,
+    ) -> dict[str, Any]:
+        """Single-pass dirty detection for scoped or full persistence flush."""
+
+        current_documents = self.current_persistence_documents(selected_state_keys)
+        if selected_state_keys is not None:
+            selected_collections = {
+                STATE_COLLECTIONS[key] for key in selected_state_keys if key in STATE_COLLECTIONS
+            }
+            baseline_keys = {
+                key for key in self._persistence_baseline if key[0] in selected_collections
+            }
+        else:
+            baseline_keys = set(self._persistence_baseline)
+
+        deleted_keys = sorted(baseline_keys - set(current_documents))
+        vector_collection = STATE_COLLECTIONS["knowledge_vectors"]
+        vector_dirty = any(key[0] == vector_collection for key in deleted_keys)
+
+        dirty_documents: dict[tuple[str, str], tuple[dict[str, Any], str]] = {}
+        for key, doc in current_documents.items():
+            payload = self.canonical_persistence_payload(doc)
+            if self._persistence_baseline.get(key) == payload:
+                continue
+            dirty_documents[key] = (doc, payload)
+            if key[0] == vector_collection:
+                vector_dirty = True
+
+        singleton_keys = (
+            {key for key in selected_singleton_keys if key in SINGLETON_COLLECTIONS}
+            if selected_singleton_keys is not None
+            else set(SINGLETON_COLLECTIONS)
+        )
+        dirty_singletons: dict[str, str] = {}
+        for state_key in singleton_keys:
+            value = self.persistence_tenant_document(self.state.get(state_key) or {})
+            payload = self.canonical_persistence_payload(value)
+            if self._singleton_baseline.get(state_key) == payload:
+                continue
+            dirty_singletons[state_key] = payload
+
+        current_idempotency = {
+            str(scope): self.clone(value)
+            for scope, value in self.state.get("idempotency", {}).items()
+        }
+        deleted_idempotency = sorted(set(self._idempotency_baseline) - set(current_idempotency))
+        dirty_idempotency: dict[str, str] = {}
+        for scope, value in current_idempotency.items():
+            payload = self.canonical_persistence_payload(value)
+            if self._idempotency_baseline.get(scope) == payload:
+                continue
+            dirty_idempotency[scope] = payload
+
+        new_audit_records: list[dict[str, Any]] = []
+        if selected_state_keys is None or "audit_logs" in selected_state_keys:
+            audit_collection = STATE_COLLECTIONS["audit_logs"]
+            for index, doc in enumerate(self.state.get("audit_logs", [])):
+                if not isinstance(doc, dict):
+                    continue
+                object_id = self.persistence_object_id(audit_collection, doc, index)
+                if (audit_collection, object_id) not in self._persistence_baseline:
+                    new_audit_records.append(doc)
+
+        has_work = bool(
+            dirty_documents
+            or deleted_keys
+            or dirty_singletons
+            or dirty_idempotency
+            or deleted_idempotency
+            or new_audit_records
+        )
+        return {
+            "dirty_documents": dirty_documents,
+            "deleted_keys": deleted_keys,
+            "dirty_singletons": dirty_singletons,
+            "dirty_idempotency": dirty_idempotency,
+            "deleted_idempotency": deleted_idempotency,
+            "new_audit_records": new_audit_records,
+            "vector_dirty": vector_dirty,
+            "has_work": has_work,
+        }
+
+    def _refresh_prepared_audit_dirty_payloads(
+        self,
+        dirty_documents: dict[tuple[str, str], tuple[dict[str, Any], str]],
+        new_audit_records: list[dict[str, Any]],
+    ) -> None:
+        if not new_audit_records:
+            return
+        audit_collection = STATE_COLLECTIONS["audit_logs"]
+        prepared_ids = {id(item) for item in new_audit_records}
+        for index, doc in enumerate(self.state.get("audit_logs", [])):
+            if not isinstance(doc, dict) or id(doc) not in prepared_ids:
+                continue
+            object_id = self.persistence_object_id(audit_collection, doc, index)
+            refreshed = self.persistence_tenant_document(doc)
+            payload = self.canonical_persistence_payload(refreshed)
+            dirty_documents[(audit_collection, object_id)] = (refreshed, payload)
+
+    def _apply_flush_baseline_updates(
+        self,
+        *,
+        dirty_documents: dict[tuple[str, str], tuple[dict[str, Any], str]],
+        deleted_keys: list[tuple[str, str]],
+        dirty_singletons: dict[str, str],
+        dirty_idempotency: dict[str, str],
+        deleted_idempotency: list[str],
+    ) -> None:
+        for collection_name, object_id in deleted_keys:
+            self._persistence_baseline.pop((collection_name, object_id), None)
+        for key, (_doc, payload) in dirty_documents.items():
+            self._persistence_baseline[key] = payload
+        for state_key, payload in dirty_singletons.items():
+            self._singleton_baseline[state_key] = payload
+        for scope in deleted_idempotency:
+            self._idempotency_baseline.pop(scope, None)
+        for scope, payload in dirty_idempotency.items():
+            self._idempotency_baseline[scope] = payload
+
+    def flush_to_sqlite(
+        self,
+        selected_state_keys: set[str] | None = None,
+        selected_singleton_keys: set[str] | None = None,
+    ) -> None:
         self.configure_sqlite(self.sqlite_path)
         if not self.sqlite_enabled:
             return
         self.ensure_sqlite_schema()
-        current_documents = self.current_persistence_documents()
+        plan = self._build_flush_dirty_plan(
+            selected_state_keys=selected_state_keys,
+            selected_singleton_keys=selected_singleton_keys,
+        )
+        if not plan["has_work"]:
+            return
+        dirty_documents: dict[tuple[str, str], tuple[dict[str, Any], str]] = plan["dirty_documents"]
+        deleted_keys: list[tuple[str, str]] = plan["deleted_keys"]
+        dirty_singletons: dict[str, str] = plan["dirty_singletons"]
+        dirty_idempotency: dict[str, str] = plan["dirty_idempotency"]
+        deleted_idempotency: list[str] = plan["deleted_idempotency"]
         tenant_id = configured_tenant_id()
         with self.sqlite_connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            for collection_name, object_id in sorted(set(self._persistence_baseline) - set(current_documents)):
+            for collection_name, object_id in deleted_keys:
                 row = connection.execute(
                     "SELECT payload FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
                     (tenant_id, collection_name, object_id),
@@ -2692,11 +2837,8 @@ class InMemoryRepository:
                     "DELETE FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
                     (tenant_id, collection_name, object_id),
                 )
-            for (collection_name, object_id), doc in current_documents.items():
-                payload = self.canonical_persistence_payload(doc)
+            for (collection_name, object_id), (_doc, payload) in dirty_documents.items():
                 key = (collection_name, object_id)
-                if self._persistence_baseline.get(key) == payload:
-                    continue
                 row = connection.execute(
                     "SELECT payload FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
                     (tenant_id, collection_name, object_id),
@@ -2718,11 +2860,7 @@ class InMemoryRepository:
                     """,
                     (tenant_id, collection_name, object_id, payload),
                 )
-            for state_key in SINGLETON_COLLECTIONS:
-                value = self.persistence_tenant_document(self.state.get(state_key) or {})
-                payload = self.canonical_persistence_payload(value)
-                if self._singleton_baseline.get(state_key) == payload:
-                    continue
+            for state_key, payload in dirty_singletons.items():
                 row = connection.execute(
                     "SELECT payload FROM aicheck_singletons WHERE tenant_id = ? AND name = ?",
                     (tenant_id, state_key),
@@ -2740,11 +2878,7 @@ class InMemoryRepository:
                     """,
                     (tenant_id, state_key, payload),
                 )
-            current_idempotency = {
-                str(scope): self.clone(payload)
-                for scope, payload in self.state.get("idempotency", {}).items()
-            }
-            for scope in sorted(set(self._idempotency_baseline) - set(current_idempotency)):
+            for scope in deleted_idempotency:
                 row = connection.execute(
                     "SELECT payload FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
                     (tenant_id, scope),
@@ -2756,10 +2890,7 @@ class InMemoryRepository:
                     "DELETE FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
                     (tenant_id, scope),
                 )
-            for scope, value in current_idempotency.items():
-                payload = self.canonical_persistence_payload(value)
-                if self._idempotency_baseline.get(scope) == payload:
-                    continue
+            for scope, payload in dirty_idempotency.items():
                 row = connection.execute(
                     "SELECT payload FROM idempotency_records WHERE tenant_id = ? AND scope = ?",
                     (tenant_id, scope),
@@ -2778,7 +2909,13 @@ class InMemoryRepository:
                     (tenant_id, scope, payload),
                 )
             connection.commit()
-        self.capture_persistence_baseline()
+        self._apply_flush_baseline_updates(
+            dirty_documents=dirty_documents,
+            deleted_keys=deleted_keys,
+            dirty_singletons=dirty_singletons,
+            dirty_idempotency=dirty_idempotency,
+            deleted_idempotency=deleted_idempotency,
+        )
 
     def postgres_connection(self, dsn: str | None = None):
         try:
@@ -3346,31 +3483,38 @@ class InMemoryRepository:
             self.apply_tenant_scope()
             self.sync_postgres.commit()
 
-    def flush_to_sync_postgres(self) -> None:
+    def flush_to_sync_postgres(
+        self,
+        selected_state_keys: set[str] | None = None,
+        selected_singleton_keys: set[str] | None = None,
+    ) -> None:
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
             if self.sync_postgres is None:
                 return
             self.ensure_postgres_schema()
-            current_documents = self.current_persistence_documents()
-            vector_collection = STATE_COLLECTIONS["knowledge_vectors"]
-            vector_dirty = any(
-                collection_name == vector_collection
-                and self._persistence_baseline.get((collection_name, object_id))
-                != self.canonical_persistence_payload(document)
-                for (collection_name, object_id), document in current_documents.items()
-            ) or any(
-                key[0] == vector_collection and key not in current_documents
-                for key in self._persistence_baseline
+            plan = self._build_flush_dirty_plan(
+                selected_state_keys=selected_state_keys,
+                selected_singleton_keys=selected_singleton_keys,
             )
+            if not plan["has_work"]:
+                return
+            dirty_documents: dict[tuple[str, str], tuple[dict[str, Any], str]] = plan["dirty_documents"]
+            deleted_keys: list[tuple[str, str]] = plan["deleted_keys"]
+            dirty_singletons: dict[str, str] = plan["dirty_singletons"]
+            dirty_idempotency: dict[str, str] = plan["dirty_idempotency"]
+            deleted_idempotency: list[str] = plan["deleted_idempotency"]
+            new_audit_records: list[dict[str, Any]] = plan["new_audit_records"]
+            vector_dirty = bool(plan["vector_dirty"])
             tenant_id = configured_tenant_id()
             with self.sync_postgres.transaction():
-                self.prepare_audit_records_for_postgres_transaction(
-                    {"audit_logs": self.state.get("audit_logs", [])},
-                    tenant_id,
-                )
-                current_documents = self.current_persistence_documents()
-                for collection_name, object_id in sorted(set(self._persistence_baseline) - set(current_documents)):
+                if new_audit_records:
+                    self.prepare_audit_records_for_postgres_transaction(
+                        {"audit_logs": new_audit_records},
+                        tenant_id,
+                    )
+                    self._refresh_prepared_audit_dirty_payloads(dirty_documents, new_audit_records)
+                for collection_name, object_id in deleted_keys:
                     row = self.sync_postgres.execute(
                         "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s FOR UPDATE",
                         (tenant_id, collection_name, object_id),
@@ -3380,11 +3524,8 @@ class InMemoryRepository:
                         "DELETE FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s",
                         (tenant_id, collection_name, object_id),
                     )
-                for (collection_name, object_id), doc in current_documents.items():
-                    payload = self.canonical_persistence_payload(doc)
+                for (collection_name, object_id), (_doc, payload) in dirty_documents.items():
                     key = (collection_name, object_id)
-                    if self._persistence_baseline.get(key) == payload:
-                        continue
                     row = self.sync_postgres.execute(
                         "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s FOR UPDATE",
                         (tenant_id, collection_name, object_id),
@@ -3418,11 +3559,7 @@ class InMemoryRepository:
                                 raise RuntimeError(
                                     f"Concurrent persistence insert detected for {collection_name}/{object_id}."
                                 )
-                for state_key in SINGLETON_COLLECTIONS:
-                    value = self.persistence_tenant_document(self.state.get(state_key) or {})
-                    payload = self.canonical_persistence_payload(value)
-                    if self._singleton_baseline.get(state_key) == payload:
-                        continue
+                for state_key, payload in dirty_singletons.items():
                     row = self.sync_postgres.execute(
                         "SELECT payload FROM aicheck_singletons WHERE tenant_id = %s AND name = %s FOR UPDATE",
                         (tenant_id, state_key),
@@ -3440,11 +3577,7 @@ class InMemoryRepository:
                         """,
                         (tenant_id, state_key, payload),
                     )
-                current_idempotency = {
-                    str(scope): self.clone(value)
-                    for scope, value in self.state.get("idempotency", {}).items()
-                }
-                for scope in sorted(set(self._idempotency_baseline) - set(current_idempotency)):
+                for scope in deleted_idempotency:
                     row = self.sync_postgres.execute(
                         "SELECT payload FROM idempotency_records WHERE tenant_id = %s AND scope = %s FOR UPDATE",
                         (tenant_id, scope),
@@ -3456,10 +3589,7 @@ class InMemoryRepository:
                         "DELETE FROM idempotency_records WHERE tenant_id = %s AND scope = %s",
                         (tenant_id, scope),
                     )
-                for scope, value in current_idempotency.items():
-                    payload = self.canonical_persistence_payload(value)
-                    if self._idempotency_baseline.get(scope) == payload:
-                        continue
+                for scope, payload in dirty_idempotency.items():
                     row = self.sync_postgres.execute(
                         "SELECT payload FROM idempotency_records WHERE tenant_id = %s AND scope = %s FOR UPDATE",
                         (tenant_id, scope),
@@ -3478,7 +3608,13 @@ class InMemoryRepository:
                         (tenant_id, scope, payload),
                     )
             self.sync_postgres.commit()
-            self.capture_persistence_baseline()
+            self._apply_flush_baseline_updates(
+                dirty_documents=dirty_documents,
+                deleted_keys=deleted_keys,
+                dirty_singletons=dirty_singletons,
+                dirty_idempotency=dirty_idempotency,
+                deleted_idempotency=deleted_idempotency,
+            )
             if vector_dirty:
                 self.flush_knowledge_vectors_to_pgvector()
 
@@ -4261,14 +4397,23 @@ OCR_WORKER_STATE_KEYS_FOR_SQLITE = {
 }
 
 
-def flush_state() -> None:
+def flush_state(
+    selected_state_keys: set[str] | None = None,
+    selected_singleton_keys: set[str] | None = None,
+) -> None:
     repo.apply_tenant_scope()
     if postgres_persistence_configured():
-        repo.flush_to_sync_postgres()
+        repo.flush_to_sync_postgres(
+            selected_state_keys=selected_state_keys,
+            selected_singleton_keys=selected_singleton_keys,
+        )
         return
     if not (repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH")):
         return
-    repo.flush_to_sqlite()
+    repo.flush_to_sqlite(
+        selected_state_keys=selected_state_keys,
+        selected_singleton_keys=selected_singleton_keys,
+    )
 
 
 def flush_state_records(records_by_state_key: dict[str, list[dict[str, Any]]]) -> None:

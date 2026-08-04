@@ -463,8 +463,10 @@ type SubmissionSnapshotMock = {
   submissionId: string
   snapshotId: string
   projectId: string
+  submissionType?: 'document' | 'project' | 'ndt'
   nodeIds: number[]
   bindingIds: string[]
+  documentIds?: string[]
   batchName?: string
   submitterComment?: string
   nextStatus: string
@@ -2613,8 +2615,15 @@ const buildSubmissionDraftDetail = (draft: SubmissionDraftMock) => ({
 
 const buildSubmissionDetail = (snapshot: SubmissionSnapshotMock) => ({
   ...snapshot,
+  submissionType: snapshot.submissionType || 'document',
+  documentIds: snapshot.documentIds || [],
+  documentCount: (snapshot.documentIds || []).length,
   nodes: getSubmissionNodes(snapshot.projectId, snapshot.nodeIds),
   bindings: getSubmissionBindings(snapshot.projectId, snapshot.bindingIds),
+  documents: state.documents.filter(
+    (item) =>
+      item.projectId === snapshot.projectId && (snapshot.documentIds || []).includes(item.id)
+  ),
   createdTodos: state.todos.filter((todo) => snapshot.createdTodoIds.includes(todo.id))
 })
 
@@ -7012,6 +7021,92 @@ export default [
     timeout,
     response: ({ body, query, url }) => {
       const id = pathParts(url)[2] || projectId
+      const isProjectSubmit = String(body?.submissionType || '').toLowerCase() === 'project'
+      if (isProjectSubmit) {
+        const mutationError = getMutationError(id, {
+          body,
+          query,
+          action: '提交项目资料池'
+        })
+        if (mutationError) return mutationError
+        const selectedDocumentIds = Array.isArray(body?.documentIds) ? body.documentIds : []
+        const documents = selectedDocumentIds
+          .map((documentId) =>
+            state.documents.find((item) => item.projectId === id && item.id === documentId)
+          )
+          .filter(Boolean)
+        if (!documents.length) {
+          return fail(40026, '当前没有可提交到资料池的项目文件。', {
+            reason: 'EMPTY_PROJECT_PACKAGE'
+          })
+        }
+        const alreadySubmitted = documents.filter((document) => document.poolSubmissionStatus === '已提交')
+        if (alreadySubmitted.length) {
+          return fail(40900, '所选文件已提交到项目资料池，不能重复提交。', {
+            reason: 'CONFLICT',
+            alreadySubmittedDocumentIds: alreadySubmitted.map((item) => item.id)
+          })
+        }
+        const changed = documents.map((document) => {
+          const before = document.poolSubmissionStatus || '未提交'
+          document.poolSubmissionStatus = '已提交'
+          document.poolSubmittedAt = serverTime
+          document.updatedAt = serverTime
+          return {
+            field: `documents.${document.id}.poolSubmissionStatus`,
+            before,
+            after: '已提交'
+          }
+        })
+        const submissionId = `SUB-${Date.now()}`
+        const createdTodo = addTodo({
+          title: '项目资料已提交到资料池，待监检处理',
+          projectId: id,
+          nodeId: undefined,
+          targetType: 'submission',
+          targetId: submissionId,
+          status: '待处理',
+          priority: '中',
+          deadline: '2026-06-27 18:00:00',
+          assigneeName: '张工',
+          actions: ['file:view', 'file:bind']
+        })
+        const snapshotId = `SNAP-${Date.now()}`
+        const documentIds = documents.map((item) => item.id)
+        state.submissionSnapshots.unshift({
+          submissionId,
+          snapshotId,
+          projectId: id,
+          submissionType: 'project',
+          nodeIds: [],
+          bindingIds: [],
+          documentIds,
+          batchName: body?.batchName,
+          submitterComment: body?.submitterComment,
+          nextStatus: '资料池待处理',
+          submittedAt: serverTime,
+          createdTodoIds: [createdTodo.id],
+          changed
+        })
+        addMessage({
+          title: '项目资料已提交到资料池',
+          content: `${documentIds.length} 个文件已进入监检资料池，等待处理。`,
+          projectId: id,
+          targetType: 'submission',
+          targetId: createdTodo.targetId
+        })
+        return ok({
+          submissionId,
+          snapshotId,
+          submissionType: 'project',
+          nextStatus: '资料池待处理',
+          changed,
+          createdTodos: [createdTodo],
+          bindingIds: [],
+          createdBindingIds: [],
+          documentIds
+        })
+      }
       const nodeId = Number(body?.nodeId) || roleNodeMap.contractor
       const nodeIds = Array.isArray(body?.nodeIds) && body.nodeIds.length ? body.nodeIds : [nodeId]
       const mutationError = getNodeMutationError(id, nodeIds[0], {
@@ -7101,6 +7196,7 @@ export default [
         submissionId,
         snapshotId,
         projectId: id,
+        submissionType: 'document',
         nodeIds,
         bindingIds: selectedBindings.map((binding) => binding.id),
         batchName: body?.batchName,
@@ -7120,6 +7216,7 @@ export default [
       return ok({
         submissionId,
         snapshotId,
+        submissionType: 'document',
         nextStatus: 'AI 预审中',
         changed,
         createdTodos: [createdTodo],

@@ -146,6 +146,7 @@ from libs.raw_vault import (
 from libs.raw_vault_export import build_raw_vault_export, build_raw_vault_summary
 from libs.runtime_readiness import production_runtime_status
 from libs.security.auth import (
+    DEFAULT_INITIAL_PASSWORD,
     ROLE_DEFAULT_PATHS,
     USERS,
     authenticate,
@@ -1979,6 +1980,41 @@ def document_has_submitted_binding(project_id: str, document_id: str) -> bool:
     )
 
 
+def document_has_project_pool_submission(project_id: str, document_id: str) -> bool:
+    document = repo.find_one("documents", document_id)
+    return bool(
+        document
+        and document.get("projectId") == project_id
+        and document.get("poolSubmissionStatus") == "已提交"
+    )
+
+
+def document_is_locked_from_delete(project_id: str, document_id: str) -> bool:
+    return document_has_project_pool_submission(project_id, document_id) or document_has_submitted_binding(
+        project_id, document_id
+    )
+
+
+def is_project_level_submission(body: dict[str, Any]) -> bool:
+    return str(body.get("submissionType") or "").strip().lower() == "project"
+
+
+def project_submission_document_ids(project_id: str, body: dict[str, Any]) -> tuple[list[str], list[str]]:
+    requested_ids = [str(item) for item in (body.get("documentIds") or []) if item]
+    valid_ids: list[str] = []
+    invalid_ids: list[str] = []
+    for document_id in requested_ids:
+        document = repo.find_one("documents", document_id)
+        if not document or document.get("projectId") != project_id:
+            invalid_ids.append(document_id)
+            continue
+        if document.get("fileStatus") in {"已撤回", "已作废", "已删除"}:
+            invalid_ids.append(document_id)
+            continue
+        valid_ids.append(document_id)
+    return list(dict.fromkeys(valid_ids)), list(dict.fromkeys(invalid_ids))
+
+
 def document_storage_targets(document_id: str) -> set[tuple[str, str]]:
     targets: set[tuple[str, str]] = set()
     for version in repo.state.get("versions", []):
@@ -3371,7 +3407,11 @@ def build_admin_user_record(
         "displayName": name,
         "passwordHash": password_hash,
         "authVersion": int((existing or {}).get("authVersion") or 0),
-        "mustChangePassword": bool(password) or bool((existing or {}).get("mustChangePassword")),
+        "mustChangePassword": (
+            True
+            if password and existing is not None
+            else bool((existing or {}).get("mustChangePassword"))
+        ),
         "role": role,
         "roleId": role_id_for_admin_user(role),
         "roleLabel": ROLE_LABELS.get(role, role),
@@ -3404,6 +3444,21 @@ def sync_user_references(user: dict[str, Any]) -> None:
         bump_record_revision(member)
 
 
+def enable_admin_identity_flush(
+    request: Request,
+    *,
+    include_users: bool = False,
+    include_project_members: bool = False,
+) -> None:
+    state_keys = {"audit_logs"}
+    if include_users:
+        state_keys.add("users")
+    if include_project_members:
+        state_keys.add("project_members")
+    request.state.flush_state_keys = state_keys
+    request.state.flush_singleton_keys = {"admin_config"}
+
+
 def unique_admin_value_conflict(
     user_id: str | None,
     *,
@@ -3414,9 +3469,9 @@ def unique_admin_value_conflict(
         if user_id and user.get("id") == user_id:
             continue
         if username and user.get("username") == username:
-            return "用户名已存在。"
+            return "用户名已存在，请更换用户名。"
         if mobile and user.get("mobile") and user.get("mobile") == mobile:
-            return "手机号已存在。"
+            return "手机号已存在，请更换手机号。"
     return None
 
 
@@ -6935,7 +6990,7 @@ def delete_project_document(
         doc = repo.find_one("documents", document_id)
         if not doc or doc.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
-        if document_has_submitted_binding(project_id, document_id):
+        if document_is_locked_from_delete(project_id, document_id):
             return fail(
                 errors.CONFLICT,
                 request,
@@ -7096,8 +7151,11 @@ def submission_summary(submission: dict[str, Any]) -> dict[str, Any]:
         "submissionId": submission["submissionId"],
         "snapshotId": submission["snapshotId"],
         "projectId": submission["projectId"],
+        "submissionType": submission.get("submissionType", "document"),
         "nodeIds": submission.get("nodeIds", []),
         "nodeNames": [node["name"] for node in nodes if node],
+        "documentIds": submission.get("documentIds", []),
+        "documentCount": len(submission.get("documentIds") or []),
         "bindingCount": len(submission.get("bindingIds", [])),
         "todoCount": len(submission.get("createdTodoIds", [])),
         "batchName": submission.get("batchName"),
@@ -7133,14 +7191,98 @@ def submit_node_package(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
+    project_level = is_project_level_submission(body)
+    node_ids = [] if project_level else node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
 
     def produce():
-        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids or None)
         if guard:
             return guard
         submission_id = f"SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{uuid4().hex[:8].upper()}"
+
+        if project_level:
+            document_ids, invalid_document_ids = project_submission_document_ids(project_id, body)
+            if invalid_document_ids:
+                return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
+            if not document_ids:
+                return fail(errors.EMPTY_PROJECT_PACKAGE, request)
+            already_submitted = [
+                document_id
+                for document_id in document_ids
+                if document_has_project_pool_submission(project_id, document_id)
+            ]
+            if already_submitted:
+                return fail(
+                    errors.CONFLICT,
+                    request,
+                    message="所选文件已提交到项目资料池，不能重复提交。",
+                    data={"alreadySubmittedDocumentIds": already_submitted},
+                )
+            changed = []
+            for document_id in document_ids:
+                document = repo.find_one("documents", document_id)
+                if not document:
+                    continue
+                before = document.get("poolSubmissionStatus") or "未提交"
+                document["poolSubmissionStatus"] = "已提交"
+                document["poolSubmittedAt"] = server_time()
+                document["updatedAt"] = server_time()
+                changed.append(
+                    {
+                        "field": f"documents.{document_id}.poolSubmissionStatus",
+                        "before": before,
+                        "after": "已提交",
+                    }
+                )
+            todo_id = f"TODO-{uuid4().hex[:8].upper()}"
+            repo.state["todos"].insert(
+                0,
+                {
+                    "id": todo_id,
+                    "title": "项目资料已提交到资料池，待监检处理",
+                    "projectId": project_id,
+                    "nodeId": None,
+                    "targetType": "submission",
+                    "targetId": submission_id,
+                    "status": "待处理",
+                    "priority": "中",
+                    "assigneeName": project_role_assignee_name(project_id, "inspection"),
+                    "actions": ["file:view", "file:bind"],
+                },
+            )
+            submission = {
+                "submissionId": submission_id,
+                "snapshotId": snapshot_id,
+                "projectId": project_id,
+                "submissionType": "project",
+                "nodeIds": [],
+                "bindingIds": [],
+                "documentIds": document_ids,
+                "batchName": body.get("batchName"),
+                "submitterComment": body.get("submitterComment"),
+                "nextStatus": "资料池待处理",
+                "submittedAt": server_time(),
+                "createdTodoIds": [todo_id],
+                "changed": changed,
+                "createdBindingIds": [],
+            }
+            repo.state["submissions"].insert(0, submission)
+            todo = repo.find_one("todos", todo_id)
+            return ok(
+                {
+                    "submissionId": submission_id,
+                    "snapshotId": snapshot_id,
+                    "submissionType": "project",
+                    "nextStatus": "资料池待处理",
+                    "createdTodos": [repo.clone(todo)] if todo else [],
+                    "bindingIds": [],
+                    "createdBindingIds": [],
+                    "documentIds": document_ids,
+                },
+                request,
+            )
+
         binding_ids, created_binding_ids, invalid_document_ids = submission_binding_ids_from_body(project_id, node_ids, body)
         if invalid_document_ids:
             return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
@@ -7172,8 +7314,10 @@ def submit_node_package(
             "submissionId": submission_id,
             "snapshotId": snapshot_id,
             "projectId": project_id,
+            "submissionType": "document",
             "nodeIds": node_ids,
             "bindingIds": binding_ids,
+            "documentIds": body.get("documentIds") or [],
             "batchName": body.get("batchName"),
             "submitterComment": body.get("submitterComment"),
             "nextStatus": "待审查",
@@ -7184,7 +7328,7 @@ def submit_node_package(
         }
         repo.state["submissions"].insert(0, submission)
         todo = repo.find_one("todos", todo_id)
-        return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "nextStatus": "待审查", "createdTodos": [repo.clone(todo)] if todo else [], "bindingIds": binding_ids, "createdBindingIds": created_binding_ids}, request)
+        return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "submissionType": "document", "nextStatus": "待审查", "createdTodos": [repo.clone(todo)] if todo else [], "bindingIds": binding_ids, "createdBindingIds": created_binding_ids}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -7197,12 +7341,18 @@ def get_submission_detail(request: Request, project_id: str, submission_id: str)
     bindings = [item for item in repo.bindings_for_project(project_id) if item["id"] in set(submission.get("bindingIds", []))]
     nodes = [repo.node(project_id, node_id) for node_id in submission.get("nodeIds", [])]
     todos = [item for item in repo.state["todos"] if item["id"] in set(submission.get("createdTodoIds", []))]
+    documents = [
+        repo.clone(item)
+        for item in repo.state.get("documents", [])
+        if item.get("projectId") == project_id and item.get("id") in set(submission.get("documentIds") or [])
+    ]
     return ok(
         {
             **submission_summary(submission),
             "submissionType": submission.get("submissionType", "document"),
             "nodes": [repo.clone(item) for item in nodes if item],
             "bindings": bindings,
+            "documents": documents,
             "createdTodos": todos,
             "changed": submission.get("changed", []),
             "snapshot": repo.clone(submission.get("snapshot")),
@@ -28948,6 +29098,7 @@ def create_admin_org_unit(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    enable_admin_identity_flush(request)
     def produce():
         if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
             return fail(errors.ETAG_CONFLICT, request)
@@ -28994,6 +29145,7 @@ def update_admin_org_unit(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    enable_admin_identity_flush(request)
     def produce():
         org = find_org_unit(org_id)
         if not org:
@@ -29047,6 +29199,7 @@ def delete_admin_org_unit(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    enable_admin_identity_flush(request)
     def produce():
         org = find_org_unit(org_id)
         if not org:
@@ -29105,6 +29258,7 @@ def create_admin_user(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    enable_admin_identity_flush(request, include_users=True)
     def produce():
         if not singleton_if_match_valid("admin-config", repo.state["admin_config"], if_match):
             return fail(errors.ETAG_CONFLICT, request)
@@ -29114,7 +29268,9 @@ def create_admin_user(
             return fail(errors.VALIDATION_ERROR, request, message="用户名和角色不能为空。")
         if role not in ROLE_ACTIONS:
             return fail(errors.VALIDATION_ERROR, request, message="角色不存在。")
-        password = str(body.get("password") or body.get("initialPassword") or "")
+        password = str(body.get("password") or body.get("initialPassword") or "").strip()
+        if not password:
+            password = DEFAULT_INITIAL_PASSWORD
         password_errors = password_strength_errors(username, password)
         if password_errors:
             return fail(
@@ -29129,9 +29285,9 @@ def create_admin_user(
         org, org_error = validate_user_org_binding(request, role, body.get("orgId"), body.get("orgName"))
         if org_error:
             return org_error
-        user = build_admin_user_record(body, org=org)
+        user = build_admin_user_record({**body, "password": password}, org=org)
         user["authVersion"] = 1
-        user["mustChangePassword"] = True
+        user["mustChangePassword"] = False
         repo.state["users"].insert(0, user)
         upsert_admin_config_user(user)
         bump_singleton_revision(repo.state["admin_config"])
@@ -29159,6 +29315,7 @@ def update_admin_user(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    enable_admin_identity_flush(request, include_users=True, include_project_members=True)
     def produce():
         existing = admin_user_by_id(user_id)
         if existing is None:
@@ -29233,6 +29390,7 @@ def delete_admin_user(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    enable_admin_identity_flush(request, include_users=True, include_project_members=True)
     def produce():
         existing = admin_user_by_id(user_id)
         display = next((item for item in admin_config_users() if item.get("id") == user_id), None)

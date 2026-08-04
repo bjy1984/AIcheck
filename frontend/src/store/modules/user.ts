@@ -5,7 +5,8 @@ import { ElMessageBox } from 'element-plus'
 import { useI18n } from '@/hooks/web/useI18n'
 import { loginOutApi } from '@/api/login'
 import { useTagsViewStore } from './tagsView'
-import router from '@/router'
+import { usePermissionStoreWithOut } from './permission'
+import router, { resetRouter } from '@/router'
 
 interface UserState {
   userInfo?: UserType
@@ -87,10 +88,16 @@ export const useUserStore = defineStore('user', {
     },
     reset() {
       const tagsViewStore = useTagsViewStore()
+      const permissionStore = usePermissionStoreWithOut()
       tagsViewStore.delAllViews()
       this.setToken('')
       this.setUserInfo(undefined)
       this.setRoleRouters([])
+      resetRouter()
+      permissionStore.setIsAddRouters(false)
+      permissionStore.routers = []
+      permissionStore.addRouters = []
+      permissionStore.menuTabRouters = []
       router.replace('/login')
     },
     logout() {

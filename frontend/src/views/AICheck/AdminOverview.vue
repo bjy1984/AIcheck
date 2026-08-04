@@ -279,6 +279,7 @@ type TableSortState = {
 type TableState = PaginationState & TableSortState
 
 const DEFAULT_PIPELINE_BUSINESS_PACK_ID = 'engineering_inspection_v1'
+const DEFAULT_INITIAL_PASSWORD = 'anyuekeji.123'
 const PIPELINE_TYPE_ORDER = ['GA类', 'GB类', 'GC类']
 
 const createPagination = (pageSize = 10): PaginationState => ({
@@ -2406,6 +2407,8 @@ const openUserDialog = (row?: AdminUser) => {
       row.orgId || overview.value.orgUnits.find((org) => org.name === row.orgName)?.id || ''
     userForm.status = row.status
     userForm.etag = row.etag || ''
+  } else {
+    userForm.password = DEFAULT_INITIAL_PASSWORD
   }
   userDialogVisible.value = true
 }
@@ -2426,21 +2429,21 @@ const handleSaveUser = async () => {
     ElMessage.warning('该角色必须绑定组织')
     return
   }
-  if (userDialogMode.value === 'create' && !userForm.password) {
-    ElMessage.warning('请设置初始强密码')
-    return
-  }
-  if (userForm.password) {
+  const initialPassword =
+    userDialogMode.value === 'create'
+      ? userForm.password.trim() || DEFAULT_INITIAL_PASSWORD
+      : userForm.password.trim()
+  if (initialPassword) {
     const classes = [
-      /[a-z]/.test(userForm.password),
-      /[A-Z]/.test(userForm.password),
-      /\d/.test(userForm.password),
-      /[^A-Za-z0-9]/.test(userForm.password)
+      /[a-z]/.test(initialPassword),
+      /[A-Z]/.test(initialPassword),
+      /\d/.test(initialPassword),
+      /[^A-Za-z0-9]/.test(initialPassword)
     ]
     if (
-      userForm.password.length < 12 ||
+      initialPassword.length < 12 ||
       classes.filter(Boolean).length < 3 ||
-      userForm.password.toLowerCase().includes(userForm.username.toLowerCase())
+      initialPassword.toLowerCase().includes(userForm.username.toLowerCase())
     ) {
       ElMessage.warning('密码至少 12 位、包含三类字符且不得包含用户名')
       return
@@ -2458,7 +2461,7 @@ const handleSaveUser = async () => {
       orgName: org?.name,
       status: userForm.status,
       password:
-        userDialogMode.value === 'create' ? userForm.password : userForm.password || undefined
+        userDialogMode.value === 'create' ? initialPassword : initialPassword || undefined
     }
     const res =
       userDialogMode.value === 'create'
@@ -5554,7 +5557,7 @@ onMounted(() => {
               autocomplete="new-password"
               :placeholder="
                 userDialogMode === 'create'
-                  ? '至少 12 位并包含三类字符'
+                  ? `默认 ${DEFAULT_INITIAL_PASSWORD}；可修改`
                   : '留空则不修改；填写后用户须首次改密'
               "
             />

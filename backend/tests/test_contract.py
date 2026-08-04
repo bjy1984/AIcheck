@@ -5723,6 +5723,87 @@ def test_project_file_direct_submit_creates_node_binding() -> None:
     assert repo.node(project_id, 25)["status"] == "待审查"
 
 
+def test_project_level_submit_without_node_binding() -> None:
+    project_id = "P-2026-HDCP-001"
+    document_id = "DOC-20260625-005"
+    document = repo.find_one("documents", document_id)
+    assert document is not None
+    document["poolSubmissionStatus"] = "未提交"
+    before_bindings = [
+        item
+        for item in repo.state["bindings"]
+        if item.get("projectId") == project_id and item.get("documentId") == document_id
+    ]
+    before_node_status = {
+        node_id: repo.node(project_id, node_id)["status"]
+        for node_id in {16, 24, 25, 40}
+        if repo.node(project_id, node_id)
+    }
+
+    result = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={
+                "submissionType": "project",
+                "documentIds": [document_id],
+                "bindingIds": [],
+                "nodeIds": [],
+                "batchName": "资质证照资料池提交",
+                "submitterComment": "project pool submit",
+            },
+        )
+    )
+    stored_submission = next(
+        item for item in repo.state["submissions"] if item["submissionId"] == result["submissionId"]
+    )
+    todo = next(item for item in repo.state["todos"] if item["id"] in set(stored_submission["createdTodoIds"]))
+    refreshed = repo.find_one("documents", document_id)
+    after_bindings = [
+        item
+        for item in repo.state["bindings"]
+        if item.get("projectId") == project_id and item.get("documentId") == document_id
+    ]
+
+    assert result["submissionType"] == "project"
+    assert result["nextStatus"] == "资料池待处理"
+    assert result["documentIds"] == [document_id]
+    assert result["bindingIds"] == []
+    assert result["createdBindingIds"] == []
+    assert stored_submission["submissionType"] == "project"
+    assert stored_submission["nodeIds"] == []
+    assert stored_submission["documentIds"] == [document_id]
+    assert refreshed["poolSubmissionStatus"] == "已提交"
+    assert refreshed.get("poolSubmittedAt")
+    assert todo["nodeId"] is None
+    assert todo["targetType"] == "submission"
+    assert len(after_bindings) == len(before_bindings)
+    for node_id, status in before_node_status.items():
+        assert repo.node(project_id, node_id)["status"] == status
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={
+                "submissionType": "project",
+                "documentIds": [document_id],
+                "nodeIds": [],
+            },
+        ),
+        "CONFLICT",
+    )
+    assert_error(
+        client.delete(f"/projects/{project_id}/documents/{document_id}"),
+        "CONFLICT",
+    )
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={"submissionType": "project", "documentIds": [], "nodeIds": []},
+        ),
+        "EMPTY_PROJECT_PACKAGE",
+    )
+
+
 def test_global_idempotency_covers_mutations_without_explicit_route_parameter() -> None:
     project_id = "P-2026-HDCP-001"
     document_id = "DOC-20260625-003"

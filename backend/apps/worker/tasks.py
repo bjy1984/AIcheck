@@ -978,6 +978,11 @@ def _store_mineru_artifacts(
             content_type=artifact.content_type,
         )
         if not storage_url:
+            # Local/dev without object storage: keep the parse result usable
+            # and skip artifact archiving. When storage is configured or
+            # required, failing to persist must fail the job.
+            if not object_storage.enabled and not object_storage.required:
+                continue
             raise MinerUNormalizationError(
                 "MINERU_PERSIST_FAILED",
                 "MinerU artifact storage is unavailable.",
@@ -1338,6 +1343,18 @@ def _execute_mineru_ocr_extract(
         }
         result_record = repo.finish_ocr_job_record(job, failure_result)
         _finalize_mineru_pipeline(job, failure_result, result_record)
+        bound_document = (
+            repo.find_one("documents", document_id) if document_id else None
+        )
+        bound_version = (
+            repo.find_one("versions", version_id) if version_id else None
+        )
+        if (
+            bound_document is not None
+            and bound_version is not None
+            and str(bound_version.get("documentId") or "") == document_id
+        ):
+            repo.apply_ocr_result(document_id, version_id, failure_result)
         if document_id and version_id:
             failure_records = ocr_result_state_records(
                 document_id,
@@ -1527,6 +1544,9 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             ],
             recommended_action="Use provider local or mineru.",
         )
+        if document and version:
+            repo.apply_ocr_result(document_id, version_id, failure_result)
+            flush_state_records(ocr_result_state_records(document_id, version_id))
         persist_ocr_pipeline_progress(
             pipeline_run,
             task=task,
@@ -1587,6 +1607,21 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                     "Check the ocr.remote worker and retry."
                 ),
             )
+            if document and version:
+                repo.apply_ocr_result(
+                    document_id,
+                    version_id,
+                    {
+                        "storageKey": storage_key,
+                        "fileName": file_name,
+                        "status": "failed",
+                        "outcomeStatus": "failed",
+                        "diagnostics": diagnostics,
+                    },
+                )
+                flush_state_records(
+                    ocr_result_state_records(document_id, version_id)
+                )
             persist_ocr_pipeline_progress(
                 pipeline_run,
                 task=task,

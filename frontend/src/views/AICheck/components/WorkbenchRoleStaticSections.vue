@@ -529,7 +529,7 @@ const requestFileBind = (file: ContractorFileRow) => {
 }
 
 const requestFileSubmit = (file: ContractorFileRow) => {
-  if (!props.readOnly && ['待提交', '需补正'].includes(file.status)) {
+  if (!props.readOnly && ['未关联', '待提交', '需补正'].includes(file.status)) {
     emit('file-submit', file.documentId)
   }
 }
@@ -542,7 +542,7 @@ const requestFileDelete = (file: ContractorFileRow) => {
 
 const getContractorSubmitHint = (file: ContractorFileRow) => {
   if (props.readOnly) return '当前项目为只读状态，不能提交文件'
-  if (file.status === '未关联') return '请先选择审核环节'
+  if (file.status === '未关联') return '提交到项目资料池，供监检处理（可不关联审核环节）'
   return ['待提交', '需补正'].includes(file.status)
     ? '提交当前文件的全部待提交或待补正挂载'
     : '当前状态不能重复提交'
@@ -794,7 +794,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                   <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
                   <ElTooltip
                     :content="getContractorSubmitHint(row)"
-                    :disabled="!readOnly && ['待提交', '需补正'].includes(row.status)"
+                    :disabled="!readOnly && ['未关联', '待提交', '需补正'].includes(row.status)"
                     placement="top"
                     popper-class="audit-action-tooltip-popper"
                   >
@@ -802,7 +802,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                       <ElButton
                         link
                         type="primary"
-                        :disabled="readOnly || !['待提交', '需补正'].includes(row.status)"
+                        :disabled="readOnly || !['未关联', '待提交', '需补正'].includes(row.status)"
                         @click="requestFileSubmit(row)"
                       >
                         提交

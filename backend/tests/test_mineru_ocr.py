@@ -209,7 +209,6 @@ def test_multiple_layout_json_members_are_rejected_as_ambiguous() -> None:
     [
         {},
         {"pdf_info": []},
-        {"pdf_info": [{"page_idx": 0, "page_size": [0, 841]}]},
         {
             "pdf_info": [
                 {"page_idx": 0, "page_size": [595, 841]},
@@ -236,6 +235,47 @@ def test_invalid_page_layout_content_is_rejected(
         _normalize(archive)
 
     assert raised.value.code == "MINERU_PAGE_LAYOUT_INVALID"
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        {"page_idx": 0},
+        {"page_idx": 0, "page_size": None},
+        {"page_idx": 0, "page_size": [0, 841]},
+    ],
+)
+def test_page_layout_without_valid_size_degrades_to_unmapped(
+    page: dict[str, object],
+) -> None:
+    bundle = _normalize(
+        _zip_bytes(
+            middle={
+                "pdf_info": [page],
+                "_backend": "vlm",
+                "_version_name": "3.0",
+            }
+        )
+    )
+
+    result = bundle.result
+    assert result["status"] == "success"
+    assert result["pages"][0]["pageNo"] == 1
+    assert result["pages"][0]["width"] is None
+    assert result["pages"][0]["height"] is None
+    assert result["pages"][0]["coordinateSystem"] is None
+    assert result["fragments"]
+    assert all(
+        fragment["coordinateTransformStatus"] == "unmapped"
+        for fragment in result["fragments"]
+    )
+    assert all(fragment["bbox"] is None for fragment in result["fragments"])
+    assert result["quality"]["status"] == "needs_human_review"
+    assert result["outcomeStatus"] == "partial"
+    assert any(
+        item["code"] == "coordinate_transform_unmapped"
+        for item in result["diagnostics"]
+    )
 
 
 def test_missing_provider_confidence_uses_conservative_numeric_score() -> None:

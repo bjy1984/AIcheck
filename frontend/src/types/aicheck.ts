@@ -179,6 +179,8 @@ export type DocumentAsset = {
   uploaderName: string
   currentVersionId: string
   fileStatus: '草稿' | '已上传' | '已撤回' | '已替换' | '已作废'
+  poolSubmissionStatus?: '未提交' | '已提交' | '已撤回' | null
+  poolSubmittedAt?: string | null
   currentOcrStatus:
     | '待识别'
     | '未识别'

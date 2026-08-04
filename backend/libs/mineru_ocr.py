@@ -273,25 +273,25 @@ def mineru_pages(middle: Mapping[str, Any]) -> list[dict[str, Any]]:
             width = None
             height = None
         page_no = page_index + 1
-        if (
-            page_index < 0
-            or width is None
-            or height is None
-            or width <= 0
-            or height <= 0
-            or page_no in page_numbers
-        ):
+        if page_index < 0 or page_no in page_numbers:
             raise MinerUNormalizationError(
                 "MINERU_PAGE_LAYOUT_INVALID",
                 "MinerU page layout contains invalid or duplicate page metadata.",
             )
+        if width is None or height is None or width <= 0 or height <= 0:
+            # Sources without physical pages (e.g. spreadsheets) omit page_size.
+            # Keep the page and let bbox mapping degrade to "unmapped".
+            width = None
+            height = None
         page_numbers.add(page_no)
         pages.append(
             {
                 "pageNo": page_no,
                 "width": width,
                 "height": height,
-                "coordinateSystem": "rendered_pixels",
+                "coordinateSystem": (
+                    "rendered_pixels" if width is not None else None
+                ),
                 "sourceCoordinateSystem": "mineru_normalized_1000",
             }
         )
@@ -723,8 +723,10 @@ def _map_bbox(
         or max(x1, y1, x2, y2) > 1000
     ):
         return None, "mineru_normalized_1000"
-    width = float(page["width"])
-    height = float(page["height"])
+    width = _safe_float(page.get("width"))
+    height = _safe_float(page.get("height"))
+    if width is None or height is None or width <= 0 or height <= 0:
+        return None, "mineru_normalized_1000"
     return (
         [
             round(x1 / 1000.0 * width, 4),

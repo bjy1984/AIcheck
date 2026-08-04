@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
 import {
   ElAlert,
   ElButton,
@@ -13,10 +14,13 @@ import {
 } from 'element-plus'
 import { changePasswordApi } from '@/api/login'
 import { useUserStore } from '@/store/modules/user'
+import { usePermissionStore } from '@/store/modules/permission'
+import { getRoleDefaultPath } from '@/utils/roleAccess'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 
 const router = useRouter()
 const userStore = useUserStore()
+const permissionStore = usePermissionStore()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 const errorMessage = ref('')
@@ -68,6 +72,14 @@ const rules: FormRules = {
   ]
 }
 
+const ensureRoleRoutes = async (role?: string) => {
+  await permissionStore.generateRoutes('static', undefined, role)
+  permissionStore.getAddRouters.forEach((route) => {
+    router.addRoute(route as RouteRecordRaw)
+  })
+  permissionStore.setIsAddRouters(true)
+}
+
 const submit = async () => {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -84,8 +96,11 @@ const submit = async () => {
     }
     userStore.setToken(response.data.token ? `Bearer ${response.data.token}` : '')
     userStore.setUserInfo(response.data.user)
+    await ensureRoleRoutes(response.data.user?.role)
     ElMessage.success('密码已更新，请使用新密码继续工作。')
-    await router.replace(response.data.defaultPath)
+    await router.replace(
+      response.data.defaultPath || getRoleDefaultPath(response.data.user?.role)
+    )
   } catch (error: unknown) {
     errorMessage.value = getAicheckErrorMessage(error, '密码修改失败，请稍后重试。')
   } finally {

@@ -29,7 +29,10 @@ const binding = (
   actions: ['submission:submit', 'submission:withdraw']
 })
 
-const documentWithBindings = (bindings: NodeFileBinding[]): DocumentAsset => ({
+const documentWithBindings = (
+  bindings: NodeFileBinding[],
+  extras: Partial<DocumentAsset> = {}
+): DocumentAsset => ({
   id: 'DOC-ACCEPTANCE-001',
   projectId: 'QX201903S-13-Y',
   fileName: 'TEST-ACCEPTANCE-001_多节点测试资料.xlsx',
@@ -46,7 +49,8 @@ const documentWithBindings = (bindings: NodeFileBinding[]): DocumentAsset => ({
   bindings,
   primaryBinding: bindings[0] || null,
   updatedAt: '2026-07-31 12:00:00',
-  actions: ['file:view', 'submission:submit']
+  actions: ['file:view', 'submission:submit'],
+  ...extras
 })
 
 assert.equal(resolveNdtMaterialAction('底片与影像资料', 'register'), 'register-film')
@@ -66,11 +70,23 @@ assert.deepEqual(
   ['B-R21', 'B-R69']
 )
 assert.deepEqual(buildDocumentSubmissionPayload(mixedFile), {
+  mode: 'node',
   nodeIds: [21, 69],
   bindingIds: ['B-R21', 'B-R69']
 })
-assert.equal(buildDocumentSubmissionPayload(documentWithBindings([])), undefined)
+assert.deepEqual(buildDocumentSubmissionPayload(documentWithBindings([])), {
+  mode: 'project',
+  documentIds: ['DOC-ACCEPTANCE-001']
+})
 assert.equal(documentBindingSummary(documentWithBindings([])), '未关联')
+assert.equal(
+  documentBindingSummary(documentWithBindings([], { poolSubmissionStatus: '已提交' })),
+  '审核中'
+)
+assert.equal(
+  buildDocumentSubmissionPayload(documentWithBindings([], { poolSubmissionStatus: '已提交' })),
+  undefined
+)
 assert.equal(
   documentBindingSummary(documentWithBindings([binding('B-R21', 21, '草稿挂载')])),
   '待提交'
@@ -96,6 +112,7 @@ const duplicateNodeFile = documentWithBindings([
   binding('B-R69', 69, '草稿挂载')
 ])
 assert.deepEqual(buildDocumentSubmissionPayload(duplicateNodeFile), {
+  mode: 'node',
   nodeIds: [21, 69],
   bindingIds: ['B-R21-A', 'B-R21-B', 'B-R69']
 })
@@ -109,6 +126,7 @@ assert.deepEqual(
     ])
   ),
   {
+    mode: 'node',
     nodeIds: [21, 69],
     bindingIds: ['B-R69', 'B-R21']
   }

@@ -74,5 +74,8 @@ export const resolveRoleEntryPath = (role?: string, redirect?: string): string =
   } catch {
     decoded = ''
   }
+  if (!decoded || ['/login', '/404', '/redirect', '/change-password'].some((prefix) => decoded === prefix || decoded.startsWith(`${prefix}/`))) {
+    return defaultPath
+  }
   return isPathAllowedForRole(decoded, role) ? decoded : defaultPath
 }
