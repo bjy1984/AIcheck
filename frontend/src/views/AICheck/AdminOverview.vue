@@ -106,7 +106,16 @@ import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
-import { userBelongsToOrganization } from './utils/projectWizardMembers'
+import {
+  formatNodeScope,
+  formatParticipantType,
+  formatProjectRegion
+} from './utils/projectDetailPresentation'
+import {
+  findFirstRoleWithoutCandidates,
+  missingWizardMemberMessage,
+  userBelongsToOrganization
+} from './utils/projectWizardMembers'
 
 const emptyOverview = (): AdminConfigOverviewPayload => ({
   metrics: [],
@@ -2088,6 +2097,16 @@ const validateProjectWizardStep = () => {
     const orgNames = projectWizardRoles.value.map(wizardOrgNameByRole)
     if (orgNames.some((name) => !name.trim())) {
       ElMessage.warning('请补齐参建单位')
+      return false
+    }
+    const unavailableRole = findFirstRoleWithoutCandidates(
+      projectWizardRoles.value,
+      wizardUsersByRole
+    )
+    if (unavailableRole) {
+      ElMessage.warning(
+        missingWizardMemberMessage(roleLabel(unavailableRole), wizardOrgNameByRole(unavailableRole))
+      )
       return false
     }
   }
@@ -6415,7 +6434,7 @@ onMounted(() => {
                 projectDetail.project.name
               }}</ElDescriptionsItem>
               <ElDescriptionsItem label="区域">{{
-                projectDetail.project.region
+                formatProjectRegion(projectDetail.project.region)
               }}</ElDescriptionsItem>
               <ElDescriptionsItem label="状态">
                 <ElTag :type="statusType(projectDetail.project.status)" effect="light">
@@ -6444,7 +6463,9 @@ onMounted(() => {
                 show-overflow-tooltip
                 sortable="custom"
               />
-              <ElTableColumn prop="unitType" label="类型" width="110" sortable="custom" />
+              <ElTableColumn prop="unitType" label="类型" width="140" sortable="custom">
+                <template #default="{ row }">{{ formatParticipantType(row.unitType) }}</template>
+              </ElTableColumn>
               <ElTableColumn prop="contactName" label="联系人" width="100" sortable="custom" />
               <ElTableColumn prop="contactPhone" label="电话" width="140" sortable="custom" />
             </ElTable>
@@ -6490,7 +6511,7 @@ onMounted(() => {
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="nodeScope" label="节点范围" min-width="160" sortable="custom">
-                <template #default="{ row }">{{ row.nodeScope.join(', ') }}</template>
+                <template #default="{ row }">{{ formatNodeScope(row.nodeScope) }}</template>
               </ElTableColumn>
               <ElTableColumn prop="actions" label="动作" min-width="220" sortable="custom">
                 <template #default="{ row }">

@@ -8968,6 +8968,15 @@ def test_project_creation_routes_are_idempotent_and_return_initial_members() -> 
         )
     )
     assert len(created["detail"]["members"]) == 4
+    assert "businessPackSnapshot" not in created["project"]
+    assert "businessPackSnapshot" not in created["detail"]["project"]
+    assert created["project"]["businessPackVersion"]
+    assert created["project"]["businessPackSnapshotHash"]
+    assert created["createdNodeCount"] == 69
+    assert created["createdRequirementCount"] > 0
+    stored_project = repo.require_project(created["project"]["id"])
+    assert stored_project is not None
+    assert stored_project["businessPackSnapshot"]["snapshotHash"]
     assert replayed["project"]["id"] == created["project"]["id"]
     assert replayed["auditLogId"] == created["auditLogId"]
     assert len([item for item in repo.state["projects"] if item["id"] == "P-E2E-001"]) == 1

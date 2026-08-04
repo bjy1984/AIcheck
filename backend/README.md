@@ -149,11 +149,13 @@ AICHECK_BOOTSTRAP_PASSWORD_INSPECTION='Local!2026-InspectZ' \
 AICHECK_BOOTSTRAP_PASSWORD_CONTRACTOR='Local!2026-BuildZ' \
 AICHECK_BOOTSTRAP_PASSWORD_NDT='Local!2026-TestZ' \
 AICHECK_BOOTSTRAP_PASSWORD_OWNER='Local!2026-ViewZ' \
+AICHECK_STRICT_PRODUCTION=false \
 uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 ```
 
 Without `AICHECK_DATABASE_URL`, `AICHECK_MINIO_ENDPOINT`, or `AICHECK_TASK_DISPATCH`, the API runs in compatibility mode using seeded in-memory data and mock URLs. This mode is intended for fast frontend contract tests.
 Set `AICHECK_BOOTSTRAP_LOCAL_ROLES=true` to inject the five PBKDF2 role accounts into the in-memory repository for local login checks without PostgreSQL.
+With `AICHECK_STRICT_PRODUCTION=false`, security sessions use the existing in-memory fallback and local login does not require Redis. Strict production must keep `AICHECK_STRICT_PRODUCTION=true`; in that mode Redis is mandatory and the API deliberately refuses to start or serve security operations when the security backend is unavailable.
 
 Frontend live-backend mode:
 

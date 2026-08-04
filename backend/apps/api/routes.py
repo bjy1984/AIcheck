@@ -2177,6 +2177,12 @@ def versioned_project(project: dict[str, Any]) -> dict[str, Any]:
     return cloned
 
 
+def project_without_business_pack_snapshot(project: dict[str, Any]) -> dict[str, Any]:
+    summary = versioned_project(project)
+    summary.pop("businessPackSnapshot", None)
+    return summary
+
+
 def report_etag(report: dict[str, Any]) -> str:
     revision = int(report.get("revision") or 1)
     return str(report.get("etag") or f'W/"report-{report["id"]}-r{revision}"')
@@ -28645,9 +28651,11 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             )
         audit_id = repo.add_audit("项目立项", "Project", project_id)
         detail_data = project_detail_payload(project_id)
+        if detail_data:
+            detail_data["project"] = project_without_business_pack_snapshot(project)
         return ok(
             {
-                "project": versioned_project(project),
+                "project": project_without_business_pack_snapshot(project),
                 "detail": detail_data,
                 "businessPack": business_pack_summary(pack),
                 "auditLogId": audit_id,

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { userBelongsToOrganization } from '../src/views/AICheck/utils/projectWizardMembers.ts'
+import {
+  findFirstRoleWithoutCandidates,
+  missingWizardMemberMessage,
+  userBelongsToOrganization
+} from '../src/views/AICheck/utils/projectWizardMembers.ts'
 
 test('matches a renamed organization by stable organization id', () => {
   assert.equal(
@@ -30,5 +34,28 @@ test('falls back to trimmed organization names for legacy records', () => {
       { name: '粤检无损检测' }
     ),
     true
+  )
+})
+
+test('finds the first required role without an eligible member', () => {
+  const role = findFirstRoleWithoutCandidates(['owner', 'contractor', 'ndt'], (item) =>
+    item === 'contractor' ? [] : [{ id: `USER-${item}` }]
+  )
+
+  assert.equal(role, 'contractor')
+})
+
+test('allows the wizard to advance when every required role has a candidate', () => {
+  const role = findFirstRoleWithoutCandidates(['owner', 'contractor'], (item) => [
+    { id: `USER-${item}` }
+  ])
+
+  assert.equal(role, undefined)
+})
+
+test('member availability warning identifies the role and organization', () => {
+  assert.equal(
+    missingWizardMemberMessage('施工方', '施工测试'),
+    '所选施工方「施工测试」暂无启用且角色匹配的用户，请先在组织用户中配置。'
   )
 })
