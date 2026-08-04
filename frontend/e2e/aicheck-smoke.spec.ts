@@ -840,6 +840,14 @@ test.describe('AIcheck route smoke', () => {
     })
   }
 
+  test('project management omits its descriptive subtitle', async ({ page }) => {
+    await loginTo(page, '/admin/overview')
+
+    await expect(page.locator('.admin-page .page-title')).toHaveText('项目管理')
+    await expect(page.getByText('管理项目清单、项目详情和立项向导', { exact: true })).toHaveCount(0)
+    await expect(page.locator('.admin-page .page-subtitle')).toHaveCount(0)
+  })
+
   test('owner workbench keeps write actions unavailable', async ({ page }) => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/workbench/owner')!)
 

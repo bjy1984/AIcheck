@@ -418,7 +418,7 @@ const adminMenuActiveRoute = computed(() =>
 const adminPageTitleMap: Record<AdminTabKey, { title: string; subtitle: string }> = {
   projects: {
     title: '项目管理',
-    subtitle: '管理项目清单、项目详情和立项向导'
+    subtitle: ''
   },
   org: {
     title: '组织用户',
@@ -3343,7 +3343,7 @@ onMounted(() => {
       <div class="page-toolbar">
         <div>
           <h1 class="page-title">{{ adminPageTitle }}</h1>
-          <div class="page-subtitle">{{ adminPageSubtitle }}</div>
+          <div v-if="adminPageSubtitle" class="page-subtitle">{{ adminPageSubtitle }}</div>
         </div>
         <ElSpace wrap>
           <ElButton v-if="activeTab === 'projects'" type="primary" @click="openProjectWizard">
