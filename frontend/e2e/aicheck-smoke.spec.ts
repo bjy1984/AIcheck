@@ -1877,6 +1877,26 @@ test.describe('AIcheck business writeback flows', () => {
     await expect(memberDialog.getByRole('button', { name: '保存' })).toBeVisible()
   })
 
+  test('admin can continue when optional project region is blank', async ({ page }) => {
+    await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
+
+    await page.getByRole('button', { name: '新建项目' }).evaluate((element) => {
+      ;(element as HTMLButtonElement).click()
+    })
+    const wizard = page.locator('.el-dialog').filter({ hasText: '项目立项向导' })
+    await expect(wizard).toBeVisible()
+    await wizard
+      .locator('.el-form-item')
+      .filter({ hasText: '项目名称' })
+      .locator('input')
+      .fill('区域选填测试项目')
+
+    await expect(wizard).toContainText('区域（选填）')
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    await expect(wizard).toContainText('参建单位')
+    await expect(wizard.getByRole('combobox', { name: '建设单位' })).toBeVisible()
+  })
+
   test('admin creates project through setup wizard and opens project detail', async ({ page }) => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/admin/overview')!)
 

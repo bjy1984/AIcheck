@@ -2075,8 +2075,8 @@ const validateProjectWizardStep = () => {
       ElMessage.warning('请填写项目名称')
       return false
     }
-    if (!projectWizardForm.type.trim() || !projectWizardForm.region.trim()) {
-      ElMessage.warning('请填写项目类型和区域')
+    if (!projectWizardForm.type.trim()) {
+      ElMessage.warning('项目类型生成失败，请重新选择压力管道类别')
       return false
     }
   }
@@ -5178,8 +5178,11 @@ onMounted(() => {
                 </ElFormItem>
               </ElCol>
               <ElCol :xs="24" :sm="12">
-                <ElFormItem label="区域">
-                  <ElInput v-model="projectWizardForm.region" />
+                <ElFormItem label="区域（选填）">
+                  <ElInput
+                    v-model="projectWizardForm.region"
+                    placeholder="例如：广东省广州市"
+                  />
                 </ElFormItem>
               </ElCol>
             </ElRow>
