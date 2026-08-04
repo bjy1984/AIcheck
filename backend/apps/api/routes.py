@@ -3223,14 +3223,15 @@ def admin_user_projection(user: dict[str, Any]) -> dict[str, Any]:
     name = user.get("name") or user.get("displayName") or user.get("username") or "未命名用户"
     org_name = user.get("orgName") or user.get("orgUnitName") or ""
     org = find_org_unit(user.get("orgId"), org_name)
+    canonical_org_name = (org or {}).get("name") or org_name
     projected = {
         "id": user.get("id") or f"USER-{uuid4().hex[:8].upper()}",
         "username": user.get("username") or role,
         "name": name,
         "displayName": user.get("displayName") or name,
         "orgId": user.get("orgId") or (org or {}).get("id"),
-        "orgName": org_name or (org or {}).get("name") or "",
-        "orgUnitName": user.get("orgUnitName") or org_name or (org or {}).get("name") or "",
+        "orgName": canonical_org_name,
+        "orgUnitName": canonical_org_name,
         "role": role,
         "roleId": user.get("roleId") or role,
         "roleLabel": user.get("roleLabel") or ROLE_LABELS.get(role, role),
@@ -3298,6 +3299,18 @@ def find_org_unit(org_id: str | None = None, org_name: str | None = None) -> dic
         ),
         None,
     )
+
+
+def user_belongs_to_org(
+    user: dict[str, Any],
+    org: dict[str, Any] | None,
+    expected_org_name: str,
+) -> bool:
+    user_org_id = str(user.get("orgId") or "").strip()
+    org_id = str((org or {}).get("id") or "").strip()
+    if user_org_id and org_id:
+        return user_org_id == org_id
+    return str(user.get("orgName") or "").strip() == expected_org_name.strip()
 
 
 def org_type_matches_role(role: str, org_type: str | None) -> bool:
@@ -28557,6 +28570,7 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             user_id = str(member_user_ids.get(user_role) or member_user_ids.get(assignment.get("code")) or "").strip()
             user = exact_admin_user(user_id)
             expected_org = normalized.get(role_org_fields.get(user_role, ""), "")
+            expected_org_record = find_org_unit(org_name=expected_org) if expected_org else None
             if not user:
                 member_errors.append({"role": user_role, "userId": user_id or None, "reason": "请选择有效的初始成员。"})
                 continue
@@ -28566,7 +28580,7 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
             if user.get("role") != user_role:
                 member_errors.append({"role": user_role, "userId": user_id, "reason": "用户角色与业务类型角色不一致。"})
                 continue
-            if expected_org and str(user.get("orgName") or "").strip() != expected_org:
+            if expected_org and not user_belongs_to_org(user, expected_org_record, expected_org):
                 member_errors.append({"role": user_role, "userId": user_id, "reason": "用户所属组织与项目参建单位不一致。"})
                 continue
             prepared_members.append((assignment, user))

@@ -292,7 +292,7 @@ def test_business_pack_api_and_compliance_project_generation() -> None:
                 "type": "长输压力管道",
                 "region": "华东",
                 "ownerOrgName": "华东管网建设公司",
-                "contractorOrgName": "中石化安装有限公司",
+                "contractorOrgName": "粤海安装工程有限公司",
                 "inspectionOrgName": "省特检院一部",
                 "memberUserIds": {
                     "owner": "USER-OWNER-001",
@@ -339,7 +339,7 @@ def test_business_pack_api_and_compliance_project_generation() -> None:
                 "type": "公用压力管道",
                 "region": "华东",
                 "ownerOrgName": "华东管网建设公司",
-                "contractorOrgName": "中石化安装有限公司",
+                "contractorOrgName": "粤海安装工程有限公司",
                 "inspectionOrgName": "省特检院一部",
                 "memberUserIds": {
                     "owner": "USER-OWNER-001",

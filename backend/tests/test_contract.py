@@ -84,8 +84,8 @@ def admin_project_create_payload(code: str, name: str) -> dict[str, object]:
         "type": "工业压力管道",
         "region": "华东",
         "ownerOrgName": "华东管网建设公司",
-        "contractorOrgName": "中石化安装有限公司",
-        "ndtOrgName": "华测检测有限公司",
+        "contractorOrgName": "粤海安装工程有限公司",
+        "ndtOrgName": "粤检无损检测",
         "inspectionOrgName": "省特检院一部",
         "memberUserIds": {
             "owner": "USER-OWNER-001",
@@ -9032,6 +9032,81 @@ def test_project_creation_rejects_missing_or_invalid_real_configuration_without_
     }
     invalid = assert_error(client.post("/admin/projects", json=invalid_payload), "VALIDATION_ERROR")
     assert invalid["data"]["memberErrors"][0]["role"] == "inspection"
+    assert len(repo.state["projects"]) == initial_projects
+    assert len(repo.state["project_members"]) == initial_members
+
+
+def test_project_creation_accepts_member_with_matching_org_id_after_org_rename() -> None:
+    org = {
+        "id": "ORG-CONTRACTOR-RENAMED",
+        "name": "施工单位新名称",
+        "type": "contractor",
+        "status": "启用",
+    }
+    user = {
+        "id": "USER-CONTRACTOR-RENAMED",
+        "username": "contractor_renamed",
+        "name": "更名施工人员",
+        "role": "contractor",
+        "status": "启用",
+        "orgId": org["id"],
+        "orgName": "施工单位旧名称",
+    }
+    repo.state["admin_config"]["orgUnits"].append(org)
+    repo.state["admin_config"]["users"].append(user)
+    payload = admin_project_create_payload("P-ORG-ID-MATCH", "组织 ID 匹配项目")
+    payload["contractorOrgName"] = org["name"]
+    payload["ndtOrgName"] = "粤检无损检测"
+    payload["memberUserIds"] = {
+        **payload["memberUserIds"],
+        "contractor": user["id"],
+    }
+
+    created = assert_ok(client.post("/admin/projects", json=payload))
+
+    assert len(created["detail"]["members"]) == 4
+    contractor = next(item for item in created["detail"]["members"] if item["role"] == "contractor")
+    assert contractor["userId"] == user["id"]
+    assert contractor["orgName"] == org["name"]
+
+
+def test_project_creation_rejects_member_with_different_org_id_despite_matching_name() -> None:
+    selected_org = {
+        "id": "ORG-CONTRACTOR-SELECTED",
+        "name": "同名施工单位",
+        "type": "contractor",
+        "status": "启用",
+    }
+    other_org = {
+        "id": "ORG-CONTRACTOR-OTHER",
+        "name": "其他施工单位",
+        "type": "contractor",
+        "status": "启用",
+    }
+    user = {
+        "id": "USER-CONTRACTOR-OTHER-ORG",
+        "username": "contractor_other_org",
+        "name": "其他组织施工人员",
+        "role": "contractor",
+        "status": "启用",
+        "orgId": other_org["id"],
+        "orgName": selected_org["name"],
+    }
+    repo.state["admin_config"]["orgUnits"].extend([selected_org, other_org])
+    repo.state["admin_config"]["users"].append(user)
+    initial_projects = len(repo.state["projects"])
+    initial_members = len(repo.state["project_members"])
+    payload = admin_project_create_payload("P-ORG-ID-MISMATCH", "组织 ID 不匹配项目")
+    payload["contractorOrgName"] = selected_org["name"]
+    payload["ndtOrgName"] = "粤检无损检测"
+    payload["memberUserIds"] = {
+        **payload["memberUserIds"],
+        "contractor": user["id"],
+    }
+
+    invalid = assert_error(client.post("/admin/projects", json=payload), "VALIDATION_ERROR")
+
+    assert invalid["data"]["memberErrors"][0]["role"] == "contractor"
     assert len(repo.state["projects"]) == initial_projects
     assert len(repo.state["project_members"]) == initial_members
 

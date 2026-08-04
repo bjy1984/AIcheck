@@ -106,6 +106,7 @@ import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
+import { userBelongsToOrganization } from './utils/projectWizardMembers'
 
 const emptyOverview = (): AdminConfigOverviewPayload => ({
   metrics: [],
@@ -1256,14 +1257,17 @@ const wizardOrgOptions = (role: ProjectWizardMemberRole) => {
 }
 const wizardUsersByRole = (role: ProjectWizardMemberRole) => {
   const orgName = wizardOrgNameByRole(role)
+  const organization = wizardOrgOptions(role).find((org) => org.name === orgName)
   return overview.value.users.filter(
-    (user) => user.role === role && user.status === '启用' && user.orgName === orgName
+    (user) =>
+      user.role === role && user.status === '启用' && userBelongsToOrganization(user, organization)
   )
 }
 const handleWizardOrgChange = (role: ProjectWizardMemberRole) => {
   const userId = projectWizardForm.memberUserIds[role]
   const user = overview.value.users.find((item) => item.id === userId)
-  if (user && user.orgName !== wizardOrgNameByRole(role)) {
+  const organization = wizardOrgOptions(role).find((org) => org.name === wizardOrgNameByRole(role))
+  if (user && !userBelongsToOrganization(user, organization)) {
     projectWizardForm.memberUserIds[role] = ''
   }
 }
