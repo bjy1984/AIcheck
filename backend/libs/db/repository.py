@@ -3287,6 +3287,128 @@ class InMemoryRepository:
                 "paginationMode": pagination_mode,
             }
 
+    def project_document_read_view(self, project_id: str) -> "InMemoryRepository":
+        """Return a detached project-document view from current PostgreSQL rows.
+
+        Worker writes must become visible to API reads without replacing the
+        process-local repository state used by concurrent requests.
+        """
+
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return self
+            self.ensure_postgres_schema()
+            tenant_id = configured_tenant_id()
+            project_collections = {
+                STATE_COLLECTIONS["documents"],
+                STATE_COLLECTIONS["bindings"],
+                STATE_COLLECTIONS["knowledge_files"],
+            }
+            rows = self.sync_postgres.execute(
+                """
+                SELECT collection, object_id, payload
+                FROM aicheck_state
+                WHERE tenant_id = %s
+                  AND collection = ANY(%s)
+                  AND payload ->> 'projectId' = %s
+                ORDER BY collection, updated_at DESC, object_id DESC
+                """,
+                (tenant_id, sorted(project_collections), project_id),
+            ).fetchall()
+            records: dict[tuple[str, str], dict[str, Any]] = {
+                (str(collection), str(object_id)): json.loads(json.dumps(payload))
+                for collection, object_id, payload in rows
+            }
+            document_ids = {
+                str(payload.get("id") or object_id)
+                for (collection, object_id), payload in records.items()
+                if collection == STATE_COLLECTIONS["documents"]
+            }
+            version_ids = {
+                str(payload.get("currentVersionId"))
+                for (collection, _), payload in records.items()
+                if collection == STATE_COLLECTIONS["documents"] and payload.get("currentVersionId")
+            }
+            if document_ids or version_ids:
+                related_collections = {
+                    STATE_COLLECTIONS[state_key]
+                    for state_key in (
+                        "versions",
+                        "bindings",
+                        "knowledge_files",
+                        "knowledge_tasks",
+                        "ocr_jobs",
+                        "ocr_parse_results",
+                        "ocr_pipeline_runs",
+                        "extracted_fields",
+                        "evidence_links",
+                        "node_evidence_links",
+                    )
+                }
+                related_rows = self.sync_postgres.execute(
+                    """
+                    SELECT collection, object_id, payload
+                    FROM aicheck_state
+                    WHERE tenant_id = %s
+                      AND collection = ANY(%s)
+                      AND (
+                           payload ->> 'projectId' = %s
+                           OR payload ->> 'documentId' = ANY(%s)
+                           OR payload ->> 'documentVersionId' = ANY(%s)
+                           OR object_id = ANY(%s)
+                      )
+                    ORDER BY collection, object_id
+                    """,
+                    (
+                        tenant_id,
+                        sorted(related_collections),
+                        project_id,
+                        sorted(document_ids),
+                        sorted(version_ids),
+                        sorted(document_ids | version_ids),
+                    ),
+                ).fetchall()
+                for collection, object_id, payload in related_rows:
+                    records[(str(collection), str(object_id))] = json.loads(json.dumps(payload))
+                version_ids.update(
+                    str(payload.get("id") or object_id)
+                    for (collection, object_id), payload in records.items()
+                    if collection == STATE_COLLECTIONS["versions"]
+                )
+            pipeline_ids = {
+                str(payload.get("id") or object_id)
+                for (collection, object_id), payload in records.items()
+                if collection == STATE_COLLECTIONS["ocr_pipeline_runs"]
+            }
+            if pipeline_ids:
+                stage_rows = self.sync_postgres.execute(
+                    """
+                    SELECT collection, object_id, payload
+                    FROM aicheck_state
+                    WHERE tenant_id = %s
+                      AND collection = %s
+                      AND payload ->> 'pipelineRunId' = ANY(%s)
+                    ORDER BY object_id
+                    """,
+                    (tenant_id, STATE_COLLECTIONS["ocr_stage_runs"], sorted(pipeline_ids)),
+                ).fetchall()
+                for collection, object_id, payload in stage_rows:
+                    records[(str(collection), str(object_id))] = json.loads(json.dumps(payload))
+            self.sync_postgres.commit()
+
+        collection_to_state = {value: key for key, value in STATE_COLLECTIONS.items()}
+        detached_state: dict[str, Any] = {state_key: [] for state_key in STATE_COLLECTIONS}
+        detached_state["idempotency"] = {}
+        for (collection, _), payload in records.items():
+            state_key = collection_to_state.get(collection)
+            if state_key:
+                detached_state[state_key].append(payload)
+        view = InMemoryRepository()
+        view.state = detached_state
+        view.apply_tenant_scope()
+        return view
+
     def load_review_run_scope_from_sync_postgres(self, review_run_id: str) -> None:
         """Merge one ReviewRun aggregate into memory without loading unrelated historical state."""
         with self._sync_postgres_lock:

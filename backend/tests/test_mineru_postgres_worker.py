@@ -10,6 +10,7 @@ from apps.mineru_worker.queue import ClaimedKnowledgeTask, ClaimedMinerUJob
 from apps.worker import tasks
 from libs.db.repository import InMemoryRepository
 from libs.integrations.mineru_client import MinerUProtocolError
+from libs.security.tenant import current_tenant_id
 from scripts.migrate_backend import apply_migrations
 
 
@@ -409,3 +410,85 @@ def test_real_postgres_worker_persists_verified_result(
         tasks.repo.close_sync_postgres()
         tasks.repo.postgres_dsn = None
         tasks.repo.postgres_enabled = False
+
+
+@pytest.mark.skipif(
+    not os.getenv("AICHECK_TEST_POSTGRES_URL"),
+    reason="AICHECK_TEST_POSTGRES_URL is required for PostgreSQL read-view tests",
+)
+def test_project_document_read_view_uses_latest_postgres_without_mutating_api_state(
+    isolated_postgres_url: str,
+) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    apply_migrations(isolated_postgres_url)
+    tenant_id = current_tenant_id()
+    project_id = "P-FRESH-READ"
+    records = [
+        (
+            "documents",
+            "DOC-FRESH",
+            {
+                "id": "DOC-FRESH",
+                "projectId": project_id,
+                "currentVersionId": "VER-FRESH",
+                "fileName": "fresh.pdf",
+                "currentOcrStatus": "已识别",
+            },
+        ),
+        (
+            "document_versions",
+            "VER-FRESH",
+            {"id": "VER-FRESH", "documentId": "DOC-FRESH", "isCurrent": True},
+        ),
+        (
+            "knowledge_files",
+            "KF-FRESH",
+            {
+                "id": "KF-FRESH",
+                "projectId": project_id,
+                "documentId": "DOC-FRESH",
+                "documentVersionId": "VER-FRESH",
+                "sliceStatus": "已切片",
+                "vectorStatus": "待向量化",
+                "chunkCount": 4,
+            },
+        ),
+        (
+            "node_bindings",
+            "BIND-FRESH",
+            {
+                "id": "BIND-FRESH",
+                "projectId": project_id,
+                "nodeId": 16,
+                "documentId": "DOC-FRESH",
+                "documentVersionId": "VER-FRESH",
+            },
+        ),
+    ]
+    with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
+        for collection, object_id, payload in records:
+            connection.execute(
+                """
+                INSERT INTO aicheck_state (tenant_id, collection, object_id, payload)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (tenant_id, collection, object_id, Jsonb(payload)),
+            )
+
+    repository = InMemoryRepository()
+    repository.state["documents"] = []
+    repository.configure_sync_postgres(isolated_postgres_url)
+
+    view = repository.project_document_read_view(project_id)
+
+    assert repository.state["documents"] == []
+    assert view is not repository
+    documents = view.project_documents(project_id)
+    assert len(documents) == 1
+    assert documents[0]["id"] == "DOC-FRESH"
+    assert documents[0]["sliceStatus"] == "已切片"
+    assert documents[0]["vectorStatus"] == "待向量化"
+    assert documents[0]["chunkCount"] == 4
+    assert view.bindings_for_project(project_id)[0]["id"] == "BIND-FRESH"

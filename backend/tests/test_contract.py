@@ -59,6 +59,68 @@ def assert_error(response, reason: str):
     return payload
 
 
+def test_project_document_endpoints_use_detached_latest_read_view(monkeypatch) -> None:
+    project_id = "P-2026-GDLNG-002"
+    from libs.db.repository import InMemoryRepository
+
+    view = InMemoryRepository()
+    for state_key in (
+        "documents",
+        "versions",
+        "bindings",
+        "knowledge_files",
+        "ocr_parse_results",
+        "ocr_pipeline_runs",
+        "ocr_stage_runs",
+        "extracted_fields",
+    ):
+        view.state[state_key] = []
+    view.state["documents"].append(
+        {
+            "id": "DOC-LATEST-VIEW",
+            "projectId": project_id,
+            "currentVersionId": "VER-LATEST-VIEW",
+            "fileName": "latest.pdf",
+            "currentOcrStatus": "已识别",
+        }
+    )
+    view.state["versions"].append(
+        {
+            "id": "VER-LATEST-VIEW",
+            "documentId": "DOC-LATEST-VIEW",
+            "isCurrent": True,
+        }
+    )
+    view.state["knowledge_files"].append(
+        {
+            "id": "KF-LATEST-VIEW",
+            "projectId": project_id,
+            "documentId": "DOC-LATEST-VIEW",
+            "documentVersionId": "VER-LATEST-VIEW",
+            "sliceStatus": "切片中",
+            "vectorStatus": "待向量化",
+        }
+    )
+    view.state["bindings"].append(
+        {
+            "id": "BIND-LATEST-VIEW",
+            "projectId": project_id,
+            "nodeId": 24,
+            "documentId": "DOC-LATEST-VIEW",
+            "documentVersionId": "VER-LATEST-VIEW",
+        }
+    )
+    monkeypatch.setattr(repo, "project_document_read_view", lambda _project_id: view)
+
+    documents = assert_ok(client.get(f"/projects/{project_id}/documents"))
+    package = assert_ok(client.get(f"/projects/{project_id}/nodes/24/package"))
+
+    assert [item["id"] for item in documents["items"]] == ["DOC-LATEST-VIEW"]
+    assert [item["id"] for item in package["projectFiles"]] == ["DOC-LATEST-VIEW"]
+    assert package["projectFiles"][0]["sliceStatus"] == "切片中"
+    assert package["bindings"][0]["id"] == "BIND-LATEST-VIEW"
+
+
 def allow_test_ai_dispatch(monkeypatch) -> None:
     from libs.business_pack import load_business_pack
 

@@ -5929,16 +5929,17 @@ def node_package(request: Request, project_id: str, node_id: int):
     if not node:
         return fail(errors.NOT_FOUND, request)
     scope = authorized_node_scope(request, project_id)
-    bindings = repo.bindings_for_node(effective_project_id, node_id)
+    document_repo = repo.project_document_read_view(effective_project_id)
+    bindings = document_repo.bindings_for_node(effective_project_id, node_id)
     version_ids = {item["documentVersionId"] for item in bindings}
     project_bindings = [
         binding
-        for binding in repo.bindings_for_project(effective_project_id)
+        for binding in document_repo.bindings_for_project(effective_project_id)
         if record_visible_for_scope(binding, scope, project_id=effective_project_id)
     ]
     project_files = [
-        attach_document_ocr_readiness(repo, item)
-        for item in repo.project_documents(effective_project_id)
+        attach_document_ocr_readiness(document_repo, item)
+        for item in document_repo.project_documents(effective_project_id)
         if document_visible_in_scope(item, scope)
     ]
     for file in project_files:
@@ -5961,11 +5962,11 @@ def node_package(request: Request, project_id: str, node_id: int):
             "bindings": bindings,
             "projectFiles": project_files,
             "availableVersions": [
-                repo.clone(item)
-                for item in repo.state["versions"]
+                document_repo.clone(item)
+                for item in document_repo.state["versions"]
                 if item["id"] in version_ids or item.get("documentId") in visible_document_ids
             ],
-            "extractedFields": repo.fields_for_versions(version_ids),
+            "extractedFields": document_repo.fields_for_versions(version_ids),
             "reviewOpinions": [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
             "rectifications": [
                 repo.clone(item)
@@ -5987,15 +5988,16 @@ def node_package(request: Request, project_id: str, node_id: int):
 def list_documents(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
     scope = authorized_node_scope(request, project_id)
     effective_project_id = project_id
+    document_repo = repo.project_document_read_view(effective_project_id)
     items = [
-        attach_document_ocr_readiness(repo, item)
-        for item in repo.project_documents(effective_project_id)
+        attach_document_ocr_readiness(document_repo, item)
+        for item in document_repo.project_documents(effective_project_id)
         if document_visible_in_scope(item, scope)
     ]
     if nodeId:
         document_ids = {
             binding["documentId"]
-            for binding in repo.state["bindings"]
+            for binding in document_repo.state["bindings"]
             if binding.get("projectId") == effective_project_id and int(binding.get("nodeId")) == int(nodeId)
         }
         items = [item for item in items if item["id"] in document_ids]
