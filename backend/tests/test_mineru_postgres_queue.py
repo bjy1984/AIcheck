@@ -8,8 +8,11 @@ from datetime import datetime, timezone
 import pytest
 
 from apps.mineru_worker.queue import (
+    claim_knowledge_tasks,
     claim_jobs,
+    finish_knowledge_claim,
     finish_claim,
+    reschedule_knowledge_claim,
     reschedule_claim,
     write_heartbeat,
 )
@@ -60,6 +63,56 @@ def read_payload(dsn: str, tenant_id: str, job_id: str) -> dict:
             WHERE tenant_id = %s AND collection = 'ocr_jobs' AND object_id = %s
             """,
             (tenant_id, job_id),
+        ).fetchone()
+    assert row is not None
+    return dict(row[0])
+
+
+def insert_knowledge_task(
+    dsn: str,
+    *,
+    tenant_id: str,
+    task_id: str,
+    task_type: str,
+    target_id: str = "KF-QUEUE",
+    status: str = "排队中",
+) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(dsn, autocommit=True) as connection:
+        connection.execute(
+            """
+            INSERT INTO aicheck_state (tenant_id, collection, object_id, payload)
+            VALUES (%s, 'knowledge_tasks', %s, %s)
+            """,
+            (
+                tenant_id,
+                task_id,
+                Jsonb(
+                    {
+                        "id": task_id,
+                        "tenantId": tenant_id,
+                        "taskType": task_type,
+                        "targetId": target_id,
+                        "status": status,
+                        "progress": 0,
+                    }
+                ),
+            ),
+        )
+
+
+def read_knowledge_task(dsn: str, tenant_id: str, task_id: str) -> dict:
+    import psycopg
+
+    with psycopg.connect(dsn) as connection:
+        row = connection.execute(
+            """
+            SELECT payload FROM aicheck_state
+            WHERE tenant_id = %s AND collection = 'knowledge_tasks' AND object_id = %s
+            """,
+            (tenant_id, task_id),
         ).fetchone()
     assert row is not None
     return dict(row[0])
@@ -162,3 +215,99 @@ def test_reschedule_honors_due_time_and_heartbeat_is_persisted(isolated_postgres
     assert row[0] == "mineru-worker"
     assert row[1] == "worker-retry"
     assert dict(row[2])["activeCount"] == 1
+
+
+def test_knowledge_task_claim_is_exclusive_and_vector_waits_for_slice(
+    isolated_postgres_url: str,
+) -> None:
+    apply_migrations(isolated_postgres_url)
+    tenant_id = "TENANT-KNOWLEDGE-ORDER"
+    insert_knowledge_task(
+        isolated_postgres_url,
+        tenant_id=tenant_id,
+        task_id="KT-SLICE",
+        task_type="slice",
+    )
+    insert_knowledge_task(
+        isolated_postgres_url,
+        tenant_id=tenant_id,
+        task_id="KT-VECTOR",
+        task_type="vector",
+    )
+
+    first = claim_knowledge_tasks(
+        isolated_postgres_url,
+        "worker-a",
+        limit=2,
+        lease_seconds=60,
+    )
+    competing = claim_knowledge_tasks(
+        isolated_postgres_url,
+        "worker-b",
+        limit=2,
+        lease_seconds=60,
+    )
+
+    assert [(claim.task_id, claim.task_type) for claim in first] == [("KT-SLICE", "slice")]
+    assert competing == []
+    assert finish_knowledge_claim(isolated_postgres_url, first[0]) is True
+
+    import psycopg
+
+    with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            UPDATE aicheck_state
+            SET payload = jsonb_set(payload, '{status}', to_jsonb('成功'::text))
+            WHERE tenant_id = %s AND collection = 'knowledge_tasks' AND object_id = 'KT-SLICE'
+            """,
+            (tenant_id,),
+        )
+
+    vector = claim_knowledge_tasks(
+        isolated_postgres_url,
+        "worker-b",
+        limit=2,
+        lease_seconds=60,
+    )
+    assert [(claim.task_id, claim.task_type) for claim in vector] == [("KT-VECTOR", "vector")]
+
+
+def test_knowledge_task_expired_lease_and_retry_due_time(
+    isolated_postgres_url: str,
+) -> None:
+    import psycopg
+
+    apply_migrations(isolated_postgres_url)
+    tenant_id = "TENANT-KNOWLEDGE-RETRY"
+    insert_knowledge_task(
+        isolated_postgres_url,
+        tenant_id=tenant_id,
+        task_id="KT-RETRY",
+        task_type="slice",
+    )
+    first = claim_knowledge_tasks(isolated_postgres_url, "worker-a", lease_seconds=60)[0]
+    with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            UPDATE aicheck_state
+            SET payload = jsonb_set(payload, '{leaseUntil}', to_jsonb('2020-01-01T00:00:00+00:00'::text))
+            WHERE tenant_id = %s AND collection = 'knowledge_tasks' AND object_id = %s
+            """,
+            (tenant_id, first.task_id),
+        )
+    reclaimed = claim_knowledge_tasks(isolated_postgres_url, "worker-b", lease_seconds=60)[0]
+    assert reclaimed.lease_token != first.lease_token
+
+    assert reschedule_knowledge_claim(
+        isolated_postgres_url,
+        reclaimed,
+        error_message="temporary embedding failure",
+        delay_seconds=30,
+    ) is True
+    assert claim_knowledge_tasks(isolated_postgres_url, "worker-c", lease_seconds=60) == []
+    payload = read_knowledge_task(isolated_postgres_url, tenant_id, reclaimed.task_id)
+    assert payload["status"] == "排队中"
+    assert payload["attempts"] == 1
+    assert payload["errorMessage"] == "temporary embedding failure"
+    assert datetime.fromisoformat(payload["nextAttemptAt"]) > datetime.now(timezone.utc)

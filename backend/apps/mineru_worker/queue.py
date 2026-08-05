@@ -7,12 +7,23 @@ from uuid import uuid4
 
 
 OCR_JOBS_COLLECTION = "ocr_jobs"
+KNOWLEDGE_TASKS_COLLECTION = "knowledge_tasks"
 
 
 @dataclass(frozen=True)
 class ClaimedMinerUJob:
     tenant_id: str
     job_id: str
+    lease_token: str
+    attempts: int
+
+
+@dataclass(frozen=True)
+class ClaimedKnowledgeTask:
+    tenant_id: str
+    task_id: str
+    task_type: str
+    target_id: str
     lease_token: str
     attempts: int
 
@@ -95,6 +106,106 @@ def claim_jobs(
         return claimed
 
 
+def claim_knowledge_tasks(
+    dsn: str,
+    worker_id: str,
+    *,
+    limit: int = 1,
+    lease_seconds: int = 120,
+) -> list[ClaimedKnowledgeTask]:
+    """Lease due slice/vector tasks while enforcing slice-before-vector order."""
+
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    bounded_limit = max(1, min(int(limit), 100))
+    bounded_lease = max(5, int(lease_seconds))
+    with psycopg.connect(dsn, autocommit=False) as connection:
+        rows = connection.execute(
+            """
+            SELECT task.tenant_id, task.object_id, task.payload
+            FROM aicheck_state AS task
+            WHERE task.collection = %s
+              AND task.payload ->> 'taskType' IN ('slice', 'vector')
+              AND task.payload ->> 'status' IN ('排队中', '执行中')
+              AND (
+                    task.payload ->> 'status' = '排队中'
+                    OR NULLIF(task.payload ->> 'leaseUntil', '')::timestamptz <= now()
+                  )
+              AND (
+                    NULLIF(task.payload ->> 'nextAttemptAt', '') IS NULL
+                    OR NULLIF(task.payload ->> 'nextAttemptAt', '')::timestamptz <= now()
+                  )
+              AND (
+                    task.payload ->> 'taskType' = 'slice'
+                    OR EXISTS (
+                        SELECT 1
+                        FROM aicheck_state AS dependency
+                        WHERE dependency.tenant_id = task.tenant_id
+                          AND dependency.collection = %s
+                          AND dependency.payload ->> 'taskType' = 'slice'
+                          AND dependency.payload ->> 'targetId' = task.payload ->> 'targetId'
+                          AND dependency.payload ->> 'status' = '成功'
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM aicheck_state AS knowledge_file
+                        WHERE knowledge_file.tenant_id = task.tenant_id
+                          AND knowledge_file.collection = 'knowledge_files'
+                          AND knowledge_file.object_id = task.payload ->> 'targetId'
+                          AND knowledge_file.payload ->> 'sliceStatus' = '已切片'
+                    )
+                  )
+            ORDER BY
+                CASE task.payload ->> 'taskType' WHEN 'slice' THEN 0 ELSE 1 END,
+                task.updated_at,
+                task.object_id
+            FOR UPDATE OF task SKIP LOCKED
+            LIMIT %s
+            """,
+            (KNOWLEDGE_TASKS_COLLECTION, KNOWLEDGE_TASKS_COLLECTION, bounded_limit),
+        ).fetchall()
+        claimed: list[ClaimedKnowledgeTask] = []
+        for tenant_id, object_id, raw_payload in rows:
+            lease_token = uuid4().hex
+            now = datetime.now(timezone.utc)
+            payload = dict(raw_payload)
+            attempts = max(0, int(payload.get("attempts") or 0))
+            task_type = str(payload.get("taskType") or "")
+            target_id = str(payload.get("targetId") or "")
+            payload.update(
+                {
+                    "status": "执行中",
+                    "workerId": worker_id,
+                    "leaseToken": lease_token,
+                    "leaseUntil": utc_timestamp(now + timedelta(seconds=bounded_lease)),
+                    "lastAttemptAt": utc_timestamp(now),
+                    "updatedAt": utc_timestamp(now),
+                }
+            )
+            payload.pop("nextAttemptAt", None)
+            connection.execute(
+                """
+                UPDATE aicheck_state
+                SET payload = %s::jsonb, revision = revision + 1, updated_at = now()
+                WHERE tenant_id = %s AND collection = %s AND object_id = %s
+                """,
+                (Jsonb(payload), str(tenant_id), KNOWLEDGE_TASKS_COLLECTION, str(object_id)),
+            )
+            claimed.append(
+                ClaimedKnowledgeTask(
+                    tenant_id=str(tenant_id),
+                    task_id=str(object_id),
+                    task_type=task_type,
+                    target_id=target_id,
+                    lease_token=lease_token,
+                    attempts=attempts,
+                )
+            )
+        connection.commit()
+        return claimed
+
+
 def finish_claim(dsn: str, claim: ClaimedMinerUJob) -> bool:
     """Release a claim only while its lease token is still current."""
 
@@ -118,6 +229,81 @@ def reschedule_claim(
             "delaySeconds": max(0, int(delay_seconds)),
         },
     )
+
+
+def finish_knowledge_claim(dsn: str, claim: ClaimedKnowledgeTask) -> bool:
+    return _update_knowledge_claim(dsn, claim, reschedule=None)
+
+
+def reschedule_knowledge_claim(
+    dsn: str,
+    claim: ClaimedKnowledgeTask,
+    *,
+    error_message: str,
+    delay_seconds: int,
+) -> bool:
+    return _update_knowledge_claim(
+        dsn,
+        claim,
+        reschedule={
+            "errorMessage": str(error_message),
+            "delaySeconds": max(0, int(delay_seconds)),
+        },
+    )
+
+
+def _update_knowledge_claim(
+    dsn: str,
+    claim: ClaimedKnowledgeTask,
+    *,
+    reschedule: dict[str, Any] | None,
+) -> bool:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(dsn, autocommit=False) as connection:
+        row = connection.execute(
+            """
+            SELECT payload
+            FROM aicheck_state
+            WHERE tenant_id = %s AND collection = %s AND object_id = %s
+            FOR UPDATE
+            """,
+            (claim.tenant_id, KNOWLEDGE_TASKS_COLLECTION, claim.task_id),
+        ).fetchone()
+        if not row:
+            connection.rollback()
+            return False
+        payload = dict(row[0])
+        if str(payload.get("leaseToken") or "") != claim.lease_token:
+            connection.rollback()
+            return False
+        now = datetime.now(timezone.utc)
+        payload.pop("leaseToken", None)
+        payload.pop("leaseUntil", None)
+        payload.pop("workerId", None)
+        payload["updatedAt"] = utc_timestamp(now)
+        if reschedule is not None:
+            payload.update(
+                {
+                    "status": "排队中",
+                    "attempts": claim.attempts + 1,
+                    "errorMessage": str(reschedule["errorMessage"]),
+                    "nextAttemptAt": utc_timestamp(
+                        now + timedelta(seconds=int(reschedule["delaySeconds"]))
+                    ),
+                }
+            )
+        connection.execute(
+            """
+            UPDATE aicheck_state
+            SET payload = %s::jsonb, revision = revision + 1, updated_at = now()
+            WHERE tenant_id = %s AND collection = %s AND object_id = %s
+            """,
+            (Jsonb(payload), claim.tenant_id, KNOWLEDGE_TASKS_COLLECTION, claim.task_id),
+        )
+        connection.commit()
+        return True
 
 
 def _update_claim(
