@@ -7,6 +7,9 @@ import signal
 from apps.mineru_worker.worker import MinerUPostgresWorker
 
 
+logger = logging.getLogger(__name__)
+
+
 def database_url() -> str:
     dsn = str(
         os.getenv("AICHECK_DATABASE_URL")
@@ -36,6 +39,10 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     worker = build_worker()
+    logger.info(
+        "MinerU PostgreSQL worker ready: instance_id=%s",
+        worker.worker_id,
+    )
 
     def stop_worker(_signum, _frame) -> None:
         worker.stop()

@@ -842,6 +842,11 @@ def test_document_ocr_resolves_explicit_or_configured_provider(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
+        tasks,
+        "sync_state_records",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
         tasks.task_dispatcher,
         "dispatch_mineru_ocr",
         lambda job_id: lifecycle_events.append("dispatch")

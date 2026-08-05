@@ -28,7 +28,8 @@ load_backend_env() {
   fi
   export AICHECK_DATABASE_URL="${AICHECK_DEV_DATABASE_URL:-postgresql:///aicheck}"
   export AICHECK_MINERU_EXECUTION_MODE="postgres"
-  export AICHECK_REQUIRE_OBJECT_STORAGE="${AICHECK_REQUIRE_OBJECT_STORAGE:-false}"
+  export AICHECK_MINIO_ENDPOINT="${AICHECK_DEV_MINIO_ENDPOINT:-}"
+  export AICHECK_REQUIRE_OBJECT_STORAGE="${AICHECK_DEV_REQUIRE_OBJECT_STORAGE:-false}"
 }
 
 pid_on_port() {
@@ -56,6 +57,12 @@ wait_for_url() {
   return 1
 }
 
+backend_has_postgres_mineru() {
+  curl -fsS "http://127.0.0.1:$BACKEND_PORT/healthz" 2>/dev/null \
+    | "$BACKEND_DIR/.venv/bin/python" -c "import json, sys; body=json.load(sys.stdin); data=body.get('data') or {}; worker=data.get('mineruWorker') or {}; raise SystemExit(0 if worker.get('required') is True else 1)" \
+      >/dev/null 2>&1
+}
+
 ensure_postgres() {
   if pg_isready -q -d "$AICHECK_DATABASE_URL" 2>/dev/null; then
     log "PostgreSQL 已就绪。"
@@ -80,12 +87,21 @@ ensure_postgres() {
 start_backend() {
   local pid="$(pid_on_port "$BACKEND_PORT")"
   if [[ -n "$pid" ]]; then
-    log "后端已运行，PID: $pid"
-    return 0
+    if backend_has_postgres_mineru; then
+      log "后端已运行且 MinerU PostgreSQL 模式生效，PID: $pid"
+      return 0
+    fi
+    log "后端未加载 MinerU PostgreSQL 模式，重启 PID: $pid"
+    kill "$pid" 2>/dev/null || true
+    local i
+    for i in {1..20}; do
+      [[ -z "$(pid_on_port "$BACKEND_PORT")" ]] && break
+      sleep 0.25
+    done
   fi
   (
     cd "$BACKEND_DIR" || exit 1
-    nohup .venv/bin/uvicorn apps.api.main:app --host 127.0.0.1 --port "$BACKEND_PORT" > "$BACKEND_LOG" 2>&1 &
+    nohup .venv/bin/uvicorn apps.api.main:app --host 127.0.0.1 --port "$BACKEND_PORT" > "$BACKEND_LOG" 2>&1 &!
     print $! > "$LOG_DIR/backend.pid"
   )
 }
@@ -97,7 +113,7 @@ start_mineru_worker() {
   fi
   (
     cd "$BACKEND_DIR" || exit 1
-    nohup .venv/bin/python -m apps.mineru_worker.main > "$MINERU_WORKER_LOG" 2>&1 &
+    nohup .venv/bin/python -m apps.mineru_worker.main > "$MINERU_WORKER_LOG" 2>&1 &!
     print $! > "$LOG_DIR/mineru-worker.pid"
   )
 }
@@ -127,7 +143,7 @@ start_frontend() {
   (
     cd "$FRONTEND_DIR" || exit 1
     export VITE_API_PROXY_TARGET="http://127.0.0.1:$BACKEND_PORT"
-    nohup zsh -lc 'if command -v pnpm >/dev/null 2>&1; then exec pnpm run dev:live; else exec corepack pnpm run dev:live; fi' > "$FRONTEND_LOG" 2>&1 &
+    nohup zsh -lc 'if command -v pnpm >/dev/null 2>&1; then exec pnpm run dev:live; else exec corepack pnpm run dev:live; fi' > "$FRONTEND_LOG" 2>&1 &!
     print $! > "$LOG_DIR/frontend.pid"
   )
 }
