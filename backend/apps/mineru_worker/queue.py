@@ -130,6 +130,7 @@ def claim_knowledge_tasks(
               AND task.payload ->> 'status' IN ('排队中', '执行中', '运行中')
               AND (
                     task.payload ->> 'status' = '排队中'
+                    OR NULLIF(task.payload ->> 'leaseUntil', '') IS NULL
                     OR NULLIF(task.payload ->> 'leaseUntil', '')::timestamptz <= now()
                   )
               AND (

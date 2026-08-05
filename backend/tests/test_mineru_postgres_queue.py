@@ -311,3 +311,24 @@ def test_knowledge_task_expired_lease_and_retry_due_time(
     assert payload["attempts"] == 1
     assert payload["errorMessage"] == "temporary embedding failure"
     assert datetime.fromisoformat(payload["nextAttemptAt"]) > datetime.now(timezone.utc)
+
+
+def test_legacy_running_knowledge_task_without_lease_is_reclaimed(
+    isolated_postgres_url: str,
+) -> None:
+    apply_migrations(isolated_postgres_url)
+    insert_knowledge_task(
+        isolated_postgres_url,
+        tenant_id="TENANT-KNOWLEDGE-LEGACY",
+        task_id="KT-LEGACY-RUNNING",
+        task_type="slice",
+        status="运行中",
+    )
+
+    claims = claim_knowledge_tasks(
+        isolated_postgres_url,
+        "worker-recovery",
+        lease_seconds=60,
+    )
+
+    assert [claim.task_id for claim in claims] == ["KT-LEGACY-RUNNING"]
