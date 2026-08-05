@@ -741,13 +741,8 @@ const getPillClass = (value?: string): AuditStatusTone => {
               min-width="130"
               show-overflow-tooltip
             />
-            <ElTableColumn
-              prop="requirementName"
-              label="资料项"
-              min-width="180"
-              show-overflow-tooltip
-            />
-            <ElTableColumn prop="usage" label="文件用途" min-width="130" show-overflow-tooltip />
+            <ElTableColumn prop="uploader" label="上传人" width="112" />
+            <ElTableColumn prop="updatedAt" label="更新时间" width="176" />
             <ElTableColumn
               prop="sourceOrgName"
               label="来源单位"
@@ -776,8 +771,13 @@ const getPillClass = (value?: string): AuditStatusTone => {
               show-overflow-tooltip
             />
             <ElTableColumn prop="feedback" label="关联反馈" min-width="120" />
-            <ElTableColumn prop="uploader" label="上传人" width="112" />
-            <ElTableColumn prop="updatedAt" label="更新时间" width="176" />
+            <ElTableColumn
+              prop="requirementName"
+              label="资料项"
+              min-width="180"
+              show-overflow-tooltip
+            />
+            <ElTableColumn prop="usage" label="文件用途" min-width="130" show-overflow-tooltip />
             <ElTableColumn label="操作" width="220" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">

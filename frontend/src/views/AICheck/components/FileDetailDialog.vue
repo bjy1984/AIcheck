@@ -80,9 +80,13 @@ const previewTitle = computed(() => {
 const previewAvailable = computed(
   () => !!preview.value?.url && preview.value.previewType !== 'unsupported'
 )
+const previewIsImage = computed(() => preview.value?.previewType === 'image')
+const previewIsPdf = computed(() => preview.value?.previewType === 'pdf')
+/** 仅 PDF/图片可安全内嵌；Office 等放入 iframe 会触发浏览器自动下载。 */
+const previewBrowserInline = computed(() => previewIsPdf.value || previewIsImage.value)
 const previewEmbeddable = computed(() => {
   const url = String(preview.value?.url || '')
-  return previewAvailable.value && !url.startsWith('mock://')
+  return previewAvailable.value && previewBrowserInline.value && !url.startsWith('mock://')
 })
 const previewRequiresBlob = computed(
   () => previewEmbeddable.value && String(preview.value?.url || '').startsWith('/api/')
@@ -92,12 +96,13 @@ const previewFrameUrl = computed(() => {
   if (previewRequiresBlob.value) return previewObjectUrl.value
   return previewObjectUrl.value || url
 })
-const previewIsImage = computed(() => preview.value?.previewType === 'image')
 const previewUnavailableText = computed(() => {
   const url = String(preview.value?.url || '')
   if (!url) return '当前文件详情没有返回原文地址。'
   if (url.startsWith('mock://'))
     return '当前接口返回的是 mock 占位地址，还没有拿到可预览的真实原文。'
+  if (preview.value?.previewType === 'office')
+    return 'Word/Excel 等 Office 文件暂不支持在线预览，请使用右上角「下载」查看原文。'
   if (preview.value?.previewType === 'unsupported') return '当前文件类型暂不支持在线预览。'
   return '当前文件没有可预览的真实原文。'
 })
@@ -189,13 +194,9 @@ const confidenceText = (confidence?: number) => {
                 >只读</ElTag
               >
             </div>
-            <div class="preview-body" :class="{ 'preview-body--disabled': !previewAvailable }">
-              <template v-if="previewAvailable">
-                <div
-                  v-if="previewEmbeddable"
-                  class="preview-frame-host"
-                  v-loading="previewLoadingOriginal"
-                >
+            <div class="preview-body" :class="{ 'preview-body--disabled': !previewEmbeddable }">
+              <template v-if="previewEmbeddable">
+                <div class="preview-frame-host" v-loading="previewLoadingOriginal">
                   <ElAlert
                     v-if="previewOriginalError"
                     :title="previewOriginalError"
@@ -220,20 +221,15 @@ const confidenceText = (confidence?: number) => {
                     :title="document.fileName"
                   ></iframe>
                 </div>
-                <template v-else>
-                  <ElAlert
-                    title="当前文件没有可预览的真实原文"
-                    :description="previewUnavailableText"
-                    type="warning"
-                    :closable="false"
-                    show-icon
-                  />
-                  <code>{{ preview?.url }}</code>
-                </template>
               </template>
               <ElAlert
                 v-else
-                title="当前格式暂不支持在线预览"
+                :title="
+                  preview?.previewType === 'office'
+                    ? 'Office 文件不支持在线预览'
+                    : '当前格式暂不支持在线预览'
+                "
+                :description="previewUnavailableText"
                 type="warning"
                 :closable="false"
                 show-icon

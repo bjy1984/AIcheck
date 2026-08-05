@@ -1221,7 +1221,9 @@ const previewDrawerMeta = computed(() => {
 const previewDrawerCanEmbedOriginal = computed(() => {
   const url = String(previewDrawerTarget.value.url || '')
   if (!url || url.startsWith('mock://')) return false
-  return previewDrawerTarget.value.previewType !== 'unsupported'
+  const previewType = previewDrawerTarget.value.previewType
+  // Office 等非浏览器原生类型放入 iframe 会触发自动下载
+  return previewType === 'pdf' || previewType === 'image'
 })
 const previewDrawerRequiresBlob = computed(
   () =>
@@ -1233,6 +1235,8 @@ const previewDrawerOriginalUnavailableText = computed(() => {
   if (!url) return '当前文件详情没有返回原文地址。'
   if (url.startsWith('mock://'))
     return '当前接口返回的是 mock 占位地址，还没有拿到可预览的真实原文。'
+  if (previewDrawerTarget.value.previewType === 'office')
+    return 'Word/Excel 等 Office 文件暂不支持在线预览，请下载后查看。'
   if (previewDrawerTarget.value.previewType === 'unsupported')
     return '当前文件类型暂不支持在线预览。'
   return '当前文件没有可预览的真实原文。'
@@ -6048,7 +6052,11 @@ onBeforeUnmount(() => {
                 class="doc-original-unavailable"
               >
                 <ElAlert
-                  title="当前文件没有可预览的真实原文"
+                  :title="
+                    previewDrawerTarget.previewType === 'office'
+                      ? 'Office 文件不支持在线预览'
+                      : '当前文件没有可预览的真实原文'
+                  "
                   :description="previewDrawerOriginalUnavailableText"
                   type="warning"
                   :closable="false"
