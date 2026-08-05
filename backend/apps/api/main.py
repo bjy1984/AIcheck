@@ -38,6 +38,7 @@ from libs.db.repository import (
     repo,
 )
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage
+from libs.integrations.task_dispatcher import mineru_execution_mode
 from libs.runtime_readiness import production_runtime_status
 from libs.review_orchestrator.dispatcher import review_orchestration_mode
 from libs.security.actions import canonical_path, required_action_for_request
@@ -830,6 +831,7 @@ async def health_response(request: Request):
         or not payload["runtimeReady"]
         or not payload["workflowReady"]
         or not (payload.get("rawVault") or {}).get("ready")
+        or not (payload.get("mineruWorker") or {}).get("ready")
     ):
         return fail(
             errors.SECURITY_BACKEND_UNAVAILABLE,
@@ -878,6 +880,7 @@ async def health_payload() -> dict[str, object]:
         review_orchestration_mode() != "temporal" or worker_ready
     )
     raw_vault = await asyncio.to_thread(raw_vault_health_status)
+    mineru_worker = await asyncio.to_thread(mineru_worker_health_status)
     return {
         "status": "ok",
         "service": "api-service",
@@ -893,6 +896,7 @@ async def health_payload() -> dict[str, object]:
         "temporal": temporal,
         "workflowMetrics": workflow_metrics,
         "rawVault": raw_vault,
+        "mineruWorker": mineru_worker,
         "objectStorageEnabled": object_storage.enabled,
         "officialOcrTelemetry": {
             "lastSuccessfulInferenceAt": (latest_success or {}).get("finishedAt")
@@ -904,6 +908,57 @@ async def health_payload() -> dict[str, object]:
         **production_runtime_status(),
         **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
     }
+
+
+def mineru_worker_health_status() -> dict[str, object]:
+    required = mineru_execution_mode() == "postgres"
+    status: dict[str, object] = {
+        "required": required,
+        "ready": not required,
+        "instanceId": None,
+        "activeCount": 0,
+        "lastSeenAt": None,
+        "lastError": None,
+    }
+    dsn = os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not dsn:
+        if required:
+            status["lastError"] = "DATABASE_NOT_CONFIGURED"
+        return status
+    try:
+        import psycopg
+
+        with psycopg.connect(dsn) as connection:
+            row = connection.execute(
+                """
+                SELECT instance_id,
+                       payload,
+                       last_seen_at,
+                       last_seen_at >= now() - interval '30 seconds'
+                FROM service_heartbeats
+                WHERE service_role = 'mineru-worker'
+                ORDER BY last_seen_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            connection.rollback()
+        if not row:
+            return status
+        payload = dict(row[1] or {})
+        fresh = bool(row[3])
+        status.update(
+            {
+                "ready": fresh or not required,
+                "instanceId": str(row[0]),
+                "activeCount": int(payload.get("activeCount") or 0),
+                "lastSeenAt": row[2].isoformat() if row[2] else None,
+                "lastError": payload.get("lastError"),
+            }
+        )
+    except Exception as exc:
+        status["ready"] = not required
+        status["lastError"] = type(exc).__name__
+    return status
 
 
 def raw_vault_health_status() -> dict[str, object]:
