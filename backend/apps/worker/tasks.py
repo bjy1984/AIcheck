@@ -7,7 +7,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -1193,6 +1193,8 @@ def _mineru_failure_code(job: dict[str, Any], exc: Exception) -> str:
 def _execute_mineru_ocr_extract(
     self,
     job_record_id: str,
+    *,
+    retry_handler: Callable[[int, list[dict[str, Any]]], None] | None = None,
 ) -> dict[str, Any]:
     refresh_worker_state(
         {"ocr_jobs", "ocr_parse_results", "documents", "versions"}
@@ -1319,6 +1321,8 @@ def _execute_mineru_ocr_extract(
             )
             _persist_mineru_job(job)
             countdown = (10, 30, 90)[min(retry_index, 2)]
+            if retry_handler is not None:
+                retry_handler(countdown, deepcopy(diagnostics))
             raise self.retry(exc=exc, countdown=countdown)
         failure_result = {
             "storageKey": job.get("storageKey"),
@@ -1373,6 +1377,57 @@ def _execute_mineru_ocr_extract(
             "status": "failed",
             "diagnostics": diagnostics,
         }
+
+
+class MinerUPostgresRetry(RuntimeError):
+    def __init__(
+        self,
+        *,
+        countdown: int,
+        diagnostics: list[dict[str, Any]],
+    ) -> None:
+        super().__init__("MinerU PostgreSQL job should be retried.")
+        self.countdown = int(countdown)
+        self.diagnostics = deepcopy(diagnostics)
+
+
+def execute_mineru_postgres_job(
+    job_record_id: str,
+    *,
+    tenant_id: str,
+    retry_index: int,
+) -> dict[str, Any]:
+    """Run the validated MinerU task body with PostgreSQL-owned retries."""
+
+    class Request:
+        retries = max(0, int(retry_index))
+        called_directly = False
+
+    class TaskContext:
+        request = Request()
+
+        @staticmethod
+        def retry(*_args, **_kwargs):
+            raise AssertionError("PostgreSQL retry handler was not invoked")
+
+    def request_retry(
+        countdown: int,
+        diagnostics: list[dict[str, Any]],
+    ) -> None:
+        raise MinerUPostgresRetry(
+            countdown=countdown,
+            diagnostics=diagnostics,
+        )
+
+    tenant_context = set_request_tenant_id(tenant_id)
+    try:
+        return _execute_mineru_ocr_extract(
+            TaskContext(),
+            job_record_id,
+            retry_handler=request_retry,
+        )
+    finally:
+        reset_request_tenant_id(tenant_context)
 
 
 @celery_app.task(bind=True, max_retries=3)
