@@ -29,6 +29,7 @@ import type {
 import { getStatusTagType } from './status'
 import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 import { resolveNdtMaterialAction } from '@/utils/acceptanceFlows'
+import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 
 type NdtMaterialStatus = '已覆盖' | '待上传' | '需补正'
@@ -191,16 +192,6 @@ const statusForCategory = (category: string, fallbackCount = 0): NdtMaterialStat
   if (files.length || fallbackCount) return '已覆盖'
   return '待上传'
 }
-const pipelineStatusForFile = (file: DocumentAsset) => {
-  const statuses = [file.currentOcrStatus, file.sliceStatus, file.vectorStatus].filter(Boolean)
-  if (statuses.some((status) => String(status).includes('失败'))) return '失败可重试'
-  if (file.currentOcrStatus === '排队中') return '排队中'
-  if (file.currentOcrStatus && file.currentOcrStatus !== '已识别') return 'OCR 中'
-  if (file.sliceStatus && file.sliceStatus !== '已切片') return '切片中'
-  if (file.vectorStatus && file.vectorStatus !== '已向量化') return '向量化中'
-  if (file.vectorStatus === '已向量化') return '已完成'
-  return file.currentOcrStatus || '排队中'
-}
 const ndtMaterialChecklist = computed(() => {
   const openFeedbackCount = openFeedback.value.length
   const rows: NdtMaterialChecklistItem[] = [
@@ -356,7 +347,7 @@ const ndtAssetRows = computed(() => {
         documentNo: file.currentVersionId,
         standardCode: file.embeddingModel || '-',
         operator: file.uploaderName || '-',
-        status: pipelineStatusForFile(file),
+        status: documentPipelineStatus(file),
         updatedAt: file.updatedAt,
         detailId: ''
       }))

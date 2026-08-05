@@ -35,6 +35,7 @@ import type {
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
+import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
 
 type ReviewChainStep = {
   title: string
@@ -321,16 +322,6 @@ const getRelationNodeText = (fileBindings?: typeof bindings.value) => {
 
 const normalizeSearchText = (...parts: Array<string | undefined>) => parts.join(' ').toLowerCase()
 
-const pipelineStatusForFile = (file: NodePackagePayload['projectFiles'][number]) => {
-  const statuses = [file.currentOcrStatus, file.sliceStatus, file.vectorStatus].filter(Boolean)
-  if (statuses.some((status) => String(status).includes('失败'))) return '失败可重试'
-  if (file.currentOcrStatus === '排队中') return '排队中'
-  if (file.currentOcrStatus && file.currentOcrStatus !== '已识别') return 'OCR 中'
-  if (file.sliceStatus && file.sliceStatus !== '已切片') return '切片中'
-  if (file.vectorStatus && file.vectorStatus !== '已向量化') return '向量化中'
-  if (file.vectorStatus === '已向量化') return '已完成'
-  return file.currentOcrStatus || '排队中'
-}
 
 const inferMaterialCategory = (text: string) => {
   const normalized = text.toLowerCase()
@@ -368,7 +359,7 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       relationNode: getRelationNodeText(file.bindings),
       feedback: binding?.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
       ocr: file.currentOcrStatus,
-      processingStatus: pipelineStatusForFile(file),
+      processingStatus: documentPipelineStatus(file),
       uploader: file.uploaderName,
       updatedAt: file.updatedAt
     }
