@@ -8028,8 +8028,9 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     assert own_document["document"]["id"] == "DOC-20260625-003"
     assert "metrics" in admin_overview
     assert {item["userId"] for item in me["projectAuthorizations"]} == {"USER-CONTRACTOR-001"}
-    assert {item["id"] for item in workbench_projects} == {project_id}
-    assert {item["id"] for item in project_page["items"]} == {project_id}
+    expected_contractor_projects = {project_id, "P-2026-GDLNG-002"}
+    assert {item["id"] for item in workbench_projects} == expected_contractor_projects
+    assert {item["id"] for item in project_page["items"]} == expected_contractor_projects
     assert not any(item["id"] in {"TODO-SCOPE-40", "TODO-SCOPE-RPT"} for item in summary["todos"])
     visible_node_ids = {node["nodeId"] for group in tree["groups"] for node in group["nodes"]}
     assert visible_node_ids.issubset({16, 24, 25})
