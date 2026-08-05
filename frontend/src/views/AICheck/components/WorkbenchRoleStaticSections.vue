@@ -617,7 +617,6 @@ const getPillClass = (value?: string): AuditStatusTone => {
           <div class="card-head">
             <div>
               <h2>一、项目文件库 / 施工资料台账</h2>
-              <div class="sub">上传、资料分类、提交和可选环节关联统一在项目文件列表中处理。</div>
             </div>
             <div class="file-library-head-actions">
               <AuditStatusTag tone="blue">

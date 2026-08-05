@@ -4841,6 +4841,7 @@ onBeforeUnmount(() => {
 
           <AuditSummaryGrid
             v-if="
+              role !== 'contractor' &&
               !(
                 role === 'inspection' &&
                 (activeWorkbenchSection === 'overview' || activeWorkbenchSection === 'node')

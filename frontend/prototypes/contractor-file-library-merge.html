@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>施工方 · 项目文件库合并方案原型 v2</title>
+  <style>
+    :root {
+      --bg: #eef2f6;
+      --panel: #fff;
+      --text: #172033;
+      --muted: #667085;
+      --line: #e6ebf2;
+      --blue: #2f6fed;
+      --blue-soft: #eef4ff;
+      --green: #12b76a;
+      --orange: #f79009;
+      --red: #f04438;
+      --shadow: 0 8px 20px rgb(15 23 42 / 7%);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 28px;
+    }
+    .page { max-width: 1180px; margin: 0 auto; }
+    .hero { margin-bottom: 14px; }
+    .hero h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+      max-width: 720px;
+    }
+    .structure {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 14px 0 18px;
+    }
+    .structure article {
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+    }
+    .structure strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    .structure span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .card {
+      background: var(--panel);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .card-head h2 {
+      margin: 0 0 4px;
+      font-size: 16px;
+    }
+    .card-head .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .tools {
+      display: grid;
+      gap: 12px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fafbfd;
+    }
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chip.active {
+      border-color: #c9daff;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-weight: 600;
+    }
+    .filter-row {
+      display: grid;
+      grid-template-columns: 1fr 180px auto;
+      gap: 10px;
+    }
+    input, select, button { font: inherit; }
+    .input, .select {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 12px;
+      background: #fff;
+      color: var(--text);
+    }
+    .btn {
+      height: 36px;
+      border: 0;
+      border-radius: 6px;
+      padding: 0 14px;
+      background: var(--blue);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn.ghost {
+      height: 30px;
+      padding: 0 10px;
+      background: #fff;
+      color: var(--blue);
+      border: 1px solid #c9daff;
+      font-size: 12px;
+    }
+    .btn.link {
+      height: auto;
+      padding: 0;
+      background: transparent;
+      color: var(--blue);
+      font-weight: 600;
+    }
+    .btn.danger {
+      color: var(--red);
+      background: transparent;
+    }
+    .btn.small {
+      height: 28px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    /* A. 分类清单：只有一套 1–10 序号 */
+    .category-list {
+      padding: 8px 12px 14px;
+    }
+    .category-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .category-table th,
+    .category-table td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .category-table th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      background: #fcfdff;
+    }
+    .category-table tr:last-child td { border-bottom: 0; }
+    .category-table tbody tr {
+      cursor: pointer;
+      transition: background .12s ease;
+    }
+    .category-table tbody tr:hover,
+    .category-table tbody tr.active {
+      background: #f5f9ff;
+    }
+    .category-table tbody tr.active td:first-child {
+      box-shadow: inset 3px 0 0 var(--blue);
+    }
+    .cat-no {
+      width: 48px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--blue);
+    }
+    .cat-name {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .cat-hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      max-width: 420px;
+    }
+    .count-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #f2f4f7;
+      color: var(--muted);
+    }
+    .count-pill.has { background: #ecfdf3; color: var(--green); }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-right: 4px;
+    }
+    .tag.blue { background: #eef4ff; color: var(--blue); }
+    .tag.orange { background: #fff6e9; color: var(--orange); }
+    .tag.red { background: #fef3f2; color: var(--red); }
+    .tag.gap { background: #f2f4f7; color: #667085; }
+    .tag.green { background: #ecfdf3; color: var(--green); }
+
+    /* B. 文件台账：另一套全局序号 */
+    .ledger-body { padding: 0 0 8px; }
+    .ledger-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .ledger-toolbar .scope {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .ledger-toolbar .scope b { color: var(--text); }
+    .file-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .file-table th,
+    .file-table td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .file-table th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      background: #fcfdff;
+    }
+    .file-no {
+      width: 56px;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .empty {
+      padding: 28px 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .note {
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+      box-shadow: var(--shadow);
+    }
+    .note b { color: var(--text); }
+    @media (max-width: 960px) {
+      .structure { grid-template-columns: 1fr; }
+      .filter-row { grid-template-columns: 1fr; }
+      .cat-hint { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <h1>施工方工作台 · 项目文件库（合并方案原型 v2）</h1>
+      <p>重新拆成两层：上层「资料分类清单」只用 1–10 管齐套与上传；下层「项目文件台账」用全局连续序号管文件办理。两套序号各司其职，不再嵌套。</p>
+    </div>
+
+    <div class="structure" aria-label="页面构成说明">
+      <article>
+        <strong>1. 工具区</strong>
+        <span>状态筛选、搜索、排序、全局上传。服务整页，不占业务序号。</span>
+      </article>
+      <article>
+        <strong>2. 资料分类清单（序号 1–10）</strong>
+        <span>十类固定展开展示；点某一类可筛选下方台账；每行可上传。</span>
+      </article>
+      <article>
+        <strong>3. 项目文件台账（序号 1–N）</strong>
+        <span>一张平铺文件表；序号按当前列表全局连续，不与分类序号混用。</span>
+      </article>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>一、项目文件库 / 施工资料台账</h2>
+          <p class="sub">先看分类齐套，再在下方台账办理查看 / 提交 / 删除 / 选择环节。</p>
+        </div>
+        <span class="badge">已上传 3 份 · 分类 10 项</span>
+      </div>
+
+      <div class="tools">
+        <div class="status-row" aria-label="文件状态筛选">
+          <button type="button" class="chip active" data-status="全部">全部 3</button>
+          <button type="button" class="chip" data-status="未关联">未关联 1</button>
+          <button type="button" class="chip" data-status="待提交">待提交 1</button>
+          <button type="button" class="chip" data-status="审核中">审核中 0</button>
+          <button type="button" class="chip" data-status="需补正">需补正 1</button>
+          <button type="button" class="chip" data-status="已通过">已通过 0</button>
+          <button type="button" class="chip" data-status="已作废">已作废 0</button>
+        </div>
+        <div class="filter-row">
+          <input id="keyword" class="input" placeholder="搜索文件名、资料项、审核环节" />
+          <select id="sort" class="select">
+            <option value="updatedDesc">更新时间从新到旧</option>
+            <option value="status">按状态排序</option>
+          </select>
+          <button type="button" class="btn">上传资料</button>
+        </div>
+      </div>
+
+      <!-- A. 分类清单 -->
+      <div class="category-list">
+        <table class="category-table" aria-label="资料分类清单，序号1到10">
+          <thead>
+            <tr>
+              <th class="cat-no">序号</th>
+              <th>资料类别</th>
+              <th>已上传</th>
+              <th>办理摘要</th>
+              <th>建议包含（摘要）</th>
+              <th style="width:120px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="categoryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- B. 文件台账 -->
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>项目文件台账</h2>
+          <p class="sub">办理主表。序号为当前列表全局连续编号，与上方分类序号相互独立。</p>
+        </div>
+      </div>
+      <div class="ledger-toolbar">
+        <div class="scope" id="ledgerScope">当前范围：<b>全部类别</b></div>
+        <button type="button" class="btn ghost" id="clearCategoryFilter">清除分类筛选</button>
+      </div>
+      <div class="ledger-body">
+        <table class="file-table" aria-label="项目文件台账">
+          <thead>
+            <tr>
+              <th class="file-no">序号</th>
+              <th>文件名</th>
+              <th>资料类别</th>
+              <th>资料项</th>
+              <th style="width:96px">状态</th>
+              <th>关联审核环节</th>
+              <th style="width:160px">更新时间</th>
+              <th style="width:220px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="fileBody"></tbody>
+        </table>
+        <div class="empty" id="fileEmpty" hidden>当前筛选条件下暂无文件</div>
+      </div>
+    </section>
+
+    <div class="note">
+      <b>构成原则：</b><br />
+      1）分类清单的「序号」只表示资料类别顺序（固定 1–10），回答「还缺哪一类」。<br />
+      2）文件台账的「序号」只表示当前列表中的文件顺序（1–N），回答「这份文件怎么办理」。<br />
+      3）点击上方某一类，下方台账只显示该类文件；不再把文件嵌进分类里重复编号。
+    </div>
+  </div>
+
+  <script>
+    const categories = [
+      { name: '资质证照', hint: '安装许可证、焊工资格证、制造许可等' },
+      { name: '设计资料', hint: '图纸目录、设计说明、材料表、计算书等' },
+      { name: '施工方案', hint: '施工组织设计、专项方案及审批页' },
+      { name: '材料证明与复验', hint: '质保书、复验、标志移植、材料代用' },
+      { name: '安全附件与阀门', hint: '阀门/安全阀资料、安装与校验记录' },
+      { name: '焊接资料', hint: 'WPS/PQR、焊材证明、焊接记录、返修资料' },
+      { name: '热处理资料', hint: '工艺卡、曲线、报告、硬度记录' },
+      { name: '防腐保温资料', hint: '材料证明、施工验收、补口补伤、检测' },
+      { name: '安装交工资料', hint: '安装记录、单线图、交工资料' },
+      { name: '试验与吹扫资料', hint: '耐压/泄漏试验、吹扫清洗与签认' }
+    ];
+
+    const files = [
+      {
+        name: '安装许可证.pdf',
+        category: '资质证照',
+        item: '施工单位安装许可证',
+        status: '待提交',
+        tone: 'orange',
+        node: '未关联审核环节',
+        updatedAt: '2026-08-04 09:12',
+        canDelete: true
+      },
+      {
+        name: '焊工资格证-张三.pdf',
+        category: '资质证照',
+        item: '焊工资格证',
+        status: '需补正',
+        tone: 'red',
+        node: '3.2 焊接工艺与人员资格',
+        updatedAt: '2026-08-03 16:40',
+        canDelete: false
+      },
+      {
+        name: 'WPS-管道焊接.pdf',
+        category: '焊接资料',
+        item: 'WPS/PQR',
+        status: '未关联',
+        tone: 'blue',
+        node: '未关联审核环节',
+        updatedAt: '2026-08-02 11:08',
+        canDelete: true
+      }
+    ];
+
+    let activeCategory = '全部';
+    let activeStatus = '全部';
+
+    function categoryStats(name) {
+      const list = files.filter((f) => f.category === name);
+      const summary = [];
+      const countBy = {};
+      list.forEach((f) => {
+        countBy[f.status] = (countBy[f.status] || 0) + 1;
+      });
+      Object.entries(countBy).forEach(([status, count]) => {
+        const tone =
+          status === '需补正' ? 'red' :
+          status === '待提交' ? 'orange' :
+          status === '未关联' ? 'blue' :
+          status === '已通过' ? 'green' : 'gap';
+        summary.push(`<span class="tag ${tone}">${status} ${count}</span>`);
+      });
+      if (!list.length) summary.push('<span class="tag gap">缺口</span>');
+      return { count: list.length, summary: summary.join('') };
+    }
+
+    function renderCategories() {
+      document.getElementById('categoryBody').innerHTML = categories.map((cat, index) => {
+        const no = index + 1;
+        const stats = categoryStats(cat.name);
+        const active = activeCategory === cat.name ? ' active' : '';
+        return `
+          <tr class="${active}" data-category="${cat.name}">
+            <td class="cat-no">${no}</td>
+            <td class="cat-name">${cat.name}</td>
+            <td><span class="count-pill${stats.count ? ' has' : ''}">${stats.count}</span></td>
+            <td>${stats.summary}</td>
+            <td class="cat-hint">${cat.hint}</td>
+            <td>
+              <button type="button" class="btn small" onclick="event.stopPropagation()">上传</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      document.querySelectorAll('#categoryBody tr').forEach((row) => {
+        row.addEventListener('click', () => {
+          activeCategory = row.dataset.category;
+          renderCategories();
+          renderFiles();
+        });
+      });
+    }
+
+    function filteredFiles() {
+      const keyword = document.getElementById('keyword').value.trim().toLowerCase();
+      let list = files.slice();
+      if (activeCategory !== '全部') {
+        list = list.filter((f) => f.category === activeCategory);
+      }
+      if (activeStatus !== '全部') {
+        list = list.filter((f) => f.status === activeStatus);
+      }
+      if (keyword) {
+        list = list.filter((f) =>
+          [f.name, f.item, f.category, f.node].join(' ').toLowerCase().includes(keyword)
+        );
+      }
+      if (document.getElementById('sort').value === 'status') {
+        list.sort((a, b) => a.status.localeCompare(b.status, 'zh-Hans-CN'));
+      } else {
+        list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      }
+      return list;
+    }
+
+    function renderFiles() {
+      const list = filteredFiles();
+      const body = document.getElementById('fileBody');
+      const empty = document.getElementById('fileEmpty');
+      const scope = document.getElementById('ledgerScope');
+      scope.innerHTML = activeCategory === '全部'
+        ? '当前范围：<b>全部类别</b>'
+        : `当前范围：<b>${categories.findIndex((c) => c.name === activeCategory) + 1}. ${activeCategory}</b>`;
+
+      if (!list.length) {
+        body.innerHTML = '';
+        empty.hidden = false;
+        return;
+      }
+      empty.hidden = true;
+      body.innerHTML = list.map((file, index) => `
+        <tr>
+          <td class="file-no">${index + 1}</td>
+          <td>${file.name}</td>
+          <td>${file.category}</td>
+          <td>${file.item}</td>
+          <td><span class="tag ${file.tone}">${file.status}</span></td>
+          <td>${file.node}</td>
+          <td>${file.updatedAt}</td>
+          <td>
+            <div class="actions">
+              <button type="button" class="btn link">查看</button>
+              <button type="button" class="btn link">提交</button>
+              <button type="button" class="btn link danger"${file.canDelete ? '' : ' disabled style="opacity:.4"'}>删除</button>
+              <button type="button" class="btn link">选择环节</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    document.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        activeStatus = chip.dataset.status;
+        renderFiles();
+      });
+    });
+    document.getElementById('keyword').addEventListener('input', renderFiles);
+    document.getElementById('sort').addEventListener('change', renderFiles);
+    document.getElementById('clearCategoryFilter').addEventListener('click', () => {
+      activeCategory = '全部';
+      renderCategories();
+      renderFiles();
+    });
+
+    renderCategories();
+    renderFiles();
+  </script>
+</body>
+</html>
