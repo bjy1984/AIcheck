@@ -127,7 +127,7 @@ def claim_knowledge_tasks(
             FROM aicheck_state AS task
             WHERE task.collection = %s
               AND task.payload ->> 'taskType' IN ('slice', 'vector')
-              AND task.payload ->> 'status' IN ('排队中', '执行中')
+              AND task.payload ->> 'status' IN ('排队中', '执行中', '运行中')
               AND (
                     task.payload ->> 'status' = '排队中'
                     OR NULLIF(task.payload ->> 'leaseUntil', '')::timestamptz <= now()
@@ -192,6 +192,18 @@ def claim_knowledge_tasks(
                 """,
                 (Jsonb(payload), str(tenant_id), KNOWLEDGE_TASKS_COLLECTION, str(object_id)),
             )
+            active_status = "切片中" if task_type == "slice" else "向量化中"
+            status_field = "sliceStatus" if task_type == "slice" else "vectorStatus"
+            connection.execute(
+                """
+                UPDATE aicheck_state
+                SET payload = jsonb_set(payload, %s, to_jsonb(%s::text), true),
+                    revision = revision + 1,
+                    updated_at = now()
+                WHERE tenant_id = %s AND collection = 'knowledge_files' AND object_id = %s
+                """,
+                ([status_field], active_status, str(tenant_id), target_id),
+            )
             claimed.append(
                 ClaimedKnowledgeTask(
                     tenant_id=str(tenant_id),
@@ -252,6 +264,22 @@ def reschedule_knowledge_claim(
     )
 
 
+def fail_knowledge_claim(
+    dsn: str,
+    claim: ClaimedKnowledgeTask,
+    *,
+    error_message: str,
+) -> bool:
+    return _update_knowledge_claim(
+        dsn,
+        claim,
+        reschedule={
+            "errorMessage": str(error_message),
+            "terminal": True,
+        },
+    )
+
+
 def _update_knowledge_claim(
     dsn: str,
     claim: ClaimedKnowledgeTask,
@@ -284,16 +312,20 @@ def _update_knowledge_claim(
         payload.pop("workerId", None)
         payload["updatedAt"] = utc_timestamp(now)
         if reschedule is not None:
+            terminal = bool(reschedule.get("terminal"))
             payload.update(
                 {
-                    "status": "排队中",
+                    "status": "失败" if terminal else "排队中",
                     "attempts": claim.attempts + 1,
                     "errorMessage": str(reschedule["errorMessage"]),
-                    "nextAttemptAt": utc_timestamp(
-                        now + timedelta(seconds=int(reschedule["delaySeconds"]))
-                    ),
                 }
             )
+            if terminal:
+                payload.pop("nextAttemptAt", None)
+            else:
+                payload["nextAttemptAt"] = utc_timestamp(
+                    now + timedelta(seconds=int(reschedule["delaySeconds"]))
+                )
         connection.execute(
             """
             UPDATE aicheck_state
@@ -302,6 +334,24 @@ def _update_knowledge_claim(
             """,
             (Jsonb(payload), claim.tenant_id, KNOWLEDGE_TASKS_COLLECTION, claim.task_id),
         )
+        if reschedule is not None:
+            terminal = bool(reschedule.get("terminal"))
+            if claim.task_type == "slice":
+                status_field = "sliceStatus"
+                next_status = "切片失败" if terminal else "待切片"
+            else:
+                status_field = "vectorStatus"
+                next_status = "向量化失败" if terminal else "待向量化"
+            connection.execute(
+                """
+                UPDATE aicheck_state
+                SET payload = jsonb_set(payload, %s, to_jsonb(%s::text), true),
+                    revision = revision + 1,
+                    updated_at = now()
+                WHERE tenant_id = %s AND collection = 'knowledge_files' AND object_id = %s
+                """,
+                ([status_field], next_status, claim.tenant_id, claim.target_id),
+            )
         connection.commit()
         return True
 

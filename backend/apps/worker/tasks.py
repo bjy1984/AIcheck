@@ -3895,7 +3895,7 @@ def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-def slice_knowledge(self, file_id: str) -> dict[str, Any]:
+def slice_knowledge(self, file_id: str, dispatch_next: bool = True) -> dict[str, Any]:
     refresh_worker_state()
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id), None)
     file = repo.find_one("knowledge_files", file_id)
@@ -3933,13 +3933,18 @@ def slice_knowledge(self, file_id: str) -> dict[str, Any]:
         ]
     result = repo.apply_slice_result(file_id, fragments or None)
     flush_state()
-    if result.get("status") == "success":
+    if result.get("status") == "success" and dispatch_next:
         result["nextDispatch"] = task_dispatcher.dispatch_embed(file_id)
     return result
 
 
 @celery_app.task(bind=True, max_retries=3)
-def embed_knowledge(self, file_id: str, offset: int = 0) -> dict[str, Any]:
+def embed_knowledge(
+    self,
+    file_id: str,
+    offset: int = 0,
+    allow_celery_continuation: bool = True,
+) -> dict[str, Any]:
     # Deployment contract marker: embedding_batches_for_chunks keeps offline_hash_embeddings / offline_hash fallback.
     refresh_worker_state()
     chunks = sorted(
@@ -3982,7 +3987,7 @@ def embed_knowledge(self, file_id: str, offset: int = 0) -> dict[str, Any]:
         if chunks:
             checkpoint_size = (
                 max(1, min(int(os.getenv("AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE", "8")), EMBED_BATCH_SIZE))
-                if task_dispatcher.dispatch_mode() == "celery"
+                if allow_celery_continuation and task_dispatcher.dispatch_mode() == "celery"
                 else len(chunks)
             )
             start = max(0, int(offset or 0))
@@ -4013,7 +4018,11 @@ def embed_knowledge(self, file_id: str, offset: int = 0) -> dict[str, Any]:
                 task["progress"] = max(10, int(end / max(len(chunks), 1) * 95))
                 task["embeddingCheckpoint"] = {"nextOffset": end, "totalChunks": len(chunks)}
                 task["updatedAt"] = server_time()
-            if end < len(chunks) and task_dispatcher.dispatch_mode() == "celery":
+            if (
+                end < len(chunks)
+                and allow_celery_continuation
+                and task_dispatcher.dispatch_mode() == "celery"
+            ):
                 continuation = embed_knowledge.apply_async(
                     args=[file_id, end],
                     queue="cpu.heavy",
@@ -4076,6 +4085,25 @@ def embed_knowledge(self, file_id: str, offset: int = 0) -> dict[str, Any]:
             repo.mark_task_failed(task, message)
     flush_state()
     return result
+
+
+def execute_postgres_knowledge_task(
+    task_type: str,
+    file_id: str,
+    *,
+    tenant_id: str,
+) -> dict[str, Any]:
+    """Execute one persisted post-processing task without Celery dispatch."""
+
+    tenant_context = set_request_tenant_id(tenant_id)
+    try:
+        if task_type == "slice":
+            return slice_knowledge.run(file_id, False)
+        if task_type == "vector":
+            return embed_knowledge.run(file_id, 0, False)
+        raise ValueError(f"Unsupported PostgreSQL knowledge task type: {task_type}")
+    finally:
+        reset_request_tenant_id(tenant_context)
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})

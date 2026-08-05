@@ -6,7 +6,7 @@ import os
 import pytest
 
 from apps.mineru_worker import worker as worker_module
-from apps.mineru_worker.queue import ClaimedMinerUJob
+from apps.mineru_worker.queue import ClaimedKnowledgeTask, ClaimedMinerUJob
 from apps.worker import tasks
 from libs.db.repository import InMemoryRepository
 from libs.integrations.mineru_client import MinerUProtocolError
@@ -199,6 +199,7 @@ def test_worker_reschedules_retry_and_handles_empty_poll(
         ),
     )
     monkeypatch.setattr(worker_module, "finish_claim", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(worker_module, "claim_knowledge_tasks", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
         worker_module,
         "reschedule_claim",
@@ -215,6 +216,119 @@ def test_worker_reschedules_retry_and_handles_empty_poll(
         (claim, [{"code": "MINERU_TIMEOUT", "retryable": True}], 30)
     ]
     assert worker.run_once() == 0
+
+
+def test_postgres_knowledge_execution_uses_local_task_bodies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        tasks.slice_knowledge,
+        "run",
+        lambda file_id, dispatch_next=True: calls.append(
+            ("slice", file_id, dispatch_next)
+        )
+        or {"status": "success"},
+    )
+    monkeypatch.setattr(
+        tasks.embed_knowledge,
+        "run",
+        lambda file_id, offset=0, allow_celery_continuation=True: calls.append(
+            ("vector", file_id, offset, allow_celery_continuation)
+        )
+        or {"status": "success"},
+    )
+
+    assert tasks.execute_postgres_knowledge_task(
+        "slice", "KF-LOCAL", tenant_id="TENANT-LOCAL"
+    )["status"] == "success"
+    assert tasks.execute_postgres_knowledge_task(
+        "vector", "KF-LOCAL", tenant_id="TENANT-LOCAL"
+    )["status"] == "success"
+    assert calls == [
+        ("slice", "KF-LOCAL", False),
+        ("vector", "KF-LOCAL", 0, False),
+    ]
+
+
+def test_worker_processes_postgres_knowledge_claim_without_celery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claim = ClaimedKnowledgeTask(
+        "TENANT-WORKER",
+        "KT-SLICE",
+        "slice",
+        "KF-1",
+        "knowledge-lease",
+        0,
+    )
+    executed: list[tuple[str, str, str]] = []
+    finished: list[ClaimedKnowledgeTask] = []
+    monkeypatch.setattr(worker_module, "claim_jobs", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        worker_module,
+        "claim_knowledge_tasks",
+        lambda *_args, **_kwargs: [claim],
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "execute_postgres_knowledge_task",
+        lambda task_type, target_id, *, tenant_id: executed.append(
+            (task_type, target_id, tenant_id)
+        )
+        or {"status": "success"},
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "finish_knowledge_claim",
+        lambda _dsn, current: finished.append(current) or True,
+    )
+    monkeypatch.setattr(worker_module, "write_heartbeat", lambda *_args, **_kwargs: None)
+
+    worker = worker_module.MinerUPostgresWorker("postgresql:///unused", worker_id="worker-a")
+
+    assert worker.run_once() == 1
+    assert executed == [("slice", "KF-1", "TENANT-WORKER")]
+    assert finished == [claim]
+
+
+def test_worker_reschedules_failed_knowledge_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claim = ClaimedKnowledgeTask(
+        "TENANT-WORKER",
+        "KT-VECTOR",
+        "vector",
+        "KF-1",
+        "knowledge-lease",
+        1,
+    )
+    rescheduled: list[tuple[ClaimedKnowledgeTask, str, int]] = []
+    monkeypatch.setattr(worker_module, "claim_jobs", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        worker_module,
+        "claim_knowledge_tasks",
+        lambda *_args, **_kwargs: [claim],
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "execute_postgres_knowledge_task",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("temporary")),
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "reschedule_knowledge_claim",
+        lambda _dsn, current, *, error_message, delay_seconds: rescheduled.append(
+            (current, error_message, delay_seconds)
+        )
+        or True,
+    )
+    monkeypatch.setattr(worker_module, "write_heartbeat", lambda *_args, **_kwargs: None)
+
+    worker = worker_module.MinerUPostgresWorker("postgresql:///unused", worker_id="worker-a")
+
+    assert worker.run_once() == 1
+    assert rescheduled == [(claim, "RuntimeError", 30)]
 
 
 @pytest.mark.skipif(
