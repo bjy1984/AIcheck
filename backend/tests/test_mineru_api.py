@@ -26,7 +26,7 @@ def api_repository(monkeypatch: pytest.MonkeyPatch) -> InMemoryRepository:
     repository.state["ocr_parse_results"] = []
     monkeypatch.setattr(mineru_ocr_routes, "repo", repository)
     monkeypatch.setattr(api_routes, "repo", repository)
-    monkeypatch.setattr(api_main, "flush_state", lambda: None)
+    monkeypatch.setattr(api_main, "flush_state", lambda **_kwargs: None)
     monkeypatch.setattr(
         mineru_ocr_routes,
         "flush_state_records",
@@ -435,6 +435,40 @@ def test_dispatch_unavailable_marks_job_failed(
     job = api_repository.find_one("ocr_jobs", data["jobId"])
     assert job["stage"] == "dispatch"
     assert job["diagnostics"][0]["code"] == "MINERU_DISPATCH_UNAVAILABLE"
+
+
+def test_postgres_dispatch_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+    api_repository: InMemoryRepository,
+) -> None:
+    monkeypatch.setattr(
+        mineru_ocr_routes.task_dispatcher,
+        "dispatch_mineru_ocr",
+        lambda job_id: {
+            "mode": "postgres",
+            "jobId": job_id,
+            "statusReason": "mineru_job_persisted",
+        },
+    )
+
+    response = client.post(
+        "/internal/ocr/mineru/tasks",
+        json={
+            "url": "https://files.example/document.pdf",
+            "fileName": "document.pdf",
+        },
+    )
+
+    assert response.json()["code"] == 0
+    data = response.json()["data"]
+    assert data["status"] == "queued"
+    assert data["dispatch"] == {
+        "mode": "postgres",
+        "statusReason": "mineru_job_persisted",
+    }
+    job = api_repository.find_one("ocr_jobs", data["jobId"])
+    assert job["status"] == "queued"
+    assert job["stage"] == "queued"
 
 
 def test_status_read_exposes_safe_summary_only(

@@ -9862,6 +9862,63 @@ def test_contractor_default_project_upload_uses_local_direct_upload(monkeypatch)
     assert uploaded_document["materialCategory"] == "设计资料"
 
 
+def test_contractor_upload_persists_mineru_job_without_celery(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    monkeypatch.setenv("AICHECK_REQUIRE_OBJECT_STORAGE", "false")
+    monkeypatch.setenv("AICHECK_TASK_DISPATCH", "celery")
+    monkeypatch.setenv("AICHECK_MINERU_EXECUTION_MODE", "postgres")
+    monkeypatch.setenv("AICHECK_OCR_DEFAULT_PROVIDER", "mineru")
+    monkeypatch.setattr("libs.db.repository.object_storage.presigned_put_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tasks.parse_document,
+        "apply_async",
+        lambda **_kwargs: pytest.fail("MinerU upload completion must not call Celery"),
+    )
+    body = b"contractor-postgres-mineru-upload"
+
+    upload = assert_ok(
+        client.post(
+            "/projects/P-2026-GDLNG-002/documents/upload-session",
+            json={
+                "files": [
+                    {
+                        "fileName": "contractor-postgres-mineru.pdf",
+                        "fileSize": len(body),
+                        "fileType": "application/pdf",
+                        "materialCategory": "设计资料",
+                    }
+                ],
+                "requireSignedUrls": True,
+            },
+            headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+        )
+    )
+    target = upload["uploadUrls"][0]
+    assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+
+    completed = assert_ok(
+        client.post(
+            f"/projects/P-2026-GDLNG-002/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={"completedFiles": [{"documentVersionId": target["documentVersionId"], "fileSize": len(body)}]},
+            headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+        )
+    )
+
+    assert completed["fileCount"] == 1
+    assert completed["queuedTasks"][0]["mode"] == "postgres"
+    jobs = [
+        job
+        for job in repo.state["ocr_jobs"]
+        if job.get("documentId") == target["documentId"]
+        and job.get("documentVersionId") == target["documentVersionId"]
+        and job.get("provider") == "mineru"
+    ]
+    assert len(jobs) == 1
+    assert jobs[0]["status"] == "queued"
+    assert jobs[0]["stage"] == "queued"
+
+
 def test_worker_uses_ocr_http_client_when_configured(monkeypatch) -> None:
     from apps.worker import tasks
 

@@ -1578,7 +1578,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
             str(ocr_job_record["id"])
         )
         pipeline_run["mineruDispatch"] = dispatch
-        if not dispatch.get("taskId") and dispatch.get("mode") != "inline":
+        if not dispatch.get("taskId") and dispatch.get("mode") not in {"inline", "postgres"}:
             diagnostics = [
                 {
                     "code": "MINERU_DISPATCH_UNAVAILABLE",

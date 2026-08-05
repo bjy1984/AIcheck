@@ -120,7 +120,7 @@ def queue_mineru_job(
     stamp_mineru_job_actor(job, request)
     flush_state_records({"ocr_jobs": [job]})
     dispatch = task_dispatcher.dispatch_mineru_ocr(str(job["id"]))
-    if not dispatch.get("taskId") and dispatch.get("mode") != "inline":
+    if not dispatch.get("taskId") and dispatch.get("mode") not in {"inline", "postgres"}:
         repo.update_ocr_job_record(
             job,
             status="failed",

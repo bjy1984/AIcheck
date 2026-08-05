@@ -13,6 +13,11 @@ def dispatch_mode() -> str:
     return os.getenv("AICHECK_TASK_DISPATCH", "disabled").strip().lower() or "disabled"
 
 
+def mineru_execution_mode() -> str:
+    configured = os.getenv("AICHECK_MINERU_EXECUTION_MODE")
+    return (configured.strip().lower() if configured else dispatch_mode()) or "disabled"
+
+
 def cpu_heavy_dispatch_blocker(mode: str) -> dict[str, Any] | None:
     if mode != "celery":
         return None
@@ -34,6 +39,19 @@ def deterministic_task_id(scope: str, value: str) -> str:
 
 
 def dispatch_parse_document(document_id: str, version_id: str, storage_key: str, file_name: str | None = None) -> dict[str, Any]:
+    if mineru_execution_mode() == "postgres":
+        from apps.worker import tasks
+
+        version = tasks.repo.find_one("versions", version_id)
+        options = (version or {}).get("ocrOptions")
+        if tasks.resolve_ocr_provider(options if isinstance(options, dict) else {}) == "mineru":
+            prepared = tasks.parse_document.run(document_id, version_id, storage_key, file_name)
+            return {
+                "mode": "postgres",
+                "jobId": prepared.get("ocrJobRecordId"),
+                "pipelineRunId": prepared.get("pipelineRunId"),
+                "statusReason": "mineru_job_persisted",
+            }
     mode = dispatch_mode()
     if mode == "inline":
         from apps.worker.tasks import parse_document
@@ -116,8 +134,14 @@ def dispatch_ocr_pipeline_official(run_id: str) -> dict[str, Any]:
 
 
 def dispatch_mineru_ocr(job_record_id: str) -> dict[str, Any]:
-    mode = dispatch_mode()
+    mode = mineru_execution_mode()
     tenant_id = current_tenant_id()
+    if mode == "postgres":
+        return {
+            "mode": mode,
+            "jobId": job_record_id,
+            "statusReason": "mineru_job_persisted",
+        }
     if mode == "inline":
         from apps.worker.tasks import mineru_ocr_extract
 

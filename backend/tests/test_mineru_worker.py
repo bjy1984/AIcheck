@@ -497,6 +497,25 @@ def test_dispatch_mineru_ocr_targets_remote_queue(
     assert calls[0]["queue"] == "ocr.remote"
 
 
+def test_dispatch_mineru_ocr_persists_for_postgres_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AICHECK_MINERU_EXECUTION_MODE", "postgres")
+    monkeypatch.setattr(
+        tasks.mineru_ocr_extract,
+        "apply_async",
+        lambda **_kwargs: pytest.fail("PostgreSQL MinerU dispatch must not call Celery"),
+    )
+
+    output = task_dispatcher.dispatch_mineru_ocr("OCRJOB-POSTGRES-1")
+
+    assert output == {
+        "mode": "postgres",
+        "jobId": "OCRJOB-POSTGRES-1",
+        "statusReason": "mineru_job_persisted",
+    }
+
+
 def test_mineru_worker_resumes_existing_provider_task_without_resubmit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
