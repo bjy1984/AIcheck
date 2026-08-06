@@ -59,7 +59,6 @@ git commit -m "refactor: add NDT business rule labels"
 ### Task 2: Replace NDT page, drawer, and API-facing terminology
 
 **Files:**
-- Create: `frontend/src/utils/ndtUserFacingLanguage.test.ts`
 - Modify: `frontend/src/views/AICheck/components/NdtWorkflowPanel.vue`
 - Modify: `frontend/src/views/AICheck/components/UploadSessionDrawer.vue`
 - Modify: `frontend/src/views/AICheck/Workbench.vue`
@@ -70,20 +69,15 @@ git commit -m "refactor: add NDT business rule labels"
 - Consumes: `ndtBusinessRuleNames(nodeIds)` from Task 1.
 - Preserves: upload payload `nodeIds`, rule-adjustment endpoint, and single-file submission endpoint.
 
-- [ ] **Step 1: Write failing user-language tests**
+- [ ] **Step 1: Write the failing backend user-language test**
 
-Create a TypeScript source-language test that reads the two NDT Vue components and asserts the rendered source contains none of `原子资料`, `原子资料类型`, `规则挂载`, or `R35` through `R42`. Extend the existing backend contract test to assert NDT validation response messages contain neither `原子` nor `规则挂载`.
+Extend the existing backend contract test to assert NDT validation response messages use “无损检测资料” and “适用业务规则” and contain neither `原子` nor `规则挂载`. Pure Vue copy is verified through lint, type checking, and the final visible-string scan rather than a brittle source-code unit test.
 
 - [ ] **Step 2: Run the focused tests to verify they fail**
 
-Run:
+Run: `cd backend && .venv/bin/pytest tests/test_contract.py -k 'ndt_atomic' -q`
 
-```bash
-cd frontend && pnpm exec tsx src/utils/ndtUserFacingLanguage.test.ts
-cd backend && .venv/bin/pytest tests/test_contract.py -k 'ndt_atomic' -q
-```
-
-Expected: frontend test fails on current visible strings; backend test fails on current NDT validation messages.
+Expected: FAIL on the current NDT validation messages.
 
 - [ ] **Step 3: Replace visible terminology**
 
@@ -103,7 +97,7 @@ Change NDT-only validation errors, todo titles, and audit labels to “无损检
 
 - [ ] **Step 5: Run focused tests to verify they pass**
 
-Run the two commands from Step 2 and confirm both exit successfully.
+Run the command from Step 2 and confirm it exits successfully.
 
 - [ ] **Step 6: Run regression checks**
 
@@ -111,7 +105,7 @@ Run:
 
 ```bash
 cd frontend && pnpm ts:check
-cd frontend && pnpm exec eslint src/utils/ndtAtomicMaterials.ts src/utils/ndtAtomicMaterials.test.ts src/utils/ndtUserFacingLanguage.test.ts src/views/AICheck/Workbench.vue src/views/AICheck/components/NdtWorkflowPanel.vue src/views/AICheck/components/UploadSessionDrawer.vue
+cd frontend && pnpm exec eslint src/utils/ndtAtomicMaterials.ts src/utils/ndtAtomicMaterials.test.ts src/views/AICheck/Workbench.vue src/views/AICheck/components/NdtWorkflowPanel.vue src/views/AICheck/components/UploadSessionDrawer.vue
 cd frontend && pnpm exec stylelint src/views/AICheck/components/NdtWorkflowPanel.vue src/views/AICheck/components/UploadSessionDrawer.vue --cache-location node_modules/.cache/stylelint-ndt-copy
 cd backend && .venv/bin/pytest tests/test_contract.py -k 'ndt or upload_session' -q
 ```
@@ -121,6 +115,6 @@ Expected: all commands exit successfully.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/src/utils/ndtUserFacingLanguage.test.ts frontend/src/views/AICheck/components/NdtWorkflowPanel.vue frontend/src/views/AICheck/components/UploadSessionDrawer.vue frontend/src/views/AICheck/Workbench.vue backend/apps/api/routes.py backend/tests/test_contract.py
+git add frontend/src/views/AICheck/components/NdtWorkflowPanel.vue frontend/src/views/AICheck/components/UploadSessionDrawer.vue frontend/src/views/AICheck/Workbench.vue backend/apps/api/routes.py backend/tests/test_contract.py
 git commit -m "fix: use business language in NDT workflow"
 ```
