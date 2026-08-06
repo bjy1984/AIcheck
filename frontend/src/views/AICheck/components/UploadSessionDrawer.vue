@@ -12,6 +12,7 @@ import {
   ElUpload
 } from 'element-plus'
 import type { UploadFile, UploadInstance } from 'element-plus'
+import { ndtBusinessRuleNames } from '@/utils/ndtAtomicMaterials'
 
 const props = defineProps<{
   modelValue: boolean
@@ -128,18 +129,18 @@ watch(
 
       <div v-if="isAtomicNdtUpload" class="atomic-target">
         <div>
-          <span>原子资料类型</span>
+          <span>资料类型</span>
           <strong>{{ materialTypeName }}</strong>
         </div>
         <div>
-          <span>规则挂载（上传前可调整）</span>
+          <span>适用业务规则（上传前可调整）</span>
           <ElCheckboxGroup v-model="selectedNodeIds" class="node-options">
             <ElCheckbox v-for="nodeId in allowedNodeIds || []" :key="nodeId" :value="nodeId">
-              R{{ nodeId }}
+              {{ ndtBusinessRuleNames([nodeId])[0] }}
             </ElCheckbox>
           </ElCheckboxGroup>
         </div>
-        <small>上传完成后先保存为逐文件草稿；OCR 异步运行，不会自动提交审批。</small>
+        <small>每个文件上传后单独保存为草稿；OCR 在后台运行，不会自动提交审批。</small>
       </div>
 
       <ElAlert
@@ -239,9 +240,14 @@ watch(
 }
 
 .node-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.node-options :deep(.el-checkbox) {
+  height: auto;
+  margin-right: 0;
+  line-height: 1.5;
 }
 
 .target-category span {

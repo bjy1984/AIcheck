@@ -28,7 +28,6 @@ import {
   ElSkeleton,
   ElTable,
   ElTableColumn,
-  ElTooltip,
   ElTreeV2
 } from 'element-plus'
 import {
@@ -99,7 +98,6 @@ import {
   replaceNdtAtomicMaterialBindingsApi,
   submitNdtAtomicMaterialApi,
   submitNdtRectificationApi,
-  submitNdtSubmissionApi,
   submitInspectionDocumentBindingsApi,
   submitNodePackageApi,
   submitRectificationApi,
@@ -159,7 +157,6 @@ import type {
   WorkbenchSummaryPayload
 } from '@/types/aicheck'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
-import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 import { buildDocumentSubmissionPayload, documentBindingSummary } from '@/utils/acceptanceFlows'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 
@@ -338,17 +335,6 @@ const ndtReportUploadError = ref('')
 const ndtSubmitError = ref('')
 const ndtRectifyError = ref('')
 const ndtReadiness = ref<NdtSubmissionReadiness>()
-const ndtSubmitBlockers = computed(() =>
-  buildNdtSubmitBlockers({
-    reports: ndtReports.value,
-    films: ndtFilms.value,
-    projectFiles: nodePackage.value?.projectFiles || [],
-    readiness: ndtReadiness.value
-  })
-)
-const canSubmitNdt = computed(
-  () => pendingNdtReports(ndtReports.value).length > 0 && !ndtSubmitBlockers.value.length
-)
 const actionBlocker = ref<OperationBlocker>()
 const activeSideTab = ref('ai')
 const previewDrawerVisible = ref(false)
@@ -934,7 +920,7 @@ const globalSearchPlaceholder = computed(() => {
   const placeholders: Record<RoleCode, string> = {
     inspection: '⌕ 全局搜索（项目 / 文件 / 节点 / 焊工证书 / 标准条款）',
     contractor: '⌕ 全局搜索（文件 / 节点名称 / 资料项 / 反馈意见 / 编号）',
-    ndt: '⌕ 全局搜索（项目 / 底片编号 / 焊口编号 / 检测报告 / 节点）',
+    ndt: '⌕ 全局搜索（项目 / 文件 / 资料类型 / 底片编号 / 检测报告）',
     owner: '⌕ 全局搜索（项目 / 节点 / 资料状态 / 报告 / 归档资料）',
     admin: '⌕ 搜索（项目 / 单位 / 用户 / 角色 / 流程 / 待办 / 节点）',
     fde: '⌕ 搜索（AI Run / Agent / 评估集 / 发布单 / 业务类型）'
@@ -957,7 +943,7 @@ const pageIntro = computed(() => {
     inspection: '当前节点资料、AI 业务核验链路、人工审查意见和报告归档动作在同一工作区完成。',
     contractor:
       '施工方以项目文件库为主办理资料上传、资料齐套、提交和补正反馈，审核环节仅作为可选定位字段。',
-    ndt: '无损检测单位以检测资料库为主办理底片、检测记录、检测报告和监检反馈，节点仅作为反馈定位。',
+    ndt: '无损检测单位在资料库中上传、核对并逐份提交检测资料，同时处理监检反馈。',
     owner: '只读查看项目进展、节点资料状态、异常提醒、报告状态和归档资料。',
     admin: '后台只维护配置、权限、流程和审计，不替代工作台业务办理。',
     fde: 'FDE 只管理 AI 能力、评估、发布和治理，不替代业务人员作出正式结论。'
@@ -1004,11 +990,12 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
   }
   if (role.value === 'ndt') {
     const openFeedbackCount = ndtFeedback.value.filter((item) => item.status !== '已关闭').length
-    const pendingReportCount = ndtReports.value.filter((item) =>
-      ['草稿', '待提交', '需补正'].includes(item.status)
-    ).length
-    const pendingFilmCount = ndtFilms.value.filter((item) =>
-      ['草稿', '待提交', '需补正'].includes(item.status)
+    const ndtProjectFiles = (nodePackage.value?.projectFiles || []).filter(
+      (file) => file.materialCategory === '无损检测资料'
+    )
+    const materialTypeCount = new Set(ndtProjectFiles.map((file) => file.materialTypeCode)).size
+    const pendingFileCount = ndtProjectFiles.filter((file) =>
+      ['未关联', '待提交', '需补正'].includes(documentBindingSummary(file))
     ).length
     return [
       {
@@ -1018,15 +1005,15 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
         tone: 'blue'
       },
       {
-        label: '检测资料',
-        value: `${ndtFilms.value.length + ndtRecords.value.length + ndtReports.value.length} 项`,
-        hint: `底片 ${ndtFilms.value.length}，记录 ${ndtRecords.value.length}，报告 ${ndtReports.value.length}`,
+        label: '已上传文件',
+        value: `${ndtProjectFiles.length} 份`,
+        hint: `${materialTypeCount} 种资料类型`,
         tone: 'green'
       },
       {
-        label: '待提交',
-        value: pendingReportCount + pendingFilmCount,
-        hint: '底片、记录和报告统一提交给监检方',
+        label: '待提交/补正',
+        value: pendingFileCount,
+        hint: '每个文件可单独提交审批',
         tone: 'orange'
       },
       {
@@ -2925,10 +2912,10 @@ const handleReplaceNdtAtomicBindings = async (payload: {
       payload.nodeIds,
       { etag: currentProject.value?.etag }
     )
-    ElMessage.success('规则挂载已更新')
+    ElMessage.success('适用业务规则已更新')
     await loadProjectBundle()
   } catch (error) {
-    showNdtSubmitError('规则挂载调整失败，请确认文件仍处于草稿或需补正状态。', error)
+    showNdtSubmitError('适用业务规则调整失败，请确认文件仍处于草稿或需补正状态。', error)
   } finally {
     actionLoading.value = false
   }
@@ -2948,7 +2935,7 @@ const handleSubmitNdtAtomicMaterial = async (payload: {
     ElMessage.success('该文件已单独提交审批')
     await Promise.all([loadProjectBundle(), loadSubmissionHistory()])
   } catch (error) {
-    showNdtSubmitError('单文件提交审批失败，请确认规则挂载和文件状态。', error)
+    showNdtSubmitError('单文件提交审批失败，请确认适用业务规则和文件状态。', error)
   } finally {
     actionLoading.value = false
   }
@@ -3443,48 +3430,6 @@ const handleOpenRectificationDialog = (rectificationId?: string) => {
   if (!ensureWritableNode()) return
   activeRectificationId.value = rectificationId || ''
   rectificationDialogVisible.value = true
-}
-
-const handleSubmitNdt = async (payload: { reportIds: string[]; filmIds: string[] }) => {
-  if (!ensureWritableNode()) return
-  if (ndtSubmitBlockers.value.length) {
-    const message = ndtSubmitBlockers.value.join('；')
-    rememberActionBlocker('无损检测资料提交被阻断', message, ndtSubmitBlockers.value)
-    ElMessage.warning(message)
-    return
-  }
-  if (!payload.reportIds.length) {
-    ElMessage.warning('请选择或上传至少一份检测报告')
-    return
-  }
-  actionLoading.value = true
-  ndtSubmitError.value = ''
-  try {
-    const res = await submitNdtSubmissionApi(
-      activeProjectId.value,
-      {
-        nodeId: activeNodeId.value,
-        reportIds: payload.reportIds,
-        filmIds: payload.filmIds
-      },
-      {
-        etag: currentProject.value?.etag
-      }
-    )
-    if (!res) {
-      showNdtSubmitError('无损检测资料提交失败，请检查报告、底片和当前节点状态。')
-      return
-    }
-    ndtReadiness.value = res.data.ndtReadiness
-    ndtSubmitError.value = ''
-    actionBlocker.value = undefined
-    ElMessage.success('无损检测资料已提交监检')
-    await Promise.all([loadProjectBundle(), loadNdtData()])
-  } catch (error) {
-    showNdtSubmitError('无损检测资料提交失败，请检查报告、底片和当前节点状态。', error)
-  } finally {
-    actionLoading.value = false
-  }
 }
 
 const handleImportNdtRecords = async (payload: { rows: Array<Partial<NdtRecord>> }) => {
@@ -4830,36 +4775,6 @@ onBeforeUnmount(() => {
               >
                 上传监检资料
               </ElButton>
-              <ElTooltip
-                v-if="role === 'ndt' && hasAction('ndt:submit')"
-                :content="
-                  actionLoading
-                    ? '正在处理当前操作'
-                    : isReadOnly
-                      ? '当前项目为只读状态，不能提交检测资料'
-                      : ndtSubmitBlockers.join('；') ||
-                        (canSubmitNdt ? '提交满足条件的无损检测资料' : '暂无待提交的检测报告')
-                "
-                :disabled="!actionLoading && !isReadOnly && canSubmitNdt"
-                placement="bottom"
-                popper-class="audit-action-tooltip-popper"
-              >
-                <span class="workbench-action-tooltip">
-                  <ElButton
-                    class="btn primary"
-                    type="primary"
-                    :disabled="actionLoading || isReadOnly || !canSubmitNdt"
-                    @click="
-                      handleSubmitNdt({
-                        reportIds: pendingNdtReports(ndtReports).map((item) => item.id),
-                        filmIds: pendingNdtFilms(ndtFilms).map((item) => item.id)
-                      })
-                    "
-                  >
-                    提交检测资料
-                  </ElButton>
-                </span>
-              </ElTooltip>
               <ElButton
                 v-if="
                   role !== 'owner' &&
@@ -5894,7 +5809,6 @@ onBeforeUnmount(() => {
             :record-import-error="ndtRecordImportError"
             :report-upload-error="ndtReportUploadError"
             :submit-error="ndtSubmitError"
-            :ndt-readiness="ndtReadiness"
             :rectify-error="ndtRectifyError"
             @create-film="handleCreateNdtFilm"
             @import-records="handleImportNdtRecords"
@@ -5902,7 +5816,6 @@ onBeforeUnmount(() => {
             @upload-report="handleOpenNdtReportUpload"
             @replace-material-bindings="handleReplaceNdtAtomicBindings"
             @submit-material="handleSubmitNdtAtomicMaterial"
-            @submit-ndt="handleSubmitNdt"
             @rectify-ndt="handleRectifyNdt"
             @open-report-detail="handleOpenNdtReportDetail"
             @open-feedback-detail="handleOpenNdtFeedbackDetail"
@@ -6165,7 +6078,13 @@ onBeforeUnmount(() => {
 
       <UploadSessionDrawer
         v-model="uploadDrawerVisible"
-        :title="uploadDrawerMode === 'inspection' ? '上传监检资料' : '上传项目文件'"
+        :title="
+          uploadDrawerMode === 'inspection'
+            ? '上传监检资料'
+            : uploadDrawerAtomicMaterial
+              ? '上传无损检测资料'
+              : '上传项目文件'
+        "
         :node-name="selectedNode?.name"
         :material-category="uploadDrawerMaterialCategory"
         :material-type-code="uploadDrawerAtomicMaterial?.code"

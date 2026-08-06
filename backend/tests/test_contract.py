@@ -8724,6 +8724,30 @@ def test_ndt_atomic_upload_creates_independent_draft_bindings() -> None:
         assert binding["bindingStatus"] == "草稿挂载"
 
 
+def test_ndt_user_validation_messages_use_business_language() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    response = client.post(
+        f"/projects/{project_id}/documents/upload-session",
+        json={
+            "files": [
+                {
+                    "fileName": "质量保证手册.pdf",
+                    "fileSize": 1024,
+                    "fileType": "application/pdf",
+                    "materialCategory": "无损检测资料",
+                    "nodeIds": [35],
+                }
+            ]
+        },
+        headers=headers,
+    )
+    payload = assert_error(response, "VALIDATION_ERROR")
+    assert payload["message"] == "质量保证手册.pdf 必须选择资料类型。"
+    assert "原子" not in payload["message"]
+    assert "规则挂载" not in payload["message"]
+
+
 def upload_ndt_atomic_documents(file_specs: list[dict[str, object]]) -> list[dict[str, object]]:
     project_id = "P-2026-HDCP-001"
     headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}

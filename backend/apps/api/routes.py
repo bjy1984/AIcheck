@@ -443,14 +443,14 @@ def validate_ndt_atomic_upload_files(request: Request, files: list[dict[str, Any
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message=f"{file_name} 必须选择原子资料类型。",
+                message=f"{file_name} 必须选择资料类型。",
                 data={"fileName": file_name},
             )
         if not isinstance(raw_node_ids, list) or not raw_node_ids:
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message=f"{file_name} 至少挂载一个无损检测节点。",
+                message=f"{file_name} 至少选择一项适用业务规则。",
                 data={"fileName": file_name},
             )
         try:
@@ -461,7 +461,7 @@ def validate_ndt_atomic_upload_files(request: Request, files: list[dict[str, Any
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message=f"{file_name} 仅可挂载无损检测节点 35–42。",
+                message=f"{file_name} 包含不适用的业务规则，请重新选择。",
                 data={"fileName": file_name, "nodeIds": raw_node_ids},
             )
         file["nodeIds"] = node_ids
@@ -13291,9 +13291,9 @@ def replace_ndt_atomic_material_bindings(
         if not document or document.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request, message="未找到待调整的无损检测文件。")
         if str(document.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY:
-            return fail(errors.VALIDATION_ERROR, request, message="该文件不是无损检测原子资料。")
+            return fail(errors.VALIDATION_ERROR, request, message="该文件不属于无损检测资料。")
         if not node_ids or any(node_id not in NDT_ATOMIC_NODE_IDS for node_id in node_ids):
-            return fail(errors.VALIDATION_ERROR, request, message="规则挂载必须选择 35–42 中的至少一个节点。")
+            return fail(errors.VALIDATION_ERROR, request, message="请至少选择一项适用业务规则。")
         current_bindings = document_bindings(project_id, document_id)
         locked_binding_ids = [
             item["id"]
@@ -13304,7 +13304,7 @@ def replace_ndt_atomic_material_bindings(
             return fail(
                 errors.CONFLICT,
                 request,
-                message="文件提交审批后不能调整规则挂载。",
+                message="文件提交审批后不能调整适用业务规则。",
                 data={"lockedBindingIds": locked_binding_ids},
             )
         target_node_ids = set(node_ids)
@@ -13324,7 +13324,7 @@ def replace_ndt_atomic_material_bindings(
         )
         if invalid_document_ids:
             return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
-        repo.add_audit("调整无损检测原子资料规则挂载", "Document", document_id)
+        repo.add_audit("调整无损检测资料适用业务规则", "Document", document_id)
         return ok(
             {
                 "documentId": document_id,
@@ -13371,18 +13371,18 @@ def submit_ndt_atomic_material(
             str(document.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY
             or str(document.get("materialTypeCode") or "").strip() in {"", "generic_review_material"}
         ):
-            return fail(errors.VALIDATION_ERROR, request, message="该文件不是无损检测原子资料。")
+            return fail(errors.VALIDATION_ERROR, request, message="该文件不属于无损检测资料。")
         if not requested_binding_ids or len(set(requested_binding_ids)) != len(requested_binding_ids):
-            return fail(errors.VALIDATION_ERROR, request, message="请选择该文件待提交的规则挂载。")
+            return fail(errors.VALIDATION_ERROR, request, message="请选择该文件待提交的适用业务规则。")
         if len(requested_bindings) != len(requested_binding_ids):
-            return fail(errors.VALIDATION_ERROR, request, message="存在无效的规则挂载。")
+            return fail(errors.VALIDATION_ERROR, request, message="存在无效的适用业务规则。")
         current_bindings = document_bindings(project_id, document_id)
         current_binding_ids = {str(item.get("id") or "") for item in current_bindings}
         if set(requested_binding_ids) != current_binding_ids:
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message="单文件提交必须包含该文件当前的全部规则挂载。",
+                message="单文件提交必须包含该文件当前的全部适用业务规则。",
                 data={"expectedBindingIds": sorted(current_binding_ids)},
             )
         invalid_bindings = [
@@ -13398,7 +13398,7 @@ def submit_ndt_atomic_material(
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message="仅可逐文件提交其在 35–42 节点下的草稿或需补正规则。",
+                message="仅可逐文件提交其草稿或需补正状态下的适用业务规则。",
                 data={"invalidBindingIds": invalid_bindings},
             )
 
@@ -13432,7 +13432,7 @@ def submit_ndt_atomic_material(
         )
         todo = {
             "id": f"TODO-{uuid4().hex[:8].upper()}",
-            "title": f"无损检测原子资料待审查：{document.get('fileName')}",
+            "title": f"无损检测资料待审查：{document.get('fileName')}",
             "projectId": project_id,
             "nodeId": node_ids[0],
             "nodeIds": node_ids,
@@ -13464,7 +13464,7 @@ def submit_ndt_atomic_material(
             },
         }
         repo.state["submissions"].insert(0, submission)
-        repo.add_audit("提交无损检测原子资料审批", "Submission", submission_id)
+        repo.add_audit("提交无损检测资料审批", "Submission", submission_id)
         return ok(
             {
                 "submissionId": submission_id,

@@ -23,7 +23,6 @@ import type {
   DocumentAsset,
   NdtFeedback,
   NdtFilm,
-  NdtSubmissionReadiness,
   NdtRecord,
   NdtReport,
   ProjectTreeNode
@@ -36,6 +35,7 @@ import {
   NDT_ATOMIC_MATERIALS,
   NDT_NODE_IDS,
   ndtFileApprovalStatus,
+  ndtBusinessRuleNames,
   type NdtAtomicMaterial
 } from '@/utils/ndtAtomicMaterials'
 
@@ -61,7 +61,6 @@ const props = defineProps<{
   recordImportError?: string
   reportUploadError?: string
   submitError?: string
-  ndtReadiness?: NdtSubmissionReadiness
   rectifyError?: string
 }>()
 
@@ -78,7 +77,6 @@ const emit = defineEmits<{
       rows: Array<Partial<NdtRecord>>
     }
   ]
-  submitNdt: [payload: { reportIds: string[]; filmIds: string[] }]
   rectifyNdt: [
     payload: {
       rectificationId: string
@@ -197,8 +195,9 @@ const atomicFileRows = computed(() =>
     )
     return {
       ...file,
-      atomicTypeName: file.materialTypeName || file.materialTypeCode || '未分类原子资料',
+      materialTypeDisplayName: file.materialTypeName || file.materialTypeCode || '未分类资料',
       nodeIds: [...new Set(bindings.map((binding) => binding.nodeId))].sort((a, b) => a - b),
+      businessRuleNames: ndtBusinessRuleNames(bindings.map((binding) => binding.nodeId)),
       approvalStatus: ndtFileApprovalStatus(file),
       editableBindingIds: canEdit ? editableBindings.map((binding) => binding.id) : [],
       canEdit
@@ -427,11 +426,11 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       </template>
     </ElDialog>
 
-    <ElDialog v-model="bindingDialogVisible" title="调整规则挂载" width="560px" append-to-body>
-      <p class="binding-dialog-hint">仅草稿或需补正文件可调整；提交后规则挂载锁定。</p>
+    <ElDialog v-model="bindingDialogVisible" title="调整适用业务规则" width="640px" append-to-body>
+      <p class="binding-dialog-hint">草稿或需补正的文件可以调整，提交审批后不能再修改。</p>
       <ElCheckboxGroup v-model="bindingNodeIds" class="binding-node-options">
         <ElCheckbox v-for="nodeId in NDT_NODE_IDS" :key="nodeId" :value="nodeId">
-          R{{ nodeId }}
+          {{ ndtBusinessRuleNames([nodeId])[0] }}
         </ElCheckbox>
       </ElCheckboxGroup>
       <template #footer>
@@ -442,7 +441,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           :loading="loading"
           @click="saveBindingAdjustment"
         >
-          保存挂载
+          保存
         </ElButton>
       </template>
     </ElDialog>
@@ -451,9 +450,9 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       <template #header>
         <div class="panel-header">
           <div>
-            <span>一、无损检测资料库 / 检测资料台账</span>
+            <span>一、无损检测资料</span>
             <div class="panel-subtitle"
-              >无损检测机构负责检测方案、底片、记录、报告和补正资料；节点仅用于业务定位。</div
+              >集中管理检测方案、底片、记录、报告和补正资料，并逐项提交监检审核。</div
             >
           </div>
           <ElTag type="primary" effect="plain"> {{ ndtAssetRows.length }} 项资料 </ElTag>
@@ -465,8 +464,10 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       <section class="ndt-checklist">
         <div class="ndt-section-head">
           <div>
-            <strong>原子资料类型上传</strong>
-            <p>选择资料类型后自动带出 R35–R42，可在上传前调整；每个文件独立保存为草稿。</p>
+            <strong>无损检测资料上传</strong>
+            <p
+              >选择资料类型后，系统自动关联适用的业务规则；可在上传前调整。每个文件上传后单独保存为草稿。</p
+            >
           </div>
           <ElTag type="info" effect="plain">
             {{ ndtChecklistSummary.uploaded }} 个文件 / {{ ndtChecklistSummary.types }} 种类型
@@ -474,13 +475,8 @@ const handleRectifyNdt = async (rectificationId?: string) => {
         </div>
         <ElTable :data="ndtMaterialChecklist" border class="ndt-checklist-table">
           <ElTableColumn type="index" label="序号" width="72" />
-          <ElTableColumn prop="name" label="原子资料类型" min-width="250" show-overflow-tooltip />
-          <ElTableColumn prop="group" label="业务规则" min-width="170" />
-          <ElTableColumn label="默认挂载" width="150">
-            <template #default="{ row }">
-              {{ row.defaultNodeIds.map((nodeId) => `R${nodeId}`).join('、') }}
-            </template>
-          </ElTableColumn>
+          <ElTableColumn prop="name" label="资料类型" min-width="250" show-overflow-tooltip />
+          <ElTableColumn prop="group" label="业务规则" min-width="360" show-overflow-tooltip />
           <ElTableColumn label="已上传" width="100">
             <template #default="{ row }">{{ row.uploadedCount }} 项</template>
           </ElTableColumn>
@@ -503,7 +499,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
               在上传完成后异步运行，用于辅助核对字段；排队中或识别失败均不阻断单文件提交审批。</p
             >
           </div>
-          <ElTag type="info" effect="plain">辅助校验，不作准入门槛</ElTag>
+          <ElTag type="info" effect="plain">辅助核对，不影响提交</ElTag>
         </div>
         <ElTable :data="ocrMetadataRows" border>
           <ElTableColumn type="index" label="序号" width="72" />
@@ -523,15 +519,15 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       <section class="ndt-library">
         <div class="ndt-section-head">
           <div>
-            <strong>逐文件草稿与审批</strong>
+            <strong>已上传资料</strong>
             <p
-              >每个文件独立核对原子资料类型、规则挂载和 OCR
-              状态，再分别提交审批；不检查整包齐套性。</p
+              >请逐个核对资料类型、适用业务规则和 OCR
+              状态，再分别提交审批；无需等待其他资料上传完成。</p
             >
           </div>
           <div class="ndt-actions">
             <ElButton plain @click="filmDialogVisible = true">登记底片编号</ElButton>
-            <ElButton plain type="primary" @click="emit('uploadReport')">上传结构化报告</ElButton>
+            <ElButton plain type="primary" @click="emit('uploadReport')">上传检测报告</ElButton>
           </div>
         </div>
         <ElAlert
@@ -548,14 +544,14 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           <ElTableColumn type="index" label="序号" width="72" />
           <ElTableColumn prop="fileName" label="文件名称" min-width="220" show-overflow-tooltip />
           <ElTableColumn
-            prop="atomicTypeName"
-            label="原子资料类型"
+            prop="materialTypeDisplayName"
+            label="资料类型"
             min-width="230"
             show-overflow-tooltip
           />
-          <ElTableColumn label="规则挂载" width="160">
+          <ElTableColumn label="适用业务规则" min-width="300" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.nodeIds.map((nodeId) => `R${nodeId}`).join('、') || '未挂载' }}
+              {{ row.businessRuleNames.join('；') || '尚未关联' }}
             </template>
           </ElTableColumn>
           <ElTableColumn label="OCR" width="110">
@@ -585,7 +581,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
                 :disabled="!row.canEdit"
                 @click="openBindingDialog(row)"
               >
-                调整规则
+                调整业务规则
               </ElButton>
               <ElButton
                 link
@@ -753,9 +749,14 @@ const handleRectifyNdt = async (rectificationId?: string) => {
 }
 
 .binding-node-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.binding-node-options :deep(.el-checkbox) {
+  height: auto;
+  margin-right: 0;
+  line-height: 1.5;
 }
 
 .ndt-workspace :deep(.el-button),
