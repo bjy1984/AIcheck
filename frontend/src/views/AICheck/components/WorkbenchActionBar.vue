@@ -15,7 +15,6 @@ const emit = defineEmits<{
   bind: []
   saveDraft: []
   submit: []
-  withdraw: []
   history: []
   rectify: []
 }>()
@@ -51,14 +50,6 @@ const hasAction = (action: ActionCode) => actionSet.value.has(action)
       @click="emit('submit')"
     >
       提交批次
-    </ElButton>
-    <ElButton
-      v-if="canSubmit && hasAction('submission:withdraw')"
-      plain
-      :loading="loading"
-      @click="emit('withdraw')"
-    >
-      撤回未提交
     </ElButton>
     <ElButton v-if="canSubmit" plain :loading="loading" @click="emit('history')">
       提交历史

@@ -33,6 +33,7 @@ import type {
   OperationTask,
   ImpactPreview,
   InspectionAuditOverviewPayload,
+  InspectionSubmittedDocumentsPayload,
   InspectionAuditWorkspacePayload,
   SearchResult,
   TodoItem,
@@ -2981,6 +2982,20 @@ export const getInspectionAuditOverviewApi = (
   })
 }
 
+export const getInspectionSubmittedDocumentsApi = (
+  projectId: string,
+  params: {
+    keyword?: string
+    page?: number
+    pageSize?: number
+  } = {}
+): Promise<IResponse<InspectionSubmittedDocumentsPayload>> => {
+  return request.get({
+    url: `/api/projects/${projectId}/inspection/submitted-documents`,
+    params
+  })
+}
+
 export const getInspectionAuditWorkspaceApi = (
   projectId: string,
   nodeId: number
@@ -3173,19 +3188,6 @@ export const getSubmissionDetailApi = (
   return request.get({ url: `/api/projects/${projectId}/submissions/${submissionId}` })
 }
 
-export const withdrawSubmissionItemsApi = (
-  projectId: string,
-  submissionId: string,
-  payload: { bindingIds?: string[]; documentVersionIds?: string[]; reason: string },
-  options?: MutationHeaderOptions
-): Promise<IResponse<MockMutationResult>> => {
-  return request.post({
-    url: `/api/projects/${projectId}/submissions/${submissionId}/withdraw-items`,
-    data: payload,
-    headers: mutationHeaders(options)
-  })
-}
-
 export const submitRectificationApi = (
   projectId: string,
   payload: { nodeId: number; bindingIds: string[]; comment: string; rectificationId?: string },
@@ -3315,7 +3317,7 @@ export const rejectAiSuggestionApi = (
 export const returnCorrectionApi = (
   projectId: string,
   nodeId: number,
-  payload: { reason: string; evidenceLinkIds: string[] },
+  payload: { reason: string; bindingIds: string[]; evidenceLinkIds: string[] },
   options?: MutationHeaderOptions
 ): Promise<IResponse<ReturnCorrectionPayload>> => {
   return request.post({

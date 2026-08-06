@@ -34,7 +34,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/documents/batch-classify$", "file:bind"),
     ("POST", r"/projects/[^/]+/submissions/drafts$", "submission:draft"),
     ("POST", r"/projects/[^/]+/submissions$", "submission:submit"),
-    ("POST", r"/projects/[^/]+/submissions/[^/]+/withdraw-items$", "submission:withdraw"),
+    ("POST", r"/projects/[^/]+/submissions/[^/]+/withdraw-items$", "submission:submit"),
     ("POST", r"/projects/[^/]+/rectifications$", "rectification:submit"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/attachments$", "file:upload"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/file-bindings$", "file:bind"),

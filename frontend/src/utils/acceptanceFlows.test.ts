@@ -26,7 +26,7 @@ const binding = (
   sourceOrgName: '中石化第五建设有限公司',
   bindingStatus,
   boundAt: '2026-07-31 12:00:00',
-  actions: ['submission:submit', 'submission:withdraw']
+  actions: ['submission:submit']
 })
 
 const documentWithBindings = (

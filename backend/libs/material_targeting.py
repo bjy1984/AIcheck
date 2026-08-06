@@ -996,7 +996,7 @@ def upsert_auto_binding(
         "source": "material_targeting",
         "reviewPointIds": sorted(review_point_ids),
         "autoMatchConfidence": match.get("confidence"),
-        "actions": ["submission:submit", "submission:withdraw"],
+        "actions": ["submission:submit"],
     }
     repo.state.setdefault("bindings", []).insert(0, binding)
     return binding

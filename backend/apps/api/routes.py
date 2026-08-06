@@ -3650,7 +3650,7 @@ def ensure_submission_document_bindings(
                 "bindingStatus": "草稿挂载",
                 "boundByName": document.get("uploaderName") or "系统",
                 "boundAt": server_time(),
-                "actions": ["submission:submit", "submission:withdraw"],
+                "actions": ["submission:submit"],
             }
             repo.state["bindings"].insert(0, binding)
             binding_ids.append(binding["id"])
@@ -5344,7 +5344,7 @@ INSPECTION_AUDIT_STATUS_LABELS = {
 }
 
 INSPECTION_AUDIT_ACTIONS = {
-    "submission": {"project:view", "file:view", "file:preview", "file:download", "submission:submit", "submission:withdraw"},
+    "submission": {"project:view", "file:view", "file:preview", "file:download", "submission:submit"},
     "ocr": {"project:view", "file:view", "file:preview", "file:download"},
     "evidence": {"project:view", "file:view", "file:preview", "review:save", "ai:recheck"},
     "ai_review": {"ai:recheck", "ai:adopt", "ai:reject", "file:view", "file:preview"},
@@ -5440,6 +5440,118 @@ def _inspection_audit_role_error(request: Request) -> JSONResponse | None:
     return None
 
 
+def _inspection_document_review_status(
+    submission: dict[str, Any],
+    bindings: list[dict[str, Any]],
+) -> str:
+    statuses = {str(item.get("bindingStatus") or "") for item in bindings}
+    if "需补正" in statuses:
+        return "需补正"
+    if submission.get("previousSubmissionId") or submission.get("rectificationId"):
+        return "已重新提交"
+    if statuses and statuses == {"已通过"}:
+        return "已通过"
+    if "已通过" in statuses and "已提交" in statuses:
+        return "部分待审"
+    return "待审查"
+
+
+def build_inspection_submitted_document_rows(
+    project_id: str,
+    scope: set[int] | None,
+) -> list[dict[str, Any]]:
+    document_repo = repo.project_document_read_view(project_id)
+    documents = {
+        str(item.get("id")): item
+        for item in document_repo.project_documents(project_id)
+        if document_visible_in_scope(item, scope)
+    }
+    bindings = {
+        str(item.get("id")): item
+        for item in document_repo.bindings_for_project(project_id)
+        if record_visible_for_scope(item, scope, project_id=project_id)
+    }
+    rows_by_document: dict[str, dict[str, Any]] = {}
+    latest_submission_by_document: dict[str, dict[str, Any]] = {}
+    submissions = sorted(
+        (
+            item
+            for item in repo.state.get("submissions", [])
+            if item.get("projectId") == project_id and item.get("submittedAt")
+        ),
+        key=lambda item: str(item.get("submittedAt") or ""),
+        reverse=True,
+    )
+    for submission in submissions:
+        submission_type = str(submission.get("submissionType") or "document")
+        withdrawn_binding_ids = {str(item) for item in submission.get("withdrawnBindingIds") or []}
+        submitted_bindings = [
+            bindings[binding_id]
+            for raw_binding_id in submission.get("bindingIds") or []
+            if (binding_id := str(raw_binding_id)) in bindings
+            and binding_id not in withdrawn_binding_ids
+            and bindings[binding_id].get("bindingStatus") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        ]
+        bindings_by_document: dict[str, list[dict[str, Any]]] = {}
+        for binding in submitted_bindings:
+            bindings_by_document.setdefault(str(binding.get("documentId") or ""), []).append(binding)
+
+        document_ids = {str(item) for item in submission.get("documentIds") or [] if item}
+        document_ids.update(bindings_by_document)
+        for document_id in document_ids:
+            document = documents.get(document_id)
+            if not document:
+                continue
+            document_bindings = bindings_by_document.get(document_id, [])
+            if submission_type == "project":
+                if document.get("poolSubmissionStatus") != "已提交":
+                    continue
+            elif not document_bindings:
+                continue
+            if submission_type == "ndt-material" and document.get("fileStatus") != "已提交审批":
+                continue
+            existing_row = rows_by_document.get(document_id)
+            if existing_row:
+                existing_binding_ids = {
+                    str(item.get("id") or "")
+                    for item in existing_row.get("submittedBindings") or []
+                }
+                existing_row["submittedBindings"].extend(
+                    document_repo.clone(item)
+                    for item in document_bindings
+                    if str(item.get("id") or "") not in existing_binding_ids
+                )
+                existing_row["reviewStatus"] = _inspection_document_review_status(
+                    latest_submission_by_document[document_id],
+                    existing_row["submittedBindings"],
+                )
+                continue
+            enriched_document = attach_document_ocr_readiness(document_repo, document)
+            latest_submission_by_document[document_id] = submission
+            rows_by_document[document_id] = {
+                "documentId": document_id,
+                "submissionId": submission.get("submissionId") or submission.get("id"),
+                "submissionType": submission_type,
+                "fileName": enriched_document.get("fileName"),
+                "fileType": enriched_document.get("fileType"),
+                "materialTypeCode": enriched_document.get("materialTypeCode"),
+                "materialTypeName": enriched_document.get("materialTypeName"),
+                "materialCategory": enriched_document.get("materialCategory"),
+                "sourceOrgName": enriched_document.get("sourceOrgName"),
+                "submitterName": submission.get("submitterName") or enriched_document.get("uploaderName"),
+                "reviewStatus": _inspection_document_review_status(submission, document_bindings),
+                "submittedAt": submission.get("submittedAt"),
+                "submittedBindings": [document_repo.clone(item) for item in document_bindings],
+                "currentOcrStatus": enriched_document.get("currentOcrStatus"),
+                "ocrReadiness": enriched_document.get("ocrReadiness"),
+            }
+    return sorted(
+        rows_by_document.values(),
+        key=lambda item: str(item.get("submittedAt") or ""),
+        reverse=True,
+    )
+
+
 def build_inspection_audit_workspace(
     project_id: str,
     node_id: int,
@@ -5454,10 +5566,17 @@ def build_inspection_audit_workspace(
     if scope is not None and node_id not in scope:
         return None
 
+    submitted_rows = build_inspection_submitted_document_rows(project_id, scope)
+    submitted_binding_ids = {
+        str(binding.get("id") or "")
+        for item in submitted_rows
+        for binding in item.get("submittedBindings") or []
+    }
     project_bindings = [
         binding
         for binding in repo.bindings_for_project(project_id)
         if record_visible_for_scope(binding, scope, project_id=project_id)
+        and str(binding.get("id") or "") in submitted_binding_ids
     ]
     bindings = [
         repo.clone(binding)
@@ -5516,13 +5635,7 @@ def build_inspection_audit_workspace(
         and node_id in {int(value) for value in item.get("nodeIds") or []}
         and record_visible_for_scope(item, scope, project_id=project_id)
     ]
-    submission_drafts = [
-        repo.clone(item)
-        for item in repo.state.get("submission_drafts", [])
-        if item.get("projectId") == project_id
-        and node_id in {int(value) for value in item.get("nodeIds") or []}
-        and record_visible_for_scope(item, scope, project_id=project_id)
-    ]
+    submission_drafts: list[dict[str, Any]] = []
     ai_runs = [
         safe_ai_run_view(item)
         for item in repo.state.get("ai_runs", [])
@@ -5928,6 +6041,56 @@ def inspection_audit_overview(
     )
 
 
+@router.get("/projects/{project_id}/inspection/submitted-documents")
+def inspection_submitted_documents(
+    request: Request,
+    project_id: str,
+    keyword: str | None = None,
+    page_no: int = Query(default=1, alias="page", ge=1),
+    page_size: int = Query(default=20, alias="pageSize", ge=1, le=200),
+):
+    role_error = _inspection_audit_role_error(request)
+    if role_error:
+        return role_error
+    if not repo.require_project(project_id):
+        return fail(errors.NOT_FOUND, request)
+    scope = authorized_node_scope(request, project_id)
+    if scope == set():
+        return fail(errors.FORBIDDEN, request)
+    rows = build_inspection_submitted_document_rows(project_id, scope)
+    normalized_keyword = str(keyword or "").strip().lower()
+    if normalized_keyword:
+        rows = [
+            item
+            for item in rows
+            if normalized_keyword
+            in " ".join(
+                str(item.get(key) or "")
+                for key in (
+                    "fileName",
+                    "sourceOrgName",
+                    "submitterName",
+                    "materialCategory",
+                    "materialTypeName",
+                    "reviewStatus",
+                )
+            ).lower()
+        ]
+    total = len(rows)
+    start = (page_no - 1) * page_size
+    return ok(
+        {
+            "schemaVersion": "InspectionSubmittedDocuments@1.0.0",
+            "items": rows[start : start + page_size],
+            "page": page_no,
+            "pageSize": page_size,
+            "total": total,
+            "dataAsOf": server_time(),
+        },
+        request,
+    )
+
+
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/audit-workspace")
 def inspection_node_audit_workspace(request: Request, project_id: str, node_id: int):
     role_error = _inspection_audit_role_error(request)
@@ -5970,9 +6133,11 @@ def node_package(request: Request, project_id: str, node_id: int):
     if not node:
         return fail(errors.NOT_FOUND, request)
     scope = authorized_node_scope(request, project_id)
+    effective_role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
     document_repo = repo.project_document_read_view(effective_project_id)
     bindings = document_repo.bindings_for_node(effective_project_id, node_id)
-    version_ids = {item["documentVersionId"] for item in bindings}
     project_bindings = [
         binding
         for binding in document_repo.bindings_for_project(effective_project_id)
@@ -5983,6 +6148,24 @@ def node_package(request: Request, project_id: str, node_id: int):
         for item in document_repo.project_documents(effective_project_id)
         if document_visible_in_scope(item, scope)
     ]
+    if effective_role == "inspection":
+        submitted_rows = build_inspection_submitted_document_rows(effective_project_id, scope)
+        submitted_document_ids = {str(item.get("documentId") or "") for item in submitted_rows}
+        submitted_binding_ids = {
+            str(binding.get("id") or "")
+            for item in submitted_rows
+            for binding in item.get("submittedBindings") or []
+        }
+        bindings = [item for item in bindings if str(item.get("id") or "") in submitted_binding_ids]
+        project_bindings = [
+            item
+            for item in project_bindings
+            if str(item.get("id") or "") in submitted_binding_ids
+        ]
+        project_files = [
+            item for item in project_files if str(item.get("id") or "") in submitted_document_ids
+        ]
+    version_ids = {item["documentVersionId"] for item in bindings}
     for file in project_files:
         file_bindings = [binding for binding in project_bindings if binding.get("documentId") == file.get("id")]
         file["bindings"] = file_bindings
@@ -7005,7 +7188,7 @@ def bind_documents(
                     "bindingStatus": "草稿挂载",
                     "boundByName": request_actor_name(request),
                     "boundAt": server_time(),
-                    "actions": ["submission:submit", "submission:withdraw"],
+                    "actions": ["submission:submit"],
                 }
                 repo.state["bindings"].insert(0, binding)
                 created.append(binding["id"])
@@ -7139,6 +7322,12 @@ def withdraw_document(
         doc = repo.find_one("documents", document_id)
         if not doc or doc.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if document_is_locked_from_delete(project_id, document_id):
+            return fail(
+                errors.SUBMISSION_WITHDRAW_NOT_ALLOWED,
+                request,
+                http_status=409,
+            )
         doc["fileStatus"] = "已撤回"
         doc["updatedAt"] = server_time()
         return ok({**repo.mutation_result("撤回文件", "Document", document_id, next_status="已撤回"), "document": repo.clone(doc)}, request)
@@ -7261,6 +7450,40 @@ def submission_summary(submission: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def pending_rectification_for_bindings(
+    project_id: str,
+    binding_ids: list[str],
+) -> dict[str, Any] | None:
+    requested_ids = {str(item) for item in binding_ids if item}
+    if not requested_ids:
+        return None
+    candidates = [
+        item
+        for item in repo.state.get("rectifications", [])
+        if item.get("projectId") == project_id
+        and item.get("status") == "待反馈"
+        and bool(requested_ids & {str(value) for value in item.get("bindingIds") or []})
+    ]
+    return max(
+        candidates,
+        key=lambda item: str(item.get("returnedAt") or item.get("createdAt") or ""),
+        default=None,
+    )
+
+
+def link_resubmission_to_rectification(
+    submission: dict[str, Any],
+    rectification: dict[str, Any] | None,
+) -> None:
+    if not rectification:
+        return
+    submission["previousSubmissionId"] = rectification.get("submissionId")
+    submission["rectificationId"] = rectification.get("id")
+    rectification["status"] = "已重新提交"
+    rectification["resubmissionId"] = submission.get("submissionId")
+    rectification["resubmittedAt"] = submission.get("submittedAt")
+
+
 @router.get("/projects/{project_id}/submissions")
 def list_submissions(request: Request, project_id: str):
     drafts = [draft_summary(item) for item in repo.state["submission_drafts"] if item["projectId"] == project_id]
@@ -7314,6 +7537,7 @@ def submit_node_package(
                     message="所选文件已提交到项目资料池，不能重复提交。",
                     data={"alreadySubmittedDocumentIds": already_submitted},
                 )
+            submitted_at = server_time()
             changed = []
             for document_id in document_ids:
                 document = repo.find_one("documents", document_id)
@@ -7321,8 +7545,8 @@ def submit_node_package(
                     continue
                 before = document.get("poolSubmissionStatus") or "未提交"
                 document["poolSubmissionStatus"] = "已提交"
-                document["poolSubmittedAt"] = server_time()
-                document["updatedAt"] = server_time()
+                document["poolSubmittedAt"] = submitted_at
+                document["updatedAt"] = submitted_at
                 changed.append(
                     {
                         "field": f"documents.{document_id}.poolSubmissionStatus",
@@ -7356,8 +7580,9 @@ def submit_node_package(
                 "documentIds": document_ids,
                 "batchName": body.get("batchName"),
                 "submitterComment": body.get("submitterComment"),
+                "submitterName": request_actor_name(request),
                 "nextStatus": "资料池待处理",
-                "submittedAt": server_time(),
+                "submittedAt": submitted_at,
                 "createdTodoIds": [todo_id],
                 "changed": changed,
                 "createdBindingIds": [],
@@ -7383,6 +7608,8 @@ def submit_node_package(
             return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
         if not binding_ids:
             return fail(errors.EMPTY_NODE_PACKAGE, request)
+        rectification = pending_rectification_for_bindings(project_id, binding_ids)
+        submitted_at = server_time()
         changed = []
         for binding in repo.state["bindings"]:
             if binding["id"] in binding_ids:
@@ -7415,12 +7642,14 @@ def submit_node_package(
             "documentIds": body.get("documentIds") or [],
             "batchName": body.get("batchName"),
             "submitterComment": body.get("submitterComment"),
+            "submitterName": request_actor_name(request),
             "nextStatus": "待审查",
-            "submittedAt": server_time(),
+            "submittedAt": submitted_at,
             "createdTodoIds": [todo_id],
             "changed": changed,
             "createdBindingIds": created_binding_ids,
         }
+        link_resubmission_to_rectification(submission, rectification)
         repo.state["submissions"].insert(0, submission)
         todo = repo.find_one("todos", todo_id)
         return ok({"submissionId": submission_id, "snapshotId": snapshot_id, "submissionType": "document", "nextStatus": "待审查", "createdTodos": [repo.clone(todo)] if todo else [], "bindingIds": binding_ids, "createdBindingIds": created_binding_ids}, request)
@@ -7469,60 +7698,11 @@ def withdraw_submission_items(
         guard = mutation_guard(request, project_id, x_role=x_role)
         if guard:
             return guard
-        binding_ids = [str(item) for item in (body.get("bindingIds") or []) if item]
-        if not binding_ids:
-            return fail(errors.EMPTY_BINDINGS, request)
-        requested_ids = set(binding_ids)
-        submission = next(
-            (
-                item
-                for item in repo.state["submissions"]
-                if item["projectId"] == project_id and item["submissionId"] == submission_id
-            ),
-            None,
+        return fail(
+            errors.SUBMISSION_WITHDRAW_NOT_ALLOWED,
+            request,
+            http_status=409,
         )
-        if not submission:
-            return fail(errors.NOT_FOUND, request)
-        submitted_ids = set(submission.get("bindingIds") or [])
-        invalid_ids = sorted(requested_ids - submitted_ids)
-        if invalid_ids:
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="只能撤回当前提交批次内的资料。",
-                data={"invalidBindingIds": invalid_ids},
-            )
-        binding_by_id = {
-            binding["id"]: binding
-            for binding in repo.state["bindings"]
-            if binding.get("projectId") == project_id and binding["id"] in requested_ids
-        }
-        missing_ids = sorted(requested_ids - set(binding_by_id))
-        if missing_ids:
-            return fail(errors.NOT_FOUND, request, data={"missingBindingIds": missing_ids})
-        locked_ids = sorted(
-            binding["id"]
-            for binding in binding_by_id.values()
-            if binding.get("bindingStatus") in {"已通过", "已锁定", "已归档"}
-        )
-        if locked_ids:
-            return fail(errors.WITHDRAW_LOCKED, request, data={"lockedBindingIds": locked_ids})
-        withdrawal_reason = compact_plain_text(body.get("reason"), 1000)
-        if not withdrawal_reason:
-            return fail(errors.VALIDATION_ERROR, request, message="撤回已提交资料必须填写原因。")
-        for binding in binding_by_id.values():
-            binding["bindingStatus"] = "草稿挂载"
-        withdrawn_ids = sorted(set(submission.get("withdrawnBindingIds") or []) | requested_ids)
-        submission["withdrawnBindingIds"] = withdrawn_ids
-        submission["withdrawal"] = {
-            "bindingCount": len(withdrawn_ids),
-            "reason": withdrawal_reason,
-            "withdrawnAt": server_time(),
-        }
-        submission["nextStatus"] = "部分提交"
-        node_ids = sorted({int(item["nodeId"]) for item in binding_by_id.values()})
-        changed = [repo.set_node_status(project_id, node_id, "部分提交") for node_id in node_ids]
-        return ok(repo.mutation_result("撤回未提交项", "Submission", submission_id, next_status="部分提交", changed=changed, affected_ids=binding_ids), request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -7584,11 +7764,68 @@ def submit_rectification(
                 return fail(errors.CONFLICT, request, message="当前节点没有待反馈补正单。")
         if rectification.get("status") != "待反馈":
             return fail(errors.CONFLICT, request, message="补正单当前状态不允许提交反馈。")
-        rectification["status"] = "已反馈"
-        rectification["comment"] = body.get("comment") or body.get("description")
+        invalid_status_binding_ids = sorted(
+            binding_id
+            for binding_id in binding_ids
+            if (repo.find_one("bindings", binding_id) or {}).get("bindingStatus") != "需补正"
+        )
+        if invalid_status_binding_ids:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="只有监检退回为需补正状态的资料才能重新提交。",
+                data={"invalidBindingIds": invalid_status_binding_ids},
+            )
+        submitted_at = server_time()
+        submission_id = f"SUB-RECT-{uuid4().hex[:8].upper()}"
+        snapshot_id = f"SNAP-{submission_id}"
+        for binding_id in binding_ids:
+            binding = repo.find_one("bindings", binding_id)
+            if binding:
+                binding["bindingStatus"] = "已提交"
         rectification["bindingIds"] = binding_ids
-        rectification["feedbackAt"] = server_time()
+        rectification["feedbackComment"] = body.get("comment") or body.get("description")
+        rectification["feedbackAt"] = submitted_at
         rectification["feedbackByName"] = request_actor_name(request)
+        submission = {
+            "submissionId": submission_id,
+            "snapshotId": snapshot_id,
+            "projectId": project_id,
+            "submissionType": "document",
+            "nodeIds": [node_id],
+            "bindingIds": binding_ids,
+            "documentIds": sorted(
+                {
+                    str((repo.find_one("bindings", binding_id) or {}).get("documentId") or "")
+                    for binding_id in binding_ids
+                    if (repo.find_one("bindings", binding_id) or {}).get("documentId")
+                }
+            ),
+            "submitterComment": rectification.get("feedbackComment"),
+            "submitterName": request_actor_name(request),
+            "nextStatus": "复审中",
+            "submittedAt": submitted_at,
+            "createdTodoIds": [],
+            "changed": [],
+            "previousSubmissionId": rectification.get("submissionId"),
+            "rectificationId": rectification.get("id"),
+        }
+        link_resubmission_to_rectification(submission, rectification)
+        todo = {
+            "id": f"TODO-{uuid4().hex[:8].upper()}",
+            "title": f"节点 {node_id} 补正资料已重新提交，待复审",
+            "projectId": project_id,
+            "nodeId": node_id,
+            "targetType": "submission",
+            "targetId": submission_id,
+            "status": "待处理",
+            "priority": "高",
+            "assigneeName": project_role_assignee_name(project_id, "inspection"),
+            "actions": ["review:save"],
+        }
+        submission["createdTodoIds"] = [todo["id"]]
+        repo.state["submissions"].insert(0, submission)
+        repo.state["todos"].insert(0, todo)
         changed = [repo.set_node_status(project_id, node_id, "复审中")]
         return ok(
             {
@@ -7599,7 +7836,7 @@ def submit_rectification(
                     "status": rectification["status"],
                 },
                 "nextStatus": "复审中",
-                "createdTodos": [],
+                "createdTodos": [todo],
                 **repo.mutation_result(
                     "提交补正反馈",
                     "Rectification",
@@ -11907,16 +12144,86 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
         correction_reason = compact_plain_text(body.get("reason") or body.get("requirement"), 2000)
         if not correction_reason:
             return fail(errors.VALIDATION_ERROR, request, message="退回补正必须填写具体原因和处理要求。")
+        binding_ids = compact_id_list(body.get("bindingIds"))
+        if not binding_ids:
+            return fail(errors.EMPTY_BINDINGS, request, message="退回补正必须选择本次退回的已提交资料。")
+        binding_by_id = {
+            str(item.get("id")): item
+            for item in repo.state.get("bindings", [])
+            if item.get("projectId") == project_id and str(item.get("id")) in set(binding_ids)
+        }
+        invalid_binding_ids = sorted(
+            binding_id
+            for binding_id in binding_ids
+            if binding_id not in binding_by_id
+            or int(binding_by_id[binding_id].get("nodeId") or 0) != int(node_id)
+            or binding_by_id[binding_id].get("bindingStatus") != "已提交"
+        )
+        if invalid_binding_ids:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="只能退回当前节点中处于待审查状态的已提交资料。",
+                data={"invalidBindingIds": invalid_binding_ids},
+            )
+        matching_submissions = sorted(
+            (
+                item
+                for item in repo.state.get("submissions", [])
+                if item.get("projectId") == project_id
+                and set(binding_ids).issubset({str(value) for value in item.get("bindingIds") or []})
+                and not set(binding_ids) & {str(value) for value in item.get("withdrawnBindingIds") or []}
+            ),
+            key=lambda item: str(item.get("submittedAt") or ""),
+            reverse=True,
+        )
+        if not matching_submissions:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="所选资料没有可退回的有效提交记录。",
+            )
+        source_submission = matching_submissions[0]
+        returned_at = server_time()
         rectification = {
             "id": f"REC-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_id,
             "status": "待反馈",
             "comment": correction_reason,
-            "createdAt": server_time(),
+            "submissionId": source_submission.get("submissionId"),
+            "bindingIds": binding_ids,
+            "returnedAt": returned_at,
+            "reviewerName": request_actor_name(request),
+            "createdAt": returned_at,
         }
         repo.state["rectifications"].insert(0, rectification)
-        changed = [repo.set_node_status(project_id, node_id, "需补正")]
+        changed = []
+        for binding_id in binding_ids:
+            binding = binding_by_id[binding_id]
+            before = binding.get("bindingStatus")
+            binding["bindingStatus"] = "需补正"
+            changed.append(
+                {
+                    "field": f"bindings.{binding_id}.bindingStatus",
+                    "before": before,
+                    "after": "需补正",
+                }
+            )
+        changed.append(repo.set_node_status(project_id, node_id, "需补正"))
+        returned_documents = [
+            repo.find_one("documents", str(binding_by_id[binding_id].get("documentId") or ""))
+            for binding_id in binding_ids
+        ]
+        assignee_role = (
+            "ndt"
+            if returned_documents
+            and all(
+                document and str(document.get("materialCategory") or "").strip() == NDT_ATOMIC_MATERIAL_CATEGORY
+                for document in returned_documents
+            )
+            else "contractor"
+        )
         todo = {
             "id": f"TODO-{uuid4().hex[:8].upper()}",
             "title": f"节点 {node_id} 退回补正",
@@ -11926,7 +12233,7 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             "targetId": rectification["id"],
             "status": "待处理",
             "priority": "高",
-            "assigneeName": project_role_assignee_name(project_id, "contractor"),
+            "assigneeName": project_role_assignee_name(project_id, assignee_role),
             "actions": ["rectification:submit"],
         }
         repo.state["todos"].insert(0, todo)
@@ -13352,11 +13659,12 @@ def ndt_material_submission_state_records(
     binding_ids: list[str],
     node_ids: list[int],
     todo_ids: list[str],
+    rectification_id: str | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     binding_id_set = set(binding_ids)
     node_id_set = set(node_ids)
     todo_id_set = set(todo_ids)
-    return {
+    records = {
         "documents": [
             item for item in repo.state["documents"] if item.get("id") == document_id
         ],
@@ -13375,6 +13683,13 @@ def ndt_material_submission_state_records(
         ],
         "todos": [item for item in repo.state["todos"] if item.get("id") in todo_id_set],
     }
+    if rectification_id:
+        records["rectifications"] = [
+            item
+            for item in repo.state["rectifications"]
+            if item.get("id") == rectification_id
+        ]
+    return records
 
 
 @router.post("/projects/{project_id}/ndt/material-submissions")
@@ -13444,6 +13759,7 @@ def submit_ndt_atomic_material(
             )
 
         node_ids = sorted({int(item["nodeId"]) for item in requested_bindings})
+        rectification = pending_rectification_for_bindings(project_id, requested_binding_ids)
         submitted_at = server_time()
         submission_id = f"NDT-MAT-SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{submission_id}"
@@ -13496,6 +13812,7 @@ def submit_ndt_atomic_material(
             "documentIds": [document_id],
             "materialTypeCode": document.get("materialTypeCode"),
             "materialTypeName": document.get("materialTypeName"),
+            "submitterName": request_actor_name(request),
             "nextStatus": "待审查",
             "submittedAt": submitted_at,
             "createdTodoIds": [todo["id"]],
@@ -13505,6 +13822,7 @@ def submit_ndt_atomic_material(
                 "bindings": [repo.clone(item) for item in requested_bindings],
             },
         }
+        link_resubmission_to_rectification(submission, rectification)
         repo.state["submissions"].insert(0, submission)
         repo.add_audit("提交无损检测资料审批", "Submission", submission_id)
         request.state.persistence_conflict_message = "文件状态已更新，请刷新后重试。"
@@ -13515,6 +13833,7 @@ def submit_ndt_atomic_material(
             binding_ids=requested_binding_ids,
             node_ids=node_ids,
             todo_ids=[todo["id"]],
+            rectification_id=str(rectification.get("id")) if rectification else None,
         )
         return ok(
             {

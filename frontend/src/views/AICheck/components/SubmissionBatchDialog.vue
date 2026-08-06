@@ -48,23 +48,16 @@ const emit = defineEmits<{
       remark: string
     }
   ]
-  withdraw: [
-    payload: {
-      bindingIds: string[]
-      reason: string
-    }
-  ]
 }>()
 
 const form = reactive({
   batchName: '',
   submitterComment: '',
-  withdrawReason: '',
   targetNodeIds: [] as number[]
 })
 
 const selectedBindings = ref<NodeFileBinding[]>([])
-const lastAction = ref<'saveDraft' | 'submit' | 'withdraw'>()
+const lastAction = ref<'saveDraft' | 'submit'>()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -81,7 +74,6 @@ const submitReadyCount = computed(
 const isCrossNodeScope = computed(() => form.targetNodeIds.length > 1)
 const retryLabel = computed(() => {
   if (lastAction.value === 'saveDraft') return '重试保存'
-  if (lastAction.value === 'withdraw') return '重试撤回'
   return '重试提交'
 })
 const nodeOptions = computed(() =>
@@ -103,7 +95,6 @@ const resetForm = () => {
       ? `节点 ${selectedNode.value.nodeId} ${selectedNode.value.name} 提交批次`
       : '节点资料提交批次')
   form.submitterComment = draft?.remark || ''
-  form.withdrawReason = ''
   form.targetNodeIds = draft?.nodeIds?.length
     ? [...draft.nodeIds]
     : selectedNode.value
@@ -160,29 +151,9 @@ const handleSaveDraft = () => {
   })
 }
 
-const handleWithdraw = () => {
-  if (!selectedBindingIds.value.length) {
-    ElMessage.warning('请选择需要撤回的资料')
-    return
-  }
-  if (!form.withdrawReason.trim()) {
-    ElMessage.warning('请填写撤回原因')
-    return
-  }
-  lastAction.value = 'withdraw'
-  emit('withdraw', {
-    bindingIds: selectedBindingIds.value,
-    reason: form.withdrawReason.trim()
-  })
-}
-
 const handleRetry = () => {
   if (lastAction.value === 'saveDraft') {
     handleSaveDraft()
-    return
-  }
-  if (lastAction.value === 'withdraw') {
-    handleWithdraw()
     return
   }
   handleSubmit()
@@ -215,7 +186,7 @@ watch(
         type="info"
         show-icon
         class="batch-alert"
-        title="选择本次要提交或撤回的资料项；跨节点提交未勾选资料时，将提交所选节点范围内全部可提交挂载资料。"
+        title="选择本次要提交的资料项；跨节点提交未勾选资料时，将提交所选节点范围内全部可提交挂载资料。"
       />
       <ElAlert
         v-if="draftDetail"
@@ -298,18 +269,6 @@ watch(
           </template>
         </ElTableColumn>
       </ElTable>
-
-      <ElForm label-position="top" class="withdraw-form">
-        <ElFormItem label="撤回原因">
-          <ElInput
-            v-model="form.withdrawReason"
-            type="textarea"
-            :rows="2"
-            maxlength="200"
-            show-word-limit
-          />
-        </ElFormItem>
-      </ElForm>
     </template>
 
     <ElEmpty v-else description="请选择节点后再提交" />
@@ -322,15 +281,6 @@ watch(
       <ElButton @click="visible = false">取消</ElButton>
       <ElButton plain :disabled="!bindings.length" :loading="loading" @click="handleSaveDraft">
         保存为草稿
-      </ElButton>
-      <ElButton
-        type="warning"
-        plain
-        :disabled="!bindings.length"
-        :loading="loading"
-        @click="handleWithdraw"
-      >
-        撤回未提交项
       </ElButton>
       <ElButton
         type="primary"
@@ -360,10 +310,6 @@ watch(
 
 .submission-node-scope-field {
   min-width: 0;
-}
-
-.withdraw-form {
-  margin-top: 14px;
 }
 
 .dialog-error-content {

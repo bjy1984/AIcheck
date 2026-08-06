@@ -431,7 +431,7 @@ BINDINGS = [
         "bindingStatus": "草稿挂载",
         "boundByName": "李工",
         "boundAt": "2026-06-25 10:50:00",
-        "actions": ["submission:submit", "submission:withdraw"],
+        "actions": ["submission:submit"],
     },
     {
         "id": "BIND-16-001",
@@ -448,7 +448,7 @@ BINDINGS = [
         "bindingStatus": "需补正",
         "boundByName": "李工",
         "boundAt": "2026-06-25 11:30:00",
-        "actions": ["rectification:submit", "submission:submit", "submission:withdraw"],
+        "actions": ["rectification:submit", "submission:submit"],
     },
     {
         "id": "BIND-40-001",

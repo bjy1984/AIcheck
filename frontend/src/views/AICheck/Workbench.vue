@@ -18,7 +18,6 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
-  ElNotification,
   ElOption,
   ElPagination,
   ElProgress,
@@ -61,6 +60,7 @@ import {
   getExportTaskApi,
   getInspectionDateCompareApi,
   getInspectionAuditOverviewApi,
+  getInspectionSubmittedDocumentsApi,
   getInspectionAuditWorkspaceApi,
   getActiveReviewHumanInputTaskApi,
   getNdtInspectionFeedbackDetailApi,
@@ -102,8 +102,7 @@ import {
   submitNodePackageApi,
   submitRectificationApi,
   submitReviewHumanInputResponseApi,
-  updateReportApi,
-  withdrawSubmissionItemsApi
+  updateReportApi
 } from '@/api/aicheck'
 import type {
   ArchiveItemDetailPayload,
@@ -137,6 +136,7 @@ import type {
   InspectionAuditItem,
   InspectionAuditItemKey,
   InspectionAuditOverviewPayload,
+  InspectionSubmittedDocumentsPayload,
   InspectionAuditWorkspacePayload,
   NdtFeedback,
   NdtFilm,
@@ -314,6 +314,7 @@ let workbenchPageTransitionTimer: number | undefined
 let workbenchPageTransitionSequence = 0
 const activeInspectionAuditItem = ref<InspectionAuditItemKey>('submission')
 const inspectionAuditOverview = ref<InspectionAuditOverviewPayload>()
+const inspectionSubmittedDocuments = ref<InspectionSubmittedDocumentsPayload>()
 const inspectionAuditWorkspace = ref<InspectionAuditWorkspacePayload>()
 const inspectionAuditLoading = ref(false)
 const inspectionAuditIssue = ref<WorkbenchStateIssue>()
@@ -1051,9 +1052,6 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
     }
   ]
 })
-const overviewFileVersionMap = computed(
-  () => new Map((nodePackage.value?.availableVersions || []).map((item) => [item.id, item]))
-)
 const overviewFileMaterialTypeLabels: Record<string, string> = {
   generic_review_material: '审查资料',
   design_license: '设计单位许可证',
@@ -1127,9 +1125,8 @@ const ocrReadinessLabels: Record<string, string> = {
 }
 const ocrReadinessLabel = (status?: string) =>
   ocrReadinessLabels[String(status || '')] || '等待 OCR 产物校验'
-const inspectionOverviewFileRows = computed(() =>
-  (nodePackage.value?.projectFiles || []).map((file) => {
-    const currentVersion = overviewFileVersionMap.value.get(file.currentVersionId)
+const pagedInspectionOverviewFiles = computed(() =>
+  (inspectionSubmittedDocuments.value?.items || []).map((file, index) => {
     const sourceOrgName = file.sourceOrgName || ''
     const sourceRole =
       /无损|检测|NDT|华测/i.test(sourceOrgName) || file.materialCategory === '无损检测资料'
@@ -1139,41 +1136,14 @@ const inspectionOverviewFileRows = computed(() =>
           : '参建单位'
     return {
       ...file,
-      uploadTimeText: currentVersion?.uploadTime || file.updatedAt || '-',
+      id: file.documentId,
+      rowNo: (overviewFilePage.value - 1) * overviewFilePageSize.value + index + 1,
       materialCategoryText: getOverviewFileMaterialCategory(file),
       sourceRole
     }
   })
 )
-const filteredInspectionOverviewFiles = computed(() => {
-  const keyword = overviewFileKeyword.value.trim().toLowerCase()
-  const rows = [...inspectionOverviewFileRows.value].sort((left, right) =>
-    String(right.uploadTimeText).localeCompare(String(left.uploadTimeText))
-  )
-  if (!keyword) return rows
-  return rows.filter((file) =>
-    [
-      file.fileName,
-      file.sourceOrgName,
-      file.uploaderName,
-      file.materialCategory,
-      file.materialCategoryText,
-      file.fileStatus,
-      file.sourceRole
-    ]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(keyword))
-  )
-})
-const pagedInspectionOverviewFiles = computed(() => {
-  const start = (overviewFilePage.value - 1) * overviewFilePageSize.value
-  return filteredInspectionOverviewFiles.value
-    .slice(start, start + overviewFilePageSize.value)
-    .map((file, index) => ({
-      ...file,
-      rowNo: start + index + 1
-    }))
-})
+const inspectionOverviewFileTotal = computed(() => inspectionSubmittedDocuments.value?.total || 0)
 const postUploadProcessingFiles = computed(() =>
   (nodePackage.value?.projectFiles || []).filter((file) => {
     const readinessStatus = file.ocrReadiness?.status
@@ -1845,14 +1815,6 @@ const showSubmissionDialogError = (fallback: string, error?: unknown) => {
   ElMessage.error(message)
 }
 
-const showWithdrawSuccess = () => {
-  ElNotification.success({
-    title: '撤回成功',
-    message: '提交项已撤回为草稿挂载，可在提交历史中追溯',
-    duration: 5000
-  })
-}
-
 const showBindDialogError = (fallback: string, error?: unknown) => {
   const message = getAicheckErrorMessage(error, fallback)
   bindDialogError.value = message
@@ -1910,6 +1872,19 @@ const showExportTaskError = (fallback: string, error?: unknown) => {
   const message = getAicheckErrorMessage(error, fallback)
   exportTaskError.value = message
   ElMessage.error(message)
+}
+
+const loadInspectionSubmittedDocuments = async () => {
+  if (!activeProjectId.value || role.value !== 'inspection') {
+    inspectionSubmittedDocuments.value = undefined
+    return
+  }
+  const res = await getInspectionSubmittedDocumentsApi(activeProjectId.value, {
+    keyword: overviewFileKeyword.value.trim() || undefined,
+    page: overviewFilePage.value,
+    pageSize: overviewFilePageSize.value
+  })
+  inspectionSubmittedDocuments.value = res?.data
 }
 
 const loadInspectionAuditOverview = async () => {
@@ -2267,9 +2242,15 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
       reports.value = []
       archiveItems.value = []
       inspectionAuditOverview.value = undefined
+      inspectionSubmittedDocuments.value = undefined
       await loadNdtData()
     } else {
-      await Promise.all([loadReportArchive(), loadNdtData(), loadInspectionAuditOverview()])
+      await Promise.all([
+        loadReportArchive(),
+        loadNdtData(),
+        loadInspectionAuditOverview(),
+        loadInspectionSubmittedDocuments()
+      ])
     }
     await loadNodePackage(
       options.preserveSelection ? activeNodeId.value : contextRes.data.currentNodeId
@@ -3393,39 +3374,6 @@ const handleSubmitBatch = async (payload: {
   }
 }
 
-const handleWithdrawSubmission = async (payload: { bindingIds: string[]; reason: string }) => {
-  if (!ensureWritableNode()) return
-  actionLoading.value = true
-  submissionDialogError.value = ''
-  try {
-    const submissionId =
-      latestSubmissionIds.value[activeNodeId.value] || `SUB-${activeNodeId.value}-CURRENT`
-    const res = await withdrawSubmissionItemsApi(
-      activeProjectId.value,
-      submissionId,
-      {
-        bindingIds: payload.bindingIds,
-        reason: payload.reason
-      },
-      { etag: currentProject.value?.etag }
-    )
-    if (!res) {
-      showSubmissionDialogError('提交项撤回失败，请检查资料是否已锁定或当前状态是否允许撤回。')
-      return
-    }
-    showWithdrawSuccess()
-    submissionDialogVisible.value = false
-    submissionDialogError.value = ''
-    await loadProjectBundle()
-    await loadSubmissionHistory()
-    submissionHistoryVisible.value = true
-  } catch (error) {
-    showSubmissionDialogError('提交项撤回失败，请检查资料是否已锁定或当前状态是否允许撤回。', error)
-  } finally {
-    actionLoading.value = false
-  }
-}
-
 const handleOpenRectificationDialog = (rectificationId?: string) => {
   if (!ensureWritableNode()) return
   activeRectificationId.value = rectificationId || ''
@@ -3920,6 +3868,13 @@ const handleReturnCorrection = async () => {
     ElMessage.warning('请填写退回补正原因')
     return
   }
+  const submittedBindingIds = bindings.value
+    .filter((binding) => binding.bindingStatus === '已提交')
+    .map((binding) => binding.id)
+  if (!submittedBindingIds.length) {
+    ElMessage.warning('当前节点没有可退回的已提交资料')
+    return
+  }
   actionLoading.value = true
   try {
     const res = await returnCorrectionApi(
@@ -3927,6 +3882,7 @@ const handleReturnCorrection = async () => {
       activeNodeId.value,
       {
         reason: correctionReason.value.trim(),
+        bindingIds: submittedBindingIds,
         evidenceLinkIds: evidenceLinks.value.map((item) => item.id)
       },
       {
@@ -4427,7 +4383,18 @@ watch(
 watch(
   () => overviewFileKeyword.value,
   () => {
-    overviewFilePage.value = 1
+    if (overviewFilePage.value !== 1) {
+      overviewFilePage.value = 1
+      return
+    }
+    void loadInspectionSubmittedDocuments()
+  }
+)
+
+watch(
+  () => [overviewFilePage.value, overviewFilePageSize.value] as const,
+  () => {
+    void loadInspectionSubmittedDocuments()
   }
 )
 
@@ -4460,14 +4427,6 @@ watch(
   ([total, pageSize]) => {
     const maxPage = Math.max(1, Math.ceil(total / pageSize))
     if (inspectionNodePage.value > maxPage) inspectionNodePage.value = maxPage
-  }
-)
-
-watch(
-  () => [filteredInspectionOverviewFiles.value.length, overviewFilePageSize.value] as const,
-  ([total, pageSize]) => {
-    const maxPage = Math.max(1, Math.ceil(total / pageSize))
-    if (overviewFilePage.value > maxPage) overviewFilePage.value = maxPage
   }
 )
 
@@ -4991,11 +4950,11 @@ onBeforeUnmount(() => {
               >
                 <div class="inspection-chart-head">
                   <div>
-                    <strong>施工方/无损检测机构上传文件列表</strong>
-                    <small>按项目文件库展示上传资料，支持查找、分页和查看原文。</small>
+                    <strong>已提交审查资料</strong>
+                    <small>仅展示施工方和无损检测机构已正式提交监检审查的资料。</small>
                   </div>
                   <AuditStatusTag tone="blue" round>
-                    {{ filteredInspectionOverviewFiles.length }} 份文件
+                    {{ inspectionOverviewFileTotal }} 份文件
                   </AuditStatusTag>
                 </div>
 
@@ -5003,8 +4962,8 @@ onBeforeUnmount(() => {
                   <ElInput
                     v-model="overviewFileKeyword"
                     clearable
-                    placeholder="查找文件名、上传单位、上传人、资料类别或状态"
-                    aria-label="查找上传文件"
+                    placeholder="查找文件名、提交单位、提交人、资料类别或审查状态"
+                    aria-label="查找已提交审查资料"
                   />
                 </div>
 
@@ -5012,7 +4971,7 @@ onBeforeUnmount(() => {
                   class="overview-file-table"
                   :data="pagedInspectionOverviewFiles"
                   row-key="id"
-                  empty-text="暂无匹配文件"
+                  empty-text="暂无已提交审查资料"
                 >
                   <ElTableColumn prop="rowNo" label="序号" width="72" align="center" />
                   <ElTableColumn
@@ -5038,8 +4997,8 @@ onBeforeUnmount(() => {
                       <small class="overview-file-source">{{ row.sourceOrgName }}</small>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="uploaderName" label="上传人" width="112">
-                    <template #default="{ row }">{{ row.uploaderName || '-' }}</template>
+                  <ElTableColumn prop="submitterName" label="提交人" width="112">
+                    <template #default="{ row }">{{ row.submitterName || '-' }}</template>
                   </ElTableColumn>
                   <ElTableColumn
                     prop="materialCategoryText"
@@ -5047,10 +5006,10 @@ onBeforeUnmount(() => {
                     min-width="150"
                     show-overflow-tooltip
                   />
-                  <ElTableColumn label="资料/OCR 状态" min-width="176">
+                  <ElTableColumn label="审查/OCR 状态" min-width="176">
                     <template #default="{ row }">
-                      <AuditStatusTag :tone="getPillClass(row.fileStatus)" round>
-                        {{ row.fileStatus }}
+                      <AuditStatusTag :tone="getPillClass(row.reviewStatus)" round>
+                        {{ row.reviewStatus }}
                       </AuditStatusTag>
                       <small
                         :class="[
@@ -5065,10 +5024,14 @@ onBeforeUnmount(() => {
                       </small>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn prop="uploadTimeText" label="上传时间" width="170" />
+                  <ElTableColumn label="提交审查时间" width="170">
+                    <template #default="{ row }">
+                      {{ row.submittedAt || '提交时间缺失' }}
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn label="操作" width="96" fixed="right">
                     <template #default="{ row }">
-                      <ElButton text type="primary" @click="handleOpenFileDetail(row.id)">
+                      <ElButton text type="primary" @click="handleOpenFileDetail(row.documentId)">
                         查看原文
                       </ElButton>
                     </template>
@@ -5080,7 +5043,7 @@ onBeforeUnmount(() => {
                   v-model:page-size="overviewFilePageSize"
                   class="overview-file-pagination"
                   :page-sizes="[5, 8, 10, 20]"
-                  :total="filteredInspectionOverviewFiles.length"
+                  :total="inspectionOverviewFileTotal"
                   layout="total, sizes, prev, pager, next"
                   small
                 />
@@ -5737,7 +5700,6 @@ onBeforeUnmount(() => {
                     @bind="handleOpenBindDialog"
                     @save-draft="handleSaveDraft"
                     @submit="handleOpenSubmissionDialog"
-                    @withdraw="handleOpenSubmissionDialog"
                     @history="handleOpenSubmissionHistory"
                     @rectify="handleOpenRectificationDialog"
                   />
@@ -5899,7 +5861,6 @@ onBeforeUnmount(() => {
                   @bind="handleOpenBindDialog"
                   @save-draft="handleSaveDraft"
                   @submit="handleOpenSubmissionDialog"
-                  @withdraw="handleOpenSubmissionDialog"
                   @history="handleOpenSubmissionHistory"
                   @rectify="handleOpenRectificationDialog"
                 />
@@ -6125,7 +6086,6 @@ onBeforeUnmount(() => {
         :operation-error="submissionDialogError"
         @save-draft="handleSaveDraftFromDialog"
         @submit="handleSubmitBatch"
-        @withdraw="handleWithdrawSubmission"
       />
 
       <EvidenceLocatorDialog

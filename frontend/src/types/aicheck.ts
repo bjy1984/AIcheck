@@ -33,7 +33,6 @@ export type ActionCode =
   | 'file:withdraw'
   | 'submission:draft'
   | 'submission:submit'
-  | 'submission:withdraw'
   | 'rectification:submit'
   | 'review:save'
   | 'review:return-correction'
@@ -913,6 +912,33 @@ export type InspectionAuditOverviewPayload = {
     nodeCount: number
   }
   items: InspectionAuditOverviewNode[]
+  page: number
+  pageSize: number
+  total: number
+  dataAsOf: string
+}
+
+export type InspectionSubmittedDocument = {
+  documentId: string
+  submissionId: string
+  submissionType: 'project' | 'document' | 'ndt-material' | string
+  fileName: string
+  fileType: string
+  materialTypeCode?: string | null
+  materialTypeName?: string | null
+  materialCategory?: string | null
+  sourceOrgName: string
+  submitterName: string
+  reviewStatus: '待审查' | '需补正' | '已重新提交' | '已通过' | '部分待审' | string
+  submittedAt: string
+  submittedBindings: NodeFileBinding[]
+  currentOcrStatus: DocumentAsset['currentOcrStatus']
+  ocrReadiness?: DocumentAsset['ocrReadiness']
+}
+
+export type InspectionSubmittedDocumentsPayload = {
+  schemaVersion: 'InspectionSubmittedDocuments@1.0.0' | string
+  items: InspectionSubmittedDocument[]
   page: number
   pageSize: number
   total: number

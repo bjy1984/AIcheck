@@ -5915,8 +5915,216 @@ def test_global_audit_does_not_duplicate_explicit_audit_log() -> None:
     assert len(repo.state["audit_logs"]) == before + 1
 
 
-def test_withdraw_submission_items_enforces_batch_and_locked_state() -> None:
+def test_inspection_submitted_documents_excludes_uploads_and_uses_submission_time() -> None:
     project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    upload_only, _ = repo.create_document(
+        project_id,
+        "仅上传未提交.pdf",
+        "application/pdf",
+        source_org_name="中石化第五建设有限公司",
+        uploader_name="李工",
+    )
+    pool_document, _ = repo.create_document(
+        project_id,
+        "项目资料池提交.pdf",
+        "application/pdf",
+        source_org_name="中石化第五建设有限公司",
+        uploader_name="李工",
+    )
+    node_document, node_version = repo.create_document(
+        project_id,
+        "节点资料提交.pdf",
+        "application/pdf",
+        source_org_name="中石化第五建设有限公司",
+        uploader_name="李工",
+    )
+    ndt_document, ndt_version = repo.create_document(
+        project_id,
+        "无损检测资料提交.pdf",
+        "application/pdf",
+        source_org_name="华测检测认证集团",
+        uploader_name="王工",
+        material_category="无损检测资料",
+        material_type_code="ndt_quality_assurance_manual",
+        material_type_name="无损检测单位质量保证手册",
+    )
+    node_binding = {
+        "id": "BIND-INSPECTION-SUBMITTED-NODE",
+        "projectId": project_id,
+        "nodeId": 24,
+        "documentId": node_document["id"],
+        "documentVersionId": node_version["id"],
+        "bindingStatus": "已提交",
+        "boundAt": "2026-08-06 09:00:00",
+    }
+    ndt_binding = {
+        "id": "BIND-INSPECTION-SUBMITTED-NDT",
+        "projectId": project_id,
+        "nodeId": 35,
+        "documentId": ndt_document["id"],
+        "documentVersionId": ndt_version["id"],
+        "bindingStatus": "已提交",
+        "boundAt": "2026-08-06 09:05:00",
+    }
+    node_draft_binding = {
+        **node_binding,
+        "id": "BIND-INSPECTION-UNSUBMITTED-SAME-DOCUMENT",
+        "nodeId": 25,
+        "bindingStatus": "草稿挂载",
+    }
+    node_second_submitted_binding = {
+        **node_draft_binding,
+        "id": "BIND-INSPECTION-SECOND-SUBMITTED-SAME-DOCUMENT",
+        "bindingStatus": "已提交",
+    }
+    repo.state["bindings"].extend(
+        [node_binding, node_draft_binding, node_second_submitted_binding, ndt_binding]
+    )
+    pool_document["poolSubmissionStatus"] = "已提交"
+    pool_document["poolSubmittedAt"] = "2026-08-06 10:00:00"
+    ndt_document["fileStatus"] = "已提交审批"
+    ndt_document["submittedAt"] = "2026-08-06 12:00:00"
+    ndt_document["updatedAt"] = "2026-08-06 18:00:00"
+    repo.state["submissions"].extend(
+        [
+            {
+                "submissionId": "SUB-INSPECTION-POOL",
+                "snapshotId": "SNAP-INSPECTION-POOL",
+                "projectId": project_id,
+                "submissionType": "project",
+                "nodeIds": [],
+                "bindingIds": [],
+                "documentIds": [pool_document["id"]],
+                "submittedAt": "2026-08-06 10:00:00",
+            },
+            {
+                "submissionId": "SUB-INSPECTION-NODE-EARLIER",
+                "snapshotId": "SNAP-INSPECTION-NODE-EARLIER",
+                "projectId": project_id,
+                "submissionType": "document",
+                "nodeIds": [25],
+                "bindingIds": [node_second_submitted_binding["id"]],
+                "documentIds": [],
+                "submittedAt": "2026-08-06 10:30:00",
+            },
+            {
+                "submissionId": "SUB-INSPECTION-NODE",
+                "snapshotId": "SNAP-INSPECTION-NODE",
+                "projectId": project_id,
+                "submissionType": "document",
+                "nodeIds": [24],
+                "bindingIds": [node_binding["id"]],
+                "documentIds": [],
+                "submittedAt": "2026-08-06 11:00:00",
+            },
+            {
+                "submissionId": "SUB-INSPECTION-NDT",
+                "snapshotId": "SNAP-INSPECTION-NDT",
+                "projectId": project_id,
+                "submissionType": "ndt-material",
+                "nodeIds": [35],
+                "bindingIds": [ndt_binding["id"]],
+                "documentIds": [ndt_document["id"]],
+                "submittedAt": "2026-08-06 12:00:00",
+            },
+        ]
+    )
+
+    result = assert_ok(
+        client.get(
+            f"/projects/{project_id}/inspection/submitted-documents?page=1&pageSize=20",
+            headers=headers,
+        )
+    )
+
+    assert upload_only["id"] not in {item["documentId"] for item in result["items"]}
+    assert [item["documentId"] for item in result["items"][:3]] == [
+        ndt_document["id"],
+        node_document["id"],
+        pool_document["id"],
+    ]
+    assert [item["submittedAt"] for item in result["items"][:3]] == [
+        "2026-08-06 12:00:00",
+        "2026-08-06 11:00:00",
+        "2026-08-06 10:00:00",
+    ]
+    assert result["total"] == 3
+    node_row = next(item for item in result["items"] if item["documentId"] == node_document["id"])
+    assert {item["id"] for item in node_row["submittedBindings"]} == {
+        node_binding["id"],
+        node_second_submitted_binding["id"],
+    }
+
+    search_result = assert_ok(
+        client.get(
+            f"/projects/{project_id}/inspection/submitted-documents?keyword=节点资料提交&page=1&pageSize=1",
+            headers=headers,
+        )
+    )
+    assert search_result["total"] == 1
+    assert search_result["items"][0]["documentId"] == node_document["id"]
+
+    for forbidden_headers in (
+        {"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"},
+        {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"},
+    ):
+        assert_error(
+            client.get(
+                f"/projects/{project_id}/inspection/submitted-documents",
+                headers=forbidden_headers,
+            ),
+            "FORBIDDEN",
+        )
+
+
+def test_inspection_node_package_does_not_expose_unsubmitted_documents_or_bindings() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    draft_document, draft_version = repo.create_document(
+        project_id,
+        "监检不可见草稿.pdf",
+        "application/pdf",
+        source_org_name="中石化第五建设有限公司",
+        uploader_name="李工",
+    )
+    draft_binding = {
+        "id": "BIND-INSPECTION-HIDDEN-DRAFT",
+        "projectId": project_id,
+        "nodeId": 24,
+        "documentId": draft_document["id"],
+        "documentVersionId": draft_version["id"],
+        "bindingStatus": "草稿挂载",
+        "boundAt": "2026-08-06 08:00:00",
+    }
+    repo.state["bindings"].append(draft_binding)
+
+    package = assert_ok(
+        client.get(f"/projects/{project_id}/nodes/24/package", headers=headers)
+    )
+
+    assert draft_document["id"] not in {item["id"] for item in package["projectFiles"]}
+    assert draft_binding["id"] not in {item["id"] for item in package["bindings"]}
+
+    audit_workspace = assert_ok(
+        client.get(
+            f"/projects/{project_id}/inspection/nodes/24/audit-workspace",
+            headers=headers,
+        )
+    )
+    submission_content = audit_workspace["content"]["submission"]
+    assert draft_document["id"] not in {
+        item["id"] for item in submission_content["documents"]
+    }
+    assert draft_binding["id"] not in {
+        item["id"] for item in submission_content["bindings"]
+    }
+    assert submission_content["drafts"] == []
+
+
+def test_submitted_items_cannot_be_withdrawn_by_submitter() -> None:
+    project_id = "P-2026-HDCP-001"
+    contractor_headers = {"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"}
     payload = {
         "nodeId": 16,
         "nodeIds": [16],
@@ -5925,49 +6133,145 @@ def test_withdraw_submission_items_enforces_batch_and_locked_state() -> None:
     }
     submission = assert_ok(client.post(f"/projects/{project_id}/submissions", json=payload))
     submission_id = submission["submissionId"]
-
-    assert_error(
-        client.post(
-            f"/projects/{project_id}/submissions/SUB-MISSING/withdraw-items",
-            json={"bindingIds": ["BIND-16-001"]},
-        ),
-        "NOT_FOUND",
-    )
-    assert_error(
-        client.post(
-            f"/projects/{project_id}/submissions/{submission_id}/withdraw-items",
-            json={"bindingIds": ["BIND-24-001"]},
-        ),
-        "CONFLICT",
-    )
-
     binding = next(item for item in repo.state["bindings"] if item["id"] == "BIND-16-001")
-    binding["bindingStatus"] = "已通过"
-    assert_error(
-        client.post(
-            f"/projects/{project_id}/submissions/{submission_id}/withdraw-items",
-            json={"bindingIds": ["BIND-16-001"]},
-        ),
-        "WITHDRAW_LOCKED",
+    node_status_before = repo.node(project_id, 16)["status"]
+    response = client.post(
+        f"/projects/{project_id}/submissions/{submission_id}/withdraw-items",
+        json={"bindingIds": ["BIND-16-001"], "reason": "资料版本修正"},
+        headers=contractor_headers,
     )
 
-    binding["bindingStatus"] = "已提交"
-    withdrawn = assert_ok(
+    assert response.status_code == 409
+    error = response.json()
+    assert error["data"]["reason"] == "SUBMISSION_WITHDRAW_NOT_ALLOWED"
+    assert error["message"] == "资料已提交审查，不能撤回；如需修改，请联系监检人员退回后重新提交。"
+    assert binding["bindingStatus"] == "已提交"
+    assert repo.node(project_id, 16)["status"] == node_status_before
+    stored_submission = next(item for item in repo.state["submissions"] if item["submissionId"] == submission_id)
+    assert "withdrawnBindingIds" not in stored_submission
+    assert "withdrawal" not in stored_submission
+
+
+def test_submitted_document_cannot_be_withdrawn_through_document_endpoint() -> None:
+    project_id = "P-2026-HDCP-001"
+    contractor_headers = {"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"}
+    binding = next(item for item in repo.state["bindings"] if item["id"] == "BIND-16-001")
+    document = next(item for item in repo.state["documents"] if item["id"] == binding["documentId"])
+    original_status = document["fileStatus"]
+    assert_ok(
         client.post(
-            f"/projects/{project_id}/submissions/{submission_id}/withdraw-items",
-            json={"bindingIds": ["BIND-16-001"], "reason": "资料版本修正"},
+            f"/projects/{project_id}/submissions",
+            json={"nodeIds": [16], "bindingIds": [binding["id"]]},
+            headers=contractor_headers,
         )
     )
-    stored_submission = next(item for item in repo.state["submissions"] if item["submissionId"] == submission_id)
 
-    assert withdrawn["nextStatus"] == "部分提交"
-    assert binding["bindingStatus"] == "草稿挂载"
-    assert stored_submission["withdrawnBindingIds"] == ["BIND-16-001"]
-    assert stored_submission["withdrawal"]["bindingCount"] == 1
+    response = client.post(
+        f"/projects/{project_id}/documents/{document['id']}/withdraw",
+        headers=contractor_headers,
+    )
+
+    assert response.status_code == 409
+    error = response.json()
+    assert error["data"]["reason"] == "SUBMISSION_WITHDRAW_NOT_ALLOWED"
+    assert document["fileStatus"] == original_status
+
+
+def test_submitter_permissions_do_not_advertise_submission_withdraw() -> None:
+    assert "submission:withdraw" not in repo.role_actions("contractor")
+    assert "submission:withdraw" not in repo.role_actions("ndt")
+
+
+def test_return_correction_updates_selected_submitted_bindings() -> None:
+    project_id = "P-2026-HDCP-001"
+    inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    submission = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={
+                "nodeId": 16,
+                "nodeIds": [16],
+                "bindingIds": ["BIND-16-001"],
+                "submitterComment": "等待监检退回测试",
+            },
+        )
+    )
+
+    result = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/16/actions/return-correction",
+            json={"bindingIds": ["BIND-16-001"], "reason": "证书有效期信息需要补正"},
+            headers=inspection_headers,
+        )
+    )
+
+    binding = repo.find_one("bindings", "BIND-16-001")
+    rectification = repo.find_one("rectifications", result["rectification"]["id"])
+    assert binding["bindingStatus"] == "需补正"
+    assert repo.node(project_id, 16)["status"] == "需补正"
+    assert rectification["submissionId"] == submission["submissionId"]
+    assert rectification["bindingIds"] == ["BIND-16-001"]
+    assert rectification["returnedAt"]
+    assert rectification["comment"] == "证书有效期信息需要补正"
+
+
+def test_resubmission_preserves_original_submission_and_correction_history() -> None:
+    project_id = "P-2026-HDCP-001"
+    inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    original = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={"nodeIds": [16], "bindingIds": ["BIND-16-001"]},
+        )
+    )
+    returned = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/16/actions/return-correction",
+            json={"bindingIds": ["BIND-16-001"], "reason": "退回后重新提交测试"},
+            headers=inspection_headers,
+        )
+    )
+    rectification_id = returned["rectification"]["id"]
+    original_record = next(
+        item for item in repo.state["submissions"] if item["submissionId"] == original["submissionId"]
+    )
+    original_snapshot = deepcopy(original_record)
+
+    resubmitted = assert_ok(
+        client.post(
+            f"/projects/{project_id}/submissions",
+            json={"nodeIds": [16], "bindingIds": ["BIND-16-001"]},
+        )
+    )
+
+    resubmission_record = next(
+        item
+        for item in repo.state["submissions"]
+        if item["submissionId"] == resubmitted["submissionId"]
+    )
+    rectification = repo.find_one("rectifications", rectification_id)
+    assert resubmission_record["previousSubmissionId"] == original["submissionId"]
+    assert resubmission_record["rectificationId"] == rectification_id
+    assert resubmission_record["submittedAt"] >= rectification["returnedAt"]
+    assert original_record == original_snapshot
+    assert rectification["status"] == "已重新提交"
+    assert rectification["resubmissionId"] == resubmitted["submissionId"]
+    assert rectification["resubmittedAt"] == resubmission_record["submittedAt"]
+
+    inspection_rows = assert_ok(
+        client.get(
+            f"/projects/{project_id}/inspection/submitted-documents?keyword={repo.find_one('bindings', 'BIND-16-001')['fileName']}",
+            headers=inspection_headers,
+        )
+    )
+    row = next(item for item in inspection_rows["items"] if item["submissionId"] == resubmitted["submissionId"])
+    assert row["reviewStatus"] == "已重新提交"
+    assert row["submittedAt"] == resubmission_record["submittedAt"]
 
 
 def test_submit_rectification_updates_pending_item_and_enforces_scope() -> None:
     project_id = "P-2026-HDCP-001"
+    submission_count_before = len(repo.state["submissions"])
     assert_error(
         client.post(
             f"/projects/{project_id}/rectifications",
@@ -5994,8 +6298,19 @@ def test_submit_rectification_updates_pending_item_and_enforces_scope() -> None:
 
     assert feedback["rectification"]["id"] == "REC-16-001"
     assert feedback["nextStatus"] == "复审中"
-    assert rectification["status"] == "已反馈"
+    assert rectification["status"] == "已重新提交"
     assert rectification["bindingIds"] == ["BIND-16-001"]
+    assert rectification["resubmissionId"]
+    assert rectification["resubmittedAt"]
+    assert repo.find_one("bindings", "BIND-16-001")["bindingStatus"] == "已提交"
+    resubmission = next(
+        item
+        for item in repo.state["submissions"]
+        if item["submissionId"] == rectification["resubmissionId"]
+    )
+    assert resubmission["rectificationId"] == "REC-16-001"
+    assert resubmission["bindingIds"] == ["BIND-16-001"]
+    assert len(repo.state["submissions"]) == submission_count_before + 1
     assert node["status"] == "复审中"
     assert len([item for item in repo.state["rectifications"] if item["id"] == "REC-16-001"]) == 1
     assert_error(
@@ -7809,7 +8124,7 @@ def test_resource_id_node_scope_is_enforced_for_project_mutations(monkeypatch) -
 
     own_document = assert_ok(
         client.post(
-            f"/api/projects/{project_id}/documents/DOC-20260625-003/withdraw",
+            f"/api/projects/{project_id}/documents/DOC-20260625-002/withdraw",
             headers=contractor_headers,
         )
     )
@@ -8906,6 +9221,60 @@ def test_ndt_atomic_submission_uses_exact_scoped_persistence(monkeypatch) -> Non
     }
     assert [item["id"] for item in scoped_flushes[0]["documents"]] == [document["documentId"]]
     assert {item["id"] for item in scoped_flushes[0]["bindings"]} == set(document["bindingIds"])
+
+
+def test_ndt_resubmission_persists_linked_rectification_in_exact_scope(monkeypatch) -> None:
+    import apps.api.main as api_main
+
+    project_id = "P-2026-HDCP-001"
+    ndt_headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    document = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "质量保证手册-退回重提.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_quality_assurance_manual",
+                "materialTypeName": "无损检测单位质量保证手册",
+                "nodeIds": [35],
+            }
+        ]
+    )[0]
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": document["bindingIds"]},
+            headers=ndt_headers,
+        )
+    )
+    returned = assert_ok(
+        client.post(
+            f"/projects/{project_id}/inspection/nodes/35/actions/return-correction",
+            json={"bindingIds": document["bindingIds"], "reason": "NDT 资料退回重提"},
+            headers=inspection_headers,
+        )
+    )
+    rectification_id = returned["rectification"]["id"]
+    scoped_flushes: list[dict[str, list[dict[str, object]]]] = []
+    monkeypatch.setattr(api_main, "flush_state", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        api_main,
+        "flush_mutation_records",
+        lambda records, _scopes: scoped_flushes.append(records),
+    )
+
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": document["bindingIds"]},
+            headers=ndt_headers,
+        )
+    )
+
+    assert len(scoped_flushes) == 1
+    assert [item["id"] for item in scoped_flushes[0]["rectifications"]] == [rectification_id]
 
 
 def test_ndt_atomic_submission_returns_clear_resource_state_conflict(monkeypatch) -> None:

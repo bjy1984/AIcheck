@@ -463,7 +463,7 @@ type SubmissionSnapshotMock = {
   submissionId: string
   snapshotId: string
   projectId: string
-  submissionType?: 'document' | 'project' | 'ndt'
+  submissionType?: 'document' | 'project' | 'ndt' | 'ndt-material'
   nodeIds: number[]
   bindingIds: string[]
   documentIds?: string[]
@@ -846,7 +846,6 @@ const initialMemberActions: Record<RoleCode, ActionCode[]> = {
     'file:bind',
     'submission:draft',
     'submission:submit',
-    'submission:withdraw',
     'rectification:submit'
   ],
   ndt: [
@@ -855,7 +854,6 @@ const initialMemberActions: Record<RoleCode, ActionCode[]> = {
     'file:bind',
     'submission:draft',
     'submission:submit',
-    'submission:withdraw',
     'rectification:submit',
     'ndt:film-create',
     'ndt:record-import',
@@ -1420,7 +1418,6 @@ const roleActions: Record<RoleCode, ActionCode[]> = {
     'file:bind',
     'submission:draft',
     'submission:submit',
-    'submission:withdraw',
     'rectification:submit'
   ],
   ndt: [
@@ -1429,7 +1426,6 @@ const roleActions: Record<RoleCode, ActionCode[]> = {
     'file:bind',
     'submission:draft',
     'submission:submit',
-    'submission:withdraw',
     'rectification:submit',
     'ndt:film-create',
     'ndt:record-import',
@@ -6666,6 +6662,81 @@ export default [
     }
   },
   {
+    url: /\/api\/projects\/[^/]+\/inspection\/submitted-documents/,
+    method: 'get',
+    timeout,
+    response: ({ url, query }) => {
+      const id = pathParts(url)[2] || projectId
+      const keyword = String(query?.keyword || '').trim().toLowerCase()
+      const rowsByDocumentId = new Map<string, Record<string, unknown>>()
+      const submissions = state.submissionSnapshots
+        .filter((snapshot) => snapshot.projectId === id && snapshot.submittedAt)
+        .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt))
+      submissions.forEach((snapshot) => {
+        const submittedBindings = state.bindings.filter(
+          (binding) =>
+            binding.projectId === id &&
+            snapshot.bindingIds.includes(binding.id) &&
+            ['已提交', '需补正', '已通过'].includes(binding.bindingStatus)
+        )
+        const documentIds = new Set([
+          ...(snapshot.documentIds || []),
+          ...submittedBindings.map((binding) => binding.documentId)
+        ])
+        documentIds.forEach((documentId) => {
+          if (rowsByDocumentId.has(documentId)) return
+          const document = state.documents.find(
+            (item) => item.projectId === id && item.id === documentId
+          )
+          if (!document) return
+          const documentBindings = submittedBindings.filter(
+            (binding) => binding.documentId === documentId
+          )
+          if (snapshot.submissionType !== 'project' && !documentBindings.length) return
+          const bindingStatuses = documentBindings.map((binding) => binding.bindingStatus)
+          const reviewStatus = bindingStatuses.includes('需补正')
+            ? '需补正'
+            : bindingStatuses.length > 0 && bindingStatuses.every((status) => status === '已通过')
+              ? '已通过'
+              : '待审查'
+          rowsByDocumentId.set(documentId, {
+            documentId,
+            submissionId: snapshot.submissionId,
+            submissionType: snapshot.submissionType || 'document',
+            fileName: document.fileName,
+            fileType: document.fileType,
+            materialTypeCode: document.materialTypeCode,
+            materialTypeName: document.materialTypeName,
+            materialCategory: document.materialCategory,
+            sourceOrgName: document.sourceOrgName,
+            submitterName: document.uploaderName,
+            reviewStatus,
+            submittedAt: snapshot.submittedAt,
+            submittedBindings: documentBindings,
+            currentOcrStatus: document.currentOcrStatus,
+            ocrReadiness: document.ocrReadiness
+          })
+        })
+      })
+      const rows = Array.from(rowsByDocumentId.values()).filter((row) => {
+        if (!keyword) return true
+        return [
+          row.fileName,
+          row.sourceOrgName,
+          row.submitterName,
+          row.materialCategory,
+          row.materialTypeName,
+          row.reviewStatus
+        ].some((value) => String(value || '').toLowerCase().includes(keyword))
+      })
+      return ok({
+        schemaVersion: 'InspectionSubmittedDocuments@1.0.0',
+        ...makePage(rows, Number(query?.page) || 1, Number(query?.pageSize) || 20),
+        dataAsOf: serverTime
+      })
+    }
+  },
+  {
     url: /\/api\/projects\/[^/]+\/nodes\/[^/]+\/package/,
     method: 'get',
     timeout,
@@ -7150,7 +7221,7 @@ export default [
             sourceOrgName: document.sourceOrgName,
             bindingStatus: '草稿挂载',
             boundAt: serverTime,
-            actions: ['submission:submit', 'submission:withdraw']
+            actions: ['submission:submit']
           }
           state.bindings.unshift(binding)
           selectedBindingIds.push(binding.id)
@@ -7249,75 +7320,13 @@ export default [
     response: ({ body, query, url }) => {
       const parts = pathParts(url)
       const id = parts[2] || projectId
-      const submissionId = parts[4] || `SUB-${Date.now()}`
       const mutationError = getMutationError(id, { body, query, action: '撤回提交项' })
       if (mutationError) return mutationError
-      if (!body?.reason) {
-        return fail(40021, '撤回原因不能为空。', { reason: 'WITHDRAW_REASON_REQUIRED' })
-      }
-      const selectedBindingIds = Array.isArray(body?.bindingIds) ? body.bindingIds : []
-      const selectedVersionIds = Array.isArray(body?.documentVersionIds)
-        ? body.documentVersionIds
-        : []
-      const targetBindings = state.bindings.filter((binding) => {
-        if (binding.projectId !== id) return false
-        if (selectedBindingIds.length && selectedBindingIds.includes(binding.id)) return true
-        if (selectedVersionIds.length && selectedVersionIds.includes(binding.documentVersionId))
-          return true
-        return false
-      })
-      if (!targetBindings.length) {
-        return fail(40421, '没有找到可撤回的提交项。', { reason: 'WITHDRAW_ITEM_NOT_FOUND' })
-      }
-      const lockedBinding = targetBindings.find((binding) => binding.bindingStatus === '已通过')
-      if (lockedBinding) {
-        return fail(40921, '已通过资料不能撤回。', { reason: 'WITHDRAW_LOCKED' })
-      }
-      const affectedNodeIds = Array.from(new Set(targetBindings.map((binding) => binding.nodeId)))
-      const changed: Array<{ field: string; before?: unknown; after: unknown }> = []
-      targetBindings.forEach((binding) => {
-        changed.push({
-          field: `bindings.${binding.id}.bindingStatus`,
-          before: binding.bindingStatus,
-          after: '草稿挂载'
-        })
-        binding.bindingStatus = '草稿挂载'
-        binding.actions = ['submission:draft', 'submission:submit', 'submission:withdraw']
-      })
-      affectedNodeIds.forEach((currentNodeId) => {
-        const { before } = setNodeStatus(id, currentNodeId, '部分提交')
-        changed.push({ field: `nodes.${currentNodeId}.status`, before, after: '部分提交' })
-        updateNodeFileProgress(id, currentNodeId)
-      })
-      setProjectStatus(id, '资料提交中', affectedNodeIds[0])
-      const snapshot = state.submissionSnapshots.find(
-        (item) => item.projectId === id && item.submissionId === submissionId
+      return fail(
+        40922,
+        '资料已提交审查，不能撤回；如需修改，请联系监检人员退回后重新提交。',
+        { reason: 'SUBMISSION_WITHDRAW_NOT_ALLOWED' }
       )
-      if (snapshot) {
-        snapshot.nextStatus = '部分提交'
-        snapshot.withdrawal = {
-          bindingCount: targetBindings.length,
-          reason: String(body.reason),
-          withdrawnAt: serverTime
-        }
-        snapshot.changed.push(...changed)
-      }
-      addMessage({
-        title: '提交项已撤回',
-        content: `提交 ${submissionId} 已撤回 ${targetBindings.length} 个资料项：${body.reason}`,
-        projectId: id,
-        targetType: 'submission',
-        targetId: submissionId
-      })
-      return ok({
-        id: `MUT-${Date.now()}`,
-        objectType: 'submission',
-        objectId: submissionId,
-        nextStatus: '部分提交',
-        changed,
-        auditLogId: addAuditLog('撤回提交项', 'Submission', submissionId),
-        affectedIds: targetBindings.map((binding) => binding.id)
-      })
     }
   },
   {

@@ -10,7 +10,7 @@ roles:
     platformRole: submitter
     defaultPath: /workbench/contractor
     defaultNodeId: 1
-    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, file:withdraw, submission:draft, submission:submit, submission:withdraw, rectification:submit, todo:update, message:update]
+    actions: [project:view, file:view, file:upload, file:bind, file:preview, file:download, file:withdraw, submission:draft, submission:submit, rectification:submit, todo:update, message:update]
   - code: device_observer
     label: 管理观察者
     platformRole: observer

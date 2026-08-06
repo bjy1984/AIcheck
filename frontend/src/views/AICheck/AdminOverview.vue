@@ -808,7 +808,6 @@ const roleActionOptions: Record<RoleCode, ActionCode[]> = {
     'file:bind',
     'submission:draft',
     'submission:submit',
-    'submission:withdraw',
     'rectification:submit'
   ],
   ndt: [
@@ -817,7 +816,6 @@ const roleActionOptions: Record<RoleCode, ActionCode[]> = {
     'file:bind',
     'submission:draft',
     'submission:submit',
-    'submission:withdraw',
     'rectification:submit',
     'ndt:film-create',
     'ndt:record-import',
@@ -2460,8 +2458,7 @@ const handleSaveUser = async () => {
       orgId: userForm.orgId || undefined,
       orgName: org?.name,
       status: userForm.status,
-      password:
-        userDialogMode.value === 'create' ? initialPassword : initialPassword || undefined
+      password: userDialogMode.value === 'create' ? initialPassword : initialPassword || undefined
     }
     const res =
       userDialogMode.value === 'create'
