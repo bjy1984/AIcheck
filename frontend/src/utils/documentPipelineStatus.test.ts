@@ -5,6 +5,12 @@ import { documentPipelineStatus } from './documentPipelineStatus'
 const cases = [
   [{ currentOcrStatus: '排队中' }, '排队中'],
   [{ currentOcrStatus: '识别中' }, 'OCR 中'],
+  [{ currentOcrStatus: '抽取不完整', sliceStatus: '待切片' }, '待切片'],
+  [{ currentOcrStatus: '抽取不完整' }, '待切片'],
+  [
+    { currentOcrStatus: '抽取不完整', sliceStatus: '已切片', vectorStatus: '待向量化' },
+    '待向量化'
+  ],
   [{ currentOcrStatus: '已识别', sliceStatus: '待切片' }, '待切片'],
   [{ currentOcrStatus: '已识别', sliceStatus: '切片中' }, '切片中'],
   [

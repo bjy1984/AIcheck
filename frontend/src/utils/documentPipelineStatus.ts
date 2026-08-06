@@ -11,12 +11,22 @@ export const documentPipelineStatus = (file: DocumentPipelineState): string => {
   if ([ocrStatus, sliceStatus, vectorStatus].some((status) => status.includes('失败'))) {
     return '失败可重试'
   }
-  if (ocrStatus === '排队中' || ocrStatus === '等待OCR' || ocrStatus === '待OCR') return '排队中'
-  if (ocrStatus && ocrStatus !== '已识别' && ocrStatus !== '人工修正') return 'OCR 中'
+  if (
+    ocrStatus === '排队中' ||
+    ocrStatus === '等待OCR' ||
+    ocrStatus === '待OCR' ||
+    ocrStatus === '待识别' ||
+    ocrStatus === '未识别'
+  ) {
+    return '排队中'
+  }
+  if (ocrStatus === '识别中') return 'OCR 中'
+  const ocrComplete = ['已识别', '人工修正', '抽取不完整'].includes(ocrStatus)
+  if (ocrStatus && !ocrComplete) return ocrStatus
   if (sliceStatus === '未切片' || sliceStatus === '待切片') return '待切片'
   if (sliceStatus === '切片中') return '切片中'
   if (sliceStatus && sliceStatus !== '已切片') return sliceStatus
-  if (!sliceStatus && ['已识别', '人工修正'].includes(ocrStatus)) return '待切片'
+  if (!sliceStatus && ocrComplete) return '待切片'
   if (vectorStatus === '未向量化' || vectorStatus === '待向量化' || !vectorStatus) {
     return '待向量化'
   }
