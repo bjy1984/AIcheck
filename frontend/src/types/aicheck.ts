@@ -174,6 +174,7 @@ export type DocumentAsset = {
   fileName: string
   fileType: string
   materialTypeCode?: string | null
+  materialTypeName?: string | null
   materialCategory?: string | null
   sourceOrgName: string
   uploaderName: string
