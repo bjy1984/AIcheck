@@ -8813,6 +8813,51 @@ def test_ndt_atomic_submission_refreshes_latest_document_state_before_validation
     assert repo.find_one("documents", document["documentId"])["currentOcrStatus"] == "已识别"
 
 
+def test_ndt_atomic_submission_reloads_external_ocr_update_from_sqlite(tmp_path) -> None:
+    from libs.db.repository import InMemoryRepository
+
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    sqlite_path = str(tmp_path / "ndt-concurrent-submission.sqlite3")
+    repo.configure_sqlite(sqlite_path)
+    repo.flush_to_sqlite()
+    document = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "质量保证手册-OCR并发更新.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_quality_assurance_manual",
+                "materialTypeName": "无损检测单位质量保证手册",
+                "nodeIds": [35],
+            }
+        ]
+    )[0]
+    stale_document = repo.find_one("documents", document["documentId"])
+    assert stale_document["currentOcrStatus"] == "排队中"
+
+    ocr_worker_view = InMemoryRepository()
+    ocr_worker_view.configure_sqlite(sqlite_path)
+    ocr_worker_view.load_from_sqlite({"documents"})
+    ocr_document = ocr_worker_view.find_one("documents", document["documentId"])
+    ocr_document["currentOcrStatus"] = "已识别"
+    ocr_worker_view.sync_state_records_to_sqlite({"documents": [ocr_document]}, {})
+
+    result = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": document["bindingIds"]},
+            headers=headers,
+        )
+    )
+
+    assert result["nextStatus"] == "待审查"
+    refreshed_document = repo.find_one("documents", document["documentId"])
+    assert refreshed_document["currentOcrStatus"] == "已识别"
+    assert refreshed_document["fileStatus"] == "已提交审批"
+
+
 def test_ndt_atomic_submission_uses_exact_scoped_persistence(monkeypatch) -> None:
     import apps.api.main as api_main
 
