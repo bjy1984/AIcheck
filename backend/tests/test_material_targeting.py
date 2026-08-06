@@ -308,6 +308,34 @@ def test_apply_ocr_result_rejects_successful_but_empty_result() -> None:
     assert not [item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]
 
 
+def test_apply_ocr_result_accepts_usable_table_without_text_fragments() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "材料表.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    result = {
+        "status": "success",
+        "outcomeStatus": "partial",
+        "quality": {
+            "status": "needs_human_review",
+            "reasons": ["REQUIRED_FIELD_MISSING"],
+        },
+        "fragments": [],
+        "fields": [],
+        "tables": [{"rows": [["材料", "规格"], ["20#", "DN50"]]}],
+        "seals": [],
+    }
+
+    applied = repo.apply_ocr_result(document["id"], version["id"], result)
+
+    assert applied["status"] == "success"
+    assert applied["reviewOutcomeStatus"] == "partial"
+    assert document["currentOcrStatus"] == "已识别"
+    assert version["sliceStatus"] == "待切片"
+    assert version["vectorStatus"] == "待向量化"
+
+
 def test_node2_license_evidence_requires_manual_confirmation() -> None:
     document, version = repo.create_document(
         PROJECT_ID,
