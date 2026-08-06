@@ -86,7 +86,7 @@ git commit -m "feat: add inspection submitted document view"
 **Files:**
 - Modify: `backend/tests/test_contract.py`
 - Modify: `backend/apps/api/routes.py`
-- Modify: `backend/apps/api/errors.py`
+- Modify: `backend/libs/contracts/errors.py`
 
 **Interfaces:**
 - Produces: error code `SUBMISSION_WITHDRAW_NOT_ALLOWED`
@@ -124,7 +124,7 @@ Expected: 新规则测试 PASS；旧撤回成功断言需改为禁止撤回断�
 - [ ] **Step 7: 提交本任务**
 
 ```bash
-git add backend/apps/api/routes.py backend/apps/api/errors.py backend/tests/test_contract.py
+git add backend/apps/api/routes.py backend/libs/contracts/errors.py backend/tests/test_contract.py
 git commit -m "fix: enforce inspection-only correction returns"
 ```
 
