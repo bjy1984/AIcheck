@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from libs.material_review_assets import load_material_review_asset, material_review_asset_status
-from libs.ocr_readiness import build_document_ocr_readiness
+from libs.ocr_readiness import build_document_ocr_readiness, parse_result_ingestion_status
 
 
 class FakeRepo:
@@ -85,6 +85,35 @@ def test_parse_with_required_quality_gap_is_incomplete_even_with_bbox() -> None:
     assert readiness["outcomeStatus"] == "partial"
     assert readiness["artifactIntegrity"] is False
     assert readiness["blockingReasons"][0]["code"] == "OCR_QUALITY_GATE_BLOCKED"
+
+
+def test_ingestion_status_accepts_review_incomplete_text() -> None:
+    result = parse_result(
+        fragments=[{"text": "材料代用单"}],
+        quality={"status": "needs_human_review", "reasons": ["REQUIRED_FIELD_MISSING"]},
+    )
+
+    assert parse_result_ingestion_status(result) == "usable"
+
+
+def test_ingestion_status_accepts_non_empty_table_without_fragments() -> None:
+    result = parse_result(fragments=[])
+    result["tables"] = [{"html": "<table><tr><td>DN50</td></tr></table>"}]
+
+    assert parse_result_ingestion_status(result) == "usable"
+
+
+def test_ingestion_status_rejects_empty_artifacts() -> None:
+    result = parse_result(fragments=[{"text": "   "}])
+    result["tables"] = [{"rows": []}]
+
+    assert parse_result_ingestion_status(result) == "empty"
+
+
+def test_ingestion_status_rejects_execution_failure_with_content() -> None:
+    result = parse_result(fragments=[{"text": "材料代用单"}], status="failed")
+
+    assert parse_result_ingestion_status(result) == "failed"
 
 
 def test_material_review_asset_is_packaged_and_versioned() -> None:

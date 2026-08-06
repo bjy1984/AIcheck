@@ -28,6 +28,25 @@ def parse_result_quality_blockers(parse_result: dict[str, Any] | None) -> list[s
     return sorted(reasons & OCR_FORMAL_BLOCKING_REASONS)
 
 
+def parse_result_ingestion_status(parse_result: dict[str, Any] | None) -> str:
+    execution_status = str((parse_result or {}).get("status") or "").lower()
+    if execution_status not in {"success", "succeeded", "completed"}:
+        return "failed"
+    fragments = [
+        item
+        for item in (parse_result or {}).get("fragments", [])
+        if isinstance(item, dict)
+    ]
+    tables = [
+        item
+        for item in (parse_result or {}).get("tables", [])
+        if isinstance(item, dict)
+    ]
+    if any(_has_content(item) for item in [*fragments, *tables]):
+        return "usable"
+    return "empty"
+
+
 def parse_result_outcome_status(parse_result: dict[str, Any] | None) -> str:
     execution_status = str((parse_result or {}).get("status") or "").lower()
     quality = (parse_result or {}).get("quality")
