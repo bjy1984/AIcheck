@@ -96,6 +96,8 @@ import {
   saveReviewOpinionApi,
   saveSubmissionDraftApi,
   searchApi,
+  replaceNdtAtomicMaterialBindingsApi,
+  submitNdtAtomicMaterialApi,
   submitNdtRectificationApi,
   submitNdtSubmissionApi,
   submitInspectionDocumentBindingsApi,
@@ -228,6 +230,7 @@ import SubmissionBatchDialog from './components/SubmissionBatchDialog.vue'
 import SubmissionDetailDrawer from './components/SubmissionDetailDrawer.vue'
 import SubmissionHistoryDrawer from './components/SubmissionHistoryDrawer.vue'
 import UploadSessionDrawer from './components/UploadSessionDrawer.vue'
+import { NDT_NODE_IDS, type NdtAtomicMaterial } from '@/utils/ndtAtomicMaterials'
 import WorkbenchActionBar from './components/WorkbenchActionBar.vue'
 import WorkbenchRoleStaticSections from './components/WorkbenchRoleStaticSections.vue'
 import WorkbenchRightStaticDetails from './components/WorkbenchRightStaticDetails.vue'
@@ -359,6 +362,7 @@ const previewDrawerOriginalError = ref('')
 const uploadDrawerVisible = ref(false)
 const uploadDrawerError = ref('')
 const uploadDrawerMaterialCategory = ref('')
+const uploadDrawerAtomicMaterial = ref<NdtAtomicMaterial>()
 const uploadDrawerMode = ref<'project' | 'inspection'>('project')
 const ndtReportUploadVisible = ref(false)
 const bindDialogVisible = ref(false)
@@ -2766,11 +2770,16 @@ const openLocalArchiveDownloadTask = (item: ArchiveItem) => {
   exportTaskVisible.value = true
 }
 
-const handleOpenUploadDrawer = (materialCategory?: string) => {
+const handleOpenUploadDrawer = (target?: string | NdtAtomicMaterial) => {
   if (!ensureWritableProject()) return
   uploadDrawerMode.value = 'project'
   uploadDrawerError.value = ''
-  uploadDrawerMaterialCategory.value = materialCategory || ''
+  uploadDrawerAtomicMaterial.value = typeof target === 'object' ? target : undefined
+  uploadDrawerMaterialCategory.value = uploadDrawerAtomicMaterial.value
+    ? '无损检测资料'
+    : typeof target === 'string'
+      ? target
+      : ''
   uploadDrawerVisible.value = true
 }
 
@@ -2779,10 +2788,11 @@ const handleOpenInspectionUploadDrawer = () => {
   uploadDrawerMode.value = 'inspection'
   uploadDrawerError.value = ''
   uploadDrawerMaterialCategory.value = '监检现场补充证据'
+  uploadDrawerAtomicMaterial.value = undefined
   uploadDrawerVisible.value = true
 }
 
-const handleCreateUploadSession = async (files: File[]) => {
+const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: number[] }) => {
   if (!ensureWritableProject()) return
   if (!files.length) {
     ElMessage.warning('请选择至少一个本地文件')
@@ -2797,6 +2807,13 @@ const handleCreateUploadSession = async (files: File[]) => {
       fileType: inferUploadFileType(file),
       ...(uploadDrawerMaterialCategory.value
         ? { materialCategory: uploadDrawerMaterialCategory.value }
+        : {}),
+      ...(uploadDrawerAtomicMaterial.value
+        ? {
+            materialTypeCode: uploadDrawerAtomicMaterial.value.code,
+            materialTypeName: uploadDrawerAtomicMaterial.value.name,
+            nodeIds: metadata?.nodeIds || uploadDrawerAtomicMaterial.value.defaultNodeIds
+          }
         : {})
     }))
     const res =
@@ -2880,11 +2897,58 @@ const handleCreateUploadSession = async (files: File[]) => {
       return
     }
     uploadDrawerError.value = ''
-    ElMessage.success(`已上传 ${files.length} 个文件，OCR 和索引处理已进入队列`)
+    ElMessage.success(
+      uploadDrawerAtomicMaterial.value
+        ? `已上传 ${files.length} 个文件并分别保存为草稿，OCR 已异步排队`
+        : `已上传 ${files.length} 个文件，OCR 和索引处理已进入队列`
+    )
     uploadDrawerVisible.value = false
     await loadProjectBundle()
   } catch (error) {
     showUploadDrawerError('文件上传失败，请检查对象存储、网络连接和当前项目权限。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleReplaceNdtAtomicBindings = async (payload: {
+  documentId: string
+  nodeIds: number[]
+}) => {
+  if (!ensureWritableProject()) return
+  actionLoading.value = true
+  ndtSubmitError.value = ''
+  try {
+    await replaceNdtAtomicMaterialBindingsApi(
+      activeProjectId.value,
+      payload.documentId,
+      payload.nodeIds,
+      { etag: currentProject.value?.etag }
+    )
+    ElMessage.success('规则挂载已更新')
+    await loadProjectBundle()
+  } catch (error) {
+    showNdtSubmitError('规则挂载调整失败，请确认文件仍处于草稿或需补正状态。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleSubmitNdtAtomicMaterial = async (payload: {
+  documentId: string
+  bindingIds: string[]
+}) => {
+  if (!ensureWritableProject()) return
+  actionLoading.value = true
+  ndtSubmitError.value = ''
+  try {
+    await submitNdtAtomicMaterialApi(activeProjectId.value, payload, {
+      etag: currentProject.value?.etag
+    })
+    ElMessage.success('该文件已单独提交审批')
+    await Promise.all([loadProjectBundle(), loadSubmissionHistory()])
+  } catch (error) {
+    showNdtSubmitError('单文件提交审批失败，请确认规则挂载和文件状态。', error)
   } finally {
     actionLoading.value = false
   }
@@ -4485,6 +4549,7 @@ watch(
     if (!open) {
       uploadDrawerError.value = ''
       uploadDrawerMaterialCategory.value = ''
+      uploadDrawerAtomicMaterial.value = undefined
     }
   }
 )
@@ -5835,6 +5900,8 @@ onBeforeUnmount(() => {
             @import-records="handleImportNdtRecords"
             @upload-material="handleOpenUploadDrawer"
             @upload-report="handleOpenNdtReportUpload"
+            @replace-material-bindings="handleReplaceNdtAtomicBindings"
+            @submit-material="handleSubmitNdtAtomicMaterial"
             @submit-ndt="handleSubmitNdt"
             @rectify-ndt="handleRectifyNdt"
             @open-report-detail="handleOpenNdtReportDetail"
@@ -6101,6 +6168,10 @@ onBeforeUnmount(() => {
         :title="uploadDrawerMode === 'inspection' ? '上传监检资料' : '上传项目文件'"
         :node-name="selectedNode?.name"
         :material-category="uploadDrawerMaterialCategory"
+        :material-type-code="uploadDrawerAtomicMaterial?.code"
+        :material-type-name="uploadDrawerAtomicMaterial?.name"
+        :default-node-ids="uploadDrawerAtomicMaterial?.defaultNodeIds"
+        :allowed-node-ids="[...NDT_NODE_IDS]"
         :loading="actionLoading"
         :operation-error="uploadDrawerError"
         @submit="handleCreateUploadSession"

@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
+  ElCheckbox,
+  ElCheckboxGroup,
   ElDrawer,
   ElMessage,
   ElTable,
@@ -16,13 +18,17 @@ const props = defineProps<{
   title?: string
   nodeName?: string
   materialCategory?: string
+  materialTypeCode?: string
+  materialTypeName?: string
+  defaultNodeIds?: number[]
+  allowedNodeIds?: number[]
   loading: boolean
   operationError?: string
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  submit: [files: File[]]
+  submit: [files: File[], metadata?: { nodeIds: number[] }]
 }>()
 
 const visible = computed({
@@ -32,6 +38,8 @@ const visible = computed({
 
 const uploadRef = ref<UploadInstance>()
 const selectedFiles = ref<File[]>([])
+const selectedNodeIds = ref<number[]>([])
+const isAtomicNdtUpload = computed(() => Boolean(props.materialTypeCode))
 
 const fileRows = computed(() =>
   selectedFiles.value.map((file, index) => ({
@@ -83,7 +91,11 @@ const handleSubmit = () => {
     ElMessage.warning('请选择至少一个本地文件')
     return
   }
-  emit('submit', selectedFiles.value)
+  if (isAtomicNdtUpload.value && !selectedNodeIds.value.length) {
+    ElMessage.warning('请至少选择一个无损检测规则节点')
+    return
+  }
+  emit('submit', selectedFiles.value, { nodeIds: [...selectedNodeIds.value] })
 }
 
 const handleRetry = () => {
@@ -93,7 +105,10 @@ const handleRetry = () => {
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) resetFiles()
+    if (open) {
+      resetFiles()
+      selectedNodeIds.value = [...(props.defaultNodeIds || [])]
+    }
   }
 )
 </script>
@@ -109,6 +124,22 @@ watch(
       <div v-if="materialCategory" class="target-category">
         <span>资料类别</span>
         <strong>{{ materialCategory }}</strong>
+      </div>
+
+      <div v-if="isAtomicNdtUpload" class="atomic-target">
+        <div>
+          <span>原子资料类型</span>
+          <strong>{{ materialTypeName }}</strong>
+        </div>
+        <div>
+          <span>规则挂载（上传前可调整）</span>
+          <ElCheckboxGroup v-model="selectedNodeIds" class="node-options">
+            <ElCheckbox v-for="nodeId in allowedNodeIds || []" :key="nodeId" :value="nodeId">
+              R{{ nodeId }}
+            </ElCheckbox>
+          </ElCheckboxGroup>
+        </div>
+        <small>上传完成后先保存为逐文件草稿；OCR 异步运行，不会自动提交审批。</small>
       </div>
 
       <ElAlert
@@ -185,6 +216,32 @@ watch(
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
+}
+
+.atomic-target {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  color: #344054;
+  background: #f8fafc;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+}
+
+.atomic-target > div {
+  display: grid;
+  gap: 6px;
+}
+
+.atomic-target span,
+.atomic-target small {
+  color: #667085;
+}
+
+.node-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
 }
 
 .target-category span {

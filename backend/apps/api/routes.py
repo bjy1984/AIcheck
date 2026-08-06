@@ -13144,9 +13144,10 @@ def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(def
 @router.post("/projects/{project_id}/ndt/reports/upload-session")
 def ndt_report_upload_session(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
     node_ids = node_ids_from_body(body, 40)
+    atomic_node_ids = [40, 41, 42]
 
     def produce():
-        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=sorted({*node_ids, *atomic_node_ids}))
         if guard:
             return guard
         node_id = node_ids[0] if node_ids else 40
@@ -13167,7 +13168,10 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
                 **file,
                 "fileName": file.get("fileName") or "RT检测报告.pdf",
                 "fileType": file.get("fileType") or "application/pdf",
-                "materialCategory": file.get("materialCategory") or body.get("materialCategory") or "检测报告",
+                "materialCategory": NDT_ATOMIC_MATERIAL_CATEGORY,
+                "materialTypeCode": "ndt_report",
+                "materialTypeName": "无损检测报告",
+                "nodeIds": atomic_node_ids,
             }
             for file in files
         ]
@@ -13223,10 +13227,20 @@ def complete_ndt_report_upload_session(request: Request, project_id: str, sessio
             )
         files = repo.complete_upload_session(session_id)
         dispatches = dispatch_completed_upload_files(files)
+        documents = create_ndt_atomic_drafts_for_completed_session(project_id, files)
         reports = create_ndt_reports_for_completed_session(project_id, session, files)
         request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
         result = repo.mutation_result("完成无损检测报告上传会话", "UploadSession", session_id, next_status="排队中")
-        return ok({**result, "queuedTasks": dispatches, "fileCount": len(files), "reports": reports}, request)
+        return ok(
+            {
+                **result,
+                "queuedTasks": dispatches,
+                "fileCount": len(files),
+                "documents": documents,
+                "reports": reports,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"sessionId": session_id, "body": body})
 
@@ -13362,6 +13376,15 @@ def submit_ndt_atomic_material(
             return fail(errors.VALIDATION_ERROR, request, message="请选择该文件待提交的规则挂载。")
         if len(requested_bindings) != len(requested_binding_ids):
             return fail(errors.VALIDATION_ERROR, request, message="存在无效的规则挂载。")
+        current_bindings = document_bindings(project_id, document_id)
+        current_binding_ids = {str(item.get("id") or "") for item in current_bindings}
+        if set(requested_binding_ids) != current_binding_ids:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="单文件提交必须包含该文件当前的全部规则挂载。",
+                data={"expectedBindingIds": sorted(current_binding_ids)},
+            )
         invalid_bindings = [
             item["id"]
             for item in requested_bindings

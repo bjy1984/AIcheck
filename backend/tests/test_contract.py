@@ -8871,6 +8871,19 @@ def test_ndt_atomic_document_rules_can_be_replaced_before_submission() -> None:
         ]
     )[0]
 
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": [document["bindingIds"][0]]},
+            headers=headers,
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert all(
+        repo.find_one("bindings", binding_id)["bindingStatus"] == "草稿挂载"
+        for binding_id in document["bindingIds"]
+    )
+
     adjusted = assert_ok(
         client.put(
             f"/projects/{project_id}/ndt/documents/{document['documentId']}/bindings",
@@ -9056,7 +9069,11 @@ def test_upload_and_ndt_validation_errors_match_contract() -> None:
     assert created_report["entrustNo"] == "WT-IDEMPOTENT-001"
     assert created_report["standardCode"] == "NB/T 47013.2-2015"
     created_document = repo.find_one("documents", upload["uploadUrls"][0]["documentId"])
-    assert created_document["materialCategory"] == "检测报告"
+    assert created_document["materialCategory"] == "无损检测资料"
+    assert created_document["materialTypeCode"] == "ndt_report"
+    assert created_document["materialTypeName"] == "无损检测报告"
+    assert complete["documents"][0]["nodeIds"] == [40, 41, 42]
+    assert len(complete["documents"][0]["bindingIds"]) == 3
     assert created_document["sourceOrgName"] == "华测检测有限公司"
 
 

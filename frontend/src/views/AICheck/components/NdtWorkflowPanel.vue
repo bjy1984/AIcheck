@@ -4,6 +4,8 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElCheckbox,
+  ElCheckboxGroup,
   ElDialog,
   ElEmpty,
   ElForm,
@@ -27,24 +29,18 @@ import type {
   ProjectTreeNode
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
-import { buildNdtSubmitBlockers, pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
-import { resolveNdtMaterialAction } from '@/utils/acceptanceFlows'
+import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
+import {
+  NDT_ATOMIC_MATERIALS,
+  NDT_NODE_IDS,
+  ndtFileApprovalStatus,
+  type NdtAtomicMaterial
+} from '@/utils/ndtAtomicMaterials'
 
-type NdtMaterialStatus = '已覆盖' | '待上传' | '需补正'
-type NdtMaterialAction =
-  | { key: 'upload'; label: string; category: string }
-  | { key: 'register'; label: string; category: string }
-  | { key: 'rectify'; label: string }
-type NdtMaterialChecklistItem = {
-  category: string
-  requiredItems: string
+type NdtMaterialChecklistItem = NdtAtomicMaterial & {
   uploadedCount: number
-  missing: string
-  status: NdtMaterialStatus
-  nodeRefs: string
-  actions: NdtMaterialAction[]
 }
 type NdtOcrMetadataRow = {
   category: string
@@ -93,8 +89,10 @@ const emit = defineEmits<{
   ]
   openReportDetail: [reportId: string]
   openFeedbackDetail: [feedbackId: string]
-  uploadMaterial: [materialCategory: string]
+  uploadMaterial: [material: NdtAtomicMaterial]
   uploadReport: []
+  replaceMaterialBindings: [payload: { documentId: string; nodeIds: number[] }]
+  submitMaterial: [payload: { documentId: string; bindingIds: string[] }]
 }>()
 
 const rectificationForm = reactive({
@@ -102,6 +100,9 @@ const rectificationForm = reactive({
   description: '已补充底片包索引和检测记录页码，请复审。'
 })
 const filmDialogVisible = ref(false)
+const bindingDialogVisible = ref(false)
+const bindingDocumentId = ref('')
+const bindingNodeIds = ref<number[]>([])
 const filmForm = reactive({
   filmNo: '',
   weldNo: '',
@@ -135,22 +136,6 @@ const rectificationRules: FormRules = {
 
 const pendingReports = computed(() => pendingNdtReports(props.reports))
 const pendingFilms = computed(() => pendingNdtFilms(props.films))
-const blockerText = (item: { code?: string; message?: string; reportId?: string }) =>
-  [item.reportId, item.message || item.code].filter(Boolean).join('：')
-const submitBlockers = computed(() =>
-  buildNdtSubmitBlockers({
-    reports: props.reports,
-    films: props.films,
-    projectFiles: props.projectFiles,
-    readiness: props.ndtReadiness
-  })
-)
-const canSubmitNdt = computed(() => pendingReports.value.length > 0 && !submitBlockers.value.length)
-const submitNdtHint = computed(() => {
-  if (submitBlockers.value.length) return submitBlockers.value.join('；')
-  if (!pendingReports.value.length) return '暂无待提交的检测报告'
-  return '提交满足条件的检测报告与底片资料'
-})
 const openFeedback = computed(() => props.feedback.filter((item) => item.status === '待反馈'))
 const defaultFeedback = computed(() => openFeedback.value[0])
 watch(
@@ -185,113 +170,41 @@ const ndtMetricCards = computed<AuditSummaryCard[]>(() => [
     tone: openFeedback.value.length ? 'orange' : 'gray'
   }
 ])
-const filesByCategory = (category: string) =>
-  props.projectFiles.filter((file) => file.materialCategory === category)
-const statusForCategory = (category: string, fallbackCount = 0): NdtMaterialStatus => {
-  const files = filesByCategory(category)
-  if (files.length || fallbackCount) return '已覆盖'
-  return '待上传'
-}
-const ndtMaterialChecklist = computed(() => {
-  const openFeedbackCount = openFeedback.value.length
-  const rows: NdtMaterialChecklistItem[] = [
-    {
-      category: '机构与人员资质',
-      requiredItems: '无损检测机构核准证、检测人员资格证、执业注册证、项目人员任命',
-      uploadedCount: filesByCategory('机构与人员资质').length,
-      missing: filesByCategory('机构与人员资质').length
-        ? '已上传资质资料，等待监检核验'
-        : '当前接口未返回资质文件，需在无损检测资料库中补充或核验',
-      status: statusForCategory('机构与人员资质'),
-      nodeRefs: 'R35、R36、R37',
-      actions: [{ key: 'upload', label: '上传资料', category: '机构与人员资质' }]
-    },
-    {
-      category: '检测方案与工艺',
-      requiredItems: '无损检测方案、单项检测工艺文件、操作指导书、受控表格',
-      uploadedCount: filesByCategory('检测方案与工艺').length,
-      missing: filesByCategory('检测方案与工艺').length
-        ? '已上传检测方案与工艺资料'
-        : '需补充检测方案、工艺文件和操作指导书',
-      status: statusForCategory('检测方案与工艺'),
-      nodeRefs: 'R35、R39、R40',
-      actions: [{ key: 'upload', label: '上传资料', category: '检测方案与工艺' }]
-    },
-    {
-      category: '检测设备与校准',
-      requiredItems: '检测设备台账、检定/校准报告、设备有效期证明',
-      uploadedCount: filesByCategory('检测设备与校准').length,
-      missing: filesByCategory('检测设备与校准').length
-        ? '已上传设备与校准资料'
-        : '需补充设备检定或校准证明',
-      status: statusForCategory('检测设备与校准'),
-      nodeRefs: 'R38',
-      actions: [{ key: 'upload', label: '上传资料', category: '检测设备与校准' }]
-    },
-    {
-      category: '底片与影像资料',
-      requiredItems: '底片编号、射线底片或数字影像、底片包索引',
-      uploadedCount: filesByCategory('底片与影像资料').length + props.films.length,
-      missing:
-        filesByCategory('底片与影像资料').length || props.films.length
-          ? '已登记或上传底片影像，等待监检核验'
-          : '需上传或登记底片编号和影像资料',
-      status: props.films.some((film) => film.status === '需补正')
-        ? '需补正'
-        : statusForCategory('底片与影像资料', props.films.length),
-      nodeRefs: 'R40、R65',
-      actions: [
-        { key: 'register', label: '新增底片编号', category: '底片与影像资料' },
-        { key: 'upload', label: '上传底片/影像', category: '底片与影像资料' }
-      ]
-    },
-    {
-      category: '检测记录',
-      requiredItems: '无损检测委托单、检测记录、原始记录、抽查样本记录',
-      uploadedCount: filesByCategory('检测记录').length + props.records.length,
-      missing:
-        filesByCategory('检测记录').length || props.records.length
-          ? '已上传或导入检测记录，等待监检核验'
-          : '需导入检测记录和原始记录',
-      status: statusForCategory('检测记录', props.records.length),
-      nodeRefs: 'R40、R41',
-      actions: [{ key: 'upload', label: '上传检测记录', category: '检测记录' }]
-    },
-    {
-      category: '检测报告',
-      requiredItems: 'RT/UT/MT/PT 检测报告、检测结论、报告与底片对应关系',
-      uploadedCount: filesByCategory('检测报告').length + props.reports.length,
-      missing:
-        filesByCategory('检测报告').length || props.reports.length
-          ? '已上传检测报告，等待监检核验'
-          : '需上传检测报告',
-      status: props.reports.some((report) => report.status === '需补正')
-        ? '需补正'
-        : statusForCategory('检测报告', props.reports.length),
-      nodeRefs: 'R40、R65',
-      actions: [{ key: 'upload', label: '上传检测报告', category: '检测报告' }]
-    },
-    {
-      category: '问题处理闭环',
-      requiredItems: '不合格品控制、联络单/意见书、处理反馈、返修后复检报告',
-      uploadedCount: openFeedbackCount,
-      missing: openFeedbackCount ? `${openFeedbackCount} 项监检反馈待处理` : '暂无待处理反馈',
-      status: openFeedbackCount ? '需补正' : '已覆盖',
-      nodeRefs: 'R41、R42',
-      actions: [
-        { key: 'upload', label: '上传补正', category: '问题处理闭环' },
-        { key: 'rectify', label: '提交反馈' }
-      ]
-    }
-  ]
-  return rows
-})
+const atomicProjectFiles = computed(() =>
+  props.projectFiles.filter((file) => file.materialCategory === '无损检测资料')
+)
+const ndtMaterialChecklist = computed<NdtMaterialChecklistItem[]>(() =>
+  NDT_ATOMIC_MATERIALS.map((material) => ({
+    ...material,
+    uploadedCount: atomicProjectFiles.value.filter(
+      (file) => file.materialTypeCode === material.code
+    ).length
+  }))
+)
 const ndtChecklistSummary = computed(() => ({
-  covered: ndtMaterialChecklist.value.filter((item) => item.status === '已覆盖').length,
-  pending: ndtMaterialChecklist.value.filter((item) => item.status === '待上传').length,
-  correction: ndtMaterialChecklist.value.filter((item) => item.status === '需补正').length,
+  uploaded: atomicProjectFiles.value.length,
+  types: new Set(atomicProjectFiles.value.map((file) => file.materialTypeCode)).size,
   total: ndtMaterialChecklist.value.length
 }))
+const atomicFileRows = computed(() =>
+  atomicProjectFiles.value.map((file) => {
+    const bindings = file.bindings || []
+    const editableBindings = bindings.filter((binding) =>
+      ['草稿挂载', '需补正'].includes(binding.bindingStatus)
+    )
+    const canEdit = bindings.every((binding) =>
+      ['草稿挂载', '需补正'].includes(binding.bindingStatus)
+    )
+    return {
+      ...file,
+      atomicTypeName: file.materialTypeName || file.materialTypeCode || '未分类原子资料',
+      nodeIds: [...new Set(bindings.map((binding) => binding.nodeId))].sort((a, b) => a - b),
+      approvalStatus: ndtFileApprovalStatus(file),
+      editableBindingIds: canEdit ? editableBindings.map((binding) => binding.id) : [],
+      canEdit
+    }
+  })
+)
 const ndtAssetRows = computed(() => {
   const reportFileIds = new Set(props.reports.map((report) => report.fileId))
   return [
@@ -375,26 +288,26 @@ const ocrMetadataRows = computed<NdtOcrMetadataRow[]>(() => [
   }
 ])
 
-const scrollToNdtSection = (sectionId: string) => {
-  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+const handleMaterialUpload = (material: NdtAtomicMaterial) => emit('uploadMaterial', material)
+
+const openBindingDialog = (row: (typeof atomicFileRows.value)[number]) => {
+  bindingDocumentId.value = row.id
+  bindingNodeIds.value = [...row.nodeIds]
+  bindingDialogVisible.value = true
 }
 
-const handleMaterialAction = (action: NdtMaterialAction) => {
-  const category = 'category' in action ? action.category : ''
-  const route = resolveNdtMaterialAction(category, action.key)
-  if (route === 'register-film') {
-    filmDialogVisible.value = true
-    return
-  }
-  if (route === 'upload-report') {
-    emit('uploadReport')
-    return
-  }
-  if (route === 'upload-material') {
-    emit('uploadMaterial', category)
-    return
-  }
-  scrollToNdtSection('ndt-feedback-list')
+const saveBindingAdjustment = () => {
+  if (!bindingNodeIds.value.length) return
+  emit('replaceMaterialBindings', {
+    documentId: bindingDocumentId.value,
+    nodeIds: [...bindingNodeIds.value]
+  })
+  bindingDialogVisible.value = false
+}
+
+const submitAtomicFile = (row: (typeof atomicFileRows.value)[number]) => {
+  if (!row.editableBindingIds.length) return
+  emit('submitMaterial', { documentId: row.id, bindingIds: row.editableBindingIds })
 }
 
 const handleCreateFilm = async () => {
@@ -415,13 +328,6 @@ const handleCreateFilm = async () => {
     evaluationLevel: filmForm.evaluationLevel.trim(),
     evaluatorName: filmForm.evaluatorName.trim(),
     reviewerName: filmForm.reviewerName.trim()
-  })
-}
-
-const handleSubmitNdt = () => {
-  emit('submitNdt', {
-    reportIds: pendingReports.value.map((report) => report.id),
-    filmIds: pendingFilms.value.map((film) => film.id)
   })
 }
 
@@ -521,6 +427,26 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       </template>
     </ElDialog>
 
+    <ElDialog v-model="bindingDialogVisible" title="调整规则挂载" width="560px" append-to-body>
+      <p class="binding-dialog-hint">仅草稿或需补正文件可调整；提交后规则挂载锁定。</p>
+      <ElCheckboxGroup v-model="bindingNodeIds" class="binding-node-options">
+        <ElCheckbox v-for="nodeId in NDT_NODE_IDS" :key="nodeId" :value="nodeId">
+          R{{ nodeId }}
+        </ElCheckbox>
+      </ElCheckboxGroup>
+      <template #footer>
+        <ElButton @click="bindingDialogVisible = false">取消</ElButton>
+        <ElButton
+          type="primary"
+          :disabled="!bindingNodeIds.length"
+          :loading="loading"
+          @click="saveBindingAdjustment"
+        >
+          保存挂载
+        </ElButton>
+      </template>
+    </ElDialog>
+
     <ElCard shadow="never" class="panel ndt-panel">
       <template #header>
         <div class="panel-header">
@@ -539,45 +465,32 @@ const handleRectifyNdt = async (rectificationId?: string) => {
       <section class="ndt-checklist">
         <div class="ndt-section-head">
           <div>
-            <strong>标准资料上传</strong>
-            <p>按无损检测单位应提交的资料类别归类，监检节点可在上传或提交后补充关联。</p>
+            <strong>原子资料类型上传</strong>
+            <p>选择资料类型后自动带出 R35–R42，可在上传前调整；每个文件独立保存为草稿。</p>
           </div>
           <ElTag type="info" effect="plain">
-            {{ ndtChecklistSummary.covered }} / {{ ndtChecklistSummary.total }} 类已有资料
+            {{ ndtChecklistSummary.uploaded }} 个文件 / {{ ndtChecklistSummary.types }} 种类型
           </ElTag>
         </div>
         <ElTable :data="ndtMaterialChecklist" border class="ndt-checklist-table">
           <ElTableColumn type="index" label="序号" width="72" />
-          <ElTableColumn prop="category" label="资料类别" min-width="150" />
-          <ElTableColumn label="操作" min-width="170">
+          <ElTableColumn prop="name" label="原子资料类型" min-width="250" show-overflow-tooltip />
+          <ElTableColumn prop="group" label="业务规则" min-width="170" />
+          <ElTableColumn label="默认挂载" width="150">
             <template #default="{ row }">
-              <div class="ndt-table-actions">
-                <ElButton
-                  v-for="action in row.actions"
-                  :key="`${row.category}-${action.key}-${action.label}`"
-                  link
-                  type="primary"
-                  :loading="loading"
-                  @click="handleMaterialAction(action)"
-                >
-                  {{ action.label }}
-                </ElButton>
-              </div>
+              {{ row.defaultNodeIds.map((nodeId) => `R${nodeId}`).join('、') }}
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="requiredItems" label="标准要求资料" min-width="260" />
-          <ElTableColumn label="已上传/登记" width="110">
+          <ElTableColumn label="已上传" width="100">
             <template #default="{ row }">{{ row.uploadedCount }} 项</template>
           </ElTableColumn>
-          <ElTableColumn prop="missing" label="缺口/待核验" min-width="260" />
-          <ElTableColumn label="状态" width="110">
+          <ElTableColumn label="操作" width="120" fixed="right">
             <template #default="{ row }">
-              <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-                {{ row.status }}
-              </ElTag>
+              <ElButton link type="primary" :loading="loading" @click="handleMaterialUpload(row)">
+                上传文件
+              </ElButton>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="nodeRefs" label="关联规则" width="130" />
         </ElTable>
       </section>
 
@@ -586,10 +499,11 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           <div>
             <strong>OCR 字段确认</strong>
             <p
-              >底片、检测记录和检测报告的关键字段由资料识别结果进入台账，人工只处理低置信度和监检反馈项。</p
+              >OCR
+              在上传完成后异步运行，用于辅助核对字段；排队中或识别失败均不阻断单文件提交审批。</p
             >
           </div>
-          <ElTag type="warning" effect="plain">字段待确认</ElTag>
+          <ElTag type="info" effect="plain">辅助校验，不作准入门槛</ElTag>
         </div>
         <ElTable :data="ocrMetadataRows" border>
           <ElTableColumn type="index" label="序号" width="72" />
@@ -604,133 +518,84 @@ const handleRectifyNdt = async (rectificationId?: string) => {
             </template>
           </ElTableColumn>
         </ElTable>
-        <ElTable
-          v-if="ndtReadiness?.reports?.length"
-          :data="ndtReadiness.reports"
-          border
-          class="ndt-readiness-table"
-        >
-          <ElTableColumn prop="reportId" label="报告" min-width="150" show-overflow-tooltip />
-          <ElTableColumn prop="ocrStatus" label="OCR" width="100" />
-          <ElTableColumn label="字段/bbox" width="110">
-            <template #default="{ row }">
-              {{ row.fieldCount || 0 }} / {{ row.bboxFieldCount || 0 }}
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="状态" width="100">
-            <template #default="{ row }">
-              <ElTag :type="row.passed ? 'success' : 'danger'" size="small" effect="plain">
-                {{ row.passed ? '可提交' : '阻断' }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="原因" min-width="260" show-overflow-tooltip>
-            <template #default="{ row }">
-              {{ (row.blockingReasons || []).map(blockerText).join('；') || '无' }}
-            </template>
-          </ElTableColumn>
-        </ElTable>
       </section>
 
       <section class="ndt-library">
         <div class="ndt-section-head">
           <div>
-            <strong>检测资料列表</strong>
-            <p>底片、检测记录和检测报告统一在资料库中管理，再提交给监检方审核。</p>
+            <strong>逐文件草稿与审批</strong>
+            <p
+              >每个文件独立核对原子资料类型、规则挂载和 OCR
+              状态，再分别提交审批；不检查整包齐套性。</p
+            >
           </div>
           <div class="ndt-actions">
-            <span
-              >待提交报告 {{ pendingReports.length }} 份，底片 {{ pendingFilms.length }} 个</span
-            >
-            <ElTooltip
-              :content="submitNdtHint"
-              :disabled="canSubmitNdt"
-              placement="top"
-              popper-class="audit-action-tooltip-popper"
-            >
-              <span class="ndt-action-tooltip">
-                <ElButton
-                  type="primary"
-                  :disabled="!canSubmitNdt"
-                  :loading="loading"
-                  @click="handleSubmitNdt"
-                >
-                  提交检测资料
-                </ElButton>
-              </span>
-            </ElTooltip>
+            <ElButton plain @click="filmDialogVisible = true">登记底片编号</ElButton>
+            <ElButton plain type="primary" @click="emit('uploadReport')">上传结构化报告</ElButton>
           </div>
         </div>
-        <ElAlert
-          v-if="submitBlockers.length"
-          class="ndt-submit-error"
-          type="warning"
-          title="检测资料暂不满足提交条件"
-          :closable="false"
-          show-icon
-        >
-          <ul class="ndt-blocker-list">
-            <li v-for="reason in submitBlockers" :key="reason">{{ reason }}</li>
-          </ul>
-        </ElAlert>
         <ElAlert
           v-if="submitError"
           class="ndt-submit-error"
           type="error"
-          title="无损检测资料提交失败"
+          title="无损检测文件操作失败"
           :closable="false"
           show-icon
         >
-          <div class="ndt-error-content">
-            <span>{{ submitError }}</span>
-            <ElButton link type="primary" :loading="loading" @click="handleSubmitNdt">
-              重试提交
-            </ElButton>
-          </div>
+          {{ submitError }}
         </ElAlert>
-        <ElTable :data="ndtAssetRows" border height="280">
+        <ElTable :data="atomicFileRows" border height="360">
           <ElTableColumn type="index" label="序号" width="72" />
-          <ElTableColumn prop="name" label="资料名称/编号" min-width="180" show-overflow-tooltip />
-          <ElTableColumn prop="assetType" label="资料类型" width="110" />
-          <ElTableColumn prop="method" label="方法" width="80" />
+          <ElTableColumn prop="fileName" label="文件名称" min-width="220" show-overflow-tooltip />
           <ElTableColumn
-            prop="documentNo"
-            label="委托/报告号"
-            min-width="150"
+            prop="atomicTypeName"
+            label="原子资料类型"
+            min-width="230"
             show-overflow-tooltip
           />
-          <ElTableColumn
-            prop="standardCode"
-            label="执行标准"
-            min-width="160"
-            show-overflow-tooltip
-          />
-          <ElTableColumn
-            prop="operator"
-            label="检测/复核人"
-            min-width="130"
-            show-overflow-tooltip
-          />
-          <ElTableColumn prop="relation" label="关联对象" min-width="150" show-overflow-tooltip />
-          <ElTableColumn label="状态" width="110">
+          <ElTableColumn label="规则挂载" width="160">
             <template #default="{ row }">
-              <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-                {{ row.status }}
+              {{ row.nodeIds.map((nodeId) => `R${nodeId}`).join('、') || '未挂载' }}
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="OCR" width="110">
+            <template #default="{ row }">
+              <ElTag
+                :type="getStatusTagType(documentPipelineStatus(row))"
+                size="small"
+                effect="plain"
+              >
+                {{ row.currentOcrStatus }}
+              </ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="审批状态" width="110">
+            <template #default="{ row }">
+              <ElTag :type="getStatusTagType(row.approvalStatus)" size="small" effect="plain">
+                {{ row.approvalStatus }}
               </ElTag>
             </template>
           </ElTableColumn>
           <ElTableColumn prop="updatedAt" label="更新时间" min-width="150" show-overflow-tooltip />
-          <ElTableColumn label="操作" width="120" fixed="right">
+          <ElTableColumn label="操作" width="190" fixed="right">
             <template #default="{ row }">
               <ElButton
-                v-if="row.detailId"
                 link
                 type="primary"
-                @click="emit('openReportDetail', row.detailId)"
+                :disabled="!row.canEdit"
+                @click="openBindingDialog(row)"
               >
-                查看详情
+                调整规则
               </ElButton>
-              <span v-else class="muted-action">台账项</span>
+              <ElButton
+                link
+                type="primary"
+                :disabled="!row.editableBindingIds.length"
+                :loading="loading"
+                @click="submitAtomicFile(row)"
+              >
+                提交审批
+              </ElButton>
             </template>
           </ElTableColumn>
         </ElTable>
@@ -880,6 +745,17 @@ const handleRectifyNdt = async (rectificationId?: string) => {
 
 .ndt-film-error {
   margin-bottom: 14px;
+}
+
+.binding-dialog-hint {
+  margin: 0 0 14px;
+  color: #667085;
+}
+
+.binding-node-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
 }
 
 .ndt-workspace :deep(.el-button),
