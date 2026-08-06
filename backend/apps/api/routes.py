@@ -6077,6 +6077,11 @@ def upload_session_state_records(session_id: str) -> dict[str, list[dict[str, An
         "upload_sessions": [session],
         "documents": [item for item in repo.state.get("documents", []) if str(item.get("id") or "") in document_ids],
         "versions": [item for item in repo.state.get("versions", []) if str(item.get("id") or "") in version_ids],
+        "bindings": [
+            item
+            for item in repo.state.get("bindings", [])
+            if str(item.get("documentId") or "") in document_ids
+        ],
         "knowledge_files": [
             item for item in repo.state.get("knowledge_files", []) if str(item.get("id") or "") in knowledge_file_ids
         ],
@@ -13339,6 +13344,39 @@ def replace_ndt_atomic_material_bindings(
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+def ndt_material_submission_state_records(
+    *,
+    project_id: str,
+    submission_id: str,
+    document_id: str,
+    binding_ids: list[str],
+    node_ids: list[int],
+    todo_ids: list[str],
+) -> dict[str, list[dict[str, Any]]]:
+    binding_id_set = set(binding_ids)
+    node_id_set = set(node_ids)
+    todo_id_set = set(todo_ids)
+    return {
+        "documents": [
+            item for item in repo.state["documents"] if item.get("id") == document_id
+        ],
+        "bindings": [
+            item for item in repo.state["bindings"] if item.get("id") in binding_id_set
+        ],
+        "tree_nodes": [
+            item
+            for item in repo.state["tree_nodes"]
+            if item.get("projectId") == project_id and int(item.get("nodeId") or 0) in node_id_set
+        ],
+        "submissions": [
+            item
+            for item in repo.state["submissions"]
+            if item.get("submissionId") == submission_id
+        ],
+        "todos": [item for item in repo.state["todos"] if item.get("id") in todo_id_set],
+    }
+
+
 @router.post("/projects/{project_id}/ndt/material-submissions")
 def submit_ndt_atomic_material(
     request: Request,
@@ -13349,18 +13387,21 @@ def submit_ndt_atomic_material(
 ):
     document_id = str(body.get("documentId") or "").strip()
     requested_binding_ids = [str(item).strip() for item in (body.get("bindingIds") or []) if str(item).strip()]
-    requested_bindings = [
-        item for item in repo.state["bindings"] if item.get("id") in set(requested_binding_ids)
-    ]
-    requested_node_ids = sorted(
-        {
-            int(item.get("nodeId") or 0)
-            for item in requested_bindings
-            if int(item.get("nodeId") or 0) in NDT_ATOMIC_NODE_IDS
-        }
-    )
 
     def produce():
+        if repo.sync_postgres is not None or repo.postgres_dsn or repo.sqlite_enabled or repo.sqlite_path:
+            load_state({"documents", "versions", "bindings", "tree_nodes"})
+        requested_binding_id_set = set(requested_binding_ids)
+        requested_bindings = [
+            item for item in repo.state["bindings"] if item.get("id") in requested_binding_id_set
+        ]
+        requested_node_ids = sorted(
+            {
+                int(item.get("nodeId") or 0)
+                for item in requested_bindings
+                if int(item.get("nodeId") or 0) in NDT_ATOMIC_NODE_IDS
+            }
+        )
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=requested_node_ids or None)
         if guard:
             return guard
@@ -13445,6 +13486,7 @@ def submit_ndt_atomic_material(
         }
         repo.state["todos"].insert(0, todo)
         submission = {
+            "id": submission_id,
             "submissionId": submission_id,
             "snapshotId": snapshot_id,
             "projectId": project_id,
@@ -13465,6 +13507,15 @@ def submit_ndt_atomic_material(
         }
         repo.state["submissions"].insert(0, submission)
         repo.add_audit("提交无损检测资料审批", "Submission", submission_id)
+        request.state.persistence_conflict_message = "文件状态已更新，请刷新后重试。"
+        request.state.scoped_flush_records = lambda: ndt_material_submission_state_records(
+            project_id=project_id,
+            submission_id=submission_id,
+            document_id=document_id,
+            binding_ids=requested_binding_ids,
+            node_ids=node_ids,
+            todo_ids=[todo["id"]],
+        )
         return ok(
             {
                 "submissionId": submission_id,

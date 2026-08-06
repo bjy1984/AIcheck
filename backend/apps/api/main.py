@@ -31,6 +31,7 @@ from libs.db.postgres import (
     run_transaction_probe,
 )
 from libs.db.repository import (
+    ConcurrentPersistenceError,
     flush_mutation_records,
     flush_state,
     load_state,
@@ -267,6 +268,21 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
     try:
         try:
             response = await call_next(request)
+        except ConcurrentPersistenceError as exc:
+            restore_failed_request_state(request)
+            logger.warning("concurrent_persistence_conflict: %s", exc)
+            return fail(
+                errors.RESOURCE_STATE_CHANGED,
+                request,
+                message=str(
+                    getattr(
+                        request.state,
+                        "persistence_conflict_message",
+                        errors.RESOURCE_STATE_CHANGED.message,
+                    )
+                ),
+                http_status=409,
+            )
         except BaseException:
             restore_failed_request_state(request)
             raise
@@ -304,6 +320,21 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
                         selected_singleton_keys=set(singleton_keys) if singleton_keys is not None else None,
                     )
             return response
+        except ConcurrentPersistenceError as exc:
+            restore_failed_request_state(request)
+            logger.warning("concurrent_persistence_conflict: %s", exc)
+            return fail(
+                errors.RESOURCE_STATE_CHANGED,
+                request,
+                message=str(
+                    getattr(
+                        request.state,
+                        "persistence_conflict_message",
+                        errors.RESOURCE_STATE_CHANGED.message,
+                    )
+                ),
+                http_status=409,
+            )
         except BaseException:
             restore_failed_request_state(request)
             raise

@@ -8773,6 +8773,137 @@ def upload_ndt_atomic_documents(file_specs: list[dict[str, object]]) -> list[dic
     return complete["documents"]
 
 
+def test_ndt_atomic_submission_refreshes_latest_document_state_before_validation(monkeypatch) -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    document = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "质量保证手册-并发更新.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_quality_assurance_manual",
+                "materialTypeName": "无损检测单位质量保证手册",
+                "nodeIds": [35],
+            }
+        ]
+    )[0]
+    persisted_document = repo.find_one("documents", document["documentId"])
+    persisted_document["currentOcrStatus"] = "排队中"
+    refreshed_state_keys: list[set[str]] = []
+
+    def refresh_latest_state(state_keys: set[str]) -> None:
+        refreshed_state_keys.append(state_keys)
+        persisted_document["currentOcrStatus"] = "已识别"
+
+    repo.postgres_dsn = "postgresql://refresh-latest-state-test"
+    monkeypatch.setattr("apps.api.routes.load_state", refresh_latest_state)
+
+    result = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": document["bindingIds"]},
+            headers=headers,
+        )
+    )
+
+    assert result["documentId"] == document["documentId"]
+    assert refreshed_state_keys == [{"documents", "versions", "bindings", "tree_nodes"}]
+    assert repo.find_one("documents", document["documentId"])["currentOcrStatus"] == "已识别"
+
+
+def test_ndt_atomic_submission_uses_exact_scoped_persistence(monkeypatch) -> None:
+    import apps.api.main as api_main
+
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    document = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "质量保证手册-精确提交.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_quality_assurance_manual",
+                "materialTypeName": "无损检测单位质量保证手册",
+                "nodeIds": [35],
+            }
+        ]
+    )[0]
+    full_flushes: list[dict[str, object]] = []
+    scoped_flushes: list[dict[str, list[dict[str, object]]]] = []
+    monkeypatch.setattr(api_main, "flush_state", lambda **kwargs: full_flushes.append(kwargs))
+    monkeypatch.setattr("apps.api.routes.load_state", lambda _state_keys: None)
+    monkeypatch.setattr(
+        api_main,
+        "flush_mutation_records",
+        lambda records, _scopes: scoped_flushes.append(records),
+    )
+
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": document["bindingIds"]},
+            headers=headers,
+        )
+    )
+
+    assert full_flushes == []
+    assert len(scoped_flushes) == 1
+    assert set(scoped_flushes[0]) == {
+        "documents",
+        "bindings",
+        "tree_nodes",
+        "submissions",
+        "todos",
+        "audit_logs",
+    }
+    assert [item["id"] for item in scoped_flushes[0]["documents"]] == [document["documentId"]]
+    assert {item["id"] for item in scoped_flushes[0]["bindings"]} == set(document["bindingIds"])
+
+
+def test_ndt_atomic_submission_returns_clear_resource_state_conflict(monkeypatch) -> None:
+    import apps.api.main as api_main
+    from libs.db.repository import ConcurrentPersistenceError
+
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    document = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "质量保证手册-并发冲突.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_quality_assurance_manual",
+                "materialTypeName": "无损检测单位质量保证手册",
+                "nodeIds": [35],
+            }
+        ]
+    )[0]
+    monkeypatch.setattr("apps.api.routes.load_state", lambda _state_keys: None)
+
+    def raise_concurrent_update(_records, _scopes) -> None:
+        raise ConcurrentPersistenceError(
+            f"Concurrent persistence update detected for documents/{document['documentId']}"
+        )
+
+    monkeypatch.setattr(api_main, "flush_mutation_records", raise_concurrent_update)
+
+    response = client.post(
+        f"/projects/{project_id}/ndt/material-submissions",
+        json={"documentId": document["documentId"], "bindingIds": document["bindingIds"]},
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["data"]["reason"] == "RESOURCE_STATE_CHANGED"
+    assert payload["message"] == "文件状态已更新，请刷新后重试。"
+    assert payload["data"]["reason"] != "EXTERNAL_TOOL_FAILED"
+
+
 def test_ndt_atomic_documents_submit_independently_without_ocr_gate() -> None:
     project_id = "P-2026-HDCP-001"
     headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
@@ -11363,6 +11494,21 @@ def test_postgres_indexes_include_jsonb_and_idempotency_specs() -> None:
         "fields": ["tenant_id", "scope"],
         "unique": True,
     } in POSTGRES_INDEXES["idempotency_records"]
+
+
+def test_persistence_baseline_conflict_uses_dedicated_exception() -> None:
+    import libs.db.repository as repository_module
+
+    key = ("documents", "DOC-CONCURRENT")
+    repo._persistence_baseline[key] = repo.canonical_persistence_payload(
+        {"id": "DOC-CONCURRENT", "currentOcrStatus": "排队中"}
+    )
+
+    with pytest.raises(repository_module.ConcurrentPersistenceError):
+        repo.assert_persistence_baseline(
+            key,
+            {"id": "DOC-CONCURRENT", "currentOcrStatus": "已识别"},
+        )
 
 
 def test_postgres_jsonb_state_table_covers_all_persisted_collections() -> None:

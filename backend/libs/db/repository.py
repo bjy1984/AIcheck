@@ -50,6 +50,10 @@ from .seed import (
 )
 
 
+class ConcurrentPersistenceError(RuntimeError):
+    """Raised when optimistic persistence detects a newer stored record."""
+
+
 STATE_COLLECTIONS = {
     "projects": "projects",
     "tree_nodes": "project_nodes",
@@ -2530,7 +2534,7 @@ class InMemoryRepository:
         expected = self._persistence_baseline.get(key)
         actual = self.canonical_persistence_payload(stored_payload) if stored_payload is not None else None
         if expected != actual:
-            raise RuntimeError(
+            raise ConcurrentPersistenceError(
                 f"Concurrent persistence update detected for {key[0]}/{key[1]}; reload before retrying."
             )
 
@@ -2889,7 +2893,7 @@ class InMemoryRepository:
                 elif row:
                     if self.canonical_persistence_payload(json.loads(row[0])) == payload:
                         continue
-                    raise RuntimeError(
+                    raise ConcurrentPersistenceError(
                         f"Concurrent persistence insert detected for {collection_name}/{object_id}."
                     )
                 connection.execute(
@@ -3701,7 +3705,7 @@ class InMemoryRepository:
                         )
                     elif row:
                         if self.canonical_persistence_payload(row[0]) != payload:
-                            raise RuntimeError(
+                            raise ConcurrentPersistenceError(
                                 f"Concurrent persistence insert detected for {collection_name}/{object_id}."
                             )
                     else:
@@ -3719,7 +3723,7 @@ class InMemoryRepository:
                                 (tenant_id, collection_name, object_id),
                             ).fetchone()
                             if not concurrent or self.canonical_persistence_payload(concurrent[0]) != payload:
-                                raise RuntimeError(
+                                raise ConcurrentPersistenceError(
                                     f"Concurrent persistence insert detected for {collection_name}/{object_id}."
                                 )
                 for state_key, payload in dirty_singletons.items():
@@ -3846,7 +3850,7 @@ class InMemoryRepository:
                             )
                         elif row:
                             if self.canonical_persistence_payload(row[0]) != payload:
-                                raise RuntimeError(
+                                raise ConcurrentPersistenceError(
                                     f"Concurrent persistence insert detected for {collection_name}/{object_id}."
                                 )
                         else:
@@ -3933,7 +3937,7 @@ class InMemoryRepository:
                         )
                     elif row:
                         if self.canonical_persistence_payload(json.loads(row[0])) != payload:
-                            raise RuntimeError(
+                            raise ConcurrentPersistenceError(
                                 f"Concurrent persistence insert detected for {collection_name}/{object_id}."
                             )
                     else:

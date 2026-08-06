@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apps.api.routes import upload_session_state_records
+from apps.api.routes import create_ndt_atomic_drafts_for_completed_session, upload_session_state_records
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
 
@@ -37,3 +37,27 @@ def test_upload_session_scoped_records_exclude_unrelated_and_vector_state() -> N
 
 def test_unknown_upload_session_has_no_scoped_records() -> None:
     assert upload_session_state_records("UPS-NOT-FOUND") == {}
+
+
+def test_ndt_upload_session_scoped_records_include_created_bindings() -> None:
+    session_id, _ = repo.create_upload_session(
+        PROJECT_ID,
+        [
+            {
+                "fileName": "质量保证手册.pdf",
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_quality_assurance_manual",
+                "materialTypeName": "无损检测单位质量保证手册",
+                "nodeIds": [35],
+            }
+        ],
+    )
+    files = repo.complete_upload_session(session_id)
+    created = create_ndt_atomic_drafts_for_completed_session(PROJECT_ID, files)
+
+    records = upload_session_state_records(session_id)
+
+    assert len(created) == 1
+    assert {item["id"] for item in records["bindings"]} == set(created[0]["bindingIds"])
+    assert {item["documentId"] for item in records["bindings"]} == {created[0]["documentId"]}
