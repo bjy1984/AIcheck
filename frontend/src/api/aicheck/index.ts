@@ -483,6 +483,24 @@ export type NdtSubmissionPayload = {
   nodeEvidenceLinks?: EvidenceLink[]
 }
 
+export type NdtAtomicMaterialSubmissionPayload = {
+  submissionId: string
+  snapshotId: string
+  documentId: string
+  bindingIds: string[]
+  nodeIds: number[]
+  nextStatus: '待审查'
+  createdTodos: TodoItem[]
+}
+
+export type NdtAtomicMaterialBindingsPayload = {
+  documentId: string
+  nodeIds: number[]
+  bindingIds: string[]
+  createdBindingIds: string[]
+  removedBindingIds: string[]
+}
+
 export type NdtRectificationPayload = {
   rectification: {
     id: string
@@ -3570,6 +3588,31 @@ export const submitNdtSubmissionApi = (
 ): Promise<IResponse<NdtSubmissionPayload>> => {
   return request.post({
     url: `/api/projects/${projectId}/ndt/submissions`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const replaceNdtAtomicMaterialBindingsApi = (
+  projectId: string,
+  documentId: string,
+  nodeIds: number[],
+  options?: MutationHeaderOptions
+): Promise<IResponse<NdtAtomicMaterialBindingsPayload>> => {
+  return request.put({
+    url: `/api/projects/${projectId}/ndt/documents/${documentId}/bindings`,
+    data: { nodeIds },
+    headers: mutationHeaders(options)
+  })
+}
+
+export const submitNdtAtomicMaterialApi = (
+  projectId: string,
+  payload: { documentId: string; bindingIds: string[] },
+  options?: MutationHeaderOptions
+): Promise<IResponse<NdtAtomicMaterialSubmissionPayload>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/ndt/material-submissions`,
     data: payload,
     headers: mutationHeaders(options)
   })

@@ -13247,6 +13247,217 @@ def ndt_report_detail(request: Request, project_id: str, report_id: str):
     return ok({"report": repo.clone(report), "films": films, "records": records, "document": repo.clone(document) if document else None, "feedback": feedback}, request)
 
 
+@router.put("/projects/{project_id}/ndt/documents/{document_id}/bindings")
+def replace_ndt_atomic_material_bindings(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    raw_node_ids = body.get("nodeIds")
+    try:
+        node_ids = sorted({int(item) for item in raw_node_ids}) if isinstance(raw_node_ids, list) else []
+    except (TypeError, ValueError):
+        node_ids = []
+    existing_bindings = document_bindings(project_id, document_id)
+    guard_node_ids = sorted(
+        {
+            *node_ids,
+            *[int(item.get("nodeId") or 0) for item in existing_bindings if item.get("nodeId")],
+        }
+    )
+
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=guard_node_ids or None)
+        if guard:
+            return guard
+        document = repo.find_one("documents", document_id)
+        if not document or document.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request, message="未找到待调整的无损检测文件。")
+        if str(document.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY:
+            return fail(errors.VALIDATION_ERROR, request, message="该文件不是无损检测原子资料。")
+        if not node_ids or any(node_id not in NDT_ATOMIC_NODE_IDS for node_id in node_ids):
+            return fail(errors.VALIDATION_ERROR, request, message="规则挂载必须选择 35–42 中的至少一个节点。")
+        current_bindings = document_bindings(project_id, document_id)
+        locked_binding_ids = [
+            item["id"]
+            for item in current_bindings
+            if item.get("bindingStatus") not in {"草稿挂载", "需补正"}
+        ]
+        if locked_binding_ids:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="文件提交审批后不能调整规则挂载。",
+                data={"lockedBindingIds": locked_binding_ids},
+            )
+        target_node_ids = set(node_ids)
+        removed_binding_ids = [
+            item["id"] for item in current_bindings if int(item.get("nodeId") or 0) not in target_node_ids
+        ]
+        if removed_binding_ids:
+            removed_set = set(removed_binding_ids)
+            repo.state["bindings"] = [
+                item for item in repo.state["bindings"] if item.get("id") not in removed_set
+            ]
+        binding_ids, created_binding_ids, invalid_document_ids = ensure_submission_document_bindings(
+            project_id,
+            node_ids,
+            [document_id],
+            usage="证明材料",
+        )
+        if invalid_document_ids:
+            return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
+        repo.add_audit("调整无损检测原子资料规则挂载", "Document", document_id)
+        return ok(
+            {
+                "documentId": document_id,
+                "nodeIds": node_ids,
+                "bindingIds": binding_ids,
+                "createdBindingIds": created_binding_ids,
+                "removedBindingIds": removed_binding_ids,
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
+@router.post("/projects/{project_id}/ndt/material-submissions")
+def submit_ndt_atomic_material(
+    request: Request,
+    project_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    document_id = str(body.get("documentId") or "").strip()
+    requested_binding_ids = [str(item).strip() for item in (body.get("bindingIds") or []) if str(item).strip()]
+    requested_bindings = [
+        item for item in repo.state["bindings"] if item.get("id") in set(requested_binding_ids)
+    ]
+    requested_node_ids = sorted(
+        {
+            int(item.get("nodeId") or 0)
+            for item in requested_bindings
+            if int(item.get("nodeId") or 0) in NDT_ATOMIC_NODE_IDS
+        }
+    )
+
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=requested_node_ids or None)
+        if guard:
+            return guard
+        document = repo.find_one("documents", document_id)
+        if not document or document.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request, message="未找到待提交的无损检测文件。")
+        if (
+            str(document.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY
+            or str(document.get("materialTypeCode") or "").strip() in {"", "generic_review_material"}
+        ):
+            return fail(errors.VALIDATION_ERROR, request, message="该文件不是无损检测原子资料。")
+        if not requested_binding_ids or len(set(requested_binding_ids)) != len(requested_binding_ids):
+            return fail(errors.VALIDATION_ERROR, request, message="请选择该文件待提交的规则挂载。")
+        if len(requested_bindings) != len(requested_binding_ids):
+            return fail(errors.VALIDATION_ERROR, request, message="存在无效的规则挂载。")
+        invalid_bindings = [
+            item["id"]
+            for item in requested_bindings
+            if item.get("projectId") != project_id
+            or item.get("documentId") != document_id
+            or item.get("documentVersionId") != document.get("currentVersionId")
+            or int(item.get("nodeId") or 0) not in NDT_ATOMIC_NODE_IDS
+            or item.get("bindingStatus") not in {"草稿挂载", "需补正"}
+        ]
+        if invalid_bindings:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="仅可逐文件提交其在 35–42 节点下的草稿或需补正规则。",
+                data={"invalidBindingIds": invalid_bindings},
+            )
+
+        node_ids = sorted({int(item["nodeId"]) for item in requested_bindings})
+        submitted_at = server_time()
+        submission_id = f"NDT-MAT-SUB-{uuid4().hex[:8].upper()}"
+        snapshot_id = f"SNAP-{submission_id}"
+        changed = []
+        for binding in requested_bindings:
+            before = binding.get("bindingStatus")
+            binding["bindingStatus"] = "已提交"
+            changed.append(
+                {
+                    "field": f"bindings.{binding['id']}.bindingStatus",
+                    "before": before,
+                    "after": "已提交",
+                }
+            )
+        for node_id in node_ids:
+            changed.append(repo.set_node_status(project_id, node_id, "待审查"))
+        document_status_before = document.get("fileStatus")
+        document["fileStatus"] = "已提交审批"
+        document["submittedAt"] = submitted_at
+        document["updatedAt"] = submitted_at
+        changed.append(
+            {
+                "field": f"documents.{document_id}.fileStatus",
+                "before": document_status_before,
+                "after": "已提交审批",
+            }
+        )
+        todo = {
+            "id": f"TODO-{uuid4().hex[:8].upper()}",
+            "title": f"无损检测原子资料待审查：{document.get('fileName')}",
+            "projectId": project_id,
+            "nodeId": node_ids[0],
+            "nodeIds": node_ids,
+            "targetType": "submission",
+            "targetId": submission_id,
+            "status": "待处理",
+            "priority": "中",
+            "assigneeName": project_role_assignee_name(project_id, "inspection"),
+            "actions": ["review:save"],
+        }
+        repo.state["todos"].insert(0, todo)
+        submission = {
+            "submissionId": submission_id,
+            "snapshotId": snapshot_id,
+            "projectId": project_id,
+            "submissionType": "ndt-material",
+            "nodeIds": node_ids,
+            "bindingIds": requested_binding_ids,
+            "documentIds": [document_id],
+            "materialTypeCode": document.get("materialTypeCode"),
+            "materialTypeName": document.get("materialTypeName"),
+            "nextStatus": "待审查",
+            "submittedAt": submitted_at,
+            "createdTodoIds": [todo["id"]],
+            "changed": changed,
+            "snapshot": {
+                "document": repo.clone(document),
+                "bindings": [repo.clone(item) for item in requested_bindings],
+            },
+        }
+        repo.state["submissions"].insert(0, submission)
+        repo.add_audit("提交无损检测原子资料审批", "Submission", submission_id)
+        return ok(
+            {
+                "submissionId": submission_id,
+                "snapshotId": snapshot_id,
+                "documentId": document_id,
+                "bindingIds": requested_binding_ids,
+                "nodeIds": node_ids,
+                "nextStatus": "待审查",
+                "createdTodos": [todo],
+            },
+            request,
+        )
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
+
+
 @router.post("/projects/{project_id}/ndt/submissions")
 def submit_ndt(
     request: Request,

@@ -1997,7 +1997,7 @@ PROJECT_MEMBERS = [
         "name": "王工",
         "orgName": "华测检测有限公司",
         "role": "ndt",
-        "nodeScope": [35, 36, 40, 41, 42],
+        "nodeScope": list(range(35, 43)),
         "actions": ROLE_ACTIONS["ndt"],
         "status": "启用",
         "updatedAt": "2026-06-26 09:30:00",
@@ -2051,7 +2051,7 @@ TEST_PROJECT_ROLE_PROFILES = {
         "name": "王工",
         # Align with Scan 测试场景 NDT_USER
         "orgName": "粤检无损检测",
-        "nodeScope": [35, 36, 40, 41, 42],
+        "nodeScope": list(range(35, 43)),
     },
     "owner": {
         "userId": "USER-OWNER-001",

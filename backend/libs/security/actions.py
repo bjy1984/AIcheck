@@ -64,6 +64,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/ndt/records/import$", "ndt:record-import"),
     ("POST", r"/projects/[^/]+/ndt/reports/upload-session$", "ndt:report-upload"),
     ("POST", r"/projects/[^/]+/ndt/reports/upload-session/[^/]+/complete$", "ndt:report-upload"),
+    ("PUT", r"/projects/[^/]+/ndt/documents/[^/]+/bindings$", "file:bind"),
+    ("POST", r"/projects/[^/]+/ndt/material-submissions$", "ndt:submit"),
     ("POST", r"/projects/[^/]+/ndt/submissions$", "ndt:submit"),
     ("POST", r"/projects/[^/]+/ndt/rectifications$", "rectification:submit"),
     ("POST", r"/todos/[^/]+/(complete|defer)$", "todo:update"),

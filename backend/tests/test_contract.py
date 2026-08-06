@@ -8724,6 +8724,188 @@ def test_ndt_atomic_upload_creates_independent_draft_bindings() -> None:
         assert binding["bindingStatus"] == "草稿挂载"
 
 
+def upload_ndt_atomic_documents(file_specs: list[dict[str, object]]) -> list[dict[str, object]]:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={"files": file_specs},
+            headers=headers,
+        )
+    )
+    completed_files = []
+    for target in upload["uploadUrls"]:
+        body = b"%PDF-ndt-atomic".ljust(1024, b"0")
+        assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+        completed_files.append({"documentVersionId": target["documentVersionId"], "fileSize": len(body)})
+    complete = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={"completedFiles": completed_files},
+            headers=headers,
+        )
+    )
+    return complete["documents"]
+
+
+def test_ndt_atomic_documents_submit_independently_without_ocr_gate() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    documents = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "质量保证手册.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_quality_assurance_manual",
+                "materialTypeName": "无损检测单位质量保证手册",
+                "nodeIds": [35],
+            },
+            {
+                "fileName": "检测方案.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_plan",
+                "materialTypeName": "无损检测方案",
+                "nodeIds": [36],
+            },
+        ]
+    )
+    first, second = documents
+    first_document = repo.find_one("documents", first["documentId"])
+    second_document = repo.find_one("documents", second["documentId"])
+    first_document["currentOcrStatus"] = "排队中"
+    second_document["currentOcrStatus"] = "识别失败"
+
+    first_result = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": first["documentId"], "bindingIds": first["bindingIds"]},
+            headers=headers,
+        )
+    )
+    assert first_result["documentId"] == first["documentId"]
+    assert first_result["bindingIds"] == first["bindingIds"]
+    assert repo.find_one("bindings", first["bindingIds"][0])["bindingStatus"] == "已提交"
+    assert repo.find_one("bindings", second["bindingIds"][0])["bindingStatus"] == "草稿挂载"
+    assert first_document["fileStatus"] == "已提交审批"
+    assert len(first_result["createdTodos"]) == 1
+
+    second_result = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": second["documentId"], "bindingIds": second["bindingIds"]},
+            headers=headers,
+        )
+    )
+    assert second_result["documentId"] == second["documentId"]
+    assert repo.find_one("bindings", second["bindingIds"][0])["bindingStatus"] == "已提交"
+    assert second_document["fileStatus"] == "已提交审批"
+    created_submissions = [
+        item
+        for item in repo.state["submissions"]
+        if item.get("submissionType") == "ndt-material"
+        and item.get("documentIds", [None])[0] in {first["documentId"], second["documentId"]}
+    ]
+    assert len(created_submissions) == 2
+
+
+def test_ndt_atomic_submission_rejects_mixed_document_bindings_atomically() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    documents = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "人员明细表.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_person_roster",
+                "materialTypeName": "无损检测人员明细表",
+                "nodeIds": [38],
+            },
+            {
+                "fileName": "人员资格证.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_person_certificate",
+                "materialTypeName": "无损检测人员资格证",
+                "nodeIds": [38],
+            },
+        ]
+    )
+    first, second = documents
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={
+                "documentId": first["documentId"],
+                "bindingIds": [first["bindingIds"][0], second["bindingIds"][0]],
+            },
+            headers=headers,
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert repo.find_one("bindings", first["bindingIds"][0])["bindingStatus"] == "草稿挂载"
+    assert repo.find_one("bindings", second["bindingIds"][0])["bindingStatus"] == "草稿挂载"
+
+
+def test_ndt_atomic_document_rules_can_be_replaced_before_submission() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    document = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "无损检测委托单.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_entrustment",
+                "materialTypeName": "无损检测委托单",
+                "nodeIds": [37, 42],
+            }
+        ]
+    )[0]
+
+    adjusted = assert_ok(
+        client.put(
+            f"/projects/{project_id}/ndt/documents/{document['documentId']}/bindings",
+            json={"nodeIds": [37]},
+            headers=headers,
+        )
+    )
+    assert adjusted["documentId"] == document["documentId"]
+    assert adjusted["nodeIds"] == [37]
+    assert len(adjusted["bindingIds"]) == 1
+    bindings = [
+        item
+        for item in repo.state["bindings"]
+        if item.get("projectId") == project_id and item.get("documentId") == document["documentId"]
+    ]
+    assert [item["nodeId"] for item in bindings] == [37]
+    assert bindings[0]["bindingStatus"] == "草稿挂载"
+
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": adjusted["bindingIds"]},
+            headers=headers,
+        )
+    )
+    assert_error(
+        client.put(
+            f"/projects/{project_id}/ndt/documents/{document['documentId']}/bindings",
+            json={"nodeIds": [42]},
+            headers=headers,
+        ),
+        "CONFLICT",
+    )
+
+
 def test_upload_and_ndt_validation_errors_match_contract() -> None:
     project_id = "P-2026-HDCP-001"
     project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
