@@ -427,6 +427,47 @@ def validate_upload_files(
     return None
 
 
+NDT_ATOMIC_MATERIAL_CATEGORY = "无损检测资料"
+NDT_ATOMIC_NODE_IDS = set(range(35, 43))
+
+
+def validate_ndt_atomic_upload_files(request: Request, files: list[dict[str, Any]]) -> JSONResponse | None:
+    for index, file in enumerate(files):
+        if str(file.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY:
+            continue
+        file_name = str(file.get("fileName") or f"第 {index + 1} 个文件")
+        material_type_code = str(file.get("materialTypeCode") or "").strip()
+        material_type_name = str(file.get("materialTypeName") or "").strip()
+        raw_node_ids = file.get("nodeIds")
+        if not material_type_code or not material_type_name:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=f"{file_name} 必须选择原子资料类型。",
+                data={"fileName": file_name},
+            )
+        if not isinstance(raw_node_ids, list) or not raw_node_ids:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=f"{file_name} 至少挂载一个无损检测节点。",
+                data={"fileName": file_name},
+            )
+        try:
+            node_ids = sorted({int(node_id) for node_id in raw_node_ids})
+        except (TypeError, ValueError):
+            node_ids = []
+        if not node_ids or any(node_id not in NDT_ATOMIC_NODE_IDS for node_id in node_ids):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=f"{file_name} 仅可挂载无损检测节点 35–42。",
+                data={"fileName": file_name, "nodeIds": raw_node_ids},
+            )
+        file["nodeIds"] = node_ids
+    return None
+
+
 def safe_upload_file_name(file_name: str) -> str:
     normalized = str(file_name or "未命名文件").replace("\\", "/").split("/")[-1].strip()
     normalized = re.sub(r"[\x00-\x1f]", "", normalized)
@@ -6192,6 +6233,9 @@ def create_upload_session(
         validation_error = validate_upload_files(request, files)
         if validation_error:
             return validation_error
+        atomic_validation_error = validate_ndt_atomic_upload_files(request, files)
+        if atomic_validation_error:
+            return atomic_validation_error
         require_signed_urls = parse_bool(body.get("requireSignedUrls"), default=False)
         upload_headers = {
             key: value
@@ -6338,6 +6382,43 @@ def dispatch_completed_upload_files(files: list[dict[str, Any]]) -> list[dict[st
     return dispatches
 
 
+def create_ndt_atomic_drafts_for_completed_session(
+    project_id: str,
+    files: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    for file in files:
+        if str(file.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY:
+            continue
+        node_ids = sorted(
+            {
+                int(node_id)
+                for node_id in (file.get("nodeIds") or [])
+                if str(node_id).strip().isdigit() and int(node_id) in NDT_ATOMIC_NODE_IDS
+            }
+        )
+        document_id = str(file.get("documentId") or "").strip()
+        binding_ids, _, invalid_document_ids = ensure_submission_document_bindings(
+            project_id,
+            node_ids,
+            [document_id],
+            usage="证明材料",
+        )
+        if invalid_document_ids:
+            continue
+        documents.append(
+            {
+                "documentId": document_id,
+                "documentVersionId": file.get("documentVersionId"),
+                "materialTypeCode": file.get("materialTypeCode"),
+                "materialTypeName": file.get("materialTypeName"),
+                "nodeIds": node_ids,
+                "bindingIds": binding_ids,
+            }
+        )
+    return documents
+
+
 def create_ndt_reports_for_completed_session(
     project_id: str,
     session: dict[str, Any] | None,
@@ -6409,11 +6490,18 @@ def complete_upload_session(
             )
         files = repo.complete_upload_session(session_id)
         dispatches = dispatch_completed_upload_files(files)
+        documents = create_ndt_atomic_drafts_for_completed_session(project_id, files)
         ndt_reports = create_ndt_reports_for_completed_session(project_id, session, files)
         request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
         result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
         return ok(
-            {**result, "queuedTasks": dispatches, "fileCount": len(files), "ndtReports": ndt_reports},
+            {
+                **result,
+                "queuedTasks": dispatches,
+                "fileCount": len(files),
+                "documents": documents,
+                "ndtReports": ndt_reports,
+            },
             request,
         )
 

@@ -931,6 +931,8 @@ class InMemoryRepository:
         source_org_name: str | None = None,
         uploader_name: str | None = None,
         material_category: str | None = None,
+        material_type_code: str | None = None,
+        material_type_name: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         doc, version, knowledge_file, knowledge_task = self._build_document_records(
             project_id,
@@ -939,6 +941,8 @@ class InMemoryRepository:
             source_org_name=source_org_name,
             uploader_name=uploader_name,
             material_category=material_category,
+            material_type_code=material_type_code,
+            material_type_name=material_type_name,
         )
         self._insert_document_records(doc, version, knowledge_file, knowledge_task)
         return doc, version
@@ -952,6 +956,8 @@ class InMemoryRepository:
         source_org_name: str | None = None,
         uploader_name: str | None = None,
         material_category: str | None = None,
+        material_type_code: str | None = None,
+        material_type_name: str | None = None,
         file_size: int = 0,
         content_hash: str | None = None,
         ocr_options: dict[str, Any] | None = None,
@@ -965,11 +971,14 @@ class InMemoryRepository:
         resolved_source_org_name = source_org_name or (project or {}).get("contractorOrgName") or "项目参建单位"
         resolved_uploader_name = uploader_name or "系统"
         resolved_material_category = str(material_category or "").strip()
+        resolved_material_type_code = str(material_type_code or "").strip()
+        resolved_material_type_name = str(material_type_name or "").strip()
         doc = {
             "id": document_id,
             "projectId": project_id,
             "businessPackId": (project or {}).get("businessPackId"),
-            "materialTypeCode": "generic_review_material",
+            "materialTypeCode": resolved_material_type_code or "generic_review_material",
+            "materialTypeName": resolved_material_type_name or None,
             "materialCategory": resolved_material_category or None,
             "fileName": file_name,
             "fileType": file_type or file_name.split(".")[-1],
@@ -1008,6 +1017,8 @@ class InMemoryRepository:
             "documentId": document_id,
             "documentVersionId": version_id,
             "materialCategory": resolved_material_category or None,
+            "materialTypeCode": resolved_material_type_code or "generic_review_material",
+            "materialTypeName": resolved_material_type_name or None,
             "ocrStatus": "排队中",
             "sliceStatus": "未切片",
             "vectorStatus": "待向量化",
@@ -1067,6 +1078,8 @@ class InMemoryRepository:
                 source_org_name=source_org_name,
                 uploader_name=uploader_name,
                 material_category=file.get("materialCategory"),
+                material_type_code=file.get("materialTypeCode"),
+                material_type_name=file.get("materialTypeName"),
                 file_size=int(file.get("fileSize") or 0),
                 content_hash=str(file.get("contentHash") or "").strip() or None,
                 ocr_options=(
@@ -1076,6 +1089,13 @@ class InMemoryRepository:
                 ),
             )
             content_type = file.get("fileType") or "application/octet-stream"
+            node_ids = sorted(
+                {
+                    int(node_id)
+                    for node_id in (file.get("nodeIds") or [])
+                    if str(node_id).strip().isdigit()
+                }
+            )
             fallback_url = f"mock://upload/{session_id}/{doc['id']}"
             local_upload = False
             if local_upload_url_prefix and not object_storage.required:
@@ -1097,6 +1117,9 @@ class InMemoryRepository:
                 {
                     "fileName": doc["fileName"],
                     "materialCategory": doc.get("materialCategory"),
+                    "materialTypeCode": doc.get("materialTypeCode"),
+                    "materialTypeName": doc.get("materialTypeName"),
+                    "nodeIds": node_ids,
                     "documentId": doc["id"],
                     "documentVersionId": version["id"],
                     "url": upload_url,
@@ -1111,6 +1134,9 @@ class InMemoryRepository:
                     "documentVersionId": version["id"],
                     "fileName": doc["fileName"],
                     "materialCategory": doc.get("materialCategory"),
+                    "materialTypeCode": doc.get("materialTypeCode"),
+                    "materialTypeName": doc.get("materialTypeName"),
+                    "nodeIds": node_ids,
                     "storageBucket": "documents",
                     "storageKey": version["storageKey"],
                     "status": "待上传",

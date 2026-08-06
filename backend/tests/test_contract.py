@@ -8657,6 +8657,73 @@ def test_import_project_file_keeps_project_scope_and_filtering() -> None:
     assert updated["file"]["projectId"] == project_id
 
 
+def test_ndt_atomic_upload_creates_independent_draft_bindings() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    file_specs = [
+        {
+            "fileName": "质量保证手册-正文.pdf",
+            "fileSize": 1024,
+            "fileType": "application/pdf",
+            "materialCategory": "无损检测资料",
+            "materialTypeCode": "ndt_quality_assurance_manual",
+            "materialTypeName": "无损检测单位质量保证手册",
+            "nodeIds": [35],
+        },
+        {
+            "fileName": "质量保证手册-批准页.pdf",
+            "fileSize": 1024,
+            "fileType": "application/pdf",
+            "materialCategory": "无损检测资料",
+            "materialTypeCode": "ndt_quality_assurance_manual",
+            "materialTypeName": "无损检测单位质量保证手册",
+            "nodeIds": [35],
+        },
+    ]
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={"files": file_specs},
+            headers=headers,
+        )
+    )
+
+    completed_files = []
+    for target in upload["uploadUrls"]:
+        body = b"%PDF-ndt-atomic".ljust(1024, b"0")
+        assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+        completed_files.append(
+            {"documentVersionId": target["documentVersionId"], "fileSize": len(body)}
+        )
+
+    complete = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={"completedFiles": completed_files},
+            headers=headers,
+        )
+    )
+
+    assert len(complete["documents"]) == 2
+    document_ids = [item["documentId"] for item in complete["documents"]]
+    assert len(set(document_ids)) == 2
+    for item in complete["documents"]:
+        assert item["materialTypeCode"] == "ndt_quality_assurance_manual"
+        assert item["materialTypeName"] == "无损检测单位质量保证手册"
+        assert item["nodeIds"] == [35]
+        assert len(item["bindingIds"]) == 1
+
+        document = repo.find_one("documents", item["documentId"])
+        assert document["materialCategory"] == "无损检测资料"
+        assert document["materialTypeCode"] == "ndt_quality_assurance_manual"
+        assert document["materialTypeName"] == "无损检测单位质量保证手册"
+
+        binding = repo.find_one("bindings", item["bindingIds"][0])
+        assert binding["documentId"] == item["documentId"]
+        assert binding["nodeId"] == 35
+        assert binding["bindingStatus"] == "草稿挂载"
+
+
 def test_upload_and_ndt_validation_errors_match_contract() -> None:
     project_id = "P-2026-HDCP-001"
     project = assert_ok(client.get(f"/projects/{project_id}"))["project"]

@@ -108,6 +108,9 @@ export type UploadSessionPayload = {
   uploadUrls: Array<{
     fileName: string
     materialCategory?: string | null
+    materialTypeCode?: string | null
+    materialTypeName?: string | null
+    nodeIds?: number[]
     documentId: string
     documentVersionId: string
     url: string
@@ -122,11 +125,22 @@ export type DocumentUploadSessionFile = {
   fileSize: number
   fileType: string
   materialCategory?: string
+  materialTypeCode?: string
+  materialTypeName?: string
+  nodeIds?: number[]
 }
 
 export type UploadSessionCompletePayload = MockMutationResult & {
   queuedTasks: unknown[]
   fileCount: number
+  documents?: Array<{
+    documentId: string
+    documentVersionId: string
+    materialTypeCode: string
+    materialTypeName: string
+    nodeIds: number[]
+    bindingIds: string[]
+  }>
 }
 
 export type SubmissionDraftPayload = {
