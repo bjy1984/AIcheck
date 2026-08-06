@@ -30,7 +30,11 @@ from libs.knowledge_indexing import (
     cosine_similarity,
     vector_payload_for_pg,
 )
-from libs.ocr_readiness import parse_result_outcome_status, parse_result_quality_blockers
+from libs.ocr_readiness import (
+    parse_result_ingestion_status,
+    parse_result_outcome_status,
+    parse_result_quality_blockers,
+)
 from libs.security.tenant import (
     apply_default_tenant,
     current_tenant_id as configured_tenant_id,
@@ -1725,11 +1729,11 @@ class InMemoryRepository:
             ),
             None,
         )
-        outcome_status = parse_result_outcome_status(result)
-        success = outcome_status == "completed"
-        partial = outcome_status == "partial"
+        ingestion_status = parse_result_ingestion_status(result)
+        review_outcome_status = parse_result_outcome_status(result)
+        success = ingestion_status == "usable"
         now = server_time()
-        status = "已识别" if success else "抽取不完整" if partial else "识别失败"
+        status = "已识别" if success else "识别失败"
         if document:
             document["currentOcrStatus"] = status
             document["updatedAt"] = now
@@ -1743,21 +1747,23 @@ class InMemoryRepository:
             knowledge_file["vectorStatus"] = "待向量化" if success else "未向量化"
             knowledge_file["updatedAt"] = now
         if task:
-            task["status"] = "成功" if success else "需复核" if partial else "失败"
-            task["progress"] = 100 if success or partial else task.get("progress", 0)
+            task["status"] = "成功" if success else "失败"
+            task["progress"] = 100 if success else task.get("progress", 0)
             task["finishedAt"] = now
             task["updatedAt"] = now
             self._bump_revision(task)
             if not success:
-                quality_blockers = parse_result_quality_blockers(result)
                 diagnostic_messages = [
                     str(item.get("code") or item.get("message") or item)
                     if isinstance(item, dict)
                     else str(item)
                     for item in result.get("diagnostics") or []
                 ]
-                task["errorMessage"] = "; ".join(quality_blockers or diagnostic_messages or ["OCR failed"])
-                self.append_task_log(task, "warning" if partial else "error", task["errorMessage"])
+                task["errorMessage"] = "; ".join(
+                    diagnostic_messages
+                    or ["OCR result did not contain usable text or table content."]
+                )
+                self.append_task_log(task, "error", task["errorMessage"])
             else:
                 task.pop("errorMessage", None)
                 self.append_task_log(task, "info", "OCR 任务完成。")
@@ -1766,8 +1772,9 @@ class InMemoryRepository:
             return {
                 "documentId": document_id,
                 "versionId": version_id,
-                "status": "partial" if partial else "failed",
-                "outcomeStatus": outcome_status,
+                "status": "failed",
+                "ingestionStatus": ingestion_status,
+                "reviewOutcomeStatus": review_outcome_status,
                 "qualityReasons": parse_result_quality_blockers(result),
                 "fieldCount": 0,
             }
@@ -1834,7 +1841,15 @@ class InMemoryRepository:
                     document_id=document_id,
                     version_id=version_id,
                 )
-        return {"documentId": document_id, "versionId": version_id, "status": "success", "fieldCount": len(fields)}
+        return {
+            "documentId": document_id,
+            "versionId": version_id,
+            "status": "success",
+            "ingestionStatus": ingestion_status,
+            "reviewOutcomeStatus": review_outcome_status,
+            "qualityReasons": parse_result_quality_blockers(result),
+            "fieldCount": len(fields),
+        }
 
     def apply_slice_result(self, file_id: str, fragments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         file = self.find_one("knowledge_files", file_id)

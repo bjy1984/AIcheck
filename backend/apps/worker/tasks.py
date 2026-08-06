@@ -866,6 +866,13 @@ def _finalize_mineru_pipeline(
             else [{"code": "SEAL_TEXT_LOW_CONFIDENCE"}]
         ),
     )
+    for separate_review_stage in ("qwen_extract", "grounding_validate", "finalize"):
+        repo.mark_ocr_pipeline_stage(
+            run,
+            separate_review_stage,
+            "skipped",
+            engine_status={"skipReasons": ["review_pipeline_separate"]},
+        )
     repo.mark_ocr_pipeline_stage(
         run,
         "evidence_fusion",

@@ -251,7 +251,7 @@ def test_design_document_cannot_prove_design_license_point() -> None:
     )
 
 
-def test_apply_ocr_result_does_not_promote_quality_blocked_result() -> None:
+def test_apply_ocr_result_promotes_usable_quality_blocked_result() -> None:
     document, version = repo.create_document(
         PROJECT_ID,
         "图纸目录.png",
@@ -272,10 +272,37 @@ def test_apply_ocr_result_does_not_promote_quality_blocked_result() -> None:
 
     applied = repo.apply_ocr_result(document["id"], version["id"], result)
 
-    assert applied["status"] == "partial"
+    assert applied["status"] == "success"
+    assert applied["reviewOutcomeStatus"] == "partial"
     assert applied["qualityReasons"] == ["FIELD_EVIDENCE_MISSING", "REQUIRED_FIELD_MISSING"]
-    assert document["currentOcrStatus"] == "抽取不完整"
-    assert version["ocrStatus"] == "抽取不完整"
+    assert document["currentOcrStatus"] == "已识别"
+    assert version["ocrStatus"] == "已识别"
+    assert version["sliceStatus"] == "待切片"
+    assert version["vectorStatus"] == "待向量化"
+    assert [item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]
+
+
+def test_apply_ocr_result_rejects_successful_but_empty_result() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "空白文件.png",
+        "image/png",
+    )
+    result = {
+        "status": "success",
+        "outcomeStatus": "completed",
+        "quality": {"status": "auto_usable", "reasons": []},
+        "fragments": [{"pageNo": 1, "text": "   "}],
+        "fields": [{"fieldName": "文件名", "fieldValue": "不应作为入库成功依据"}],
+        "tables": [{"rows": []}],
+        "seals": [],
+    }
+
+    applied = repo.apply_ocr_result(document["id"], version["id"], result)
+
+    assert applied["status"] == "failed"
+    assert applied["ingestionStatus"] == "empty"
+    assert document["currentOcrStatus"] == "识别失败"
     assert version["sliceStatus"] == "未切片"
     assert version["vectorStatus"] == "未向量化"
     assert not [item for item in repo.state["extracted_fields"] if item.get("documentVersionId") == version["id"]]

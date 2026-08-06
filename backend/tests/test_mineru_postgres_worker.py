@@ -147,6 +147,94 @@ def test_postgres_execution_preserves_verified_ocr_result(
     assert parse_result["fragments"] == EXPECTED_FRAGMENTS
 
 
+def test_postgres_execution_indexes_usable_review_incomplete_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = InMemoryRepository()
+    document, version = repository.create_document(
+        "PRJ-001",
+        "材料代用单.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    job = repository.create_ocr_job_record(
+        document_id=document["id"],
+        version_id=version["id"],
+        storage_key=version["storageKey"],
+        file_name=document["fileName"],
+        provider="mineru",
+        options={},
+    )
+    pipeline = repository.create_or_resume_ocr_pipeline_run(
+        run_key=f"mineru:{version['id']}",
+        document_id=document["id"],
+        version_id=version["id"],
+        storage_key=version["storageKey"],
+        storage_bucket=version.get("storageBucket"),
+        file_name=document["fileName"],
+        profile_id="material_substitution_approval_v1",
+        document_type="material_substitution_approval",
+        mode="active",
+        pipeline_version="mineru-postgres-v1",
+        project_id=document["projectId"],
+        task_id=None,
+    )
+    job["pipelineRunId"] = pipeline["id"]
+    result = {
+        "parseResultId": "PARSE-MINERU-REVIEW-INCOMPLETE",
+        "status": "success",
+        "outcomeStatus": "partial",
+        "storageKey": version["storageKey"],
+        "fileName": document["fileName"],
+        "pages": [{"pageNo": 1}],
+        "fragments": deepcopy(EXPECTED_FRAGMENTS),
+        "layoutBlocks": [],
+        "tables": [],
+        "seals": [],
+        "signatures": [],
+        "fields": [],
+        "quality": {
+            "status": "needs_human_review",
+            "reasons": ["REQUIRED_FIELD_MISSING", "SEAL_NOT_FOUND"],
+            "blockingReasons": [],
+        },
+        "diagnostics": [],
+        "engineRuns": [{"engine": "mineru_vlm", "status": "success"}],
+        "metadata": {"provider": "mineru", "model": "vlm"},
+    }
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "refresh_worker_state", lambda *_args: None)
+    monkeypatch.setattr(tasks, "refresh_ocr_worker_state", lambda *_args: None)
+    monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
+    monkeypatch.setattr(tasks, "run_mineru_job", lambda _job: deepcopy(result))
+
+    output = tasks.execute_mineru_postgres_job(
+        job["id"],
+        tenant_id="TENANT-DEFAULT",
+        retry_index=0,
+    )
+
+    assert output["status"] == "success"
+    assert output["applied"]["reviewOutcomeStatus"] == "partial"
+    assert document["currentOcrStatus"] == "已识别"
+    assert version["sliceStatus"] == "待切片"
+    assert version["vectorStatus"] == "待向量化"
+    downstream = [
+        item
+        for item in repository.state["knowledge_tasks"]
+        if item.get("documentVersionId") == version["id"]
+    ]
+    assert {item.get("taskType") for item in downstream} >= {"slice", "vector"}
+    stages = {
+        item["stage"]: item
+        for item in repository.ocr_pipeline_stages(str(job.get("pipelineRunId") or ""))
+    }
+    for stage_name in ("qwen_extract", "grounding_validate", "finalize"):
+        assert stages[stage_name]["status"] == "skipped"
+        assert stages[stage_name]["engineStatus"]["skipReasons"] == [
+            "review_pipeline_separate"
+        ]
+
+
 def test_worker_finishes_successful_claim_with_tenant_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
