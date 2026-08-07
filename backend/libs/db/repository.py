@@ -63,6 +63,7 @@ STATE_COLLECTIONS = {
     "bindings": "node_bindings",
     "evidence_links": "evidence_links",
     "node_evidence_links": "node_evidence_links",
+    "fact_corrections": "fact_corrections",
     "material_targeting_runs": "material_targeting_runs",
     "extracted_fields": "extracted_fields",
     "ai_runs": "ai_runs",
@@ -248,6 +249,7 @@ class InMemoryRepository:
         self.state.setdefault("knowledge_vector_corrections", [])
         self.state.setdefault("knowledge_chunk_quarantines", [])
         self.state.setdefault("node_evidence_links", [])
+        self.state.setdefault("fact_corrections", [])
         self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
@@ -398,6 +400,7 @@ class InMemoryRepository:
         self.state.setdefault("knowledge_vector_corrections", [])
         self.state.setdefault("knowledge_chunk_quarantines", [])
         self.state.setdefault("node_evidence_links", [])
+        self.state.setdefault("fact_corrections", [])
         self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
         self.state.setdefault("ocr_jobs", [])
@@ -2341,6 +2344,7 @@ class InMemoryRepository:
         loaded.setdefault("knowledge_vector_corrections", [])
         loaded.setdefault("knowledge_chunk_quarantines", [])
         loaded.setdefault("node_evidence_links", [])
+        loaded.setdefault("fact_corrections", [])
         loaded.setdefault("material_targeting_runs", [])
         loaded.setdefault("upload_sessions", [])
         loaded.setdefault("ocr_jobs", [])

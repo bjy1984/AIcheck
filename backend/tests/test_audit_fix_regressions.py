@@ -164,3 +164,97 @@ def test_review_opinion_records_audit_and_ai_linkage() -> None:
 def test_suggestion_result_labels_cover_all_aggregate_values() -> None:
     for value in ("passed", "failed", "evidence_insufficient", "not_applicable", "human_review_required", "execution_error"):
         assert value in SUGGESTION_RESULT_LABELS
+
+
+# ------------------------------------------------------------ issue #5 D-1
+
+
+def test_fact_correction_lifecycle_with_audit() -> None:
+    saved = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/inspection/nodes/24/fact-corrections",
+            json={
+                "factPath": "welderCertificate.certificateNo",
+                "originalValue": "T2026-O01",
+                "correctedValue": "TS2026-001",
+                "reason": "OCR 把 S 识别成 5。",
+            },
+        )
+    )
+    correction = saved["correction"]
+    assert saved["auditLogId"]
+    assert correction["status"] == "active"
+    assert correction["correctedBy"]
+    assert repo.find_one("audit_logs", saved["auditLogId"]) is not None
+
+    # 同 factPath 再次修正 → 旧记录被 supersede
+    second = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/inspection/nodes/24/fact-corrections",
+            json={"factPath": "welderCertificate.certificateNo", "correctedValue": "TS2026-002"},
+        )
+    )
+    assert correction["id"] in second["correction"]["supersedes"]
+    listed = assert_ok(client.get("/projects/P-2026-HDCP-001/inspection/nodes/24/fact-corrections?status=active"))
+    assert [item["id"] for item in listed] == [second["correction"]["id"]]
+
+    # 撤销
+    revoked = assert_ok(
+        client.post(
+            f"/projects/P-2026-HDCP-001/inspection/nodes/24/fact-corrections/{second['correction']['id']}/revoke",
+            json={},
+        )
+    )
+    assert revoked["correction"]["status"] == "revoked"
+
+
+def test_fact_correction_rejects_invalid_path() -> None:
+    response = client.post(
+        "/projects/P-2026-HDCP-001/inspection/nodes/24/fact-corrections",
+        json={"factPath": "a..b; drop", "correctedValue": "x"},
+    )
+    assert response.json()["code"] != 0
+
+
+def test_fact_corrections_overlay_only_target_node() -> None:
+    from libs.review_orchestrator.execution import apply_node_fact_corrections
+
+    state = {
+        "fact_corrections": [
+            {
+                "id": "FCOR-1",
+                "projectId": "P-1",
+                "nodeId": 24,
+                "factPath": "welderCertificate.certificateNo",
+                "correctedValue": "TS2026-001",
+                "status": "active",
+                "createdAt": "2026-08-07T00:00:00Z",
+            },
+            {
+                "id": "FCOR-2",
+                "projectId": "P-1",
+                "nodeId": 25,
+                "factPath": "weldingProcedure.wpsNo",
+                "correctedValue": "WPS-9",
+                "status": "active",
+                "createdAt": "2026-08-07T00:00:00Z",
+            },
+            {
+                "id": "FCOR-3",
+                "projectId": "P-1",
+                "nodeId": 24,
+                "factPath": "welderCertificate.validUntil",
+                "correctedValue": "2027-01-01",
+                "status": "revoked",
+                "createdAt": "2026-08-07T00:00:00Z",
+            },
+        ]
+    }
+    facts = {"welderCertificate": {"certificateNo": "T2026-O01"}}
+    applied = apply_node_fact_corrections(state, "P-1", 24, facts)
+
+    # 仅本节点、仅 active 的修正生效（节点独立原则）
+    assert facts["welderCertificate"]["certificateNo"] == "TS2026-001"
+    assert "validUntil" not in facts["welderCertificate"]
+    assert "weldingProcedure" not in facts
+    assert [item["correctionId"] for item in applied] == ["FCOR-1"]

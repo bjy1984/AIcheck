@@ -86,6 +86,53 @@ REVIEW_GRAPH_EDGES = [
     for index in range(len(REVIEW_GRAPH_STEPS) - 1)
 ]
 
+def apply_node_fact_corrections(
+    state: dict[str, Any],
+    project_id: str,
+    node_id: int,
+    facts: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """把监检人员的事实修正覆盖到本节点的业务事实上（issue #5 / D-1）。
+
+    业务口径：修正仅对本节点生效、不跨节点传播；重跑由人工显式触发，
+    本函数只在节点重跑的 load_context 步骤被调用。
+    """
+    if not isinstance(facts, dict):
+        return []
+    applied: list[dict[str, Any]] = []
+    corrections = [
+        item
+        for item in state.get("fact_corrections", []) or []
+        if item.get("projectId") == project_id
+        and int(item.get("nodeId") or 0) == int(node_id)
+        and item.get("status") == "active"
+    ]
+    for correction in sorted(corrections, key=lambda item: str(item.get("createdAt") or "")):
+        path = str(correction.get("factPath") or "")
+        parts = [part for part in path.split(".") if part]
+        if not parts:
+            continue
+        cursor: Any = facts
+        for part in parts[:-1]:
+            nested = cursor.get(part) if isinstance(cursor, dict) else None
+            if not isinstance(nested, dict):
+                nested = {}
+                if isinstance(cursor, dict):
+                    cursor[part] = nested
+            cursor = nested
+        if isinstance(cursor, dict):
+            cursor[parts[-1]] = correction.get("correctedValue")
+            applied.append(
+                {
+                    "correctionId": correction.get("id"),
+                    "factPath": path,
+                    "correctedBy": correction.get("correctedBy"),
+                    "createdAt": correction.get("createdAt"),
+                }
+            )
+    return applied
+
+
 # 确定性判定 → AI 建议结论展示词。所有结论均为建议，最终由监检人员确认。
 SUGGESTION_RESULT_LABELS = {
     "passed": "建议满足要求",
@@ -2023,6 +2070,14 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         elif f"r{int(review_run.get('nodeId') or 0)}" in R24_R34_FACT_BUILDERS:
             builder = R24_R34_FACT_BUILDERS[f"r{int(review_run.get('nodeId') or 0)}"]
             context["businessFacts"] = builder(repo.state, review_run)
+        applied_corrections = apply_node_fact_corrections(
+            repo.state,
+            str(review_run.get("projectId") or ""),
+            int(review_run.get("nodeId") or 0),
+            context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else None,
+        )
+        if applied_corrections:
+            review_run["appliedFactCorrections"] = repo.clone(applied_corrections)
         clause_snapshot = review_run_clause_snapshot(repo.state, str(review_run.get("reviewRunId") or ""))
         context["clausePackageSnapshot"] = clause_snapshot or {}
         return {
@@ -2031,6 +2086,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "nodeName": (node or {}).get("name"),
             "clausePackageId": (clause_snapshot or {}).get("packageStorageId"),
             "fixedClauseCount": len((clause_snapshot or {}).get("clauses") or []),
+            "appliedFactCorrections": len(applied_corrections),
         }
     if node_key == "load_ocr_result":
         version_ids = set(review_run.get("inputDocumentVersionIds") or [])

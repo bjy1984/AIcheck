@@ -12097,6 +12097,123 @@ def list_review_opinions(request: Request, project_id: str, node_id: int):
     return ok([repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == project_id and int(item["nodeId"]) == int(node_id)], request)
 
 
+FACT_PATH_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+){0,7}$")
+
+
+@router.post("/projects/{project_id}/inspection/nodes/{node_id}/fact-corrections")
+def save_fact_correction(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    """人工修正 OCR 抽取的结构化事实（业务口径：不重传文件，修正留痕，仅本节点生效）。
+
+    修正不会自动触发重跑；监检人员通过既有 ai-recheck 接口显式重跑本节点，
+    重跑时在 load_context 步骤按 factPath 覆盖业务事实。
+    """
+
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
+        fact_path = str(body.get("factPath") or "").strip()
+        if not FACT_PATH_PATTERN.fullmatch(fact_path):
+            return fail(errors.VALIDATION_ERROR, request, message="factPath 必须是点分隔的字段路径（如 welderCertificate.certificateNo）。")
+        if "correctedValue" not in body:
+            return fail(errors.VALIDATION_ERROR, request, message="必须提供修正后的值 correctedValue。")
+        reason = compact_plain_text(body.get("reason"), 500)
+        superseded_ids: list[str] = []
+        for item in repo.state["fact_corrections"]:
+            if (
+                item.get("projectId") == project_id
+                and int(item.get("nodeId") or 0) == int(node_id)
+                and item.get("factPath") == fact_path
+                and item.get("status") == "active"
+            ):
+                item["status"] = "superseded"
+                item["supersededAt"] = server_time()
+                superseded_ids.append(str(item.get("id")))
+        correction = {
+            "id": f"FCOR-{uuid4().hex[:10].upper()}",
+            "projectId": project_id,
+            "nodeId": int(node_id),
+            "factPath": fact_path,
+            "originalValue": body.get("originalValue"),
+            "correctedValue": body.get("correctedValue"),
+            "documentVersionId": compact_plain_text(body.get("documentVersionId"), 120) or None,
+            "reason": reason or None,
+            "status": "active",
+            "supersedes": superseded_ids,
+            "correctedBy": request_actor_name(request),
+            "correctedByUserId": request_user_id(request),
+            "createdAt": server_time(),
+        }
+        repo.state["fact_corrections"].insert(0, correction)
+        audit_id = repo.add_audit(
+            "人工修正事实字段",
+            "FactCorrection",
+            correction["id"],
+            project_id=project_id,
+            node_id=int(node_id),
+            before={"factPath": fact_path, "originalValue": body.get("originalValue")},
+            after={"correctedValue": body.get("correctedValue"), "supersedes": superseded_ids},
+        )
+        return ok({"correction": correction, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "nodeId": node_id, "body": body})
+
+
+@router.get("/projects/{project_id}/inspection/nodes/{node_id}/fact-corrections")
+def list_fact_corrections(request: Request, project_id: str, node_id: int, status: str | None = None):
+    items = [
+        repo.clone(item)
+        for item in repo.state["fact_corrections"]
+        if item.get("projectId") == project_id
+        and int(item.get("nodeId") or 0) == int(node_id)
+        and (not status or item.get("status") == status)
+    ]
+    return ok(items, request)
+
+
+@router.post("/projects/{project_id}/inspection/nodes/{node_id}/fact-corrections/{correction_id}/revoke")
+def revoke_fact_correction(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    correction_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
+        if guard:
+            return guard
+        correction = repo.find_one("fact_corrections", correction_id)
+        if not correction or correction.get("projectId") != project_id or int(correction.get("nodeId") or 0) != int(node_id):
+            return fail(errors.NOT_FOUND, request)
+        if correction.get("status") != "active":
+            return fail(errors.CONFLICT, request, message=f"修正记录当前状态为 {correction.get('status')}，不能撤销。")
+        correction["status"] = "revoked"
+        correction["revokedAt"] = server_time()
+        correction["revokedBy"] = request_actor_name(request)
+        audit_id = repo.add_audit(
+            "撤销事实字段修正",
+            "FactCorrection",
+            correction_id,
+            project_id=project_id,
+            node_id=int(node_id),
+            before={"status": "active"},
+            after={"status": "revoked"},
+        )
+        return ok({"correction": correction, "auditLogId": audit_id}, request)
+
+    return idempotent(request, idempotency_key, produce, fingerprint_source={"correctionId": correction_id})
+
+
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/ai-suggestions/{suggestion_id}/adopt")
 def adopt_ai_suggestion(request: Request, project_id: str, node_id: int, suggestion_id: str, body: dict[str, Any] = Body(default_factory=dict), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), x_role: str | None = Header(default=None, alias="X-Role")):
     def produce():
