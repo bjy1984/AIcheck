@@ -50,6 +50,48 @@ def test_missing_fact_fields_are_evidence_insufficient_not_failed() -> None:
     assert partial["result"] == "evidence_insufficient"
 
 
+def test_verdicts_are_correct_in_all_three_directions() -> None:
+    """R-1 的修复必须三向都对：合规→passed、有值不合规→failed、缺值→evidence_insufficient。
+
+    只测「缺值」会漏掉改过头的风险——把真实不符合项也放宽成证据不足，等于漏报。
+    """
+    from libs.db.repository import repo
+    from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool
+
+    def run(tool, args):
+        return dispatch_runtime_tool(repo.state, tool, args).get("result")
+
+    covering = {"validFrom": "2023-01-01", "validUntil": "2025-12-01",
+                "periodStart": "2024-02-01", "periodEnd": "2024-12-01"}
+    lapsed = {**covering, "validUntil": "2024-06-01", "validFrom": "2024-01-01"}
+
+    assert run("check_date_covers", covering) == "passed"
+    assert run("check_date_covers", lapsed) == "failed"
+    assert run("check_date_covers", {"validFrom": "2023-01-01"}) == "evidence_insufficient"
+
+    assert run("check_design_license_scope",
+               {"licenseScopes": ["GC1"], "requiredPipelineGrades": ["GC2"]}) == "passed"
+    assert run("check_design_license_scope",
+               {"licenseScopes": ["GC3"], "requiredPipelineGrades": ["GC1"]}) == "failed"
+    assert run("check_design_license_scope", {}) == "evidence_insufficient"
+
+
+def test_business_tools_stay_strict_on_noncompliant_values() -> None:
+    """确保 R-1 没有把「有值但不满足」一并放宽。"""
+    cases = [
+        ("check_scope_coverage",
+         {"grantedScopes": ["GC3"], "requiredScopes": ["GC1"], "coverageMap": {"GC1": ["GC1"]}}),
+        ("check_signature_completeness",
+         {"actualRoles": ["设计", "校核"], "requiredRoles": ["设计", "校核", "审核", "审定"]}),
+        ("check_cross_document_match",
+         {"comparisons": [{"code": "pressure", "values": [10, 12], "tolerance": 0.01}]}),
+        ("check_document_set_completeness",
+         {"requiredDocumentTypes": ["a", "b"], "uploadedDocumentTypes": ["a"], "parseableDocumentTypes": ["a"]}),
+    ]
+    for tool, args in cases:
+        assert dispatch_business_tool(tool, args)["result"] == "failed", f"{tool} 应判不符合"
+
+
 def test_present_but_noncompliant_value_is_still_failed() -> None:
     scope = dispatch_business_tool(
         "check_scope_coverage",
