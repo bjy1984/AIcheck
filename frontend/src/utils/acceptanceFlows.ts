@@ -49,7 +49,11 @@ export const buildDocumentSubmissionPayload = (
       bindingIds: bindings.map((item) => item.id)
     }
   }
-  if (!(file.bindings || []).length && !isProjectPoolSubmitted(file) && file.fileStatus === '已上传') {
+  if (
+    !(file.bindings || []).length &&
+    !isProjectPoolSubmitted(file) &&
+    file.fileStatus === '已上传'
+  ) {
     return {
       mode: 'project',
       documentIds: [file.id]

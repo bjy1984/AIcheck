@@ -322,7 +322,6 @@ const getRelationNodeText = (fileBindings?: typeof bindings.value) => {
 
 const normalizeSearchText = (...parts: Array<string | undefined>) => parts.join(' ').toLowerCase()
 
-
 const inferMaterialCategory = (text: string) => {
   const normalized = text.toLowerCase()
   return (

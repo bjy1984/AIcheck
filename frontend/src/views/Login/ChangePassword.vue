@@ -98,9 +98,7 @@ const submit = async () => {
     userStore.setUserInfo(response.data.user)
     await ensureRoleRoutes(response.data.user?.role)
     ElMessage.success('密码已更新，请使用新密码继续工作。')
-    await router.replace(
-      response.data.defaultPath || getRoleDefaultPath(response.data.user?.role)
-    )
+    await router.replace(response.data.defaultPath || getRoleDefaultPath(response.data.user?.role))
   } catch (error: unknown) {
     errorMessage.value = getAicheckErrorMessage(error, '密码修改失败，请稍后重试。')
   } finally {
