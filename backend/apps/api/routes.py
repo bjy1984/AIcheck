@@ -307,6 +307,26 @@ AI_FEEDBACK_TYPES = {
 FDE_ROLES = {"fde"}
 SUBMITTED_DOCUMENT_BINDING_STATUSES = {"已提交", "需补正", "已通过"}
 
+# 人工审查结论 → 节点状态。业务口径：NOT_APPLICABLE 是独立终态，不得落入「需补正」；
+# INSUFFICIENT_EVIDENCE（证据不足）保持节点在「待审查」，等待补件或后续判断。
+REVIEW_OPINION_NODE_STATUS = {
+    "满足要求": "已通过",
+    "需补正": "需补正",
+    "不适用": "不适用",
+    "证据不足": "待审查",
+}
+
+# AI 建议展示词 → 人工结论预填。仅覆盖可安全预填的映射；
+# 「需专业判断」「执行故障待重试」不预填，强制人工选择。
+AI_SUGGESTION_TO_OPINION_RESULT = {
+    "建议满足要求": "满足要求",
+    "建议不符合": "需补正",
+    "建议不适用": "不适用",
+    "证据不足": "证据不足",
+    "需补正": "需补正",
+    "需人工确认": "",
+}
+
 ROLE_LABELS = {
     "inspection": "监检人员",
     "contractor": "施工方",
@@ -11996,7 +12016,7 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             return guard
         result = str(body.get("result") or "").strip()
         opinion_text = str(body.get("opinion") or "").strip()
-        if result not in {"满足要求", "需补正", "不适用"} or not opinion_text:
+        if result not in REVIEW_OPINION_NODE_STATUS or not opinion_text:
             return fail(errors.VALIDATION_ERROR, request, message="审查结果和人工意见不能为空。")
         readiness = build_node_evidence_readiness(repo, project_id, node_id)
         evidence_validation = validate_node_evidence_selection(
@@ -12019,6 +12039,19 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
                 message="仍有 pending 或 missing 资料证据，不能保存“满足要求”审查意见。",
                 data={"evidenceReadiness": readiness, "evidenceValidation": evidence_validation},
             )
+        latest_ai_run = next(
+            (
+                item
+                for item in repo.state.get("ai_runs", [])
+                if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+            ),
+            None,
+        )
+        ai_suggested_result = (
+            compact_plain_text((latest_ai_run.get("suggestion") or {}).get("result"), 40)
+            if latest_ai_run
+            else None
+        )
         opinion = {
             "id": f"OPN-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
@@ -12033,12 +12066,28 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             "evidenceValidation": evidence_validation,
             "businessRuleVersion": business_rule_version_for_node(project_id, node_id),
             "reviewerName": request_actor_name(request),
+            "aiRunId": latest_ai_run.get("id") if latest_ai_run else None,
+            "aiSuggestedResult": ai_suggested_result,
+            "overriddenFromAi": bool(
+                ai_suggested_result
+                and ai_suggested_result in REVIEW_OPINION_NODE_STATUS
+                and ai_suggested_result != result
+            ),
             "createdAt": server_time(),
         }
         repo.state["review_opinions"].insert(0, opinion)
-        next_status = "已通过" if opinion["result"] == "满足要求" else "需补正"
+        next_status = REVIEW_OPINION_NODE_STATUS[result]
         repo.set_node_status(project_id, node_id, next_status)
-        return ok({"opinion": opinion, "nextStatus": next_status}, request)
+        audit_id = repo.add_audit(
+            "保存人工审查意见",
+            "ReviewOpinion",
+            opinion["id"],
+            project_id=project_id,
+            node_id=int(node_id),
+            before={"aiRunId": opinion["aiRunId"], "aiSuggestedResult": ai_suggested_result},
+            after={"result": result, "nextStatus": next_status, "overriddenFromAi": opinion["overriddenFromAi"]},
+        )
+        return ok({"opinion": opinion, "nextStatus": next_status, "auditLogId": audit_id}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
@@ -12074,7 +12123,10 @@ def adopt_ai_suggestion(request: Request, project_id: str, node_id: int, suggest
         selected_ids = [item for item in requested_ids if item in allowed_ids]
         requires_evidence_selection = not selected_ids
         suggestion = latest_run.get("suggestion") if isinstance(latest_run.get("suggestion"), dict) else {}
-        result = compact_plain_text(body.get("result") or suggestion.get("result"), 40)
+        suggested = compact_plain_text(suggestion.get("result"), 40)
+        # AI 建议展示词 → 人工结论选项的预填映射；映射不到的（需专业判断/执行故障）留空强制人工选择。
+        prefill = AI_SUGGESTION_TO_OPINION_RESULT.get(suggested, suggested if suggested in REVIEW_OPINION_NODE_STATUS else "")
+        result = compact_plain_text(body.get("result"), 40) or prefill
         opinion = compact_plain_text(
             body.get("opinion")
             or suggestion.get("opinionDraft")
@@ -14841,7 +14893,7 @@ def accept_review_finding(
             return guard
         result = str(body.get("result") or "").strip()
         opinion_text = compact_plain_text(body.get("opinion") or finding.get("description"), 2000)
-        if result not in {"满足要求", "需补正", "不适用"} or not opinion_text:
+        if result not in REVIEW_OPINION_NODE_STATUS or not opinion_text:
             return fail(errors.VALIDATION_ERROR, request, message="采纳审查发现时必须明确选择审查结果并填写人工意见。")
         node_id = int(finding["nodeId"])
         project_id = str(finding["projectId"])

@@ -704,7 +704,7 @@ def _validate_atomic_check_tool_bindings(
         if isinstance(item, dict) and item.get("id")
     }
     binding_ids: set[str] = set()
-    allowed_statuses = {"planned", "pilot_implemented", "implemented", "deprecated"}
+    allowed_statuses = {"planned", "binding_only", "pilot_implemented", "implemented", "deprecated"}
     for index, binding in enumerate(bindings):
         if not isinstance(binding, dict):
             errors.append(f"atomicCheckToolBindings[{index}] must be a mapping.")

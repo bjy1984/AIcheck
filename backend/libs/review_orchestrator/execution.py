@@ -86,6 +86,16 @@ REVIEW_GRAPH_EDGES = [
     for index in range(len(REVIEW_GRAPH_STEPS) - 1)
 ]
 
+# 确定性判定 → AI 建议结论展示词。所有结论均为建议，最终由监检人员确认。
+SUGGESTION_RESULT_LABELS = {
+    "passed": "建议满足要求",
+    "failed": "建议不符合",
+    "evidence_insufficient": "证据不足",
+    "not_applicable": "建议不适用",
+    "human_review_required": "需专业判断",
+    "execution_error": "执行故障待重试",
+}
+
 REVIEW_STATE_COLLECTIONS = (
     "review_runs",
     "review_step_runs",
@@ -1871,9 +1881,14 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["llmMetadata"] = repo.clone(review_run.get("llmMetadata") or {})
             ai_run["reasoningProcess"] = (ai_run.get("llmMetadata") or {}).get("reasoningProcess")
             ai_run["llmResultText"] = (ai_run.get("llmMetadata") or {}).get("resultText")
+            deterministic_verdict = str(
+                next(iter(context.get("ruleResults") or []), {}).get("result") or ""
+            )
             ai_run.setdefault("suggestion", {}).update(
                 {
-                    "result": "需人工确认",
+                    # 建议结论携带确定性判定（最终仍由监检人员确认，任何结论不自动成立）。
+                    "result": SUGGESTION_RESULT_LABELS.get(deterministic_verdict, "需人工确认"),
+                    "deterministicResult": deterministic_verdict or None,
                     "opinionDraft": (review_run.get("findingDrafts") or [{}])[0].get("description", "AI 审查草稿已生成。"),
                     "confidence": (review_run.get("findingDrafts") or [{}])[0].get("confidence", 0.82),
                     "manualConfirmItems": ["证据链、规则依据和条款适用性"],
@@ -2236,6 +2251,10 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 if isinstance(semantic_review, dict) and semantic_review.get("atomicJudgments")
                 else "固定 atomicCheck Tool 执行完成，待人工确认。"
                 if deterministic_result in {"passed", "failed", "not_applicable"}
+                else "atomicCheck Tool 执行故障（系统问题，非业务结论），请检查服务状态后重试。"
+                if deterministic_result == "execution_error"
+                else "形式检查完成，但需要专业人员作实质判断。"
+                if deterministic_result == "human_review_required"
                 else "固定 atomicCheck Tool 缺少完整事实、证据或规则参数，禁止自动判定符合。"
             ),
             "linkedClauseIds": linked_clause_ids,

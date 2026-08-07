@@ -465,6 +465,7 @@ def test_readyz_is_public_minimal_and_fail_closed(monkeypatch) -> None:
     assert ready.json() == {
         "status": "ready",
         "ready": True,
+        "authRequired": True,
         "checks": {
             "database": True,
             "security": True,

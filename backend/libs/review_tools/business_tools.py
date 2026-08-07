@@ -1851,7 +1851,21 @@ def evaluate_rule_check(spec: dict[str, Any]) -> dict[str, Any] | None:
 def checked_result(tool_name: str, facts: Any, checks: list[dict[str, Any]], version: str | None = None) -> dict[str, Any]:
     if not checks:
         return insufficient(tool_name, facts, "checks_empty")
-    return result(tool_name, "passed" if all(item.get("passed") for item in checks) else "failed", facts={"input": facts}, checks=checks, rule_version=version or rule_version(dict_value(facts)))
+    failures = [item for item in checks if not item.get("passed")]
+    if not failures:
+        return result(tool_name, "passed", facts={"input": facts}, checks=checks, rule_version=version or rule_version(dict_value(facts)))
+    # 全部失败项均为「字段缺失」时按证据不足处理；存在实质不合规（有值但不满足）才判 failed。
+    if all(item.get("missing") for item in failures):
+        output = result(
+            tool_name,
+            "evidence_insufficient",
+            facts={"input": facts},
+            checks=checks,
+            rule_version=version or rule_version(dict_value(facts)),
+        )
+        output["warnings"] = ["required_facts_missing:" + ",".join(str(item.get("code")) for item in failures)]
+        return output
+    return result(tool_name, "failed", facts={"input": facts}, checks=checks, rule_version=version or rule_version(dict_value(facts)))
 
 
 def insufficient(tool_name: str, arguments: Any, reason: str) -> dict[str, Any]:

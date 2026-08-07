@@ -83,6 +83,15 @@ async def lifespan(app: FastAPI):
     load_state()
     bootstrap_local_roles_if_configured()
     validate_security_runtime()
+    if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() != "true":
+        # 关闭认证会连带使项目隔离、节点范围、角色校验全部失效（authorized_node_scope
+        # 与 member_node_scope_error 在无登录身份时直接放行）。禁止以此状态对外提供服务。
+        logger.warning(
+            "SECURITY WARNING: AICHECK_REQUIRE_AUTH is not 'true'. "
+            "Authentication AND all project/node/role authorization checks are DISABLED. "
+            "Any client can claim any identity via X-Role/X-User-Id headers. "
+            "Never expose this deployment beyond local development."
+        )
     if strict_production() and not await security_sessions.ready():
         raise RuntimeError("Redis security backend is unavailable")
     yield
@@ -807,7 +816,12 @@ async def readiness_response():
         checks["rawVault"] = bool((health.get("rawVault") or {}).get("ready"))
     ready = all(checks.values())
     return JSONResponse(
-        {"status": "ready" if ready else "not_ready", "ready": ready, "checks": checks},
+        {
+            "status": "ready" if ready else "not_ready",
+            "ready": ready,
+            "checks": checks,
+            "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
+        },
         status_code=200 if ready else 503,
     )
 

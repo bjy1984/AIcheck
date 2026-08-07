@@ -3611,8 +3611,18 @@ const handleAdoptAiSuggestion = async (suggestionId: string) => {
   actionLoading.value = true
   try {
     const aiResult = latestAiRun.value.suggestion.result
-    const normalizedResult: ReviewOpinion['result'] =
-      aiResult === '需补正' || aiResult === '不适用' ? aiResult : '满足要求'
+    // AI 建议结论 → 人工结论预填。认不出的建议（需专业判断/执行故障等）不得回退成「满足要求」，
+    // 预填为「证据不足」强制人工改选（issue #14）。
+    const AI_RESULT_TO_OPINION: Record<string, ReviewOpinion['result']> = {
+      建议满足要求: '满足要求',
+      满足要求: '满足要求',
+      建议不符合: '需补正',
+      需补正: '需补正',
+      建议不适用: '不适用',
+      不适用: '不适用',
+      证据不足: '证据不足'
+    }
+    const normalizedResult: ReviewOpinion['result'] = AI_RESULT_TO_OPINION[aiResult] ?? '证据不足'
     const res = await adoptAiSuggestionApi(
       activeProjectId.value,
       activeNodeId.value,

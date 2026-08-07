@@ -169,21 +169,22 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     assert len(tool_bindings) == len(checks) == 194
     assert {item["atomicCheckId"] for item in tool_bindings} == {item["id"] for item in checks}
     assert all(item["requiredFacts"] and item["tools"] and item["outputSchema"] for item in tool_bindings)
+    # implementationStatus 口径（2026-08-07 审计修正，issue #7）：
+    # pilot_implemented 仅覆盖存在专用 fact builder / handler 的规则（R04、R12-R34）；
+    # 其余为 binding_only（仅绑定声明，走通用规则解释器，缺参数时 evidence_insufficient）。
     pilot_bindings = [item for item in tool_bindings if item["implementationStatus"] == "pilot_implemented"]
-    assert {item["sourceRuleId"] for item in pilot_bindings} == {
-        "R01", "R02", "R03", "R06", "R07", "R09",
-        "R12", "R13", "R14", "R15", "R16", "R17", "R18", "R19",
-        "R20", "R21", "R22", "R23", "R24", "R25", "R26", "R27",
-        "R28", "R29", "R30", "R31", "R32", "R33", "R34",
-        "R60", "R61", "R62",
-    }
+    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R04"} | {f"R{n}" for n in range(12, 35)}
+    binding_only = [item for item in tool_bindings if item["implementationStatus"] == "binding_only"]
+    assert len(pilot_bindings) + len(binding_only) == 194
+    pilot_rule_ids = set((pack.get("atomicCheckToolBindingSet") or {}).get("pilotRules") or [])
+    pilot_scoped_bindings = [item for item in tool_bindings if item["sourceRuleId"] in pilot_rule_ids]
     assert all(
         any(
             candidate["sourceRuleId"] == rule_id
             and "validate_evidence_grounding" in candidate["tools"]
-            for candidate in pilot_bindings
+            for candidate in pilot_scoped_bindings
         )
-        for rule_id in {item["sourceRuleId"] for item in pilot_bindings}
+        for rule_id in pilot_rule_ids
     )
 
     invalid_tool_binding_pack = deepcopy(pack)

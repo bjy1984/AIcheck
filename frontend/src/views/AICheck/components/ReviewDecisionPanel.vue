@@ -141,6 +141,7 @@ const evidenceText = (evidence: EvidenceLink) =>
           <ElOption label="满足要求" value="满足要求" />
           <ElOption label="需补正" value="需补正" />
           <ElOption label="不适用" value="不适用" />
+          <ElOption label="证据不足（待补件后复核）" value="证据不足" />
         </ElSelect>
       </ElFormItem>
       <ElFormItem label="结论引用证据">

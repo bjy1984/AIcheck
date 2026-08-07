@@ -79,7 +79,9 @@ def test_required_and_document_completeness_require_uploaded_bodies() -> None:
         },
     )
 
-    assert required["result"] == "failed"
+    # 业务口径（issue #3）：抽取字段缺失 → 证据不足；文件本体缺失 → 不符合（保持 failed）。
+    assert required["result"] == "evidence_insufficient"
+    assert "required_facts_missing:required_license_scope" in (required.get("warnings") or [])
     assert documents["result"] == "failed"
 
 

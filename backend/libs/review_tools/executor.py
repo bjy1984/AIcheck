@@ -473,13 +473,30 @@ def project_pipeline_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def aggregate_tool_results(outputs: list[dict[str, Any]]) -> str:
+    """单个原子项内聚合各工具输出。
+
+    优先级（业务口径）：
+    1. 证据锚定失效一票否决——grounding 不通过时 passed/failed 均不可靠，降级证据不足；
+    2. 已确认的 failed（真实不符合）不被工具执行故障掩盖；
+    3. 工具执行故障是系统问题，走独立 execution_error 通道，不伪装成业务结论；
+    4. human_review_required 独立保留（证据够但需专业判断 ≠ 证据不足）。
+    """
     business_results = [str(item.get("result")) for item in outputs if item.get("result")]
+    grounding_failed = any(
+        str(item.get("toolName")) == "validate_evidence_grounding"
+        and str(item.get("result")) in {"evidence_insufficient", "failed"}
+        for item in outputs
+    )
     execution_failed = any(item.get("status") in {"rejected", "failed", "error"} for item in outputs)
-    if execution_failed:
+    if grounding_failed:
         return "evidence_insufficient"
     if "failed" in business_results:
         return "failed"
-    if any(item in {"evidence_insufficient", "human_review_required"} for item in business_results):
+    if execution_failed:
+        return "execution_error"
+    if "human_review_required" in business_results:
+        return "human_review_required"
+    if "evidence_insufficient" in business_results:
         return "evidence_insufficient"
     applicable = [item for item in business_results if item != "not_applicable"]
     if business_results and not applicable:
@@ -493,6 +510,10 @@ def aggregate_atomic_results(items: list[dict[str, Any]]) -> str:
     results = [str(item.get("result")) for item in items]
     if "failed" in results:
         return "failed"
+    if "execution_error" in results:
+        return "execution_error"
+    if "human_review_required" in results:
+        return "human_review_required"
     if not results or any(item == "evidence_insufficient" for item in results):
         return "evidence_insufficient"
     applicable = [item for item in results if item != "not_applicable"]
@@ -508,4 +529,6 @@ def summarize(items: list[dict[str, Any]]) -> dict[str, int]:
         "failedCount": sum(1 for item in items if item.get("result") == "failed"),
         "evidenceInsufficientCount": sum(1 for item in items if item.get("result") == "evidence_insufficient"),
         "notApplicableCount": sum(1 for item in items if item.get("result") == "not_applicable"),
+        "humanReviewRequiredCount": sum(1 for item in items if item.get("result") == "human_review_required"),
+        "executionErrorCount": sum(1 for item in items if item.get("result") == "execution_error"),
     }

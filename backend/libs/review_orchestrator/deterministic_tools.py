@@ -678,7 +678,12 @@ def decimal(value: Any) -> Decimal | None:
 
 
 def check(code: str, passed: bool, actual: Any, expected: Any) -> dict[str, Any]:
-    return {"code": code, "passed": bool(passed), "actual": json_value(actual), "expected": json_value(expected)}
+    item = {"code": code, "passed": bool(passed), "actual": json_value(actual), "expected": json_value(expected)}
+    # 业务口径：字段缺失（事实没抽到）不是「不符合」，而是「证据不足」。
+    # expected == "present" 的检查项是存在性检查；未通过即为缺失，标记供聚合层区分。
+    if not passed and expected == "present":
+        item["missing"] = True
+    return item
 
 
 def result(

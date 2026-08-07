@@ -452,7 +452,7 @@ export type ReviewOpinion = {
   id: string
   projectId: string
   nodeId: number
-  result: '满足要求' | '需补正' | '不适用'
+  result: '满足要求' | '需补正' | '不适用' | '证据不足'
   opinion: string
   evidenceLinkIds: string[]
   readinessSnapshot?: NodeEvidenceReadiness
@@ -460,6 +460,9 @@ export type ReviewOpinion = {
   businessRuleVersion?: string
   requiresEvidenceSelection?: boolean
   reviewerName: string
+  aiRunId?: string | null
+  aiSuggestedResult?: string | null
+  overriddenFromAi?: boolean
   createdAt: string
 }
 

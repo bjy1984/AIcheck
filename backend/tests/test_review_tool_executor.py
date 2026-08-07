@@ -16,7 +16,7 @@ def test_all_engineering_node_plans_compile_against_runtime_catalog() -> None:
     assert all(item["compilable"] for plan in plans for item in plan)
     assert all(not item["missingTools"] for plan in plans for item in plan)
     assert {item["implementationStatus"] for plan in plans for item in plan} <= {
-        "implemented",
+        "binding_only",
         "pilot_implemented",
     }
 
@@ -94,7 +94,9 @@ def test_aggregation_never_turns_failed_or_insufficient_into_passed() -> None:
     )
 
     assert passed["result"] == "passed"
-    assert insufficient["result"] == "failed"
+    # 业务口径（issue #3）：事实字段缺失是「证据不足」而非「不符合」；
+    # 只有字段有值且不满足规则、或应交文件本体缺失时才是 failed。
+    assert insufficient["result"] == "evidence_insufficient"
 
 
 def test_r04_plan_assembles_document_completeness_and_approval_arguments() -> None:
@@ -486,6 +488,8 @@ def test_r13_complete_structured_facts_pass_the_full_fixed_plan() -> None:
         "failedCount": 0,
         "evidenceInsufficientCount": 0,
         "notApplicableCount": 0,
+        "humanReviewRequiredCount": 0,
+        "executionErrorCount": 0,
     }
 
 
@@ -610,6 +614,8 @@ def test_r14_complete_structured_facts_pass_the_full_fixed_plan() -> None:
         "failedCount": 0,
         "evidenceInsufficientCount": 0,
         "notApplicableCount": 0,
+        "humanReviewRequiredCount": 0,
+        "executionErrorCount": 0,
     }
 
 
@@ -746,4 +752,6 @@ def test_r15_complete_structured_facts_pass_the_full_fixed_plan() -> None:
         "failedCount": 0,
         "evidenceInsufficientCount": 0,
         "notApplicableCount": 1,
+        "humanReviewRequiredCount": 0,
+        "executionErrorCount": 0,
     }

@@ -1,9 +1,12 @@
 atomicCheckToolBindingSet:
   id: engineering-inspection-tool-bindings-v1
   schemaVersion: atomic-check-tool-binding-v1
-  version: 2026.07.16
+  version: 2026.08.07
   lifecycleStatus: draft
   atomicCheckCount: 194
+  # implementationStatus 口径（2026-08-07 审计修正，见 issue #7）：
+  #   pilot_implemented — 存在专用 fact builder / tool handler（R04、R12-R34）；
+  #   binding_only      — 仅有绑定声明，走通用规则解释器，缺参数时返回 evidence_insufficient。
   pilotRules:
   - R01
   - R02
@@ -57,7 +60,7 @@ atomicCheckToolBindings:
     normalizer: organization_name
     requiredCount: 3
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R01-02
   sourceRuleId: R01
   requiredFacts:
@@ -75,7 +78,7 @@ atomicCheckToolBindings:
     argumentProfile: r01_design_scope_project
     scopeProfile: design-license-scope-cn-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R01-03
   sourceRuleId: R01
   requiredFacts:
@@ -97,7 +100,7 @@ atomicCheckToolBindings:
     coverageMode: closed_interval
     periodEndPolicy: latest_of_planned_actual_change_clarification
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R01-04
   sourceRuleId: R01
   requiredFacts:
@@ -115,7 +118,7 @@ atomicCheckToolBindings:
     argumentProfile: r01_design_scope_documents
     scopeProfile: design-license-scope-cn-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R01-05
   sourceRuleId: R01
   requiredFacts:
@@ -134,7 +137,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R02-01
   sourceRuleId: R02
   requiredFacts:
@@ -152,7 +155,7 @@ atomicCheckToolBindings:
     argumentProfile: r02_installation_scope
     scopeProfile: installation-license-scope-cn-v2
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R02-02
   sourceRuleId: R02
   requiredFacts:
@@ -171,7 +174,7 @@ atomicCheckToolBindings:
     argumentProfile: r02_installation_license_period
     coverageMode: closed_interval
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R02-03
   sourceRuleId: R02
   requiredFacts:
@@ -190,7 +193,7 @@ atomicCheckToolBindings:
     failureAction: CONTACT_NOTICE_REQUIRED
     externalActionPolicy: recommendation_only
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R02-04
   sourceRuleId: R02
   requiredFacts:
@@ -209,7 +212,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R03-01
   sourceRuleId: R03
   requiredFacts:
@@ -227,7 +230,7 @@ atomicCheckToolBindings:
     argumentProfile: r03_agency_identity
     evaluationMode: identity
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R03-02
   sourceRuleId: R03
   requiredFacts:
@@ -248,7 +251,7 @@ atomicCheckToolBindings:
     evaluationMode: method_coverage
     codeProfile: tsg-z7002-2022-table-a1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R03-03
   sourceRuleId: R03
   requiredFacts:
@@ -270,7 +273,7 @@ atomicCheckToolBindings:
     failureAction: CONTACT_NOTICE_REQUIRED
     externalActionPolicy: recommendation_only
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R03-04
   sourceRuleId: R03
   requiredFacts:
@@ -289,7 +292,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R04-01
   sourceRuleId: R04
   requiredFacts:
@@ -314,7 +317,7 @@ atomicCheckToolBindings:
     - pipeline_material_list
     - straight_pipe_strength_calculation
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R04-02
   sourceRuleId: R04
   requiredFacts:
@@ -345,7 +348,7 @@ atomicCheckToolBindings:
     - 审核
     ruleVersion: r04-design-approval-tsg31-2025-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R04-03
   sourceRuleId: R04
   requiredFacts:
@@ -376,7 +379,7 @@ atomicCheckToolBindings:
     ruleVersion: r04-design-approval-tsg31-2025-v1
     triggerProfile: gc1-or-gcd-pressure-temperature-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R04-04
   sourceRuleId: R04
   requiredFacts:
@@ -395,7 +398,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R05-01
   sourceRuleId: R05
   requiredFacts:
@@ -412,7 +415,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R05-02
   sourceRuleId: R05
   requiredFacts:
@@ -431,7 +434,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R06-01
   sourceRuleId: R06
   requiredFacts:
@@ -455,7 +458,7 @@ atomicCheckToolBindings:
     - pipeline_stress_calculation
     ruleVersion: r06-calculation-consistency-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R06-02
   sourceRuleId: R06
   requiredFacts:
@@ -480,7 +483,7 @@ atomicCheckToolBindings:
     - 审核
     ruleVersion: r06-design-approval-tsg31-2025-3.1.3.3-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R06-03
   sourceRuleId: R06
   requiredFacts:
@@ -507,7 +510,7 @@ atomicCheckToolBindings:
     triggerProfile: gc1-or-gcd-pressure-temperature-v1
     ruleVersion: r06-design-approval-tsg31-2025-3.1.3.3-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R06-04
   sourceRuleId: R06
   requiredFacts:
@@ -526,7 +529,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R07-01
   sourceRuleId: R07
   requiredFacts:
@@ -560,7 +563,7 @@ atomicCheckToolBindings:
     sealPolicy: tsg31_2025_3.1.2_by_document_type
     ruleVersion: r07-design-change-tsg31-2025-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R07-02
   sourceRuleId: R07
   requiredFacts:
@@ -579,7 +582,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R08-01
   sourceRuleId: R08
   requiredFacts:
@@ -599,7 +602,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R08-02
   sourceRuleId: R08
   requiredFacts:
@@ -618,7 +621,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R09-01
   sourceRuleId: R09
   requiredFacts:
@@ -660,7 +663,7 @@ atomicCheckToolBindings:
       - requirements.acceptanceCriteria
     ruleVersion: r09-design-special-requirements-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R09-02
   sourceRuleId: R09
   requiredFacts:
@@ -679,7 +682,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R10-01
   sourceRuleId: R10
   requiredFacts: &id001
@@ -698,7 +701,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R10-02
   sourceRuleId: R10
   requiredFacts: *id001
@@ -716,7 +719,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R10-03
   sourceRuleId: R10
   requiredFacts: *id001
@@ -732,7 +735,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R10-04
   sourceRuleId: R10
   requiredFacts:
@@ -751,7 +754,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R11-01
   sourceRuleId: R11
   requiredFacts: &id002
@@ -772,7 +775,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R11-02
   sourceRuleId: R11
   requiredFacts: *id002
@@ -788,7 +791,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R11-03
   sourceRuleId: R11
   requiredFacts: *id002
@@ -802,7 +805,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R11-04
   sourceRuleId: R11
   requiredFacts:
@@ -821,7 +824,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R12-01
   sourceRuleId: R12
   requiredFacts:
@@ -844,7 +847,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R12-02
   sourceRuleId: R12
   requiredFacts:
@@ -2181,7 +2184,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R35-02
   sourceRuleId: R35
   requiredFacts:
@@ -2200,7 +2203,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R36-01
   sourceRuleId: R36
   requiredFacts:
@@ -2219,7 +2222,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R36-02
   sourceRuleId: R36
   requiredFacts:
@@ -2238,7 +2241,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R37-01
   sourceRuleId: R37
   requiredFacts: &id003
@@ -2257,7 +2260,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R37-02
   sourceRuleId: R37
   requiredFacts: *id003
@@ -2272,7 +2275,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R37-03
   sourceRuleId: R37
   requiredFacts:
@@ -2291,7 +2294,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R38-01
   sourceRuleId: R38
   requiredFacts:
@@ -2312,7 +2315,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R38-02
   sourceRuleId: R38
   requiredFacts:
@@ -2331,7 +2334,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R39-01
   sourceRuleId: R39
   requiredFacts:
@@ -2350,7 +2353,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R39-02
   sourceRuleId: R39
   requiredFacts:
@@ -2369,7 +2372,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R40-01
   sourceRuleId: R40
   requiredFacts:
@@ -2389,7 +2392,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R40-02
   sourceRuleId: R40
   requiredFacts:
@@ -2408,7 +2411,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R41-01
   sourceRuleId: R41
   requiredFacts:
@@ -2427,7 +2430,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R41-02
   sourceRuleId: R41
   requiredFacts:
@@ -2446,7 +2449,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R42-01
   sourceRuleId: R42
   requiredFacts:
@@ -2467,7 +2470,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R42-02
   sourceRuleId: R42
   requiredFacts:
@@ -2486,7 +2489,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R43-01
   sourceRuleId: R43
   requiredFacts:
@@ -2507,7 +2510,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R43-02
   sourceRuleId: R43
   requiredFacts:
@@ -2526,7 +2529,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R44-01
   sourceRuleId: R44
   requiredFacts:
@@ -2546,7 +2549,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R44-02
   sourceRuleId: R44
   requiredFacts:
@@ -2565,7 +2568,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R45-01
   sourceRuleId: R45
   requiredFacts:
@@ -2585,7 +2588,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R45-02
   sourceRuleId: R45
   requiredFacts:
@@ -2604,7 +2607,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R46-01
   sourceRuleId: R46
   requiredFacts:
@@ -2623,7 +2626,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R46-02
   sourceRuleId: R46
   requiredFacts:
@@ -2642,7 +2645,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R47-01
   sourceRuleId: R47
   requiredFacts:
@@ -2661,7 +2664,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R47-02
   sourceRuleId: R47
   requiredFacts:
@@ -2680,7 +2683,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R48-01
   sourceRuleId: R48
   requiredFacts:
@@ -2702,7 +2705,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R48-02
   sourceRuleId: R48
   requiredFacts:
@@ -2721,7 +2724,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R49-01
   sourceRuleId: R49
   requiredFacts:
@@ -2741,7 +2744,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R49-02
   sourceRuleId: R49
   requiredFacts:
@@ -2760,7 +2763,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R50-01
   sourceRuleId: R50
   requiredFacts:
@@ -2781,7 +2784,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R50-02
   sourceRuleId: R50
   requiredFacts:
@@ -2800,7 +2803,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R51-01
   sourceRuleId: R51
   requiredFacts:
@@ -2821,7 +2824,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R51-02
   sourceRuleId: R51
   requiredFacts:
@@ -2840,7 +2843,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R52-01
   sourceRuleId: R52
   requiredFacts:
@@ -2859,7 +2862,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R52-02
   sourceRuleId: R52
   requiredFacts:
@@ -2878,7 +2881,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R53-01
   sourceRuleId: R53
   requiredFacts: &id004
@@ -2899,7 +2902,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R53-02
   sourceRuleId: R53
   requiredFacts: *id004
@@ -2913,7 +2916,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R53-03
   sourceRuleId: R53
   requiredFacts:
@@ -2932,7 +2935,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R54-01
   sourceRuleId: R54
   requiredFacts:
@@ -2953,7 +2956,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R54-02
   sourceRuleId: R54
   requiredFacts:
@@ -2972,7 +2975,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R55-01
   sourceRuleId: R55
   requiredFacts:
@@ -2993,7 +2996,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R55-02
   sourceRuleId: R55
   requiredFacts:
@@ -3012,7 +3015,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R56-01
   sourceRuleId: R56
   requiredFacts: &id005
@@ -3033,7 +3036,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R56-02
   sourceRuleId: R56
   requiredFacts: *id005
@@ -3050,7 +3053,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R56-03
   sourceRuleId: R56
   requiredFacts:
@@ -3069,7 +3072,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R57-01
   sourceRuleId: R57
   requiredFacts:
@@ -3089,7 +3092,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R57-02
   sourceRuleId: R57
   requiredFacts:
@@ -3108,7 +3111,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R58-01
   sourceRuleId: R58
   requiredFacts:
@@ -3126,7 +3129,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R58-02
   sourceRuleId: R58
   requiredFacts:
@@ -3145,7 +3148,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R59-01
   sourceRuleId: R59
   requiredFacts:
@@ -3170,7 +3173,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R59-02
   sourceRuleId: R59
   requiredFacts:
@@ -3189,7 +3192,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R60-01
   sourceRuleId: R60
   requiredFacts:
@@ -3212,7 +3215,7 @@ atomicCheckToolBindings:
     - 1.5
     - 2.0
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R60-02
   sourceRuleId: R60
   requiredFacts:
@@ -3231,7 +3234,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R61-01
   sourceRuleId: R61
   requiredFacts:
@@ -3251,7 +3254,7 @@ atomicCheckToolBindings:
     profile: pressure_test_parameters
     ruleProfileVersion: pressure-test-parameters-gbt20801-v2
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R61-02
   sourceRuleId: R61
   requiredFacts:
@@ -3272,7 +3275,7 @@ atomicCheckToolBindings:
     profile: pressure_test_parameters
     ruleProfileVersion: pressure-test-parameters-gbt20801-v2
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R61-03
   sourceRuleId: R61
   requiredFacts:
@@ -3291,7 +3294,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R62-01
   sourceRuleId: R62
   requiredFacts:
@@ -3308,7 +3311,7 @@ atomicCheckToolBindings:
     profile: pressure_test_report
     numericTolerance: 0.001
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R62-02
   sourceRuleId: R62
   requiredFacts:
@@ -3327,7 +3330,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: pilot_implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R63-01
   sourceRuleId: R63
   requiredFacts:
@@ -3346,7 +3349,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R63-02
   sourceRuleId: R63
   requiredFacts:
@@ -3365,7 +3368,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R64-01
   sourceRuleId: R64
   requiredFacts:
@@ -3384,7 +3387,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R64-02
   sourceRuleId: R64
   requiredFacts:
@@ -3403,7 +3406,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R65-01
   sourceRuleId: R65
   requiredFacts: &id006
@@ -3422,7 +3425,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R65-02
   sourceRuleId: R65
   requiredFacts: *id006
@@ -3438,7 +3441,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R65-03
   sourceRuleId: R65
   requiredFacts:
@@ -3457,7 +3460,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R66-01
   sourceRuleId: R66
   requiredFacts:
@@ -3480,7 +3483,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R66-02
   sourceRuleId: R66
   requiredFacts:
@@ -3499,7 +3502,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R67-01
   sourceRuleId: R67
   requiredFacts:
@@ -3521,7 +3524,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R67-02
   sourceRuleId: R67
   requiredFacts:
@@ -3540,7 +3543,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R68-01
   sourceRuleId: R68
   requiredFacts:
@@ -3565,7 +3568,7 @@ atomicCheckToolBindings:
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R68-02
   sourceRuleId: R68
   requiredFacts:
@@ -3584,7 +3587,7 @@ atomicCheckToolBindings:
     requireBboxOrQuotedText: true
     denyOnConflict: true
   outputSchema: evidence-gate-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R69-01
   sourceRuleId: R69
   requiredFacts: &id007
@@ -3610,7 +3613,7 @@ atomicCheckToolBindings:
     - coveredProjectId
     automatedDecisionAllowed: false
   outputSchema: manual-evaluation-evidence-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
 - atomicCheckId: AC-R69-02
   sourceRuleId: R69
   requiredFacts: *id007
@@ -3630,4 +3633,4 @@ atomicCheckToolBindings:
     - coveredProjectId
     automatedDecisionAllowed: false
   outputSchema: manual-evaluation-evidence-result-v1
-  implementationStatus: implemented
+  implementationStatus: binding_only
