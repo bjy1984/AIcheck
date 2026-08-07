@@ -244,6 +244,89 @@ def test_review_run_clause_snapshot_matches_its_node() -> None:
         assert payload["packageId"] == f"CLAUSE-PKG-R{node_id:02d}"
 
 
+def test_field_correction_reaches_ocr_reading_tools() -> None:
+    """字段级修正必须穿透到读 OCR 的确定性工具。
+
+    最初的实现只覆盖 businessFacts，而 OCR 抽取值（如「证书编号」）由工具直接从
+    解析结果读取，修正因此完全不生效——记录存下来了，判定却没变。
+    """
+    from libs.review_orchestrator.runtime_tools import apply_field_corrections_to_parse_results
+
+    state = {
+        "fact_corrections": [
+            {
+                "id": "FCOR-1",
+                "projectId": "P-1",
+                "nodeId": 24,
+                "fieldId": "FIELD-24-001",
+                "fieldName": "证书编号",
+                "documentVersionId": "DV-1",
+                "correctedValue": "TS6J-2024-99999",
+                "status": "active",
+            },
+            {  # 其他节点的修正不得串入
+                "id": "FCOR-2",
+                "projectId": "P-1",
+                "nodeId": 25,
+                "fieldId": "FIELD-25-001",
+                "fieldName": "证书编号",
+                "documentVersionId": "DV-1",
+                "correctedValue": "串入的值",
+                "status": "active",
+            },
+        ]
+    }
+    results = [
+        {
+            "documentVersionId": "DV-1",
+            "fields": [
+                {"fieldName": "证书编号", "value": "TS6J-2024-03158"},
+                {"fieldName": "姓名", "value": "王建国"},
+            ],
+        }
+    ]
+    patched = apply_field_corrections_to_parse_results(
+        state, results, context={"reviewRun": {"projectId": "P-1", "nodeId": 24}}
+    )
+    fields = {f["fieldName"]: f for f in patched[0]["fields"]}
+    assert fields["证书编号"]["value"] == "TS6J-2024-99999"
+    assert fields["证书编号"]["originalValue"] == "TS6J-2024-03158"
+    assert fields["证书编号"]["humanCorrected"] is True
+    assert fields["姓名"]["value"] == "王建国", "未修正的字段不应被改动"
+    assert results[0]["fields"][0]["value"] == "TS6J-2024-03158", "不得改动持久化状态"
+
+
+def test_field_correction_does_not_leak_across_nodes() -> None:
+    from libs.review_orchestrator.runtime_tools import apply_field_corrections_to_parse_results
+
+    state = {
+        "fact_corrections": [
+            {
+                "id": "FCOR-1",
+                "projectId": "P-1",
+                "nodeId": 24,
+                "fieldId": "FIELD-1",
+                "fieldName": "证书编号",
+                "documentVersionId": "DV-1",
+                "correctedValue": "改过的",
+                "status": "active",
+            }
+        ]
+    }
+    results = [{"documentVersionId": "DV-1", "fields": [{"fieldName": "证书编号", "value": "原值"}]}]
+    other = apply_field_corrections_to_parse_results(
+        state, results, context={"reviewRun": {"projectId": "P-1", "nodeId": 25}}
+    )
+    assert other[0]["fields"][0]["value"] == "原值", "节点独立：其他节点不应受影响"
+
+    revoked = apply_field_corrections_to_parse_results(
+        {"fact_corrections": [{**state["fact_corrections"][0], "status": "revoked"}]},
+        results,
+        context={"reviewRun": {"projectId": "P-1", "nodeId": 24}},
+    )
+    assert revoked[0]["fields"][0]["value"] == "原值", "已撤销的修正不应生效"
+
+
 def test_role_action_matrix_declares_report_view_only_for_intended_roles() -> None:
     """角色动作表是权限意图的声明；读端点当前不校验它，二者的差距需要显式可见。
 

@@ -12111,17 +12111,32 @@ def save_fact_correction(
 ):
     """人工修正 OCR 抽取的结构化事实（业务口径：不重传文件，修正留痕，仅本节点生效）。
 
-    修正不会自动触发重跑；监检人员通过既有 ai-recheck 接口显式重跑本节点，
-    重跑时在 load_context 步骤按 factPath 覆盖业务事实。
+    支持两种目标，二选一：
+    - `fieldId`（推荐）：直接指向 `ocr-fields` 返回的抽取字段，例如「证书编号」。
+      重跑时覆盖 OCR 解析结果，所有读 OCR 的确定性工具都会看到修正值。
+    - `factPath`：点分隔的业务事实路径，覆盖 fact builder 产出的 businessFacts。
+
+    修正不会自动触发重跑；监检人员通过既有 ai-recheck 接口显式重跑本节点。
     """
 
     def produce():
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
             return guard
+        field_id = compact_plain_text(body.get("fieldId"), 120)
         fact_path = str(body.get("factPath") or "").strip()
-        if not FACT_PATH_PATTERN.fullmatch(fact_path):
-            return fail(errors.VALIDATION_ERROR, request, message="factPath 必须是点分隔的字段路径（如 welderCertificate.certificateNo）。")
+        if field_id:
+            field = repo.find_one("extracted_fields", field_id)
+            if not field:
+                return fail(errors.NOT_FOUND, request, message="未找到该抽取字段。")
+            # 以 fieldId 为修正键，同一字段的重复修正互相 supersede。
+            fact_path = f"field:{field_id}"
+        elif not FACT_PATH_PATTERN.fullmatch(fact_path):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="必须提供 fieldId，或点分隔的 factPath（如 welderCertificate.certificateNo）。",
+            )
         if "correctedValue" not in body:
             return fail(errors.VALIDATION_ERROR, request, message="必须提供修正后的值 correctedValue。")
         reason = compact_plain_text(body.get("reason"), 500)
@@ -12136,14 +12151,21 @@ def save_fact_correction(
                 item["status"] = "superseded"
                 item["supersededAt"] = server_time()
                 superseded_ids.append(str(item.get("id")))
+        field = repo.find_one("extracted_fields", field_id) if field_id else None
         correction = {
             "id": f"FCOR-{uuid4().hex[:10].upper()}",
             "projectId": project_id,
             "nodeId": int(node_id),
             "factPath": fact_path,
-            "originalValue": body.get("originalValue"),
+            "fieldId": field_id or None,
+            "fieldName": (field or {}).get("fieldName"),
+            "originalValue": body.get("originalValue") if field is None else (field or {}).get("fieldValue"),
             "correctedValue": body.get("correctedValue"),
-            "documentVersionId": compact_plain_text(body.get("documentVersionId"), 120) or None,
+            "documentVersionId": (
+                compact_plain_text(body.get("documentVersionId"), 120)
+                or (field or {}).get("documentVersionId")
+                or None
+            ),
             "reason": reason or None,
             "status": "active",
             "supersedes": superseded_ids,
