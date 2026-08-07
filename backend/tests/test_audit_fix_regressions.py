@@ -190,6 +190,60 @@ def test_graph_execution_preserves_context_for_callers() -> None:
     assert context.get("evidenceLinks") == [{"id": "EV-1"}]
 
 
+def test_clause_package_binding_is_self_consistent() -> None:
+    """节点→条款包绑定必须自洽：sourceRuleId / nodeId / packageId 三者一致。
+
+    业务包升版（含规则重编号）后若不重绑，存量项目会继续指向旧 release 的包，
+    产生 nodeId=24 却记 sourceRuleId=R12 这类自相矛盾的审计记录。
+    """
+    from libs.business_pack import load_business_pack
+    from libs.business_pack.clause_store import (
+        bind_project_node_clause_packages,
+        ensure_clause_state,
+    )
+
+    pack = load_business_pack("engineering_inspection_v1")
+    state: dict = {}
+    ensure_clause_state(state)
+    project = {"id": "P-TEST-1", "businessPackId": pack["id"], "businessPackVersion": pack["version"]}
+    bind_project_node_clause_packages(state, project, pack)
+
+    bindings = state["project_node_clause_packages"]
+    assert bindings, "应产生节点绑定"
+    mismatched = [
+        (b["nodeId"], b.get("sourcePackageId"), b.get("sourceRuleId"))
+        for b in bindings
+        if b.get("sourcePackageId") != f"CLAUSE-PKG-R{int(b['nodeId']):02d}"
+        or b.get("sourceRuleId") != f"R{int(b['nodeId']):02d}"
+    ]
+    assert not mismatched, f"绑定与节点号不一致: {mismatched[:5]}"
+
+
+def test_review_run_clause_snapshot_matches_its_node() -> None:
+    """冻结快照内部必须自洽——曾出现 nodeId=24 / sourceRuleId=R12 / nodeName 为 R24 的记录。"""
+    from libs.business_pack import load_business_pack
+    from libs.business_pack.clause_store import (
+        bind_project_node_clause_packages,
+        clause_package_snapshot_for_project_node,
+        ensure_clause_state,
+    )
+
+    pack = load_business_pack("engineering_inspection_v1")
+    state: dict = {}
+    ensure_clause_state(state)
+    project = {"id": "P-TEST-2", "businessPackId": pack["id"], "businessPackVersion": pack["version"]}
+    bind_project_node_clause_packages(state, project, pack)
+
+    for node_id in (12, 24, 25, 40):
+        payload = clause_package_snapshot_for_project_node(state, "P-TEST-2", node_id)
+        assert payload, f"节点 {node_id} 应有条款快照"
+        assert payload["nodeId"] == node_id
+        assert payload["sourceRuleId"] == f"R{node_id:02d}", (
+            f"节点 {node_id} 快照 sourceRuleId={payload['sourceRuleId']}"
+        )
+        assert payload["packageId"] == f"CLAUSE-PKG-R{node_id:02d}"
+
+
 def test_suggestion_result_labels_cover_all_aggregate_values() -> None:
     for value in ("passed", "failed", "evidence_insufficient", "not_applicable", "human_review_required", "execution_error"):
         assert value in SUGGESTION_RESULT_LABELS
