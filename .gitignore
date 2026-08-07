@@ -19,6 +19,8 @@ backend/data/*.sqlite3
 backend/data/*.sqlite-*
 backend/data/*.sqlite3-*
 backend/data/*.sqlite3.bak-*
+backend/data/*.bak
+backend/data/*.dump
 backend/data/runtime-exports/
 backend/ocr_eval/reports/
 backend/ocr_eval/public_datasets/
