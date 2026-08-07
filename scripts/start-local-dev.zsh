@@ -43,22 +43,25 @@ pid_is_running() {
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
+BACKEND_HEALTHZ_URL="http://127.0.0.1:$BACKEND_PORT/api/healthz"
+
 wait_for_url() {
   local url="$1" name="$2"
+  local attempts="${3:-90}"
   local i
-  for i in {1..90}; do
+  for ((i = 1; i <= attempts; i++)); do
     if curl -fsS "$url" >/dev/null 2>&1; then
       log "$name 已就绪：$url"
       return 0
     fi
     sleep 0.5
   done
-  log "$name 未通过健康检查，请查看日志。"
+  log "$name 未通过健康检查：$url"
   return 1
 }
 
 backend_has_postgres_mineru() {
-  curl -fsS "http://127.0.0.1:$BACKEND_PORT/healthz" 2>/dev/null \
+  curl -fsS "$BACKEND_HEALTHZ_URL" 2>/dev/null \
     | "$BACKEND_DIR/.venv/bin/python" -c "import json, sys; body=json.load(sys.stdin); data=body.get('data') or {}; worker=data.get('mineruWorker') or {}; raise SystemExit(0 if worker.get('required') is True else 1)" \
       >/dev/null 2>&1
 }
@@ -150,9 +153,21 @@ start_frontend() {
 
 dry_run() {
   print "AICHECK_MINERU_EXECUTION_MODE=postgres"
-  print "backend: .venv/bin/uvicorn apps.api.main:app -> $BACKEND_LOG ($LOG_DIR/backend.pid)"
+  print "backend: .venv/bin/uvicorn apps.api.main:app --host 127.0.0.1 --port $BACKEND_PORT"
+  print "backend healthz: $BACKEND_HEALTHZ_URL"
+  print "backend log: $BACKEND_LOG ($LOG_DIR/backend.pid)"
   print "mineru: .venv/bin/python -m apps.mineru_worker.main -> $MINERU_WORKER_LOG ($LOG_DIR/mineru-worker.pid)"
-  print "frontend: pnpm run dev:live -> $FRONTEND_LOG ($LOG_DIR/frontend.pid)"
+  print "frontend: pnpm run dev:live (preflight $BACKEND_HEALTHZ_URL) -> $FRONTEND_LOG ($LOG_DIR/frontend.pid)"
+}
+
+require_backend_ready() {
+  if wait_for_url "$BACKEND_HEALTHZ_URL" "后端" 180; then
+    return 0
+  fi
+  log "错误：后端未在 :$BACKEND_PORT 就绪，已跳过前端启动。"
+  log "请检查：$BACKEND_LOG"
+  log "手动启动示例：cd backend && .venv/bin/uvicorn apps.api.main:app --host 127.0.0.1 --port $BACKEND_PORT"
+  return 1
 }
 
 main() {
@@ -165,12 +180,13 @@ main() {
   touch "$BACKEND_LOG" "$MINERU_WORKER_LOG" "$FRONTEND_LOG"
   ensure_postgres || return 1
   start_backend
-  wait_for_url "http://127.0.0.1:$BACKEND_PORT/healthz" "后端" || true
+  require_backend_ready || return 1
   start_mineru_worker
   wait_for_mineru_worker || true
   start_frontend
   wait_for_url "http://127.0.0.1:$FRONTEND_PORT/" "前端" || true
   log "后端：http://127.0.0.1:$BACKEND_PORT"
+  log "后端健康检查：$BACKEND_HEALTHZ_URL"
   log "前端：http://127.0.0.1:$FRONTEND_PORT"
   log "日志：$LOG_DIR"
   if ! truthy "${AICHECK_DEV_NO_FOLLOW:-false}"; then

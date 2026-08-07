@@ -157,12 +157,13 @@ Without `AICHECK_DATABASE_URL`, `AICHECK_MINIO_ENDPOINT`, or `AICHECK_TASK_DISPA
 Set `AICHECK_BOOTSTRAP_LOCAL_ROLES=true` to inject the five PBKDF2 role accounts into the in-memory repository for local login checks without PostgreSQL.
 With `AICHECK_STRICT_PRODUCTION=false`, security sessions use the existing in-memory fallback and local login does not require Redis. Strict production must keep `AICHECK_STRICT_PRODUCTION=true`; in that mode Redis is mandatory and the API deliberately refuses to start or serve security operations when the security backend is unavailable.
 
-Frontend live-backend mode:
+Unified local stack (FastAPI on `:8000` + Vite live proxy on `:4000`):
 
 ```bash
-cd frontend
-pnpm vite --mode live
+AICHECK_DEV_NO_FOLLOW=true zsh scripts/start-local-dev.zsh
 ```
+
+The script starts the API first, waits for `http://127.0.0.1:8000/api/healthz`, then starts the frontend. `pnpm run dev:live` alone only starts Vite and will refuse to boot unless `:8000/api/healthz` is already healthy.
 
 The Vite proxy forwards `/api/*` to FastAPI after stripping `/api`, and forwards `/mock/*` unchanged for login compatibility.
 
