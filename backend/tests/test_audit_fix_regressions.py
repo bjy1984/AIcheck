@@ -244,6 +244,30 @@ def test_review_run_clause_snapshot_matches_its_node() -> None:
         assert payload["packageId"] == f"CLAUSE-PKG-R{node_id:02d}"
 
 
+def test_override_detection_covers_every_ai_verdict() -> None:
+    """AI 建议用展示词、人工结论用业务词；不先归一就只有同名的「证据不足」能被判为推翻，
+    最典型的「AI 判不符合 / 人工判满足要求」反而会记成未推翻。"""
+    from apps.api.routes import AI_SUGGESTION_TO_OPINION_RESULT, REVIEW_OPINION_NODE_STATUS
+    from libs.review_orchestrator.execution import SUGGESTION_RESULT_LABELS
+
+    def overridden(ai_label: str, human_result: str) -> bool:
+        equivalent = AI_SUGGESTION_TO_OPINION_RESULT.get(ai_label, ai_label)
+        return bool(equivalent and equivalent in REVIEW_OPINION_NODE_STATUS and equivalent != human_result)
+
+    assert overridden("建议不符合", "满足要求") is True
+    assert overridden("建议满足要求", "需补正") is True
+    assert overridden("建议不适用", "需补正") is True
+    assert overridden("证据不足", "不适用") is True
+    # 一致时不算推翻
+    assert overridden("建议不符合", "需补正") is False
+    assert overridden("建议满足要求", "满足要求") is False
+    # 无法映射的建议（需专业判断/执行故障）不主张推翻
+    assert overridden("需专业判断", "需补正") is False
+
+    mappable = [v for v in SUGGESTION_RESULT_LABELS.values() if v in AI_SUGGESTION_TO_OPINION_RESULT]
+    assert len(mappable) >= 4, "多数 AI 结论应能映射到人工结论词"
+
+
 def test_field_correction_reaches_ocr_reading_tools() -> None:
     """字段级修正必须穿透到读 OCR 的确定性工具。
 

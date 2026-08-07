@@ -3611,8 +3611,10 @@ const handleAdoptAiSuggestion = async (suggestionId: string) => {
   actionLoading.value = true
   try {
     const aiResult = latestAiRun.value.suggestion.result
-    // AI 建议结论 → 人工结论预填。认不出的建议（需专业判断/执行故障等）不得回退成「满足要求」，
-    // 预填为「证据不足」强制人工改选（issue #14）。
+    // AI 建议结论 → 人工结论预填，与后端 AI_SUGGESTION_TO_OPINION_RESULT 保持同一口径。
+    // 映射不到的建议（需专业判断 / 执行故障待重试）不预填任何值：后端会置
+    // requiresResultSelection，由监检人员自己选。切勿兜底成某个具体结论——
+    //「需专业判断」意为证据充分但需专业人员定夺，兜底成「证据不足」语义正好相反。
     const AI_RESULT_TO_OPINION: Record<string, ReviewOpinion['result']> = {
       建议满足要求: '满足要求',
       满足要求: '满足要求',
@@ -3622,7 +3624,7 @@ const handleAdoptAiSuggestion = async (suggestionId: string) => {
       不适用: '不适用',
       证据不足: '证据不足'
     }
-    const normalizedResult: ReviewOpinion['result'] = AI_RESULT_TO_OPINION[aiResult] ?? '证据不足'
+    const normalizedResult = AI_RESULT_TO_OPINION[aiResult]
     const res = await adoptAiSuggestionApi(
       activeProjectId.value,
       activeNodeId.value,

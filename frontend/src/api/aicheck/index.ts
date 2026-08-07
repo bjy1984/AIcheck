@@ -3286,7 +3286,8 @@ export const adoptAiSuggestionApi = (
   nodeId: number,
   suggestionId: string,
   payload: {
-    result: ReviewOpinion['result']
+    // 省略时由后端按 AI 建议预填；映射不到的建议会置 requiresResultSelection，交人工选择。
+    result?: ReviewOpinion['result']
     opinion: string
     reason: string
     evidenceLinkIds?: string[]

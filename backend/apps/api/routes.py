@@ -12052,6 +12052,13 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             if latest_ai_run
             else None
         )
+        # AI 建议用展示词（建议不符合…），人工结论用业务词（需补正…）；先归一到同一套
+        # 词汇再比较，否则只有恰好同名的「证据不足」才可能被判定为推翻。
+        ai_equivalent_result = (
+            AI_SUGGESTION_TO_OPINION_RESULT.get(ai_suggested_result, ai_suggested_result)
+            if ai_suggested_result
+            else None
+        )
         opinion = {
             "id": f"OPN-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
@@ -12069,9 +12076,9 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             "aiRunId": latest_ai_run.get("id") if latest_ai_run else None,
             "aiSuggestedResult": ai_suggested_result,
             "overriddenFromAi": bool(
-                ai_suggested_result
-                and ai_suggested_result in REVIEW_OPINION_NODE_STATUS
-                and ai_suggested_result != result
+                ai_equivalent_result
+                and ai_equivalent_result in REVIEW_OPINION_NODE_STATUS
+                and ai_equivalent_result != result
             ),
             "createdAt": server_time(),
         }
