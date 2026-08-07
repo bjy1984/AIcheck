@@ -244,6 +244,23 @@ def test_review_run_clause_snapshot_matches_its_node() -> None:
         assert payload["packageId"] == f"CLAUSE-PKG-R{node_id:02d}"
 
 
+def test_role_action_matrix_declares_report_view_only_for_intended_roles() -> None:
+    """角色动作表是权限意图的声明；读端点当前不校验它，二者的差距需要显式可见。
+
+    inspection/owner/admin 声明了 report:view；contractor/ndt 没有。
+    若未来给 contractor 加上 report:view，应是有意为之而非顺手添加。
+    """
+    from libs.business_pack import load_business_pack
+
+    pack = load_business_pack("engineering_inspection_v1")
+    actions = {r["code"]: set(r.get("actions") or []) for r in pack["roles"]}
+
+    assert "report:view" in actions["inspection"]
+    assert "report:view" in actions["owner"]
+    assert "report:view" not in actions["contractor"], "施工方不应声明报告查看权"
+    assert "report:view" not in actions["ndt"], "无损检测机构不应声明报告查看权"
+
+
 def test_suggestion_result_labels_cover_all_aggregate_values() -> None:
     for value in ("passed", "failed", "evidence_insufficient", "not_applicable", "human_review_required", "execution_error"):
         assert value in SUGGESTION_RESULT_LABELS
