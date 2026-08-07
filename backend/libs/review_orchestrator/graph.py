@@ -59,8 +59,11 @@ def execute_review_graph(
             },
             config={"configurable": {"thread_id": review_run["reviewRunId"]}},
         )
+    # 节点返回的 state["context"] 通常就是传入的同一个对象；先取副本再清空，
+    # 否则 clear() 会把待回写的数据一并抹掉，调用方拿到空 context。
+    final_context = dict(output_state.get("context") or {})
     context.clear()
-    context.update(output_state.get("context") or {})
+    context.update(final_context)
     return {
         "runner": "langgraph",
         "available": True,

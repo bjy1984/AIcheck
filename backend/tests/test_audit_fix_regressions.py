@@ -161,6 +161,35 @@ def test_review_opinion_records_audit_and_ai_linkage() -> None:
     assert audit is not None
 
 
+def test_graph_execution_preserves_context_for_callers() -> None:
+    """LangGraph 节点回写的 state["context"] 常与传入对象同一；
+    execute_review_graph 结尾若直接 clear()+update() 会把数据抹掉，
+    导致图执行后 ruleResults / evidenceLinks / promptShape 全部丢失。"""
+    from libs.review_orchestrator.graph import execute_review_graph
+
+    context: dict = {}
+    steps = [{"key": "step_one"}, {"key": "step_two"}]
+
+    def run_step(review_run, node_key, ctx):
+        ctx.setdefault("visited", []).append(node_key)
+        if node_key == "step_two":
+            ctx["ruleResults"] = [{"result": "evidence_insufficient"}]
+            ctx["evidenceLinks"] = [{"id": "EV-1"}]
+        return {"nodeKey": node_key}
+
+    execute_review_graph(
+        {"reviewRunId": "RRUN-TEST"},
+        context,
+        steps=steps,
+        run_step=run_step,
+        mark_graph_node=lambda *args, **kwargs: {},
+    )
+
+    assert context.get("visited") == ["step_one", "step_two"]
+    assert context.get("ruleResults") == [{"result": "evidence_insufficient"}]
+    assert context.get("evidenceLinks") == [{"id": "EV-1"}]
+
+
 def test_suggestion_result_labels_cover_all_aggregate_values() -> None:
     for value in ("passed", "failed", "evidence_insufficient", "not_applicable", "human_review_required", "execution_error"):
         assert value in SUGGESTION_RESULT_LABELS
