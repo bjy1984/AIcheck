@@ -3,7 +3,7 @@
 - 基线 commit：`8ec3f56`（main）
 - 审计范围：代码逻辑 + 业务逻辑（按已确认的业务口径基线，见 [00-baseline.md](00-baseline.md)）
 - 方式：只读审计；关键结论均以实际运行代码验证，验证脚本随报告附上
-- 分报告：[00 基线](00-baseline.md) · [01 架构](01-architecture.md) · [02 编排与规则](02-orchestration-rules.md) · [03 数据与检索](03-data-retrieval.md) · [04 安全与角色](04-security-roles.md) · [05 前端](05-frontend.md)
+- 分报告：[00 基线](00-baseline.md) · [01 架构](01-architecture.md) · [02 编排与规则](02-orchestration-rules.md) · [03 数据与检索](03-data-retrieval.md) · [04 安全与角色](04-security-roles.md) · [05 前端](05-frontend.md) · [06 第二轮横切面](06-second-round.md)
 
 ## 执行摘要
 
@@ -48,6 +48,17 @@ raw_vault 哈希链、条款冻结快照、幂等与乐观锁、上传清洗都�
 | F-3 | P2 | e2e 仅 1 条 smoke，主审查链路无覆盖 | frontend/e2e | [05](05-frontend.md) |
 | S-4 | P3 | auth 关闭时审计日志身份可伪造等 | routes.py | [04](04-security-roles.md) |
 | F-4 | P3 | 400ms 轮询与后端 0.4s 节流共振 | AIReviewB | [05](05-frontend.md) |
+
+## 第二轮发现（横切面探查，2026-08-07 补充）
+
+| # | 级别 | 发现 | 位置 | 报告 |
+|---|---|---|---|---|
+| N-1 | **P0** | 人工结论「不适用」把节点置为「需补正」，制造错误整改指令 | routes.py:12039 | [06](06-second-round.md) |
+| N-2 | P1 | AI 建议主结论恒为「需人工确认」，确定性判定不上卡片 | execution.py:1876 | [06](06-second-round.md) |
+| N-3 | P2 | 置信度全硬编码（0.82/0.55/0.5/0.68），伪指标 | execution.py:3226 等 4 处 | [06](06-second-round.md) |
+| N-4 | P2 | 节点状态机无转移校验，15 处 set_node_status 各自为政 | repository.py:791 | [06](06-second-round.md) |
+| N-5 | P2 | 多租户重启后非 configured 租户数据不可见 | repository.py:3088 | [06](06-second-round.md) |
+| N-6 | P3 | If-Match 缺省即放行，乐观锁依赖客户端自觉 | routes.py:2243 | [06](06-second-round.md) |
 
 ## 建议修复顺序
 
