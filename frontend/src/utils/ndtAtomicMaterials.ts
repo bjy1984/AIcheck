@@ -164,7 +164,7 @@ export const ndtAtomicMaterialByCode = (code?: string | null) =>
   code ? materialsByCode.get(code) : undefined
 
 export const ndtFileApprovalStatus = (
-  file: Pick<DocumentAsset, 'bindings'>
+  file: Pick<DocumentAsset, 'bindings' | 'fileStatus'>
 ): NdtFileApprovalStatus => {
   const bindings = file.bindings || []
   if (bindings.some((binding) => binding.bindingStatus === '需补正')) return '需补正'
@@ -172,5 +172,6 @@ export const ndtFileApprovalStatus = (
     return '已通过'
   }
   if (bindings.some((binding) => binding.bindingStatus === '已提交')) return '待审查'
+  if (file.fileStatus === '已提交审批') return '待审查'
   return '草稿'
 }

@@ -9489,6 +9489,54 @@ def test_ndt_atomic_document_rules_can_be_replaced_before_submission() -> None:
     )
 
 
+def test_ndt_atomic_document_can_submit_without_business_rule_bindings() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
+    document = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "射线检测报告-无规则.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_report",
+                "materialTypeName": "无损检测报告",
+                "nodeIds": [40, 41, 42],
+            }
+        ]
+    )[0]
+    binding_id_set = set(document["bindingIds"])
+    repo.state["bindings"] = [
+        item for item in repo.state["bindings"] if item.get("id") not in binding_id_set
+    ]
+    persisted = repo.find_one("documents", document["documentId"])
+    persisted["nodeId"] = 40
+
+    result = assert_ok(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": []},
+            headers=headers,
+        )
+    )
+    assert result["documentId"] == document["documentId"]
+    assert result["bindingIds"] == []
+    assert result["nodeIds"] == [40]
+    assert result["nextStatus"] == "待审查"
+    assert persisted["fileStatus"] == "已提交审批"
+    assert len(result["createdTodos"]) == 1
+    assert result["createdTodos"][0]["nodeId"] == 40
+
+    assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": document["documentId"], "bindingIds": []},
+            headers=headers,
+        ),
+        "CONFLICT",
+    )
+
+
 def test_upload_and_ndt_validation_errors_match_contract() -> None:
     project_id = "P-2026-HDCP-001"
     project = assert_ok(client.get(f"/projects/{project_id}"))["project"]

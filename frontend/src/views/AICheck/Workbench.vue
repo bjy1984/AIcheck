@@ -2916,7 +2916,7 @@ const handleSubmitNdtAtomicMaterial = async (payload: {
     ElMessage.success('该文件已单独提交审批')
     await Promise.all([loadProjectBundle(), loadSubmissionHistory()])
   } catch (error) {
-    showNdtSubmitError('单文件提交审批失败，请确认适用业务规则和文件状态。', error)
+    showNdtSubmitError('单文件提交审批失败，请确认文件仍处于草稿或需补正状态。', error)
   } finally {
     actionLoading.value = false
   }

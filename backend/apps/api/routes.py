@@ -5526,7 +5526,7 @@ def build_inspection_submitted_document_rows(
             if submission_type == "project":
                 if document.get("poolSubmissionStatus") != "已提交":
                     continue
-            elif not document_bindings:
+            elif not document_bindings and submission_type != "ndt-material":
                 continue
             if submission_type == "ndt-material" and document.get("fileStatus") != "已提交审批":
                 continue
@@ -13904,6 +13904,8 @@ def submit_ndt_atomic_material(
     def produce():
         if repo.sync_postgres is not None or repo.postgres_dsn or repo.sqlite_enabled or repo.sqlite_path:
             load_state({"documents", "versions", "bindings", "tree_nodes"})
+        if len(set(requested_binding_ids)) != len(requested_binding_ids):
+            return fail(errors.VALIDATION_ERROR, request, message="适用业务规则列表存在重复项。")
         requested_binding_id_set = set(requested_binding_ids)
         requested_bindings = [
             item for item in repo.state["bindings"] if item.get("id") in requested_binding_id_set
@@ -13926,37 +13928,61 @@ def submit_ndt_atomic_material(
             or str(document.get("materialTypeCode") or "").strip() in {"", "generic_review_material"}
         ):
             return fail(errors.VALIDATION_ERROR, request, message="该文件不属于无损检测资料。")
-        if not requested_binding_ids or len(set(requested_binding_ids)) != len(requested_binding_ids):
-            return fail(errors.VALIDATION_ERROR, request, message="请选择该文件待提交的适用业务规则。")
-        if len(requested_bindings) != len(requested_binding_ids):
-            return fail(errors.VALIDATION_ERROR, request, message="存在无效的适用业务规则。")
         current_bindings = document_bindings(project_id, document_id)
         current_binding_ids = {str(item.get("id") or "") for item in current_bindings}
-        if set(requested_binding_ids) != current_binding_ids:
-            return fail(
-                errors.VALIDATION_ERROR,
-                request,
-                message="单文件提交必须包含该文件当前的全部适用业务规则。",
-                data={"expectedBindingIds": sorted(current_binding_ids)},
-            )
-        invalid_bindings = [
-            item["id"]
-            for item in requested_bindings
-            if item.get("projectId") != project_id
-            or item.get("documentId") != document_id
-            or item.get("documentVersionId") != document.get("currentVersionId")
-            or int(item.get("nodeId") or 0) not in NDT_ATOMIC_NODE_IDS
-            or item.get("bindingStatus") not in {"草稿挂载", "需补正"}
-        ]
-        if invalid_bindings:
-            return fail(
-                errors.VALIDATION_ERROR,
-                request,
-                message="仅可逐文件提交其草稿或需补正状态下的适用业务规则。",
-                data={"invalidBindingIds": invalid_bindings},
-            )
+        if current_binding_ids:
+            if not requested_binding_ids:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message="该文件已关联业务规则，提交时需包含全部适用业务规则。",
+                    data={"expectedBindingIds": sorted(current_binding_ids)},
+                )
+            if len(requested_bindings) != len(requested_binding_ids):
+                return fail(errors.VALIDATION_ERROR, request, message="存在无效的适用业务规则。")
+            if set(requested_binding_ids) != current_binding_ids:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message="单文件提交必须包含该文件当前的全部适用业务规则。",
+                    data={"expectedBindingIds": sorted(current_binding_ids)},
+                )
+            invalid_bindings = [
+                item["id"]
+                for item in requested_bindings
+                if item.get("projectId") != project_id
+                or item.get("documentId") != document_id
+                or item.get("documentVersionId") != document.get("currentVersionId")
+                or int(item.get("nodeId") or 0) not in NDT_ATOMIC_NODE_IDS
+                or item.get("bindingStatus") not in {"草稿挂载", "需补正"}
+            ]
+            if invalid_bindings:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message="仅可逐文件提交其草稿或需补正状态下的适用业务规则。",
+                    data={"invalidBindingIds": invalid_bindings},
+                )
+        else:
+            if requested_binding_ids:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message="该文件尚未关联业务规则，请勿传入 bindingIds。",
+                )
+            if document.get("fileStatus") == "已提交审批":
+                return fail(errors.CONFLICT, request, message="该文件已提交审批，请勿重复提交。")
 
         node_ids = sorted({int(item["nodeId"]) for item in requested_bindings})
+        document_node_id = int(document.get("nodeId") or 0)
+        todo_node_id = (
+            node_ids[0]
+            if node_ids
+            else document_node_id
+            if document_node_id in NDT_ATOMIC_NODE_IDS
+            else 40
+        )
+        todo_node_ids = node_ids or [todo_node_id]
         rectification = pending_rectification_for_bindings(project_id, requested_binding_ids)
         submitted_at = server_time()
         submission_id = f"NDT-MAT-SUB-{uuid4().hex[:8].upper()}"
@@ -13989,8 +14015,8 @@ def submit_ndt_atomic_material(
             "id": f"TODO-{uuid4().hex[:8].upper()}",
             "title": f"无损检测资料待审查：{document.get('fileName')}",
             "projectId": project_id,
-            "nodeId": node_ids[0],
-            "nodeIds": node_ids,
+            "nodeId": todo_node_id,
+            "nodeIds": todo_node_ids,
             "targetType": "submission",
             "targetId": submission_id,
             "status": "待处理",
@@ -14005,7 +14031,7 @@ def submit_ndt_atomic_material(
             "snapshotId": snapshot_id,
             "projectId": project_id,
             "submissionType": "ndt-material",
-            "nodeIds": node_ids,
+            "nodeIds": todo_node_ids,
             "bindingIds": requested_binding_ids,
             "documentIds": [document_id],
             "materialTypeCode": document.get("materialTypeCode"),
@@ -14029,7 +14055,7 @@ def submit_ndt_atomic_material(
             submission_id=submission_id,
             document_id=document_id,
             binding_ids=requested_binding_ids,
-            node_ids=node_ids,
+            node_ids=todo_node_ids,
             todo_ids=[todo["id"]],
             rectification_id=str(rectification.get("id")) if rectification else None,
         )
@@ -14039,7 +14065,7 @@ def submit_ndt_atomic_material(
                 "snapshotId": snapshot_id,
                 "documentId": document_id,
                 "bindingIds": requested_binding_ids,
-                "nodeIds": node_ids,
+                "nodeIds": todo_node_ids,
                 "nextStatus": "待审查",
                 "createdTodos": [todo],
             },

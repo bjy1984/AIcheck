@@ -190,17 +190,17 @@ const atomicFileRows = computed(() =>
     const editableBindings = bindings.filter((binding) =>
       ['草稿挂载', '需补正'].includes(binding.bindingStatus)
     )
-    const canEdit = bindings.every((binding) =>
-      ['草稿挂载', '需补正'].includes(binding.bindingStatus)
-    )
+    const approvalStatus = ndtFileApprovalStatus(file)
+    const canEdit = approvalStatus === '草稿' || approvalStatus === '需补正'
     return {
       ...file,
       materialTypeDisplayName: file.materialTypeName || file.materialTypeCode || '未分类资料',
       nodeIds: [...new Set(bindings.map((binding) => binding.nodeId))].sort((a, b) => a - b),
       businessRuleNames: ndtBusinessRuleNames(bindings.map((binding) => binding.nodeId)),
-      approvalStatus: ndtFileApprovalStatus(file),
+      approvalStatus,
       editableBindingIds: canEdit ? editableBindings.map((binding) => binding.id) : [],
-      canEdit
+      canEdit,
+      canSubmit: canEdit
     }
   })
 )
@@ -305,7 +305,7 @@ const saveBindingAdjustment = () => {
 }
 
 const submitAtomicFile = (row: (typeof atomicFileRows.value)[number]) => {
-  if (!row.editableBindingIds.length) return
+  if (!row.canSubmit) return
   emit('submitMaterial', { documentId: row.id, bindingIds: row.editableBindingIds })
 }
 
@@ -521,8 +521,8 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           <div>
             <strong>已上传资料</strong>
             <p
-              >请逐个核对资料类型、适用业务规则和 OCR
-              状态，再分别提交审批；无需等待其他资料上传完成。</p
+              >请逐个核对资料类型和 OCR
+              状态后分别提交审批；业务规则可关联也可不关联，无需等待其他资料上传完成。</p
             >
           </div>
           <div class="ndt-actions">
@@ -586,7 +586,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
               <ElButton
                 link
                 type="primary"
-                :disabled="!row.editableBindingIds.length"
+                :disabled="!row.canSubmit"
                 :loading="loading"
                 @click="submitAtomicFile(row)"
               >

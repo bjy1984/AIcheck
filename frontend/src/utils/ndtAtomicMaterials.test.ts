@@ -51,10 +51,13 @@ const binding = (bindingStatus: NodeFileBinding['bindingStatus']): NodeFileBindi
   actions: []
 })
 
-const fileWithBindings = (bindings: NodeFileBinding[]) =>
-  ({ bindings }) as Pick<DocumentAsset, 'bindings'>
+const fileWithBindings = (
+  bindings: NodeFileBinding[],
+  fileStatus: DocumentAsset['fileStatus'] = '已上传'
+) => ({ bindings, fileStatus }) as Pick<DocumentAsset, 'bindings' | 'fileStatus'>
 
 assert.equal(ndtFileApprovalStatus(fileWithBindings([])), '草稿')
+assert.equal(ndtFileApprovalStatus(fileWithBindings([], '已提交审批')), '待审查')
 assert.equal(ndtFileApprovalStatus(fileWithBindings([binding('草稿挂载')])), '草稿')
 assert.equal(ndtFileApprovalStatus(fileWithBindings([binding('已提交')])), '待审查')
 assert.equal(
