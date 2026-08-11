@@ -29,7 +29,7 @@ import type {
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
-import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
+import { documentBusinessStatus, documentPipelineStatus } from '@/utils/documentPipelineStatus'
 import { canRetryDocumentUpload, canSubmitNdtDocumentUpload } from '@/utils/documentUploadActions'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import {
@@ -256,7 +256,7 @@ const ndtAssetRows = computed(() => {
         documentNo: file.currentVersionId,
         standardCode: file.embeddingModel || '-',
         operator: file.uploaderName || '-',
-        status: documentPipelineStatus(file),
+        status: documentBusinessStatus(file),
         updatedAt: file.updatedAt,
         detailId: ''
       }))

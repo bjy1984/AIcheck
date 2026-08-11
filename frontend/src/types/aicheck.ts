@@ -263,6 +263,8 @@ export type NodeFileBinding = {
   sourceOrgName: string
   bindingStatus: '草稿挂载' | '已提交' | '需补正' | '已通过'
   boundAt: string
+  /** 文件本体是否已上传成功。false 表示只建了记录、内容未落盘，不能提交。 */
+  bodyUploaded?: boolean
   actions: ActionCode[]
 }
 

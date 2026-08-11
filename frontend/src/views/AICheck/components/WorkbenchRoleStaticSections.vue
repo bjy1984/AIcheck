@@ -35,7 +35,7 @@ import type {
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
-import { documentPipelineStatus, type DocumentUploadStatus } from '@/utils/documentPipelineStatus'
+import { documentBusinessStatus, type DocumentBusinessStatus } from '@/utils/documentPipelineStatus'
 import { canRetryDocumentUpload, canSubmitDocumentUpload } from '@/utils/documentUploadActions'
 
 type ReviewChainStep = {
@@ -67,7 +67,7 @@ type ContractorFileRow = {
   relationNode: string
   feedback: string
   ocr: string
-  processingStatus: DocumentUploadStatus
+  processingStatus: DocumentBusinessStatus
   uploader: string
   updatedAt: string
 }
@@ -360,7 +360,7 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       relationNode: getRelationNodeText(file.bindings),
       feedback: binding?.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
       ocr: file.currentOcrStatus,
-      processingStatus: documentPipelineStatus(file),
+      processingStatus: documentBusinessStatus(file),
       uploader: file.uploaderName,
       updatedAt: file.updatedAt
     }

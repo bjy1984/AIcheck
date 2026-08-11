@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
@@ -246,7 +247,8 @@ def recognize_document_seals(
             }
             item["matchesExpectedIssuer"] = issuer_matches_seal(expected_issuer, item)
             seals.append(item)
-    return {
+    detection = seal_detection_capability()
+    payload = {
         "toolCallId": runtime_tool_call_id(),
         "toolName": "recognize_document_seals",
         "status": "succeeded",
@@ -254,7 +256,31 @@ def recognize_document_seals(
         "expectedIssuer": expected_issuer or None,
         "matchedIssuerSealCount": sum(1 for item in seals if item.get("matchesExpectedIssuer")),
         "seals": seals[:20],
+        "detectionEnabled": detection["enabled"],
+        "detectionPipelines": detection["pipelines"],
     }
+    # 印章是监检判定的关键证据。检测管线全部关闭时找不到印章，说明的是「没查」而不是
+    # 「没有」，必须让下游能区分——否则会把未检测直接当成缺章判不符合。
+    if not detection["enabled"] and not seals:
+        payload["status"] = "capability_disabled"
+        payload["sealCount"] = None
+        payload["warnings"] = [
+            "seal_detection_disabled:未启用任何印章检测管线，本结果不能作为「无印章」的依据。"
+        ]
+    return payload
+
+
+def seal_detection_capability() -> dict[str, Any]:
+    """当前启用了哪些印章检测管线。"""
+    pipelines = {
+        "paddlex": env_flag("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE"),
+        "agentdesign": env_flag("AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR"),
+    }
+    return {"enabled": any(pipelines.values()), "pipelines": pipelines}
+
+
+def env_flag(name: str) -> bool:
+    return os.getenv(name, "false").strip().lower() == "true"
 
 
 def recognize_signatures_and_seals(
@@ -282,12 +308,16 @@ def recognize_signatures_and_seals(
     return {
         "toolCallId": runtime_tool_call_id(),
         "toolName": "recognize_signatures_and_seals",
-        "status": "succeeded",
+        # 印章检测未启用时向上透传，避免把「没查印章」当成「没有印章」。
+        "status": seal_result["status"],
         "signatureCount": len(signatures),
         "sealCount": seal_result["sealCount"],
         "matchedIssuerSealCount": seal_result["matchedIssuerSealCount"],
         "signatures": signatures[:40],
         "seals": seal_result["seals"],
+        "detectionEnabled": seal_result["detectionEnabled"],
+        "detectionPipelines": seal_result["detectionPipelines"],
+        **({"warnings": seal_result["warnings"]} if seal_result.get("warnings") else {}),
     }
 
 
