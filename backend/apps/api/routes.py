@@ -7644,6 +7644,7 @@ def submit_node_package(
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids or None)
         if guard:
             return guard
+        submission_role = effective_role_for_request(request, x_role)[0]
         submission_id = f"SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{uuid4().hex[:8].upper()}"
 
@@ -7653,11 +7654,17 @@ def submit_node_package(
                 return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
             if not document_ids:
                 return fail(errors.EMPTY_PROJECT_PACKAGE, request)
-            incomplete_document_ids = [
-                document_id
-                for document_id in document_ids
-                if not document_upload_pipeline_complete(repo.find_one("documents", document_id) or {})
-            ]
+            incomplete_document_ids = (
+                [
+                    document_id
+                    for document_id in document_ids
+                    if not document_upload_pipeline_complete(
+                        repo.find_one("documents", document_id) or {}
+                    )
+                ]
+                if submission_role == "contractor"
+                else []
+            )
             if incomplete_document_ids:
                 return fail(
                     errors.VALIDATION_ERROR,
@@ -7755,11 +7762,17 @@ def submit_node_package(
                 if binding.get("id") in binding_ids and binding.get("documentId")
             )
         )
-        incomplete_document_ids = [
-            document_id
-            for document_id in submission_document_ids
-            if not document_upload_pipeline_complete(repo.find_one("documents", document_id) or {})
-        ]
+        incomplete_document_ids = (
+            [
+                document_id
+                for document_id in submission_document_ids
+                if not document_upload_pipeline_complete(
+                    repo.find_one("documents", document_id) or {}
+                )
+            ]
+            if submission_role == "contractor"
+            else []
+        )
         if incomplete_document_ids:
             return fail(
                 errors.VALIDATION_ERROR,
