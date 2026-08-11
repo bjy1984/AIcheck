@@ -56,6 +56,9 @@ MUTATION_HEADER_EXEMPT_URLS = {
     "/api/fde/business-packs/validate-all",
     "/api/knowledge/reindex-preview",
     "/api/knowledge/retrieval-test",
+    # 原始数据完整性校验：只读校验，后端同名路由已在 READ_ONLY_POST_ROUTES 中豁免，
+    # 前端侧此前漏加，导致两份名单口径不一致。
+    "/api/fde/review-runs/${reviewRunId}/raw-vault/verify",
     "/api/rules/versions/${versionId}/${action}-preview",
 }
 PUBLIC_MUTATION_ROUTES = {
@@ -69,6 +72,16 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/auth/change-password"),
 }
 READ_ONLY_POST_ROUTES = {
+    # 外部登记信息检索：用 POST 只为传递结构化查询条件，不写任何状态，
+    # 因此没有幂等键可言（已核对 cnse_routes.py / std_samr_routes.py 均不改 repo.state）。
+    ("POST", "/cnse/organizations/search"),
+    ("POST", "/api/cnse/organizations/search"),
+    ("POST", "/cnse/persons/search"),
+    ("POST", "/api/cnse/persons/search"),
+    ("POST", "/std-samr/standards/search"),
+    ("POST", "/api/std-samr/standards/search"),
+    ("POST", "/std-samr/standards/verify"),
+    ("POST", "/api/std-samr/standards/verify"),
     ("POST", "/business-packs/{pack_id}/validate"),
     ("POST", "/api/business-packs/{pack_id}/validate"),
     ("POST", "/business-packs/validate-all"),
@@ -96,6 +109,8 @@ IDEMPOTENT_DELEGATE_CALLS = {
     "create_admin_project",
     "create_upload_session",
     "fde_replay_review_run",
+    # 监检提交资料转交 submit_node_package 处理，幂等在被委托方实现。
+    "submit_node_package",
     "update_knowledge_source",
 }
 REQUIRED_WORKER_TASKS = {
@@ -2957,7 +2972,9 @@ def role_contract_check(
         if role == "admin":
             expected_path = "/admin/overview"
         elif role == "fde":
-            expected_path = "/fde/projects"
+            # cc2600f 重构治理台后 FDE 落地页改为治理总览；前端路由、登录跳转
+            # (libs/security/auth.py) 和菜单三处一致，此处的期望值当时漏了同步。
+            expected_path = "/fde/dashboard"
         else:
             expected_path = f"/workbench/{role}"
         if paths.get(role) != expected_path:

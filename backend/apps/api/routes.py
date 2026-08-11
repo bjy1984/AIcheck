@@ -11339,6 +11339,11 @@ def create_review_session_message(
             name=f"review-conversation-{execution_entry['executionId']}",
             daemon=True,
         )
+        # 必须在启动线程之前定型响应：后台线程会原地改写同一个 assistant_message
+        # 对象（状态、内容块、执行计数），线程起来后再序列化会读到改到一半的中间态。
+        # 受理响应描述的是「受理那一刻」，最终结果由客户端轮询消息列表获取。
+        accepted_assistant_view = review_message_view(assistant_message)
+        accepted_session_view = review_session_view(session)
         execution_entry["thread"] = worker
         worker.start()
         return ok(
@@ -11346,8 +11351,8 @@ def create_review_session_message(
                 "messageId": user_message["id"],
                 "status": "accepted",
                 "userMessage": review_message_view(user_message),
-                "assistantMessage": review_message_view(assistant_message),
-                "session": review_session_view(session),
+                "assistantMessage": accepted_assistant_view,
+                "session": accepted_session_view,
             },
             request,
         )

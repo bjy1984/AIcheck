@@ -46,3 +46,22 @@ def allow_explicit_test_dev_tokens(monkeypatch):
     security_sessions.reset_for_tests()
     yield
     security_sessions.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def isolate_repository_persistence_backend():
+    """每个用例结束后关掉 repo 上的持久化后端。
+
+    多数用例跑在纯内存态上，只有少数会 configure_sqlite/配置 Postgres 来验证持久化。
+    这些开关挂在全局 repo 单例上，开启后不会自己关闭，于是后续用例会意外走进
+    SQLite 写入路径并因缺少 baseline 而失败——表现为「单跑通过、全量跑失败」，
+    掩盖真实回归。只有部分测试文件自带 setup_function 做重置，这里统一兜底。
+    """
+    from libs.db.repository import repo
+
+    yield
+    repo.sqlite_enabled = False
+    repo.sqlite_path = None
+    repo.postgres_enabled = False
+    repo.sync_postgres = None
+    repo.postgres_dsn = None
