@@ -7726,6 +7726,122 @@ def void_document(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"documentId": document_id})
 
 
+# 资料自动分类原先是硬编码 stub：文件名含「焊工」→ 节点 24，否则一律 16，
+# 置信度恒为 0.82。真实素材下准确率约 21%（14 份里 11 份被归到 16），监检人员
+# 几乎要手工重挂全部资料。业务包的 nodeTemplates.requiredMaterials 里本就写明了
+# 「哪个节点需要哪类资料」，这才是权威依据。
+# 双向覆盖率之和低于此值视为噪声——业务包里没有对应类型时（比如「工艺图纸目录」）
+# 硬猜会把资料挂到错误节点上，而「未分类」只是让人工来定。
+MATERIAL_NAME_MIN_COVERAGE = 0.9
+
+
+def material_type_node_index(project_id: str) -> dict[str, list[tuple[int, str]]]:
+    """资料类型码 → [(节点号, 必传类型)]，取自业务包的节点资料要求。"""
+    index: dict[str, list[tuple[int, str]]] = {}
+    pack = business_pack_for_project(repo.require_project(project_id))
+    for node in pack.get("nodeTemplates") or []:
+        try:
+            node_id = int(node.get("nodeId"))
+        except (TypeError, ValueError):
+            continue
+        for requirement in node.get("requiredMaterials") or []:
+            code = str(requirement.get("materialTypeCode") or "").strip()
+            if code:
+                index.setdefault(code, []).append((node_id, str(requirement.get("requiredType") or "")))
+    return index
+
+
+def material_name_overlap(file_stem: str, material_name: str) -> int:
+    """文件名主干与资料类型名称的最长公共连续片段长度。
+
+    实际文件名很少与业务包里的正式名称字面相等：「焊工证.pdf」对「焊工资格证」、
+    「射线检测报告.pdf」对「无损检测报告」、「特种设备安装改造维修许可证.pdf」对
+    「施工单位安装许可证」。用最长公共子串衡量重合度，比整名包含实用得多。
+    """
+    if not file_stem or not material_name:
+        return 0
+    best = 0
+    for start in range(len(material_name)):
+        for end in range(len(material_name), start + best, -1):
+            fragment = material_name[start:end]
+            if fragment in file_stem:
+                best = max(best, len(fragment))
+                break
+    return best
+
+
+def material_type_code_from_file_name(project_id: str, file_name: str) -> str:
+    """按业务包里的资料类型名称匹配文件名，取重合度最高的一个。
+
+    主判据是「类型名称有多少字出现在文件名里」——最长公共子串会在「许可证」这类
+    共同后缀上打平（设计单位许可证 / 制造单位许可证 / 施工单位安装许可证），
+    字符覆盖率能区分开。同分时用最长公共子串、再用较短名称（更具体）打破平局。
+
+    覆盖率低于阈值就不猜：猜错比不猜更糟——资料会被挂到错误节点上，
+    而「未分类」只是让人工来定。
+    """
+    stem = str(file_name or "").rsplit(".", 1)[0].strip()
+    if not stem:
+        return ""
+    pack = business_pack_for_project(repo.require_project(project_id))
+    stem_characters = set(stem)
+    best_code = ""
+    best_key: tuple[float, int, int] = (0.0, 0, 0)
+    for item in pack.get("materialTypes") or []:
+        name = str(item.get("name") or "").strip()
+        code = str(item.get("code") or "").strip()
+        if not name or not code:
+            continue
+        name_characters = set(name)
+        # 双向覆盖：光看「类型名有多少字在文件名里」会偏向短名称——
+        # 「特种设备安装改造维修许可证」对「设计单位许可证」(7字) 的比值高于对
+        # 「施工单位安装许可证」(9字)，尽管后者才是对的（它含「安装」）。
+        # 加上反向覆盖后，文件名里被解释掉的字越多得分越高，正确项胜出。
+        name_coverage = sum(1 for character in name_characters if character in stem) / len(name_characters)
+        stem_coverage = sum(1 for character in stem_characters if character in name) / len(stem_characters)
+        key = (name_coverage + stem_coverage, material_name_overlap(stem, name), -len(name))
+        if key > best_key:
+            best_code, best_key = code, key
+    return best_code if best_key[0] >= MATERIAL_NAME_MIN_COVERAGE else ""
+
+
+def classify_document_to_nodes(project_id: str, document: dict[str, Any]) -> dict[str, Any]:
+    """给一份资料推荐归属节点。
+
+    置信度反映证据强度，不再是恒定值：
+    - 上传时已声明资料类型码 → 0.95（这是调用方的明示，不是猜的）
+    - 由文件名匹配出类型名称 → 0.7
+    - 两者都没有                → 0.2，且不给节点建议，交人工判断
+    """
+    file_name = str(document.get("fileName") or "")
+    declared_code = str(document.get("materialTypeCode") or "").strip()
+    # generic_review_material 是落库默认值，不算调用方的明示声明
+    if declared_code == "generic_review_material":
+        declared_code = ""
+    code, confidence, basis = declared_code, 0.95, "declared_material_type"
+    if not code:
+        code = material_type_code_from_file_name(project_id, file_name)
+        confidence, basis = (0.7, "file_name_match") if code else (0.2, "unclassified")
+
+    node_ids: list[int] = []
+    if code:
+        entries = material_type_node_index(project_id).get(code) or []
+        # 「必传」的节点优先；同一类资料在多个节点出现时全部给出，由人工选定
+        required_nodes = [node_id for node_id, required_type in entries if required_type == "必传"]
+        node_ids = sorted(set(required_nodes or [node_id for node_id, _ in entries]))
+        if not node_ids:
+            confidence, basis = 0.2, "material_type_not_mapped_to_node"
+
+    return {
+        "documentId": document.get("id"),
+        "fileName": file_name,
+        "suggestedNodeIds": node_ids,
+        "materialTypeCode": code or None,
+        "confidence": confidence,
+        "basis": basis,
+    }
+
+
 @router.post("/projects/{project_id}/documents/batch-classify")
 def batch_classify_documents(
     request: Request,
@@ -7739,7 +7855,7 @@ def batch_classify_documents(
         if guard:
             return guard
         suggestions = [
-            {"documentId": doc["id"], "fileName": doc["fileName"], "suggestedNodeIds": [24 if "焊工" in doc["fileName"] else 16], "confidence": 0.82}
+            classify_document_to_nodes(project_id, doc)
             for doc in repo.project_documents(project_id)
         ]
         audit_id = repo.add_audit("批量资料智能分类", "Document", project_id)

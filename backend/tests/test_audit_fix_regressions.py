@@ -1461,3 +1461,73 @@ def test_binding_honors_per_item_node_id() -> None:
         assert bound_nodes == [node_id], (
             f"声明 nodeId={node_id} 的资料应且只应挂到该节点，实际 {bound_nodes}"
         )
+
+
+# ---- M-1：资料自动分类准确率约 21% ----
+
+
+def test_m1_classification_uses_business_pack_instead_of_hardcoded_stub() -> None:
+    """分类必须来自业务包的节点资料要求，而不是「文件名含焊工→24，否则16」。
+
+    原 stub 在真实素材下准确率约 21%（14 份里 11 份被归到节点 16），置信度恒为 0.82。
+    按业务规模（单项目几千页），监检人员实际要手工重挂几乎全部资料。
+    """
+    from apps.api.routes import classify_document_to_nodes
+
+    project_id = "P-2026-HDCP-001"
+    # 审计当时用的真实素材文件名与其应归节点
+    cases = [
+        ("射线检测报告.pdf", 40),
+        ("焊接工艺评定报告.pdf", 25),
+        ("特种设备制造许可证-河北广浩.pdf", 12),
+        ("特种设备安装改造维修许可证.pdf", 2),
+        ("压力管道强度计算书.png", 6),
+        ("产品质量证明part1.pdf", 16),
+        ("焊工证.pdf", 24),
+    ]
+    for file_name, expected_node in cases:
+        result = classify_document_to_nodes(project_id, {"id": "D", "fileName": file_name})
+        assert expected_node in result["suggestedNodeIds"], (
+            f"{file_name} 应能归到节点 {expected_node}，实际 {result['suggestedNodeIds']}"
+        )
+        assert result["confidence"] > 0.2
+
+    # 认不出来时不许硬猜——猜错会把资料挂到错误节点，未分类只是让人工来定
+    unknown = classify_document_to_nodes(project_id, {"id": "D", "fileName": "随手拍的现场照片.jpg"})
+    assert unknown["suggestedNodeIds"] == []
+    assert unknown["confidence"] == 0.2
+    assert unknown["basis"] == "unclassified"
+
+    # 上传时已声明类型码是明示，不是猜的，置信度应更高
+    declared = classify_document_to_nodes(
+        project_id, {"id": "D", "fileName": "随便什么名字.pdf", "materialTypeCode": "welder_certificate"}
+    )
+    assert 24 in declared["suggestedNodeIds"]
+    assert declared["confidence"] == 0.95
+    assert declared["basis"] == "declared_material_type"
+
+    # 落库默认值不算明示声明
+    generic = classify_document_to_nodes(
+        project_id, {"id": "D", "fileName": "焊工证.pdf", "materialTypeCode": "generic_review_material"}
+    )
+    assert generic["basis"] == "file_name_match"
+
+
+def test_m1_batch_classify_endpoint_no_longer_returns_constant_confidence() -> None:
+    headers = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    response = client.post(
+        "/api/projects/P-2026-HDCP-001/documents/batch-classify",
+        headers={**headers, "Idempotency-Key": "m1-batch"},
+        json={},
+    )
+    assert response.status_code == 200, response.text
+    suggestions = response.json()["data"]["suggestions"]
+    assert suggestions, "演示项目应有资料可分类"
+    assert not all(item["confidence"] == 0.82 for item in suggestions), "置信度不应再是常量"
+    assert all("basis" in item for item in suggestions), "每条建议都要说明依据"
+    # 不再是「非 24 即 16」
+    assert {node for item in suggestions for node in item["suggestedNodeIds"]} - {16, 24}
