@@ -5817,6 +5817,7 @@ onBeforeUnmount(() => {
             @upload-report="handleOpenNdtReportUpload"
             @replace-material-bindings="handleReplaceNdtAtomicBindings"
             @submit-material="handleSubmitNdtAtomicMaterial"
+            @retry-upload="handleRetryProjectFileUpload"
             @rectify-ndt="handleRectifyNdt"
             @open-report-detail="handleOpenNdtReportDetail"
             @open-feedback-detail="handleOpenNdtFeedbackDetail"

@@ -35,10 +35,7 @@ import type {
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
-import {
-  documentPipelineStatus,
-  type DocumentUploadStatus
-} from '@/utils/documentPipelineStatus'
+import { documentPipelineStatus, type DocumentUploadStatus } from '@/utils/documentPipelineStatus'
 import { canRetryDocumentUpload, canSubmitDocumentUpload } from '@/utils/documentUploadActions'
 
 type ReviewChainStep = {
