@@ -5,7 +5,7 @@
 素材：`Scan/` 目录的真实监检资料（焊工证、焊接工艺评定报告、特种设备制造许可证、
 射线检测报告、产品质量证明、压力管道强度计算书等），以施工方角色上传 8 份。
 
-**本轮只找问题，未改动任何产品代码。共 9 项发现（M-1..M-9）。**
+**本轮只找问题，未改动任何产品代码。共 10 项发现（M-1..M-10）。**
 
 ---
 
@@ -221,6 +221,80 @@ rectification["feedbackComment"] = body.get("comment") or body.get("description"
 
 ---
 
+## M-10 · 写端点字段命名分歧与静默丢弃（全量扫描） 【P2】
+
+沿 M-7 的线索对全部写端点做了系统扫描。
+
+**扫描口径**：解析 `routes.py` 中全部 `@router.post/put/patch`，提取各自实际读取的
+`body.get("...")` 键；对「说明文字类」字段按业务域分组，比较命名一致性；
+再逐个实测传错名时是否静默成功。
+
+### 命名分歧
+
+读取 body 的写端点共 **121 个**。同一语义的说明字段有 **7 种命名**：
+
+| 字段名 | 端点数 |
+|---|---|
+| reason | 32 |
+| comment | 12 |
+| opinion | 4 |
+| description | 3 |
+| remark | 2 |
+| text | 2 |
+| content | 1 |
+
+**9 个业务域内部命名不一致**，同一操作对的两端用不同字段名：
+
+| 业务域 | 分歧 |
+|---|---|
+| ai-suggestions | adopt 用 `opinion` / reject 用 `reason` |
+| findings | accept 用 `opinion` / reject 用 `reason` |
+| review-runs | human-decision 用 `comment` / cancel、rerun 用 `reason` |
+| ndt | submissions 用 `comment` / rectifications 用 `description` |
+| releases | approve 用 `comment` / submit、rollback 用 `reason` |
+| ocr-annotation tasks | label、review 用 `comment` / cancel 用 `reason` |
+| nodes | review-opinions 用 `opinion` / fact-corrections 用 `reason` |
+
+### 有无校验：一半一半
+
+对说明字段做了必填/非空校验的 **24 个**，无校验的 **25 个**。
+后者传错名即静默丢弃，请求仍返回成功。
+
+**实测验证**（避免仅凭静态分析下结论）：
+
+| 端点 | 传入 | 结果 |
+|---|---|---|
+| `ai-suggestions/{id}/reject` | `opinion`（应 `reason`）| ✅ 40001 拒绝 |
+| `review-runs/{id}/cancel` | `comment`（应 `reason`）| ✅ 40001 拒绝 |
+| `actions/return-correction` | `comment`（应 `reason`）| ✅ 40001 拒绝 |
+| `fact-corrections` | `note`（应 `reason`）| ❌ **code 0，reason 落库 None** |
+| `rectifications` | `feedback`（应 `comment`）| ❌ **code 0，说明丢失**（即 M-7）|
+
+即：**业务主链上的关键写操作大多有校验并正确拒绝**；静默丢弃集中在
+可选说明字段上，其中 `fact-corrections` 是我本轮之前新增的接口，同样有此问题。
+
+### 非说明类字段
+
+也测了会影响判定的参数，结论是**服务端派生优先，属正确设计**：
+
+| 传入 | 落库 | 判定 |
+|---|---|---|
+| `riskLevel: 高` | `高` | 接受（合理）|
+| `basis: TSG D7006 D2.6.1` | 同值 | 接受（合理）|
+| `closeStatus: 已关闭` | `未关闭` | **忽略——正确**，关闭状态不应由创建方自定 |
+| `severity: critical` | `None` | 忽略（该端点无此字段）|
+| `advisoryOnly: False` | `True` | **忽略——正确**，由 `reviewMode` 派生（routes.py:8287），防止调用方自行提级 |
+| `modelAlias` / `priority` | `None` | 忽略——服务端决定 |
+
+### 建议
+
+1. 统一说明字段命名（建议全用 `comment`，或至少同一业务域内一致）；
+2. 写端点对未识别的 body 键返回警告或拒绝，而非静默接受——
+   当前调用方无法区分「字段名写错」与「服务端不需要该字段」；
+3. 若短期不改契约，至少在响应中回显实际采纳的字段，让调用方可自检。
+
+---
+
 ## 本轮确认正确的部分
 
 | 项 | 实测 |
@@ -230,6 +304,8 @@ rectification["feedbackComment"] = body.get("comment") or body.get("description"
 | 哈希不符拒绝 | 声明哈希与实际存储不符时拒绝（「上传文件哈希与完成清单不一致」） |
 | 未上传内容的原件下载 | 正确拒绝，**不存在串读其他文档内容的问题**（已用不同文件对照验证：射线检测报告与焊工证返回各自内容，哈希不同） |
 | 证据就绪门禁 | 空壳文档不计入满足项，正式复核仍被拦住 |
+| 关键写操作的必填校验 | 打回单、AI 建议驳回、ReviewRun 取消传错字段名时均正确返回 40001，不静默接受 |
+| 服务端派生优先 | `advisoryOnly` 由 reviewMode 派生、`closeStatus` 不由创建方自定，调用方无法自行提级或改写关键状态 |
 | 六角色登录 | 全部成功，JWT 正常签发 |
 | 本地无 docker 部署 | venv + uvicorn + vite 直跑，无需容器 |
 | 施工方提交流程 | 挂载 → 提交 → 节点转「待审查」，绑定状态转「已提交」，全链路正常 |
