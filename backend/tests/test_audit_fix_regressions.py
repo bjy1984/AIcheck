@@ -836,3 +836,46 @@ def test_issue11_no_module_reads_require_auth_with_false_default() -> None:
         if 'AICHECK_REQUIRE_AUTH", "false"' in path.read_text(encoding="utf-8")
     ]
     assert offenders == [], f"这些文件仍在自带 false 默认值，应改用 authentication_enforced()：{offenders}"
+
+
+# ---- #18 真身：施工方/无损检测机构本就不该读监检报告 ----
+
+
+def test_issue18_roles_without_report_view_cannot_read_reports() -> None:
+    """roles.yaml 只给 inspection / owner 发了 report:view，接口必须照此执行。
+
+    改之前：报告与归档的「读」完全不进动作检查——只有 PATCH/POST 被推断出动作码，
+    GET 直接放行。施工方能 GET 到监检报告全文、检验结论和证据链。
+    这不是新增业务规则，是让实现追上早就写好的角色动作表。
+    """
+    project_id = "P-2026-HDCP-001"
+    report_id = next(
+        item["id"] for item in repo.state["reports"] if item.get("projectId") == project_id
+    )
+
+    def headers(role: str, user: str) -> dict[str, str]:
+        return {"X-Dev-Role": role, "X-Dev-User": user, "X-Role": role}
+
+    for role, user in (("contractor", "USER-CONTRACTOR-001"), ("ndt", "USER-NDT-001")):
+        actions = set(repo.role_actions(role))
+        assert "report:view" not in actions, f"{role} 的动作表若已授予 report:view，本用例前提失效"
+
+        listed = client.get(f"/api/projects/{project_id}/reports", headers=headers(role, user))
+        assert listed.json()["code"] == 403, f"{role} 不应读到报告列表：{listed.text}"
+
+        detail = client.get(
+            f"/api/projects/{project_id}/reports/{report_id}", headers=headers(role, user)
+        )
+        assert detail.json()["code"] == 403, f"{role} 不应读到报告正文：{detail.text}"
+
+        archive = client.get(
+            f"/api/projects/{project_id}/archive/package", headers=headers(role, user)
+        )
+        assert archive.json()["code"] == 403, f"{role} 不应读到归档包：{archive.text}"
+
+    # 监检自己必须照常读得到，别把拦截做过头
+    inspection = client.get(
+        f"/api/projects/{project_id}/reports",
+        headers=headers("inspection", "USER-INSPECTION-001"),
+    )
+    assert inspection.json()["code"] == 0

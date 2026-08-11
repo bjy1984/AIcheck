@@ -2984,6 +2984,35 @@ def report_readable_for_role(report: dict[str, Any], role: str | None) -> bool:
     return str(report.get("status") or "") in REPORT_SETTLED_STATUSES
 
 
+def read_action_role_error(request: Request, action_code: str, subject: str) -> JSONResponse | None:
+    """按角色动作表把关「读」（issue #18）。
+
+    roles.yaml 只给 inspection / owner 发了 report:view 与 archive:view，但报告与
+    归档的读取原先完全不进动作检查——required_action_for_request 只推断写操作，
+    GET 直接放行，于是施工方和无损检测机构能读到监检报告全文、检验结论和证据链。
+    这不是新增业务规则，是让实现追上早就写好的动作表。
+    """
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if role is None:
+        return None
+    if role in {"admin", "fde"}:
+        # 平台侧角色走各自的管理入口，不在这里额外收紧，避免影响既有运维路径。
+        return None
+    if action_code not in set(repo.role_actions(role)):
+        return fail(errors.FORBIDDEN, request, message=f"当前角色无权查看{subject}。", http_status=403)
+    return None
+
+
+def report_read_role_error(request: Request) -> JSONResponse | None:
+    return read_action_role_error(request, "report:view", "监督检验报告")
+
+
+def archive_read_role_error(request: Request) -> JSONResponse | None:
+    return read_action_role_error(request, "archive:view", "归档资料")
+
+
 def readable_project_reports(request: Request, project_id: str, scope: set[int] | None) -> list[dict[str, Any]]:
     role, _ = effective_role_for_request(request)
     return [
@@ -12895,6 +12924,9 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
 
 @router.get("/projects/{project_id}/owner/reports")
 def owner_reports(request: Request, project_id: str):
+    role_error = report_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     return ok(
         [versioned_report(item) for item in readable_project_reports(request, project_id, scope)],
@@ -12904,6 +12936,9 @@ def owner_reports(request: Request, project_id: str):
 
 @router.get("/projects/{project_id}/reports")
 def list_reports(request: Request, project_id: str):
+    role_error = report_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     return ok(
         [versioned_report(item) for item in readable_project_reports(request, project_id, scope)],
@@ -12913,6 +12948,9 @@ def list_reports(request: Request, project_id: str):
 
 @router.get("/projects/{project_id}/reports/{report_id}")
 def report_detail(request: Request, project_id: str, report_id: str):
+    role_error = report_read_role_error(request)
+    if role_error:
+        return role_error
     report = repo.find_one("reports", report_id)
     if not report or report.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
@@ -13203,6 +13241,9 @@ def archive_report(
 
 @router.get("/projects/{project_id}/archive")
 def list_archive(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
+    role_error = archive_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
@@ -13302,6 +13343,9 @@ def build_archive_zip_artifact(*, manifest: dict[str, Any], files: dict[str, Any
 
 @router.get("/projects/{project_id}/archive/package")
 def archive_package(request: Request, project_id: str):
+    role_error = archive_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     export_id = archive_package_export_id(project_id)
     rows = archive_package_rows(project_id, scope)
