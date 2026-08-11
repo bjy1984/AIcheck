@@ -1,0 +1,54 @@
+# 前端质量门禁（P0 新增）。
+#
+# 此前前端没有任何 CI：5 个单测文件从未被执行过（package.json 里既没有测试
+# 依赖也没有测试脚本），vue-tsc 只靠人手跑。这条 workflow 把两者变成必过项。
+name: Frontend quality
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-quality.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-quality.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # package.json 的 packageManager 字段钉在 pnpm@11.7.0，corepack 按它取版本
+      - name: Enable corepack (pnpm from packageManager field)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit tests
+        run: pnpm run test:unit
+
+      - name: Type check
+        run: pnpm exec vue-tsc --noEmit

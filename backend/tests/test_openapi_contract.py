@@ -102,3 +102,50 @@ def test_contract_coverage_does_not_regress() -> None:
         f"契约覆盖的操作数从 {minimum_covered_operations} 掉到了 "
         f"{report['coveredOperationCount']}——契约与实现正在反向漂移。"
     )
+
+
+def test_generated_contract_artifact_is_current() -> None:
+    """openapi/generated/openapi.json 必须与实现零漂移（issue #10 的最终形态）。
+
+    审计的建议就是「从 FastAPI 自动导出 openapi 作为唯一契约源 + CI diff 检查」。
+    这个工件覆盖实现侧全部 652 个路径，前端/外部集成方对齐时以它为准；
+    手工 fragment 文件继续存在，用于给高频端点补充人写的说明与示例。
+
+    实现一变、忘了重新导出 → 本测试失败。重新导出：
+        python -m scripts.openapi_route_coverage --export ../openapi/generated/openapi.json
+    """
+    import json
+    from pathlib import Path
+
+    from apps.api.main import app
+
+    artifact_path = Path(__file__).resolve().parents[2] / "openapi" / "generated" / "openapi.json"
+    assert artifact_path.exists(), "缺少生成的契约工件，先跑 --export 生成"
+
+    committed = json.loads(artifact_path.read_text(encoding="utf-8"))
+    live = json.loads(json.dumps(app.openapi(), ensure_ascii=False, sort_keys=True, default=str))
+
+    def business_paths(document: dict) -> set[str]:
+        # mock 路由只在兼容模式下挂载，不属于业务契约，两侧都排除
+        return {
+            path
+            for path in (document.get("paths") or {})
+            if not path.startswith(("/mock/", "/api/mock/"))
+        }
+
+    committed_paths = business_paths(committed)
+    live_paths = business_paths(live)
+    only_committed = sorted(committed_paths - live_paths)[:10]
+    only_live = sorted(live_paths - committed_paths)[:10]
+    assert committed_paths == live_paths, (
+        f"契约工件与实现的路径集合不一致。工件独有: {only_committed}；实现独有: {only_live}。"
+        "重新导出：python -m scripts.openapi_route_coverage --export ../openapi/generated/openapi.json"
+    )
+
+    # 路径集合一致之外，每个路径的方法集合也要一致（比全文比较稳定，不受 schema 序列化细节影响）
+    for path in sorted(live_paths):
+        committed_methods = {k for k in (committed["paths"][path] or {}) if k in {"get", "post", "put", "patch", "delete"}}
+        live_methods = {k for k in (live["paths"][path] or {}) if k in {"get", "post", "put", "patch", "delete"}}
+        assert committed_methods == live_methods, (
+            f"{path} 的方法集合漂移：工件 {sorted(committed_methods)} vs 实现 {sorted(live_methods)}"
+        )

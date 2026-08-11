@@ -65,6 +65,11 @@ jobs:
       - name: Verify immutable migration manifest
         run: python scripts/migrate_backend.py --verify-only
 
+      # ruff 配置在 pyproject.toml 里，但此前从未进 CI——1124 条存量已冻结为基线，
+      # 这一步只拦"新增告警"（棘轮），存量清理按批进行并用 --update 收紧基线。
+      - name: Ruff ratchet (no new lint findings)
+        run: python -m pip install ruff==0.16.2 && python -m scripts.ruff_baseline
+
       - name: Run backend suite with real PostgreSQL
         run: pytest -q
 

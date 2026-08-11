@@ -8,6 +8,7 @@
   "scripts": {
     "i": "pnpm install",
     "dev": "pnpm vite --mode base",
+    "test:unit": "node scripts/run-unit-tests.mjs",
     "dev:live": "node ./scripts/ensure-backend-ready.mjs && VITE_API_PROXY_TARGET=http://127.0.0.1:8000 pnpm vite --mode live",
     "dev:live:frontend-only": "VITE_API_PROXY_TARGET=http://127.0.0.1:8000 pnpm vite --mode live",
     "ts:check": "pnpm vue-tsc --noEmit --skipLibCheck",

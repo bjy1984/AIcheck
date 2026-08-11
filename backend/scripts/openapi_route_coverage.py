@@ -107,6 +107,13 @@ def export_document(target: Path) -> dict[str, Any]:
     from apps.api.main import app
 
     document = app.openapi()
+    # 兼容 mock 路由只在 AICHECK_ENABLE_COMPATIBILITY_MOCKS 下挂载，不属于业务契约；
+    # 留在工件里会让漂移检查随环境开关抖动。
+    document["paths"] = {
+        path: item
+        for path, item in (document.get("paths") or {}).items()
+        if not path.startswith(("/mock/", "/api/mock/"))
+    }
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     return document
