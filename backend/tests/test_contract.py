@@ -8368,7 +8368,22 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     assert ndt_feedback["items"] == []
     assert any(item["id"] == "NDT-REC-001" for item in ndt_visible_records["items"])
     assert archive_package["itemCount"] == 2
-    assert any(report["id"] == "RPT-20260625-001" for report in owner_reports)
+    # RPT-20260625-001 在节点范围内，但状态是「复核中」——签发前属于监检机构的内部
+    # 工作稿，不对建设方开放（issue #18）。定稿后同一份报告必须照常可见，
+    # 否则就是把建设方彻底挡在报告之外了。
+    assert not any(report["id"] == "RPT-20260625-001" for report in owner_reports)
+    settled_report = next(
+        item for item in repo.state["reports"] if item["id"] == "RPT-20260625-001"
+    )
+    original_status = settled_report["status"]
+    try:
+        settled_report["status"] = "已签发"
+        settled_reports = assert_ok(
+            client.get(f"/api/projects/{project_id}/owner/reports", headers=owner_headers)
+        )
+        assert any(report["id"] == "RPT-20260625-001" for report in settled_reports)
+    finally:
+        settled_report["status"] = original_status
 
 
 def test_upload_creates_knowledge_task_and_retrieval_works() -> None:

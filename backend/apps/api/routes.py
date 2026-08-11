@@ -2971,6 +2971,30 @@ def report_visible_in_scope(report: dict[str, Any], scope: set[int] | None) -> b
     return bool(node_ids) and node_ids.issubset(scope)
 
 
+# 监检报告在签发前属于监检机构的内部工作稿：草稿/复核中/复核完成/待签发都可能被推翻。
+# 建设方（owner）作为委托方只应看到已定稿的结论，未定稿版本不外泄。
+# 监检、FDE、admin 仍看全量——他们是报告的生产与运维方。
+REPORT_SETTLED_STATUSES = {"已签发", "已归档"}
+REPORT_SETTLED_ONLY_ROLES = {"owner"}
+
+
+def report_readable_for_role(report: dict[str, Any], role: str | None) -> bool:
+    if str(role or "") not in REPORT_SETTLED_ONLY_ROLES:
+        return True
+    return str(report.get("status") or "") in REPORT_SETTLED_STATUSES
+
+
+def readable_project_reports(request: Request, project_id: str, scope: set[int] | None) -> list[dict[str, Any]]:
+    role, _ = effective_role_for_request(request)
+    return [
+        item
+        for item in repo.state["reports"]
+        if item["projectId"] == project_id
+        and report_visible_in_scope(item, scope)
+        and report_readable_for_role(item, role)
+    ]
+
+
 def archive_visible_in_scope(item: dict[str, Any], scope: set[int] | None) -> bool:
     if scope is None:
         return True
@@ -5322,11 +5346,7 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
         for item in repo.project_documents(project_id)
         if document_visible_in_scope(item, scope)
     ]
-    visible_reports = [
-        item
-        for item in repo.state["reports"]
-        if item["projectId"] == project_id and report_visible_in_scope(item, scope)
-    ]
+    visible_reports = readable_project_reports(request, project_id, scope)
     visible_messages = [
         item
         for item in repo.state["messages"]
@@ -5609,6 +5629,7 @@ def build_inspection_audit_workspace(
     *,
     scope: set[int] | None,
     include_content: bool,
+    role: str | None = None,
 ) -> dict[str, Any] | None:
     project = repo.require_project(project_id)
     node = repo.node(project_id, node_id)
@@ -5717,6 +5738,7 @@ def build_inspection_audit_workspace(
         if item.get("projectId") == project_id
         and node_id in {int(value) for value in item.get("nodeIds") or []}
         and report_visible_in_scope(item, scope)
+        and report_readable_for_role(item, role)
     ]
     archive_items = [
         repo.clone(item)
@@ -6052,6 +6074,7 @@ def inspection_audit_overview(
             int(node["nodeId"]),
             scope=scope,
             include_content=False,
+            role=effective_role_for_request(request)[0],
         )
         if not projection:
             continue
@@ -6162,6 +6185,7 @@ def inspection_node_audit_workspace(request: Request, project_id: str, node_id: 
         node_id,
         scope=scope,
         include_content=True,
+        role=effective_role_for_request(request)[0],
     )
     if not payload:
         return fail(errors.NOT_FOUND, request)
@@ -12873,11 +12897,7 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
 def owner_reports(request: Request, project_id: str):
     scope = authorized_node_scope(request, project_id)
     return ok(
-        [
-            versioned_report(item)
-            for item in repo.state["reports"]
-            if item["projectId"] == project_id and report_visible_in_scope(item, scope)
-        ],
+        [versioned_report(item) for item in readable_project_reports(request, project_id, scope)],
         request,
     )
 
@@ -12886,11 +12906,7 @@ def owner_reports(request: Request, project_id: str):
 def list_reports(request: Request, project_id: str):
     scope = authorized_node_scope(request, project_id)
     return ok(
-        [
-            versioned_report(item)
-            for item in repo.state["reports"]
-            if item["projectId"] == project_id and report_visible_in_scope(item, scope)
-        ],
+        [versioned_report(item) for item in readable_project_reports(request, project_id, scope)],
         request,
     )
 
@@ -12899,6 +12915,13 @@ def list_reports(request: Request, project_id: str):
 def report_detail(request: Request, project_id: str, report_id: str):
     report = repo.find_one("reports", report_id)
     if not report or report.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
+    # 正文在这个端点上，必须与列表同口径：未定稿的报告不对建设方开放。
+    # 返回 404 而非 403——不确认「存在一份尚未签发的报告」本身也是信息。
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if not report_readable_for_role(report, role):
         return fail(errors.NOT_FOUND, request)
     return ok(
         {
@@ -13282,11 +13305,7 @@ def archive_package(request: Request, project_id: str):
     scope = authorized_node_scope(request, project_id)
     export_id = archive_package_export_id(project_id)
     rows = archive_package_rows(project_id, scope)
-    reports = [
-        repo.clone(item)
-        for item in repo.state.get("reports", [])
-        if item.get("projectId") == project_id and report_visible_in_scope(item, scope)
-    ]
+    reports = [repo.clone(item) for item in readable_project_reports(request, project_id, scope)]
     export_tasks = [
         repo.clone(item)
         for item in repo.state.get("export_tasks", [])
@@ -14878,7 +14897,11 @@ def search(
                     append_result("document", doc["id"], doc["fileName"], doc.get("sourceOrgName"), f"/workbench/{role}?projectId={doc['projectId']}&documentId={doc['id']}", [doc.get("currentOcrStatus")], status_value=doc.get("currentOcrStatus"), updated_at=doc.get("updatedAt"), breadcrumb="项目 / 资料")
             for report in repo.state["reports"]:
                 node_scope = authorized_node_scope(request, report["projectId"])
-                if (not projectId or report["projectId"] == projectId) and report_visible_in_scope(report, node_scope):
+                if (
+                    (not projectId or report["projectId"] == projectId)
+                    and report_visible_in_scope(report, node_scope)
+                    and report_readable_for_role(report, role)
+                ):
                     append_result("report", report["id"], report["title"], report["status"], f"/workbench/{role}?projectId={report['projectId']}&reportId={report['id']}", [report.get("reportNo")], status_value=report.get("status"), updated_at=report.get("updatedAt"), breadcrumb="项目 / 报告")
 
     if search_scope == "admin":

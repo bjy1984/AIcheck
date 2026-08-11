@@ -6,6 +6,10 @@ from uuid import uuid4
 
 import pytest
 
+# AICHECK_REQUIRE_AUTH 的代码默认值是 true（漏配必须表现为「登不进去」而不是「谁都能进」）。
+# 测试套件跑的是业务逻辑，用 X-Dev-Role 头直接扮演角色，因此在这里显式声明本地开发姿态。
+# 专门验认证的用例会自行 monkeypatch 回 "true"；authentication_enforced() 的默认值另有用例钉住。
+os.environ.setdefault("AICHECK_REQUIRE_AUTH", "false")
 os.environ.setdefault("AICHECK_ENABLE_DEMO_DATA", "true")
 os.environ.setdefault("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true")
 os.environ.setdefault("AICHECK_OCR_PROVIDER_MODE", "local")

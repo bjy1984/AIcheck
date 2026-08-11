@@ -718,3 +718,121 @@ def test_u5_project_file_rows_carry_body_uploaded_flag() -> None:
 
     # 其余每一行都必须带上该字段，不能只在空壳这一行出现
     assert all("bodyUploaded" in item for item in project_files)
+
+
+# ---- #18：建设方只能读已定稿的监检报告 ----
+
+
+def _owner_headers() -> dict[str, str]:
+    return {"X-Dev-Role": "owner", "X-Dev-User": "USER-OWNER-001", "X-Role": "owner"}
+
+
+def _inspection_headers() -> dict[str, str]:
+    return {"X-Dev-Role": "inspection", "X-Dev-User": "USER-INSPECTION-001", "X-Role": "inspection"}
+
+
+def test_issue18_owner_only_reads_settled_reports() -> None:
+    """报告在签发前是监检机构的内部工作稿，可能被推翻，不应对建设方开放。
+
+    覆盖全部读取入口——只堵列表不堵详情等于没堵，因为正文在详情端点上。
+    """
+    project_id = "P-2026-HDCP-001"
+    reports = [item for item in repo.state["reports"] if item.get("projectId") == project_id]
+    assert reports, "演示项目应有报告，否则本用例验不到任何东西"
+
+    draft = reports[0]
+    draft["status"] = "复核中"
+    settled_id = None
+    if len(reports) > 1:
+        reports[1]["status"] = "已签发"
+        settled_id = reports[1]["id"]
+
+    def ids(response) -> set[str]:
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        items = data if isinstance(data, list) else data.get("reports") or []
+        return {str(item["id"]) for item in items}
+
+    owner_listed = ids(client.get(f"/api/projects/{project_id}/reports", headers=_owner_headers()))
+    assert draft["id"] not in owner_listed
+    if settled_id:
+        assert settled_id in owner_listed
+
+    owner_dashboard = ids(
+        client.get(f"/api/projects/{project_id}/owner/reports", headers=_owner_headers())
+    )
+    assert draft["id"] not in owner_dashboard
+
+    archive = ids(
+        client.get(f"/api/projects/{project_id}/archive/package", headers=_owner_headers())
+    )
+    assert draft["id"] not in archive
+
+    # 正文端点：未定稿报告对建设方按不存在处理（403 会确认「有一份尚未签发的报告」）
+    detail = client.get(
+        f"/api/projects/{project_id}/reports/{draft['id']}", headers=_owner_headers()
+    )
+    assert detail.status_code == 200
+    assert detail.json()["code"] == 40404, detail.text
+
+    # 监检自己仍然读得到——这是他们的工作稿
+    inspection_listed = ids(
+        client.get(f"/api/projects/{project_id}/reports", headers=_inspection_headers())
+    )
+    assert draft["id"] in inspection_listed
+    inspection_detail = client.get(
+        f"/api/projects/{project_id}/reports/{draft['id']}", headers=_inspection_headers()
+    )
+    assert inspection_detail.json()["code"] == 0
+
+
+def test_issue18_settled_report_stays_readable_for_owner() -> None:
+    """别把建设方彻底挡在报告之外：已签发/已归档必须照常可读。"""
+    project_id = "P-2026-HDCP-001"
+    report = next(item for item in repo.state["reports"] if item.get("projectId") == project_id)
+    for status in ("已签发", "已归档"):
+        report["status"] = status
+        detail = client.get(
+            f"/api/projects/{project_id}/reports/{report['id']}", headers=_owner_headers()
+        )
+        assert detail.json()["code"] == 0, f"{status} 应对建设方可读"
+
+
+# ---- #11：认证默认值必须是「开启」 ----
+
+
+def test_issue11_auth_is_required_by_default(monkeypatch) -> None:
+    """漏配 AICHECK_REQUIRE_AUTH 时必须表现为「登不进去」，不能是「谁都能进」。
+
+    关闭认证会连带使项目隔离、节点范围、角色校验全部失效——authorized_node_scope
+    与 member_node_scope_error 在无登录身份时直接放行，任何客户端都能用
+    X-Role/X-User-Id 请求头冒充任意身份。默认值一旦是 false，一次漏配就是全量越权。
+    """
+    from libs.security.auth import authentication_enforced
+
+    monkeypatch.delenv("AICHECK_REQUIRE_AUTH", raising=False)
+    assert authentication_enforced() is True, "未配置时必须默认要求认证"
+
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "false")
+    assert authentication_enforced() is False, "本地开发显式关闭仍要生效"
+
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    assert authentication_enforced() is True
+
+
+def test_issue11_no_module_reads_require_auth_with_false_default() -> None:
+    """默认值只允许有一处。
+
+    改之前这个开关散在 7 个地方各写一遍 os.getenv(..., "false")，翻转默认值必须
+    七处同改、漏一处就留一个后门。现在统一走 authentication_enforced()，此用例防止回流。
+    """
+    import pathlib
+
+    backend = pathlib.Path(__file__).resolve().parent.parent
+    offenders = [
+        str(path.relative_to(backend))
+        for directory in ("apps", "libs")
+        for path in (backend / directory).rglob("*.py")
+        if 'AICHECK_REQUIRE_AUTH", "false"' in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"这些文件仍在自带 false 默认值，应改用 authentication_enforced()：{offenders}"

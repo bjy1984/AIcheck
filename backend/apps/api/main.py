@@ -44,6 +44,7 @@ from libs.runtime_readiness import production_runtime_status
 from libs.review_orchestrator.dispatcher import review_orchestration_mode
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import (
+    authentication_enforced,
     compatibility_mocks_enabled,
     decode_token,
     demo_users_enabled,
@@ -83,7 +84,7 @@ async def lifespan(app: FastAPI):
     load_state()
     bootstrap_local_roles_if_configured()
     validate_security_runtime()
-    if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() != "true":
+    if not authentication_enforced():
         # 关闭认证会连带使项目隔离、节点范围、角色校验全部失效（authorized_node_scope
         # 与 member_node_scope_error 在无登录身份时直接放行）。禁止以此状态对外提供服务。
         logger.warning(
@@ -180,7 +181,7 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
     normalized_path = canonical_path(request.url.path)
     if normalized_path.startswith("/mock/") and not compatibility_mocks_enabled():
         return JSONResponse({"detail": "Not Found"}, status_code=404)
-    if auth_required(request) or request.headers.get("Authorization"):
+    if auth_required_for_path(request) or request.headers.get("Authorization"):
         claims = predecoded_claims
         if claims is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), errors.AUTH_REQUIRED.reason)
@@ -377,8 +378,8 @@ def restore_failed_request_state(request: Request) -> None:
             reset_request_tenant_id(token)
 
 
-def auth_required(request: Request) -> bool:
-    if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() != "true":
+def auth_required_for_path(request: Request) -> bool:
+    if not authentication_enforced():
         return False
     public_prefixes = (
         "/healthz",
@@ -714,7 +715,7 @@ def inferred_action_error(request: Request) -> JSONResponse | None:
     header_role = request.headers.get("X-Role")
     if token_role and header_role and header_role != token_role:
         return fail(errors.FORBIDDEN, request, message="请求角色与登录身份不一致。")
-    role = token_role or (header_role if not auth_required(request) else None)
+    role = token_role or (header_role if not auth_required_for_path(request) else None)
     if not role:
         return None
     allowed_actions = set(repo.role_actions(role))
@@ -820,7 +821,7 @@ async def readiness_response():
             "status": "ready" if ready else "not_ready",
             "ready": ready,
             "checks": checks,
-            "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
+            "authRequired": authentication_enforced(),
         },
         status_code=200 if ready else 503,
     )
@@ -891,7 +892,7 @@ async def health_response(request: Request):
 @app.get("/api/system/postgres-transaction-probe", tags=["system"])
 async def postgres_transaction_probe(request: Request):
     claims = getattr(request.state, "auth", None)
-    if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true" and (not claims or claims.get("role") != "admin"):
+    if authentication_enforced() and (not claims or claims.get("role") != "admin"):
         return fail(errors.FORBIDDEN, request, message="仅管理员可执行 PostgreSQL transaction 探针。")
     return ok(await run_transaction_probe(getattr(request.app.state, "postgres", None)), request)
 
@@ -935,7 +936,7 @@ async def health_payload() -> dict[str, object]:
         "postgresTransactions": bool(repo.postgres_enabled),
         "sqliteEnabled": repo.sqlite_enabled,
         "sqlitePath": repo.sqlite_path,
-        "authRequired": os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true",
+        "authRequired": authentication_enforced(),
         "demoUsersEnabled": demo_users_enabled(),
         "workflowReady": workflow_ready,
         "temporal": temporal,
