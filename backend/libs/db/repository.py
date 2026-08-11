@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -48,6 +49,9 @@ from .seed import (
     ensure_test_project_members,
     fresh_state,
 )
+
+
+LOGGER = logging.getLogger("aicheck.repository")
 
 
 class ConcurrentPersistenceError(RuntimeError):
@@ -4182,8 +4186,15 @@ class InMemoryRepository:
                 return
             try:
                 persisted_ids: list[str] = []
+                # D-4：知识库里注册了 2560/4096 维的 embedding 档案，但 pgvector 表是
+                # 按 OFFLINE_VECTOR_DIMENSIONS 建的。维度不匹配的向量原先直接 continue
+                # 跳过——flush 不写、检索返回空，全程无报错，换了模型档案的人只会看到
+                # 「检索没结果」而不知道向量根本没入库。
+                skipped_dimensions: dict[int, int] = {}
                 for row in self.state.get("knowledge_vectors", []) or []:
-                    if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
+                    row_dimensions = int(row.get("dimensions") or 0)
+                    if row_dimensions != OFFLINE_VECTOR_DIMENSIONS:
+                        skipped_dimensions[row_dimensions] = skipped_dimensions.get(row_dimensions, 0) + 1
                         continue
                     payload = vector_payload_for_pg(row)
                     embedding = payload.get("embedding")
@@ -4226,6 +4237,17 @@ class InMemoryRepository:
                             payload["index_version"],
                             payload["metadata"],
                         ),
+                    )
+                if skipped_dimensions:
+                    detail = "、".join(
+                        f"{dimensions} 维 {count} 条" for dimensions, count in sorted(skipped_dimensions.items())
+                    )
+                    LOGGER.error(
+                        "pgvector_dimension_mismatch: 有向量因维度与索引表不符而未入库（%s）。"
+                        "索引表按 %s 维建立；这些向量既不会被写入、也不会被检索到，"
+                        "更换 embedding 模型档案后需要重建索引表并重新向量化。",
+                        detail,
+                        OFFLINE_VECTOR_DIMENSIONS,
                     )
                 stale_ids = sorted(self._pgvector_baseline_ids - set(persisted_ids))
                 if stale_ids:

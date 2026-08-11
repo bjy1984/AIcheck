@@ -455,10 +455,18 @@ const pollLiveAgentTrace = async () => {
   }
 }
 
+// SSE 断开后的降级轮询间隔。原为 400ms，恰好与后端 0.4s 的重载节流同频——
+// 多用户同时在线时会反复触发 Postgres 全集合重载（F-4）。这条路径只是 SSE
+// 不可用时的兜底，1.5s 足以让执行动态看起来是连续的。
+const LIVE_TRACE_FALLBACK_POLL_INTERVAL_MS = 1500
+
 const startLivePolling = () => {
   if (liveTraceTimer) return
   void pollLiveAgentTrace()
-  liveTraceTimer = window.setInterval(() => void pollLiveAgentTrace(), 400)
+  liveTraceTimer = window.setInterval(
+    () => void pollLiveAgentTrace(),
+    LIVE_TRACE_FALLBACK_POLL_INTERVAL_MS
+  )
 }
 
 const startLiveAgentTrace = () => {

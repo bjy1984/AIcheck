@@ -151,6 +151,7 @@ from libs.security.auth import (
     ROLE_DEFAULT_PATHS,
     USERS,
     authenticate,
+    authentication_enforced,
     decode_token,
     demo_users_enabled,
     hash_password,
@@ -1933,6 +1934,11 @@ def request_user_id(request: Request) -> str | None:
     auth_user = getattr(request.state, "auth_user", None)
     if auth_user and auth_user.get("id"):
         return auth_user["id"]
+    # S-4：X-User-Id 是客户端自称的身份，会被直接写进审计日志。认证开启时必须只认
+    # 登录态——否则「谁做的」这一栏可以被任意伪造，审计链就失去意义。
+    # 认证关闭是本地开发姿态，此时该头是唯一的身份来源，保留。
+    if authentication_enforced():
+        return None
     return request.headers.get("X-User-Id")
 
 
@@ -12757,6 +12763,13 @@ def list_review_opinions(request: Request, project_id: str, node_id: int):
     process_error = review_process_read_error(request, "监检人工审查意见")
     if process_error:
         return process_error
+    # S-2：这里原先没有 handler 层的节点范围校验，只靠中间件按路径正则推断 scope。
+    # 路由一改、正则没跟上，越权就会静默出现。与 list_ai_runs 对齐，在 handler 里也校验。
+    scope_error = member_node_scope_error(
+        request, project_id, effective_role_for_request(request)[0], node_ids=[node_id]
+    )
+    if scope_error:
+        return scope_error
     return ok([repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == project_id and int(item["nodeId"]) == int(node_id)], request)
 
 

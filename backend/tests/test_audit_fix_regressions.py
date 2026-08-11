@@ -1711,3 +1711,72 @@ def test_issue8_knowledge_overview_surfaces_degraded_vector_ratio() -> None:
     finally:
         target["vectorStatus"] = original_status
         target["vectorStatusReason"] = original_reason
+
+
+# ---- issue #12 里的可修项：D-4 / S-2 / S-4 ----
+
+
+def test_s4_forged_user_header_is_not_trusted_when_auth_is_on(monkeypatch) -> None:
+    """X-User-Id 是客户端自称的身份，会被直接写进审计日志。
+
+    认证开启时必须只认登录态——否则「谁做的」这一栏可以被任意伪造，审计链失去意义。
+    认证关闭是本地开发姿态，此时该头是唯一身份来源，保留。
+    """
+    from apps.api.routes import request_user_id
+
+    class _Request:
+        def __init__(self) -> None:
+            self.headers = {"X-User-Id": "USER-伪造的身份"}
+            self.state = type("_State", (), {})()
+
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    assert request_user_id(_Request()) is None, "认证开启时不能采信请求头里的身份"
+
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "false")
+    assert request_user_id(_Request()) == "USER-伪造的身份", "本地开发姿态下仍需可用"
+
+    # 有登录态时一律以登录态为准
+    request = _Request()
+    request.state.auth_user = {"id": "USER-INSPECTION-001"}
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
+    assert request_user_id(request) == "USER-INSPECTION-001"
+
+
+def test_s2_review_opinions_has_handler_level_scope_check() -> None:
+    """高敏读端点不能只靠中间件按路径正则推断 scope。
+
+    路由一改、正则没跟上，越权就会静默出现。这里断言 handler 内部确实调用了
+    member_node_scope_error——与 list_ai_runs 同一惯例。
+    行为层面的越权拦截无法在本套件里端到端验证：测试环境认证关闭，
+    member_node_scope_error 在无登录身份时按设计直接放行（见 S-1 的启动告警）。
+    """
+    import inspect
+
+    from apps.api import routes
+
+    source = inspect.getsource(routes.list_review_opinions)
+    assert "member_node_scope_error" in source, "review-opinions 缺少 handler 层节点范围校验"
+    # 对齐参照：list_ai_runs 本就有
+    assert "member_node_scope_error" in inspect.getsource(routes.list_ai_runs)
+
+
+def test_d4_dimension_mismatched_vectors_are_reported_not_silently_skipped(caplog) -> None:
+    """维度不符的向量原先直接 continue 跳过：不写库、检索为空、全程无报错。
+
+    换了 embedding 模型档案的人只会看到「检索没结果」，不会知道向量根本没入库。
+    """
+    import logging
+    import re
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parent.parent / "libs" / "db" / "repository.py"
+    text = source.read_text(encoding="utf-8")
+    assert "pgvector_dimension_mismatch" in text, "维度不符必须留下可检索的日志标记"
+    # 跳过与告警必须在同一段逻辑里，不能只留注释
+    skip_block = re.search(
+        r"row_dimensions != OFFLINE_VECTOR_DIMENSIONS.*?pgvector_dimension_mismatch",
+        text,
+        re.S,
+    )
+    assert skip_block, "跳过维度不符的向量时必须计数并上报"
+    assert logging.getLogger("aicheck.repository") is not None
