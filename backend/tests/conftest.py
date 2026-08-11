@@ -10,6 +10,9 @@ import pytest
 # 测试套件跑的是业务逻辑，用 X-Dev-Role 头直接扮演角色，因此在这里显式声明本地开发姿态。
 # 专门验认证的用例会自行 monkeypatch 回 "true"；authentication_enforced() 的默认值另有用例钉住。
 os.environ.setdefault("AICHECK_REQUIRE_AUTH", "false")
+# 同理：高风险写端点默认强制 If-Match（N-6）。测试验的是业务逻辑而非乐观锁协议，
+# 逐个调用补头只会淹没断言；默认值与拦截行为另有专门用例钉住。
+os.environ.setdefault("AICHECK_REQUIRE_IF_MATCH", "false")
 os.environ.setdefault("AICHECK_ENABLE_DEMO_DATA", "true")
 os.environ.setdefault("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true")
 os.environ.setdefault("AICHECK_OCR_PROVIDER_MODE", "local")

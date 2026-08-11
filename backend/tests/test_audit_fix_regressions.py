@@ -1531,3 +1531,109 @@ def test_m1_batch_classify_endpoint_no_longer_returns_constant_confidence() -> N
     assert all("basis" in item for item in suggestions), "每条建议都要说明依据"
     # 不再是「非 24 即 16」
     assert {node for item in suggestions for node in item["suggestedNodeIds"]} - {16, 24}
+
+
+# ---- N-4：节点状态机无转移校验 ----
+
+
+def test_n4_settled_node_cannot_be_dragged_back_to_the_start() -> None:
+    """已办结的节点不能被无声改回流程起点。
+
+    改之前 set_node_status 没有任何前置状态校验，15 个调用点互不知晓——
+    已通过的节点可以被任意改回「待提交」，监检的终审结论就这么被推翻。
+    """
+    from libs.db.repository import IllegalNodeStatusTransition
+
+    project_id = "P-2026-HDCP-001"
+    node_id = 24
+    node = repo.node(project_id, node_id)
+    original = node["status"]
+    try:
+        for settled in ("已通过", "不适用"):
+            node["status"] = settled
+            for forbidden in ("待提交", "部分提交", "需补正"):
+                try:
+                    repo.set_node_status(project_id, node_id, forbidden)
+                except IllegalNodeStatusTransition as error:
+                    assert settled in str(error) and forbidden in str(error)
+                else:
+                    raise AssertionError(f"{settled} → {forbidden} 不应被允许")
+                assert repo.node(project_id, node_id)["status"] == settled, "被拒后状态不能被改动"
+
+            # 复审与 AI 重跑是显式的审查动作，必须仍然放行
+            for reopenable in ("复审中", "业务核验中"):
+                node["status"] = settled
+                repo.set_node_status(project_id, node_id, reopenable)
+                assert repo.node(project_id, node_id)["status"] == reopenable
+
+        # 正常推进不受影响
+        node["status"] = "待提交"
+        repo.set_node_status(project_id, node_id, "待审查")
+        assert repo.node(project_id, node_id)["status"] == "待审查"
+        repo.set_node_status(project_id, node_id, "已通过")
+        assert repo.node(project_id, node_id)["status"] == "已通过"
+    finally:
+        node["status"] = original
+
+
+# ---- N-6：If-Match 缺省即放行 ----
+
+
+def test_n6_high_risk_writes_require_if_match_by_default(monkeypatch) -> None:
+    """不发 If-Match 就绕过乐观锁，并发写会无声推翻别人的结论。
+
+    对「保存审查结论 / 打回补正 / 正式提交 / 归档」强制要求该头；默认开启，
+    存量调用方迁移期可用 AICHECK_REQUIRE_IF_MATCH=false 暂时关闭。
+    """
+    from apps.api.routes import if_match_enforced, requires_if_match
+
+    monkeypatch.delenv("AICHECK_REQUIRE_IF_MATCH", raising=False)
+    assert if_match_enforced() is True, "默认必须是强制，漏配要 fail closed"
+
+    class _Request:
+        def __init__(self, method: str, path: str) -> None:
+            self.method = method
+            self.url = type("_Url", (), {"path": path})()
+
+    high_risk = [
+        "/api/projects/P1/inspection/nodes/24/review-opinions",
+        "/api/projects/P1/inspection/nodes/24/actions/return-correction",
+        "/api/projects/P1/submissions",
+        "/api/projects/P1/reports/RPT-1/archive",
+    ]
+    for path in high_risk:
+        assert requires_if_match(_Request("POST", path)) is True, path
+        assert requires_if_match(_Request("GET", path)) is False, f"读操作不该被拦：{path}"
+
+    # 名单之外的写端点保持缺省放行，避免一次性打破所有既有调用方
+    assert requires_if_match(_Request("POST", "/api/projects/P1/documents/bindings")) is False
+
+    monkeypatch.setenv("AICHECK_REQUIRE_IF_MATCH", "false")
+    assert if_match_enforced() is False
+    assert requires_if_match(_Request("POST", high_risk[0])) is False
+
+
+def test_n6_missing_if_match_is_rejected_end_to_end(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_IF_MATCH", "true")
+    headers = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+    body = {"result": "满足要求", "opinion": "资料齐全。", "evidenceLinkIds": []}
+
+    without = client.post(
+        "/api/projects/P-2026-HDCP-001/inspection/nodes/24/review-opinions",
+        headers={**headers, "Idempotency-Key": "n6-without"},
+        json=body,
+    )
+    assert without.json()["code"] == 40001, without.text
+    assert without.json()["data"]["reason"] == "IF_MATCH_REQUIRED"
+
+    # 带上就放行（"*" 是合法的 If-Match）
+    with_header = client.post(
+        "/api/projects/P-2026-HDCP-001/inspection/nodes/24/review-opinions",
+        headers={**headers, "Idempotency-Key": "n6-with", "If-Match": "*"},
+        json=body,
+    )
+    assert with_header.json()["code"] != 40001 or with_header.json()["data"].get("reason") != "IF_MATCH_REQUIRED"

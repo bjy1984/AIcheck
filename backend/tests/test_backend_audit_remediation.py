@@ -82,8 +82,10 @@ def test_cold_tenant_login_loads_persistent_state_and_writes_tenant_audit(monkey
     tenant_id = "TENANT-COLD-LOGIN"
     calls: list[str] = []
 
-    def load_cold_tenant() -> None:
-        calls.append(tenant_id)
+    def load_cold_tenant(selected_state_keys=None, tenant_id: str | None = None) -> None:
+        # N-5：必须按登录请求声明的租户加载。这个 stub 原先无参，把「该加载哪个租户」
+        # 写死在闭包里，恰好掩盖了「一律按 configured_tenant_id() 加载」的缺陷。
+        calls.append(str(tenant_id or ""))
         repo.state["users"] = [
             {
                 "id": "USER-COLD-001",
@@ -94,7 +96,7 @@ def test_cold_tenant_login_loads_persistent_state_and_writes_tenant_audit(monkey
                 "authVersion": 0,
                 "mustChangePassword": False,
                 "displayName": "冷租户用户",
-                "tenantId": tenant_id,
+                "tenantId": "TENANT-COLD-LOGIN",
             }
         ]
 

@@ -3290,6 +3290,53 @@ def review_quality_gate(drafts: list[dict[str, Any]], validation_results: dict[s
     )
 
 
+# 置信度原先是四处硬编码常量（0.82 / 0.55 / 0.5 / 0.68），前端却以「置信度 82%」
+# 两位精度展示一个从未被计算的数字——比不显示更糟，它让人以为系统在量化把握。
+# 现在由证据锚定质量派生：能拿到多少可定位、可追溯的证据，就报多少把握。
+PURE_LLM_CONFIDENCE_CEILING = 0.55
+GROUNDING_CONFIDENCE_FLOOR = 0.3
+GROUNDING_CONFIDENCE_CEILING = 0.95
+
+
+def derive_grounding_confidence(
+    grounding_input: dict[str, Any], audit_mode: str
+) -> tuple[float, dict[str, Any]]:
+    """按证据锚定质量算置信度，并返回可核对的计算依据。
+
+    分母是本次拿到的证据条数，分子是「可定位、置信度不低、无关键质量告警」的条数。
+    纯 LLM 模式没有 OCR/page/bbox 证据，无论算出多少都封顶——这类结论本就只能
+    当人工复核提示。
+    """
+    summary = dict((grounding_input or {}).get("summary") or {})
+    evidence_count = int(summary.get("evidenceLinkCount") or 0)
+    penalties = {
+        "lowConfidenceEvidenceCount": int(summary.get("lowConfidenceEvidenceCount") or 0),
+        "missingPositionEvidenceCount": int(summary.get("missingPositionEvidenceCount") or 0),
+        "criticalQualityFlagCount": int(summary.get("criticalQualityFlagCount") or 0),
+        "blockingIssueCount": int(summary.get("blockingIssueCount") or 0),
+    }
+    if evidence_count <= 0:
+        confidence = GROUNDING_CONFIDENCE_FLOOR
+        ratio = 0.0
+    else:
+        flawed = min(evidence_count, sum(penalties.values()))
+        ratio = (evidence_count - flawed) / evidence_count
+        confidence = GROUNDING_CONFIDENCE_FLOOR + ratio * (
+            GROUNDING_CONFIDENCE_CEILING - GROUNDING_CONFIDENCE_FLOOR
+        )
+    if str(audit_mode) == "pure_llm":
+        confidence = min(confidence, PURE_LLM_CONFIDENCE_CEILING)
+    confidence = round(min(max(confidence, GROUNDING_CONFIDENCE_FLOOR), GROUNDING_CONFIDENCE_CEILING), 2)
+    return confidence, {
+        "method": "grounding_coverage",
+        "evidenceCount": evidence_count,
+        "usableRatio": round(ratio, 3),
+        "penalties": penalties,
+        "auditMode": str(audit_mode),
+        "pureLlmCeilingApplied": str(audit_mode) == "pure_llm",
+    }
+
+
 def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     evidence = context.get("evidenceLinks") or []
     rule_result = next(iter(context.get("ruleResults") or []), {})
@@ -3297,18 +3344,15 @@ def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> 
     audit_runtime = context.get("auditRuntime") or audit_runtime_for_run(review_run)
     grounding_status = str(grounding_input.get("groundingStatus") or "insufficient_evidence")
     description = "已基于 OCR 字段、规则检查和知识检索生成审查草稿，需监检员人工确认。"
-    confidence = 0.82
     source_method = "ocr_llm_review"
     if audit_runtime["mode"] == "pure_llm":
         description = "当前为纯 LLM 审计模式，未加载 OCR/page/bbox 证据；以下建议只能作为人工复核提示，不能作为自动审计结论。"
-        confidence = 0.55
         source_method = "pure_llm_review"
     if grounding_status != "grounded":
         description = "当前 OCR 证据不足以支撑自动审查结论，需人工核对原件、字段、表格、印章和证据链。"
-        confidence = 0.5
         if audit_runtime["mode"] == "pure_llm":
             description = "当前为纯 LLM 审计模式，未加载 OCR/page/bbox 证据；以下建议只能作为人工复核提示，不能作为自动审计结论。"
-            confidence = 0.55
+    confidence, confidence_basis = derive_grounding_confidence(grounding_input, audit_runtime["mode"])
     return {
         "id": f"FND-DRAFT-{uuid4().hex[:8].upper()}",
         "reviewRunId": review_run["reviewRunId"],
@@ -3358,6 +3402,8 @@ def build_finding_draft(review_run: dict[str, Any], context: dict[str, Any]) -> 
             for trace in context.get("retrievalTraces") or []
         ],
         "confidence": confidence,
+        # 置信度必须可核对：带上算它的依据，而不是给一个来历不明的数字。
+        "confidenceBasis": confidence_basis,
         "suggestedAction": "human_confirm",
         "groundingStatus": grounding_status,
         "unsupportedClaims": [],

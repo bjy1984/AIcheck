@@ -32,6 +32,7 @@ from libs.db.postgres import (
 )
 from libs.db.repository import (
     ConcurrentPersistenceError,
+    IllegalNodeStatusTransition,
     flush_mutation_records,
     flush_state,
     load_state,
@@ -185,10 +186,14 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
         claims = predecoded_claims
         if claims is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), errors.AUTH_REQUIRED.reason)
-        if not repo.tenant_is_loaded(str(claims.get("tid") or "")):
+        claimed_tenant = str(claims.get("tid") or "")
+        if not repo.tenant_is_loaded(claimed_tenant):
             if postgres_persistence_configured() or repo.sqlite_enabled or repo.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
-                load_state()
-            repo.mark_tenant_loaded(str(claims.get("tid") or ""))
+                # N-5：这里原先无参调用 load_state()，即一律按 configured_tenant_id()
+                # 加载，随后却把 claims.tid 标记为已加载。多租户部署重启后，
+                # 非 configured 租户的数据在库里存在却永不加载——对使用方等同于数据丢失。
+                load_state(tenant_id=claimed_tenant or None)
+            repo.mark_tenant_loaded(claimed_tenant)
         user_record = user_record_by_username(claims.get("sub"), tenant_id=str(claims.get("tid") or ""))
         if user_record is None:
             return audit_rejected_request(request, fail(errors.AUTH_REQUIRED, request), "AUTH_USER_NOT_FOUND")
@@ -293,6 +298,11 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
                 ),
                 http_status=409,
             )
+        except IllegalNodeStatusTransition as exc:
+            # 非法的节点状态跳变是业务冲突，不是服务端故障——要给调用方看得懂的原因。
+            restore_failed_request_state(request)
+            logger.warning("illegal_node_status_transition: %s", exc)
+            return fail(errors.CONFLICT, request, message=str(exc), http_status=409)
         except BaseException:
             restore_failed_request_state(request)
             raise

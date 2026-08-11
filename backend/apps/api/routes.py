@@ -145,6 +145,7 @@ from libs.raw_vault import (
 )
 from libs.raw_vault_export import build_raw_vault_export, build_raw_vault_summary
 from libs.runtime_readiness import production_runtime_status
+from libs.security.actions import canonical_path
 from libs.security.auth import (
     DEFAULT_INITIAL_PASSWORD,
     ROLE_DEFAULT_PATHS,
@@ -1833,6 +1834,35 @@ def resolved_role_for_read(request: Request, role: str | None = None, x_role: st
     return requested_role or effective_role or "inspection", None
 
 
+# 这些动作一旦并发写就会无声推翻别人的结论：保存审查意见、打回补正、正式提交、
+# 归档。它们必须带 If-Match（N-6），其余端点保持缺省放行，避免一次性打破所有
+# 既有调用方——收紧范围可以后续按需扩大。
+IF_MATCH_REQUIRED_PATH_PATTERNS = (
+    re.compile(r"/inspection/nodes/[^/]+/review-opinions$"),
+    re.compile(r"/inspection/nodes/[^/]+/actions/return-correction$"),
+    re.compile(r"/projects/[^/]+/submissions$"),
+    re.compile(r"/projects/[^/]+/reports/[^/]+/archive$"),
+)
+
+
+def if_match_enforced() -> bool:
+    """默认开启，与认证默认值同一原则：漏配要 fail closed。
+
+    存量调用方（尤其外部集成）迁移期间可显式设 AICHECK_REQUIRE_IF_MATCH=false
+    暂时关闭；关掉后高风险写端点会退回「不发头即绕过乐观锁」的旧行为。
+    """
+    return os.getenv("AICHECK_REQUIRE_IF_MATCH", "true").lower() == "true"
+
+
+def requires_if_match(request: Request) -> bool:
+    if not if_match_enforced():
+        return False
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
+    path = canonical_path(request.url.path)
+    return any(pattern.search(path) for pattern in IF_MATCH_REQUIRED_PATH_PATTERNS)
+
+
 def mutation_guard(
     request: Request,
     project_id: str | None = None,
@@ -1853,6 +1883,19 @@ def mutation_guard(
         effective_if_match = if_match
         if effective_if_match is None and "/reports/" not in request.url.path:
             effective_if_match = request.headers.get("If-Match")
+        # N-6：不发 If-Match 就绕过乐观锁。对「一旦并发写就会推翻别人结论」的高风险
+        # 动作强制要求该头——保存审查结论、打回补正、正式提交、归档。
+        # 其余端点保持缺省放行，避免一次性打破所有既有调用方。
+        if not effective_if_match and requires_if_match(request):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=(
+                    "该操作会改写审查结论，必须携带 If-Match 请求头（取自项目的 etag），"
+                    "以免覆盖他人在此期间的修改。"
+                ),
+                data={"reason": "IF_MATCH_REQUIRED"},
+            )
         if not project_if_match_valid(project, effective_if_match):
             return fail(errors.ETAG_CONFLICT, request)
         node_scope_error = member_node_scope_error(request, project_id, effective_role, node_ids=node_ids)
@@ -2946,9 +2989,11 @@ def upsert_ndt_node_evidence_links(project_id: str, node_id: int, reports: list[
                 "pageNo": 1,
                 "fieldName": "报告编号",
                 "quotedText": report.get("reportNo"),
-                "matchedEvidenceItems": [item for item in [report.get("reportNo"), report.get("method"), report.get("detectionRatio")] if item],
+                "matchedEvidenceItems": (matched := [item for item in [report.get("reportNo"), report.get("method"), report.get("detectionRatio")] if item]),
                 "supportStatus": "partial",
-                "confidence": 0.82,
+                # 按实际匹配到的字段数派生，而不是恒定的 0.82（N-3）：
+                # 三项关键字段（报告编号 / 检测方法 / 检测比例）匹配到几项就报几分。
+                "confidence": round(0.3 + 0.65 * len(matched) / 3, 2),
                 "manualStatus": "pending",
                 "manualStatusLabel": "待确认",
                 "source": "ndt_submission",
@@ -4592,7 +4637,8 @@ async def auth_login(request: Request, body: dict[str, Any] = Body(default_facto
         )
         if not repo.tenant_is_loaded(requested_tenant_id):
             if persistent:
-                load_state()
+                # 按登录请求声明的租户加载，而不是一律按 configured_tenant_id()（N-5）。
+                load_state(tenant_id=requested_tenant_id or None)
             repo.mark_tenant_loaded(requested_tenant_id)
         request.state.mutation_state_snapshot = repo.snapshot_current_tenant_runtime(
             include_state=not persistent
@@ -6665,6 +6711,20 @@ def validate_upload_session_completion(
     return verified, None
 
 
+def local_review_confidence(missing_count: int, pending_count: int, manual_item_count: int) -> float:
+    """本地降级审查的置信度：按「已就绪的证据项占比」派生（N-3）。
+
+    缺项和待确认项越多，把握越低。全部就绪也不给满分——本地降级本就没有跑完整
+    的证据锚定，上限留出余量。
+    """
+    unresolved = max(0, int(missing_count)) + max(0, int(pending_count))
+    total = unresolved + max(0, int(manual_item_count))
+    if total <= 0:
+        return 0.7
+    ready_ratio = 1 - unresolved / total
+    return round(0.35 + 0.35 * ready_ratio, 2)
+
+
 def duplicate_documents_in_project(project_id: str, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """按 hash + projectId 找出项目内已存在的同一份文件（M-5）。
 
@@ -8661,7 +8721,8 @@ def ai_recheck(
             **(run.get("suggestion") or {}),
             "result": conclusion,
             "opinionDraft": opinion,
-            "confidence": 0.55 if missing_count or pending_count else 0.68,
+            # 本地降级路径同样不给常量（N-3）：按「已就绪的证据项占比」派生。
+            "confidence": local_review_confidence(missing_count, pending_count, len(manual_items)),
             "manualConfirmItems": manual_items,
         }
         run["reasoningProcess"] = reasoning
