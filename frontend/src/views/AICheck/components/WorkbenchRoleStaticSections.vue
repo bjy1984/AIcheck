@@ -518,10 +518,20 @@ const requestFileBind = (file: ContractorFileRow) => {
   if (!props.readOnly) emit('file-bind', file.documentId)
 }
 
+/** 上传失败的资料不能提交：本体没落盘，提交上去也是空壳（后端同口径拒 DOCUMENT_BODY_MISSING）。 */
+const contractorFileSubmittable = (file: ContractorFileRow) =>
+  !props.readOnly &&
+  file.processingStatus !== '上传失败' &&
+  ['未关联', '待提交', '需补正'].includes(file.status)
+
 const requestFileSubmit = (file: ContractorFileRow) => {
-  if (!props.readOnly && ['未关联', '待提交', '需补正'].includes(file.status)) {
+  if (contractorFileSubmittable(file)) {
     emit('file-submit', file.documentId)
   }
+}
+
+const requestFileReupload = (file: ContractorFileRow) => {
+  if (!props.readOnly) emit('upload', file.materialCategory)
 }
 
 const requestFileDelete = (file: ContractorFileRow) => {
@@ -532,6 +542,7 @@ const requestFileDelete = (file: ContractorFileRow) => {
 
 const getContractorSubmitHint = (file: ContractorFileRow) => {
   if (props.readOnly) return '当前项目为只读状态，不能提交文件'
+  if (file.processingStatus === '上传失败') return '该资料未上传成功，请先重新上传再提交'
   if (file.status === '未关联') return '提交到项目资料池，供监检处理（可不关联审核环节）'
   return ['待提交', '需补正'].includes(file.status)
     ? '提交当前文件的全部待提交或待补正挂载'
@@ -781,9 +792,18 @@ const getPillClass = (value?: string): AuditStatusTone => {
               <template #default="{ row }">
                 <div class="table-actions">
                   <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
+                  <ElButton
+                    v-if="row.processingStatus === '上传失败'"
+                    link
+                    type="warning"
+                    :disabled="readOnly"
+                    @click="requestFileReupload(row)"
+                  >
+                    重新上传
+                  </ElButton>
                   <ElTooltip
                     :content="getContractorSubmitHint(row)"
-                    :disabled="!readOnly && ['未关联', '待提交', '需补正'].includes(row.status)"
+                    :disabled="contractorFileSubmittable(row)"
                     placement="top"
                     popper-class="audit-action-tooltip-popper"
                   >
@@ -791,7 +811,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                       <ElButton
                         link
                         type="primary"
-                        :disabled="readOnly || !['未关联', '待提交', '需补正'].includes(row.status)"
+                        :disabled="!contractorFileSubmittable(row)"
                         @click="requestFileSubmit(row)"
                       >
                         提交

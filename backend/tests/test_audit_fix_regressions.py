@@ -667,3 +667,54 @@ def test_m12_owner_progress_reflects_real_node_settlement() -> None:
     settled = len([item for item in nodes if item.get("status") in {"已通过", "不适用"}]) + 1
     assert after == f"{round(settled / len(nodes) * 100)}%"
     assert read_progress() == before
+
+
+# ---- U-5 补漏：台账行（projectFiles）此前不带本体标记 ----
+
+
+def test_u5_project_file_rows_carry_body_uploaded_flag() -> None:
+    """节点包里的台账行必须带 bodyUploaded。
+
+    此前只有 bindings 带这个标记，台账行没有，于是一份从未上传成功的资料
+    在施工方台账里永远显示「上传中」——看不出该重传，只有点了提交才会撞到
+    DOCUMENT_BODY_MISSING。前端的「上传失败 / 重新上传 / 禁用提交」全部依赖这个字段。
+    """
+    headers = {"X-Dev-Role": "contractor", "X-Dev-User": "USER-CONTRACTOR-001"}
+    project_id = "P-2026-HDCP-001"
+
+    session = client.post(
+        f"/api/projects/{project_id}/documents/upload-session",
+        headers={**headers, "Idempotency-Key": "u5-projectfile-flag"},
+        json={
+            "files": [
+                {
+                    "fileName": "从未上传成功的资料.pdf",
+                    "fileSize": 1024,
+                    "contentType": "application/pdf",
+                }
+            ]
+        },
+    )
+    assert session.status_code == 200, session.text
+    # 故意不 PUT 任何内容：只有记录，没有本体。
+    empty_document_id = session.json()["data"]["uploadUrls"][0]["documentId"]
+
+    node_id = next(
+        item
+        for item in repo.state["tree_nodes"]
+        if item.get("projectId") == project_id
+    )["nodeId"]
+    package = client.get(
+        f"/api/projects/{project_id}/nodes/{node_id}/package",
+        headers=headers,
+    )
+    assert package.status_code == 200, package.text
+    project_files = package.json()["data"]["projectFiles"]
+
+    rows = {str(item["id"]): item for item in project_files}
+    assert empty_document_id in rows, "新建的资料应出现在施工方台账里"
+    assert "bodyUploaded" in rows[empty_document_id]
+    assert rows[empty_document_id]["bodyUploaded"] is False
+
+    # 其余每一行都必须带上该字段，不能只在空壳这一行出现
+    assert all("bodyUploaded" in item for item in project_files)

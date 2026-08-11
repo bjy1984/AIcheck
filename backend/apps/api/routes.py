@@ -6232,6 +6232,11 @@ def node_package(request: Request, project_id: str, node_id: int):
         file_bindings = [binding for binding in project_bindings if binding.get("documentId") == file.get("id")]
         file["bindings"] = file_bindings
         file["primaryBinding"] = file_bindings[0] if file_bindings else None
+        # 台账行同样要带本体标记：没有它，从未上传成功的文件会一直显示「上传中」，
+        # 施工方看不出该重传，只有点了提交才会撞到 DOCUMENT_BODY_MISSING。
+        file["bodyUploaded"] = document_body_uploaded(
+            repo.find_one("documents", file.get("id")) or file
+        )
     visible_document_ids = {item["id"] for item in project_files}
     node_ai_runs = [
         item

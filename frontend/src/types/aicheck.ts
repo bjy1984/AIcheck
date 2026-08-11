@@ -192,6 +192,8 @@ export type DocumentAsset = {
     | '人工修正'
   sliceStatus?: '未切片' | '待切片' | '已切片' | '切片失败'
   vectorStatus?: '未向量化' | '待向量化' | '已向量化' | '向量化失败'
+  /** 文件本体是否已上传成功。false 表示只建了记录、内容未落盘，处理状态应显示「上传失败」。 */
+  bodyUploaded?: boolean
   chunkCount?: number
   vectorCount?: number
   embeddingModel?: string

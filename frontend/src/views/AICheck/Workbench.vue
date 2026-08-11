@@ -3083,9 +3083,18 @@ const handleSubmitProjectFile = async (documentId: string) => {
     }
     return
   }
+  const isProjectSubmit = submissionPayload.mode === 'project'
+  // 与批量提交同一口径：提交是不可逆动作，撤回须另行申请，必须先确认。
+  const confirmed = await confirmIrreversibleAction({
+    title: '提交资料给监检',
+    message: isProjectSubmit
+      ? `将把《${file.fileName}》提交到项目资料池，提交后进入监检处理流程，需要撤回时须另行申请。确认提交？`
+      : `将把《${file.fileName}》提交到 ${submissionPayload.nodeIds.length} 个审核节点，提交后进入监检审查流程，需要撤回时须另行申请。确认提交？`,
+    confirmText: '确认提交'
+  })
+  if (!confirmed) return
   actionLoading.value = true
   try {
-    const isProjectSubmit = submissionPayload.mode === 'project'
     const res = await submitNodePackageApi(
       activeProjectId.value,
       isProjectSubmit
