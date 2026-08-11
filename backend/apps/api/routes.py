@@ -5273,6 +5273,34 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
     )
 
 
+# 建设方看板「总体进度」的口径：监检节点的办结比例。
+# 与 project_overview 的 nodeSummary 保持同一套状态词表，不另立标准。
+# 「不适用」是经人工判定的终态处置，同样计入已办结；停用节点不参与统计。
+PROJECT_PROGRESS_SETTLED_STATUSES = {"已通过", "不适用"}
+PROJECT_PROGRESS_EXCLUDED_STATUSES = {"停用"}
+
+
+def project_progress_percent(nodes: list[dict[str, Any]]) -> int | None:
+    """返回 0-100 的整数进度；无可统计节点时返回 None（由调用方决定如何展示）。"""
+    countable = [
+        item
+        for item in nodes
+        if str(item.get("status") or "") not in PROJECT_PROGRESS_EXCLUDED_STATUSES
+    ]
+    if not countable:
+        return None
+    settled = len(
+        [item for item in countable if str(item.get("status") or "") in PROJECT_PROGRESS_SETTLED_STATUSES]
+    )
+    return round(settled / len(countable) * 100)
+
+
+def project_progress_display(nodes: list[dict[str, Any]]) -> str:
+    percent = project_progress_percent(nodes)
+    # 没有可统计节点时不能显示 0%——那会被读成「一项没办」，实际是「还没有节点」。
+    return "—" if percent is None else f"{percent}%"
+
+
 @router.get("/projects/{project_id}/workbench/summary")
 def workbench_summary(request: Request, project_id: str, role: str = Query(default="inspection")):
     resolved_role, role_error = resolved_role_for_read(request, role)
@@ -5313,7 +5341,7 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
     ]
     if resolved_role == "owner":
         metrics = [
-            {"key": "progress", "label": "总体进度", "value": "42%", "tone": "blue"},
+            {"key": "progress", "label": "总体进度", "value": project_progress_display(visible_nodes), "tone": "blue"},
             {"key": "report", "label": "报告版本", "value": len(visible_reports), "tone": "green"},
             {"key": "archive", "label": "归档资料", "value": len([item for item in repo.state["archive_items"] if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)]), "tone": "gray"},
         ]

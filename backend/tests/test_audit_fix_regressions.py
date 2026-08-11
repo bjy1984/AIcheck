@@ -610,3 +610,60 @@ def test_fact_corrections_overlay_only_target_node() -> None:
     assert "validUntil" not in facts["welderCertificate"]
     assert "weldingProcedure" not in facts
     assert [item["correctionId"] for item in applied] == ["FCOR-1"]
+
+
+# ---- M-12：建设方「总体进度」曾写死 42% ----
+
+
+def test_m12_owner_progress_reflects_real_node_settlement() -> None:
+    """总体进度必须来自节点办结情况，而不是常量。
+
+    建设方看板上这是唯一的核心指标，写死意味着无论项目实际办到哪一步都显示同一个数。
+    口径与 project_overview 的 nodeSummary 一致：已通过 / 不适用 记为已办结，停用不参与统计。
+    """
+    from apps.api.routes import project_progress_display, project_progress_percent
+
+    # 全部办结
+    assert project_progress_percent([{"status": "已通过"}, {"status": "不适用"}]) == 100
+    # 一项未办结
+    assert project_progress_percent([{"status": "已通过"}, {"status": "需补正"}]) == 50
+    # 一项未办
+    assert project_progress_percent([{"status": "待审查"}, {"status": "待提交"}]) == 0
+    # 停用节点不拉低分母
+    assert project_progress_percent([{"status": "已通过"}, {"status": "停用"}]) == 100
+    # 没有可统计节点时不得显示 0%——那会被读成「一项没办」
+    assert project_progress_percent([]) is None
+    assert project_progress_percent([{"status": "停用"}]) is None
+    assert project_progress_display([]) == "—"
+    assert project_progress_display([{"status": "已通过"}, {"status": "需补正"}]) == "50%"
+
+    # 端到端：进度必须随节点办结情况变化，而不是恒定值
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Dev-Role": "owner", "X-Dev-User": "USR-OWNER-001"}
+
+    def read_progress() -> str:
+        response = client.get(
+            f"/api/projects/{project_id}/workbench/summary",
+            params={"role": "owner"},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        return {item["key"]: item["value"] for item in response.json()["data"]["metrics"]}["progress"]
+
+    nodes = [item for item in repo.state["tree_nodes"] if item.get("projectId") == project_id]
+    assert nodes, "演示项目应有监检节点，否则本用例无法验证进度随办结变化"
+    before = read_progress()
+
+    target = next(item for item in nodes if item.get("status") != "已通过")
+    original_status = target.get("status")
+    try:
+        target["status"] = "已通过"
+        after = read_progress()
+    finally:
+        target["status"] = original_status
+
+    assert before != after, "办结一个节点后进度必须变化——恒定值说明又被写死了"
+    assert after.endswith("%")
+    settled = len([item for item in nodes if item.get("status") in {"已通过", "不适用"}]) + 1
+    assert after == f"{round(settled / len(nodes) * 100)}%"
+    assert read_progress() == before
