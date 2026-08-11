@@ -9064,7 +9064,28 @@ def test_ndt_user_validation_messages_use_business_language() -> None:
     assert "规则挂载" not in payload["message"]
 
 
-def upload_ndt_atomic_documents(file_specs: list[dict[str, object]]) -> list[dict[str, object]]:
+def mark_document_pipeline_complete(document_id: str) -> None:
+    document = repo.find_one("documents", document_id)
+    version = repo.find_one("versions", document["currentVersionId"])
+    knowledge_file = next(
+        item
+        for item in repo.state["knowledge_files"]
+        if item.get("documentVersionId") == document["currentVersionId"]
+    )
+    document["currentOcrStatus"] = "已识别"
+    version["ocrStatus"] = "已识别"
+    version["sliceStatus"] = "已切片"
+    version["vectorStatus"] = "已向量化"
+    knowledge_file["ocrStatus"] = "已识别"
+    knowledge_file["sliceStatus"] = "已切片"
+    knowledge_file["vectorStatus"] = "已向量化"
+
+
+def upload_ndt_atomic_documents(
+    file_specs: list[dict[str, object]],
+    *,
+    pipeline_complete: bool = True,
+) -> list[dict[str, object]]:
     project_id = "P-2026-HDCP-001"
     headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
     upload = assert_ok(
@@ -9086,7 +9107,11 @@ def upload_ndt_atomic_documents(file_specs: list[dict[str, object]]) -> list[dic
             headers=headers,
         )
     )
-    return complete["documents"]
+    documents = complete["documents"]
+    if pipeline_complete:
+        for document in documents:
+            mark_document_pipeline_complete(str(document["documentId"]))
+    return documents
 
 
 def test_retry_failed_upload_reuses_stored_original_and_current_version(monkeypatch) -> None:
@@ -9265,7 +9290,8 @@ def test_ndt_atomic_submission_refreshes_latest_document_state_before_validation
                 "materialTypeName": "无损检测单位质量保证手册",
                 "nodeIds": [35],
             }
-        ]
+        ],
+        pipeline_complete=False,
     )[0]
     persisted_document = repo.find_one("documents", document["documentId"])
     persisted_document["currentOcrStatus"] = "排队中"
@@ -9273,7 +9299,7 @@ def test_ndt_atomic_submission_refreshes_latest_document_state_before_validation
 
     def refresh_latest_state(state_keys: set[str]) -> None:
         refreshed_state_keys.append(state_keys)
-        persisted_document["currentOcrStatus"] = "已识别"
+        mark_document_pipeline_complete(str(document["documentId"]))
 
     repo.postgres_dsn = "postgresql://refresh-latest-state-test"
     monkeypatch.setattr("apps.api.routes.load_state", refresh_latest_state)
@@ -9287,7 +9313,9 @@ def test_ndt_atomic_submission_refreshes_latest_document_state_before_validation
     )
 
     assert result["documentId"] == document["documentId"]
-    assert refreshed_state_keys == [{"documents", "versions", "bindings", "tree_nodes"}]
+    assert refreshed_state_keys == [
+        {"documents", "versions", "bindings", "tree_nodes", "knowledge_files"}
+    ]
     assert repo.find_one("documents", document["documentId"])["currentOcrStatus"] == "已识别"
 
 
@@ -9310,17 +9338,37 @@ def test_ndt_atomic_submission_reloads_external_ocr_update_from_sqlite(tmp_path)
                 "materialTypeName": "无损检测单位质量保证手册",
                 "nodeIds": [35],
             }
-        ]
+        ],
+        pipeline_complete=False,
     )[0]
     stale_document = repo.find_one("documents", document["documentId"])
     assert stale_document["currentOcrStatus"] == "排队中"
 
     ocr_worker_view = InMemoryRepository()
     ocr_worker_view.configure_sqlite(sqlite_path)
-    ocr_worker_view.load_from_sqlite({"documents"})
+    ocr_worker_view.load_from_sqlite({"documents", "versions", "knowledge_files"})
     ocr_document = ocr_worker_view.find_one("documents", document["documentId"])
+    ocr_version = ocr_worker_view.find_one("versions", ocr_document["currentVersionId"])
+    ocr_knowledge_file = next(
+        item
+        for item in ocr_worker_view.state["knowledge_files"]
+        if item.get("documentVersionId") == ocr_document["currentVersionId"]
+    )
     ocr_document["currentOcrStatus"] = "已识别"
-    ocr_worker_view.sync_state_records_to_sqlite({"documents": [ocr_document]}, {})
+    ocr_version["ocrStatus"] = "已识别"
+    ocr_version["sliceStatus"] = "已切片"
+    ocr_version["vectorStatus"] = "已向量化"
+    ocr_knowledge_file["ocrStatus"] = "已识别"
+    ocr_knowledge_file["sliceStatus"] = "已切片"
+    ocr_knowledge_file["vectorStatus"] = "已向量化"
+    ocr_worker_view.sync_state_records_to_sqlite(
+        {
+            "documents": [ocr_document],
+            "versions": [ocr_version],
+            "knowledge_files": [ocr_knowledge_file],
+        },
+        {},
+    )
 
     result = assert_ok(
         client.post(
@@ -9481,7 +9529,7 @@ def test_ndt_atomic_submission_returns_clear_resource_state_conflict(monkeypatch
     assert payload["data"]["reason"] != "EXTERNAL_TOOL_FAILED"
 
 
-def test_ndt_atomic_documents_submit_independently_without_ocr_gate() -> None:
+def test_ndt_atomic_documents_require_upload_success_before_submission() -> None:
     project_id = "P-2026-HDCP-001"
     headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}
     documents = upload_ndt_atomic_documents(
@@ -9504,13 +9552,53 @@ def test_ndt_atomic_documents_submit_independently_without_ocr_gate() -> None:
                 "materialTypeName": "无损检测方案",
                 "nodeIds": [36],
             },
-        ]
+        ],
+        pipeline_complete=False,
     )
     first, second = documents
     first_document = repo.find_one("documents", first["documentId"])
     second_document = repo.find_one("documents", second["documentId"])
     first_document["currentOcrStatus"] = "排队中"
     second_document["currentOcrStatus"] = "识别失败"
+
+    first_blocked = assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": first["documentId"], "bindingIds": first["bindingIds"]},
+            headers=headers,
+        ),
+        "VALIDATION_ERROR",
+    )
+    second_blocked = assert_error(
+        client.post(
+            f"/projects/{project_id}/ndt/material-submissions",
+            json={"documentId": second["documentId"], "bindingIds": second["bindingIds"]},
+            headers=headers,
+        ),
+        "VALIDATION_ERROR",
+    )
+
+    assert first_blocked["message"] == "文件上传处理尚未成功，暂不能提交。"
+    assert first_blocked["data"]["incompleteDocumentIds"] == [first["documentId"]]
+    assert second_blocked["data"]["incompleteDocumentIds"] == [second["documentId"]]
+    assert repo.find_one("bindings", first["bindingIds"][0])["bindingStatus"] == "草稿挂载"
+    assert repo.find_one("bindings", second["bindingIds"][0])["bindingStatus"] == "草稿挂载"
+    assert first_document["fileStatus"] == "已上传"
+    assert second_document["fileStatus"] == "已上传"
+
+    first_version = repo.find_one("versions", first_document["currentVersionId"])
+    first_knowledge_file = next(
+        item
+        for item in repo.state["knowledge_files"]
+        if item.get("documentVersionId") == first_document["currentVersionId"]
+    )
+    first_document["currentOcrStatus"] = "已识别"
+    first_version["ocrStatus"] = "已识别"
+    first_version["sliceStatus"] = "已切片"
+    first_version["vectorStatus"] = "已向量化"
+    first_knowledge_file["ocrStatus"] = "已识别"
+    first_knowledge_file["sliceStatus"] = "已切片"
+    first_knowledge_file["vectorStatus"] = "已向量化"
 
     first_result = assert_ok(
         client.post(
@@ -9519,30 +9607,157 @@ def test_ndt_atomic_documents_submit_independently_without_ocr_gate() -> None:
             headers=headers,
         )
     )
+
     assert first_result["documentId"] == first["documentId"]
-    assert first_result["bindingIds"] == first["bindingIds"]
     assert repo.find_one("bindings", first["bindingIds"][0])["bindingStatus"] == "已提交"
     assert repo.find_one("bindings", second["bindingIds"][0])["bindingStatus"] == "草稿挂载"
     assert first_document["fileStatus"] == "已提交审批"
-    assert len(first_result["createdTodos"]) == 1
+    assert second_document["fileStatus"] == "已上传"
 
-    second_result = assert_ok(
+
+def test_contractor_project_submission_requires_upload_success() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"}
+    upload = assert_ok(
         client.post(
-            f"/projects/{project_id}/ndt/material-submissions",
-            json={"documentId": second["documentId"], "bindingIds": second["bindingIds"]},
+            f"/projects/{project_id}/documents/upload-session",
+            json={
+                "files": [
+                    {
+                        "fileName": "施工方案-等待处理.pdf",
+                        "fileSize": 32,
+                        "fileType": "application/pdf",
+                        "materialCategory": "施工方案",
+                    }
+                ]
+            },
             headers=headers,
         )
     )
-    assert second_result["documentId"] == second["documentId"]
-    assert repo.find_one("bindings", second["bindingIds"][0])["bindingStatus"] == "已提交"
-    assert second_document["fileStatus"] == "已提交审批"
-    created_submissions = [
+    target = upload["uploadUrls"][0]
+    body = b"%PDF-contractor-upload-success"
+    assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {"documentVersionId": target["documentVersionId"], "fileSize": len(body)}
+                ]
+            },
+            headers=headers,
+        )
+    )
+    document_id = target["documentId"]
+    submission = {
+        "submissionType": "project",
+        "documentIds": [document_id],
+        "bindingIds": [],
+        "nodeIds": [],
+    }
+
+    blocked = assert_error(
+        client.post(f"/projects/{project_id}/submissions", json=submission, headers=headers),
+        "VALIDATION_ERROR",
+    )
+    assert blocked["message"] == "文件上传处理尚未成功，暂不能提交。"
+    assert blocked["data"]["incompleteDocumentIds"] == [document_id]
+
+    document = repo.find_one("documents", document_id)
+    version = repo.find_one("versions", target["documentVersionId"])
+    knowledge_file = next(
         item
-        for item in repo.state["submissions"]
-        if item.get("submissionType") == "ndt-material"
-        and item.get("documentIds", [None])[0] in {first["documentId"], second["documentId"]}
-    ]
-    assert len(created_submissions) == 2
+        for item in repo.state["knowledge_files"]
+        if item.get("documentVersionId") == target["documentVersionId"]
+    )
+    document["currentOcrStatus"] = "已识别"
+    version["ocrStatus"] = "已识别"
+    version["sliceStatus"] = "已切片"
+    version["vectorStatus"] = "已向量化"
+    knowledge_file["ocrStatus"] = "已识别"
+    knowledge_file["sliceStatus"] = "已切片"
+    knowledge_file["vectorStatus"] = "已向量化"
+
+    result = assert_ok(
+        client.post(f"/projects/{project_id}/submissions", json=submission, headers=headers)
+    )
+    assert result["documentIds"] == [document_id]
+
+
+def test_contractor_bound_submission_requires_upload_success() -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"}
+    upload = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session",
+            json={
+                "files": [
+                    {
+                        "fileName": "节点施工资料-等待处理.pdf",
+                        "fileSize": 30,
+                        "fileType": "application/pdf",
+                        "materialCategory": "施工方案",
+                    }
+                ]
+            },
+            headers=headers,
+        )
+    )
+    target = upload["uploadUrls"][0]
+    body = b"%PDF-contractor-node-upload"
+    assert_ok(client.put(target["url"], content=body, headers=target["headers"]))
+    assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/upload-session/{upload['uploadSessionId']}/complete",
+            json={
+                "completedFiles": [
+                    {"documentVersionId": target["documentVersionId"], "fileSize": len(body)}
+                ]
+            },
+            headers=headers,
+        )
+    )
+    bound = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/bindings",
+            json={
+                "nodeIds": [16],
+                "bindings": [
+                    {
+                        "documentId": target["documentId"],
+                        "documentVersionId": target["documentVersionId"],
+                        "usage": "原始提交",
+                    }
+                ],
+            },
+            headers=headers,
+        )
+    )
+    submission = {"nodeIds": [16], "bindingIds": bound["affectedIds"]}
+
+    blocked = assert_error(
+        client.post(f"/projects/{project_id}/submissions", json=submission, headers=headers),
+        "VALIDATION_ERROR",
+    )
+    assert blocked["data"]["incompleteDocumentIds"] == [target["documentId"]]
+
+    document = repo.find_one("documents", target["documentId"])
+    version = repo.find_one("versions", target["documentVersionId"])
+    knowledge_file = next(
+        item
+        for item in repo.state["knowledge_files"]
+        if item.get("documentVersionId") == target["documentVersionId"]
+    )
+    document["currentOcrStatus"] = "已识别"
+    version["sliceStatus"] = "已切片"
+    version["vectorStatus"] = "已向量化"
+    knowledge_file["sliceStatus"] = "已切片"
+    knowledge_file["vectorStatus"] = "已向量化"
+
+    result = assert_ok(
+        client.post(f"/projects/{project_id}/submissions", json=submission, headers=headers)
+    )
+    assert result["bindingIds"] == bound["affectedIds"]
 
 
 def test_ndt_atomic_submission_rejects_mixed_document_bindings_atomically() -> None:

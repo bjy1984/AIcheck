@@ -7573,6 +7573,32 @@ def pending_rectification_for_bindings(
     )
 
 
+def document_upload_pipeline_complete(document: dict[str, Any]) -> bool:
+    version_id = str(document.get("currentVersionId") or "")
+    version = repo.find_one("versions", version_id) or {}
+    knowledge_file = next(
+        (
+            item
+            for item in repo.state.get("knowledge_files", [])
+            if str(item.get("documentVersionId") or "") == version_id
+        ),
+        {},
+    )
+    ocr_status = str(
+        document.get("currentOcrStatus")
+        or version.get("ocrStatus")
+        or knowledge_file.get("ocrStatus")
+        or ""
+    )
+    slice_status = str(knowledge_file.get("sliceStatus") or version.get("sliceStatus") or "")
+    vector_status = str(knowledge_file.get("vectorStatus") or version.get("vectorStatus") or "")
+    return (
+        ocr_status in {"已识别", "人工修正", "抽取不完整"}
+        and slice_status == "已切片"
+        and vector_status == "已向量化"
+    )
+
+
 def link_resubmission_to_rectification(
     submission: dict[str, Any],
     rectification: dict[str, Any] | None,
@@ -7627,6 +7653,18 @@ def submit_node_package(
                 return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
             if not document_ids:
                 return fail(errors.EMPTY_PROJECT_PACKAGE, request)
+            incomplete_document_ids = [
+                document_id
+                for document_id in document_ids
+                if not document_upload_pipeline_complete(repo.find_one("documents", document_id) or {})
+            ]
+            if incomplete_document_ids:
+                return fail(
+                    errors.VALIDATION_ERROR,
+                    request,
+                    message="文件上传处理尚未成功，暂不能提交。",
+                    data={"incompleteDocumentIds": incomplete_document_ids},
+                )
             already_submitted = [
                 document_id
                 for document_id in document_ids
@@ -7710,6 +7748,25 @@ def submit_node_package(
             return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
         if not binding_ids:
             return fail(errors.EMPTY_NODE_PACKAGE, request)
+        submission_document_ids = list(
+            dict.fromkeys(
+                str(binding.get("documentId") or "")
+                for binding in repo.state["bindings"]
+                if binding.get("id") in binding_ids and binding.get("documentId")
+            )
+        )
+        incomplete_document_ids = [
+            document_id
+            for document_id in submission_document_ids
+            if not document_upload_pipeline_complete(repo.find_one("documents", document_id) or {})
+        ]
+        if incomplete_document_ids:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="文件上传处理尚未成功，暂不能提交。",
+                data={"incompleteDocumentIds": incomplete_document_ids},
+            )
         rectification = pending_rectification_for_bindings(project_id, binding_ids)
         submitted_at = server_time()
         changed = []
@@ -13985,7 +14042,7 @@ def submit_ndt_atomic_material(
 
     def produce():
         if repo.sync_postgres is not None or repo.postgres_dsn or repo.sqlite_enabled or repo.sqlite_path:
-            load_state({"documents", "versions", "bindings", "tree_nodes"})
+            load_state({"documents", "versions", "bindings", "tree_nodes", "knowledge_files"})
         if len(set(requested_binding_ids)) != len(requested_binding_ids):
             return fail(errors.VALIDATION_ERROR, request, message="适用业务规则列表存在重复项。")
         requested_binding_id_set = set(requested_binding_ids)
@@ -14010,6 +14067,13 @@ def submit_ndt_atomic_material(
             or str(document.get("materialTypeCode") or "").strip() in {"", "generic_review_material"}
         ):
             return fail(errors.VALIDATION_ERROR, request, message="该文件不属于无损检测资料。")
+        if not document_upload_pipeline_complete(document):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="文件上传处理尚未成功，暂不能提交。",
+                data={"incompleteDocumentIds": [document_id]},
+            )
         current_bindings = document_bindings(project_id, document_id)
         current_binding_ids = {str(item.get("id") or "") for item in current_bindings}
         if current_binding_ids:
