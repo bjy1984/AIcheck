@@ -1792,9 +1792,15 @@ const assertRealUploadTarget = (target: DocumentUploadTarget, file: File) => {
 
 const uploadFileToSignedUrl = async (target: DocumentUploadTarget, file: File) => {
   assertRealUploadTarget(target, file)
+  // 登录态由本地会话补，不再依赖服务端在会话响应里回显 Authorization（M-3）——
+  // 把调用方自己的 JWT 写进响应体没有增益，却会随响应进入 devtools、前端日志、
+  // 错误上报和网关访问日志。target.headers 仍带本次上传专用的短时凭证。
   const response = await fetch(target.url, {
     method: target.method || 'PUT',
-    headers: target.headers || {},
+    headers: {
+      ...(target.headers || {}),
+      [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? ''
+    },
     body: file
   })
   if (!response.ok) {
@@ -3084,9 +3090,18 @@ const handleSubmitProjectFile = async (documentId: string) => {
     }
     return
   }
+  const isProjectSubmit = submissionPayload.mode === 'project'
+  // 与批量提交同一口径：提交是不可逆动作，撤回须另行申请，必须先确认。
+  const confirmed = await confirmIrreversibleAction({
+    title: '提交资料给监检',
+    message: isProjectSubmit
+      ? `将把《${file.fileName}》提交到项目资料池，提交后进入监检处理流程，需要撤回时须另行申请。确认提交？`
+      : `将把《${file.fileName}》提交到 ${submissionPayload.nodeIds.length} 个审核节点，提交后进入监检审查流程，需要撤回时须另行申请。确认提交？`,
+    confirmText: '确认提交'
+  })
+  if (!confirmed) return
   actionLoading.value = true
   try {
-    const isProjectSubmit = submissionPayload.mode === 'project'
     const res = await submitNodePackageApi(
       activeProjectId.value,
       isProjectSubmit

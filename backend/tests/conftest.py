@@ -6,8 +6,18 @@ from uuid import uuid4
 
 import pytest
 
+# AICHECK_REQUIRE_AUTH 的代码默认值是 true（漏配必须表现为「登不进去」而不是「谁都能进」）。
+# 测试套件跑的是业务逻辑，用 X-Dev-Role 头直接扮演角色，因此在这里显式声明本地开发姿态。
+# 专门验认证的用例会自行 monkeypatch 回 "true"；authentication_enforced() 的默认值另有用例钉住。
+os.environ.setdefault("AICHECK_REQUIRE_AUTH", "false")
+# 同理：高风险写端点默认强制 If-Match（N-6）。测试验的是业务逻辑而非乐观锁协议，
+# 逐个调用补头只会淹没断言；默认值与拦截行为另有专门用例钉住。
+os.environ.setdefault("AICHECK_REQUIRE_IF_MATCH", "false")
 os.environ.setdefault("AICHECK_ENABLE_DEMO_DATA", "true")
 os.environ.setdefault("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true")
+# 测试环境没有 embedding 服务，向量化走字符哈希伪向量。这是离线自测的正当用法，
+# 但必须显式声明——静默使用会让生产环境的配置错误无人察觉（D-2 / issue #8）。
+os.environ.setdefault("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", "true")
 os.environ.setdefault("AICHECK_OCR_PROVIDER_MODE", "local")
 os.environ.setdefault("AICHECK_OCR_DEFAULT_PROVIDER", "local")
 
@@ -46,3 +56,22 @@ def allow_explicit_test_dev_tokens(monkeypatch):
     security_sessions.reset_for_tests()
     yield
     security_sessions.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def isolate_repository_persistence_backend():
+    """每个用例结束后关掉 repo 上的持久化后端。
+
+    多数用例跑在纯内存态上，只有少数会 configure_sqlite/配置 Postgres 来验证持久化。
+    这些开关挂在全局 repo 单例上，开启后不会自己关闭，于是后续用例会意外走进
+    SQLite 写入路径并因缺少 baseline 而失败——表现为「单跑通过、全量跑失败」，
+    掩盖真实回归。只有部分测试文件自带 setup_function 做重置，这里统一兜底。
+    """
+    from libs.db.repository import repo
+
+    yield
+    repo.sqlite_enabled = False
+    repo.sqlite_path = None
+    repo.postgres_enabled = False
+    repo.sync_postgres = None
+    repo.postgres_dsn = None

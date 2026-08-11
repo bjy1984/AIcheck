@@ -54,6 +54,17 @@ def strict_production() -> bool:
     return os.getenv("AICHECK_STRICT_PRODUCTION", "false").lower() == "true"
 
 
+def authentication_enforced() -> bool:
+    """是否强制认证。默认开启——漏配时必须是「登不进去」，不能是「谁都能进」。
+
+    关闭认证会连带使项目隔离、节点范围、角色校验全部失效（authorized_node_scope
+    与 member_node_scope_error 在无登录身份时直接放行），任何客户端都能用
+    X-Role/X-User-Id 请求头冒充任意身份。本地开发需要关闭时显式设
+    AICHECK_REQUIRE_AUTH=false。
+    """
+    return os.getenv("AICHECK_REQUIRE_AUTH", "true").lower() == "true"
+
+
 def demo_users_enabled() -> bool:
     return os.getenv("AICHECK_ENABLE_DEMO_USERS", "true").lower() == "true"
 

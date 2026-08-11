@@ -3,7 +3,7 @@
 // Do not edit by hand.
 
 export const aicheckOpenApiOperations = {
-  "admin_get_config_overview": { method: "GET", path: "/api/admin/config/overview", tags: ["admin"] },
+  "admin_get_config_overview": { method: "GET", path: "/api/admin/config-overview", tags: ["admin"] },
   "knowledge_get_network": { method: "GET", path: "/api/knowledge/network", tags: ["knowledge"] },
   "knowledge_get_overview": { method: "GET", path: "/api/knowledge/overview", tags: ["knowledge"] },
   "knowledge_retry_task": { method: "POST", path: "/api/knowledge/tasks/{taskId}/retry", tags: ["knowledge"] },
@@ -21,7 +21,7 @@ export const aicheckOpenApiOperations = {
   "reports_archive_report": { method: "POST", path: "/api/projects/{projectId}/reports/{reportId}/archive", tags: ["reports", "archive"] },
   "reports_create_export": { method: "POST", path: "/api/projects/{projectId}/reports/{reportId}/export", tags: ["reports", "exports"] },
   "submissions_list_history": { method: "GET", path: "/api/projects/{projectId}/submissions", tags: ["submissions"] },
-  "submissions_submit_node_package": { method: "POST", path: "/api/projects/{projectId}/submissions/submit", tags: ["submissions"] },
+  "submissions_submit_node_package": { method: "POST", path: "/api/projects/{projectId}/submissions", tags: ["submissions"] },
   "workbench_get_project_tree": { method: "GET", path: "/api/projects/{projectId}/tree", tags: ["workbench"] },
   "workbench_get_context": { method: "GET", path: "/api/projects/{projectId}/workbench/context", tags: ["workbench"] },
   "workbench_get_summary": { method: "GET", path: "/api/projects/{projectId}/workbench/summary", tags: ["workbench"] },

@@ -50,8 +50,6 @@ paths:
           $ref: './common.yaml#/components/responses/NotFound'
         '409':
           $ref: './common.yaml#/components/responses/Conflict'
-
-  /api/projects/{projectId}/submissions/submit:
     post:
       tags: [submissions]
       operationId: submissions_submit_node_package

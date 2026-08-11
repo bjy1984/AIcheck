@@ -145,11 +145,13 @@ from libs.raw_vault import (
 )
 from libs.raw_vault_export import build_raw_vault_export, build_raw_vault_summary
 from libs.runtime_readiness import production_runtime_status
+from libs.security.actions import canonical_path
 from libs.security.auth import (
     DEFAULT_INITIAL_PASSWORD,
     ROLE_DEFAULT_PATHS,
     USERS,
     authenticate,
+    authentication_enforced,
     decode_token,
     demo_users_enabled,
     hash_password,
@@ -585,6 +587,59 @@ def validated_plain_text(value: Any, *, limit: int, field_name: str) -> tuple[st
     if len(normalized) > limit:
         return None, f"{field_name}不能超过 {limit} 个字符。"
     return normalized, None
+
+
+# 同一语义的说明字段在 121 个写端点里有 7 种命名（reason / comment / opinion /
+# description / remark / text / content），9 个业务域内部还各自不一致。调用方写错名字时
+# 请求返回 code 0、说明文本落 None——施工方写的整改说明就这么丢了，监检复审时看不到
+# 对方解释了什么（M-7 / M-10）。统一契约成本太高且会破坏既有调用方，这里退而求其次：
+# 收到「明显是说明文字、但不是本端点认的字段名」时明确拒绝，不再静默接受。
+EXPLANATION_FIELD_ALIASES = (
+    "comment",
+    "content",
+    "description",
+    "explanation",
+    "feedback",
+    "message",
+    "note",
+    "notes",
+    "opinion",
+    "reason",
+    "remark",
+    "remarks",
+    "response",
+    "text",
+)
+
+
+def unrecognized_explanation_field_error(
+    request: Request,
+    body: dict[str, Any],
+    accepted: tuple[str, ...],
+) -> JSONResponse | None:
+    """调用方用了别名而非本端点接受的说明字段名时拒绝，避免文本静默丢失。
+
+    只在本端点一个都没收到时才报——同时传了正确字段就说明调用方知道该传什么，
+    多带的键不影响业务，没必要拦。
+    """
+    if any(str(body.get(name) or "").strip() for name in accepted):
+        return None
+    misspelled = [
+        name
+        for name in EXPLANATION_FIELD_ALIASES
+        if name not in accepted and str(body.get(name) or "").strip()
+    ]
+    if not misspelled:
+        return None
+    return fail(
+        errors.VALIDATION_ERROR,
+        request,
+        message=(
+            f"说明文字请放在 {accepted[0]} 字段。收到的 {'、'.join(misspelled)} "
+            f"不是本接口接受的字段名，若直接忽略会让说明内容丢失。"
+        ),
+        data={"acceptedFields": list(accepted), "unrecognizedFields": misspelled},
+    )
 
 
 def split_business_rule_sentences(value: Any, limit: int = 12) -> list[str]:
@@ -1780,6 +1835,35 @@ def resolved_role_for_read(request: Request, role: str | None = None, x_role: st
     return requested_role or effective_role or "inspection", None
 
 
+# 这些动作一旦并发写就会无声推翻别人的结论：保存审查意见、打回补正、正式提交、
+# 归档。它们必须带 If-Match（N-6），其余端点保持缺省放行，避免一次性打破所有
+# 既有调用方——收紧范围可以后续按需扩大。
+IF_MATCH_REQUIRED_PATH_PATTERNS = (
+    re.compile(r"/inspection/nodes/[^/]+/review-opinions$"),
+    re.compile(r"/inspection/nodes/[^/]+/actions/return-correction$"),
+    re.compile(r"/projects/[^/]+/submissions$"),
+    re.compile(r"/projects/[^/]+/reports/[^/]+/archive$"),
+)
+
+
+def if_match_enforced() -> bool:
+    """默认开启，与认证默认值同一原则：漏配要 fail closed。
+
+    存量调用方（尤其外部集成）迁移期间可显式设 AICHECK_REQUIRE_IF_MATCH=false
+    暂时关闭；关掉后高风险写端点会退回「不发头即绕过乐观锁」的旧行为。
+    """
+    return os.getenv("AICHECK_REQUIRE_IF_MATCH", "true").lower() == "true"
+
+
+def requires_if_match(request: Request) -> bool:
+    if not if_match_enforced():
+        return False
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
+    path = canonical_path(request.url.path)
+    return any(pattern.search(path) for pattern in IF_MATCH_REQUIRED_PATH_PATTERNS)
+
+
 def mutation_guard(
     request: Request,
     project_id: str | None = None,
@@ -1800,6 +1884,19 @@ def mutation_guard(
         effective_if_match = if_match
         if effective_if_match is None and "/reports/" not in request.url.path:
             effective_if_match = request.headers.get("If-Match")
+        # N-6：不发 If-Match 就绕过乐观锁。对「一旦并发写就会推翻别人结论」的高风险
+        # 动作强制要求该头——保存审查结论、打回补正、正式提交、归档。
+        # 其余端点保持缺省放行，避免一次性打破所有既有调用方。
+        if not effective_if_match and requires_if_match(request):
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message=(
+                    "该操作会改写审查结论，必须携带 If-Match 请求头（取自项目的 etag），"
+                    "以免覆盖他人在此期间的修改。"
+                ),
+                data={"reason": "IF_MATCH_REQUIRED"},
+            )
         if not project_if_match_valid(project, effective_if_match):
             return fail(errors.ETAG_CONFLICT, request)
         node_scope_error = member_node_scope_error(request, project_id, effective_role, node_ids=node_ids)
@@ -1837,6 +1934,11 @@ def request_user_id(request: Request) -> str | None:
     auth_user = getattr(request.state, "auth_user", None)
     if auth_user and auth_user.get("id"):
         return auth_user["id"]
+    # S-4：X-User-Id 是客户端自称的身份，会被直接写进审计日志。认证开启时必须只认
+    # 登录态——否则「谁做的」这一栏可以被任意伪造，审计链就失去意义。
+    # 认证关闭是本地开发姿态，此时该头是唯一的身份来源，保留。
+    if authentication_enforced():
+        return None
     return request.headers.get("X-User-Id")
 
 
@@ -2893,9 +2995,11 @@ def upsert_ndt_node_evidence_links(project_id: str, node_id: int, reports: list[
                 "pageNo": 1,
                 "fieldName": "报告编号",
                 "quotedText": report.get("reportNo"),
-                "matchedEvidenceItems": [item for item in [report.get("reportNo"), report.get("method"), report.get("detectionRatio")] if item],
+                "matchedEvidenceItems": (matched := [item for item in [report.get("reportNo"), report.get("method"), report.get("detectionRatio")] if item]),
                 "supportStatus": "partial",
-                "confidence": 0.82,
+                # 按实际匹配到的字段数派生，而不是恒定的 0.82（N-3）：
+                # 三项关键字段（报告编号 / 检测方法 / 检测比例）匹配到几项就报几分。
+                "confidence": round(0.3 + 0.65 * len(matched) / 3, 2),
                 "manualStatus": "pending",
                 "manualStatusLabel": "待确认",
                 "source": "ndt_submission",
@@ -2969,6 +3073,103 @@ def report_visible_in_scope(report: dict[str, Any], scope: set[int] | None) -> b
         return True
     node_ids = {int(item) for item in report.get("nodeIds") or []}
     return bool(node_ids) and node_ids.issubset(scope)
+
+
+# 监检报告在签发前属于监检机构的内部工作稿：草稿/复核中/复核完成/待签发都可能被推翻。
+# 建设方（owner）作为委托方只应看到已定稿的结论，未定稿版本不外泄。
+# 监检、FDE、admin 仍看全量——他们是报告的生产与运维方。
+REPORT_SETTLED_STATUSES = {"已签发", "已归档"}
+REPORT_SETTLED_ONLY_ROLES = {"owner"}
+
+
+def report_readable_for_role(report: dict[str, Any], role: str | None) -> bool:
+    if str(role or "") not in REPORT_SETTLED_ONLY_ROLES:
+        return True
+    return str(report.get("status") or "") in REPORT_SETTLED_STATUSES
+
+
+# 建设方（owner）在角色表里是 observer：只有 project:view / file:view / file:preview /
+# report:view / archive:view / archive:download。审查过程——AI 逐条判定理由、监检人工
+# 结论、整改往返——不在其中，读端点却全开（M-9）。同理，「已提交才进入审查视野」
+# 这条规则只作用于 inspection，建设方能看到施工方尚未提交的草稿（M-11），
+# 比监检看到的还多。两者同源：读端点不按角色裁剪。
+REVIEW_PROCESS_OBSERVER_ROLES = {"owner"}
+
+
+def review_process_read_error(request: Request, subject: str) -> JSONResponse | None:
+    """挡住 observer 角色对审查过程数据的读取。
+
+    建设方是出资方，看结论（已定稿报告、归档）是合理的；看监检怎么判、AI 说了什么、
+    施工方被打回几次，既不在其动作表内，也让审查过程失去独立性。
+    """
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if str(role or "") in REVIEW_PROCESS_OBSERVER_ROLES:
+        return fail(
+            errors.FORBIDDEN,
+            request,
+            message=f"当前角色无权查看{subject}。建设方可查看已签发报告与归档资料。",
+            http_status=403,
+        )
+    return None
+
+
+def document_readable_for_role(document: dict[str, Any], role: str | None) -> bool:
+    """建设方只看已进入审查视野的资料，不看施工方尚未提交的草稿。
+
+    与监检的 SUBMITTED_DOCUMENT_BINDING_STATUSES 同一口径：施工方在正式提交前
+    应当有整理、替换、撤回的空间。
+    """
+    if str(role or "") not in REVIEW_PROCESS_OBSERVER_ROLES:
+        return True
+    if str(document.get("poolSubmissionStatus") or "") == "已提交":
+        return True
+    return any(
+        str(binding.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        for binding in repo.state.get("bindings", [])
+        if str(binding.get("documentId") or "") == str(document.get("id") or "")
+    )
+
+
+def read_action_role_error(request: Request, action_code: str, subject: str) -> JSONResponse | None:
+    """按角色动作表把关「读」（issue #18）。
+
+    roles.yaml 只给 inspection / owner 发了 report:view 与 archive:view，但报告与
+    归档的读取原先完全不进动作检查——required_action_for_request 只推断写操作，
+    GET 直接放行，于是施工方和无损检测机构能读到监检报告全文、检验结论和证据链。
+    这不是新增业务规则，是让实现追上早就写好的动作表。
+    """
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if role is None:
+        return None
+    if role in {"admin", "fde"}:
+        # 平台侧角色走各自的管理入口，不在这里额外收紧，避免影响既有运维路径。
+        return None
+    if action_code not in set(repo.role_actions(role)):
+        return fail(errors.FORBIDDEN, request, message=f"当前角色无权查看{subject}。", http_status=403)
+    return None
+
+
+def report_read_role_error(request: Request) -> JSONResponse | None:
+    return read_action_role_error(request, "report:view", "监督检验报告")
+
+
+def archive_read_role_error(request: Request) -> JSONResponse | None:
+    return read_action_role_error(request, "archive:view", "归档资料")
+
+
+def readable_project_reports(request: Request, project_id: str, scope: set[int] | None) -> list[dict[str, Any]]:
+    role, _ = effective_role_for_request(request)
+    return [
+        item
+        for item in repo.state["reports"]
+        if item["projectId"] == project_id
+        and report_visible_in_scope(item, scope)
+        and report_readable_for_role(item, role)
+    ]
 
 
 def archive_visible_in_scope(item: dict[str, Any], scope: set[int] | None) -> bool:
@@ -4442,7 +4643,8 @@ async def auth_login(request: Request, body: dict[str, Any] = Body(default_facto
         )
         if not repo.tenant_is_loaded(requested_tenant_id):
             if persistent:
-                load_state()
+                # 按登录请求声明的租户加载，而不是一律按 configured_tenant_id()（N-5）。
+                load_state(tenant_id=requested_tenant_id or None)
             repo.mark_tenant_loaded(requested_tenant_id)
         request.state.mutation_state_snapshot = repo.snapshot_current_tenant_runtime(
             include_state=not persistent
@@ -5273,6 +5475,34 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
     )
 
 
+# 建设方看板「总体进度」的口径：监检节点的办结比例。
+# 与 project_overview 的 nodeSummary 保持同一套状态词表，不另立标准。
+# 「不适用」是经人工判定的终态处置，同样计入已办结；停用节点不参与统计。
+PROJECT_PROGRESS_SETTLED_STATUSES = {"已通过", "不适用"}
+PROJECT_PROGRESS_EXCLUDED_STATUSES = {"停用"}
+
+
+def project_progress_percent(nodes: list[dict[str, Any]]) -> int | None:
+    """返回 0-100 的整数进度；无可统计节点时返回 None（由调用方决定如何展示）。"""
+    countable = [
+        item
+        for item in nodes
+        if str(item.get("status") or "") not in PROJECT_PROGRESS_EXCLUDED_STATUSES
+    ]
+    if not countable:
+        return None
+    settled = len(
+        [item for item in countable if str(item.get("status") or "") in PROJECT_PROGRESS_SETTLED_STATUSES]
+    )
+    return round(settled / len(countable) * 100)
+
+
+def project_progress_display(nodes: list[dict[str, Any]]) -> str:
+    percent = project_progress_percent(nodes)
+    # 没有可统计节点时不能显示 0%——那会被读成「一项没办」，实际是「还没有节点」。
+    return "—" if percent is None else f"{percent}%"
+
+
 @router.get("/projects/{project_id}/workbench/summary")
 def workbench_summary(request: Request, project_id: str, role: str = Query(default="inspection")):
     resolved_role, role_error = resolved_role_for_read(request, role)
@@ -5294,11 +5524,7 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
         for item in repo.project_documents(project_id)
         if document_visible_in_scope(item, scope)
     ]
-    visible_reports = [
-        item
-        for item in repo.state["reports"]
-        if item["projectId"] == project_id and report_visible_in_scope(item, scope)
-    ]
+    visible_reports = readable_project_reports(request, project_id, scope)
     visible_messages = [
         item
         for item in repo.state["messages"]
@@ -5313,7 +5539,7 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
     ]
     if resolved_role == "owner":
         metrics = [
-            {"key": "progress", "label": "总体进度", "value": "42%", "tone": "blue"},
+            {"key": "progress", "label": "总体进度", "value": project_progress_display(visible_nodes), "tone": "blue"},
             {"key": "report", "label": "报告版本", "value": len(visible_reports), "tone": "green"},
             {"key": "archive", "label": "归档资料", "value": len([item for item in repo.state["archive_items"] if item.get("projectId") == project_id and archive_visible_in_scope(item, scope)]), "tone": "gray"},
         ]
@@ -5581,6 +5807,7 @@ def build_inspection_audit_workspace(
     *,
     scope: set[int] | None,
     include_content: bool,
+    role: str | None = None,
 ) -> dict[str, Any] | None:
     project = repo.require_project(project_id)
     node = repo.node(project_id, node_id)
@@ -5689,6 +5916,7 @@ def build_inspection_audit_workspace(
         if item.get("projectId") == project_id
         and node_id in {int(value) for value in item.get("nodeIds") or []}
         and report_visible_in_scope(item, scope)
+        and report_readable_for_role(item, role)
     ]
     archive_items = [
         repo.clone(item)
@@ -6024,6 +6252,7 @@ def inspection_audit_overview(
             int(node["nodeId"]),
             scope=scope,
             include_content=False,
+            role=effective_role_for_request(request)[0],
         )
         if not projection:
             continue
@@ -6134,6 +6363,7 @@ def inspection_node_audit_workspace(request: Request, project_id: str, node_id: 
         node_id,
         scope=scope,
         include_content=True,
+        role=effective_role_for_request(request)[0],
     )
     if not payload:
         return fail(errors.NOT_FOUND, request)
@@ -6164,6 +6394,7 @@ def node_package(request: Request, project_id: str, node_id: int):
     effective_role, identity_error = effective_role_for_request(request)
     if identity_error:
         return identity_error
+    observer_view = str(effective_role or "") in REVIEW_PROCESS_OBSERVER_ROLES
     document_repo = repo.project_document_read_view(effective_project_id)
     bindings = document_repo.bindings_for_node(effective_project_id, node_id)
     project_bindings = [
@@ -6193,6 +6424,22 @@ def node_package(request: Request, project_id: str, node_id: int):
         project_files = [
             item for item in project_files if str(item.get("id") or "") in submitted_document_ids
         ]
+    elif observer_view:
+        # M-11：建设方原先看到的比监检还多，含施工方尚未提交的草稿挂载。
+        # 与监检同一口径——只有进入审查视野的资料才对出资方可见。
+        bindings = [
+            item
+            for item in bindings
+            if str(item.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        ]
+        project_bindings = [
+            item
+            for item in project_bindings
+            if str(item.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        ]
+        project_files = [
+            item for item in project_files if document_readable_for_role(item, effective_role)
+        ]
     version_ids = {item["documentVersionId"] for item in bindings}
     # 标出文件本体是否真的上传成功，供前端在提交前拦截空壳资料（同 DOCUMENT_BODY_MISSING 口径）。
     for binding in (*bindings, *project_bindings):
@@ -6204,6 +6451,11 @@ def node_package(request: Request, project_id: str, node_id: int):
         file_bindings = [binding for binding in project_bindings if binding.get("documentId") == file.get("id")]
         file["bindings"] = file_bindings
         file["primaryBinding"] = file_bindings[0] if file_bindings else None
+        # 台账行同样要带本体标记：没有它，从未上传成功的文件会一直显示「上传中」，
+        # 施工方看不出该重传，只有点了提交才会撞到 DOCUMENT_BODY_MISSING。
+        file["bodyUploaded"] = document_body_uploaded(
+            repo.find_one("documents", file.get("id")) or file
+        )
     visible_document_ids = {item["id"] for item in project_files}
     node_ai_runs = [
         item
@@ -6230,17 +6482,31 @@ def node_package(request: Request, project_id: str, node_id: int):
                 if item["id"] in version_ids or item.get("documentId") in visible_document_ids
             ],
             "extractedFields": document_repo.fields_for_versions(version_ids),
-            "reviewOpinions": [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
-            "rectifications": [
-                repo.clone(item)
-                for item in repo.state["rectifications"]
-                if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
-            ],
+            # 审查过程对建设方（observer）不开放：AI 判定理由、监检人工结论、整改往返
+            # 都不在其动作表内（M-9）。这里与独立端点同口径，否则堵了端点、节点包照漏。
+            "reviewOpinions": (
+                []
+                if observer_view
+                else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
+            ),
+            "rectifications": (
+                []
+                if observer_view
+                else [
+                    repo.clone(item)
+                    for item in repo.state["rectifications"]
+                    if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
+                ]
+            ),
             # 只带最近几次运行：工作台展示的是当前状态与最近一次结果，而全量历史会让
             # 本响应膨胀到数百 KB（实测 9 次运行即 665KB），且轮询会反复重取。
             # 需要完整历史时用 /inspection/nodes/{id}/ai-runs。
-            "aiRuns": [safe_ai_run_view(item) for item in node_ai_runs[:NODE_PACKAGE_AI_RUN_LIMIT]],
-            "aiRunTotal": len(node_ai_runs),
+            "aiRuns": (
+                []
+                if observer_view
+                else [safe_ai_run_view(item) for item in node_ai_runs[:NODE_PACKAGE_AI_RUN_LIMIT]]
+            ),
+            "aiRunTotal": 0 if observer_view else len(node_ai_runs),
             "actions": repo.clone(node.get("actions", [])),
         },
         request,
@@ -6250,12 +6516,15 @@ def node_package(request: Request, project_id: str, node_id: int):
 @router.get("/projects/{project_id}/documents")
 def list_documents(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
     scope = authorized_node_scope(request, project_id)
+    read_role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
     effective_project_id = project_id
     document_repo = repo.project_document_read_view(effective_project_id)
     items = [
         attach_document_ocr_readiness(document_repo, item)
         for item in document_repo.project_documents(effective_project_id)
-        if document_visible_in_scope(item, scope)
+        if document_visible_in_scope(item, scope) and document_readable_for_role(item, read_role)
     ]
     if nodeId:
         document_ids = {
@@ -6265,6 +6534,10 @@ def list_documents(request: Request, project_id: str, page_no: int = Query(defau
         }
         items = [item for item in items if item["id"] in document_ids]
     items = filter_keyword(items, keyword, ["fileName", "sourceOrgName", "materialCategory"])
+    # M-4：只创建会话、从不 PUT 内容的空壳记录会照常出现在资料台账里，
+    # 与真实资料在列表中无可视区分。带上本体标记，让台账一眼能看出哪些是空壳。
+    for item in items:
+        item["bodyUploaded"] = document_body_uploaded(item)
     return ok(page(items, page_no, page_size), request)
 
 
@@ -6444,6 +6717,52 @@ def validate_upload_session_completion(
     return verified, None
 
 
+def local_review_confidence(missing_count: int, pending_count: int, manual_item_count: int) -> float:
+    """本地降级审查的置信度：按「已就绪的证据项占比」派生（N-3）。
+
+    缺项和待确认项越多，把握越低。全部就绪也不给满分——本地降级本就没有跑完整
+    的证据锚定，上限留出余量。
+    """
+    unresolved = max(0, int(missing_count)) + max(0, int(pending_count))
+    total = unresolved + max(0, int(manual_item_count))
+    if total <= 0:
+        return 0.7
+    ready_ratio = 1 - unresolved / total
+    return round(0.35 + 0.35 * ready_ratio, 2)
+
+
+def duplicate_documents_in_project(project_id: str, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 hash + projectId 找出项目内已存在的同一份文件（M-5）。
+
+    同一份资料（sha256 一致）重复上传原先产生多条独立文档记录，无标记、无提示。
+    只提示不阻断：换版、补拍同一份资料都是合法业务，由上传方决定复用还是保留新版本。
+    """
+    results: list[dict[str, Any]] = []
+    for file in files or []:
+        document_id = str(file.get("documentId") or "")
+        version = repo.current_version(document_id)
+        content_hash = str((version or {}).get("hash") or "").strip()
+        if not content_hash:
+            continue
+        existing = [
+            {"documentId": str(item.get("id") or ""), "fileName": item.get("fileName")}
+            for item in repo.project_documents(project_id)
+            if str(item.get("id") or "") != document_id
+            and str((repo.current_version(str(item.get("id") or "")) or {}).get("hash") or "") == content_hash
+        ]
+        if existing:
+            results.append(
+                {
+                    "documentId": document_id,
+                    "fileName": file.get("fileName"),
+                    "contentHash": content_hash,
+                    "existingDocuments": existing,
+                    "message": f"项目内已存在内容相同的资料（{len(existing)} 份），可考虑复用而非重复上传。",
+                }
+            )
+    return results
+
+
 def document_body_uploaded(document: dict[str, Any] | None, version: dict[str, Any] | None = None) -> bool:
     """文件本体是否真的上传成功。
 
@@ -6505,9 +6824,13 @@ def create_upload_session(
         if atomic_validation_error:
             return atomic_validation_error
         require_signed_urls = parse_bool(body.get("requireSignedUrls"), default=False)
+        # 不回显 Authorization（M-3）：调用方本来就持有自己的 token，把它原样写进
+        # 响应体对调用方没有增益，却扩大泄漏面——响应体会进浏览器 devtools、前端日志、
+        # 错误上报和网关访问日志。登录态由客户端自行附加；本次上传的短时凭证
+        # X-Upload-Session-Token 才是需要下发的。
         upload_headers = {
             key: value
-            for key in ("Authorization", "X-Role", "X-User-Id")
+            for key in ("X-Role", "X-User-Id")
             if (value := request.headers.get(key))
         }
         role_for_upload = str(x_role or request.headers.get("X-Role") or "").lower()
@@ -6760,6 +7083,7 @@ def complete_upload_session(
         dispatches = dispatch_completed_upload_files(files)
         documents = create_ndt_atomic_drafts_for_completed_session(project_id, files)
         ndt_reports = create_ndt_reports_for_completed_session(project_id, session, files)
+        duplicates = duplicate_documents_in_project(project_id, files)
         request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
         result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
         return ok(
@@ -6769,6 +7093,10 @@ def complete_upload_session(
                 "fileCount": len(files),
                 "documents": documents,
                 "ndtReports": ndt_reports,
+                # M-5：同一文件重复上传原先无标记、无提示，几千页规模下多人协作会
+                # 显著膨胀台账。这里只提示不阻断——换版、补拍同一份资料都是合法业务，
+                # 由上传方决定是复用既有文档还是保留新版本。
+                "duplicates": duplicates,
             },
             request,
         )
@@ -7316,7 +7644,17 @@ def bind_documents(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
+    # 每条 binding 自带的 nodeId 必须生效：原先只看 body 顶层的 nodeId/nodeIds，
+    # 逐条声明的节点被静默忽略，全部落到施工方的默认节点 16——调用方在界面上选了
+    # 节点，资料却挂到别处，且请求返回成功。这也是「大量资料都归到节点 16」的成因之一。
+    declared_binding_node_ids = [
+        int(item["nodeId"])
+        for item in (body.get("bindings") or [])
+        if isinstance(item, dict) and str(item.get("nodeId") or "").strip().lstrip("-").isdigit()
+    ]
+    node_ids = sorted(set(declared_binding_node_ids)) or node_ids_from_body(
+        body, ROLE_NODE_MAP["contractor"]
+    )
 
     def produce():
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
@@ -7343,6 +7681,10 @@ def bind_documents(
         for node_id in node_ids:
             requirements = [item for item in repo.state["requirements"] if int(item["nodeId"]) == node_id]
             for index, binding_input in enumerate(binding_inputs):
+                # 逐条声明了节点时按声明分派，避免每条资料被挂到所有节点上（笛卡尔积）。
+                declared = binding_input.get("nodeId") if isinstance(binding_input, dict) else None
+                if str(declared or "").strip().lstrip("-").isdigit() and int(declared) != node_id:
+                    continue
                 document = repo.find_one("documents", binding_input.get("documentId"))
                 version_id = binding_input.get("documentVersionId") or (document or {}).get("currentVersionId")
                 if not document or not version_id:
@@ -7532,6 +7874,122 @@ def void_document(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"documentId": document_id})
 
 
+# 资料自动分类原先是硬编码 stub：文件名含「焊工」→ 节点 24，否则一律 16，
+# 置信度恒为 0.82。真实素材下准确率约 21%（14 份里 11 份被归到 16），监检人员
+# 几乎要手工重挂全部资料。业务包的 nodeTemplates.requiredMaterials 里本就写明了
+# 「哪个节点需要哪类资料」，这才是权威依据。
+# 双向覆盖率之和低于此值视为噪声——业务包里没有对应类型时（比如「工艺图纸目录」）
+# 硬猜会把资料挂到错误节点上，而「未分类」只是让人工来定。
+MATERIAL_NAME_MIN_COVERAGE = 0.9
+
+
+def material_type_node_index(project_id: str) -> dict[str, list[tuple[int, str]]]:
+    """资料类型码 → [(节点号, 必传类型)]，取自业务包的节点资料要求。"""
+    index: dict[str, list[tuple[int, str]]] = {}
+    pack = business_pack_for_project(repo.require_project(project_id))
+    for node in pack.get("nodeTemplates") or []:
+        try:
+            node_id = int(node.get("nodeId"))
+        except (TypeError, ValueError):
+            continue
+        for requirement in node.get("requiredMaterials") or []:
+            code = str(requirement.get("materialTypeCode") or "").strip()
+            if code:
+                index.setdefault(code, []).append((node_id, str(requirement.get("requiredType") or "")))
+    return index
+
+
+def material_name_overlap(file_stem: str, material_name: str) -> int:
+    """文件名主干与资料类型名称的最长公共连续片段长度。
+
+    实际文件名很少与业务包里的正式名称字面相等：「焊工证.pdf」对「焊工资格证」、
+    「射线检测报告.pdf」对「无损检测报告」、「特种设备安装改造维修许可证.pdf」对
+    「施工单位安装许可证」。用最长公共子串衡量重合度，比整名包含实用得多。
+    """
+    if not file_stem or not material_name:
+        return 0
+    best = 0
+    for start in range(len(material_name)):
+        for end in range(len(material_name), start + best, -1):
+            fragment = material_name[start:end]
+            if fragment in file_stem:
+                best = max(best, len(fragment))
+                break
+    return best
+
+
+def material_type_code_from_file_name(project_id: str, file_name: str) -> str:
+    """按业务包里的资料类型名称匹配文件名，取重合度最高的一个。
+
+    主判据是「类型名称有多少字出现在文件名里」——最长公共子串会在「许可证」这类
+    共同后缀上打平（设计单位许可证 / 制造单位许可证 / 施工单位安装许可证），
+    字符覆盖率能区分开。同分时用最长公共子串、再用较短名称（更具体）打破平局。
+
+    覆盖率低于阈值就不猜：猜错比不猜更糟——资料会被挂到错误节点上，
+    而「未分类」只是让人工来定。
+    """
+    stem = str(file_name or "").rsplit(".", 1)[0].strip()
+    if not stem:
+        return ""
+    pack = business_pack_for_project(repo.require_project(project_id))
+    stem_characters = set(stem)
+    best_code = ""
+    best_key: tuple[float, int, int] = (0.0, 0, 0)
+    for item in pack.get("materialTypes") or []:
+        name = str(item.get("name") or "").strip()
+        code = str(item.get("code") or "").strip()
+        if not name or not code:
+            continue
+        name_characters = set(name)
+        # 双向覆盖：光看「类型名有多少字在文件名里」会偏向短名称——
+        # 「特种设备安装改造维修许可证」对「设计单位许可证」(7字) 的比值高于对
+        # 「施工单位安装许可证」(9字)，尽管后者才是对的（它含「安装」）。
+        # 加上反向覆盖后，文件名里被解释掉的字越多得分越高，正确项胜出。
+        name_coverage = sum(1 for character in name_characters if character in stem) / len(name_characters)
+        stem_coverage = sum(1 for character in stem_characters if character in name) / len(stem_characters)
+        key = (name_coverage + stem_coverage, material_name_overlap(stem, name), -len(name))
+        if key > best_key:
+            best_code, best_key = code, key
+    return best_code if best_key[0] >= MATERIAL_NAME_MIN_COVERAGE else ""
+
+
+def classify_document_to_nodes(project_id: str, document: dict[str, Any]) -> dict[str, Any]:
+    """给一份资料推荐归属节点。
+
+    置信度反映证据强度，不再是恒定值：
+    - 上传时已声明资料类型码 → 0.95（这是调用方的明示，不是猜的）
+    - 由文件名匹配出类型名称 → 0.7
+    - 两者都没有                → 0.2，且不给节点建议，交人工判断
+    """
+    file_name = str(document.get("fileName") or "")
+    declared_code = str(document.get("materialTypeCode") or "").strip()
+    # generic_review_material 是落库默认值，不算调用方的明示声明
+    if declared_code == "generic_review_material":
+        declared_code = ""
+    code, confidence, basis = declared_code, 0.95, "declared_material_type"
+    if not code:
+        code = material_type_code_from_file_name(project_id, file_name)
+        confidence, basis = (0.7, "file_name_match") if code else (0.2, "unclassified")
+
+    node_ids: list[int] = []
+    if code:
+        entries = material_type_node_index(project_id).get(code) or []
+        # 「必传」的节点优先；同一类资料在多个节点出现时全部给出，由人工选定
+        required_nodes = [node_id for node_id, required_type in entries if required_type == "必传"]
+        node_ids = sorted(set(required_nodes or [node_id for node_id, _ in entries]))
+        if not node_ids:
+            confidence, basis = 0.2, "material_type_not_mapped_to_node"
+
+    return {
+        "documentId": document.get("id"),
+        "fileName": file_name,
+        "suggestedNodeIds": node_ids,
+        "materialTypeCode": code or None,
+        "confidence": confidence,
+        "basis": basis,
+    }
+
+
 @router.post("/projects/{project_id}/documents/batch-classify")
 def batch_classify_documents(
     request: Request,
@@ -7545,7 +8003,7 @@ def batch_classify_documents(
         if guard:
             return guard
         suggestions = [
-            {"documentId": doc["id"], "fileName": doc["fileName"], "suggestedNodeIds": [24 if "焊工" in doc["fileName"] else 16], "confidence": 0.82}
+            classify_document_to_nodes(project_id, doc)
             for doc in repo.project_documents(project_id)
         ]
         audit_id = repo.add_audit("批量资料智能分类", "Document", project_id)
@@ -7982,6 +8440,11 @@ def submit_rectification(
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        # M-7：施工方的整改说明原先只认 comment/description，传 feedback 之类的别名时
+        # 请求照样成功、说明文本落 None，监检复审时看不到对方解释了什么。
+        field_error = unrecognized_explanation_field_error(request, body, ("comment", "description"))
+        if field_error:
+            return field_error
         node_id = node_ids[0] if node_ids else ROLE_NODE_MAP["contractor"]
         node = repo.node(project_id, node_id)
         if not node:
@@ -8025,18 +8488,50 @@ def submit_rectification(
                 return fail(errors.CONFLICT, request, message="当前节点没有待反馈补正单。")
         if rectification.get("status") != "待反馈":
             return fail(errors.CONFLICT, request, message="补正单当前状态不允许提交反馈。")
-        invalid_status_binding_ids = sorted(
-            binding_id
+        # M-6：原先要求每个 binding 自身状态必须是「需补正」，而新上传并挂载的资料
+        # 状态是「草稿挂载」，于是永远无法作为补正材料提交。但监检打回的典型理由
+        # 就是「资料不对/不全，请补充」——施工方本应上传新资料。只能就原文件再提交
+        # 一次（内容没变），或绕过整改单走普通提交，导致整改单与实际补正的资料脱钩。
+        # 现在：被打回的原资料与本节点新挂载的资料都可作为补正材料；已在审查中或
+        # 已通过的资料仍然拒绝——重复提交它们没有业务含义。
+        RECTIFIABLE_BINDING_STATUSES = {"需补正", "草稿挂载"}
+        invalid_bindings = [
+            (binding_id, str((repo.find_one("bindings", binding_id) or {}).get("bindingStatus") or ""))
             for binding_id in binding_ids
-            if (repo.find_one("bindings", binding_id) or {}).get("bindingStatus") != "需补正"
-        )
-        if invalid_status_binding_ids:
+            if str((repo.find_one("bindings", binding_id) or {}).get("bindingStatus") or "")
+            not in RECTIFIABLE_BINDING_STATUSES
+        ]
+        if invalid_bindings:
             return fail(
                 errors.CONFLICT,
                 request,
-                message="只有监检退回为需补正状态的资料才能重新提交。",
-                data={"invalidBindingIds": invalid_status_binding_ids},
+                message=(
+                    "补正材料只能是被退回的资料或本节点新上传的资料。"
+                    "已在审查中或已通过的资料不能再次提交。"
+                ),
+                data={
+                    "invalidBindingIds": sorted(item[0] for item in invalid_bindings),
+                    "invalidBindingStatuses": {item[0]: item[1] for item in invalid_bindings},
+                },
             )
+        wrong_node_binding_ids = sorted(
+            binding_id
+            for binding_id in binding_ids
+            if int((repo.find_one("bindings", binding_id) or {}).get("nodeId") or 0) != node_id
+        )
+        if wrong_node_binding_ids:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="补正材料必须挂载在本补正单所属的节点上。",
+                data={"invalidBindingIds": wrong_node_binding_ids},
+            )
+        # 留痕：区分「原资料重新提交」与「新补充的资料」，整改闭环要能追溯补的是什么。
+        replacement_binding_ids = sorted(
+            binding_id
+            for binding_id in binding_ids
+            if str((repo.find_one("bindings", binding_id) or {}).get("bindingStatus") or "") == "草稿挂载"
+        )
         submitted_at = server_time()
         submission_id = f"SUB-RECT-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{submission_id}"
@@ -8045,6 +8540,7 @@ def submit_rectification(
             if binding:
                 binding["bindingStatus"] = "已提交"
         rectification["bindingIds"] = binding_ids
+        rectification["replacementBindingIds"] = replacement_binding_ids
         rectification["feedbackComment"] = body.get("comment") or body.get("description")
         rectification["feedbackAt"] = submitted_at
         rectification["feedbackByName"] = request_actor_name(request)
@@ -8115,6 +8611,9 @@ def submit_rectification(
 
 @router.get("/projects/{project_id}/rectifications")
 def list_rectifications(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+    process_error = review_process_read_error(request, "整改往返记录")
+    if process_error:
+        return process_error
     scope = authorized_node_scope(request, project_id)
     return ok(
         page(
@@ -8380,7 +8879,8 @@ def ai_recheck(
             **(run.get("suggestion") or {}),
             "result": conclusion,
             "opinionDraft": opinion,
-            "confidence": 0.55 if missing_count or pending_count else 0.68,
+            # 本地降级路径同样不给常量（N-3）：按「已就绪的证据项占比」派生。
+            "confidence": local_review_confidence(missing_count, pending_count, len(manual_items)),
             "manualConfirmItems": manual_items,
         }
         run["reasoningProcess"] = reasoning
@@ -8786,6 +9286,9 @@ def node_live_status(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/ai-runs")
 def list_ai_runs(request: Request, project_id: str, node_id: int):
+    process_error = review_process_read_error(request, "AI 复核过程记录")
+    if process_error:
+        return process_error
     scope_error = member_node_scope_error(request, project_id, effective_role_for_request(request)[0], node_ids=[node_id])
     if scope_error:
         return scope_error
@@ -11491,6 +11994,11 @@ def create_review_session_message(
             name=f"review-conversation-{execution_entry['executionId']}",
             daemon=True,
         )
+        # 必须在启动线程之前定型响应：后台线程会原地改写同一个 assistant_message
+        # 对象（状态、内容块、执行计数），线程起来后再序列化会读到改到一半的中间态。
+        # 受理响应描述的是「受理那一刻」，最终结果由客户端轮询消息列表获取。
+        accepted_assistant_view = review_message_view(assistant_message)
+        accepted_session_view = review_session_view(session)
         execution_entry["thread"] = worker
         worker.start()
         return ok(
@@ -11498,8 +12006,8 @@ def create_review_session_message(
                 "messageId": user_message["id"],
                 "status": "accepted",
                 "userMessage": review_message_view(user_message),
-                "assistantMessage": review_message_view(assistant_message),
-                "session": review_session_view(session),
+                "assistantMessage": accepted_assistant_view,
+                "session": accepted_session_view,
             },
             request,
         )
@@ -12404,6 +12912,16 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/review-opinions")
 def list_review_opinions(request: Request, project_id: str, node_id: int):
+    process_error = review_process_read_error(request, "监检人工审查意见")
+    if process_error:
+        return process_error
+    # S-2：这里原先没有 handler 层的节点范围校验，只靠中间件按路径正则推断 scope。
+    # 路由一改、正则没跟上，越权就会静默出现。与 list_ai_runs 对齐，在 handler 里也校验。
+    scope_error = member_node_scope_error(
+        request, project_id, effective_role_for_request(request)[0], node_ids=[node_id]
+    )
+    if scope_error:
+        return scope_error
     return ok([repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == project_id and int(item["nodeId"]) == int(node_id)], request)
 
 
@@ -12449,6 +12967,9 @@ def save_fact_correction(
             )
         if "correctedValue" not in body:
             return fail(errors.VALIDATION_ERROR, request, message="必须提供修正后的值 correctedValue。")
+        field_error = unrecognized_explanation_field_error(request, body, ("reason",))
+        if field_error:
+            return field_error
         reason = compact_plain_text(body.get("reason"), 500)
         superseded_ids: list[str] = []
         for item in repo.state["fact_corrections"]:
@@ -12985,34 +13506,42 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
 
 @router.get("/projects/{project_id}/owner/reports")
 def owner_reports(request: Request, project_id: str):
+    role_error = report_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     return ok(
-        [
-            versioned_report(item)
-            for item in repo.state["reports"]
-            if item["projectId"] == project_id and report_visible_in_scope(item, scope)
-        ],
+        [versioned_report(item) for item in readable_project_reports(request, project_id, scope)],
         request,
     )
 
 
 @router.get("/projects/{project_id}/reports")
 def list_reports(request: Request, project_id: str):
+    role_error = report_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     return ok(
-        [
-            versioned_report(item)
-            for item in repo.state["reports"]
-            if item["projectId"] == project_id and report_visible_in_scope(item, scope)
-        ],
+        [versioned_report(item) for item in readable_project_reports(request, project_id, scope)],
         request,
     )
 
 
 @router.get("/projects/{project_id}/reports/{report_id}")
 def report_detail(request: Request, project_id: str, report_id: str):
+    role_error = report_read_role_error(request)
+    if role_error:
+        return role_error
     report = repo.find_one("reports", report_id)
     if not report or report.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
+    # 正文在这个端点上，必须与列表同口径：未定稿的报告不对建设方开放。
+    # 返回 404 而非 403——不确认「存在一份尚未签发的报告」本身也是信息。
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if not report_readable_for_role(report, role):
         return fail(errors.NOT_FOUND, request)
     return ok(
         {
@@ -13294,6 +13823,9 @@ def archive_report(
 
 @router.get("/projects/{project_id}/archive")
 def list_archive(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
+    role_error = archive_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
@@ -13393,14 +13925,13 @@ def build_archive_zip_artifact(*, manifest: dict[str, Any], files: dict[str, Any
 
 @router.get("/projects/{project_id}/archive/package")
 def archive_package(request: Request, project_id: str):
+    role_error = archive_read_role_error(request)
+    if role_error:
+        return role_error
     scope = authorized_node_scope(request, project_id)
     export_id = archive_package_export_id(project_id)
     rows = archive_package_rows(project_id, scope)
-    reports = [
-        repo.clone(item)
-        for item in repo.state.get("reports", [])
-        if item.get("projectId") == project_id and report_visible_in_scope(item, scope)
-    ]
+    reports = [repo.clone(item) for item in readable_project_reports(request, project_id, scope)]
     export_tasks = [
         repo.clone(item)
         for item in repo.state.get("export_tasks", [])
@@ -13975,9 +14506,13 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
         project = repo.find_one("projects", project_id) or {}
         source_org_name = project.get("ndtOrgName") or "无损检测机构"
         uploader_name = request_actor_name(request)
+        # 不回显 Authorization（M-3）：调用方本来就持有自己的 token，把它原样写进
+        # 响应体对调用方没有增益，却扩大泄漏面——响应体会进浏览器 devtools、前端日志、
+        # 错误上报和网关访问日志。登录态由客户端自行附加；本次上传的短时凭证
+        # X-Upload-Session-Token 才是需要下发的。
         upload_headers = {
             key: value
-            for key in ("Authorization", "X-Role", "X-User-Id")
+            for key in ("X-Role", "X-User-Id")
             if (value := request.headers.get(key))
         }
         upload_files = [
@@ -14999,7 +15534,11 @@ def search(
                     append_result("document", doc["id"], doc["fileName"], doc.get("sourceOrgName"), f"/workbench/{role}?projectId={doc['projectId']}&documentId={doc['id']}", [doc.get("currentOcrStatus")], status_value=doc.get("currentOcrStatus"), updated_at=doc.get("updatedAt"), breadcrumb="项目 / 资料")
             for report in repo.state["reports"]:
                 node_scope = authorized_node_scope(request, report["projectId"])
-                if (not projectId or report["projectId"] == projectId) and report_visible_in_scope(report, node_scope):
+                if (
+                    (not projectId or report["projectId"] == projectId)
+                    and report_visible_in_scope(report, node_scope)
+                    and report_readable_for_role(report, role)
+                ):
                     append_result("report", report["id"], report["title"], report["status"], f"/workbench/{role}?projectId={report['projectId']}&reportId={report['id']}", [report.get("reportNo")], status_value=report.get("status"), updated_at=report.get("updatedAt"), breadcrumb="项目 / 报告")
 
     if search_scope == "admin":
@@ -27199,6 +27738,16 @@ def knowledge_overview(request: Request):
                 "updatedAt": source.get("updatedAt"),
             }
         )
+    # 哈希伪向量的标记落在知识文件的 vectorStatusReason 上（见 worker 的
+    # embedding_batches_for_chunks）。这里汇总出来，让降级在界面上可见。
+    vectorized_files = [
+        item for item in indexable_files if str(item.get("vectorStatus") or "") == "已向量化"
+    ]
+    degraded_vector_files = [
+        item
+        for item in vectorized_files
+        if "hash" in str(item.get("vectorStatusReason") or "").lower()
+    ]
     return ok(
         {
             "metrics": [
@@ -27206,9 +27755,35 @@ def knowledge_overview(request: Request):
                 {"key": "file", "label": "项目文件", "value": len(indexable_files), "tone": "green"},
                 {"key": "task", "label": "运行任务", "value": len([item for item in indexable_tasks if item["status"] in {"排队中", "运行中"}]), "tone": "orange"},
                 {"key": "failed", "label": "失败任务", "value": len([item for item in indexable_tasks if item["status"] == "失败"]), "tone": "red"},
+                # D-2：哈希伪向量与真语义向量同表同维存储，仅索引版本不同。检索侧配对
+                # 逻辑本身没错，但没有任何地方指出「索引里有多少是降级向量」——
+                # embedding 服务配置错误时系统照常运行，检索结果近似随机而无人察觉。
+                {
+                    "key": "degradedVector",
+                    "label": "降级向量文件",
+                    "value": len(degraded_vector_files),
+                    "tone": "red" if degraded_vector_files else "gray",
+                },
             ],
             "libraries": libraries,
             "scorecard": build_knowledge_rule_scorecard(repo.state),
+            "vectorQuality": {
+                "degradedFileCount": len(degraded_vector_files),
+                "vectorizedFileCount": len(vectorized_files),
+                "degradedRatio": (
+                    round(len(degraded_vector_files) / len(vectorized_files), 3) if vectorized_files else 0.0
+                ),
+                "degradedFiles": [
+                    {
+                        "fileId": item.get("id"),
+                        "fileName": item.get("fileName"),
+                        "reason": item.get("vectorStatusReason"),
+                        "indexVersion": item.get("indexVersion"),
+                    }
+                    for item in degraded_vector_files[:20]
+                ],
+                "note": "降级向量由字符哈希生成、没有语义，检索结果不可信；应修复 embedding 服务后重建索引。",
+            },
         },
         request,
     )
@@ -29887,12 +30462,50 @@ def compare_run_detail(request: Request, run_id: str):
     return ok(repo.clone(run), request)
 
 
+def repository_state_footprint() -> dict[str, Any]:
+    """当前进程内业务状态的占用概览（A-1 / issue #9）。
+
+    全量业务状态（含 OCR 全文）常驻 API 进程内存。架构改造要先有容量评估，
+    评估要有实测数据——先把占用量暴露在管理端，让容量风险在触线前可见，
+    而不是等到 OOM 才发现。只统计条数与近似字节数，不导出业务内容。
+    """
+    top: list[tuple[int, str, int]] = []
+    total_bytes = 0
+    total_records = 0
+    unmeasured: list[str] = []
+    for key, value in repo.state.items():
+        if not isinstance(value, list) or not value:
+            continue
+        try:
+            size = len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+        except Exception:
+            # 量不出来就说量不出来。静默 continue 会让这个集合从统计里彻底消失，
+            # 那正是本指标要解决的问题（占用不可见）的翻版。
+            unmeasured.append(key)
+            total_records += len(value)
+            continue
+        total_bytes += size
+        total_records += len(value)
+        top.append((size, key, len(value)))
+    top.sort(reverse=True)
+    return {
+        "totalBytes": total_bytes,
+        "totalMegabytes": round(total_bytes / 1024 / 1024, 2),
+        "totalRecords": total_records,
+        "largestCollections": [
+            {"collection": key, "bytes": size, "recordCount": count} for size, key, count in top[:5]
+        ],
+        "unmeasuredCollections": unmeasured,
+    }
+
+
 @router.get("/admin/config-overview")
 def admin_config_overview(request: Request):
     overview = repo.build_admin_overview()
     overview["businessPacks"] = list_business_packs()
     overview["orgUnits"] = list_admin_org_units()
     overview["users"] = list_admin_users()
+    overview["stateFootprint"] = repository_state_footprint()
     overview.update(
         {
             "revision": singleton_revision(repo.state["admin_config"]),

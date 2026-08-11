@@ -201,7 +201,7 @@ paths:
         '409':
           $ref: './common.yaml#/components/responses/Conflict'
 
-  /api/admin/config/overview:
+  /api/admin/config-overview:
     get:
       tags: [admin]
       operationId: admin_get_config_overview

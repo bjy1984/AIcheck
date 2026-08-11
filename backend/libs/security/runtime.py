@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from libs.security.auth import (
     JWT_SECRET,
+    authentication_enforced,
     compatibility_mocks_enabled,
     demo_users_enabled,
     dev_tokens_allowed,
@@ -76,7 +77,7 @@ def security_runtime_problems() -> list[str]:
     if not strict_production():
         return []
     problems: list[str] = []
-    if os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() != "true":
+    if not authentication_enforced():
         problems.append("AICHECK_REQUIRE_AUTH must be true")
     tenant_mode = os.getenv("AICHECK_TENANT_MODE", "shared").strip().lower()
     if tenant_mode not in {"shared", "isolated"}:

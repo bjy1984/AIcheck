@@ -74,7 +74,9 @@ class ObjectStorage:
             return True
         if explicit in {"false", "0", "no"}:
             return False
-        auth_required = os.getenv("AICHECK_REQUIRE_AUTH", "false").lower() == "true"
+        from libs.security.auth import authentication_enforced
+
+        auth_required = authentication_enforced()
         demo_disabled = os.getenv("AICHECK_ENABLE_DEMO_USERS", "true").lower() == "false"
         return auth_required and demo_disabled
 

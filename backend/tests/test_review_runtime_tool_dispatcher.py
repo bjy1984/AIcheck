@@ -151,16 +151,20 @@ def test_r01_design_license_pilot_tools() -> None:
 
 
 def test_r24_welder_qualification_coverage_pilot_tool() -> None:
+    # 必须钉住 reviewDate：welder_rule_version 在缺省时回落到 date.today()，
+    # 2026-08-01 起进入 TSG Z6002-2026 过渡期，未核验规则档时一律 evidence_insufficient。
+    # 本用例断言的是 2010 版规则下的解码与覆盖判定，故显式取过渡期之前的日期。
     decoded = dispatch_runtime_tool(
         {},
         "decode_welder_qualification",
-        {"qualificationCodes": ["GTAW-FeⅡ-6G-3/57-FefS-02/11/12"]},
+        {"qualificationCodes": ["GTAW-FeⅡ-6G-3/57-FefS-02/11/12"], "reviewDate": "2026-07-01"},
     )
     coverage = dispatch_runtime_tool(
         {},
         "check_welder_work_coverage",
         {
             "qualificationCodes": ["GTAW-FeⅡ-6G-3/57-FefS-02/11/12"],
+            "reviewDate": "2026-07-01",
             "workItems": [
                 {
                     "weldingMethod": "GTAW",
@@ -177,6 +181,7 @@ def test_r24_welder_qualification_coverage_pilot_tool() -> None:
         "check_welder_work_coverage",
         {
             "qualificationCodes": ["GTAW-FeⅡ-6G-3/57-FefS-02/11/12"],
+            "reviewDate": "2026-07-01",
             "workItems": [
                 {
                     "weldingMethod": "SMAW",
@@ -193,6 +198,40 @@ def test_r24_welder_qualification_coverage_pilot_tool() -> None:
     assert decoded["facts"]["decodedItems"][0]["materialCategory"] == "FEII"
     assert coverage["result"] == "passed"
     assert uncovered["result"] == "failed"
+
+
+def test_r24_welder_2026_transition_requires_verified_rule_profile() -> None:
+    """2026-08-01 起焊工资格进入 TSG Z6002-2026 过渡期。
+
+    过渡期内若未核验规则档（ruleProfile2026Verified），不得沿用 2010 版口径下判定，
+    必须退回 evidence_insufficient 交人工确认；核验后才恢复正常判定。
+    """
+    arguments = {
+        "qualificationCodes": ["GTAW-FeⅡ-6G-3/57-FefS-02/11/12"],
+        "reviewDate": "2026-08-01",
+    }
+
+    unverified = dispatch_runtime_tool({}, "decode_welder_qualification", dict(arguments))
+    assert unverified["result"] == "evidence_insufficient"
+    assert unverified["facts"]["reason"] == "tsg_z6002_2026_effective_profile_not_verified"
+    assert unverified["ruleVersion"] == "welder-qualification-tsg-z6002-2026-transition-v1"
+
+    verified = dispatch_runtime_tool(
+        {},
+        "decode_welder_qualification",
+        {**arguments, "ruleProfile2026Verified": True},
+    )
+    assert verified["result"] == "passed"
+    assert verified["ruleVersion"] == "welder-qualification-tsg-z6002-2026-transition-v1"
+
+    # 过渡期前仍走 2010 版口径。
+    legacy = dispatch_runtime_tool(
+        {},
+        "decode_welder_qualification",
+        {**arguments, "reviewDate": "2026-07-31"},
+    )
+    assert legacy["result"] == "passed"
+    assert legacy["ruleVersion"] == "welder-qualification-tsg-z6002-2010-v2"
 
 
 def test_r60_to_r62_pressure_test_pilot_tools() -> None:

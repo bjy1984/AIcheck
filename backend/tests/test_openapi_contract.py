@@ -70,3 +70,35 @@ def test_openapi_validator_rejects_missing_request_and_response_schemas() -> Non
 
     with pytest.raises(OpenApiContractError, match="requestBody must declare"):
         validate_operation("/api/review-runs/{reviewRunId}/human-decision", "post", operation)
+
+
+def test_contract_declares_nothing_the_implementation_lacks() -> None:
+    """契约里不能有实现侧不存在的操作（issue #10 / A-4）。
+
+    「文档说 A、实现是 B」比「文档没写」更糟——调用方按文档写代码，撞上 404
+    才发现。发现时实测有两条：契约写 /admin/config/overview 而实现是
+    /admin/config-overview；/submissions/submit 实现里根本不存在。
+    行为快照式的契约测试发现不了这类差异，只能靠这条结构对比。
+    """
+    from scripts.openapi_route_coverage import coverage_report
+
+    report = coverage_report()
+    assert report["staleContractOperations"] == [], (
+        f"这些操作契约里有、实现里没有：{report['staleContractOperations']}"
+    )
+
+
+def test_contract_coverage_does_not_regress() -> None:
+    """覆盖率棘轮：只许涨不许跌。
+
+    手工契约当前只覆盖实现的一小部分（发现时 6.6%）。一次补全 355 条不现实，
+    但必须防止边补边掉。每补一批就把这个下限往上调。
+    """
+    from scripts.openapi_route_coverage import coverage_report
+
+    minimum_covered_operations = 25
+    report = coverage_report()
+    assert report["coveredOperationCount"] >= minimum_covered_operations, (
+        f"契约覆盖的操作数从 {minimum_covered_operations} 掉到了 "
+        f"{report['coveredOperationCount']}——契约与实现正在反向漂移。"
+    )

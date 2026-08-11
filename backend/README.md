@@ -153,6 +153,11 @@ AICHECK_STRICT_PRODUCTION=false \
 uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 ```
 
+`AICHECK_REQUIRE_AUTH` defaults to `true`: a missing configuration must fail closed
+("nobody can get in"), never open ("anybody can claim any identity"). Disabling it also
+disables project isolation, node scope, and role checks, so set `AICHECK_REQUIRE_AUTH=false`
+explicitly — and only for local development where that trade-off is understood.
+
 Without `AICHECK_DATABASE_URL`, `AICHECK_MINIO_ENDPOINT`, or `AICHECK_TASK_DISPATCH`, the API runs in compatibility mode using seeded in-memory data and mock URLs. This mode is intended for fast frontend contract tests.
 Set `AICHECK_BOOTSTRAP_LOCAL_ROLES=true` to inject the five PBKDF2 role accounts into the in-memory repository for local login checks without PostgreSQL.
 With `AICHECK_STRICT_PRODUCTION=false`, security sessions use the existing in-memory fallback and local login does not require Redis. Strict production must keep `AICHECK_STRICT_PRODUCTION=true`; in that mode Redis is mandatory and the API deliberately refuses to start or serve security operations when the security backend is unavailable.

@@ -525,11 +525,33 @@ def embedding_batches_for_chunks(chunks: list[dict[str, Any]]) -> tuple[list[dic
                 for item in offline_hash_embeddings(texts[offset : offset + EMBED_BATCH_SIZE]):
                     vectors.append({**item, "index": offset + int(item.get("index") or 0)})
             return vectors, OFFLINE_EMBEDDING_MODEL, STANDARD_INDEX_VERSION, int(target["dimensions"]), fallback_reason
+    # D-2：EmbeddingClient 未启用时，这里原先直接落哈希伪向量且 fallback_reason 为
+    # None——与真语义向量同表同维存储，无任何标记。embedding 服务配置错了系统照常
+    # 运行，检索结果近似随机，使用方无从察觉。
+    # 现在把它当配置错误：要用哈希向量必须显式声明（离线自测/评测场景），
+    # 否则拒绝入库，让问题在写入时就暴露。
+    if not force_offline and not env_bool("AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK", False):
+        raise RuntimeError(
+            "embedding_client_not_configured: 未配置可用的 embedding 服务。"
+            "哈希伪向量没有语义、会让检索结果近似随机，不能静默入库。"
+            "如确实要在离线环境自测，请显式设 AICHECK_EMBEDDING_FORCE_OFFLINE_HASH=true "
+            "或 AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK=true。"
+        )
     vectors = []
     for offset in range(0, len(texts), EMBED_BATCH_SIZE):
         for item in offline_hash_embeddings(texts[offset : offset + EMBED_BATCH_SIZE]):
             vectors.append({**item, "index": offset + int(item.get("index") or 0)})
-    return vectors, OFFLINE_EMBEDDING_MODEL, STANDARD_INDEX_VERSION, int(active_embedding_target()["dimensions"]), None
+    # 即便是显式声明的离线模式，也要留下降级标记——否则索引里的哈希向量依旧不可辨认。
+    fallback_reason = (
+        "forced_offline_hash_embedding" if force_offline else "embedding_client_disabled_hash_fallback"
+    )
+    return (
+        vectors,
+        OFFLINE_EMBEDDING_MODEL,
+        STANDARD_INDEX_VERSION,
+        int(active_embedding_target()["dimensions"]),
+        fallback_reason,
+    )
 
 
 ACCURACY_BASELINE_TEXT_ENGINES = [

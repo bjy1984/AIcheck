@@ -8323,7 +8323,10 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     tree = assert_ok(client.get(f"/api/projects/{project_id}/tree", headers=contractor_headers))
     documents = assert_ok(client.get(f"/api/projects/{project_id}/documents", headers=contractor_headers))
     bindings = assert_ok(client.get(f"/api/projects/{project_id}/documents/bindings", headers=contractor_headers))
-    reports = assert_ok(client.get(f"/api/projects/{project_id}/reports", headers=contractor_headers))
+    # 施工方的动作表没有 report:view（issue #18）。这里原先是 assert_ok，
+    # 等于把越权读取当成了既有行为——报告读取现在按动作表拒绝。
+    contractor_reports = client.get(f"/api/projects/{project_id}/reports", headers=contractor_headers)
+    assert contractor_reports.status_code == 403, contractor_reports.text
     todos = assert_ok(client.get(f"/api/todos?projectId={project_id}", headers=contractor_headers))
     messages = assert_ok(client.get(f"/api/messages?projectId={project_id}", headers=contractor_headers))
     search_results = assert_ok(client.get(f"/api/search?projectId={project_id}&keyword=RT", headers=contractor_headers))
@@ -8337,7 +8340,10 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     ndt_reports = assert_ok(client.get(f"/api/projects/{project_id}/ndt/reports", headers=contractor_headers))
     ndt_feedback = assert_ok(client.get(f"/api/projects/{project_id}/ndt/inspection-feedback", headers=contractor_headers))
     ndt_visible_records = assert_ok(client.get(f"/api/projects/{project_id}/ndt/records", headers=ndt_headers))
-    archive_package = assert_ok(client.get(f"/api/projects/{project_id}/archive/package", headers=contractor_headers))
+    # 施工方的动作表也没有 archive:view（issue #18）——归档包读取同样按动作表拒绝。
+    contractor_archive = client.get(f"/api/projects/{project_id}/archive/package", headers=contractor_headers)
+    assert contractor_archive.status_code == 403, contractor_archive.text
+    archive_package = assert_ok(client.get(f"/api/projects/{project_id}/archive/package", headers=owner_headers))
     owner_reports = assert_ok(client.get(f"/api/projects/{project_id}/owner/reports", headers=owner_headers))
 
     assert own_node["node"]["nodeId"] == 16
@@ -8352,7 +8358,16 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     assert visible_node_ids.issubset({16, 24, 25})
     assert "DOC-20260625-004" not in {item["id"] for item in documents["items"]}
     assert "BIND-40-001" not in {item["id"] for item in bindings}
-    assert all(set(report.get("nodeIds") or []).issubset({16, 24, 25}) for report in reports)
+    # 报告的节点范围过滤本身仍要验，只是换用有 report:view 的角色（建设方）来读。
+    # 建设方的节点范围是 [1, 16, 24, 40, 59, 68]，报告只能落在其中。
+    owner_scope_node_ids = {1, 16, 24, 40, 59, 68}
+    owner_all_reports = assert_ok(
+        client.get(f"/api/projects/{project_id}/reports", headers=owner_headers)
+    )
+    assert all(
+        set(report.get("nodeIds") or []).issubset(owner_scope_node_ids)
+        for report in owner_all_reports
+    )
     assert "TODO-SCOPE-40" not in {item["id"] for item in todos["items"]}
     assert "TODO-SCOPE-RPT" not in {item["id"] for item in todos["items"]}
     assert "MSG-SCOPE-40" not in {item["id"] for item in messages["items"]}
@@ -8368,7 +8383,22 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     assert ndt_feedback["items"] == []
     assert any(item["id"] == "NDT-REC-001" for item in ndt_visible_records["items"])
     assert archive_package["itemCount"] == 2
-    assert any(report["id"] == "RPT-20260625-001" for report in owner_reports)
+    # RPT-20260625-001 在节点范围内，但状态是「复核中」——签发前属于监检机构的内部
+    # 工作稿，不对建设方开放（issue #18）。定稿后同一份报告必须照常可见，
+    # 否则就是把建设方彻底挡在报告之外了。
+    assert not any(report["id"] == "RPT-20260625-001" for report in owner_reports)
+    settled_report = next(
+        item for item in repo.state["reports"] if item["id"] == "RPT-20260625-001"
+    )
+    original_status = settled_report["status"]
+    try:
+        settled_report["status"] = "已签发"
+        settled_reports = assert_ok(
+            client.get(f"/api/projects/{project_id}/owner/reports", headers=owner_headers)
+        )
+        assert any(report["id"] == "RPT-20260625-001" for report in settled_reports)
+    finally:
+        settled_report["status"] = original_status
 
 
 def test_upload_creates_knowledge_task_and_retrieval_works() -> None:

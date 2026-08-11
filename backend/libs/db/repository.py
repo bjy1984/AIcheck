@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -50,8 +51,26 @@ from .seed import (
 )
 
 
+LOGGER = logging.getLogger("aicheck.repository")
+
+
 class ConcurrentPersistenceError(RuntimeError):
     """Raised when optimistic persistence detects a newer stored record."""
+
+
+class IllegalNodeStatusTransition(RuntimeError):
+    """节点状态跳变不合法时抛出（N-4）。"""
+
+
+# 已办结的终态：监检给出结论后，节点不应被其他流程无声改回。
+NODE_STATUS_TERMINAL_STATUSES = {"已通过", "不适用"}
+# 能重新打开终态节点的去向：都是显式的审查动作，有审计、有触发人。
+# 「复审中」是人工发起的复审，「业务核验中」是人工触发的 AI 重跑——两者都合法。
+NODE_STATUS_REOPENABLE_TARGETS = {"复审中", "业务核验中"}
+# 明确禁止的去向：把已办结的节点拖回流程起点，等于无声推翻监检的终审结论。
+# 只挡这几个而不是「白名单之外全挡」——真实业务里状态推进的路径不止一条，
+# 定得太死会把正常流程也拦下来。
+NODE_STATUS_FORBIDDEN_REOPEN_TARGETS = {"待提交", "部分提交", "需补正"}
 
 
 STATE_COLLECTIONS = {
@@ -456,6 +475,28 @@ class InMemoryRepository:
     def require_project(self, project_id: str) -> dict[str, Any] | None:
         return self.find_one("projects", project_id)
 
+    def material_type_name_for_code(self, project_id: str | None, code: str) -> str:
+        """按业务包的 materialTypes 把资料类型码解析成名称，解析不出就返回空串。
+
+        名称是业务包里的权威定义，不该要求上传方再传一遍——传了不一致更麻烦。
+        """
+        if not code:
+            return ""
+        try:
+            from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
+        except Exception:
+            return ""
+        project = self.require_project(str(project_id or "")) or {}
+        pack_id = project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+        try:
+            pack = load_business_pack(str(pack_id))
+        except Exception:
+            return ""
+        for item in pack.get("materialTypes") or []:
+            if str(item.get("code") or "") == code:
+                return str(item.get("name") or "")
+        return ""
+
     def role_actions(self, role: str) -> list[str]:
         return list(ROLE_ACTIONS.get(role, ROLE_ACTIONS["inspection"]))
 
@@ -795,9 +836,30 @@ class InMemoryRepository:
         node = self.node(project_id, node_id)
         before = node.get("status") if node else None
         if node is not None:
+            self._reject_illegal_node_transition(project_id, node_id, before, status)
             node["status"] = status
             node["revision"] = int(node.get("revision", 1)) + 1
         return {"field": f"nodes.{node_id}.status", "before": before, "after": status}
+
+    def _reject_illegal_node_transition(
+        self, project_id: str, node_id: int, before: Any, after: str
+    ) -> None:
+        """拦住不该发生的节点状态跳变（N-4）。
+
+        15 个调用点各自 set_node_status、互不知晓，没有任何前置状态校验——
+        已通过的节点可以被任意改回「待提交」，监检的终审结论就这么被无声推翻。
+        这里只挡明确非法的跳变，合法路径一律放行：真实业务里状态推进的路径不止一条，
+        定得太死会把正常流程也拦下来。
+        """
+        current = str(before or "")
+        target = str(after or "")
+        if not current or current == target:
+            return
+        if current in NODE_STATUS_TERMINAL_STATUSES and target in NODE_STATUS_FORBIDDEN_REOPEN_TARGETS:
+            raise IllegalNodeStatusTransition(
+                f"节点 {node_id} 当前为「{current}」，不能直接变更为「{target}」。"
+                f"已办结的节点需先经复审重新打开（{'、'.join(sorted(NODE_STATUS_REOPENABLE_TARGETS))}）。"
+            )
 
     def touch_project(self, project_id: str, status: str | None = None, current_node_id: int | None = None) -> None:
         project = self.require_project(project_id)
@@ -980,6 +1042,13 @@ class InMemoryRepository:
         resolved_material_category = str(material_category or "").strip()
         resolved_material_type_code = str(material_type_code or "").strip()
         resolved_material_type_name = str(material_type_name or "").strip()
+        # M-8：上传时声明了 materialTypeCode，名称却要调用方再传一遍，不传就落 None。
+        # 业务包的 materialTypes 里就有权威名称，按 code 解析即可——NDT 专用路径是
+        # 硬编码把名称填上的，通用路径没接上，于是同一份资料从两条路进来长得不一样。
+        if resolved_material_type_code and not resolved_material_type_name:
+            resolved_material_type_name = self.material_type_name_for_code(
+                project_id, resolved_material_type_code
+            )
         doc = {
             "id": document_id,
             "projectId": project_id,
@@ -1149,6 +1218,13 @@ class InMemoryRepository:
                     "status": "待上传",
                 }
             )
+            # M-8：声明的 nodeIds 原先只回显在响应里、不落库，资料仍是游离状态，
+            # 上传方以为已归属、实际还要再手工挂一次。NDT 专用路径是在会话建好后
+            # 手工回填 document["nodeId"] 才对的；通用路径这里补上同样的落库。
+            if node_ids:
+                doc["nodeId"] = node_ids[0]
+                if knowledge_file:
+                    knowledge_file["nodeId"] = node_ids[0]
             pending_records.append((doc, version, knowledge_file, knowledge_task))
         for records in pending_records:
             self._insert_document_records(*records)
@@ -2621,11 +2697,15 @@ class InMemoryRepository:
                 object_id = self.persistence_object_id(collection_name, doc, index)
                 self._persistence_baseline[(collection_name, object_id)] = self.canonical_persistence_payload(doc)
 
-    def load_from_sqlite(self, selected_state_keys: set[str] | None = None) -> None:
+    def load_from_sqlite(
+        self, selected_state_keys: set[str] | None = None, tenant_id: str | None = None
+    ) -> None:
+        """按租户加载 SQLite 持久化状态（同 load_from_sync_postgres 的 N-5 修复）。"""
         self.configure_sqlite(self.sqlite_path)
         if not self.sqlite_enabled:
             return
         self.ensure_sqlite_schema()
+        effective_tenant_id = str(tenant_id or configured_tenant_id())
         loaded = self._fresh_state_for_persistence_load()
         with self.sqlite_connection() as connection:
             selected_collections = [
@@ -2643,7 +2723,7 @@ class InMemoryRepository:
                       AND tenant_id = ?
                     ORDER BY collection, object_id
                     """,
-                    [*selected_collections, configured_tenant_id()],
+                    [*selected_collections, effective_tenant_id],
                 ).fetchall()
             else:
                 rows = connection.execute(
@@ -2653,7 +2733,7 @@ class InMemoryRepository:
                     WHERE tenant_id = ?
                     ORDER BY collection, object_id
                     """,
-                    (configured_tenant_id(),),
+                    (effective_tenant_id,),
                 ).fetchall()
             has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
             grouped: dict[str, list[dict[str, Any]]] = {}
@@ -2670,13 +2750,13 @@ class InMemoryRepository:
                 SELECT name, payload FROM aicheck_singletons
                 WHERE tenant_id = ?
                 """,
-                (configured_tenant_id(),),
+                (effective_tenant_id,),
             ).fetchall()
             for name, payload in singleton_rows:
                 loaded[name] = json.loads(payload)
             idempotency_rows = connection.execute(
                 "SELECT scope, payload FROM idempotency_records WHERE tenant_id = ?",
-                (configured_tenant_id(),),
+                (effective_tenant_id,),
             ).fetchall()
             loaded["idempotency"] = {scope: json.loads(payload) for scope, payload in idempotency_rows}
         loaded_baseline = {
@@ -3089,8 +3169,18 @@ class InMemoryRepository:
                 )
             self._postgres_schema_ready = True
 
-    def load_from_sync_postgres(self, selected_state_keys: set[str] | None = None) -> None:
+    def load_from_sync_postgres(
+        self, selected_state_keys: set[str] | None = None, tenant_id: str | None = None
+    ) -> None:
+        """按租户加载持久化状态。
+
+        N-5：写入按 JWT 里的 tid 落库，读取却一律按 configured_tenant_id() 环境变量。
+        多租户部署重启后，非 configured 租户的数据在库里存在却永不加载，而
+        main.py 又把 claims.tid 标记为「已加载」——对使用方等同于数据丢失。
+        现在按请求租户参数化；不传时仍回落到 configured_tenant_id()，单租户部署行为不变。
+        """
         with self._sync_postgres_lock:
+            effective_tenant_id = str(tenant_id or configured_tenant_id())
             self.configure_sync_postgres()
             if self.sync_postgres is None:
                 return
@@ -3109,7 +3199,7 @@ class InMemoryRepository:
                       AND tenant_id = %s
                     ORDER BY collection, object_id
                     """,
-                    (selected_collections, configured_tenant_id()),
+                    (selected_collections, effective_tenant_id),
                 ).fetchall()
             else:
                 rows = self.sync_postgres.execute(
@@ -3132,7 +3222,7 @@ class InMemoryRepository:
                     loaded[state_key] = documents
             singleton_rows = self.sync_postgres.execute(
                 "SELECT name, payload FROM aicheck_singletons WHERE tenant_id = %s",
-                (configured_tenant_id(),),
+                (effective_tenant_id,),
             ).fetchall()
             for name, payload in singleton_rows:
                 loaded[name] = json.loads(json.dumps(payload))
@@ -4096,8 +4186,15 @@ class InMemoryRepository:
                 return
             try:
                 persisted_ids: list[str] = []
+                # D-4：知识库里注册了 2560/4096 维的 embedding 档案，但 pgvector 表是
+                # 按 OFFLINE_VECTOR_DIMENSIONS 建的。维度不匹配的向量原先直接 continue
+                # 跳过——flush 不写、检索返回空，全程无报错，换了模型档案的人只会看到
+                # 「检索没结果」而不知道向量根本没入库。
+                skipped_dimensions: dict[int, int] = {}
                 for row in self.state.get("knowledge_vectors", []) or []:
-                    if int(row.get("dimensions") or 0) != OFFLINE_VECTOR_DIMENSIONS:
+                    row_dimensions = int(row.get("dimensions") or 0)
+                    if row_dimensions != OFFLINE_VECTOR_DIMENSIONS:
+                        skipped_dimensions[row_dimensions] = skipped_dimensions.get(row_dimensions, 0) + 1
                         continue
                     payload = vector_payload_for_pg(row)
                     embedding = payload.get("embedding")
@@ -4140,6 +4237,17 @@ class InMemoryRepository:
                             payload["index_version"],
                             payload["metadata"],
                         ),
+                    )
+                if skipped_dimensions:
+                    detail = "、".join(
+                        f"{dimensions} 维 {count} 条" for dimensions, count in sorted(skipped_dimensions.items())
+                    )
+                    LOGGER.error(
+                        "pgvector_dimension_mismatch: 有向量因维度与索引表不符而未入库（%s）。"
+                        "索引表按 %s 维建立；这些向量既不会被写入、也不会被检索到，"
+                        "更换 embedding 模型档案后需要重建索引表并重新向量化。",
+                        detail,
+                        OFFLINE_VECTOR_DIMENSIONS,
                     )
                 stale_ids = sorted(self._pgvector_baseline_ids - set(persisted_ids))
                 if stale_ids:
@@ -4495,11 +4603,12 @@ def postgres_persistence_configured() -> bool:
     return bool(repo.sync_postgres is not None or repo.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL"))
 
 
-def load_state(selected_state_keys: set[str] | None = None) -> None:
+def load_state(selected_state_keys: set[str] | None = None, tenant_id: str | None = None) -> None:
+    """加载持久化状态；不传 tenant_id 时按 configured_tenant_id() 回落（N-5）。"""
     if postgres_persistence_configured():
-        repo.load_from_sync_postgres(selected_state_keys)
+        repo.load_from_sync_postgres(selected_state_keys, tenant_id=tenant_id)
         return
-    repo.load_from_sqlite(selected_state_keys)
+    repo.load_from_sqlite(selected_state_keys, tenant_id=tenant_id)
 
 
 def load_review_run_state(review_run_id: str) -> None:
