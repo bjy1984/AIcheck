@@ -9089,6 +9089,168 @@ def upload_ndt_atomic_documents(file_specs: list[dict[str, object]]) -> list[dic
     return complete["documents"]
 
 
+def test_retry_failed_upload_reuses_stored_original_and_current_version(monkeypatch) -> None:
+    project_id = "P-2026-HDCP-001"
+    headers = {
+        "X-Role": "ndt",
+        "X-User-Id": "USER-NDT-001",
+        "Idempotency-Key": "retry-failed-upload-once",
+    }
+    uploaded = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "失败后重新上传.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_plan",
+                "materialTypeName": "无损检测方案",
+                "nodeIds": [36],
+            }
+        ]
+    )[0]
+    document_id = str(uploaded["documentId"])
+    document = repo.find_one("documents", document_id)
+    version_id = str(document["currentVersionId"])
+    version = repo.find_one("versions", version_id)
+    knowledge_file = next(
+        item
+        for item in repo.state["knowledge_files"]
+        if item.get("documentVersionId") == version_id
+    )
+    binding_ids = [item["id"] for item in repo.bindings_for_project(project_id) if item.get("documentId") == document_id]
+    document["currentOcrStatus"] = "识别失败"
+    version["ocrStatus"] = "识别失败"
+    version["sliceStatus"] = "切片失败"
+    version["vectorStatus"] = "向量化失败"
+    knowledge_file["ocrStatus"] = "识别失败"
+    knowledge_file["sliceStatus"] = "切片失败"
+    knowledge_file["vectorStatus"] = "向量化失败"
+    repo.apply_slice_result(knowledge_file["id"], [{"pageNo": 1, "text": "旧切片"}])
+    repo.apply_embed_result(knowledge_file["id"], 1)
+    dispatched: list[tuple[str, str, str, str | None]] = []
+
+    def fake_dispatch(document_id: str, version_id: str, storage_key: str, file_name: str | None = None):
+        dispatched.append((document_id, version_id, storage_key, file_name))
+        return {"mode": "test", "taskId": "retry-upload-task"}
+
+    monkeypatch.setattr(task_dispatcher, "dispatch_parse_document", fake_dispatch)
+
+    first = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/{document_id}/retry-upload",
+            headers=headers,
+        )
+    )
+    replay = assert_ok(
+        client.post(
+            f"/projects/{project_id}/documents/{document_id}/retry-upload",
+            headers=headers,
+        )
+    )
+
+    assert first == replay
+    assert first["documentId"] == document_id
+    assert first["documentVersionId"] == version_id
+    assert first["uploadStatus"] == "上传中"
+    assert document["currentOcrStatus"] == "识别中"
+    assert version["sliceStatus"] == "未切片"
+    assert version["vectorStatus"] == "待向量化"
+    assert knowledge_file["chunkCount"] == 0
+    assert knowledge_file["vectorCount"] == 0
+    assert [item for item in repo.state["knowledge_chunks"] if item.get("fileId") == knowledge_file["id"]] == []
+    assert [item for item in repo.state["knowledge_vectors"] if item.get("fileId") == knowledge_file["id"]] == []
+    assert binding_ids == [item["id"] for item in repo.bindings_for_project(project_id) if item.get("documentId") == document_id]
+    assert dispatched == [(document_id, version_id, version["storageKey"], document["fileName"])]
+
+
+def test_retry_failed_upload_rejects_document_without_failed_stage() -> None:
+    project_id = "P-2026-HDCP-001"
+    uploaded = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "仍在正常处理.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_plan",
+                "materialTypeName": "无损检测方案",
+                "nodeIds": [36],
+            }
+        ]
+    )[0]
+
+    payload = assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/{uploaded['documentId']}/retry-upload",
+            headers={"X-Role": "ndt", "X-User-Id": "USER-NDT-001"},
+        ),
+        "VALIDATION_ERROR",
+    )
+
+    assert payload["message"] == "仅处理失败的文件可以重新上传。"
+
+
+def test_retry_failed_upload_rejects_missing_stored_original(monkeypatch) -> None:
+    project_id = "P-2026-HDCP-001"
+    uploaded = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "原文件已丢失.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_plan",
+                "materialTypeName": "无损检测方案",
+                "nodeIds": [36],
+            }
+        ]
+    )[0]
+    document = repo.find_one("documents", uploaded["documentId"])
+    document["currentOcrStatus"] = "识别失败"
+    monkeypatch.setattr("apps.api.routes.project_document_local_original_path", lambda *_args: None)
+    monkeypatch.setattr("apps.api.routes.project_document_storage_object", lambda *_args: None)
+
+    payload = assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/{uploaded['documentId']}/retry-upload",
+            headers={"X-Role": "ndt", "X-User-Id": "USER-NDT-001"},
+        ),
+        "VALIDATION_ERROR",
+    )
+
+    assert payload["message"] == "原文件已不存在，请重新选择本地文件上传。"
+
+
+def test_retry_failed_upload_rejects_non_business_role() -> None:
+    project_id = "P-2026-HDCP-001"
+    uploaded = upload_ndt_atomic_documents(
+        [
+            {
+                "fileName": "监检人员不可重传.pdf",
+                "fileSize": 1024,
+                "fileType": "application/pdf",
+                "materialCategory": "无损检测资料",
+                "materialTypeCode": "ndt_plan",
+                "materialTypeName": "无损检测方案",
+                "nodeIds": [36],
+            }
+        ]
+    )[0]
+    document = repo.find_one("documents", uploaded["documentId"])
+    document["currentOcrStatus"] = "识别失败"
+
+    payload = assert_error(
+        client.post(
+            f"/projects/{project_id}/documents/{uploaded['documentId']}/retry-upload",
+            headers={"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"},
+        ),
+        "FORBIDDEN",
+    )
+
+    assert payload["message"] == "当前角色不能重新上传该文件。"
+
+
 def test_ndt_atomic_submission_refreshes_latest_document_state_before_validation(monkeypatch) -> None:
     project_id = "P-2026-HDCP-001"
     headers = {"X-Role": "ndt", "X-User-Id": "USER-NDT-001"}

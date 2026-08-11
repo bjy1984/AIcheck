@@ -7111,6 +7111,88 @@ def document_download_url(request: Request, project_id: str, document_id: str):
     return ok(project_document_original_payload(request, project_id, document)["download"], request)
 
 
+@router.post("/projects/{project_id}/documents/{document_id}/retry-upload")
+def retry_failed_document_upload(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        if role not in {"contractor", "ndt"}:
+            return fail(errors.FORBIDDEN, request, message="当前角色不能重新上传该文件。")
+        document, version, context_error = project_document_original_context(
+            request,
+            project_id,
+            document_id,
+        )
+        if context_error:
+            return context_error
+        version_id = str(version["id"])
+        knowledge_file = next(
+            (
+                item
+                for item in repo.state.get("knowledge_files", [])
+                if str(item.get("documentVersionId") or "") == version_id
+            ),
+            None,
+        )
+        if not knowledge_file:
+            return fail(errors.NOT_FOUND, request, message="未找到该文件的处理记录。")
+        statuses = [
+            document.get("currentOcrStatus"),
+            version.get("ocrStatus"),
+            version.get("sliceStatus"),
+            version.get("vectorStatus"),
+            knowledge_file.get("ocrStatus"),
+            knowledge_file.get("sliceStatus"),
+            knowledge_file.get("vectorStatus"),
+        ]
+        if not any("失败" in str(status or "") for status in statuses):
+            return fail(errors.VALIDATION_ERROR, request, message="仅处理失败的文件可以重新上传。")
+        local_original = project_document_local_original_path(document, version)
+        storage_object = project_document_storage_object(version)
+        object_metadata = (
+            object_storage.object_metadata(*storage_object)
+            if storage_object and object_storage.enabled
+            else None
+        )
+        if local_original is None and not object_metadata:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="原文件已不存在，请重新选择本地文件上传。",
+            )
+        queued_task = dispatch_knowledge_file_ocr_pipeline(
+            knowledge_file,
+            reason="用户从工作台重新上传失败文件",
+        )
+        repo.add_audit("重新上传失败文件", "Document", document_id)
+        return ok(
+            {
+                "documentId": document_id,
+                "documentVersionId": version_id,
+                "uploadStatus": "上传中",
+                "queuedTask": queued_task,
+            },
+            request,
+        )
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"documentId": document_id},
+    )
+
+
 @router.get("/projects/{project_id}/documents/{document_id}/ocr-fields")
 def document_ocr_fields(request: Request, project_id: str, document_id: str):
     versions = repo.versions_for_document(document_id)
