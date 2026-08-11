@@ -222,23 +222,24 @@ git commit -m "fix: require completed uploads before submission"
 
 **Files:**
 - Modify: `frontend/src/api/aicheck/index.ts`
+- Create: `frontend/src/utils/documentUploadActions.ts`
+- Create: `frontend/src/utils/documentUploadActions.test.ts`
 - Modify: `frontend/src/views/AICheck/components/WorkbenchRoleStaticSections.vue`
 - Modify: `frontend/src/views/AICheck/Workbench.vue`
-- Create: `frontend/tests/workbench-upload-state.test.mjs`
 
 **Interfaces:**
 - Produces: `retryDocumentUploadApi(projectId, documentId, options)` and `file-retry-upload` event from `WorkbenchRoleStaticSections`.
 - Consumes: Task 1 status/predicate and Task 2 endpoint.
 
-- [ ] **Step 1: Add failing source-level workbench assertions**
+- [ ] **Step 1: Add failing business-action assertions**
 
-The Node test reads both Vue source files and asserts the contractor status cell contains a `失败重新上传` button path, the submit condition includes `processingStatus === '上传成功'`, and `Workbench.vue` calls `retryDocumentUploadApi` and reloads the project bundle.
+Add table-driven assertions that contractor rows are submittable only when their workflow status is eligible and upload status is `上传成功`, and retryable only when upload status is `失败重新上传`.
 
 - [ ] **Step 2: Run the source-level test and verify the retry interaction is absent**
 
-Run: `cd frontend && node --test tests/workbench-upload-state.test.mjs`
+Run: `cd frontend && pnpm exec esno src/utils/documentUploadActions.test.ts`
 
-Expected: FAIL on missing retry event/API call and missing upload-success submit condition.
+Expected: FAIL because the business-action utility does not exist.
 
 - [ ] **Step 3: Add the API and contractor event**
 
@@ -253,7 +254,7 @@ export const retryDocumentUploadApi = (
 })
 ```
 
-Add `file-retry-upload: [documentId: string]` to the component emits. Render `失败重新上传` as a link button in the processing-status cell; all other states remain tags. Disable contractor submission unless the business status is `上传成功`, and update the tooltip to explain that upload processing must finish.
+Implement `canSubmitDocumentUpload(workflowEligible, uploadStatus)` and `canRetryDocumentUpload(uploadStatus)`. Add `file-retry-upload: [documentId: string]` to the component emits. Render `失败重新上传` as a link button in the processing-status cell; all other states remain tags. Disable contractor submission unless the business status is `上传成功`, and update the tooltip to explain that upload processing must finish.
 
 - [ ] **Step 4: Wire the page handler**
 
@@ -261,14 +262,14 @@ Add `handleRetryProjectFileUpload(documentId)` that calls the API with a unique 
 
 - [ ] **Step 5: Run focused tests and type checking**
 
-Run: `cd frontend && node --test tests/workbench-upload-state.test.mjs && pnpm exec esno src/utils/documentPipelineStatus.test.ts && pnpm ts:check`
+Run: `cd frontend && pnpm exec esno src/utils/documentUploadActions.test.ts && pnpm exec esno src/utils/documentPipelineStatus.test.ts && pnpm ts:check`
 
 Expected: PASS.
 
 - [ ] **Step 6: Commit contractor integration**
 
 ```bash
-git add frontend/src/api/aicheck/index.ts frontend/src/views/AICheck/components/WorkbenchRoleStaticSections.vue frontend/src/views/AICheck/Workbench.vue frontend/tests/workbench-upload-state.test.mjs
+git add frontend/src/api/aicheck/index.ts frontend/src/utils/documentUploadActions.ts frontend/src/utils/documentUploadActions.test.ts frontend/src/views/AICheck/components/WorkbenchRoleStaticSections.vue frontend/src/views/AICheck/Workbench.vue
 git commit -m "feat: retry failed contractor uploads"
 ```
 
@@ -277,19 +278,19 @@ git commit -m "feat: retry failed contractor uploads"
 **Files:**
 - Modify: `frontend/src/views/AICheck/components/NdtWorkflowPanel.vue`
 - Modify: `frontend/src/views/AICheck/Workbench.vue`
-- Modify: `frontend/tests/workbench-upload-state.test.mjs`
+- Modify: `frontend/src/utils/documentUploadActions.test.ts`
 
 **Interfaces:**
 - Produces: `retryUpload: [documentId: string]` from `NdtWorkflowPanel`.
 - Consumes: Task 1 status/predicate and Task 4 page retry handler.
 
-- [ ] **Step 1: Extend the failing source-level test for NDT**
+- [ ] **Step 1: Extend the failing business-action test for NDT**
 
-Assert the NDT table renders `documentPipelineStatus(row)` instead of `row.currentOcrStatus`, emits retry from the failure button, derives `canSubmit` from `isDocumentUploadSuccessful(file)`, and contains no `不阻断单文件提交` or `辅助核对，不影响提交` copy.
+Assert NDT rows are submittable only when the approval state is editable and the upload status is `上传成功`; failed uploads remain retryable but not submittable.
 
 - [ ] **Step 2: Run the test and verify current NDT behavior fails**
 
-Run: `cd frontend && node --test tests/workbench-upload-state.test.mjs`
+Run: `cd frontend && pnpm exec esno src/utils/documentUploadActions.test.ts`
 
 Expected: FAIL because the table shows raw OCR status and permits submission while processing.
 
@@ -303,14 +304,14 @@ Add `@retry-upload="handleRetryProjectFileUpload"` to `NdtWorkflowPanel`; keep a
 
 - [ ] **Step 5: Run frontend verification**
 
-Run: `cd frontend && node --test tests/workbench-upload-state.test.mjs && pnpm exec esno src/utils/documentPipelineStatus.test.ts && pnpm ts:check && pnpm lint:eslint:check`
+Run: `cd frontend && pnpm exec esno src/utils/documentUploadActions.test.ts && pnpm exec esno src/utils/documentPipelineStatus.test.ts && pnpm ts:check && pnpm lint:eslint:check`
 
 Expected: PASS with no new errors.
 
 - [ ] **Step 6: Commit NDT integration**
 
 ```bash
-git add frontend/src/views/AICheck/components/NdtWorkflowPanel.vue frontend/src/views/AICheck/Workbench.vue frontend/tests/workbench-upload-state.test.mjs
+git add frontend/src/views/AICheck/components/NdtWorkflowPanel.vue frontend/src/views/AICheck/Workbench.vue frontend/src/utils/documentUploadActions.test.ts
 git commit -m "feat: gate NDT submission on upload success"
 ```
 
@@ -331,7 +332,7 @@ Expected: PASS.
 
 - [ ] **Step 2: Run frontend tests and static checks**
 
-Run: `cd frontend && pnpm exec esno src/utils/documentPipelineStatus.test.ts && node --test tests/workbench-upload-state.test.mjs && pnpm ts:check && pnpm lint:eslint:check`
+Run: `cd frontend && pnpm exec esno src/utils/documentPipelineStatus.test.ts && pnpm exec esno src/utils/documentUploadActions.test.ts && pnpm ts:check && pnpm lint:eslint:check`
 
 Expected: PASS.
 
