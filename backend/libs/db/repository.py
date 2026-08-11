@@ -456,6 +456,28 @@ class InMemoryRepository:
     def require_project(self, project_id: str) -> dict[str, Any] | None:
         return self.find_one("projects", project_id)
 
+    def material_type_name_for_code(self, project_id: str | None, code: str) -> str:
+        """按业务包的 materialTypes 把资料类型码解析成名称，解析不出就返回空串。
+
+        名称是业务包里的权威定义，不该要求上传方再传一遍——传了不一致更麻烦。
+        """
+        if not code:
+            return ""
+        try:
+            from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
+        except Exception:
+            return ""
+        project = self.require_project(str(project_id or "")) or {}
+        pack_id = project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
+        try:
+            pack = load_business_pack(str(pack_id))
+        except Exception:
+            return ""
+        for item in pack.get("materialTypes") or []:
+            if str(item.get("code") or "") == code:
+                return str(item.get("name") or "")
+        return ""
+
     def role_actions(self, role: str) -> list[str]:
         return list(ROLE_ACTIONS.get(role, ROLE_ACTIONS["inspection"]))
 
@@ -980,6 +1002,13 @@ class InMemoryRepository:
         resolved_material_category = str(material_category or "").strip()
         resolved_material_type_code = str(material_type_code or "").strip()
         resolved_material_type_name = str(material_type_name or "").strip()
+        # M-8：上传时声明了 materialTypeCode，名称却要调用方再传一遍，不传就落 None。
+        # 业务包的 materialTypes 里就有权威名称，按 code 解析即可——NDT 专用路径是
+        # 硬编码把名称填上的，通用路径没接上，于是同一份资料从两条路进来长得不一样。
+        if resolved_material_type_code and not resolved_material_type_name:
+            resolved_material_type_name = self.material_type_name_for_code(
+                project_id, resolved_material_type_code
+            )
         doc = {
             "id": document_id,
             "projectId": project_id,
@@ -1149,6 +1178,13 @@ class InMemoryRepository:
                     "status": "待上传",
                 }
             )
+            # M-8：声明的 nodeIds 原先只回显在响应里、不落库，资料仍是游离状态，
+            # 上传方以为已归属、实际还要再手工挂一次。NDT 专用路径是在会话建好后
+            # 手工回填 document["nodeId"] 才对的；通用路径这里补上同样的落库。
+            if node_ids:
+                doc["nodeId"] = node_ids[0]
+                if knowledge_file:
+                    knowledge_file["nodeId"] = node_ids[0]
             pending_records.append((doc, version, knowledge_file, knowledge_task))
         for records in pending_records:
             self._insert_document_records(*records)

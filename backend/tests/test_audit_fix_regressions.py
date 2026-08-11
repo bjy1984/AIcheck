@@ -1007,3 +1007,457 @@ def test_m11_owner_cannot_see_unsubmitted_contractor_drafts() -> None:
     ]
     if submitted:
         assert str(submitted[0]["id"]) in visible_ids(owner)
+
+
+# ---- M-8：上传时声明的资料类型与归属节点被静默丢弃 ----
+
+
+def test_m8_declared_material_type_and_nodes_are_persisted() -> None:
+    """上传时声明的 materialTypeCode / nodeIds 必须落库。
+
+    改之前：会话响应正常回显这两个字段，落库时 nodeId 为 None、materialTypeName 为
+    None——资料仍是游离状态，上传方以为已归属、实际还要再手工挂一次。
+    NDT 专用路径本就做对了（会话建好后回填 nodeId、按类型填名称），通用路径没接上，
+    同一份资料从两条路进来长得不一样。
+    """
+    headers = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    project_id = "P-2026-HDCP-001"
+
+    def upload(code: str, node_id: int, key: str) -> dict:
+        response = client.post(
+            f"/api/projects/{project_id}/documents/upload-session",
+            headers={**headers, "Idempotency-Key": key},
+            json={
+                "files": [
+                    {
+                        "fileName": f"{key}.pdf",
+                        "fileSize": 4096,
+                        "contentType": "application/pdf",
+                        "materialTypeCode": code,
+                        "nodeIds": [node_id],
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+        document_id = response.json()["data"]["uploadUrls"][0]["documentId"]
+        return repo.find_one("documents", document_id) or {}
+
+    welder = upload("welder_certificate", 24, "m8-welder")
+    assert welder["materialTypeCode"] == "welder_certificate"
+    assert welder["materialTypeName"] == "焊工资格证", "类型名称应按业务包的 materialTypes 解析"
+    assert welder["nodeId"] == 24, "声明的归属节点必须落库，否则资料仍是游离状态"
+
+    ndt = upload("ndt_report", 40, "m8-ndt")
+    assert ndt["materialTypeName"] == "无损检测报告"
+    assert ndt["nodeId"] == 40
+
+    # 业务包里没有的类型码不许瞎猜出名称
+    unknown = upload("这个码不存在", 16, "m8-unknown")
+    assert unknown["materialTypeName"] is None
+    assert unknown["nodeId"] == 16
+
+
+# ---- M-7 / M-10：说明文字传错字段名时静默丢弃 ----
+
+
+def test_m7_explanation_alias_guard_only_fires_when_text_would_be_lost() -> None:
+    """守卫只在「文本会丢」时开火，不能变成挑刺。
+
+    传了正确字段（哪怕同时多带别名）就放行；一个都没传时不归本守卫管，
+    必填与否由各端点自己定。
+    """
+    from apps.api.routes import unrecognized_explanation_field_error
+
+    headers = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+
+    def post_correction(payload: dict, key: str):
+        return client.post(
+            "/api/projects/P-2026-HDCP-001/inspection/nodes/24/fact-corrections",
+            headers={**headers, "Idempotency-Key": key},
+            json={
+                "factPath": "welderCertificate.certificateNo",
+                "correctedValue": "TS2026-888",
+                **payload,
+            },
+        )
+
+    # 正确字段 → 放行
+    assert post_correction({"reason": "OCR 识别有误。"}, "m7-ok").json()["code"] == 0
+    # 同时传了正确字段和别名 → 放行
+    assert post_correction({"reason": "OCR 识别有误。", "note": "附注"}, "m7-both").json()["code"] == 0
+    # 一个都没传 → 不被本守卫拦（该端点 reason 非必填）
+    assert post_correction({}, "m7-none").json()["code"] == 0
+
+    assert unrecognized_explanation_field_error is not None
+
+
+def test_m7_rectification_endpoint_rejects_alias_end_to_end() -> None:
+    headers = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    response = client.post(
+        "/api/projects/P-2026-HDCP-001/rectifications",
+        headers={**headers, "Idempotency-Key": "m7-alias"},
+        json={"nodeId": 24, "bindingIds": [], "feedback": "已补充覆盖本工程焊接方法的焊工证。"},
+    )
+    assert response.json()["code"] == 40001, response.text
+    assert "comment" in response.json()["message"]
+
+
+def test_m10_fact_correction_reason_alias_is_rejected() -> None:
+    """fact-corrections 是我自己新增的接口，同样有这个毛病，一并堵上。"""
+    headers = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+    response = client.post(
+        "/api/projects/P-2026-HDCP-001/inspection/nodes/24/fact-corrections",
+        headers={**headers, "Idempotency-Key": "m10-alias"},
+        json={
+            "factPath": "welderCertificate.certificateNo",
+            "correctedValue": "TS2026-999",
+            "note": "OCR 把 0 认成 O 了。",
+        },
+    )
+    assert response.json()["code"] == 40001, response.text
+    assert "reason" in response.json()["message"]
+
+
+# ---- M-4 / M-5：空壳记录无可视区分；重复上传无去重提示 ----
+
+
+def _upload_with_body(project_id: str, file_name: str, payload: bytes, key: str) -> str:
+    headers = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    session = client.post(
+        f"/api/projects/{project_id}/documents/upload-session",
+        headers={**headers, "Idempotency-Key": f"{key}-session"},
+        json={"files": [{"fileName": file_name, "fileSize": len(payload), "contentType": "application/pdf"}]},
+    )
+    assert session.status_code == 200, session.text
+    target = session.json()["data"]["uploadUrls"][0]
+    put = client.put(
+        target["url"].removeprefix("/api"),
+        headers={**headers, **target["headers"]},
+        content=payload,
+    )
+    assert put.json()["code"] == 0, put.text
+    import hashlib
+
+    complete = client.post(
+        f"/api/projects/{project_id}/documents/upload-session/{session.json()['data']['uploadSessionId']}/complete",
+        headers={**headers, "Idempotency-Key": f"{key}-complete"},
+        json={
+            "completedFiles": [
+                {
+                    "documentVersionId": target["documentVersionId"],
+                    "fileSize": len(payload),
+                    "contentHash": hashlib.sha256(payload).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert complete.json()["code"] == 0, complete.text
+    return complete.json()["data"]
+
+
+def test_m4_document_ledger_marks_empty_shell_records() -> None:
+    """只建会话、从不 PUT 内容的空壳记录，在台账里必须能一眼看出来。
+
+    改之前它与真实资料在列表中无可视区分——业务红线写着「目录中列出文件不能等同于
+    文件本体已上传」。
+    """
+    headers = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    project_id = "P-2026-HDCP-001"
+    session = client.post(
+        f"/api/projects/{project_id}/documents/upload-session",
+        headers={**headers, "Idempotency-Key": "m4-shell"},
+        json={"files": [{"fileName": "从未上传的文件.pdf", "fileSize": 1024, "contentType": "application/pdf"}]},
+    )
+    shell_id = session.json()["data"]["uploadUrls"][0]["documentId"]
+
+    listing = client.get(f"/api/projects/{project_id}/documents", headers=headers)
+    assert listing.status_code == 200, listing.text
+    rows = {str(item["id"]): item for item in listing.json()["data"]["items"]}
+    assert shell_id in rows
+    assert rows[shell_id]["bodyUploaded"] is False
+    assert all("bodyUploaded" in item for item in rows.values()), "每一行都要带标记，不能只标空壳那行"
+
+
+def test_m5_repeated_upload_of_same_content_is_flagged() -> None:
+    """同一份文件重复上传要提示，但不阻断——换版、补拍都是合法业务。"""
+    project_id = "P-2026-HDCP-001"
+    payload = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+
+    first = _upload_with_body(project_id, "焊工证.pdf", payload, "m5-first")
+    assert first["duplicates"] == [], "首次上传不应报重复"
+
+    second = _upload_with_body(project_id, "焊工证-再传一次.pdf", payload, "m5-second")
+    assert second["duplicates"], "内容相同的第二次上传应被标出"
+    duplicate = second["duplicates"][0]
+    assert duplicate["existingDocuments"], "应指出项目内已存在的同内容资料"
+    assert "已存在" in duplicate["message"]
+
+    # 内容不同则不报重复
+    other = _upload_with_body(project_id, "另一份资料.pdf", payload + b"different", "m5-other")
+    assert other["duplicates"] == []
+
+
+# ---- M-6：打回后无法用新上传的资料补正 ----
+
+
+def test_m6_rectification_accepts_newly_uploaded_material() -> None:
+    """监检打回的典型理由就是「资料不对/不全，请补充」——施工方本应上传新资料。
+
+    改之前：补正提交要求每个 binding 自身状态必须是「需补正」，而新上传并挂载的
+    资料是「草稿挂载」，于是永远无法作为补正材料提交。施工方只能就原文件再提交
+    一次（内容没变），或绕过整改单走普通提交，整改单与实际补正的资料就此脱钩。
+    """
+    contractor = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    inspection = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+    project_id = "P-2026-HDCP-001"
+    node_id = 24
+
+    # 找一条本节点已被退回的绑定，并确认存在待反馈的补正单
+    rectification = next(
+        (
+            item
+            for item in repo.state["rectifications"]
+            if item.get("projectId") == project_id
+            and int(item.get("nodeId") or 0) == node_id
+            and item.get("status") == "待反馈"
+        ),
+        None,
+    )
+    if rectification is None:
+        # 走真实链路造出待反馈补正单：施工方挂载并提交 → 监检按该次提交退回。
+        seed_session = client.post(
+            f"/api/projects/{project_id}/documents/upload-session",
+            headers={**contractor, "Idempotency-Key": "m6-seed-upload"},
+            json={"files": [{"fileName": "待被打回的焊工证.pdf", "fileSize": 2048, "contentType": "application/pdf"}]},
+        )
+        seed_target = seed_session.json()["data"]["uploadUrls"][0]
+        seed_payload = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+        assert client.put(
+            seed_target["url"].removeprefix("/api"),
+            headers={**contractor, **seed_target["headers"]},
+            content=seed_payload,
+        ).json()["code"] == 0
+        assert client.post(
+            f"/api/projects/{project_id}/documents/bindings",
+            headers={**contractor, "Idempotency-Key": "m6-seed-bind"},
+            json={"bindings": [{"documentId": seed_target["documentId"], "nodeId": node_id}]},
+        ).json()["code"] == 0
+        seed_binding_id = next(
+            str(item["id"])
+            for item in repo.state["bindings"]
+            if str(item.get("documentId") or "") == seed_target["documentId"]
+        )
+        submitted = client.post(
+            f"/api/projects/{project_id}/submissions",
+            headers={**contractor, "Idempotency-Key": "m6-seed-submit"},
+            json={"nodeIds": [node_id], "bindingIds": [seed_binding_id], "batchName": "M-6 打回前置提交"},
+        )
+        assert submitted.json()["code"] == 0, submitted.text
+        returned = client.post(
+            f"/api/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction",
+            headers={**inspection, "Idempotency-Key": "m6-return"},
+            json={
+                "reason": "焊工证持证项目未覆盖本工程焊接方法，请补充。",
+                "bindingIds": [seed_binding_id],
+            },
+        )
+        assert returned.json()["code"] == 0, returned.text
+        rectification = next(
+            item
+            for item in repo.state["rectifications"]
+            if item.get("projectId") == project_id
+            and int(item.get("nodeId") or 0) == node_id
+            and item.get("status") == "待反馈"
+        )
+
+    # 施工方上传一份新资料并挂到同一节点——这就是「补充」的真实动作
+    session = client.post(
+        f"/api/projects/{project_id}/documents/upload-session",
+        headers={**contractor, "Idempotency-Key": "m6-new-material"},
+        json={
+            "files": [
+                {
+                    "fileName": "补充的焊工证（覆盖本工程焊接方法）.pdf",
+                    "fileSize": 4096,
+                    "contentType": "application/pdf",
+                }
+            ]
+        },
+    )
+    assert session.status_code == 200, session.text
+    new_document_id = session.json()["data"]["uploadUrls"][0]["documentId"]
+    target = session.json()["data"]["uploadUrls"][0]
+    payload = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+    put = client.put(
+        target["url"].removeprefix("/api"),
+        headers={**contractor, **target["headers"]},
+        content=payload,
+    )
+    assert put.json()["code"] == 0, put.text
+
+    bind = client.post(
+        f"/api/projects/{project_id}/documents/bindings",
+        headers={**contractor, "Idempotency-Key": "m6-bind"},
+        json={"bindings": [{"documentId": new_document_id, "nodeId": node_id}]},
+    )
+    assert bind.json()["code"] == 0, bind.text
+    new_binding_id = next(
+        str(item["id"])
+        for item in repo.state["bindings"]
+        if str(item.get("documentId") or "") == new_document_id
+    )
+    assert repo.find_one("bindings", new_binding_id)["bindingStatus"] == "草稿挂载"
+
+    submitted = client.post(
+        f"/api/projects/{project_id}/rectifications",
+        headers={**contractor, "Idempotency-Key": "m6-submit"},
+        json={
+            "nodeId": node_id,
+            "rectificationId": rectification["id"],
+            "bindingIds": [new_binding_id],
+            "comment": "已补充覆盖本工程焊接方法的焊工证。",
+        },
+    )
+    assert submitted.json()["code"] == 0, f"新上传的资料应能作为补正材料提交：{submitted.text}"
+
+    updated = repo.find_one("rectifications", rectification["id"])
+    assert new_binding_id in (updated.get("bindingIds") or [])
+    # 留痕：能追溯出这次补的是新资料而非原文件重提
+    assert new_binding_id in (updated.get("replacementBindingIds") or [])
+    assert updated["feedbackComment"] == "已补充覆盖本工程焊接方法的焊工证。"
+    assert repo.find_one("bindings", new_binding_id)["bindingStatus"] == "已提交"
+
+
+def test_m6_already_reviewed_material_still_cannot_be_resubmitted() -> None:
+    """别把口径放得太宽：已在审查中或已通过的资料重复提交没有业务含义，仍要拒绝。"""
+    contractor = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    project_id = "P-2026-HDCP-001"
+    node_id = 24
+    rectification = next(
+        (
+            item
+            for item in repo.state["rectifications"]
+            if item.get("projectId") == project_id
+            and int(item.get("nodeId") or 0) == node_id
+            and item.get("status") == "待反馈"
+        ),
+        None,
+    )
+    if rectification is None:
+        return
+
+    passed_binding = next(
+        (
+            item
+            for item in repo.state["bindings"]
+            if int(item.get("nodeId") or 0) == node_id and item.get("projectId") == project_id
+        ),
+        None,
+    )
+    if passed_binding is None:
+        return
+    original_status = passed_binding["bindingStatus"]
+    try:
+        passed_binding["bindingStatus"] = "已通过"
+        response = client.post(
+            f"/api/projects/{project_id}/rectifications",
+            headers={**contractor, "Idempotency-Key": "m6-passed"},
+            json={
+                "nodeId": node_id,
+                "rectificationId": rectification["id"],
+                "bindingIds": [str(passed_binding["id"])],
+                "comment": "试图重复提交已通过的资料。",
+            },
+        )
+        assert response.json()["code"] == 40900, response.text
+        assert "已通过" in response.json()["message"]
+    finally:
+        passed_binding["bindingStatus"] = original_status
+
+
+# ---- 新发现：挂载时逐条声明的 nodeId 被忽略，全部落到默认节点 16 ----
+
+
+def test_binding_honors_per_item_node_id() -> None:
+    """每条 binding 自带的 nodeId 必须生效。
+
+    改之前只看 body 顶层的 nodeId/nodeIds，逐条声明的节点被静默忽略，全部落到
+    施工方的默认节点 16——调用方在界面上选了节点、资料却挂到别处，且请求返回成功。
+    这也是审计里「大量资料都归到节点 16」这一现象的成因之一。
+    """
+    contractor = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    project_id = "P-2026-HDCP-001"
+    payload = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+
+    declared = []
+    for index, node_id in enumerate((24, 25, 40)):
+        session = client.post(
+            f"/api/projects/{project_id}/documents/upload-session",
+            headers={**contractor, "Idempotency-Key": f"bind-node-{index}"},
+            json={"files": [{"fileName": f"资料-{node_id}.pdf", "fileSize": len(payload), "contentType": "application/pdf"}]},
+        )
+        target = session.json()["data"]["uploadUrls"][0]
+        assert client.put(
+            target["url"].removeprefix("/api"),
+            headers={**contractor, **target["headers"]},
+            content=payload,
+        ).json()["code"] == 0
+        declared.append((target["documentId"], node_id))
+
+    response = client.post(
+        f"/api/projects/{project_id}/documents/bindings",
+        headers={**contractor, "Idempotency-Key": "bind-node-all"},
+        json={"bindings": [{"documentId": document_id, "nodeId": node_id} for document_id, node_id in declared]},
+    )
+    assert response.json()["code"] == 0, response.text
+
+    for document_id, node_id in declared:
+        bound_nodes = [
+            int(item["nodeId"])
+            for item in repo.state["bindings"]
+            if str(item.get("documentId") or "") == document_id
+        ]
+        assert bound_nodes == [node_id], (
+            f"声明 nodeId={node_id} 的资料应且只应挂到该节点，实际 {bound_nodes}"
+        )

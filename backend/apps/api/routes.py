@@ -587,6 +587,59 @@ def validated_plain_text(value: Any, *, limit: int, field_name: str) -> tuple[st
     return normalized, None
 
 
+# 同一语义的说明字段在 121 个写端点里有 7 种命名（reason / comment / opinion /
+# description / remark / text / content），9 个业务域内部还各自不一致。调用方写错名字时
+# 请求返回 code 0、说明文本落 None——施工方写的整改说明就这么丢了，监检复审时看不到
+# 对方解释了什么（M-7 / M-10）。统一契约成本太高且会破坏既有调用方，这里退而求其次：
+# 收到「明显是说明文字、但不是本端点认的字段名」时明确拒绝，不再静默接受。
+EXPLANATION_FIELD_ALIASES = (
+    "comment",
+    "content",
+    "description",
+    "explanation",
+    "feedback",
+    "message",
+    "note",
+    "notes",
+    "opinion",
+    "reason",
+    "remark",
+    "remarks",
+    "response",
+    "text",
+)
+
+
+def unrecognized_explanation_field_error(
+    request: Request,
+    body: dict[str, Any],
+    accepted: tuple[str, ...],
+) -> JSONResponse | None:
+    """调用方用了别名而非本端点接受的说明字段名时拒绝，避免文本静默丢失。
+
+    只在本端点一个都没收到时才报——同时传了正确字段就说明调用方知道该传什么，
+    多带的键不影响业务，没必要拦。
+    """
+    if any(str(body.get(name) or "").strip() for name in accepted):
+        return None
+    misspelled = [
+        name
+        for name in EXPLANATION_FIELD_ALIASES
+        if name not in accepted and str(body.get(name) or "").strip()
+    ]
+    if not misspelled:
+        return None
+    return fail(
+        errors.VALIDATION_ERROR,
+        request,
+        message=(
+            f"说明文字请放在 {accepted[0]} 字段。收到的 {'、'.join(misspelled)} "
+            f"不是本接口接受的字段名，若直接忽略会让说明内容丢失。"
+        ),
+        data={"acceptedFields": list(accepted), "unrecognizedFields": misspelled},
+    )
+
+
 def split_business_rule_sentences(value: Any, limit: int = 12) -> list[str]:
     text = compact_plain_text(value, 3000)
     if not text:
@@ -6429,6 +6482,10 @@ def list_documents(request: Request, project_id: str, page_no: int = Query(defau
         }
         items = [item for item in items if item["id"] in document_ids]
     items = filter_keyword(items, keyword, ["fileName", "sourceOrgName", "materialCategory"])
+    # M-4：只创建会话、从不 PUT 内容的空壳记录会照常出现在资料台账里，
+    # 与真实资料在列表中无可视区分。带上本体标记，让台账一眼能看出哪些是空壳。
+    for item in items:
+        item["bodyUploaded"] = document_body_uploaded(item)
     return ok(page(items, page_no, page_size), request)
 
 
@@ -6606,6 +6663,38 @@ def validate_upload_session_completion(
             document["currentOcrStatus"] = "排队中"
             document["updatedAt"] = server_time()
     return verified, None
+
+
+def duplicate_documents_in_project(project_id: str, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 hash + projectId 找出项目内已存在的同一份文件（M-5）。
+
+    同一份资料（sha256 一致）重复上传原先产生多条独立文档记录，无标记、无提示。
+    只提示不阻断：换版、补拍同一份资料都是合法业务，由上传方决定复用还是保留新版本。
+    """
+    results: list[dict[str, Any]] = []
+    for file in files or []:
+        document_id = str(file.get("documentId") or "")
+        version = repo.current_version(document_id)
+        content_hash = str((version or {}).get("hash") or "").strip()
+        if not content_hash:
+            continue
+        existing = [
+            {"documentId": str(item.get("id") or ""), "fileName": item.get("fileName")}
+            for item in repo.project_documents(project_id)
+            if str(item.get("id") or "") != document_id
+            and str((repo.current_version(str(item.get("id") or "")) or {}).get("hash") or "") == content_hash
+        ]
+        if existing:
+            results.append(
+                {
+                    "documentId": document_id,
+                    "fileName": file.get("fileName"),
+                    "contentHash": content_hash,
+                    "existingDocuments": existing,
+                    "message": f"项目内已存在内容相同的资料（{len(existing)} 份），可考虑复用而非重复上传。",
+                }
+            )
+    return results
 
 
 def document_body_uploaded(document: dict[str, Any] | None, version: dict[str, Any] | None = None) -> bool:
@@ -6928,6 +7017,7 @@ def complete_upload_session(
         dispatches = dispatch_completed_upload_files(files)
         documents = create_ndt_atomic_drafts_for_completed_session(project_id, files)
         ndt_reports = create_ndt_reports_for_completed_session(project_id, session, files)
+        duplicates = duplicate_documents_in_project(project_id, files)
         request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
         result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
         return ok(
@@ -6937,6 +7027,10 @@ def complete_upload_session(
                 "fileCount": len(files),
                 "documents": documents,
                 "ndtReports": ndt_reports,
+                # M-5：同一文件重复上传原先无标记、无提示，几千页规模下多人协作会
+                # 显著膨胀台账。这里只提示不阻断——换版、补拍同一份资料都是合法业务，
+                # 由上传方决定是复用既有文档还是保留新版本。
+                "duplicates": duplicates,
             },
             request,
         )
@@ -7402,7 +7496,17 @@ def bind_documents(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    node_ids = node_ids_from_body(body, ROLE_NODE_MAP["contractor"])
+    # 每条 binding 自带的 nodeId 必须生效：原先只看 body 顶层的 nodeId/nodeIds，
+    # 逐条声明的节点被静默忽略，全部落到施工方的默认节点 16——调用方在界面上选了
+    # 节点，资料却挂到别处，且请求返回成功。这也是「大量资料都归到节点 16」的成因之一。
+    declared_binding_node_ids = [
+        int(item["nodeId"])
+        for item in (body.get("bindings") or [])
+        if isinstance(item, dict) and str(item.get("nodeId") or "").strip().lstrip("-").isdigit()
+    ]
+    node_ids = sorted(set(declared_binding_node_ids)) or node_ids_from_body(
+        body, ROLE_NODE_MAP["contractor"]
+    )
 
     def produce():
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
@@ -7429,6 +7533,10 @@ def bind_documents(
         for node_id in node_ids:
             requirements = [item for item in repo.state["requirements"] if int(item["nodeId"]) == node_id]
             for index, binding_input in enumerate(binding_inputs):
+                # 逐条声明了节点时按声明分派，避免每条资料被挂到所有节点上（笛卡尔积）。
+                declared = binding_input.get("nodeId") if isinstance(binding_input, dict) else None
+                if str(declared or "").strip().lstrip("-").isdigit() and int(declared) != node_id:
+                    continue
                 document = repo.find_one("documents", binding_input.get("documentId"))
                 version_id = binding_input.get("documentVersionId") or (document or {}).get("currentVersionId")
                 if not document or not version_id:
@@ -7998,6 +8106,11 @@ def submit_rectification(
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        # M-7：施工方的整改说明原先只认 comment/description，传 feedback 之类的别名时
+        # 请求照样成功、说明文本落 None，监检复审时看不到对方解释了什么。
+        field_error = unrecognized_explanation_field_error(request, body, ("comment", "description"))
+        if field_error:
+            return field_error
         node_id = node_ids[0] if node_ids else ROLE_NODE_MAP["contractor"]
         node = repo.node(project_id, node_id)
         if not node:
@@ -8041,18 +8154,50 @@ def submit_rectification(
                 return fail(errors.CONFLICT, request, message="当前节点没有待反馈补正单。")
         if rectification.get("status") != "待反馈":
             return fail(errors.CONFLICT, request, message="补正单当前状态不允许提交反馈。")
-        invalid_status_binding_ids = sorted(
-            binding_id
+        # M-6：原先要求每个 binding 自身状态必须是「需补正」，而新上传并挂载的资料
+        # 状态是「草稿挂载」，于是永远无法作为补正材料提交。但监检打回的典型理由
+        # 就是「资料不对/不全，请补充」——施工方本应上传新资料。只能就原文件再提交
+        # 一次（内容没变），或绕过整改单走普通提交，导致整改单与实际补正的资料脱钩。
+        # 现在：被打回的原资料与本节点新挂载的资料都可作为补正材料；已在审查中或
+        # 已通过的资料仍然拒绝——重复提交它们没有业务含义。
+        RECTIFIABLE_BINDING_STATUSES = {"需补正", "草稿挂载"}
+        invalid_bindings = [
+            (binding_id, str((repo.find_one("bindings", binding_id) or {}).get("bindingStatus") or ""))
             for binding_id in binding_ids
-            if (repo.find_one("bindings", binding_id) or {}).get("bindingStatus") != "需补正"
-        )
-        if invalid_status_binding_ids:
+            if str((repo.find_one("bindings", binding_id) or {}).get("bindingStatus") or "")
+            not in RECTIFIABLE_BINDING_STATUSES
+        ]
+        if invalid_bindings:
             return fail(
                 errors.CONFLICT,
                 request,
-                message="只有监检退回为需补正状态的资料才能重新提交。",
-                data={"invalidBindingIds": invalid_status_binding_ids},
+                message=(
+                    "补正材料只能是被退回的资料或本节点新上传的资料。"
+                    "已在审查中或已通过的资料不能再次提交。"
+                ),
+                data={
+                    "invalidBindingIds": sorted(item[0] for item in invalid_bindings),
+                    "invalidBindingStatuses": {item[0]: item[1] for item in invalid_bindings},
+                },
             )
+        wrong_node_binding_ids = sorted(
+            binding_id
+            for binding_id in binding_ids
+            if int((repo.find_one("bindings", binding_id) or {}).get("nodeId") or 0) != node_id
+        )
+        if wrong_node_binding_ids:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message="补正材料必须挂载在本补正单所属的节点上。",
+                data={"invalidBindingIds": wrong_node_binding_ids},
+            )
+        # 留痕：区分「原资料重新提交」与「新补充的资料」，整改闭环要能追溯补的是什么。
+        replacement_binding_ids = sorted(
+            binding_id
+            for binding_id in binding_ids
+            if str((repo.find_one("bindings", binding_id) or {}).get("bindingStatus") or "") == "草稿挂载"
+        )
         submitted_at = server_time()
         submission_id = f"SUB-RECT-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{submission_id}"
@@ -8061,6 +8206,7 @@ def submit_rectification(
             if binding:
                 binding["bindingStatus"] = "已提交"
         rectification["bindingIds"] = binding_ids
+        rectification["replacementBindingIds"] = replacement_binding_ids
         rectification["feedbackComment"] = body.get("comment") or body.get("description")
         rectification["feedbackAt"] = submitted_at
         rectification["feedbackByName"] = request_actor_name(request)
@@ -12479,6 +12625,9 @@ def save_fact_correction(
             )
         if "correctedValue" not in body:
             return fail(errors.VALIDATION_ERROR, request, message="必须提供修正后的值 correctedValue。")
+        field_error = unrecognized_explanation_field_error(request, body, ("reason",))
+        if field_error:
+            return field_error
         reason = compact_plain_text(body.get("reason"), 500)
         superseded_ids: list[str] = []
         for item in repo.state["fact_corrections"]:
