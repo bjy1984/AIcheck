@@ -30303,12 +30303,44 @@ def compare_run_detail(request: Request, run_id: str):
     return ok(repo.clone(run), request)
 
 
+def repository_state_footprint() -> dict[str, Any]:
+    """当前进程内业务状态的占用概览（A-1 / issue #9）。
+
+    全量业务状态（含 OCR 全文）常驻 API 进程内存。架构改造要先有容量评估，
+    评估要有实测数据——先把占用量暴露在管理端，让容量风险在触线前可见，
+    而不是等到 OOM 才发现。只统计条数与近似字节数，不导出业务内容。
+    """
+    top: list[tuple[int, str, int]] = []
+    total_bytes = 0
+    total_records = 0
+    for key, value in repo.state.items():
+        if not isinstance(value, list) or not value:
+            continue
+        try:
+            size = len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+        except Exception:
+            continue
+        total_bytes += size
+        total_records += len(value)
+        top.append((size, key, len(value)))
+    top.sort(reverse=True)
+    return {
+        "totalBytes": total_bytes,
+        "totalMegabytes": round(total_bytes / 1024 / 1024, 2),
+        "totalRecords": total_records,
+        "largestCollections": [
+            {"collection": key, "bytes": size, "recordCount": count} for size, key, count in top[:5]
+        ],
+    }
+
+
 @router.get("/admin/config-overview")
 def admin_config_overview(request: Request):
     overview = repo.build_admin_overview()
     overview["businessPacks"] = list_business_packs()
     overview["orgUnits"] = list_admin_org_units()
     overview["users"] = list_admin_users()
+    overview["stateFootprint"] = repository_state_footprint()
     overview.update(
         {
             "revision": singleton_revision(repo.state["admin_config"]),
