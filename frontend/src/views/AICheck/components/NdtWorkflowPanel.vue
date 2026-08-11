@@ -29,7 +29,7 @@ import type {
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
-import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
+import { documentBusinessStatus } from '@/utils/documentPipelineStatus'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import {
   NDT_ATOMIC_MATERIALS,
@@ -259,7 +259,7 @@ const ndtAssetRows = computed(() => {
         documentNo: file.currentVersionId,
         standardCode: file.embeddingModel || '-',
         operator: file.uploaderName || '-',
-        status: documentPipelineStatus(file),
+        status: documentBusinessStatus(file),
         updatedAt: file.updatedAt,
         detailId: ''
       }))
@@ -557,7 +557,7 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           <ElTableColumn label="OCR" width="110">
             <template #default="{ row }">
               <ElTag
-                :type="getStatusTagType(documentPipelineStatus(row))"
+                :type="getStatusTagType(documentBusinessStatus(row))"
                 size="small"
                 effect="plain"
               >

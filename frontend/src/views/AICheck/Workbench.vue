@@ -2561,6 +2561,29 @@ const handleInspectionMatrixSelect = async (
   if (!switched) return
 }
 
+/**
+ * 不可逆业务动作的二次确认。
+ *
+ * 提交、打回、采纳 AI 建议都会推进监检流程且不能简单撤销，需要和删除文件同等的确认。
+ * 返回 false 表示用户取消。
+ */
+const confirmIrreversibleAction = async (options: {
+  title: string
+  message: string
+  confirmText: string
+}): Promise<boolean> => {
+  try {
+    await ElMessageBox.confirm(options.message, options.title, {
+      type: 'warning',
+      confirmButtonText: options.confirmText,
+      cancelButtonText: '再看看'
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 const ensureWritableNode = () => {
   if (isReadOnly.value) {
     ElMessage.warning(readonlyIssue.value?.message || '当前项目只读，只能查看、预览或下载。')
@@ -3340,6 +3363,14 @@ const handleSubmitBatch = async (payload: {
   submitterComment: string
 }) => {
   if (!ensureWritableNode()) return
+  // 提交后资料进入监检审查流程，撤回需另走接口——比删除未提交文件更不可逆，
+  // 理应有同等的二次确认。
+  const confirmed = await confirmIrreversibleAction({
+    title: '提交资料给监检',
+    message: `将提交 ${payload.bindingIds.length} 份资料到 ${payload.nodeIds.length} 个节点，提交后进入监检审查流程，需要撤回时须另行申请。确认提交？`,
+    confirmText: '确认提交'
+  })
+  if (!confirmed) return
   actionLoading.value = true
   submissionDialogError.value = ''
   try {
@@ -3609,6 +3640,12 @@ const handleSaveReviewOpinion = async () => {
 
 const handleAdoptAiSuggestion = async (suggestionId: string) => {
   if (!ensureWritableNode() || !latestAiRun.value) return
+  const confirmed = await confirmIrreversibleAction({
+    title: '采纳 AI 建议',
+    message: `将以 AI 建议「${latestAiRun.value.suggestion.result}」生成人工结论草稿。AI 建议不能替代人工判断，请确认已核对证据与条款依据。`,
+    confirmText: '确认采纳'
+  })
+  if (!confirmed) return
   actionLoading.value = true
   try {
     const aiResult = latestAiRun.value.suggestion.result
@@ -3888,6 +3925,12 @@ const handleReturnCorrection = async () => {
     ElMessage.warning('当前节点没有可退回的已提交资料')
     return
   }
+  const confirmed = await confirmIrreversibleAction({
+    title: '退回补正',
+    message: `将退回 ${submittedBindingIds.length} 份已提交资料并通知施工方整改，节点状态转为「需补正」。确认退回？`,
+    confirmText: '确认退回'
+  })
+  if (!confirmed) return
   actionLoading.value = true
   try {
     const res = await returnCorrectionApi(

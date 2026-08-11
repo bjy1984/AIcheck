@@ -307,6 +307,9 @@ AI_FEEDBACK_TYPES = {
 FDE_ROLES = {"fde"}
 SUBMITTED_DOCUMENT_BINDING_STATUSES = {"已提交", "需补正", "已通过"}
 
+# 节点包里最多带几次 AI 运行。工作台只需最近结果，全量历史走 /ai-runs。
+NODE_PACKAGE_AI_RUN_LIMIT = 3
+
 # 人工审查结论 → 节点状态。业务口径：NOT_APPLICABLE 是独立终态，不得落入「需补正」；
 # INSUFFICIENT_EVIDENCE（证据不足）保持节点在「待审查」，等待补件或后续判断。
 REVIEW_OPINION_NODE_STATUS = {
@@ -5944,7 +5947,12 @@ def build_inspection_audit_workspace(
     enriched_node = enrich_node_with_requirements_summary(project_id, node, project_bindings=project_bindings)
     payload: dict[str, Any] = {
         "schemaVersion": "InspectionAuditWorkspace@1.0.0",
-        "project": repo.project_for_role(project, "inspection"),
+        # 去掉 businessPackSnapshot（实测约 393KB）：本接口每次点击节点都会被调用，
+        # 而前端只用 businessPackSnapshotHash 判断快照版本，整包快照无人消费。
+        "project": {
+            **repo.project_for_role(project, "inspection"),
+            "businessPackSnapshot": None,
+        },
         "node": enriched_node,
         "items": items,
         "latestActivityAt": max((str(item.get("updatedAt") or "") for item in items), default="") or None,
@@ -6197,6 +6205,11 @@ def node_package(request: Request, project_id: str, node_id: int):
         file["bindings"] = file_bindings
         file["primaryBinding"] = file_bindings[0] if file_bindings else None
     visible_document_ids = {item["id"] for item in project_files}
+    node_ai_runs = [
+        item
+        for item in repo.state["ai_runs"]
+        if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
+    ]
     evidence_readiness = build_node_evidence_readiness(repo, effective_project_id, node_id)
     return ok(
         {
@@ -6223,11 +6236,11 @@ def node_package(request: Request, project_id: str, node_id: int):
                 for item in repo.state["rectifications"]
                 if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
             ],
-            "aiRuns": [
-                safe_ai_run_view(item)
-                for item in repo.state["ai_runs"]
-                if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
-            ],
+            # 只带最近几次运行：工作台展示的是当前状态与最近一次结果，而全量历史会让
+            # 本响应膨胀到数百 KB（实测 9 次运行即 665KB），且轮询会反复重取。
+            # 需要完整历史时用 /inspection/nodes/{id}/ai-runs。
+            "aiRuns": [safe_ai_run_view(item) for item in node_ai_runs[:NODE_PACKAGE_AI_RUN_LIMIT]],
+            "aiRunTotal": len(node_ai_runs),
             "actions": repo.clone(node.get("actions", [])),
         },
         request,
@@ -12612,14 +12625,6 @@ def standards(request: Request, project_id: str, node_id: int):
             rule.get("witnessText") or rule.get("checkMethod"),
         ]
     ).strip() or "审查依据"
-    retrieval = retrieve_knowledge_clauses(
-        repo.state,
-        query=query,
-        business_pack_id=business_pack_id,
-        node_id=node_id,
-        top_k=5,
-        query_type="node_standard_basis",
-    )
     standards_payload = fixed_standard_references_for_node(project, node_id)
     project_pack = (project or {}).get("businessPackSnapshot") or business_pack_for_project(project)
     if project_pack.get("standardClausePackages") and not standards_payload:
@@ -12630,6 +12635,18 @@ def standards(request: Request, project_id: str, node_id: int):
             data={"projectId": project_id, "nodeId": node_id},
             http_status=409,
         )
+    # 固定条款包已给出该节点的全部依据时不再做知识检索：检索结果在此仅用于去重后补充，
+    # 而这个接口每次点击节点都会被调用，实测检索本身耗时约 1.1 秒，是节点加载的主要开销。
+    if standards_payload:
+        return ok(standards_payload, request)
+    retrieval = retrieve_knowledge_clauses(
+        repo.state,
+        query=query,
+        business_pack_id=business_pack_id,
+        node_id=node_id,
+        top_k=5,
+        query_type="node_standard_basis",
+    )
     fixed_keys = {
         (str(item.get("knowledgeFileId") or ""), str(item.get("clauseNo") or ""))
         for item in standards_payload
