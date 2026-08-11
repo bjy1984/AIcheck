@@ -488,12 +488,17 @@ def aggregate_tool_results(outputs: list[dict[str, Any]]) -> str:
         for item in outputs
     )
     execution_failed = any(item.get("status") in {"rejected", "failed", "error"} for item in outputs)
+    # 某项检测能力未启用（如印章检测管线全关）时，该维度是「没查」而非「没问题」，
+    # 不能让其余工具的 passed 把它盖过去。
+    capability_disabled = any(item.get("status") == "capability_disabled" for item in outputs)
     if grounding_failed:
         return "evidence_insufficient"
     if "failed" in business_results:
         return "failed"
     if execution_failed:
         return "execution_error"
+    if capability_disabled:
+        return "evidence_insufficient"
     if "human_review_required" in business_results:
         return "human_review_required"
     if "evidence_insufficient" in business_results:

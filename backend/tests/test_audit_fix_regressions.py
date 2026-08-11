@@ -395,6 +395,55 @@ def test_field_correction_does_not_leak_across_nodes() -> None:
     assert revoked[0]["fields"][0]["value"] == "原值", "已撤销的修正不应生效"
 
 
+def test_disabled_seal_detection_is_not_reported_as_no_seal(monkeypatch) -> None:
+    """印章检测管线全关时，找不到印章说明的是「没查」而不是「没有」。
+
+    印章是监检判定的关键证据；若此时仍返回 succeeded + sealCount 0，
+    判定链会据此认为资料缺章，把未检测直接变成不符合。
+    """
+    from libs.review_orchestrator.runtime_tools import (
+        recognize_document_seals,
+        seal_detection_capability,
+    )
+
+    monkeypatch.setenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "false")
+    monkeypatch.setenv("AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR", "false")
+    assert seal_detection_capability()["enabled"] is False
+
+    result = recognize_document_seals({"ocr_parse_results": []}, {}, context={})
+    assert result["status"] == "capability_disabled"
+    assert result["sealCount"] is None, "不能报 0，那会被读成「确认没有印章」"
+    assert any("seal_detection_disabled" in item for item in result["warnings"])
+
+    monkeypatch.setenv("AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE", "true")
+    enabled = recognize_document_seals({"ocr_parse_results": []}, {}, context={})
+    assert enabled["status"] == "succeeded"
+    assert enabled["sealCount"] == 0, "管线启用时 0 是可信的结论"
+
+
+def test_capability_disabled_is_not_overridden_by_other_passes() -> None:
+    """未启用的检测维度不能被其他工具的 passed 盖过去。"""
+    assert (
+        aggregate_tool_results(
+            [
+                {"toolName": "recognize_signatures_and_seals", "status": "capability_disabled"},
+                {"toolName": "check_required", "result": "passed"},
+            ]
+        )
+        == "evidence_insufficient"
+    )
+    # 真实不符合仍优先于「没查」
+    assert (
+        aggregate_tool_results(
+            [
+                {"toolName": "recognize_signatures_and_seals", "status": "capability_disabled"},
+                {"toolName": "check_required", "result": "failed"},
+            ]
+        )
+        == "failed"
+    )
+
+
 def test_document_body_check_relies_on_content_hash_not_file_status() -> None:
     """空壳资料（建了记录但从未上传内容）不得被挂载或提交。
 
