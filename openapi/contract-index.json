@@ -5,7 +5,7 @@
     {
       "operationId": "admin_get_config_overview",
       "method": "GET",
-      "path": "/api/admin/config/overview",
+      "path": "/api/admin/config-overview",
       "tags": [
         "admin"
       ]
@@ -155,7 +155,7 @@
     {
       "operationId": "submissions_submit_node_package",
       "method": "POST",
-      "path": "/api/projects/{projectId}/submissions/submit",
+      "path": "/api/projects/{projectId}/submissions",
       "tags": [
         "submissions"
       ]

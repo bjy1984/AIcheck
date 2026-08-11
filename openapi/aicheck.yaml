@@ -39,8 +39,6 @@ paths:
     $ref: './paths-documents.yaml#/paths/~1api~1projects~1{projectId}~1documents~1{documentId}~1download-url'
   /api/projects/{projectId}/submissions:
     $ref: './paths-submissions.yaml#/paths/~1api~1projects~1{projectId}~1submissions'
-  /api/projects/{projectId}/submissions/submit:
-    $ref: './paths-submissions.yaml#/paths/~1api~1projects~1{projectId}~1submissions~1submit'
   /api/projects/{projectId}/inspection/nodes/{nodeId}/report-review:
     $ref: './paths-inspection.yaml#/paths/~1api~1projects~1{projectId}~1inspection~1nodes~1{nodeId}~1report-review'
   /api/review-runs/{reviewRunId}/human-input-tasks/active:
@@ -69,8 +67,8 @@ paths:
     $ref: './paths-knowledge-admin.yaml#/paths/~1api~1knowledge~1network'
   /api/knowledge/tasks/{taskId}/retry:
     $ref: './paths-knowledge-admin.yaml#/paths/~1api~1knowledge~1tasks~1{taskId}~1retry'
-  /api/admin/config/overview:
-    $ref: './paths-knowledge-admin.yaml#/paths/~1api~1admin~1config~1overview'
+  /api/admin/config-overview:
+    $ref: './paths-knowledge-admin.yaml#/paths/~1api~1admin~1config-overview'
 components:
   securitySchemes:
     bearerAuth:
