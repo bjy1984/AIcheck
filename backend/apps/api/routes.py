@@ -30313,12 +30313,17 @@ def repository_state_footprint() -> dict[str, Any]:
     top: list[tuple[int, str, int]] = []
     total_bytes = 0
     total_records = 0
+    unmeasured: list[str] = []
     for key, value in repo.state.items():
         if not isinstance(value, list) or not value:
             continue
         try:
             size = len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
         except Exception:
+            # 量不出来就说量不出来。静默 continue 会让这个集合从统计里彻底消失，
+            # 那正是本指标要解决的问题（占用不可见）的翻版。
+            unmeasured.append(key)
+            total_records += len(value)
             continue
         total_bytes += size
         total_records += len(value)
@@ -30331,6 +30336,7 @@ def repository_state_footprint() -> dict[str, Any]:
         "largestCollections": [
             {"collection": key, "bytes": size, "recordCount": count} for size, key, count in top[:5]
         ],
+        "unmeasuredCollections": unmeasured,
     }
 
 
