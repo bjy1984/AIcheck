@@ -1637,3 +1637,77 @@ def test_n6_missing_if_match_is_rejected_end_to_end(monkeypatch) -> None:
         json=body,
     )
     assert with_header.json()["code"] != 40001 or with_header.json()["data"].get("reason") != "IF_MATCH_REQUIRED"
+
+
+# ---- issue #8 / D-2：哈希伪向量可静默混入知识索引 ----
+
+
+def test_issue8_hash_pseudo_vectors_cannot_enter_the_index_silently(monkeypatch) -> None:
+    """embedding 服务没配好时，不能悄悄用字符哈希伪向量顶上。
+
+    哈希向量与真语义向量同表同维存储，仅索引版本不同——配置错误时系统照常运行，
+    检索结果近似随机，使用方无从察觉。现在把它当配置错误：要用必须显式声明。
+    """
+    from apps.worker import tasks
+
+    chunks = [{"text": "焊工资格证有效期覆盖施工周期。"}]
+
+    class _DisabledClient:
+        enabled = False
+        model_id = ""
+        index_version = ""
+        dimensions = 0
+
+    monkeypatch.setattr(tasks, "EmbeddingClient", lambda *a, **k: _DisabledClient())
+    monkeypatch.delenv("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", raising=False)
+    monkeypatch.delenv("AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK", raising=False)
+
+    try:
+        tasks.embedding_batches_for_chunks(chunks)
+    except RuntimeError as error:
+        assert "embedding_client_not_configured" in str(error)
+        assert "AICHECK_EMBEDDING_FORCE_OFFLINE_HASH" in str(error), "错误信息要告诉运维怎么办"
+    else:
+        raise AssertionError("未配置 embedding 服务时不应静默落哈希伪向量")
+
+    # 显式声明离线自测 → 放行，但必须留下降级标记，否则索引里的哈希向量依旧不可辨认
+    monkeypatch.setenv("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", "true")
+    vectors, model, index_version, dimensions, fallback_reason = tasks.embedding_batches_for_chunks(chunks)
+    assert vectors and dimensions > 0 and index_version
+    assert fallback_reason == "forced_offline_hash_embedding"
+
+    monkeypatch.delenv("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", raising=False)
+    monkeypatch.setenv("AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK", "true")
+    _, _, _, _, fallback_reason = tasks.embedding_batches_for_chunks(chunks)
+    assert fallback_reason == "embedding_client_disabled_hash_fallback"
+
+
+def test_issue8_knowledge_overview_surfaces_degraded_vector_ratio() -> None:
+    """知识管理页要能看出索引里有多少降级向量，否则问题永远不会被发现。"""
+    headers = {"X-Dev-Role": "admin", "X-Dev-User": "USER-ADMIN-001", "X-Role": "admin"}
+    response = client.get("/api/knowledge/overview", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+
+    quality = data["vectorQuality"]
+    assert {"degradedFileCount", "vectorizedFileCount", "degradedRatio", "degradedFiles"} <= set(quality)
+    assert {item["key"] for item in data["metrics"]} >= {"degradedVector"}
+
+    # 造一个降级文件，占比要跟着变
+    files = repo.state.get("knowledge_files") or []
+    if not files:
+        return
+    target = files[0]
+    original_status, original_reason = target.get("vectorStatus"), target.get("vectorStatusReason")
+    try:
+        target["vectorStatus"] = "已向量化"
+        target["vectorStatusReason"] = "embedding_client_disabled_hash_fallback"
+        refreshed = client.get("/api/knowledge/overview", headers=headers).json()["data"]
+        assert refreshed["vectorQuality"]["degradedFileCount"] >= 1
+        assert refreshed["vectorQuality"]["degradedRatio"] > 0
+        assert any(
+            item["fileId"] == target["id"] for item in refreshed["vectorQuality"]["degradedFiles"]
+        )
+    finally:
+        target["vectorStatus"] = original_status
+        target["vectorStatusReason"] = original_reason

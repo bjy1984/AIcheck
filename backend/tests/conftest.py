@@ -15,6 +15,9 @@ os.environ.setdefault("AICHECK_REQUIRE_AUTH", "false")
 os.environ.setdefault("AICHECK_REQUIRE_IF_MATCH", "false")
 os.environ.setdefault("AICHECK_ENABLE_DEMO_DATA", "true")
 os.environ.setdefault("AICHECK_ENABLE_COMPATIBILITY_MOCKS", "true")
+# 测试环境没有 embedding 服务，向量化走字符哈希伪向量。这是离线自测的正当用法，
+# 但必须显式声明——静默使用会让生产环境的配置错误无人察觉（D-2 / issue #8）。
+os.environ.setdefault("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", "true")
 os.environ.setdefault("AICHECK_OCR_PROVIDER_MODE", "local")
 os.environ.setdefault("AICHECK_OCR_DEFAULT_PROVIDER", "local")
 

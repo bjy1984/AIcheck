@@ -27566,6 +27566,16 @@ def knowledge_overview(request: Request):
                 "updatedAt": source.get("updatedAt"),
             }
         )
+    # 哈希伪向量的标记落在知识文件的 vectorStatusReason 上（见 worker 的
+    # embedding_batches_for_chunks）。这里汇总出来，让降级在界面上可见。
+    vectorized_files = [
+        item for item in indexable_files if str(item.get("vectorStatus") or "") == "已向量化"
+    ]
+    degraded_vector_files = [
+        item
+        for item in vectorized_files
+        if "hash" in str(item.get("vectorStatusReason") or "").lower()
+    ]
     return ok(
         {
             "metrics": [
@@ -27573,9 +27583,35 @@ def knowledge_overview(request: Request):
                 {"key": "file", "label": "项目文件", "value": len(indexable_files), "tone": "green"},
                 {"key": "task", "label": "运行任务", "value": len([item for item in indexable_tasks if item["status"] in {"排队中", "运行中"}]), "tone": "orange"},
                 {"key": "failed", "label": "失败任务", "value": len([item for item in indexable_tasks if item["status"] == "失败"]), "tone": "red"},
+                # D-2：哈希伪向量与真语义向量同表同维存储，仅索引版本不同。检索侧配对
+                # 逻辑本身没错，但没有任何地方指出「索引里有多少是降级向量」——
+                # embedding 服务配置错误时系统照常运行，检索结果近似随机而无人察觉。
+                {
+                    "key": "degradedVector",
+                    "label": "降级向量文件",
+                    "value": len(degraded_vector_files),
+                    "tone": "red" if degraded_vector_files else "gray",
+                },
             ],
             "libraries": libraries,
             "scorecard": build_knowledge_rule_scorecard(repo.state),
+            "vectorQuality": {
+                "degradedFileCount": len(degraded_vector_files),
+                "vectorizedFileCount": len(vectorized_files),
+                "degradedRatio": (
+                    round(len(degraded_vector_files) / len(vectorized_files), 3) if vectorized_files else 0.0
+                ),
+                "degradedFiles": [
+                    {
+                        "fileId": item.get("id"),
+                        "fileName": item.get("fileName"),
+                        "reason": item.get("vectorStatusReason"),
+                        "indexVersion": item.get("indexVersion"),
+                    }
+                    for item in degraded_vector_files[:20]
+                ],
+                "note": "降级向量由字符哈希生成、没有语义，检索结果不可信；应修复 embedding 服务后重建索引。",
+            },
         },
         request,
     )
