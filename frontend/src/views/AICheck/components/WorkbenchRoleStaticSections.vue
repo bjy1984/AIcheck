@@ -35,7 +35,11 @@ import type {
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
-import { documentPipelineStatus } from '@/utils/documentPipelineStatus'
+import {
+  documentPipelineStatus,
+  type DocumentUploadStatus
+} from '@/utils/documentPipelineStatus'
+import { canRetryDocumentUpload, canSubmitDocumentUpload } from '@/utils/documentUploadActions'
 
 type ReviewChainStep = {
   title: string
@@ -66,7 +70,7 @@ type ContractorFileRow = {
   relationNode: string
   feedback: string
   ocr: string
-  processingStatus: string
+  processingStatus: DocumentUploadStatus
   uploader: string
   updatedAt: string
 }
@@ -95,6 +99,7 @@ const emit = defineEmits<{
   'file-view': [documentId: string]
   'file-bind': [documentId: string]
   'file-submit': [documentId: string]
+  'file-retry-upload': [documentId: string]
   'file-delete': [documentId: string]
 }>()
 
@@ -386,7 +391,7 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
     relationNode: getRelationNodeText([binding]),
     feedback: binding.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
     ocr: '--',
-    processingStatus: '--',
+    processingStatus: '上传中',
     uploader: '--',
     updatedAt: binding.boundAt
   }))
@@ -490,13 +495,13 @@ const resetContractorFilePage = () => {
 
 const getElementTagType = (value?: string): ElementTagType => {
   if (!value) return 'info'
-  if (['通过', '满足', '完成', '覆盖', '归档'].some((keyword) => value.includes(keyword))) {
+  if (['通过', '满足', '完成', '覆盖', '归档', '成功'].some((keyword) => value.includes(keyword))) {
     return 'success'
   }
   if (['补正', '失败', '禁止', '风险', '作废'].some((keyword) => value.includes(keyword))) {
     return 'danger'
   }
-  if (['待', '审核', '处理中', '排队'].some((keyword) => value.includes(keyword))) {
+  if (['待', '审核', '处理中', '排队', '上传中'].some((keyword) => value.includes(keyword))) {
     return 'warning'
   }
   return 'primary'
@@ -518,9 +523,22 @@ const requestFileBind = (file: ContractorFileRow) => {
   if (!props.readOnly) emit('file-bind', file.documentId)
 }
 
+const canSubmitContractorFile = (file: ContractorFileRow) =>
+  !props.readOnly &&
+  canSubmitDocumentUpload(
+    ['未关联', '待提交', '需补正'].includes(file.status),
+    file.processingStatus
+  )
+
 const requestFileSubmit = (file: ContractorFileRow) => {
-  if (!props.readOnly && ['未关联', '待提交', '需补正'].includes(file.status)) {
+  if (canSubmitContractorFile(file)) {
     emit('file-submit', file.documentId)
+  }
+}
+
+const requestFileRetryUpload = (file: ContractorFileRow) => {
+  if (!props.readOnly && canRetryDocumentUpload(file.processingStatus)) {
+    emit('file-retry-upload', file.documentId)
   }
 }
 
@@ -532,6 +550,7 @@ const requestFileDelete = (file: ContractorFileRow) => {
 
 const getContractorSubmitHint = (file: ContractorFileRow) => {
   if (props.readOnly) return '当前项目为只读状态，不能提交文件'
+  if (file.processingStatus !== '上传成功') return '文件上传处理成功后才可提交'
   if (file.status === '未关联') return '提交到项目资料池，供监检处理（可不关联审核环节）'
   return ['待提交', '需补正'].includes(file.status)
     ? '提交当前文件的全部待提交或待补正挂载'
@@ -757,7 +776,16 @@ const getPillClass = (value?: string): AuditStatusTone => {
             </ElTableColumn>
             <ElTableColumn label="处理状态" width="116">
               <template #default="{ row }">
-                <ElTag :type="getElementTagType(row.processingStatus)" effect="plain">
+                <ElButton
+                  v-if="canRetryDocumentUpload(row.processingStatus)"
+                  link
+                  type="danger"
+                  :disabled="readOnly"
+                  @click="requestFileRetryUpload(row)"
+                >
+                  失败重新上传
+                </ElButton>
+                <ElTag v-else :type="getElementTagType(row.processingStatus)" effect="plain">
                   {{ row.processingStatus }}
                 </ElTag>
               </template>
@@ -783,7 +811,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                   <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
                   <ElTooltip
                     :content="getContractorSubmitHint(row)"
-                    :disabled="!readOnly && ['未关联', '待提交', '需补正'].includes(row.status)"
+                    :disabled="canSubmitContractorFile(row)"
                     placement="top"
                     popper-class="audit-action-tooltip-popper"
                   >
@@ -791,7 +819,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                       <ElButton
                         link
                         type="primary"
-                        :disabled="readOnly || !['未关联', '待提交', '需补正'].includes(row.status)"
+                        :disabled="!canSubmitContractorFile(row)"
                         @click="requestFileSubmit(row)"
                       >
                         提交

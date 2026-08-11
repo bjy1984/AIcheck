@@ -90,6 +90,7 @@ import {
   markMessageReadApi,
   rejectAiSuggestionApi,
   rejectNodeEvidenceLinkApi,
+  retryDocumentUploadApi,
   requestAiRecheckApi,
   returnCorrectionApi,
   saveReviewOpinionApi,
@@ -3104,6 +3105,31 @@ const handleSubmitProjectFile = async (documentId: string) => {
   }
 }
 
+const handleRetryProjectFileUpload = async (documentId: string) => {
+  if (!ensureWritableProject()) return
+  if (!documentId) {
+    ElMessage.warning('请选择需要重新上传的项目文件')
+    return
+  }
+  actionLoading.value = true
+  try {
+    const res = await retryDocumentUploadApi(activeProjectId.value, documentId, {
+      etag: currentProject.value?.etag,
+      idempotencyKey: `retry-document-upload-${activeProjectId.value}-${documentId}-${Date.now()}`
+    })
+    if (!res) {
+      showActionError('文件重新上传失败，请刷新项目文件库后重试。')
+      return
+    }
+    ElMessage.success('已重新上传，正在处理')
+    await loadProjectBundle()
+  } catch (error) {
+    showActionError('文件重新上传失败，请确认原文件仍然存在。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 const handleDeleteProjectFile = async (documentId: string) => {
   if (!ensureWritableProject()) return
   if (!documentId) {
@@ -5085,6 +5111,7 @@ onBeforeUnmount(() => {
             @file-view="handleOpenFileDetail"
             @file-bind="handleOpenBindDialog"
             @file-submit="handleSubmitProjectFile"
+            @file-retry-upload="handleRetryProjectFileUpload"
             @file-delete="handleDeleteProjectFile"
           />
 

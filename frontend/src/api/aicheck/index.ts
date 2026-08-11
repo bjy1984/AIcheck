@@ -3075,6 +3075,24 @@ export const completeDocumentUploadSessionApi = (
   })
 }
 
+export const retryDocumentUploadApi = (
+  projectId: string,
+  documentId: string,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    documentId: string
+    documentVersionId: string
+    uploadStatus: '上传中'
+    queuedTask: Record<string, unknown>
+  }>
+> => {
+  return request.post({
+    url: `/api/projects/${projectId}/documents/${documentId}/retry-upload`,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const bindDocumentsToNodeApi = (
   projectId: string,
   payload: {
