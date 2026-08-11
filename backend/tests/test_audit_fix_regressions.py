@@ -879,3 +879,46 @@ def test_issue18_roles_without_report_view_cannot_read_reports() -> None:
         headers=headers("inspection", "USER-INSPECTION-001"),
     )
     assert inspection.json()["code"] == 0
+
+
+# ---- #16：LangGraph 图执行后 context 被自赋值清空 ----
+
+
+def test_issue16_graph_execution_preserves_context_written_by_nodes() -> None:
+    """图跑完后，节点写进 context 的证据链与判定结果必须还在。
+
+    LangGraph 节点返回的 state["context"] 通常就是传进去的同一个对象。
+    原实现先 context.clear() 再 update(output_state["context"])，两者同源，
+    clear() 把待回写的数据一并抹掉——调用方拿到空 context，整条审查的证据链、
+    规则结果、工具输出全部丢失，且不报错。
+    """
+    from libs.review_orchestrator.graph import execute_review_graph
+
+    review_run = {"reviewRunId": "RRUN-ISSUE16"}
+    context: dict[str, object] = {"initial": "kept"}
+    steps = [{"key": "collect"}, {"key": "judge"}]
+
+    def run_step(run, step_key, ctx):
+        # 真实节点就是这样直接写传入的 context 对象
+        ctx.setdefault("ruleResults", []).append(f"{step_key}:done")
+        ctx[f"{step_key}Evidence"] = ["EV-1"]
+        return {"status": "succeeded", "stepKey": step_key}
+
+    def mark_graph_node(*_args, **_kwargs):
+        return {}
+
+    result = execute_review_graph(
+        review_run,
+        context,
+        steps=steps,
+        run_step=run_step,
+        mark_graph_node=mark_graph_node,
+    )
+
+    assert result.get("runner") in {"langgraph", "manual"}
+    assert context.get("initial") == "kept", "图执行不应抹掉调用方原有的 context"
+    assert context.get("ruleResults") == ["collect:done", "judge:done"], (
+        f"节点写入的判定结果丢失：{context!r}"
+    )
+    assert context.get("collectEvidence") == ["EV-1"]
+    assert context.get("judgeEvidence") == ["EV-1"]
