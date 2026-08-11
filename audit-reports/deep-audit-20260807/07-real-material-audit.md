@@ -5,7 +5,7 @@
 素材：`Scan/` 目录的真实监检资料（焊工证、焊接工艺评定报告、特种设备制造许可证、
 射线检测报告、产品质量证明、压力管道强度计算书等），以施工方角色上传 8 份。
 
-**本轮只找问题，未改动任何产品代码。**
+**本轮只找问题，未改动任何产品代码。共 9 项发现（M-1..M-9）。**
 
 ---
 
@@ -103,6 +103,45 @@ GET  /projects/{pid}/nodes/24/package     → bindings: []          ← 空
 
 ---
 
+## M-8 · 上传时声明的 nodeIds 被静默丢弃 【P1】
+
+施工方上传时显式声明资料类型与归属节点：
+
+```json
+{"fileName":"焊接工艺评定报告.pdf", "materialTypeCode":"welding_procedure_qualification",
+ "nodeIds":[25]}
+```
+
+会话响应**正常回显**：`materialTypeCode: welding_procedure_qualification`、`nodeIds: [25]`。
+但完成上传后查台账：
+
+| 字段 | 落库值 |
+|---|---|
+| materialTypeCode | `welding_procedure_qualification` ✅ |
+| materialTypeName | **None** |
+| materialCategory | **None** |
+| nodeId / nodeIds | **None** ❌ |
+
+**声明的节点归属没有落库**，资料仍是游离状态，需要再手工挂载一次。
+`materialTypeName` / `materialCategory` 也未按 code 解析填充。
+
+**对照组**：NDT 专用上传路径（`POST /ndt/reports/upload-session`）上传同一批真实素材时，
+落库结果完整：
+
+```
+materialTypeCode  = ndt_report
+materialTypeName  = 无损检测报告
+materialCategory  = 无损检测资料
+nodeId            = 40          ← 自动绑定到正确节点
+sourceOrgName     = 华测检测有限公司
+```
+
+即：**系统具备按类型自动定名、归类、挂载的能力，通用上传路径没有接上**。
+这也让 M-1 的成因更清楚——不是「做不到分类」，而是通用路径既没有推断、
+声明了也不生效。
+
+---
+
 ## M-6 · 打回后无法用新上传的资料补正 【P1·流程断点】
 
 跨角色跑「施工方提交 → 监检打回 → 施工方补正」时卡住：
@@ -127,6 +166,33 @@ POST /projects/{pid}/rectifications
 **待确认**：若业务上要求「补正必须针对被打回的原资料」（例如换版必须走文档版本追加
 `POST /documents/{id}/versions` 而非新建文档），那这是设计意图，缺的是明确的错误引导；
 否则是流程缺陷。错误信息目前没有告诉施工方该怎么做。
+
+---
+
+## M-9 · 建设方（observer）可读全部审查过程数据 【P1·扩大了 issue #18】
+
+`owner` 角色定位为 `observer`，动作表只有
+`[project:view, file:view, file:preview, report:view, archive:view, archive:download]`。
+实测以 owner 身份读取：
+
+| 端点 | 结果 |
+|---|---|
+| `/reports` | **9 份**监督检验报告全文 |
+| `/archive` | 2 条归档 |
+| `/documents` | **20 份**资料台账（含施工方与 NDT 提交的全部原始资料）|
+| `/rectifications` | **3 条整改单**，含打回理由「焊工证持证项目未覆盖本工程焊接方法，请补充。」|
+| `/inspection/nodes/{n}/review-opinions` | 监检人工结论 |
+| `/inspection/nodes/{n}/ai-runs` | **9 条 AI 运行记录**，含建议结论与判定描述全文 |
+
+即：建设方能看到**施工方被打回的全过程、监检人员的人工结论、AI 的逐条判定理由**。
+
+写路径正确拦截（`review:save` / `file:bind` 均 403 FORBIDDEN），
+问题只在读路径——与 issue #18（施工方/NDT 可读报告）同源：动作矩阵不作用于 GET。
+本轮把影响面从「报告」扩大到「资料台账 + 整改过程 + AI 判定 + 人工结论」，
+且涉及第三个角色。
+
+业务上建设方看到多少是可以商量的（毕竟是出资方），但**当前实现是「读端点全开」，
+而非「按角色决定」** —— 这与最小权限口径和角色声明都不一致。
 
 ---
 
@@ -170,6 +236,8 @@ rectification["feedbackComment"] = body.get("comment") or body.get("description"
 | 监检打回流程 | 生成整改单、写入打回理由（`comment` 字段完整）、节点转「需补正」、施工方可见 |
 | 补正闭环（原资料） | 用被打回的 binding 提交 → 整改单转「已重新提交」，记录 `resubmissionId`、`feedbackByName`（李工）、`feedbackAt` |
 | 跨角色可见性 | 施工方能看到发给自己的整改单及打回理由 |
+| NDT 专用上传链路 | 会话 → PUT → complete 全通，落库自动定名、归类、绑定节点 40、记录检测机构名 |
+| NDT 工作台数据面 | films / records / reports / summary 四个端点均正常，报告进 NDT 台账（状态「待提交」）|
 
 ---
 
