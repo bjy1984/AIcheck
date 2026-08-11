@@ -68,9 +68,31 @@ const selectedNode = computed(() => props.packageData?.node)
 const bindings = computed(() => props.packageData?.bindings || [])
 const selectedBindingIds = computed(() => selectedBindings.value.map((item) => item.id))
 const targetNodeCount = computed(() => form.targetNodeIds.length)
-const submitReadyCount = computed(
-  () => selectedBindings.value.filter((item) => item.bindingStatus !== '已通过').length
+// 文件本体没上传成功的资料不能提交：后端以版本内容哈希为准（DOCUMENT_BODY_MISSING），
+// 这里同口径拦在按钮上，避免用户提交后才被拒。
+const bindingBodyUploaded = (item: { bodyUploaded?: boolean }) => item.bodyUploaded !== false
+const unuploadedBindings = computed(() =>
+  selectedBindings.value.filter((item) => !bindingBodyUploaded(item))
 )
+const submitReadyCount = computed(
+  () =>
+    selectedBindings.value.filter(
+      (item) => item.bindingStatus !== '已通过' && bindingBodyUploaded(item)
+    ).length
+)
+const submitBlockedReason = computed(() => {
+  if (!bindings.value.length) return '当前节点没有可提交的资料'
+  if (!selectedBindings.value.length) return '请先勾选要提交的资料'
+  if (unuploadedBindings.value.length) {
+    const names = unuploadedBindings.value
+      .slice(0, 2)
+      .map((item) => item.fileName || item.id)
+      .join('、')
+    return `${names} 尚未上传成功，请重新上传后再提交`
+  }
+  if (!submitReadyCount.value) return '所选资料均已通过审查，无需重复提交'
+  return ''
+})
 const isCrossNodeScope = computed(() => form.targetNodeIds.length > 1)
 const retryLabel = computed(() => {
   if (lastAction.value === 'saveDraft') return '重试保存'
@@ -274,7 +296,10 @@ watch(
     <ElEmpty v-else description="请选择节点后再提交" />
 
     <template #footer>
-      <span class="footer-hint"
+      <span v-if="submitBlockedReason" class="footer-hint footer-hint--blocked">
+        {{ submitBlockedReason }}
+      </span>
+      <span v-else class="footer-hint"
         >已选择 {{ selectedBindingIds.length }} 项，可提交 {{ submitReadyCount }} 项，节点范围
         {{ targetNodeCount }} 个</span
       >
@@ -284,7 +309,7 @@ watch(
       </ElButton>
       <ElButton
         type="primary"
-        :disabled="!bindings.length"
+        :disabled="Boolean(submitBlockedReason)"
         :loading="loading"
         @click="handleSubmit"
       >
@@ -326,6 +351,10 @@ watch(
   min-height: 32px;
   line-height: 32px;
   color: #667085;
+}
+
+.footer-hint--blocked {
+  color: #d97706;
 }
 
 @media (width <= 768px) {

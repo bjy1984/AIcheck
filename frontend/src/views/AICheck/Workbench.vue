@@ -70,6 +70,7 @@ import {
   importNdtRecordsApi,
   generateReportReviewApi,
   getNodePackageApi,
+  getNodeLiveStatusApi,
   getProjectTreeApi,
   getSubmissionDetailApi,
   getSubmissionDraftDetailApi,
@@ -4252,6 +4253,15 @@ const refreshAiReviewStatus = async () => {
   }
   reviewPolling.value = true
   try {
+    // 先用轻量状态接口探活（约为完整节点包的 0.4%）。只有 AI 运行状态真的变了，
+    // 才去重拉完整数据——否则每次轮询都整体替换数据会让页面反复重绘。
+    const live = await getNodeLiveStatusApi(activeProjectId.value, activeNodeId.value)
+    const liveStatus = String(live?.data?.latestAiRun?.status || '')
+    if (!liveStatus) {
+      stopAiReviewPolling()
+      return
+    }
+    if (liveStatus === String(run.status || '')) return
     await loadNodePackage(activeNodeId.value, { silent: true })
     aiRecheckRunOverride.value = undefined
     const refreshed = latestAiRun.value
@@ -4279,6 +4289,8 @@ const stopAiReviewPolling = () => {
   reviewPollTimer.value = undefined
 }
 
+const lastProcessingCount = ref<number | undefined>(undefined)
+
 const refreshPostUploadPipelineStatus = async () => {
   if (!activeProjectId.value || pipelinePolling.value) return
   if (!hasPostUploadProcessing.value) {
@@ -4287,7 +4299,13 @@ const refreshPostUploadPipelineStatus = async () => {
   }
   pipelinePolling.value = true
   try {
+    // 同 refreshAiReviewStatus：先轻量探活，处理中的文件数没变就不重拉全量数据。
+    const live = await getNodeLiveStatusApi(activeProjectId.value, activeNodeId.value)
+    const count = live?.data?.processingDocumentCount
+    if (typeof count === 'number' && count === lastProcessingCount.value) return
+    lastProcessingCount.value = count
     await loadNodePackage(activeNodeId.value, { silent: true })
+    if (count === 0) stopPostUploadPolling()
   } finally {
     pipelinePolling.value = false
   }

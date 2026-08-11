@@ -6186,6 +6186,12 @@ def node_package(request: Request, project_id: str, node_id: int):
             item for item in project_files if str(item.get("id") or "") in submitted_document_ids
         ]
     version_ids = {item["documentVersionId"] for item in bindings}
+    # 标出文件本体是否真的上传成功，供前端在提交前拦截空壳资料（同 DOCUMENT_BODY_MISSING 口径）。
+    for binding in (*bindings, *project_bindings):
+        binding["bodyUploaded"] = document_body_uploaded(
+            repo.find_one("documents", binding.get("documentId")),
+            repo.find_one("versions", binding.get("documentVersionId")),
+        )
     for file in project_files:
         file_bindings = [binding for binding in project_bindings if binding.get("documentId") == file.get("id")]
         file["bindings"] = file_bindings
@@ -6423,6 +6429,47 @@ def validate_upload_session_completion(
             document["currentOcrStatus"] = "排队中"
             document["updatedAt"] = server_time()
     return verified, None
+
+
+def document_body_uploaded(document: dict[str, Any] | None, version: dict[str, Any] | None = None) -> bool:
+    """文件本体是否真的上传成功。
+
+    业务红线：「目录中列出文件不能等同于文件本体已上传」。创建上传会话时就会生成
+    document/version 记录，若客户端从未真正 PUT 内容（或上传中断），这些记录依然存在，
+    看起来与正常资料无异。
+
+    判据只用版本上的内容哈希：它由 complete 阶段按对象存储里的实际字节算出
+    （validate_upload_session_completion → storage_updates），文件没落盘就不会有值。
+    `fileStatus` 不能用——建档时就被写成「已上传」，未上传的空壳同样带这个值。
+    """
+    if not document:
+        return False
+    checked = version if version is not None else repo.current_version(str(document.get("id") or ""))
+    return bool(checked and checked.get("hash"))
+
+
+def unuploaded_document_error(
+    request: Request,
+    documents: list[tuple[dict[str, Any] | None, dict[str, Any] | None]],
+) -> JSONResponse | None:
+    """任一文件本体缺失即拒绝，并回报具体是哪些文件。"""
+    missing = [
+        {
+            "documentId": str((document or {}).get("id") or ""),
+            "fileName": str((document or {}).get("fileName") or ""),
+        }
+        for document, version in documents
+        if not document_body_uploaded(document, version)
+    ]
+    if not missing:
+        return None
+    names = "、".join(item["fileName"] or item["documentId"] for item in missing[:3])
+    return fail(
+        errors.CONFLICT,
+        request,
+        message=f"以下资料尚未上传成功，不能挂载或提交：{names}。请重新上传后再试。",
+        data={"reason": "DOCUMENT_BODY_MISSING", "missingDocuments": missing},
+    )
 
 
 @router.post("/projects/{project_id}/documents/upload-session")
@@ -7183,6 +7230,19 @@ def bind_documents(
         binding_inputs = body.get("bindings") or []
         if not binding_inputs:
             return fail(errors.EMPTY_BINDINGS, request)
+        body_error = unuploaded_document_error(
+            request,
+            [
+                (
+                    repo.find_one("documents", item.get("documentId")),
+                    repo.find_one("versions", item.get("documentVersionId")) if item.get("documentVersionId") else None,
+                )
+                for item in binding_inputs
+                if item.get("documentId")
+            ],
+        )
+        if body_error:
+            return body_error
         created = []
         changed = []
         for node_id in node_ids:
@@ -7557,6 +7617,12 @@ def submit_node_package(
                     message="所选文件已提交到项目资料池，不能重复提交。",
                     data={"alreadySubmittedDocumentIds": already_submitted},
                 )
+            body_error = unuploaded_document_error(
+                request,
+                [(repo.find_one("documents", document_id), None) for document_id in document_ids],
+            )
+            if body_error:
+                return body_error
             submitted_at = server_time()
             changed = []
             for document_id in document_ids:
@@ -7628,6 +7694,16 @@ def submit_node_package(
             return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
         if not binding_ids:
             return fail(errors.EMPTY_NODE_PACKAGE, request)
+        body_error = unuploaded_document_error(
+            request,
+            [
+                (repo.find_one("documents", (binding or {}).get("documentId")), None)
+                for binding in (repo.find_one("bindings", binding_id) for binding_id in binding_ids)
+                if binding
+            ],
+        )
+        if body_error:
+            return body_error
         rectification = pending_rectification_for_bindings(project_id, binding_ids)
         submitted_at = server_time()
         changed = []
@@ -8478,6 +8554,68 @@ def ai_recheck(
             "auditInputMode": body.get("auditInputMode") or body.get("auditRuntimeMode"),
             "reviewMode": body.get("reviewMode"),
         },
+    )
+
+
+@router.get("/projects/{project_id}/inspection/nodes/{node_id}/live-status")
+def node_live_status(request: Request, project_id: str, node_id: int):
+    """轮询专用的轻量状态接口。
+
+    界面在 AI 复核和上传处理期间需要定时探活。此前轮询直接重拉 nodes/{id}/package
+    （含全量 AI 运行历史，实测约 665KB）并整体替换数据，导致页面反复整体重绘。
+    这里只回状态字段，让轮询判断"是否还在进行中"，仅在状态变化时才去取完整数据。
+    """
+    scope_error = member_node_scope_error(
+        request, project_id, effective_role_for_request(request)[0], node_ids=[node_id]
+    )
+    if scope_error:
+        return scope_error
+    tenant_id = request_tenant_id(request)
+    node_runs = [
+        item
+        for item in repo.state.get("ai_runs", [])
+        if item.get("projectId") == project_id
+        and int(item.get("nodeId") or 0) == int(node_id)
+        and tenant_id_for_record(item) == tenant_id
+    ]
+    latest = node_runs[0] if node_runs else None
+    node = repo.node(project_id, node_id) or {}
+    documents = [
+        item
+        for item in repo.project_documents(project_id)
+        if tenant_id_for_record(item) == tenant_id
+    ]
+    processing = [
+        {
+            "documentId": item.get("id"),
+            "fileName": item.get("fileName"),
+            "ocrStatus": item.get("currentOcrStatus"),
+            "sliceStatus": item.get("sliceStatus"),
+            "vectorStatus": item.get("vectorStatus"),
+        }
+        for item in documents
+        if str(item.get("currentOcrStatus") or "") not in {"", "已识别", "人工修正", "抽取不完整"}
+    ]
+    return ok(
+        {
+            "nodeId": int(node_id),
+            "nodeStatus": node.get("status"),
+            "nodeRevision": node.get("revision"),
+            "latestAiRun": (
+                {
+                    "id": latest.get("id"),
+                    "status": latest.get("status"),
+                    "reviewMode": latest.get("reviewMode"),
+                    "suggestionResult": (latest.get("suggestion") or {}).get("result"),
+                    "finishedAt": latest.get("finishedAt"),
+                }
+                if latest
+                else None
+            ),
+            "processingDocumentCount": len(processing),
+            "processingDocuments": processing[:20],
+        },
+        request,
     )
 
 

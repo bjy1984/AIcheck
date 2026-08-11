@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 import libs.review_orchestrator  # noqa: F401  # 先初始化，规避 review_tools 循环导入
@@ -391,6 +393,58 @@ def test_field_correction_does_not_leak_across_nodes() -> None:
         context={"reviewRun": {"projectId": "P-1", "nodeId": 24}},
     )
     assert revoked[0]["fields"][0]["value"] == "原值", "已撤销的修正不应生效"
+
+
+def test_document_body_check_relies_on_content_hash_not_file_status() -> None:
+    """空壳资料（建了记录但从未上传内容）不得被挂载或提交。
+
+    fileStatus 在建档时就被写成「已上传」，对空壳同样成立，因此不能作为判据；
+    版本上的内容哈希由 complete 阶段按对象存储实际字节算出，文件没落盘就没有值。
+    """
+    from apps.api.routes import document_body_uploaded
+
+    shell_doc = {"id": "DOC-SHELL", "fileStatus": "已上传"}
+    assert document_body_uploaded(shell_doc, {"id": "DV-SHELL", "hash": None}) is False
+    assert document_body_uploaded(shell_doc, {"id": "DV-SHELL"}) is False
+    assert document_body_uploaded(None, None) is False
+
+    real_doc = {"id": "DOC-REAL", "fileStatus": "已上传"}
+    assert document_body_uploaded(real_doc, {"id": "DV-REAL", "hash": "sha256-abc"}) is True
+    # 即便 fileStatus 缺失，只要内容哈希在就算已上传
+    assert document_body_uploaded({"id": "DOC-REAL"}, {"id": "DV", "hash": "sha256-abc"}) is True
+
+
+def test_unuploaded_document_error_names_the_offending_files() -> None:
+    """拒绝时要告诉用户是哪几份资料没传上去，否则无从下手。"""
+    from apps.api.routes import unuploaded_document_error
+
+    response = unuploaded_document_error(
+        _request_stub(),
+        [
+            ({"id": "DOC-1", "fileName": "焊工证.pdf"}, {"hash": "sha256-ok"}),
+            ({"id": "DOC-2", "fileName": "射线检测报告.pdf"}, {"hash": None}),
+        ],
+    )
+    assert response is not None
+    payload = json.loads(bytes(response.body).decode())
+    assert payload["data"]["reason"] == "DOCUMENT_BODY_MISSING"
+    assert "射线检测报告.pdf" in payload["message"]
+    assert "焊工证.pdf" not in payload["message"], "已上传成功的资料不应被列为问题项"
+    assert [item["documentId"] for item in payload["data"]["missingDocuments"]] == ["DOC-2"]
+
+    assert unuploaded_document_error(_request_stub(), [({"id": "DOC-1"}, {"hash": "sha256-ok"})]) is None
+
+
+def _request_stub():
+    from starlette.datastructures import Headers
+
+    class _Stub:
+        url = type("U", (), {"path": "/api/test"})()
+        headers = Headers({})
+        method = "POST"
+        state = type("S", (), {})()
+
+    return _Stub()
 
 
 def test_role_action_matrix_declares_report_view_only_for_intended_roles() -> None:

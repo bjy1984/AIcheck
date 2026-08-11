@@ -2967,6 +2967,35 @@ export const getNodePackageApi = (
   return request.get({ url: `/api/projects/${projectId}/nodes/${nodeId}/package` })
 }
 
+export type NodeLiveStatus = {
+  nodeId: number
+  nodeStatus?: string
+  nodeRevision?: number
+  latestAiRun?: {
+    id: string
+    status: string
+    reviewMode?: string
+    suggestionResult?: string
+    finishedAt?: string
+  } | null
+  processingDocumentCount: number
+  processingDocuments: {
+    documentId: string
+    fileName?: string
+    ocrStatus?: string
+    sliceStatus?: string
+    vectorStatus?: string
+  }[]
+}
+
+/** 轮询专用的轻量状态接口，约为完整节点包体积的 0.4%，用于避免定时重拉全量数据。 */
+export const getNodeLiveStatusApi = (
+  projectId: string,
+  nodeId: number
+): Promise<IResponse<NodeLiveStatus>> => {
+  return request.get({ url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/live-status` })
+}
+
 export const getInspectionAuditOverviewApi = (
   projectId: string,
   params: {
