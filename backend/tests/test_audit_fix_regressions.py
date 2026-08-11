@@ -922,3 +922,88 @@ def test_issue16_graph_execution_preserves_context_written_by_nodes() -> None:
     )
     assert context.get("collectEvidence") == ["EV-1"]
     assert context.get("judgeEvidence") == ["EV-1"]
+
+
+# ---- M-9 / M-11：建设方（observer）读端点全开 ----
+
+
+def test_m9_owner_cannot_read_review_process_data() -> None:
+    """建设方在角色表里是 observer，审查过程不在其动作表内。
+
+    改之前 owner 能读到：AI 逐条判定理由、监检人工结论、施工方被打回的整改往返。
+    这些既不在动作表内，也让审查过程失去独立性。看结论（已签发报告、归档）才是其定位。
+    """
+    project_id = "P-2026-HDCP-001"
+    owner = {"X-Dev-Role": "owner", "X-Dev-User": "USER-OWNER-001", "X-Role": "owner"}
+    inspection = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+    node_id = 24
+
+    blocked = [
+        (f"/api/projects/{project_id}/rectifications", "整改往返"),
+        (f"/api/projects/{project_id}/inspection/nodes/{node_id}/ai-runs", "AI 运行记录"),
+        (f"/api/projects/{project_id}/inspection/nodes/{node_id}/review-opinions", "人工结论"),
+    ]
+    for url, label in blocked:
+        owner_response = client.get(url, headers=owner)
+        assert owner_response.json()["code"] == 403, f"建设方不应读到{label}：{owner_response.text}"
+        # 监检自己必须照常读得到，别把拦截做过头
+        assert client.get(url, headers=inspection).json()["code"] == 0, f"监检应能读到{label}"
+
+    # 节点包里同样不能夹带——只堵独立端点、节点包照漏等于没堵
+    package = client.get(f"/api/projects/{project_id}/nodes/{node_id}/package", headers=owner)
+    assert package.status_code == 200, package.text
+    data = package.json()["data"]
+    assert data["aiRuns"] == []
+    assert data["aiRunTotal"] == 0
+    assert data["reviewOpinions"] == []
+    assert data["rectifications"] == []
+
+    inspection_package = client.get(
+        f"/api/projects/{project_id}/nodes/{node_id}/package", headers=inspection
+    )
+    assert inspection_package.status_code == 200
+
+
+def test_m11_owner_cannot_see_unsubmitted_contractor_drafts() -> None:
+    """施工方在正式提交前应有整理、替换、撤回的空间。
+
+    改之前建设方看到的资料比监检还多，包含施工方挂上去但尚未提交的草稿。
+    与监检同一口径：只有进入审查视野（已提交/需补正/已通过）的资料才对出资方可见。
+    """
+    project_id = "P-2026-HDCP-001"
+    owner = {"X-Dev-Role": "owner", "X-Dev-User": "USER-OWNER-001", "X-Role": "owner"}
+    contractor = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+
+    session = client.post(
+        f"/api/projects/{project_id}/documents/upload-session",
+        headers={**contractor, "Idempotency-Key": "m11-draft-doc"},
+        json={"files": [{"fileName": "施工方的草稿资料.pdf", "fileSize": 2048, "contentType": "application/pdf"}]},
+    )
+    assert session.status_code == 200, session.text
+    draft_document_id = session.json()["data"]["uploadUrls"][0]["documentId"]
+
+    def visible_ids(headers: dict[str, str]) -> set[str]:
+        response = client.get(f"/api/projects/{project_id}/documents", headers=headers)
+        assert response.status_code == 200, response.text
+        return {str(item["id"]) for item in response.json()["data"]["items"]}
+
+    assert draft_document_id in visible_ids(contractor), "施工方应看得到自己的草稿"
+    assert draft_document_id not in visible_ids(owner), "建设方不应看到尚未提交的草稿"
+
+    # 建设方仍应看到已进入审查视野的资料，别把台账清空
+    submitted = [
+        item
+        for item in repo.state["documents"]
+        if item.get("projectId") == project_id
+        and str(item.get("poolSubmissionStatus") or "") == "已提交"
+    ]
+    if submitted:
+        assert str(submitted[0]["id"]) in visible_ids(owner)

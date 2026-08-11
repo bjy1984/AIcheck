@@ -1791,9 +1791,15 @@ const assertRealUploadTarget = (target: DocumentUploadTarget, file: File) => {
 
 const uploadFileToSignedUrl = async (target: DocumentUploadTarget, file: File) => {
   assertRealUploadTarget(target, file)
+  // 登录态由本地会话补，不再依赖服务端在会话响应里回显 Authorization（M-3）——
+  // 把调用方自己的 JWT 写进响应体没有增益，却会随响应进入 devtools、前端日志、
+  // 错误上报和网关访问日志。target.headers 仍带本次上传专用的短时凭证。
   const response = await fetch(target.url, {
     method: target.method || 'PUT',
-    headers: target.headers || {},
+    headers: {
+      ...(target.headers || {}),
+      [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? ''
+    },
     body: file
   })
   if (!response.ok) {

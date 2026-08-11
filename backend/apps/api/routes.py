@@ -2984,6 +2984,50 @@ def report_readable_for_role(report: dict[str, Any], role: str | None) -> bool:
     return str(report.get("status") or "") in REPORT_SETTLED_STATUSES
 
 
+# 建设方（owner）在角色表里是 observer：只有 project:view / file:view / file:preview /
+# report:view / archive:view / archive:download。审查过程——AI 逐条判定理由、监检人工
+# 结论、整改往返——不在其中，读端点却全开（M-9）。同理，「已提交才进入审查视野」
+# 这条规则只作用于 inspection，建设方能看到施工方尚未提交的草稿（M-11），
+# 比监检看到的还多。两者同源：读端点不按角色裁剪。
+REVIEW_PROCESS_OBSERVER_ROLES = {"owner"}
+
+
+def review_process_read_error(request: Request, subject: str) -> JSONResponse | None:
+    """挡住 observer 角色对审查过程数据的读取。
+
+    建设方是出资方，看结论（已定稿报告、归档）是合理的；看监检怎么判、AI 说了什么、
+    施工方被打回几次，既不在其动作表内，也让审查过程失去独立性。
+    """
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if str(role or "") in REVIEW_PROCESS_OBSERVER_ROLES:
+        return fail(
+            errors.FORBIDDEN,
+            request,
+            message=f"当前角色无权查看{subject}。建设方可查看已签发报告与归档资料。",
+            http_status=403,
+        )
+    return None
+
+
+def document_readable_for_role(document: dict[str, Any], role: str | None) -> bool:
+    """建设方只看已进入审查视野的资料，不看施工方尚未提交的草稿。
+
+    与监检的 SUBMITTED_DOCUMENT_BINDING_STATUSES 同一口径：施工方在正式提交前
+    应当有整理、替换、撤回的空间。
+    """
+    if str(role or "") not in REVIEW_PROCESS_OBSERVER_ROLES:
+        return True
+    if str(document.get("poolSubmissionStatus") or "") == "已提交":
+        return True
+    return any(
+        str(binding.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        for binding in repo.state.get("bindings", [])
+        if str(binding.get("documentId") or "") == str(document.get("id") or "")
+    )
+
+
 def read_action_role_error(request: Request, action_code: str, subject: str) -> JSONResponse | None:
     """按角色动作表把关「读」（issue #18）。
 
@@ -6245,6 +6289,7 @@ def node_package(request: Request, project_id: str, node_id: int):
     effective_role, identity_error = effective_role_for_request(request)
     if identity_error:
         return identity_error
+    observer_view = str(effective_role or "") in REVIEW_PROCESS_OBSERVER_ROLES
     document_repo = repo.project_document_read_view(effective_project_id)
     bindings = document_repo.bindings_for_node(effective_project_id, node_id)
     project_bindings = [
@@ -6273,6 +6318,22 @@ def node_package(request: Request, project_id: str, node_id: int):
         ]
         project_files = [
             item for item in project_files if str(item.get("id") or "") in submitted_document_ids
+        ]
+    elif observer_view:
+        # M-11：建设方原先看到的比监检还多，含施工方尚未提交的草稿挂载。
+        # 与监检同一口径——只有进入审查视野的资料才对出资方可见。
+        bindings = [
+            item
+            for item in bindings
+            if str(item.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        ]
+        project_bindings = [
+            item
+            for item in project_bindings
+            if str(item.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES
+        ]
+        project_files = [
+            item for item in project_files if document_readable_for_role(item, effective_role)
         ]
     version_ids = {item["documentVersionId"] for item in bindings}
     # 标出文件本体是否真的上传成功，供前端在提交前拦截空壳资料（同 DOCUMENT_BODY_MISSING 口径）。
@@ -6316,17 +6377,31 @@ def node_package(request: Request, project_id: str, node_id: int):
                 if item["id"] in version_ids or item.get("documentId") in visible_document_ids
             ],
             "extractedFields": document_repo.fields_for_versions(version_ids),
-            "reviewOpinions": [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)],
-            "rectifications": [
-                repo.clone(item)
-                for item in repo.state["rectifications"]
-                if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
-            ],
+            # 审查过程对建设方（observer）不开放：AI 判定理由、监检人工结论、整改往返
+            # 都不在其动作表内（M-9）。这里与独立端点同口径，否则堵了端点、节点包照漏。
+            "reviewOpinions": (
+                []
+                if observer_view
+                else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
+            ),
+            "rectifications": (
+                []
+                if observer_view
+                else [
+                    repo.clone(item)
+                    for item in repo.state["rectifications"]
+                    if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
+                ]
+            ),
             # 只带最近几次运行：工作台展示的是当前状态与最近一次结果，而全量历史会让
             # 本响应膨胀到数百 KB（实测 9 次运行即 665KB），且轮询会反复重取。
             # 需要完整历史时用 /inspection/nodes/{id}/ai-runs。
-            "aiRuns": [safe_ai_run_view(item) for item in node_ai_runs[:NODE_PACKAGE_AI_RUN_LIMIT]],
-            "aiRunTotal": len(node_ai_runs),
+            "aiRuns": (
+                []
+                if observer_view
+                else [safe_ai_run_view(item) for item in node_ai_runs[:NODE_PACKAGE_AI_RUN_LIMIT]]
+            ),
+            "aiRunTotal": 0 if observer_view else len(node_ai_runs),
             "actions": repo.clone(node.get("actions", [])),
         },
         request,
@@ -6336,12 +6411,15 @@ def node_package(request: Request, project_id: str, node_id: int):
 @router.get("/projects/{project_id}/documents")
 def list_documents(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
     scope = authorized_node_scope(request, project_id)
+    read_role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
     effective_project_id = project_id
     document_repo = repo.project_document_read_view(effective_project_id)
     items = [
         attach_document_ocr_readiness(document_repo, item)
         for item in document_repo.project_documents(effective_project_id)
-        if document_visible_in_scope(item, scope)
+        if document_visible_in_scope(item, scope) and document_readable_for_role(item, read_role)
     ]
     if nodeId:
         document_ids = {
@@ -6591,9 +6669,13 @@ def create_upload_session(
         if atomic_validation_error:
             return atomic_validation_error
         require_signed_urls = parse_bool(body.get("requireSignedUrls"), default=False)
+        # 不回显 Authorization（M-3）：调用方本来就持有自己的 token，把它原样写进
+        # 响应体对调用方没有增益，却扩大泄漏面——响应体会进浏览器 devtools、前端日志、
+        # 错误上报和网关访问日志。登录态由客户端自行附加；本次上传的短时凭证
+        # X-Upload-Session-Token 才是需要下发的。
         upload_headers = {
             key: value
-            for key in ("Authorization", "X-Role", "X-User-Id")
+            for key in ("X-Role", "X-User-Id")
             if (value := request.headers.get(key))
         }
         role_for_upload = str(x_role or request.headers.get("X-Role") or "").lower()
@@ -8049,6 +8131,9 @@ def submit_rectification(
 
 @router.get("/projects/{project_id}/rectifications")
 def list_rectifications(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+    process_error = review_process_read_error(request, "整改往返记录")
+    if process_error:
+        return process_error
     scope = authorized_node_scope(request, project_id)
     return ok(
         page(
@@ -8720,6 +8805,9 @@ def node_live_status(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/ai-runs")
 def list_ai_runs(request: Request, project_id: str, node_id: int):
+    process_error = review_process_read_error(request, "AI 复核过程记录")
+    if process_error:
+        return process_error
     scope_error = member_node_scope_error(request, project_id, effective_role_for_request(request)[0], node_ids=[node_id])
     if scope_error:
         return scope_error
@@ -12343,6 +12431,9 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/review-opinions")
 def list_review_opinions(request: Request, project_id: str, node_id: int):
+    process_error = review_process_read_error(request, "监检人工审查意见")
+    if process_error:
+        return process_error
     return ok([repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == project_id and int(item["nodeId"]) == int(node_id)], request)
 
 
@@ -13924,9 +14015,13 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
         project = repo.find_one("projects", project_id) or {}
         source_org_name = project.get("ndtOrgName") or "无损检测机构"
         uploader_name = request_actor_name(request)
+        # 不回显 Authorization（M-3）：调用方本来就持有自己的 token，把它原样写进
+        # 响应体对调用方没有增益，却扩大泄漏面——响应体会进浏览器 devtools、前端日志、
+        # 错误上报和网关访问日志。登录态由客户端自行附加；本次上传的短时凭证
+        # X-Upload-Session-Token 才是需要下发的。
         upload_headers = {
             key: value
-            for key in ("Authorization", "X-Role", "X-User-Id")
+            for key in ("X-Role", "X-User-Id")
             if (value := request.headers.get(key))
         }
         upload_files = [
