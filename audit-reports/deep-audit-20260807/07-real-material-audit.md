@@ -5,7 +5,7 @@
 素材：`Scan/` 目录的真实监检资料（焊工证、焊接工艺评定报告、特种设备制造许可证、
 射线检测报告、产品质量证明、压力管道强度计算书等），以施工方角色上传 8 份。
 
-**本轮只找问题，未改动任何产品代码。共 10 项发现（M-1..M-10）。**
+**本轮只找问题，未改动任何产品代码。共 10 项有效发现（M-1、M-3..M-11），其中 M-2 经深挖后由我自行撤回。**
 
 ---
 
@@ -32,21 +32,58 @@
 
 ---
 
-## M-2 · 同一节点的绑定数在两个接口间不一致（0 vs 4） 【P1】
+## ~~M-2 · 同一节点的绑定数在两个接口间不一致~~ 【已撤回——我的误判】
 
-绑定成功后：
+**原判断（错误）**：挂载成功后 `documents/bindings?nodeId=24` 返回 4 条，
+而 `nodes/24/package` 返回 `bindings: []`，据此认为两接口数据不一致、
+监检人员看不到刚挂的资料。
+
+**深挖后的事实**：这是**既定业务规则，不是缺陷**。
+[routes.py:6172-6185](../../backend/apps/api/routes.py) 对 `inspection` 角色专门过滤，
+`package.bindings` 只保留 `SUBMITTED_DOCUMENT_BINDING_STATUSES`（已提交/需补正/已通过）
+中的绑定 —— 即**监检人员只审已提交的资料，不看施工方的草稿**。
+
+佐证：常量 `SUBMITTED_DOCUMENT_BINDING_STATUSES`（routes.py:308）、
+提交记录 `a3bd08a fix: enforce submitted document review lifecycle`、
+专项测试 `frontend/src/views/AICheck/inspectionSubmittedDocuments.test.ts`。
+
+实测（提交之后再看，数字自洽）：
+
+| 角色 | `package.bindings` | 状态构成 |
+|---|---|---|
+| inspection | 2 | 已提交 ×2 —— 按规则过滤 |
+| contractor | 5 | 含草稿挂载 |
+| owner | 5 | 含草稿挂载 |
+| ndt | 403 | 不在节点范围 |
+
+我当初观察到 0 条，是因为那一刻绑定还是「草稿挂载」、尚未提交，
+监检视角看不到本就正确。**撤回该发现**。
+
+仅存的次要问题：`documents/bindings?nodeId=24` 对监检返回 5 条（含草稿），
+`package` 返回 2 条，同一角色两个接口口径不同且无任何说明，
+容易让调用方（含我）误判。属文档/契约问题，非数据缺陷。
+
+---
+
+## M-11 · 建设方能看到施工方尚未提交的草稿资料 【P1】
+
+承 M-2 深挖发现：监检人员被规则限定为「只看已提交资料」，
+但 **`owner`（建设方）没有这层过滤**：
 
 ```
-POST /projects/{pid}/documents/bindings   → code 0，objectId BIND-24-619B2F
-GET  /projects/{pid}/documents/bindings?nodeId=24  → 4 条（含新建的 BIND-24-619B2F）
-GET  /projects/{pid}/nodes/24/package     → bindings: []          ← 空
+inspection  package.bindings = 2   ['已提交','已提交']
+owner       package.bindings = 5   含 2 条「草稿挂载」
+            BIND-24-1DEE47  焊工证.pdf     草稿挂载
+            BIND-24-002     焊工名册.xlsx  草稿挂载
 ```
 
-同一节点、同一时刻，两个接口给出 4 条和 0 条。`package` 是监检工作台的主数据源，
-监检人员在界面上看不到刚挂载的资料，会以为挂载失败而重复操作
-（本次审计中我正是因此重复挂载了两次，产生 `BIND-24-619B2F` 和 `BIND-24-ABE662` 两条重复绑定）。
+即：**建设方看到的资料比监检人员还多**，包括施工方挂上去但**尚未正式提交**的草稿。
 
-节点证据就绪度也始终停在 `缺 3`，不随绑定变化。
+施工方在正式提交前应当有整理、替换、撤回的空间；草稿阶段的资料被出资方直接看到，
+既不符合「已提交才进入审查视野」的业务规则，也让施工方失去提交前的自主权。
+
+与 M-9 同源（读端点不按角色裁剪），但危害更具体：M-9 是「看到已发生的审查过程」，
+这里是「看到尚未提交的半成品」。
 
 ---
 
@@ -304,6 +341,7 @@ rectification["feedbackComment"] = body.get("comment") or body.get("description"
 | 哈希不符拒绝 | 声明哈希与实际存储不符时拒绝（「上传文件哈希与完成清单不一致」） |
 | 未上传内容的原件下载 | 正确拒绝，**不存在串读其他文档内容的问题**（已用不同文件对照验证：射线检测报告与焊工证返回各自内容，哈希不同） |
 | 证据就绪门禁 | 空壳文档不计入满足项，正式复核仍被拦住 |
+| 已提交资料生命周期 | 监检 `package.bindings` 按 `SUBMITTED_DOCUMENT_BINDING_STATUSES` 过滤，只审已提交资料，不看施工方草稿（规则明确、有常量有测试）|
 | 关键写操作的必填校验 | 打回单、AI 建议驳回、ReviewRun 取消传错字段名时均正确返回 40001，不静默接受 |
 | 服务端派生优先 | `advisoryOnly` 由 reviewMode 派生、`closeStatus` 不由创建方自定，调用方无法自行提级或改写关键状态 |
 | 六角色登录 | 全部成功，JWT 正常签发 |
