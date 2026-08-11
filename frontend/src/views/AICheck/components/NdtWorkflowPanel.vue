@@ -29,7 +29,8 @@ import type {
 } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
-import { documentBusinessStatus } from '@/utils/documentPipelineStatus'
+import { documentBusinessStatus, documentPipelineStatus } from '@/utils/documentPipelineStatus'
+import { canRetryDocumentUpload, canSubmitNdtDocumentUpload } from '@/utils/documentUploadActions'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import {
   NDT_ATOMIC_MATERIALS,
@@ -42,13 +43,6 @@ import {
 type NdtMaterialChecklistItem = NdtAtomicMaterial & {
   uploadedCount: number
 }
-type NdtOcrMetadataRow = {
-  category: string
-  source: string
-  fields: string
-  status: string
-}
-
 const props = defineProps<{
   node?: ProjectTreeNode
   films: NdtFilm[]
@@ -91,6 +85,7 @@ const emit = defineEmits<{
   uploadReport: []
   replaceMaterialBindings: [payload: { documentId: string; nodeIds: number[] }]
   submitMaterial: [payload: { documentId: string; bindingIds: string[] }]
+  retryUpload: [documentId: string]
 }>()
 
 const rectificationForm = reactive({
@@ -192,15 +187,17 @@ const atomicFileRows = computed(() =>
     )
     const approvalStatus = ndtFileApprovalStatus(file)
     const canEdit = approvalStatus === '草稿' || approvalStatus === '需补正'
+    const uploadStatus = documentPipelineStatus(file)
     return {
       ...file,
       materialTypeDisplayName: file.materialTypeName || file.materialTypeCode || '未分类资料',
       nodeIds: [...new Set(bindings.map((binding) => binding.nodeId))].sort((a, b) => a - b),
       businessRuleNames: ndtBusinessRuleNames(bindings.map((binding) => binding.nodeId)),
       approvalStatus,
+      uploadStatus,
       editableBindingIds: canEdit ? editableBindings.map((binding) => binding.id) : [],
       canEdit,
-      canSubmit: canEdit
+      canSubmit: canSubmitNdtDocumentUpload(approvalStatus, uploadStatus)
     }
   })
 )
@@ -266,27 +263,6 @@ const ndtAssetRows = computed(() => {
   ]
 })
 
-const ocrMetadataRows = computed<NdtOcrMetadataRow[]>(() => [
-  {
-    category: '底片与影像资料',
-    source: '底片、数字影像、底片包索引',
-    fields: '底片编号、焊口编号、底片包索引、影像文件名、评定级别、缺陷位置',
-    status: props.films.length ? '已识别' : '待上传'
-  },
-  {
-    category: '检测记录',
-    source: '委托单、检测记录、原始记录',
-    fields: '记录编号、委托单号、报告编号、工艺编号、设备编号、人员证书、检测结论',
-    status: props.records.length ? '已识别' : '待上传'
-  },
-  {
-    category: '检测报告',
-    source: 'RT/UT/MT/PT 检测报告',
-    fields: '报告编号、检测方法、检测比例、执行标准、报告结论、检测/复核人员',
-    status: props.reports.length ? '已识别' : '待上传'
-  }
-])
-
 const handleMaterialUpload = (material: NdtAtomicMaterial) => emit('uploadMaterial', material)
 
 const openBindingDialog = (row: (typeof atomicFileRows.value)[number]) => {
@@ -307,6 +283,10 @@ const saveBindingAdjustment = () => {
 const submitAtomicFile = (row: (typeof atomicFileRows.value)[number]) => {
   if (!row.canSubmit) return
   emit('submitMaterial', { documentId: row.id, bindingIds: row.editableBindingIds })
+}
+
+const retryAtomicFileUpload = (row: (typeof atomicFileRows.value)[number]) => {
+  if (canRetryDocumentUpload(row.uploadStatus)) emit('retryUpload', row.id)
 }
 
 const handleCreateFilm = async () => {
@@ -490,40 +470,11 @@ const handleRectifyNdt = async (rectificationId?: string) => {
         </ElTable>
       </section>
 
-      <section class="ndt-ocr-panel">
-        <div class="ndt-section-head">
-          <div>
-            <strong>OCR 字段确认</strong>
-            <p
-              >OCR
-              在上传完成后异步运行，用于辅助核对字段；排队中或识别失败均不阻断单文件提交审批。</p
-            >
-          </div>
-          <ElTag type="info" effect="plain">辅助核对，不影响提交</ElTag>
-        </div>
-        <ElTable :data="ocrMetadataRows" border>
-          <ElTableColumn type="index" label="序号" width="72" />
-          <ElTableColumn prop="category" label="资料类别" width="150" show-overflow-tooltip />
-          <ElTableColumn prop="source" label="识别来源" min-width="220" show-overflow-tooltip />
-          <ElTableColumn prop="fields" label="关键字段" min-width="360" show-overflow-tooltip />
-          <ElTableColumn label="识别状态" width="120">
-            <template #default="{ row }">
-              <ElTag :type="getStatusTagType(row.status)" size="small" effect="plain">
-                {{ row.status }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-      </section>
-
       <section class="ndt-library">
         <div class="ndt-section-head">
           <div>
             <strong>已上传资料</strong>
-            <p
-              >请逐个核对资料类型和 OCR
-              状态后分别提交审批；业务规则可关联也可不关联，无需等待其他资料上传完成。</p
-            >
+            <p>请逐个核对资料类型；文件上传成功后可分别提交审批，无需等待其他资料上传完成。</p>
           </div>
           <div class="ndt-actions">
             <ElButton plain @click="filmDialogVisible = true">登记底片编号</ElButton>
@@ -554,14 +505,19 @@ const handleRectifyNdt = async (rectificationId?: string) => {
               {{ row.businessRuleNames.join('；') || '尚未关联' }}
             </template>
           </ElTableColumn>
-          <ElTableColumn label="OCR" width="110">
+          <ElTableColumn label="上传状态" width="130">
             <template #default="{ row }">
-              <ElTag
-                :type="getStatusTagType(documentBusinessStatus(row))"
-                size="small"
-                effect="plain"
+              <ElButton
+                v-if="canRetryDocumentUpload(row.uploadStatus)"
+                link
+                type="danger"
+                :disabled="loading"
+                @click="retryAtomicFileUpload(row)"
               >
-                {{ row.currentOcrStatus }}
+                失败重新上传
+              </ElButton>
+              <ElTag v-else :type="getStatusTagType(row.uploadStatus)" size="small" effect="plain">
+                {{ row.uploadStatus }}
               </ElTag>
             </template>
           </ElTableColumn>

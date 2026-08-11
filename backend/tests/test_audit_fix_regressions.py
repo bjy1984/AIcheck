@@ -1225,6 +1225,48 @@ def test_m5_repeated_upload_of_same_content_is_flagged() -> None:
 # ---- M-6：打回后无法用新上传的资料补正 ----
 
 
+def _complete_uploaded_file_pipeline(
+    project_id: str,
+    session_id: str,
+    target: dict[str, object],
+    payload: bytes,
+    headers: dict[str, str],
+    key: str,
+) -> None:
+    """测试中模拟对象存储确认与异步处理完成，避免在「上传中」状态提交。"""
+    import hashlib
+
+    completed = client.post(
+        f"/api/projects/{project_id}/documents/upload-session/{session_id}/complete",
+        headers={**headers, "Idempotency-Key": f"{key}-complete"},
+        json={
+            "completedFiles": [
+                {
+                    "documentVersionId": target["documentVersionId"],
+                    "fileSize": len(payload),
+                    "contentHash": hashlib.sha256(payload).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert completed.json()["code"] == 0, completed.text
+    document = repo.find_one("documents", str(target["documentId"]))
+    version = repo.find_one("versions", str(target["documentVersionId"]))
+    assert document is not None and version is not None
+    knowledge_file = next(
+        item
+        for item in repo.state["knowledge_files"]
+        if str(item.get("documentVersionId") or "") == str(target["documentVersionId"])
+    )
+    document["currentOcrStatus"] = "已识别"
+    version["ocrStatus"] = "已识别"
+    version["sliceStatus"] = "已切片"
+    version["vectorStatus"] = "已向量化"
+    knowledge_file["ocrStatus"] = "已识别"
+    knowledge_file["sliceStatus"] = "已切片"
+    knowledge_file["vectorStatus"] = "已向量化"
+
+
 def test_m6_rectification_accepts_newly_uploaded_material() -> None:
     """监检打回的典型理由就是「资料不对/不全，请补充」——施工方本应上传新资料。
 
@@ -1270,6 +1312,14 @@ def test_m6_rectification_accepts_newly_uploaded_material() -> None:
             headers={**contractor, **seed_target["headers"]},
             content=seed_payload,
         ).json()["code"] == 0
+        _complete_uploaded_file_pipeline(
+            project_id,
+            seed_session.json()["data"]["uploadSessionId"],
+            seed_target,
+            seed_payload,
+            contractor,
+            "m6-seed-upload",
+        )
         assert client.post(
             f"/api/projects/{project_id}/documents/bindings",
             headers={**contractor, "Idempotency-Key": "m6-seed-bind"},
@@ -1327,6 +1377,14 @@ def test_m6_rectification_accepts_newly_uploaded_material() -> None:
         content=payload,
     )
     assert put.json()["code"] == 0, put.text
+    _complete_uploaded_file_pipeline(
+        project_id,
+        session.json()["data"]["uploadSessionId"],
+        target,
+        payload,
+        contractor,
+        "m6-new-material",
+    )
 
     bind = client.post(
         f"/api/projects/{project_id}/documents/bindings",

@@ -4,7 +4,8 @@ export const getStatusTagType = (status?: string) => {
     status.includes('通过') ||
     status.includes('归档') ||
     status.includes('健康') ||
-    status.includes('完成')
+    status.includes('完成') ||
+    status.includes('成功')
   )
     return 'success'
   if (status.includes('补正') || status.includes('作废') || status.includes('失败')) return 'danger'

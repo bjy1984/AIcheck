@@ -140,7 +140,7 @@ watch(
             </ElCheckbox>
           </ElCheckboxGroup>
         </div>
-        <small>每个文件上传后单独保存为草稿；OCR 在后台运行，不会自动提交审批。</small>
+        <small>每个文件上传后单独保存为草稿；上传处理成功后才可提交审批。</small>
       </div>
 
       <ElAlert
