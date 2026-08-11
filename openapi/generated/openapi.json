@@ -18524,6 +18524,87 @@
         ]
       }
     },
+    "/api/projects/{project_id}/documents/{document_id}/retry-upload": {
+      "post": {
+        "operationId": "retry_failed_document_upload_api_projects__project_id__documents__document_id__retry_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Failed Document Upload",
+        "tags": [
+          "AIcheck API"
+        ]
+      }
+    },
     "/api/projects/{project_id}/documents/{document_id}/review-feedback": {
       "get": {
         "operationId": "document_review_feedback_api_projects__project_id__documents__document_id__review_feedback_get",
@@ -39698,6 +39779,87 @@
           }
         },
         "summary": "Document Preview Url",
+        "tags": [
+          "AIcheck API"
+        ]
+      }
+    },
+    "/projects/{project_id}/documents/{document_id}/retry-upload": {
+      "post": {
+        "operationId": "retry_failed_document_upload_projects__project_id__documents__document_id__retry_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Failed Document Upload",
         "tags": [
           "AIcheck API"
         ]

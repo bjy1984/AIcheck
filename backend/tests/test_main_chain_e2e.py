@@ -87,7 +87,30 @@ def upload_document(file_name: str, key: str) -> str:
         ),
         f"{key}:完成上传",
     )
-    return str(target["documentId"])
+    document_id = str(target["documentId"])
+    mark_ocr_pipeline_complete(document_id)
+    return document_id
+
+
+def mark_ocr_pipeline_complete(document_id: str) -> None:
+    """OCR/切片/向量化的可控替身。
+
+    测试环境不跑 worker，管线状态停在「排队中」；而施工方提交现在要求管线完成
+    （2026-08-10 上传重试专项加的门：document_upload_pipeline_complete）。
+    这里直接把三段状态置为完成——与该专项自己的契约测试同一做法。
+    """
+    document = repo.find_one("documents", document_id)
+    assert document, f"文档 {document_id} 不存在"
+    version = repo.find_one("versions", str(document.get("currentVersionId") or "")) or {}
+    document["currentOcrStatus"] = "已识别"
+    version["ocrStatus"] = "已识别"
+    version["sliceStatus"] = "已切片"
+    version["vectorStatus"] = "已向量化"
+    for knowledge_file in repo.state.get("knowledge_files", []):
+        if str(knowledge_file.get("documentVersionId") or "") == str(document.get("currentVersionId") or ""):
+            knowledge_file["ocrStatus"] = "已识别"
+            knowledge_file["sliceStatus"] = "已切片"
+            knowledge_file["vectorStatus"] = "已向量化"
 
 
 def bind_to_node(document_id: str, key: str) -> str:
