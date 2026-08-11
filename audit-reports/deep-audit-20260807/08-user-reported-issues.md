@@ -30,6 +30,27 @@ return (configured or "mineru").lower()
 `status: succeeded`，只是 `signatureCount: 0` —— **失败表现为「没有印章」而非「未检测」**，
 判定链会据此认为资料缺少印章。
 
+### 更正与修复（2026-08-11）
+
+**关于 MinerU 的判断有误，在此更正**：`load_mineru_config` 本就带凭证校验，
+无 API Key 时抛 `MINERU_NOT_CONFIGURED`，**失败是显式的、不是静默的**。
+原文「在线 OCR 转换必然失败」属实（默认 provider 是 mineru 而配置缺凭证），
+但「静默失败」的定性错误。用户已提供 MinerU 凭证，配置补齐即可。
+
+**公章部分属实且已修**（提交 `4d7222c`）：
+- `recognize_document_seals` 在管线全关时返回 `status: capability_disabled`、
+  `sealCount: None`（而非 0），并列出各管线开关状态；
+- `recognize_signatures_and_seals` 向上透传该状态；
+- 聚合器新增 `capability_disabled → evidence_insufficient` 分支。
+
+修复前实测漏洞：`capability_disabled` 与其他工具的 `passed` 同在时，
+**整体判为 `passed`** —— 即「印章没查」被当成通过。修复后为 `evidence_insufficient`；
+真实的 `failed` 仍优先。管线启用后 `sealCount: 0` 重新成为可信结论。
+
+**本地无法启用公章管线**：模型盘 `/Volumes/7up/aicheck-ocr-models/official_models`
+未挂载，`PP-OCRv4_server_seal_det` 等模型不可用；`agentdesign` 后端路径同样不存在。
+启用需要先挂载模型盘。
+
 ---
 
 ## U-2 · 点击业务节点后加载缓慢 【P1】
@@ -151,11 +172,11 @@ void refreshPostUploadPipelineStatus() → await loadNodePackage(activeNodeId.va
 
 | # | 问题 | 级别 | 确认结论 |
 |---|---|---|---|
-| U-1 | 公章检测 + MinerU | P1 | 属实——两条公章管线均关闭，MinerU 无凭证却是默认 provider |
-| U-2 | 节点加载缓慢 | P1 | 属实——8 请求 / 1.8 秒 / 4.7 MB |
-| U-3 | 状态显示技术过程 | P2 | 属实——切片、向量化直接暴露给施工方 |
-| U-4 | 无提交确认弹窗 | P2 | 属实——删除有确认，提交没有 |
-| U-5 | 无重试 + 失败仍可提交 | P1 | 属实且更严重——空壳资料可完成提交进入审查 |
+| U-1 | 公章检测 + MinerU | P1 | 公章属实**已修**（4d7222c）；MinerU「静默失败」的定性有误，已更正——它会显式报 MINERU_NOT_CONFIGURED |
+| U-2 | 节点加载缓慢 | P1 | 属实**已修**（da6f14d）——1801ms → 831ms（-54%）|
+| U-3 | 状态显示技术过程 | P2 | 属实**已修**（da6f14d）——提交方改为 上传中/上传成功/上传失败 |
+| U-4 | 无提交确认弹窗 | P2 | 属实**已修**（da6f14d）——提交/打回/采纳建议均加确认 |
+| U-5 | 无重试 + 失败仍可提交 | P1 | 属实且更严重，**已修**（406a332）——挂载/提交三入口按内容哈希校验 |
 | U-6 | 页面频繁整体刷新 | P1 | 属实——5 秒/10 秒轮询各拉一次 665 KB 全量包 |
 
 **关联既有发现**：U-5 与 M-4 同源（空壳文档），U-2 与 U-6 同源
