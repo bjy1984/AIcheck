@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -92,25 +93,79 @@ def upload_document(file_name: str, key: str) -> str:
     return document_id
 
 
-def mark_ocr_pipeline_complete(document_id: str) -> None:
-    """OCR/切片/向量化的可控替身。
+# 一份贴近真实 OCR 产物的载荷：带页码、带 bbox、置信度有高有低。
+# 用它是为了让 apply_ocr_result 真正跑一遍字段落库与证据链生成，而不是绕过。
+WELDER_CERT_OCR_RESULT = {
+    "fileName": "焊工资格证-链路测试.pdf",
+    # 可用性由 status + fragments/tables 判定（libs/ocr_readiness.py），
+    # 不是自己声明一个 ingestionStatus 就算数——第一版就在这里写错过
+    "status": "success",
+    "fragments": [
+        {"text": "特种设备作业人员证", "pageNo": 1, "bbox": [100, 120, 520, 180]},
+        {"text": "证书编号 TS6J-2024-03158", "pageNo": 1, "bbox": [120, 240, 420, 286]},
+        {"text": "姓名 王建国", "pageNo": 1, "bbox": [120, 300, 260, 344]},
+        {"text": "合格项目 GTAW-FeII-6G-3/57-FefS-02/11/12", "pageNo": 2, "bbox": [118, 402, 560, 448]},
+    ],
+    "fields": [
+        {
+            "fieldName": "证书编号",
+            "fieldValue": "TS6J-2024-03158",
+            "pageNo": 1,
+            "bbox": [120, 240, 420, 286],
+            "confidence": 0.96,
+        },
+        {
+            "fieldName": "姓名",
+            "fieldValue": "王建国",
+            "pageNo": 1,
+            "bbox": [120, 300, 260, 344],
+            "confidence": 0.93,
+        },
+        {
+            # 低置信度字段必须照样落库并标记，不能因为「不够确定」就丢掉——
+            # 丢掉的结果是监检看不到这一项，也就不会去核对（M-7 的病根）
+            "fieldName": "合格项目",
+            "fieldValue": "GTAW-FeII-6G-3/57-FefS-02/11/12",
+            "pageNo": 2,
+            "bbox": [118, 402, 560, 448],
+            "confidence": 0.61,
+        },
+    ],
+}
 
-    测试环境不跑 worker，管线状态停在「排队中」；而施工方提交现在要求管线完成
-    （2026-08-10 上传重试专项加的门：document_upload_pipeline_complete）。
-    这里直接把三段状态置为完成——与该专项自己的契约测试同一做法。
+
+def run_ocr_pipeline(document_id: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
+    """走真实的 OCR 落库路径，而不是直接改状态。
+
+    原实现把 ocrStatus/sliceStatus/vectorStatus 直接置为完成，链路是通了，但
+    apply_ocr_result 里「字段落库 + 证据链生成 + bbox 保留」这段代码端到端从未被跑过——
+    而那正是本轮出现静默丢字段（M-7）的地方。现在喂真实形状的产物，让这段代码
+    真的执行，再断言产物能从 API 出来。
+
+    切片/向量化仍是替身：它们不产出审查依据，且需要真实 worker 与 pgvector。
     """
     document = repo.find_one("documents", document_id)
     assert document, f"文档 {document_id} 不存在"
-    version = repo.find_one("versions", str(document.get("currentVersionId") or "")) or {}
-    document["currentOcrStatus"] = "已识别"
-    version["ocrStatus"] = "已识别"
-    version["sliceStatus"] = "已切片"
-    version["vectorStatus"] = "已向量化"
-    for knowledge_file in repo.state.get("knowledge_files", []):
-        if str(knowledge_file.get("documentVersionId") or "") == str(document.get("currentVersionId") or ""):
-            knowledge_file["ocrStatus"] = "已识别"
-            knowledge_file["sliceStatus"] = "已切片"
-            knowledge_file["vectorStatus"] = "已向量化"
+    version_id = str(document.get("currentVersionId") or "")
+    assert version_id, f"文档 {document_id} 没有当前版本"
+
+    applied = repo.apply_ocr_result(document_id, version_id, result or WELDER_CERT_OCR_RESULT)
+
+    version = repo.find_one("versions", version_id) or {}
+    if str(version.get("ocrStatus") or "") == "已识别":
+        # 切片与向量化不影响审查依据，保持替身
+        version["sliceStatus"] = "已切片"
+        version["vectorStatus"] = "已向量化"
+        for knowledge_file in repo.state.get("knowledge_files", []):
+            if str(knowledge_file.get("documentVersionId") or "") == version_id:
+                knowledge_file["ocrStatus"] = "已识别"
+                knowledge_file["sliceStatus"] = "已切片"
+                knowledge_file["vectorStatus"] = "已向量化"
+    return applied
+
+
+def mark_ocr_pipeline_complete(document_id: str) -> None:
+    run_ocr_pipeline(document_id)
 
 
 def bind_to_node(document_id: str, key: str) -> str:
@@ -252,3 +307,84 @@ def test_main_chain_upload_review_return_rectify_pass(monkeypatch) -> None:
     else:
         raise AssertionError("已通过节点不应能被改回待提交")
     assert node_status() == "已通过"
+
+
+# ---- OCR 环节：主链路此前从上传直接跳到提交，这段代码端到端从未被跑过 ----
+
+
+def test_ocr_products_reach_the_api_with_locatable_coordinates() -> None:
+    """OCR 抽取 → 字段落库 → 证据链 → API 可读，逐段断言。
+
+    这条链是「证据可溯源」的地基：字段没落库，监检就没东西可核；证据链没 bbox，
+    界面就只能报页码、画不出框。两者都属于「坏了也不会报错」的那类。
+    """
+    document_id = upload_document("焊工证-OCR链路.pdf", "ocr-chain")
+    applied = run_ocr_pipeline(document_id)
+
+    assert applied["status"] != "failed", f"OCR 应判定为可用：{applied}"
+    assert applied["fieldCount"] == 3, f"三个字段都要落库，实际 {applied['fieldCount']}"
+
+    fields = ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/documents/{document_id}/ocr-fields",
+            headers=INSPECTION,
+        ),
+        "读 OCR 字段",
+    )
+    by_name = {str(item["fieldName"]): item for item in fields}
+    assert set(by_name) == {"证书编号", "姓名", "合格项目"}, f"字段有丢失：{sorted(by_name)}"
+    assert by_name["证书编号"]["fieldValue"] == "TS6J-2024-03158"
+
+    # 低置信度字段必须落库并被标出来，而不是悄悄丢掉——丢掉的结果是监检
+    # 根本看不到这一项，也就不会去核对（M-7 的病根）
+    assert by_name["合格项目"]["reviewStatus"] == "低置信度"
+    assert by_name["证书编号"]["reviewStatus"] == "已确认"
+
+    # 页码要跟着字段走：合格项目在第 2 页，界面据此跳页
+    assert by_name["合格项目"]["pageNo"] == 2
+
+    detail = ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/documents/{document_id}",
+            headers=INSPECTION,
+        ),
+        "读文档详情",
+    )
+    links = detail.get("evidenceLinks") or []
+    assert len(links) >= 3, f"每个字段都应生成证据链条目，实际 {len(links)}"
+
+    # bbox 是前端画高亮的唯一依据。后端为它付了完整代价（必填校验、
+    # bboxCoverage 就绪度指标），这里断言它真的能一路传到 API。
+    linked = {str(item.get("fieldName")): item for item in links}
+    assert linked["证书编号"]["bbox"] == [120, 240, 420, 286]
+    assert linked["合格项目"]["pageNo"] == 2
+
+    # 字段 → 证据链的引用必须接得上，否则界面拿字段查不到坐标
+    evidence_ids = {str(item.get("id")) for item in links}
+    for name, field in by_name.items():
+        assert str(field.get("evidenceLinkId")) in evidence_ids, f"{name} 的证据引用断了"
+
+
+def test_failed_ocr_blocks_submission_instead_of_passing_an_empty_shell() -> None:
+    """OCR 失败时不能让空壳资料混进审查视野（U-5 的端到端形态）。"""
+    document_id = upload_document("扫描失败件.pdf", "ocr-failed")
+    applied = run_ocr_pipeline(
+        document_id,
+        {"fileName": "扫描失败件.pdf", "status": "failed", "fragments": [], "fields": []},
+    )
+    assert applied["status"] == "failed"
+    assert applied["fieldCount"] == 0
+
+    binding_id = bind_to_node(document_id, "ocr-failed")
+    response = client.post(
+        f"/api/projects/{PROJECT_ID}/submissions",
+        headers={**CONTRACTOR, "Idempotency-Key": "ocr-failed-submit", "If-Match": "*"},
+        json={"nodeIds": [NODE_ID], "bindingIds": [binding_id], "batchName": "失败件提交"},
+    )
+    payload = response.json()
+    assert payload["code"] != 0, "OCR 失败的资料不该能提交"
+    assert document_id in (payload.get("data") or {}).get("incompleteDocumentIds", []), payload
+
+    # 失败必须留下可诊断的痕迹，而不是只把状态置为失败
+    document = repo.find_one("documents", document_id)
+    assert document["currentOcrStatus"] == "识别失败"
