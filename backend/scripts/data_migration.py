@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -110,6 +111,19 @@ def validate_manifest(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
 def safe_user_roles(roles: Iterable[str], *, bootstrap_role: str) -> list[str]:
     preserved = {"postgres", bootstrap_role}
     return sorted(role for role in roles if role not in preserved and not role.startswith("pg_"))
+
+
+def bootstrap_role_password_sql(globals_sql: str, *, role: str) -> str:
+    """Copy a bootstrap role's SCRAM verifier without changing its fixed privileges."""
+    pattern = re.compile(
+        rf"^ALTER ROLE {re.escape(role)} WITH .* PASSWORD "
+        r"('SCRAM-SHA-256[^']*');$",
+        re.MULTILINE,
+    )
+    match = pattern.search(globals_sql)
+    if match is None:
+        raise BundleValidationError(f"SCRAM password verifier is missing for bootstrap role {role}")
+    return f"ALTER ROLE {role} PASSWORD {match.group(1)};"
 
 
 def require_destructive_confirmation(
@@ -280,6 +294,10 @@ def main() -> int:
     upload_parser.add_argument("--ssh-host", default="dev-bjy")
     upload_parser.add_argument("--remote-root", default="/home/dev-bjy/aicheck-migrations")
 
+    role_password_parser = subparsers.add_parser("bootstrap-role-password-sql")
+    role_password_parser.add_argument("--globals", type=Path, required=True)
+    role_password_parser.add_argument("--role", required=True)
+
     args = parser.parse_args()
     if args.command == "export":
         result = export_bundle(
@@ -303,6 +321,14 @@ def main() -> int:
         if (root / "READY").read_text(encoding="utf-8").strip() != manifest["migrationId"]:
             raise BundleValidationError("bundle READY marker does not match migration ID")
         print(json.dumps({"valid": True, "migrationId": manifest["migrationId"]}))
+        return 0
+    if args.command == "bootstrap-role-password-sql":
+        print(
+            bootstrap_role_password_sql(
+                args.globals.read_text(encoding="utf-8"),
+                role=args.role,
+            )
+        )
         return 0
     remote = upload_bundle(
         UploadConfig(

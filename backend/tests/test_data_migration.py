@@ -11,6 +11,7 @@ from scripts.data_migration import (
     BundleValidationError,
     ExportConfig,
     UploadConfig,
+    bootstrap_role_password_sql,
     export_bundle,
     require_destructive_confirmation,
     safe_user_roles,
@@ -94,6 +95,18 @@ def test_safe_user_roles_preserves_postgres_builtin_and_bootstrap_roles() -> Non
         "litellm",
         "temporary",
     ]
+
+
+def test_bootstrap_role_sync_preserves_privileges_and_copies_only_scram_password() -> None:
+    globals_sql = """
+CREATE ROLE aicheck;
+ALTER ROLE aicheck WITH NOSUPERUSER INHERIT NOCREATEROLE NOCREATEDB LOGIN NOREPLICATION NOBYPASSRLS PASSWORD 'SCRAM-SHA-256$4096:salt$stored:server';
+"""
+
+    assert bootstrap_role_password_sql(globals_sql, role="aicheck") == (
+        "ALTER ROLE aicheck PASSWORD "
+        "'SCRAM-SHA-256$4096:salt$stored:server';"
+    )
 
 
 def test_destructive_restore_requires_matching_id_and_explicit_confirmation() -> None:
@@ -299,3 +312,19 @@ def test_restore_script_refuses_to_touch_target_without_confirmation(tmp_path: P
 
     assert result.returncode == 64
     assert "--confirm-replace" in result.stderr
+
+
+def test_server_runtime_profile_never_mutates_restored_data() -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "deploy_runtime_profile.sh"
+
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "bootstrapLocalRoles": False,
+        "enableDemoData": False,
+    }

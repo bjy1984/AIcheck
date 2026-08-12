@@ -113,6 +113,12 @@ awk '
 ' "$bundle_root/globals.sql" > "$filtered_globals"
 docker exec -i "$postgres_container" psql -U "$postgres_user" -d postgres -v ON_ERROR_STOP=1 < "$filtered_globals"
 
+# The existing cluster's bootstrap role cannot lose SUPERUSER, but its password
+# verifier must still match the source so the restored application credentials work.
+python3 "$(dirname "$0")/data_migration.py" bootstrap-role-password-sql \
+  --globals "$bundle_root/globals.sql" --role "$postgres_user" \
+  | docker exec -i "$postgres_container" psql -U "$postgres_user" -d postgres -v ON_ERROR_STOP=1
+
 for database in aicheck litellm workflow; do
   docker exec -i "$postgres_container" pg_restore -U "$postgres_user" -d "$database" \
     --clean --if-exists --no-owner < "$bundle_root/databases/$database.dump"

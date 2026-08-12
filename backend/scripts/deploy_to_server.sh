@@ -14,6 +14,8 @@
 #   bash scripts/deploy_to_server.sh --frontend # 只更新前端静态资源
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/deploy_runtime_profile.sh"
 HOST="${AICHECK_DEPLOY_HOST:-dev-bjy}"
 REMOTE_HOME=/home/dev-bjy
 SERVER_DATA_ROOT="${AICHECK_SERVER_DATA_ROOT:-$REMOTE_HOME/aicheck-data}"
@@ -29,6 +31,18 @@ MODE="${1:-all}"
 # backend/data/visual_extraction_pages 是被误提交的 OCR 页面图产物（1106 个 PNG，
 # 约 550MB）。部署不需要它，剔除后包体从 557MB 降到 3.5MB。
 sync_backend() {
+  local server_postgres_password="${AICHECK_SERVER_POSTGRES_PASSWORD:-}"
+  local local_env_file="${AICHECK_LOCAL_ENV_FILE:-$REPO_ROOT/backend/.env}"
+  if [ -z "$server_postgres_password" ] && [ -f "$local_env_file" ]; then
+    server_postgres_password="$(sed -n 's/^AICHECK_POSTGRES_PASSWORD=//p' "$local_env_file" | tail -1)"
+  fi
+  if [ -z "$server_postgres_password" ]; then
+    echo "缺少数据库口令：设置 AICHECK_SERVER_POSTGRES_PASSWORD，或提供 $local_env_file" >&2
+    return 64
+  fi
+  local encoded_postgres_password
+  encoded_postgres_password="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$server_postgres_password")"
+
   echo "==> 打包后端（HEAD=$COMMIT）"
   git -C "$REPO_ROOT" archive --format=tar HEAD backend openapi > "$STAGE/src.tar"
   python3 - "$STAGE/src.tar" "$STAGE/src.tar.gz" <<'PY'
@@ -70,20 +84,20 @@ PY
     cd $REMOTE_HOME/AIcheck/backend
     docker build -q -f Dockerfile.server -t aicheck-api:local . >/dev/null
     docker run --rm --network aicheck-net \
-      -e AICHECK_DATABASE_URL=postgresql://aicheck:AicheckProd2026@aicheck-postgres:5432/aicheck \
+      -e AICHECK_DATABASE_URL=postgresql://aicheck:$encoded_postgres_password@aicheck-postgres:5432/aicheck \
       -e AICHECK_TENANT_ID=TENANT-DEFAULT \
       aicheck-api:local python scripts/migrate_backend.py | tail -1
     docker rm -f aicheck-api >/dev/null 2>&1 || true
     docker run -d --name aicheck-api --network aicheck-net --restart unless-stopped \
       -v $SERVER_DATA_ROOT/files/output:/app/output \
       -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
-      -e AICHECK_DATABASE_URL=postgresql://aicheck:AicheckProd2026@aicheck-postgres:5432/aicheck \
+      -e AICHECK_DATABASE_URL=postgresql://aicheck:$encoded_postgres_password@aicheck-postgres:5432/aicheck \
       -e AICHECK_TENANT_ID=TENANT-DEFAULT \
       -e AICHECK_TENANT_MODE=isolated \
       -e AICHECK_REDIS_URL=redis://aicheck-redis:6379/0 \
       -e AICHECK_REQUIRE_AUTH=true \
-      -e AICHECK_ENABLE_DEMO_DATA=true \
-      -e AICHECK_BOOTSTRAP_LOCAL_ROLES=true \
+      -e AICHECK_ENABLE_DEMO_DATA=$AICHECK_RUNTIME_ENABLE_DEMO_DATA \
+      -e AICHECK_BOOTSTRAP_LOCAL_ROLES=$AICHECK_RUNTIME_BOOTSTRAP_LOCAL_ROLES \
       -e AICHECK_STRICT_PRODUCTION=false \
       -e AICHECK_JWT_SECRET=AicheckProdJwt-2026-ChangeMe \
       -e AICHECK_ALLOWED_HOSTS='*' \
@@ -99,7 +113,7 @@ import hashlib, pathlib
 print('容器内 routes.py:', hashlib.sha256(pathlib.Path('/app/apps/api/routes.py').read_bytes()).hexdigest()[:16])
 \"
   "
-  local_hash=$(shasum -a 256 "$REPO_ROOT/backend/apps/api/routes.py" | cut -c1-16)
+  local_hash=$(LC_ALL=C shasum -a 256 "$REPO_ROOT/backend/apps/api/routes.py" | cut -c1-16)
   echo "  本地 routes.py:   $local_hash"
 }
 
@@ -129,24 +143,10 @@ verify() {
     code=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" http://127.0.0.1:${GATEWAY_PORT}/)
     echo "  前端首页: HTTP $code"
     [ "$code" = "200" ] || exit 1
-    login=$(curl -s --max-time 10 -X POST http://127.0.0.1:${GATEWAY_PORT}/api/auth/login \
-      -H "Content-Type: application/json" -d "{\"username\":\"inspection\",\"password\":\"inspection\"}")
-    echo "$login" | grep -q "\"code\": *0" && echo "  登录: 通过" || { echo "  登录失败: $login"; exit 1; }
-
-    # 行为探针：健康检查全绿并不代表新代码生效（部署过一次旧容器实例才发现）。
-    # 挑一条本轮修复的、行为可判定的规则实测——施工方不得读 AI 判定理由（O-1）。
-    tc=$(curl -s --max-time 10 -X POST http://127.0.0.1:${GATEWAY_PORT}/api/auth/login \
-      -H "Content-Type: application/json" -d "{\"username\":\"contractor\",\"password\":\"contractor\"}" \
-      | python3 -c "import json,sys;print(json.load(sys.stdin).get(\"data\",{}).get(\"token\",\"\"))")
-    probe=$(curl -s --max-time 10 \
-      http://127.0.0.1:${GATEWAY_PORT}/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-runs \
-      -H "Authorization: Bearer $tc" | python3 -c "import json,sys;print(json.load(sys.stdin).get(\"code\"))")
-    if [ "$probe" = "403" ]; then
-      echo "  行为探针(O-1 施工方读 AI 判定): 403 已拦截"
-    else
-      echo "  行为探针失败：施工方读 AI 判定返回 $probe（期望 403）——新代码可能没生效"
-      exit 1
-    fi
+    unauthenticated=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" \
+      http://127.0.0.1:${GATEWAY_PORT}/api/projects)
+    [ "$unauthenticated" = "401" ] || { echo "  未认证请求未被拦截: HTTP $unauthenticated"; exit 1; }
+    echo "  未认证访问: HTTP 401 已拦截"
     docker ps --filter name=aicheck- --format "  {{.Names}}  {{.Status}}"
 REMOTE_VERIFY
 }
