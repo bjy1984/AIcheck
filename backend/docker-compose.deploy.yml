@@ -153,6 +153,42 @@ services:
       AICHECK_MINERU_JOB_TIMEOUT_SECONDS: ${AICHECK_MINERU_JOB_TIMEOUT_SECONDS:-1800}
       AICHECK_MINERU_MAX_DOWNLOAD_BYTES: ${AICHECK_MINERU_MAX_DOWNLOAD_BYTES:-536870912}
 
+
+  # 版面/印章识别、知识切片与向量化：CPU 密集，单独进程避免饿死轻量任务
+  cpu-heavy-worker-service:
+    <<: *deploy-worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q cpu.heavy
+    environment:
+      <<: *deploy-worker-environment
+      AICHECK_MINERU_TIMEOUT_SECONDS: ${AICHECK_MINERU_TIMEOUT_SECONDS:-60}
+      AICHECK_MINERU_POLL_INTERVAL_SECONDS: ${AICHECK_MINERU_POLL_INTERVAL_SECONDS:-3}
+      AICHECK_MINERU_JOB_TIMEOUT_SECONDS: ${AICHECK_MINERU_JOB_TIMEOUT_SECONDS:-1800}
+      AICHECK_MINERU_MAX_DOWNLOAD_BYTES: ${AICHECK_MINERU_MAX_DOWNLOAD_BYTES:-536870912}
+
+
+  # 远端 LLM 调用：受外部服务时延支配，与本地计算分开排队
+  llm-remote-worker-service:
+    <<: *deploy-worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q llm.remote
+    environment:
+      <<: *deploy-worker-environment
+      AICHECK_MINERU_TIMEOUT_SECONDS: ${AICHECK_MINERU_TIMEOUT_SECONDS:-60}
+      AICHECK_MINERU_POLL_INTERVAL_SECONDS: ${AICHECK_MINERU_POLL_INTERVAL_SECONDS:-3}
+      AICHECK_MINERU_JOB_TIMEOUT_SECONDS: ${AICHECK_MINERU_JOB_TIMEOUT_SECONDS:-1800}
+      AICHECK_MINERU_MAX_DOWNLOAD_BYTES: ${AICHECK_MINERU_MAX_DOWNLOAD_BYTES:-536870912}
+
+
+  # OCR 证据融合与产物收口：轻量但在链路末端，堵住会让整条流水线看起来卡住
+  business-light-worker-service:
+    <<: *deploy-worker-service
+    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q business.light
+    environment:
+      <<: *deploy-worker-environment
+      AICHECK_MINERU_TIMEOUT_SECONDS: ${AICHECK_MINERU_TIMEOUT_SECONDS:-60}
+      AICHECK_MINERU_POLL_INTERVAL_SECONDS: ${AICHECK_MINERU_POLL_INTERVAL_SECONDS:-3}
+      AICHECK_MINERU_JOB_TIMEOUT_SECONDS: ${AICHECK_MINERU_JOB_TIMEOUT_SECONDS:-1800}
+      AICHECK_MINERU_MAX_DOWNLOAD_BYTES: ${AICHECK_MINERU_MAX_DOWNLOAD_BYTES:-536870912}
+
   review-worker-service:
     build:
       context: .
