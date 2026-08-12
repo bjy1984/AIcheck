@@ -953,6 +953,14 @@ const pageIntro = computed(() => {
   }
   return intros[role.value]
 })
+/* X-5：未选节点时原先照常渲染整套骨架——七个步骤、四个字段全是「-」和「状态待加载」，
+ * 版式与真实内容完全一致，用户会误以为「这个节点没数据」而不是「我还没选节点」。
+ * 两者的应对动作完全不同，必须区分开。 */
+const inspectionNodeUnselected = computed(
+  () =>
+    role.value === 'inspection' && activeWorkbenchSection.value === 'node' && !selectedNode.value
+)
+
 const currentNodeLabel = computed(() => {
   if (!selectedNode.value) return '未选择节点'
   return `${selectedNode.value.nodeId}. ${selectedNode.value.name}`
@@ -1576,6 +1584,67 @@ const aiExecutionSteps = computed<AiExecutionDisplayStep[]>(() => {
   ]
   return steps.map((step, index) => ({ ...step, status: statusFor(index, step.title) }))
 })
+
+/* X-3：AI 执行过程默认折叠。
+ * 原先 7 个步骤全量平铺，实测占 3.1 屏，而监检最需要的结论与缺项在最底部。
+ * 过程性步骤（读上下文、定位规则、检索文件）日常不需要看；需要时一键展开。
+ * 折叠交互与 AI 复核 B 版工作台对齐（button + aria-expanded）。 */
+const aiExecutionExpanded = ref(false)
+
+/* X-4：界面上原先只显示 T01/T07 这类裸编号，监检人员无从判断它是什么、该不该出现。
+ * 业务包的 toolCatalog 是权威来源，这里只做展示层翻译，不在前端另存一份词表。 */
+const toolCatalogMap = computed(() => {
+  const map = new Map<string, { name: string; capability: string }>()
+  for (const tool of businessBasis.value?.toolCatalog || []) {
+    if (tool?.id) map.set(String(tool.id), { name: tool.name, capability: tool.capability })
+  }
+  return map
+})
+
+const toolLabel = (toolId: string) => toolCatalogMap.value.get(toolId)?.name || toolId
+
+const toolTooltip = (toolId: string) => {
+  const tool = toolCatalogMap.value.get(toolId)
+  if (!tool) return `工具编号 ${toolId}`
+  return tool.capability ? `${toolId} · ${tool.capability}` : `${toolId} · ${tool.name}`
+}
+
+/* 状态词表是 待执行 / 执行中 / 完成 / 异常 / 需人工确认，语义分三类。
+ * 「非完成」不等于「需关注」——AI 尚未运行时七步全是「待执行」，那是未开始，
+ * 不是出了问题。摘要要是把它报成「7 步需关注」，等于教用户忽略这个提示。 */
+const AI_STEP_ATTENTION = new Set(['异常', '需人工确认'])
+
+const aiExecutionSummary = computed(() => {
+  const steps = aiExecutionSteps.value
+  if (!steps.length) return '暂无执行记录'
+  const attention = steps.filter((step) => AI_STEP_ATTENTION.has(String(step.status)))
+  const done = steps.filter((step) => step.status === '完成')
+  const parts = [`${steps.length} 步`]
+  if (attention.length) {
+    parts.push(`${attention.length} 步需关注：${attention.map((s) => s.title).join('、')}`)
+  } else if (!done.length) {
+    parts.push('尚未运行')
+  } else if (done.length === steps.length) {
+    parts.push('全部完成')
+  } else {
+    parts.push(`进行中 ${done.length}/${steps.length}`)
+  }
+  return parts.join(' · ')
+})
+
+/** 结论与缺项要置顶——这是监检打开这一页真正要看的东西。 */
+const aiOutcomeHighlights = computed(() => {
+  const suggestion = latestAiRun.value?.suggestion
+  if (!suggestion) return null
+  return {
+    result: suggestion.result || '待判定',
+    confidence: suggestion.confidence,
+    manualConfirmItems: suggestion.manualConfirmItems || [],
+    // opinionDraft 是 AI 给出的结论说明，比另立 rectificationSuggestion 更贴近类型契约
+    rectification: suggestion.opinionDraft || ''
+  }
+})
+
 const evidenceLabel = (evidence: EvidenceLink) => {
   const title = evidence.fileName || evidence.fieldName || evidence.objectId
   return evidence.pageNo ? `${title} P${evidence.pageNo}` : title
@@ -4839,6 +4908,7 @@ onBeforeUnmount(() => {
                 v-if="
                   role === 'inspection' &&
                   activeWorkbenchSection === 'node' &&
+                  !inspectionNodeUnselected &&
                   hasAction('file:upload')
                 "
                 class="btn primary"
@@ -4862,7 +4932,11 @@ onBeforeUnmount(() => {
                 文件库
               </ElButton>
               <ElButton
-                v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+                v-if="
+                  role === 'inspection' &&
+                  activeWorkbenchSection === 'node' &&
+                  !inspectionNodeUnselected
+                "
                 class="btn ai-review-b-entry"
                 type="primary"
                 @click="handleOpenAiReviewB"
@@ -4876,8 +4950,23 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <div v-if="inspectionNodeUnselected" class="node-unselected">
+            <ElEmpty :image-size="110" description="">
+              <template #description>
+                <p class="node-unselected-title">请从左侧选择一个审查节点</p>
+                <p class="node-unselected-hint">
+                  选中节点后，这里会显示该节点的审计项状态、监检依据、资料与 AI 审查结果。
+                </p>
+              </template>
+            </ElEmpty>
+          </div>
+
           <AuditItemDirectory
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+            v-if="
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected
+            "
             v-model="activeInspectionAuditItem"
             :items="inspectionAuditItems"
             :loading="inspectionAuditLoading"
@@ -4886,7 +4975,10 @@ onBeforeUnmount(() => {
 
           <WorkbenchStateBanner
             v-if="
-              role === 'inspection' && activeWorkbenchSection === 'node' && inspectionAuditIssue
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
+              inspectionAuditIssue
             "
             class="inspection-audit-state-banner"
             :type="inspectionAuditIssue.type"
@@ -5195,6 +5287,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
               activeInspectionAuditItem === 'ai_review' &&
               hasAction('ai:recheck')
             "
@@ -5307,6 +5400,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
               activeInspectionAuditItem === 'ocr'
             "
             id="inspection-audit-panel-ocr"
@@ -5383,6 +5477,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
               ['submission', 'evidence'].includes(activeInspectionAuditItem)
             "
             :id="`inspection-audit-panel-${activeInspectionAuditItem}`"
@@ -5681,6 +5776,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
               activeInspectionAuditItem === 'ai_review'
             "
             id="inspection-node-execution"
@@ -5691,7 +5787,55 @@ onBeforeUnmount(() => {
               <div class="sub">LangGraph 编排执行步骤与操作反馈</div>
             </div>
             <div class="card-body">
-              <div class="execution-timeline">
+              <!-- 结论与缺项置顶：这是监检打开这一页真正要看的东西 -->
+              <div v-if="aiOutcomeHighlights" class="ai-outcome">
+                <div class="ai-outcome-head">
+                  <span class="ai-outcome-label">AI 建议结论</span>
+                  <strong class="ai-outcome-result">{{ aiOutcomeHighlights.result }}</strong>
+                  <span v-if="aiOutcomeHighlights.confidence !== undefined" class="ai-outcome-conf">
+                    置信度 {{ Math.round((aiOutcomeHighlights.confidence || 0) * 100) }}%
+                  </span>
+                </div>
+                <div v-if="aiOutcomeHighlights.manualConfirmItems.length" class="ai-outcome-block">
+                  <span class="ai-outcome-block-label">需人工确认</span>
+                  <div class="ai-outcome-chips">
+                    <span
+                      v-for="item in aiOutcomeHighlights.manualConfirmItems"
+                      :key="item"
+                      class="ai-outcome-chip"
+                    >
+                      {{ item }}
+                    </span>
+                  </div>
+                </div>
+                <div v-if="aiOutcomeHighlights.rectification" class="ai-outcome-block">
+                  <span class="ai-outcome-block-label">结论说明</span>
+                  <p class="ai-outcome-text">{{ aiOutcomeHighlights.rectification }}</p>
+                </div>
+              </div>
+
+              <!-- 过程默认折叠，与 AI 复核 B 版工作台的交互对齐 -->
+              <button
+                type="button"
+                class="execution-toggle"
+                :aria-expanded="aiExecutionExpanded"
+                aria-controls="ai-execution-timeline"
+                @click="aiExecutionExpanded = !aiExecutionExpanded"
+              >
+                <span class="execution-toggle-copy">
+                  <strong>执行过程</strong>
+                  <small>{{ aiExecutionSummary }}</small>
+                </span>
+                <span :class="['execution-toggle-chevron', { 'is-open': aiExecutionExpanded }]"
+                  >⌄</span
+                >
+              </button>
+
+              <div
+                v-show="aiExecutionExpanded"
+                id="ai-execution-timeline"
+                class="execution-timeline"
+              >
                 <article
                   v-for="(step, index) in aiExecutionSteps"
                   :key="step.title"
@@ -5716,9 +5860,14 @@ onBeforeUnmount(() => {
                       </div>
                     </dl>
                     <div class="evidence-row">
-                      <AuditStatusTag v-for="tool in step.tools" :key="tool" tone="blue" round>
-                        {{ tool }}
-                      </AuditStatusTag>
+                      <ElTooltip
+                        v-for="tool in step.tools"
+                        :key="tool"
+                        :content="toolTooltip(tool)"
+                        placement="top"
+                      >
+                        <span class="execution-tool-tag">{{ toolLabel(tool) }}</span>
+                      </ElTooltip>
                       <button
                         v-for="evidence in step.evidenceLinks"
                         :key="evidence.id"
@@ -5739,6 +5888,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
               activeInspectionAuditItem === 'human_review'
             "
             id="inspection-audit-panel-human_review"
@@ -5793,6 +5943,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
               activeInspectionAuditItem === 'human_review'
             "
             id="inspection-node-manual-review"
@@ -6978,6 +7129,159 @@ onBeforeUnmount(() => {
   transition:
     opacity 300ms ease-in,
     transform 300ms ease-in;
+}
+
+/* X-5 未选节点空状态 */
+.node-unselected {
+  display: flex;
+  padding: 48px 16px;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.node-unselected-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-unselected-hint {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+/* X-3 执行过程折叠开关 —— 与 AI 复核 B 版工作台同一交互 */
+.execution-toggle {
+  display: flex;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.execution-toggle:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.execution-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.execution-toggle-copy strong {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.execution-toggle-copy small {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.execution-toggle-chevron {
+  font-size: 18px;
+  color: #94a3b8;
+  transition: transform 0.2s;
+}
+
+.execution-toggle-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+/* X-4 工具标签：显示业务名，悬浮看能力说明 */
+.execution-tool-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  cursor: help;
+}
+
+/* AI 结论置顶卡片 */
+.ai-outcome {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #f8fafc, #fff);
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+}
+
+.ai-outcome-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.ai-outcome-label {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.ai-outcome-result {
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.ai-outcome-conf {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ai-outcome-block {
+  margin-top: 10px;
+}
+
+.ai-outcome-block-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ai-outcome-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ai-outcome-chip {
+  padding: 2px 10px;
+  font-size: 13px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 10px;
+}
+
+.ai-outcome-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
 }
 
 .center.has-flush-audit-directory {

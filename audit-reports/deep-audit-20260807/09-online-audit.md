@@ -205,3 +205,57 @@ preview=None  download=None
    AI 判定必须 403）。健康检查证明不了行为正确性，这是这次的直接教训。
 
 顺带修了验证段写死 8090 的问题（网关已切到 8081），此前它静默跳过了整段验证。
+
+---
+
+# 弱口令处置（2026-08-12）
+
+审计里 O-3「六个角色口令等于用户名，暴露在公网 8081」已处置完毕。
+
+## 处置前先排掉的一个坑
+
+我上一轮生成的 7 条强凭证是以 `AICHECK_BOOTSTRAP_PASSWORD_*` 命名的，本来打算直接
+投给容器。动手前查了一遍谁在读这些变量——**只有部署验证脚本读**（用来知道拿什么
+口令去登录），生产代码一行都不读。直接投上去，服务照常起、验证照常绿，弱口令原封
+不动。这已经是本轮第五次「静默的失败」了。
+
+改走 `/api/auth/change-password`：校验旧口令、走 `password_strength_errors` 强度检查、
+`hash_password` 生成 pbkdf2、`authVersion + 1` 让旧 token 立即失效、写审计日志。
+这是产品自己的业务流，不是绕过它改库。
+
+## 执行与验证
+
+先拿 `ndt`（影响面最小）做金丝雀，改完 **重启容器** 确认没回弹——这一步是关键，
+`repo.state` 是内存单例，如果没落到 Postgres，下次部署就会静默还原成弱口令。
+确认持久化后再改其余五个。
+
+| 检查 | 结果 |
+|---|---|
+| 公网 8081 用「用户名=口令」登录 | admin / inspection / contractor / ndt / owner / fde **全部 401** |
+| 新口令登录 | 全部通过 |
+| 容器重启后 | 旧口令仍被拒、新口令仍可用（已落 Postgres） |
+| 口令存储形态 | `aicheck_state` 里 6/6 是 `pbkdf2_sha256$…`，`plain:` 0 条，遗留 `password` 明文字段 0 条 |
+| 审计留痕 | 6 条，AUD-8A77CF7197 / 29D773E135 / 5451FEA778 / 025FFC486C / E164822B00 / BFAC5505E9 |
+
+凭证仍只存在于服务器 `/home/dev-bjy/aicheck-secrets.env`（600，仓库路径外）与本地
+scratchpad，没有进仓库、没有进日志、没有进提交信息。
+
+## 没有一并处理的：AICHECK_STRICT_PRODUCTION=false
+
+这台是 demo 部署，开 `strict_production` 会直接起不来——它要求
+`AICHECK_ENABLE_DEMO_USERS=false`、`AICHECK_ENABLE_DEMO_DATA=false`（可这个部署
+展示的就是 demo 数据）、`AICHECK_MINIO_ENDPOINT`（MinIO 未部署）、审计锚定对象锁。
+所以它现在关着是对的，不是配置疏忽。
+
+但要如实记下关着的代价：
+
+1. `verify_password` 仍接受 `plain:` 前缀的口令哈希。**当前无人使用**（6/6 已是
+   pbkdf2），但如果将来有人往库里塞 `plain:` 记录，它会被照单接受。
+2. 登录限流退回进程内内存（`session.py` 在非 strict 下 `_client()` 直接返回 None），
+   不走 Redis——重启即清零，多实例也不共享。
+3. **`security_runtime_problems()` 自身第一行就是 `if not strict_production(): return []`。**
+   也就是说，安全姿态自检在最需要它的场景下整个跳过。这个设计对 demo 合理，但要
+   意识到：readyz 的 `security: true` 在这台机器上不代表「安全配置已核验」，只代表
+   「没有核验」。
+
+真上生产时，这三条连同 MinIO、审计锚定要一起解决，不能只把开关拨到 true。

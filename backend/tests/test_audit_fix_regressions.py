@@ -1959,3 +1959,33 @@ def test_o2_document_detail_degrades_instead_of_failing(monkeypatch) -> None:
     healthy = client.get(f"/api/projects/{project_id}/documents/{document['id']}", headers=inspection)
     if healthy.json()["code"] == 0:
         assert healthy.json()["data"]["storageUnavailable"] is False
+
+
+# ---- X-4：工具编号 T01–T12 裸露给业务用户 ----
+
+
+def test_x4_business_basis_carries_tool_catalog() -> None:
+    """界面要把 T01/T07 翻译成业务语言，前提是后端把权威工具名下发。
+
+    业务包的 toolCatalog 是唯一来源；前端不该另存一份词表——那会随业务包更新而失准。
+    runtimeTool（底层函数名）不下发：业务用户不需要知道实现细节。
+    """
+    headers = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+    response = client.get("/api/projects/P-2026-HDCP-001/nodes/24/package", headers=headers)
+    assert response.status_code == 200, response.text
+    basis = response.json()["data"].get("businessBasis") or {}
+
+    catalog = basis.get("toolCatalog") or []
+    assert catalog, "businessBasis 必须带 toolCatalog，否则界面只能显示裸编号"
+    by_id = {item["id"]: item for item in catalog}
+    assert "T01" in by_id and by_id["T01"]["name"], "T01 应有业务名称"
+    assert all(item.get("name") for item in catalog), "每个工具都要有名称"
+    assert all("runtimeTool" not in item for item in catalog), "不下发底层函数名"
+
+    # 规则引用的工具都应能在目录里查到，否则界面仍会退回显示编号
+    referenced = set(basis.get("toolIds") or [])
+    assert referenced <= set(by_id), f"这些工具在目录里查不到：{sorted(referenced - set(by_id))}"

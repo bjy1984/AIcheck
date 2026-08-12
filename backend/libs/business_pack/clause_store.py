@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 from typing import Any
 from urllib.parse import quote
@@ -246,6 +247,47 @@ def publish_standard_clause_release(state: dict[str, Any], pack: dict[str, Any])
         retained = [item for item in state.get(key, []) if item.get("releaseId") != release_id]
         state[key] = retained + deepcopy(rows)
     return {key: len(rows) for key, rows in compiled.items()}
+
+
+def clause_rule_number(rule_id: Any) -> int | None:
+    """R24 -> 24。取不出编号就返回 None，交由调用方按「无法判定」处理。"""
+    match = re.match(r"^R(\d+)$", str(rule_id or "").strip())
+    return int(match.group(1)) if match else None
+
+
+def clause_binding_inconsistencies(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """找出「内容对、标签错」的项目条款绑定。
+
+    规则重编号后，旧 release 的 packageId/sourceRuleId 用旧编号，而 nodeId 与条款
+    内容已是新编号口径——同一条记录里两个编号指向不同规则。判定结果不受影响
+    （条款内容是对的），但事后核查无法凭 clausePackageId 定位到真正使用的条款，
+    而可溯源正是这个系统的核心价值。
+
+    注意这里判的是「记录自相矛盾」，不是「版本旧」。钉在旧版本但自洽的项目是
+    合法的业务选择（业务方明确「标准换版暂不考虑」），不能一并冲掉。
+    """
+    findings: list[dict[str, Any]] = []
+    for item in state.get("project_node_clause_packages") or []:
+        if not isinstance(item, dict):
+            continue
+        node_id = item.get("nodeId")
+        try:
+            node_number = int(node_id)
+        except (TypeError, ValueError):
+            continue
+        rule_number = clause_rule_number(item.get("sourceRuleId"))
+        if rule_number is None or rule_number == node_number:
+            continue
+        findings.append(
+            {
+                "projectId": str(item.get("projectId") or ""),
+                "nodeId": node_number,
+                "sourceRuleId": str(item.get("sourceRuleId") or ""),
+                "sourcePackageId": str(item.get("sourcePackageId") or ""),
+                "businessPackVersion": str(item.get("businessPackVersion") or ""),
+            }
+        )
+    return findings
 
 
 def bind_project_node_clause_packages(

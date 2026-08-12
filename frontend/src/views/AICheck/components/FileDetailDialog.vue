@@ -9,12 +9,15 @@ import {
   ElEmpty,
   ElTable,
   ElTableColumn,
+  ElTabPane,
+  ElTabs,
   ElTag
 } from 'element-plus'
 import { getDocumentOriginalBlobApi } from '@/api/aicheck'
 import type { DocumentDetailPayload } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
+import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
 
 const props = defineProps<{
@@ -155,10 +158,127 @@ onBeforeUnmount(() => {
 const confidenceText = (confidence?: number) => {
   return formatConfidence(confidence)
 }
+
+/* ---------------- 证据定位（X-1 / X-2） ----------------
+ * 监检的核心动作是「看着原文核对字段」。原先字段表在预览下方，两者无法同屏对照；
+ * 而后端为可定位性付了完整代价（bbox 必填、bboxCoverage 就绪度指标），前端却没画。
+ *
+ * 能做到什么，取决于预览载体：
+ *   图片 —— <img> 有 naturalWidth/Height，bbox 像素坐标可换算成百分比，能画真高亮；
+ *   PDF  —— 走浏览器原生 viewer 的 <iframe>，内部布局与缩放不可控，画不了框；
+ *           但 #page=N 锚点能跳页，这已经省掉用户手动翻页。
+ * 要在 PDF 上画框必须引入 pdf.js 自行渲染到 canvas，属独立技术选型，不在本次范围。
+ */
+type LocatableItem = {
+  key: string
+  label: string
+  value: string
+  pageNo?: number
+  bbox?: number[]
+  confidence?: number
+  status?: string
+  kind: 'field' | 'evidence'
+}
+
+const sideTab = ref('fields')
+const activeLocateKey = ref('')
+const previewNaturalSize = ref<{ width: number; height: number } | null>(null)
+
+/** OCR 字段自身不带 bbox，坐标在它 evidenceLinkId 指向的证据链条目上。 */
+const bboxByEvidenceId = computed(() => {
+  const map = new Map<string, number[]>()
+  for (const link of evidenceLinks.value) {
+    const bbox = normalizeBbox(link.bbox as number[] | undefined)
+    if (link.id && bbox) map.set(String(link.id), bbox)
+  }
+  return map
+})
+
+const locatableItems = computed<LocatableItem[]>(() => [
+  ...extractedFields.value.map((field, index) => ({
+    key: `field-${field.id || index}`,
+    label: String(field.fieldName || '未命名字段'),
+    value: String(field.fieldValue ?? ''),
+    pageNo: field.pageNo,
+    bbox: field.evidenceLinkId
+      ? bboxByEvidenceId.value.get(String(field.evidenceLinkId))
+      : undefined,
+    confidence: field.confidence,
+    status: field.reviewStatus,
+    kind: 'field' as const
+  })),
+  ...evidenceLinks.value.map((link, index) => ({
+    key: `evidence-${link.id || index}`,
+    label: String(link.fieldName || link.objectType || '证据引用'),
+    value: String(link.quotedText ?? ''),
+    pageNo: link.pageNo,
+    bbox: normalizeBbox(link.bbox as number[] | undefined),
+    confidence: link.confidence,
+    kind: 'evidence' as const
+  }))
+])
+
+const activeLocatable = computed(() =>
+  locatableItems.value.find((item) => item.key === activeLocateKey.value)
+)
+
+/** 图片预览下，把 bbox 像素坐标换算成相对定位样式。 */
+const highlightStyle = computed(() =>
+  previewIsImage.value
+    ? bboxToPercentStyle(activeLocatable.value?.bbox, previewNaturalSize.value)
+    : null
+)
+
+/** PDF 无法叠加高亮，改用 #page=N 跳页；图片直接靠 highlightStyle 画框。 */
+const previewSrcWithPage = computed(() => {
+  const base = previewFrameUrl.value
+  if (!base || !previewIsPdf.value) return base
+  const page = activeLocatable.value?.pageNo
+  if (!page) return base
+  return `${base.split('#')[0]}#page=${page}`
+})
+
+const locateHint = computed(() => {
+  const item = activeLocatable.value
+  if (!item) return ''
+  if (!item.pageNo) return '该条证据未记录页码，无法定位到原文位置。'
+  if (previewIsImage.value) {
+    return item.bbox
+      ? `已在原文第 ${item.pageNo} 页高亮该字段位置。`
+      : `该条证据未记录坐标，只能定位到第 ${item.pageNo} 页。`
+  }
+  if (previewIsPdf.value) {
+    return `已跳转到第 ${item.pageNo} 页。PDF 由浏览器内置阅读器渲染，暂不支持框选高亮。`
+  }
+  return `该条证据位于第 ${item.pageNo} 页。`
+})
+
+const handleLocate = (item: LocatableItem) => {
+  activeLocateKey.value = activeLocateKey.value === item.key ? '' : item.key
+}
+
+const handlePreviewImageLoad = (event: Event) => {
+  const image = event.target as HTMLImageElement
+  previewNaturalSize.value = { width: image.naturalWidth, height: image.naturalHeight }
+}
+
+watch(visible, (open) => {
+  if (!open) {
+    activeLocateKey.value = ''
+    previewNaturalSize.value = null
+    sideTab.value = 'fields'
+  }
+})
 </script>
 
 <template>
-  <ElDialog v-model="visible" title="文件详情" width="960px" append-to-body class="file-dialog">
+  <ElDialog
+    v-model="visible"
+    title="文件详情"
+    width="min(1400px, 92vw)"
+    append-to-body
+    class="file-dialog"
+  >
     <div v-loading="loading" class="file-detail">
       <template v-if="detail && document">
         <div class="file-header">
@@ -194,6 +314,7 @@ const confidenceText = (confidence?: number) => {
                 >只读</ElTag
               >
             </div>
+            <div v-if="locateHint" class="locate-hint">{{ locateHint }}</div>
             <div class="preview-body" :class="{ 'preview-body--disabled': !previewEmbeddable }">
               <template v-if="previewEmbeddable">
                 <div class="preview-frame-host" v-loading="previewLoadingOriginal">
@@ -207,17 +328,26 @@ const confidenceText = (confidence?: number) => {
                   <div v-else-if="!previewFrameUrl" class="preview-placeholder">
                     原文预览加载中
                   </div>
-                  <img
-                    v-else-if="previewIsImage"
-                    class="preview-image"
-                    :src="previewFrameUrl"
-                    :alt="document.fileName"
-                    @error="handlePreviewImageError"
-                  />
+                  <!-- 图片：bbox 可换算成百分比，叠一层高亮框 -->
+                  <div v-else-if="previewIsImage" class="preview-image-stage">
+                    <img
+                      class="preview-image"
+                      :src="previewFrameUrl"
+                      :alt="document.fileName"
+                      @load="handlePreviewImageLoad"
+                      @error="handlePreviewImageError"
+                    />
+                    <span
+                      v-if="highlightStyle"
+                      class="preview-highlight"
+                      :style="highlightStyle"
+                    ></span>
+                  </div>
+                  <!-- PDF：浏览器内置阅读器，只能靠 #page= 跳页 -->
                   <iframe
                     v-else
                     class="preview-frame"
-                    :src="previewFrameUrl"
+                    :src="previewSrcWithPage"
                     :title="document.fileName"
                   ></iframe>
                 </div>
@@ -237,6 +367,7 @@ const confidenceText = (confidence?: number) => {
             </div>
           </div>
 
+          <!-- 右侧不再放元数据摘要：核对字段才是主任务，元数据挪进「文件信息」页签 -->
           <div class="detail-side">
             <ElAlert
               v-if="ocrReadiness && ocrReadiness.status !== 'ready'"
@@ -247,79 +378,107 @@ const confidenceText = (confidence?: number) => {
               type="warning"
               :closable="false"
               show-icon
+              class="side-alert"
             />
-            <ElDescriptions :column="1" border>
-              <ElDescriptionsItem label="文件状态">
-                <ElTag :type="getStatusTagType(document.fileStatus)" size="small" effect="plain">
-                  {{ document.fileStatus }}
-                </ElTag>
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="OCR 状态">
-                <ElTag
-                  :type="ocrReadiness?.status === 'ready' ? 'success' : 'warning'"
-                  size="small"
-                >
-                  {{ ocrReadinessLabel }}
-                </ElTag>
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="OCR 产物">
-                {{ ocrReadiness?.fieldCount || 0 }} 字段 ·
-                {{ ocrReadiness?.fragmentCount || 0 }} 片段 · bbox
-                {{ Math.round((ocrReadiness?.bboxCoverage || 0) * 100) }}%
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="Parse Result">
-                {{ ocrReadiness?.parseResultId || '-' }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="当前版本">
-                {{ currentVersion?.versionNo || '-' }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="文件大小">{{ fileSizeText }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="绑定节点">{{ bindings.length }}</ElDescriptionsItem>
-            </ElDescriptions>
+            <ElTabs v-model="sideTab" class="side-tabs">
+              <ElTabPane :label="`识别字段 (${locatableItems.length})`" name="fields">
+                <div v-if="!locatableItems.length" class="side-empty">
+                  <ElEmpty :image-size="60" description="暂无识别字段" />
+                </div>
+                <ul v-else class="locate-list">
+                  <li
+                    v-for="item in locatableItems"
+                    :key="item.key"
+                    :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
+                  >
+                    <button
+                      type="button"
+                      class="locate-button"
+                      :aria-pressed="item.key === activeLocateKey"
+                      @click="handleLocate(item)"
+                    >
+                      <div class="locate-head">
+                        <span class="locate-label">{{ item.label }}</span>
+                        <ElTag
+                          size="small"
+                          effect="plain"
+                          :type="item.kind === 'evidence' ? 'warning' : 'info'"
+                        >
+                          {{ item.kind === 'evidence' ? '证据引用' : 'OCR' }}
+                        </ElTag>
+                      </div>
+                      <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
+                      <div class="locate-meta">
+                        <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
+                        <span v-if="item.confidence !== undefined">
+                          置信度 {{ confidenceText(item.confidence) }}
+                        </span>
+                        <span v-if="item.status">{{ item.status }}</span>
+                        <span v-if="item.bbox" class="locate-badge">可定位</span>
+                      </div>
+                    </button>
+                  </li>
+                </ul>
+              </ElTabPane>
+
+              <ElTabPane label="文件信息" name="meta">
+                <ElDescriptions :column="1" border size="small">
+                  <ElDescriptionsItem label="文件状态">
+                    <ElTag
+                      :type="getStatusTagType(document.fileStatus)"
+                      size="small"
+                      effect="plain"
+                    >
+                      {{ document.fileStatus }}
+                    </ElTag>
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="OCR 状态">
+                    <ElTag
+                      :type="ocrReadiness?.status === 'ready' ? 'success' : 'warning'"
+                      size="small"
+                    >
+                      {{ ocrReadinessLabel }}
+                    </ElTag>
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="OCR 产物">
+                    {{ ocrReadiness?.fieldCount || 0 }} 字段 ·
+                    {{ ocrReadiness?.fragmentCount || 0 }} 片段 · bbox
+                    {{ Math.round((ocrReadiness?.bboxCoverage || 0) * 100) }}%
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="当前版本">
+                    {{ currentVersion?.versionNo || '-' }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="文件大小">{{ fileSizeText }}</ElDescriptionsItem>
+                  <ElDescriptionsItem label="绑定节点">{{ bindings.length }}</ElDescriptionsItem>
+                  <ElDescriptionsItem label="Parse Result">
+                    {{ ocrReadiness?.parseResultId || '-' }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </ElTabPane>
+
+              <ElTabPane :label="`历史版本 (${versions.length})`" name="versions">
+                <ElTable :data="versions" border size="small" max-height="100%">
+                  <ElTableColumn prop="versionNo" label="版本" width="80" />
+                  <ElTableColumn
+                    prop="uploaderName"
+                    label="上传人"
+                    width="90"
+                    show-overflow-tooltip
+                  />
+                  <ElTableColumn prop="uploadTime" label="上传时间" min-width="150" />
+                  <ElTableColumn label="当前" width="70">
+                    <template #default="{ row }">
+                      <ElTag v-if="row.isCurrent" type="success" size="small" effect="plain">
+                        当前
+                      </ElTag>
+                      <span v-else>-</span>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+              </ElTabPane>
+            </ElTabs>
           </div>
         </div>
-
-        <div class="section-title">历史版本</div>
-        <ElTable :data="versions" border height="150">
-          <ElTableColumn prop="versionNo" label="版本" width="90" />
-          <ElTableColumn prop="hash" label="文件 Hash" min-width="220" show-overflow-tooltip />
-          <ElTableColumn prop="uploaderName" label="上传人" width="100" />
-          <ElTableColumn prop="uploadTime" label="上传时间" width="170" />
-          <ElTableColumn label="当前" width="80">
-            <template #default="{ row }">
-              <ElTag v-if="row.isCurrent" type="success" size="small" effect="plain">当前</ElTag>
-              <span v-else>-</span>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-
-        <div class="section-title">OCR 字段</div>
-        <ElTable :data="extractedFields" border height="160">
-          <ElTableColumn prop="fieldName" label="字段" width="140" show-overflow-tooltip />
-          <ElTableColumn prop="fieldValue" label="识别值" min-width="180" show-overflow-tooltip />
-          <ElTableColumn prop="pageNo" label="页码" width="80" />
-          <ElTableColumn label="置信度" width="92">
-            <template #default="{ row }">{{ confidenceText(row.confidence) }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="复核状态" width="110">
-            <template #default="{ row }">
-              <ElTag :type="getStatusTagType(row.reviewStatus)" size="small" effect="plain">
-                {{ row.reviewStatus }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-
-        <div class="section-title">证据定位</div>
-        <ElTable :data="evidenceLinks" border height="150">
-          <ElTableColumn prop="objectType" label="对象" width="140" />
-          <ElTableColumn prop="fieldName" label="字段" width="120" show-overflow-tooltip />
-          <ElTableColumn prop="quotedText" label="引用内容" min-width="220" show-overflow-tooltip />
-          <ElTableColumn prop="pageNo" label="页码" width="80" />
-          <ElTableColumn label="置信度" width="92">
-            <template #default="{ row }">{{ confidenceText(row.confidence) }}</template>
-          </ElTableColumn>
-        </ElTable>
       </template>
 
       <ElEmpty v-else description="请选择文件" />
@@ -364,13 +523,17 @@ const confidenceText = (confidence?: number) => {
 
 .file-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.9fr);
+  /* 固定工作区高度：预览与字段各自滚动，避免整页上下滚动来回找 */
+  height: min(64vh, 680px);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   gap: 14px;
   align-items: stretch;
 }
 
 .preview-shell {
-  min-height: 210px;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -391,6 +554,9 @@ const confidenceText = (confidence?: number) => {
 
 .preview-body {
   display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
   min-height: 168px;
   flex-direction: column;
   gap: 8px;
@@ -400,8 +566,43 @@ const confidenceText = (confidence?: number) => {
 }
 
 .preview-frame-host {
+  display: flex;
   width: 100%;
-  min-height: 360px;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+}
+
+/* 图片高亮舞台：相对定位，供 bbox 覆盖层换算百分比 */
+.preview-image-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.preview-highlight {
+  position: absolute;
+  border: 2px solid #f59e0b;
+  border-radius: 2px;
+  background: rgb(245 158 11 / 18%);
+  box-shadow: 0 0 0 9999px rgb(15 23 42 / 12%);
+  pointer-events: none;
+  animation: locate-flash 1.2s ease-out;
+}
+
+@keyframes locate-flash {
+  0%,
+  55% {
+    border-color: #f97316;
+    background: rgb(249 115 22 / 34%);
+  }
+
+  100% {
+    border-color: #f59e0b;
+    background: rgb(245 158 11 / 18%);
+  }
 }
 
 .preview-placeholder {
@@ -418,7 +619,7 @@ const confidenceText = (confidence?: number) => {
 .preview-image {
   display: block;
   width: 100%;
-  max-height: 520px;
+  height: auto;
   object-fit: contain;
   background: #fff;
   border: 1px solid #d5deea;
@@ -427,7 +628,8 @@ const confidenceText = (confidence?: number) => {
 
 .preview-frame {
   width: 100%;
-  min-height: 360px;
+  min-height: 0;
+  flex: 1;
   background: #fff;
   border: 1px solid #d5deea;
   border-radius: 4px;
@@ -455,7 +657,128 @@ const confidenceText = (confidence?: number) => {
 }
 
 .detail-side {
+  display: flex;
   min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.side-alert {
+  margin: 8px 8px 0;
+  width: auto;
+}
+
+.side-tabs {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 0 8px 8px;
+}
+
+.side-tabs :deep(.el-tabs__content) {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.side-tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
+.side-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 字段列表：一行一个可点击条目，点击后在左侧原文定位 */
+.locate-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+}
+
+.locate-button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.locate-button:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.locate-item.is-active .locate-button {
+  background: #fff7ed;
+  border-color: #f59e0b;
+}
+
+.locate-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.locate-label {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locate-value {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.locate-meta {
+  display: flex;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #64748b;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.locate-badge {
+  padding: 0 6px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 4px;
+}
+
+/* 定位提示条：说清这次定位到了哪里、能不能画框 */
+.locate-hint {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #92400e;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
 }
 
 .section-title {

@@ -2453,6 +2453,75 @@ class InMemoryRepository:
         loaded.setdefault("masking_policies", [])
         return loaded
 
+    def repair_clause_binding_drift(self, loaded: dict[str, Any]) -> bool:
+        """修复「内容对、标签错」的项目条款绑定。
+
+        规则重编号后，旧 release 的 packageId/sourceRuleId 用旧编号，而 nodeId 与条款
+        内容已是新编号口径——同一条记录里两个编号指向不同规则。判定结果不受影响
+        （条款内容是对的），但事后核查无法凭 clausePackageId 定位到真正使用的条款，
+        而可溯源正是这个系统的核心价值。
+
+        旧 release 自身就带着这个矛盾，不存在一个「正确的旧版本」可以保全，所以只能
+        按当前业务包重绑——这是修复损坏，不是给项目换标准版本。
+
+        判的是「记录自相矛盾」，不是「版本旧」：钉在旧版本但自洽的项目是合法的业务
+        选择（业务方明确「标准换版暂不考虑」），不能一并冲掉。
+
+        刻意不放在 apply_seed_compatibility_defaults 里——那个函数挂在
+        demo_data_enabled() 下（默认 false），真实部署里根本不跑。数据完整性修复
+        不能依赖 demo 播种开关。
+        """
+        from libs.business_pack import list_business_packs, load_business_pack
+        from libs.business_pack.clause_store import (
+            bind_project_node_clause_packages,
+            clause_binding_inconsistencies,
+            ensure_clause_state,
+            publish_standard_clause_release,
+        )
+
+        ensure_clause_state(loaded)
+        corrupt = clause_binding_inconsistencies(loaded)
+        if not corrupt:
+            return False
+
+        corrupt_project_ids = {item["projectId"] for item in corrupt if item["projectId"]}
+        LOGGER.warning(
+            "检测到 %d 条条款绑定自相矛盾（nodeId 与 sourceRuleId 指向不同规则），"
+            "涉及 %d 个项目，按当前业务包重绑：%s",
+            len(corrupt),
+            len(corrupt_project_ids),
+            sorted(corrupt_project_ids),
+        )
+
+        for summary in list_business_packs():
+            pack = load_business_pack(summary["id"])
+            if not pack.get("standardClausePackages"):
+                continue
+            publish_standard_clause_release(loaded, pack)
+            for project in loaded.get("projects", []):
+                if project.get("businessPackId") != pack["id"]:
+                    continue
+                if str(project.get("id") or "") not in corrupt_project_ids:
+                    continue
+                bind_project_node_clause_packages(
+                    loaded,
+                    project,
+                    pack,
+                    bound_at=project.get("updatedAt"),
+                )
+                # 重绑后项目实际依据的就是新版本，version 必须跟上，否则
+                # 「标签与内容不一致」只是从绑定记录挪到了项目记录上。
+                project["businessPackVersion"] = pack["version"]
+
+        remaining = clause_binding_inconsistencies(loaded)
+        if remaining:
+            LOGGER.error(
+                "重绑后仍有 %d 条条款绑定自相矛盾，条款溯源不可信：%s",
+                len(remaining),
+                remaining[:5],
+            )
+        return True
+
     def apply_seed_compatibility_defaults(self, loaded: dict[str, Any]) -> bool:
         """Backfill fields added after an existing local database was initialized."""
         changed = False
@@ -2802,6 +2871,8 @@ class InMemoryRepository:
                     self.state.setdefault("project_members", []),
                     self.state.get("tree_nodes", []),
                 )
+            # 与 demo 开关无关：损坏的条款溯源在任何部署里都必须修
+            backfilled = self.repair_clause_binding_drift(self.state) or backfilled
         if not has_project_seed and demo_data_enabled():
             self.flush_to_sqlite()
         elif backfilled:
@@ -3281,6 +3352,8 @@ class InMemoryRepository:
                         self.state.setdefault("project_members", []),
                         self.state.get("tree_nodes", []),
                     )
+                # 与 demo 开关无关：损坏的条款溯源在任何部署里都必须修
+                backfilled = self.repair_clause_binding_drift(self.state) or backfilled
             # psycopg starts a transaction for the SELECTs above when autocommit is off.
             # End that read transaction before any writer tries to flush the JSONB state.
             self.sync_postgres.commit()
@@ -4258,10 +4331,14 @@ class InMemoryRepository:
                 self.sync_postgres.commit()
                 self._pgvector_baseline_ids = set(persisted_ids)
             except Exception:
+                # 原先连日志都没有：向量整批没入库，检索永远返回空，而调用方看到的
+                # 是「知识库没覆盖到」。回滚要吞异常（回滚本身失败无从补救），
+                # 但原始失败必须留下痕迹。
+                LOGGER.exception("pgvector_flush_failed: 知识向量刷写 pgvector 失败，本批未入库")
                 try:
                     self.sync_postgres.rollback()
                 except Exception:
-                    pass
+                    LOGGER.exception("pgvector_flush_rollback_failed: 回滚同样失败")
 
     def search_knowledge_vectors(
         self,
@@ -4273,7 +4350,19 @@ class InMemoryRepository:
     ) -> list[dict[str, Any]]:
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
-            if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
+            if self.sync_postgres is None or not self.ensure_pgvector_schema():
+                return []
+            if len(embedding) != OFFLINE_VECTOR_DIMENSIONS:
+                # 写入侧维度不符已经会报错，检索侧不能反过来沉默：
+                # 「查询向量维度不对」和「库里确实没有相关内容」都返回空列表，
+                # 调用方无从分辨，只会以为是知识库没覆盖到。
+                LOGGER.error(
+                    "pgvector_query_dimension_mismatch: 查询向量 %s 维，索引表按 %s 维建立，"
+                    "本次检索必然返回空——这不是「没有匹配内容」，是查询用的 embedding "
+                    "模型档案与索引表不一致。",
+                    len(embedding),
+                    OFFLINE_VECTOR_DIMENSIONS,
+                )
                 return []
             embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
             filters = ["tenant_id = %s"]
