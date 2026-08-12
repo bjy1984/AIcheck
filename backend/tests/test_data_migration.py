@@ -19,6 +19,7 @@ from scripts.data_migration import (
     upload_bundle,
     validate_manifest,
 )
+from scripts.verify_restored_migration import verify_restored_files
 
 
 def valid_manifest(root: Path) -> dict[str, object]:
@@ -27,6 +28,9 @@ def valid_manifest(root: Path) -> dict[str, object]:
         "databases/aicheck.dump": b"aicheck-dump",
         "databases/litellm.dump": b"litellm-dump",
         "databases/workflow.dump": b"workflow-dump",
+        "files/output/document_uploads/sample.pdf": b"document",
+        "files/output/knowledge_uploads/sample.pdf": b"knowledge",
+        "files/rules/sample.pdf": b"rule",
     }
     files = {}
     for relative, body in payloads.items():
@@ -42,6 +46,12 @@ def valid_manifest(root: Path) -> dict[str, object]:
         "migrationId": "migration-20260812T120000Z",
         "databases": ["aicheck", "litellm", "workflow"],
         "buckets": ["documents", "previews", "exports", "ocr-artifacts"],
+        "sourceStorageMode": "local_filesystem",
+        "localFileRoots": [
+            "output/document_uploads",
+            "output/knowledge_uploads",
+            "rules",
+        ],
         "files": files,
     }
 
@@ -94,6 +104,15 @@ def test_validate_manifest_rejects_undeclared_payload(tmp_path: Path) -> None:
     (tmp_path / "unexpected.bin").write_bytes(b"unexpected")
 
     with pytest.raises(BundleValidationError, match="undeclared"):
+        validate_manifest(manifest, tmp_path)
+
+
+def test_validate_manifest_rejects_missing_local_storage_root(tmp_path: Path) -> None:
+    manifest = valid_manifest(tmp_path)
+    del manifest["files"]["files/rules/sample.pdf"]
+    (tmp_path / "files/rules/sample.pdf").unlink()
+
+    with pytest.raises(BundleValidationError, match="local file root"):
         validate_manifest(manifest, tmp_path)
 
 
@@ -232,8 +251,11 @@ def test_export_bundle_captures_three_databases_and_local_file_roots(tmp_path: P
         "databases/litellm.dump",
         "databases/workflow.dump",
         "files/output/document_uploads/project/document.pdf",
+        "files/output/document_uploads/.migration-root",
         "files/output/knowledge_uploads/source/standard.pdf",
+        "files/output/knowledge_uploads/.migration-root",
         "files/rules/standards/rule.pdf",
+        "files/rules/.migration-root",
     }
     assert [command[-1] for command in runner.commands if command[0].endswith("pg_dump")] == [
         "aicheck",
@@ -360,3 +382,17 @@ def test_server_runtime_profile_never_mutates_restored_data() -> None:
         "bootstrapLocalRoles": False,
         "enableDemoData": False,
     }
+
+
+def test_verify_restored_files_checks_every_declared_local_payload(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle"
+    restored = tmp_path / "restored"
+    manifest = valid_manifest(bundle)
+    for relative in manifest["files"]:
+        if relative.startswith("files/"):
+            source = bundle / relative
+            target = restored / relative.removeprefix("files/")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+
+    assert verify_restored_files(manifest, restored) == 3

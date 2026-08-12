@@ -86,6 +86,10 @@ def validate_manifest(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
         raise BundleValidationError("manifest databases must match the required inventory")
     if set(manifest.get("buckets", [])) != EXPECTED_BUCKETS:
         raise BundleValidationError("manifest buckets must match the required inventory")
+    if manifest.get("sourceStorageMode") != "local_filesystem":
+        raise BundleValidationError("manifest sourceStorageMode must be local_filesystem")
+    if tuple(manifest.get("localFileRoots", [])) != LOCAL_FILE_ROOTS:
+        raise BundleValidationError("manifest localFileRoots must match the required inventory")
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise BundleValidationError("manifest files inventory is required")
@@ -99,6 +103,10 @@ def validate_manifest(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
         raise BundleValidationError(
             "manifest required payload is missing: " + ", ".join(sorted(missing_payloads))
         )
+    for root_name in LOCAL_FILE_ROOTS:
+        prefix = f"files/{root_name}/"
+        if not any(name.startswith(prefix) for name in files):
+            raise BundleValidationError(f"manifest local file root is empty or missing: {root_name}")
     actual_payloads = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*")
@@ -183,6 +191,7 @@ def _copy_required_file_roots(config: ExportConfig, bundle_root: Path) -> None:
             raise BundleValidationError(f"required local file root is missing: {source}")
         destination = destination_root / relative
         shutil.copytree(source, destination, copy_function=shutil.copy2)
+        (destination / ".migration-root").touch(exist_ok=True)
 
 
 def _payload_inventory(bundle_root: Path) -> dict[str, dict[str, int | str]]:
