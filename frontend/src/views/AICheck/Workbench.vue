@@ -415,8 +415,10 @@ const pipelinePollTimer = ref<number>()
 const pipelinePolling = ref(false)
 const reviewPollTimer = ref<number>()
 const reviewPolling = ref(false)
-const POST_UPLOAD_PIPELINE_POLL_INTERVAL_MS = 10000
-const REVIEW_POLL_INTERVAL_MS = 5000
+// 上传后单次补拉的延迟（不是轮询周期）
+const POST_UPLOAD_PIPELINE_RECHECK_DELAY_MS = 10000
+// AI 复核触发后单次补拉的延迟（不是轮询周期）
+const REVIEW_RECHECK_DELAY_MS = 5000
 const overviewFileKeyword = ref('')
 const overviewFilePage = ref(1)
 const overviewFilePageSize = ref(8)
@@ -4428,17 +4430,22 @@ const refreshAiReviewStatus = async () => {
   }
 }
 
+/* 不做定时轮询：稳态下没有东西在变，隔几秒刷一次只是在制造「页面自己在动」的
+ * 观感，也让每次刷新都要重新拉节点包。改为「用户发起动作后单次补一刀」——
+ * AI 复核是异步的，触发后延迟一次拉取即可看到结果；还没出结果时用户可以
+ * 切走再切回来，那本身就会重新加载。 */
 const startAiReviewPolling = () => {
   if (reviewPollTimer.value) return
-  reviewPollTimer.value = window.setInterval(() => {
+  reviewPollTimer.value = window.setTimeout(() => {
+    reviewPollTimer.value = undefined
     if (document.visibilityState === 'hidden') return
     void refreshAiReviewStatus()
-  }, REVIEW_POLL_INTERVAL_MS)
+  }, REVIEW_RECHECK_DELAY_MS)
 }
 
 const stopAiReviewPolling = () => {
   if (!reviewPollTimer.value) return
-  window.clearInterval(reviewPollTimer.value)
+  window.clearTimeout(reviewPollTimer.value)
   reviewPollTimer.value = undefined
 }
 
@@ -4466,14 +4473,15 @@ const refreshPostUploadPipelineStatus = async () => {
 
 const startPostUploadPolling = () => {
   if (pipelinePollTimer.value) return
-  pipelinePollTimer.value = window.setInterval(() => {
+  pipelinePollTimer.value = window.setTimeout(() => {
+    pipelinePollTimer.value = undefined
     void refreshPostUploadPipelineStatus()
-  }, POST_UPLOAD_PIPELINE_POLL_INTERVAL_MS)
+  }, POST_UPLOAD_PIPELINE_RECHECK_DELAY_MS)
 }
 
 const stopPostUploadPolling = () => {
   if (!pipelinePollTimer.value) return
-  window.clearInterval(pipelinePollTimer.value)
+  window.clearTimeout(pipelinePollTimer.value)
   pipelinePollTimer.value = undefined
 }
 

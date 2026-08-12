@@ -13470,6 +13470,61 @@ def evidence_chain(request: Request, project_id: str, node_id: int):
     return ok({"node": repo.clone(node), "links": links, "groupedByObject": grouped}, request)
 
 
+# 节点依据的知识检索结果缓存。
+#
+# 这个接口每点一次节点就调一次，而检索要对全部知识条款做一遍词法打分——线上
+# 实测 7416 条、单次 3 秒，端到端 6 秒，是节点切换卡顿的主要来源。
+#
+# 但它的输入其实是静态的：查询串由节点规则拼成，候选集是知识库。只要业务包和
+# 知识库没变，同一个节点每次都会算出同样的结果。所以按「业务包 + 节点 + 知识库
+# 指纹」缓存，知识库一变指纹就变、缓存自然失效，不需要手动清。
+_NODE_STANDARD_RETRIEVAL_CACHE: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+_NODE_STANDARD_CACHE_LIMIT = 512
+
+
+def knowledge_base_signature() -> str:
+    """知识库指纹：条款数 + 最新更新时间。
+
+    只用条数会漏掉「改了内容但没增删」的情况，所以带上最大 updatedAt。
+    两者都便宜——不需要遍历内容做哈希。
+    """
+    clauses = repo.state.get("knowledge_clauses") or []
+    latest = ""
+    for item in clauses:
+        if not isinstance(item, dict):
+            continue
+        stamp = str(item.get("updatedAt") or item.get("createdAt") or "")
+        latest = max(latest, stamp)
+    return f"{len(clauses)}:{latest}"
+
+
+def cached_node_standard_retrieval(
+    *,
+    business_pack_id: str,
+    node_id: int,
+    query: str,
+) -> list[dict[str, Any]]:
+    cache_key = (str(business_pack_id), int(node_id), knowledge_base_signature())
+    cached = _NODE_STANDARD_RETRIEVAL_CACHE.get(cache_key)
+    if cached is not None:
+        return repo.clone(cached)
+
+    retrieval = retrieve_knowledge_clauses(
+        repo.state,
+        query=query,
+        business_pack_id=business_pack_id,
+        node_id=node_id,
+        top_k=5,
+        query_type="node_standard_basis",
+    )
+    selected = retrieval["trace"]["selectedClauses"]
+    if len(_NODE_STANDARD_RETRIEVAL_CACHE) >= _NODE_STANDARD_CACHE_LIMIT:
+        # 指纹变化会让旧键永远命不中，简单清空即可，不必做 LRU
+        _NODE_STANDARD_RETRIEVAL_CACHE.clear()
+    _NODE_STANDARD_RETRIEVAL_CACHE[cache_key] = repo.clone(selected)
+    return selected
+
+
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/standards")
 def standards(request: Request, project_id: str, node_id: int):
     project = repo.require_project(project_id)
@@ -13497,19 +13552,16 @@ def standards(request: Request, project_id: str, node_id: int):
     # 而这个接口每次点击节点都会被调用，实测检索本身耗时约 1.1 秒，是节点加载的主要开销。
     if standards_payload:
         return ok(standards_payload, request)
-    retrieval = retrieve_knowledge_clauses(
-        repo.state,
-        query=query,
+    selected_clauses = cached_node_standard_retrieval(
         business_pack_id=business_pack_id,
         node_id=node_id,
-        top_k=5,
-        query_type="node_standard_basis",
+        query=query,
     )
     fixed_keys = {
         (str(item.get("knowledgeFileId") or ""), str(item.get("clauseNo") or ""))
         for item in standards_payload
     }
-    for clause in retrieval["trace"]["selectedClauses"]:
+    for clause in selected_clauses:
         section_path = clause.get("sectionPath") or []
         retrieved = enrich_standard_reference(
             {
