@@ -22,20 +22,27 @@ from scripts.data_migration import (
 
 
 def valid_manifest(root: Path) -> dict[str, object]:
-    payload = root / "databases" / "aicheck.dump"
-    payload.parent.mkdir(parents=True)
-    payload.write_bytes(b"postgres-dump")
+    payloads = {
+        "globals.sql": b"CREATE ROLE aicheck;",
+        "databases/aicheck.dump": b"aicheck-dump",
+        "databases/litellm.dump": b"litellm-dump",
+        "databases/workflow.dump": b"workflow-dump",
+    }
+    files = {}
+    for relative, body in payloads.items():
+        payload = root / relative
+        payload.parent.mkdir(parents=True, exist_ok=True)
+        payload.write_bytes(body)
+        files[relative] = {
+            "size": len(body),
+            "sha256": "sha256:" + hashlib.sha256(body).hexdigest(),
+        }
     return {
         "schemaVersion": "aicheck-data-migration-v1",
         "migrationId": "migration-20260812T120000Z",
         "databases": ["aicheck", "litellm", "workflow"],
         "buckets": ["documents", "previews", "exports", "ocr-artifacts"],
-        "files": {
-            "databases/aicheck.dump": {
-                "size": 13,
-                "sha256": "sha256:" + hashlib.sha256(b"postgres-dump").hexdigest(),
-            }
-        },
+        "files": files,
     }
 
 
@@ -71,6 +78,22 @@ def test_validate_manifest_rejects_changed_payload(tmp_path: Path) -> None:
     (tmp_path / "databases" / "aicheck.dump").write_bytes(b"changed")
 
     with pytest.raises(BundleValidationError, match="size|SHA-256"):
+        validate_manifest(manifest, tmp_path)
+
+
+def test_validate_manifest_rejects_missing_required_database_dump(tmp_path: Path) -> None:
+    manifest = valid_manifest(tmp_path)
+    del manifest["files"]["databases/workflow.dump"]
+
+    with pytest.raises(BundleValidationError, match="required payload"):
+        validate_manifest(manifest, tmp_path)
+
+
+def test_validate_manifest_rejects_undeclared_payload(tmp_path: Path) -> None:
+    manifest = valid_manifest(tmp_path)
+    (tmp_path / "unexpected.bin").write_bytes(b"unexpected")
+
+    with pytest.raises(BundleValidationError, match="undeclared"):
         validate_manifest(manifest, tmp_path)
 
 
@@ -312,6 +335,15 @@ def test_restore_script_refuses_to_touch_target_without_confirmation(tmp_path: P
 
     assert result.returncode == 64
     assert "--confirm-replace" in result.stderr
+
+
+def test_migration_wrapper_refuses_without_explicit_writer_freeze() -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "migrate_local_data_to_server.sh"
+
+    result = subprocess.run(["bash", str(script)], text=True, capture_output=True)
+
+    assert result.returncode == 64
+    assert "AICHECK_MIGRATION_WRITERS_FROZEN=true" in result.stderr
 
 
 def test_server_runtime_profile_never_mutates_restored_data() -> None:

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --migration-id ID --archive PATH --checksum PATH --confirm-replace" >&2
+  echo "usage: $0 --migration-id ID --archive PATH --checksum PATH --writers-frozen --confirm-replace" >&2
   exit 64
 }
 
@@ -10,9 +10,10 @@ migration_id=""
 archive=""
 checksum=""
 confirmed=false
+writers_frozen=false
 postgres_container="${AICHECK_POSTGRES_CONTAINER:-aicheck-postgres}"
 api_container="${AICHECK_API_CONTAINER:-aicheck-api}"
-postgres_user="${AICHECK_POSTGRES_USER:-aicheck}"
+postgres_user="aicheck"
 data_root="${AICHECK_SERVER_DATA_ROOT:-/home/dev-bjy/aicheck-data}"
 
 while [ "$#" -gt 0 ]; do
@@ -21,12 +22,17 @@ while [ "$#" -gt 0 ]; do
     --archive) archive="${2:-}"; shift 2 ;;
     --checksum) checksum="${2:-}"; shift 2 ;;
     --confirm-replace) confirmed=true; shift ;;
+    --writers-frozen) writers_frozen=true; shift ;;
     *) usage ;;
   esac
 done
 
 if [ "$confirmed" != true ]; then
   echo "destructive restore requires --confirm-replace" >&2
+  exit 64
+fi
+if [ "$writers_frozen" != true ]; then
+  echo "restore requires --writers-frozen after every source and target writer is stopped" >&2
   exit 64
 fi
 if [ -z "$migration_id" ] || [ -z "$archive" ] || [ -z "$checksum" ]; then
@@ -51,7 +57,23 @@ fi
 
 (cd "$archive_dir" && sha256sum -c "$(basename "$checksum_path")")
 tar -tzf "$archive_path" >/dev/null
-tar -xzf "$archive_path" -C "$archive_dir"
+python3 - "$archive_path" "$archive_dir" "$migration_id" <<'PY'
+import pathlib
+import sys
+import tarfile
+
+archive = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2]).resolve()
+migration_id = sys.argv[3]
+with tarfile.open(str(archive), "r:gz") as source:
+    for member in source.getmembers():
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] != migration_id:
+            raise SystemExit("unsafe archive member: " + member.name)
+        if member.issym() or member.islnk() or member.isdev():
+            raise SystemExit("archive links and devices are not allowed: " + member.name)
+    source.extractall(str(destination))
+PY
 bundle_root="$archive_dir/$migration_id"
 
 python3 - "$bundle_root" "$migration_id" <<'PY'
@@ -71,6 +93,7 @@ if (root / "READY").read_text(encoding="utf-8").strip() != migration_id:
 if set(manifest.get("databases", [])) != {"aicheck", "litellm", "workflow"}:
     raise SystemExit("database inventory mismatch")
 PY
+python3 "$(dirname "$0")/data_migration.py" validate-bundle --bundle-root "$bundle_root"
 
 postgres_major="$(docker exec "$postgres_container" psql -U "$postgres_user" -d postgres -Atc "show server_version_num" | cut -c1-2)"
 if [ "$postgres_major" != "16" ]; then
@@ -80,7 +103,10 @@ fi
 
 receipt_dir="$archive_dir/receipts"
 mkdir -p "$receipt_dir"
-docker exec "$postgres_container" pg_dump -U "$postgres_user" -d aicheck -Fc > "$receipt_dir/target-before-aicheck.dump"
+docker exec "$postgres_container" pg_dumpall -U "$postgres_user" --globals-only > "$receipt_dir/target-before-globals.sql"
+for database in aicheck litellm workflow; do
+  docker exec "$postgres_container" pg_dump -U "$postgres_user" -d "$database" -Fc > "$receipt_dir/target-before-$database.dump"
+done
 docker inspect "$api_container" > "$receipt_dir/target-api-before.json"
 docker stop "$api_container" >/dev/null
 

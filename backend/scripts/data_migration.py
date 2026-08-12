@@ -89,6 +89,26 @@ def validate_manifest(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise BundleValidationError("manifest files inventory is required")
+    for relative_name in files:
+        if not isinstance(relative_name, str):
+            raise BundleValidationError("invalid manifest files entry")
+        _safe_relative_path(relative_name)
+    required_payloads = {"globals.sql", *(f"databases/{name}.dump" for name in DATABASE_ORDER)}
+    missing_payloads = required_payloads.difference(files)
+    if missing_payloads:
+        raise BundleValidationError(
+            "manifest required payload is missing: " + ", ".join(sorted(missing_payloads))
+        )
+    actual_payloads = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path.name not in {"manifest.json", "READY"}
+    }
+    undeclared_payloads = actual_payloads.difference(files)
+    if undeclared_payloads:
+        raise BundleValidationError(
+            "bundle contains undeclared payload: " + ", ".join(sorted(undeclared_payloads))
+        )
     resolved_root = root.resolve()
     for relative_name, metadata in files.items():
         if not isinstance(relative_name, str) or not isinstance(metadata, dict):
@@ -232,6 +252,7 @@ def export_bundle(
     except Exception:
         archive.unlink(missing_ok=True)
         checksum_file.unlink(missing_ok=True)
+        shutil.rmtree(bundle_root, ignore_errors=True)
         raise
 
 

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${AICHECK_MIGRATION_WRITERS_FROZEN:-}" != "true" ]; then
+  echo "refusing inconsistent snapshot: stop all source and target writers, then set AICHECK_MIGRATION_WRITERS_FROZEN=true" >&2
+  exit 64
+fi
+
 backend_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 repo_root="$(cd "$backend_dir/.." && pwd -P)"
 source_root="${AICHECK_MIGRATION_SOURCE_ROOT:-$repo_root}"
@@ -30,11 +35,13 @@ echo "==> upload through $ssh_host"
   --ssh-host "$ssh_host" \
   --remote-root "$remote_root"
 
-scp "$backend_dir/scripts/restore_data_migration.sh" "$ssh_host:$remote_dir/"
+scp "$backend_dir/scripts/restore_data_migration.sh" \
+  "$backend_dir/scripts/data_migration.py" \
+  "$ssh_host:$remote_dir/"
 
 echo "==> destructive restore on $ssh_host"
 ssh "$ssh_host" \
-  "bash '$remote_dir/restore_data_migration.sh' --migration-id '$migration_id' --archive '$remote_dir/$migration_id.tar.gz' --checksum '$remote_dir/$migration_id.tar.gz.sha256' --confirm-replace"
+  "bash '$remote_dir/restore_data_migration.sh' --migration-id '$migration_id' --archive '$remote_dir/$migration_id.tar.gz' --checksum '$remote_dir/$migration_id.tar.gz.sha256' --writers-frozen --confirm-replace"
 
 echo "==> deploy API code with persistent file mounts"
 AICHECK_DEPLOY_HOST="$ssh_host" bash "$backend_dir/scripts/deploy_to_server.sh" --backend

@@ -31,17 +31,51 @@ MODE="${1:-all}"
 # backend/data/visual_extraction_pages 是被误提交的 OCR 页面图产物（1106 个 PNG，
 # 约 550MB）。部署不需要它，剔除后包体从 557MB 降到 3.5MB。
 sync_backend() {
-  local server_postgres_password="${AICHECK_SERVER_POSTGRES_PASSWORD:-}"
   local local_env_file="${AICHECK_LOCAL_ENV_FILE:-$REPO_ROOT/backend/.env}"
-  if [ -z "$server_postgres_password" ] && [ -f "$local_env_file" ]; then
-    server_postgres_password="$(sed -n 's/^AICHECK_POSTGRES_PASSWORD=//p' "$local_env_file" | tail -1)"
-  fi
-  if [ -z "$server_postgres_password" ]; then
-    echo "缺少数据库口令：设置 AICHECK_SERVER_POSTGRES_PASSWORD，或提供 $local_env_file" >&2
-    return 64
-  fi
-  local encoded_postgres_password
-  encoded_postgres_password="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$server_postgres_password")"
+  local runtime_env="$STAGE/aicheck-api.env"
+  AICHECK_RUNTIME_ENV_FILE="$local_env_file" \
+  AICHECK_RUNTIME_OUTPUT="$runtime_env" \
+  AICHECK_RUNTIME_DEMO="$AICHECK_RUNTIME_ENABLE_DEMO_DATA" \
+  AICHECK_RUNTIME_BOOTSTRAP="$AICHECK_RUNTIME_BOOTSTRAP_LOCAL_ROLES" \
+  python3 - <<'PY'
+import os, pathlib, shlex, urllib.parse
+
+values = {}
+path = pathlib.Path(os.environ["AICHECK_RUNTIME_ENV_FILE"])
+if path.is_file():
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        try:
+            parsed = shlex.split(value, comments=True, posix=True)
+        except ValueError as exc:
+            raise SystemExit(f"invalid dotenv value for {key.strip()}: {exc}")
+        values[key.strip()] = parsed[0] if parsed else ""
+password = os.environ.get("AICHECK_SERVER_POSTGRES_PASSWORD") or values.get("AICHECK_POSTGRES_PASSWORD")
+jwt_secret = os.environ.get("AICHECK_SERVER_JWT_SECRET") or values.get("AICHECK_JWT_SECRET")
+if not password or not jwt_secret:
+    raise SystemExit("AICHECK_POSTGRES_PASSWORD and AICHECK_JWT_SECRET are required")
+url = "postgresql://aicheck:{}@aicheck-postgres:5432/aicheck".format(
+    urllib.parse.quote(password, safe="")
+)
+runtime = {
+    "AICHECK_DATABASE_URL": url,
+    "AICHECK_TENANT_ID": "TENANT-DEFAULT",
+    "AICHECK_TENANT_MODE": "isolated",
+    "AICHECK_REDIS_URL": "redis://aicheck-redis:6379/0",
+    "AICHECK_REQUIRE_AUTH": "true",
+    "AICHECK_ENABLE_DEMO_DATA": os.environ["AICHECK_RUNTIME_DEMO"],
+    "AICHECK_BOOTSTRAP_LOCAL_ROLES": os.environ["AICHECK_RUNTIME_BOOTSTRAP"],
+    "AICHECK_STRICT_PRODUCTION": "false",
+    "AICHECK_JWT_SECRET": jwt_secret,
+    "AICHECK_ALLOWED_HOSTS": "*",
+}
+output = pathlib.Path(os.environ["AICHECK_RUNTIME_OUTPUT"])
+output.write_text("".join(f"{key}={value}\n" for key, value in runtime.items()), encoding="utf-8")
+output.chmod(0o600)
+PY
 
   echo "==> 打包后端（HEAD=$COMMIT）"
   git -C "$REPO_ROOT" archive --format=tar HEAD backend openapi > "$STAGE/src.tar"
@@ -56,6 +90,8 @@ with tarfile.open(src) as si, tarfile.open(dst, "w:gz", compresslevel=9) as so:
         so.addfile(m, si.extractfile(m) if m.isfile() else None)
 PY
   scp -q "$STAGE/src.tar.gz" "$HOST:$REMOTE_HOME/aicheck-src.tar.gz"
+  scp -q "$runtime_env" "$HOST:$REMOTE_HOME/aicheck-api.env"
+  ssh "$HOST" "chmod 600 '$REMOTE_HOME/aicheck-api.env'"
 
   echo "==> 服务器解包并提交到本地 git 仓库"
   ssh "$HOST" "
@@ -84,23 +120,13 @@ PY
     cd $REMOTE_HOME/AIcheck/backend
     docker build -q -f Dockerfile.server -t aicheck-api:local . >/dev/null
     docker run --rm --network aicheck-net \
-      -e AICHECK_DATABASE_URL=postgresql://aicheck:$encoded_postgres_password@aicheck-postgres:5432/aicheck \
-      -e AICHECK_TENANT_ID=TENANT-DEFAULT \
+      --env-file $REMOTE_HOME/aicheck-api.env \
       aicheck-api:local python scripts/migrate_backend.py | tail -1
     docker rm -f aicheck-api >/dev/null 2>&1 || true
     docker run -d --name aicheck-api --network aicheck-net --restart unless-stopped \
       -v $SERVER_DATA_ROOT/files/output:/app/output \
       -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
-      -e AICHECK_DATABASE_URL=postgresql://aicheck:$encoded_postgres_password@aicheck-postgres:5432/aicheck \
-      -e AICHECK_TENANT_ID=TENANT-DEFAULT \
-      -e AICHECK_TENANT_MODE=isolated \
-      -e AICHECK_REDIS_URL=redis://aicheck-redis:6379/0 \
-      -e AICHECK_REQUIRE_AUTH=true \
-      -e AICHECK_ENABLE_DEMO_DATA=$AICHECK_RUNTIME_ENABLE_DEMO_DATA \
-      -e AICHECK_BOOTSTRAP_LOCAL_ROLES=$AICHECK_RUNTIME_BOOTSTRAP_LOCAL_ROLES \
-      -e AICHECK_STRICT_PRODUCTION=false \
-      -e AICHECK_JWT_SECRET=AicheckProdJwt-2026-ChangeMe \
-      -e AICHECK_ALLOWED_HOSTS='*' \
+      --env-file $REMOTE_HOME/aicheck-api.env \
       -p 127.0.0.1:8000:8000 \
       aicheck-api:local uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 >/dev/null
     sleep 12
