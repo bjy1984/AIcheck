@@ -126,15 +126,54 @@ verify() {
     code=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" http://127.0.0.1:${GATEWAY_PORT}/)
     echo "  前端首页: HTTP $code"
     [ "$code" = "200" ] || exit 1
-    login=$(curl -s --max-time 10 -X POST http://127.0.0.1:${GATEWAY_PORT}/api/auth/login \
-      -H "Content-Type: application/json" -d "{\"username\":\"inspection\",\"password\":\"inspection\"}")
-    echo "$login" | grep -q "\"code\": *0" && echo "  登录: 通过" || { echo "  登录失败: $login"; exit 1; }
+    # 口令从 /home/dev-bjy/aicheck-secrets.env 读（600，仓库路径外），不硬编码。
+    # 顺带断言弱口令必须被拒——防止有人把口令改回「用户名=口令」而无人察觉。
+    tc=$(PYTHONIOENCODING=utf-8 python3 - <<'PROBE_PY'
+import json, pathlib, sys, urllib.request, urllib.error, os
+
+BASE = "http://127.0.0.1:" + os.environ["GATEWAY_PORT"]
+creds = {}
+secrets = pathlib.Path("/home/dev-bjy/aicheck-secrets.env")
+if secrets.exists():
+    for line in secrets.read_text().splitlines():
+        if "=" in line and not line.strip().startswith("#"):
+            k, v = line.split("=", 1)
+            creds[k.strip()] = v.strip().strip('"').strip("'")
+
+def login(user, password):
+    req = urllib.request.Request(
+        BASE + "/api/auth/login",
+        data=json.dumps({"username": user, "password": password}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        return json.loads(exc.read())
+
+def password_for(role):
+    return creds.get("AICHECK_BOOTSTRAP_PASSWORD_" + role.upper())
+
+for role in ("inspection", "contractor"):
+    pw = password_for(role)
+    if not pw:
+        print(f"  凭证缺失：{role}（/home/dev-bjy/aicheck-secrets.env）", file=sys.stderr)
+        sys.exit(1)
+    if login(role, pw).get("code") != 0:
+        print(f"  登录失败：{role}", file=sys.stderr)
+        sys.exit(1)
+    if login(role, role).get("code") == 0:
+        print(f"  弱口令回退：{role} 的口令等于用户名", file=sys.stderr)
+        sys.exit(1)
+
+print("  登录: 通过（弱口令已拒）", file=sys.stderr)
+print(login("contractor", password_for("contractor")).get("data", {}).get("token", ""))
+PROBE_PY
+    ) || exit 1
 
     # 行为探针：健康检查全绿并不代表新代码生效（部署过一次旧容器实例才发现）。
     # 挑一条本轮修复的、行为可判定的规则实测——施工方不得读 AI 判定理由（O-1）。
-    tc=$(curl -s --max-time 10 -X POST http://127.0.0.1:${GATEWAY_PORT}/api/auth/login \
-      -H "Content-Type: application/json" -d "{\"username\":\"contractor\",\"password\":\"contractor\"}" \
-      | python3 -c "import json,sys;print(json.load(sys.stdin).get(\"data\",{}).get(\"token\",\"\"))")
     probe=$(curl -s --max-time 10 \
       http://127.0.0.1:${GATEWAY_PORT}/api/projects/P-2026-HDCP-001/inspection/nodes/24/ai-runs \
       -H "Authorization: Bearer $tc" | python3 -c "import json,sys;print(json.load(sys.stdin).get(\"code\"))")
