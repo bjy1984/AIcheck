@@ -60,6 +60,10 @@ PY
   "
 
   echo "==> 重建 API 镜像并重建容器"
+  # 凭证一律从 /home/dev-bjy 下的 600 权限文件读，不写进仓库、不进命令行。
+  # 传法用 docker --env-file 而非 shell 的 source：凭证里含特殊字符，
+  # source 会把它们当 shell 语法解析（实测报过 command not found）。
+  # env-file 按 KEY=VALUE 原样读取，不做任何展开。
   # 必须 rm + run，不能 docker restart：restart 重启的是既有容器实例，它绑定在
   # 旧镜像层上，新构建的镜像根本不会被采用。这个坑真实发生过——镜像 15:09 构建，
   # 容器还是 07:09 那个实例，代码更新静默失效，验证却全绿（因为验的是健康检查，
@@ -68,22 +72,12 @@ PY
     set -e
     cd $REMOTE_HOME/AIcheck/backend
     docker build -q -f Dockerfile.server -t aicheck-api:local . >/dev/null
-    docker run --rm --network aicheck-net \
-      -e AICHECK_DATABASE_URL=postgresql://aicheck:AicheckProd2026@aicheck-postgres:5432/aicheck \
-      -e AICHECK_TENANT_ID=TENANT-DEFAULT \
+    python3 /home/dev-bjy/build-runtime-env.py
+    docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.env \
       aicheck-api:local python scripts/migrate_backend.py | tail -1
     docker rm -f aicheck-api >/dev/null 2>&1 || true
     docker run -d --name aicheck-api --network aicheck-net --restart unless-stopped \
-      -e AICHECK_DATABASE_URL=postgresql://aicheck:AicheckProd2026@aicheck-postgres:5432/aicheck \
-      -e AICHECK_TENANT_ID=TENANT-DEFAULT \
-      -e AICHECK_TENANT_MODE=isolated \
-      -e AICHECK_REDIS_URL=redis://aicheck-redis:6379/0 \
-      -e AICHECK_REQUIRE_AUTH=true \
-      -e AICHECK_ENABLE_DEMO_DATA=true \
-      -e AICHECK_BOOTSTRAP_LOCAL_ROLES=true \
-      -e AICHECK_STRICT_PRODUCTION=false \
-      -e AICHECK_JWT_SECRET=AicheckProdJwt-2026-ChangeMe \
-      -e AICHECK_ALLOWED_HOSTS='*' \
+      --env-file /home/dev-bjy/aicheck-runtime.env \
       -p 127.0.0.1:8000:8000 \
       aicheck-api:local uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 >/dev/null
     sleep 12

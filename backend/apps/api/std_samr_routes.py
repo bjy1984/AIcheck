@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, Request
@@ -11,9 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
+from libs.integrations.external_registry_queries import (
+    query_standard_search,
+    query_standard_status,
+)
 from libs.integrations.std_samr_client import (
-    DEFAULT_ORIGIN,
-    StdSamrClient,
     StdSamrConfigurationError,
     StdSamrProtocolError,
     StdSamrRequestError,
@@ -21,7 +21,6 @@ from libs.integrations.std_samr_client import (
     normalize_standard_ref,
     parse_review_date,
 )
-
 
 logger = logging.getLogger("aicheck.api.std_samr")
 router = APIRouter(tags=["National standards public registry"])
@@ -95,23 +94,10 @@ class StdSamrVerifyResponse(BaseModel):
     serverTime: str
 
 
-def configured_std_samr_origin() -> str:
-    return str(os.getenv("AICHECK_STD_SAMR_ORIGIN") or DEFAULT_ORIGIN).strip()
 
 
-def query_standard_search(query: str, *, page: int = 1) -> dict[str, Any]:
-    """Execute a std.samr.gov.cn search and return the public contract."""
-
-    with StdSamrClient(origin=configured_std_samr_origin()) as client:
-        return dict(client.search(query, page=page).to_dict(origin=client.origin))
 
 
-def query_standard_status(standard_ref: str, review_date: date | str | None = None) -> dict[str, Any]:
-    """Verify a cited standard against std.samr.gov.cn."""
-
-    as_of = parse_review_date(review_date)
-    with StdSamrClient(origin=configured_std_samr_origin()) as client:
-        return dict(client.verify(standard_ref, review_date=as_of).to_dict(origin=client.origin))
 
 
 def log_std_samr_failure(request: Request, exc: Exception, *, operation: str) -> None:

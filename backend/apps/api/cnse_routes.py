@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
-import os
-from typing import Any, Literal
+from typing import Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
@@ -12,9 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.integrations.cnse_client import (
-    DEFAULT_ORIGIN,
     PERSON_FIELDS,
-    CnseApiClient,
     CnseConfigurationError,
     CnseProtocolError,
     CnseRecognitionError,
@@ -22,7 +18,10 @@ from libs.integrations.cnse_client import (
     normalize_id_number,
     normalize_keyword,
 )
-
+from libs.integrations.external_registry_queries import (
+    query_cnse_organizations,
+    query_cnse_persons,
+)
 
 logger = logging.getLogger("aicheck.api.cnse")
 router = APIRouter(tags=["CNSE public registry"])
@@ -122,39 +121,12 @@ class CnsePersonSearchResponse(BaseModel):
     serverTime: str
 
 
-def configured_cnse_origin() -> str:
-    return str(os.getenv("AICHECK_CNSE_ORIGIN") or DEFAULT_ORIGIN).strip()
 
 
-def configured_cnse_min_confidence() -> float:
-    raw = str(os.getenv("AICHECK_CNSE_MIN_CONFIDENCE") or "0.50").strip()
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise CnseConfigurationError("minimum confidence is invalid") from exc
-    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
-        raise CnseConfigurationError("minimum confidence is invalid")
-    return value
 
 
-def query_cnse_organizations(keyword: str) -> dict[str, Any]:
-    """Execute the complete challenge/recognition/search flow in one session."""
-
-    with CnseApiClient(
-        origin=configured_cnse_origin(),
-        min_confidence=configured_cnse_min_confidence(),
-    ) as client:
-        return dict(client.query(keyword).to_dict())
 
 
-def query_cnse_persons(id_number: str) -> dict[str, Any]:
-    """Execute the person challenge/check/search flow in one session."""
-
-    with CnseApiClient(
-        origin=configured_cnse_origin(),
-        min_confidence=configured_cnse_min_confidence(),
-    ) as client:
-        return dict(client.query_person(id_number).to_dict())
 
 
 def log_cnse_failure(request: Request, exc: Exception, *, operation: str) -> None:

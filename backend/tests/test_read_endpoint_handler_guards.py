@@ -12,7 +12,6 @@ import inspect
 from fastapi.testclient import TestClient
 
 import apps.api.routes as routes_module
-import libs.review_orchestrator  # noqa: F401  # 先初始化，规避 review_tools 循环导入
 from apps.api.main import app
 
 client = TestClient(app)

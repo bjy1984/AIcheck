@@ -1,7 +1,4 @@
 {
- "apps/api/cnse_routes.py": {
-  "I001": 1
- },
  "apps/api/cnse_service.py": {
   "I001": 1
  },
@@ -23,9 +20,6 @@
   "SIM102": 1,
   "SIM103": 2,
   "UP031": 1
- },
- "apps/api/std_samr_routes.py": {
-  "I001": 1
  },
  "apps/embedding_service/main.py": {
   "I001": 1
@@ -358,10 +352,6 @@
  "libs/review_grounding.py": {
   "I001": 1,
   "SIM103": 2
- },
- "libs/review_orchestrator/__init__.py": {
-  "I001": 1,
-  "RUF022": 1
  },
  "libs/review_orchestrator/deterministic_tools.py": {
   "DTZ011": 1,
@@ -921,6 +911,9 @@
  },
  "tests/test_fde_console.py": {
   "I001": 1
+ },
+ "tests/test_import_layering.py": {
+  "B009": 1
  },
  "tests/test_import_scan_test_scenario.py": {
   "I001": 1
