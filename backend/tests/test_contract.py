@@ -6837,7 +6837,7 @@ def test_project_management_etag_idempotency_and_versioned_responses() -> None:
     assert initialized_replay["project"]["etag"] == initialized["project"]["etag"]
 
 
-def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
+def test_document_mutations_are_idempotent_and_project_etag_guarded(monkeypatch) -> None:
     project_id = "P-2026-HDCP-001"
     project = assert_ok(client.get(f"/projects/{project_id}"))["project"]
 
@@ -6980,12 +6980,44 @@ def test_document_mutations_are_idempotent_and_project_etag_guarded() -> None:
     )
     assert any(item.get("fileId") == knowledge_file_id for item in repo.state.get("knowledge_chunks", []))
     assert any(item.get("fileId") == knowledge_file_id for item in repo.state.get("knowledge_vectors", []))
+    from apps.api import main as api_main
+
+    flush_calls: list[tuple[set[str] | None, set[str] | None]] = []
+    monkeypatch.setattr(
+        api_main,
+        "flush_state",
+        lambda selected_state_keys=None, selected_singleton_keys=None: flush_calls.append(
+            (selected_state_keys, selected_singleton_keys)
+        ),
+    )
     deleted_document = assert_ok(
         client.delete(
             f"/projects/{project_id}/documents/{document_id}",
             headers={"If-Match": project["etag"], "Idempotency-Key": "document-delete-once"},
         )
     )
+    assert flush_calls == [
+        (
+            {
+                "audit_logs",
+                "bindings",
+                "documents",
+                "evidence_links",
+                "extracted_fields",
+                "knowledge_chunks",
+                "knowledge_files",
+                "knowledge_tasks",
+                "knowledge_vectors",
+                "ocr_corrections",
+                "ocr_jobs",
+                "ocr_parse_results",
+                "submission_drafts",
+                "upload_sessions",
+                "versions",
+            },
+            None,
+        )
+    ]
     deleted_document_replay = assert_ok(
         client.delete(
             f"/projects/{project_id}/documents/{document_id}",

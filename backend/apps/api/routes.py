@@ -2209,6 +2209,27 @@ def remove_document_storage_objects(document_id: str) -> int:
     return removed
 
 
+PROJECT_DOCUMENT_DELETE_STATE_KEYS = frozenset(
+    {
+        "audit_logs",
+        "bindings",
+        "documents",
+        "evidence_links",
+        "extracted_fields",
+        "knowledge_chunks",
+        "knowledge_files",
+        "knowledge_tasks",
+        "knowledge_vectors",
+        "ocr_corrections",
+        "ocr_jobs",
+        "ocr_parse_results",
+        "submission_drafts",
+        "upload_sessions",
+        "versions",
+    }
+)
+
+
 def remove_project_document_records(project_id: str, document_id: str) -> dict[str, int]:
     version_ids = {
         str(item.get("id"))
@@ -7846,6 +7867,7 @@ def delete_project_document(
                 ),
             )
         removed = remove_project_document_records(project_id, document_id)
+        request.state.flush_state_keys = set(PROJECT_DOCUMENT_DELETE_STATE_KEYS)
         return ok(
             {
                 **repo.mutation_result(

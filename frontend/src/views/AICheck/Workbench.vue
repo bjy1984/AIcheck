@@ -238,6 +238,7 @@ import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
+import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 
 type PreviewDrawerTarget = {
@@ -3194,6 +3195,8 @@ const handleDeleteProjectFile = async (documentId: string) => {
   } catch {
     return
   }
+  const removal = removeProjectFileLocally(nodePackage.value, documentId)
+  nodePackage.value = removal.packageData
   actionLoading.value = true
   try {
     const res = await deleteProjectDocumentApi(activeProjectId.value, documentId, {
@@ -3201,12 +3204,14 @@ const handleDeleteProjectFile = async (documentId: string) => {
       idempotencyKey: `project-file-delete-${activeProjectId.value}-${documentId}`
     })
     if (!res) {
+      nodePackage.value = restoreProjectFileLocally(nodePackage.value, removal)
       showActionError('项目文件删除失败，请刷新项目文件库后重试。')
       return
     }
     ElMessage.success('未提交文件已删除')
-    await loadProjectBundle()
+    void loadNodePackage(activeNodeId.value, { silent: true })
   } catch (error) {
+    nodePackage.value = restoreProjectFileLocally(nodePackage.value, removal)
     showActionError('项目文件删除失败，仅未提交文件允许删除。', error)
   } finally {
     actionLoading.value = false
