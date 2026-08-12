@@ -14,23 +14,35 @@ import tempfile
 import threading
 import time
 import zipfile
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import quote
-from xml.etree import ElementTree as ET
 from uuid import uuid4
+from xml.etree import ElementTree as ET
 
 import yaml
-from fastapi import APIRouter, BackgroundTasks, Body, Header, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi import APIRouter, Body, Header, Query, Request
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 
-from apps.api.adapters.engineering_inspection import ENGINEERING_DOMAIN_TYPE
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from apps.ocr_service.utils import parse_bool
+from libs.audit_context import (
+    current_request_audit_context,
+    reset_request_audit_context,
+    set_request_audit_context,
+)
+from libs.audit_runtime import audit_runtime_public_config
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     build_project_requirements,
@@ -49,10 +61,19 @@ from libs.business_pack.clause_store import (
 )
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
-from libs.audit_context import current_request_audit_context, reset_request_audit_context, set_request_audit_context
-from libs.audit_runtime import audit_runtime_public_config
-from libs.db.repository import flush_mutation_records, flush_state, load_state, postgres_persistence_configured, repo
-from libs.db.seed import PROJECT_ID, ROLE_ACTIONS, ROLE_NODE_MAP, STANDARD_RULES_SOURCE_ID, STANDARD_RULES_VERSION
+from libs.db.repository import (
+    flush_mutation_records,
+    flush_state,
+    load_state,
+    postgres_persistence_configured,
+    repo,
+)
+from libs.db.seed import (
+    ROLE_ACTIONS,
+    ROLE_NODE_MAP,
+    STANDARD_RULES_SOURCE_ID,
+    STANDARD_RULES_VERSION,
+)
 from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.fde_certification import (
@@ -67,6 +88,7 @@ from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
+from libs.knowledge_graph import build_business_pack_knowledge_network
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
     STANDARD_INDEX_VERSION,
@@ -75,7 +97,6 @@ from libs.knowledge_indexing import (
     offline_hash_embedding,
 )
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
-from libs.knowledge_graph import build_business_pack_knowledge_network
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.material_targeting import (
     build_node_evidence_readiness,
@@ -87,14 +108,23 @@ from libs.material_targeting import (
     set_node_evidence_link_manual_status,
 )
 from libs.model_usage import normalize_model_usage
-from libs.ocr_readiness import attach_document_ocr_readiness, build_document_ocr_readiness
+from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
+from libs.raw_vault import (
+    capture_agent_turn,
+    capture_tool_error,
+    capture_tool_request,
+    capture_tool_result,
+    postgres_events_for_run,
+    postgres_pending_payload,
+    raw_context_from_record,
+    verify_event_chain,
+)
+from libs.raw_vault_export import build_raw_vault_export, build_raw_vault_summary
 from libs.review_orchestrator import (
-    REVIEW_GRAPH_STEPS,
     apply_review_human_input_for_review_run,
     build_review_orchestration_scorecard,
     clone_review_run_for_replay,
-    create_review_run_from_ai_run,
     dispatch_existing_review_run,
     execute_review_run_inline,
     graph_view_for_review_run,
@@ -133,17 +163,6 @@ from libs.review_orchestrator.r20_r23_facts import (
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
-from libs.raw_vault import (
-    capture_agent_turn,
-    capture_tool_error,
-    capture_tool_request,
-    capture_tool_result,
-    postgres_events_for_run,
-    postgres_pending_payload,
-    raw_context_from_record,
-    verify_event_chain,
-)
-from libs.raw_vault_export import build_raw_vault_export, build_raw_vault_summary
 from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path
 from libs.security.auth import (
@@ -152,7 +171,6 @@ from libs.security.auth import (
     USERS,
     authenticate,
     authentication_enforced,
-    decode_token,
     demo_users_enabled,
     hash_password,
     issue_token,
@@ -169,15 +187,13 @@ from libs.security.session import (
     security_sessions,
 )
 from libs.security.tenant import (
-    current_tenant_id,
     configured_tenant_id,
+    current_tenant_id,
     reset_request_tenant_id,
     set_request_tenant_id,
-    tenant_is_allowed,
     tenant_id_for_record,
+    tenant_is_allowed,
 )
-from scripts.ocr_100_label_studio_export import label_config_xml, label_studio_task, label_studio_task_without_image
-from scripts.ocr_100_label_studio_import import import_label_studio_annotations
 from scripts.ocr_100_action_board import (
     ACTION_BOARD_LANES,
     action_board_csv,
@@ -185,6 +201,12 @@ from scripts.ocr_100_action_board import (
     build_action_board,
     write_action_handoff,
 )
+from scripts.ocr_100_label_studio_export import (
+    label_config_xml,
+    label_studio_task,
+    label_studio_task_without_image,
+)
+from scripts.ocr_100_label_studio_import import import_label_studio_annotations
 from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tasks
 
 router = APIRouter(tags=["AIcheck API"])
@@ -914,7 +936,7 @@ def normalize_business_rule_version_record(
 def extract_markdown_rule_field(section: str, title: str) -> str:
     marker = re.escape(title)
     pattern = rf"\*\*{marker}\*\*\s*(.*?)(?=\n\*\*|\n###\s+R\d+|\Z)"
-    match = re.search(pattern, section, re.S)
+    match = re.search(pattern, section, re.DOTALL)
     return compact_rule_text(match.group(1) if match else "")
 
 
@@ -925,7 +947,7 @@ def parse_markdown_business_rules(
     import_version: str,
     imported_at: str,
 ) -> list[dict[str, Any]]:
-    sections = list(re.finditer(r"^###\s+(R\d+)\s*[｜|]\s*(.+?)\s*$", text, re.M))
+    sections = list(re.finditer(r"^###\s+(R\d+)\s*[｜|]\s*(.+?)\s*$", text, re.MULTILINE))
     parsed: list[dict[str, Any]] = []
     for index, match in enumerate(sections):
         source_rule_id = match.group(1).upper()
@@ -1201,7 +1223,7 @@ async def parse_multipart_uploads(request: Request) -> tuple[dict[str, list[str]
         return {}, [], fail(errors.VALIDATION_ERROR, request, message="上传内容不能为空。")
     try:
         message = BytesParser(policy=policy.default).parsebytes(
-            f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + body
+            f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode() + body
         )
     except Exception as exc:
         return {}, [], fail(errors.VALIDATION_ERROR, request, message=f"上传表单解析失败：{exc}")
@@ -1324,7 +1346,7 @@ def sync_knowledge_source_counts(source: dict[str, Any]) -> None:
 
 
 def stable_knowledge_record_seed(source_id: str, relative_path: str) -> str:
-    return hashlib.sha1(f"{source_id}:{relative_path}".encode("utf-8")).hexdigest()[:10].upper()
+    return hashlib.sha1(f"{source_id}:{relative_path}".encode()).hexdigest()[:10].upper()
 
 
 def resolve_knowledge_file_id(file_id: str) -> str:
@@ -4730,7 +4752,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
             error_code="RATE_LIMITED",
             outcome="denied",
         )
-        request.state.scoped_flush_records = lambda: {}
+        request.state.scoped_flush_records = dict
         response = fail(
             errors.RATE_LIMITED,
             request,
@@ -4754,7 +4776,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
                 error_code="RATE_LIMITED",
                 outcome="denied",
             )
-            request.state.scoped_flush_records = lambda: {}
+            request.state.scoped_flush_records = dict
             response = fail(
                 errors.RATE_LIMITED,
                 request,
@@ -4771,7 +4793,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
             error_code="INVALID_CREDENTIALS",
             outcome="denied",
         )
-        request.state.scoped_flush_records = lambda: {}
+        request.state.scoped_flush_records = dict
         return fail(errors.AUTH_REQUIRED, request, message="账号或密码错误")
     try:
         await security_sessions.clear_login_failures(client_ip, username)
@@ -4800,7 +4822,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
                 error_code="JWT_BACKEND_UNAVAILABLE",
                 outcome="failed",
             )
-            request.state.scoped_flush_records = lambda: {}
+            request.state.scoped_flush_records = dict
             return fail(
                 errors.SECURITY_BACKEND_UNAVAILABLE,
                 request,
@@ -4808,7 +4830,7 @@ async def authenticate_for_tenant(request: Request, body: dict[str, Any], tenant
                 http_status=503,
             )
         repo.add_audit("登录成功", "Authentication", username)
-        request.state.scoped_flush_records = lambda: {}
+        request.state.scoped_flush_records = dict
         return ok({"token": token, "user": user}, request)
     finally:
         reset_request_audit_context(identity_audit_token)
@@ -4822,7 +4844,7 @@ async def auth_logout(request: Request):
     except SecurityBackendUnavailable:
         return fail(errors.SECURITY_BACKEND_UNAVAILABLE, request, http_status=503)
     repo.add_audit("退出登录", "Authentication", str(claims.get("sub") or "unknown"))
-    request.state.scoped_flush_records = lambda: {}
+    request.state.scoped_flush_records = dict
     return ok(None, request)
 
 
@@ -7367,16 +7389,8 @@ def reject_node_evidence_link(
 @router.get("/projects/{project_id}/documents/{document_id}/versions")
 def document_versions(request: Request, project_id: str, document_id: str):
     # S-2：这里原先连 projectId 都不校验——路径里的 project_id 完全没被用到，
-    # 传任意项目 id 都能读到同一份版本历史。补上归属校验与节点范围校验。
-    document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    scope_error = member_node_scope_error(
-        request,
-        project_id,
-        effective_role_for_request(request)[0],
-        node_ids=document_node_ids(project_id, document_id),
-    )
+    # 传任意项目 id 都能读到同一份版本历史。
+    scope_error = document_read_scope_error(request, project_id, document_id)
     if scope_error:
         return scope_error
     return ok(repo.versions_for_document(document_id), request)
@@ -7682,15 +7696,69 @@ def retry_failed_document_upload(
     )
 
 
+def document_read_scope_error(request: Request, project_id: str, document_id: str) -> JSONResponse | None:
+    """文档级读端点的归属 + 节点范围校验。
+
+    S-2：中间件按 URL 正则推断 scope 是单层防御，handler 必须自己也校验一次。
+    node_ids 走 document_node_ids——与中间件同一口径，避免两处推断出不同的 scope。
+    """
+    document = repo.find_one("documents", document_id)
+    if not document or document.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
+    return member_node_scope_error(
+        request,
+        project_id,
+        effective_role_for_request(request)[0],
+        node_ids=document_node_ids(project_id, document_id),
+    )
+
+
 @router.get("/projects/{project_id}/documents/{document_id}/ocr-fields")
 def document_ocr_fields(request: Request, project_id: str, document_id: str):
+    # S-2：路径里的 project_id 原先完全没被使用，也没有任何范围校验。
+    scope_error = document_read_scope_error(request, project_id, document_id)
+    if scope_error:
+        return scope_error
     versions = repo.versions_for_document(document_id)
     return ok(repo.fields_for_versions({item["id"] for item in versions}), request)
 
 
 @router.get("/projects/{project_id}/documents/{document_id}/review-feedback")
 def document_review_feedback(request: Request, project_id: str, document_id: str):
-    return ok({"opinions": repo.clone(repo.state["review_opinions"]), "rectifications": repo.clone(repo.state["rectifications"])}, request)
+    """该文档所在节点的退回补正往返。
+
+    原实现有两个各自独立的问题：
+    1. 返回 repo.state 里**全部**审查意见与整改单，既不按项目也不按文档过滤——
+       跨项目的监检结论一并送出；
+    2. 绕过了 review_process_read_error。同一份监检人工结论，走
+       /inspection/nodes/{id}/review-opinions 时施工方与建设方被 403 拦下，
+       走这里却能拿到全文（实测已复现）。角色隔离必须在所有入口一致，
+       只在「正门」设卡等于没设。
+    """
+    process_error = review_process_read_error(request, "监检人工审查意见")
+    if process_error:
+        return process_error
+    scope_error = document_read_scope_error(request, project_id, document_id)
+    if scope_error:
+        return scope_error
+    node_ids = {int(item) for item in document_node_ids(project_id, document_id)}
+
+    def in_scope(item: dict[str, Any]) -> bool:
+        if item.get("projectId") != project_id:
+            return False
+        # 节点无法判定时（历史数据缺 nodeId）不放行——宁可少给，不可多给
+        try:
+            return int(item.get("nodeId")) in node_ids
+        except (TypeError, ValueError):
+            return False
+
+    return ok(
+        {
+            "opinions": [repo.clone(item) for item in repo.state["review_opinions"] if in_scope(item)],
+            "rectifications": [repo.clone(item) for item in repo.state["rectifications"] if in_scope(item)],
+        },
+        request,
+    )
 
 
 @router.post("/projects/{project_id}/documents/{document_id}/versions")
@@ -11147,7 +11215,7 @@ def review_conversation_llm_answer(
                         **({"stream_handler": _stream_handler} if use_stream else {}),
                     )
                     break
-                except Exception as exc:  # noqa: BLE001 - 分类后决定是否重试
+                except Exception as exc:
                     failure_kind, retryable = review_conversation_model_failure_kind(exc)
                     if attempt >= model_attempts or not retryable:
                         raise
@@ -14027,9 +14095,7 @@ def build_archive_zip_artifact(*, manifest: dict[str, Any], files: dict[str, Any
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as package:
         package.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         for path, payload in files.items():
-            if isinstance(payload, bytes):
-                package.writestr(path, payload)
-            elif isinstance(payload, str):
+            if isinstance(payload, bytes) or isinstance(payload, str):
                 package.writestr(path, payload)
             else:
                 package.writestr(path, json.dumps(payload, ensure_ascii=False, indent=2))
@@ -16640,8 +16706,8 @@ def fde_metric(
     suffix: str = "",
     *,
     key: str | None = None,
-    numerator: int | float | None = None,
-    denominator: int | float | None = None,
+    numerator: float | None = None,
+    denominator: float | None = None,
     sample_size: int | None = None,
     availability: str = "available",
     scope: str = "tenant",
@@ -17530,7 +17596,7 @@ def fde_project_knowledge_lineage(documents: list[dict[str, Any]], review_runs: 
             "step": "03",
             "label": "节点定位",
             "description": "定位章节、附录或表格节点，并保留页码范围",
-            "value": f"{sum(len(((item.get('pageIndexTree') or {}).get('selectedNodes') or [])) for item in pageindex_traces)} 节点",
+            "value": f"{sum(len((item.get('pageIndexTree') or {}).get('selectedNodes') or []) for item in pageindex_traces)} 节点",
             "tone": "green" if pageindex_traces else "orange",
         },
         {
@@ -17564,7 +17630,7 @@ def fde_project_knowledge_lineage(documents: list[dict[str, Any]], review_runs: 
     }
 
 
-def fde_ratio(numerator: float | int, denominator: float | int, *, default: float = 0.0) -> float:
+def fde_ratio(numerator: float, denominator: float, *, default: float = 0.0) -> float:
     try:
         denominator_value = float(denominator)
         if denominator_value <= 0:
@@ -22491,7 +22557,7 @@ def fde_metric_threshold(metric: str) -> tuple[float, str]:
     return 0.0, ">="
 
 
-def fde_metric_passed(metric: str, value: float | int) -> bool:
+def fde_metric_passed(metric: str, value: float) -> bool:
     threshold, operator = fde_metric_threshold(metric)
     return float(value) >= threshold if operator == ">=" else float(value) <= threshold
 
@@ -26708,7 +26774,7 @@ def fde_ocr_pipeline_run_detail(request: Request, run_id: str):
         "truncationRecovery": {
             "outputTruncated": bool(grounding_validation.get("outputTruncated")),
             "recoveryCallCount": int(
-                (((parse_result or {}).get("metadata") or {}).get("truncationRecoveryCallCount") or 0)
+                ((parse_result or {}).get("metadata") or {}).get("truncationRecoveryCallCount") or 0
             ),
         },
     }
