@@ -4234,6 +4234,27 @@ def fixed_standard_references_for_node(project: dict[str, Any] | None, node_id: 
     return references
 
 
+def business_pack_tool_catalog(project: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """业务包里的工具目录：{id, name, capability}。
+
+    界面上把 T01/T07 这类编号翻译成业务语言需要它（X-4）。runtimeTool 是实现细节，
+    不下发——业务用户不需要知道底层函数名。
+    """
+    pack = business_pack_for_project(project)
+    catalog: list[dict[str, Any]] = []
+    for item in pack.get("toolCatalog") or []:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        catalog.append(
+            {
+                "id": str(item.get("id")),
+                "name": str(item.get("name") or ""),
+                "capability": str(item.get("capability") or ""),
+            }
+        )
+    return catalog
+
+
 def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[str, Any] | None:
     rule = business_rule_for_node(project, node_id)
     if not rule:
@@ -4256,6 +4277,10 @@ def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[st
         "witnessText": rule.get("witnessText") or "",
         "materialTypeCodes": repo.clone(rule.get("materialTypeCodes") or []),
         "toolIds": repo.clone(rule.get("toolIds") or []),
+        # X-4：界面上原先只显示 T01/T07 这样的裸编号，监检人员无从判断它是什么。
+        # 业务包的 toolCatalog 里有权威名称与能力描述，一并下发，让前端能显示
+        # 「查焊工持证范围」而不是「T07」。
+        "toolCatalog": business_pack_tool_catalog(project),
         "referencedStandards": [
             enrich_standard_reference(item)
             for item in rule.get("referencedStandards") or []

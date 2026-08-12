@@ -431,6 +431,8 @@ export type NodeBusinessBasis = {
   witnessText?: string
   materialTypeCodes?: string[]
   toolIds?: string[]
+  /** 业务包的工具目录：把 T01/T07 这类编号翻译成业务语言（X-4） */
+  toolCatalog?: Array<{ id: string; name: string; capability: string }>
   referencedStandards?: Array<{
     reference: string
     file?: string
