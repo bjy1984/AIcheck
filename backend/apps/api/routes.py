@@ -3088,19 +3088,53 @@ def report_readable_for_role(report: dict[str, Any], role: str | None) -> bool:
     return str(report.get("status") or "") in REPORT_SETTLED_STATUSES
 
 
-# 建设方（owner）在角色表里是 observer：只有 project:view / file:view / file:preview /
-# report:view / archive:view / archive:download。审查过程——AI 逐条判定理由、监检人工
-# 结论、整改往返——不在其中，读端点却全开（M-9）。同理，「已提交才进入审查视野」
-# 这条规则只作用于 inspection，建设方能看到施工方尚未提交的草稿（M-11），
-# 比监检看到的还多。两者同源：读端点不按角色裁剪。
+# 「已提交才进入审查视野」这条规则原先只作用于 inspection，建设方能看到施工方尚未
+# 提交的草稿（M-11），比监检看到的还多。这个集合只管草稿可见性——施工方当然要能
+# 看自己的草稿，不能进这个集合。
 REVIEW_PROCESS_OBSERVER_ROLES = {"owner"}
+
+# 审查过程数据（AI 逐条判定理由、监检人工结论）不对「非审查方」开放（M-9 / O-1）。
+# 两个角色的动作表里都没有任何 review:* 或 ai:* 权限：
+#   owner      —— observer，只有 project:view / file:view / file:preview /
+#                 report:view / archive:view / archive:download
+#   contractor —— 只有资料上传挂载提交与补正反馈相关权限
+# 建设方是出资方，看结论（已定稿报告、归档）合理，看监检怎么推导的不合理；
+# 施工方是被审查方，让它看到审查方的完整判定理由，等于把「怎么判的」提前告诉
+# 被判的一方。M-9 首次修复时只纳入了 owner，O-1 在线上审计中发现 contractor 同样
+# 可读，这里一并纳入。
+REVIEW_PROCESS_RESTRICTED_ROLES = {"owner", "contractor"}
 
 
 def review_process_read_error(request: Request, subject: str) -> JSONResponse | None:
-    """挡住 observer 角色对审查过程数据的读取。
+    """挡住非审查方对审查过程数据的读取。
 
-    建设方是出资方，看结论（已定稿报告、归档）是合理的；看监检怎么判、AI 说了什么、
-    施工方被打回几次，既不在其动作表内，也让审查过程失去独立性。
+    注意：整改往返（rectifications）不走这个守卫——打回理由本就要给施工方看，
+    是业务闭环的一部分，且与其动作表里的 rectification:submit 配套。
+    """
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    effective = str(role or "")
+    if effective in REVIEW_PROCESS_RESTRICTED_ROLES:
+        hint = (
+            "建设方可查看已签发报告与归档资料。"
+            if effective == "owner"
+            else "施工方可查看退回补正意见与自己提交的资料。"
+        )
+        return fail(
+            errors.FORBIDDEN,
+            request,
+            message=f"当前角色无权查看{subject}。{hint}",
+            http_status=403,
+        )
+    return None
+
+
+def rectification_read_error(request: Request) -> JSONResponse | None:
+    """整改往返只挡建设方，不挡施工方。
+
+    打回理由是给施工方看的——它是补正闭环的输入，与其动作表里的
+    rectification:submit 配套。建设方看施工方被打回几次则不在其定位内。
     """
     role, identity_error = effective_role_for_request(request)
     if identity_error:
@@ -3109,7 +3143,7 @@ def review_process_read_error(request: Request, subject: str) -> JSONResponse | 
         return fail(
             errors.FORBIDDEN,
             request,
-            message=f"当前角色无权查看{subject}。建设方可查看已签发报告与归档资料。",
+            message="当前角色无权查看整改往返记录。建设方可查看已签发报告与归档资料。",
             http_status=403,
         )
     return None
@@ -6395,6 +6429,9 @@ def node_package(request: Request, project_id: str, node_id: int):
     if identity_error:
         return identity_error
     observer_view = str(effective_role or "") in REVIEW_PROCESS_OBSERVER_ROLES
+    # 审查过程（AI 判定 / 人工结论）对建设方与施工方都不开放（M-9 / O-1）；
+    # 整改往返与草稿可见性只挡建设方——打回理由要给施工方看，草稿本就是它自己的。
+    review_process_hidden = str(effective_role or "") in REVIEW_PROCESS_RESTRICTED_ROLES
     document_repo = repo.project_document_read_view(effective_project_id)
     bindings = document_repo.bindings_for_node(effective_project_id, node_id)
     project_bindings = [
@@ -6482,11 +6519,10 @@ def node_package(request: Request, project_id: str, node_id: int):
                 if item["id"] in version_ids or item.get("documentId") in visible_document_ids
             ],
             "extractedFields": document_repo.fields_for_versions(version_ids),
-            # 审查过程对建设方（observer）不开放：AI 判定理由、监检人工结论、整改往返
-            # 都不在其动作表内（M-9）。这里与独立端点同口径，否则堵了端点、节点包照漏。
+            # 与独立端点同口径，否则堵了端点、节点包照漏（M-9 修复时踩过这个坑）。
             "reviewOpinions": (
                 []
-                if observer_view
+                if review_process_hidden
                 else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
             ),
             "rectifications": (
@@ -6503,10 +6539,10 @@ def node_package(request: Request, project_id: str, node_id: int):
             # 需要完整历史时用 /inspection/nodes/{id}/ai-runs。
             "aiRuns": (
                 []
-                if observer_view
+                if review_process_hidden
                 else [safe_ai_run_view(item) for item in node_ai_runs[:NODE_PACKAGE_AI_RUN_LIMIT]]
             ),
-            "aiRunTotal": 0 if observer_view else len(node_ai_runs),
+            "aiRunTotal": 0 if review_process_hidden else len(node_ai_runs),
             "actions": repo.clone(node.get("actions", [])),
         },
         request,
@@ -7111,7 +7147,20 @@ def document_detail(request: Request, project_id: str, document_id: str):
         return fail(errors.NOT_FOUND, request)
     versions = repo.versions_for_document(document_id)
     version_ids = {item["id"] for item in versions}
-    original = project_document_original_payload(request, project_id, document)
+    # O-2：这个端点同时承载元数据（文件名、资料类型、归属节点、OCR 状态、版本、
+    # 挂载、抽取字段）与存储签名地址。原先存储不可用时整个端点失败，连「这份资料
+    # 是什么、挂在哪个节点」都拿不到——而这些信息完全不依赖对象存储。
+    # 现在降级：元数据照常返回，签名地址置空并标注原因，由前端决定是否禁用
+    # 预览/下载按钮。
+    preview: Any = None
+    download: Any = None
+    storage_unavailable_reason: str | None = None
+    try:
+        original = project_document_original_payload(request, project_id, document)
+        preview = original["preview"]
+        download = original["download"]
+    except ObjectStorageUnavailable as exc:
+        storage_unavailable_reason = str(exc) or "对象存储不可用"
     return ok(
         {
             "document": attach_document_ocr_readiness(repo, document),
@@ -7120,8 +7169,10 @@ def document_detail(request: Request, project_id: str, document_id: str):
             "bindings": [item for item in repo.bindings_for_project(document["projectId"]) if item["documentId"] == document_id],
             "extractedFields": repo.fields_for_versions(version_ids),
             "evidenceLinks": repo.evidence_for_versions(version_ids),
-            "preview": original["preview"],
-            "download": original["download"],
+            "preview": preview,
+            "download": download,
+            "storageUnavailable": storage_unavailable_reason is not None,
+            "storageUnavailableReason": storage_unavailable_reason,
         },
         request,
     )
@@ -8611,7 +8662,7 @@ def submit_rectification(
 
 @router.get("/projects/{project_id}/rectifications")
 def list_rectifications(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    process_error = review_process_read_error(request, "整改往返记录")
+    process_error = rectification_read_error(request)
     if process_error:
         return process_error
     scope = authorized_node_scope(request, project_id)

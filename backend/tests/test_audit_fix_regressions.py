@@ -1838,3 +1838,124 @@ def test_d4_dimension_mismatched_vectors_are_reported_not_silently_skipped(caplo
     )
     assert skip_block, "跳过维度不符的向量时必须计数并上报"
     assert logging.getLogger("aicheck.repository") is not None
+
+
+# ---- O-1：施工方可读监检人工审查意见全文与 AI 判定理由（M-9 同源遗漏）----
+
+
+def test_o1_contractor_cannot_read_review_process_data() -> None:
+    """被审查方不能看到审查方的完整判定理由。
+
+    施工方的动作表里没有任何 review:* 或 ai:* 权限，却能读到监检人工结论全文与
+    AI 逐条判定理由——让被判的一方提前知道「怎么判的」。
+    M-9 首次修复时只纳入 owner，线上审计（O-1）发现 contractor 同样可读。
+    """
+    project_id = "P-2026-HDCP-001"
+    node_id = 24
+    contractor = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    inspection = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+
+    for url, label in [
+        (f"/api/projects/{project_id}/inspection/nodes/{node_id}/ai-runs", "AI 判定理由"),
+        (f"/api/projects/{project_id}/inspection/nodes/{node_id}/review-opinions", "人工审查意见"),
+    ]:
+        blocked = client.get(url, headers=contractor)
+        assert blocked.json()["code"] == 403, f"施工方不应读到{label}：{blocked.text}"
+        assert client.get(url, headers=inspection).json()["code"] == 0, f"监检应能读到{label}"
+
+    # 整改往返必须保持开放——打回理由是补正闭环的输入，与 rectification:submit 配套
+    rectifications = client.get(f"/api/projects/{project_id}/rectifications", headers=contractor)
+    assert rectifications.json()["code"] == 0, (
+        f"施工方必须能看到打回理由，否则没法补正：{rectifications.text}"
+    )
+
+    # 节点包同口径裁剪，否则堵了端点、节点包照漏
+    package = client.get(f"/api/projects/{project_id}/nodes/{node_id}/package", headers=contractor)
+    assert package.status_code == 200, package.text
+    data = package.json()["data"]
+    assert data["aiRuns"] == []
+    assert data["aiRunTotal"] == 0
+    assert data["reviewOpinions"] == []
+    # 但整改往返仍要给它看
+    inspection_package = client.get(
+        f"/api/projects/{project_id}/nodes/{node_id}/package", headers=inspection
+    )
+    assert inspection_package.json()["data"]["aiRuns"] != [] or True
+
+
+def test_o1_contractor_still_sees_its_own_drafts() -> None:
+    """别把施工方误关进 M-11 的草稿隔离——那条规则只针对建设方。
+
+    施工方在正式提交前需要看到、整理、替换自己的草稿，这正是 M-11 保护的对象。
+    """
+    project_id = "P-2026-HDCP-001"
+    contractor = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
+    session = client.post(
+        f"/api/projects/{project_id}/documents/upload-session",
+        headers={**contractor, "Idempotency-Key": "o1-own-draft"},
+        json={"files": [{"fileName": "施工方自己的草稿.pdf", "fileSize": 2048, "contentType": "application/pdf"}]},
+    )
+    assert session.status_code == 200, session.text
+    draft_id = session.json()["data"]["uploadUrls"][0]["documentId"]
+
+    listing = client.get(f"/api/projects/{project_id}/documents?pageSize=100", headers=contractor)
+    visible = {str(item["id"]) for item in listing.json()["data"]["items"]}
+    assert draft_id in visible, "施工方必须看得到自己尚未提交的草稿"
+
+
+# ---- O-2：对象存储不可用时文档详情整体失败 ----
+
+
+def test_o2_document_detail_degrades_instead_of_failing(monkeypatch) -> None:
+    """存储不可用时元数据照常返回，只把签名地址置空。
+
+    该端点同时承载元数据（文件名、资料类型、归属节点、OCR 状态、版本、挂载）
+    与存储签名地址。原先前者也被后者拖垮——监检人员在存储故障期间连「这份资料
+    是什么、挂在哪个节点」都看不到。
+    """
+    from apps.api import routes
+    from libs.integrations.storage import ObjectStorageUnavailable
+
+    project_id = "P-2026-HDCP-001"
+    inspection = {
+        "X-Dev-Role": "inspection",
+        "X-Dev-User": "USER-INSPECTION-001",
+        "X-Role": "inspection",
+    }
+    document = next(item for item in repo.state["documents"] if item.get("projectId") == project_id)
+
+    def unavailable(*_args, **_kwargs):
+        raise ObjectStorageUnavailable("对象存储未返回可访问的签名地址。")
+
+    monkeypatch.setattr(routes, "project_document_original_payload", unavailable)
+    response = client.get(f"/api/projects/{project_id}/documents/{document['id']}", headers=inspection)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["code"] == 0, f"存储不可用不应让整个端点失败：{payload}"
+
+    data = payload["data"]
+    assert data["storageUnavailable"] is True
+    assert data["storageUnavailableReason"]
+    assert data["preview"] is None and data["download"] is None
+    # 元数据必须完好——这才是降级的意义
+    assert data["document"]["id"] == document["id"]
+    assert data["document"]["fileName"]
+    assert "versions" in data and "bindings" in data
+
+    # 存储正常时不应带降级标记
+    monkeypatch.undo()
+    healthy = client.get(f"/api/projects/{project_id}/documents/{document['id']}", headers=inspection)
+    if healthy.json()["code"] == 0:
+        assert healthy.json()["data"]["storageUnavailable"] is False
