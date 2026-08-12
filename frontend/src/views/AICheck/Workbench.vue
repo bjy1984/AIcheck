@@ -957,7 +957,8 @@ const pageIntro = computed(() => {
  * 版式与真实内容完全一致，用户会误以为「这个节点没数据」而不是「我还没选节点」。
  * 两者的应对动作完全不同，必须区分开。 */
 const inspectionNodeUnselected = computed(
-  () => role.value === 'inspection' && activeWorkbenchSection.value === 'node' && !selectedNode.value
+  () =>
+    role.value === 'inspection' && activeWorkbenchSection.value === 'node' && !selectedNode.value
 )
 
 const currentNodeLabel = computed(() => {
@@ -4946,7 +4947,11 @@ onBeforeUnmount(() => {
           </div>
 
           <AuditItemDirectory
-            v-if="role === 'inspection' && activeWorkbenchSection === 'node' && !inspectionNodeUnselected"
+            v-if="
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected
+            "
             v-model="activeInspectionAuditItem"
             :items="inspectionAuditItems"
             :loading="inspectionAuditLoading"
@@ -5807,7 +5812,11 @@ onBeforeUnmount(() => {
                 >
               </button>
 
-              <div v-show="aiExecutionExpanded" id="ai-execution-timeline" class="execution-timeline">
+              <div
+                v-show="aiExecutionExpanded"
+                id="ai-execution-timeline"
+                class="execution-timeline"
+              >
                 <article
                   v-for="(step, index) in aiExecutionSteps"
                   :key="step.title"
@@ -7145,7 +7154,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .execution-toggle:hover {

@@ -351,7 +351,11 @@ watch(visible, (open) => {
                       @load="handlePreviewImageLoad"
                       @error="handlePreviewImageError"
                     />
-                    <span v-if="highlightStyle" class="preview-highlight" :style="highlightStyle" />
+                    <span
+                      v-if="highlightStyle"
+                      class="preview-highlight"
+                      :style="highlightStyle"
+                    ></span>
                   </div>
                   <!-- PDF：浏览器内置阅读器，只能靠 #page= 跳页 -->
                   <iframe
@@ -723,7 +727,9 @@ watch(visible, (open) => {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .locate-button:hover {
