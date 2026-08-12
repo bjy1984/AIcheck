@@ -8,6 +8,8 @@ import pytest
 
 from scripts.data_migration import (
     BundleValidationError,
+    ExportConfig,
+    export_bundle,
     require_destructive_confirmation,
     safe_user_roles,
     sha256_file,
@@ -121,3 +123,102 @@ def test_sha256_file_streams_real_file(tmp_path: Path) -> None:
 
 def test_manifest_fixture_is_json_serializable(tmp_path: Path) -> None:
     json.dumps(valid_manifest(tmp_path))
+
+
+class ExportRunner:
+    def __init__(self, *, fail_database: str | None = None) -> None:
+        self.commands: list[list[str]] = []
+        self.fail_database = fail_database
+
+    def __call__(self, command: list[str], *, output: Path | None = None) -> str:
+        self.commands.append(command)
+        database = command[-1] if command and command[0].endswith("pg_dump") else None
+        if self.fail_database is not None and database == self.fail_database:
+            raise RuntimeError(f"failed to dump {database}")
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text("CREATE ROLE aicheck;\n", encoding="utf-8")
+        for argument in command:
+            if argument.startswith("--file="):
+                target = Path(argument.removeprefix("--file="))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(f"dump:{database}".encode())
+        return ""
+
+
+def make_source_files(root: Path) -> None:
+    files = {
+        "output/document_uploads/project/document.pdf": b"document",
+        "output/knowledge_uploads/source/standard.pdf": b"knowledge",
+        "rules/standards/rule.pdf": b"rule",
+    }
+    for relative, body in files.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+
+
+def test_export_bundle_captures_three_databases_and_local_file_roots(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "migrations"
+    make_source_files(source)
+    runner = ExportRunner()
+
+    result = export_bundle(
+        ExportConfig(
+            migration_id="migration-20260812T120000Z",
+            source_root=source,
+            output_root=output,
+            git_commit="abc123",
+            pg_bin=Path("/postgres/bin"),
+        ),
+        runner=runner,
+    )
+
+    bundle_root = output / "migration-20260812T120000Z"
+    manifest = json.loads((bundle_root / "manifest.json").read_text())
+    assert (bundle_root / "READY").is_file()
+    assert result.archive == output / "migration-20260812T120000Z.tar.gz"
+    assert result.archive.is_file()
+    assert result.checksum_file.read_text().split()[0] == sha256_file(result.archive).removeprefix("sha256:")
+    assert manifest["databases"] == ["aicheck", "litellm", "workflow"]
+    assert manifest["localFileRoots"] == [
+        "output/document_uploads",
+        "output/knowledge_uploads",
+        "rules",
+    ]
+    assert set(manifest["files"]) == {
+        "globals.sql",
+        "databases/aicheck.dump",
+        "databases/litellm.dump",
+        "databases/workflow.dump",
+        "files/output/document_uploads/project/document.pdf",
+        "files/output/knowledge_uploads/source/standard.pdf",
+        "files/rules/standards/rule.pdf",
+    }
+    assert [command[-1] for command in runner.commands if command[0].endswith("pg_dump")] == [
+        "aicheck",
+        "litellm",
+        "workflow",
+    ]
+
+
+def test_export_bundle_never_marks_failed_snapshot_ready(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "migrations"
+    make_source_files(source)
+
+    with pytest.raises(RuntimeError, match="workflow"):
+        export_bundle(
+            ExportConfig(
+                migration_id="migration-failed",
+                source_root=source,
+                output_root=output,
+                git_commit="abc123",
+                pg_bin=Path("/postgres/bin"),
+            ),
+            runner=ExportRunner(fail_database="workflow"),
+        )
+
+    assert not (output / "migration-failed" / "READY").exists()
+    assert not (output / "migration-failed.tar.gz").exists()
