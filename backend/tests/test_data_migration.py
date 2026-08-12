@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,10 +10,12 @@ import pytest
 from scripts.data_migration import (
     BundleValidationError,
     ExportConfig,
+    UploadConfig,
     export_bundle,
     require_destructive_confirmation,
     safe_user_roles,
     sha256_file,
+    upload_bundle,
     validate_manifest,
 )
 
@@ -222,3 +225,77 @@ def test_export_bundle_never_marks_failed_snapshot_ready(tmp_path: Path) -> None
 
     assert not (output / "migration-failed" / "READY").exists()
     assert not (output / "migration-failed.tar.gz").exists()
+
+
+class UploadRunner:
+    def __init__(self) -> None:
+        self.commands: list[list[str]] = []
+
+    def __call__(self, command: list[str], *, output: Path | None = None) -> str:
+        assert output is None
+        self.commands.append(command)
+        return ""
+
+
+def test_upload_bundle_uses_migration_directory_and_remote_checksum(tmp_path: Path) -> None:
+    archive = tmp_path / "migration-20260812T120000Z.tar.gz"
+    archive.write_bytes(b"archive")
+    checksum = tmp_path / "migration-20260812T120000Z.tar.gz.sha256"
+    checksum.write_text(
+        f"{hashlib.sha256(b'archive').hexdigest()}  {archive.name}\n", encoding="utf-8"
+    )
+    runner = UploadRunner()
+
+    remote = upload_bundle(
+        UploadConfig(
+            migration_id="migration-20260812T120000Z",
+            archive=archive,
+            checksum_file=checksum,
+            ssh_host="dev-bjy",
+            remote_root="/home/dev-bjy/aicheck-migrations",
+        ),
+        runner=runner,
+    )
+
+    assert remote == "/home/dev-bjy/aicheck-migrations/migration-20260812T120000Z"
+    assert runner.commands == [
+        [
+            "ssh",
+            "dev-bjy",
+            "mkdir -p -- /home/dev-bjy/aicheck-migrations/migration-20260812T120000Z",
+        ],
+        [
+            "scp",
+            str(archive),
+            str(checksum),
+            "dev-bjy:/home/dev-bjy/aicheck-migrations/migration-20260812T120000Z/",
+        ],
+        [
+            "ssh",
+            "dev-bjy",
+            "cd /home/dev-bjy/aicheck-migrations/migration-20260812T120000Z && "
+            "sha256sum -c migration-20260812T120000Z.tar.gz.sha256",
+        ],
+    ]
+
+
+def test_restore_script_refuses_to_touch_target_without_confirmation(tmp_path: Path) -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "restore_data_migration.sh"
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(script),
+            "--migration-id",
+            "migration-20260812T120000Z",
+            "--archive",
+            str(tmp_path / "missing.tar.gz"),
+            "--checksum",
+            str(tmp_path / "missing.sha256"),
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 64
+    assert "--confirm-replace" in result.stderr

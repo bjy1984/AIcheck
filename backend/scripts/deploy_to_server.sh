@@ -14,8 +14,9 @@
 #   bash scripts/deploy_to_server.sh --frontend # 只更新前端静态资源
 set -euo pipefail
 
-HOST=aicheck-prod-new
+HOST="${AICHECK_DEPLOY_HOST:-dev-bjy}"
 REMOTE_HOME=/home/dev-bjy
+SERVER_DATA_ROOT="${AICHECK_SERVER_DATA_ROOT:-$REMOTE_HOME/aicheck-data}"
 # 网关对外端口（安全组放行的是 8081；改端口时这里要跟着改）
 GATEWAY_PORT="${GATEWAY_PORT:-8081}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -74,6 +75,8 @@ PY
       aicheck-api:local python scripts/migrate_backend.py | tail -1
     docker rm -f aicheck-api >/dev/null 2>&1 || true
     docker run -d --name aicheck-api --network aicheck-net --restart unless-stopped \
+      -v $SERVER_DATA_ROOT/files/output:/app/output \
+      -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
       -e AICHECK_DATABASE_URL=postgresql://aicheck:AicheckProd2026@aicheck-postgres:5432/aicheck \
       -e AICHECK_TENANT_ID=TENANT-DEFAULT \
       -e AICHECK_TENANT_MODE=isolated \

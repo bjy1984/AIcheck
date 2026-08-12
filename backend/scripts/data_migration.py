@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -44,6 +46,15 @@ class ExportResult:
     bundle_root: Path
     archive: Path
     checksum_file: Path
+
+
+@dataclass(frozen=True)
+class UploadConfig:
+    migration_id: str
+    archive: Path
+    checksum_file: Path
+    ssh_host: str = "dev-bjy"
+    remote_root: str = "/home/dev-bjy/aicheck-migrations"
 
 
 CommandRunner = Callable[..., str]
@@ -208,3 +219,103 @@ def export_bundle(
         archive.unlink(missing_ok=True)
         checksum_file.unlink(missing_ok=True)
         raise
+
+
+def upload_bundle(
+    config: UploadConfig,
+    *,
+    runner: CommandRunner = run_command,
+) -> str:
+    if not config.archive.is_file() or not config.checksum_file.is_file():
+        raise BundleValidationError("archive and checksum file are required")
+    expected_archive_name = f"{config.migration_id}.tar.gz"
+    if config.archive.name != expected_archive_name:
+        raise BundleValidationError("archive name does not match migration ID")
+    expected_checksum = sha256_file(config.archive).removeprefix("sha256:")
+    checksum_fields = config.checksum_file.read_text(encoding="utf-8").strip().split()
+    if len(checksum_fields) != 2 or checksum_fields != [expected_checksum, expected_archive_name]:
+        raise BundleValidationError("local archive checksum file does not match archive")
+    remote_dir = f"{config.remote_root.rstrip('/')}/{config.migration_id}"
+    quoted_dir = shlex.quote(remote_dir)
+    runner(["ssh", config.ssh_host, f"mkdir -p -- {quoted_dir}"])
+    runner(
+        [
+            "scp",
+            str(config.archive),
+            str(config.checksum_file),
+            f"{config.ssh_host}:{remote_dir}/",
+        ]
+    )
+    runner(
+        [
+            "ssh",
+            config.ssh_host,
+            f"cd {quoted_dir} && sha256sum -c {shlex.quote(config.checksum_file.name)}",
+        ]
+    )
+    return remote_dir
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build, validate, and upload AIcheck data migration bundles.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    export_parser = subparsers.add_parser("export")
+    export_parser.add_argument("--migration-id", required=True)
+    export_parser.add_argument("--source-root", type=Path, required=True)
+    export_parser.add_argument("--output-root", type=Path, required=True)
+    export_parser.add_argument("--git-commit", required=True)
+    export_parser.add_argument("--pg-bin", type=Path, default=Path("/opt/homebrew/opt/postgresql@16/bin"))
+    export_parser.add_argument("--pg-host")
+    export_parser.add_argument("--pg-port", type=int)
+    export_parser.add_argument("--pg-user")
+
+    validate_parser = subparsers.add_parser("validate-bundle")
+    validate_parser.add_argument("--bundle-root", type=Path, required=True)
+
+    upload_parser = subparsers.add_parser("upload")
+    upload_parser.add_argument("--migration-id", required=True)
+    upload_parser.add_argument("--archive", type=Path, required=True)
+    upload_parser.add_argument("--checksum", type=Path, required=True)
+    upload_parser.add_argument("--ssh-host", default="dev-bjy")
+    upload_parser.add_argument("--remote-root", default="/home/dev-bjy/aicheck-migrations")
+
+    args = parser.parse_args()
+    if args.command == "export":
+        result = export_bundle(
+            ExportConfig(
+                migration_id=args.migration_id,
+                source_root=args.source_root.resolve(),
+                output_root=args.output_root.resolve(),
+                git_commit=args.git_commit,
+                pg_bin=args.pg_bin,
+                pg_host=args.pg_host,
+                pg_port=args.pg_port,
+                pg_user=args.pg_user,
+            )
+        )
+        print(json.dumps({"archive": str(result.archive), "checksum": str(result.checksum_file)}))
+        return 0
+    if args.command == "validate-bundle":
+        root = args.bundle_root.resolve()
+        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        validate_manifest(manifest, root)
+        if (root / "READY").read_text(encoding="utf-8").strip() != manifest["migrationId"]:
+            raise BundleValidationError("bundle READY marker does not match migration ID")
+        print(json.dumps({"valid": True, "migrationId": manifest["migrationId"]}))
+        return 0
+    remote = upload_bundle(
+        UploadConfig(
+            migration_id=args.migration_id,
+            archive=args.archive.resolve(),
+            checksum_file=args.checksum.resolve(),
+            ssh_host=args.ssh_host,
+            remote_root=args.remote_root,
+        )
+    )
+    print(json.dumps({"remoteDirectory": remote}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
