@@ -1609,15 +1609,25 @@ const toolTooltip = (toolId: string) => {
   return tool.capability ? `${toolId} · ${tool.capability}` : `${toolId} · ${tool.name}`
 }
 
+/* 状态词表是 待执行 / 执行中 / 完成 / 异常 / 需人工确认，语义分三类。
+ * 「非完成」不等于「需关注」——AI 尚未运行时七步全是「待执行」，那是未开始，
+ * 不是出了问题。摘要要是把它报成「7 步需关注」，等于教用户忽略这个提示。 */
+const AI_STEP_ATTENTION = new Set(['异常', '需人工确认'])
+
 const aiExecutionSummary = computed(() => {
   const steps = aiExecutionSteps.value
   if (!steps.length) return '暂无执行记录'
-  const attention = steps.filter((step) => step.status && step.status !== '完成')
+  const attention = steps.filter((step) => AI_STEP_ATTENTION.has(String(step.status)))
+  const done = steps.filter((step) => step.status === '完成')
   const parts = [`${steps.length} 步`]
   if (attention.length) {
     parts.push(`${attention.length} 步需关注：${attention.map((s) => s.title).join('、')}`)
-  } else {
+  } else if (!done.length) {
+    parts.push('尚未运行')
+  } else if (done.length === steps.length) {
     parts.push('全部完成')
+  } else {
+    parts.push(`进行中 ${done.length}/${steps.length}`)
   }
   return parts.join(' · ')
 })
@@ -4898,6 +4908,7 @@ onBeforeUnmount(() => {
                 v-if="
                   role === 'inspection' &&
                   activeWorkbenchSection === 'node' &&
+                  !inspectionNodeUnselected &&
                   hasAction('file:upload')
                 "
                 class="btn primary"
@@ -4921,7 +4932,11 @@ onBeforeUnmount(() => {
                 文件库
               </ElButton>
               <ElButton
-                v-if="role === 'inspection' && activeWorkbenchSection === 'node'"
+                v-if="
+                  role === 'inspection' &&
+                  activeWorkbenchSection === 'node' &&
+                  !inspectionNodeUnselected
+                "
                 class="btn ai-review-b-entry"
                 type="primary"
                 @click="handleOpenAiReviewB"
@@ -4960,7 +4975,10 @@ onBeforeUnmount(() => {
 
           <WorkbenchStateBanner
             v-if="
-              role === 'inspection' && activeWorkbenchSection === 'node' && inspectionAuditIssue
+              role === 'inspection' &&
+              activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
+              inspectionAuditIssue
             "
             class="inspection-audit-state-banner"
             :type="inspectionAuditIssue.type"
@@ -5459,6 +5477,7 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeWorkbenchSection === 'node' &&
+              !inspectionNodeUnselected &&
               ['submission', 'evidence'].includes(activeInspectionAuditItem)
             "
             :id="`inspection-audit-panel-${activeInspectionAuditItem}`"

@@ -17,6 +17,7 @@ import { getDocumentOriginalBlobApi } from '@/api/aicheck'
 import type { DocumentDetailPayload } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
+import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
 
 const props = defineProps<{
@@ -183,14 +184,6 @@ const sideTab = ref('fields')
 const activeLocateKey = ref('')
 const previewNaturalSize = ref<{ width: number; height: number } | null>(null)
 
-const normalizeBbox = (bbox?: number[] | null) => {
-  if (!Array.isArray(bbox) || bbox.length < 4) return undefined
-  const [x0, y0, x1, y1] = bbox.map(Number)
-  if (![x0, y0, x1, y1].every((n) => Number.isFinite(n))) return undefined
-  if (x1 <= x0 || y1 <= y0) return undefined
-  return [x0, y0, x1, y1]
-}
-
 /** OCR 字段自身不带 bbox，坐标在它 evidenceLinkId 指向的证据链条目上。 */
 const bboxByEvidenceId = computed(() => {
   const map = new Map<string, number[]>()
@@ -230,18 +223,11 @@ const activeLocatable = computed(() =>
 )
 
 /** 图片预览下，把 bbox 像素坐标换算成相对定位样式。 */
-const highlightStyle = computed(() => {
-  const item = activeLocatable.value
-  const size = previewNaturalSize.value
-  if (!previewIsImage.value || !item?.bbox || !size?.width || !size?.height) return null
-  const [x0, y0, x1, y1] = item.bbox
-  return {
-    left: `${(x0 / size.width) * 100}%`,
-    top: `${(y0 / size.height) * 100}%`,
-    width: `${((x1 - x0) / size.width) * 100}%`,
-    height: `${((y1 - y0) / size.height) * 100}%`
-  }
-})
+const highlightStyle = computed(() =>
+  previewIsImage.value
+    ? bboxToPercentStyle(activeLocatable.value?.bbox, previewNaturalSize.value)
+    : null
+)
 
 /** PDF 无法叠加高亮，改用 #page=N 跳页；图片直接靠 highlightStyle 画框。 */
 const previewSrcWithPage = computed(() => {
