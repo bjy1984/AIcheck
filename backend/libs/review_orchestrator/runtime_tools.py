@@ -7,8 +7,12 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_ocr_result
-from apps.api.cnse_routes import query_cnse_organizations, query_cnse_persons
-from apps.api.std_samr_routes import query_standard_search, query_standard_status
+from libs.integrations.external_registry_queries import (
+    query_cnse_organizations,
+    query_cnse_persons,
+    query_standard_search,
+    query_standard_status,
+)
 from libs.integrations.cnse_client import (
     CnseConfigurationError,
     CnseProtocolError,
