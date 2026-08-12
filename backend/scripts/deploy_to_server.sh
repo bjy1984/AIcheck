@@ -28,7 +28,7 @@ MODE="${1:-all}"
 # backend/data/visual_extraction_pages 是被误提交的 OCR 页面图产物（1106 个 PNG，
 # 约 550MB）。部署不需要它，剔除后包体从 557MB 降到 3.5MB。
 sync_backend() {
-  echo "==> 打包后端（HEAD=$COMMIT）"
+  echo "==> 打包后端（HEAD=${COMMIT}）"
   git -C "$REPO_ROOT" archive --format=tar HEAD backend openapi > "$STAGE/src.tar"
   python3 - "$STAGE/src.tar" "$STAGE/src.tar.gz" <<'PY'
 import sys, tarfile
@@ -141,7 +141,7 @@ verify() {
     if [ "$probe" = "403" ]; then
       echo "  行为探针(O-1 施工方读 AI 判定): 403 已拦截"
     else
-      echo "  行为探针失败：施工方读 AI 判定返回 $probe（期望 403）——新代码可能没生效"
+      echo "  行为探针失败：施工方读 AI 判定返回 ${probe}（期望 403）——新代码可能没生效"
       exit 1
     fi
     docker ps --filter name=aicheck- --format "  {{.Names}}  {{.Status}}"
@@ -154,4 +154,4 @@ case "$MODE" in
   *)          sync_backend; sync_frontend ;;
 esac
 verify
-echo "==> 部署完成（$COMMIT）"
+echo "==> 部署完成（${COMMIT}）"
