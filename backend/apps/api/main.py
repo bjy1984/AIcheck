@@ -267,8 +267,14 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
     actor = getattr(request.state, "auth_user", None) or {}
     audit_context_token = set_request_audit_context(
         {
-            "actorId": actor.get("id") or request.headers.get("X-User-Id") or "system",
-            "actorName": actor.get("displayName") or actor.get("name") or actor.get("username") or request.headers.get("X-User-Id") or "系统",
+            "actorId": actor.get("id") or client_declared_identity(request) or "system",
+            "actorName": (
+                actor.get("displayName")
+                or actor.get("name")
+                or actor.get("username")
+                or client_declared_identity(request)
+                or "系统"
+            ),
             "actorOrgName": actor.get("orgUnitName") or actor.get("orgName"),
             "actorOrgId": actor.get("orgId"),
             "actorRole": actor.get("role"),
@@ -416,7 +422,7 @@ def idempotency_scope(request: Request) -> str | None:
     actor = getattr(request.state, "auth_user", None) or {}
     claims = getattr(request.state, "auth", None) or {}
     tenant_id = str(claims.get("tid") or tenant_id_for_record(actor) or configured_tenant_id())
-    actor_id = str(actor.get("id") or request.headers.get("X-User-Id") or "anonymous")
+    actor_id = str(actor.get("id") or client_declared_identity(request) or "anonymous")
     role = str(claims.get("role") or request.headers.get("X-Role") or "anonymous")
     key_hash = idempotency_fingerprint(key)
     return f"{tenant_id}:{actor_id}:{role}:{request.method}:{canonical_path(request.url.path)}:{key_hash}"
@@ -527,10 +533,26 @@ def release_idempotency_lock(connection, request: Request) -> None:
         connection.close()
 
 
+def client_declared_identity(request: Request) -> str | None:
+    """X-User-Id 是客户端自称的身份——任何人都能填任何值。
+
+    审计留痕、幂等作用域、授权摘要三处都以它为键，采信等于让调用方自选身份：
+    可以把操作记到别人名下，也可以挤进别人的幂等作用域。所以认证开启时一律不采信，
+    没有 auth_user 就是没有身份，如实记成 system/anonymous。
+
+    认证关闭时（本地开发 / demo）才回退——那个姿态本身在启动时已有显式告警（S-1），
+    不需要在这里再兜一层。
+    """
+    if authentication_enforced():
+        return None
+    value = str(request.headers.get("X-User-Id") or "").strip()
+    return value or None
+
+
 def request_authorization_digest(request: Request) -> str:
     actor = getattr(request.state, "auth_user", None) or {}
     claims = getattr(request.state, "auth", None) or {}
-    user_id = str(actor.get("id") or request.headers.get("X-User-Id") or "anonymous")
+    user_id = str(actor.get("id") or client_declared_identity(request) or "anonymous")
     tenant_id = str(claims.get("tid") or tenant_id_for_record(actor) or configured_tenant_id())
     role = str(claims.get("role") or request.headers.get("X-Role") or "anonymous")
     memberships = sorted(

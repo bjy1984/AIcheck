@@ -4331,10 +4331,14 @@ class InMemoryRepository:
                 self.sync_postgres.commit()
                 self._pgvector_baseline_ids = set(persisted_ids)
             except Exception:
+                # 原先连日志都没有：向量整批没入库，检索永远返回空，而调用方看到的
+                # 是「知识库没覆盖到」。回滚要吞异常（回滚本身失败无从补救），
+                # 但原始失败必须留下痕迹。
+                LOGGER.exception("pgvector_flush_failed: 知识向量刷写 pgvector 失败，本批未入库")
                 try:
                     self.sync_postgres.rollback()
                 except Exception:
-                    pass
+                    LOGGER.exception("pgvector_flush_rollback_failed: 回滚同样失败")
 
     def search_knowledge_vectors(
         self,
@@ -4346,7 +4350,19 @@ class InMemoryRepository:
     ) -> list[dict[str, Any]]:
         with self._sync_postgres_lock:
             self.configure_sync_postgres()
-            if self.sync_postgres is None or len(embedding) != OFFLINE_VECTOR_DIMENSIONS or not self.ensure_pgvector_schema():
+            if self.sync_postgres is None or not self.ensure_pgvector_schema():
+                return []
+            if len(embedding) != OFFLINE_VECTOR_DIMENSIONS:
+                # 写入侧维度不符已经会报错，检索侧不能反过来沉默：
+                # 「查询向量维度不对」和「库里确实没有相关内容」都返回空列表，
+                # 调用方无从分辨，只会以为是知识库没覆盖到。
+                LOGGER.error(
+                    "pgvector_query_dimension_mismatch: 查询向量 %s 维，索引表按 %s 维建立，"
+                    "本次检索必然返回空——这不是「没有匹配内容」，是查询用的 embedding "
+                    "模型档案与索引表不一致。",
+                    len(embedding),
+                    OFFLINE_VECTOR_DIMENSIONS,
+                )
                 return []
             embedding_literal = "[" + ",".join(str(float(item)) for item in embedding) + "]"
             filters = ["tenant_id = %s"]
