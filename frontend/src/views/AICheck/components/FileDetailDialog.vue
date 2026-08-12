@@ -391,7 +391,12 @@ watch(visible, (open) => {
                     :key="item.key"
                     :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
                   >
-                    <button type="button" class="locate-button" @click="handleLocate(item)">
+                    <button
+                      type="button"
+                      class="locate-button"
+                      :aria-pressed="item.key === activeLocateKey"
+                      @click="handleLocate(item)"
+                    >
                       <div class="locate-head">
                         <span class="locate-label">{{ item.label }}</span>
                         <ElTag
