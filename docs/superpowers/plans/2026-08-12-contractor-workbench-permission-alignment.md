@@ -4,9 +4,9 @@
 
 **Goal:** 施工方工作台不再调用无权读取的报告/归档接口，同时保持后端 403 权限边界。
 
-**Architecture:** 新建纯函数表达报告/归档加载能力，工作台用该函数选择加载或清空本地状态。纯函数由 Vitest 覆盖，服务器发布仅更新前端静态文件。
+**Architecture:** 新建纯函数表达报告/归档加载能力，工作台用该函数选择加载或清空本地状态。纯函数由现有 Node assert 单测 runner 覆盖，服务器发布仅更新前端静态文件。
 
-**Tech Stack:** Vue 3、TypeScript、Vitest、Vite、Git、SSH。
+**Tech Stack:** Vue 3、TypeScript、Node assert 单测 runner、Vite、Git、SSH。
 
 ## Global Constraints
 
@@ -33,7 +33,7 @@
 
 - [ ] **Step 2: 运行定向测试并确认因模块缺失而失败**
 
-Run: `cd frontend && pnpm vitest run src/views/AICheck/workbenchRoleAccess.test.ts`
+Run: `cd frontend && pnpm test:unit`
 
 - [ ] **Step 3: 实现纯函数并接入工作台**
 
@@ -41,7 +41,7 @@ Run: `cd frontend && pnpm vitest run src/views/AICheck/workbenchRoleAccess.test.
 
 - [ ] **Step 4: 验证测试、类型和生产构建**
 
-Run: `cd frontend && pnpm vitest run src/views/AICheck/workbenchRoleAccess.test.ts && pnpm exec vue-tsc --noEmit && pnpm build:pro`
+Run: `cd frontend && pnpm test:unit && pnpm ts:check && pnpm build:pro`
 
 - [ ] **Step 5: 提交、推送并发布前端**
 

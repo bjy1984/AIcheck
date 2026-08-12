@@ -238,6 +238,7 @@ import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
+import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 
 type PreviewDrawerTarget = {
   source: 'node' | 'file' | 'standard' | 'report' | 'archive'
@@ -2067,15 +2068,20 @@ const loadInspectionDetails = async (nodeId = activeNodeId.value) => {
 
 const loadReportArchive = async () => {
   if (!activeProjectId.value) return
-  const [reportRes, archiveRes] = await Promise.all([
-    listOwnerReportsApi(activeProjectId.value),
-    listProjectArchiveApi(activeProjectId.value)
-  ])
-  if (!reportRes || !archiveRes) {
-    throw new Error('报告或归档资料加载失败。')
-  }
-  reports.value = reportRes.data
-  archiveItems.value = archiveRes.data.items
+  const loaded = await loadRoleScopedReportArchive(role.value, {
+    reports: async () => {
+      const response = await listOwnerReportsApi(activeProjectId.value)
+      if (!response) throw new Error('报告资料加载失败。')
+      return response.data
+    },
+    archiveItems: async () => {
+      const response = await listProjectArchiveApi(activeProjectId.value)
+      if (!response) throw new Error('归档资料加载失败。')
+      return response.data.items
+    }
+  })
+  reports.value = loaded.reports
+  archiveItems.value = loaded.archiveItems
 }
 
 const loadNdtData = async () => {
