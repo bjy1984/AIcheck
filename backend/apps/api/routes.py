@@ -7366,6 +7366,19 @@ def reject_node_evidence_link(
 
 @router.get("/projects/{project_id}/documents/{document_id}/versions")
 def document_versions(request: Request, project_id: str, document_id: str):
+    # S-2：这里原先连 projectId 都不校验——路径里的 project_id 完全没被用到，
+    # 传任意项目 id 都能读到同一份版本历史。补上归属校验与节点范围校验。
+    document = repo.find_one("documents", document_id)
+    if not document or document.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
+    scope_error = member_node_scope_error(
+        request,
+        project_id,
+        effective_role_for_request(request)[0],
+        node_ids=document_node_ids(project_id, document_id),
+    )
+    if scope_error:
+        return scope_error
     return ok(repo.versions_for_document(document_id), request)
 
 
@@ -7373,6 +7386,18 @@ def project_document_original_context(request: Request, project_id: str, documen
     document = repo.find_one("documents", document_id)
     if not document or document.get("projectId") != project_id:
         return None, None, fail(errors.NOT_FOUND, request)
+    # S-2：单靠中间件按路径正则推断 scope 是单层防御——路由改名、id 改走 query，
+    # 正则跟不上就静默漏判，而 handler 又没有兜底。与 list_ai_runs / review-opinions
+    # 对齐，在 handler 里也校验一次。
+    # document_node_ids 与中间件是同一口径，避免两处推断出不同的 scope。
+    scope_error = member_node_scope_error(
+        request,
+        project_id,
+        effective_role_for_request(request)[0],
+        node_ids=document_node_ids(project_id, document_id),
+    )
+    if scope_error:
+        return None, None, scope_error
     version = repo.current_version(document_id)
     if not version:
         return document, None, fail(errors.NOT_FOUND, request, message="未找到原始文档版本。")
@@ -8730,6 +8755,14 @@ def project_workflow(request: Request, project_id: str):
     project = repo.require_project(project_id)
     if not project:
         return fail(errors.NOT_FOUND, request)
+    # S-2：单靠中间件按路径正则推断 scope 是单层防御——路由改名、id 改走 query，
+    # 正则跟不上就静默漏判，而 handler 又没有兜底。与 list_ai_runs / review-opinions
+    # 对齐，在 handler 里也校验一次。
+    scope_error = member_node_scope_error(
+        request, project_id, effective_role_for_request(request)[0]
+    )
+    if scope_error:
+        return scope_error
     workflow_versions = [
         str(item.get("version") or item.get("id"))
         for item in repo.state.get("admin_config", {}).get("workflowStateMachines", [])
@@ -13345,6 +13378,14 @@ def evidence_chain(request: Request, project_id: str, node_id: int):
     node = repo.node(project_id, node_id)
     if not node:
         return fail(errors.NOT_FOUND, request)
+    # S-2：单靠中间件按路径正则推断 scope 是单层防御——路由改名、id 改走 query，
+    # 正则跟不上就静默漏判，而 handler 又没有兜底。与 list_ai_runs / review-opinions
+    # 对齐，在 handler 里也校验一次。
+    scope_error = member_node_scope_error(
+        request, project_id, effective_role_for_request(request)[0], node_ids=[node_id]
+    )
+    if scope_error:
+        return scope_error
     node_links = node_evidence_links_for_node(repo, project_id, node_id)
     links = []
     seen_ids: set[str] = set()
