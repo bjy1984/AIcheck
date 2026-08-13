@@ -13,7 +13,7 @@ export const AICHECK_ROLE_LABELS: Record<AicheckRole, string> = {
 }
 
 export const ROLE_DEFAULT_PATHS: Record<AicheckRole, string> = {
-  inspection: '/workbench/inspection',
+  inspection: '/ai-review-b',
   contractor: '/workbench/contractor',
   ndt: '/workbench/ndt',
   owner: '/workbench/owner',
@@ -48,20 +48,23 @@ export const getRoleDefaultPath = (role?: string): string => {
 
 export const isPathAllowedForRole = (path: string, role?: string): boolean => {
   const normalizedRole = normalizeAicheckRole(role)
-  if (!path || path === '/') return false
-  if (['/login', '/404', '/redirect'].some((prefix) => path.startsWith(prefix))) return true
-  if (path === '/ai-review-b' || path.startsWith('/ai-review-b/')) {
+  const pathname = path.split(/[?#]/, 1)[0]
+  if (!pathname || pathname === '/') return false
+  if (['/login', '/404', '/redirect'].some((prefix) => pathname.startsWith(prefix))) return true
+  if (pathname === '/ai-review-b' || pathname.startsWith('/ai-review-b/')) {
     return normalizedRole === 'inspection'
   }
-  if (path === '/workbench/generic' || path.startsWith('/workbench/generic/')) {
+  if (pathname === '/workbench/generic' || pathname.startsWith('/workbench/generic/')) {
     return ['admin', 'inspection', 'contractor', 'owner'].includes(normalizedRole)
   }
-  if (normalizedRole === 'admin') return path.startsWith('/admin') || path.startsWith('/knowledge')
-  if (normalizedRole === 'fde') return path.startsWith('/fde')
-  if (normalizedRole === 'test') return path.startsWith('/workbench/inspection')
+  if (normalizedRole === 'admin')
+    return pathname.startsWith('/admin') || pathname.startsWith('/knowledge')
+  if (normalizedRole === 'fde') return pathname.startsWith('/fde')
+  if (normalizedRole === 'test') return pathname.startsWith('/workbench/inspection')
+  if (normalizedRole === 'inspection') return pathname.startsWith('/workbench/inspection')
   return (
-    path === ROLE_DEFAULT_PATHS[normalizedRole] ||
-    path.startsWith(`${ROLE_DEFAULT_PATHS[normalizedRole]}/`)
+    pathname === ROLE_DEFAULT_PATHS[normalizedRole] ||
+    pathname.startsWith(`${ROLE_DEFAULT_PATHS[normalizedRole]}/`)
   )
 }
 
