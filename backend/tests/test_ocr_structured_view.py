@@ -328,3 +328,71 @@ def test_engine_without_header_flags_keeps_row_zero_convention() -> None:
     table = structured_tables(parse_result)[0]
     assert table["headerReliable"] is True
     assert table["columnNames"] == ["甲", "乙"]
+
+
+def test_unreliable_header_row_is_restored_as_data_not_dropped() -> None:
+    """表头不可信时不画表头行，那这批列名要当数据补回第一行。
+
+    线上踩过：判定 headerReliable=False 之后界面隐藏了 thead，而这些「列名」
+    本来就是表格第一行的字（「订货单位 / 沈阳宝钢东北贸易有限公司」）。结果
+    18 行只显示 17 行，整行内容凭空消失——隐藏证据比错标一个表头更糟。
+    """
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-KV",
+                "columns": 33,
+                "rows": 2,
+                "cells": [
+                    {"row": 0, "col": 0, "text": "订货单位", "isHeader": True},
+                    {"row": 0, "col": 4, "text": "沈阳宝钢东北贸易有限公司", "isHeader": True},
+                    {"row": 1, "col": 0, "text": "收货单位", "isHeader": False},
+                ],
+                "normalizedRows": [{"订货单位": "收货单位", "沈阳宝钢东北贸易有限公司": "安丰管业"}],
+            }
+        ]
+    }
+    table = structured_tables(parse_result)[0]
+    assert table["headerReliable"] is False
+    assert len(table["normalizedRows"]) == 2, "表头行必须作为数据补回"
+    assert table["normalizedRows"][0]["订货单位"] == "订货单位"
+    assert table["normalizedRows"][1]["订货单位"] == "收货单位"
+
+
+def test_reliable_header_does_not_duplicate_the_header_row() -> None:
+    """表头可信时照常画表头，不能再把列名重复塞一行数据。"""
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-GRID",
+                "columns": 2,
+                "cells": [
+                    {"row": 0, "col": 0, "text": "序号", "isHeader": True},
+                    {"row": 0, "col": 1, "text": "管道材料", "isHeader": True},
+                ],
+                "normalizedRows": [{"序号": "1", "管道材料": "A106"}],
+            }
+        ]
+    }
+    table = structured_tables(parse_result)[0]
+    assert table["headerReliable"] is True
+    assert len(table["normalizedRows"]) == 1
+
+
+def test_table_without_cells_is_not_given_a_synthetic_row() -> None:
+    """没有 cells 的表，列名直接来自字典键——那不是某一行的内容，不能补成数据行。
+
+    补了就是凭空造出一行「序号 / 管道材料 / 焊丝牌号」当表格内容，比丢一行更糟：
+    丢是少证据，造是假证据。
+    """
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-NOCELLS",
+                "normalizedRows": [{"序号": "1", "管道材料": "A106"}],
+            }
+        ]
+    }
+    table = structured_tables(parse_result)[0]
+    assert len(table["normalizedRows"]) == 1
+    assert table["normalizedRows"][0]["序号"] == "1"

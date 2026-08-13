@@ -68,6 +68,26 @@ def structured_layout_blocks(parse_result: dict[str, Any]) -> list[dict[str, Any
     ]
 
 
+def header_row_texts(item: dict[str, Any]) -> list[str]:
+    """表头行的文本，按 col 下标排。
+
+    返回空表示这张表没有可当表头的单元格——此时列名只能来自 normalizedRows 的
+    字典键，那些键从来不是某一行的内容，后面也就无所谓「把表头行补回数据」。
+    """
+    cells = [cell for cell in item.get("cells") or [] if isinstance(cell, dict)]
+    marked = any(cell.get("isHeader") is not None for cell in cells)
+    header: list[tuple[int, str]] = []
+    for cell in cells:
+        # 引擎标了 isHeader 就认它；整张表都没标才退回第 0 行
+        is_header = cell.get("isHeader") if marked else int(cell.get("row") or 0) == 0
+        if not is_header:
+            continue
+        text = str(cell.get("text") or "").strip()
+        if text:
+            header.append((int(cell.get("col") or 0), text))
+    return [text for _, text in sorted(header, key=lambda pair: pair[0])]
+
+
 def table_column_names(item: dict[str, Any], normalized: list[dict[str, Any]]) -> list[str]:
     """还原表格的真实列序。
 
@@ -80,24 +100,7 @@ def table_column_names(item: dict[str, Any], normalized: list[dict[str, Any]]) -
     cells 是数组，jsonb 保留数组顺序，且每个单元格自带 row/col/isHeader，
     所以列序从表头行的 col 下标还原，而不是从字典键序。
     """
-    marked = [
-        cell
-        for cell in item.get("cells") or []
-        if isinstance(cell, dict) and cell.get("isHeader") is not None
-    ]
-    header: list[tuple[int, str]] = []
-    for cell in item.get("cells") or []:
-        if not isinstance(cell, dict):
-            continue
-        # 引擎标了 isHeader 就认它；整张表都没标才退回第 0 行
-        is_header = cell.get("isHeader") if marked else int(cell.get("row") or 0) == 0
-        if not is_header:
-            continue
-        text = str(cell.get("text") or "").strip()
-        if text:
-            header.append((int(cell.get("col") or 0), text))
-    ordered = [text for _, text in sorted(header, key=lambda pair: pair[0])]
-
+    ordered = header_row_texts(item)
     if not normalized:
         return ordered
     keys = set(normalized[0].keys())
@@ -169,6 +172,20 @@ def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
         if not normalized and not cells:
             continue
         column_names = table_column_names(item, normalized)
+        header_reliable = table_header_is_reliable(item, table_grid_columns(item))
+        header_texts = set(header_row_texts(item))
+        if not header_reliable and normalized and header_texts:
+            # 表头不可信时界面不画表头行，那被当成列名消费掉的那一行内容就得补回
+            # 数据里——它们本来就是表格里的字（线上那张质量证明书的「订货单位 /
+            # 沈阳宝钢东北贸易有限公司」就在这一行）。不补，18 行只显示 17 行，
+            # 整行凭空消失：隐藏证据比错标一个表头更糟。
+            #
+            # 只补真来自表头行的列。引擎为重名列凭空造的键（输送管_26 之类）不是
+            # 表格里的字，填进去就是伪造内容，留空。
+            normalized = [
+                {name: (name if name in header_texts else "") for name in column_names},
+                *normalized,
+            ]
         results.append(
             {
                 "tableId": str(item.get("tableId") or item.get("candidateId") or ""),
@@ -177,7 +194,7 @@ def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
                 "columns": item.get("columns"),
                 "columnNames": column_names,
                 # 表头不可信时界面不画表头行——见 table_header_is_reliable
-                "headerReliable": table_header_is_reliable(item, table_grid_columns(item)),
+                "headerReliable": header_reliable,
                 "normalizedRows": normalized,
                 "cells": cells if not normalized else [],
                 "bbox": _clean_bbox(item.get("bbox")),
