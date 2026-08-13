@@ -5624,7 +5624,7 @@ def test_litellm_client_sanitizes_provider_response_body() -> None:
 
 def test_login_compatibility_paths() -> None:
     cases = {
-        "inspection": "/workbench/inspection",
+        "inspection": "/ai-review-b",
         "contractor": "/workbench/contractor",
         "ndt": "/workbench/ndt",
         "owner": "/workbench/owner",

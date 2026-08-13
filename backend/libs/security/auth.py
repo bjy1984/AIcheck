@@ -40,7 +40,7 @@ COMMON_PASSWORDS = {
 }
 
 ROLE_DEFAULT_PATHS = {
-    "inspection": "/workbench/inspection",
+    "inspection": "/ai-review-b",
     "contractor": "/workbench/contractor",
     "ndt": "/workbench/ndt",
     "owner": "/workbench/owner",

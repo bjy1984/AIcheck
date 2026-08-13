@@ -525,7 +525,7 @@ def test_response_envelope_contract_check_fails_legacy_or_incomplete_helpers() -
 def test_role_contract_check_fails_bad_paths_owner_write_and_missing_specs() -> None:
     paths = {
         "admin": "/admin/overview",
-        "inspection": "/workbench/inspection",
+        "inspection": "/ai-review-b",
         "contractor": "/wrong",
         "ndt": "/workbench/ndt",
         "owner": "/workbench/owner",

@@ -88,6 +88,8 @@ def test_review_b_workspace_creates_and_recovers_node_session() -> None:
 def test_review_b_routes_and_api_are_limited_to_inspection_role() -> None:
     routes = assert_ok(client.get("/api/auth/routes?role=inspection"))
     assert "/ai-review-b" in [route["path"] for route in routes]
+    workbench_route = next(route for route in routes if route["path"] == "/workbench")
+    assert workbench_route["redirect"] == "/ai-review-b"
 
     forbidden = client.get(
         f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
