@@ -162,11 +162,24 @@ class ObjectStorage:
             expires=timedelta(minutes=30),
         )
 
-    def presigned_get_url(self, url: str, *, file_name: str | None = None) -> str | None:
+    def presigned_get_url(
+        self,
+        url: str,
+        *,
+        file_name: str | None = None,
+        internal: bool = False,
+    ) -> str | None:
+        """internal=True 时用集群内地址签名，供服务间取文件。
+
+        默认签名用 AICHECK_MINIO_PUBLIC_ENDPOINT（浏览器要能访问，线上是
+        127.0.0.1:19000）。但 ONLYOFFICE 这类服务跑在同一 docker 网络里，
+        它拿到 127.0.0.1 会去连自己的容器，必然失败——那种失败还很难诊断，
+        因为签名本身是合法的。所以内网消费者必须显式要内网地址。
+        """
         parsed = parse_storage_url(url)
         if parsed is None:
             return None
-        client = self.presign_client()
+        client = self.client() if internal else self.presign_client()
         if client is None:
             return None
         self.ensure_buckets()

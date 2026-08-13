@@ -3066,6 +3066,27 @@ export const getDocumentOriginalBlobApi = (url: string): Promise<{ data: Blob }>
   }) as unknown as Promise<{ data: Blob }>
 }
 
+export interface OfficePreviewPayload {
+  documentServerBase: string
+  apiScriptUrl: string
+  config: Record<string, unknown>
+}
+
+/** Office 文件的只读在线预览配置（ONLYOFFICE）。 */
+export const getDocumentOfficePreviewApi = (
+  projectId: string,
+  documentId: string
+): Promise<IResponse<OfficePreviewPayload>> => {
+  return request.get({
+    url: `/projects/${projectId}/documents/${documentId}/office-preview`,
+    headers: {
+      // 未部署预览服务时后端返回 503，由调用方自行呈现，不弹全局错误提示
+      'X-Silent-Http-Error': 'true',
+      'X-Silent-Business-Error': 'true'
+    }
+  })
+}
+
 export const createDocumentUploadSessionApi = (
   projectId: string,
   files: DocumentUploadSessionFile[],

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import {
   ElAlert,
@@ -15,7 +15,7 @@ import {
   ElTabs,
   ElTag
 } from 'element-plus'
-import { getDocumentOriginalBlobApi } from '@/api/aicheck'
+import { getDocumentOfficePreviewApi, getDocumentOriginalBlobApi } from '@/api/aicheck'
 import type { DocumentDetailPayload } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
@@ -101,6 +101,89 @@ const previewFrameUrl = computed(() => {
   if (previewRequiresBlob.value) return previewObjectUrl.value
   return previewObjectUrl.value || url
 })
+/* ---------------- Office 在线预览（L-4） ----------------
+ * 这个项目的资料全是 .docx，此前在系统里完全无法查看，界面只提示「请下载后用
+ * Word 打开」——监检得离开系统、在本地比对，再回来填结论。
+ *
+ * 接 ONLYOFFICE Document Server，只读挂载。不做在线编辑：审查场景里原始资料
+ * 一旦可改，证据链就断了（后端已把 permissions 全部关闭）。
+ */
+const officePreviewLoading = ref(false)
+const officePreviewError = ref('')
+const officeContainerId = `office-preview-${Math.random().toString(36).slice(2, 10)}`
+let officeEditor: { destroyEditor?: () => void } | null = null
+
+const previewIsOffice = computed(() => preview.value?.previewType === 'office')
+
+const loadDocumentServerScript = (src: string) =>
+  new Promise<void>((resolve, reject) => {
+    // 本组件有个名为 document 的计算属性（当前文档记录），会遮蔽全局 document，
+    // 所以操作 DOM 必须显式走 globalThis
+    const dom = globalThis.document
+    const existing = dom.querySelector<HTMLScriptElement>(`script[data-aicheck-ds="${src}"]`)
+    if (existing) {
+      if (existing.dataset.loaded === 'true') resolve()
+      else {
+        existing.addEventListener('load', () => resolve(), { once: true })
+        existing.addEventListener('error', () => reject(new Error('加载失败')), { once: true })
+      }
+      return
+    }
+    const script = dom.createElement('script')
+    script.src = src
+    script.async = true
+    script.dataset.aicheckDs = src
+    script.addEventListener('load', () => {
+      script.dataset.loaded = 'true'
+      resolve()
+    })
+    script.addEventListener('error', () => reject(new Error('加载失败')))
+    dom.head.appendChild(script)
+  })
+
+const destroyOfficeEditor = () => {
+  try {
+    officeEditor?.destroyEditor?.()
+  } catch {
+    // 弹窗关闭时 DS 可能已自行清理，销毁失败不影响业务
+  }
+  officeEditor = null
+}
+
+const mountOfficePreview = async () => {
+  const projectId = props.detail?.document?.projectId
+  const documentId = props.detail?.document?.id
+  if (!projectId || !documentId) return
+  officePreviewLoading.value = true
+  officePreviewError.value = ''
+  destroyOfficeEditor()
+  try {
+    const res = await getDocumentOfficePreviewApi(String(projectId), String(documentId))
+    const payload = res?.data
+    if (!payload?.apiScriptUrl) {
+      officePreviewError.value = getAicheckErrorMessage(res, 'Office 预览服务暂不可用。')
+      return
+    }
+    await loadDocumentServerScript(payload.apiScriptUrl)
+    await nextTick()
+    const DocsAPI = (
+      window as unknown as { DocsAPI?: { DocEditor: new (...args: never[]) => never } }
+    ).DocsAPI
+    if (!DocsAPI) {
+      officePreviewError.value = 'Office 预览组件未能加载。'
+      return
+    }
+    officeEditor = new (DocsAPI.DocEditor as unknown as new (
+      id: string,
+      config: Record<string, unknown>
+    ) => { destroyEditor?: () => void })(officeContainerId, payload.config)
+  } catch (error) {
+    officePreviewError.value = getAicheckErrorMessage(error, 'Office 预览加载失败，请下载后查看。')
+  } finally {
+    officePreviewLoading.value = false
+  }
+}
+
 const previewUnavailableText = computed(() => {
   const url = String(preview.value?.url || '')
   if (!url) return '当前文件详情没有返回原文地址。'
@@ -146,15 +229,19 @@ watch(
   ([open]) => {
     if (open) {
       void loadPreviewOriginal()
+      if (previewIsOffice.value) void mountOfficePreview()
     } else {
       revokePreviewObjectUrl()
       previewOriginalError.value = ''
+      officePreviewError.value = ''
+      destroyOfficeEditor()
     }
   }
 )
 
 onBeforeUnmount(() => {
   revokePreviewObjectUrl()
+  destroyOfficeEditor()
 })
 
 const confidenceText = (confidence?: number) => {
@@ -345,8 +432,25 @@ watch(visible, (open) => {
               >
             </div>
             <div v-if="locateHint" class="locate-hint">{{ locateHint }}</div>
-            <div class="preview-body" :class="{ 'preview-body--disabled': !previewEmbeddable }">
-              <template v-if="previewEmbeddable">
+            <div
+              class="preview-body"
+              :class="{ 'preview-body--disabled': !previewEmbeddable && !previewIsOffice }"
+            >
+              <!-- Office：交给 ONLYOFFICE 只读渲染 -->
+              <template v-if="previewIsOffice">
+                <div class="preview-frame-host" v-loading="officePreviewLoading">
+                  <ElAlert
+                    v-if="officePreviewError"
+                    title="Office 在线预览不可用"
+                    :description="`${officePreviewError} 可使用右上角「下载」查看原文。`"
+                    type="warning"
+                    :closable="false"
+                    show-icon
+                  />
+                  <div v-else :id="officeContainerId" class="office-stage"></div>
+                </div>
+              </template>
+              <template v-else-if="previewEmbeddable">
                 <div class="preview-frame-host" v-loading="previewLoadingOriginal">
                   <ElAlert
                     v-if="previewOriginalError"
@@ -384,11 +488,7 @@ watch(visible, (open) => {
               </template>
               <ElAlert
                 v-else
-                :title="
-                  preview?.previewType === 'office'
-                    ? 'Office 文件不支持在线预览'
-                    : '当前格式暂不支持在线预览'
-                "
+                title="当前格式暂不支持在线预览"
                 :description="previewUnavailableText"
                 type="warning"
                 :closable="false"
@@ -604,6 +704,12 @@ watch(visible, (open) => {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   gap: 14px;
   align-items: stretch;
+}
+
+.office-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
 }
 
 .preview-shell {

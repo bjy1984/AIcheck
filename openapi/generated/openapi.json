@@ -18416,6 +18416,56 @@
         ]
       }
     },
+    "/api/projects/{project_id}/documents/{document_id}/office-preview": {
+      "get": {
+        "description": "Office 文件的在线预览配置（只读）。\n\n这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只能提示\n「请下载后用 Word 打开」，监检得离开系统、在本地比对，再回来填结论。\n\n只下发只读配置：mode=view、edit 权限全关。不做在线编辑——审查场景里\n原始资料一旦可改，证据链就断了。",
+        "operationId": "document_office_preview_api_projects__project_id__documents__document_id__office_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Office Preview",
+        "tags": [
+          "AIcheck API"
+        ]
+      }
+    },
     "/api/projects/{project_id}/documents/{document_id}/original": {
       "get": {
         "operationId": "project_document_original_api_projects__project_id__documents__document_id__original_get",
@@ -39672,6 +39722,56 @@
           }
         },
         "summary": "Document Ocr Fields",
+        "tags": [
+          "AIcheck API"
+        ]
+      }
+    },
+    "/projects/{project_id}/documents/{document_id}/office-preview": {
+      "get": {
+        "description": "Office 文件的在线预览配置（只读）。\n\n这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只能提示\n「请下载后用 Word 打开」，监检得离开系统、在本地比对，再回来填结论。\n\n只下发只读配置：mode=view、edit 权限全关。不做在线编辑——审查场景里\n原始资料一旦可改，证据链就断了。",
+        "operationId": "document_office_preview_projects__project_id__documents__document_id__office_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Office Preview",
         "tags": [
           "AIcheck API"
         ]
