@@ -2395,16 +2395,26 @@ def project_if_match_valid(project: dict[str, Any], if_match: str | None) -> boo
 
 
 def versioned_project(project: dict[str, Any]) -> dict[str, Any]:
+    """项目对外表示：带 revision/etag，不带业务包快照。
+
+    businessPackSnapshot 单个 1.1 MB，而它出现在每个带 project 的响应里——
+    线上实测项目列表（9 个项目）6.6 MB、tree 1.5 MB、workbench/context 1.1 MB、
+    audit-overview 1.5 MB，一次工作台加载重复传同一份快照 4 次以上。
+
+    前端从不读快照本体，只用 businessPackSnapshotHash 判断版本（已核对全量前端
+    源码）。后端也不从响应体读回——业务包按 businessPackId 从 YAML 加载。
+    需要完整快照的场景走 /business-packs 专用端点。
+    """
     cloned = repo.clone(project)
     cloned["revision"] = project_revision(project)
     cloned["etag"] = project_etag(project)
+    cloned.pop("businessPackSnapshot", None)
     return cloned
 
 
 def project_without_business_pack_snapshot(project: dict[str, Any]) -> dict[str, Any]:
-    summary = versioned_project(project)
-    summary.pop("businessPackSnapshot", None)
-    return summary
+    """历史别名：versioned_project 现在本身就不带快照，这里保留以免破坏既有调用方。"""
+    return versioned_project(project)
 
 
 def report_etag(report: dict[str, Any]) -> str:
@@ -5652,7 +5662,7 @@ def project_tree(request: Request, project_id: str):
             enrich_node_with_requirements_summary(project_id, node, project_bindings=project_bindings)
             for node in group.get("nodes", [])
         ]
-    return ok({"project": repo.clone(project), "groups": groups}, request)
+    return ok({"project": versioned_project(project), "groups": groups}, request)
 
 
 INSPECTION_AUDIT_ITEM_CONFIG: tuple[tuple[str, str], ...] = (
@@ -5789,8 +5799,17 @@ def _inspection_document_review_status(
 def build_inspection_submitted_document_rows(
     project_id: str,
     scope: set[int] | None,
+    *,
+    document_repo: Any = None,
 ) -> list[dict[str, Any]]:
-    document_repo = repo.project_document_read_view(project_id)
+    """document_repo 可由调用方传入复用。
+
+    这个视图是**项目级**的，与 nodeId 无关。audit-overview 会对项目全部节点
+    逐个构造工作区，若每次都新建视图，同一份数据要重读 69 遍——线上实测
+    单次 242ms，69 次就是 16.7 秒，正是「进工作台等 20 秒」的来源。
+    """
+    if document_repo is None:
+        document_repo = repo.project_document_read_view(project_id)
     documents = {
         str(item.get("id")): item
         for item in document_repo.project_documents(project_id)
@@ -5889,6 +5908,7 @@ def build_inspection_audit_workspace(
     scope: set[int] | None,
     include_content: bool,
     role: str | None = None,
+    document_repo: Any = None,
 ) -> dict[str, Any] | None:
     project = repo.require_project(project_id)
     node = repo.node(project_id, node_id)
@@ -5897,7 +5917,9 @@ def build_inspection_audit_workspace(
     if scope is not None and node_id not in scope:
         return None
 
-    submitted_rows = build_inspection_submitted_document_rows(project_id, scope)
+    submitted_rows = build_inspection_submitted_document_rows(
+        project_id, scope, document_repo=document_repo
+    )
     submitted_binding_ids = {
         str(binding.get("id") or "")
         for item in submitted_rows
@@ -6327,13 +6349,17 @@ def inspection_audit_overview(
     rows = []
     normalized_keyword = str(keyword or "").strip().lower()
     normalized_status = str(status or "").strip()
+    # 项目级视图构造一次给全部节点复用，而不是每个节点各建一次
+    shared_document_repo = repo.project_document_read_view(project_id)
+    overview_role = effective_role_for_request(request)[0]
     for node in nodes:
         projection = build_inspection_audit_workspace(
             project_id,
             int(node["nodeId"]),
             scope=scope,
             include_content=False,
-            role=effective_role_for_request(request)[0],
+            role=overview_role,
+            document_repo=shared_document_repo,
         )
         if not projection:
             continue
@@ -9759,7 +9785,7 @@ def review_workspace_payload(
     return {
         "schemaVersion": "ReviewWorkspaceProjection@1.0.0",
         "workspaceRevision": max(record_revision(session or {}) if session else 1, record_revision(review_run or {}) if review_run else 1),
-        "project": repo.clone(project),
+        "project": versioned_project(project),
         "node": repo.clone(node_view),
         "permissions": {
             "canStartReview": can_review and bool(available_modes),

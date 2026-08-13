@@ -247,14 +247,24 @@ def sanitize_mineru_options(options: dict[str, Any]) -> dict[str, Any]:
 
 
 class InMemoryRepository:
-    def __init__(self) -> None:
+    def __init__(self, *, seed: bool = True) -> None:
+        """seed=False 用于「造完立刻整体替换 state」的游离视图。
+
+        默认播种是主仓库需要的；但 project_document_read_view() 这类场景会在
+        下一行就把 state 换掉，播种纯属浪费——线上实测 InMemoryRepository()
+        单次 172ms（要重建 demo 种子、发布条款 release、绑定 69 个节点），
+        占该函数总耗时 242ms 的 71%，而产物一次都没被读过。
+
+        注意 seed=False 不能退回 blank_state()：它自己先调 fresh_state() 再把
+        集合逐个清空，照样付全额播种成本。这里直接给空骨架，由调用方立即替换。
+        """
         self._tenant_states: dict[str, dict[str, Any]] = {}
         self._tenant_persistence_baselines: dict[str, dict[tuple[str, str], str]] = {}
         self._tenant_singleton_baselines: dict[str, dict[str, str]] = {}
         self._tenant_idempotency_baselines: dict[str, dict[str, str]] = {}
         self._tenant_pgvector_baseline_ids: dict[str, set[str]] = {}
         self._loaded_tenants: set[str] = set()
-        self.state = runtime_initial_state()
+        self.state = runtime_initial_state() if seed else {key: [] for key in STATE_COLLECTIONS}
         self._persistence_baseline: dict[tuple[str, str], str] = {}
         self._singleton_baseline: dict[str, str] = {}
         self._idempotency_baseline: dict[str, str] = {}
@@ -517,7 +527,10 @@ class InMemoryRepository:
         return int(ROLE_NODE_MAP.get("inspection", 24))
 
     def project_for_role(self, project: dict[str, Any], role: str) -> dict[str, Any]:
+        """按角色裁剪的项目对外表示。不带 businessPackSnapshot——它单个 1.1 MB，
+        前端只用 businessPackSnapshotHash 判断版本（见 versioned_project 的说明）。"""
         cloned = self.clone(project)
+        cloned.pop("businessPackSnapshot", None)
         cloned["currentNodeId"] = self.role_current_node_id(project, role)
         cloned["riskLevel"] = self.project_risk_level(project["id"])
         if project.get("status") == "已归档":
@@ -3655,7 +3668,8 @@ class InMemoryRepository:
             state_key = collection_to_state.get(collection)
             if state_key:
                 detached_state[state_key].append(payload)
-        view = InMemoryRepository()
+        # seed=False：下一行就整体替换 state，播种出来的东西一次都不会被读
+        view = InMemoryRepository(seed=False)
         view.state = detached_state
         view.apply_tenant_scope()
         return view
