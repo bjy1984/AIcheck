@@ -110,6 +110,7 @@ def trim_evidence_to_budget(
         trimmed = _without_versions(evidence, dropped)
 
     remaining_tokens = _tokens_of(trimmed)
+    kept_count = len(trimmed.get("documentVersionIds") or [])
     return trimmed, {
         "truncated": bool(dropped),
         "evidenceTokens": remaining_tokens,
@@ -117,10 +118,15 @@ def trim_evidence_to_budget(
         "budgetTokens": budget,
         "droppedVersionIds": sorted(dropped),
         "droppedNames": [labels.get(vid) or vid for vid in sorted(dropped)],
-        "keptVersionCount": len(trimmed.get("documentVersionIds") or []),
+        "keptVersionCount": kept_count,
         # 全裁光仍超预算：剩下的固定开销就已经装不下，这时候截断救不了，
         # 必须让它响亮地失败，而不是送一份空证据让模型凭空判断。
         "stillOverBudget": remaining_tokens > budget,
+        # 一份都没留住 = 这次审查没有任何证据可依。线上实测踩到过：两份大资料
+        # 都被裁掉，报告却说「成功」——模型会对着一份空证据集给出结论，护栏虽然
+        # 会降级为待人工确认，但监检看到的是一次「做过了」的审查，实际什么都没审。
+        # 裁减的前提是「还剩下能审的东西」；剩不下，就该失败。
+        "nothingLeftToReview": bool(dropped) and kept_count == 0,
     }
 
 

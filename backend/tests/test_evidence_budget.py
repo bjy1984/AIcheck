@@ -150,3 +150,24 @@ def test_truncation_requirements_reach_the_prompt() -> None:
         }
     )
     assert any("某某.pdf" in str(item) for item in block["requirements"])
+
+
+def test_dropping_every_document_is_not_a_success() -> None:
+    """裁到一份不剩，就不是「裁减成功」。
+
+    线上实测踩到过：两份大资料都被裁掉、keptVersionCount=0，报告却说成功。
+    那样模型会对着一份空证据集给结论——护栏虽然降级为待人工确认，但监检看到的
+    是一次「做过了」的审查，实际什么都没审。裁减的前提是还剩下能审的东西。
+    """
+    evidence = _evidence(("V-A", 300), ("V-B", 300))
+    _, report = trim_evidence_to_budget(evidence, available_tokens=600)
+    assert report["keptVersionCount"] == 0
+    assert report["nothingLeftToReview"] is True
+
+
+def test_keeping_at_least_one_document_is_a_real_success() -> None:
+    """留住至少一份才算裁减成功——这是与上一条的分界。"""
+    evidence = _evidence(("V-BIG", 400), ("V-SMALL", 5))
+    _, report = trim_evidence_to_budget(evidence, available_tokens=2000)
+    assert report["keptVersionCount"] >= 1
+    assert report["nothingLeftToReview"] is False

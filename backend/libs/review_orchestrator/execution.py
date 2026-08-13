@@ -2731,8 +2731,10 @@ def trim_review_input_to_budget(
         raise IntegrationServiceError(
             "QwenRuntime", "review.chat", reason="REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED"
         )
-    if report.get("stillOverBudget"):
-        # 全裁光还超：固定开销就已经装不下，截断救不了
+    if report.get("stillOverBudget") or report.get("nothingLeftToReview"):
+        # 全裁光还超，或者一份都没留住——两种都不是「裁减成功」。
+        # 审 0 份资料会得到一个基于空证据的结论：护栏会把它降级为待人工确认，
+        # 但监检看到的仍是一次「做过了」的审查。这种沉默的空转比失败更贵。
         raise IntegrationServiceError(
             "QwenRuntime", "review.chat", reason="REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED"
         )
