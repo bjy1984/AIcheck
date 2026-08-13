@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 import zipfile
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
@@ -109,6 +110,13 @@ from libs.material_targeting import (
 )
 from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness
+from libs.office_preview import (
+    CONVERTIBLE_SUFFIXES,
+    OfficeConversionFailed,
+    OfficeConversionUnavailable,
+    convert_office_to_pdf,
+    office_preview_available,
+)
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
 from libs.raw_vault import (
     capture_agent_turn,
@@ -7804,27 +7812,27 @@ def document_read_scope_error(request: Request, project_id: str, document_id: st
     )
 
 
-def onlyoffice_document_server_base() -> str:
-    """浏览器访问 ONLYOFFICE 的前缀。空字符串表示未部署。"""
-    return os.getenv("AICHECK_ONLYOFFICE_BASE", "").strip().rstrip("/")
+OFFICE_PREVIEW_BUCKET = "documents"
 
 
-ONLYOFFICE_DOCUMENT_TYPES = {
-    "docx": "word", "doc": "word", "rtf": "word", "odt": "word", "txt": "word",
-    "xlsx": "cell", "xls": "cell", "ods": "cell", "csv": "cell",
-    "pptx": "slide", "ppt": "slide", "odp": "slide",
-}
+def office_preview_object_name(document_id: str, content_hash: str) -> str:
+    """转换产物的对象名。
+
+    按内容哈希命名：同一版本只转一次，内容变了哈希就变、缓存自然失效，
+    不需要手动清理。
+    """
+    return f"office-preview/{document_id}/{content_hash}.pdf"
 
 
 @router.get("/projects/{project_id}/documents/{document_id}/office-preview")
 def document_office_preview(request: Request, project_id: str, document_id: str):
-    """Office 文件的在线预览配置（只读）。
+    """Office 文件的在线预览：转成 PDF，复用已验证可用的 PDF 预览路径。
 
-    这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只能提示
-    「请下载后用 Word 打开」，监检得离开系统、在本地比对，再回来填结论。
+    这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只提示「请下载后用
+    Word 打开」，监检得离开系统、在本地比对，再回来填结论。
 
-    只下发只读配置：mode=view、edit 权限全关。不做在线编辑——审查场景里
-    原始资料一旦可改，证据链就断了。
+    先接过 ONLYOFFICE Document Server，卡在转换器 error:-7 未果（详见
+    libs/office_preview.py 的说明），改用 LibreOffice headless 转 PDF。
     """
     scope_error = document_read_scope_error(request, project_id, document_id)
     if scope_error:
@@ -7833,22 +7841,18 @@ def document_office_preview(request: Request, project_id: str, document_id: str)
     if not document:
         return fail(errors.NOT_FOUND, request)
 
-    # 服务可用性先判：服务没部署却报「格式不支持」，会让人去查文件格式，
-    # 而真正的原因在别处——这类误导比直接报错更费时间。
-    base = onlyoffice_document_server_base()
-    if not base:
+    if not office_preview_available():
         return fail(
             errors.OFFICE_PREVIEW_UNAVAILABLE,
             request,
-            message="Office 预览服务未部署（AICHECK_ONLYOFFICE_BASE 未配置）。",
-            data={"reason": "ONLYOFFICE_NOT_CONFIGURED"},
+            message="Office 预览服务未就绪（运行环境缺少 LibreOffice）。",
+            data={"reason": "LIBREOFFICE_NOT_INSTALLED"},
             http_status=503,
         )
 
     file_name = str(document.get("fileName") or "")
     suffix = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-    document_type = ONLYOFFICE_DOCUMENT_TYPES.get(suffix)
-    if not document_type:
+    if suffix not in CONVERTIBLE_SUFFIXES:
         return fail(
             errors.VALIDATION_ERROR,
             request,
@@ -7857,19 +7861,8 @@ def document_office_preview(request: Request, project_id: str, document_id: str)
         )
 
     version = repo.current_version(document_id) or {}
-    storage_url = repo.document_storage_url(document, fallback_prefix="preview")
-    try:
-        # 关键：给 ONLYOFFICE 的必须是**内网**地址。它和 API 在同一 docker 网络，
-        # 拿到浏览器用的 127.0.0.1:19000 会去连自己的容器，必然取不到文件。
-        fetch_url = object_storage.presigned_get_url(storage_url, internal=True)
-    except ObjectStorageUnavailable as exc:
-        return fail(
-            errors.OBJECT_STORAGE_REQUIRED,
-            request,
-            message=str(exc) or "对象存储不可用，无法生成预览。",
-            http_status=503,
-        )
-    if not fetch_url:
+    content_hash = normalized_content_hash(version.get("hash"))
+    if not content_hash:
         return fail(
             errors.NOT_FOUND,
             request,
@@ -7877,44 +7870,69 @@ def document_office_preview(request: Request, project_id: str, document_id: str)
             data={"reason": "STORAGE_OBJECT_MISSING"},
         )
 
-    # 文档指纹变了，ONLYOFFICE 才会重新取文件；用版本内容哈希最准确
-    document_key = str(version.get("hash") or version.get("id") or document_id)[:60]
+    object_name = office_preview_object_name(document_id, content_hash)
+    preview_storage_url = f"minio://{OFFICE_PREVIEW_BUCKET}/{object_name}"
+
+    try:
+        cached = object_storage.presigned_get_url(preview_storage_url)
+        if not cached:
+            source_url = repo.document_storage_url(document, fallback_prefix="preview")
+            source_signed = object_storage.presigned_get_url(source_url, internal=True)
+            if not source_signed:
+                return fail(
+                    errors.NOT_FOUND,
+                    request,
+                    message="该资料没有可用的存储对象，无法预览。",
+                    data={"reason": "STORAGE_OBJECT_MISSING"},
+                )
+            with urllib.request.urlopen(source_signed, timeout=60) as response:
+                source_bytes = response.read()
+            pdf_bytes = convert_office_to_pdf(source_bytes, file_name)
+            object_storage.put_bytes(
+                OFFICE_PREVIEW_BUCKET, object_name, pdf_bytes, content_type="application/pdf"
+            )
+            cached = object_storage.presigned_get_url(preview_storage_url)
+    except OfficeConversionUnavailable as exc:
+        return fail(
+            errors.OFFICE_PREVIEW_UNAVAILABLE,
+            request,
+            message=str(exc),
+            data={"reason": "LIBREOFFICE_NOT_INSTALLED"},
+            http_status=503,
+        )
+    except OfficeConversionFailed as exc:
+        return fail(
+            errors.OFFICE_PREVIEW_UNAVAILABLE,
+            request,
+            message=str(exc),
+            data={"reason": "OFFICE_CONVERSION_FAILED"},
+            http_status=503,
+        )
+    except ObjectStorageUnavailable as exc:
+        return fail(
+            errors.OBJECT_STORAGE_REQUIRED,
+            request,
+            message=str(exc) or "对象存储不可用，无法生成预览。",
+            http_status=503,
+        )
+
+    if not cached:
+        return fail(
+            errors.OFFICE_PREVIEW_UNAVAILABLE,
+            request,
+            message="Office 预览已生成但无法签发访问地址。",
+            data={"reason": "PREVIEW_URL_UNAVAILABLE"},
+            http_status=503,
+        )
+
     return ok(
         {
-            "documentServerBase": base,
-            "apiScriptUrl": f"{base}/web-apps/apps/api/documents/api.js",
-            "config": {
-                "documentType": document_type,
-                "type": "desktop",
-                "document": {
-                    "fileType": suffix,
-                    "key": document_key,
-                    "title": file_name,
-                    "url": fetch_url,
-                    "permissions": {
-                        "edit": False,
-                        "download": False,
-                        "print": False,
-                        "review": False,
-                        "comment": False,
-                        "fillForms": False,
-                        "modifyContentControl": False,
-                        "modifyFilter": False,
-                    },
-                },
-                "editorConfig": {
-                    "mode": "view",
-                    "lang": "zh-CN",
-                    "customization": {
-                        "chat": False,
-                        "comments": False,
-                        "help": False,
-                        "plugins": False,
-                        "toolbarNoTabs": True,
-                        "hideRightMenu": True,
-                    },
-                },
-            },
+            "previewType": "pdf",
+            "url": cached,
+            "fileName": f"{Path(file_name).stem or document_id}.pdf",
+            "sourceFileName": file_name,
+            "readonly": True,
+            "convertedFrom": suffix,
         },
         request,
     )

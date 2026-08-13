@@ -1,7 +1,11 @@
-"""Office 在线预览配置（线上审计 L-4）。
+"""Office 文件在线预览（线上审计 L-4）。
 
-线上项目的 10 份资料全是 .docx，此前在系统里完全无法查看——界面只提示
-「请下载后用 Word 打开」。监检得离开系统、在本地比对，再回来填结论。
+线上项目的资料全是 .docx，此前在系统里完全无法查看——界面只提示「请下载后用
+Word 打开」。监检得离开系统、在本地比对，再回来填结论。
+
+先接过 ONLYOFFICE Document Server，卡在转换器 error:-7 / x2t code=88 未果
+（同一文件手动跑 x2t 成功、DS 服务调用就失败，排查多轮）。改用 LibreOffice
+headless 转 PDF，复用已验证可用的 PDF 预览路径。
 """
 
 from __future__ import annotations
@@ -12,6 +16,11 @@ from fastapi.testclient import TestClient
 import apps.api.routes as routes_module
 from apps.api.main import app
 from libs.db.repository import repo
+from libs.office_preview import (
+    CONVERTIBLE_SUFFIXES,
+    OfficeConversionFailed,
+    OfficeConversionUnavailable,
+)
 
 client = TestClient(app)
 INSPECTION = {
@@ -19,39 +28,42 @@ INSPECTION = {
     "X-Dev-User": "USER-INSPECTION-001",
     "X-Role": "inspection",
 }
-CONTRACTOR = {
-    "X-Dev-Role": "contractor",
-    "X-Dev-User": "USER-CONTRACTOR-001",
-    "X-Role": "contractor",
-}
 PROJECT_ID = "P-2026-HDCP-001"
 
 
-def _first_document_id() -> str:
-    docs = [
-        item
-        for item in repo.state.get("documents", [])
-        if str(item.get("projectId")) == PROJECT_ID
-    ]
+def _office_document() -> dict | None:
+    return next(
+        (
+            item
+            for item in repo.state.get("documents", [])
+            if str(item.get("projectId")) == PROJECT_ID
+            and str(item.get("fileName") or "").lower().endswith((".docx", ".xlsx"))
+        ),
+        None,
+    )
+
+
+def _any_document_id() -> str:
+    docs = [x for x in repo.state.get("documents", []) if str(x.get("projectId")) == PROJECT_ID]
     assert docs, "该项目没有文档，测试前提不成立"
     return str(docs[0]["id"])
 
 
-def test_unconfigured_service_says_so_instead_of_failing_obscurely(monkeypatch) -> None:
-    """没部署时要明说「预览服务未部署」，不能给个空配置让前端白转圈。"""
-    monkeypatch.setenv("AICHECK_ONLYOFFICE_BASE", "")
+def test_missing_libreoffice_says_so_instead_of_failing_obscurely(monkeypatch) -> None:
+    """运行环境没装 LibreOffice 时要明说，不能让前端白转圈。"""
+    monkeypatch.setattr(routes_module, "office_preview_available", lambda: False)
     response = client.get(
-        f"/api/projects/{PROJECT_ID}/documents/{_first_document_id()}/office-preview",
+        f"/api/projects/{PROJECT_ID}/documents/{_any_document_id()}/office-preview",
         headers=INSPECTION,
     )
     payload = response.json()
     assert payload["code"] != 0
-    assert (payload.get("data") or {}).get("reason") == "ONLYOFFICE_NOT_CONFIGURED"
+    assert (payload.get("data") or {}).get("reason") == "LIBREOFFICE_NOT_INSTALLED"
 
 
 def test_non_office_file_is_rejected_with_its_suffix(monkeypatch) -> None:
-    """PDF/图片各有自己的预览路径，不该走 Office 服务。"""
-    monkeypatch.setenv("AICHECK_ONLYOFFICE_BASE", "http://ds.example")
+    """PDF/图片各有自己的预览路径，不该走转换。"""
+    monkeypatch.setattr(routes_module, "office_preview_available", lambda: True)
     document = next(
         (
             item
@@ -70,74 +82,90 @@ def test_non_office_file_is_rejected_with_its_suffix(monkeypatch) -> None:
     assert response.json()["code"] != 0
 
 
-def test_config_is_view_only(monkeypatch) -> None:
-    """审查场景里原始资料一旦可改，证据链就断了——权限必须全关。"""
-    monkeypatch.setenv("AICHECK_ONLYOFFICE_BASE", "http://ds.example")
+def test_conversion_failure_is_reported_not_swallowed(monkeypatch) -> None:
+    """转换失败要如实告知并提示下载原文，不能返回一个打不开的空地址。"""
+    document = _office_document()
+    if document is None:
+        pytest.skip("该项目没有 Office 文档")
+    monkeypatch.setattr(routes_module, "office_preview_available", lambda: True)
+    # 缓存查询必须返回 None，否则会走「已有产物」的快路径，根本不触发转换。
+    # internal=True 是取源文件那次，得给地址。
     monkeypatch.setattr(
         routes_module.object_storage,
         "presigned_get_url",
-        lambda url, **kwargs: "http://minio:9000/documents/x?sig=1",
+        lambda url, **kw: "http://minio/source" if kw.get("internal") else None,
     )
-    document = next(
-        (
-            item
-            for item in repo.state.get("documents", [])
-            if str(item.get("projectId")) == PROJECT_ID
-            and str(item.get("fileName") or "").lower().endswith((".docx", ".xlsx"))
-        ),
-        None,
+    monkeypatch.setattr(
+        routes_module,
+        "convert_office_to_pdf",
+        lambda data, name: (_ for _ in ()).throw(OfficeConversionFailed("转换未产出 PDF")),
     )
-    if document is None:
-        pytest.skip("该项目没有 Office 文档")
+    monkeypatch.setattr(
+        routes_module.urllib.request, "urlopen", lambda *a, **k: _FakeResponse(b"x")
+    )
     response = client.get(
         f"/api/projects/{PROJECT_ID}/documents/{document['id']}/office-preview",
         headers=INSPECTION,
     )
     payload = response.json()
-    assert payload["code"] == 0, payload
-    config = payload["data"]["config"]
-    assert config["editorConfig"]["mode"] == "view"
-    permissions = config["document"]["permissions"]
-    assert not any(permissions.values()), f"存在未关闭的权限：{permissions}"
+    assert payload["code"] != 0
+    assert (payload.get("data") or {}).get("reason") == "OFFICE_CONVERSION_FAILED"
 
 
-def test_document_url_uses_the_internal_endpoint(monkeypatch) -> None:
-    """给 ONLYOFFICE 的地址必须是内网的。
+class _FakeResponse:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
 
-    它和 API 在同一 docker 网络，拿到浏览器用的 127.0.0.1:19000 会去连自己的
-    容器，必然取不到文件——而且这种失败很难诊断，因为签名本身合法。
-    """
-    monkeypatch.setenv("AICHECK_ONLYOFFICE_BASE", "http://ds.example")
-    seen: dict[str, object] = {}
+    def read(self) -> bytes:
+        return self._data
 
-    def _fake_presign(url: str, **kwargs: object) -> str:
-        seen.update(kwargs)
-        return "http://minio:9000/documents/x?sig=1"
+    def __enter__(self) -> _FakeResponse:
+        return self
 
-    monkeypatch.setattr(routes_module.object_storage, "presigned_get_url", _fake_presign)
-    document = next(
-        (
-            item
-            for item in repo.state.get("documents", [])
-            if str(item.get("projectId")) == PROJECT_ID
-            and str(item.get("fileName") or "").lower().endswith((".docx", ".xlsx"))
-        ),
-        None,
-    )
-    if document is None:
-        pytest.skip("该项目没有 Office 文档")
-    client.get(
-        f"/api/projects/{PROJECT_ID}/documents/{document['id']}/office-preview",
-        headers=INSPECTION,
-    )
-    assert seen.get("internal") is True, f"未要求内网签名：{seen}"
+    def __exit__(self, *exc: object) -> None:
+        return None
 
 
 def test_role_scope_is_enforced(monkeypatch) -> None:
-    """预览配置带着可取文件的签名地址，范围校验不能少。"""
-    monkeypatch.setenv("AICHECK_ONLYOFFICE_BASE", "http://ds.example")
+    """预览会签发可取文件的地址，范围校验不能少。"""
+    monkeypatch.setattr(routes_module, "office_preview_available", lambda: True)
     response = client.get(
-        f"/api/projects/P-2026-GDLNG-002/documents/{_first_document_id()}/office-preview",
+        f"/api/projects/P-2026-GDLNG-002/documents/{_any_document_id()}/office-preview",
         headers=INSPECTION,
     )
     assert response.json()["code"] == 40404, response.text
+
+
+def test_preview_object_name_is_keyed_by_content_hash() -> None:
+    """同一版本只转一次；内容变了哈希就变，缓存自然失效，不必手动清。"""
+    first = routes_module.office_preview_object_name("DOC-1", "a" * 64)
+    same = routes_module.office_preview_object_name("DOC-1", "a" * 64)
+    changed = routes_module.office_preview_object_name("DOC-1", "b" * 64)
+    assert first == same
+    assert first != changed
+    assert first.endswith(".pdf")
+
+
+def test_convertible_suffixes_cover_the_formats_seen_in_real_projects() -> None:
+    """范围保守：只列监检资料里真实出现过的，不给「什么都能预览」的错觉。"""
+    for suffix in ("docx", "xlsx", "doc", "xls"):
+        assert suffix in CONVERTIBLE_SUFFIXES
+    for suffix in ("pdf", "png", "zip", "exe"):
+        assert suffix not in CONVERTIBLE_SUFFIXES
+
+
+def test_conversion_module_raises_when_libreoffice_is_absent(monkeypatch) -> None:
+    """模块层：没有 soffice 就抛明确异常，而不是返回空字节。"""
+    import libs.office_preview as office
+
+    monkeypatch.setattr(office, "soffice_executable", lambda: None)
+    with pytest.raises(OfficeConversionUnavailable):
+        office.convert_office_to_pdf(b"x", "a.docx")
+
+
+def test_conversion_module_rejects_unsupported_suffix(monkeypatch) -> None:
+    import libs.office_preview as office
+
+    monkeypatch.setattr(office, "soffice_executable", lambda: "/usr/bin/soffice")
+    with pytest.raises(OfficeConversionFailed):
+        office.convert_office_to_pdf(b"x", "a.zip")
