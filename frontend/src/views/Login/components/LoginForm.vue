@@ -19,6 +19,7 @@ import { getRuntimeUiContextApi } from '@/api/aicheck'
 import type { RuntimeUiContext } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { resetRouter } from '@/router'
+import { didLoginNavigationComplete } from '../loginNavigation'
 
 const { required } = useValidator()
 
@@ -282,8 +283,9 @@ const signIn = async () => {
     resetRouter()
     permissionStore.setIsAddRouters(false)
     if (loginResult.user.mustChangePassword) {
-      await push('/change-password')
-      navigated = true
+      const navigationResult = await push('/change-password')
+      navigated = didLoginNavigationComplete(navigationResult, currentRoute.value.path)
+      if (!navigated) throw new Error('登录成功，但页面跳转失败，请重试。')
       return
     }
     // 是否使用动态路由
@@ -297,13 +299,14 @@ const signIn = async () => {
         addRoute(route as RouteRecordRaw) // 动态添加可访问路由表
       })
       permissionStore.setIsAddRouters(true)
-      await push({
+      const navigationResult = await push({
         path: resolveRoleEntryPath(
           loginResult.user.role,
           redirect.value || loginResult.defaultPath || loginResult.user.defaultPath
         )
       })
-      navigated = true
+      navigated = didLoginNavigationComplete(navigationResult, currentRoute.value.path)
+      if (!navigated) throw new Error('登录成功，但页面跳转失败，请重试。')
     }
   } catch (error: unknown) {
     errorMessage.value = getAicheckErrorMessage(error, '登录失败，请检查用户名和密码')
@@ -333,12 +336,15 @@ const getRole = async (): Promise<boolean> => {
       addRoute(route as RouteRecordRaw) // 动态添加可访问路由表
     })
     permissionStore.setIsAddRouters(true)
-    await push({
+    const navigationResult = await push({
       path: resolveRoleEntryPath(
         userStore.getUserInfo?.role,
         redirect.value || userStore.getUserInfo?.defaultPath || permissionStore.addRouters[0].path
       )
     })
+    if (!didLoginNavigationComplete(navigationResult, currentRoute.value.path)) {
+      throw new Error('登录成功，但页面跳转失败，请重试。')
+    }
     return true
   }
   return false

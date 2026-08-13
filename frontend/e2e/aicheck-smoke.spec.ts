@@ -728,6 +728,8 @@ test.describe('AIcheck route smoke', () => {
 
     releaseLogin()
     await expect(page.getByText(/账号或密码错误/).first()).toBeVisible()
+    await page.waitForTimeout(250)
+    expect(requestCount).toBe(1)
     await expect(loginInputs.nth(0)).toBeEnabled()
     await expect(loginInputs.nth(1)).toBeEnabled()
     await expect(remember).toBeEnabled()
