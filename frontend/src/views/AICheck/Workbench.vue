@@ -5891,8 +5891,10 @@ onBeforeUnmount(() => {
                   >
                     重跑本节点审查
                   </ElButton>
-                  <!-- 环境类失败重跑必然再失败，按钮亮着只会让人白点 -->
-                  <span v-else class="ai-failure-noretry">重跑无用，需先修复上述环境问题</span>
+                  <!-- 重跑必然再失败时不给按钮，亮着只会让人白点。这里只做中性标注，
+                       该干什么由上面那行 nextStep 说——写死「环境问题」会和它打架：
+                       预算超限就不是环境问题，是送进去的内容太大。 -->
+                  <span v-else class="ai-failure-noretry">本次不提供重跑</span>
                   <button
                     type="button"
                     class="ai-failure-detail-toggle"
