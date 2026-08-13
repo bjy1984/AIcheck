@@ -7775,6 +7775,122 @@ def document_read_scope_error(request: Request, project_id: str, document_id: st
     )
 
 
+def onlyoffice_document_server_base() -> str:
+    """浏览器访问 ONLYOFFICE 的前缀。空字符串表示未部署。"""
+    return os.getenv("AICHECK_ONLYOFFICE_BASE", "").strip().rstrip("/")
+
+
+ONLYOFFICE_DOCUMENT_TYPES = {
+    "docx": "word", "doc": "word", "rtf": "word", "odt": "word", "txt": "word",
+    "xlsx": "cell", "xls": "cell", "ods": "cell", "csv": "cell",
+    "pptx": "slide", "ppt": "slide", "odp": "slide",
+}
+
+
+@router.get("/projects/{project_id}/documents/{document_id}/office-preview")
+def document_office_preview(request: Request, project_id: str, document_id: str):
+    """Office 文件的在线预览配置（只读）。
+
+    这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只能提示
+    「请下载后用 Word 打开」，监检得离开系统、在本地比对，再回来填结论。
+
+    只下发只读配置：mode=view、edit 权限全关。不做在线编辑——审查场景里
+    原始资料一旦可改，证据链就断了。
+    """
+    scope_error = document_read_scope_error(request, project_id, document_id)
+    if scope_error:
+        return scope_error
+    document = repo.find_one("documents", document_id)
+    if not document:
+        return fail(errors.NOT_FOUND, request)
+
+    # 服务可用性先判：服务没部署却报「格式不支持」，会让人去查文件格式，
+    # 而真正的原因在别处——这类误导比直接报错更费时间。
+    base = onlyoffice_document_server_base()
+    if not base:
+        return fail(
+            errors.OFFICE_PREVIEW_UNAVAILABLE,
+            request,
+            message="Office 预览服务未部署（AICHECK_ONLYOFFICE_BASE 未配置）。",
+            data={"reason": "ONLYOFFICE_NOT_CONFIGURED"},
+            http_status=503,
+        )
+
+    file_name = str(document.get("fileName") or "")
+    suffix = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    document_type = ONLYOFFICE_DOCUMENT_TYPES.get(suffix)
+    if not document_type:
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            message=f"{suffix or '该'} 格式不支持 Office 在线预览。",
+            data={"fileName": file_name, "suffix": suffix},
+        )
+
+    version = repo.current_version(document_id) or {}
+    storage_url = repo.document_storage_url(document, fallback_prefix="preview")
+    try:
+        # 关键：给 ONLYOFFICE 的必须是**内网**地址。它和 API 在同一 docker 网络，
+        # 拿到浏览器用的 127.0.0.1:19000 会去连自己的容器，必然取不到文件。
+        fetch_url = object_storage.presigned_get_url(storage_url, internal=True)
+    except ObjectStorageUnavailable as exc:
+        return fail(
+            errors.OBJECT_STORAGE_REQUIRED,
+            request,
+            message=str(exc) or "对象存储不可用，无法生成预览。",
+            http_status=503,
+        )
+    if not fetch_url:
+        return fail(
+            errors.NOT_FOUND,
+            request,
+            message="该资料没有可用的存储对象，无法预览。",
+            data={"reason": "STORAGE_OBJECT_MISSING"},
+        )
+
+    # 文档指纹变了，ONLYOFFICE 才会重新取文件；用版本内容哈希最准确
+    document_key = str(version.get("hash") or version.get("id") or document_id)[:60]
+    return ok(
+        {
+            "documentServerBase": base,
+            "apiScriptUrl": f"{base}/web-apps/apps/api/documents/api.js",
+            "config": {
+                "documentType": document_type,
+                "type": "desktop",
+                "document": {
+                    "fileType": suffix,
+                    "key": document_key,
+                    "title": file_name,
+                    "url": fetch_url,
+                    "permissions": {
+                        "edit": False,
+                        "download": False,
+                        "print": False,
+                        "review": False,
+                        "comment": False,
+                        "fillForms": False,
+                        "modifyContentControl": False,
+                        "modifyFilter": False,
+                    },
+                },
+                "editorConfig": {
+                    "mode": "view",
+                    "lang": "zh-CN",
+                    "customization": {
+                        "chat": False,
+                        "comments": False,
+                        "help": False,
+                        "plugins": False,
+                        "toolbarNoTabs": True,
+                        "hideRightMenu": True,
+                    },
+                },
+            },
+        },
+        request,
+    )
+
+
 @router.get("/projects/{project_id}/documents/{document_id}/ocr-fields")
 def document_ocr_fields(request: Request, project_id: str, document_id: str):
     # S-2：路径里的 project_id 原先完全没被使用，也没有任何范围校验。
