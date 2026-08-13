@@ -9,6 +9,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PIP_TRUSTED_HOST=mirrors.aliyun.com
 
+# LibreOffice headless：Office 资料转 PDF 在线预览（L-4）。
+# 用国内源——默认 deb.debian.org 在这个网络下 14 KB/s，实测腾讯源 708 KB/s。
+# --no-install-recommends 省掉字体外的一堆桌面依赖；只装 writer/calc/impress，
+# 监检资料就这三类。fonts-wqy-zenhei 是中文必需，缺了转出来全是方块。
+ARG AICHECK_DEBIAN_MIRROR=mirrors.cloud.tencent.com
+RUN set -eux; \
+    sed -i "s|deb.debian.org|${AICHECK_DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        libreoffice-writer libreoffice-calc libreoffice-impress \
+        fonts-wqy-zenhei fonts-wqy-microhei; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt \

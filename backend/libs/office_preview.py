@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -79,6 +80,11 @@ def convert_office_to_pdf(data: bytes, file_name: str) -> bytes:
         outdir.mkdir()
         profile = root / "profile"
 
+        # HOME 必须指到可写目录。容器里进程以 aicheck 用户跑、家目录是 /app，
+        # 而 /app 是 root 拥有的只读代码目录——LibreOffice 启动时写不了家目录就
+        # 直接退出，一个 PDF 都产不出来，且退出码仍是 0。
+        # 线上实测过：只给 -env:UserInstallation 不够，它另有一批启动期文件走 $HOME。
+        env = {**os.environ, "HOME": str(root)}
         try:
             completed = subprocess.run(
                 [
@@ -96,6 +102,7 @@ def convert_office_to_pdf(data: bytes, file_name: str) -> bytes:
                 capture_output=True,
                 timeout=CONVERT_TIMEOUT_SECONDS,
                 check=False,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise OfficeConversionFailed(
