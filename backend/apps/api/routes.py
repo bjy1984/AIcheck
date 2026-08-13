@@ -38,6 +38,7 @@ from fastapi.responses import (
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from apps.ocr_service.utils import parse_bool
+from libs.ai_run_failure import ai_run_failure_view
 from libs.audit_context import (
     current_request_audit_context,
     reset_request_audit_context,
@@ -110,7 +111,6 @@ from libs.material_targeting import (
 )
 from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness
-from libs.ai_run_failure import ai_run_failure_view
 from libs.ocr_structured_view import build_ocr_structured_view
 from libs.office_preview import (
     CONVERTIBLE_SUFFIXES,
