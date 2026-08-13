@@ -273,6 +273,8 @@ export type OcrStructuredTable = {
   rows?: number
   columns?: number
   columnNames: string[]
+  /** false = 引擎只零星标了表头（键值式表格），列名不可信，界面不画表头行 */
+  headerReliable?: boolean
   normalizedRows: Record<string, string>[]
   cells: string[]
   bbox?: number[] | null

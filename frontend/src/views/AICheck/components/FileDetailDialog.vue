@@ -775,7 +775,7 @@ watch(visible, (open) => {
                       <!-- 用 normalizedRows 自己画表，不渲染引擎产出的 html（XSS 面） -->
                       <div v-if="table.normalizedRows.length" class="ocr-table-scroll">
                         <table class="ocr-table">
-                          <thead>
+                          <thead v-if="table.headerReliable !== false">
                             <tr>
                               <th v-for="col in table.columnNames" :key="col">{{ col }}</th>
                             </tr>
@@ -1017,10 +1017,13 @@ watch(visible, (open) => {
       <ElTag v-if="zoomedTable.matchedRequired" size="small" type="success" effect="plain">
         可作必备表格
       </ElTag>
+      <span v-if="zoomedTable.headerReliable === false" class="zoom-table-note">
+        未识别出表头，按原始网格展示
+      </span>
     </div>
     <div v-if="zoomedTable" class="zoom-table-scroll">
       <table class="ocr-table is-zoomed">
-        <thead>
+        <thead v-if="zoomedTable.headerReliable !== false">
           <tr>
             <th v-for="col in zoomedTable.columnNames" :key="col">{{ col }}</th>
           </tr>
@@ -1333,6 +1336,10 @@ watch(visible, (open) => {
   color: #64748b;
   gap: 10px;
   align-items: center;
+}
+
+.zoom-table-note {
+  color: #d97706;
 }
 
 .zoom-table-scroll {

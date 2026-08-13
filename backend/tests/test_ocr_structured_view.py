@@ -250,3 +250,68 @@ def test_signatures_stay_after_seals_even_on_earlier_pages() -> None:
         "signatures": [{"signatureId": "g1", "text": "张工", "pageNo": 3}],
     }
     assert [s["kind"] for s in structured_seals(parse_result)] == ["seal", "signature"]
+
+
+def test_sparse_header_is_marked_unreliable() -> None:
+    """键值式表格的零星 isHeader 不能当表头。
+
+    线上那份质量证明书 33 列只标了 4 个 isHeader，其中「沈阳宝钢东北贸易有限
+    公司」明显是值不是列名。照单全收会把供货单位名字印成列标题——凭空发明出
+    一个并不存在的结构。宁可不画表头。
+    """
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-KV",
+                "cells": [
+                    {"row": 0, "col": 0, "text": "订货单位", "isHeader": True},
+                    {"row": 0, "col": 4, "text": "沈阳宝钢东北贸易有限公司", "isHeader": True},
+                    {"row": 1, "col": 0, "text": "收货单位", "isHeader": False},
+                    {"row": 1, "col": 4, "text": "安丰管业", "isHeader": False},
+                ],
+                "normalizedRows": [
+                    {"订货单位": "a", "沈阳宝钢东北贸易有限公司": "b", "c3": "c", "c4": "d",
+                     "c5": "e", "c6": "f"}
+                ],
+            }
+        ]
+    }
+    assert structured_tables(parse_result)[0]["headerReliable"] is False
+
+
+def test_full_header_row_stays_reliable() -> None:
+    """真数据网格标满表头，照常画表头行——焊材表不能被误伤。"""
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-GRID",
+                "cells": [
+                    {"row": 0, "col": 0, "text": "序号", "isHeader": True},
+                    {"row": 0, "col": 1, "text": "管道材料", "isHeader": True},
+                    {"row": 1, "col": 0, "text": "1", "isHeader": False},
+                ],
+                "normalizedRows": [{"序号": "1", "管道材料": "A106"}],
+            }
+        ]
+    }
+    assert structured_tables(parse_result)[0]["headerReliable"] is True
+
+
+def test_engine_without_header_flags_keeps_row_zero_convention() -> None:
+    """引擎完全没标 isHeader 时，退回「第 0 行即表头」的通行约定。"""
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-NOFLAG",
+                "cells": [
+                    {"row": 0, "col": 0, "text": "甲"},
+                    {"row": 0, "col": 1, "text": "乙"},
+                    {"row": 1, "col": 0, "text": "1"},
+                ],
+                "normalizedRows": [{"甲": "1", "乙": "2"}],
+            }
+        ]
+    }
+    table = structured_tables(parse_result)[0]
+    assert table["headerReliable"] is True
+    assert table["columnNames"] == ["甲", "乙"]

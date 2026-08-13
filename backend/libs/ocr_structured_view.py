@@ -80,14 +80,17 @@ def table_column_names(item: dict[str, Any], normalized: list[dict[str, Any]]) -
     cells 是数组，jsonb 保留数组顺序，且每个单元格自带 row/col/isHeader，
     所以列序从表头行的 col 下标还原，而不是从字典键序。
     """
+    marked = [
+        cell
+        for cell in item.get("cells") or []
+        if isinstance(cell, dict) and cell.get("isHeader") is not None
+    ]
     header: list[tuple[int, str]] = []
     for cell in item.get("cells") or []:
         if not isinstance(cell, dict):
             continue
-        # 引擎给了 isHeader 就认它；没给则退回第 0 行
-        is_header = cell.get("isHeader")
-        if is_header is None:
-            is_header = int(cell.get("row") or 0) == 0
+        # 引擎标了 isHeader 就认它；整张表都没标才退回第 0 行
+        is_header = cell.get("isHeader") if marked else int(cell.get("row") or 0) == 0
         if not is_header:
             continue
         text = str(cell.get("text") or "").strip()
@@ -103,6 +106,31 @@ def table_column_names(item: dict[str, Any], normalized: list[dict[str, Any]]) -
     names = [name for name in ordered if name in keys]
     names.extend(key for key in normalized[0] if key not in set(names))
     return names
+
+
+def table_header_is_reliable(item: dict[str, Any], column_count: int) -> bool:
+    """这张表到底有没有可用的表头。
+
+    引擎对键值式表格（质量证明书抬头区那种「标签: 值」布局）会零星标几个
+    isHeader，而不是标满一行。线上那份质量证明书 33 列只标了 4 个，其中
+    「沈阳宝钢东北贸易有限公司」「输送管」明显是**值**不是列名。照单全收当表头，
+    界面就会把一个供货单位名字印成列标题——凭空发明出一个并不存在的结构。
+
+    实测分布是干净的两极：真数据网格标满（3/3、5/5、6/6），键值式表格稀疏
+    （4/33、7/21）。所以按覆盖率判断：标到一半列以上才算表头。
+
+    宁可不给表头、按原始网格展示——少一层解读，好过多一层错误解读。
+    """
+    if column_count <= 0:
+        return False
+    cells = [cell for cell in item.get("cells") or [] if isinstance(cell, dict)]
+    if not cells:
+        return False
+    if all(cell.get("isHeader") is None for cell in cells):
+        # 引擎完全没标——退回「第 0 行即表头」的通行约定
+        return True
+    header_cols = {int(cell.get("col") or 0) for cell in cells if cell.get("isHeader")}
+    return len(header_cols) * 2 >= column_count
 
 
 def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -122,13 +150,16 @@ def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
         ]
         if not normalized and not cells:
             continue
+        column_names = table_column_names(item, normalized)
         results.append(
             {
                 "tableId": str(item.get("tableId") or item.get("candidateId") or ""),
                 "pageNo": item.get("pageNo"),
                 "rows": item.get("rows"),
                 "columns": item.get("columns"),
-                "columnNames": table_column_names(item, normalized),
+                "columnNames": column_names,
+                # 表头不可信时界面不画表头行——见 table_header_is_reliable
+                "headerReliable": table_header_is_reliable(item, len(column_names)),
                 "normalizedRows": normalized,
                 "cells": cells if not normalized else [],
                 "bbox": _clean_bbox(item.get("bbox")),
