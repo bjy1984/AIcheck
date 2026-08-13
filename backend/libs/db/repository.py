@@ -13,6 +13,8 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from libs.db.state_freshness import StateFreshnessProbe
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -320,6 +322,8 @@ class InMemoryRepository:
         self.sqlite_enabled = False
         self._flush_lock = asyncio.Lock()
         self._sync_postgres_lock = threading.RLock()
+        # 进程外写入的探测器（issue #9），见 libs/db/state_freshness
+        self._state_probe = StateFreshnessProbe()
 
     @property
     def state(self) -> dict[str, Any]:
@@ -3305,6 +3309,62 @@ class InMemoryRepository:
                     "CREATE INDEX IF NOT EXISTS idx_idempotency_updated_at ON idempotency_records (tenant_id, updated_at DESC)"
                 )
             self._postgres_schema_ready = True
+
+    def refresh_stale_state_from_postgres(
+        self, *, tenant_id: str | None = None, force: bool = False
+    ) -> set[str]:
+        """把进程外写入的集合重新加载进内存，返回实际重载了哪些（issue #9）。
+
+        全量状态驻留内存、只在启动时加载一次，进程外的写入——worker 落库、运维
+        改口令、修数脚本——本进程一概看不见，得重启容器才生效。线上踩过两次。
+
+        两级探针，先问一个数，再问改了哪几个集合；只重载真变了的。
+        探测失败一律当没变化并继续用内存数据：探针不是数据源，它挂了让整个 API
+        跟着挂是本末倒置，而多用一会儿旧数据，下次探针成功就自愈。
+        """
+        with self._sync_postgres_lock:
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return set()
+            effective_tenant_id = str(tenant_id or configured_tenant_id())
+            try:
+                row = self.sync_postgres.execute(
+                    "SELECT max(updated_at) FROM aicheck_state WHERE tenant_id = %s",
+                    (effective_tenant_id,),
+                ).fetchone()
+            except Exception as exc:  # noqa: BLE001 — 见 docstring：探测失败不阻断请求
+                LOGGER.warning("state_freshness_probe_failed: %s", exc)
+                return set()
+            global_max = row[0] if row else None
+            if not force and not self._state_probe.needs_second_stage(global_max=global_max):
+                # 一级没动就到此为止——这正是这套机制便宜的原因
+                self._state_probe.stale_collections(global_max=global_max, force=force)
+                return set()
+            try:
+                rows = self.sync_postgres.execute(
+                    """
+                    SELECT collection, max(updated_at) FROM aicheck_state
+                    WHERE tenant_id = %s GROUP BY collection
+                    """,
+                    (effective_tenant_id,),
+                ).fetchall()
+            except Exception as exc:  # noqa: BLE001 — 同上
+                LOGGER.warning("state_freshness_detail_probe_failed: %s", exc)
+                return set()
+            collection_max = {str(item[0]): item[1] for item in rows}
+            stale_collections = self._state_probe.stale_collections(
+                global_max=global_max, collection_max=collection_max, force=force
+            )
+            if not stale_collections:
+                return set()
+            # 库里的表名换回 state 的键名——两边命名不一致，直接拿表名去 load 会静默漏掉
+            reverse = {table: key for key, table in STATE_COLLECTIONS.items()}
+            state_keys = {reverse[name] for name in stale_collections if name in reverse}
+            if not state_keys:
+                return set()
+        self.load_from_sync_postgres(state_keys, tenant_id=tenant_id)
+        LOGGER.info("state_reloaded_from_postgres: %s", sorted(state_keys))
+        return state_keys
 
     def load_from_sync_postgres(
         self, selected_state_keys: set[str] | None = None, tenant_id: str | None = None

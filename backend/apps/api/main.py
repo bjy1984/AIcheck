@@ -159,7 +159,9 @@ async def attach_operation_id(request: Request, call_next):
             mutation_lock = tenant_mutation_lock(tenant_id)
             await mutation_lock.acquire()
             mutation_lock_acquired = True
-        return await handle_request(request, call_next, predecoded_claims=predecoded_claims)
+        return await handle_request(
+            request, call_next, predecoded_claims=predecoded_claims, tenant_id=tenant_id
+        )
     finally:
         try:
             lock_connection = getattr(request.state, "idempotency_lock_connection", None)
@@ -171,7 +173,22 @@ async def attach_operation_id(request: Request, call_next):
             reset_request_tenant_id(tenant_context_token)
 
 
-async def handle_request(request: Request, call_next, *, predecoded_claims: dict[str, Any] | None):
+def refresh_state_if_stale(tenant_id: str | None) -> None:
+    """请求前把过期集合拉回内存。
+
+    失败一律吞掉：探针不是数据源，它挂了让整个 API 跟着挂是本末倒置。
+    仓库层已经记了日志，这里不重复。
+    """
+    repo.refresh_stale_state_from_postgres(tenant_id=tenant_id or None)
+
+
+async def handle_request(
+    request: Request,
+    call_next,
+    *,
+    predecoded_claims: dict[str, Any] | None,
+    tenant_id: str | None = None,
+):
     request.state.operation_id = request.headers.get("X-Operation-Id") or f"OP-{uuid4().hex[:12].upper()}"
     if predecoded_claims and not tenant_is_allowed(str(predecoded_claims.get("tid") or "")):
         return audit_rejected_request(
@@ -182,6 +199,17 @@ async def handle_request(request: Request, call_next, *, predecoded_claims: dict
     normalized_path = canonical_path(request.url.path)
     if normalized_path.startswith("/mock/") and not compatibility_mocks_enabled():
         return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    # 把进程外写入的集合拉回内存（issue #9）。放在鉴权之前，因为口令校验读的
+    # 就是内存里的 users——运维改完口令，本进程不刷新就一直用旧的，线上踩过。
+    #
+    # 两级探针 + 1 秒节流，绝大多数请求只多一次 max(updated_at) 的 1 行查询。
+    # 放在线程池里跑：这是同步的 psycopg 调用，直接在事件循环里做会卡住整个进程。
+    # 先判有没有 postgres 再决定是否切线程。丢进线程池本身有开销，
+    # 无持久化时（本地开发、单测）函数立刻返回，白付一次线程调度——
+    # 实测整套单测因此从 100 秒涨到 350 秒。
+    if postgres_persistence_configured():
+        await asyncio.to_thread(refresh_state_if_stale, tenant_id)
     if auth_required_for_path(request) or request.headers.get("Authorization"):
         claims = predecoded_claims
         if claims is None:

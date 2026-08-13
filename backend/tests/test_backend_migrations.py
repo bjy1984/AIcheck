@@ -17,6 +17,7 @@ def test_migration_manifest_freezes_every_sql_file() -> None:
     assert verified == {
         "0001_backend_audit_hardening": "dcec5ebd532a09c3d55e4ce3685530c7fb2446665836900dbdee9362b914fc23",
         "0002_agent_raw_event_vault": "0cff3107ba3e826fcbabb5bb91d9c34ccbdd8230fb7e0c53cac15d0d4cb8ae00",
+        "0003_state_change_probe_index": "3056d8760d093d4c5563b105a67e27db78341cfcaf7d378e88f36bb8ef049856",
     }
 
 
