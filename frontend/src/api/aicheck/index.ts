@@ -257,6 +257,55 @@ export type DocumentPreviewPayload = SignedUrlPayload & {
   pageCount?: number
 }
 
+/** OCR 抽出的正文块。blockType 让界面能区分标题与正文。 */
+export type OcrLayoutBlock = {
+  blockId: string
+  blockType: string
+  text: string
+  pageNo?: number
+  bbox?: number[] | null
+}
+
+/** OCR 抽出的表格。后端不下发引擎 html（XSS 面），只给结构化行。 */
+export type OcrStructuredTable = {
+  tableId: string
+  pageNo?: number
+  rows?: number
+  columns?: number
+  columnNames: string[]
+  normalizedRows: Record<string, string>[]
+  cells: string[]
+  bbox?: number[] | null
+  confidence?: number
+  matchedRequired?: boolean
+  candidateOnly?: boolean
+}
+
+/** 印章与签名——监检确认「盖没盖章」的直接依据。 */
+export type OcrSealItem = {
+  kind: 'seal' | 'signature'
+  id: string
+  name: string
+  sealType?: string
+  pageNo?: number
+  bbox?: number[] | null
+  confidence?: number
+  evidenceLevel?: string
+  canSatisfyRequired?: boolean
+}
+
+export type OcrStructuredView = {
+  available: boolean
+  parseResultId?: string
+  layoutBlocks: OcrLayoutBlock[]
+  tables: OcrStructuredTable[]
+  seals: OcrSealItem[]
+  pageCount: number
+  /** 正文块超出下发上限时为 true——界面要说出来，不能让人以为「就这些内容」 */
+  truncated: boolean
+  totalBlockCount?: number
+}
+
 export type DocumentDetailPayload = {
   document: DocumentAsset
   currentVersion?: DocumentVersion
@@ -264,6 +313,7 @@ export type DocumentDetailPayload = {
   bindings: NodeFileBinding[]
   extractedFields: ExtractedField[]
   evidenceLinks: EvidenceLink[]
+  ocrStructured?: OcrStructuredView
   preview: DocumentPreviewPayload
   download: SignedUrlPayload
 }

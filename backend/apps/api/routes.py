@@ -110,6 +110,7 @@ from libs.material_targeting import (
 )
 from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness
+from libs.ocr_structured_view import build_ocr_structured_view
 from libs.office_preview import (
     CONVERTIBLE_SUFFIXES,
     OfficeConversionFailed,
@@ -7338,6 +7339,10 @@ def document_detail(request: Request, project_id: str, document_id: str):
             "bindings": [item for item in repo.bindings_for_project(document["projectId"]) if item["documentId"] == document_id],
             "extractedFields": repo.fields_for_versions(version_ids),
             "evidenceLinks": repo.evidence_for_versions(version_ids),
+            # OCR 抽出的表格、印章、正文结构。此前只下发 extractedFields，
+            # 界面因此只能显示几个字段，而监检核对参数表靠的是表格、
+            # 确认盖章靠的是印章——这些后端早就抽出来了，一直没露出来。
+            "ocrStructured": build_ocr_structured_view(repo, document),
             "preview": preview,
             "download": download,
             "storageUnavailable": storage_unavailable_reason is not None,

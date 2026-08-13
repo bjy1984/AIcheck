@@ -322,6 +322,51 @@ const PLACEHOLDER_FIELD_PATTERN = /^(?:OCR)?(?:文本|片段|text|fragment|field
 const isPlaceholderField = (label: string) =>
   PLACEHOLDER_FIELD_PATTERN.test(String(label || '').trim())
 
+/* ---------------- OCR 结构化内容分区 ----------------
+ * 后端早就抽出了表格、印章、版面结构（线上一份资料 261 个正文块、1 张带
+ * normalizedRows 的表格、2 枚印章），右侧却只显示了几个字段。
+ *
+ * 监检核对「焊丝牌号与母材是否匹配」靠的就是表格，确认「有没有盖章」靠的就是
+ * 印章——这些不展示，等于让人对着一份读不懂的资料下结论。
+ */
+const ocrStructured = computed(() => props.detail?.ocrStructured)
+const ocrTables = computed(() => ocrStructured.value?.tables || [])
+const ocrSeals = computed(() => ocrStructured.value?.seals || [])
+const ocrBlocks = computed(() => ocrStructured.value?.layoutBlocks || [])
+
+/** 标题类块用于分层显示，正文类平铺。 */
+const TITLE_BLOCK_TYPES = new Set(['title', 'heading', 'header', 'section_title'])
+const isTitleBlock = (blockType: string) =>
+  TITLE_BLOCK_TYPES.has(String(blockType || '').toLowerCase())
+
+const sealKindLabel = (kind: string) => (kind === 'signature' ? '签名' : '印章')
+
+/** sealName 里有时塞的是整段上下文，列表里要截断。 */
+const sealDisplayName = (name: string) => {
+  const text = String(name || '').trim()
+  if (!text) return '（未命名）'
+  return text.length > 40 ? `${text.slice(0, 40)}…` : text
+}
+
+const structuredTabLabel = computed(() => {
+  const counts: string[] = []
+  if (businessFieldItems.value.length) counts.push(`字段 ${businessFieldItems.value.length}`)
+  if (ocrTables.value.length) counts.push(`表格 ${ocrTables.value.length}`)
+  if (ocrSeals.value.length) counts.push(`印章 ${ocrSeals.value.length}`)
+  return counts.length ? `OCR 结构化内容（${counts.join(' · ')}）` : 'OCR 结构化内容'
+})
+
+const structuredIsEmpty = computed(
+  () =>
+    !businessFieldItems.value.length &&
+    !ocrTables.value.length &&
+    !ocrSeals.value.length &&
+    !ocrBlocks.value.length &&
+    !fragmentItems.value.length
+)
+
+const blocksExpanded = ref(false)
+
 const businessFieldItems = computed(() =>
   locatableItems.value.filter((item) => !isPlaceholderField(item.label))
 )
@@ -335,9 +380,46 @@ const fragmentsExpanded = ref(false)
 const confidenceDisplay = (confidence?: number) =>
   typeof confidence === 'number' && confidence > 0 ? confidenceText(confidence) : '未提供置信度'
 
+/** 表格/印章/正文块同样带页码与 bbox，纳入定位池后点一下就能跳到原文那页。 */
+const structuredLocatables = computed<LocatableItem[]>(() => [
+  ...ocrTables.value.map((table) => ({
+    key: `table:${table.tableId}`,
+    label: '表格',
+    value: table.columnNames.join(' / '),
+    pageNo: table.pageNo,
+    bbox: table.bbox || undefined,
+    confidence: table.confidence,
+    kind: 'field' as const
+  })),
+  ...ocrSeals.value.map((seal) => ({
+    key: `seal:${seal.id}`,
+    label: sealKindLabel(seal.kind),
+    value: seal.name,
+    pageNo: seal.pageNo,
+    bbox: seal.bbox || undefined,
+    confidence: seal.confidence,
+    kind: 'evidence' as const
+  })),
+  ...ocrBlocks.value.map((block) => ({
+    key: `block:${block.blockId}`,
+    label: block.blockType,
+    value: block.text,
+    pageNo: block.pageNo,
+    bbox: block.bbox || undefined,
+    kind: 'field' as const
+  }))
+])
+
 const activeLocatable = computed(() =>
-  locatableItems.value.find((item) => item.key === activeLocateKey.value)
+  [...locatableItems.value, ...structuredLocatables.value].find(
+    (item) => item.key === activeLocateKey.value
+  )
 )
+
+/** 结构化条目按 key 定位，不必构造完整 LocatableItem。 */
+const toggleLocateKey = (key: string) => {
+  activeLocateKey.value = activeLocateKey.value === key ? '' : key
+}
 
 /** 图片预览下，把 bbox 像素坐标换算成相对定位样式。 */
 const highlightStyle = computed(() =>
@@ -511,8 +593,8 @@ watch(visible, (open) => {
               class="side-alert"
             />
             <ElTabs v-model="sideTab" class="side-tabs">
-              <ElTabPane :label="`OCR 结构化内容 (${businessFieldItems.length})`" name="fields">
-                <div v-if="!locatableItems.length" class="side-empty">
+              <ElTabPane :label="structuredTabLabel" name="fields">
+                <div v-if="structuredIsEmpty" class="side-empty">
                   <ElEmpty :image-size="60" description="暂无 OCR 结构化内容" />
                 </div>
                 <template v-else>
@@ -560,7 +642,151 @@ watch(visible, (open) => {
                     </li>
                   </ul>
 
-                  <div v-if="fragmentItems.length" class="fragment-block">
+                  <!-- 表格：监检核对参数表（焊丝牌号与母材是否匹配等）靠这个 -->
+                  <div v-if="ocrTables.length" class="ocr-section">
+                    <div class="ocr-section-head">
+                      <span class="ocr-section-title">表格 {{ ocrTables.length }} 张</span>
+                    </div>
+                    <div v-for="table in ocrTables" :key="table.tableId" class="ocr-table-card">
+                      <button
+                        type="button"
+                        :class="[
+                          'ocr-table-meta',
+                          'ocr-locate',
+                          { 'is-active': activeLocateKey === `table:${table.tableId}` }
+                        ]"
+                        :aria-pressed="activeLocateKey === `table:${table.tableId}`"
+                        @click="toggleLocateKey(`table:${table.tableId}`)"
+                      >
+                        <span v-if="table.pageNo">第 {{ table.pageNo }} 页</span>
+                        <span v-if="table.rows && table.columns">
+                          {{ table.rows }} 行 × {{ table.columns }} 列
+                        </span>
+                        <ElTag
+                          v-if="table.matchedRequired"
+                          size="small"
+                          type="success"
+                          effect="plain"
+                        >
+                          可作必备表格
+                        </ElTag>
+                        <ElTag
+                          v-else-if="table.candidateOnly"
+                          size="small"
+                          type="info"
+                          effect="plain"
+                        >
+                          候选
+                        </ElTag>
+                      </button>
+                      <!-- 用 normalizedRows 自己画表，不渲染引擎产出的 html（XSS 面） -->
+                      <div v-if="table.normalizedRows.length" class="ocr-table-scroll">
+                        <table class="ocr-table">
+                          <thead>
+                            <tr>
+                              <th v-for="col in table.columnNames" :key="col">{{ col }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="(row, index) in table.normalizedRows" :key="index">
+                              <td v-for="col in table.columnNames" :key="col">{{
+                                row[col] || ''
+                              }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div v-else-if="table.cells.length" class="ocr-table-cells">
+                        {{ table.cells.join(' | ') }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 印章与签名：确认「盖没盖章」的直接依据 -->
+                  <div v-if="ocrSeals.length" class="ocr-section">
+                    <div class="ocr-section-head">
+                      <span class="ocr-section-title">印章 / 签名 {{ ocrSeals.length }} 处</span>
+                    </div>
+                    <ul class="ocr-seal-list">
+                      <li v-for="seal in ocrSeals" :key="seal.id">
+                        <button
+                          type="button"
+                          :class="[
+                            'ocr-seal-item',
+                            'ocr-locate',
+                            { 'is-active': activeLocateKey === `seal:${seal.id}` }
+                          ]"
+                          :aria-pressed="activeLocateKey === `seal:${seal.id}`"
+                          @click="toggleLocateKey(`seal:${seal.id}`)"
+                        >
+                          <div class="ocr-seal-head">
+                            <ElTag
+                              size="small"
+                              :type="seal.canSatisfyRequired ? 'success' : 'info'"
+                              effect="plain"
+                            >
+                              {{ sealKindLabel(seal.kind) }}
+                            </ElTag>
+                            <span class="ocr-seal-name">{{ sealDisplayName(seal.name) }}</span>
+                          </div>
+                          <div class="ocr-seal-meta">
+                            <span v-if="seal.pageNo">第 {{ seal.pageNo }} 页</span>
+                            <span v-if="seal.sealType">{{ seal.sealType }}</span>
+                            <span v-if="seal.confidence">{{
+                              confidenceDisplay(seal.confidence)
+                            }}</span>
+                            <span v-if="seal.canSatisfyRequired" class="ocr-seal-ok"
+                              >可满足必盖章要求</span
+                            >
+                          </div>
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <!-- 正文结构：按阅读顺序，保留标题层级 -->
+                  <div v-if="ocrBlocks.length" class="ocr-section">
+                    <button
+                      type="button"
+                      class="fragment-toggle"
+                      :aria-expanded="blocksExpanded"
+                      @click="blocksExpanded = !blocksExpanded"
+                    >
+                      <span>正文结构 {{ ocrBlocks.length }} 段</span>
+                      <span class="fragment-hint">
+                        {{
+                          ocrStructured?.truncated
+                            ? `共 ${ocrStructured.totalBlockCount} 段，仅显示前 ${ocrBlocks.length} 段`
+                            : '按阅读顺序'
+                        }}
+                      </span>
+                      <ElIcon :class="['fragment-chevron', { 'is-open': blocksExpanded }]">
+                        <ArrowDown />
+                      </ElIcon>
+                    </button>
+                    <div v-show="blocksExpanded" class="ocr-block-list">
+                      <button
+                        v-for="block in ocrBlocks"
+                        :key="block.blockId"
+                        type="button"
+                        :class="[
+                          'ocr-block',
+                          'ocr-locate',
+                          {
+                            'is-title': isTitleBlock(block.blockType),
+                            'is-active': activeLocateKey === `block:${block.blockId}`
+                          }
+                        ]"
+                        :aria-pressed="activeLocateKey === `block:${block.blockId}`"
+                        @click="toggleLocateKey(`block:${block.blockId}`)"
+                      >
+                        {{ block.text }}
+                        <span v-if="block.pageNo" class="ocr-block-page">P{{ block.pageNo }}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="fragmentItems.length && !ocrBlocks.length" class="fragment-block">
                     <button
                       type="button"
                       class="fragment-toggle"
@@ -877,6 +1103,170 @@ watch(visible, (open) => {
   height: 100%;
   align-items: center;
   justify-content: center;
+}
+
+/* OCR 结构化分区：表格 / 印章 / 正文结构 */
+.ocr-section {
+  padding-top: 10px;
+  margin-top: 12px;
+  border-top: 1px solid #eef1f5;
+}
+
+.ocr-section-head {
+  display: flex;
+  margin-bottom: 8px;
+  gap: 8px;
+  align-items: center;
+}
+
+.ocr-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.ocr-table-card {
+  padding: 8px;
+  margin-bottom: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.ocr-table-meta {
+  display: flex;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #64748b;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 参数表列多，窄侧栏放不下——横向滚动，不压字 */
+.ocr-table-scroll {
+  overflow-x: auto;
+}
+
+.ocr-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+}
+
+.ocr-table th,
+.ocr-table td {
+  padding: 4px 6px;
+  text-align: left;
+  white-space: nowrap;
+  border: 1px solid #e2e8f0;
+}
+
+.ocr-table th {
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+}
+
+.ocr-table-cells {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+  word-break: break-all;
+}
+
+/* 可点定位的条目：按钮外观归零，选中时用左侧色条标出 */
+.ocr-locate {
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.ocr-locate.is-active {
+  padding-left: 7px;
+  background: #ecf5ff;
+  border-left: 3px solid #409eff;
+}
+
+.ocr-table-meta.ocr-locate:hover,
+.ocr-block.ocr-locate:hover {
+  background: #f1f5f9;
+}
+
+.ocr-seal-list {
+  display: flex;
+  padding: 0;
+  margin: 0;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+}
+
+.ocr-seal-item {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.ocr-seal-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ocr-seal-name {
+  font-size: 13px;
+  color: #1f2937;
+  word-break: break-all;
+}
+
+.ocr-seal-meta {
+  display: flex;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ocr-seal-ok {
+  color: #16a34a;
+}
+
+.ocr-block-list {
+  max-height: 320px;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.ocr-block {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #475569;
+  word-break: break-word;
+}
+
+.ocr-block.is-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ocr-block-page {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #cbd5e1;
 }
 
 /* 字段列表：一行一个可点击条目，点击后在左侧原文定位 */
