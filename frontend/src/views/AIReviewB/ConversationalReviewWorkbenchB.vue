@@ -1160,7 +1160,7 @@ onBeforeUnmount(() => {
       <div class="topbar-spacer"></div>
       <ElButton :icon="Refresh" :loading="polling" @click="refreshLiveState">刷新状态</ElButton>
       <ElButton :icon="Files" @click="handleOpenFileLibrary">文件库</ElButton>
-      <ElButton type="primary" :icon="ArrowLeft" @click="handleBackToWorkbench">审查列表</ElButton>
+      <ElButton type="primary" :icon="ArrowLeft" @click="handleBackToWorkbench">文件列表</ElButton>
       <div class="review-user"><span></span>{{ displayUser }}</div>
     </header>
 

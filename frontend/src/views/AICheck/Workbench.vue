@@ -4795,7 +4795,7 @@ onBeforeUnmount(() => {
             text
             @click="handleInspectionWorkspaceViewChange('list')"
           >
-            审查列表
+            文件列表
           </ElButton>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
             <button class="user" type="button" aria-label="打开用户菜单">

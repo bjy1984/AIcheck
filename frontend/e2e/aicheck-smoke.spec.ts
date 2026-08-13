@@ -191,7 +191,7 @@ const expectRouteVisible = async (page: Page, routeCase: RouteCase) => {
 const openRoute = async (page: Page, routeCase: RouteCase) => {
   await loginTo(page, routeCase.path)
   if (routeCase.path === '/workbench/inspection') {
-    await page.getByRole('button', { name: '审查列表', exact: true }).click()
+    await page.getByRole('button', { name: '文件列表', exact: true }).click()
     await page.waitForURL(/view=list/)
   }
   await expectRouteVisible(page, routeCase)
@@ -744,7 +744,7 @@ test.describe('AIcheck route smoke', () => {
       timelineTopBeforeRightScroll
     )
 
-    await page.getByRole('button', { name: '审查列表', exact: true }).click()
+    await page.getByRole('button', { name: '文件列表', exact: true }).click()
     await expect(page).toHaveURL(/#\/workbench\/inspection\?.*view=list/)
     await expect(page.locator('.inspection-review-list-region')).toBeVisible()
     await expect(page.locator('.inspection-ai-review-region')).toBeHidden()
