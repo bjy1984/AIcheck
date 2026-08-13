@@ -238,6 +238,8 @@ import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
 import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
+import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
+import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 
 type PreviewDrawerTarget = {
   source: 'node' | 'file' | 'standard' | 'report' | 'archive'
@@ -2138,15 +2140,20 @@ const loadInspectionDetails = async (nodeId = activeNodeId.value) => {
 
 const loadReportArchive = async () => {
   if (!activeProjectId.value) return
-  const [reportRes, archiveRes] = await Promise.all([
-    listOwnerReportsApi(activeProjectId.value),
-    listProjectArchiveApi(activeProjectId.value)
-  ])
-  if (!reportRes || !archiveRes) {
-    throw new Error('报告或归档资料加载失败。')
-  }
-  reports.value = reportRes.data
-  archiveItems.value = archiveRes.data.items
+  const loaded = await loadRoleScopedReportArchive(role.value, {
+    reports: async () => {
+      const response = await listOwnerReportsApi(activeProjectId.value)
+      if (!response) throw new Error('报告资料加载失败。')
+      return response.data
+    },
+    archiveItems: async () => {
+      const response = await listProjectArchiveApi(activeProjectId.value)
+      if (!response) throw new Error('归档资料加载失败。')
+      return response.data.items
+    }
+  })
+  reports.value = loaded.reports
+  archiveItems.value = loaded.archiveItems
 }
 
 const loadNdtData = async () => {
@@ -3259,6 +3266,8 @@ const handleDeleteProjectFile = async (documentId: string) => {
   } catch {
     return
   }
+  const removal = removeProjectFileLocally(nodePackage.value, documentId)
+  nodePackage.value = removal.packageData
   actionLoading.value = true
   try {
     const res = await deleteProjectDocumentApi(activeProjectId.value, documentId, {
@@ -3266,12 +3275,14 @@ const handleDeleteProjectFile = async (documentId: string) => {
       idempotencyKey: `project-file-delete-${activeProjectId.value}-${documentId}`
     })
     if (!res) {
+      nodePackage.value = restoreProjectFileLocally(nodePackage.value, removal)
       showActionError('项目文件删除失败，请刷新项目文件库后重试。')
       return
     }
     ElMessage.success('未提交文件已删除')
-    await loadProjectBundle()
+    void loadNodePackage(activeNodeId.value, { silent: true })
   } catch (error) {
+    nodePackage.value = restoreProjectFileLocally(nodePackage.value, removal)
     showActionError('项目文件删除失败，仅未提交文件允许删除。', error)
   } finally {
     actionLoading.value = false

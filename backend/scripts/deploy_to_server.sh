@@ -14,8 +14,9 @@
 #   bash scripts/deploy_to_server.sh --frontend # 只更新前端静态资源
 set -euo pipefail
 
-HOST=aicheck-prod-new
+HOST="${AICHECK_DEPLOY_HOST:-aicheck-prod-new}"
 REMOTE_HOME=/home/dev-bjy
+SERVER_DATA_ROOT="${AICHECK_SERVER_DATA_ROOT:-$REMOTE_HOME/aicheck-data}"
 # 网关对外端口（安全组放行的是 8081；改端口时这里要跟着改）
 GATEWAY_PORT="${GATEWAY_PORT:-8081}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -44,7 +45,7 @@ PY
 
   echo "==> 服务器解包并提交到本地 git 仓库"
   ssh "$HOST" "
-    set -e
+    set -eo pipefail
     cd $REMOTE_HOME
     rm -rf AIcheck/backend AIcheck/openapi
     tar xzf aicheck-src.tar.gz -C AIcheck
@@ -72,7 +73,7 @@ PY
   # 容器还是 07:09 那个实例，代码更新静默失效，验证却全绿（因为验的是健康检查，
   # 不是新行为）。
   ssh "$HOST" "
-    set -e
+    set -eo pipefail
     cd $REMOTE_HOME/AIcheck/backend
     docker build -q -f Dockerfile.server -t aicheck-api:local . >/dev/null
     python3 /home/dev-bjy/build-runtime-env.py
@@ -80,6 +81,8 @@ PY
       aicheck-api:local python scripts/migrate_backend.py | tail -1
     docker rm -f aicheck-api >/dev/null 2>&1 || true
     docker run -d --name aicheck-api --network aicheck-net --restart unless-stopped \
+      -v $SERVER_DATA_ROOT/files/output:/app/output \
+      -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
       --env-file /home/dev-bjy/aicheck-runtime.env \
       -p 127.0.0.1:8000:8000 \
       aicheck-api:local uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 >/dev/null
