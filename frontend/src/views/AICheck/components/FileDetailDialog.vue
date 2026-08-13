@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import {
   ElAlert,
@@ -110,44 +110,18 @@ const previewFrameUrl = computed(() => {
  */
 const officePreviewLoading = ref(false)
 const officePreviewError = ref('')
-const officeContainerId = `office-preview-${Math.random().toString(36).slice(2, 10)}`
-let officeEditor: { destroyEditor?: () => void } | null = null
-
 const previewIsOffice = computed(() => preview.value?.previewType === 'office')
 
-const loadDocumentServerScript = (src: string) =>
-  new Promise<void>((resolve, reject) => {
-    // 本组件有个名为 document 的计算属性（当前文档记录），会遮蔽全局 document，
-    // 所以操作 DOM 必须显式走 globalThis
-    const dom = globalThis.document
-    const existing = dom.querySelector<HTMLScriptElement>(`script[data-aicheck-ds="${src}"]`)
-    if (existing) {
-      if (existing.dataset.loaded === 'true') resolve()
-      else {
-        existing.addEventListener('load', () => resolve(), { once: true })
-        existing.addEventListener('error', () => reject(new Error('加载失败')), { once: true })
-      }
-      return
-    }
-    const script = dom.createElement('script')
-    script.src = src
-    script.async = true
-    script.dataset.aicheckDs = src
-    script.addEventListener('load', () => {
-      script.dataset.loaded = 'true'
-      resolve()
-    })
-    script.addEventListener('error', () => reject(new Error('加载失败')))
-    dom.head.appendChild(script)
-  })
+/* Office 预览转成 PDF 后，走与普通 PDF 预览同一条渲染路径。
+ * 原先这里是 ONLYOFFICE Document Server 的脚本注入与编辑器实例，随后端改用
+ * LibreOffice 转 PDF 已经不需要——留着只会让人以为还依赖那个服务。 */
+const officeObjectUrl = ref('')
 
-const destroyOfficeEditor = () => {
-  try {
-    officeEditor?.destroyEditor?.()
-  } catch {
-    // 弹窗关闭时 DS 可能已自行清理，销毁失败不影响业务
+const revokeOfficeObjectUrl = () => {
+  if (officeObjectUrl.value) {
+    URL.revokeObjectURL(officeObjectUrl.value)
+    officeObjectUrl.value = ''
   }
-  officeEditor = null
 }
 
 const mountOfficePreview = async () => {
@@ -156,27 +130,20 @@ const mountOfficePreview = async () => {
   if (!projectId || !documentId) return
   officePreviewLoading.value = true
   officePreviewError.value = ''
-  destroyOfficeEditor()
+  revokeOfficeObjectUrl()
   try {
     const res = await getDocumentOfficePreviewApi(String(projectId), String(documentId))
-    const payload = res?.data
-    if (!payload?.apiScriptUrl) {
+    const url = String(res?.data?.url || '')
+    if (!url) {
       officePreviewError.value = getAicheckErrorMessage(res, 'Office 预览服务暂不可用。')
       return
     }
-    await loadDocumentServerScript(payload.apiScriptUrl)
-    await nextTick()
-    const DocsAPI = (
-      window as unknown as { DocsAPI?: { DocEditor: new (...args: never[]) => never } }
-    ).DocsAPI
-    if (!DocsAPI) {
-      officePreviewError.value = 'Office 预览组件未能加载。'
-      return
-    }
-    officeEditor = new (DocsAPI.DocEditor as unknown as new (
-      id: string,
-      config: Record<string, unknown>
-    ) => { destroyEditor?: () => void })(officeContainerId, payload.config)
+    // 后端给的是 /api/... 路径而不是 MinIO 预签名地址——那个地址是服务器回环
+    // （http://127.0.0.1:19000/…），浏览器根本到不了。线上实测踩过：接口 200、
+    // 地址合法，浏览器一取就失败，界面显示「服务不可用」而服务好好的。
+    // 这里沿用 PDF/图片预览已验证可用的那条路：经 API 取字节 → createObjectURL。
+    const blob = await getDocumentOriginalBlobApi(url)
+    officeObjectUrl.value = URL.createObjectURL(blob.data)
   } catch (error) {
     officePreviewError.value = getAicheckErrorMessage(error, 'Office 预览加载失败，请下载后查看。')
   } finally {
@@ -234,14 +201,14 @@ watch(
       revokePreviewObjectUrl()
       previewOriginalError.value = ''
       officePreviewError.value = ''
-      destroyOfficeEditor()
+      revokeOfficeObjectUrl()
     }
   }
 )
 
 onBeforeUnmount(() => {
   revokePreviewObjectUrl()
-  destroyOfficeEditor()
+  revokeOfficeObjectUrl()
 })
 
 const confidenceText = (confidence?: number) => {
@@ -614,7 +581,12 @@ watch(visible, (open) => {
                     :closable="false"
                     show-icon
                   />
-                  <div v-else :id="officeContainerId" class="office-stage"></div>
+                  <iframe
+                    v-else-if="officeObjectUrl"
+                    :src="officeObjectUrl"
+                    class="office-stage"
+                    title="Office 文件预览"
+                  ></iframe>
                 </div>
               </template>
               <template v-else-if="previewEmbeddable">

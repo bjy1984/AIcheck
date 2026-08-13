@@ -18418,7 +18418,7 @@
     },
     "/api/projects/{project_id}/documents/{document_id}/office-preview": {
       "get": {
-        "description": "Office 文件的在线预览配置（只读）。\n\n这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只能提示\n「请下载后用 Word 打开」，监检得离开系统、在本地比对，再回来填结论。\n\n只下发只读配置：mode=view、edit 权限全关。不做在线编辑——审查场景里\n原始资料一旦可改，证据链就断了。",
+        "description": "Office 文件的在线预览：转成 PDF，复用已验证可用的 PDF 预览路径。\n\n这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只提示「请下载后用\nWord 打开」，监检得离开系统、在本地比对，再回来填结论。\n\n先接过 ONLYOFFICE Document Server，卡在转换器 error:-7 未果（详见\nlibs/office_preview.py 的说明），改用 LibreOffice headless 转 PDF。",
         "operationId": "document_office_preview_api_projects__project_id__documents__document_id__office_preview_get",
         "parameters": [
           {
@@ -18461,6 +18461,56 @@
           }
         },
         "summary": "Document Office Preview",
+        "tags": [
+          "AIcheck API"
+        ]
+      }
+    },
+    "/api/projects/{project_id}/documents/{document_id}/office-preview/content": {
+      "get": {
+        "description": "直接返回转换后的 PDF 字节。\n\n不能给前端一个 MinIO 预签名地址：那个地址是 http://127.0.0.1:19000/...，\n指向的是**服务器自己的回环**，用户浏览器根本到不了——线上实测过，接口 200、\n地址合法，浏览器一取就失败，界面显示「Office 预览服务不可用」，而服务好好的。\n\n已经能用的 PDF/图片预览走的就是「经 API 取字节 → 前端 createObjectURL」，\n这里沿用同一套路：MinIO 不必对外暴露，鉴权也仍在 API 这一层。",
+        "operationId": "document_office_preview_content_api_projects__project_id__documents__document_id__office_preview_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Office Preview Content",
         "tags": [
           "AIcheck API"
         ]
@@ -39729,7 +39779,7 @@
     },
     "/projects/{project_id}/documents/{document_id}/office-preview": {
       "get": {
-        "description": "Office 文件的在线预览配置（只读）。\n\n这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只能提示\n「请下载后用 Word 打开」，监检得离开系统、在本地比对，再回来填结论。\n\n只下发只读配置：mode=view、edit 权限全关。不做在线编辑——审查场景里\n原始资料一旦可改，证据链就断了。",
+        "description": "Office 文件的在线预览：转成 PDF，复用已验证可用的 PDF 预览路径。\n\n这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只提示「请下载后用\nWord 打开」，监检得离开系统、在本地比对，再回来填结论。\n\n先接过 ONLYOFFICE Document Server，卡在转换器 error:-7 未果（详见\nlibs/office_preview.py 的说明），改用 LibreOffice headless 转 PDF。",
         "operationId": "document_office_preview_projects__project_id__documents__document_id__office_preview_get",
         "parameters": [
           {
@@ -39772,6 +39822,56 @@
           }
         },
         "summary": "Document Office Preview",
+        "tags": [
+          "AIcheck API"
+        ]
+      }
+    },
+    "/projects/{project_id}/documents/{document_id}/office-preview/content": {
+      "get": {
+        "description": "直接返回转换后的 PDF 字节。\n\n不能给前端一个 MinIO 预签名地址：那个地址是 http://127.0.0.1:19000/...，\n指向的是**服务器自己的回环**，用户浏览器根本到不了——线上实测过，接口 200、\n地址合法，浏览器一取就失败，界面显示「Office 预览服务不可用」，而服务好好的。\n\n已经能用的 PDF/图片预览走的就是「经 API 取字节 → 前端 createObjectURL」，\n这里沿用同一套路：MinIO 不必对外暴露，鉴权也仍在 API 这一层。",
+        "operationId": "document_office_preview_content_projects__project_id__documents__document_id__office_preview_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Office Preview Content",
         "tags": [
           "AIcheck API"
         ]

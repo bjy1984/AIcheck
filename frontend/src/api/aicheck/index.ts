@@ -3120,13 +3120,18 @@ export const getDocumentOriginalBlobApi = (url: string): Promise<{ data: Blob }>
   }) as unknown as Promise<{ data: Blob }>
 }
 
+/** Office 文件转 PDF 后的预览。后端用 LibreOffice headless 转换。 */
 export interface OfficePreviewPayload {
-  documentServerBase: string
-  apiScriptUrl: string
-  config: Record<string, unknown>
+  previewType: 'pdf'
+  /** API 路径而非 MinIO 预签名地址——后者指向服务器回环，浏览器到不了 */
+  url: string
+  fileName: string
+  sourceFileName: string
+  readonly: boolean
+  convertedFrom: string
 }
 
-/** Office 文件的只读在线预览配置（ONLYOFFICE）。 */
+/** Office 文件的只读在线预览（转 PDF）。 */
 export const getDocumentOfficePreviewApi = (
   projectId: string,
   documentId: string

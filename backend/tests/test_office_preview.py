@@ -177,11 +177,11 @@ def test_cache_hit_requires_the_object_to_actually_exist() -> None:
     calls: list[tuple[str, str]] = []
 
     class _Storage:
-        def object_metadata(self, bucket: str, object_name: str):
+        def object_metadata(self, bucket: str, object_name: str) -> None:
             calls.append((bucket, object_name))
-            return None  # 对象不存在
+            # 对象不存在
 
-        def presigned_get_url(self, *args, **kwargs):  # pragma: no cover - 不该被当判据
+        def presigned_get_url(self, *args, **kwargs) -> str:  # pragma: no cover - 不该被当判据
             return "http://example.invalid/looks-fine-but-404"
 
     original = routes.object_storage
@@ -198,7 +198,7 @@ def test_metadata_lookup_error_is_treated_as_cache_miss() -> None:
     from apps.api import routes
 
     class _Storage:
-        def object_metadata(self, bucket: str, object_name: str):
+        def object_metadata(self, bucket: str, object_name: str) -> None:
             raise RuntimeError("网络抖动")
 
     original = routes.object_storage
