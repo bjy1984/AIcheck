@@ -1637,6 +1637,7 @@ const AI_FAILURE_KIND_LABELS: Record<string, string> = {
   orchestration: '编排服务',
   model: '模型服务',
   timeout: '调用超时',
+  budget: '内容超限',
   material: '资料依据',
   unknown: '未归类'
 }

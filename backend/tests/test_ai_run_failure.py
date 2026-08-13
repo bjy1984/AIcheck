@@ -112,3 +112,56 @@ def test_bare_connection_refused_is_not_blamed_on_orchestration() -> None:
     """
     kind, _, _ = classify_failure("connection refused")
     assert kind == FailureKind.UNKNOWN
+
+
+def test_template_message_must_not_drive_classification() -> None:
+    """ai_run 上那条 errorMessage 是写死的模板串，不是诊断结果。
+
+    execution.py 无条件写死：
+        ai_run["errorMessage"] = "Temporal/LangGraph 审查编排执行失败。"
+    真实异常在关联 review_run 的 errorCode/errorMessage 里。
+
+    我第一版拿这个模板串分类，因为里面有「Temporal」四个字就判成「编排服务
+    连不上」，让监检去联系运维查一个好好的服务——而线上真实原因是资料超出
+    模型上下文预算。归错因比不归因更浪费时间。
+    """
+    run = {"status": "失败", "errorMessage": "Temporal/LangGraph 审查编排执行失败。"}
+    view = ai_run_failure_view(run)
+    assert view is not None
+    assert view["kind"] != FailureKind.ORCHESTRATION, "模板串不含诊断信息，不能据此断言编排问题"
+    assert view["detailRecorded"] is False, "模板串等于没有原始报错，要如实标出"
+
+
+def test_real_cause_comes_from_linked_review_run() -> None:
+    """线上真实的那一条：ai_run 是模板串，review_run 才有真相。"""
+    run = {"status": "失败", "errorMessage": "Temporal/LangGraph 审查编排执行失败。"}
+    review_run = {
+        "errorCode": "REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED",
+        "errorMessage": "QwenRuntime review.chat failed: reason REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED",
+    }
+    view = ai_run_failure_view(run, review_run)
+    assert view is not None
+    assert view["kind"] == FailureKind.BUDGET
+    assert view["retryable"] is False, "同样的资料重跑必然再超，不能诱导用户白点"
+    assert "资料" in view["nextStep"], "要告诉人减少资料，而不是去查编排服务"
+
+
+def test_budget_wins_over_model_vendor_name() -> None:
+    """真实报错里同时出现 QwenRuntime 和预算超限，要归预算。
+
+    归成「模型服务不可用」会让人去查密钥配置——模型好好的，是送进去的东西太大。
+    """
+    kind, _, _ = classify_failure(
+        "QwenRuntime review.chat failed: reason REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED"
+    )
+    assert kind == FailureKind.BUDGET
+
+
+def test_genuine_temporal_error_still_classified_as_orchestration() -> None:
+    """收紧模板串之后，真正的 Temporal 传输错误仍要认出来。"""
+    view = ai_run_failure_view(
+        {"status": "失败"},
+        {"errorMessage": "tonic::transport::Error(Transport, ConnectError(ConnectionRefused))"},
+    )
+    assert view is not None
+    assert view["kind"] == FailureKind.ORCHESTRATION

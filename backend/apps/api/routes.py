@@ -3523,11 +3523,27 @@ def record_visible_for_request(request: Request, record: dict[str, Any], project
     return record_visible_for_scope(record, scope, project_id=effective_project_id)
 
 
+def linked_review_run(run: dict[str, Any]) -> dict[str, Any] | None:
+    """AI 运行关联的 ReviewRun——真实失败原因写在它身上。"""
+    review_run_id = str(run.get("reviewRunId") or "")
+    if not review_run_id:
+        return None
+    for item in repo.state.get("review_runs") or []:
+        if isinstance(item, dict) and str(item.get("reviewRunId") or "") == review_run_id:
+            return item
+    return None
+
+
 def safe_ai_run_view(run: dict[str, Any]) -> dict[str, Any]:
     view = repo.clone(run)
     # 失败时给出可读归因与下一步。原先界面只显示「异常」两个字，errorMessage
     # 明明躺在库里却没人下发——静默的失败比响亮的失败更贵。
-    failure = ai_run_failure_view(run)
+    #
+    # 必须带上关联的 review_run：ai_run 上那条 errorMessage 是写死的模板串
+    # （"Temporal/LangGraph 审查编排执行失败。"），真实异常在 review_run 的
+    # errorCode/errorMessage 里。只看 ai_run 会把「资料超出模型上下文预算」
+    # 误诊成「编排服务连不上」，让人去查一个好好的服务。
+    failure = ai_run_failure_view(run, linked_review_run(run))
     if failure:
         view["failure"] = failure
     prompt_audit = view.get("promptAudit") if isinstance(view.get("promptAudit"), dict) else {}

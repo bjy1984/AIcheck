@@ -30,12 +30,34 @@ class FailureKind:
     MODEL = "model"
     TIMEOUT = "timeout"
     MATERIAL = "material"
+    BUDGET = "budget"
     UNKNOWN = "unknown"
+
+
+# ai_run 的 errorMessage 是**写死的模板串**，不是诊断结果：
+#     ai_run["errorMessage"] = "Temporal/LangGraph 审查编排执行失败。"
+# 真实异常写在关联的 review_run 的 errorCode / errorMessage 里。
+#
+# 第一版我拿这个模板串去分类，因为里面有「Temporal」四个字，就判成「编排服务
+# 连不上」，让监检去联系运维查一个好好的服务。实际原因是
+# REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED——资料超出模型上下文预算，跟编排毫无关系。
+#
+# 所以这串要显式排除：它不携带任何信息，落到它就等于没有诊断。
+_TEMPLATE_MESSAGES = {
+    "temporal/langgraph 审查编排执行失败。",
+    "temporal/langgraph 审查编排暂时失败。",
+}
 
 
 # 顺序有意义：先匹配到的先用。编排层连不上要排在模型之前——Temporal 都没起来时，
 # 模型配没配根本轮不到。
 _SIGNATURES: tuple[tuple[str, str, str, bool], ...] = (
+    (
+        r"token_budget_exceeded|budget.*exceed|context.*length|too many tokens|maximum context",
+        FailureKind.BUDGET,
+        "本次送审内容超出模型单次可处理的上限，AI 没能读完就中止了。",
+        False,
+    ),
     (
         # 只认编排层自己的特征串。别拿泛化的 "connection refused" 去认——模型代理
         # 连不上也是这句话，会被误判成编排问题，把人引到错的方向去查。
@@ -84,12 +106,15 @@ def next_step_for(kind: str) -> str:
         FailureKind.ORCHESTRATION: "属于环境问题，重跑无用。请联系运维确认编排服务已启动。",
         FailureKind.MODEL: "属于环境问题，重跑无用。请联系运维确认模型服务与密钥配置。",
         FailureKind.TIMEOUT: "可以直接重跑；反复超时请联系运维。",
+        FailureKind.BUDGET: "重跑无用，同样会超。请减少本节点挂载的资料份数后再跑，或联系运维调高模型上下文预算。",
         FailureKind.MATERIAL: "先确认该节点资料已完成 OCR 抽取，再重跑。",
         FailureKind.UNKNOWN: "可以重跑一次；仍失败请把下方详情提供给运维。",
     }.get(kind, "可以重跑一次；仍失败请把下方详情提供给运维。")
 
 
-def ai_run_failure_view(run: dict[str, Any]) -> dict[str, Any] | None:
+def ai_run_failure_view(
+    run: dict[str, Any], review_run: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """失败运行的可读归因；没失败返回 None。
 
     detail 保留原始报错——归因是给监检看的，原文是给运维查的，两个都要有。
@@ -98,10 +123,18 @@ def ai_run_failure_view(run: dict[str, Any]) -> dict[str, Any] | None:
     status = str(run.get("status") or "")
     if status not in FAILED_STATUSES:
         return None
-    # 各链路的字段名不统一：ai_runs 写 errorMessage，review_runs 的对账脚本写 errorCode
-    detail = str(
-        run.get("errorMessage") or run.get("error") or run.get("errorCode") or ""
-    ).strip()
+    # 各链路的字段名不统一：ai_runs 写 errorMessage，review_runs 的对账脚本写 errorCode。
+    # review_run 传进来时优先用它——ai_run 上那条是模板串，不含诊断信息。
+    candidates = []
+    if review_run:
+        candidates += [review_run.get("errorMessage"), review_run.get("errorCode")]
+    candidates += [run.get("errorMessage"), run.get("error"), run.get("errorCode")]
+    detail = ""
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text and text.lower() not in _TEMPLATE_MESSAGES:
+            detail = text
+            break
     kind, reason, retryable = classify_failure(detail)
     return {
         "kind": kind,

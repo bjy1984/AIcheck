@@ -405,7 +405,7 @@ export type AiReviewRun = {
   }
   /** 仅失败时出现。后端把原始报错翻成人话，并回答「重跑有没有用」。 */
   failure?: {
-    kind: 'orchestration' | 'model' | 'timeout' | 'material' | 'unknown'
+    kind: 'orchestration' | 'model' | 'timeout' | 'material' | 'budget' | 'unknown'
     reason: string
     nextStep: string
     retryable: boolean
