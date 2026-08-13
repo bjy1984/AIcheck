@@ -676,8 +676,29 @@ test.describe('AIcheck route smoke', () => {
   test('inspection switches AI review and review list inside the same workspace', async ({
     page
   }) => {
+    await page.setViewportSize({ width: 1120, height: 900 })
     await loginTo(page, '/workbench/inspection')
     await expect(page.getByText('监检工作台').first()).toBeVisible()
+
+    const topActions = page.locator('.top-actions')
+    await expect(page.getByRole('button', { name: /待办消息/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: '文件预览', exact: true })).toHaveCount(0)
+    await expect
+      .poll(() =>
+        topActions.locator(':scope > *').evaluateAll((elements) => {
+          const tops = elements
+            .filter((element) => getComputedStyle(element).display !== 'none')
+            .map((element) => Math.round(element.getBoundingClientRect().top))
+          return new Set(tops).size
+        })
+      )
+      .toBe(1)
+
+    await page.getByRole('button', { name: /待办消息/ }).click()
+    const quickAccessDialog = page.getByRole('dialog', { name: '全局入口' })
+    await expect(quickAccessDialog.getByRole('tab', { name: /待办/ })).toBeVisible()
+    await expect(quickAccessDialog.getByRole('tab', { name: /消息/ })).toBeVisible()
+    await quickAccessDialog.getByRole('button', { name: 'Close' }).click()
 
     await page.waitForURL((url) => {
       const params = new URLSearchParams(url.hash.split('?')[1] || '')

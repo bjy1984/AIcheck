@@ -787,6 +787,7 @@ const availableActions = computed<ActionCode[]>(() => {
   )
 })
 const unreadMessageCount = computed(() => messages.value.filter((message) => !message.read).length)
+const quickAccessNotificationCount = computed(() => todos.value.length + unreadMessageCount.value)
 const projectTreeNodes = computed<ProjectTreeNode[]>(() =>
   treeGroups.value.flatMap((group) => group.nodes || [])
 )
@@ -2757,13 +2758,6 @@ const handleStandardTreeNodeClick = (data: StandardReferenceTreeNode) => {
     url: data.previewUrl,
     previewType: previewTypeForStandard(data.fileName),
     meta: `${data.reference || data.label} · ${data.sourceRelativePath || data.knowledgeFileId || '规范库'}`
-  })
-}
-
-const handleOpenCurrentPreview = () => {
-  openPreviewDrawer({
-    source: 'node',
-    title: previewFileName.value
   })
 }
 
@@ -4771,12 +4765,10 @@ onBeforeUnmount(() => {
         </ElButton>
         <div class="top-actions">
           <ElButton class="top-action" text @click="handleOpenQuickAccess('todos')">
-            待办<span v-if="todos.length" class="notice-dot">{{ todos.length }}</span>
+            待办消息<span v-if="quickAccessNotificationCount" class="notice-dot">
+              {{ quickAccessNotificationCount }}
+            </span>
           </ElButton>
-          <ElButton class="top-action" text @click="handleOpenQuickAccess('messages')">
-            消息<span v-if="unreadMessageCount" class="notice-dot">{{ unreadMessageCount }}</span>
-          </ElButton>
-          <ElButton class="top-action" text @click="handleOpenCurrentPreview"> 文件预览 </ElButton>
           <ElButton
             v-if="role === 'inspection'"
             :class="['top-action', { 'is-active': activeInspectionWorkspaceView === 'ai' }]"
@@ -6824,14 +6816,20 @@ onBeforeUnmount(() => {
 .top-actions {
   display: flex;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
   font-size: 15px;
   color: #27364d;
   white-space: nowrap;
-  flex-wrap: wrap;
-  gap: 18px;
-  row-gap: 6px;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
+  gap: 14px;
   align-items: center;
   justify-content: flex-end;
+}
+
+.top-actions::-webkit-scrollbar {
+  display: none;
 }
 
 .top-actions .top-action.el-button {
