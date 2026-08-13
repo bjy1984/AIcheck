@@ -760,7 +760,7 @@ watch(visible, (open) => {
                     </ul>
                   </div>
 
-                  <!-- 正文结构：按阅读顺序，保留标题层级 -->
+                  <!-- 正文结构：按阅读顺序，非正文块打类型角标 -->
                   <div v-if="ocrBlocks.length" class="ocr-section">
                     <button
                       type="button"
