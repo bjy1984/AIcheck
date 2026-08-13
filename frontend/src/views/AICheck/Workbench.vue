@@ -1672,6 +1672,11 @@ const aiExecutionSummary = computed(() => {
 const aiOutcomeHighlights = computed(() => {
   const suggestion = latestAiRun.value?.suggestion
   if (!suggestion) return null
+  // 失败时不显示结论块。suggestion 是 run 创建时就写好的占位（opinionDraft 是
+  // 「AI 复核已进入队列，完成后将更新审查建议」），失败后没人回填——照原样显示
+  // 就是在失败横幅旁边挂一句「已进入队列」，两句话互相打脸。
+  // 没产出判定就说没产出，由横幅承担说明责任。
+  if (latestAiRun.value?.status === '失败') return null
   return {
     result: suggestion.result || '待判定',
     confidence: suggestion.confidence,
@@ -1687,6 +1692,10 @@ const evidenceLabel = (evidence: EvidenceLink) => {
 }
 const chineseOrder = ['一', '二', '三', '四', '五', '六']
 const reviewConclusionOverall = computed(() => {
+  // 同上：失败时 opinionDraft 还是那句排队占位，不能当结论用
+  if (latestAiRun.value?.status === '失败') {
+    return '本次 AI 审查执行失败，未产出结论。失败原因与处理方式见上方提示。'
+  }
   if (latestAiRun.value?.suggestion.opinionDraft) return latestAiRun.value.suggestion.opinionDraft
   const summary = selectedNode.value?.requirementsSummary
   if (summary?.missingCount) {
