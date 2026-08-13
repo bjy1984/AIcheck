@@ -18607,6 +18607,7 @@
     },
     "/api/projects/{project_id}/documents/{document_id}/review-feedback": {
       "get": {
+        "description": "该文档所在节点的退回补正往返。\n\n原实现有两个各自独立的问题：\n1. 返回 repo.state 里**全部**审查意见与整改单，既不按项目也不按文档过滤——\n   跨项目的监检结论一并送出；\n2. 绕过了 review_process_read_error。同一份监检人工结论，走\n   /inspection/nodes/{id}/review-opinions 时施工方与建设方被 403 拦下，\n   走这里却能拿到全文（实测已复现）。角色隔离必须在所有入口一致，\n   只在「正门」设卡等于没设。",
         "operationId": "document_review_feedback_api_projects__project_id__documents__document_id__review_feedback_get",
         "parameters": [
           {
@@ -39867,6 +39868,7 @@
     },
     "/projects/{project_id}/documents/{document_id}/review-feedback": {
       "get": {
+        "description": "该文档所在节点的退回补正往返。\n\n原实现有两个各自独立的问题：\n1. 返回 repo.state 里**全部**审查意见与整改单，既不按项目也不按文档过滤——\n   跨项目的监检结论一并送出；\n2. 绕过了 review_process_read_error。同一份监检人工结论，走\n   /inspection/nodes/{id}/review-opinions 时施工方与建设方被 403 拦下，\n   走这里却能拿到全文（实测已复现）。角色隔离必须在所有入口一致，\n   只在「正门」设卡等于没设。",
         "operationId": "document_review_feedback_projects__project_id__documents__document_id__review_feedback_get",
         "parameters": [
           {
