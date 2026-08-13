@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -73,7 +73,21 @@ import ProjectNodeTree from '@/views/AICheck/components/ProjectNodeTree.vue'
 import R12RegistryVerificationDialog from '@/views/AICheck/components/R12RegistryVerificationDialog.vue'
 import R19SemanticEvidenceDialog from '@/views/AICheck/components/R19SemanticEvidenceDialog.vue'
 import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
+import { resolveReviewWorkbenchContext } from '@/views/AIReviewB/embeddedReviewWorkbench'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
+
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    projectId?: string
+    nodeId?: number
+  }>(),
+  {
+    embedded: false,
+    projectId: '',
+    nodeId: 0
+  }
+)
 
 const route = useRoute()
 const router = useRouter()
@@ -404,6 +418,7 @@ const scrollTimelineToEnd = async (force = false) => {
 }
 
 const updateRouteQuery = async () => {
+  if (props.embedded) return
   await router.replace({
     path: '/ai-review-b',
     query: {
@@ -575,6 +590,26 @@ const loadPage = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const loadEmbeddedContext = async () => {
+  const context = resolveReviewWorkbenchContext(props)
+  if (context.source !== 'embedded') return
+  if (
+    context.projectId === activeProjectId.value &&
+    context.nodeId === activeNodeId.value &&
+    workspace.value
+  ) {
+    return
+  }
+  stopLiveAgentTrace()
+  activeProjectId.value = context.projectId
+  activeNodeId.value = context.nodeId
+  messages.value = []
+  events.value = []
+  executionStarted.value = false
+  activityExpanded.value = false
+  await loadNodeWorkspace(true)
 }
 
 const refreshLiveState = async () => {
@@ -1081,9 +1116,18 @@ const formatTime = (value?: string) => {
 }
 
 onMounted(async () => {
-  await loadPage()
+  const context = resolveReviewWorkbenchContext(props)
+  if (context.source === 'standalone') await loadPage()
+  else await loadEmbeddedContext()
   pollTimer = window.setInterval(() => void refreshLiveState(), 3000)
 })
+
+watch(
+  () => [props.embedded, props.projectId, props.nodeId] as const,
+  () => {
+    if (props.embedded) void loadEmbeddedContext()
+  }
+)
 
 onBeforeUnmount(() => {
   if (pollTimer) window.clearInterval(pollTimer)
@@ -1092,8 +1136,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="review-b-shell">
-    <header class="review-b-topbar">
+  <div :class="['review-b-shell', { 'is-embedded': props.embedded }]">
+    <header v-if="!props.embedded" class="review-b-topbar">
       <div class="brand">
         <span class="brand-mark">AI</span>
         <div>
@@ -1130,7 +1174,7 @@ onBeforeUnmount(() => {
     />
 
     <div class="review-b-layout" v-loading="loading">
-      <aside class="node-sidebar">
+      <aside v-if="!props.embedded" class="node-sidebar">
         <div class="sidebar-heading">
           <span>监检节点</span>
           <ElTag type="info" effect="plain">{{ allNodes.length }}</ElTag>
@@ -1679,6 +1723,28 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(300px, 404px) minmax(650px, 1fr) 330px;
   min-height: calc(100vh - 72px);
+}
+
+.review-b-shell.is-embedded {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+}
+
+.review-b-shell.is-embedded .page-alert {
+  margin: 0 0 12px;
+}
+
+.review-b-shell.is-embedded .review-b-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 330px);
+  min-height: 0;
+}
+
+.review-b-shell.is-embedded .context-panel {
+  position: static;
+  top: auto;
+  height: auto;
+  max-height: none;
 }
 
 .node-sidebar,
