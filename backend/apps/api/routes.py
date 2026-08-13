@@ -6738,6 +6738,20 @@ def upload_session_state_records(session_id: str) -> dict[str, list[dict[str, An
     }
 
 
+def normalized_content_hash(value: Any) -> str:
+    """把内容哈希归一到纯十六进制，便于比较。
+
+    两边格式本来就不一致：经 API 中转的上传写入 "sha256-<hex>"，而客户端
+    （以及直传路径）算的是裸 <hex>。原先那条一致性校验因为字段名错配从没生效，
+    这个差异一直被掩盖着；一旦校验开始工作，每次上传都会误报「哈希不一致」。
+    """
+    text = str(value or "").strip().lower()
+    for prefix in ("sha256-", "sha256:"):
+        if text.startswith(prefix):
+            return text[len(prefix):]
+    return text
+
+
 def validate_upload_session_completion(
     session: dict[str, Any],
     body: dict[str, Any],
@@ -6818,9 +6832,13 @@ def validate_upload_session_completion(
                 "claimedFileSize": claimed_size,
                 "actualFileSize": actual_size,
             }
-        claimed_hash = str(claim.get("hash") or "").strip()
+        # 契约里客户端字段名是 contentHash（见前端 DocumentUploadCompletion）。
+        # 原先只读 claim["hash"]，于是客户端声明的哈希从来没被读到过——
+        # 这条一致性校验形同虚设，version["hash"] 也永远拿不到值。
+        # 兼容 hash 是为了不打破可能存在的其他调用方。
+        claimed_hash = normalized_content_hash(claim.get("contentHash") or claim.get("hash"))
         version = repo.find_one("versions", version_id) or {}
-        actual_hash = str(version.get("hash") or "").strip()
+        actual_hash = normalized_content_hash(version.get("hash"))
         if claimed_hash and actual_hash and claimed_hash != actual_hash:
             return None, {
                 "message": "上传文件哈希与完成清单不一致。",
@@ -6835,6 +6853,7 @@ def validate_upload_session_completion(
     for update in storage_updates:
         metadata = update["metadata"]
         actual_size = int(metadata["size"])
+        version_id = update["versionId"]
         update["fileEntry"].update(
             {
                 "status": "已上传",
@@ -6854,6 +6873,16 @@ def validate_upload_session_completion(
                     "uploadTime": server_time(),
                 }
             )
+            # 内容哈希必须落到版本记录上。
+            #
+            # document_body_uploaded() 只认 version["hash"]——那是「文件本体真的
+            # 上传成功了」的唯一判据。原先这里漏写：哈希在上面算进了 verified
+            # 返回值，却从没写回 version，于是每一份走完整上传流程的文件都停在
+            # hash=None，挂载与提交被 40900「尚未上传成功」拒绝，而文件其实好好地
+            # 躺在对象存储里（线上实测：MinIO 里 15818 字节可取，挂载照样被拒）。
+            resolved_hash = str((verified.get(version_id) or {}).get("hash") or "").strip()
+            if resolved_hash:
+                version["hash"] = resolved_hash
         document = repo.find_one("documents", update["documentId"])
         if document:
             document["fileStatus"] = "已上传"
