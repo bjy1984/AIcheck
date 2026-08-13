@@ -6090,7 +6090,18 @@ def build_inspection_audit_workspace(
     all_materials_submitted = bool(bindings) and all(
         str(binding.get("bindingStatus")) in {"已提交", "已通过"} for binding in bindings
     )
-    if submission_issues:
+    # 「需关注」要留给「做了但不对」，不能给「还没开始做」。
+    #
+    # 原判据把 submission_issues 排在 not_started 之前：只要节点有必传资料要求
+    # 而尚未匹配，就判需关注。后果是一个刚立项、0 份资料的项目开局就有 138 个
+    # 红点（线上实测：69 节点 × 资料提交 + 证据确认），真正需要关注的事项淹没其中。
+    #
+    # 打回补正是例外——它天然意味着「已经做过一轮且被退回」，任何时候都要关注。
+    has_rectification = any(
+        str(issue.get("code")) == "MATERIALS_RECTIFICATION" for issue in submission_issues
+    )
+    submission_started = bool(bindings or submission_drafts or latest_submission)
+    if has_rectification or submission_issues and submission_started:
         submission_status = "needs_attention"
     elif latest_submission and all_materials_submitted:
         submission_status = "completed"
@@ -6126,8 +6137,12 @@ def build_inspection_audit_workspace(
     ]
     if not evidence_readiness.get("hasReviewPoints"):
         evidence_issues.append(_inspection_audit_issue("REVIEW_POINTS_MISSING", "当前节点未配置可核验的资料审查点。"))
+    # 同上：没有任何资料提交时，证据当然「还没确认」，那不是需关注。
+    # 证据确认是资料提交的下游，上游没动，下游不可能有问题。
     if evidence_readiness.get("readyForAiFormal"):
         evidence_status = "completed"
+    elif not submission_started:
+        evidence_status = "not_started"
     elif evidence_issues or int(evidence_readiness.get("missingCount") or 0) > 0:
         evidence_status = "needs_attention"
     elif int(evidence_readiness.get("pendingCount") or 0) > 0:
