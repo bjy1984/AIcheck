@@ -10,6 +10,8 @@ headless 转 PDF，复用已验证可用的 PDF 预览路径。
 
 from __future__ import annotations
 
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -100,8 +102,10 @@ def test_conversion_failure_is_reported_not_swallowed(monkeypatch) -> None:
         "convert_office_to_pdf",
         lambda data, name: (_ for _ in ()).throw(OfficeConversionFailed("转换未产出 PDF")),
     )
+    # 端点用 `with urllib.request.urlopen(...)`，所以替身要能进上下文。
+    # io.BytesIO 天生支持，不必自己造类。
     monkeypatch.setattr(
-        routes_module.urllib.request, "urlopen", lambda *a, **k: _FakeResponse(b"x")
+        routes_module.urllib.request, "urlopen", lambda *a, **k: io.BytesIO(b"x")
     )
     response = client.get(
         f"/api/projects/{PROJECT_ID}/documents/{document['id']}/office-preview",
@@ -112,18 +116,6 @@ def test_conversion_failure_is_reported_not_swallowed(monkeypatch) -> None:
     assert (payload.get("data") or {}).get("reason") == "OFFICE_CONVERSION_FAILED"
 
 
-class _FakeResponse:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def read(self) -> bytes:
-        return self._data
-
-    def __enter__(self) -> _FakeResponse:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
 
 
 def test_role_scope_is_enforced(monkeypatch) -> None:
