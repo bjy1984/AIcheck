@@ -161,3 +161,49 @@ def test_conversion_module_rejects_unsupported_suffix(monkeypatch) -> None:
     monkeypatch.setattr(office, "soffice_executable", lambda: "/usr/bin/soffice")
     with pytest.raises(OfficeConversionFailed):
         office.convert_office_to_pdf(b"x", "a.zip")
+
+
+def test_cache_hit_requires_the_object_to_actually_exist() -> None:
+    """缓存判据必须是「对象在不在」，不能是「能不能签发 URL」。
+
+    线上踩过：原实现写 cached = presigned_get_url(...)，而签发是纯计算，对不
+    存在的对象照样返回一个合法 URL。于是「缓存命中」永远成立、转换分支一次都
+    没执行过——接口返回 200 带地址，前端一取就是 404。
+
+    这是最贵的那种失败：所有信号都说成功了。
+    """
+    from apps.api import routes
+
+    calls: list[tuple[str, str]] = []
+
+    class _Storage:
+        def object_metadata(self, bucket: str, object_name: str):
+            calls.append((bucket, object_name))
+            return None  # 对象不存在
+
+        def presigned_get_url(self, *args, **kwargs):  # pragma: no cover - 不该被当判据
+            return "http://example.invalid/looks-fine-but-404"
+
+    original = routes.object_storage
+    routes.object_storage = _Storage()
+    try:
+        assert routes.office_preview_cached("office-preview/DOC-X/abc.pdf") is False
+    finally:
+        routes.object_storage = original
+    assert calls, "必须实查 stat，而不是只签个 URL 就当命中"
+
+
+def test_metadata_lookup_error_is_treated_as_cache_miss() -> None:
+    """查不动就当没有：多转一次浪费几秒，判成「有」则是返回一个坏链接。"""
+    from apps.api import routes
+
+    class _Storage:
+        def object_metadata(self, bucket: str, object_name: str):
+            raise RuntimeError("网络抖动")
+
+    original = routes.object_storage
+    routes.object_storage = _Storage()
+    try:
+        assert routes.office_preview_cached("office-preview/DOC-X/abc.pdf") is False
+    finally:
+        routes.object_storage = original

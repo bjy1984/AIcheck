@@ -7882,6 +7882,22 @@ def office_preview_object_name(document_id: str, content_hash: str) -> str:
     return f"office-preview/{document_id}/{content_hash}.pdf"
 
 
+def office_preview_cached(object_name: str) -> bool:
+    """转换产物是否已在对象存储里。
+
+    必须实查 stat，不能拿 presigned_get_url 的返回值当判据：签发是纯计算，
+    对不存在的对象照样给出一个合法 URL。踩过这个坑——接口返回 200 带地址，
+    前端取回 404，而转换从头到尾没执行过。
+    """
+    try:
+        return bool(object_storage.object_metadata(OFFICE_PREVIEW_BUCKET, object_name))
+    except ObjectStorageUnavailable:
+        raise
+    except Exception:
+        # 查不动就当没有：多转一次只是浪费几秒，判成「有」则是返回一个坏链接
+        return False
+
+
 @router.get("/projects/{project_id}/documents/{document_id}/office-preview")
 def document_office_preview(request: Request, project_id: str, document_id: str):
     """Office 文件的在线预览：转成 PDF，复用已验证可用的 PDF 预览路径。
@@ -7932,8 +7948,11 @@ def document_office_preview(request: Request, project_id: str, document_id: str)
     preview_storage_url = f"minio://{OFFICE_PREVIEW_BUCKET}/{object_name}"
 
     try:
-        cached = object_storage.presigned_get_url(preview_storage_url)
-        if not cached:
+        # 用「对象在不在」判缓存，不能用「能不能签发 URL」。
+        # 原先写的是 cached = presigned_get_url(...)，而签发是纯计算、从不校验
+        # 对象存在——于是「缓存命中」永远成立，转换分支一次都没跑过：接口返回
+        # 200 和一个地址，前端一取就是 404。又一次静默失败，而且是我自己写的。
+        if not office_preview_cached(object_name):
             source_url = repo.document_storage_url(document, fallback_prefix="preview")
             source_signed = object_storage.presigned_get_url(source_url, internal=True)
             if not source_signed:
@@ -7949,7 +7968,7 @@ def document_office_preview(request: Request, project_id: str, document_id: str)
             object_storage.put_bytes(
                 OFFICE_PREVIEW_BUCKET, object_name, pdf_bytes, content_type="application/pdf"
             )
-            cached = object_storage.presigned_get_url(preview_storage_url)
+        cached = object_storage.presigned_get_url(preview_storage_url)
     except OfficeConversionUnavailable as exc:
         return fail(
             errors.OFFICE_PREVIEW_UNAVAILABLE,
