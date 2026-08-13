@@ -274,6 +274,44 @@ def unsupported_claims(text: str, evidence_texts: list[str]) -> list[dict[str, A
     return unique
 
 
+# 表格投影里有一对兼容别名，指向的是**同一个对象**：
+#     "normalizedRows": normalized_rows,  "rows": normalized_rows,
+#     "cellsSummary": cells_summary,      "cells": cells_summary,
+# 这在数据结构上无所谓（契约测试也钉住了 cellsSummary），但送进提示词就是把
+# 同一张表原样发两遍。线上一张 17×6 的表占 25027 字符，其中 16162 是这两对
+# 重复，真实值只有 1141——模型付三份 token 读同一件事。
+#
+# 另外每个单元格都带 "bbox": null / "confidence": null，OCR 没给的信息，
+# 发过去也只是让模型多读一遍「没有」。
+#
+# 这里只压提示词里的那一份，不动 grounding_input 本身：数据结构是有契约的，
+# 而预算问题出在提示词。
+_TABLE_ALIAS_KEYS = ("rows", "cellsSummary")
+
+
+def _compact_table_cell(cell: Any) -> Any:
+    """去掉取值为空的单元格键。null 不携带信息，只占 token。"""
+    if not isinstance(cell, dict):
+        return cell
+    return {key: value for key, value in cell.items() if value not in (None, "", [], {})}
+
+
+def compact_tables_for_prompt(tables: Any) -> Any:
+    """提示词用的表格：去重复别名、去空值。严格无损——去掉的都是重复或 null。"""
+    if not isinstance(tables, list):
+        return tables
+    compacted = []
+    for table in tables:
+        if not isinstance(table, dict):
+            compacted.append(table)
+            continue
+        item = {key: value for key, value in table.items() if key not in _TABLE_ALIAS_KEYS}
+        if isinstance(item.get("cells"), list):
+            item["cells"] = [_compact_table_cell(cell) for cell in item["cells"]]
+        compacted.append(item)
+    return compacted
+
+
 def grounding_prompt_block(grounding_input: dict[str, Any]) -> dict[str, Any]:
     grounding_policy = str(grounding_input.get("groundingPolicy") or "evidence_only")
     if grounding_policy == "llm_only_human_review":
@@ -281,7 +319,11 @@ def grounding_prompt_block(grounding_input: dict[str, Any]) -> dict[str, Any]:
             "strictGroundingPolicy": "llm_only_human_review",
             "requirements": PURE_LLM_REVIEW_REQUIREMENTS,
             "groundedOcrEvidence": {
-                key: grounding_input.get(key)
+                key: (
+                    compact_tables_for_prompt(grounding_input.get(key))
+                    if key == "tables"
+                    else grounding_input.get(key)
+                )
                 for key in [
                     "schemaVersion",
                     "documentVersionIds",
@@ -321,7 +363,11 @@ def grounding_prompt_block(grounding_input: dict[str, Any]) -> dict[str, Any]:
         "strictGroundingPolicy": "evidence_only",
         "requirements": STRICT_GROUNDING_REQUIREMENTS,
         "groundedOcrEvidence": {
-            key: grounding_input.get(key)
+            key: (
+                compact_tables_for_prompt(grounding_input.get(key))
+                if key == "tables"
+                else grounding_input.get(key)
+            )
             for key in [
                 "schemaVersion",
                 "documentVersionIds",
