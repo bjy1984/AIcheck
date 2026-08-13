@@ -286,6 +286,8 @@ export type OcrSealItem = {
   kind: 'seal' | 'signature'
   id: string
   name: string
+  /** false = 视觉检出但文字未识别，需人工看图辨认——不是数据缺失 */
+  recognized: boolean
   sealType?: string
   pageNo?: number
   bbox?: number[] | null

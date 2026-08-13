@@ -209,3 +209,44 @@ def test_columns_absent_from_header_are_appended_not_dropped() -> None:
         ]
     }
     assert structured_tables(parse_result)[0]["columnNames"] == ["序号", "备注"]
+
+
+def test_unrecognized_seals_are_flagged_not_silently_unnamed() -> None:
+    """视觉检出但文字未识别的章要标出来，不能只显示成「（未命名）」。
+
+    线上一份产品质量证明 9 枚章里 8 枚属于此类。显示成「未命名」会被当成
+    数据缺失而略过；实际含义是「这里确实有一枚章，需要人工看图辨认」。
+    """
+    parse_result = {
+        "seals": [
+            {"candidateId": "CAND-1", "pageNo": 5, "visualRankScore": 0.8},
+            {"sealId": "SEAL-1", "sealName": "质检专用章", "sealType": "quality_seal", "pageNo": 2},
+        ]
+    }
+    seals = structured_seals(parse_result)
+    # 已识别的排前面：认出文字的能直接核对，未识别的要人工看图
+    assert [seal["recognized"] for seal in seals] == [True, False]
+    assert seals[0]["name"] == "质检专用章"
+    assert seals[1]["id"] == "CAND-1", "候选章要能用 candidateId 定位，否则点不了"
+
+
+def test_recognized_seals_sort_by_page_within_group() -> None:
+    """同组内按页码排——监检是顺着页码翻的。"""
+    parse_result = {
+        "seals": [
+            {"sealId": "S-9", "sealName": "章九", "pageNo": 9},
+            {"sealId": "S-2", "sealName": "章二", "pageNo": 2},
+            {"candidateId": "C-7", "pageNo": 7},
+            {"candidateId": "C-1", "pageNo": 1},
+        ]
+    }
+    assert [s["pageNo"] for s in structured_seals(parse_result)] == [2, 9, 1, 7]
+
+
+def test_signatures_stay_after_seals_even_on_earlier_pages() -> None:
+    """印章与签名是不同性质的证据，不能因页码穿插而打散分组。"""
+    parse_result = {
+        "seals": [{"sealId": "s1", "sealName": "质检章", "pageNo": 7}],
+        "signatures": [{"signatureId": "g1", "text": "张工", "pageNo": 3}],
+    }
+    assert [s["kind"] for s in structured_seals(parse_result)] == ["seal", "signature"]

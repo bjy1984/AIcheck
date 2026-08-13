@@ -144,18 +144,33 @@ def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def structured_seals(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
-    """印章与签名：监检确认「盖没盖章」的直接依据。"""
+    """印章与签名：监检确认「盖没盖章」的直接依据。
+
+    引擎给的是两类记录，混在一起显示会误导：
+
+      已识别章  带 sealName / sealType / sealEvidenceLevel，文字认出来了；
+      候选章    只有 candidateId / visualRankScore / imagePath——视觉上确实
+                检出一枚章，但文字没认出来。
+
+    线上一份产品质量证明里 9 枚章有 8 枚是后者。之前一律显示成「（未命名）」，
+    监检会当成数据缺失而略过；实际含义是「这里有一枚章，需要你自己看图辨认」，
+    仍然是证据，只是要人工过一眼。recognized 字段把这个区别摆到台面上。
+    """
     results: list[dict[str, Any]] = []
     for kind, key in (("seal", "seals"), ("signature", "signatures")):
         for item in parse_result.get(key) or []:
             if not isinstance(item, dict):
                 continue
+            # sealName 里有时塞的是整段上下文文本，界面要截断显示
+            name = str(item.get("sealName") or item.get("text") or "").strip()
             results.append(
                 {
                     "kind": kind,
-                    "id": str(item.get("sealId") or item.get("signatureId") or ""),
-                    # sealName 里有时塞的是整段上下文文本，界面要截断显示
-                    "name": str(item.get("sealName") or item.get("text") or "").strip(),
+                    "id": str(
+                        item.get("sealId") or item.get("signatureId") or item.get("candidateId") or ""
+                    ),
+                    "name": name,
+                    "recognized": bool(name),
                     "sealType": str(item.get("sealType") or ""),
                     "pageNo": item.get("pageNo"),
                     "bbox": _clean_bbox(item.get("bbox")),
@@ -167,6 +182,15 @@ def structured_seals(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
             )
             if len(results) >= MAX_SEALS:
                 return results
+    # 已识别的排前面：认出文字的能直接核对，未识别的要人工看图，成本高得多。
+    # 印章仍排在签名前——两者是不同性质的证据，不能因页码穿插而打散。
+    results.sort(
+        key=lambda seal: (
+            not seal["recognized"],
+            0 if seal["kind"] == "seal" else 1,
+            int(seal.get("pageNo") or 0),
+        )
+    )
     return results
 
 

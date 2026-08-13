@@ -16,7 +16,7 @@ import {
   ElTag
 } from 'element-plus'
 import { getDocumentOfficePreviewApi, getDocumentOriginalBlobApi } from '@/api/aicheck'
-import type { DocumentDetailPayload } from '@/api/aicheck'
+import type { DocumentDetailPayload, OcrSealItem } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
@@ -357,12 +357,39 @@ const blockTypeLabel = (blockType: string) =>
 
 const sealKindLabel = (kind: string) => (kind === 'signature' ? '签名' : '印章')
 
-/** sealName 里有时塞的是整段上下文，列表里要截断。 */
-const sealDisplayName = (name: string) => {
-  const text = String(name || '').trim()
-  if (!text) return '（未命名）'
+/* 「（未命名）」是个误导性的说法。
+ *
+ * 引擎给两类记录：已识别章带 sealName，候选章只有视觉检出结果、文字没认出来。
+ * 线上一份产品质量证明 9 枚章有 8 枚属于后者，全显示成「（未命名）」，监检会
+ * 当成数据缺失而略过——实际含义是「这里确实有一枚章，需要你自己看图辨认」。
+ * 那仍然是证据，只是核验成本高，不是没有。 */
+const sealDisplayName = (seal: OcrSealItem) => {
+  const text = String(seal.name || '').trim()
+  if (!text) return `${sealKindLabel(seal.kind)}（待人工辨认）`
   return text.length > 40 ? `${text.slice(0, 40)}…` : text
 }
+
+/** 印章类型的中文名。原样吐 quality_seal 等于没说。 */
+const SEAL_TYPE_LABELS: Record<string, string> = {
+  quality_seal: '质量专用章',
+  inspection_testing_seal: '检验检测专用章',
+  official_seal: '公章',
+  contract_seal: '合同专用章',
+  design_seal: '设计专用章'
+}
+const sealTypeLabel = (sealType?: string) =>
+  sealType ? SEAL_TYPE_LABELS[sealType] || sealType : ''
+
+/** 证据级别同理，英文枚举对监检没有意义。 */
+const EVIDENCE_LEVEL_LABELS: Record<string, string> = {
+  visual_plus_page_text: '图像 + 页面文字',
+  visual_only: '仅图像',
+  text_only: '仅文字'
+}
+const evidenceLevelLabel = (level?: string) => (level ? EVIDENCE_LEVEL_LABELS[level] || level : '')
+
+const recognizedSeals = computed(() => ocrSeals.value.filter((seal) => seal.recognized))
+const pendingSeals = computed(() => ocrSeals.value.filter((seal) => !seal.recognized))
 
 const structuredTabLabel = computed(() => {
   const counts: string[] = []
@@ -425,6 +452,35 @@ const structuredLocatables = computed<LocatableItem[]>(() => [
     kind: 'field' as const
   }))
 ])
+
+/* 置信度与复核状态合成一条陈述。
+ *
+ * 之前卡片并排显示「未提供置信度」和「低置信度」——自相矛盾：没有数值，
+ * 凭什么判低？查库发现 reviewStatus='低置信度' 的 189 条里有 97 条压根没有
+ * 置信度数值。这两件事对监检的处置完全不同：
+ *   有数值且偏低 —— 引擎认出来了但不太确定，核对字面值即可；
+ *   根本没数值   —— 管线没产出这个指标，可信度未知，得回原文重核。
+ * 合并成一句话说清楚，比并排两个矛盾标签强。 */
+const LOW_CONFIDENCE_STATUS = '低置信度'
+
+const confidenceSummary = (item: LocatableItem) => {
+  const hasValue = typeof item.confidence === 'number' && item.confidence > 0
+  const isLow = item.status === LOW_CONFIDENCE_STATUS
+  if (hasValue)
+    return isLow ? `低置信度 ${confidenceText(item.confidence)}` : confidenceText(item.confidence)
+  return isLow ? '置信度未知 · 需回原文核对' : '未提供置信度'
+}
+
+/** 置信度未知比「低」更需要提醒——低还有个数，未知是完全不知道。 */
+const confidenceTone = (item: LocatableItem) => {
+  const hasValue = typeof item.confidence === 'number' && item.confidence > 0
+  if (item.status !== LOW_CONFIDENCE_STATUS) return ''
+  return hasValue ? 'is-low' : 'is-unknown'
+}
+
+/** 复核状态标签：低置信度已并入置信度那句，不再重复。 */
+const reviewStatusLabel = (item: LocatableItem) =>
+  item.status && item.status !== LOW_CONFIDENCE_STATUS ? item.status : ''
 
 const activeLocatable = computed(() =>
   [...locatableItems.value, ...structuredLocatables.value].find(
@@ -638,20 +694,19 @@ watch(visible, (open) => {
                         <div class="locate-head">
                           <span class="locate-label">{{ item.label }}</span>
                           <ElTag
+                            v-if="item.kind === 'evidence'"
                             size="small"
                             effect="plain"
-                            :type="item.kind === 'evidence' ? 'warning' : 'info'"
+                            type="warning"
                           >
-                            {{ item.kind === 'evidence' ? '证据引用' : 'OCR' }}
+                            证据引用
                           </ElTag>
                         </div>
                         <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
                         <div class="locate-meta">
                           <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
-                          <span v-if="item.confidence !== undefined">
-                            {{ confidenceDisplay(item.confidence) }}
-                          </span>
-                          <span v-if="item.status">{{ item.status }}</span>
+                          <span :class="confidenceTone(item)">{{ confidenceSummary(item) }}</span>
+                          <span v-if="reviewStatusLabel(item)">{{ reviewStatusLabel(item) }}</span>
                           <span v-if="item.bbox" class="locate-badge">可定位</span>
                         </div>
                       </button>
@@ -723,8 +778,9 @@ watch(visible, (open) => {
                     <div class="ocr-section-head">
                       <span class="ocr-section-title">印章 / 签名 {{ ocrSeals.length }} 处</span>
                     </div>
-                    <ul class="ocr-seal-list">
-                      <li v-for="seal in ocrSeals" :key="seal.id">
+
+                    <ul v-if="recognizedSeals.length" class="ocr-seal-list">
+                      <li v-for="seal in recognizedSeals" :key="seal.id">
                         <button
                           type="button"
                           :class="[
@@ -741,23 +797,49 @@ watch(visible, (open) => {
                               :type="seal.canSatisfyRequired ? 'success' : 'info'"
                               effect="plain"
                             >
-                              {{ sealKindLabel(seal.kind) }}
+                              {{ sealTypeLabel(seal.sealType) || sealKindLabel(seal.kind) }}
                             </ElTag>
-                            <span class="ocr-seal-name">{{ sealDisplayName(seal.name) }}</span>
+                            <span v-if="seal.pageNo" class="ocr-seal-page"
+                              >第 {{ seal.pageNo }} 页</span
+                            >
                           </div>
+                          <div class="ocr-seal-name">{{ sealDisplayName(seal) }}</div>
                           <div class="ocr-seal-meta">
-                            <span v-if="seal.pageNo">第 {{ seal.pageNo }} 页</span>
-                            <span v-if="seal.sealType">{{ seal.sealType }}</span>
+                            <span v-if="evidenceLevelLabel(seal.evidenceLevel)">
+                              {{ evidenceLevelLabel(seal.evidenceLevel) }}
+                            </span>
                             <span v-if="seal.confidence">{{
                               confidenceDisplay(seal.confidence)
                             }}</span>
-                            <span v-if="seal.canSatisfyRequired" class="ocr-seal-ok"
-                              >可满足必盖章要求</span
-                            >
+                            <span v-if="seal.canSatisfyRequired" class="ocr-seal-ok">
+                              可满足必盖章要求
+                            </span>
                           </div>
                         </button>
                       </li>
                     </ul>
+
+                    <!-- 视觉检出但文字未识别：是证据，只是要人工看图，不能混进上面 -->
+                    <div v-if="pendingSeals.length" class="ocr-pending">
+                      <div class="ocr-pending-head">
+                        待人工辨认 {{ pendingSeals.length }} 处 · 检出印章但文字未识别
+                      </div>
+                      <div class="ocr-pending-pages">
+                        <button
+                          v-for="seal in pendingSeals"
+                          :key="seal.id"
+                          type="button"
+                          :class="[
+                            'ocr-pending-chip',
+                            { 'is-active': activeLocateKey === `seal:${seal.id}` }
+                          ]"
+                          :aria-pressed="activeLocateKey === `seal:${seal.id}`"
+                          @click="toggleLocateKey(`seal:${seal.id}`)"
+                        >
+                          第 {{ seal.pageNo || '?' }} 页
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- 正文结构：按阅读顺序，非正文块打类型角标 -->
@@ -1232,6 +1314,62 @@ watch(visible, (open) => {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+}
+
+.ocr-seal-page {
+  margin-left: auto;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* 待辨认的章：不占整卡，收成页码芯片一排——它们的信息量只有「哪一页有章」 */
+.ocr-pending {
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+}
+
+.ocr-pending-head {
+  font-size: 12px;
+  color: #92400e;
+}
+
+.ocr-pending-pages {
+  display: flex;
+  margin-top: 6px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ocr-pending-chip {
+  padding: 2px 8px;
+  font-size: 12px;
+  color: #92400e;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+}
+
+.ocr-pending-chip:hover {
+  background: #fef3c7;
+}
+
+.ocr-pending-chip.is-active {
+  color: #fff;
+  background: #d97706;
+  border-color: #d97706;
+}
+
+/* 置信度未知比「低」更该刺眼：低还有个数，未知是完全不知道 */
+.locate-meta .is-low {
+  color: #d97706;
+}
+
+.locate-meta .is-unknown {
+  color: #dc2626;
 }
 
 .ocr-seal-head {
