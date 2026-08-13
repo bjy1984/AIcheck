@@ -361,7 +361,12 @@ def grounding_prompt_block(grounding_input: dict[str, Any]) -> dict[str, Any]:
         }
     return {
         "strictGroundingPolicy": "evidence_only",
-        "requirements": STRICT_GROUNDING_REQUIREMENTS,
+        # 证据被裁减过时把「哪些没送审」写进硬性要求。只在证据里删掉资料是不够的：
+        # 模型不知道自己少看了东西，会对着残缺的证据集给出一个自信的结论。
+        "requirements": [
+            *STRICT_GROUNDING_REQUIREMENTS,
+            *(grounding_input.get("truncationRequirements") or []),
+        ],
         "groundedOcrEvidence": {
             key: (
                 compact_tables_for_prompt(grounding_input.get(key))

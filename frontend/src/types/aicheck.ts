@@ -403,6 +403,15 @@ export type AiReviewRun = {
     to?: string
     reason?: string
   }
+  /** 证据被裁减过时出现。裁了什么必须让人看见，否则又是一次静默。 */
+  evidenceBudget?: {
+    truncated: boolean
+    droppedNames: string[]
+    keptVersionCount: number
+    originalTokens?: number
+    evidenceTokens?: number
+    budgetTokens?: number
+  }
   /** 仅失败时出现。后端把原始报错翻成人话，并回答「重跑有没有用」。 */
   failure?: {
     kind: 'orchestration' | 'model' | 'timeout' | 'material' | 'budget' | 'unknown'

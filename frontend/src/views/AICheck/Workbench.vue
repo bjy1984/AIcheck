@@ -1630,6 +1630,14 @@ const AI_STEP_ATTENTION = new Set(['异常', '需人工确认'])
  * 后端已把原始报错翻成人话并给出下一步，这里只负责摆出来，外加一件事：
  * 重跑无用时不给亮着的重跑按钮——那是在诱导用户白点。
  */
+/* 证据裁减告知。
+ *
+ * 节点资料合计超出模型上下文预算时，后端按整份裁减而不是整次失败——但裁过的
+ * 结论一律降级为待人工确认。这里必须把「哪几份没送审」摆出来：模型没读到的
+ * 资料，监检得自己看。不说，就等于让人对着一份不完整的判定签字。
+ */
+const aiEvidenceBudget = computed(() => aiRecheckDisplayRun.value?.evidenceBudget)
+
 const aiRunFailure = computed(() => aiRecheckDisplayRun.value?.failure)
 const aiFailureDetailExpanded = ref(false)
 
@@ -5875,6 +5883,22 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
+              <div v-if="aiEvidenceBudget?.truncated" class="ai-truncation">
+                <div class="ai-truncation-head">
+                  <ElTag size="small" type="warning" effect="dark">证据未送全</ElTag>
+                  <span>本次仅送审 {{ aiEvidenceBudget.keptVersionCount }} 份资料</span>
+                </div>
+                <p class="ai-truncation-body">
+                  以下资料超出模型单次上下文预算，未参与本次 AI 审查，需人工核对：
+                </p>
+                <ul class="ai-truncation-list">
+                  <li v-for="name in aiEvidenceBudget.droppedNames" :key="name">{{ name }}</li>
+                </ul>
+                <p class="ai-truncation-note">
+                  因证据不全，本次结论已降级为「待人工确认」，不作满足要求的判定。
+                </p>
+              </div>
+
               <div v-if="aiRunFailure" class="ai-failure">
                 <div class="ai-failure-head">
                   <ElTag size="small" type="danger" effect="dark">AI 审查失败</ElTag>
@@ -7250,6 +7274,42 @@ onBeforeUnmount(() => {
   font-size: 13px;
   line-height: 1.6;
   color: #64748b;
+}
+
+/* 证据未送全：不是失败，但同样不能让人错过 */
+.ai-truncation {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+}
+
+.ai-truncation-head {
+  display: flex;
+  font-size: 13px;
+  color: #92400e;
+  gap: 8px;
+  align-items: center;
+}
+
+.ai-truncation-body {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  color: #92400e;
+}
+
+.ai-truncation-list {
+  padding-left: 20px;
+  margin: 0;
+  font-size: 13px;
+  color: #7c2d12;
+}
+
+.ai-truncation-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #b45309;
 }
 
 /* AI 失败横幅：这是整屏里唯一「系统没干成活」的位置，要抢眼 */

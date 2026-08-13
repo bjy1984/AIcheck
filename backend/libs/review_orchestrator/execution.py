@@ -22,6 +22,10 @@ from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_orchestrator.evidence_budget import (
+    trim_evidence_to_budget,
+    truncation_requirements,
+)
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.r12_agent import (
@@ -2704,6 +2708,65 @@ def persist_review_model_attempt(attempt: dict[str, Any]) -> None:
     flush_state_records({"model_call_attempts": [attempt]})
 
 
+def trim_review_input_to_budget(
+    review_run: dict[str, Any],
+    context: dict[str, Any],
+    budget_policy: dict[str, Any],
+) -> tuple[list[dict[str, str]], int]:
+    """裁减证据后重建提示词，并把裁减结果留痕。"""
+    grounding_input = context.get("groundingInput") or {}
+    version_labels = document_version_labels(grounding_input)
+    # 证据之外的固定开销（工具目录、规则、模板）不可裁，先量出来给证据留余量
+    fixed_overhead = estimate_messages_tokens(
+        build_review_prompt_parts(review_run, {**context, "groundingInput": {}})["messages"]
+    )
+    trimmed, report = trim_evidence_to_budget(
+        grounding_input,
+        available_tokens=int(budget_policy["maxInputTokens"]) - fixed_overhead,
+        version_labels=version_labels,
+    )
+    if not report.get("truncated"):
+        # 裁不动说明超的不是证据（例如固定开销本身就过大）——照旧响亮地失败，
+        # 别让它带着一份完整证据继续跑然后在模型侧超时。
+        raise IntegrationServiceError(
+            "QwenRuntime", "review.chat", reason="REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED"
+        )
+    if report.get("stillOverBudget"):
+        # 全裁光还超：固定开销就已经装不下，截断救不了
+        raise IntegrationServiceError(
+            "QwenRuntime", "review.chat", reason="REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED"
+        )
+
+    # 证据不全 → 走既有护栏降级为待人工确认、置信度封顶，不许出「满足要求」
+    trimmed = dict(trimmed)
+    trimmed["groundingStatus"] = "insufficient_evidence"
+    trimmed["truncationRequirements"] = truncation_requirements(report)
+    context["groundingInput"] = trimmed
+    context["evidenceBudget"] = report
+    review_run["evidenceBudget"] = repo.clone(report)
+
+    rebuilt = build_review_prompt_parts(review_run, context)["messages"]
+    return rebuilt, estimate_messages_tokens(rebuilt)
+
+
+def document_version_labels(grounding_input: dict[str, Any]) -> dict[str, str]:
+    """版本号 → 文件名。裁减清单要给人看文件名，不是一串 ID。"""
+    wanted = {str(item) for item in grounding_input.get("documentVersionIds") or [] if item}
+    if not wanted:
+        return {}
+    documents = {str(item.get("id")): item for item in repo.state.get("documents") or []}
+    labels: dict[str, str] = {}
+    for version in repo.state.get("versions") or []:
+        version_id = str(version.get("id") or "")
+        if version_id not in wanted:
+            continue
+        document = documents.get(str(version.get("documentId") or "")) or {}
+        name = str(document.get("fileName") or "").strip()
+        if name:
+            labels[version_id] = name
+    return labels
+
+
 def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     mode = review_llm_execution_mode()
     if mode in {"deterministic", "disabled", "mock"}:
@@ -2719,10 +2782,22 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         review_run["llmMetadata"] = repo.clone(metadata)
         drafts = apply_grounding_guardrails([build_finding_draft(review_run, context)], context.get("groundingInput") or {})
         return drafts, metadata
-    messages = build_review_messages(review_run, context)
-    qwen_runtime = qwen_runtime_public_config()
     budget_policy = review_model_budget_policy(review_run)
+    messages = build_review_messages(review_run, context)
     estimated_input_tokens = estimate_messages_tokens(messages)
+
+    # 超预算时先按整份资料裁减再重建，而不是整次失败。原先一超就报
+    # REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED，一份资料都没审——监检既拿不到任何
+    # AI 意见，也不知道差多少、该拆掉哪份。
+    #
+    # 裁减是有代价的，所以三条约束一起上（详见 evidence_budget 模块）：
+    # 只裁整份、裁过就降级为待人工确认、裁了什么写进提示词和界面。
+    if estimated_input_tokens > budget_policy["maxInputTokens"]:
+        messages, estimated_input_tokens = trim_review_input_to_budget(
+            review_run, context, budget_policy
+        )
+
+    qwen_runtime = qwen_runtime_public_config()
     estimated_cost = model_cost_cny(
         {
             "input_tokens": estimated_input_tokens,

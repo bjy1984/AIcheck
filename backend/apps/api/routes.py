@@ -3546,6 +3546,12 @@ def safe_ai_run_view(run: dict[str, Any]) -> dict[str, Any]:
     failure = ai_run_failure_view(run, linked_review_run(run))
     if failure:
         view["failure"] = failure
+    # 证据被裁减过就要说出来。悄悄少送几份、模型照常给结论，是这轮审计里
+    # 反复出现的那类最贵的失败——看起来一切正常。
+    review_run = linked_review_run(run) or {}
+    budget = review_run.get("evidenceBudget")
+    if isinstance(budget, dict) and budget.get("truncated"):
+        view["evidenceBudget"] = repo.clone(budget)
     prompt_audit = view.get("promptAudit") if isinstance(view.get("promptAudit"), dict) else {}
     view["promptSummary"] = {
         key: prompt_audit.get(key)
