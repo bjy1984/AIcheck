@@ -403,6 +403,16 @@ export type AiReviewRun = {
     to?: string
     reason?: string
   }
+  /** 仅失败时出现。后端把原始报错翻成人话，并回答「重跑有没有用」。 */
+  failure?: {
+    kind: 'orchestration' | 'model' | 'timeout' | 'material' | 'unknown'
+    reason: string
+    nextStep: string
+    retryable: boolean
+    detail: string
+    /** false = 这次失败连原因都没落库，本身就是要修的问题 */
+    detailRecorded: boolean
+  }
   suggestion: {
     id: string
     result: '满足要求' | '需补正' | '不适用' | '需人工确认'

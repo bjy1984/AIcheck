@@ -110,6 +110,7 @@ from libs.material_targeting import (
 )
 from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness
+from libs.ai_run_failure import ai_run_failure_view
 from libs.ocr_structured_view import build_ocr_structured_view
 from libs.office_preview import (
     CONVERTIBLE_SUFFIXES,
@@ -3524,6 +3525,11 @@ def record_visible_for_request(request: Request, record: dict[str, Any], project
 
 def safe_ai_run_view(run: dict[str, Any]) -> dict[str, Any]:
     view = repo.clone(run)
+    # 失败时给出可读归因与下一步。原先界面只显示「异常」两个字，errorMessage
+    # 明明躺在库里却没人下发——静默的失败比响亮的失败更贵。
+    failure = ai_run_failure_view(run)
+    if failure:
+        view["failure"] = failure
     prompt_audit = view.get("promptAudit") if isinstance(view.get("promptAudit"), dict) else {}
     view["promptSummary"] = {
         key: prompt_audit.get(key)

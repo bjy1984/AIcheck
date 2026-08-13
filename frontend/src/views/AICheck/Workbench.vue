@@ -1514,7 +1514,10 @@ const aiExecutionSteps = computed<AiExecutionDisplayStep[]>(() => {
   const statusFor = (index: number, title: string) => {
     const runStatus = latestAiRun.value?.status
     if (!runStatus) return '待执行'
-    if (runStatus === '失败') return index <= 3 ? '完成' : '异常'
+    // 失败时不能按下标硬说前四步「完成」。前端手上只有执行计划、没有分步结果
+    // （真实分步在 ai_trace_steps，节点包不带），凭下标编出来的「完成」是假的：
+    // 线上那次失败是 Temporal 根本没连上，一步都没跑，界面却显示四步已完成。
+    if (runStatus === '失败') return '未执行'
     if (runStatus === '推理中') return index <= 2 ? '完成' : index === 3 ? '执行中' : '待执行'
     if (manualItems.length && /人工|缺项/.test(title)) return '需人工确认'
     return '完成'
@@ -1618,9 +1621,38 @@ const toolTooltip = (toolId: string) => {
  * 不是出了问题。摘要要是把它报成「7 步需关注」，等于教用户忽略这个提示。 */
 const AI_STEP_ATTENTION = new Set(['异常', '需人工确认'])
 
+/* AI 失败归因。
+ *
+ * 线上失败记录里躺着完整的 Temporal 连接错误，界面却只显示「异常」两个字——
+ * 监检既不知道是模型没配、超时、还是资料本身有问题，也不知道该不该重跑，
+ * 只能去问人。静默的失败比响亮的失败更贵。
+ *
+ * 后端已把原始报错翻成人话并给出下一步，这里只负责摆出来，外加一件事：
+ * 重跑无用时不给亮着的重跑按钮——那是在诱导用户白点。
+ */
+const aiRunFailure = computed(() => aiRecheckDisplayRun.value?.failure)
+const aiFailureDetailExpanded = ref(false)
+
+const AI_FAILURE_KIND_LABELS: Record<string, string> = {
+  orchestration: '编排服务',
+  model: '模型服务',
+  timeout: '调用超时',
+  material: '资料依据',
+  unknown: '未归类'
+}
+const aiFailureKindLabel = computed(
+  () => AI_FAILURE_KIND_LABELS[String(aiRunFailure.value?.kind)] || '未归类'
+)
+
 const aiExecutionSummary = computed(() => {
   const steps = aiExecutionSteps.value
   if (!steps.length) return '暂无执行记录'
+  // 失败要直接从 run 状态判，不能等分步标签冒出「异常」——现在失败时每一步都是
+  // 「未执行」（因为确实一步没跑），照旧只看步骤标签的话，整次失败反而不再计入
+  // 需关注，比原先的假「完成」还糟。
+  if (latestAiRun.value?.status === '失败') {
+    return `${steps.length} 步 · 本次执行失败，未产出判定`
+  }
   const attention = steps.filter((step) => AI_STEP_ATTENTION.has(String(step.status)))
   const done = steps.filter((step) => step.status === '完成')
   const parts = [`${steps.length} 步`]
@@ -5833,6 +5865,38 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
+              <div v-if="aiRunFailure" class="ai-failure">
+                <div class="ai-failure-head">
+                  <ElTag size="small" type="danger" effect="dark">AI 审查失败</ElTag>
+                  <span class="ai-failure-kind">{{ aiFailureKindLabel }}</span>
+                </div>
+                <p class="ai-failure-reason">{{ aiRunFailure.reason }}</p>
+                <p class="ai-failure-next">{{ aiRunFailure.nextStep }}</p>
+                <div class="ai-failure-actions">
+                  <ElButton
+                    v-if="aiRunFailure.retryable"
+                    size="small"
+                    type="primary"
+                    @click="handleAiRecheck"
+                  >
+                    重跑本节点审查
+                  </ElButton>
+                  <!-- 环境类失败重跑必然再失败，按钮亮着只会让人白点 -->
+                  <span v-else class="ai-failure-noretry">重跑无用，需先修复上述环境问题</span>
+                  <button
+                    type="button"
+                    class="ai-failure-detail-toggle"
+                    :aria-expanded="aiFailureDetailExpanded"
+                    @click="aiFailureDetailExpanded = !aiFailureDetailExpanded"
+                  >
+                    {{ aiFailureDetailExpanded ? '收起原始报错' : '查看原始报错' }}
+                  </button>
+                </div>
+                <pre v-show="aiFailureDetailExpanded" class="ai-failure-detail">{{
+                  aiRunFailure.detail
+                }}</pre>
+              </div>
+
               <!-- 过程默认折叠，与 AI 复核 B 版工作台的交互对齐 -->
               <button
                 type="button"
@@ -7174,6 +7238,75 @@ onBeforeUnmount(() => {
   font-size: 13px;
   line-height: 1.6;
   color: #64748b;
+}
+
+/* AI 失败横幅：这是整屏里唯一「系统没干成活」的位置，要抢眼 */
+.ai-failure {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+}
+
+.ai-failure-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ai-failure-kind {
+  font-size: 12px;
+  color: #b91c1c;
+}
+
+.ai-failure-reason {
+  margin: 8px 0 4px;
+  font-size: 14px;
+  color: #7f1d1d;
+}
+
+.ai-failure-next {
+  margin: 0;
+  font-size: 13px;
+  color: #b45309;
+}
+
+.ai-failure-actions {
+  display: flex;
+  margin-top: 10px;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ai-failure-noretry {
+  font-size: 13px;
+  color: #92400e;
+}
+
+.ai-failure-detail-toggle {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: #64748b;
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* 原始报错留给运维查，字号小、可横滚，不抢归因那句话的位置 */
+.ai-failure-detail {
+  padding: 8px 10px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #475569;
+  word-break: break-all;
+  white-space: pre-wrap;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
 }
 
 /* X-3 执行过程折叠开关 —— 与 AI 复核 B 版工作台同一交互 */
