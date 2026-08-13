@@ -334,10 +334,26 @@ const ocrTables = computed(() => ocrStructured.value?.tables || [])
 const ocrSeals = computed(() => ocrStructured.value?.seals || [])
 const ocrBlocks = computed(() => ocrStructured.value?.layoutBlocks || [])
 
-/** 标题类块用于分层显示，正文类平铺。 */
-const TITLE_BLOCK_TYPES = new Set(['title', 'heading', 'header', 'section_title'])
-const isTitleBlock = (blockType: string) =>
-  TITLE_BLOCK_TYPES.has(String(blockType || '').toLowerCase())
+/* 标注块类型，而不是伪造标题层级。
+ *
+ * 起初我把 header 当标题加粗——错了。OCR 语境里 header 是**页眉**，线上实际
+ * 内容是「工程项目 | S05-DESIGN-001」「副本」，footer 是「国家市场监督管理
+ * 总局制」这类页脚。全库统计（text 606 / table 113 / page_number 67 /
+ * header 62 / footer 31 / seal 18 / image 11 / aside_text 5）里根本没有标题
+ * 类型，加粗页眉只会把页面家具误导成章节标题。
+ *
+ * 页眉页脚也不直接扔：页眉带工程编号，页脚的「国家市场监督管理总局制」能
+ * 佐证这是制式表格，都是证据。标出来让人自己判断，比替人删掉稳妥。 */
+const BLOCK_TYPE_LABELS: Record<string, string> = {
+  header: '页眉',
+  footer: '页脚',
+  table: '表格',
+  image: '图片',
+  seal: '印章',
+  aside_text: '旁注'
+}
+const blockTypeLabel = (blockType: string) =>
+  BLOCK_TYPE_LABELS[String(blockType || '').toLowerCase()] || ''
 
 const sealKindLabel = (kind: string) => (kind === 'signature' ? '签名' : '印章')
 
@@ -757,7 +773,7 @@ watch(visible, (open) => {
                         {{
                           ocrStructured?.truncated
                             ? `共 ${ocrStructured.totalBlockCount} 段，仅显示前 ${ocrBlocks.length} 段`
-                            : '按阅读顺序'
+                            : '按阅读顺序，含页眉页脚'
                         }}
                       </span>
                       <ElIcon :class="['fragment-chevron', { 'is-open': blocksExpanded }]">
@@ -772,14 +788,14 @@ watch(visible, (open) => {
                         :class="[
                           'ocr-block',
                           'ocr-locate',
-                          {
-                            'is-title': isTitleBlock(block.blockType),
-                            'is-active': activeLocateKey === `block:${block.blockId}`
-                          }
+                          { 'is-active': activeLocateKey === `block:${block.blockId}` }
                         ]"
                         :aria-pressed="activeLocateKey === `block:${block.blockId}`"
                         @click="toggleLocateKey(`block:${block.blockId}`)"
                       >
+                        <span v-if="blockTypeLabel(block.blockType)" class="ocr-block-kind">
+                          {{ blockTypeLabel(block.blockType) }}
+                        </span>
                         {{ block.text }}
                         <span v-if="block.pageNo" class="ocr-block-page">P{{ block.pageNo }}</span>
                       </button>
@@ -1257,10 +1273,14 @@ watch(visible, (open) => {
   word-break: break-word;
 }
 
-.ocr-block.is-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1f2937;
+/* 块类型角标：页眉/页脚等页面家具要能一眼认出，不能混进正文当内容读 */
+.ocr-block-kind {
+  padding: 0 4px;
+  margin-right: 4px;
+  font-size: 11px;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 3px;
 }
 
 .ocr-block-page {
