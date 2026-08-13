@@ -711,6 +711,9 @@ test.describe('AIcheck route smoke', () => {
 
     await expect(page.locator('.inspection-ai-review-region')).toBeVisible()
     await expect(page.locator('.review-b-shell.is-embedded')).toBeVisible()
+    await expect(page.locator('.review-b-shell.is-embedded .context-chips')).toHaveCount(0)
+    await expect(page.locator('.review-b-shell.is-embedded .trace-collapse')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '查看执行轨迹' })).toHaveCount(0)
     await expect(page.locator('#audit-node-navigation')).toHaveCount(1)
     await expect(page.locator('.project-title-select')).toHaveCount(1)
     await expectNoPageOverflow(page)

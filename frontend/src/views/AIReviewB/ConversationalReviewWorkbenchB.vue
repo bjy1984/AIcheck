@@ -1202,14 +1202,14 @@ onBeforeUnmount(() => {
             <h1>{{ currentNode?.nodeId || '-' }}. {{ currentNode?.name || '请选择节点' }}</h1>
             <p v-if="conversationSubtitle">{{ conversationSubtitle }}</p>
           </div>
-          <div class="run-meta">
+          <div v-if="!props.embedded" class="run-meta">
             <ElButton :icon="View" :disabled="!activeRunId" @click="tracePanels = ['trace']"
               >查看执行轨迹</ElButton
             >
           </div>
         </section>
 
-        <section class="context-chips">
+        <section v-if="!props.embedded" class="context-chips">
           <span class="primary-chip">当前问题：{{ currentTask }}</span>
           <span>文件资料 {{ selectedEvidence.length }}</span>
           <span>已确认 {{ workspace?.contextSummary.confirmedEvidenceCount || 0 }}</span>
@@ -1470,7 +1470,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <ElCollapse v-model="tracePanels" class="trace-collapse">
+        <ElCollapse v-if="!props.embedded" v-model="tracePanels" class="trace-collapse">
           <ElCollapseItem name="trace">
             <template #title>
               <span class="trace-title"
@@ -1766,7 +1766,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .review-b-shell.is-embedded .conversation-timeline {
