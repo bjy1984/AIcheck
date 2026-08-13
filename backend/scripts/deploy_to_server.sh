@@ -99,7 +99,7 @@ import hashlib, pathlib
 print('容器内 routes.py:', hashlib.sha256(pathlib.Path('/app/apps/api/routes.py').read_bytes()).hexdigest()[:16])
 \"
   "
-  local_hash=$(shasum -a 256 "$REPO_ROOT/backend/apps/api/routes.py" | cut -c1-16)
+  local_hash=$(LC_ALL=C LANG=C shasum -a 256 "$REPO_ROOT/backend/apps/api/routes.py" | cut -c1-16)
   echo "  本地 routes.py:   $local_hash"
 }
 
