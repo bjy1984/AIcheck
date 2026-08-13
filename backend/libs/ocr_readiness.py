@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -93,6 +94,27 @@ def _latest_parse_result(repo: Any, document_version_id: str | None) -> dict[str
     )
 
 
+# 抽取管线在没做字段识别时，会把正文切片按 OCR文本 / OCR文本2 … 顺序编号塞进 fields。
+# 这些不是业务字段——监检要的是「证书编号」「设计压力」这类。线上实测：一份
+# ocrReadiness=ready、bbox 100% 的资料，字段全是 OCR文本1..5、置信度全 0，
+# 打开对审查毫无用处，而系统告诉监检「证据就绪」。
+_PLACEHOLDER_FIELD_PATTERN = re.compile(r"^(?:OCR)?(?:文本|片段|text|fragment|field)\s*_?\d*$", re.IGNORECASE)
+
+
+def is_placeholder_field_name(field_name: Any) -> bool:
+    """字段名是否只是「第 N 段文本」这类占位命名。"""
+    return bool(_PLACEHOLDER_FIELD_PATTERN.match(str(field_name or "").strip()))
+
+
+def business_field_rows(field_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """滤掉占位命名后，真正可用于审查的字段。"""
+    return [
+        item
+        for item in field_rows
+        if not is_placeholder_field_name(item.get("fieldName") or item.get("name") or item.get("key"))
+    ]
+
+
 def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[str, Any]:
     document_version_id = str(document.get("currentVersionId") or "") or None
     parse_result = _latest_parse_result(repo, document_version_id)
@@ -181,6 +203,18 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
                 "targetId": document.get("id"),
             }
         )
+    elif field_rows and not business_field_rows(field_rows):
+        # 有字段产物，但全是 OCR文本1..N 这类占位命名——等于没做字段识别。
+        # 判为 ready 会让监检以为可以直接核对，打开才发现无从下手。
+        status = "incomplete"
+        issues.append(
+            {
+                "code": "OCR_FIELDS_ARE_PLACEHOLDERS",
+                "message": "OCR 只切出了文本片段，没有识别出业务字段（如证书编号、设计压力），不能作为审查依据。",
+                "actionKey": "review_ocr",
+                "targetId": document.get("id"),
+            }
+        )
     else:
         status = "ready"
 
@@ -200,6 +234,7 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
         "outcomeStatus": parse_result_outcome_status(parse_result) if parse_result else None,
         "qualityStatus": ((parse_result or {}).get("quality") or {}).get("status"),
         "fieldCount": len(field_rows),
+        "businessFieldCount": len(business_field_rows(field_rows)),
         "fragmentCount": len(fragment_rows),
         "tableCount": len(table_rows),
         "sealCount": len(seal_rows),

@@ -2515,12 +2515,26 @@ class InMemoryRepository:
             for item in loaded.get("project_node_clause_packages") or []
             if isinstance(item, dict)
         }
+        # 只有「本身带条款包」的业务包才谈得上绑定缺失。
+        # compliance_audit_v1 / device_inspection_v1 没有 standardClausePackages，
+        # 它们的项目永远绑不出东西——若当成损坏，每次启动都会重试一遍，
+        # 把启动时间从 30 秒拉到 80 秒（实测线上 502 的直接原因）。
+        #
+        # 判据取自 YAML 业务包而不是「已发布 release」：首次修复时 release 还没发布，
+        # 拿发布结果当前提会自我否定。
+        packs_with_clauses = {
+            str(summary["id"])
+            for summary in list_business_packs()
+            if load_business_pack(summary["id"]).get("standardClausePackages")
+        }
         orphaned_project_ids = set()
         for project in loaded.get("projects", []):
             project_id = str(project.get("id") or "")
             if not project_id or project_id in bound_project_ids:
                 continue
             pack_id = str(project.get("businessPackId") or "")
+            if pack_id not in packs_with_clauses:
+                continue  # 该业务包没有条款包，绑不出东西，不是损坏
             version = str(project.get("businessPackVersion") or "")
             if version and f"{pack_id}@{version}" in published_releases:
                 continue  # 钉住的版本确实存在，只是还没绑——留给正常播种路径

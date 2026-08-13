@@ -214,3 +214,59 @@ def test_repair_leaves_alone_a_project_pinned_to_an_existing_release() -> None:
     }
     assert repo.repair_clause_binding_drift(state) is False
     assert state["projects"][0]["businessPackVersion"] == "2026.06.01"
+
+
+def test_projects_of_packs_without_clause_packages_are_not_treated_as_broken() -> None:
+    """业务包本身没有条款包时，项目绑不出东西——那不是损坏。
+
+    线上实测过代价：compliance_audit_v1 / device_inspection_v1 的两个 fixture 项目
+    每次启动都被判为孤儿、重绑、仍然 0 条、下次再来，把启动从 30 秒拉到 80 秒，
+    直接导致部署验证 502。
+    """
+    state = {
+        "projects": [
+            {
+                "id": "P-NO-CLAUSE-PACK",
+                "businessPackId": "compliance_audit_v1",
+                "businessPackVersion": "2026.06.01",
+            }
+        ],
+        "project_node_clause_packages": [],
+        "standard_clause_packages_db": [
+            {
+                "id": "PKG-1",
+                "releaseId": "engineering_inspection_v1@2026.07.16",
+                "lifecycleStatus": "published",
+                "nodeId": 24,
+                "packageId": "CLAUSE-PKG-R24",
+                "sourceRuleId": "R24",
+                "snapshotHash": "h",
+            }
+        ],
+    }
+    assert repo.repair_clause_binding_drift(state) is False
+    assert state["projects"][0]["businessPackVersion"] == "2026.06.01"
+
+
+def test_repair_is_idempotent_across_restarts() -> None:
+    """修完一次，第二次必须是 no-op——否则每次启动都要重跑一遍。"""
+    pack = None
+    for summary in list_business_packs():
+        candidate = load_business_pack(summary["id"])
+        if candidate.get("standardClausePackages"):
+            pack = candidate
+            break
+    assert pack is not None
+    state = {
+        "projects": [
+            {
+                "id": "P-ONCE",
+                "businessPackId": pack["id"],
+                "businessPackVersion": "2026.06.99",
+                "updatedAt": "2026-06-26 09:30:00",
+            }
+        ],
+        "project_node_clause_packages": [],
+    }
+    assert repo.repair_clause_binding_drift(state) is True
+    assert repo.repair_clause_binding_drift(state) is False, "第二次不该再修"
