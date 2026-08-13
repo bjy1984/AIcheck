@@ -4736,7 +4736,18 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="aicheck-static-viewport" v-loading="loading">
-    <div class="aicheck-page app-shell">
+    <div
+      :class="[
+        'aicheck-page',
+        'app-shell',
+        {
+          'is-inspection-ai-page':
+            role === 'inspection' &&
+            activeInspectionWorkspaceView === 'ai' &&
+            activeWorkbenchSection === 'node'
+        }
+      ]"
+    >
       <a class="skip-main" href="#aicheck-workbench-main">跳到主内容</a>
       <header class="topbar">
         <div class="brand">
@@ -4875,6 +4886,10 @@ onBeforeUnmount(() => {
             {
               'has-flush-audit-directory':
                 role === 'inspection' && activeWorkbenchSection === 'node',
+              'is-inspection-ai-workspace':
+                role === 'inspection' &&
+                activeInspectionWorkspaceView === 'ai' &&
+                activeWorkbenchSection === 'node',
               'is-workbench-page-leaving': workbenchPageTransitionPhase === 'leaving',
               'is-workbench-page-hidden': workbenchPageTransitionPhase === 'hidden',
               'is-workbench-page-entering': workbenchPageTransitionPhase === 'entering'
@@ -6957,6 +6972,17 @@ onBeforeUnmount(() => {
 .inspection-ai-review-region,
 .inspection-review-list-region {
   min-width: 0;
+}
+
+.center.is-inspection-ai-workspace {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.center.is-inspection-ai-workspace > .inspection-ai-review-region {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .left {
@@ -9562,6 +9588,26 @@ h3 {
     grid-template-rows: auto 1fr;
     height: auto;
     min-height: 100vh;
+  }
+
+  .aicheck-page.app-shell.is-inspection-ai-page {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .aicheck-page.app-shell.is-inspection-ai-page .workspace {
+    display: grid;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aicheck-page.app-shell.is-inspection-ai-page .center {
+    height: 100%;
+    min-height: 0;
   }
 
   .topbar,

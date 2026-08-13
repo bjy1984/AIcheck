@@ -715,6 +715,32 @@ test.describe('AIcheck route smoke', () => {
     await expect(page.locator('.project-title-select')).toHaveCount(1)
     await expectNoPageOverflow(page)
 
+    const center = page.locator('#aicheck-workbench-main')
+    const timeline = page.locator('.conversation-timeline')
+    const contextPanel = page.locator('.context-panel')
+    await expect
+      .poll(() =>
+        Promise.all([
+          center.evaluate((element) => getComputedStyle(element).overflowY),
+          timeline.evaluate((element) => getComputedStyle(element).overflowY),
+          contextPanel.evaluate((element) => getComputedStyle(element).overflowY)
+        ])
+      )
+      .toEqual(['hidden', 'auto', 'auto'])
+    const timelineTopBeforeRightScroll = await timeline.evaluate(
+      (element) => element.getBoundingClientRect().top
+    )
+    await contextPanel.evaluate((element) => {
+      element.scrollTop = Math.min(120, element.scrollHeight - element.clientHeight)
+    })
+    await expect
+      .poll(() => contextPanel.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0)
+    expect(await center.evaluate((element) => element.scrollTop)).toBe(0)
+    expect(await timeline.evaluate((element) => element.getBoundingClientRect().top)).toBe(
+      timelineTopBeforeRightScroll
+    )
+
     await page.getByRole('button', { name: '审查列表', exact: true }).click()
     await expect(page).toHaveURL(/#\/workbench\/inspection\?.*view=list/)
     await expect(page.locator('.inspection-review-list-region')).toBeVisible()

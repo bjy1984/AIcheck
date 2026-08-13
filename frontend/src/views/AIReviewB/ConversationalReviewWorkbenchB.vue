@@ -1747,6 +1747,40 @@ onBeforeUnmount(() => {
   max-height: none;
 }
 
+.review-b-shell.is-embedded {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.review-b-shell.is-embedded .review-b-layout {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+.review-b-shell.is-embedded .conversation-column {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.review-b-shell.is-embedded .conversation-timeline {
+  max-height: none;
+  min-height: 0;
+}
+
+.review-b-shell.is-embedded .context-panel {
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .node-sidebar,
 .context-panel {
   position: sticky;
