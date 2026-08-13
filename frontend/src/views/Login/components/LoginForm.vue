@@ -37,6 +37,8 @@ const rules = {
   password: [required()]
 }
 
+const loading = ref(false)
+
 const schema = reactive<FormSchema[]>([
   {
     field: 'title',
@@ -67,7 +69,8 @@ const schema = reactive<FormSchema[]>([
       name: 'username',
       autocomplete: 'username',
       placeholder: '请输入账号',
-      prefixIcon: <Icon icon="vi-ep:user" />
+      prefixIcon: <Icon icon="vi-ep:user" />,
+      disabled: loading
     }
   },
   {
@@ -86,6 +89,7 @@ const schema = reactive<FormSchema[]>([
       },
       placeholder: '请输入密码',
       prefixIcon: <Icon icon="vi-ep:lock" />,
+      disabled: loading,
       // 按下enter键触发登录
       onKeydown: (_e: any) => {
         if (_e.key === 'Enter') {
@@ -130,8 +134,21 @@ const schema = reactive<FormSchema[]>([
           return (
             <>
               <div class="flex justify-between items-center w-[100%]">
-                <ElCheckbox v-model={remember.value} label={t('login.remember')} size="small" />
-                <ElLink type="primary" underline={false} onClick={contactAdministrator}>
+                <ElCheckbox
+                  v-model={remember.value}
+                  label={t('login.remember')}
+                  size="small"
+                  disabled={loading.value}
+                />
+                <ElLink
+                  type="primary"
+                  underline={false}
+                  disabled={loading.value}
+                  aria-disabled={loading.value}
+                  onClick={() => {
+                    if (!loading.value) contactAdministrator()
+                  }}
+                >
                   联系管理员重置
                 </ElLink>
               </div>
@@ -154,6 +171,7 @@ const schema = reactive<FormSchema[]>([
               <div class="w-[100%]">
                 <BaseButton
                   loading={loading.value}
+                  disabled={loading.value}
                   type="primary"
                   class="w-[100%] auth-submit-button"
                   onClick={signIn}
@@ -211,8 +229,6 @@ onMounted(() => {
 const { formRegister, formMethods } = useForm()
 const { getFormData, getElFormExpose, setValues } = formMethods
 
-const loading = ref(false)
-
 const redirect = ref<string>('')
 
 watch(
@@ -237,64 +253,67 @@ watch(
 
 // 登录
 const signIn = async () => {
-  const formRef = await getElFormExpose()
-  await formRef?.validate(async (isValid) => {
-    if (isValid) {
-      loading.value = true
-      errorMessage.value = ''
-      const formData = await getFormData<UserLoginType>()
+  if (loading.value) return
 
-      try {
-        const res = await loginApi(formData)
+  loading.value = true
+  errorMessage.value = ''
+  let navigated = false
 
-        if (res) {
-          // 是否记住我 - 只保存用户名
-          if (unref(remember)) {
-            userStore.setLoginInfo(formData.username)
-          } else {
-            userStore.setLoginInfo(undefined)
-          }
-          userStore.setRememberMe(unref(remember))
-          const loginResult = res.data
-          userStore.setToken(loginResult.token ? `Bearer ${loginResult.token}` : '')
-          userStore.setUserInfo(loginResult.user)
-          // 切换账号前先清掉上一会话残留的动态路由，避免落到 404
-          resetRouter()
-          permissionStore.setIsAddRouters(false)
-          if (loginResult.user.mustChangePassword) {
-            await push('/change-password')
-            return
-          }
-          // 是否使用动态路由
-          if (appStore.getDynamicRouter) {
-            getRole()
-          } else {
-            await permissionStore
-              .generateRoutes('static', undefined, loginResult.user.role)
-              .catch(() => {})
-            permissionStore.getAddRouters.forEach((route) => {
-              addRoute(route as RouteRecordRaw) // 动态添加可访问路由表
-            })
-            permissionStore.setIsAddRouters(true)
-            push({
-              path: resolveRoleEntryPath(
-                loginResult.user.role,
-                redirect.value || loginResult.defaultPath || loginResult.user.defaultPath
-              )
-            })
-          }
-        }
-      } catch (error: unknown) {
-        errorMessage.value = getAicheckErrorMessage(error, '登录失败，请检查用户名和密码')
-      } finally {
-        loading.value = false
-      }
+  try {
+    const formRef = await getElFormExpose()
+    const isValid = formRef ? await formRef.validate().catch(() => false) : false
+    if (!isValid) return
+
+    const formData = await getFormData<UserLoginType>()
+    const res = await loginApi(formData)
+    if (!res) return
+
+    // 是否记住我 - 只保存用户名
+    if (unref(remember)) {
+      userStore.setLoginInfo(formData.username)
+    } else {
+      userStore.setLoginInfo(undefined)
     }
-  })
+    userStore.setRememberMe(unref(remember))
+    const loginResult = res.data
+    userStore.setToken(loginResult.token ? `Bearer ${loginResult.token}` : '')
+    userStore.setUserInfo(loginResult.user)
+    // 切换账号前先清掉上一会话残留的动态路由，避免落到 404
+    resetRouter()
+    permissionStore.setIsAddRouters(false)
+    if (loginResult.user.mustChangePassword) {
+      await push('/change-password')
+      navigated = true
+      return
+    }
+    // 是否使用动态路由
+    if (appStore.getDynamicRouter) {
+      navigated = await getRole()
+    } else {
+      await permissionStore
+        .generateRoutes('static', undefined, loginResult.user.role)
+        .catch(() => {})
+      permissionStore.getAddRouters.forEach((route) => {
+        addRoute(route as RouteRecordRaw) // 动态添加可访问路由表
+      })
+      permissionStore.setIsAddRouters(true)
+      await push({
+        path: resolveRoleEntryPath(
+          loginResult.user.role,
+          redirect.value || loginResult.defaultPath || loginResult.user.defaultPath
+        )
+      })
+      navigated = true
+    }
+  } catch (error: unknown) {
+    errorMessage.value = getAicheckErrorMessage(error, '登录失败，请检查用户名和密码')
+  } finally {
+    if (!navigated) loading.value = false
+  }
 }
 
 // 获取角色信息
-const getRole = async () => {
+const getRole = async (): Promise<boolean> => {
   const formData = await getFormData<UserLoginType>()
   const params = {
     roleName: formData.username
@@ -314,13 +333,15 @@ const getRole = async () => {
       addRoute(route as RouteRecordRaw) // 动态添加可访问路由表
     })
     permissionStore.setIsAddRouters(true)
-    push({
+    await push({
       path: resolveRoleEntryPath(
         userStore.getUserInfo?.role,
         redirect.value || userStore.getUserInfo?.defaultPath || permissionStore.addRouters[0].path
       )
     })
+    return true
   }
+  return false
 }
 </script>
 

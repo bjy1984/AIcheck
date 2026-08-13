@@ -689,6 +689,52 @@ test.describe('AIcheck route smoke', () => {
     await expect(page).toHaveURL(/#\/login/)
   })
 
+  test('login enters a complete loading state immediately and prevents duplicate submissions', async ({
+    page
+  }) => {
+    let releaseLogin!: () => void
+    const loginPending = new Promise<void>((resolve) => {
+      releaseLogin = resolve
+    })
+    let requestCount = 0
+
+    await page.route('**/api/auth/login', async (route) => {
+      requestCount += 1
+      await loginPending
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify(businessError(401, '账号或密码错误', 'AUTH_REQUIRED'))
+      })
+    })
+
+    const loginInputs = await gotoLoginPage(page)
+    const remember = page.getByRole('checkbox', { name: '记住我' })
+    const resetLink = page.locator('.el-link').filter({ hasText: '联系管理员重置' })
+    const loginButton = page.getByRole('button', { name: /^登录$/ })
+    await loginInputs.nth(0).fill('invalid-user')
+    await loginInputs.nth(1).fill('invalid-password')
+
+    await loginButton.evaluate((button) => {
+      ;(button as HTMLButtonElement).click()
+      ;(button as HTMLButtonElement).click()
+    })
+    await expect(loginInputs.nth(0)).toBeDisabled()
+    await expect(loginInputs.nth(1)).toBeDisabled()
+    await expect(remember).toBeDisabled()
+    await expect(resetLink).toHaveAttribute('aria-disabled', 'true')
+    await expect(loginButton).toBeDisabled()
+    await expect.poll(() => requestCount).toBe(1)
+
+    releaseLogin()
+    await expect(page.getByText(/账号或密码错误/).first()).toBeVisible()
+    await expect(loginInputs.nth(0)).toBeEnabled()
+    await expect(loginInputs.nth(1)).toBeEnabled()
+    await expect(remember).toBeEnabled()
+    await expect(resetLink).not.toHaveAttribute('aria-disabled', 'true')
+    await expect(loginButton).toBeEnabled()
+  })
+
   test('login HTTP errors preserve the business envelope', async ({ page }) => {
     await page.route('**/api/auth/login', async (route) => {
       await route.fulfill({
