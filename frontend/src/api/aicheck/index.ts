@@ -3078,7 +3078,7 @@ export const getDocumentOfficePreviewApi = (
   documentId: string
 ): Promise<IResponse<OfficePreviewPayload>> => {
   return request.get({
-    url: `/projects/${projectId}/documents/${documentId}/office-preview`,
+    url: `/api/projects/${projectId}/documents/${documentId}/office-preview`,
     headers: {
       // 未部署预览服务时后端返回 503，由调用方自行呈现，不弹全局错误提示
       'X-Silent-Http-Error': 'true',

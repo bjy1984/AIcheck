@@ -511,9 +511,9 @@ watch(visible, (open) => {
               class="side-alert"
             />
             <ElTabs v-model="sideTab" class="side-tabs">
-              <ElTabPane :label="`识别字段 (${businessFieldItems.length})`" name="fields">
+              <ElTabPane :label="`OCR 结构化内容 (${businessFieldItems.length})`" name="fields">
                 <div v-if="!locatableItems.length" class="side-empty">
-                  <ElEmpty :image-size="60" description="暂无识别字段" />
+                  <ElEmpty :image-size="60" description="暂无 OCR 结构化内容" />
                 </div>
                 <template v-else>
                   <ElAlert
