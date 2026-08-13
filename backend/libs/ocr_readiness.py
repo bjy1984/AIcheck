@@ -203,20 +203,32 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
                 "targetId": document.get("id"),
             }
         )
-    elif field_rows and not business_field_rows(field_rows):
-        # 有字段产物，但全是 OCR文本1..N 这类占位命名——等于没做字段识别。
-        # 判为 ready 会让监检以为可以直接核对，打开才发现无从下手。
-        status = "incomplete"
+    else:
+        status = "ready"
+
+    # 业务字段可用性是**独立于产物完整性**的一件事，不能压进同一个 status。
+    #
+    # status=ready 的语义是「OCR 产物完整且可定位」——有文字、有坐标就成立，
+    # 这是既有契约（tests/test_ocr_readiness.py 明确钉住）。但监检看到「证据就绪」
+    # 时想的是「可以拿来核对了」，两者并不等价：线上一份 ready + bbox 100% 的资料，
+    # 字段是 OCR文本1..5、置信度全 0，打开根本无从核对。
+    #
+    # 所以这里不改 status，而是单独给出信号，由界面如实呈现
+    # 「证据就绪，但未识别出业务字段」。
+    business_fields = business_field_rows(field_rows)
+    if status == "ready" and not business_fields:
         issues.append(
             {
-                "code": "OCR_FIELDS_ARE_PLACEHOLDERS",
-                "message": "OCR 只切出了文本片段，没有识别出业务字段（如证书编号、设计压力），不能作为审查依据。",
+                "code": "OCR_BUSINESS_FIELDS_NOT_EXTRACTED",
+                "level": "advisory",
+                "message": (
+                    "OCR 产物完整，但只切出了文本片段，未识别出业务字段"
+                    "（如证书编号、设计压力）；核对前需人工补录或重跑抽取。"
+                ),
                 "actionKey": "review_ocr",
                 "targetId": document.get("id"),
             }
         )
-    else:
-        status = "ready"
 
     structure_status = str((stages_by_name.get("structure_scan") or {}).get("status") or "")
     seal_status = str((stages_by_name.get("seal_signature_scan") or {}).get("status") or "")
@@ -234,7 +246,8 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
         "outcomeStatus": parse_result_outcome_status(parse_result) if parse_result else None,
         "qualityStatus": ((parse_result or {}).get("quality") or {}).get("status"),
         "fieldCount": len(field_rows),
-        "businessFieldCount": len(business_field_rows(field_rows)),
+        "businessFieldCount": len(business_fields),
+        "businessFieldsExtracted": bool(business_fields),
         "fragmentCount": len(fragment_rows),
         "tableCount": len(table_rows),
         "sealCount": len(seal_rows),

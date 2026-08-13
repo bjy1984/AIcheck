@@ -60,6 +60,9 @@ PY
   "
 
   echo "==> 重建 API 镜像并重建容器"
+  # 启动后轮询 /api/readyz 而不是固定 sleep：启动耗时随数据量与迁移内容变化，
+  # 写死秒数迟早等不及。实测踩过两次——容器已 Up 但仍在初始化，验证直接报 502
+  # 「就绪检查未通过」，而服务其实好好的。
   # 凭证一律从 /home/dev-bjy 下的 600 权限文件读，不写进仓库、不进命令行。
   # 传法用 docker --env-file 而非 shell 的 source：凭证里含特殊字符，
   # source 会把它们当 shell 语法解析（实测报过 command not found）。
@@ -80,7 +83,10 @@ PY
       --env-file /home/dev-bjy/aicheck-runtime.env \
       -p 127.0.0.1:8000:8000 \
       aicheck-api:local uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 >/dev/null
-    sleep 12
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+      sleep 5
+      curl -s --max-time 10 http://127.0.0.1:${GATEWAY_PORT}/api/readyz | grep -q ready.:true && break
+    done
   "
   # 确认容器真的换成了新代码，而不是又跑起旧实例
   echo "==> 校验容器代码与本地一致"
