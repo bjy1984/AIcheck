@@ -14,7 +14,7 @@
 #   bash scripts/deploy_to_server.sh --frontend # 只更新前端静态资源
 set -euo pipefail
 
-HOST="${AICHECK_DEPLOY_HOST:-aicheck-prod-new}"
+HOST="${AICHECK_DEPLOY_HOST:-dev-bjy}"
 REMOTE_HOME=/home/dev-bjy
 SERVER_DATA_ROOT="${AICHECK_SERVER_DATA_ROOT:-$REMOTE_HOME/aicheck-data}"
 # 网关对外端口（安全组放行的是 8081；改端口时这里要跟着改）
