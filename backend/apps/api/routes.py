@@ -3556,6 +3556,8 @@ def safe_ai_run_view(run: dict[str, Any]) -> dict[str, Any]:
             "promptHash",
             "responseHash",
             "payloadPolicy",
+            # 本次给了模型哪些工具——裁剪会改变判定，复盘时要能看见
+            "toolScope",
         )
         if prompt_audit.get(key) is not None
     }

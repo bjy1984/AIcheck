@@ -22,6 +22,7 @@ from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
 from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.r12_agent import (
     apply_r12_human_input,
@@ -2546,11 +2547,18 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         rule=current_rule,
         prompt_template=prompt_template,
     )
+    # 只下发本节点规则用得上的工具。全量 111 个占 9740 tokens ≈ 41% 预算，
+    # 挂 0 份资料就已经吃掉近一半——节点 24 那次 REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED
+    # 就是这么来的。裁剪一律 fail-open：认不出就送全量，见 tool_scope 的说明。
+    scoped_tools, tool_scope_meta = scoped_runtime_tool_catalog(
+        runtime_tool_catalog(), pack, review_run.get("nodeId")
+    )
+    context["toolScope"] = tool_scope_meta
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
         "auditInputMode": audit_runtime["mode"],
         "auditRuntime": audit_runtime_public_config(mode=audit_runtime["mode"]),
-        "availableRuntimeTools": runtime_tool_catalog(),
+        "availableRuntimeTools": scoped_tools,
         "runtimeToolResults": {
             key: compact_tool_output(value)
             for key, value in (context.get("runtimeToolResults") or {}).items()
@@ -2655,6 +2663,9 @@ def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any
         "criticPrompt": (prompt.get("template") or {}).get("criticPrompt") or "",
         "messages": messages,
         "payloadPolicy": "full_prompt_stored_for_audit",
+        # 本次给了模型哪些工具。裁剪会改变它能取到什么证据，也就会改变判定——
+        # 日后复盘一个可疑结论时，这是「当时它手里有什么」的唯一记录。
+        "toolScope": context.get("toolScope") or {},
     }
 
 
