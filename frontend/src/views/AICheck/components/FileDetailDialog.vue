@@ -16,7 +16,7 @@ import {
   ElTag
 } from 'element-plus'
 import { getDocumentOfficePreviewApi, getDocumentOriginalBlobApi } from '@/api/aicheck'
-import type { DocumentDetailPayload, OcrSealItem } from '@/api/aicheck'
+import type { DocumentDetailPayload, OcrSealItem, OcrStructuredTable } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
@@ -408,6 +408,19 @@ const structuredIsEmpty = computed(
     !fragmentItems.value.length
 )
 
+/* 参数表放大。
+ *
+ * 侧栏只有约 400px，而线上一份产品质量证明的表是 17 行 × 16 列——挤在那里
+ * 逐列横滚，监检没法对照「规格 / 材质 / 炉批号」这类跨列关系。表格是这一屏
+ * 里唯一需要二维阅读的东西，给它一个铺得开的地方看。 */
+const zoomedTable = ref<OcrStructuredTable | null>(null)
+const zoomedTableVisible = computed({
+  get: () => Boolean(zoomedTable.value),
+  set: (open: boolean) => {
+    if (!open) zoomedTable.value = null
+  }
+})
+
 const blocksExpanded = ref(false)
 
 const businessFieldItems = computed(() =>
@@ -749,6 +762,15 @@ watch(visible, (open) => {
                         >
                           候选
                         </ElTag>
+                        <ElButton
+                          v-if="table.normalizedRows.length"
+                          class="ocr-table-zoom"
+                          text
+                          size="small"
+                          @click.stop="zoomedTable = table"
+                        >
+                          放大
+                        </ElButton>
                       </button>
                       <!-- 用 normalizedRows 自己画表，不渲染引擎产出的 html（XSS 面） -->
                       <div v-if="table.normalizedRows.length" class="ocr-table-scroll">
@@ -982,6 +1004,33 @@ watch(visible, (open) => {
       </template>
 
       <ElEmpty v-else description="请选择文件" />
+    </div>
+  </ElDialog>
+
+  <!-- 放大后的参数表：宽表在侧栏里读不了，给它铺得开的地方 -->
+  <ElDialog v-model="zoomedTableVisible" title="表格详情" width="min(1200px, 92vw)" append-to-body>
+    <div v-if="zoomedTable" class="zoom-table-meta">
+      <span v-if="zoomedTable.pageNo">第 {{ zoomedTable.pageNo }} 页</span>
+      <span v-if="zoomedTable.rows && zoomedTable.columns">
+        {{ zoomedTable.rows }} 行 × {{ zoomedTable.columns }} 列
+      </span>
+      <ElTag v-if="zoomedTable.matchedRequired" size="small" type="success" effect="plain">
+        可作必备表格
+      </ElTag>
+    </div>
+    <div v-if="zoomedTable" class="zoom-table-scroll">
+      <table class="ocr-table is-zoomed">
+        <thead>
+          <tr>
+            <th v-for="col in zoomedTable.columnNames" :key="col">{{ col }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, index) in zoomedTable.normalizedRows" :key="index">
+            <td v-for="col in zoomedTable.columnNames" :key="col">{{ row[col] || '' }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </ElDialog>
 </template>
@@ -1271,6 +1320,42 @@ watch(visible, (open) => {
   line-height: 1.6;
   color: #64748b;
   word-break: break-all;
+}
+
+.ocr-table-zoom {
+  margin-left: auto;
+}
+
+.zoom-table-meta {
+  display: flex;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #64748b;
+  gap: 10px;
+  align-items: center;
+}
+
+.zoom-table-scroll {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+/* 放大态不再 nowrap：有横向空间了，让长单元格换行比逐列横滚好读 */
+.ocr-table.is-zoomed {
+  font-size: 13px;
+}
+
+.ocr-table.is-zoomed th,
+.ocr-table.is-zoomed td {
+  padding: 6px 10px;
+  white-space: normal;
+}
+
+/* 表头吸顶：17 行往下翻时列名不能跟着滚走，否则对不上是哪一列 */
+.ocr-table.is-zoomed th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 /* 可点定位的条目：按钮外观归零，选中时用左侧色条标出 */
