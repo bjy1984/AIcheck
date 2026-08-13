@@ -108,6 +108,24 @@ def table_column_names(item: dict[str, Any], normalized: list[dict[str, Any]]) -
     return names
 
 
+def table_grid_columns(item: dict[str, Any]) -> int:
+    """引擎网格的真实列数。
+
+    覆盖率必须拿它当分母，不能拿渲染出来的列数。线上那份质量证明书网格是 33 列，
+    但 normalizedRows 只归出 6 个键——按 6 算，4 个表头标记就成了 67% 覆盖率，
+    稀疏表头照样被判成可信。按 33 算才是真相：12%。
+    """
+    declared = item.get("columns")
+    if isinstance(declared, int) and declared > 0:
+        return declared
+    cols = [
+        int(cell.get("col") or 0)
+        for cell in item.get("cells") or []
+        if isinstance(cell, dict)
+    ]
+    return max(cols) + 1 if cols else 0
+
+
 def table_header_is_reliable(item: dict[str, Any], column_count: int) -> bool:
     """这张表到底有没有可用的表头。
 
@@ -159,7 +177,7 @@ def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
                 "columns": item.get("columns"),
                 "columnNames": column_names,
                 # 表头不可信时界面不画表头行——见 table_header_is_reliable
-                "headerReliable": table_header_is_reliable(item, len(column_names)),
+                "headerReliable": table_header_is_reliable(item, table_grid_columns(item)),
                 "normalizedRows": normalized,
                 "cells": cells if not normalized else [],
                 "bbox": _clean_bbox(item.get("bbox")),

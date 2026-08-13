@@ -255,23 +255,34 @@ def test_signatures_stay_after_seals_even_on_earlier_pages() -> None:
 def test_sparse_header_is_marked_unreliable() -> None:
     """键值式表格的零星 isHeader 不能当表头。
 
-    线上那份质量证明书 33 列只标了 4 个 isHeader，其中「沈阳宝钢东北贸易有限
-    公司」明显是值不是列名。照单全收会把供货单位名字印成列标题——凭空发明出
-    一个并不存在的结构。宁可不画表头。
+    照搬线上那份质量证明书的真实数字：网格 33 列，只有 4 个单元格标了 isHeader，
+    其中「沈阳宝钢东北贸易有限公司」「输送管」明显是值不是列名；normalizedRows
+    归出 6 个键。
+
+    这组数字专门钉住覆盖率的**分母**：按 6 个渲染列算，4 个标记是 67%，稀疏表头
+    照样被判可信（线上就是这么错的）；按 33 列网格算才是真相，12%。
     """
     parse_result = {
         "tables": [
             {
                 "tableId": "T-KV",
+                "columns": 33,
                 "cells": [
                     {"row": 0, "col": 0, "text": "订货单位", "isHeader": True},
                     {"row": 0, "col": 4, "text": "沈阳宝钢东北贸易有限公司", "isHeader": True},
+                    {"row": 0, "col": 19, "text": "产品名称", "isHeader": True},
+                    {"row": 0, "col": 22, "text": "输送管", "isHeader": True},
                     {"row": 1, "col": 0, "text": "收货单位", "isHeader": False},
-                    {"row": 1, "col": 4, "text": "安丰管业", "isHeader": False},
                 ],
                 "normalizedRows": [
-                    {"订货单位": "a", "沈阳宝钢东北贸易有限公司": "b", "c3": "c", "c4": "d",
-                     "c5": "e", "c6": "f"}
+                    {
+                        "订货单位": "a",
+                        "沈阳宝钢东北贸易有限公司": "b",
+                        "产品名称": "c",
+                        "输送管": "d",
+                        "输送管_26": "e",
+                        "输送管_29": "f",
+                    }
                 ],
             }
         ]
@@ -285,6 +296,7 @@ def test_full_header_row_stays_reliable() -> None:
         "tables": [
             {
                 "tableId": "T-GRID",
+                "columns": 2,
                 "cells": [
                     {"row": 0, "col": 0, "text": "序号", "isHeader": True},
                     {"row": 0, "col": 1, "text": "管道材料", "isHeader": True},
@@ -303,6 +315,7 @@ def test_engine_without_header_flags_keeps_row_zero_convention() -> None:
         "tables": [
             {
                 "tableId": "T-NOFLAG",
+                "columns": 2,
                 "cells": [
                     {"row": 0, "col": 0, "text": "甲"},
                     {"row": 0, "col": 1, "text": "乙"},
