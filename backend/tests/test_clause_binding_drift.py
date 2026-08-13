@@ -143,3 +143,74 @@ def test_shipped_business_packs_are_internally_consistent() -> None:
             assert re.fullmatch(r"CLAUSE-PKG-R\d+", str(package.get("packageId") or "")), (
                 f"packageId 命名不规范：{package.get('packageId')}"
             )
+
+
+# ---- 「一条绑定都没有」是同一类损坏的另一种形态 ----
+
+
+def test_repair_binds_projects_that_have_no_clause_bindings_at_all() -> None:
+    """钉住的版本已不存在时，项目会既没绑定也不被矛盾检测挑中。
+
+    线上就这么漏掉了主项目 P-2026-HDCP-001：钉在 2026.06.99，而库里只发布了
+    2026.07.16。后果不是报错——是每次打开节点都掉进知识检索兜底，实测每个节点
+    首次 5.5 秒。
+    """
+    pack = None
+    for summary in list_business_packs():
+        candidate = load_business_pack(summary["id"])
+        if candidate.get("standardClausePackages"):
+            pack = candidate
+            break
+    assert pack is not None
+
+    state = {
+        "projects": [
+            {
+                "id": "P-ORPHANED",
+                "businessPackId": pack["id"],
+                "businessPackVersion": "2026.06.99",  # 该 release 不存在
+                "updatedAt": "2026-06-26 09:30:00",
+            }
+        ],
+        "project_node_clause_packages": [],
+    }
+    assert repo.repair_clause_binding_drift(state) is True
+    bindings = [
+        item
+        for item in state["project_node_clause_packages"]
+        if item.get("projectId") == "P-ORPHANED"
+    ]
+    assert bindings, "没有绑定的项目必须被重绑，否则节点依据只能靠慢速检索兜底"
+    assert clause_binding_inconsistencies(state) == []
+    assert state["projects"][0]["businessPackVersion"] == pack["version"]
+
+
+def test_repair_leaves_alone_a_project_pinned_to_an_existing_release() -> None:
+    """钉在**存在**的 release 上、只是还没绑——交给正常播种路径，不在这里抢着做。
+
+    这条区分很重要：把「版本存在但未绑」也当成损坏，就等于用修 bug 的名义
+    改变项目所依据的标准版本。
+    """
+    state = {
+        "projects": [
+            {
+                "id": "P-PINNED-OK",
+                "businessPackId": "engineering_inspection_v1",
+                "businessPackVersion": "2026.06.01",
+            }
+        ],
+        "project_node_clause_packages": [],
+        "standard_clause_packages_db": [
+            {
+                "id": "PKG-1",
+                "releaseId": "engineering_inspection_v1@2026.06.01",
+                "lifecycleStatus": "published",
+                "nodeId": 24,
+                "packageId": "CLAUSE-PKG-R24",
+                "sourceRuleId": "R24",
+                "snapshotHash": "h",
+            }
+        ],
+    }
+    assert repo.repair_clause_binding_drift(state) is False
+    assert state["projects"][0]["businessPackVersion"] == "2026.06.01"

@@ -2481,17 +2481,56 @@ class InMemoryRepository:
 
         ensure_clause_state(loaded)
         corrupt = clause_binding_inconsistencies(loaded)
-        if not corrupt:
-            return False
-
         corrupt_project_ids = {item["projectId"] for item in corrupt if item["projectId"]}
-        LOGGER.warning(
-            "检测到 %d 条条款绑定自相矛盾（nodeId 与 sourceRuleId 指向不同规则），"
-            "涉及 %d 个项目，按当前业务包重绑：%s",
-            len(corrupt),
-            len(corrupt_project_ids),
-            sorted(corrupt_project_ids),
-        )
+
+        # 「一条绑定都没有」和「绑定自相矛盾」是同一类损坏的两种形态，都得修。
+        #
+        # 上一版只查矛盾，结果主项目 P-2026-HDCP-001 漏网：它钉在 2026.06.99，
+        # 而那个 release 早已不存在（库里只发布了 2026.07.16），于是既没有绑定、
+        # 也不会被矛盾检测挑中。后果不是报错，是每次打开节点都掉进知识检索兜底——
+        # 线上实测每个节点首次 5.5 秒。
+        #
+        # 判据是「项目钉住的版本没有已发布的 release」：这时它不可能有条款依据，
+        # 保留这个钉住没有任何意义。钉在**存在**的旧 release 上则照旧不动。
+        published_releases = {
+            str(item.get("releaseId") or "")
+            for item in loaded.get("standard_clause_packages_db") or []
+            if isinstance(item, dict) and item.get("lifecycleStatus") == "published"
+        }
+        bound_project_ids = {
+            str(item.get("projectId") or "")
+            for item in loaded.get("project_node_clause_packages") or []
+            if isinstance(item, dict)
+        }
+        orphaned_project_ids = set()
+        for project in loaded.get("projects", []):
+            project_id = str(project.get("id") or "")
+            if not project_id or project_id in bound_project_ids:
+                continue
+            pack_id = str(project.get("businessPackId") or "")
+            version = str(project.get("businessPackVersion") or "")
+            if version and f"{pack_id}@{version}" in published_releases:
+                continue  # 钉住的版本确实存在，只是还没绑——留给正常播种路径
+            orphaned_project_ids.add(project_id)
+        if orphaned_project_ids:
+            LOGGER.warning(
+                "检测到 %d 个项目没有任何条款绑定且钉住的业务包版本已不存在，"
+                "按当前业务包重绑：%s",
+                len(orphaned_project_ids),
+                sorted(orphaned_project_ids),
+            )
+        corrupt_project_ids |= orphaned_project_ids
+
+        if not corrupt_project_ids:
+            return False
+        if corrupt:
+            LOGGER.warning(
+                "检测到 %d 条条款绑定自相矛盾（nodeId 与 sourceRuleId 指向不同规则），"
+                "涉及 %d 个项目，按当前业务包重绑：%s",
+                len(corrupt),
+                len({item["projectId"] for item in corrupt if item["projectId"]}),
+                sorted({item["projectId"] for item in corrupt if item["projectId"]}),
+            )
 
         for summary in list_business_packs():
             pack = load_business_pack(summary["id"])
