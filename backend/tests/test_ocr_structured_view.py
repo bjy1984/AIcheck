@@ -154,3 +154,58 @@ def test_missing_parse_result_reports_unavailable_not_empty_success() -> None:
     assert view["available"] is False
     assert view["layoutBlocks"] == []
     assert view["pageCount"] == 0
+
+
+def test_column_order_comes_from_header_cells_not_dict_keys() -> None:
+    """列序取自表头单元格的 col 下标，不取字典键序。
+
+    state 存在 Postgres 的 jsonb 列里，jsonb 不保留对象键序。线上这张焊材表
+    存进去是「序号 / 管道材料 / …」，取出来键序变成了「备注 / 序号 / 焊条 / …」。
+    用例里的 normalizedRows 就按取出来的乱序写，确保修复真的生效。
+    """
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-1",
+                "pageNo": 3,
+                "cells": [
+                    {"row": 0, "col": 0, "text": "序号", "isHeader": True},
+                    {"row": 0, "col": 1, "text": "管道材料", "isHeader": True},
+                    {"row": 0, "col": 2, "text": "焊丝牌号", "isHeader": True},
+                    {"row": 1, "col": 0, "text": "1", "isHeader": False},
+                ],
+                # jsonb 取回后的键序：按键长 + 字节序重排
+                "normalizedRows": [{"序号": "1", "焊丝牌号": "TIG50", "管道材料": "A106"}],
+            }
+        ]
+    }
+    table = structured_tables(parse_result)[0]
+    assert table["columnNames"] == ["序号", "管道材料", "焊丝牌号"]
+
+
+def test_column_order_falls_back_to_keys_when_header_missing() -> None:
+    """没有表头单元格时退回键序——列序不理想，但一列都不能丢。"""
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-2",
+                "cells": [],
+                "normalizedRows": [{"甲": "1", "乙": "2"}],
+            }
+        ]
+    }
+    assert structured_tables(parse_result)[0]["columnNames"] == ["甲", "乙"]
+
+
+def test_columns_absent_from_header_are_appended_not_dropped() -> None:
+    """表头对不上的列补在后面。合并单元格会让表头缺项，丢列等于丢证据。"""
+    parse_result = {
+        "tables": [
+            {
+                "tableId": "T-3",
+                "cells": [{"row": 0, "col": 0, "text": "序号", "isHeader": True}],
+                "normalizedRows": [{"备注": "√", "序号": "1"}],
+            }
+        ]
+    }
+    assert structured_tables(parse_result)[0]["columnNames"] == ["序号", "备注"]

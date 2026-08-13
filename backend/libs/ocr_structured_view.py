@@ -68,6 +68,43 @@ def structured_layout_blocks(parse_result: dict[str, Any]) -> list[dict[str, Any
     ]
 
 
+def table_column_names(item: dict[str, Any], normalized: list[dict[str, Any]]) -> list[str]:
+    """还原表格的真实列序。
+
+    不能直接用 normalizedRows[0].keys()：state 存在 Postgres 的 jsonb 列里，
+    而 jsonb 不保留对象键序（它按「键长 + 字节序」重排）。线上那张焊材表原本是
+    「序号 / 管道材料 / 焊丝牌号 / 焊丝规格 / 焊条 / 备注」，取回来变成
+    「备注 / 序号 / 焊条 / 焊丝牌号 / 焊丝规格 / 管道材料」——序号跑到第二列，
+    监检对着这样的参数表核不了「焊丝牌号与母材是否匹配」。
+
+    cells 是数组，jsonb 保留数组顺序，且每个单元格自带 row/col/isHeader，
+    所以列序从表头行的 col 下标还原，而不是从字典键序。
+    """
+    header: list[tuple[int, str]] = []
+    for cell in item.get("cells") or []:
+        if not isinstance(cell, dict):
+            continue
+        # 引擎给了 isHeader 就认它；没给则退回第 0 行
+        is_header = cell.get("isHeader")
+        if is_header is None:
+            is_header = int(cell.get("row") or 0) == 0
+        if not is_header:
+            continue
+        text = str(cell.get("text") or "").strip()
+        if text:
+            header.append((int(cell.get("col") or 0), text))
+    ordered = [text for _, text in sorted(header, key=lambda pair: pair[0])]
+
+    if not normalized:
+        return ordered
+    keys = set(normalized[0].keys())
+    # 表头与 normalizedRows 的键未必完全一致（合并单元格、空表头），
+    # 对得上的按表头排，对不上的补在后面，绝不丢列。
+    names = [name for name in ordered if name in keys]
+    names.extend(key for key in normalized[0] if key not in set(names))
+    return names
+
+
 def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
     """表格：给结构化行，不给 html。
 
@@ -91,7 +128,7 @@ def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
                 "pageNo": item.get("pageNo"),
                 "rows": item.get("rows"),
                 "columns": item.get("columns"),
-                "columnNames": list(normalized[0].keys()) if normalized else [],
+                "columnNames": table_column_names(item, normalized),
                 "normalizedRows": normalized,
                 "cells": cells if not normalized else [],
                 "bbox": _clean_bbox(item.get("bbox")),
