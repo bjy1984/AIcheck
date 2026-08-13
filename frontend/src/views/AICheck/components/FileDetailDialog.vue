@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import {
   ElAlert,
   ElButton,
+  ElIcon,
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
@@ -218,6 +220,34 @@ const locatableItems = computed<LocatableItem[]>(() => [
   }))
 ])
 
+/* ---------------- 业务字段 vs 原文片段（L-3c） ----------------
+ * 抽取管线没做字段识别时，会把正文切片按 OCR文本 / OCR文本2 … 顺序编号塞进
+ * fields（后端 fields_from_fragments 兜底）。这些不是业务字段——监检要的是
+ * 「证书编号」「设计压力」这类。
+ *
+ * 线上一份资料 10 个条目全是这种编号片段、置信度全 0，平铺在右侧，看不出
+ * 哪条该核对。所以按语义分两组：真字段置顶，片段折叠收起。
+ *
+ * 判据与后端 libs/ocr_readiness.py 的 is_placeholder_field_name 保持一致。
+ */
+const PLACEHOLDER_FIELD_PATTERN = /^(?:OCR)?(?:文本|片段|text|fragment|field)\s*_?\d*$/i
+
+const isPlaceholderField = (label: string) =>
+  PLACEHOLDER_FIELD_PATTERN.test(String(label || '').trim())
+
+const businessFieldItems = computed(() =>
+  locatableItems.value.filter((item) => !isPlaceholderField(item.label))
+)
+const fragmentItems = computed(() =>
+  locatableItems.value.filter((item) => isPlaceholderField(item.label))
+)
+const fragmentsExpanded = ref(false)
+
+/** 置信度 0 与「没给置信度」含义完全不同：前者是「判定为不可信」，
+ *  后者是「管线没产出这个指标」。显示成 0% 会让监检误以为是前者。 */
+const confidenceDisplay = (confidence?: number) =>
+  typeof confidence === 'number' && confidence > 0 ? confidenceText(confidence) : '未提供置信度'
+
 const activeLocatable = computed(() =>
   locatableItems.value.find((item) => item.key === activeLocateKey.value)
 )
@@ -381,44 +411,90 @@ watch(visible, (open) => {
               class="side-alert"
             />
             <ElTabs v-model="sideTab" class="side-tabs">
-              <ElTabPane :label="`识别字段 (${locatableItems.length})`" name="fields">
+              <ElTabPane :label="`识别字段 (${businessFieldItems.length})`" name="fields">
                 <div v-if="!locatableItems.length" class="side-empty">
                   <ElEmpty :image-size="60" description="暂无识别字段" />
                 </div>
-                <ul v-else class="locate-list">
-                  <li
-                    v-for="item in locatableItems"
-                    :key="item.key"
-                    :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
-                  >
+                <template v-else>
+                  <ElAlert
+                    v-if="!businessFieldItems.length"
+                    type="warning"
+                    :closable="false"
+                    show-icon
+                    title="未识别出业务字段"
+                    description="只切出了原文片段，没有识别出证书编号、设计压力这类可核对的字段。核对前需人工补录或重跑抽取。"
+                    class="side-alert"
+                  />
+                  <ul v-if="businessFieldItems.length" class="locate-list">
+                    <li
+                      v-for="item in businessFieldItems"
+                      :key="item.key"
+                      :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
+                    >
+                      <button
+                        type="button"
+                        class="locate-button"
+                        :aria-pressed="item.key === activeLocateKey"
+                        @click="handleLocate(item)"
+                      >
+                        <div class="locate-head">
+                          <span class="locate-label">{{ item.label }}</span>
+                          <ElTag
+                            size="small"
+                            effect="plain"
+                            :type="item.kind === 'evidence' ? 'warning' : 'info'"
+                          >
+                            {{ item.kind === 'evidence' ? '证据引用' : 'OCR' }}
+                          </ElTag>
+                        </div>
+                        <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
+                        <div class="locate-meta">
+                          <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
+                          <span v-if="item.confidence !== undefined">
+                            {{ confidenceDisplay(item.confidence) }}
+                          </span>
+                          <span v-if="item.status">{{ item.status }}</span>
+                          <span v-if="item.bbox" class="locate-badge">可定位</span>
+                        </div>
+                      </button>
+                    </li>
+                  </ul>
+
+                  <div v-if="fragmentItems.length" class="fragment-block">
                     <button
                       type="button"
-                      class="locate-button"
-                      :aria-pressed="item.key === activeLocateKey"
-                      @click="handleLocate(item)"
+                      class="fragment-toggle"
+                      :aria-expanded="fragmentsExpanded"
+                      @click="fragmentsExpanded = !fragmentsExpanded"
                     >
-                      <div class="locate-head">
-                        <span class="locate-label">{{ item.label }}</span>
-                        <ElTag
-                          size="small"
-                          effect="plain"
-                          :type="item.kind === 'evidence' ? 'warning' : 'info'"
-                        >
-                          {{ item.kind === 'evidence' ? '证据引用' : 'OCR' }}
-                        </ElTag>
-                      </div>
-                      <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
-                      <div class="locate-meta">
-                        <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
-                        <span v-if="item.confidence !== undefined">
-                          置信度 {{ confidenceText(item.confidence) }}
-                        </span>
-                        <span v-if="item.status">{{ item.status }}</span>
-                        <span v-if="item.bbox" class="locate-badge">可定位</span>
-                      </div>
+                      <span>原文片段 {{ fragmentItems.length }} 条</span>
+                      <span class="fragment-hint">未命名的正文切片，非业务字段</span>
+                      <ElIcon :class="['fragment-chevron', { 'is-open': fragmentsExpanded }]">
+                        <ArrowDown />
+                      </ElIcon>
                     </button>
-                  </li>
-                </ul>
+                    <ul v-show="fragmentsExpanded" class="locate-list">
+                      <li
+                        v-for="item in fragmentItems"
+                        :key="item.key"
+                        :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
+                      >
+                        <button
+                          type="button"
+                          class="locate-button"
+                          :aria-pressed="item.key === activeLocateKey"
+                          @click="handleLocate(item)"
+                        >
+                          <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
+                          <div class="locate-meta">
+                            <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
+                            <span v-if="item.bbox" class="locate-badge">可定位</span>
+                          </div>
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                </template>
               </ElTabPane>
 
               <ElTabPane label="文件信息" name="meta">
@@ -698,6 +774,47 @@ watch(visible, (open) => {
 }
 
 /* 字段列表：一行一个可点击条目，点击后在左侧原文定位 */
+.fragment-block {
+  margin-top: 10px;
+  border-top: 1px solid #eef1f5;
+  padding-top: 10px;
+}
+
+.fragment-toggle {
+  display: flex;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.fragment-toggle:hover {
+  background: #f1f5f9;
+}
+
+.fragment-hint {
+  flex: 1;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.fragment-chevron {
+  font-size: 15px;
+  color: #94a3b8;
+  transition: transform 0.2s;
+}
+
+.fragment-chevron.is-open {
+  transform: rotate(180deg);
+}
+
 .locate-list {
   display: flex;
   margin: 0;
