@@ -6239,10 +6239,17 @@ def build_inspection_audit_workspace(
         )
     )
     if invalid_legacy_opinion:
+        # 历史意见缺当前口径的证据校验——是旧数据的事实，监检重新签一次也补不上
+        # 当时的证据链。作为留痕说明保留，但不算待办。
         human_issues.append(_inspection_audit_issue("LEGACY_OPINION_UNVERIFIED", "历史人工意见缺少当前 confirmed evidence 校验。"))
     if active_rectifications:
         human_issues.append(_inspection_audit_issue("RECTIFICATION_OPEN", f"仍有 {len(active_rectifications)} 个补正事项未关闭。"))
-    if human_issues or (latest_opinion and latest_opinion.get("result") == "需补正"):
+    # 同报告/归档：历史意见缺当前口径的证据校验是旧数据的事实，监检重新签一次
+    # 也补不上当时的证据链。留痕说明保留在 issues 里，但不占用待办。
+    human_blocking = [
+        issue for issue in human_issues if issue.get("code") != "LEGACY_OPINION_UNVERIFIED"
+    ]
+    if human_blocking or (latest_opinion and latest_opinion.get("result") == "需补正"):
         human_status = "needs_attention"
     elif latest_opinion:
         human_status = "completed"
@@ -6259,7 +6266,14 @@ def build_inspection_audit_workspace(
     if latest_report and (latest_report.get("evidenceValidation") or {}).get("passed") is False:
         report_issues.append(_inspection_audit_issue("REPORT_EVIDENCE_INVALID", "报告证据校验未通过。"))
     latest_report_status = str((latest_report or {}).get("status") or "")
-    if report_issues:
+    # 「历史报告未关联来源意见」是留痕说明，不是待办：监检做什么都关不掉它，
+    # 那条关联在旧数据里就不存在。把它算成 needs_attention，等于给每一份历史
+    # 报告挂一条永远无法完成的任务——线上 3 份报告全是这种，占了 9 项待办里的 3 项。
+    # 只有 REPORT_EVIDENCE_INVALID 这类真问题才该要人处理。
+    report_blocking = [
+        issue for issue in report_issues if issue.get("code") != "REPORT_SOURCE_UNLINKED"
+    ]
+    if report_blocking:
         report_status = "needs_attention"
     elif latest_report_status in {"草稿", "复核中", "待签发"}:
         report_status = "in_progress"
@@ -6282,7 +6296,10 @@ def build_inspection_audit_workspace(
     if export_status == "失败":
         archive_status = "failed"
         archive_issues.append(_inspection_audit_issue("ARCHIVE_EXPORT_FAILED", str((latest_export or {}).get("errorMessage") or "归档导出失败。")))
-    elif archive_issues:
+    elif [
+        issue for issue in archive_issues if issue.get("code") != "ARCHIVE_SOURCE_UNLINKED"
+    ]:
+        # 同报告：历史归档缺来源关联是留痕说明，不是监检能处理的事
         archive_status = "needs_attention"
     elif archive_items:
         archive_status = "completed"
