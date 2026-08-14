@@ -2320,7 +2320,10 @@ onBeforeUnmount(() => {
   border: 1px solid #dbeafe;
   border-radius: 999px;
   flex: none;
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
 }
 
 .composer-suggestion:hover {
@@ -2345,7 +2348,9 @@ onBeforeUnmount(() => {
   /* 阴影收敛：原来 30px 的大扩散让这张卡在页面上「浮」得过重，
      压过了它上面的消息区——输入框是工具，不该比内容更显眼。 */
   box-shadow: 0 2px 12px rgb(20 104 232 / 6%);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 /* 聚焦时才强调：没在输入时它安静待着，光标进来才把注意力收过来 */
