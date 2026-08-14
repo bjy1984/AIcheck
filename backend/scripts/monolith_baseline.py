@@ -45,10 +45,18 @@ DIRECT_WRITE_PATTERN = re.compile(
 DIRECT_ACCESS_PATTERN = re.compile(r"repo\.state\[")
 
 # 被盯住的文件。加新条目要有理由：棘轮盯太多东西就没人看了。
+#
+# FdeConsole.vue 是 2026-08-14 补进来的，理由是它当时 29,203 行——**比
+# routes.py 还大**（script 10,875 / template 10,179 / style 8,147），
+# 而全仓最大的那个文件此前完全不在任何护栏里。
+#
+# 被盯住不等于变好，只等于不再变坏。它现在还很大，往下拆要先把
+# reactive 状态与纯整形分开，那是另一件事。
 TRACKED_FILES = (
     "backend/apps/api/routes.py",
     "backend/libs/review_orchestrator/execution.py",
     "frontend/src/views/AICheck/Workbench.vue",
+    "frontend/src/views/AICheck/FdeConsole.vue",
 )
 
 

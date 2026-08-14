@@ -168,6 +168,38 @@ import {
   techTermLabels as sharedTechTermLabels
 } from './components/auditLabels'
 import { fdeNavigationGroups, fdeRouteCatalog } from './fde/routeCatalog'
+import {
+  OcrCapabilityRoi,
+  OcrCapabilityRoiTone,
+  OcrCapabilitySealDisplayRow,
+  OcrCapabilityStructuredRow,
+  OcrCapabilityTablePreview,
+  cleanOcrCapabilityTableText,
+  createOcrCapabilityRoi,
+  createOcrCapabilityStructuredRow,
+  dedupeOcrCapabilityRois,
+  isOcrCapabilityPlaceholderSealName,
+  normalizeOcrCapabilityBbox,
+  normalizeOcrCapabilityTextLines,
+  ocrCapabilityBboxCenterInside,
+  ocrCapabilityBboxOverlapRatio,
+  ocrCapabilityBboxText,
+  ocrCapabilityBlobErrorMessage,
+  ocrCapabilityFailureMessage,
+  ocrCapabilityRoiTagType,
+  ocrCapabilitySealColorLabel,
+  ocrCapabilitySealFieldLines,
+  ocrCapabilitySealTypeLabel,
+  ocrCapabilityTableSummary,
+  ocrCapabilityTerminalStatuses,
+  resolveOcrCapabilityPreviewType,
+  resolveOcrCapabilityUploadUrl,
+  sanitizeOcrCapabilityUploadHeaders,
+  shouldKeepOcrCapabilityRoi,
+  stringifyOcrCapabilityText,
+  uniqueOcrCapabilityLines,
+  uniqueOcrCapabilityTableKey
+} from './fdeOcrCapabilityShaping'
 
 const Echart = defineAsyncComponent(() =>
   import('@/components/Echart').then((module) => module.Echart)
@@ -3675,12 +3707,7 @@ const selectedOcrCapabilityParseResult = computed(
 const selectedOcrCapabilityPreview = computed(
   () => selectedOcrCapabilityTest.value?.preview || null
 )
-const resolveOcrCapabilityPreviewType = (file?: File | null) => {
-  const text = `${file?.type || ''} ${file?.name || ''}`.toLowerCase()
-  if (/pdf/.test(text)) return 'pdf'
-  if (/image|png|jpe?g|webp|gif/.test(text)) return 'image'
-  return 'unsupported'
-}
+
 const selectedOcrCapabilityPreviewSource = computed(() => {
   if (selectedOcrCapabilityPreview.value?.url) {
     return selectedOcrCapabilityPreview.value
@@ -3694,30 +3721,7 @@ const selectedOcrCapabilityPreviewSource = computed(() => {
   }
   return null
 })
-const stringifyOcrCapabilityText = (value: unknown): string => {
-  if (value === undefined || value === null) return ''
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => stringifyOcrCapabilityText(item))
-      .filter(Boolean)
-      .join('\n')
-  }
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    return stringifyOcrCapabilityText(
-      record.text ??
-        record.fullText ??
-        record.rawText ??
-        record.plainText ??
-        record.content ??
-        record.value ??
-        record.fieldValue ??
-        record.ocrText
-    )
-  }
-  return ''
-}
+
 const selectedOcrCapabilitySummary = computed(() => {
   const result = selectedOcrCapabilityParseResult.value || {}
   const runSummary = selectedOcrCapabilityRun.value?.resultSummary || {}
@@ -3764,145 +3768,6 @@ const selectedOcrCapabilityDiagnostics = computed(() => {
         }
   )
 })
-
-type OcrCapabilityRoiTone = 'blue' | 'green' | 'orange' | 'red' | 'purple'
-
-type OcrCapabilityRoi = {
-  id: string
-  type: string
-  tone: OcrCapabilityRoiTone
-  pageNo: number
-  label: string
-  text: string
-  bbox: [number, number, number, number]
-  confidence?: number
-  source?: string
-}
-
-type OcrCapabilityStructuredRow = {
-  id: string
-  pageNo: number
-  type: string
-  name: string
-  value: string
-  bboxText: string
-  confidence?: number
-  source: string
-}
-
-type OcrCapabilitySealDisplayRow = {
-  id: string
-  title: string
-  colorLabel: string
-  typeLabel: string
-  status: string
-  tagType: 'success' | 'warning' | 'danger' | 'info'
-  pageNo: number
-  bboxText: string
-  confidence?: number
-  source: string
-  contentLines: string[]
-  meta: Array<{ label: string; value: string }>
-}
-
-type OcrCapabilityTablePreview = {
-  id: string
-  title: string
-  meta: Array<{ label: string; value: string }>
-  columns: Array<{ key: string; label: string }>
-  rows: Array<{ id: string; cells: Record<string, string> }>
-}
-
-const ocrCapabilityRoiToneTypeMap: Record<
-  OcrCapabilityRoiTone,
-  'primary' | 'success' | 'warning' | 'danger' | 'info'
-> = {
-  blue: 'primary',
-  green: 'success',
-  orange: 'warning',
-  red: 'danger',
-  purple: 'info'
-}
-
-const normalizeOcrCapabilityBbox = (bbox: unknown): [number, number, number, number] | null => {
-  if (!Array.isArray(bbox) || bbox.length < 4) return null
-  let values: number[] = []
-  if (Array.isArray(bbox[0])) {
-    const points = bbox
-      .filter((point): point is unknown[] => Array.isArray(point) && point.length >= 2)
-      .map((point) => [Number(point[0]), Number(point[1])])
-      .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
-    if (!points.length) return null
-    const xs = points.map(([x]) => x)
-    const ys = points.map(([, y]) => y)
-    values = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
-  } else {
-    values = bbox.slice(0, 4).map((value) => Number(value))
-  }
-  if (values.some((value) => !Number.isFinite(value))) return null
-  const [rawX1, rawY1, rawX2, rawY2] = values
-  const x1 = Math.min(rawX1, rawX2)
-  const y1 = Math.min(rawY1, rawY2)
-  const x2 = Math.max(rawX1, rawX2)
-  const y2 = Math.max(rawY1, rawY2)
-  if (x2 <= x1 || y2 <= y1) return null
-  return [x1, y1, x2, y2]
-}
-
-const ocrCapabilityRoiText = (record: Record<string, unknown>) =>
-  stringifyOcrCapabilityText(
-    record.text ??
-      record.fullText ??
-      record.fieldValue ??
-      record.value ??
-      record.sealName ??
-      record.sealType ??
-      record.label ??
-      record.type
-  )
-
-const ocrCapabilityStructuredValue = (record: Record<string, unknown>) =>
-  stringifyOcrCapabilityText(
-    record.fieldValue ??
-      record.value ??
-      record.text ??
-      record.fullText ??
-      record.rawText ??
-      record.content ??
-      record.sealName ??
-      record.sealType ??
-      record.tableName ??
-      record.label
-  )
-
-const ocrCapabilityTableSummary = (record: Record<string, unknown>) => {
-  const rowCount = Number(record.rowCount ?? record.rows ?? 0)
-  const columnCount = Number(record.columnCount ?? record.columns ?? 0)
-  const cellCount = Array.isArray(record.cells) ? record.cells.length : 0
-  const parts = [
-    rowCount ? `${rowCount} 行` : '',
-    columnCount ? `${columnCount} 列` : '',
-    cellCount ? `${cellCount} 单元格` : ''
-  ].filter(Boolean)
-  return parts.join(' / ') || ocrCapabilityStructuredValue(record) || '表格结构'
-}
-
-const cleanOcrCapabilityTableText = (value: unknown) =>
-  stringifyOcrCapabilityText(value)
-    .replace(/\s*\n+\s*/g, ' / ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-const uniqueOcrCapabilityTableKey = (base: string, used: Set<string>) => {
-  let key = base || `col_${used.size + 1}`
-  let index = 2
-  while (used.has(key)) {
-    key = `${base}_${index}`
-    index += 1
-  }
-  used.add(key)
-  return key
-}
 
 const createOcrCapabilityTablePreviewFromCells = (
   record: Record<string, unknown>,
@@ -4023,234 +3888,6 @@ const selectedOcrCapabilityTablePreviews = computed<OcrCapabilityTablePreview[]>
     .filter((table): table is OcrCapabilityTablePreview => Boolean(table))
 )
 
-const ocrCapabilityBboxText = (bbox: unknown) => {
-  const normalized = normalizeOcrCapabilityBbox(bbox)
-  return normalized ? normalized.map((value) => Math.round(value * 100) / 100).join(', ') : '-'
-}
-
-const normalizeOcrCapabilityTextLines = (value: unknown): string[] =>
-  stringifyOcrCapabilityText(value)
-    .split(/\n+/)
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-
-const uniqueOcrCapabilityLines = (lines: string[]) => {
-  const seen = new Set<string>()
-  return lines.filter((line) => {
-    const key = line.replace(/\s+/g, '').toLowerCase()
-    if (!key || seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-const isOcrCapabilityPlaceholderSealName = (value: unknown) => {
-  const text = String(value || '').trim()
-  return !text || text === '视觉印章候选' || text === '视觉蓝章候选' || /^visual_/i.test(text)
-}
-
-const ocrCapabilitySealColorLabel = (record: Record<string, unknown>) => {
-  const text =
-    `${record.visualColor || ''} ${record.sealType || ''} ${record.sealName || ''}`.toLowerCase()
-  if (text.includes('blue')) return '蓝章'
-  if (text.includes('red')) return '红章'
-  const colorField = Array.isArray(record.fields)
-    ? (record.fields as Array<Record<string, unknown>>).find((field) =>
-        String(field.fieldName || '').includes('颜色')
-      )
-    : null
-  const colorText = String(colorField?.fieldValue || '').toLowerCase()
-  if (colorText.includes('blue')) return '蓝章'
-  if (colorText.includes('red')) return '红章'
-  return '印章'
-}
-
-const ocrCapabilitySealTypeLabel = (record: Record<string, unknown>) => {
-  const type = String(record.sealType || '').toLowerCase()
-  if (type.includes('blue')) return '蓝色印章候选'
-  if (type.includes('red')) return '红色印章候选'
-  if (type.includes('candidate')) return '印章候选'
-  return String(record.sealType || record.type || '印章')
-}
-
-const ocrCapabilitySealFieldLines = (record: Record<string, unknown>) => {
-  const fields = Array.isArray(record.fields)
-    ? (record.fields as Array<Record<string, unknown>>)
-    : []
-  return fields.flatMap((field) => {
-    const name = String(field.fieldName || field.fieldCode || field.name || '').trim()
-    const value = stringifyOcrCapabilityText(field.fieldValue ?? field.value ?? field.text).trim()
-    if (!value || name.includes('颜色') || name === '印章原文' || name === '识别文字') return []
-    return [`${name || '字段'}：${value}`]
-  })
-}
-
-const ocrCapabilityBboxOverlapRatio = (
-  first: [number, number, number, number],
-  second: [number, number, number, number]
-) => {
-  const left = Math.max(first[0], second[0])
-  const top = Math.max(first[1], second[1])
-  const right = Math.min(first[2], second[2])
-  const bottom = Math.min(first[3], second[3])
-  const width = Math.max(0, right - left)
-  const height = Math.max(0, bottom - top)
-  const overlap = width * height
-  if (!overlap) return 0
-  const firstArea = (first[2] - first[0]) * (first[3] - first[1])
-  const secondArea = (second[2] - second[0]) * (second[3] - second[1])
-  return overlap / Math.max(1, Math.min(firstArea, secondArea))
-}
-
-const ocrCapabilityBboxCenterInside = (
-  inner: [number, number, number, number],
-  outer: [number, number, number, number]
-) => {
-  const centerX = (inner[0] + inner[2]) / 2
-  const centerY = (inner[1] + inner[3]) / 2
-  return centerX >= outer[0] && centerX <= outer[2] && centerY >= outer[1] && centerY <= outer[3]
-}
-
-const ocrCapabilityRoiArea = (bbox: [number, number, number, number]) =>
-  Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1])
-
-const ocrCapabilityRoiOverlapRatio = (first: OcrCapabilityRoi, second: OcrCapabilityRoi) =>
-  ocrCapabilityBboxOverlapRatio(first.bbox, second.bbox)
-
-const ocrCapabilitySealRoiHasTextEvidence = (source: Record<string, unknown>) => {
-  const text = stringifyOcrCapabilityText(
-    source.text ?? source.fullText ?? source.rawText ?? source.content ?? source.sealName
-  ).replace(/\s+/g, '')
-  if (/专用章|印章|许可|单位名称|业务范围|资质证书|有效期|有限公司|TS\d+/i.test(text)) {
-    return true
-  }
-  const fields = Array.isArray(source.fields)
-    ? (source.fields as Array<Record<string, unknown>>)
-    : []
-  return fields.some((field) => {
-    const name = String(field.fieldName || field.fieldCode || '').trim()
-    const value = stringifyOcrCapabilityText(field.fieldValue ?? field.value ?? field.text).replace(
-      /\s+/g,
-      ''
-    )
-    return (
-      name !== '印章颜色' &&
-      /专用章|印章|许可|单位名称|业务范围|资质证书|有效期|有限公司|TS\d+/i.test(value)
-    )
-  })
-}
-
-const shouldKeepOcrCapabilityRoi = (source: Record<string, unknown>, roi: OcrCapabilityRoi) => {
-  if (roi.type !== '印章') return true
-  const flags = Array.isArray(source.qualityFlags) ? source.qualityFlags.map(String) : []
-  const candidateOnly =
-    flags.includes('visual_candidate_only') ||
-    flags.includes('requires_seal_ocr_text') ||
-    source.candidateOnly === true
-  if (!candidateOnly) return true
-  return ocrCapabilitySealRoiHasTextEvidence(source)
-}
-
-const dedupeOcrCapabilityRois = (items: OcrCapabilityRoi[]) => {
-  const sorted = [...items].sort((left, right) => {
-    const typeWeight = (roi: OcrCapabilityRoi) =>
-      roi.type === '表格' ? 4 : roi.type === '字段' ? 3 : roi.type === '印章' ? 2 : 1
-    const textWeight = (roi: OcrCapabilityRoi) => (roi.text ? 1 : 0)
-    return (
-      typeWeight(right) - typeWeight(left) ||
-      textWeight(right) - textWeight(left) ||
-      ocrCapabilityRoiArea(right.bbox) - ocrCapabilityRoiArea(left.bbox)
-    )
-  })
-  const kept: OcrCapabilityRoi[] = []
-  sorted.forEach((roi) => {
-    const duplicate = kept.some(
-      (existing) =>
-        existing.pageNo === roi.pageNo &&
-        existing.type === roi.type &&
-        ocrCapabilityRoiOverlapRatio(existing, roi) >= 0.68
-    )
-    if (!duplicate) kept.push(roi)
-  })
-  return kept.sort((left, right) => left.pageNo - right.pageNo || left.bbox[1] - right.bbox[1])
-}
-
-const createOcrCapabilityStructuredRow = (
-  source: Record<string, unknown>,
-  type: string,
-  index: number,
-  fallbackName: string
-): OcrCapabilityStructuredRow | null => {
-  const rawName =
-    source.fieldName ||
-    source.fieldCode ||
-    source.name ||
-    source.tableId ||
-    source.sealName ||
-    source.sealType ||
-    source.type ||
-    source.label ||
-    fallbackName
-  const name =
-    type === '字段'
-      ? friendlyFieldLabel(String(rawName || fallbackName))
-      : String(rawName || fallbackName)
-  const value =
-    type === '表格' ? ocrCapabilityTableSummary(source) : ocrCapabilityStructuredValue(source)
-  if (!value && !source.bbox) return null
-  return {
-    id: `${type}-${source.id || source.fragmentId || source.fieldCode || source.tableId || source.sealId || index}`,
-    pageNo: Number(source.pageNo || 1),
-    type,
-    name,
-    value,
-    bboxText: ocrCapabilityBboxText(source.bbox),
-    confidence:
-      source.confidence !== undefined || source.ocrConfidence !== undefined
-        ? Number(source.confidence ?? source.ocrConfidence)
-        : undefined,
-    source: String(source.sourceEngine || source.source || source.extractionMethod || '-')
-  }
-}
-
-const createOcrCapabilityRoi = (
-  source: Record<string, unknown>,
-  type: string,
-  tone: OcrCapabilityRoiTone,
-  index: number,
-  fallbackLabel: string
-): OcrCapabilityRoi | null => {
-  const bbox = normalizeOcrCapabilityBbox(source.bbox)
-  if (!bbox) return null
-  const rawLabel =
-    source.fieldName ||
-    source.fieldCode ||
-    source.sealName ||
-    source.sealType ||
-    source.tableId ||
-    source.type ||
-    source.label ||
-    fallbackLabel
-  const label =
-    type === '字段'
-      ? friendlyFieldLabel(String(rawLabel || fallbackLabel))
-      : String(rawLabel || fallbackLabel)
-  return {
-    id: `${type}-${source.id || source.fragmentId || source.fieldCode || source.tableId || source.sealId || index}`,
-    type,
-    tone,
-    pageNo: Number(source.pageNo || 1),
-    label,
-    text: ocrCapabilityRoiText(source),
-    bbox,
-    confidence:
-      source.confidence !== undefined || source.ocrConfidence !== undefined
-        ? Number(source.confidence ?? source.ocrConfidence)
-        : undefined,
-    source: String(source.sourceEngine || source.source || '')
-  }
-}
-
 const selectedOcrCapabilityRawRois = computed<OcrCapabilityRoi[]>(() => {
   const result = selectedOcrCapabilityParseResult.value || {}
   const seen = new Set<string>()
@@ -4341,9 +3978,6 @@ const ocrCapabilityRoiLegend = computed(() => {
     }))
     .filter((item) => item.count > 0)
 })
-
-const ocrCapabilityRoiTagType = (tone: OcrCapabilityRoiTone) =>
-  ocrCapabilityRoiToneTypeMap[tone] || 'info'
 
 const selectedOcrCapabilitySealRows = computed<OcrCapabilitySealDisplayRow[]>(() => {
   const result = selectedOcrCapabilityParseResult.value || {}
@@ -8807,16 +8441,6 @@ const clearOcrCapabilityPdfPagePreview = () => {
   ocrCapabilityPdfPagePreviewError.value = ''
 }
 
-const ocrCapabilityBlobErrorMessage = async (blob: Blob) => {
-  if (!String(blob.type || '').includes('application/json')) return ''
-  try {
-    const payload = JSON.parse(await blob.text())
-    return String(payload?.message || payload?.data?.message || payload?.data?.reason || '')
-  } catch {
-    return ''
-  }
-}
-
 const clearVectorSourcePreview = () => {
   if (vectorSourcePreviewObjectUrl.value) {
     URL.revokeObjectURL(vectorSourcePreviewObjectUrl.value)
@@ -8979,8 +8603,6 @@ const loadOcrCapabilityTestDetail = async (runId: string, schedulePoll = true) =
   }
 }
 
-const ocrCapabilityTerminalStatuses = new Set(['success', 'failed', 'cancelled'])
-
 const scheduleOcrCapabilityTestPolling = (run?: FdeOcrCapabilityTestRun) => {
   if (ocrCapabilityTestPolling.value) {
     window.clearTimeout(ocrCapabilityTestPolling.value)
@@ -9021,20 +8643,6 @@ const waitForOcrCapabilityTestTerminal = async (
   throw new Error('OCR 重新预标注超时，请稍后查看最近测试记录。')
 }
 
-const ocrCapabilityFailureMessage = (detail: FdeOcrCapabilityTestDetailPayload | null) => {
-  const diagnostics = [
-    ...(detail?.run?.diagnostics || []),
-    ...((detail?.parseResult?.diagnostics as Array<Record<string, unknown> | string> | undefined) ||
-      [])
-  ]
-  const first = diagnostics.find(Boolean)
-  if (typeof first === 'string') return first
-  if (first && typeof first === 'object') {
-    return String(first.message || first.code || 'OCR 重新预标注失败。')
-  }
-  return 'OCR 重新预标注失败，请检查 OCR 服务状态后重试。'
-}
-
 const selectOcrCapabilityTestFile = (file: File | null) => {
   if (ocrCapabilityLocalPreviewUrl.value) {
     URL.revokeObjectURL(ocrCapabilityLocalPreviewUrl.value)
@@ -9057,52 +8665,6 @@ const handleOcrCapabilityTestUploadChange = (uploadFile: UploadFile) => {
 const handleOcrAnnotationUploadChange = (uploadFile: UploadFile) => {
   selectOcrCapabilityTestFile(uploadFile.raw || null)
   selectedOcrStatusTab.value = 'annotation'
-}
-
-const resolveOcrCapabilityUploadUrl = (uploadUrl: string) => {
-  const proxyOrigin = import.meta.env.VITE_MINIO_UPLOAD_PROXY_ORIGIN
-  if (!proxyOrigin) return uploadUrl
-  try {
-    const sourceUrl = new URL(uploadUrl)
-    const targetUrl = new URL(proxyOrigin)
-    sourceUrl.protocol = targetUrl.protocol
-    sourceUrl.host = targetUrl.host
-    return sourceUrl.toString()
-  } catch {
-    return uploadUrl
-  }
-}
-
-const isOcrCapabilityHeaderNameSafe = (name: string) => /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name)
-
-const isOcrCapabilityHeaderValueSafe = (value: string) => /^[\t\x20-\xff]*$/.test(value)
-
-const normalizeOcrCapabilityContentType = (value: string) => {
-  const contentType = String(value || '').trim()
-  return /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+(?:\s*;\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+=[A-Za-z0-9!#$%&'*+.^_`|~-]+)*$/.test(
-    contentType
-  )
-    ? contentType
-    : 'application/octet-stream'
-}
-
-const sanitizeOcrCapabilityUploadHeaders = (
-  rawHeaders: Record<string, string> | undefined,
-  fallbackContentType: string
-) => {
-  const headers: Record<string, string> = {}
-  Object.entries(rawHeaders || {}).forEach(([rawName, rawValue]) => {
-    const name = String(rawName || '').trim()
-    const value = String(rawValue ?? '').trim()
-    if (!name || !isOcrCapabilityHeaderNameSafe(name) || !isOcrCapabilityHeaderValueSafe(value)) {
-      return
-    }
-    headers[name] = value
-  })
-  if (!Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) {
-    headers['Content-Type'] = normalizeOcrCapabilityContentType(fallbackContentType)
-  }
-  return headers
 }
 
 const startOcrCapabilityTest = async () => {

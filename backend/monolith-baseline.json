@@ -9,6 +9,9 @@
     "directStateWrite": 10,
     "lines": 4123
   },
+  "frontend/src/views/AICheck/FdeConsole.vue": {
+    "lines": 27183
+  },
   "frontend/src/views/AICheck/Workbench.vue": {
     "lines": 9323
   }
