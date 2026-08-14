@@ -178,14 +178,18 @@ sync_frontend() {
   # 推荐问题功能在界面上一条都不显示，而入口校验全程报「✓ 一致」——
   # 因为它比对的两端同源。**同源比对不是校验。**
   #
-  # 这里改成用源码里的特征串反查线上产物：随便挑几个只可能来自当前源码的
-  # 标记，去线上实际下载的 JS 里搜。搜不到就是发布没生效。
+  # 这里改成用源码里的特征串反查线上产物：挑几个只可能来自当前源码的标记，
+  # 去构建产物里搜。搜不到就是发布没生效。
+  #
+  # **标记必须是字符串字面量**（CSS 类名、界面文案），不能用 JS 标识符——
+  # 第一版挑了 inspectionOnlyAttentionNodes，压缩时被重命名，校验当场误报
+  # 「发布的不是当前源码」。压缩改不掉的只有字面量。
   echo "==> 校验线上产物确实来自当前源码"
   local marker_file marker missing
   missing=0
   for marker_file in \
     "frontend/src/views/AIReviewB/ConversationalReviewWorkbenchB.vue:composer-suggestion" \
-    "frontend/src/views/AICheck/Workbench.vue:inspectionOnlyAttentionNodes"
+    "frontend/src/views/AICheck/Workbench.vue:只看需处理"
   do
     local f="${marker_file%%:*}" m="${marker_file##*:}"
     grep -q "$m" "$REPO_ROOT/$f" 2>/dev/null || continue   # 源码里没有就跳过，不误判
