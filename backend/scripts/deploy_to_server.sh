@@ -190,15 +190,20 @@ PROBE_PY
     # 上面的健康检查与行为探针只能证明「服务活着、权限没塌」；这一轮线上找到的
     # 问题全是 200 + 单测全绿，只有真去看返回内容才暴露（预览地址取回 404、
     # 表格列序错乱、失败运行说不出原因）。探针把那些手工核对固定下来。
-    pw=$(grep "^AICHECK_BOOTSTRAP_PASSWORD_INSPECTION=" /home/dev-bjy/aicheck-secrets.env \
-         | cut -d= -f2- | tr -d "\"'"'"'")
-    docker cp "$(docker inspect aicheck-api --format '{{.Id}}'):/app/scripts/business_chain_probe.py" \
-      /tmp/probe.py >/dev/null 2>&1 || true
-    docker exec -e PYTHONPATH=/app -e AICHECK_PROBE_PASSWORD="$pw" -w /app aicheck-api \
+    #
+    # 口令用 --env-file 传给容器，不在命令行拼——命令行会进 shell 历史和进程表，
+    # 而且远端 heredoc 里手工转义引号极易散架（写这段时就散过一次）。
+    grep "^AICHECK_BOOTSTRAP_PASSWORD_INSPECTION=" /home/dev-bjy/aicheck-secrets.env \
+      | sed "s/^AICHECK_BOOTSTRAP_PASSWORD_INSPECTION=/AICHECK_PROBE_PASSWORD=/" \
+      > /tmp/aicheck-probe.env
+    chmod 600 /tmp/aicheck-probe.env
+    docker exec --env-file /tmp/aicheck-probe.env -e PYTHONPATH=/app -w /app aicheck-api \
       python scripts/business_chain_probe.py --base-url http://127.0.0.1:8000 || {
+        rm -f /tmp/aicheck-probe.env
         echo "  业务链探针未通过——新代码可能引入了内容层回归"
         exit 1
       }
+    rm -f /tmp/aicheck-probe.env
     docker ps --filter name=aicheck- --format "  {{.Names}}  {{.Status}}"
 REMOTE_VERIFY
 }

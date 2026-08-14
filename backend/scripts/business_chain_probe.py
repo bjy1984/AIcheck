@@ -254,16 +254,31 @@ def main() -> int:
         return 1
 
     project_id = args.project_id
-    if not project_id:
+    documents: list[dict[str, Any]] = []
+    if project_id:
+        documents = (
+            call_api(args.base_url, f"/api/projects/{project_id}/documents", token).get("data") or {}
+        ).get("items") or []
+    else:
+        # 挑资料最多的项目，不是第一个。接进部署时踩过：默认取首个项目，
+        # 而它恰好 0 份资料，四条检查全跳过却报全绿——探针在一个空项目上
+        # 什么也证明不了，却让人以为验过了。
         projects = (call_api(args.base_url, "/api/projects", token).get("data") or {}).get("items") or []
         if not projects:
             print("✗ 没有可探测的项目", file=sys.stderr)
             return 1
-        project_id = str(projects[0].get("id"))
-
-    documents = (
-        call_api(args.base_url, f"/api/projects/{project_id}/documents", token).get("data") or {}
-    ).get("items") or []
+        for candidate in projects:
+            candidate_id = str(candidate.get("id") or "")
+            if not candidate_id:
+                continue
+            items = (
+                call_api(args.base_url, f"/api/projects/{candidate_id}/documents", token).get("data")
+                or {}
+            ).get("items") or []
+            if len(items) > len(documents):
+                project_id, documents = candidate_id, items
+        if not project_id:
+            project_id = str(projects[0].get("id"))
 
     checks = [
         ("弱口令拒绝", lambda: check_weak_passwords_are_rejected(args.base_url, args.username)),
@@ -286,6 +301,7 @@ def main() -> int:
     ]
 
     failed = 0
+    skipped = 0
     print(f"业务链探针 · 项目 {project_id} · 资料 {len(documents)} 份")
     for name, check in checks:
         try:
@@ -297,7 +313,15 @@ def main() -> int:
             print(f"  ✗ {name}：探针异常 {type(exc).__name__}: {exc}")
             failed += 1
         else:
+            if detail.startswith("跳过"):
+                skipped += 1
             print(f"  ✓ {name}：{detail}")
+
+    # 全跳过不等于全通过：那说明这个环境里没有可验的数据，探针什么也没证明。
+    # 报绿会让人以为验过了——这正是探针本身要防的那类错觉。
+    if not failed and skipped >= len(checks) - 1:
+        print(f"  ! 有 {skipped}/{len(checks)} 条因缺少数据被跳过——本次探测未能证明任何东西")
+        return 2
     return 1 if failed else 0
 
 
