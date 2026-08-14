@@ -92,7 +92,14 @@ PY
     # 让新容器完全不映射端口更简单，但那样切换后就没有直连后端的入口了，
     # 而 business_chain_probe 等工具都在用它——静默拿掉一个调试入口，
     # 下次有人查问题时会以为是服务坏了。
-    if docker port aicheck-api 2>/dev/null | grep -q 8000; then NEXT_PORT=8001; else NEXT_PORT=8000; fi
+    # 按**宿主侧**端口判断。docker port 的输出形如 `8000/tcp -> 127.0.0.1:8001`，
+    # 直接 grep 8000 会命中容器侧那个 8000，于是永远选 8001——当前正好在 8001
+    # 时就撞端口。实测报过 "Bind for 127.0.0.1:8001 failed: port is already allocated"。
+    if docker port aicheck-api 2>/dev/null | grep -q "127.0.0.1:8000"; then
+      NEXT_PORT=8001
+    else
+      NEXT_PORT=8000
+    fi
     docker rm -f aicheck-api-next >/dev/null 2>&1 || true
     docker run -d --name aicheck-api-next --network aicheck-net \
       -p 127.0.0.1:\$NEXT_PORT:8000 \
