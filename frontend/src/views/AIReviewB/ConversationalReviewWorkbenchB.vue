@@ -2279,6 +2279,11 @@ onBeforeUnmount(() => {
    滚动条隐藏——它出现在这么窄的一条上只是噪音，横向滚动靠触控板/滚轮即可。 */
 .composer-suggestions {
   display: flex;
+  /* min-width: 0 是这里的关键：flex 子项默认 min-width: auto，会被内容撑开，
+     于是父容器跟着变宽、overflow-x 永远不触发。实测窄屏下对话卡被撑到 1182px
+     而窗口只有 1000px——推荐条「能滚动」这件事从来没发生过。 */
+  min-width: 0;
+  max-width: 100%;
   margin-bottom: 8px;
   overflow-x: auto;
   gap: 6px;
