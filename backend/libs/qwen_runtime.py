@@ -27,6 +27,59 @@ MODEL_ROLE_ALIASES = {
 }
 
 
+# official_api 走的是 OpenAI 兼容协议，供应商可换。这两个通用变量优先于
+# 各 provider 自己的 QWEN_* 变量。
+GENERIC_BASE_URL_ENV = "AICHECK_LLM_API_BASE"
+GENERIC_API_KEY_ENV = "AICHECK_LLM_API_KEY"
+
+# 各角色用哪个模型，允许按环境覆盖——否则换供应商就得改配置文件再重新构建镜像。
+MODEL_ROLE_ENV = {
+    "review": "AICHECK_LLM_MODEL_REVIEW",
+    "default": "AICHECK_LLM_MODEL_DEFAULT",
+    "compareFast": "AICHECK_LLM_MODEL_COMPARE_FAST",
+    "visionReview": "AICHECK_LLM_MODEL_VISION",
+    "coder": "AICHECK_LLM_MODEL_CODER",
+    "embeddingOptional": "AICHECK_LLM_MODEL_EMBEDDING",
+}
+
+# 地址 host → 供应商显示名。认不出的主机名直接把 host 报出去，不编。
+_PROVIDER_BY_HOST = {
+    "dashscope.aliyuncs.com": "Model Studio / DashScope",
+    "api.deepseek.com": "DeepSeek",
+    "api.openai.com": "OpenAI",
+}
+
+
+def provider_label_for(mode: str, base_url: str) -> str:
+    """供应商显示名。
+
+    这个值会写进 review_run / 消息的 execution 里，是事后追溯「这条结论是谁生成的」
+    的唯一线索。按模式硬编码会让记录说谎——不能为了好看而编一个没打过的供应商。
+    """
+    if mode != "official_api":
+        return "server"
+    host = str(base_url or "").split("//", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    if not host:
+        return "official_api（地址未配置）"
+    return _PROVIDER_BY_HOST.get(host, host)
+
+
+def model_names_with_env_overrides(
+    models: dict[str, Any], source: dict[str, str] | Any
+) -> dict[str, Any]:
+    """按环境变量覆盖各角色的模型名。
+
+    换供应商时模型名一定要跟着换（DeepSeek 不认 qwen3.7-plus）。没有这层覆盖，
+    换供应商就要改仓库里的 yaml 并重建镜像——那会逼人把临时决定写成永久配置。
+    """
+    resolved = deepcopy(models)
+    for role, env_name in MODEL_ROLE_ENV.items():
+        override = str(source.get(env_name) or "").strip()
+        if override:
+            resolved[role] = override
+    return resolved
+
+
 def env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -52,15 +105,24 @@ def qwen_runtime_config(path: Path | None = None, env: dict[str, str] | None = N
     base_url_env = str(provider.get("baseUrlEnv") or "")
     api_key_env = str(provider.get("apiKeyEnv") or "")
     default_base_url = str(provider.get("defaultBaseUrl") or "")
-    base_url = str(source.get(base_url_env) or default_base_url or "").rstrip("/")
-    api_key = str(source.get(api_key_env) or "")
+    # 通用变量优先于 QWEN_* 变量：official_api 这条路走的是 OpenAI 兼容协议，
+    # 供应商不一定是通义。把 DeepSeek 的密钥塞进名叫 QWEN_API_KEY 的变量里，
+    # 下一个人打开 env 文件只会更糊涂。旧名保留为回退，既有部署不受影响。
+    base_url = str(
+        source.get(GENERIC_BASE_URL_ENV) or source.get(base_url_env) or default_base_url or ""
+    ).rstrip("/")
+    api_key = str(source.get(GENERIC_API_KEY_ENV) or source.get(api_key_env) or "")
     aliases = deepcopy(server_provider.get("aliases") or {})
-    models = deepcopy(official_provider.get("models") or {})
+    models = model_names_with_env_overrides(official_provider.get("models") or {}, source)
     return {
         "schemaVersion": str(config.get("schemaVersion") or "aicheck-qwen-runtime@1"),
         "mode": configured_mode,
         "modeEnv": mode_env,
-        "provider": "Model Studio / DashScope" if configured_mode == "official_api" else "server",
+        # 供应商名从**实际地址**推出来，不从模式推。
+        # 原来写死成 "Model Studio / DashScope"：只要 mode 是 official_api 就这么报，
+        # 哪怕地址指着 api.deepseek.com。这类「按配置意图报告、不按现实报告」的字段，
+        # 正是这次排查里最费时间的东西——运行记录上写着一个从没被调用过的供应商。
+        "provider": provider_label_for(configured_mode, base_url),
         "baseUrl": base_url,
         "baseUrlRedacted": redact_url(base_url),
         "baseUrlEnv": base_url_env,

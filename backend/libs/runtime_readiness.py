@@ -7,7 +7,7 @@ from libs.material_review_assets import material_review_asset_status
 from libs.aliyun_ocr import official_ocr_circuit_breaker
 from libs.ocr_runtime import ocr_runtime_config, ocr_runtime_public_config
 from libs.official_ocr_control import official_ocr_control_status
-from libs.qwen_runtime import redact_url, server_mode_base_url
+from libs.qwen_runtime import qwen_runtime_config, redact_url, server_mode_base_url
 from scripts.setup_langgraph_checkpoint import REQUIRED_TABLES, verify_checkpoint_schema
 
 
@@ -44,7 +44,7 @@ def workflow_schema_status() -> dict[str, Any]:
     }
 
 
-def qwen_configuration_status(qwen_mode: str) -> dict[str, Any]:
+def qwen_configuration_status() -> dict[str, Any]:
     """模型链路是否真的配好了。
 
     ## 这里原来写的是 `True`
@@ -66,17 +66,29 @@ def qwen_configuration_status(qwen_mode: str) -> dict[str, Any]:
     `http://litellm-service:4000` 是 compose 内部主机名，脱离 compose 必然解析失败，
     因此「没配地址」等价于「没配好」，不能算就绪。
 
-    official_api 模式：要有 QWEN_API_KEY。
+    official_api 模式：要有地址和密钥（AICHECK_LLM_API_BASE / AICHECK_LLM_API_KEY，
+    旧名 QWEN_API_BASE / QWEN_API_KEY 仍可用）。
 
     这里只做配置层判定，**不发网络探测**——就绪接口会被健康检查高频调用，
     在里面打外部请求会把模型的抖动变成本服务的抖动。真实可达性由调用侧的
     失败原因回报（见 libs/review_conversation_fallback）。
     """
-    mode = str(qwen_mode or "").strip().lower()
+    # 模式只从 runtime 配置取一次。此前调用方另外读一遍 AICHECK_QWEN_CALL_MODE
+    # 再传进来，两个来源可以不一致——这轮排查里反复出现的就是这类「两个数字互相
+    # 打脸、但都不报错」。
+    runtime = qwen_runtime_config()
+    mode = str(runtime.get("mode") or "").strip().lower()
     if mode == "official_api":
-        configured = bool(os.getenv("QWEN_API_KEY", "").strip())
-        reason = "" if configured else "QWEN_API_KEY 未配置"
-        base_url = os.getenv("QWEN_API_BASE", "").strip()
+        # 走 runtime 配置而不是直接读 QWEN_API_KEY：通用变量 AICHECK_LLM_API_KEY
+        # 优先，直接读旧变量会把配好的部署误判成没配。
+        base_url = str(runtime.get("baseUrl") or "")
+        configured = bool(runtime.get("apiKeyConfigured")) and bool(base_url)
+        if configured:
+            reason = ""
+        elif not base_url:
+            reason = "official_api 模式未配置模型地址（AICHECK_LLM_API_BASE 或 QWEN_API_BASE）"
+        else:
+            reason = "模型密钥未配置（AICHECK_LLM_API_KEY 或 QWEN_API_KEY）"
     else:
         base_url = server_mode_base_url()
         configured = bool(base_url)
@@ -92,13 +104,14 @@ def qwen_configuration_status(qwen_mode: str) -> dict[str, Any]:
         "ready": configured,
         "mode": mode,
         "baseUrl": redact_url(base_url),
+        # 报实际供应商，不报模式意图——地址指着 DeepSeek 就不该写 DashScope
+        "provider": runtime.get("provider"),
         "reason": reason,
         "fallbackEnabled": os.getenv("AICHECK_QWEN_ALLOW_SERVER_FALLBACK", "false").strip().lower() == "true",
     }
 
 
 def audit_service_configuration_status() -> dict[str, Any]:
-    qwen_mode = os.getenv("AICHECK_QWEN_CALL_MODE", "server").strip().lower()
     ocr_runtime = ocr_runtime_config()
     ocr_public = ocr_runtime_public_config()
     official_mode = ocr_runtime["mode"] in {"official", "hybrid_auto"}
@@ -127,7 +140,7 @@ def audit_service_configuration_status() -> dict[str, Any]:
             "capacityControl": control_status,
             "formalReadinessProfileAllowlist": ocr_public.get("formalReadinessProfileAllowlist") or [],
         },
-        "qwen": qwen_configuration_status(qwen_mode),
+        "qwen": qwen_configuration_status(),
         "embedding": {
             "configured": bool(os.getenv("AICHECK_EMBEDDING_API_BASE", "").strip()),
             "provider": os.getenv("AICHECK_EMBEDDING_PROVIDER", "local").strip().lower(),
