@@ -7,7 +7,7 @@ import re
 import sys
 from collections import Counter
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -374,7 +374,7 @@ def write_annotation_workbook(plan: dict[str, Any], output_dir: Path) -> dict[st
         )
     manifest = {
         "schemaVersion": "aicheck-ocr-100-annotation-workbook-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "source": plan.get("source"),
         "summary": plan.get("summary") if isinstance(plan.get("summary"), dict) else {},
         "draftCount": len(draft_files),

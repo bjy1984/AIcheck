@@ -6,7 +6,6 @@ from typing import Any
 from libs.review_orchestrator.deterministic_tools import check, decimal, result
 from libs.review_tools.material_standard_profiles import resolve_material_standard_profile
 
-
 R18_RULE_VERSION = "r18-material-retest-and-ndt-tsg-d7006-2020-v1"
 _PASS = {"accepted", "approved", "qualified", "passed", "符合", "合格", "通过"}
 

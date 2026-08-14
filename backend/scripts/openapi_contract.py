@@ -7,7 +7,6 @@ from typing import Any
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT_PATH = ROOT / "openapi" / "aicheck.yaml"
 INDEX_PATH = ROOT / "openapi" / "contract-index.json"

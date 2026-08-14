@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 PROFILE_VERSION = "material-product-standard-profiles-v1"
 
 # This registry deliberately freezes only document/test-item requirements that have

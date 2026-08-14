@@ -204,7 +204,7 @@ def test_generate_finding_drafts_rejects_truncated_provider_output(monkeypatch) 
     monkeypatch.setattr("libs.review_orchestrator.execution.review_llm_execution_mode", lambda: "litellm")
     monkeypatch.setattr("libs.review_orchestrator.execution.build_review_messages", lambda review_run, context: [])
     monkeypatch.setattr("libs.review_orchestrator.execution.build_review_prompt_shape", lambda review_run, context: {})
-    monkeypatch.setattr("libs.review_orchestrator.execution.qwen_runtime_public_config", lambda: {})
+    monkeypatch.setattr("libs.review_orchestrator.execution.qwen_runtime_public_config", dict)
     monkeypatch.setattr("libs.review_orchestrator.execution.qwen_runtime_client", lambda: FakeClient())
 
     with pytest.raises(IntegrationServiceError) as error:

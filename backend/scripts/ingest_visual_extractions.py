@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = BACKEND_ROOT.parent
 if str(BACKEND_ROOT) not in sys.path:
@@ -23,7 +22,6 @@ from libs.knowledge_indexing import (
     chunk_text,
     offline_hash_embeddings,
 )
-
 
 VISUAL_EXTRACTION_ROOT = BACKEND_ROOT / "data" / "visual_extractions"
 VISUAL_SOURCE_METHOD = "codex_visual_manual_extraction"

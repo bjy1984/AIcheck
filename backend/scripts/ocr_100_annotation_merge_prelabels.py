@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +81,7 @@ def merge_prelabel_packs(
             skipped_human_labels.append(case_id)
         merged["prelabelMerge"] = {
             "source": update_sources.get(case_id),
-            "mergedAt": datetime.now(timezone.utc).isoformat(),
+            "mergedAt": datetime.now(UTC).isoformat(),
             "preservedHumanLabel": bool(preserve_human_labels and task.get("labeledExpected")),
         }
         merged_tasks.append(merged)
@@ -91,7 +91,7 @@ def merge_prelabel_packs(
     output_payload["tasks"] = merged_tasks
     output_payload["prelabelMergeSummary"] = {
         "schemaVersion": "aicheck-ocr-100-prelabel-merge-report-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "base": str(base_resolved),
         "updateFiles": [str(path) for path in update_paths],
         "baseTasks": len(base_tasks),

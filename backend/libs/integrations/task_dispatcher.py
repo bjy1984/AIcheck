@@ -34,7 +34,7 @@ def cpu_heavy_dispatch_blocker(mode: str) -> dict[str, Any] | None:
 
 
 def deterministic_task_id(scope: str, value: str) -> str:
-    digest = hashlib.sha256(f"{scope}:{value}".encode("utf-8")).hexdigest()[:24]
+    digest = hashlib.sha256(f"{scope}:{value}".encode()).hexdigest()[:24]
     return f"aicheck-{scope}-{digest}"
 
 

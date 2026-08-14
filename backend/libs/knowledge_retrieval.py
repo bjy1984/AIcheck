@@ -9,8 +9,11 @@ from typing import Any
 from uuid import uuid4
 
 from libs.contracts.responses import server_time
-from libs.knowledge_indexing import metadata_interference_reasons, noise_like_text, quarantine_interference_reasons
-
+from libs.knowledge_indexing import (
+    metadata_interference_reasons,
+    noise_like_text,
+    quarantine_interference_reasons,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 STANDARD_ALIAS_REGISTRY_PATH = BACKEND_ROOT / "config" / "standard_alias_registry.json"
@@ -357,7 +360,7 @@ def chinese_ngrams(text: str) -> set[str]:
     compact = "".join(re.findall(r"[\u4e00-\u9fff]+", text or ""))
     grams: set[str] = set()
     for width in (2, 3, 4):
-        for index in range(0, max(0, len(compact) - width + 1)):
+        for index in range(max(0, len(compact) - width + 1)):
             grams.add(compact[index : index + width])
     return grams
 

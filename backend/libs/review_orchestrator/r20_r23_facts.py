@@ -328,7 +328,7 @@ def _standard_refs(parse_result: dict[str, Any]) -> list[str]:
         if not isinstance(item, dict):
             continue
         text = str(item.get("fieldValue") or item.get("value") or item.get("text") or "")
-        values.extend(match.group(0) for match in re.finditer(r"GB\s*/?\s*T\s*(?:13927\s*[-—]\s*2022|26480\s*[-—]\s*2011)", text, re.I))
+        values.extend(match.group(0) for match in re.finditer(r"GB\s*/?\s*T\s*(?:13927\s*[-—]\s*2022|26480\s*[-—]\s*2011)", text, re.IGNORECASE))
     return values
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -188,7 +188,7 @@ def test_reschedule_honors_due_time_and_heartbeat_is_persisted(isolated_postgres
     assert payload["status"] == "queued"
     assert payload["stage"] == "retry_wait"
     assert payload["attempts"] == 1
-    assert datetime.fromisoformat(payload["nextAttemptAt"]) > datetime.now(timezone.utc)
+    assert datetime.fromisoformat(payload["nextAttemptAt"]) > datetime.now(UTC)
 
     with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
         connection.execute(
@@ -309,7 +309,7 @@ def test_knowledge_task_expired_lease_and_retry_due_time(
     assert payload["status"] == "排队中"
     assert payload["attempts"] == 1
     assert payload["errorMessage"] == "temporary embedding failure"
-    assert datetime.fromisoformat(payload["nextAttemptAt"]) > datetime.now(timezone.utc)
+    assert datetime.fromisoformat(payload["nextAttemptAt"]) > datetime.now(UTC)
 
 
 def test_legacy_running_knowledge_task_without_lease_is_reclaimed(

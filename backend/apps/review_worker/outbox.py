@@ -3,14 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from temporalio.client import Client
 
 from libs.audit_anchor import write_pending_audit_anchors
-
 
 OUTBOX_COLLECTION = "workflow_outbox"
 COMMAND_SIGNALS = {
@@ -25,7 +24,7 @@ def database_url() -> str | None:
 
 
 def utc_timestamp(value: datetime | None = None) -> str:
-    return (value or datetime.now(timezone.utc)).isoformat()
+    return (value or datetime.now(UTC)).isoformat()
 
 
 def finalized_command_payload(
@@ -65,7 +64,7 @@ def finalized_command_payload(
         payload["lastError"] = str(error or "Temporal signal failed")[:2000]
         if payload["status"] == "retry_pending":
             delay = min(300, 2 ** min(attempts, 8))
-            payload["nextAttemptAt"] = utc_timestamp(datetime.now(timezone.utc) + timedelta(seconds=delay))
+            payload["nextAttemptAt"] = utc_timestamp(datetime.now(UTC) + timedelta(seconds=delay))
         else:
             payload["deadLetteredAt"] = payload["updatedAt"]
             payload.pop("nextAttemptAt", None)
@@ -78,7 +77,7 @@ def claim_pending_commands(dsn: str, *, limit: int = 20) -> list[dict[str, Any]]
     import psycopg
 
     lease_token = uuid4().hex
-    lease_until = utc_timestamp(datetime.now(timezone.utc) + timedelta(seconds=60))
+    lease_until = utc_timestamp(datetime.now(UTC) + timedelta(seconds=60))
     with psycopg.connect(dsn, autocommit=False) as connection:
         rows = connection.execute(
             """

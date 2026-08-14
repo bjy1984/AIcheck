@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from libs.raw_vault import (
@@ -11,7 +12,6 @@ from libs.raw_vault import (
     capture_tool_request,
     capture_tool_result,
 )
-
 
 ToolRunner = Callable[[str, dict[str, Any]], dict[str, Any]]
 

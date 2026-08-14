@@ -5,9 +5,10 @@ import contextlib
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -160,16 +161,16 @@ def prelabel_annotation_tasks(
                 "tableSuggestions": len(suggested.get("tables") or []),
                 "sealSuggestions": len(suggested.get("seals") or []),
                 "blockers": blockers,
-                "generatedAt": datetime.now(timezone.utc).isoformat(),
+                "generatedAt": datetime.now(UTC).isoformat(),
             }
         else:
             updated["prelabelStatus"] = "unavailable"
-            updated["prelabelSummary"] = {"source": event.get("source"), "error": event.get("error"), "generatedAt": datetime.now(timezone.utc).isoformat()}
+            updated["prelabelSummary"] = {"source": event.get("source"), "error": event.get("error"), "generatedAt": datetime.now(UTC).isoformat()}
         prelabelled.append(updated)
     output_payload = {**payload, "tasks": prelabelled} if isinstance(payload, dict) else {"tasks": prelabelled}
     output_payload["prelabelSummary"] = {
         "schemaVersion": "aicheck-ocr-100-prelabel-report-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "sourceTasks": len(tasks),
         "tasks": len(prelabelled),
         "selectedCaseIds": sorted(selected_case_ids),

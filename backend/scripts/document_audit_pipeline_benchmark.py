@@ -9,7 +9,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
 PIPELINES = ("qwen_vl_audit_v1", "paddle_nuextract_deepseek_v1")
 
 

@@ -14,9 +14,12 @@ import yaml
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from libs.embedding_models import (
+    EMBEDDING_DEFAULT_ALIAS,
+    allowed_embedding_model_ids,
+    embedding_runtime_config,
+)
 from scripts.verify_deployment import REQUIRED_LITELLM_ALIASES
-from libs.embedding_models import EMBEDDING_DEFAULT_ALIAS, allowed_embedding_model_ids, embedding_runtime_config
-
 
 REQUIRED_SERVICES = {
     "api-service",

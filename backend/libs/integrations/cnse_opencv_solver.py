@@ -10,8 +10,7 @@ from __future__ import annotations
 import io
 import math
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
-
+from typing import Any
 
 ALGORITHM = "opencv-edge-template-v1"
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -86,7 +85,7 @@ def _load_rgba(data: bytes, label: str) -> Any:
         raise CnseOpenCvError(f"{label} image cannot be decoded") from exc
 
 
-def _alpha_bounds(image: Any) -> Optional[Tuple[int, int, int, int]]:
+def _alpha_bounds(image: Any) -> tuple[int, int, int, int] | None:
     import numpy as np
 
     alpha = image[:, :, 3]
@@ -149,7 +148,7 @@ def _best_unique(
     min_correlation: float,
     min_uniqueness: float,
     strategy: str,
-) -> Optional[_Candidate]:
+) -> _Candidate | None:
     import numpy as np
 
     finite = np.isfinite(scores)
@@ -177,7 +176,7 @@ def _best_unique(
     )
 
 
-def _masked_alpha_gap(background: Any, puzzle: Any) -> Optional[_Candidate]:
+def _masked_alpha_gap(background: Any, puzzle: Any) -> _Candidate | None:
     import numpy as np
 
     bounds = _alpha_bounds(puzzle)
@@ -226,7 +225,7 @@ def _luminance(image: Any) -> Any:
     return (77 * rgb[:, :, 0] + 150 * rgb[:, :, 1] + 29 * rgb[:, :, 2]) / 256
 
 
-def _masked_photometric(background: Any, puzzle: Any) -> Optional[_Candidate]:
+def _masked_photometric(background: Any, puzzle: Any) -> _Candidate | None:
     import numpy as np
 
     bounds = _alpha_bounds(puzzle)
@@ -287,7 +286,7 @@ def _masked_photometric(background: Any, puzzle: Any) -> Optional[_Candidate]:
     )
 
 
-def _edge_match(background: Any, puzzle: Any) -> Optional[_Candidate]:
+def _edge_match(background: Any, puzzle: Any) -> _Candidate | None:
     import cv2
     import numpy as np
 

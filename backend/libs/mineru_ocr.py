@@ -13,9 +13,9 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.engines import html_table_to_structure
-from libs.ocr.profiles import profile_for
 from apps.ocr_service.service import enrich_parse_result
 from libs.contracts.responses import server_time
+from libs.ocr.profiles import profile_for
 
 MAX_ZIP_MEMBERS = 5_000
 MAX_ZIP_MEMBER_BYTES = 128 * 1024 * 1024

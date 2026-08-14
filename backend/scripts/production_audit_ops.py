@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -85,7 +85,7 @@ def append_operational_audit(
         "incidentId": incident_id,
         "sequence": sequence,
         "previousHash": previous_hash,
-        "createdAt": created_at or datetime.now(timezone.utc).isoformat(),
+        "createdAt": created_at or datetime.now(UTC).isoformat(),
     }
     if metadata:
         event["metadata"] = metadata

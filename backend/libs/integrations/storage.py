@@ -3,13 +3,12 @@ from __future__ import annotations
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlencode, urlparse
 
 from libs.contracts.responses import SERVER_TZ
-
 
 LOGICAL_BUCKETS = (
     "documents",
@@ -225,7 +224,7 @@ class ObjectStorage:
             from minio.retention import COMPLIANCE, Retention
 
             retention_days = max(1, int(os.getenv("AICHECK_AUDIT_ANCHOR_RETENTION_DAYS", "3650")))
-            retention = Retention(COMPLIANCE, datetime.now(timezone.utc) + timedelta(days=retention_days))
+            retention = Retention(COMPLIANCE, datetime.now(UTC) + timedelta(days=retention_days))
         result = client.put_object(
             physical_bucket,
             physical_object_name,

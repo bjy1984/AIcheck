@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-import re
-
 
 DRAWING_PROFILE_IDS = {
     "engineering_drawing_list_v1",
@@ -873,7 +872,7 @@ def write_outputs(report_dir: Path, suffix: str, payload: dict[str, Any]) -> Non
     )
 
 
-def ratio(numerator: int | float, denominator: int | float) -> float:
+def ratio(numerator: float, denominator: float) -> float:
     if not denominator:
         return 0.0
     return round(float(numerator) / float(denominator), 4)

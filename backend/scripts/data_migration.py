@@ -9,10 +9,10 @@ import shlex
 import shutil
 import subprocess
 import tarfile
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Iterable
-
+from typing import Any
 
 SCHEMA_VERSION = "aicheck-data-migration-v1"
 EXPECTED_DATABASES = frozenset({"aicheck", "litellm", "workflow"})

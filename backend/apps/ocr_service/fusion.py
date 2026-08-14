@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-from difflib import SequenceMatcher
 import re
 from copy import deepcopy
+from datetime import datetime
+from difflib import SequenceMatcher
 from typing import Any
 
 from libs.ocr.utils import parse_bool
@@ -496,13 +496,13 @@ def seal_text_has_indicator(text: str) -> bool:
 
 
 def infer_fragment_seal_type(text: str, seal: dict[str, Any]) -> str:
-    if "设计许可" in text or ("管道" in text and ("许可" in text or re.search(r"TS\s*\d", text, flags=re.I))):
+    if "设计许可" in text or ("管道" in text and ("许可" in text or re.search(r"TS\s*\d", text, flags=re.IGNORECASE))):
         return "design_license_seal"
     if "检测" in text or "检验" in text:
         return "inspection_testing_seal"
     if "出图" in text or "审图" in text or "施工图审查" in text:
         return "drawing_approval_seal"
-    if "管道" in text or re.search(r"TS\s*\d", text, flags=re.I):
+    if "管道" in text or re.search(r"TS\s*\d", text, flags=re.IGNORECASE):
         return "design_license_seal"
     return str(seal.get("sealType") or "fragment_text_seal")
 
@@ -637,11 +637,11 @@ def fragment_seal_text_can_satisfy_required(seal_type: Any, text: str) -> bool:
     compact = normalize_text(text).replace(" ", "")
     if normalized_type == "design_license_seal":
         return bool(
-            re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.I)
+            re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.IGNORECASE)
             and ("压力管道" in compact or "设计许可" in compact or "特种设备" in compact)
         )
     if normalized_type == "drawing_approval_seal":
-        has_certificate = bool(re.search(r"\bA\s*\d{6,12}\b", text, flags=re.I))
+        has_certificate = bool(re.search(r"\bA\s*\d{6,12}\b", text, flags=re.IGNORECASE))
         has_expiry = bool(extract_blue_seal_expiry(text))
         has_approval_signal = any(token in compact for token in ["出图", "审图", "施工图审查", "资质证书编号", "单位名称"])
         return has_approval_signal and (has_certificate or has_expiry)
@@ -703,7 +703,7 @@ def fragment_seal_fields(
             "source": "ocr_fragments_in_visual_seal_bbox",
         }
     ]
-    license_match = re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.I)
+    license_match = re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.IGNORECASE)
     if license_match:
         fields.append(
             {
@@ -715,7 +715,7 @@ def fragment_seal_fields(
                 "source": "ocr_fragments_in_visual_seal_bbox",
             }
         )
-    blue_certificate_match = re.search(r"\bA\s*\d{6,12}\b", text, flags=re.I)
+    blue_certificate_match = re.search(r"\bA\s*\d{6,12}\b", text, flags=re.IGNORECASE)
     if seal_type == "drawing_approval_seal" and blue_certificate_match:
         fields.append(
             {
@@ -1003,9 +1003,7 @@ def build_quality_gate(result: dict[str, Any], profile: dict[str, Any]) -> dict[
         reasons.append("TABLE_CONTENT_SPARSE")
     if required_seal and not seals:
         reasons.append("SEAL_NOT_FOUND")
-    if required_seal and seals and not formal_seals:
-        reasons.append("SEAL_TEXT_LOW_CONFIDENCE")
-    elif required_seal and formal_seals and seal_confidence < 0.65:
+    if required_seal and seals and not formal_seals or required_seal and formal_seals and seal_confidence < 0.65:
         reasons.append("SEAL_TEXT_LOW_CONFIDENCE")
     if formal_seals and missing_expected_seal_types:
         reasons.append("EXPECTED_SEAL_TYPE_MISSING")
@@ -1551,9 +1549,9 @@ def validate_identifier_value(field_code: str, text: str) -> tuple[bool, str]:
     compact = normalize_identifier_text(text)
     if len(compact) < 2:
         return False, "identifier_too_short"
-    if re.search(r"[^A-Z0-9/_.#()（）\-\u4e00-\u9fff]", compact, flags=re.I):
+    if re.search(r"[^A-Z0-9/_.#()（）\-\u4e00-\u9fff]", compact, flags=re.IGNORECASE):
         return False, "identifier_has_invalid_characters"
-    if not re.search(r"[A-Z0-9]", compact, flags=re.I):
+    if not re.search(r"[A-Z0-9]", compact, flags=re.IGNORECASE):
         return False, "identifier_missing_alnum"
     if field_code in {"report_no", "certificate_no", "record_no", "drawing_no"} and len(compact) < 4:
         return False, "identifier_too_short"
@@ -1590,7 +1588,7 @@ def validate_code_list_value(field_code: str, text: str) -> tuple[bool, str]:
         return False, "code_list_empty"
     valid_count = 0
     for token in tokens[:30]:
-        if re.search(r"[A-Z]", token, flags=re.I) and re.search(r"\d", token) and re.fullmatch(r"[A-Z0-9_.#()/（）\-]+", token, flags=re.I):
+        if re.search(r"[A-Z]", token, flags=re.IGNORECASE) and re.search(r"\d", token) and re.fullmatch(r"[A-Z0-9_.#()/（）\-]+", token, flags=re.IGNORECASE):
             valid_count += 1
     if valid_count == 0:
         return False, f"{field_code}_format_unrecognized"

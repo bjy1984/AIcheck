@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +13,6 @@ if __package__ in {None, ""}:
 from scripts.ocr_100_corpus import SCENARIO_PROFILE_DEFAULTS
 from scripts.ocr_100_ingest_samples import SUPPORTED_SUFFIXES
 from scripts.ocr_eval_set import write_text_file
-
 
 PLACEHOLDER_PREFIX = "replace-with-"
 
@@ -257,7 +256,7 @@ def build_report(
     ready_to_ingest = not failures and placeholders == 0 and bool(samples)
     summary = {
         "schemaVersion": "aicheck-ocr-100-collection-intake-verify-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "intakeDir": str(intake_dir),
         "manifest": str(manifest_path),
         "slots": len([item for item in samples if isinstance(item, dict)]),

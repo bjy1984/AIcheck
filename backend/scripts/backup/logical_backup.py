@@ -8,19 +8,18 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from minio import Minio
-
 
 SCHEMA_VERSION = "aicheck-backup-manifest-v1"
 SECRET_DIR = Path(os.getenv("AICHECK_BACKUP_SECRET_DIR", "/run/secrets/aicheck-backup"))
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def sha256_file(path: Path) -> str:
@@ -76,7 +75,7 @@ def build_manifest(root: Path, *, started_at: str, databases: list[str], postgre
     }
     manifest: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
-        "backupId": datetime.now(timezone.utc).strftime("logical-%Y%m%dT%H%M%SZ"),
+        "backupId": datetime.now(UTC).strftime("logical-%Y%m%dT%H%M%SZ"),
         "backupType": "logical-all-databases",
         "startedAt": started_at,
         "completedAt": utc_now(),
@@ -159,7 +158,7 @@ def main() -> int:
         bucket = os.getenv("AICHECK_LOGICAL_BACKUP_BUCKET", "aicheck-db-logical-backups")
         if not client.bucket_exists(bucket):
             raise RuntimeError(f"offsite bucket {bucket!r} does not exist; backup job will not create retention policy")
-        prefix = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+        prefix = datetime.now(UTC).strftime("%Y/%m/%d")
         encrypted_object = f"{prefix}/{encrypted.name}"
         manifest_object = f"{prefix}/{manifest['backupId']}.manifest.json"
         client.fput_object(bucket, encrypted_object, str(encrypted), content_type="application/pgp-encrypted")

@@ -4,7 +4,6 @@ import os
 from contextvars import ContextVar, Token
 from typing import Any
 
-
 DEFAULT_TENANT_ID = "TENANT-DEFAULT"
 _request_tenant_id: ContextVar[str | None] = ContextVar("aicheck_request_tenant_id", default=None)
 

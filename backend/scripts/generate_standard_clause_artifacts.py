@@ -14,7 +14,6 @@ from pathlib import Path
 
 import yaml
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 PACK_DIR = BACKEND_ROOT / "business_packs" / "engineering_inspection_v1"
@@ -653,7 +652,7 @@ def make_locator(
     verification_status: str,
 ) -> dict[str, object]:
     digest = hashlib.sha1(
-        f"{standard_ref}|{clause_no}|{start_page}|{end_page}".encode("utf-8")
+        f"{standard_ref}|{clause_no}|{start_page}|{end_page}".encode()
     ).hexdigest()[:12].upper()
     return {
         "locatorId": f"LOC-{digest}",

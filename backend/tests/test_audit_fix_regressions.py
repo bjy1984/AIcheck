@@ -1833,7 +1833,7 @@ def test_d4_dimension_mismatched_vectors_are_reported_not_silently_skipped(caplo
     skip_block = re.search(
         r"row_dimensions != OFFLINE_VECTOR_DIMENSIONS.*?pgvector_dimension_mismatch",
         text,
-        re.S,
+        re.DOTALL,
     )
     assert skip_block, "跳过维度不符的向量时必须计数并上报"
     assert logging.getLogger("aicheck.repository") is not None

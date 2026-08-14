@@ -16,7 +16,6 @@ from libs.integrations.raw_http_capture import (
 )
 from libs.raw_vault import RawCapture, RawCaptureContext, raw_capture_from_environment
 
-
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "qwen_runtime.yaml"
 SUPPORTED_MODES = {"server", "official_api"}
 MODEL_ROLE_ALIASES = {

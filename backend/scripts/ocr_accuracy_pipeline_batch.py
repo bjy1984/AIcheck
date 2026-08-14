@@ -15,13 +15,12 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.ocr.profiles import profile_for
 from libs.contracts.responses import server_time
 from libs.db.repository import flush_state_records, load_state, repo
 from libs.integrations import task_dispatcher
 from libs.integrations.storage import object_storage
+from libs.ocr.profiles import profile_for
 from libs.ocr_accuracy_pipeline import pipeline_version
-
 
 TERMINAL_STATUSES = {"completed", "partial", "failed", "canceled"}
 SCENARIO_TAG = "ocr-accuracy-regression-v2"
@@ -350,12 +349,12 @@ def summarize_case(case: dict[str, Any], campaign: str, capabilities: dict[str, 
         "engineStatus": {name: item.get("engineStatus") or {} for name, item in stages.items()},
         "stageEngineGates": stage_engine_gates,
         "applicableEngineFailures": applicable_failures,
-        "invalidCandidateIdCount": int(((run.get("groundingValidation") or {}).get("invalidCandidateIdCount") or 0)),
-        "unsupportedAttributionCount": int(((run.get("groundingValidation") or {}).get("unsupportedAttributionCount") or 0)),
+        "invalidCandidateIdCount": int((run.get("groundingValidation") or {}).get("invalidCandidateIdCount") or 0),
+        "unsupportedAttributionCount": int((run.get("groundingValidation") or {}).get("unsupportedAttributionCount") or 0),
         "droppedUnsupportedAttributionCount": int(
-            ((run.get("groundingValidation") or {}).get("droppedUnsupportedAttributionCount") or 0)
+            (run.get("groundingValidation") or {}).get("droppedUnsupportedAttributionCount") or 0
         ),
-        "candidateRepairCount": int(((run.get("groundingValidation") or {}).get("candidateRepairCount") or 0)),
+        "candidateRepairCount": int((run.get("groundingValidation") or {}).get("candidateRepairCount") or 0),
         "formalEvidenceReady": bool(run.get("formalEvidenceReady")),
         "resultCounts": {
             "fields": len(parse_result.get("fields") or []),

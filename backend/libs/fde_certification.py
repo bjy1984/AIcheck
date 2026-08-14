@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
-from typing import Any, Callable
-
+from collections.abc import Callable
+from typing import Any
 
 PRODUCTION_CERTIFICATION_PROFILE = "production-certification-v2"
 CERTIFICATION_REPORT_SCHEMA_VERSION = "aicheck-certification-report-v2"

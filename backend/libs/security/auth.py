@@ -5,11 +5,11 @@ import hmac
 import os
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from libs.security.tenant import current_tenant_id, configured_tenant_id, tenant_id_for_record
+from libs.security.tenant import configured_tenant_id, current_tenant_id, tenant_id_for_record
 
 try:
     import jwt
@@ -270,7 +270,7 @@ def user_auth_version(username: str | None) -> int:
 def issue_token(user: dict[str, Any]) -> str:
     if jwt is None:
         raise RuntimeError("PyJWT is required to issue access tokens")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user["username"],
         "role": user.get("role", "inspection"),
@@ -288,8 +288,7 @@ def issue_token(user: dict[str, Any]) -> str:
 def decode_token(token: str) -> dict[str, Any] | None:
     if not token:
         return None
-    if token.startswith("Bearer "):
-        token = token[7:]
+    token = token.removeprefix("Bearer ")
     if token.startswith("dev-token-"):
         if not dev_tokens_allowed():
             return None

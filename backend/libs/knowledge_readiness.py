@@ -4,7 +4,6 @@ from typing import Any
 
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 
-
 REQUIRED_KNOWLEDGE_ROUTES = {
     "exact_clause_lookup": "TSG-D7006-D2.4.1 条",
     "hybrid_review_basis_search": "焊工资格证有效期如何校验？",
@@ -63,9 +62,7 @@ def source_index_section(state: dict[str, Any]) -> dict[str, Any]:
         if item.get("sourceType") not in {"project-file", "project_file"} and safe_int(item.get("chunkCount")) > 0
     ]
     vector_ready = [item for item in vector_scope if item.get("vectorStatus") == "已向量化"]
-    if vector_scope and len(vector_ready) / len(vector_scope) >= 0.6:
-        points += 5
-    elif not vector_scope and has_structured_rule_index:
+    if vector_scope and len(vector_ready) / len(vector_scope) >= 0.6 or not vector_scope and has_structured_rule_index:
         points += 5
     else:
         blockers.append("less than 60% of indexed rule-basis knowledge sources are vectorized")

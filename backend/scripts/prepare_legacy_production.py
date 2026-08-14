@@ -5,10 +5,9 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 TENANT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 INDEX_COMPATIBILITY_MARKERS = {
@@ -144,7 +143,7 @@ def legacy_report(connection: Any, tenant_id: str) -> dict[str, Any]:
     )
     return {
         "schemaVersion": "aicheck-legacy-production-preflight-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "database": str(connection.info.dbname),
         "tenantId": tenant_id,
         "stateRows": state_rows,

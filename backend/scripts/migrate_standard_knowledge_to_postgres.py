@@ -5,9 +5,9 @@ import json
 import os
 import sqlite3
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 STANDARD_SOURCE_ID = "KS-STANDARD-RULES"
 

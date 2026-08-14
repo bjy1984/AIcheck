@@ -6,7 +6,6 @@ import signal
 
 from apps.mineru_worker.worker import MinerUPostgresWorker
 
-
 logger = logging.getLogger(__name__)
 
 

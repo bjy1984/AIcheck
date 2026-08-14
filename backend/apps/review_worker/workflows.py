@@ -8,7 +8,10 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from apps.review_worker.activities import apply_review_workflow_command_activity, run_review_graph_activity
+    from apps.review_worker.activities import (
+        apply_review_workflow_command_activity,
+        run_review_graph_activity,
+    )
 
 
 @workflow.defn(name="ReviewRunWorkflow")

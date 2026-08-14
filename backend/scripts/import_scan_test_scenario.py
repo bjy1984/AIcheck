@@ -11,16 +11,15 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = BACKEND_ROOT.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.contracts.responses import server_time
 from libs.business_pack import business_pack_snapshot, load_business_pack
 from libs.business_pack.clause_store import bind_project_node_clause_packages
+from libs.contracts.responses import server_time
 from libs.db.repository import flush_state, load_state, repo, stable_doc_id
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
@@ -30,7 +29,6 @@ from libs.knowledge_indexing import (
 )
 from libs.material_review_assets import load_material_review_asset
 from libs.material_targeting import run_material_targeting
-
 
 SCENARIO_TAG = "scan-test-scenario-v1"
 SCENARIO_BINDING_VERSION = "scan-binding-v2"

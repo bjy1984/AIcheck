@@ -6,10 +6,9 @@ import json
 import os
 import platform
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 SCHEMA_VERSION = "aicheck-release-manifest-v1"
 IGNORED_NAMES = {".DS_Store", "__pycache__"}
@@ -112,7 +111,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     document: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "releaseId": release_id,
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "source": {
             "gitSha": git_sha,
             "dirty": bool(dirty_lines),

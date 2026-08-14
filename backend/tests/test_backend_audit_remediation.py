@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -290,7 +290,7 @@ def test_human_edit_revalidates_evidence_references_and_input_limits() -> None:
 
 
 def test_jwt_missing_required_tenant_claim_is_rejected() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     token = auth.jwt.encode(
         {
             "sub": "admin",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -129,7 +129,7 @@ def run_collection_pipeline(
 
     summary = {
         "schemaVersion": "aicheck-ocr-100-collection-intake-pipeline-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "intakeDir": str(intake_dir),
         "execute": bool(execute),
         "readyToExecute": ready and not failures,

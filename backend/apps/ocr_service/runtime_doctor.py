@@ -10,7 +10,6 @@ from typing import Any
 
 from libs.ocr.utils import parse_bool
 
-
 PACKAGE_CHECKS = {
     "cv2": "opencv-python-headless",
     "numpy": "numpy",

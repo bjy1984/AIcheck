@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -107,7 +107,7 @@ def verify_label_studio_pack(label_studio_dir: Path, *, annotation_tasks: Path |
         failures.append(failure("LABEL_STUDIO_SKIPPED_TASKS", "Export skipped tasks without allowSkipped=true.", skipped=summary.get("skipped")))
     report_summary = {
         "schemaVersion": "aicheck-ocr-100-label-studio-verify-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "labelStudioDir": str(root),
         "source": str(source_tasks_path) if source_tasks_path else summary.get("source"),
         "ok": not failures and bool(label_tasks),
@@ -175,8 +175,7 @@ def resolve_image_path(image_url: str, *, local_root: Path, image_url_prefix: st
     if not image_url:
         return None
     raw = image_url
-    if raw.startswith(image_url_prefix):
-        raw = raw[len(image_url_prefix) :]
+    raw = raw.removeprefix(image_url_prefix)
     raw = unquote(raw)
     path = Path(raw)
     return path if path.is_absolute() else (local_root / path).resolve()

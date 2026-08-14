@@ -403,19 +403,19 @@ def build_review_conversation_agent_tools(
     seen: set[str] = set()
     tools: list[dict[str, Any]] = []
     for item in context_tools:
-        name = str(((item.get("function") or {}).get("name") or ""))
+        name = str((item.get("function") or {}).get("name") or "")
         if not name or name in seen:
             continue
         seen.add(name)
         tools.append(item)
     for item in build_llm_tools_for_runtime(CONVERSATION_AGENT_RUNTIME_TOOL_NAMES):
-        name = str(((item.get("function") or {}).get("name") or ""))
+        name = str((item.get("function") or {}).get("name") or "")
         if not name or name in seen:
             continue
         seen.add(name)
         tools.append(item)
     for item in EXTERNAL_REGISTRY_LLM_TOOLS:
-        name = str(((item.get("function") or {}).get("name") or ""))
+        name = str((item.get("function") or {}).get("name") or "")
         if not name or name in seen:
             continue
         seen.add(name)

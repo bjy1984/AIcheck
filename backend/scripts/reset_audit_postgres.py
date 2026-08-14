@@ -9,7 +9,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from libs.db.repository import repo
-from scripts.create_roles import apply_role_bootstrap_to_state, resolve_role_passwords, selected_roles
+from scripts.create_roles import (
+    apply_role_bootstrap_to_state,
+    resolve_role_passwords,
+    selected_roles,
+)
 
 
 def parse_args() -> argparse.Namespace:

@@ -295,7 +295,7 @@ def test_release_manifest_can_require_bundle_and_immutable_images(monkeypatch, t
     from scripts import ocr_pipeline_release_manifest as release_manifest
 
     monkeypatch.setattr(release_manifest, "git_revision", lambda _reference: "a" * 40)
-    monkeypatch.setattr(release_manifest, "git_worktree_status", lambda: [])
+    monkeypatch.setattr(release_manifest, "git_worktree_status", list)
     args = SimpleNamespace(
         origin_commit="a" * 40,
         bundle=None,

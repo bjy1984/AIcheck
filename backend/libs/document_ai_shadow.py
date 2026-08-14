@@ -6,9 +6,9 @@ import math
 import os
 import re
 import unicodedata
+from collections.abc import Iterable
 from copy import deepcopy
-from typing import Any, Iterable
-
+from typing import Any
 
 EVIDENCE_PRIOR_VERSION = "EvidencePrior@3"
 DEFAULT_DOCUMENT_AI_PROFILE_ALLOWLIST = (

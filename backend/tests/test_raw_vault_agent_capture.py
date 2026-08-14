@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from libs.raw_vault import InMemoryRawVaultStore, RawCapture, RawCaptureContext
-from libs.review_orchestrator.runtime_tools import runtime_tool_catalog
 from libs.review_tools import execute_node_tool_plan
 
 

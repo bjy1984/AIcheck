@@ -8,6 +8,7 @@ import sys
 import zipfile
 from argparse import Namespace
 from copy import deepcopy
+from datetime import UTC
 from pathlib import Path
 
 import httpx
@@ -3206,7 +3207,6 @@ def test_ocr_remediation_cache_key_includes_remediation_context(monkeypatch, tmp
 
     def capture_cache_key(source_path, *, engine_status, variant, profile, model_manifest, options=None):
         captured_options.append(options or {})
-        return None
 
     service = OcrService()
     service.engines = [RemediationEngine()]
@@ -5815,7 +5815,7 @@ def test_project_level_submit_without_node_binding() -> None:
     ]
     before_node_status = {
         node_id: repo.node(project_id, node_id)["status"]
-        for node_id in {16, 24, 25, 40}
+        for node_id in (16, 24, 25, 40)
         if repo.node(project_id, node_id)
     }
 
@@ -10882,7 +10882,7 @@ def test_project_document_local_heic_inline_preview_renders_png(monkeypatch) -> 
 
 
 def test_heic_preview_sips_fallback_caps_preview_size(monkeypatch, tmp_path) -> None:
-    import apps.api.routes as routes
+    from apps.api import routes
 
     source = tmp_path / "source.heic"
     source.write_bytes(b"heic")
@@ -10993,7 +10993,7 @@ def test_concrete_admin_routes_precede_the_dynamic_admin_route() -> None:
 
 
 def test_admin_audit_logs_use_postgres_page_contract(monkeypatch) -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     class Cursor:
         def __init__(self, rows):
@@ -11007,7 +11007,7 @@ def test_admin_audit_logs_use_postgres_page_contract(monkeypatch) -> None:
 
     class Connection:
         def __init__(self):
-            now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+            now = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
             self.rows = [
                 ("AUD-PG-3", {"id": "AUD-PG-3", "action": "发布规则", "result": "成功"}, now),
                 ("AUD-PG-2", {"id": "AUD-PG-2", "action": "更新规则", "result": "成功"}, now),

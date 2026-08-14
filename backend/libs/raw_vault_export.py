@@ -3,8 +3,8 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from collections.abc import Callable
 from dataclasses import asdict
-from typing import Callable
 
 from libs.raw_vault import (
     CapturedRawEvent,

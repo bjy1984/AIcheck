@@ -37,7 +37,6 @@ from fastapi.responses import (
 from apps.api.office_preview_routes import router as office_preview_router
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
-from libs.ocr.utils import parse_bool
 from libs.ai_run_failure import ai_run_failure_view
 from libs.audit_context import (
     current_request_audit_context,
@@ -111,20 +110,10 @@ from libs.material_targeting import (
     set_node_evidence_link_manual_status,
 )
 from libs.model_usage import normalize_model_usage
+from libs.ocr.utils import parse_bool
 from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.ocr_structured_view import build_ocr_structured_view
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
-from libs.reasoning_budget import (
-    conversation_max_output_tokens,
-    output_budget_exhausted_by_reasoning,
-)
-from libs.review_conversation_prompt import (
-    REVIEW_CONVERSATION_LANGUAGE_REMINDER,
-    REVIEW_CONVERSATION_SYSTEM_PROMPT,
-)
-from libs.review_conversation_fallback import fallback_answer_text
-from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
-from libs.review_conversation_blocks import review_message_source_references
 from libs.raw_vault import (
     capture_agent_turn,
     capture_tool_error,
@@ -136,6 +125,16 @@ from libs.raw_vault import (
     verify_event_chain,
 )
 from libs.raw_vault_export import build_raw_vault_export, build_raw_vault_summary
+from libs.reasoning_budget import (
+    conversation_max_output_tokens,
+    output_budget_exhausted_by_reasoning,
+)
+from libs.review_conversation_blocks import review_message_source_references
+from libs.review_conversation_fallback import fallback_answer_text
+from libs.review_conversation_prompt import (
+    REVIEW_CONVERSATION_LANGUAGE_REMINDER,
+    REVIEW_CONVERSATION_SYSTEM_PROMPT,
+)
 from libs.review_orchestrator import (
     apply_review_human_input_for_review_run,
     build_review_orchestration_scorecard,
@@ -177,6 +176,7 @@ from libs.review_orchestrator.r20_r23_facts import (
 )
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path

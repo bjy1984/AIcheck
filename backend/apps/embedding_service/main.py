@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import math
 import os
 import threading
 import time
 from typing import Any
-import hashlib
-import math
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
-
 
 MODEL_ID = os.getenv("AICHECK_EMBEDDING_MODEL_ID", "Qwen/Qwen3-Embedding-0.6B")
 SERVED_MODEL_NAME = os.getenv("AICHECK_EMBEDDING_SERVED_MODEL_NAME", "embedding-default")

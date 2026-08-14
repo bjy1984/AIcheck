@@ -3,17 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from libs.business_rule_generation import (
-    STANDARD_VERSION as GENERATED_STANDARD_RULES_VERSION,
-    build_standard_knowledge_seed,
-    list_standard_files,
-    repo_root_from_backend,
-)
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
-    business_pack_fixtures,
     build_project_requirements,
     build_project_tree,
+    business_pack_fixtures,
     business_pack_snapshot,
     default_business_pack,
     list_business_packs,
@@ -26,8 +20,16 @@ from libs.business_pack.clause_store import (
     bind_project_node_clause_packages,
     publish_standard_clause_release,
 )
-from libs.material_targeting import load_review_points_from_mapping_doc
+from libs.business_rule_generation import (
+    STANDARD_VERSION as GENERATED_STANDARD_RULES_VERSION,
+)
+from libs.business_rule_generation import (
+    build_standard_knowledge_seed,
+    list_standard_files,
+    repo_root_from_backend,
+)
 from libs.material_review_assets import load_material_review_asset
+from libs.material_targeting import load_review_points_from_mapping_doc
 
 PROJECT_ID = "P-2026-HDCP-001"
 DEFAULT_BUSINESS_PACK = default_business_pack()

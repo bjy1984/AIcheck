@@ -9,11 +9,12 @@ import re
 import threading
 import time
 import unicodedata
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -25,7 +26,6 @@ from libs.official_ocr_control import (
     RedisOfficialOcrCircuitBreaker,
     official_ocr_call_slot,
 )
-
 
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 SEAL_TEXT_RE = re.compile(
@@ -80,12 +80,12 @@ class OfficialOcrCircuitBreaker:
     def before_call(self) -> None:
         with self._lock:
             if self._opened_at is None:
-                return None
+                return
             elapsed = time.monotonic() - self._opened_at
             if elapsed >= self.open_seconds:
                 self._opened_at = None
                 self._failures = 0
-                return None
+                return
             raise AliyunOcrCircuitOpen(
                 "Aliyun OCR circuit is open",
                 reason="CIRCUIT_OPEN",
@@ -700,7 +700,7 @@ def match_value_to_fragments(value: Any, fragments: list[dict[str, Any]]) -> lis
         by_page.setdefault(int(item.get("pageNo") or 1), []).append(item)
     for rows in by_page.values():
         for width in (2, 3):
-            for index in range(0, max(len(rows) - width + 1, 0)):
+            for index in range(max(len(rows) - width + 1, 0)):
                 group = rows[index : index + width]
                 combined = normalize_match_text("".join(str(item.get("text") or "") for item in group))
                 if _value_matches_fragment(needle, combined):

@@ -8,7 +8,6 @@ from pathlib import Path
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID
 from libs.material_targeting import MAPPING_DOC_RELATIVE_PATH, load_review_points_from_mapping_doc
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = BACKEND_ROOT.parent
 DEFAULT_SOURCE = WORKSPACE_ROOT / MAPPING_DOC_RELATIVE_PATH

@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -80,7 +80,7 @@ def import_label_studio_annotations(
     updated_by_case_id = {str(task.get("caseId")): task for task in updated_tasks if task.get("caseId")}
     updated_by_task_id = {str(task.get("taskId")): task for task in updated_tasks if task.get("taskId")}
 
-    imported_at = datetime.now(timezone.utc).isoformat()
+    imported_at = datetime.now(UTC).isoformat()
     imported: list[dict[str, Any]] = []
     unmatched: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []

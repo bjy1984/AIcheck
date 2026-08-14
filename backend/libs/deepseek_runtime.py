@@ -10,7 +10,6 @@ import yaml
 from libs.integrations.errors import IntegrationServiceError, safe_reason
 from libs.integrations.litellm_client import LiteLLMClient
 
-
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "audit_model_comparison.yaml"
 SUPPORTED_MODES = {"off", "shadow"}
 

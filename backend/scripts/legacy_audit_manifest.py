@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -21,7 +21,7 @@ def build_manifest(preflight: dict, *, incident_id: str, backup_reference: str) 
         "incidentId": incident_id,
         "tenantId": preflight["tenantId"],
         "database": preflight["database"],
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "backupReference": backup_reference,
         "legacyAuditRows": preflight["legacyAuditRows"],
         "legacyAuditDigest": preflight["legacyAuditDigest"],

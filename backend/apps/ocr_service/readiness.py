@@ -4,7 +4,6 @@ from typing import Any
 
 from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS, ocr_100_thresholds
 
-
 OCR_100_REQUIRED_ENGINES = [
     "paddle_ocr_subprocess",
     "pp_structure_v3",

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import yaml
-
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "ocr_runtime.yaml"
 SUPPORTED_MODES = {"local", "official", "hybrid_auto"}

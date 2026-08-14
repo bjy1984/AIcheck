@@ -11,14 +11,13 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = BACKEND_ROOT.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.business_rule_generation import (  # noqa: E402
+from libs.business_rule_generation import (
     STANDARD_VERSION,
     build_rule_sets,
     list_standard_files,
     render_standard_match_section,
     replace_generated_standard_section,
 )
-
 
 BLOCK_LITERAL_KEYS = {
     "criteria",

@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from libs.material_review_assets import material_review_asset_status
 from libs.aliyun_ocr import official_ocr_circuit_breaker
+from libs.material_review_assets import material_review_asset_status
 from libs.ocr_runtime import ocr_runtime_config, ocr_runtime_public_config
 from libs.official_ocr_control import official_ocr_control_status
 from libs.qwen_runtime import qwen_runtime_config, redact_url, server_mode_base_url

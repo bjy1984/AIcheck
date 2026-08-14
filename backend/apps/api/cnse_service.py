@@ -13,7 +13,6 @@ from apps.api.cnse_routes import router as cnse_router
 from libs.contracts.responses import ok
 from libs.security.runtime import allowed_hosts
 
-
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 

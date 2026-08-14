@@ -11,7 +11,6 @@ from typing import Any
 
 from libs.ocr.utils import parse_bool
 
-
 PAGE_RENDER_VERSION = "pymupdf_text_to_pixel_matrix_v4"
 
 

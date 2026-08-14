@@ -4,14 +4,18 @@ import argparse
 import json
 import sys
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tasks, is_machine_draft_label, resolve_tasks_path
+from scripts.ocr_annotation_readiness import (
+    build_annotation_readiness_from_tasks,
+    is_machine_draft_label,
+    resolve_tasks_path,
+)
 from scripts.ocr_eval_set import write_text_file
 
 
@@ -58,7 +62,7 @@ def draft_labels_from_suggestions(
     if not isinstance(tasks, list):
         raise ValueError("annotation tasks must be a JSON object with tasks[] or a raw task list.")
     selected_case_ids = set(case_ids or set())
-    drafted_at = datetime.now(timezone.utc).isoformat()
+    drafted_at = datetime.now(UTC).isoformat()
     output_tasks: list[Any] = []
     drafted_case_ids: list[str] = []
     skipped: dict[str, list[str]] = {

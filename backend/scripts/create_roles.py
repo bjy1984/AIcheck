@@ -18,7 +18,6 @@ from libs.db.repository import repo
 from libs.db.seed import ADMIN_CONFIG, PROJECT_ID, ROLE_ACTIONS
 from libs.security.auth import ROLE_DEFAULT_PATHS, hash_password
 
-
 ROLE_SPECS: dict[str, dict[str, Any]] = {
     "admin": {
         "userId": "USER-ADMIN-001",

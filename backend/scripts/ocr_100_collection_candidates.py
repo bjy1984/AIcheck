@@ -4,7 +4,7 @@ import argparse
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +91,7 @@ def build_collection_candidate_report(
     duplicate_candidates = [item for item in candidates if item.get("duplicate")]
     summary = {
         "schemaVersion": "aicheck-ocr-100-collection-candidates-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "inputs": [str(path) for path in inputs],
         "inputFiles": len(files),
         "newCandidates": len(new_candidates),

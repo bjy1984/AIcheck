@@ -5,11 +5,11 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
-from typing import Any, Callable, Protocol
+from datetime import UTC, datetime
+from typing import Any, Protocol
 from uuid import uuid4
-
 
 RAW_EVENT_SCHEMA_VERSION = "aicheck-agent-raw-event@1"
 GENESIS_HASH = "GENESIS"
@@ -32,7 +32,7 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 
 def utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass(frozen=True)

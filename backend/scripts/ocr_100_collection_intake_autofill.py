@@ -3,18 +3,21 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.ocr_100_collection_intake_verify import (
+    is_placeholder,
+    resolve_manifest_path,
+    verify_collection_intake,
+)
 from scripts.ocr_100_corpus import SCENARIO_PROFILE_DEFAULTS
-from scripts.ocr_100_collection_intake_verify import is_placeholder, resolve_manifest_path, verify_collection_intake
 from scripts.ocr_100_ingest_samples import SUPPORTED_SUFFIXES, is_likely_standard_doc
 from scripts.ocr_eval_set import write_text_file
-
 
 IGNORED_FILENAMES = {"README.md", ".gitkeep", ".DS_Store"}
 
@@ -92,7 +95,7 @@ def autofill_collection_intake(
             item = sample_items[slot_index]
             old_name = str(item.get("fileName") or "")
             item["fileName"] = source_path.name
-            item["autoFilledAt"] = datetime.now(timezone.utc).isoformat()
+            item["autoFilledAt"] = datetime.now(UTC).isoformat()
             item["autoFilledFrom"] = str(source_path)
             used_files.add(source_path)
             assigned.append(
@@ -109,7 +112,7 @@ def autofill_collection_intake(
     else:
         output_path = output_path_for(manifest_path, output_manifest=output_manifest, in_place=in_place)
         if isinstance(payload, dict):
-            payload["autoFilledAt"] = datetime.now(timezone.utc).isoformat()
+            payload["autoFilledAt"] = datetime.now(UTC).isoformat()
             payload["autoFillSourceManifest"] = str(manifest_path)
         write_text_file(output_path, json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -215,7 +218,7 @@ def build_report(
     verification_summary = verification.get("summary") if isinstance(verification, dict) and isinstance(verification.get("summary"), dict) else {}
     summary = {
         "schemaVersion": "aicheck-ocr-100-collection-intake-autofill-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "intakeDir": str(intake_dir),
         "manifest": str(manifest_path),
         "outputManifest": str(output_path) if output_path else None,

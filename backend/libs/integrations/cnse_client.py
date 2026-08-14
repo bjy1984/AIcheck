@@ -12,8 +12,9 @@ import binascii
 import json
 import math
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -25,7 +26,6 @@ from libs.integrations.cnse_opencv_solver import (
     solve_opencv_from_bytes,
 )
 
-
 DEFAULT_ORIGIN = "https://cnse.e-cqs.cn"
 ALLOWED_ORIGINS = frozenset({DEFAULT_ORIGIN, "https://cnse.samr.gov.cn"})
 PAGE_PATH = "/info-pub/pub"
@@ -34,7 +34,7 @@ SEARCH_PATH = "/info-pub/pub/orgSearchData.json"
 PERSON_CAPTCHA_PATH = "/info-pub/pub/pubQueryVCodeData.json"
 PERSON_CHECK_PATH = "/info-pub/pub/checkPubQuerycode.json"
 PERSON_SEARCH_PATH = "/info-pub/pub/remotePubQuery.json"
-DEFAULT_TIMEOUT: Tuple[float, float] = (5.0, 20.0)
+DEFAULT_TIMEOUT: tuple[float, float] = (5.0, 20.0)
 MAX_CHALLENGE_BYTES = 16 * 1024 * 1024
 MAX_QUERY_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_BASE64_CHARACTERS = 12_000_000
@@ -92,7 +92,7 @@ class CnseChallenge:
 class CnseQueryResult:
     keyword: str
     total: int
-    rows: Tuple[Mapping[str, str], ...]
+    rows: tuple[Mapping[str, str], ...]
     move_length: int
     api_y_height: int
     confidence: float
@@ -242,7 +242,7 @@ def _decode_base64_image(value: Any, field: str) -> bytes:
     return decoded
 
 
-def _validate_timeout(timeout: Tuple[float, float]) -> Tuple[float, float]:
+def _validate_timeout(timeout: tuple[float, float]) -> tuple[float, float]:
     if (
         not isinstance(timeout, tuple)
         or len(timeout) != 2
@@ -300,8 +300,8 @@ class CnseApiClient:
         *,
         origin: str = DEFAULT_ORIGIN,
         client: httpx.Client | None = None,
-        timeout: Tuple[float, float] = DEFAULT_TIMEOUT,
-        solver: Optional[Callable[..., OpenCvMatch]] = None,
+        timeout: tuple[float, float] = DEFAULT_TIMEOUT,
+        solver: Callable[..., OpenCvMatch] | None = None,
         min_confidence: float = 0.50,
     ) -> None:
         self.origin = _normalize_origin(origin)
@@ -326,10 +326,10 @@ class CnseApiClient:
             follow_redirects=False,
         )
 
-    def __enter__(self) -> "CnseApiClient":
+    def __enter__(self) -> CnseApiClient:
         return self
 
-    def __exit__(self, *_: Any) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -348,8 +348,8 @@ class CnseApiClient:
         path: str,
         *,
         limit: int,
-        data: Optional[Mapping[str, str]] = None,
-        params: Optional[Mapping[str, str]] = None,
+        data: Mapping[str, str] | None = None,
+        params: Mapping[str, str] | None = None,
     ) -> Any:
         headers = {
             "Accept": "application/json",
@@ -377,7 +377,7 @@ class CnseApiClient:
             if response is not None and callable(getattr(response, "close", None)):
                 response.close()
 
-    def _solve_challenge(self, challenge: CnseChallenge) -> Tuple[int, OpenCvMatch]:
+    def _solve_challenge(self, challenge: CnseChallenge) -> tuple[int, OpenCvMatch]:
         try:
             matched = self.solver(
                 challenge.puzzle_bytes,
@@ -447,7 +447,7 @@ class CnseApiClient:
         *,
         page_number: int = 1,
         page_size: int = 10,
-    ) -> Tuple[int, Tuple[Mapping[str, str], ...]]:
+    ) -> tuple[int, tuple[Mapping[str, str], ...]]:
         normalized_keyword = normalize_keyword(keyword)
         if (
             isinstance(move_length, bool)

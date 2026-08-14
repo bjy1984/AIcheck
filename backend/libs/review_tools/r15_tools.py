@@ -10,7 +10,6 @@ from libs.review_tools.r13_tools import (
     evaluate_r13_type_test_coverage,
 )
 
-
 R15_RULE_VERSION = "r15-foreign-component-tsg31-2025-d7006-2020-v1"
 
 _DOMESTIC_COUNTRY_MARKERS = {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from libs.integrations.storage import ObjectStorage, object_storage
@@ -83,7 +83,7 @@ def claim_pending_raw_payloads(dsn: str, *, limit: int = 20) -> list[RawOutboxPa
     import psycopg
 
     lease_token = uuid4().hex
-    lease_until = datetime.now(timezone.utc) + timedelta(seconds=60)
+    lease_until = datetime.now(UTC) + timedelta(seconds=60)
     with psycopg.connect(dsn, autocommit=False) as connection:
         rows = connection.execute(
             """

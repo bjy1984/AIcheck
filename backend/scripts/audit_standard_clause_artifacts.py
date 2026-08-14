@@ -4,14 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 from collections import Counter
 from datetime import date
 from pathlib import Path
-import shutil
-import subprocess
 
 import yaml
-
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent

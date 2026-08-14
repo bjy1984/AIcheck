@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable
+from typing import Any
 
 RESULT_SCHEMA = "deterministic-tool-result-v1"
 
@@ -323,7 +324,7 @@ def check_pressure_gauge_requirements(arguments: dict[str, Any]) -> dict[str, An
                 check(f"gauge_{index}_dial_diameter_recorded", dial_diameter is not None and dial_diameter > 0, dial_diameter, "recorded_positive_value"),
                 check(
                     f"gauge_{index}_range_ratio",
-                    ratio is not None and Decimal("1.5") <= ratio <= Decimal("2"),
+                    ratio is not None and Decimal("1.5") <= ratio <= Decimal(2),
                     ratio,
                     "1.5..2.0",
                 ),
@@ -396,7 +397,7 @@ def check_pressure_test_parameters(arguments: dict[str, Any]) -> dict[str, Any]:
         )
     checks.extend(
         [
-            check("pressure_hold_at_least_10_minutes", hold_minutes >= Decimal("10"), hold_minutes, 10),
+            check("pressure_hold_at_least_10_minutes", hold_minutes >= Decimal(10), hold_minutes, 10),
             check("test_result_accepted", test_result in {"passed", "qualified", "合格", "无泄漏", "no_leak"}, test_result, "accepted"),
         ]
     )
@@ -422,7 +423,7 @@ def pneumatic_step_checks(steps: list[dict[str, Any]], test_pressure: Decimal) -
     pressures = [pressure for pressure, _ in parsed]
     checks = [
         check("gas_first_step_50_percent", abs(pressures[0] - test_pressure * Decimal("0.5")) <= test_pressure * Decimal("0.01"), pressures[0], test_pressure * Decimal("0.5")),
-        check("gas_first_step_hold_at_least_3_minutes", parsed[0][1] >= Decimal("3"), parsed[0][1], 3),
+        check("gas_first_step_hold_at_least_3_minutes", parsed[0][1] >= Decimal(3), parsed[0][1], 3),
         check("gas_last_step_reaches_test_pressure", abs(pressures[-1] - test_pressure) <= test_pressure * Decimal("0.001"), pressures[-1], test_pressure),
     ]
     for index, ((previous, _), (current, hold)) in enumerate(zip(parsed, parsed[1:]), 2):
@@ -431,7 +432,7 @@ def pneumatic_step_checks(steps: list[dict[str, Any]], test_pressure: Decimal) -
             [
                 check(f"gas_step_{index}_increasing", current > previous, current, f">{previous}"),
                 check(f"gas_step_{index}_increment_at_most_10_percent", increment <= Decimal("0.101"), increment, "<=0.10"),
-                check(f"gas_step_{index}_hold_at_least_3_minutes", hold >= Decimal("3"), hold, 3),
+                check(f"gas_step_{index}_hold_at_least_3_minutes", hold >= Decimal(3), hold, 3),
             ]
         )
     return checks
@@ -521,13 +522,13 @@ def decode_welder_code(code: str) -> dict[str, Any]:
     diameter_value = decimal(re.sub(r"[^0-9.]", "", diameter_code))
     if thickness_value is None or thickness_value <= 0 or diameter_value is None or diameter_value <= 0:
         return {"code": code, "parseStatus": "unsupported", "reason": "coverage_code_not_in_profile"}
-    thickness = (Decimal("0"), thickness_value * 2 if thickness_value < 12 else None)
+    thickness = (Decimal(0), thickness_value * 2 if thickness_value < 12 else None)
     diameter = (
         diameter_value
         if diameter_value < 25
-        else Decimal("25")
+        else Decimal(25)
         if diameter_value < 76
-        else Decimal("76"),
+        else Decimal(76),
         None,
     )
     return {

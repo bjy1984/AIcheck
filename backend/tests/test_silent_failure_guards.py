@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import pytest
 from starlette.requests import Request
 
 from apps.api.main import client_declared_identity

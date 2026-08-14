@@ -8,7 +8,6 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
-
 app = FastAPI(title="AIcheck isolated validation fault proxy", version="1.0")
 _lock = asyncio.Lock()
 _fault: dict[str, Any] = {

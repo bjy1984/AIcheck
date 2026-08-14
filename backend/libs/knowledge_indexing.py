@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
-
 OFFLINE_EMBEDDING_MODEL = "offline-hash-v1"
 OFFLINE_VECTOR_DIMENSIONS = 1024
 STANDARD_INDEX_VERSION = "knowledge-index-offline-hash-v1@1024"
@@ -123,7 +122,7 @@ def chinese_ngrams(text: str) -> list[str]:
     grams = list(text)
     for size in (2, 3, 4):
         if len(text) >= size:
-            grams.extend(text[index : index + size] for index in range(0, len(text) - size + 1))
+            grams.extend(text[index : index + size] for index in range(len(text) - size + 1))
     return grams
 
 
@@ -442,7 +441,7 @@ def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, 
             text = piece[:MAX_CHUNK_CHARS]
             chunks.append(
                 {
-                    **{
+                    
                         "id": f"CHK-{file['id']}-{sequence}",
                         "fileId": file["id"],
                         "documentId": file.get("documentId"),
@@ -461,8 +460,8 @@ def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, 
                         "ocrEngine": unit.get("ocrEngine") or unit.get("source") or "unknown",
                         "ocrConfidence": unit.get("ocrConfidence"),
                         "contextType": context_type,
-                        "createdAt": None,
-                    },
+                        "createdAt": None
+                    ,
                     **chunk_quality_fields(text, context_type=context_type),
                 }
             )

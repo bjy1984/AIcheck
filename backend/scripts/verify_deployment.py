@@ -22,7 +22,6 @@ from libs.db.seed import PROJECT_ID
 from libs.qwen_runtime import qwen_runtime_config
 from libs.security.auth import ROLE_DEFAULT_PATHS
 
-
 DEFAULT_ROLES = ("admin", "inspection", "contractor", "ndt", "owner", "fde")
 REQUIRED_LITELLM_ALIASES = {"default-chat", "review-chat", "deepseek-reasoner", "embedding-default", "compare-fast"}
 SECRET_TEXT_PATTERNS = [

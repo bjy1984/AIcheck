@@ -5,20 +5,19 @@ import argparse
 import hashlib
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 SCHEMA_VERSION = "aicheck-backup-recoverability-v1"
 
 
 def parse_time(value: Any) -> datetime | None:
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        return datetime.fromtimestamp(float(value), tz=UTC)
     if not value:
         return None
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(UTC)
 
 
 def age_hours(value: Any, *, now: datetime) -> float | None:
@@ -64,7 +63,7 @@ def build_report(
     *,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     physical = pgbackrest_summary(pgbackrest_info, now=current)
     logical_age = age_hours(logical_receipt.get("completedAt"), now=current)
     replication_age = age_hours(replication_receipt.get("completedAt"), now=current)

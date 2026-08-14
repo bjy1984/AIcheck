@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from libs.contracts.responses import server_time
 
-
 MAPPING_DOC_RELATIVE_PATH = "docs/工程监检资料映射表.md"
 SUPPORTED_STATUS = "命中"
 PARTIAL_STATUS = "待人工确认"

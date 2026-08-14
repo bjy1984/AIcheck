@@ -15,7 +15,6 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from libs.contracts.responses import server_time
 
-
 DEFAULT_COMPOSE_FILES = [
     BACKEND_ROOT / "docker-compose.yml",
     BACKEND_ROOT / "docker-compose.accuracy-pipeline.yml",

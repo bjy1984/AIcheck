@@ -7,7 +7,6 @@ from copy import deepcopy
 from typing import Any
 from urllib.parse import quote
 
-
 CLAUSE_STATE_COLLECTIONS = (
     "standard_document_versions",
     "standard_clause_references",

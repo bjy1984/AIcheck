@@ -13,13 +13,12 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-from libs.db.state_freshness import StateFreshnessProbe
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from libs.audit_context import current_request_audit_context
 from libs.contracts.responses import server_time
+from libs.db.state_freshness import StateFreshnessProbe
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
@@ -40,8 +39,10 @@ from libs.ocr_readiness import (
 )
 from libs.security.tenant import (
     apply_default_tenant,
-    current_tenant_id as configured_tenant_id,
     tenant_id_for_record,
+)
+from libs.security.tenant import (
+    current_tenant_id as configured_tenant_id,
 )
 
 from .seed import (
@@ -51,7 +52,6 @@ from .seed import (
     ensure_test_project_members,
     fresh_state,
 )
-
 
 LOGGER = logging.getLogger("aicheck.repository")
 
@@ -2886,9 +2886,7 @@ class InMemoryRepository:
                 grouped.setdefault(collection_name, []).append(json.loads(payload))
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 documents = grouped.get(collection_name, [])
-                if selected_state_keys is not None and state_key in selected_state_keys:
-                    loaded[state_key] = documents
-                elif has_project_seed or documents:
+                if selected_state_keys is not None and state_key in selected_state_keys or has_project_seed or documents:
                     loaded[state_key] = documents
             singleton_rows = connection.execute(
                 """
@@ -2949,9 +2947,7 @@ class InMemoryRepository:
                 )
             # 与 demo 开关无关：损坏的条款溯源在任何部署里都必须修
             backfilled = self.repair_clause_binding_drift(self.state) or backfilled
-        if not has_project_seed and demo_data_enabled():
-            self.flush_to_sqlite()
-        elif backfilled:
+        if not has_project_seed and demo_data_enabled() or backfilled:
             self.flush_to_sqlite()
 
     def _build_flush_dirty_plan(
@@ -3419,9 +3415,7 @@ class InMemoryRepository:
                 grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 documents = grouped.get(collection_name, [])
-                if selected_state_keys is not None and state_key in selected_state_keys:
-                    loaded[state_key] = documents
-                elif has_project_seed or documents:
+                if selected_state_keys is not None and state_key in selected_state_keys or has_project_seed or documents:
                     loaded[state_key] = documents
             singleton_rows = self.sync_postgres.execute(
                 "SELECT name, payload FROM aicheck_singletons WHERE tenant_id = %s",
@@ -3489,9 +3483,7 @@ class InMemoryRepository:
             # psycopg starts a transaction for the SELECTs above when autocommit is off.
             # End that read transaction before any writer tries to flush the JSONB state.
             self.sync_postgres.commit()
-            if not has_project_seed and demo_data_enabled():
-                self.flush_to_sync_postgres()
-            elif backfilled:
+            if not has_project_seed and demo_data_enabled() or backfilled:
                 self.flush_to_sync_postgres()
 
     def query_state_page_from_sync_postgres(
@@ -3631,7 +3623,7 @@ class InMemoryRepository:
                 "paginationMode": pagination_mode,
             }
 
-    def project_document_read_view(self, project_id: str) -> "InMemoryRepository":
+    def project_document_read_view(self, project_id: str) -> InMemoryRepository:
         """Return a detached project-document view from current PostgreSQL rows.
 
         Worker writes must become visible to API reads without replacing the

@@ -4,12 +4,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.backup.verify_backup_readiness import age_hours, check, load_json, pgbackrest_summary
+    from scripts.backup.verify_backup_readiness import (
+        age_hours,
+        check,
+        load_json,
+        pgbackrest_summary,
+    )
 except ModuleNotFoundError:
     from verify_backup_readiness import age_hours, check, load_json, pgbackrest_summary
 
@@ -23,7 +28,7 @@ def build_local_report(
     *,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     physical = pgbackrest_summary(pgbackrest_info, now=current)
     restore_age = age_hours(restore_receipt.get("completedAt"), now=current)
     checks = [

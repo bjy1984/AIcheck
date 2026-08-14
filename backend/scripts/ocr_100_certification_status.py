@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,6 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.ocr_eval_set import write_text_file
-
 
 DEFAULT_REPORT_DIR = Path("ocr_eval/reports")
 
@@ -137,7 +136,7 @@ def build_certification_status(paths: dict[str, Path | None]) -> dict[str, Any]:
     )
     summary = {
         "schemaVersion": "aicheck-ocr-100-certification-status-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "status": status,
         "ok": scorecard_ok,
         "score": score,

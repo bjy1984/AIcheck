@@ -9,13 +9,13 @@ from typing import Any
 from apps.mineru_worker.queue import (
     ClaimedKnowledgeTask,
     ClaimedMinerUJob,
-    claim_knowledge_tasks,
     claim_jobs,
+    claim_knowledge_tasks,
     fail_knowledge_claim,
-    finish_knowledge_claim,
     finish_claim,
-    reschedule_knowledge_claim,
+    finish_knowledge_claim,
     reschedule_claim,
+    reschedule_knowledge_claim,
     write_heartbeat,
 )
 from apps.worker.tasks import (
@@ -23,7 +23,6 @@ from apps.worker.tasks import (
     execute_mineru_postgres_job,
     execute_postgres_knowledge_task,
 )
-
 
 logger = logging.getLogger(__name__)
 

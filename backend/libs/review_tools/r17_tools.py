@@ -5,7 +5,6 @@ from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import check, result
 
-
 R17_RULE_VERSION = "r17-arrival-acceptance-tsg-d7006-2020-v1"
 _PASS = {"accepted", "approved", "qualified", "passed", "符合", "合格", "通过"}
 

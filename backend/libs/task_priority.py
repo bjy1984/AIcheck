@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MAX_TASK_PRIORITY = 10
 
 

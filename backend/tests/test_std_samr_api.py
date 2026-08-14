@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-import apps.api.std_samr_routes as std_samr_routes
+from apps.api import std_samr_routes
 from apps.api.main import app
 from libs.integrations.std_samr_client import (
     StdSamrClient,

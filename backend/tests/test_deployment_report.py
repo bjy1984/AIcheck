@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 from scripts.deployment_report import (
     REQUIRED_STORAGE_BUCKETS,
     DeploymentReportBuilder,
-    auth_security_contract_check,
     backend_action_coverage_check,
     backend_mutation_idempotency_check,
     backup_recoverability_contract_section,

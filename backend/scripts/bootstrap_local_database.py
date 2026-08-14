@@ -10,7 +10,6 @@ from typing import Any
 from libs.db.repository import repo
 from libs.db.seed import fresh_state
 
-
 SYNC_COLLECTIONS = [
     "knowledge_sources",
     "knowledge_files",

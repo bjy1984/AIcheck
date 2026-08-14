@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +54,7 @@ def export_annotation_tasks(
     tasks = payload.get("tasks") if isinstance(payload, dict) else payload
     if not isinstance(tasks, list):
         raise ValueError("annotation tasks must be a JSON object with tasks[] or a raw task list.")
-    exported_at = datetime.now(timezone.utc).isoformat()
+    exported_at = datetime.now(UTC).isoformat()
     cases = merge_page_level_cases(
         [export_task(task, exported_at=exported_at, mark_status=mark_status) for task in tasks if isinstance(task, dict)]
     )

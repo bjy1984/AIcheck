@@ -8,19 +8,19 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from html.parser import HTMLParser
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-
 DEFAULT_ORIGIN = "https://std.samr.gov.cn"
 ALLOWED_ORIGINS = frozenset({DEFAULT_ORIGIN})
 SEARCH_PATH = "/search/stdPage"
-DEFAULT_TIMEOUT: Tuple[float, float] = (5.0, 20.0)
+DEFAULT_TIMEOUT: tuple[float, float] = (5.0, 20.0)
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_QUERY_BYTES = 512
 
@@ -150,7 +150,7 @@ class StdSamrBrief:
 class StdSamrSearchResult:
     query: str
     total: int
-    rows: Tuple[StdSamrBrief, ...]
+    rows: tuple[StdSamrBrief, ...]
 
     def to_dict(self, *, origin: str = DEFAULT_ORIGIN) -> Mapping[str, Any]:
         return {
@@ -172,7 +172,7 @@ class StdSamrDetail:
     issue_date: str | None = None
     effective_date: str | None = None
     withdrawn_on: str | None = None
-    supersedes: Tuple[str, ...] = ()
+    supersedes: tuple[str, ...] = ()
     fields: Mapping[str, str] = field(default_factory=dict)
 
     def to_dict(self, *, origin: str = DEFAULT_ORIGIN) -> Mapping[str, Any]:
@@ -199,7 +199,7 @@ class StdSamrVerifyResult:
     verdict: str
     matched: StdSamrBrief | None
     current_execution: StdSamrBrief | None
-    standard_references: Tuple[Mapping[str, Any], ...]
+    standard_references: tuple[Mapping[str, Any], ...]
     detail: StdSamrDetail | None = None
     queried_at: str = ""
 
@@ -267,7 +267,7 @@ def _normalize_origin(value: str) -> str:
     return origin
 
 
-def _validate_timeout(timeout: Tuple[float, float]) -> Tuple[float, float]:
+def _validate_timeout(timeout: tuple[float, float]) -> tuple[float, float]:
     if (
         not isinstance(timeout, tuple)
         or len(timeout) != 2
@@ -345,7 +345,7 @@ def parse_review_date(value: Any) -> date | None:
         raise StdSamrConfigurationError("reviewDate must be YYYY-MM-DD") from exc
 
 
-def parse_search_html(html: str) -> Tuple[int, Tuple[StdSamrBrief, ...]]:
+def parse_search_html(html: str) -> tuple[int, tuple[StdSamrBrief, ...]]:
     if not isinstance(html, str) or not html.strip():
         raise StdSamrProtocolError("std.samr search page is empty")
     total_match = _TOTAL_RE.search(html)
@@ -507,7 +507,7 @@ class StdSamrClient:
         *,
         origin: str = DEFAULT_ORIGIN,
         client: httpx.Client | None = None,
-        timeout: Tuple[float, float] = DEFAULT_TIMEOUT,
+        timeout: tuple[float, float] = DEFAULT_TIMEOUT,
     ) -> None:
         self.origin = _normalize_origin(origin)
         self.timeout = _validate_timeout(timeout)
@@ -522,10 +522,10 @@ class StdSamrClient:
             follow_redirects=False,
         )
 
-    def __enter__(self) -> "StdSamrClient":
+    def __enter__(self) -> StdSamrClient:
         return self
 
-    def __exit__(self, *_: Any) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -540,7 +540,7 @@ class StdSamrClient:
             raise StdSamrConfigurationError("request path escaped the approved std.samr origin")
         return url
 
-    def _request_text(self, path: str, *, params: Optional[Mapping[str, str]] = None) -> str:
+    def _request_text(self, path: str, *, params: Mapping[str, str] | None = None) -> str:
         response = None
         try:
             request = self.client.build_request(
@@ -589,7 +589,7 @@ class StdSamrClient:
     def verify(self, cited_ref: str, *, review_date: date | None = None) -> StdSamrVerifyResult:
         canonical = normalize_standard_ref(cited_ref)
         as_of = review_date or date.today()
-        queried_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        queried_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
         search_query = canonical.display
         result = self.search(search_query)

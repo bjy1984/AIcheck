@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,10 @@ from apps.ocr_service.service import ocr_service
 from scripts.ocr_100_annotation_export import export_annotation_tasks
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
 from scripts.ocr_100_scorecard import evaluate_eval_set, load_sample_summaries
-from scripts.ocr_annotation_readiness import build_annotation_readiness_report, build_annotation_readiness_from_tasks
+from scripts.ocr_annotation_readiness import (
+    build_annotation_readiness_from_tasks,
+    build_annotation_readiness_report,
+)
 from scripts.ocr_eval_set import write_text_file
 
 
@@ -162,7 +165,7 @@ def run_reviewed_label_gate(
 
     summary = {
         "schemaVersion": "aicheck-ocr-100-reviewed-label-gate-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "annotationTasks": str(annotation_tasks),
         "labelStudioExport": str(label_studio_export) if label_studio_export else None,
         "outputDir": str(output_dir),

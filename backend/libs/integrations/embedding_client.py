@@ -5,7 +5,11 @@ from typing import Any
 
 import httpx
 
-from libs.embedding_models import EMBEDDING_DEFAULT_ALIAS, EMBEDDING_DEFAULT_MODEL_ID, embedding_model_spec
+from libs.embedding_models import (
+    EMBEDDING_DEFAULT_ALIAS,
+    EMBEDDING_DEFAULT_MODEL_ID,
+    embedding_model_spec,
+)
 from libs.integrations.errors import IntegrationServiceError, safe_reason
 
 

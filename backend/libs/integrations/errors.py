@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 SAFE_REASON_PATTERN = re.compile(r"^[A-Z][A-Z0-9_.-]{1,79}$")
 
 

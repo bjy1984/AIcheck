@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-
 GENERATED_AT = "2026-07-03 00:00:00"
 STANDARD_SOURCE_ID = "KS-STANDARD-RULES"
 STANDARD_SOURCE_NAME = "标准规范库（业务规则引用标准）"
@@ -95,7 +94,7 @@ def normalize_review_class(value: Any) -> str:
 def extract_rule_field(section: str, title: str) -> str:
     marker = re.escape(title)
     pattern = rf"\*\*{marker}\*\*\s*(.*?)(?=\n\*\*|\n###\s+R\d+|\n##\s+|\Z)"
-    match = re.search(pattern, section, re.S)
+    match = re.search(pattern, section, re.DOTALL)
     return compact_text(match.group(1) if match else "")
 
 
@@ -119,7 +118,7 @@ def parse_meta_row(section: str) -> dict[str, Any]:
 
 
 def parse_business_rules_markdown(text: str) -> list[dict[str, Any]]:
-    headings = list(re.finditer(r"^###\s+(R\d+)\s*[｜|]\s*(.+?)\s*$", text, re.M))
+    headings = list(re.finditer(r"^###\s+(R\d+)\s*[｜|]\s*(.+?)\s*$", text, re.MULTILINE))
     rules: list[dict[str, Any]] = []
     for index, match in enumerate(headings):
         source_rule_id = match.group(1).upper()
@@ -212,7 +211,7 @@ STANDARD_REF_RE = re.compile(
     r"|JB\s*(?:/|∕|_)?\s*T\s*[0-9.]+(?:\s*[—-]\s*\d{4})?"
     r"|SY\s*(?:/|∕|_)?\s*T\s*[0-9.]+(?:\s*[—-]\s*\d{4})?"
     r")",
-    re.I,
+    re.IGNORECASE,
 )
 
 
@@ -291,13 +290,7 @@ def match_standard_files(refs: list[str], standard_files: list[dict[str, Any]]) 
             file_keys = set(file.get("codes") or [])
             file_key_blob = canonical_code(file.get("relativeToStandards") or file.get("fileName") or "")
             matched = False
-            if ref in file_keys or ref_key in file_keys:
-                matched = True
-            elif ref_key and any(ref_key == key or key.startswith(ref_key) or ref_key.startswith(key) for key in file_keys):
-                matched = True
-            elif ref_key == "NBT47013" and "NB_T_47013_SPLIT" in file_key_blob:
-                matched = True
-            elif ref_key and ref_key in file_key_blob:
+            if ref in file_keys or ref_key in file_keys or ref_key and any(ref_key == key or key.startswith(ref_key) or ref_key.startswith(key) for key in file_keys) or ref_key == "NBT47013" and "NB_T_47013_SPLIT" in file_key_blob or ref_key and ref_key in file_key_blob:
                 matched = True
             if matched:
                 key = (ref, file["relativePath"])
@@ -835,7 +828,7 @@ def render_standard_match_section(standard_files: list[dict[str, Any]], rule_set
 def replace_generated_standard_section(markdown_text: str, section: str) -> str:
     title = "## 标准规范文件匹配索引"
     if title in markdown_text:
-        return re.sub(r"## 标准规范文件匹配索引\n.*?(?=\n##\s+引用索引)", section, markdown_text, flags=re.S)
+        return re.sub(r"## 标准规范文件匹配索引\n.*?(?=\n##\s+引用索引)", section, markdown_text, flags=re.DOTALL)
     marker = "\n## 引用索引"
     if marker in markdown_text:
         return markdown_text.replace(marker, f"\n{section}\n{marker}", 1)

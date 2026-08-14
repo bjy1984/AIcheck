@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 OCR_READY_STATUSES = {"ready"}
 OCR_RETRYABLE_STATUSES = {"failed", "incomplete", "inconsistent"}
 OCR_FORMAL_BLOCKING_REASONS = {

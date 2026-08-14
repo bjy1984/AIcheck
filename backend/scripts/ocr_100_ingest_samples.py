@@ -7,7 +7,7 @@ import mimetypes
 import re
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -134,7 +134,7 @@ def build_sample_queue(
         "schemaVersion": "aicheck-ocr-100-sample-queue-v1",
         "name": "aicheck_ocr_100_real_sample_queue",
         "version": "0.1.0",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "summary": {
             "inputs": [str(path) for path in inputs],
             "cases": len(cases),

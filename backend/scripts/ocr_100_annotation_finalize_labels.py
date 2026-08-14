@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +83,7 @@ def finalize_human_labels(
         raise ValueError("annotation tasks must be a JSON object with tasks[] or a raw task list.")
 
     selected_case_ids = set(case_ids or set())
-    finalized_at = datetime.now(timezone.utc).isoformat()
+    finalized_at = datetime.now(UTC).isoformat()
     output_tasks: list[Any] = []
     selected: list[dict[str, Any]] = []
     finalized_case_ids: list[str] = []

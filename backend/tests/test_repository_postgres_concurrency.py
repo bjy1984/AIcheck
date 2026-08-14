@@ -4,7 +4,7 @@ import threading
 import time
 import types
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from libs.db.repository import InMemoryRepository
 from libs.security.tenant import reset_request_tenant_id, set_request_tenant_id
@@ -22,7 +22,7 @@ class EmptyCursor:
 
 
 class DetectConcurrentTransaction:
-    def __init__(self, connection: "DetectConcurrentConnection") -> None:
+    def __init__(self, connection: DetectConcurrentConnection) -> None:
         self.connection = connection
 
     def __enter__(self):
@@ -81,7 +81,7 @@ class PagingConnection(DetectConcurrentConnection):
     def __init__(self) -> None:
         super().__init__()
         self.statements: list[tuple[str, object]] = []
-        now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
         self.rows = [
             ("AUD-3", {"id": "AUD-3", "action": "发布规则"}, now),
             ("AUD-2", {"id": "AUD-2", "action": "更新规则"}, now),

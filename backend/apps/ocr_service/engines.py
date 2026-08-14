@@ -4,8 +4,8 @@ import importlib.util
 import json
 import os
 import select
-import signal
 import shutil
+import signal
 import subprocess
 import textwrap
 import threading
@@ -3082,7 +3082,7 @@ def normalized_rows_from_cells(cells: list[dict[str, Any]]) -> list[dict[str, An
             if not value:
                 continue
             key = header_by_col.get(int(cell.get("col") or 0)) or f"col_{int(cell.get('col') or 0) + 1}"
-            if key in row and row[key]:
+            if row.get(key):
                 key = f"{key}_{int(cell.get('col') or 0) + 1}"
             row[key] = value
         if row:

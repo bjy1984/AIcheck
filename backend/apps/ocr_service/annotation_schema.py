@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 QUALITY_STATUSES = {"auto_usable", "needs_human_review", "failed"}
 KNOWN_SEAL_TYPES = {
     "company_official_seal",

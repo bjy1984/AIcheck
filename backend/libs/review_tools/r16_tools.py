@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal
 from typing import Any
 
-from libs.review_orchestrator.deterministic_tools import check, decimal, normalize_value, result
-from libs.review_tools.material_standard_profiles import PROFILE_VERSION, resolve_material_standard_profile
-
+from libs.review_orchestrator.deterministic_tools import check, decimal, result
+from libs.review_tools.material_standard_profiles import (
+    PROFILE_VERSION,
+    resolve_material_standard_profile,
+)
 
 R16_RULE_VERSION = "r16-quality-certificate-tsg-d7006-2020-v1"
 _PASS = {"accepted", "approved", "compliant", "qualified", "passed", "符合", "合格", "通过"}

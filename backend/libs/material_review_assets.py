@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ASSET_PATH = BACKEND_ROOT / "config" / "material_review_points.json"
 

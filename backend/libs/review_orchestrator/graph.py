@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from contextlib import nullcontext
-from typing import Any, Callable
+from typing import Any
 
 
 def langgraph_disabled() -> bool:

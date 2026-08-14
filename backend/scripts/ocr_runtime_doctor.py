@@ -8,6 +8,5 @@ if __package__ in {None, ""}:
 
 from apps.ocr_service.runtime_doctor import main
 
-
 if __name__ == "__main__":
     raise SystemExit(main())

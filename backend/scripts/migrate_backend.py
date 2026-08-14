@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 
-
 MIGRATIONS_ROOT = Path(__file__).resolve().parents[1] / "db" / "migrations"
 MIGRATIONS_MANIFEST = MIGRATIONS_ROOT / "manifest.json"
 

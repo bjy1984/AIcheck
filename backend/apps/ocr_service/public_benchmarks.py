@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 PUBLIC_BENCHMARK_DATASETS: dict[str, dict[str, Any]] = {
     "doclaynet": {
@@ -35,7 +34,7 @@ PUBLIC_BENCHMARK_DATASETS: dict[str, dict[str, Any]] = {
 def public_dataset_registry() -> dict[str, Any]:
     return {
         "schemaVersion": "aicheck-ocr-public-benchmark-registry-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "productionCertificationEligible": False,
         "datasets": PUBLIC_BENCHMARK_DATASETS,
     }
@@ -96,7 +95,7 @@ def public_benchmark_report(
         report_blockers.append("no benchmark cases were indexed")
     return {
         "schemaVersion": "aicheck-ocr-public-benchmark-index-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "dataset": dataset,
         "datasetName": metadata["name"],
         "benchmarkType": metadata["benchmarkType"],

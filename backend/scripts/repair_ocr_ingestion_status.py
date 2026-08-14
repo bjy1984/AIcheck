@@ -13,7 +13,6 @@ from libs.db.repository import (
 )
 from libs.ocr_readiness import parse_result_ingestion_status
 
-
 REPAIR_COLLECTIONS = {
     "documents",
     "versions",

@@ -133,7 +133,7 @@ def split_label_value(text: str, label: str) -> str:
 
 
 def extract_license_no(text: str) -> str:
-    match = re.search(r"TS[A-Z0-9]{6,}[-]?\d{4}", text, flags=re.I)
+    match = re.search(r"TS[A-Z0-9]{6,}[-]?\d{4}", text, flags=re.IGNORECASE)
     return match.group(0).upper() if match else ""
 
 

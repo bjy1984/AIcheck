@@ -6,7 +6,6 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
-
 KNOWLEDGE_NETWORK_SCHEMA_VERSION = "knowledge-network@1.0.0"
 
 NODE_TYPE_LABELS = {

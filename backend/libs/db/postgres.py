@@ -52,7 +52,11 @@ async def init_postgres_if_configured(app: Any) -> None:
 def bootstrap_local_roles_if_configured() -> None:
     if os.getenv("AICHECK_BOOTSTRAP_LOCAL_ROLES", "false").lower() != "true":
         return
-    from scripts.create_roles import apply_role_bootstrap_to_state, resolve_role_passwords, selected_roles
+    from scripts.create_roles import (
+        apply_role_bootstrap_to_state,
+        resolve_role_passwords,
+        selected_roles,
+    )
 
     roles = selected_roles(os.getenv("AICHECK_BOOTSTRAP_LOCAL_ROLE_LIST", "admin,inspection,contractor,ndt,owner,fde"))
     project_id = os.getenv("AICHECK_DEFAULT_PROJECT_ID", "P-2026-HDCP-001")

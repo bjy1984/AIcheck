@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
-
 
 OCR_JOBS_COLLECTION = "ocr_jobs"
 KNOWLEDGE_TASKS_COLLECTION = "knowledge_tasks"
@@ -29,7 +28,7 @@ class ClaimedKnowledgeTask:
 
 
 def utc_timestamp(value: datetime | None = None) -> str:
-    return (value or datetime.now(timezone.utc)).isoformat()
+    return (value or datetime.now(UTC)).isoformat()
 
 
 def claim_jobs(
@@ -71,7 +70,7 @@ def claim_jobs(
         claimed: list[ClaimedMinerUJob] = []
         for tenant_id, object_id, raw_payload in rows:
             lease_token = uuid4().hex
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             payload = dict(raw_payload)
             attempts = max(0, int(payload.get("attempts") or 0))
             payload.update(
@@ -169,7 +168,7 @@ def claim_knowledge_tasks(
         claimed: list[ClaimedKnowledgeTask] = []
         for tenant_id, object_id, raw_payload in rows:
             lease_token = uuid4().hex
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             payload = dict(raw_payload)
             attempts = max(0, int(payload.get("attempts") or 0))
             task_type = str(payload.get("taskType") or "")
@@ -307,7 +306,7 @@ def _update_knowledge_claim(
         if str(payload.get("leaseToken") or "") != claim.lease_token:
             connection.rollback()
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload.pop("leaseToken", None)
         payload.pop("leaseUntil", None)
         payload.pop("workerId", None)
@@ -383,7 +382,7 @@ def _update_claim(
         if str(payload.get("leaseToken") or "") != claim.lease_token:
             connection.rollback()
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload.pop("leaseToken", None)
         payload.pop("leaseUntil", None)
         payload.pop("workerId", None)

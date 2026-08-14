@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any, Callable
+from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import (
     check,
@@ -65,17 +66,34 @@ from libs.review_tools.r20_r23_tools import (
 )
 from libs.review_tools.r24_r34_tools import (
     check_wps_pqr_coverage as check_r25_wps_pqr_coverage,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_heat_treatment as evaluate_r32_r34_heat_treatment,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_heat_treatment_instruments as evaluate_r33_heat_treatment_instruments,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_pipe_fit_up as evaluate_r28_pipe_fit_up,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_weld_appearance as evaluate_r30_weld_appearance,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_weld_repair as evaluate_r31_weld_repair,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_welding_consumable as evaluate_r26_welding_consumable,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_welding_consumable_control as evaluate_r27_welding_consumable_control,
+)
+from libs.review_tools.r24_r34_tools import (
     evaluate_welding_process as evaluate_r29_welding_process,
+)
+from libs.review_tools.r24_r34_tools import (
     resolve_pwht_applicability,
 )
-
 
 COMMON_TOOL_NAMES = (
     "check_required",
@@ -1736,7 +1754,7 @@ def design_four_level_trigger(pipeline: dict[str, Any]) -> str | None:
     temperature = decimal(pipeline.get("designTemperatureC"))
     if temperature is None:
         return None
-    if temperature >= Decimal("570"):
+    if temperature >= Decimal(570):
         return "GCD_PRESSURE_GTE_4_AND_TEMPERATURE_GTE_570"
     return ""
 
@@ -1791,7 +1809,7 @@ def evaluate_valve_test(arguments: dict[str, Any]) -> dict[str, Any]:
             check("factory_records_traceable", arguments.get("factoryRecordsTraceable") is True, arguments.get("factoryRecordsTraceable"), True),
         ]
         return checked_result("evaluate_valve_test", arguments, exemption_checks, "valve-test-gbt20801-v1")
-    ratios = {"gc1": Decimal("1"), "gc2": Decimal("0.10"), "gc3": Decimal("0.05")}
+    ratios = {"gc1": Decimal(1), "gc2": Decimal("0.10"), "gc3": Decimal("0.05")}
     ratio = ratios.get(grade)
     if ratio is None:
         return insufficient("evaluate_valve_test", arguments, "unsupported_pipeline_grade")

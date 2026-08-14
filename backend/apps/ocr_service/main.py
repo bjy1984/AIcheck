@@ -11,11 +11,12 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import FileResponse
 
-from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
 from apps.ocr_service.result_cache import prune_ocr_cache
-from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_payload
+from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
+from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_payload
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):

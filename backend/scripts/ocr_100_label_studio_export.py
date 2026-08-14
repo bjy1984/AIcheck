@@ -4,7 +4,7 @@ import argparse
 import json
 import struct
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -98,7 +98,7 @@ def export_label_studio_pack(
     write_text_file(output_dir / "label_studio_tasks.json", json.dumps(label_studio_tasks, ensure_ascii=False, indent=2))
     summary = {
         "schemaVersion": "aicheck-ocr-100-label-studio-export-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "source": str(tasks_path),
         "tasks": len(label_studio_tasks),
         "sourceTasks": len(tasks),

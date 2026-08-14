@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +57,7 @@ def build_annotation_readiness_from_tasks(tasks: list[Any], *, source: str = "me
     scenario_gaps = scenario_gap_summary(items)
     report = {
         "schemaVersion": "aicheck-ocr-annotation-readiness-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "source": source,
         "ok": bool(items) and ready_count == len(items),
         "summary": {

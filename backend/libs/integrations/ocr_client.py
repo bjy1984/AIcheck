@@ -12,7 +12,6 @@ import httpx
 
 from libs.integrations.errors import IntegrationServiceError, safe_reason
 
-
 DEFAULT_LOCAL_OCR_BASE_URL = "http://127.0.0.1:18010"
 
 

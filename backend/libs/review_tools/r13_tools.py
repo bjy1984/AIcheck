@@ -6,7 +6,6 @@ from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import check, decimal, normalize_value, result
 
-
 R13_RULE_VERSION = "r13-component-certificate-coverage-tsg-d7006-2020-samr41-v1"
 
 _ACCEPTED_CONCLUSIONS = {
@@ -720,7 +719,7 @@ def _item_pressure_mpa(item: dict[str, Any]) -> Decimal | None:
     pn_match = re.search(r"\bPN\s*(\d+(?:\.\d+)?)\b", pressure_class, flags=re.IGNORECASE)
     if pn_match:
         pn_value = decimal(pn_match.group(1))
-        return pn_value / Decimal("10") if pn_value is not None else None
+        return pn_value / Decimal(10) if pn_value is not None else None
     if "mpa" in pressure_class.lower():
         return _number(pressure_class)
     return None

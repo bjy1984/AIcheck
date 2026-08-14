@@ -9,7 +9,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
 GROUPS = (
     "baseline",
     "paddle_vl_fusion",

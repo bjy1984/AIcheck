@@ -225,7 +225,7 @@ def persist_document_ai_shadow_run(run: dict[str, Any]) -> None:
 
 
 def document_ai_shadow_run_id(parse_result_id: str, profile_id: str) -> str:
-    seed = hashlib.sha256(f"{parse_result_id}|{profile_id}|{EVIDENCE_PRIOR_VERSION}".encode("utf-8")).hexdigest()
+    seed = hashlib.sha256(f"{parse_result_id}|{profile_id}|{EVIDENCE_PRIOR_VERSION}".encode()).hexdigest()
     return f"DOCSH-{seed[:18].upper()}"
 
 
@@ -2132,7 +2132,7 @@ def _persist_pipeline_stage_result(
     result: dict[str, Any],
 ) -> dict[str, Any]:
     identity = hashlib.sha256(
-        f"{run.get('id')}:{stage}:{run.get('pipelineVersion')}".encode("utf-8")
+        f"{run.get('id')}:{stage}:{run.get('pipelineVersion')}".encode()
     ).hexdigest()[:16].upper()
     job_id = f"OCRJOB-STAGE-{identity}"
     parse_result_id = f"PARSE-STAGE-{identity}"
@@ -3238,19 +3238,19 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
             "batches": batch_validations,
             "validatedFieldCount": len(grounded_fields),
             "invalidCandidateIdCount": sum(
-                int(((item.get("validation") or {}).get("invalidCandidateIdCount") or 0))
+                int((item.get("validation") or {}).get("invalidCandidateIdCount") or 0)
                 for item in batch_validations
             ),
             "unsupportedAttributionCount": sum(
-                int((((item.get("validation") or {}).get("statusCounts") or {}).get("unsupported") or 0))
+                int(((item.get("validation") or {}).get("statusCounts") or {}).get("unsupported") or 0)
                 for item in batch_validations
             ),
             "droppedUnsupportedAttributionCount": sum(
-                int(((item.get("validation") or {}).get("droppedUnsupportedAttributionCount") or 0))
+                int((item.get("validation") or {}).get("droppedUnsupportedAttributionCount") or 0)
                 for item in batch_validations
             ),
             "candidateRepairCount": sum(
-                int(((item.get("validation") or {}).get("candidateRepairCount") or 0))
+                int((item.get("validation") or {}).get("candidateRepairCount") or 0)
                 for item in batch_validations
             ),
         }

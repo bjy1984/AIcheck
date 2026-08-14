@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextvars import ContextVar, Token
 from typing import Any
 
-
 _request_audit_context: ContextVar[dict[str, Any] | None] = ContextVar(
     "aicheck_request_audit_context",
     default=None,

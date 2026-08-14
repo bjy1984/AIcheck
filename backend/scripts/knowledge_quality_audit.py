@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
@@ -15,7 +14,6 @@ from libs.db.repository import load_state, repo
 from libs.db.seed import DEFAULT_BUSINESS_PACK_ID, STANDARD_RULES_SOURCE_ID
 from libs.knowledge_indexing import QWEN3_EMBEDDING_MODEL, QWEN3_INDEX_VERSION, noise_like_text
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
-
 
 GOLDEN_CASES: list[dict[str, str]] = [
     {"question": "压力管道监督检验规则的监督检验范围如何引用？", "path": "TSG D7006-2020"},
@@ -193,7 +191,7 @@ NON_SPATIAL_SOURCE_METHODS = {
 }
 
 
-def ratio(numerator: int | float, denominator: int | float) -> float:
+def ratio(numerator: float, denominator: float) -> float:
     if not denominator:
         return 0.0
     return round(float(numerator) / float(denominator), 4)

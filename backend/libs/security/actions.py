@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (

@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -90,7 +90,7 @@ def build_annotation_pack(
     scenario_counts = count_scenarios(tasks)
     summary = {
         "schemaVersion": "aicheck-ocr-100-annotation-pack-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "queue": str(queue_path),
         "tasks": len(tasks),
         "scenarioCounts": scenario_counts,

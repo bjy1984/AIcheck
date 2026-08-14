@@ -8,7 +8,6 @@ from typing import Any
 
 from apps.ocr_service.evaluation import aggregate_case_metrics
 
-
 REQUIRED_FAULT_COMPONENTS = {
     "redis",
     "worker",

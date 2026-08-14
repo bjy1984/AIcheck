@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -137,9 +138,9 @@ def test_reconciliation_plan_rejects_path_traversal_identifier(tmp_path) -> None
 
 
 def test_locked_manifest_verification_reads_exact_versioned_content() -> None:
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    retention_started_at = datetime.now(timezone.utc) - timedelta(days=2)
+    retention_started_at = datetime.now(UTC) - timedelta(days=2)
 
     class Response:
         def __init__(self, body: bytes) -> None:

@@ -4,7 +4,7 @@ import argparse
 import csv
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -14,9 +14,12 @@ if __package__ in {None, ""}:
 
 from scripts.ocr_100_annotation_sprint import build_annotation_sprint_plan
 from scripts.ocr_100_certification_status import build_certification_status, default_report_paths
-from scripts.ocr_100_corpus import OCR_100_SCENARIO_TARGETS, SCENARIO_COLLECTION_HINTS, expected_annotation_checklist
+from scripts.ocr_100_corpus import (
+    OCR_100_SCENARIO_TARGETS,
+    SCENARIO_COLLECTION_HINTS,
+    expected_annotation_checklist,
+)
 from scripts.ocr_eval_set import write_text_file
-
 
 DEFAULT_REPORT_DIR = Path("ocr_eval/reports")
 ACTION_BOARD_LANES = ("collect_samples", "label_existing", "triage_candidates", "release_eval", "scorecard")
@@ -220,7 +223,7 @@ def board_summary(
         lane_counts[lane] = lane_counts.get(lane, 0) + 1
     return {
         "schemaVersion": "aicheck-ocr-100-action-board-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "status": status_summary.get("status"),
         "score": status_summary.get("score"),
         "readyForEval": status_summary.get("readyForEval", sprint_summary.get("readyForEval", 0)),
@@ -407,7 +410,7 @@ def write_action_handoff(report: dict[str, Any], output_dir: Path) -> dict[str, 
     write_text_file(files["labelCsv"], lane_csv(grouped.get("label_existing", []), lane="label_existing"))
     manifest = {
         "schemaVersion": "aicheck-ocr-100-action-handoff-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "outputDir": str(output_dir),
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
         "laneCounts": {lane: len(grouped.get(lane, [])) for lane in ACTION_BOARD_LANES},

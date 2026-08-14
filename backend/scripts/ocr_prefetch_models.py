@@ -14,7 +14,6 @@ if __package__ in {None, ""}:
 
 from scripts.ocr_eval_set import write_text_file
 
-
 OCR_100_PADDLEX_MODELS = [
     "PP-OCRv6_medium_det",
     "PP-OCRv6_medium_rec",

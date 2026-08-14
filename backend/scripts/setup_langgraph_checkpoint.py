@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-
 REQUIRED_TABLES = {
     "checkpoints",
     "checkpoint_blobs",

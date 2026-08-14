@@ -6,7 +6,6 @@ from typing import Any
 
 import yaml
 
-
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "audit_runtime.yaml"
 SUPPORTED_MODES = {"ocr_llm", "pure_llm"}
 

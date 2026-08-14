@@ -7,7 +7,6 @@ from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import check, decimal, result
 
-
 R20_RULE_VERSION = "r20-new-material-tsg31-2025-d7006-2020-v1"
 R21_RULE_VERSION = "r21-mark-transfer-gbt20801.1-2025-d7006-2020-v1"
 R22_RULE_VERSION = "r22-material-substitution-tsg31-2025-d7006-2020-v1"
@@ -425,7 +424,7 @@ def evaluate_r23_valve_sampling(arguments: dict[str, Any]) -> dict[str, Any]:
         grade = _norm(_first(lot, "pipelineGrade", "grade"))
         lot_size = _integer(_first(lot, "lotSize", "populationCount", "quantity"))
         tested = _integer(_first(lot, "testedCount", "sampledCount"))
-        ratio = {"gc1": Decimal("1"), "gc2": Decimal("0.10"), "gc3": Decimal("0.05")}.get(grade)
+        ratio = {"gc1": Decimal(1), "gc2": Decimal("0.10"), "gc3": Decimal("0.05")}.get(grade)
         exemption = _truth(lot.get("factoryWitnessExemption")) is True
         reasons = []
         if exemption:

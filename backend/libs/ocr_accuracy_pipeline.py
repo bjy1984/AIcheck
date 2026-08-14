@@ -6,19 +6,19 @@ import mimetypes
 import os
 import re
 import tempfile
+from collections.abc import Iterable
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-from libs.ocr.profiles import profile_for
-from libs.ocr_runtime import qwen_render_max_long_side
 from libs.document_ai_shadow import (
     build_evidence_prior,
     estimate_json_tokens,
     stable_payload_hash,
     validate_shadow_attribution,
 )
-
+from libs.ocr.profiles import profile_for
+from libs.ocr_runtime import qwen_render_max_long_side
 
 PIPELINE_VERSION = "ocr-accuracy-first@2"
 PIPELINE_STAGES = (

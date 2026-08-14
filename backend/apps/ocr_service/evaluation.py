@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 ParseRunner = Callable[[dict[str, Any]], dict[str, Any]]
 

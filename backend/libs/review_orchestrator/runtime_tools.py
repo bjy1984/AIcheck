@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -642,7 +642,7 @@ def dict_items(value: Any) -> list[dict[str, Any]]:
 
 
 def runtime_tool_call_id() -> str:
-    suffix = datetime.now(timezone.utc).strftime("%H%M%S")
+    suffix = datetime.now(UTC).strftime("%H%M%S")
     return f"RTOOL-{uuid4().hex[:8].upper()}-{suffix}"
 
 

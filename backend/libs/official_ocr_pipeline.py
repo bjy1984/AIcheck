@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from PIL import Image
 
@@ -175,7 +176,7 @@ def _offset_advanced_fragments(call: dict[str, Any]) -> list[dict[str, Any]]:
                 for index, value in enumerate(polygon)
             ]
         digest = hashlib.sha256(
-            f"{fragment.get('pageNo')}|{fragment.get('text')}|{fragment.get('polygon')}".encode("utf-8")
+            f"{fragment.get('pageNo')}|{fragment.get('text')}|{fragment.get('polygon')}".encode()
         ).hexdigest()[:16].upper()
         candidate_id = f"OCR-CAND-{digest}"
         fragment["candidateId"] = candidate_id
@@ -347,7 +348,7 @@ def _local_text_layer_result(
                 if not text:
                     continue
                 bbox = [float(block[0]), float(block[1]), float(block[2]), float(block[3])]
-                digest = hashlib.sha256(f"{page_no}|{index}|{text}|{bbox}".encode("utf-8")).hexdigest()[:16].upper()
+                digest = hashlib.sha256(f"{page_no}|{index}|{text}|{bbox}".encode()).hexdigest()[:16].upper()
                 candidate_id = f"TEXT-CAND-{digest}"
                 fragments.append(
                     {

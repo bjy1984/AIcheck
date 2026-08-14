@@ -7,7 +7,6 @@ from typing import Any
 from libs.review_orchestrator.deterministic_tools import check, decimal, normalize_value, result
 from libs.review_tools.r13_tools import classify_r13_component_requirements
 
-
 R14_RULE_VERSION = "r14-component-factory-inspection-tsg-d7006-2020-v1"
 
 _ACCEPTED_CONCLUSIONS = {
@@ -661,7 +660,7 @@ def _pressure_mpa(value: Any) -> Decimal | None:
     pn_match = re.search(r"\bPN\s*(\d+(?:\.\d+)?)\b", compact)
     if pn_match:
         pn = Decimal(pn_match.group(1))
-        return pn / Decimal("10") if pn >= 10 else pn
+        return pn / Decimal(10) if pn >= 10 else pn
     mpa_match = re.search(r"(-?\d+(?:\.\d+)?)\s*MPA", compact)
     if mpa_match:
         return Decimal(mpa_match.group(1))

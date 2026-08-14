@@ -7,7 +7,6 @@ import math
 import os
 from typing import Any
 
-
 DEFAULT_SOURCE_ID = "KS-STANDARD-RULES"
 DEFAULT_DIMENSIONS = 1024
 DEFAULT_EXPECTED_COUNT = 2134

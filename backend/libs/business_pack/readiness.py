@@ -3,8 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from .boundary import scan_core_boundary
-from .loader import business_pack_summary, list_business_packs, load_business_pack, validate_business_pack
-
+from .loader import (
+    business_pack_summary,
+    list_business_packs,
+    load_business_pack,
+    validate_business_pack,
+)
 
 REQUIRED_PACK_COMPONENTS = (
     "roles",

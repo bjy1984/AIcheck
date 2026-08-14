@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = BACKEND_ROOT.parent
 if str(BACKEND_ROOT) not in sys.path:
@@ -14,7 +13,6 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from libs.db.repository import load_state, repo
 from libs.knowledge_indexing import local_path_from_storage_key
-
 
 VISUAL_PAGE_ROOT = BACKEND_ROOT / "data" / "visual_extraction_pages"
 

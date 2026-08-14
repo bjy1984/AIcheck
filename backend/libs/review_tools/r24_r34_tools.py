@@ -7,8 +7,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from libs.review_orchestrator.deterministic_tools import check, check_welder_work_coverage, decimal, parse_date, result
-
+from libs.review_orchestrator.deterministic_tools import (
+    check,
+    check_welder_work_coverage,
+    decimal,
+    parse_date,
+    result,
+)
 
 R25_VERSION = "r25-wps-pqr-nbt47014-2023-v1"
 R26_VERSION = "r26-consumable-mtc-nbt47018-product-standard-v1"
@@ -561,8 +566,8 @@ def _evaluate_heat_treatment_procedure(arguments: dict[str, Any]) -> dict[str, A
             explicit = True
             reasons.append("holding_time_below_table36_minimum")
         if thickness and thickness > 0:
-            heat_max = min(Decimal("205") * Decimal("25") / thickness, Decimal("205"))
-            cool_max = min(Decimal("260") * Decimal("25") / thickness, Decimal("260"))
+            heat_max = min(Decimal(205) * Decimal(25) / thickness, Decimal(205))
+            cool_max = min(Decimal(260) * Decimal(25) / thickness, Decimal(260))
             if heat_rate is not None and heat_rate > heat_max:
                 explicit = True
                 reasons.append("heating_rate_exceeds_7.6.4_limit")
@@ -704,13 +709,13 @@ def _minimum_hold_minutes(thickness: Decimal | None, profile: dict[str, Any]) ->
         return None
     if profile.get("holdSchedule") == "nine_cr":
         if thickness <= 125:
-            return max(thickness / Decimal("25") * Decimal("60"), floor)
-        increments = ((thickness - Decimal("125")) / Decimal("25")).to_integral_value(rounding="ROUND_CEILING")
-        return Decimal("300") + increments * Decimal("15")
+            return max(thickness / Decimal(25) * Decimal(60), floor)
+        increments = ((thickness - Decimal(125)) / Decimal(25)).to_integral_value(rounding="ROUND_CEILING")
+        return Decimal(300) + increments * Decimal(15)
     if thickness <= 50:
-        return max(thickness / Decimal("25") * Decimal("60") * rate, floor)
-    increments = ((thickness - Decimal("50")) / Decimal("25")).to_integral_value(rounding="ROUND_CEILING")
-    return Decimal("120") + increments * Decimal("15")
+        return max(thickness / Decimal(25) * Decimal(60) * rate, floor)
+    increments = ((thickness - Decimal(50)) / Decimal(25)).to_integral_value(rounding="ROUND_CEILING")
+    return Decimal(120) + increments * Decimal(15)
 
 
 def _hardness_status(weld: dict[str, Any], report: dict[str, Any], profile: dict[str, Any]) -> tuple[str, list[str]]:
@@ -809,10 +814,10 @@ def _fit_up_limit(material: str, thickness: Decimal | None) -> Decimal | None:
     if thickness is None or not material:
         return None
     if any(token in material for token in ("aluminum", "aluminium", "铝")):
-        return Decimal("0.5") if thickness <= 5 else min(thickness * Decimal("0.10"), Decimal("2"))
+        return Decimal("0.5") if thickness <= 5 else min(thickness * Decimal("0.10"), Decimal(2))
     if any(token in material for token in ("copper", "nickel", "titanium", "zirconium", "铜", "镍", "钛", "锆")):
-        return min(thickness * Decimal("0.10"), Decimal("1"))
-    return min(thickness * Decimal("0.10"), Decimal("2"))
+        return min(thickness * Decimal("0.10"), Decimal(1))
+    return min(thickness * Decimal("0.10"), Decimal(2))
 
 
 def _pwht_parameter_status(weld: dict[str, Any], record: dict[str, Any], profile: dict[str, Any]) -> tuple[str, list[str]]:
@@ -852,8 +857,8 @@ def _pwht_parameter_status(weld: dict[str, Any], record: dict[str, Any], profile
         incomplete = True
         reasons.append("governing_thickness_missing_for_rate_limits")
     else:
-        heating_max = min(Decimal("205") * Decimal("25") / thickness, Decimal("205"))
-        cooling_max = min(Decimal("260") * Decimal("25") / thickness, Decimal("260"))
+        heating_max = min(Decimal(205) * Decimal(25) / thickness, Decimal(205))
+        cooling_max = min(Decimal(260) * Decimal(25) / thickness, Decimal(260))
         if heating_rate is not None and heating_rate > heating_max:
             failed = True
             reasons.append("actual_heating_rate_exceeds_7.6.4_limit")
@@ -874,7 +879,7 @@ def _pwht_applicability_from_arguments(arguments: dict[str, Any]) -> list[dict[s
 def _reinforcement_limit(grade: str | None, thickness: Decimal | None) -> Decimal | None:
     if grade is None or thickness is None:
         return None
-    base = Decimal("1.5") if thickness <= 6 else Decimal("3") if thickness <= 13 else Decimal("4") if thickness <= 25 else Decimal("5")
+    base = Decimal("1.5") if thickness <= 6 else Decimal(3) if thickness <= 13 else Decimal(4) if thickness <= 25 else Decimal(5)
     return base * 2 if grade == "V" else base
 
 
@@ -888,13 +893,13 @@ def _undercut_limit(grade: str | None, joint: str, thickness: Decimal | None) ->
         return None
     # 表43：纵向坡口均为A；I/II级全部为A；III/IV级的环向/支管及角焊缝为D；V级环向/支管为E、角焊缝为D。
     if longitudinal or grade in {"I", "II"}:
-        return Decimal("0")
+        return Decimal(0)
     if grade in {"II", "III"}:
-        return min(Decimal("1"), thickness / Decimal("4"))
+        return min(Decimal(1), thickness / Decimal(4))
     if grade == "IV" or grade == "V" and fillet:
-        return min(Decimal("1"), thickness / Decimal("4"))
+        return min(Decimal(1), thickness / Decimal(4))
     if grade == "V":
-        return min(Decimal("1.5"), max(thickness / Decimal("4"), Decimal("1")))
+        return min(Decimal("1.5"), max(thickness / Decimal(4), Decimal(1)))
     return None
 
 

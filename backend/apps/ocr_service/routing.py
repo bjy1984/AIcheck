@@ -4,7 +4,6 @@ from typing import Any
 
 from libs.ocr.utils import parse_bool
 
-
 TEXT_ENGINES = {"pymupdf_text_layer", "paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli", "docling_local"}
 RASTER_TEXT_ENGINES = {"paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli"}
 TABLE_ENGINES = {"pp_structure_v3", "opencv_table_grid_subprocess"}

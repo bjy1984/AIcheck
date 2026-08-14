@@ -71,7 +71,7 @@ def test_unknown_attribute_still_raises_attribute_error() -> None:
     import libs.review_orchestrator as orchestrator
 
     with pytest.raises(AttributeError):
-        getattr(orchestrator, "this_name_does_not_exist")
+        orchestrator.this_name_does_not_exist
 
 
 # ---- 分层方向：libs 不该依赖 apps ----

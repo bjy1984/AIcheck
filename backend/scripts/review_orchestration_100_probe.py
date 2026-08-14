@@ -17,7 +17,6 @@ if __package__ in {None, ""}:
 
 from libs.db.seed import PROJECT_ID
 
-
 HUMAN_REVIEW_STATUSES = {"waiting_human_review", "accepted_by_human", "edited_by_human", "rejected_by_human"}
 REQUIRED_SCORECARD_SECTIONS = {"workflow", "graph", "evidence", "governance"}
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from scripts.backup.verify_backup_readiness import build_report
 from scripts.backup.verify_local_backup import build_local_report
@@ -38,7 +38,7 @@ def valid_evidence(now: datetime):
 
 
 def test_backup_recoverability_passes_only_with_fresh_complete_evidence() -> None:
-    now = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 15, tzinfo=UTC)
     report = build_report(*valid_evidence(now), now=now)
 
     assert report["ok"] is True
@@ -48,7 +48,7 @@ def test_backup_recoverability_passes_only_with_fresh_complete_evidence() -> Non
 
 
 def test_backup_recoverability_fails_stale_restore_and_missing_database() -> None:
-    now = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 15, tzinfo=UTC)
     pgbackrest, logical, replication, restore = valid_evidence(now)
     logical["databases"].remove("workflow")
     restore["completedAt"] = (now - timedelta(days=32)).isoformat()
@@ -61,7 +61,7 @@ def test_backup_recoverability_fails_stale_restore_and_missing_database() -> Non
 
 
 def test_local_backup_report_passes_but_never_claims_formal_recoverability() -> None:
-    now = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 15, tzinfo=UTC)
     pgbackrest, _logical, _replication, restore = valid_evidence(now)
 
     report = build_local_report(pgbackrest, restore, now=now)
@@ -74,7 +74,7 @@ def test_local_backup_report_passes_but_never_claims_formal_recoverability() -> 
 
 
 def test_local_backup_report_fails_without_recent_restore() -> None:
-    now = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 15, tzinfo=UTC)
     pgbackrest, _logical, _replication, restore = valid_evidence(now)
     restore["completedAt"] = (now - timedelta(days=40)).isoformat()
 

@@ -12,9 +12,8 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.ocr_100_corpus import OCR_100_SCENARIO_TARGETS, scenario_target_gaps
+from scripts.ocr_100_corpus import scenario_target_gaps
 from scripts.ocr_eval_set import write_text_file
-
 
 SCENARIO_KEYWORDS: dict[str, list[str]] = {
     "piping_table_profile": ["管道特性表", "piping characteristic", "pipe no", "管线号", "管道号", "p&id"],

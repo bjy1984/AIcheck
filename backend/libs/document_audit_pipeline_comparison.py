@@ -12,14 +12,13 @@ from typing import Any
 
 import httpx
 
-from libs.ocr.profiles import profile_for
 from libs.contracts.responses import server_time
 from libs.db.repository import repo, sync_state_records
 from libs.deepseek_runtime import deepseek_runtime_config, deepseek_runtime_public_config
 from libs.integrations import task_dispatcher
 from libs.integrations.errors import IntegrationServiceError, safe_reason
 from libs.integrations.litellm_client import LiteLLMClient
-
+from libs.ocr.profiles import profile_for
 
 PIPELINE_COMPARISON_SCHEMA_VERSION = "DocumentAuditPipelineComparisonRun@1"
 
@@ -497,7 +496,7 @@ def normalize_pipeline_result(
             suggested_action = "human_confirm"
         findings.append(
             {
-                "id": f"PAF-{hashlib.sha256(f'{pipeline_id}|{index}|{raw}'.encode('utf-8')).hexdigest()[:12].upper()}",
+                "id": f"PAF-{hashlib.sha256(f'{pipeline_id}|{index}|{raw}'.encode()).hexdigest()[:12].upper()}",
                 "findingType": finding_type,
                 "severity": str(raw.get("severity")) if str(raw.get("severity") or "") in {"low", "medium", "high"} else "medium",
                 "title": compact_text(raw.get("title"), 200),

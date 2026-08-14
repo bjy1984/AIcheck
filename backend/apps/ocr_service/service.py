@@ -13,8 +13,8 @@ from copy import deepcopy
 from functools import wraps
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree
 from uuid import uuid4
+from xml.etree import ElementTree
 
 from apps.ocr_service.engines import local_engines
 from apps.ocr_service.fusion import (
@@ -25,9 +25,12 @@ from apps.ocr_service.fusion import (
     validate_business_field_value,
 )
 from apps.ocr_service.jobs import DocumentParseJobStore
-from apps.ocr_service.pages import public_document_pages, render_document_pages, render_pdf_page_preview
+from apps.ocr_service.pages import (
+    public_document_pages,
+    render_document_pages,
+    render_pdf_page_preview,
+)
 from apps.ocr_service.preprocess import generate_image_variants, requested_variant_names
-from libs.ocr.profiles import profile_for
 from apps.ocr_service.quality import probe_page_quality
 from apps.ocr_service.result_cache import (
     EVIDENCE_CONTRACT_VERSION,
@@ -35,27 +38,29 @@ from apps.ocr_service.result_cache import (
     REMEDIATION_VERSION,
     build_engine_result_cache_key,
     build_result_cache_key,
+    engine_result_cache_dir,
     load_engine_result_cache,
     load_result_cache,
-    engine_result_cache_dir,
-    result_cache_dir,
     rehydrate_cached_result,
+    result_cache_dir,
     save_engine_result_cache,
     save_result_cache,
 )
 from apps.ocr_service.routing import route_engine_variants
 from apps.ocr_service.runtime_doctor import build_runtime_doctor
-from libs.ocr.utils import parse_bool
-from libs.ocr.welder_certificate_tool import (
-    extract_welder_certificate_from_ocr_result,
-    extraction_metadata as welder_certificate_extraction_metadata,
-    welder_certificate_ocr_fields,
-    welder_certificate_ocr_tables,
-)
 from libs.capacity_guard import disk_capacity_status
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
-
+from libs.ocr.profiles import profile_for
+from libs.ocr.utils import parse_bool
+from libs.ocr.welder_certificate_tool import (
+    extract_welder_certificate_from_ocr_result,
+    welder_certificate_ocr_fields,
+    welder_certificate_ocr_tables,
+)
+from libs.ocr.welder_certificate_tool import (
+    extraction_metadata as welder_certificate_extraction_metadata,
+)
 
 AGENTDESIGN_BACKEND = Path(
     os.getenv("AICHECK_AGENTDESIGN_BACKEND", "/Volumes/Volume/project/agentdesign/mvp-system/backend")
@@ -2879,7 +2884,7 @@ def crop_variant_image(source_path: Path, bbox: list[float], *, padding_ratio: f
             out_dir.mkdir(parents=True, exist_ok=True)
             source_hash = file_sha256(source_path)
             key = hashlib.sha256(
-                f"{source_hash}:bbox={crop_box}:purpose={purpose}:transform=crop_remediation_v1".encode("utf-8")
+                f"{source_hash}:bbox={crop_box}:purpose={purpose}:transform=crop_remediation_v1".encode()
             ).hexdigest()[:20]
             target = out_dir / f"{source_path.stem}-{key}.png"
             if not target.exists():
@@ -3330,7 +3335,7 @@ def seal_crop_fragment_is_adjacent_noise(fragment: dict[str, Any]) -> bool:
     if not text:
         return True
     compact = re.sub(r"\s+", "", text)
-    if re.search(r"QX\d{6,}[A-Z0-9-]+", compact, flags=re.I):
+    if re.search(r"QX\d{6,}[A-Z0-9-]+", compact, flags=re.IGNORECASE):
         return True
     if compact.isdigit() and len(compact) <= 2:
         return True
@@ -3413,7 +3418,7 @@ def seal_crop_fields_from_text(
             "sourcePriority": "crop_ocr",
         }
     ]
-    license_match = re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.I)
+    license_match = re.search(r"TS\s*[A-Z0-9-]+", text, flags=re.IGNORECASE)
     if license_match:
         fields.append(
             {
@@ -3426,7 +3431,7 @@ def seal_crop_fields_from_text(
                 "sourcePriority": "crop_ocr",
             }
         )
-    blue_certificate_match = re.search(r"\bA\s*\d{6,12}\b", text, flags=re.I)
+    blue_certificate_match = re.search(r"\bA\s*\d{6,12}\b", text, flags=re.IGNORECASE)
     if seal_type == "drawing_approval_seal" and blue_certificate_match:
         fields.append(
             {
@@ -4064,7 +4069,7 @@ def route_term_hit(joined: str, normalized: str, term: str) -> bool:
 
 
 def site_layout_signal(joined: str, normalized: str) -> bool:
-    tank_count = len(re.findall(r"\bTK\s*\d{3,4}", joined, flags=re.I))
+    tank_count = len(re.findall(r"\bTK\s*\d{3,4}", joined, flags=re.IGNORECASE))
     road_or_area = any(token in joined for token in ["消防道路", "装车站", "泵区", "罐区", "防火堤", "临海路"])
     spatial_terms = any(token in joined for token in ["总平面", "布置图", "平面布置", "总图", "方位图"])
     normalized_spatial = any(token in normalized for token in ["SITELAYOUT", "PLOTPLAN", "GENERALARRANGEMENT", "LAYOUT"])
@@ -4902,9 +4907,7 @@ def infer_piping_tables_for_page(items: list[dict[str, Any]], page_no: int) -> l
         ordered = sorted(row, key=lambda value: value["bbox"][0])
         span = max(cell["bbox"][2] for cell in ordered) - min(cell["bbox"][0] for cell in ordered)
         row_text = " ".join(cell["text"] for cell in ordered)
-        if len(ordered) >= 4 and span >= 400:
-            table_rows.append(ordered)
-        elif table_rows and (PIPE_CODE_RE.search(row_text) or len(ordered) >= 3):
+        if len(ordered) >= 4 and span >= 400 or table_rows and (PIPE_CODE_RE.search(row_text) or len(ordered) >= 3):
             table_rows.append(ordered)
 
     data_rows = [row for row in table_rows if any(PIPE_CODE_RE.search(cell["text"]) for cell in row)]
@@ -5379,14 +5382,14 @@ def extract_piping_requirement_fields(result: dict[str, Any]) -> None:
             "pressure_pipe_level",
             "压力管道级别",
             ["pressureLevel"],
-            re.compile(r"\bGC\s*[123]\b", re.I),
+            re.compile(r"\bGC\s*[123]\b", re.IGNORECASE),
             lambda value: re.sub(r"\s+", "", value).upper(),
         ),
         (
             "weld_detection_method",
             "焊缝检测方法",
             ["weldDetectionMethod"],
-            re.compile(r"\b(?:RT|UT|MT|PT)\b", re.I),
+            re.compile(r"\b(?:RT|UT|MT|PT)\b", re.IGNORECASE),
             lambda value: value.upper(),
         ),
         (
@@ -5400,42 +5403,42 @@ def extract_piping_requirement_fields(result: dict[str, Any]) -> None:
             "weld_acceptance_level",
             "焊缝合格级别",
             ["eligibleLevel"],
-            re.compile(r"\b(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)\b", re.I),
+            re.compile(r"\b(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)\b", re.IGNORECASE),
             normalize_roman_level,
         ),
         (
             "weld_tech_level",
             "焊缝检测技术等级",
             ["ranking"],
-            re.compile(r"\b(?:A|B|C|AB)\b", re.I),
+            re.compile(r"\b(?:A|B|C|AB)\b", re.IGNORECASE),
             lambda value: value.upper(),
         ),
         (
             "strength_test_medium",
             "强度试验介质",
             ["strengthTestMedium"],
-            re.compile(r"(?:强度试验|强度).*?(水|空气)", re.S),
+            re.compile(r"(?:强度试验|强度).*?(水|空气)", re.DOTALL),
             lambda value: value,
         ),
         (
             "strength_test_pressure",
             "强度试验压力",
             ["strengthTestPressure"],
-            re.compile(r"(?:强度试验|强度).*?(\d+(?:\.\d+)?)\s*MPA?", re.I | re.S),
+            re.compile(r"(?:强度试验|强度).*?(\d+(?:\.\d+)?)\s*MPA?", re.IGNORECASE | re.DOTALL),
             lambda value: value,
         ),
         (
             "tightness_test_medium",
             "严密性试验介质",
             ["tightnessTestMedium"],
-            re.compile(r"(?:严密性试验|严密).*?(水|空气)", re.S),
+            re.compile(r"(?:严密性试验|严密).*?(水|空气)", re.DOTALL),
             lambda value: value,
         ),
         (
             "tightness_test_pressure",
             "严密性试验压力",
             ["tightnessTestPressure"],
-            re.compile(r"(?:严密性试验|严密).*?(\d+(?:\.\d+)?)\s*MPA?", re.I | re.S),
+            re.compile(r"(?:严密性试验|严密).*?(\d+(?:\.\d+)?)\s*MPA?", re.IGNORECASE | re.DOTALL),
             lambda value: value,
         ),
     ]
@@ -5495,12 +5498,12 @@ def piping_detection_row_candidate(text_items: list[tuple[str, dict[str, Any]]],
                 text, fragment = match
                 return {"text": text.replace("％", "%").replace(" ", ""), "fragment": fragment}
         if field_code == "weld_acceptance_level":
-            match = first_row_text_candidate(right_items, re.compile(r"^(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)$", re.I))
+            match = first_row_text_candidate(right_items, re.compile(r"^(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)$", re.IGNORECASE))
             if match:
                 text, fragment = match
                 return {"text": normalize_roman_level(text), "fragment": fragment}
         if field_code == "weld_tech_level":
-            match = first_row_text_candidate(right_items, re.compile(r"^(?:AB|A|B|C)$", re.I), prefer_longest=True)
+            match = first_row_text_candidate(right_items, re.compile(r"^(?:AB|A|B|C)$", re.IGNORECASE), prefer_longest=True)
             if match:
                 text, fragment = match
                 return {"text": text.upper(), "fragment": fragment}
@@ -5668,8 +5671,8 @@ def find_total_sheets_fragment(text_items: list[tuple[str, dict[str, Any]]]) -> 
     patterns = [
         re.compile(r"共\s*(\d{1,4})\s*张"),
         re.compile(r"总\s*张\s*数\s*[:：]?\s*(\d{1,4})"),
-        re.compile(r"TOTAL\s*SHEETS?\s*[:：]?\s*(\d{1,4})", flags=re.I),
-        re.compile(r"SHEET\s+\d{1,4}\s+OF\s+(\d{1,4})", flags=re.I),
+        re.compile(r"TOTAL\s*SHEETS?\s*[:：]?\s*(\d{1,4})", flags=re.IGNORECASE),
+        re.compile(r"SHEET\s+\d{1,4}\s+OF\s+(\d{1,4})", flags=re.IGNORECASE),
     ]
     for text, fragment in text_items:
         for pattern in patterns:
@@ -6184,7 +6187,7 @@ def ndt_report_no_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dic
     candidate = next_value_after_label(text_items, ["报告编号", "报告号", "编号"], max_steps=5)
     if candidate:
         return candidate
-    pattern = re.compile(r"\b(?:RT|UT)?[A-Z0-9-]*\d{4}[A-Z0-9-]*(?:RTBG|BG)?[-A-Z0-9]*\b", re.I)
+    pattern = re.compile(r"\b(?:RT|UT)?[A-Z0-9-]*\d{4}[A-Z0-9-]*(?:RTBG|BG)?[-A-Z0-9]*\b", re.IGNORECASE)
     return regex_field_candidate(text_items, pattern)
 
 
@@ -6248,7 +6251,7 @@ def ndt_evaluation_level_candidate(text_items: list[tuple[str, dict[str, Any]]])
     if candidate:
         candidate["text"] = normalize_roman_level(str(candidate.get("text") or "")).replace("级", "")
         return candidate
-    pattern = re.compile(r"\b(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)\s*级?\b", re.I)
+    pattern = re.compile(r"\b(?:I|II|III|IV|Ⅰ|Ⅱ|Ⅲ|Ⅳ)\s*级?\b", re.IGNORECASE)
     match = regex_field_candidate(text_items, pattern)
     if match:
         match["text"] = normalize_roman_level(str(match["text"])).replace("级", "")
@@ -6287,7 +6290,7 @@ def extract_qualification_certificate_fields(result: dict[str, Any]) -> None:
 def qualification_certificate_evidence_text(joined: str) -> str:
     if any(token in joined for token in ["特种设备生产许可证", "生产许可证", "许可证编号", "许可项目", "许可范围"]):
         return joined
-    if re.search(r"\bTS\s*\d{6,12}(?:-\d{4})?\b", joined, flags=re.I) and "有效期" in joined:
+    if re.search(r"\bTS\s*\d{6,12}(?:-\d{4})?\b", joined, flags=re.IGNORECASE) and "有效期" in joined:
         return joined
     return ""
 
@@ -6471,14 +6474,14 @@ PQR_WPS_NO_RE = re.compile(r"\b(?:PQR|WPS)[A-Z0-9_./-]*\b", re.IGNORECASE)
 def welding_procedure_qualification_evidence_text(joined: str) -> str:
     if any(token in joined for token in ["焊接工艺评定", "焊评报告", "焊接工艺评定报告"]):
         return joined
-    if re.search(r"\bPQR\b|\bWPS\b", joined, flags=re.I) and any(token in joined for token in ["母材", "焊接方法", "厚度范围", "适用范围"]):
+    if re.search(r"\bPQR\b|\bWPS\b", joined, flags=re.IGNORECASE) and any(token in joined for token in ["母材", "焊接方法", "厚度范围", "适用范围"]):
         return joined
     return ""
 
 
 def welding_method_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
     patterns = [
-        re.compile(r"\b(?:GTAW|SMAW|GMAW|SAW|FCAW|PAW)(?:\s*[+/]\s*(?:GTAW|SMAW|GMAW|SAW|FCAW|PAW))*\b", re.I),
+        re.compile(r"\b(?:GTAW|SMAW|GMAW|SAW|FCAW|PAW)(?:\s*[+/]\s*(?:GTAW|SMAW|GMAW|SAW|FCAW|PAW))*\b", re.IGNORECASE),
         re.compile(r"(?:钨极氩弧焊|焊条电弧焊|气体保护焊|埋弧焊|手工电弧焊)"),
     ]
     for text, fragment in text_items:
@@ -6490,7 +6493,7 @@ def welding_method_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> di
 
 
 def thickness_range_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
-    pattern = re.compile(r"(?:厚度|适用).*?(\d+(?:\.\d+)?\s*(?:[-~～至]\s*)?\d*(?:\.\d+)?\s*mm)", re.I)
+    pattern = re.compile(r"(?:厚度|适用).*?(\d+(?:\.\d+)?\s*(?:[-~～至]\s*)?\d*(?:\.\d+)?\s*mm)", re.IGNORECASE)
     for text, fragment in text_items:
         match = pattern.search(text)
         if match:
@@ -6639,7 +6642,7 @@ def quality_certificate_manufacturer(text_items: list[tuple[str, dict[str, Any]]
 def quality_certificate_specification(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
     for text, fragment in text_items:
         normalized = text.replace(" ", "")
-        if re.search(r"\b(?:WN|DN|NPS)\s*\d+", text, flags=re.I) or PIPE_SIZE_RE.search(text) or "S=" in normalized:
+        if re.search(r"\b(?:WN|DN|NPS)\s*\d+", text, flags=re.IGNORECASE) or PIPE_SIZE_RE.search(text) or "S=" in normalized:
             return {"text": text, "fragment": fragment}
     return next_value_after_label(text_items, ["规格", "规格型号"], max_steps=8)
 

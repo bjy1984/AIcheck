@@ -4,14 +4,13 @@ import argparse
 import hashlib
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
 from libs.business_pack import load_business_pack, validate_business_pack
 from libs.review_orchestrator.execution import runtime_tool_catalog
-
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -72,7 +71,7 @@ def publish(
     binding_set = document.get("atomicCheckToolBindingSet")
     if not isinstance(binding_set, dict):
         raise RuntimeError("atomicCheckToolBindingSet is missing")
-    published_at = datetime.now(timezone.utc).isoformat()
+    published_at = datetime.now(UTC).isoformat()
     result = {
         "packId": pack_id,
         "path": str(path),

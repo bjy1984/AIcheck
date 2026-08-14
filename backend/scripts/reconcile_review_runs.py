@@ -6,12 +6,11 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from scripts.production_audit_ops import append_operational_audit
-
 
 TEMPORAL_ACTIONS = {"preserve_waiting", "terminate_orphan", "terminate_keep_failed"}
 DATABASE_ACTIONS = {"mark_failed_to_start"}
@@ -210,7 +209,7 @@ def mark_failed_to_start(connection: Any, *, tenant_id: str, incident_id: str, e
     ).fetchall()
     if side_effects:
         raise RuntimeError(f"{entry['reviewRunId']} has nontrivial side effects: {side_effects}")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     payload.update(
         {
             "status": "failed_to_start",
@@ -252,8 +251,8 @@ def mark_failed_to_start(connection: Any, *, tenant_id: str, incident_id: str, e
 
 
 async def execute(args: argparse.Namespace) -> dict[str, Any]:
-    from temporalio.client import Client
     import psycopg
+    from temporalio.client import Client
 
     plan = load_plan(args.plan_file)
     incident_id = plan["incidentId"]

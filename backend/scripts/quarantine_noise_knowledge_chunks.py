@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
@@ -14,7 +13,6 @@ if str(BACKEND_ROOT) not in sys.path:
 from libs.contracts.responses import server_time
 from libs.db.repository import flush_state, load_state, repo
 from libs.knowledge_indexing import OFFLINE_VECTOR_DIMENSIONS, noise_like_text, stable_id
-
 
 DEFAULT_SOURCE_ID = "KS-STANDARD-RULES"
 QUARANTINE_VERSION = "noise-watermark-quarantine-v1"

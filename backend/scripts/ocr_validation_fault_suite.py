@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_COMPOSE = BACKEND_ROOT / "docker-compose.ocr-validation.yml"
 REMOTE_CONFIRMATION = "I_UNDERSTAND_REMOTE_ONLY"

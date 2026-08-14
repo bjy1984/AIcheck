@@ -3,14 +3,18 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.ocr_100_corpus import SCENARIO_COLLECTION_HINTS, SCENARIO_PROFILE_DEFAULTS, expected_annotation_checklist
+from scripts.ocr_100_corpus import (
+    SCENARIO_COLLECTION_HINTS,
+    SCENARIO_PROFILE_DEFAULTS,
+    expected_annotation_checklist,
+)
 from scripts.ocr_eval_set import write_text_file
 
 
@@ -92,7 +96,7 @@ def build_collection_intake(
         write_text_file(scenario_dir / "README.md", scenario_readme(scenario_items[-1], output_dir=output_dir, queue_output=queue_output, copy_to=copy_to))
     manifest = {
         "schemaVersion": "aicheck-ocr-100-intake-manifest-template-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "sourceClosurePlan": str(closure_plan_path),
         "instructions": [
             "Put real customer/field documents into each slot's dropDirectory.",
@@ -184,7 +188,7 @@ def build_collection_intake(
     }
     summary = {
         "schemaVersion": "aicheck-ocr-100-collection-intake-v1",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "sourceClosurePlan": str(closure_plan_path),
         "outputDir": str(output_dir),
         "scenarios": len(scenario_items),

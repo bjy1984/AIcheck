@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from libs.integrations.storage import object_storage
@@ -39,7 +39,7 @@ def write_pending_audit_anchors(database_url: str) -> list[dict[str, Any]]:
             ).fetchone()
             if exists:
                 continue
-            anchored_at = datetime.now(timezone.utc).isoformat()
+            anchored_at = datetime.now(UTC).isoformat()
             envelope = {
                 "schemaVersion": "aicheck-audit-anchor-v1",
                 "tenantId": str(tenant_id),

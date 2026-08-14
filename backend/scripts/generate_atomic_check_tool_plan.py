@@ -5,7 +5,6 @@ from typing import Any
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[2]
 PACK_DIR = ROOT / "backend" / "business_packs" / "engineering_inspection_v1"
 SOURCE = PACK_DIR / "atomic_checks.yaml"

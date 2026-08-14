@@ -19,9 +19,22 @@ from fastapi.responses import JSONResponse, Response
 
 from apps.api.cnse_routes import router as cnse_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
+from apps.api.routes import (
+    binding_node_ids,
+    document_node_ids,
+    idempotency_fingerprint,
+    member_node_scope_error,
+    mock_router,
+    report_node_ids,
+    router,
+    scope_error_for_record,
+)
 from apps.api.std_samr_routes import router as std_samr_router
-from apps.api.routes import binding_node_ids, document_node_ids, idempotency_fingerprint, member_node_scope_error, mock_router, report_node_ids, router, scope_error_for_record
-from libs.audit_context import current_request_audit_context, reset_request_audit_context, set_request_audit_context
+from libs.audit_context import (
+    current_request_audit_context,
+    reset_request_audit_context,
+    set_request_audit_context,
+)
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.postgres import (
@@ -41,8 +54,8 @@ from libs.db.repository import (
 )
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage
 from libs.integrations.task_dispatcher import mineru_execution_mode
-from libs.runtime_readiness import production_runtime_status
 from libs.review_orchestrator.dispatcher import review_orchestration_mode
+from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import (
     authentication_enforced,
@@ -61,14 +74,13 @@ from libs.security.runtime import (
 )
 from libs.security.session import SecurityBackendUnavailable, security_sessions
 from libs.security.tenant import (
-    current_tenant_id,
     configured_tenant_id,
+    current_tenant_id,
     reset_request_tenant_id,
     set_request_tenant_id,
-    tenant_is_allowed,
     tenant_id_for_record,
+    tenant_is_allowed,
 )
-
 
 logger = logging.getLogger("aicheck.api")
 _tenant_mutation_locks: dict[tuple[int, str], asyncio.Lock] = {}
