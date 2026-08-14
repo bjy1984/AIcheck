@@ -1729,7 +1729,7 @@ def test_issue8_hash_pseudo_vectors_cannot_enter_the_index_silently(monkeypatch)
 
     # 显式声明离线自测 → 放行，但必须留下降级标记，否则索引里的哈希向量依旧不可辨认
     monkeypatch.setenv("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", "true")
-    vectors, model, index_version, dimensions, fallback_reason = tasks.embedding_batches_for_chunks(chunks)
+    vectors, _model, index_version, dimensions, fallback_reason = tasks.embedding_batches_for_chunks(chunks)
     assert vectors and dimensions > 0 and index_version
     assert fallback_reason == "forced_offline_hash_embedding"
 

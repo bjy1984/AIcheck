@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from libs.contracts.responses import business_today
 
 RESULT_SCHEMA = "deterministic-tool-result-v1"
 
@@ -628,7 +629,7 @@ def welding_position_code(value: Any) -> str:
 
 
 def welder_rule_version(arguments: dict[str, Any]) -> tuple[str, str | None]:
-    review_date = parse_date(arguments.get("reviewDate") or arguments.get("workDate")) or date.today()
+    review_date = parse_date(arguments.get("reviewDate") or arguments.get("workDate")) or business_today()
     if review_date >= date(2026, 8, 1):
         version = "welder-qualification-tsg-z6002-2026-transition-v1"
         if arguments.get("ruleProfile2026Verified") is not True:

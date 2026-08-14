@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from libs.contracts.responses import business_today
 from libs.review_orchestrator.deterministic_tools import (
     check,
     check_welder_work_coverage,
@@ -476,7 +477,7 @@ def evaluate_heat_treatment_instruments(arguments: dict[str, Any]) -> dict[str, 
             )
     if not records:
         return _insufficient("evaluate_heat_treatment_instruments", "temperature_instrument_records_missing", R33_VERSION, arguments)
-    review_date = parse_date(arguments.get("reviewDate")) or date.today()
+    review_date = parse_date(arguments.get("reviewDate")) or business_today()
     required_types = {"thermocouple", "controller", "recorder"}
     found_types: set[str] = set()
     checks, reasons = [], []
@@ -918,9 +919,7 @@ def _pwht_exception(weld: dict[str, Any], group: str, thickness: Decimal, tensil
         return True
     if group.startswith("low_alloy") and weld_thickness <= 13 and _bool(_first(weld, "adequatePreheat")) is True and tensile is not None and tensile < 490:
         return True
-    if group == "ferritic_stainless" and _norm(_first(weld, "fillerGroup")) in {"austenitic", "nickel", "奥氏体", "镍基"}:
-        return True
-    return False
+    return bool(group == "ferritic_stainless" and _norm(_first(weld, "fillerGroup")) in {"austenitic", "nickel", "奥氏体", "镍基"})
 
 
 def _material_group(item: dict[str, Any]) -> str | None:

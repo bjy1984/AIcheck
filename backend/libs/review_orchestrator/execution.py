@@ -1095,7 +1095,7 @@ def plan_r19_semantic_review(
 
     document_version_ids = {str(item) for item in agent_context.get("documentVersionIds") or [] if item}
     evidence_index = agent_context.setdefault("evidenceIndex", {})
-    known_evidence_ids = set(str(item) for item in evidence_index)
+    known_evidence_ids = {str(item) for item in evidence_index}
     tool_catalog = {str(item.get("name")): item for item in runtime_tool_catalog()}
 
     def schema_for_runtime(name: str) -> dict[str, Any]:

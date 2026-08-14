@@ -140,7 +140,7 @@ def render_pdf_pages(
                     page_path,
                     page_no=page_no,
                     source_type="pdf",
-                    render_dpi=int(round(scale * 72)),
+                    render_dpi=round(scale * 72),
                     document_path=source_path,
                     rotation=int(page.rotation or 0),
                     source_width=float(page.rect.width),
@@ -154,7 +154,7 @@ def render_pdf_pages(
                     pdf_pixmap_y=int(getattr(pixmap, "y", 0) or 0),
                     page_render_version=PAGE_RENDER_VERSION,
                     requested_render_dpi=dpi,
-                    effective_render_dpi=int(round(scale * 72)),
+                    effective_render_dpi=round(scale * 72),
                     total_pages=total_pages,
                     rendered_pages=rendered_pages,
                     truncated=truncated,
@@ -430,7 +430,7 @@ def render_pdf_page_preview(
             target,
             page_no=page_no,
             source_type="pdf",
-            render_dpi=int(round(scale * 72)),
+            render_dpi=round(scale * 72),
             document_path=source_path,
             rotation=int(page.rotation or 0),
             source_width=float(page.rect.width),
@@ -444,7 +444,7 @@ def render_pdf_page_preview(
             pdf_pixmap_y=int(getattr(pixmap, "y", 0) or 0),
             page_render_version=PAGE_RENDER_VERSION,
             requested_render_dpi=dpi,
-            effective_render_dpi=int(round(scale * 72)),
+            effective_render_dpi=round(scale * 72),
             total_pages=total_pages,
             rendered_pages=[page_no],
             truncated=total_pages > 1,
@@ -588,7 +588,7 @@ def constrain_image_page(
     if target.exists():
         return target
     ratio = max_long_side / float(max(width, height))
-    new_size = (max(1, int(round(width * ratio))), max(1, int(round(height * ratio))))
+    new_size = (max(1, round(width * ratio)), max(1, round(height * ratio)))
     if resize_with_pillow(path, target, new_size) or resize_with_cv2(path, target, new_size):
         return target
     return path

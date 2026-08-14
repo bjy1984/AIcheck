@@ -1057,15 +1057,12 @@ def validate_shadow_attribution(structured_output: Any, evidence_prior: dict[str
         repair_applied = False
         if individually_supported:
             selected = [
-                sorted(
-                    individually_supported,
-                    key=lambda candidate: (
+                min(individually_supported, key=lambda candidate: (
                         0 if str(candidate.get("semanticKey") or "") == field_key else 1,
                         _GRANULARITY_RANK.get(str(candidate.get("granularity")), 99),
                         -len(str(candidate.get("text") or "")),
                         str(candidate.get("candidateId")),
-                    ),
-                )[0]
+                    ))
             ]
         elif raw_ids:
             repaired_candidates = _deterministic_table_cell_repair(

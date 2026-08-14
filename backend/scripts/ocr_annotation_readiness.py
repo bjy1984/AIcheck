@@ -127,7 +127,7 @@ def scenario_gap_summary(items: list[dict[str, Any]]) -> dict[str, dict[str, Any
 
 
 def scenario_next_action(bucket: dict[str, Any]) -> str:
-    blockers = set(str(blocker) for blocker in (bucket.get("blockerCounts") or {}).keys())
+    blockers = {str(blocker) for blocker in (bucket.get("blockerCounts") or {})}
     if "missing_human_label" in blockers and bucket.get("machineSuggestions"):
         return "Review machine suggestions, correct values and evidence boxes, then confirm with human labeler/reviewer."
     if "missing_human_label" in blockers:

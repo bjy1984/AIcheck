@@ -819,9 +819,7 @@ def seal_matches(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
     required_flags = {str(item) for item in expected.get("qualityFlags") or []}
     if required_flags and not required_flags <= {str(item) for item in actual.get("qualityFlags") or []}:
         return False
-    if not seal_fields_match(actual, expected):
-        return False
-    return True
+    return seal_fields_match(actual, expected)
 
 
 def seal_fields_match(actual: dict[str, Any], expected: dict[str, Any]) -> bool:

@@ -19228,7 +19228,7 @@ def fde_vector_file_detail(project_id: str, document_version_id: str, *, chunk_p
     ] or [
         {**trace, "_fdeTraceScope": "project_proxy"} for trace in project_traces[:5]
     ]
-    trace_identifiers = {
+    {
         trace_id
         for trace in trace_rows_source
         for trace_id in fde_trace_chunk_identifiers(trace)
@@ -19981,7 +19981,7 @@ def fde_standards_vectorization_payload(
     ]
     rows.sort(key=lambda item: (0 if item.get("contextType") == "standard_reference" else 1, str(item.get("sourceRelativePath") or item.get("fileName") or "")))
     file_page = page(rows, max(1, fde_as_int(page_no, 1)), max(1, min(fde_as_int(page_size, 100), 200)))
-    all_corrections = [view for row in rows for view in [*([row.get("correctionSummary")] if row.get("correctionSummary") else [])]]
+    [view for row in rows for view in [*([row.get("correctionSummary")] if row.get("correctionSummary") else [])]]
     chunk_count = sum(fde_as_int(item.get("chunkCount")) for item in rows)
     vector_count = sum(fde_as_int(item.get("vectorCount")) for item in rows)
     vectorized_files = len(
@@ -20086,7 +20086,7 @@ def fde_standard_vector_file_detail(
         raise KeyError(file_id)
     knowledge_file_id = str(file.get("id") or resolved_file_id)
     document_version_id = str(file.get("documentVersionId") or "")
-    version = repo.find_one("versions", document_version_id)
+    repo.find_one("versions", document_version_id)
     chunks = [
         repo.clone(item)
         for item in repo.state.get("knowledge_chunks", [])
@@ -25344,12 +25344,7 @@ def expected_seal_fields_from_result(seal: dict[str, Any]) -> list[dict[str, Any
 
 def expected_seal_name_is_placeholder(value: str) -> bool:
     text = value.strip().lower()
-    return not text or text.startswith("视觉") or text.startswith("visual_") or text in {
-        "蓝章",
-        "红章",
-        "seal",
-        "stamp",
-    }
+    return not text or text.startswith(("视觉", "visual_")) or text in {"蓝章", "红章", "seal", "stamp"}
 
 
 def dedupe_expected_seal_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -25699,9 +25694,7 @@ def fde_capability_test_upload_ready(upload_session: dict[str, Any]) -> bool:
         return True
     upload_url = str(upload_session.get("uploadUrl") or "")
     storage_url = str(upload_session.get("storageUrl") or upload_session.get("storageKey") or "")
-    if upload_url and not upload_url.startswith("mock://") and storage_url:
-        return True
-    return False
+    return bool(upload_url and not upload_url.startswith("mock://") and storage_url)
 
 
 def fde_capability_test_result_summary(result: dict[str, Any] | None) -> dict[str, Any]:
@@ -29035,9 +29028,7 @@ def evidence_link_references_knowledge_file(link: dict[str, Any], file: dict[str
         return True
     if object_type in {"knowledgefile", "file"} and file_id and object_id == file_id:
         return True
-    if object_type in {"knowledgechunk", "chunk"} and chunk_ids and object_id in chunk_ids:
-        return True
-    return False
+    return bool(object_type in {"knowledgechunk", "chunk"} and chunk_ids and object_id in chunk_ids)
 
 
 def evidence_link_ids_from_run(run: dict[str, Any]) -> set[str]:

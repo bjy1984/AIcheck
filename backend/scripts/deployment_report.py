@@ -40,7 +40,12 @@ from scripts.build_release_manifest import verify_manifest as verify_release_man
 from scripts.create_roles import ROLE_SPECS, build_plan, validate_strong_passwords
 from scripts.security_release_gate import validate_scan_directory
 from scripts.validate_deployment_config import DeploymentConfigValidator
-from scripts.verify_deployment import DEFAULT_ROLES, DeploymentVerifier, VerifyConfig
+from scripts.verify_deployment import (
+    DEFAULT_ROLES,
+    CheckResult,
+    DeploymentVerifier,
+    VerifyConfig,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent

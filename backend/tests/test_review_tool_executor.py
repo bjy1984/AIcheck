@@ -256,7 +256,7 @@ def test_r20_r23_plans_assemble_specialized_business_arguments() -> None:
             or {"status": "succeeded", "result": "passed"},
         )
 
-    by_name = {name: arguments for name, arguments in captured}
+    by_name = dict(captured)
     assert by_name["evaluate_r20_new_material_procedure"]["typeTestReports"][0]["reportNo"] == "TT-1"
     assert by_name["evaluate_r21_mark_transfer"]["markTransferOccurred"] is False
     assert by_name["evaluate_r22_material_substitution"]["materialSubstitutionOccurred"] is False

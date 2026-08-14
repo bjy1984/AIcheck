@@ -4,6 +4,7 @@ import re
 from datetime import date, datetime
 from typing import Any
 from uuid import uuid4
+from libs.contracts.responses import business_today
 
 TOOL_NAME = "ocr.welder_certificate.extract"
 TOOL_VERSION = "welder-certificate-extractor-v1"
@@ -334,7 +335,7 @@ def validity_status(valid_until: str) -> str:
         deadline = datetime.strptime(valid_until, "%Y.%m.%d").date()
     except ValueError:
         return "unknown"
-    return "valid" if deadline >= date.today() else "expired"
+    return "valid" if deadline >= business_today() else "expired"
 
 
 def first_qualified_item(extraction: dict[str, Any]) -> dict[str, Any] | None:

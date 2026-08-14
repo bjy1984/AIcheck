@@ -34,7 +34,7 @@ def main() -> int:
     result = draft_labels_from_suggestions(
         Path(args.annotation_tasks),
         output_path=Path(args.output),
-        case_ids=set(str(item) for item in args.case_id),
+        case_ids={str(item) for item in args.case_id},
         limit=max(0, int(args.limit)),
         only_auto_usable=bool(args.only_auto_usable),
         overwrite_machine_drafts=bool(args.overwrite_machine_drafts),

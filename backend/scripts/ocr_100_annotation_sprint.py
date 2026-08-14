@@ -266,7 +266,7 @@ def has_positive_evidence(item: dict[str, Any]) -> bool:
 
 def human_actions(status: dict[str, Any], suggested: dict[str, Any], template: dict[str, Any]) -> list[str]:
     actions: list[str] = []
-    blockers = set(str(item) for item in status.get("blockers") or [])
+    blockers = {str(item) for item in status.get("blockers") or []}
     if "machine_draft_not_human_confirmed" in blockers:
         actions.append("Review machine draft labeledExpected, correct values/bboxes, then replace machine_prelabel with a real labeler.")
     if "missing_human_label" in blockers and suggested:

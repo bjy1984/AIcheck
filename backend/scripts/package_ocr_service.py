@@ -22,9 +22,7 @@ def should_include_package_member(path: Path) -> bool:
         return False
     if path.name.startswith(OCR_PACKAGE_EXCLUDE_PREFIXES):
         return False
-    if path.suffix in OCR_PACKAGE_EXCLUDE_SUFFIXES:
-        return False
-    return True
+    return path.suffix not in OCR_PACKAGE_EXCLUDE_SUFFIXES
 
 
 def build_ocr_service_package(source_dir: Path, output_path: Path) -> dict[str, Any]:

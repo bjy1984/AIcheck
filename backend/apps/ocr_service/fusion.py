@@ -1274,9 +1274,7 @@ def same_table_selection_identity(left: dict[str, Any], right: dict[str, Any]) -
     if left.get("tableId") and left.get("tableId") == right.get("tableId"):
         left_page = left.get("pageNo")
         right_page = right.get("pageNo")
-        if left_page is not None and right_page is not None and int_from(left_page, default=1) != int_from(right_page, default=1):
-            return False
-        return True
+        return not (left_page is not None and right_page is not None and int_from(left_page, default=1) != int_from(right_page, default=1))
     return False
 
 
@@ -1345,7 +1343,7 @@ def table_header_tokens(table: dict[str, Any]) -> set[str]:
             tokens.add(token)
     for row in (table.get("normalizedRows") or [])[:2]:
         if isinstance(row, dict):
-            tokens.update(normalize_header_token(key) for key in row.keys())
+            tokens.update(normalize_header_token(key) for key in row)
     return {token for token in tokens if token}
 
 

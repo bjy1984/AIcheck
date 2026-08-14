@@ -586,7 +586,7 @@ def _validated_source_refs(value: Any, errors: list[str], answer_index: int) -> 
         if source_type not in {"url", "document", "record", "other"}:
             errors.append(f"answer_{answer_index}_source_ref_{source_index}_type_invalid")
             continue
-        if source_type == "url" and not (url.startswith("https://") or url.startswith("http://")):
+        if source_type == "url" and not (url.startswith(("https://", "http://"))):
             errors.append(f"answer_{answer_index}_source_ref_{source_index}_url_invalid")
             continue
         if source_type != "url" and not reference:

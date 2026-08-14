@@ -42,7 +42,7 @@ def main() -> int:
         Path(args.annotation_tasks),
         output_path=Path(args.output),
         report_output=Path(args.report_output) if args.report_output else None,
-        case_ids=set(str(item) for item in args.case_id),
+        case_ids={str(item) for item in args.case_id},
         labeler=str(args.labeler),
         reviewer=str(args.reviewer),
         comment=str(args.comment or ""),

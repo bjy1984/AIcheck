@@ -2418,7 +2418,7 @@ def ocr_pipeline_seal_scan(self, run_id: str) -> dict[str, Any]:
 @celery_app.task(bind=True, max_retries=2)
 @pipeline_task_lock("ocr-fusion", lambda _self, run_id: str(run_id))
 def ocr_pipeline_evidence_fusion(self, run_id: str) -> dict[str, Any]:
-    run, baseline, profile = _pipeline_stage_context(run_id)
+    run, baseline, _profile = _pipeline_stage_context(run_id)
     if not run:
         return {"pipelineRunId": run_id, "status": "missing"}
     existing = _stage_record(run, "evidence_fusion")

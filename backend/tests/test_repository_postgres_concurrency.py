@@ -333,7 +333,7 @@ def test_ocr_task_postgres_load_scopes_historical_payloads_to_document() -> None
 
     repository.load_ocr_task_state_from_sync_postgres("DOC-1", "DV-1")
 
-    statement, params = next(
+    _statement, params = next(
         (statement, params)
         for statement, params in connection.statements
         if "payload ->> 'documentVersionId'" in statement

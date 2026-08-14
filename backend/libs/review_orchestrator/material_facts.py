@@ -270,7 +270,7 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
         if _present(output.get(target)):
             continue
         value = _row_value(row, *keys)
-        if target.startswith("requires") or target.startswith("listedIn") or target.endswith("Occurred"):
+        if target.startswith(("requires", "listedIn")) or target.endswith("Occurred"):
             value = _boolean_value(value)
         elif target in {"requiredInspectionItems", "requiredRetestItems", "requiredMaterialNdtMethods", "materialTestTriggerReasons", "requiredQuantitativeItems"}:
             value = _list_value(value)

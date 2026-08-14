@@ -122,13 +122,7 @@ def seal_engine_disabled(engine_name: str, profile: dict[str, Any]) -> bool:
         default=seal_policy_enabled(seal_policy, "enableSealTextRecognition", default=default_enabled),
     ):
         return True
-    if engine_name == "visual_seal_candidate_subprocess" and not seal_policy_enabled(
-        seal_policy,
-        "enableColorCandidate",
-        default=default_enabled,
-    ):
-        return True
-    return False
+    return bool(engine_name == "visual_seal_candidate_subprocess" and not seal_policy_enabled(seal_policy, "enableColorCandidate", default=default_enabled))
 
 
 def table_engine_disabled(profile: dict[str, Any]) -> bool:

@@ -308,12 +308,9 @@ def test_legacy_production_preparation_upgrades_realistic_old_schema(isolated_po
             """
         ).fetchone()[0]
         assert kvi_pk == ["tenant_id", "id"]
-        index_defs = {
-            name: definition
-            for name, definition in connection.execute(
+        index_defs = dict(connection.execute(
                 "SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema()"
-            ).fetchall()
-        }
+            ).fetchall())
         assert "(tenant_id, collection)" in index_defs["idx_aicheck_state_collection"]
         assert "(tenant_id, updated_at DESC)" in index_defs["idx_idempotency_updated_at"]
 

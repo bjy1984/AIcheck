@@ -223,7 +223,7 @@ def evaluate_r15_manufacturing_license_coverage(arguments: dict[str, Any]) -> di
     failed = False
     incomplete = requirement_unknown
     for index, (item, classification) in enumerate(required_items, 1):
-        item_id = classification["componentItemId"]
+        classification["componentItemId"]
         manufacturer = _organization(item.get("manufacturerName"))
         required_scope = _component_scope_category(item.get("componentType") or item.get("productName"))
         if not manufacturer or not required_scope:

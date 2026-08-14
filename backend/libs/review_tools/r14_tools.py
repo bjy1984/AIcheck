@@ -664,7 +664,7 @@ def _pressure_mpa(value: Any) -> Decimal | None:
     mpa_match = re.search(r"(-?\d+(?:\.\d+)?)\s*MPA", compact)
     if mpa_match:
         return Decimal(mpa_match.group(1))
-    if compact.startswith("CLASS") or compact.startswith("CL"):
+    if compact.startswith(("CLASS", "CL")):
         return None
     return number
 

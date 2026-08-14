@@ -53,7 +53,7 @@ def runtime_section(runtime_doctor: dict[str, Any] | None, *, runtime_profile: s
         telemetry = runtime_doctor.get("officialOcrTelemetry")
         telemetry = telemetry if isinstance(telemetry, dict) else {}
         capacity = ocr.get("capacityControl") if isinstance(ocr.get("capacityControl"), dict) else {}
-        circuit = ocr.get("circuitBreaker") if isinstance(ocr.get("circuitBreaker"), dict) else {}
+        ocr.get("circuitBreaker") if isinstance(ocr.get("circuitBreaker"), dict) else {}
         capabilities = {
             "provider configured": ocr.get("configured") is True and ocr.get("providerMode") == "official",
             "live inference observed": bool(telemetry.get("lastSuccessfulInferenceAt") or ocr.get("lastSuccessfulInferenceAt")),

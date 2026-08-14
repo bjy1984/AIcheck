@@ -347,9 +347,7 @@ def pdf_deep_scan_requested(options: dict[str, Any]) -> bool:
 def pdf_text_layer_fast_path_enabled(options: dict[str, Any]) -> bool:
     if parse_bool(os.getenv("AICHECK_OCR_PDF_TEXT_LAYER_FAST_PATH", "true"), True) is not True:
         return False
-    if pdf_deep_scan_requested(options):
-        return False
-    return True
+    return not pdf_deep_scan_requested(options)
 
 
 def apply_business_pdf_deep_scan_default_options(
@@ -2035,7 +2033,7 @@ def percentile(values: list[float], percentile_value: float) -> float | None:
     clean = sorted(value for value in values if value >= 0)
     if not clean:
         return None
-    index = min(max(int(round((len(clean) - 1) * percentile_value)), 0), len(clean) - 1)
+    index = min(max(round((len(clean) - 1) * percentile_value), 0), len(clean) - 1)
     return round(clean[index], 3)
 
 
@@ -3351,9 +3349,7 @@ def seal_crop_fragment_is_adjacent_noise(fragment: dict[str, Any]) -> bool:
         "油漆保温一览表",
         "综合材料表",
     ]
-    if any(term in compact for term in drawing_terms) and "压力管道" not in compact:
-        return True
-    return False
+    return bool(any(term in compact for term in drawing_terms) and "压力管道" not in compact)
 
 
 def seal_crop_has_visual_source(target: dict[str, Any]) -> bool:
@@ -3632,9 +3628,7 @@ def variant_has_unmapped_coordinates(variant: dict[str, Any], item: dict[str, An
     if not status or status in {"identity", "original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}:
         return False
     item_status = str(item.get("coordinateTransformStatus") or "")
-    if item_status in {"original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}:
-        return False
-    return True
+    return item_status not in {"original", "mapped", "mapped_from_crop", "mapped_from_pdf_points"}
 
 
 def normalize_nested_coordinates(
@@ -4636,7 +4630,7 @@ def piping_alignment_confidence(aligned: dict[str, Any], grid_table: dict[str, A
     normalized_rows = [row for row in aligned.get("normalizedRows") or [] if isinstance(row, dict)]
     fill_values = [value for row in normalized_rows for value in row.values()]
     fill_rate = len([value for value in fill_values if str(value or "").strip()]) / max(len(fill_values), 1)
-    header_codes = {piping_header_code(str(key)) for row in normalized_rows[:2] for key in row.keys() if isinstance(row, dict)}
+    header_codes = {piping_header_code(str(key)) for row in normalized_rows[:2] for key in row if isinstance(row, dict)}
     header_codes.discard(None)
     header_score = min(len(header_codes) / 8.0, 1.0)
     grid_score = min((rows * columns) / 160.0, 1.0)
@@ -5522,12 +5516,12 @@ def ocr_rows_by_method_fragment(text_items: list[tuple[str, dict[str, Any]]]) ->
         upper = text.upper().strip()
         if upper not in {"RT", "UT", "MT", "PT"}:
             continue
-        x0, y0, x1, y1 = bbox
+        x0, y0, _x1, y1 = bbox
         center_y = (y0 + y1) / 2
         tolerance = max((y1 - y0) * 1.5, 18.0)
         right_items = []
         for other_text, other_fragment, other_bbox in indexed:
-            ox0, oy0, ox1, oy1 = other_bbox
+            ox0, oy0, _ox1, oy1 = other_bbox
             other_center_y = (oy0 + oy1) / 2
             if other_fragment is fragment:
                 continue
@@ -5634,7 +5628,7 @@ def tag_engineering_drawing_common_tables(result: dict[str, Any]) -> None:
             or ("PROJECT" in compact and ("DWG" in compact or "DRAWING" in compact))
         ):
             continue
-        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas = {str(item) for item in table.get("businessSchemas") or [] if item}
         schemas.add("engineering_drawing_title_block_v1")
         table["businessSchemas"] = sorted(schemas)
         table.setdefault("businessSchema", "engineering_drawing_title_block_v1")
@@ -5695,7 +5689,7 @@ def tag_engineering_drawing_list_tables(result: dict[str, Any]) -> None:
             or ("DWG" in compact and "PROJECT" in compact)
         ):
             continue
-        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas = {str(item) for item in table.get("businessSchemas") or [] if item}
         schemas.add("engineering_drawing_title_block_v1")
         table["businessSchemas"] = sorted(schemas)
         table.setdefault("businessSchema", "engineering_drawing_title_block_v1")
@@ -6018,7 +6012,7 @@ def tag_quality_certificate_tables(result: dict[str, Any]) -> None:
     tables = [table for table in result.get("tables") or [] if isinstance(table, dict)]
     for table in tables:
         text = table_text(table)
-        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas = {str(item) for item in table.get("businessSchemas") or [] if item}
         if quality_table_has_chemical_composition(text):
             schemas.add("material_chemical_composition_table")
         if quality_table_has_mechanical_property(text):
@@ -6026,7 +6020,7 @@ def tag_quality_certificate_tables(result: dict[str, Any]) -> None:
         if schemas:
             table["businessSchemas"] = sorted(schemas)
             if not table.get("businessSchema"):
-                table["businessSchema"] = sorted(schemas)[0]
+                table["businessSchema"] = min(schemas)
             flags = {str(flag) for flag in table.get("qualityFlags") or []}
             flags.add("quality_certificate_schema_match")
             table["qualityFlags"] = sorted(flags)
@@ -6132,7 +6126,7 @@ def tag_ndt_rt_report_tables(result: dict[str, Any]) -> None:
         compact = text.replace(" ", "").upper()
         if not any(token in compact for token in ["射线", "RT", "焊口", "检测比例", "评定级别", "报告编号"]):
             continue
-        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas = {str(item) for item in table.get("businessSchemas") or [] if item}
         schemas.add("weld_detection_result_table")
         table["businessSchemas"] = sorted(schemas)
         if not table.get("businessSchema"):
@@ -6508,7 +6502,7 @@ def tag_welding_procedure_qualification_tables(result: dict[str, Any]) -> None:
         compact = text.replace(" ", "").upper()
         if not any(token in compact for token in ["PQR", "WPS", "焊接工艺评定", "焊接方法", "母材", "厚度范围", "适用范围"]):
             continue
-        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas = {str(item) for item in table.get("businessSchemas") or [] if item}
         schemas.add("welding_procedure_qualification_table")
         table["businessSchemas"] = sorted(schemas)
         if not table.get("businessSchema"):
@@ -6564,7 +6558,7 @@ def tag_welding_record_tables(result: dict[str, Any]) -> None:
         compact = text.replace(" ", "")
         if not any(token in compact for token in ["焊口编号", "焊工", "焊接日期", "焊缝编号", "工艺评定"]):
             continue
-        schemas = set(str(item) for item in table.get("businessSchemas") or [] if item)
+        schemas = {str(item) for item in table.get("businessSchemas") or [] if item}
         schemas.add("welding_record_table")
         table["businessSchemas"] = sorted(schemas)
         if not table.get("businessSchema"):
@@ -6627,7 +6621,7 @@ def table_text(table: dict[str, Any]) -> str:
             values.append(str(cell.get("text") or ""))
     for row in table.get("normalizedRows") or []:
         if isinstance(row, dict):
-            values.extend(str(key) for key in row.keys())
+            values.extend(str(key) for key in row)
             values.extend(str(value) for value in row.values())
     return " ".join(values)
 

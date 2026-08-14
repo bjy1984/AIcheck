@@ -1142,7 +1142,7 @@ class DeploymentVerifier:
         headers = {"Authorization": f"Bearer {self.tokens['contractor']}"}
         discovered, discovery_failures = self.discover_out_of_scope_resources(headers)
 
-        status_code, payload = self.request_json(
+        _status_code, payload = self.request_json(
             self.api,
             "GET",
             f"/api/projects/{self.config.project_id}/workbench/context?role=inspection",

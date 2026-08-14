@@ -297,7 +297,7 @@ def stage_engine_gate(
 def summarize_case(case: dict[str, Any], campaign: str, capabilities: dict[str, Any]) -> dict[str, Any]:
     version_id = stable_id("DV-OCRREG", f"{campaign}:{case['caseId']}")
     runs = runs_for_version(version_id)
-    run = sorted(runs, key=lambda item: str(item.get("updatedAt") or ""), reverse=True)[0] if runs else {}
+    run = max(runs, key=lambda item: str(item.get("updatedAt") or "")) if runs else {}
     stages = stage_map(str(run.get("id") or "")) if run else {}
     attempts = [
         item

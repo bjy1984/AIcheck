@@ -155,7 +155,7 @@ def latest_parse_result(repo: Any, document_version_id: str) -> dict[str, Any] |
     ]
     if not results:
         return None
-    return sorted(results, key=lambda item: str(item.get("finishedAt") or item.get("createdAt") or ""), reverse=True)[0]
+    return max(results, key=lambda item: str(item.get("finishedAt") or item.get("createdAt") or ""))
 
 
 def review_points_for_project(repo: Any, project: dict[str, Any] | None, node_id: int | None = None) -> list[dict[str, Any]]:
@@ -495,7 +495,7 @@ def generic_excerpt_text(text: Any, point: dict[str, Any], document: dict[str, A
         normalized_text(document.get("fileName")),
     }
     generic_values.discard("")
-    return normalized in generic_values or normalized.startswith("主类型命中") or normalized.startswith("视觉抽检确认")
+    return normalized in generic_values or normalized.startswith(("主类型命中", "视觉抽检确认"))
 
 
 def target_text_contains_fact(target: dict[str, Any], text: Any) -> bool:

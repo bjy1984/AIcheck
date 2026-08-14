@@ -412,7 +412,7 @@ def suggested_table(table: dict[str, Any]) -> dict[str, Any]:
         output["matchedRequiredTables"] = [str(table["matchedRequiredTable"])]
     business_rows = table.get("businessRows") or table.get("normalizedRows")
     if isinstance(business_rows, list) and business_rows:
-        output["requiredBusinessKeys"] = sorted(str(key) for key in business_rows[0].keys()) if isinstance(business_rows[0], dict) else None
+        output["requiredBusinessKeys"] = sorted(str(key) for key in business_rows[0]) if isinstance(business_rows[0], dict) else None
     return {key: value for key, value in output.items() if value is not None}
 
 

@@ -527,7 +527,7 @@ class InMemoryRepository:
         if project.get("currentNodeId") is not None:
             return int(project["currentNodeId"])
         if node_ids:
-            return sorted(node_ids)[0]
+            return min(node_ids)
         return int(ROLE_NODE_MAP.get("inspection", 24))
 
     def project_for_role(self, project: dict[str, Any], role: str) -> dict[str, Any]:

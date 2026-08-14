@@ -929,9 +929,7 @@ def _quality_flag_is_critical(flag: Any) -> bool:
 def _table_has_content(table: dict[str, Any]) -> bool:
     if str(table.get("contentMarkdown") or "").strip():
         return True
-    if table.get("normalizedRows") or table.get("cellsSummary"):
-        return True
-    return False
+    return bool(table.get("normalizedRows") or table.get("cellsSummary"))
 
 
 def _seal_text_has_risk(seal: dict[str, Any]) -> bool:
@@ -945,9 +943,7 @@ def _seal_text_has_risk(seal: dict[str, Any]) -> bool:
     ocr_score = _safe_float(seal.get("ocrConfidence"), default=None)
     if ocr_score is not None and ocr_score < LOW_CONFIDENCE_THRESHOLD:
         return True
-    if not has_text and _safe_float(seal.get("visualConfidence"), default=1.0) < LOW_CONFIDENCE_THRESHOLD:
-        return True
-    return False
+    return bool(not has_text and _safe_float(seal.get("visualConfidence"), default=1.0) < LOW_CONFIDENCE_THRESHOLD)
 
 
 def _has_position(item: dict[str, Any]) -> bool:

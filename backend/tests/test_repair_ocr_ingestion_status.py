@@ -119,7 +119,7 @@ def test_apply_marks_empty_result_failed_without_downstream_tasks() -> None:
 
 
 def test_apply_preserves_completed_downstream_stages() -> None:
-    repository, document, version = incomplete_repository(
+    repository, _document, version = incomplete_repository(
         tables=[{"rows": [["材料", "规格"], ["20#", "DN50"]]}]
     )
     version["sliceStatus"] = "已切片"

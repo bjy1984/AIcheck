@@ -91,7 +91,7 @@ def evaluate_r13_supervision_certificate_completeness(arguments: dict[str, Any])
     applicable_count = 0
     for index, item in enumerate(design_items, 1):
         classification = _classification_record(item, index)
-        item_id = classification["componentItemId"]
+        classification["componentItemId"]
         if not classification["supervisionRequirementKnown"]:
             incomplete = True
             checks.append(

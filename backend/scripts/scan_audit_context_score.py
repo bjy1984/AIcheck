@@ -168,9 +168,7 @@ def can_promote_to_context_auto_usable(sample: dict[str, Any]) -> bool:
         return False
     if sample.get("contextualMissingTables"):
         return False
-    if suspicious_drawing_no(sample):
-        return False
-    return True
+    return not suspicious_drawing_no(sample)
 
 
 def suspicious_drawing_no(sample: dict[str, Any]) -> bool:
@@ -178,9 +176,7 @@ def suspicious_drawing_no(sample: dict[str, Any]) -> bool:
     drawing_no = str(key_fields.get("drawing_no") or "")
     if not drawing_no:
         return False
-    if any(token in drawing_no.upper() for token in ["A244", "TS181"]):
-        return True
-    return False
+    return bool(any(token in drawing_no.upper() for token in ["A244", "TS181"]))
 
 
 def collect_package_fields(report_dir: Path, samples: list[dict[str, Any]]) -> dict[str, Any]:
@@ -340,7 +336,7 @@ def build_pdf_deep_scan_metrics(report_dir: Path, samples: list[dict[str, Any]])
         result = load_result_for_sample(report_dir, sample)
         profile_id = str(sample.get("requestedProfileId") or sample.get("profileId") or "")
         required_tables = PDF_DEEP_SCAN_REQUIRED_TABLES.get(profile_id, set())
-        schemas = result_table_schemas(result) or set(str(item) for item in sample.get("tableSchemas") or [] if item)
+        schemas = result_table_schemas(result) or {str(item) for item in sample.get("tableSchemas") or [] if item}
         missing = sorted(required_tables - schemas)
         if missing:
             missing_required_tables[str(sample.get("fileName") or "")] = missing

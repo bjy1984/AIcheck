@@ -206,7 +206,6 @@ def render_case_previews(
     preview_max_pixels: int,
 ) -> tuple[list[Path], list[dict[str, Any]]]:
     path = Path(source_path)
-    events: list[dict[str, Any]] = []
     if not path.exists():
         return [], [{"status": "skipped", "reason": "source_missing", "path": str(path)}]
     suffix = path.suffix.lower()

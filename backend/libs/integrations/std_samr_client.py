@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+from libs.contracts.responses import business_today
 
 DEFAULT_ORIGIN = "https://std.samr.gov.cn"
 ALLOWED_ORIGINS = frozenset({DEFAULT_ORIGIN})
@@ -588,7 +589,7 @@ class StdSamrClient:
 
     def verify(self, cited_ref: str, *, review_date: date | None = None) -> StdSamrVerifyResult:
         canonical = normalize_standard_ref(cited_ref)
-        as_of = review_date or date.today()
+        as_of = review_date or business_today()
         queried_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
         search_query = canonical.display
