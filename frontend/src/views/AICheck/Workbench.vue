@@ -242,7 +242,7 @@ import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
 import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
 import { resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
-import { aggregateNodeStatus } from './nodeAggregateStatus'
+import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
 import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 
@@ -853,6 +853,24 @@ const handleInspectionNodeTableSort = ({
   inspectionNodeSortKey.value = prop as InspectionNodeSortKey
   inspectionNodeSortDirection.value = order === 'ascending' ? 'asc' : 'desc'
 }
+/* 只看需要我处理的。
+ *
+ * 69 个节点按 6 条/页 = 12 页，而需处理的那几个散在其中——实测首屏 6 行全是
+ * 「未开始」。业务口径是「监检最好只需要知道状态，全程不需要人工干预」，
+ * 那清单的默认视角就该是「有没有要我管的」，而不是把 69 个节点平铺出来让人翻。
+ *
+ * 默认开启，但要能关掉：偶尔确实需要看全量（比如核对整体进度）。
+ * 计数写在开关上——关着的时候也得知道有几个在等，否则筛选本身就成了新的隐藏。
+ */
+const inspectionOnlyAttentionNodes = ref(true)
+
+const inspectionAttentionNodeCount = computed(
+  () =>
+    projectTreeNodes.value.filter((node) =>
+      nodeNeedsAttention(inspectionAuditOverviewNodeMap.value.get(node.nodeId)?.items)
+    ).length
+)
+
 const inspectionProjectNodeRows = computed(() => {
   const rows = projectTreeNodes.value.map((node) => {
     const summary = node.requirementsSummary
@@ -899,9 +917,19 @@ const inspectionProjectNodeRows = computed(() => {
     return inspectionNodeSortDirection.value === 'asc' ? comparison : -comparison
   })
 })
+
+const inspectionVisibleNodeRows = computed(() => {
+  if (!inspectionOnlyAttentionNodes.value) return inspectionProjectNodeRows.value
+  const filtered = inspectionProjectNodeRows.value.filter((row) =>
+    nodeNeedsAttention(inspectionAuditOverviewNodeMap.value.get(row.node.nodeId)?.items)
+  )
+  // 一个都没有时退回全量：给一张空表会让人以为数据没加载出来。
+  // 「没有要处理的」这件事由开关旁边的计数说，不靠一张空表暗示。
+  return filtered.length ? filtered : inspectionProjectNodeRows.value
+})
 const pagedInspectionProjectNodeRows = computed(() => {
   const start = (inspectionNodePage.value - 1) * inspectionNodePageSize.value
-  return inspectionProjectNodeRows.value.slice(start, start + inspectionNodePageSize.value)
+  return inspectionVisibleNodeRows.value.slice(start, start + inspectionNodePageSize.value)
 })
 const canShowWorkspace = computed(() => !pageIssue.value && !!activeProjectId.value)
 const roleUserLabel = computed(() => {
@@ -4682,7 +4710,7 @@ watch(
 )
 
 watch(
-  () => [inspectionProjectNodeRows.value.length, inspectionNodePageSize.value] as const,
+  () => [inspectionVisibleNodeRows.value.length, inspectionNodePageSize.value] as const,
   ([total, pageSize]) => {
     const maxPage = Math.max(1, Math.ceil(total / pageSize))
     if (inspectionNodePage.value > maxPage) inspectionNodePage.value = maxPage
@@ -5175,10 +5203,15 @@ onBeforeUnmount(() => {
                   <div class="inspection-chart-head">
                     <div>
                       <strong>节点处理清单</strong>
+                      <!-- 计数写在开关上：关着的时候也得知道有几个在等，
+                           否则筛选本身就成了新的隐藏 -->
+                      <ElCheckbox v-model="inspectionOnlyAttentionNodes" class="node-filter-toggle">
+                        只看需处理（{{ inspectionAttentionNodeCount }}）
+                      </ElCheckbox>
                       <small>与左侧项目树一致，按节点查看资料、要求和审查进度。</small>
                     </div>
                     <AuditStatusTag tone="green" round>
-                      {{ inspectionProjectNodeRows.length }} 个节点
+                      {{ inspectionVisibleNodeRows.length }} 个节点
                     </AuditStatusTag>
                   </div>
                   <ElTable
@@ -5295,7 +5328,7 @@ onBeforeUnmount(() => {
                     v-model:page-size="inspectionNodePageSize"
                     class="inspection-node-pagination"
                     :page-sizes="[6, 10, 20, 50]"
-                    :total="inspectionProjectNodeRows.length"
+                    :total="inspectionVisibleNodeRows.length"
                     layout="total, sizes, prev, pager, next"
                     small
                   />
@@ -6925,6 +6958,11 @@ onBeforeUnmount(() => {
   gap: 14px;
   align-items: center;
   justify-content: flex-end;
+}
+
+.node-filter-toggle {
+  margin-left: 12px;
+  font-weight: 400;
 }
 
 /* 节点状态：一个词说清「要不要我管」，卡点与进度做次要信息 */
