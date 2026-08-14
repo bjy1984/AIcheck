@@ -531,10 +531,16 @@ class InMemoryRepository:
         return int(ROLE_NODE_MAP.get("inspection", 24))
 
     def project_for_role(self, project: dict[str, Any], role: str) -> dict[str, Any]:
-        """按角色裁剪的项目对外表示。不带 businessPackSnapshot——它单个 1.1 MB，
-        前端只用 businessPackSnapshotHash 判断版本（见 versioned_project 的说明）。"""
-        cloned = self.clone(project)
-        cloned.pop("businessPackSnapshot", None)
+        """按角色裁剪的项目对外表示。不带 businessPackSnapshot——它单个 383 KB，
+        前端只用 businessPackSnapshotHash 判断版本（见 versioned_project 的说明）。
+
+        剔除必须发生在深拷贝**之前**：原先是先 clone 整个项目再 pop 掉快照，
+        等于每次都完整拷贝一份马上要丢的 383 KB。审计项总览一次要过 69 个节点，
+        这一项就吃掉 494 ms——实测改成先剔除后拷贝是 1 ms。
+        """
+        cloned = self.clone(
+            {key: value for key, value in project.items() if key != "businessPackSnapshot"}
+        )
         cloned["currentNodeId"] = self.role_current_node_id(project, role)
         cloned["riskLevel"] = self.project_risk_level(project["id"])
         if project.get("status") == "已归档":

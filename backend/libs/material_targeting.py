@@ -161,14 +161,17 @@ def latest_parse_result(repo: Any, document_version_id: str) -> dict[str, Any] |
 
 def review_points_for_project(repo: Any, project: dict[str, Any] | None, node_id: int | None = None) -> list[dict[str, Any]]:
     business_pack_id = (project or {}).get("businessPackId") or "engineering_inspection_v1"
-    points = [
-        repo.clone(item)
+    # 先按条件筛，再克隆。原先是全量克隆之后才按 nodeId 过滤——审计项总览
+    # 逐个节点调这个函数，等于把整张审查要点表深拷贝 69 遍再各扔掉 68/69。
+    # cProfile 里它占 3.96s / 8.85s。
+    matched = [
+        item
         for item in repo.state.get("admin_config", {}).get("materialReviewPoints", [])
-        if item.get("enabled", True) and str(item.get("businessPackId") or business_pack_id) == str(business_pack_id)
+        if item.get("enabled", True)
+        and str(item.get("businessPackId") or business_pack_id) == str(business_pack_id)
+        and (node_id is None or int(item.get("nodeId") or 0) == int(node_id))
     ]
-    if node_id is not None:
-        points = [item for item in points if int(item.get("nodeId") or 0) == int(node_id)]
-    return points
+    return [repo.clone(item) for item in matched]
 
 
 def flatten_text(value: Any, *, limit: int = 120000) -> str:
