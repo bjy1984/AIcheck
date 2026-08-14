@@ -768,10 +768,20 @@ const applyStreamingDeltas = (messageId: string) => {
     else content += piece
   }
   if (!reasoning && !content) return
-  const parts: string[] = []
-  if (reasoning) parts.push(`〔推理〕${reasoning.trim()}`)
-  if (content) parts.push(content.trim())
-  placeholder.contentBlocks = [{ type: 'text', text: `${parts.join('\n\n')}\n\n——正在继续核查…` }]
+  // 推理单独成块并默认折叠。原先是 `〔推理〕${reasoning}` 直接拼进正文——
+  // 换成推理模型（deepseek-v4-pro）后，这一段动辄上千字，监检打开看到的整屏
+  // 都是模型的自言自语（「让我思考…」「实际上…」），真正的结论反而在最下面。
+  //
+  // 过程不是没价值：判定依据可追溯是这套系统的底线，出了结论要能问「你凭什么」。
+  // 所以是折叠，不是丢弃。
+  const blocks: ReviewBContentBlock[] = []
+  if (reasoning) blocks.push({ type: 'reasoning', text: reasoning.trim() })
+  const answered = content.trim()
+  blocks.push({
+    type: 'text',
+    text: answered ? `${answered}\n\n——正在继续核查…` : '——正在核查…'
+  })
+  placeholder.contentBlocks = blocks
 }
 
 /** 后台执行模式下等待占位 assistant 消息终态；完成消息会重新分配 sequence，因此始终取全量快照。 */
@@ -1095,6 +1105,10 @@ const legacyBasisLabels = (basis: ReviewBBasisItem) => {
   ).sort((left, right) => right.length - left.length)
 }
 
+/* 推理块只做字数统计与原样展示：这段是模型的内部过程，不参与引用解析，
+   也不该被「固定依据条款→适用标准条款」这类正文改写规则动到。 */
+const blockReasoningLength = (block: ReviewBContentBlock) => blockText(block).length
+
 const blockDisplayText = (block: ReviewBContentBlock) => {
   const citations: string[] = []
   let content = blockText(block).replace(/\[[^\]]+\]\((?:basis|evidence):[^)]+\)/g, (citation) => {
@@ -1279,6 +1293,20 @@ onBeforeUnmount(() => {
                     :references="blockReferences(block)"
                     @open-reference="openMessageReference"
                   />
+
+                  <!-- 推理过程：默认折叠成一行。展开后可读，但不占据视线。
+                       监检要的是结论，不是模型的自言自语；而「凭什么」这个问题
+                       随时可能被问到，所以留着能展开。 -->
+                  <details
+                    v-else-if="block.type === 'reasoning'"
+                    class="reasoning-block"
+                    :data-length="blockReasoningLength(block)"
+                  >
+                    <summary class="reasoning-summary">
+                      推理过程 · {{ blockReasoningLength(block) }} 字
+                    </summary>
+                    <pre class="reasoning-text">{{ blockDisplayText(block) }}</pre>
+                  </details>
 
                   <section v-else-if="block.type === 'basis_card'" class="content-card basis-card">
                     <h3
@@ -1970,6 +1998,59 @@ onBeforeUnmount(() => {
 
 .message-body {
   min-width: 0;
+}
+
+/* 推理过程：折叠态必须比结论轻。
+   它是「需要时能查」的东西，不是要读的东西——做成和正文一样的分量，
+   等于把上千字的自言自语重新摆回视线里。 */
+.reasoning-block {
+  margin: 6px 0 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+
+.reasoning-summary {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasoning-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.reasoning-block[open] .reasoning-summary::before {
+  transform: rotate(90deg);
+}
+
+.reasoning-summary:hover {
+  color: var(--el-text-color-primary);
+}
+
+/* 展开后限高并可滚：推理动辄上千字，整段铺开会把下面的结论顶出屏幕，
+   等于折叠了个寂寞。 */
+.reasoning-text {
+  max-height: 260px;
+  margin: 0;
+  padding: 0 10px 10px;
+  overflow: auto;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--el-text-color-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .welcome-card p {

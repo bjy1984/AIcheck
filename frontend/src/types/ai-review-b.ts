@@ -115,6 +115,9 @@ export type ReviewBWorkspace = {
 
 export type ReviewBContentBlock =
   | { type: 'text'; text: string; references?: ReviewBReference[] }
+  /* 模型的推理过程。与正文分开成块，而不是拼进 text——
+     推理模型（deepseek-v4-pro 等）的这一段动辄上千字，混进正文会把结论淹没。 */
+  | { type: 'reasoning'; text: string }
   | { type: 'basis_card'; basisRefIds?: string[]; items?: ReviewBBasisItem[] }
   | {
       type: 'evidence_card'
