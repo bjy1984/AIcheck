@@ -38,9 +38,33 @@ export type NodeAggregate = {
   progress: string
 }
 
-const ATTENTION_STATUSES = new Set(['需关注', '执行失败', 'failed', 'attention'])
-const RUNNING_STATUSES = new Set(['处理中', '推理中', 'running', '执行中'])
-const DONE_STATUSES = new Set(['已完成', 'completed', 'done'])
+/* 取值以线上接口实测为准，不靠猜。
+ *
+ * 2026-08-13 从 audit-overview 实测的分布是 snake_case：
+ *     not_started 340 / needs_attention 8 / completed 2
+ * 我第一版按中文（「需关注」）和另一套英文（failed/attention）写，一条都匹配不上
+ * ——筛选静默失效，界面显示「只看需处理（0）」，而总览同时写着 9 项需关注。
+ * 两个数字互相打脸，但都没报错。
+ *
+ * 中文与其他写法一并保留：ai_runs 写中文、review_runs 写英文是历史遗留，
+ * 这一层要能同时兜住，少认一种就是漏审。 */
+const ATTENTION_STATUSES = new Set([
+  'needs_attention',
+  'failed',
+  'execution_failed',
+  '需关注',
+  '执行失败',
+  'attention'
+])
+const RUNNING_STATUSES = new Set([
+  'in_progress',
+  'processing',
+  'running',
+  '处理中',
+  '推理中',
+  '执行中'
+])
+const DONE_STATUSES = new Set(['completed', 'done', '已完成'])
 
 /**
  * 汇总一个节点的七项状态。

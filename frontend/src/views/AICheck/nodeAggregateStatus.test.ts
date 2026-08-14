@@ -87,3 +87,26 @@ assert.equal(aggregateNodeStatus([null as never, undefined as never]).label, '�
 assert.equal(nodeNeedsAttention([item('a', '需关注')]), true)
 assert.equal(nodeNeedsAttention([item('a', '已完成')]), false)
 assert.equal(nodeNeedsAttention(undefined), false)
+
+// —— 线上真实取值（2026-08-13 从 audit-overview 实测）——
+// 分布是 snake_case：not_started 340 / needs_attention 8 / completed 2。
+// 第一版按中文和另一套英文写，一条都匹配不上——筛选静默失效，界面显示
+// 「只看需处理（0）」，而总览同时写着 9 项需关注。两个数字互相打脸，但都没报错。
+assert.equal(aggregateNodeStatus([item('a', 'needs_attention', '人工结论')]).tone, 'attention')
+assert.equal(aggregateNodeStatus([item('a', 'needs_attention', '人工结论')]).blockedAt, '人工结论')
+assert.equal(aggregateNodeStatus([item('a', 'not_started')]).label, '未开始')
+assert.equal(aggregateNodeStatus([item('a', 'completed')]).tone, 'done')
+assert.equal(nodeNeedsAttention([item('a', 'needs_attention')]), true)
+
+// 七项里混着 snake_case 与中文时也要正确汇总
+{
+  const mixed = [
+    item('submission', 'completed', '资料提交'),
+    item('ocr', 'not_started', 'OCR 抽取'),
+    item('manual', 'needs_attention', '人工结论')
+  ]
+  const r = aggregateNodeStatus(mixed)
+  assert.equal(r.tone, 'attention')
+  assert.equal(r.blockedAt, '人工结论')
+  assert.equal(r.progress, '1/3')
+}
