@@ -2326,6 +2326,11 @@ onBeforeUnmount(() => {
 }
 
 .composer-card {
+  /* 不加约束时它会被内部最宽的子项撑开：实测 conversation-column 只有 270px，
+     而这张卡撑到 1182px，直接溢出到父容器外面去。加推荐问题只是让这个既有
+     缺陷显形——快捷命令那排按钮本来也在撑它，只是没人在窄屏下看过。 */
+  min-width: 0;
+  max-width: 100%;
   padding: 12px;
   background: #fff;
   border: 1px solid #b8d2ff;
