@@ -4830,23 +4830,41 @@ onBeforeUnmount(() => {
               {{ quickAccessNotificationCount }}
             </span>
           </ElButton>
-          <ElButton
+          <!-- 视图切换做成分段控件，而不是两个并排的文字按钮。
+               原先它们长得像动作按钮（还带魔法棒图标），而 AI 视图又是监检的
+               默认视图——用户进来就在 AI 视图里，再点「AI审查」是合法的无操作，
+               界面却零反馈，看上去就是「点了没用」。实测反馈过这个问题。
+               分段控件在视觉上直接表达「二选一」，选中态一望即知。
+
+               另一侧原先叫「文件列表」，而它其实是完整的传统工作台（审计项状态
+               总览 + 节点处理清单 + 已提交资料）。名不副实，导致进了 AI 视图的人
+               找不到回去的路——实测就有人问「怎么切换回传统视图」。改叫「完整工作台」。 -->
+          <div
             v-if="role === 'inspection'"
-            :class="['top-action', { 'is-active': activeInspectionWorkspaceView === 'ai' }]"
-            text
-            @click="handleInspectionWorkspaceViewChange('ai')"
+            class="view-segmented"
+            role="tablist"
+            aria-label="监检工作台视图"
           >
-            <ElIcon><MagicStick /></ElIcon>
-            AI审查
-          </ElButton>
-          <ElButton
-            v-if="role === 'inspection'"
-            :class="['top-action', { 'is-active': activeInspectionWorkspaceView === 'list' }]"
-            text
-            @click="handleInspectionWorkspaceViewChange('list')"
-          >
-            文件列表
-          </ElButton>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeInspectionWorkspaceView === 'ai'"
+              :class="['view-segment', { 'is-active': activeInspectionWorkspaceView === 'ai' }]"
+              @click="handleInspectionWorkspaceViewChange('ai')"
+            >
+              <ElIcon><MagicStick /></ElIcon>
+              AI审查
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeInspectionWorkspaceView === 'list'"
+              :class="['view-segment', { 'is-active': activeInspectionWorkspaceView === 'list' }]"
+              @click="handleInspectionWorkspaceViewChange('list')"
+            >
+              完整工作台
+            </button>
+          </div>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
             <button class="user" type="button" aria-label="打开用户菜单">
               <span class="avatar"></span>
@@ -6898,6 +6916,45 @@ onBeforeUnmount(() => {
   gap: 14px;
   align-items: center;
   justify-content: flex-end;
+}
+
+/* 视图分段控件：一眼看出是「二选一」，不是两个可点的动作 */
+.view-segmented {
+  display: inline-flex;
+  padding: 2px;
+  background: #eef1f6;
+  border-radius: 999px;
+  gap: 2px;
+  flex: none;
+}
+
+.view-segment {
+  display: inline-flex;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: #5b6b85;
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 999px;
+  gap: 5px;
+  align-items: center;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.view-segment:hover:not(.is-active) {
+  color: #27364d;
+  background: rgb(255 255 255 / 60%);
+}
+
+.view-segment.is-active {
+  color: #1d4ed8;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
 }
 
 .top-actions::-webkit-scrollbar {
