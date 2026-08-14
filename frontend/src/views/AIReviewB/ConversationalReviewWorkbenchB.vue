@@ -21,6 +21,7 @@ import {
 } from 'element-plus'
 import {
   ArrowLeft,
+  ArrowRight,
   ChatDotRound,
   CircleCheck,
   Document,
@@ -73,7 +74,10 @@ import ProjectNodeTree from '@/views/AICheck/components/ProjectNodeTree.vue'
 import R12RegistryVerificationDialog from '@/views/AICheck/components/R12RegistryVerificationDialog.vue'
 import R19SemanticEvidenceDialog from '@/views/AICheck/components/R19SemanticEvidenceDialog.vue'
 import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
-import { resolveReviewWorkbenchContext } from '@/views/AIReviewB/embeddedReviewWorkbench'
+import {
+  resolveReviewSidebarLayout,
+  resolveReviewWorkbenchContext
+} from '@/views/AIReviewB/embeddedReviewWorkbench'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 
 const props = withDefaults(
@@ -113,6 +117,15 @@ const composer = ref('')
 const timelineRef = ref<HTMLElement>()
 const tracePanels = ref<string[]>([])
 const activityExpanded = ref(false)
+const leftSidebarCollapsed = ref(false)
+const rightSidebarCollapsed = ref(false)
+const sidebarLayout = computed(() =>
+  resolveReviewSidebarLayout({
+    embedded: props.embedded,
+    leftCollapsed: leftSidebarCollapsed.value,
+    rightCollapsed: rightSidebarCollapsed.value
+  })
+)
 const executionStarted = ref(false)
 const evidenceDialogVisible = ref(false)
 const evidencePreview = ref<EvidenceLink>()
@@ -1173,26 +1186,46 @@ onBeforeUnmount(() => {
       show-icon
     />
 
-    <div class="review-b-layout" v-loading="loading">
+    <div :class="['review-b-layout', ...sidebarLayout.layoutClasses]" v-loading="loading">
       <aside v-if="!props.embedded" class="node-sidebar">
-        <div class="sidebar-heading">
-          <span>监检节点</span>
-          <ElTag type="info" effect="plain">{{ allNodes.length }}</ElTag>
-        </div>
-        <ProjectNodeTree
-          :groups="treeGroups"
-          :active-node-id="activeNodeId"
-          :show-overview="false"
-          empty-description="暂无可复核节点"
-          @select="handleNodeSelect"
-        />
-        <div class="sidebar-links">
-          <button type="button" class="is-active"
-            ><ElIcon><ChatDotRound /></ElIcon>当前对话</button
-          >
-          <button type="button" @click="tracePanels = ['trace']"
-            ><ElIcon><Document /></ElIcon>执行记录</button
-          >
+        <button
+          type="button"
+          class="sidebar-toggle is-left"
+          :aria-label="sidebarLayout.leftLabel"
+          :title="sidebarLayout.leftLabel"
+          :aria-expanded="sidebarLayout.leftExpanded"
+          aria-controls="review-node-sidebar-content"
+          @click="leftSidebarCollapsed = !leftSidebarCollapsed"
+        >
+          <ElIcon>
+            <ArrowLeft v-if="sidebarLayout.leftExpanded" />
+            <ArrowRight v-else />
+          </ElIcon>
+        </button>
+        <div
+          v-show="sidebarLayout.leftExpanded"
+          id="review-node-sidebar-content"
+          class="sidebar-content node-sidebar-content"
+        >
+          <div class="sidebar-heading">
+            <span>监检节点</span>
+            <ElTag type="info" effect="plain">{{ allNodes.length }}</ElTag>
+          </div>
+          <ProjectNodeTree
+            :groups="treeGroups"
+            :active-node-id="activeNodeId"
+            :show-overview="false"
+            empty-description="暂无可复核节点"
+            @select="handleNodeSelect"
+          />
+          <div class="sidebar-links">
+            <button type="button" class="is-active"
+              ><ElIcon><ChatDotRound /></ElIcon>当前对话</button
+            >
+            <button type="button" @click="tracePanels = ['trace']"
+              ><ElIcon><Document /></ElIcon>执行记录</button
+            >
+          </div>
         </div>
       </aside>
 
@@ -1495,120 +1528,141 @@ onBeforeUnmount(() => {
       </main>
 
       <aside class="context-panel">
-        <section class="side-card">
-          <h2>当前上下文</h2>
-          <dl>
-            <div
-              ><dt>当前任务</dt><dd>{{ currentTask }}</dd></div
-            >
-            <div
-              ><dt>当前状态</dt
-              ><dd
-                ><ElTag :type="runStatusTone">{{ runStatus }}</ElTag></dd
-              ></div
-            >
-            <div
-              ><dt>关联证据</dt><dd>{{ selectedEvidence.length }} 份</dd></div
-            >
-          </dl>
-          <ElButton
-            class="full-button"
-            type="primary"
-            :icon="MagicStick"
-            :loading="actionLoading"
-            :disabled="!canStartReview"
-            @click="handleStartReview"
-          >
-            发起{{ startReviewMode === 'formal' ? '正式复核' : '缺项预审' }}
-          </ElButton>
-        </section>
-
-        <section class="side-card evidence-workset">
-          <div class="side-card-title">
-            <h2>文件资料</h2><small>{{ selectedEvidenceSummary }}</small>
-          </div>
-          <div v-for="evidence in selectedEvidence" :key="evidence.id" class="selected-evidence">
-            <div>
-              <strong>{{ evidence.fileName || evidence.fieldName || evidence.id }}</strong>
-              <small>第 {{ evidence.pageNo || '-' }} 页</small>
-            </div>
-            <ElTag
-              :type="evidence.manualStatus === 'confirmed' ? 'success' : 'warning'"
-              size="small"
-            >
-              {{ evidence.manualStatusLabel || evidence.manualStatus || '候选' }}
-            </ElTag>
-            <div class="selected-evidence-actions">
-              <ElButton text type="primary" @click="openEvidence(evidence)">查看</ElButton>
-              <ElButton
-                v-if="evidence.manualStatus !== 'confirmed'"
-                text
-                type="success"
-                @click="confirmEvidence(evidence)"
-                >确认</ElButton
+        <button
+          v-if="!props.embedded"
+          type="button"
+          class="sidebar-toggle is-right"
+          :aria-label="sidebarLayout.rightLabel"
+          :title="sidebarLayout.rightLabel"
+          :aria-expanded="sidebarLayout.rightExpanded"
+          aria-controls="review-context-panel-content"
+          @click="rightSidebarCollapsed = !rightSidebarCollapsed"
+        >
+          <ElIcon>
+            <ArrowRight v-if="sidebarLayout.rightExpanded" />
+            <ArrowLeft v-else />
+          </ElIcon>
+        </button>
+        <div
+          v-show="props.embedded || sidebarLayout.rightExpanded"
+          id="review-context-panel-content"
+          class="sidebar-content context-panel-content"
+        >
+          <section class="side-card">
+            <h2>当前上下文</h2>
+            <dl>
+              <div
+                ><dt>当前任务</dt><dd>{{ currentTask }}</dd></div
               >
-              <ElButton text @click="toggleEvidenceSelection(evidence)">移除</ElButton>
+              <div
+                ><dt>当前状态</dt
+                ><dd
+                  ><ElTag :type="runStatusTone">{{ runStatus }}</ElTag></dd
+                ></div
+              >
+              <div
+                ><dt>关联证据</dt><dd>{{ selectedEvidence.length }} 份</dd></div
+              >
+            </dl>
+            <ElButton
+              class="full-button"
+              type="primary"
+              :icon="MagicStick"
+              :loading="actionLoading"
+              :disabled="!canStartReview"
+              @click="handleStartReview"
+            >
+              发起{{ startReviewMode === 'formal' ? '正式复核' : '缺项预审' }}
+            </ElButton>
+          </section>
+
+          <section class="side-card evidence-workset">
+            <div class="side-card-title">
+              <h2>文件资料</h2><small>{{ selectedEvidenceSummary }}</small>
             </div>
-          </div>
-          <ElEmpty v-if="!selectedEvidence.length" description="暂无文件资料" :image-size="52" />
-        </section>
+            <div v-for="evidence in selectedEvidence" :key="evidence.id" class="selected-evidence">
+              <div>
+                <strong>{{ evidence.fileName || evidence.fieldName || evidence.id }}</strong>
+                <small>第 {{ evidence.pageNo || '-' }} 页</small>
+              </div>
+              <ElTag
+                :type="evidence.manualStatus === 'confirmed' ? 'success' : 'warning'"
+                size="small"
+              >
+                {{ evidence.manualStatusLabel || evidence.manualStatus || '候选' }}
+              </ElTag>
+              <div class="selected-evidence-actions">
+                <ElButton text type="primary" @click="openEvidence(evidence)">查看</ElButton>
+                <ElButton
+                  v-if="evidence.manualStatus !== 'confirmed'"
+                  text
+                  type="success"
+                  @click="confirmEvidence(evidence)"
+                  >确认</ElButton
+                >
+                <ElButton text @click="toggleEvidenceSelection(evidence)">移除</ElButton>
+              </div>
+            </div>
+            <ElEmpty v-if="!selectedEvidence.length" description="暂无文件资料" :image-size="52" />
+          </section>
 
-        <section class="side-card quick-actions">
-          <h2>快捷操作</h2>
-          <div>
-            <ElButton :icon="Document" @click="sendMessage('/标准条款')">查看标准条款</ElButton>
-            <ElButton :icon="Search" @click="sendMessage('/检索证据')">让 AI 补充证据</ElButton>
-            <ElButton :icon="MagicStick" @click="sendMessage('/草拟意见')">生成意见草稿</ElButton>
-          </div>
-        </section>
+          <section class="side-card quick-actions">
+            <h2>快捷操作</h2>
+            <div>
+              <ElButton :icon="Document" @click="sendMessage('/标准条款')">查看标准条款</ElButton>
+              <ElButton :icon="Search" @click="sendMessage('/检索证据')">让 AI 补充证据</ElButton>
+              <ElButton :icon="MagicStick" @click="sendMessage('/草拟意见')">生成意见草稿</ElButton>
+            </div>
+          </section>
 
-        <section v-if="activeTask" class="side-card human-task-card">
-          <div class="side-card-title"><h2>过程人工待办</h2><ElTag type="warning">1</ElTag></div>
-          <strong>{{ activeTask.title }}</strong>
-          <p>{{ activeTask.description }}</p>
-          <ElButton
-            class="full-button"
-            type="warning"
-            :disabled="!canRenderActiveTask"
-            @click="openActiveHumanTask"
-          >
-            处理并恢复复核
-          </ElButton>
-        </section>
+          <section v-if="activeTask" class="side-card human-task-card">
+            <div class="side-card-title"><h2>过程人工待办</h2><ElTag type="warning">1</ElTag></div>
+            <strong>{{ activeTask.title }}</strong>
+            <p>{{ activeTask.description }}</p>
+            <ElButton
+              class="full-button"
+              type="warning"
+              :disabled="!canRenderActiveTask"
+              @click="openActiveHumanTask"
+            >
+              处理并恢复复核
+            </ElButton>
+          </section>
 
-        <section class="side-card human-decision-card">
-          <h2>最终人工结论</h2>
-          <ElAlert
-            v-if="!canSubmitHumanDecision"
-            :title="activeTask ? '请先完成过程人工待办' : 'ReviewRun 完成后可提交最终结论'"
-            type="info"
-            :closable="false"
-          />
-          <label>审查结论</label>
-          <ElRadioGroup v-model="humanDecision" :disabled="!canSubmitHumanDecision">
-            <ElRadioButton value="accept">采纳</ElRadioButton>
-            <ElRadioButton value="edit">修改</ElRadioButton>
-            <ElRadioButton value="reject">驳回</ElRadioButton>
-          </ElRadioGroup>
-          <label>人工复核意见</label>
-          <ElInput
-            v-model="humanComment"
-            type="textarea"
-            :rows="4"
-            maxlength="2000"
-            show-word-limit
-            placeholder="请输入人工复核意见"
-          />
-          <ElButton
-            class="full-button"
-            type="primary"
-            :loading="actionLoading"
-            :disabled="!canSubmitHumanDecision"
-            @click="handleSubmitHumanDecision"
-          >
-            保存人工复核结论
-          </ElButton>
-        </section>
+          <section class="side-card human-decision-card">
+            <h2>最终人工结论</h2>
+            <ElAlert
+              v-if="!canSubmitHumanDecision"
+              :title="activeTask ? '请先完成过程人工待办' : 'ReviewRun 完成后可提交最终结论'"
+              type="info"
+              :closable="false"
+            />
+            <label>审查结论</label>
+            <ElRadioGroup v-model="humanDecision" :disabled="!canSubmitHumanDecision">
+              <ElRadioButton value="accept">采纳</ElRadioButton>
+              <ElRadioButton value="edit">修改</ElRadioButton>
+              <ElRadioButton value="reject">驳回</ElRadioButton>
+            </ElRadioGroup>
+            <label>人工复核意见</label>
+            <ElInput
+              v-model="humanComment"
+              type="textarea"
+              :rows="4"
+              maxlength="2000"
+              show-word-limit
+              placeholder="请输入人工复核意见"
+            />
+            <ElButton
+              class="full-button"
+              type="primary"
+              :loading="actionLoading"
+              :disabled="!canSubmitHumanDecision"
+              @click="handleSubmitHumanDecision"
+            >
+              保存人工复核结论
+            </ElButton>
+          </section>
+        </div>
       </aside>
     </div>
 
@@ -1723,6 +1777,19 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(300px, 404px) minmax(650px, 1fr) 330px;
   min-height: calc(100vh - 72px);
+  transition: grid-template-columns 180ms ease;
+}
+
+.review-b-layout.is-left-collapsed {
+  grid-template-columns: 28px minmax(650px, 1fr) 330px;
+}
+
+.review-b-layout.is-right-collapsed {
+  grid-template-columns: minmax(300px, 404px) minmax(650px, 1fr) 28px;
+}
+
+.review-b-layout.is-left-collapsed.is-right-collapsed {
+  grid-template-columns: 28px minmax(650px, 1fr) 28px;
 }
 
 .review-b-shell.is-embedded {
@@ -1787,13 +1854,66 @@ onBeforeUnmount(() => {
   top: 72px;
   align-self: start;
   height: calc(100vh - 72px);
-  overflow: auto;
+  overflow: visible;
   background: #fff;
 }
 
 .node-sidebar {
-  padding: 18px 14px;
   border-right: 1px solid var(--review-line);
+}
+
+.sidebar-content {
+  height: 100%;
+  overflow: auto;
+}
+
+.node-sidebar-content {
+  padding: 18px 14px;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  top: 16px;
+  z-index: 5;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--review-blue);
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid var(--review-line);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgb(22 34 51 / 12%);
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+  place-items: center;
+}
+
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+  color: #075bd8;
+  border-color: #8bb6f4;
+  outline: 0;
+  box-shadow: 0 5px 16px rgb(20 104 232 / 20%);
+}
+
+.sidebar-toggle:focus-visible {
+  box-shadow:
+    0 0 0 3px rgb(20 104 232 / 18%),
+    0 5px 16px rgb(20 104 232 / 20%);
+}
+
+.sidebar-toggle.is-left {
+  right: 0;
+  transform: translateX(50%);
+}
+
+.sidebar-toggle.is-right {
+  left: 0;
+  transform: translateX(-50%);
 }
 
 .sidebar-heading,
@@ -2062,8 +2182,8 @@ onBeforeUnmount(() => {
 .evidence-facts {
   display: grid;
   gap: 4px;
-  margin: 6px 0 0;
   padding: 0;
+  margin: 6px 0 0;
   list-style: none;
 }
 
@@ -2332,8 +2452,11 @@ onBeforeUnmount(() => {
 }
 
 .context-panel {
-  padding: 18px 14px 28px;
   border-left: 1px solid var(--review-line);
+}
+
+.context-panel-content {
+  padding: 18px 14px 28px;
 }
 
 .side-card {
@@ -2476,6 +2599,18 @@ onBeforeUnmount(() => {
 @media (width <= 1380px) {
   .review-b-layout {
     grid-template-columns: minmax(280px, 360px) minmax(610px, 1fr) 302px;
+  }
+
+  .review-b-layout.is-left-collapsed {
+    grid-template-columns: 28px minmax(610px, 1fr) 302px;
+  }
+
+  .review-b-layout.is-right-collapsed {
+    grid-template-columns: minmax(280px, 360px) minmax(610px, 1fr) 28px;
+  }
+
+  .review-b-layout.is-left-collapsed.is-right-collapsed {
+    grid-template-columns: 28px minmax(610px, 1fr) 28px;
   }
 
   .brand {
