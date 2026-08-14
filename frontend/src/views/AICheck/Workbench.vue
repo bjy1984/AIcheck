@@ -206,6 +206,7 @@ type EvidenceConfirmationRow = {
 }
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
+import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
 import EvidenceLocatorDialog from './components/EvidenceLocatorDialog.vue'
@@ -1648,7 +1649,6 @@ const AI_STEP_ATTENTION = new Set(['异常', '需人工确认'])
 const aiEvidenceBudget = computed(() => aiRecheckDisplayRun.value?.evidenceBudget)
 
 const aiRunFailure = computed(() => aiRecheckDisplayRun.value?.failure)
-const aiFailureDetailExpanded = ref(false)
 
 const AI_FAILURE_KIND_LABELS: Record<string, string> = {
   orchestration: '编排服务',
@@ -5949,55 +5949,12 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div v-if="aiEvidenceBudget?.truncated" class="ai-truncation">
-                  <div class="ai-truncation-head">
-                    <ElTag size="small" type="warning" effect="dark">证据未送全</ElTag>
-                    <span>本次仅送审 {{ aiEvidenceBudget.keptVersionCount }} 份资料</span>
-                  </div>
-                  <p class="ai-truncation-body">
-                    以下资料超出模型单次上下文预算，未参与本次 AI 审查，需人工核对：
-                  </p>
-                  <ul class="ai-truncation-list">
-                    <li v-for="name in aiEvidenceBudget.droppedNames" :key="name">{{ name }}</li>
-                  </ul>
-                  <p class="ai-truncation-note">
-                    因证据不全，本次结论已降级为「待人工确认」，不作满足要求的判定。
-                  </p>
-                </div>
-
-                <div v-if="aiRunFailure" class="ai-failure">
-                  <div class="ai-failure-head">
-                    <ElTag size="small" type="danger" effect="dark">AI 审查失败</ElTag>
-                    <span class="ai-failure-kind">{{ aiFailureKindLabel }}</span>
-                  </div>
-                  <p class="ai-failure-reason">{{ aiRunFailure.reason }}</p>
-                  <p class="ai-failure-next">{{ aiRunFailure.nextStep }}</p>
-                  <div class="ai-failure-actions">
-                    <ElButton
-                      v-if="aiRunFailure.retryable"
-                      size="small"
-                      type="primary"
-                      @click="handleAiRecheck"
-                    >
-                      重跑本节点审查
-                    </ElButton>
-                    <!-- 重跑必然再失败时不给按钮，亮着只会让人白点。这里只做中性标注，
-                         该干什么由上面那行 nextStep 说——写死「环境问题」会和它打架：
-                         预算超限就不是环境问题，是送进去的内容太大。 -->
-                    <span v-else class="ai-failure-noretry">本次不提供重跑</span>
-                    <button
-                      type="button"
-                      class="ai-failure-detail-toggle"
-                      :aria-expanded="aiFailureDetailExpanded"
-                      @click="aiFailureDetailExpanded = !aiFailureDetailExpanded"
-                    >
-                      {{ aiFailureDetailExpanded ? '收起原始报错' : '查看原始报错' }}
-                    </button>
-                  </div>
-                  <pre v-show="aiFailureDetailExpanded" class="ai-failure-detail">{{
-                    aiRunFailure.detail
-                  }}</pre>
-                </div>
+                <AiReviewRunAlerts
+                  :evidence-budget="aiEvidenceBudget"
+                  :failure="aiRunFailure"
+                  :failure-kind-label="aiFailureKindLabel"
+                  @retry="handleAiRecheck"
+                />
 
                 <!-- 过程默认折叠，与 AI 复核 B 版工作台的交互对齐 -->
                 <button
@@ -7364,111 +7321,6 @@ onBeforeUnmount(() => {
   font-size: 13px;
   line-height: 1.6;
   color: #64748b;
-}
-
-/* 证据未送全：不是失败，但同样不能让人错过 */
-.ai-truncation {
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 10px;
-}
-
-.ai-truncation-head {
-  display: flex;
-  font-size: 13px;
-  color: #92400e;
-  gap: 8px;
-  align-items: center;
-}
-
-.ai-truncation-body {
-  margin: 8px 0 4px;
-  font-size: 13px;
-  color: #92400e;
-}
-
-.ai-truncation-list {
-  padding-left: 20px;
-  margin: 0;
-  font-size: 13px;
-  color: #7c2d12;
-}
-
-.ai-truncation-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: #b45309;
-}
-
-/* AI 失败横幅：这是整屏里唯一「系统没干成活」的位置，要抢眼 */
-.ai-failure {
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 10px;
-}
-
-.ai-failure-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.ai-failure-kind {
-  font-size: 12px;
-  color: #b91c1c;
-}
-
-.ai-failure-reason {
-  margin: 8px 0 4px;
-  font-size: 14px;
-  color: #7f1d1d;
-}
-
-.ai-failure-next {
-  margin: 0;
-  font-size: 13px;
-  color: #b45309;
-}
-
-.ai-failure-actions {
-  display: flex;
-  margin-top: 10px;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.ai-failure-noretry {
-  font-size: 13px;
-  color: #92400e;
-}
-
-.ai-failure-detail-toggle {
-  padding: 0;
-  font: inherit;
-  font-size: 13px;
-  color: #64748b;
-  text-decoration: underline;
-  cursor: pointer;
-  background: none;
-  border: none;
-}
-
-/* 原始报错留给运维查，字号小、可横滚，不抢归因那句话的位置 */
-.ai-failure-detail {
-  padding: 8px 10px;
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: #475569;
-  word-break: break-all;
-  white-space: pre-wrap;
-  background: #fff;
-  border: 1px solid #fecaca;
-  border-radius: 6px;
 }
 
 /* X-3 执行过程折叠开关 —— 与 AI 复核 B 版工作台同一交互 */

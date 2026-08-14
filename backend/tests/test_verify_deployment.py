@@ -59,6 +59,8 @@ def api_transport(request: httpx.Request) -> httpx.Response:
         default_path = (
             "/admin/overview"
             if role == "admin"
+            else "/ai-review-b"
+            if role == "inspection"
             else "/fde/dashboard"
             if role == "fde"
             else f"/workbench/{role}"
