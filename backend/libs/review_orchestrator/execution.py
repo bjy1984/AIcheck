@@ -35,6 +35,7 @@ from libs.review_grounding import (
     build_grounded_review_input,
     grounding_prompt_block,
 )
+from libs.review_orchestrator.clause_digest import retrieved_clause_digest
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
     truncation_requirements,
@@ -2609,6 +2610,14 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "ruleResults": context.get("ruleResults") or [],
         "fixedClausePackage": context.get("clausePackageSnapshot") or {},
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
+        # 检索到的条款正文与 ID。原先只给 traceId，不给条款本身——而输出 schema
+        # 要求模型产出 kbRefs: [{retrievalTraceId, clauseIds}]。它手里没有任何
+        # clauseId，这个要求根本无法满足：线上 3 条 finding 的 kbRefs 全是空的。
+        #
+        # retrieve_knowledge 这一步照常跑、照常写 retrieval_traces，产出却只存进
+        # context["knowledgeClauses"] 然后无人读取。实测把它清空，提示词只有
+        # traceId 那一处变化——等于整步白跑。
+        "retrievedClauses": retrieved_clause_digest(context.get("knowledgeClauses")),
         "evidenceLinkIds": [item.get("id") for item in context.get("evidenceLinks") or []],
         "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
         "criticPrompt": (prompt.get("template") or {}).get("criticPrompt") or "",
