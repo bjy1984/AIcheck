@@ -7,6 +7,7 @@ from libs.material_review_assets import material_review_asset_status
 from libs.aliyun_ocr import official_ocr_circuit_breaker
 from libs.ocr_runtime import ocr_runtime_config, ocr_runtime_public_config
 from libs.official_ocr_control import official_ocr_control_status
+from libs.qwen_runtime import redact_url, server_mode_base_url
 from scripts.setup_langgraph_checkpoint import REQUIRED_TABLES, verify_checkpoint_schema
 
 
@@ -43,6 +44,59 @@ def workflow_schema_status() -> dict[str, Any]:
     }
 
 
+def qwen_configuration_status(qwen_mode: str) -> dict[str, Any]:
+    """模型链路是否真的配好了。
+
+    ## 这里原来写的是 `True`
+
+        "configured": bool(os.getenv("QWEN_API_KEY")) if mode == "official_api" else True,
+
+    server 模式（也是 defaultMode）下无条件返回 True，不看地址、不看密钥。
+    而 production_runtime_status 取值用的是 `get("ready", get("configured"))`，
+    qwen 没有 ready 键，于是一路读到这个恒真的 configured。
+
+    代价：2026-08-10 到 08-14，线上没有任何模型可用——litellm 容器从未创建过，
+    LITELLM_BASE_URL 也没配，调用一律打向解析不了的 `litellm-service:4000`。
+    这四天里生产就绪报告始终显示 qwen 正常。**一个恒真的健康检查比没有健康检查更坏**，
+    因为它会让人停止怀疑。
+
+    ## 判定口径
+
+    server 模式：要有一个明确配置过的地址。LiteLLMClient 的缺省值
+    `http://litellm-service:4000` 是 compose 内部主机名，脱离 compose 必然解析失败，
+    因此「没配地址」等价于「没配好」，不能算就绪。
+
+    official_api 模式：要有 QWEN_API_KEY。
+
+    这里只做配置层判定，**不发网络探测**——就绪接口会被健康检查高频调用，
+    在里面打外部请求会把模型的抖动变成本服务的抖动。真实可达性由调用侧的
+    失败原因回报（见 libs/review_conversation_fallback）。
+    """
+    mode = str(qwen_mode or "").strip().lower()
+    if mode == "official_api":
+        configured = bool(os.getenv("QWEN_API_KEY", "").strip())
+        reason = "" if configured else "QWEN_API_KEY 未配置"
+        base_url = os.getenv("QWEN_API_BASE", "").strip()
+    else:
+        base_url = server_mode_base_url()
+        configured = bool(base_url)
+        reason = (
+            ""
+            if configured
+            else "server 模式未配置模型网关地址（AICHECK_QWEN_SERVER_BASE_URL 或 LITELLM_BASE_URL）"
+        )
+    return {
+        "configured": configured,
+        # 显式给出 ready，不再让上游回退到 configured——两者含义相同时也要写出来，
+        # 省得下一个人再踩「没有 ready 键就读 configured」这条隐式规则。
+        "ready": configured,
+        "mode": mode,
+        "baseUrl": redact_url(base_url),
+        "reason": reason,
+        "fallbackEnabled": os.getenv("AICHECK_QWEN_ALLOW_SERVER_FALLBACK", "false").strip().lower() == "true",
+    }
+
+
 def audit_service_configuration_status() -> dict[str, Any]:
     qwen_mode = os.getenv("AICHECK_QWEN_CALL_MODE", "server").strip().lower()
     ocr_runtime = ocr_runtime_config()
@@ -73,11 +127,7 @@ def audit_service_configuration_status() -> dict[str, Any]:
             "capacityControl": control_status,
             "formalReadinessProfileAllowlist": ocr_public.get("formalReadinessProfileAllowlist") or [],
         },
-        "qwen": {
-            "configured": bool(os.getenv("QWEN_API_KEY", "").strip()) if qwen_mode == "official_api" else True,
-            "mode": qwen_mode,
-            "fallbackEnabled": os.getenv("AICHECK_QWEN_ALLOW_SERVER_FALLBACK", "false").strip().lower() == "true",
-        },
+        "qwen": qwen_configuration_status(qwen_mode),
         "embedding": {
             "configured": bool(os.getenv("AICHECK_EMBEDDING_API_BASE", "").strip()),
             "provider": os.getenv("AICHECK_EMBEDDING_PROVIDER", "local").strip().lower(),

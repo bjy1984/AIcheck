@@ -114,6 +114,8 @@ from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.ocr_structured_view import build_ocr_structured_view
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
+from libs.review_conversation_fallback import fallback_answer_text
+from libs.review_conversation_blocks import review_message_source_references
 from libs.raw_vault import (
     capture_agent_turn,
     capture_tool_error,
@@ -10944,97 +10946,6 @@ def review_conversation_agent_tool_output(
     }
 
 
-def review_basis_display_label(item: dict[str, Any]) -> str:
-    standard_code = str(
-        item.get("standardCode")
-        or item.get("standardRef")
-        or item.get("standardName")
-        or ""
-    ).strip()
-    internal_code = standard_code.removeprefix("STD-")
-    announcement_match = re.fullmatch(r"SAMR-(\d{4})-(\d+)", internal_code)
-    if announcement_match:
-        standard_code = (
-            f"市场监管总局公告 {announcement_match.group(1)} 年第 "
-            f"{announcement_match.group(2)} 号"
-        )
-    elif standard_code.startswith("STD-"):
-        standard_code = internal_code
-        standard_code = re.sub(r"^TSG-D", "TSG D", standard_code)
-        standard_code = re.sub(r"^TSG-", "TSG ", standard_code)
-        standard_code = re.sub(r"^GBT-", "GB/T ", standard_code)
-        standard_code = re.sub(r"^NBT-", "NB/T ", standard_code)
-        standard_code = re.sub(r"^JBT-", "JB/T ", standard_code)
-        standard_code = re.sub(r"^SYT-", "SY/T ", standard_code)
-        standard_code = re.sub(r"^GB-", "GB ", standard_code)
-        standard_code = re.sub(r"-(\d{4})$", r"—\1", standard_code)
-    standard_code = re.sub(
-        r"^市场监管总局公告\s*(\d{4})\s*年\s*第\s*(\d+)\s*号$",
-        r"市场监管总局公告 \1 年第 \2 号",
-        standard_code,
-    )
-
-    clause_no = str(item.get("clauseNo") or "").strip()
-    clause_no = re.sub(r"(\d)-(?=\d)", r"\1～", clause_no)
-    if re.match(r"^附件\s*\d", clause_no):
-        clause_label = re.sub(r"^附件\s*(\d+)", r"附件 \1", clause_no.split("：", 1)[0])
-    elif re.match(r"^(附件|附录|表|第)", clause_no):
-        clause_label = clause_no
-    elif clause_no:
-        clause_label = f"第 {clause_no} 条"
-    else:
-        clause_label = ""
-    return " ".join(value for value in (standard_code, clause_label) if value).strip()
-
-
-def review_message_source_references(
-    basis_items: list[dict[str, Any]],
-    evidence_links: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    references: list[dict[str, Any]] = []
-    for item in basis_items[:12]:
-        reference_id = str(item.get("sourceLocatorId") or item.get("clauseId") or "")
-        if not reference_id:
-            continue
-        standard_ref = str(item.get("standardCode") or item.get("standardRef") or "").strip()
-        clause_no = str(item.get("clauseNo") or "").strip()
-        file_name = str(item.get("fileName") or "").strip()
-        display_label = review_basis_display_label(item)
-        aliases = [
-            reference_id,
-            standard_ref,
-            f"{standard_ref} {clause_no}".strip(),
-            standard_ref.removeprefix("STD-"),
-            display_label,
-            Path(file_name).stem if file_name else "",
-        ]
-        references.append(
-            {
-                "kind": "basis",
-                "referenceId": reference_id,
-                "label": display_label or reference_id,
-                "aliases": list(dict.fromkeys(value for value in aliases if value)),
-                "basis": repo.clone(item),
-            }
-        )
-    for item in evidence_links[:12]:
-        reference_id = str(item.get("id") or "")
-        if not reference_id:
-            continue
-        file_name = str(item.get("fileName") or item.get("documentName") or "").strip()
-        aliases = [reference_id, file_name, str(item.get("fieldName") or "").strip()]
-        references.append(
-            {
-                "kind": "evidence",
-                "referenceId": reference_id,
-                "label": file_name or reference_id,
-                "aliases": list(dict.fromkeys(value for value in aliases if value)),
-                "evidence": repo.clone(item),
-            }
-        )
-    return references
-
-
 def review_conversation_llm_answer(
     session: dict[str, Any],
     user_text: str,
@@ -11901,8 +11812,16 @@ def review_agent_answer_blocks(
     blocks: list[dict[str, Any]] = [
         {
             "type": "text",
+            # 模型没跑成时，正文必须先说「没答上」再给状态数字。
+            # 旧文案「我已加载…你可以继续让我检索证据」把没做的事说成做了，
+            # 详见 libs/review_conversation_fallback 模块头。
             "text": agent_result.get("text")
-            or f"我已加载当前节点“{node.get('name') or node_id}”的固定规则、证据就绪状态和 ReviewRun。当前运行状态：{run_status}；资料就绪：{readiness.get('satisfiedCount', 0)}/{readiness.get('requiredCount', 0)}，待确认证据：{readiness.get('pendingCount', 0)}。你可以继续让我检索证据、查看标准条款或草拟意见。",
+            or fallback_answer_text(
+                node_name=str(node.get("name") or node_id),
+                run_status=run_status,
+                readiness=readiness,
+                failure_reason=execution.get("failureReason"),
+            ),
             "references": review_message_source_references(
                 context["basis_items"], context["evidence_links"]
             ),

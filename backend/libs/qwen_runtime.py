@@ -85,6 +85,45 @@ def qwen_runtime_config(path: Path | None = None, env: dict[str, str] | None = N
     }
 
 
+def server_mode_base_url(config: dict[str, Any] | None = None) -> str:
+    """server 模式实际生效的模型地址。
+
+    2026-08-14 发现的坑：qwen_runtime.yaml 把 server 模式的地址写成
+    `baseUrlEnv: AICHECK_QWEN_SERVER_BASE_URL`，但没有任何代码路径读它——
+    server 模式一律 `LiteLLMClient()` 空参构造，取的是 LITELLM_BASE_URL，
+    缺省值 `http://litellm-service:4000` 只在 compose 网络里能解析。
+
+    结果是：运维照配置文件把地址设到 AICHECK_QWEN_SERVER_BASE_URL，设了等于没设，
+    调用仍打向一个解析不了的主机名，报 IntegrationServiceError。
+
+    这里让文档里的那个变量真正生效，同时保留 LITELLM_BASE_URL 作为回退，
+    使既有部署行为不变。
+    """
+    resolved = config if config is not None else qwen_runtime_config()
+    if str(resolved.get("mode") or "") != "server":
+        return ""
+    return str(resolved.get("baseUrl") or os.getenv("LITELLM_BASE_URL") or "").rstrip("/")
+
+
+def build_qwen_runtime_client(client_cls: Any, config: dict[str, Any] | None = None) -> QwenRuntimeClient:
+    """按当前配置装配 QwenRuntimeClient。
+
+    execution.py 与 worker/tasks.py 原本各有一份逐字相同的实现；合并到这里，
+    省得下次改 server 模式的地址解析要记得改两处（这次差点就漏了一处）。
+
+    `client_cls` 由调用方传入而不是在这里 import，是为了让测试仍能
+    monkeypatch 各自模块里的 LiteLLMClient。
+    """
+    resolved = config if config is not None else qwen_runtime_config()
+    if not (resolved["mode"] == "server" or resolved.get("allowFallbackToServer")):
+        return QwenRuntimeClient(config=resolved, server_client=None)
+    # 只有显式配置过地址时才覆盖；没配就交给 LiteLLMClient 自己的解析顺序，
+    # 保持既有部署行为不变。
+    base_url = server_mode_base_url(resolved)
+    server_client = client_cls(**({"base_url": base_url} if base_url else {}))
+    return QwenRuntimeClient(config=resolved, server_client=server_client)
+
+
 def load_qwen_runtime_config(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         loaded = yaml.safe_load(handle) or {}
@@ -156,7 +195,11 @@ class QwenRuntimeClient:
         return LiteLLMClient.first_message_text(response)
 
     def _server_chat_sync(self, messages: list[dict[str, Any]], model: str, **kwargs: Any) -> dict[str, Any]:
-        client = self.server_client or LiteLLMClient(raw_capture=self.raw_capture)
+        base_url = server_mode_base_url(self.config)
+        client = self.server_client or LiteLLMClient(
+            **({"base_url": base_url} if base_url else {}),
+            raw_capture=self.raw_capture,
+        )
         return client.chat_sync(messages, model=model, **kwargs)
 
     def _official_chat_sync(self, messages: list[dict[str, Any]], role_or_model: str, **kwargs: Any) -> dict[str, Any]:

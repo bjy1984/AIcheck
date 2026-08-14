@@ -748,7 +748,11 @@ def test_review_b_basis_labels_hide_internal_locator_ids() -> None:
         ),
     ]
 
-    assert [routes_module.review_basis_display_label(item) for item, _ in cases] == [
+    # 2026-08-14 从 routes.py 搬到 libs/review_conversation_blocks（纯数据整形，
+    # 与请求无关）。这里直接引新家，别再经由路由模块转一手。
+    from libs.review_conversation_blocks import review_basis_display_label
+
+    assert [review_basis_display_label(item) for item, _ in cases] == [
         expected for _, expected in cases
     ]
 

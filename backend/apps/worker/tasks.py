@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from libs.ocr.profiles import profile_for
 from apps.ocr_service.service import ocr_service
 from apps.worker.celery_app import celery_app
+from libs.aliyun_ocr import AliyunOcrError, AliyunOcrRetryableError
+from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
-from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
 from libs.db.repository import (
     STATE_COLLECTIONS,
     flush_state,
@@ -28,6 +28,7 @@ from libs.db.repository import (
     repo,
     sync_state_records,
 )
+from libs.deepseek_runtime import DeepSeekAuditClient, deepseek_runtime_public_config
 from libs.document_ai_shadow import (
     EVIDENCE_PRIOR_VERSION,
     build_evidence_prior,
@@ -48,7 +49,6 @@ from libs.document_audit_pipeline_comparison import (
     persist_pipeline_comparison_run,
     schedule_pipeline_comparison,
 )
-from libs.deepseek_runtime import DeepSeekAuditClient, deepseek_runtime_public_config
 from libs.integrations import task_dispatcher
 from libs.integrations.document_ai_client import DocumentAiClient
 from libs.integrations.embedding_client import EmbeddingClient
@@ -57,7 +57,6 @@ from libs.integrations.litellm_client import LiteLLMClient
 from libs.integrations.mineru_client import MinerUClient, MinerUError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
-from libs.raw_vault import raw_context_from_record
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
     OFFLINE_EMBEDDING_MODEL,
@@ -75,19 +74,21 @@ from libs.mineru_ocr import (
     normalize_mineru_zip,
 )
 from libs.model_usage import model_cost_cny, normalize_model_usage
+from libs.ocr.profiles import profile_for
 from libs.ocr_accuracy_pipeline import (
     SEAL_ENGINES,
     STRUCTURE_ENGINES,
     build_batch_prior,
     build_batch_priors,
     default_profile,
+    fuse_stage_parse_results,
+    infer_preliminary_profile_id,
     merge_batch_outputs,
     merge_grounded_fields,
     normalize_qwen_structured_output,
     page_batches,
     page_numbers,
-    infer_preliminary_profile_id,
-    fuse_stage_parse_results,
+    parse_qwen_json,
     pipeline_enabled,
     pipeline_mode,
     pipeline_run_key,
@@ -99,26 +100,33 @@ from libs.ocr_accuracy_pipeline import (
     required_field_blockers,
     stage_engine_summary,
     temporary_pipeline_directory,
-    validated_ocr_fields,
     validate_batch_output,
-    parse_qwen_json,
+    validated_ocr_fields,
 )
-from libs.aliyun_ocr import AliyunOcrError, AliyunOcrRetryableError
 from libs.ocr_runtime import (
+    ocr_runtime_config,
     official_ocr_enabled,
     official_ocr_primary_enabled,
-    ocr_runtime_config,
 )
 from libs.official_ocr_pipeline import official_ocr_extract, profile_result_complete
 from libs.pipeline_lock import pipeline_task_lock
-from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
-from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block, unsupported_claims
+from libs.qwen_runtime import (
+    QwenRuntimeClient,
+    build_qwen_runtime_client,
+    qwen_runtime_public_config,
+)
+from libs.raw_vault import raw_context_from_record
+from libs.review_grounding import (
+    apply_grounding_guardrails,
+    build_grounded_review_input,
+    grounding_prompt_block,
+    unsupported_claims,
+)
 from libs.security.tenant import (
     current_tenant_id,
     reset_request_tenant_id,
     set_request_tenant_id,
 )
-
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 
@@ -302,9 +310,7 @@ def schedule_document_ai_shadow(
 
 
 def qwen_runtime_client() -> QwenRuntimeClient:
-    config = qwen_runtime_config()
-    server_client = LiteLLMClient() if config["mode"] == "server" or config.get("allowFallbackToServer") else None
-    return QwenRuntimeClient(config=config, server_client=server_client)
+    return build_qwen_runtime_client(LiteLLMClient)
 
 
 def compare_document_version_ids(run: dict[str, Any]) -> set[str]:

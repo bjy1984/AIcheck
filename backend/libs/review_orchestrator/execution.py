@@ -28,7 +28,11 @@ from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
-from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
+from libs.qwen_runtime import (
+    QwenRuntimeClient,
+    build_qwen_runtime_client,
+    qwen_runtime_public_config,
+)
 from libs.raw_vault import raw_context_from_record
 from libs.review_grounding import (
     apply_grounding_guardrails,
@@ -40,6 +44,7 @@ from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
     truncation_requirements,
 )
+from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.r12_agent import (
     apply_r12_human_input,
@@ -82,31 +87,11 @@ from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
-REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
-    {"key": "load_context", "label": "加载项目上下文", "taskQueue": "review.graph"},
-    {"key": "load_ocr_result", "label": "加载 OCR 证据", "taskQueue": "review.graph"},
-    {"key": "run_rule_engine", "label": "执行确定性规则", "taskQueue": "review.validation"},
-    {"key": "retrieve_knowledge", "label": "检索知识依据", "taskQueue": "review.retrieval"},
-    {"key": "build_prompt", "label": "构造审查 Prompt", "taskQueue": "review.graph"},
-    {"key": "llm_generate_findings", "label": "QwenRuntime 生成审查草稿", "taskQueue": "review.llm"},
-    {"key": "schema_validation", "label": "Schema 校验", "taskQueue": "review.validation"},
-    {"key": "evidence_validation", "label": "证据校验", "taskQueue": "review.validation"},
-    {"key": "reference_validation", "label": "依据校验", "taskQueue": "review.validation"},
-    {"key": "critic_review", "label": "Critic 复核", "taskQueue": "review.llm"},
-    {"key": "quality_gate", "label": "质量门禁", "taskQueue": "review.validation"},
-    {"key": "persist_drafts", "label": "持久化草稿", "taskQueue": "review.graph"},
-]
-
 
 def qwen_runtime_client() -> QwenRuntimeClient:
-    config = qwen_runtime_config()
-    server_client = LiteLLMClient() if config["mode"] == "server" or config.get("allowFallbackToServer") else None
-    return QwenRuntimeClient(config=config, server_client=server_client)
+    return build_qwen_runtime_client(LiteLLMClient)
 
-REVIEW_GRAPH_EDGES = [
-    {"source": REVIEW_GRAPH_STEPS[index]["key"], "target": REVIEW_GRAPH_STEPS[index + 1]["key"]}
-    for index in range(len(REVIEW_GRAPH_STEPS) - 1)
-]
+
 
 def apply_node_fact_corrections(
     state: dict[str, Any],

@@ -14,6 +14,7 @@ from __future__ import annotations
 from scripts.compose_drift_check import (
     INTENTIONALLY_ABSENT,
     SERVICE_TO_CONTAINER,
+    UNRESOLVED_DRIFT,
     declared_services,
     drift,
 )
@@ -54,6 +55,33 @@ def test_gateway_and_office_are_declared() -> None:
     assert "web" in services
     assert services["web"]["container_name"] == "aicheck-web"
     assert "onlyoffice" in services
+
+
+def test_unresolved_drift_only_shrinks() -> None:
+    """未决漂移是棘轮：只能删，不能加。
+
+    照本仓 ruff_baseline / monolith_baseline 的做法。往这份名单里添东西，
+    等于把「暂时不管」变成常态——litellm 缺失静默四天，正是因为它当时被写进了
+    「有意不跑」的豁免表，还配了一条我没验证过的理由。
+    """
+    assert set(UNRESOLVED_DRIFT) == {"litellm-service"}, (
+        "未决漂移清单变了。删除条目=问题已解决，欢迎；"
+        "新增条目=请先确认这真的没法当场解决，再连同决定选项一起写进理由。"
+    )
+    for name, note in UNRESOLVED_DRIFT.items():
+        assert name in declared_services(), f"{name} 不在 compose 里，不该出现在未决表"
+        # 未决项必须写明「待定什么」，否则名单本身就成了新的静默处
+        assert "待定" in note, f"{name} 没写清楚待谁决定什么：{note}"
+        assert len(note) >= 40, f"{name} 的说明太短，读的人无法据此决策"
+
+
+def test_unresolved_is_reported_separately_from_missing() -> None:
+    """未决项不能混进 missing——老问题会一直盖着新问题。"""
+    report = drift(PRODUCTION_CONTAINERS, declared_services())
+    assert "aicheck-litellm" in report["unresolved"]
+    assert "aicheck-litellm" not in report["missing"]
+    # 也不能悄悄进「有意不跑」——那是「就这么定了」的意思
+    assert "litellm-service" not in INTENTIONALLY_ABSENT
 
 
 def test_absent_services_are_explained_not_just_listed() -> None:

@@ -62,13 +62,41 @@ SERVICE_TO_CONTAINER = {
 
 # 声明了但当前部署有意不跑的服务。写在这里是为了区分「有意不跑」和「漂移」——
 # 不区分的话每次都报一堆已知差异，报久了就没人看了。
+#
+# ⚠️ 这份名单的每条理由都必须是**核对过的事实**，不是推断。
+#
+# 反面教材（2026-08-13 我自己写的）：
+#
+#     "litellm-service": "镜像不可达，模型直连供应商"
+#
+# 前半句对——ghcr.io 的镜像境内确实拉不到。后半句是我顺手补的推断，从没验证：
+# qwen_runtime.yaml 里 `defaultMode: server`、`allowFallbackToServer: false`，
+# 根本没有直连供应商的路径。于是这条理由把一个真警报按掉了，线上四天无模型可用
+# 而漂移检查一片安静。**免检名单上一条错误的理由，比不写这份名单更危险。**
 INTENTIONALLY_ABSENT = {
     "temporal-ui": "调试用界面，生产不暴露",
     "ocr-service": "OCR 走远端 API，本地不起",
     "embedding-service": "向量化走远端 API，本地不起",
-    "litellm-service": "镜像不可达，模型直连供应商",
     "worker-service": "已按队列拆成 business/cpu-heavy/llm/ocr 四个专用 worker",
     "review-worker-service": "编排当前是 inline 模式，未启用独立审查 worker",
+}
+
+# 已知但**尚未决定怎么办**的漂移。与 INTENTIONALLY_ABSENT 的区别是态度：
+# 那份是「就这么定了」，这份是「还没定，先别装作没事」。
+#
+# 按本仓既有的棘轮做法（ruff_baseline / monolith_baseline）：这份名单只能缩不能涨。
+# 新出现的漂移会立刻变红；名单里的项要消失，必须有人真的做了决定并删掉这一条。
+#
+# 放这里而不是塞回豁免表，是因为豁免表意味着「不用管了」——正是那个态度让
+# litellm 缺失静默了四天。
+UNRESOLVED_DRIFT = {
+    "litellm-service": (
+        "生产无模型网关：镜像 ghcr.io/berriai/litellm 境内拉不到，容器从未创建。"
+        "而历史上真正跑通的 4 次模型调用走的是 official_api 直连 DashScope"
+        "（2026-07-21 至 08-10），说明 compose 声明的拓扑与实际意图本就不一致。"
+        "待定：恢复 official_api 直连（需 QWEN_API_KEY），或换可达镜像把网关立起来。"
+        "在决定之前，模型相关功能一律降级，降级文案见 libs/review_conversation_fallback。"
+    ),
 }
 
 
@@ -81,19 +109,32 @@ def declared_services(compose_path: Path | None = None) -> dict[str, Any]:
 
 
 def drift(running: set[str], services: dict[str, Any]) -> dict[str, list[str]]:
-    """比对声明与现实，返回三类差异。"""
+    """比对声明与现实，返回四类差异。
+
+    `missing` 与 `unresolved` 都是「声明了却没跑」，分开是因为处置不同：
+    missing 是新问题，要当场查；unresolved 是已登记、等人决定的老问题。
+    合成一类的话，老问题会一直盖着新问题。
+    """
+    exempt = set(INTENTIONALLY_ABSENT) | set(UNRESOLVED_DRIFT)
     expected = {
         SERVICE_TO_CONTAINER.get(name, f"aicheck-{name}")
         for name in services
-        if name not in INTENTIONALLY_ABSENT
+        if name not in exempt
     }
     declared_all = {SERVICE_TO_CONTAINER.get(name, f"aicheck-{name}") for name in services}
+    unresolved = {
+        SERVICE_TO_CONTAINER.get(name, f"aicheck-{name}")
+        for name in UNRESOLVED_DRIFT
+        if name in services
+    }
     return {
         # 声明了、也该跑，但没跑——最需要注意的一类
         "missing": sorted(expected - running),
         # 在跑但任何 compose 都没声明——照文件理解生产就会漏掉它们
         "undeclared": sorted(running - declared_all),
         "intentionallyAbsent": sorted(INTENTIONALLY_ABSENT),
+        # 已知未决：不当作通过，但也不淹没新问题
+        "unresolved": sorted(unresolved - running),
     }
 
 
@@ -119,8 +160,13 @@ def main() -> int:
     if report["undeclared"]:
         print(f"  ! 在跑却没被任何 compose 声明：{'、'.join(report['undeclared'])}")
         print("    照 docker-compose.deploy.yml 理解生产环境会漏掉它们。")
+    for name, note in UNRESOLVED_DRIFT.items():
+        container = SERVICE_TO_CONTAINER.get(name, f"aicheck-{name}")
+        if container in report["unresolved"]:
+            print(f"  ⏳ 已知未决：{container}")
+            print(f"     {note}")
     if not report["missing"] and not report["undeclared"]:
-        print("  ✓ 声明与现实一致")
+        print("  ✓ 声明与现实一致（已知未决项除外）")
     return 1 if (args.strict and (report["missing"] or report["undeclared"])) else 0
 
 
