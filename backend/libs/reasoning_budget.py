@@ -100,3 +100,61 @@ def output_budget_exhausted_by_reasoning(
     if reasoning <= 0:
         return False
     return completion >= max_output_tokens and reasoning >= completion * _REASONING_DOMINANCE
+
+
+# 正式 ReviewRun 的输出上限。
+#
+# 与对话路径分开一个常量，是因为要写的东西不一样：对话回一段话，
+# 正式审查要产出 ReviewFindingDraftList JSON——每个 finding 带证据引用、
+# 条款关联、置信度和人工确认项，多个原子核查项就是多条。
+#
+# 2026-08-14 实测：这条路径原本硬编码 1600，且不走本模块。节点 2 首次接上
+# 真模型后返回 LLM_OUTPUT_TRUNCATED，用量是 completion 1600 / reasoning 1600
+# ——推理占满 100%，正文一个字没写。与对话路径当时的症状完全一样，
+# 只是那次修完没有回头看还有谁在用自己的常量。
+REVIEW_DEFAULT_MAX_OUTPUT_TOKENS = 6000
+REVIEW_MAX_OUTPUT_TOKENS_ENV = "AICHECK_QWEN_REVIEW_MAX_TOKENS"
+
+
+def review_max_output_tokens() -> int:
+    """正式审查单次调用的输出上限。
+
+    下限 1600：低于此值连推理都装不下（实测节点 2 的推理就用掉 1600）。
+    上限 32000：同对话路径，防止把笔误写进 env 变成一次昂贵的调用。
+    """
+    raw = os.getenv(REVIEW_MAX_OUTPUT_TOKENS_ENV, "").strip()
+    if not raw:
+        return REVIEW_DEFAULT_MAX_OUTPUT_TOKENS
+    try:
+        value = int(raw)
+    except ValueError:
+        return REVIEW_DEFAULT_MAX_OUTPUT_TOKENS
+    return max(1600, min(32000, value))
+
+
+def truncation_caused_by_reasoning(
+    usage: dict[str, Any] | None, max_output_tokens: int
+) -> bool:
+    """已知这次被截断了，问的是「是不是推理占掉的」。
+
+    与 output_budget_exhausted_by_reasoning 的区别在于**问题不同**：
+
+      对话路径：正文是空的，为什么？→ finish_reason=length 本身就是有力信号。
+      正式路径：已经判定截断了，是谁占的？→ finish_reason 不再有区分力，
+                因为「正文写满被截」和「推理吃光」两种情况它都报 length。
+
+    2026-08-14 差点在这里归错因：直接复用前者，会把「正文写满被截断」
+    （reasoning_tokens=0）也标成推理耗尽，让人去调一个跟问题无关的预算。
+    归错因比不归因更浪费时间。
+
+    所以这里只看推理占比，不看 finish_reason。
+    """
+    data = usage if isinstance(usage, dict) else {}
+    try:
+        completion = int(data.get("completion_tokens") or data.get("outputTokens") or 0)
+    except (TypeError, ValueError):
+        return False
+    if completion <= 0 or max_output_tokens <= 0:
+        return False
+    reasoning = reasoning_tokens_from_usage(data)
+    return reasoning >= completion * _REASONING_DOMINANCE

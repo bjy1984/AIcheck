@@ -148,3 +148,86 @@ def test_脏数据不炸():
         {"atomicCheckResults": "坏数据"}
     ]
     assert compact_rule_results([{"atomicCheckResults": [{"toolResults": None}]}])
+
+
+# ── 输出预算：同一个病、两条路，别只修一条 ──────────────────────────────
+
+
+def test_正式审查的输出预算走统一口径():
+    """2026-08-14：对话路径改用 reasoning_budget 后，正式路径仍写死 1600。
+
+    节点 2 首次接上真模型返回 LLM_OUTPUT_TRUNCATED，用量 completion 1600 /
+    reasoning 1600——推理占满 100%，正文一个字没写。与对话路径当时的症状
+    完全一样，只是那次修完没有回头看还有谁在用自己的常量。
+    """
+    from libs.reasoning_budget import review_max_output_tokens
+    from libs.review_orchestrator.execution import review_model_budget_policy
+
+    policy = review_model_budget_policy({"modelAlias": "review-chat"})
+    assert policy["maxOutputTokens"] == review_max_output_tokens()
+    # 实测推理一次就用掉 1600，上限必须高于它，否则正文永远没份
+    assert policy["maxOutputTokens"] > 1600
+
+
+def test_推理占满额度要单独归因():
+    """只报「截断了」等于没说。人需要知道的是「我该改什么」。"""
+    from libs.reasoning_budget import truncation_caused_by_reasoning
+
+    # 节点 2 那次的真实 usage：推理占 100%
+    assert truncation_caused_by_reasoning(
+        {"completion_tokens": 1600, "completion_tokens_details": {"reasoning_tokens": 1600}}, 1600
+    ) is True
+    # 正文写满被截断（推理 0）：调输出预算解决不了，标成推理耗尽会把人带偏。
+    # 这一条是既有测试 test_generate_finding_drafts_rejects_truncated_provider_output
+    # 抓出来的——它的 fixture 正是 finish_reason=length 且没有推理 token。
+    assert truncation_caused_by_reasoning({"completion_tokens": 1600}, 1600) is False
+    assert truncation_caused_by_reasoning(
+        {"completion_tokens": 1600, "completion_tokens_details": {"reasoning_tokens": 50}}, 1600
+    ) is False
+    # 脏数据不炸
+    assert truncation_caused_by_reasoning(None, 1600) is False
+    assert truncation_caused_by_reasoning({"completion_tokens": "坏"}, 1600) is False
+
+
+def test_两条路径的判据不能混用():
+    """对话问「正文为什么是空的」，正式问「已经截断了，是谁占的」。
+
+    finish_reason=length 对后者没有区分力：正文写满被截和推理吃光都报 length。
+    直接复用对话那条判据，会把普通截断标成推理耗尽。
+    """
+    from libs.reasoning_budget import (
+        output_budget_exhausted_by_reasoning,
+        truncation_caused_by_reasoning,
+    )
+
+    plain_truncation = {"completion_tokens": 1600}
+    # 对话路径：供应商说了 length，采信
+    assert output_budget_exhausted_by_reasoning(plain_truncation, 1600, "length") is True
+    # 正式路径：不看 finish_reason，只看推理占比
+    assert truncation_caused_by_reasoning(plain_truncation, 1600) is False
+
+
+def test_推理耗尽不进重试():
+    """重试只会再被吃光一次，要改的是预算不是次数。"""
+    from libs.review_orchestrator.execution import NON_RETRYABLE_REVIEW_REASONS
+
+    assert "LLM_OUTPUT_BUDGET_EXHAUSTED_BY_REASONING" in NON_RETRYABLE_REVIEW_REASONS
+
+
+def test_env_覆盖有下限():
+    """低于 1600 连推理都装不下，配了等于把功能关掉。"""
+    import os
+
+    from libs.reasoning_budget import review_max_output_tokens
+
+    old = os.environ.get("AICHECK_QWEN_REVIEW_MAX_TOKENS")
+    try:
+        os.environ["AICHECK_QWEN_REVIEW_MAX_TOKENS"] = "100"
+        assert review_max_output_tokens() == 1600
+        os.environ["AICHECK_QWEN_REVIEW_MAX_TOKENS"] = "不是数字"
+        assert review_max_output_tokens() == 6000
+    finally:
+        if old is None:
+            os.environ.pop("AICHECK_QWEN_REVIEW_MAX_TOKENS", None)
+        else:
+            os.environ["AICHECK_QWEN_REVIEW_MAX_TOKENS"] = old

@@ -34,6 +34,10 @@ from libs.qwen_runtime import (
     qwen_runtime_public_config,
 )
 from libs.raw_vault import raw_context_from_record
+from libs.reasoning_budget import (
+    review_max_output_tokens,
+    truncation_caused_by_reasoning,
+)
 from libs.review_grounding import (
     apply_grounding_guardrails,
     build_grounded_review_input,
@@ -180,6 +184,8 @@ NON_RETRYABLE_REVIEW_REASONS = {
     "REVIEW_COST_BUDGET_EXCEEDED",
     "REVIEW_MAX_ATTEMPTS_EXCEEDED",
     "LLM_OUTPUT_TRUNCATED",
+    # 推理占满输出额度：重试只会再被吃光一次，要改的是预算不是次数
+    "LLM_OUTPUT_BUDGET_EXHAUSTED_BY_REASONING",
     "LLM_OUTPUT_EMPTY",
     "LLM_OUTPUT_INVALID_JSON",
     "LLM_OUTPUT_INVALID_ENVELOPE",
@@ -2711,7 +2717,10 @@ def review_model_budget_policy(review_run: dict[str, Any]) -> dict[str, Any]:
     configured = route.get("budgetPolicy") if isinstance(route.get("budgetPolicy"), dict) else {}
     return {
         "maxInputTokens": max(1024, int(os.getenv("AICHECK_REVIEW_MAX_INPUT_TOKENS", "24000"))),
-        "maxOutputTokens": max(256, int(os.getenv("AICHECK_QWEN_REVIEW_MAX_TOKENS", "1600"))),
+        # 走 reasoning_budget 的统一口径，不再自己写死。原值 1600 对推理模型
+        # 连推理都装不下：节点 2 实测 completion 1600 / reasoning 1600，
+        # 正文一个字没写就被判 LLM_OUTPUT_TRUNCATED。
+        "maxOutputTokens": review_max_output_tokens(),
         "maxCostCny": max(
             0.01,
             float(
@@ -2984,7 +2993,19 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
             }
         )
         flush_state_records({"model_call_attempts": [attempt]})
-        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_TRUNCATED")
+        # 区分「推理吃光了额度」和「模型真的没话说」——两者处置完全不同：
+        # 前者调大 AICHECK_QWEN_REVIEW_MAX_TOKENS 就能解决，后者调多少都没用。
+        # 只报 LLM_OUTPUT_TRUNCATED 等于告诉人「截断了」，而人要知道的是「我该改什么」。
+        truncation_reason = (
+            "LLM_OUTPUT_BUDGET_EXHAUSTED_BY_REASONING"
+            # 用 truncation_caused_by_reasoning 而不是 output_budget_exhausted_by_reasoning：
+            # 这里已经确定被截断了，finish_reason=length 对两种成因都成立、没有区分力。
+            if truncation_caused_by_reasoning(
+                raw_usage, int(budget_policy["maxOutputTokens"])
+            )
+            else "LLM_OUTPUT_TRUNCATED"
+        )
+        raise IntegrationServiceError("QwenRuntime", "review.chat", reason=truncation_reason)
     append_tool_call(
         review_run,
         "llm_generate_findings",
