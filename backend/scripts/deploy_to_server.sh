@@ -200,6 +200,13 @@ PROBE_PY
     docker exec --env-file /tmp/aicheck-probe.env -e PYTHONPATH=/app -w /app aicheck-api \
       python scripts/business_chain_probe.py --base-url http://127.0.0.1:8000 || {
         rm -f /tmp/aicheck-probe.env
+
+    # 生产拓扑漂移：docker-compose.deploy.yml 名为部署权威，却既不驱动部署
+    # 也不描述现状——线上跑着的 aicheck-web 和 aicheck-onlyoffice 曾经压根不在
+    # 里面。加服务只是让这份谎言更详细，有东西校验它才让它开始有意义。
+    running=$(docker ps --format "{{.Names}}" | grep "^aicheck-" | paste -sd, -)
+    docker exec -e PYTHONPATH=/app -w /app aicheck-api \
+      python scripts/compose_drift_check.py --running "$running" || true
         echo "  业务链探针未通过——新代码可能引入了内容层回归"
         exit 1
       }
