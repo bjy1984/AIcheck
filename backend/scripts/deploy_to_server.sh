@@ -82,17 +82,50 @@ PY
     python3 /home/dev-bjy/build-runtime-env.py
     docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.env \
       aicheck-api:local python scripts/migrate_backend.py | tail -1
-    docker rm -f aicheck-api >/dev/null 2>&1 || true
-    docker run -d --name aicheck-api --network aicheck-net --restart unless-stopped \
+    # 蓝绿切换：新容器先起在旁边，自己 readyz 绿了再顶替旧的。
+    #
+    # 原先是 rm -f 之后再 run，中间必然有一段真空：新容器要加载三万行的
+    # routes.py 再起 uvicorn，实测约 60 秒。2026-08-14 20:56 就是这么造成
+    # 一分钟 502 的，而脚本这边照样报「部署完成」——因为它等的是最终 readyz
+    # 变绿，看不见中间那一分钟。**部署方自己看不到的停机，才是最容易长期存在的。**
+    # 端口在两次部署之间轮换：旧容器占着 8000 时新容器用 8001，反之亦然。
+    # 让新容器完全不映射端口更简单，但那样切换后就没有直连后端的入口了，
+    # 而 business_chain_probe 等工具都在用它——静默拿掉一个调试入口，
+    # 下次有人查问题时会以为是服务坏了。
+    if docker port aicheck-api 2>/dev/null | grep -q 8000; then NEXT_PORT=8001; else NEXT_PORT=8000; fi
+    docker rm -f aicheck-api-next >/dev/null 2>&1 || true
+    docker run -d --name aicheck-api-next --network aicheck-net \
+      -p 127.0.0.1:\$NEXT_PORT:8000 \
       -v $SERVER_DATA_ROOT/files/output:/app/output \
       -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
       --env-file /home/dev-bjy/aicheck-runtime.env \
-      -p 127.0.0.1:8000:8000 \
       aicheck-api:local uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 >/dev/null
-    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
-      sleep 5
+    # 直接问新容器自己，不经网关——此刻网关还指着旧容器
+    ready=no
+    for i in $(seq 1 60); do
+      sleep 3
+      if docker exec aicheck-api-next python -c \
+        \"import urllib.request,sys; sys.exit(0 if b'ready\\\":true' in urllib.request.urlopen('http://127.0.0.1:8000/api/readyz',timeout=5).read() else 1)\" \
+        >/dev/null 2>&1; then ready=yes; break; fi
+    done
+    if [ \"$ready\" != yes ]; then
+      echo '新容器未能就绪，保留旧容器继续服务' >&2
+      docker logs aicheck-api-next --tail 30 >&2 || true
+      docker rm -f aicheck-api-next >/dev/null 2>&1 || true
+      exit 1
+    fi
+    # 顶替：旧容器让出名字与端口，新容器接手，随即 reload 网关。
+    # nginx 的 proxy_pass 写的是字面主机名，只在启动时解析一次并缓存，
+    # 所以改完名字必须 reload 才会重新解析——不 reload 会一直打向已死的旧 IP。
+    docker rm -f aicheck-api >/dev/null 2>&1 || true
+    docker rename aicheck-api-next aicheck-api
+    docker update --restart unless-stopped aicheck-api >/dev/null 2>&1 || true
+    docker exec aicheck-web nginx -s reload >/dev/null 2>&1 || docker restart aicheck-web >/dev/null
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      sleep 2
       curl -s --max-time 10 http://127.0.0.1:${GATEWAY_PORT}/api/readyz | grep -q ready.:true && break
     done
+    echo \"    直连后端端口：127.0.0.1:\$NEXT_PORT（蓝绿轮换，每次部署会换）\"
   "
   # 确认容器真的换成了新代码，而不是又跑起旧实例
   echo "==> 校验容器代码与本地一致"
@@ -216,7 +249,7 @@ PROBE_PY
       > /tmp/aicheck-probe.env
     chmod 600 /tmp/aicheck-probe.env
     docker exec --env-file /tmp/aicheck-probe.env -e PYTHONPATH=/app -w /app aicheck-api \
-      python scripts/business_chain_probe.py --base-url http://127.0.0.1:8000 || {
+      python scripts/business_chain_probe.py --base-url http://aicheck-web || {
         rm -f /tmp/aicheck-probe.env
         echo "  业务链探针未通过——新代码可能引入了内容层回归"
         exit 1
