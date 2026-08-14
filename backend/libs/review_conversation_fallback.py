@@ -49,6 +49,13 @@ _REASON_TEXT = {
     "REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED": "本次上下文超出输入预算，未发起调用",
     "LLM_OUTPUT_TRUNCATED": "模型输出被截断，结果不完整",
     "LLM_OUTPUT_INVALID": "模型输出无法解析",
+    "LLM_OUTPUT_EMPTY": "模型没有产出可用回答",
+    # 推理模型专有：推理过程占满了输出额度，轮到写结论时已经没有余量。
+    # 与「模型没话说」分开说，因为处置不同——这个调大预算就能解决。
+    "LLM_OUTPUT_BUDGET_EXHAUSTED_BY_REASONING": (
+        "模型的推理过程占满了本次输出额度，没能写出结论"
+        "（可调大 AICHECK_REVIEW_CONVERSATION_MAX_OUTPUT_TOKENS）"
+    ),
 }
 
 

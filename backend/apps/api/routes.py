@@ -114,6 +114,10 @@ from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.ocr_structured_view import build_ocr_structured_view
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
+from libs.reasoning_budget import (
+    conversation_max_output_tokens,
+    output_budget_exhausted_by_reasoning,
+)
 from libs.review_conversation_fallback import fallback_answer_text
 from libs.review_conversation_blocks import review_message_source_references
 from libs.raw_vault import (
@@ -11084,6 +11088,7 @@ def review_conversation_llm_answer(
     ]
     execution_id = execution_id or f"RAGENT-{uuid4().hex[:10].upper()}"
     max_turns = max(2, min(12, int(os.getenv("AICHECK_REVIEW_CONVERSATION_AGENT_MAX_TURNS", "8"))))
+    max_output_tokens = conversation_max_output_tokens()
     tool_call_count = 0
     last_provider = None
     last_model = None
@@ -11227,7 +11232,7 @@ def review_conversation_llm_answer(
                     "model": "review-chat",
                     "toolChoice": "none" if final_turn else "auto",
                     "temperature": 0.1,
-                    "maxTokens": 1200,
+                    "maxTokens": max_output_tokens,
                 },
             )
             # 串流增量：把供应商实际返回的逐 token 片段缓冲后转发为 delta 事件。
@@ -11272,7 +11277,7 @@ def review_conversation_llm_answer(
                         tools=REVIEW_CONVERSATION_AGENT_TOOLS,
                         tool_choice="none" if final_turn else "auto",
                         temperature=0.1,
-                        max_tokens=1200,
+                        max_tokens=max_output_tokens,
                         timeout=max(
                             10.0,
                             float(os.getenv("AICHECK_REVIEW_CONVERSATION_TIMEOUT_SECONDS", "60")),
@@ -11381,10 +11386,21 @@ def review_conversation_llm_answer(
             if not tool_calls:
                 content = QwenRuntimeClient.first_message_text(response).strip()
                 if not content:
+                    # 「模型没输出」是真的，但没用。推理模型把额度花光和模型真的
+                    # 没话说，处置完全不同——前者调大预算就好，后者调多少都没用。
+                    exhausted = output_budget_exhausted_by_reasoning(
+                        usage,
+                        max_output_tokens,
+                        finish_reason=(response.get("choices") or [{}])[0].get("finish_reason"),
+                    )
                     raise IntegrationServiceError(
                         "QwenRuntime",
                         "review.conversation.agent",
-                        reason="LLM_OUTPUT_EMPTY",
+                        reason=(
+                            "LLM_OUTPUT_BUDGET_EXHAUSTED_BY_REASONING"
+                            if exhausted
+                            else "LLM_OUTPUT_EMPTY"
+                        ),
                     )
                 append_review_session_event(
                     session,
