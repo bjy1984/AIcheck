@@ -165,8 +165,9 @@ def test_正式审查的输出预算走统一口径():
 
     policy = review_model_budget_policy({"modelAlias": "review-chat"})
     assert policy["maxOutputTokens"] == review_max_output_tokens()
-    # 实测推理一次就用掉 1600，上限必须高于它，否则正文永远没份
-    assert policy["maxOutputTokens"] > 1600
+    # 实测：成功那次 completion 5,245（推理 3,619）；6000 时又被推理占满。
+    # 上限必须高过观测到的成功样本，否则「偶尔多想两步」就会被判失败。
+    assert policy["maxOutputTokens"] > 6000
 
 
 def test_推理占满额度要单独归因():
@@ -225,7 +226,7 @@ def test_env_覆盖有下限():
         os.environ["AICHECK_QWEN_REVIEW_MAX_TOKENS"] = "100"
         assert review_max_output_tokens() == 1600
         os.environ["AICHECK_QWEN_REVIEW_MAX_TOKENS"] = "不是数字"
-        assert review_max_output_tokens() == 6000
+        assert review_max_output_tokens() == 8000
     finally:
         if old is None:
             os.environ.pop("AICHECK_QWEN_REVIEW_MAX_TOKENS", None)

@@ -112,7 +112,12 @@ def output_budget_exhausted_by_reasoning(
 # 真模型后返回 LLM_OUTPUT_TRUNCATED，用量是 completion 1600 / reasoning 1600
 # ——推理占满 100%，正文一个字没写。与对话路径当时的症状完全一样，
 # 只是那次修完没有回头看还有谁在用自己的常量。
-REVIEW_DEFAULT_MAX_OUTPUT_TOKENS = 6000
+# 实测（节点 2，deepseek-v4-pro，同一份输入连跑两次）：
+#   成功：completion 5,245（推理 3,619 + 正文 1,626）
+#   失败：顶到 6,000，推理占满，正文没份
+# 推理长度本身有波动，6000 卡在成功样本的正上方——等于把「偶尔多想两步」
+# 判成失败。留出约 1.5 倍余量。
+REVIEW_DEFAULT_MAX_OUTPUT_TOKENS = 8000
 REVIEW_MAX_OUTPUT_TOKENS_ENV = "AICHECK_QWEN_REVIEW_MAX_TOKENS"
 
 
