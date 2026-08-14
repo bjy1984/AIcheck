@@ -2969,7 +2969,9 @@ def role_contract_check(
         if role not in paths or role not in actions:
             missing_roles.append(role)
             continue
-        if role == "admin":
+        if role == "inspection":
+            expected_path = "/ai-review-b"
+        elif role == "admin":
             expected_path = "/admin/overview"
         elif role == "fde":
             # cc2600f 重构治理台后 FDE 落地页改为治理总览；前端路由、登录跳转
