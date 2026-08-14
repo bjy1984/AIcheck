@@ -241,10 +241,9 @@ import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalRevi
 import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
 import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
-import {
-  resolveInspectionWorkspaceView,
-  type InspectionWorkspaceView
-} from './inspectionWorkspaceView'
+import { resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
+import { aggregateNodeStatus } from './nodeAggregateStatus'
+import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 
 type PreviewDrawerTarget = {
@@ -454,15 +453,6 @@ const inspectionAuditItemLabels: Record<InspectionAuditItemKey, string> = {
   human_review: '人工结论',
   report: '报告复核',
   archive: '签发归档'
-}
-const inspectionAuditItemShortLabels: Record<InspectionAuditItemKey, string> = {
-  submission: '资料',
-  ocr: 'OCR',
-  evidence: '证据',
-  ai_review: 'AI',
-  human_review: '人工',
-  report: '报告',
-  archive: '归档'
 }
 const isInspectionAuditItemKey = (value: unknown): value is InspectionAuditItemKey =>
   inspectionAuditItemKeys.includes(String(value || '') as InspectionAuditItemKey)
@@ -2691,6 +2681,11 @@ const handleProjectOverviewSelect = async () => {
   })
   if (!switched) return
 }
+
+/* 节点的七项审计汇成一个状态。缓存按 nodeId——表格渲染每行会取三次
+ * （状态词、卡点、进度），不缓存就是每行算三遍。 */
+const nodeAggregate = (nodeId: number) =>
+  aggregateNodeStatus(inspectionAuditOverviewNodeMap.value.get(nodeId)?.items)
 
 const handleInspectionMatrixSelect = async (
   node: ProjectTreeNode,
@@ -5250,27 +5245,41 @@ onBeforeUnmount(() => {
                         </small>
                       </template>
                     </ElTableColumn>
-                    <ElTableColumn label="七项独立审计状态" min-width="540">
+                    <!-- 原先这里平铺七个状态标签，一页 14 行 = 98 个标签、56 个可点元素，
+                         而实测 483 个审计项里 471 个是同一个值（未开始）——监检要在一屏
+                         几乎一样的标签里找出不一样的那几个。
+
+                         业务口径是「监检最好只需要知道状态，全程不需要人工干预」，
+                         所以列表只回答一个问题：这个节点要不要我管。七项明细点开详情再看。 -->
+                    <ElTableColumn label="状态" min-width="240">
                       <template #default="{ row }">
-                        <div
+                        <button
                           v-if="inspectionAuditOverviewNodeMap.get(row.node.nodeId)"
-                          class="inspection-audit-matrix"
-                          :aria-label="`${row.node.name}审计项状态`"
+                          type="button"
+                          class="node-status-cell"
+                          :title="`点击查看 ${row.node.name} 的七项审计明细`"
+                          @click="handleInspectionMatrixSelect(row.node, 'submission')"
                         >
-                          <button
-                            v-for="item in inspectionAuditOverviewNodeMap.get(row.node.nodeId)
-                              ?.items || []"
-                            :key="item.key"
-                            type="button"
-                            :class="['inspection-audit-matrix-item', `is-${item.status}`]"
-                            :title="`${item.label}：${item.statusLabel}；${item.metric}；${item.summary}`"
-                            @click="handleInspectionMatrixSelect(row.node, item.key)"
+                          <span
+                            :class="[
+                              'node-status-pill',
+                              `is-${nodeAggregate(row.node.nodeId).tone}`
+                            ]"
                           >
-                            <span>{{ inspectionAuditItemShortLabels[item.key] }}</span>
-                            <i aria-hidden="true"></i>
-                            <small>{{ item.statusLabel }}</small>
-                          </button>
-                        </div>
+                            {{ nodeAggregate(row.node.nodeId).label }}
+                          </span>
+                          <!-- 卡在哪一步必须说出来。只说「需要处理」等于把问题原样
+                               丢回给人，他还得点进去逐项翻才知道是 OCR 没跑完还是等他签字。 -->
+                          <small
+                            v-if="nodeAggregate(row.node.nodeId).blockedAt"
+                            class="node-status-where"
+                          >
+                            {{ nodeAggregate(row.node.nodeId).blockedAt }}
+                          </small>
+                          <small class="node-status-progress">
+                            {{ nodeAggregate(row.node.nodeId).progress }}
+                          </small>
+                        </button>
                         <ElSkeleton
                           v-else
                           class="inspection-audit-matrix-loading"
@@ -6916,6 +6925,59 @@ onBeforeUnmount(() => {
   gap: 14px;
   align-items: center;
   justify-content: flex-end;
+}
+
+/* 节点状态：一个词说清「要不要我管」，卡点与进度做次要信息 */
+.node-status-cell {
+  display: flex;
+  width: 100%;
+  padding: 2px 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  gap: 8px;
+  align-items: center;
+}
+
+.node-status-pill {
+  padding: 3px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+  flex: none;
+}
+
+/* 只有这一种需要人动，配色上要能一眼从整列里跳出来 */
+.node-status-pill.is-attention {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.node-status-pill.is-running {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.node-status-pill.is-done {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.node-status-pill.is-idle {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.node-status-where {
+  font-size: 12px;
+  color: #92400e;
+}
+
+.node-status-progress {
+  margin-left: auto;
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 /* 视图分段控件：一眼看出是「二选一」，不是两个可点的动作 */
