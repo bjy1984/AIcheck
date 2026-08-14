@@ -2279,11 +2279,12 @@ onBeforeUnmount(() => {
    滚动条隐藏——它出现在这么窄的一条上只是噪音，横向滚动靠触控板/滚轮即可。 */
 .composer-suggestions {
   display: flex;
+
   /* min-width: 0 是这里的关键：flex 子项默认 min-width: auto，会被内容撑开，
      于是父容器跟着变宽、overflow-x 永远不触发。实测窄屏下对话卡被撑到 1182px
      而窗口只有 1000px——推荐条「能滚动」这件事从来没发生过。 */
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
   margin-bottom: 8px;
   overflow-x: auto;
   gap: 6px;
@@ -2304,42 +2305,79 @@ onBeforeUnmount(() => {
 }
 
 .composer-suggestion {
-  /* 不许被压扁：flex 默认会收缩子项，一行放不下时会把所有按钮挤成一堆省略号，
-     那样每条都看不出问的是什么。宁可横向滚，也不要每条都读不了。 */
-  max-width: 280px;
-  padding: 4px 10px;
-  overflow: hidden;
+  /* 不截断：既然已经横向滚动，再设 max-width + ellipsis 就是既滚又截——
+     实测 4 条里 2 条被切掉后半句，而后半句往往才是限定条件
+     （「…分别对应哪个审查点？」）。滚动是为了读全，不是为了少读。
+     flex: none 是必须的：flex 默认收缩子项，会把所有按钮挤成一堆省略号。 */
+  padding: 5px 12px;
   font: inherit;
   font-size: 12px;
+  line-height: 1.5;
   color: #1d4ed8;
-  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
   background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  border: 1px solid #dbeafe;
   border-radius: 999px;
   flex: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
 .composer-suggestion:hover {
   background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.composer-suggestion:active {
+  transform: scale(0.97);
 }
 
 .composer-card {
   /* 不加约束时它会被内部最宽的子项撑开：实测 conversation-column 只有 270px，
      而这张卡撑到 1182px，直接溢出到父容器外面去。加推荐问题只是让这个既有
      缺陷显形——快捷命令那排按钮本来也在撑它，只是没人在窄屏下看过。 */
-  min-width: 0;
   max-width: 100%;
-  padding: 12px;
+  min-width: 0;
+  padding: 12px 14px 10px;
   background: #fff;
-  border: 1px solid #b8d2ff;
-  border-radius: 11px;
-  box-shadow: 0 8px 30px rgb(20 104 232 / 8%);
+  border: 1px solid #dbe6f7;
+  border-radius: 14px;
+  /* 阴影收敛：原来 30px 的大扩散让这张卡在页面上「浮」得过重，
+     压过了它上面的消息区——输入框是工具，不该比内容更显眼。 */
+  box-shadow: 0 2px 12px rgb(20 104 232 / 6%);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+/* 聚焦时才强调：没在输入时它安静待着，光标进来才把注意力收过来 */
+.composer-card:focus-within {
+  border-color: #93c5fd;
+  box-shadow: 0 2px 16px rgb(20 104 232 / 12%);
+}
+
+/* 输入框去掉自带边框，与卡片融为一体——两层框套着显得局促 */
 .composer-card :deep(.el-textarea__inner) {
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  background: transparent;
+  border: none;
   box-shadow: none;
+}
+
+.composer-card :deep(.el-textarea__inner::placeholder) {
+  color: #b6c2d4;
+}
+
+/* 快捷命令是次要入口，不该与「发送」抢视觉重量 */
+.composer-actions :deep(.el-button:not(.el-button--primary)) {
+  color: #64748b;
+  background: transparent;
+  border-color: transparent;
+}
+
+.composer-actions :deep(.el-button:not(.el-button--primary):hover) {
+  color: #1d4ed8;
+  background: #f1f5f9;
 }
 
 .composer-actions {
