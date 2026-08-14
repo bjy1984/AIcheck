@@ -82,6 +82,7 @@ from libs.review_orchestrator.r20_r23_facts import (
 )
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
 from libs.review_orchestrator.retry_policy import has_review_retry_consumer
+from libs.review_orchestrator.rule_result_digest import compact_rule_results
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
@@ -2592,7 +2593,9 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "fieldCount": len(fields),
         "groundingStatus": grounding_input.get("groundingStatus"),
         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
-        "ruleResults": context.get("ruleResults") or [],
+        # 压掉嵌套工具输出里的证据引用列表再进提示词。原样给会让单个
+        # locate_evidence_fragment 结果占掉 39% 预算（见 rule_result_digest）。
+        "ruleResults": compact_rule_results(context.get("ruleResults") or []),
         "fixedClausePackage": context.get("clausePackageSnapshot") or {},
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
         # 检索到的条款正文与 ID。原先只给 traceId，不给条款本身——而输出 schema
