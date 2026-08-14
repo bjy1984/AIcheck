@@ -37,6 +37,7 @@ import {
   getProjectTreeApi,
   listWorkbenchProjectsApi,
   requestAiRecheckApi,
+  returnCorrectionApi,
   saveReviewOpinionApi,
   submitReviewHumanInputResponseApi
 } from '@/api/aicheck'
@@ -80,6 +81,7 @@ import ProjectNodeTree from '@/views/AICheck/components/ProjectNodeTree.vue'
 import R12RegistryVerificationDialog from '@/views/AICheck/components/R12RegistryVerificationDialog.vue'
 import R19SemanticEvidenceDialog from '@/views/AICheck/components/R19SemanticEvidenceDialog.vue'
 import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
+import ReturnCorrectionDialog from '@/views/AIReviewB/components/ReturnCorrectionDialog.vue'
 import {
   resolveReviewSidebarLayout,
   resolveReviewWorkbenchContext
@@ -88,6 +90,7 @@ import {
   buildFinalConclusionPayload,
   canSubmitFinalConclusion
 } from '@/views/AIReviewB/finalConclusion'
+import type { ReturnCorrectionRequest } from '@/views/AIReviewB/returnCorrection'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 
 const props = withDefaults(
@@ -142,6 +145,7 @@ const evidencePreview = ref<EvidenceLink>()
 const r12DialogVisible = ref(false)
 const r19DialogVisible = ref(false)
 const humanTaskSubmitting = ref(false)
+const returnCorrectionVisible = ref(false)
 const reviewResult = ref<ReviewOpinion['result']>('证据不足')
 const reviewOpinion = ref('')
 const extractedFields = ref<ExtractedField[]>([])
@@ -196,6 +200,9 @@ const canStartReview = computed(() => workspace.value?.permissions.canStartRevie
 const runStatus = computed(() => String(activeRun.value?.status || '未发起'))
 const canSubmitReviewOpinion = computed(() =>
   canSubmitFinalConclusion(workspace.value?.permissions, runStatus.value)
+)
+const canReturnCorrection = computed(
+  () => workspace.value?.permissions.canReturnCorrection === true
 )
 const runStatusTone = computed(() => {
   if (['accepted_by_human', 'edited_by_human', 'completed', '完成'].includes(runStatus.value))
@@ -1039,6 +1046,47 @@ const handleSaveReviewOpinion = async () => {
   }
 }
 
+const handleReturnCorrection = async (payload: ReturnCorrectionRequest) => {
+  if (!canReturnCorrection.value) return
+  const itemCount =
+    payload.mode === 'return_correction'
+      ? payload.bindingIds.length
+      : payload.supplementRequirements.length
+  const actionLabel = payload.mode === 'return_correction' ? '退回补正' : '发起补充资料单'
+  await ElMessageBox.confirm(
+    `将处理 ${itemCount} 项资料要求，节点转为“需补正”并通知责任方。是否${actionLabel}？`,
+    actionLabel,
+    {
+      type: 'warning',
+      confirmButtonText: '确认执行',
+      cancelButtonText: '取消'
+    }
+  )
+  actionLoading.value = true
+  try {
+    await returnCorrectionApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      {
+        ...payload,
+        evidenceLinkIds: selectedEvidence.value
+          .filter((item) => item.manualStatus === 'confirmed')
+          .map((item) => item.id)
+      },
+      { etag: workspace.value?.project.etag }
+    )
+    reviewResult.value = '需补正'
+    reviewOpinion.value = payload.opinion
+    returnCorrectionVisible.value = false
+    ElMessage.success(payload.mode === 'return_correction' ? '已退回补正' : '补充资料单已创建')
+    await refreshLiveState()
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, `${actionLabel}失败。`))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 const blockItems = <T,>(block: ReviewBContentBlock): T[] =>
   Array.isArray((block as { items?: T[] }).items) ? ((block as { items?: T[] }).items as T[]) : []
 
@@ -1647,6 +1695,16 @@ onBeforeUnmount(() => {
             >
               保存人工复核结论
             </ElButton>
+            <ElButton
+              class="full-button"
+              type="danger"
+              plain
+              :loading="actionLoading"
+              :disabled="!canReturnCorrection"
+              @click="returnCorrectionVisible = true"
+            >
+              退回补正
+            </ElButton>
           </section>
         </div>
       </aside>
@@ -1671,6 +1729,14 @@ onBeforeUnmount(() => {
       :loading="humanTaskSubmitting"
       @submit="submitHumanTask"
       @locate="locateR19Evidence"
+    />
+    <ReturnCorrectionDialog
+      v-model="returnCorrectionVisible"
+      :bindings="workspace?.returnableBindings || []"
+      :missing-requirements="workspace?.evidenceReadiness.missingRequirements || []"
+      :default-opinion="reviewOpinion"
+      :loading="actionLoading"
+      @submit="handleReturnCorrection"
     />
   </div>
 </template>
@@ -2496,6 +2562,7 @@ onBeforeUnmount(() => {
 .full-button {
   width: 100%;
   margin-top: 10px;
+  margin-left: 0;
 }
 
 .selected-evidence {

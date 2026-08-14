@@ -266,6 +266,28 @@ def test_review_b_return_correction_atomically_creates_opinion_and_todo() -> Non
     assert run["status"] == "running"
     assert "humanDecision" not in run
 
+    repeated = assert_ok(
+        client.post(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/actions/return-correction",
+            headers={
+                **HEADERS,
+                "If-Match": workspace["project"]["etag"],
+                "Idempotency-Key": "review-b-atomic-return",
+            },
+            json={
+                "mode": "return_correction",
+                "reason": "许可证范围与项目不一致，请修改。",
+                "opinion": "许可证范围与项目不一致，请修改。",
+                "bindingIds": ["BIND-ATOMIC-RETURN"],
+                "evidenceLinkIds": [],
+            },
+        )
+    )
+    assert repeated["rectification"]["id"] == result["rectification"]["id"]
+    assert len(repo.state["review_opinions"]) == before["opinions"] + 1
+    assert len(repo.state["rectifications"]) == before["rectifications"] + 1
+    assert len(repo.state["todos"]) == before["todos"] + 1
+
 
 def test_review_b_supplement_request_creates_task_without_binding(
     monkeypatch,
