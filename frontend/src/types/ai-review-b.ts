@@ -91,6 +91,7 @@ export type ReviewBWorkspace = {
     canStartReview: boolean
     canSubmitHumanInput: boolean
     canSubmitHumanDecision: boolean
+    canSubmitReviewOpinion: boolean
     canManageEvidence: boolean
   }
   evidenceReadiness: NodeEvidenceReadiness

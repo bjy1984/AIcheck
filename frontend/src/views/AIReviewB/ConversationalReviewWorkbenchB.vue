@@ -37,6 +37,7 @@ import {
   getProjectTreeApi,
   listWorkbenchProjectsApi,
   requestAiRecheckApi,
+  saveReviewOpinionApi,
   submitReviewHumanInputResponseApi
 } from '@/api/aicheck'
 import type {
@@ -54,8 +55,7 @@ import {
   listReviewBMessagesApi,
   streamReviewBEventsApi,
   runReviewBSessionActionApi,
-  sendReviewBMessageApi,
-  submitReviewBHumanDecisionApi
+  sendReviewBMessageApi
 } from '@/api/aiReviewB'
 import type {
   ReviewBAuditView,
@@ -66,7 +66,13 @@ import type {
   ReviewBReference,
   ReviewBWorkspace
 } from '@/types/ai-review-b'
-import type { EvidenceLink, ExtractedField, Project, ProjectTreeNode } from '@/types/aicheck'
+import type {
+  EvidenceLink,
+  ExtractedField,
+  Project,
+  ProjectTreeNode,
+  ReviewOpinion
+} from '@/types/aicheck'
 import { useUserStore } from '@/store/modules/user'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import EvidenceLocatorDialog from '@/views/AICheck/components/EvidenceLocatorDialog.vue'
@@ -78,6 +84,10 @@ import {
   resolveReviewSidebarLayout,
   resolveReviewWorkbenchContext
 } from '@/views/AIReviewB/embeddedReviewWorkbench'
+import {
+  buildFinalConclusionPayload,
+  canSubmitFinalConclusion
+} from '@/views/AIReviewB/finalConclusion'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 
 const props = withDefaults(
@@ -132,8 +142,8 @@ const evidencePreview = ref<EvidenceLink>()
 const r12DialogVisible = ref(false)
 const r19DialogVisible = ref(false)
 const humanTaskSubmitting = ref(false)
-const humanDecision = ref<'accept' | 'edit' | 'reject'>('accept')
-const humanComment = ref('')
+const reviewResult = ref<ReviewOpinion['result']>('证据不足')
+const reviewOpinion = ref('')
 const extractedFields = ref<ExtractedField[]>([])
 let pollTimer: number | undefined
 let liveTraceTimer: number | undefined
@@ -183,10 +193,10 @@ const currentTask = computed(
   () => workspace.value?.contextSummary.currentTask || currentNode.value?.name || '选择监检节点'
 )
 const canStartReview = computed(() => workspace.value?.permissions.canStartReview === true)
-const canSubmitHumanDecision = computed(
-  () => workspace.value?.permissions.canSubmitHumanDecision === true
-)
 const runStatus = computed(() => String(activeRun.value?.status || '未发起'))
+const canSubmitReviewOpinion = computed(() =>
+  canSubmitFinalConclusion(workspace.value?.permissions, runStatus.value)
+)
 const runStatusTone = computed(() => {
   if (['accepted_by_human', 'edited_by_human', 'completed', '完成'].includes(runStatus.value))
     return 'success'
@@ -553,7 +563,7 @@ const loadNodeWorkspace = async (reset = true) => {
   if (reset) {
     workspace.value = undefined
     auditView.value = undefined
-    humanComment.value = ''
+    reviewOpinion.value = ''
   }
   try {
     workspace.value = (
@@ -840,7 +850,7 @@ const handleSuggestion = (actionKey: string, message?: ReviewBMessage) => {
   if (actionKey === 'draft_opinion') return sendMessage('/草拟意见')
   if (actionKey === 'copy_opinion_draft') {
     const textBlock = message?.contentBlocks.find((block) => block.type === 'text')
-    humanComment.value = textBlock && 'text' in textBlock ? String(textBlock.text || '') : ''
+    reviewOpinion.value = textBlock && 'text' in textBlock ? String(textBlock.text || '') : ''
     ElMessage.success('草稿已填入右侧人工意见')
   }
 }
@@ -999,51 +1009,31 @@ const locateR19Evidence = (candidate: R19EvidenceCandidate) => {
   )
 }
 
-const handleSubmitHumanDecision = async () => {
-  if (!activeRunId.value || !canSubmitHumanDecision.value) return
-  if (!humanComment.value.trim()) {
+const handleSaveReviewOpinion = async () => {
+  if (!canSubmitReviewOpinion.value) return
+  if (!reviewOpinion.value.trim()) {
     ElMessage.warning('请填写人工复核意见')
     return
   }
-  const findingDrafts = activeRun.value?.findingDrafts || []
-  if (humanDecision.value === 'edit' && !findingDrafts.length) {
-    ElMessage.warning('当前运行没有可修改的 AI Finding，请选择采纳或驳回。')
-    return
-  }
-  await ElMessageBox.confirm('人工结论提交后将结束本次 ReviewRun，是否继续？', '保存人工复核结论', {
+  await ElMessageBox.confirm('是否保存当前节点的人工复核结论？', '保存人工复核结论', {
     type: 'warning',
-    confirmButtonText: '确认提交',
+    confirmButtonText: '确认保存',
     cancelButtonText: '取消'
   })
   actionLoading.value = true
   try {
-    const correctedOutput =
-      humanDecision.value === 'edit'
-        ? findingDrafts.map((draft) => ({
-            ...draft,
-            sourceDraftId: String(draft.id || ''),
-            description: humanComment.value.trim()
-          }))
-        : undefined
-    await submitReviewBHumanDecisionApi(
-      activeRunId.value,
+    await saveReviewOpinionApi(
+      activeProjectId.value,
+      activeNodeId.value,
+      buildFinalConclusionPayload(reviewResult.value, reviewOpinion.value, selectedEvidence.value),
       {
-        decision: humanDecision.value,
-        comment: humanComment.value.trim(),
-        correctedOutput,
-        evidenceLinkIds: selectedEvidence.value
-          .filter((item) => item.manualStatus === 'confirmed')
-          .map((item) => item.id)
-      },
-      {
-        etag: activeRun.value?.etag,
-        idempotencyKey: `review-b-decision-${activeRunId.value}-${humanDecision.value}`
+        etag: workspace.value?.project.etag
       }
     )
-    ElMessage.success('人工复核结论已提交')
+    ElMessage.success('人工复核结论已保存')
     await refreshLiveState()
   } catch (error) {
-    ElMessage.error(getAicheckErrorMessage(error, '人工复核结论提交失败。'))
+    ElMessage.error(getAicheckErrorMessage(error, '人工复核结论保存失败。'))
   } finally {
     actionLoading.value = false
   }
@@ -1631,33 +1621,29 @@ onBeforeUnmount(() => {
 
           <section class="side-card human-decision-card">
             <h2>最终人工结论</h2>
-            <ElAlert
-              v-if="!canSubmitHumanDecision"
-              :title="activeTask ? '请先完成过程人工待办' : 'ReviewRun 完成后可提交最终结论'"
-              type="info"
-              :closable="false"
-            />
             <label>审查结论</label>
-            <ElRadioGroup v-model="humanDecision" :disabled="!canSubmitHumanDecision">
-              <ElRadioButton value="accept">采纳</ElRadioButton>
-              <ElRadioButton value="edit">修改</ElRadioButton>
-              <ElRadioButton value="reject">驳回</ElRadioButton>
+            <ElRadioGroup v-model="reviewResult" :disabled="!canSubmitReviewOpinion">
+              <ElRadioButton value="满足要求">满足要求</ElRadioButton>
+              <ElRadioButton value="需补正">需补正</ElRadioButton>
+              <ElRadioButton value="不适用">不适用</ElRadioButton>
+              <ElRadioButton value="证据不足">证据不足</ElRadioButton>
             </ElRadioGroup>
             <label>人工复核意见</label>
             <ElInput
-              v-model="humanComment"
+              v-model="reviewOpinion"
               type="textarea"
               :rows="4"
               maxlength="2000"
               show-word-limit
+              :disabled="!canSubmitReviewOpinion"
               placeholder="请输入人工复核意见"
             />
             <ElButton
               class="full-button"
               type="primary"
               :loading="actionLoading"
-              :disabled="!canSubmitHumanDecision"
-              @click="handleSubmitHumanDecision"
+              :disabled="!canSubmitReviewOpinion"
+              @click="handleSaveReviewOpinion"
             >
               保存人工复核结论
             </ElButton>
