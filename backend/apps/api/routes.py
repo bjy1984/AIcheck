@@ -118,7 +118,10 @@ from libs.reasoning_budget import (
     conversation_max_output_tokens,
     output_budget_exhausted_by_reasoning,
 )
-from libs.review_conversation_prompt import REVIEW_CONVERSATION_SYSTEM_PROMPT
+from libs.review_conversation_prompt import (
+    REVIEW_CONVERSATION_LANGUAGE_REMINDER,
+    REVIEW_CONVERSATION_SYSTEM_PROMPT,
+)
 from libs.review_conversation_fallback import fallback_answer_text
 from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_conversation_blocks import review_message_source_references
@@ -11055,7 +11058,11 @@ def review_conversation_llm_answer(
         {"role": "system", "content": REVIEW_CONVERSATION_SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": json.dumps(context, ensure_ascii=False, default=str),
+            # 中文推理的要求同时放在这里。只写在 system 里实测没用：
+            # deepseek-v4-pro 照样用英文推理（2026-08-14 实测 中文 168 字 / 英文 251 词）。
+            # 推理通道不吃 system 的输出语言约束，贴近生成位置再说一遍是仅有的低成本手段。
+            "content": json.dumps(context, ensure_ascii=False, default=str)
+            + f"\n\n{REVIEW_CONVERSATION_LANGUAGE_REMINDER}",
         },
     ]
     execution_id = execution_id or f"RAGENT-{uuid4().hex[:10].upper()}"

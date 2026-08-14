@@ -74,3 +74,15 @@ _CONTEXT = (
 )
 
 REVIEW_CONVERSATION_SYSTEM_PROMPT = _ROLE + _TOOLS + _SAFETY + _OUTPUT + _CONTEXT
+
+
+# 贴近生成位置的语言提醒，附在每轮用户消息末尾。
+#
+# 为什么不只写在 system：2026-08-14 实测，system 里明确要求「推理过程必须用中文」
+# 之后，deepseek-v4-pro 仍然全程英文推理（中文 168 字 / 英文 251 词）。
+# 推理通道不吃 system 的输出语言约束。
+#
+# 这句话每轮都会重发，所以刻意压到最短——它是一次尝试，不是保证。
+# 如果实测仍不生效，正确的处置是接受并记录，而不是不断加长提示词：
+# 翻译一份「中文推理」等于伪造审计留痕，那比英文更糟。
+REVIEW_CONVERSATION_LANGUAGE_REMINDER = "请全程用中文思考与作答（含推理过程）。"
