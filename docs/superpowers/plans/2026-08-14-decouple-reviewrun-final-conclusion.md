@@ -152,35 +152,43 @@ git commit -m "feat: decouple node conclusion permission from ReviewRun"
 **Files:**
 - Modify: `frontend/src/types/ai-review-b.ts:88-105`
 - Modify: `frontend/src/views/AIReviewB/ConversationalReviewWorkbenchB.vue`
+- Create: `frontend/src/views/AIReviewB/finalConclusion.ts`
 - Create: `frontend/src/views/AIReviewB/finalConclusionDecoupling.test.ts`
 
 **Interfaces:**
 - Consumes: `saveReviewOpinionApi(projectId, nodeId, payload, { etag })`, `ReviewOpinion['result']`, `workspace.project.etag`, selected confirmed evidence links, and `permissions.canSubmitReviewOpinion`.
-- Produces: a four-option node conclusion form and `handleSaveReviewOpinion()` that does not require, mutate, or submit a ReviewRun.
+- Produces: `canSubmitFinalConclusion()`, `buildFinalConclusionPayload()`, a four-option node conclusion form, and `handleSaveReviewOpinion()` that does not require, mutate, or submit a ReviewRun.
 
-- [ ] **Step 1: Write a failing frontend source-contract test**
+- [ ] **Step 1: Write a failing frontend behavior test**
 
-Create `finalConclusionDecoupling.test.ts` with assertions for the desired integration and removed binding:
+Create `finalConclusionDecoupling.test.ts` with table-driven permission assertions and literal payload expectations:
 
 ```ts
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import {
+  buildFinalConclusionPayload,
+  canSubmitFinalConclusion
+} from './finalConclusion'
 
-const source = readFileSync(
-  new URL('./ConversationalReviewWorkbenchB.vue', import.meta.url),
-  'utf8'
+for (const runStatus of [undefined, 'queued', 'running', 'waiting_human_input', 'failed']) {
+  assert.equal(
+    canSubmitFinalConclusion({ canSubmitReviewOpinion: true }, runStatus),
+    true
+  )
+}
+assert.equal(canSubmitFinalConclusion({ canSubmitReviewOpinion: false }, 'waiting_human_review'), false)
+
+assert.deepEqual(
+  buildFinalConclusionPayload('证据不足', '  证据尚未闭合  ', [
+    { id: 'EV-CONFIRMED', manualStatus: 'confirmed' },
+    { id: 'EV-PENDING', manualStatus: 'pending' }
+  ]),
+  {
+    result: '证据不足',
+    opinion: '证据尚未闭合',
+    evidenceLinkIds: ['EV-CONFIRMED']
+  }
 )
-
-assert.match(source, /saveReviewOpinionApi/)
-assert.match(source, /canSubmitReviewOpinion/)
-assert.match(source, /value="满足要求"/)
-assert.match(source, /value="需补正"/)
-assert.match(source, /value="不适用"/)
-assert.match(source, /value="证据不足"/)
-assert.match(source, /activeProjectId\.value,\s*activeNodeId\.value,/)
-assert.doesNotMatch(source, /submitReviewBHumanDecisionApi/)
-assert.doesNotMatch(source, /ReviewRun 完成后可提交最终结论/)
-assert.doesNotMatch(source, /人工结论提交后将结束本次 ReviewRun/)
 
 console.log('Review B final conclusion decoupling contract passed')
 ```
@@ -189,21 +197,50 @@ console.log('Review B final conclusion decoupling contract passed')
 
 Run: `cd frontend && pnpm test:unit`
 
-Expected: the new contract test fails because the workbench still imports and calls `submitReviewBHumanDecisionApi`, uses ReviewRun permission, and renders accept/edit/reject.
+Expected: the new behavior test fails because `finalConclusion.ts` and its exported functions do not exist.
 
-- [ ] **Step 3: Update the workspace type and component state**
+- [ ] **Step 3: Implement the pure conclusion boundary**
 
-Add `canSubmitReviewOpinion: boolean` to `ReviewBWorkspace.permissions`. Import `saveReviewOpinionApi` and `ReviewOpinion`; remove `submitReviewBHumanDecisionApi`. Replace the ReviewRun decision state with:
+Create `finalConclusion.ts` with a permission resolver that deliberately ignores the optional ReviewRun status and a payload builder that trims the opinion and keeps only confirmed evidence:
+
+```ts
+import type { EvidenceLink, ReviewOpinion } from '@/types/aicheck'
+
+export const canSubmitFinalConclusion = (
+  permissions: { canSubmitReviewOpinion?: boolean } | undefined,
+  _reviewRunStatus?: string
+) => permissions?.canSubmitReviewOpinion === true
+
+export const buildFinalConclusionPayload = (
+  result: ReviewOpinion['result'],
+  opinion: string,
+  selectedEvidence: Array<Pick<EvidenceLink, 'id' | 'manualStatus'>>
+) => ({
+  result,
+  opinion: opinion.trim(),
+  evidenceLinkIds: selectedEvidence
+    .filter((item) => item.manualStatus === 'confirmed')
+    .map((item) => item.id)
+})
+```
+
+Run: `cd frontend && pnpm test:unit`
+
+Expected: all behavior tests pass, proving run status cannot affect permission and pending evidence cannot enter the formal payload.
+
+- [ ] **Step 4: Update the workspace type and component state**
+
+Add `canSubmitReviewOpinion: boolean` to `ReviewBWorkspace.permissions`. Import `saveReviewOpinionApi`, `ReviewOpinion`, `buildFinalConclusionPayload`, and `canSubmitFinalConclusion`; remove `submitReviewBHumanDecisionApi`. Replace the ReviewRun decision state with:
 
 ```ts
 const reviewResult = ref<ReviewOpinion['result']>('证据不足')
 const reviewOpinion = ref('')
 const canSubmitReviewOpinion = computed(
-  () => workspace.value?.permissions.canSubmitReviewOpinion === true
+  () => canSubmitFinalConclusion(workspace.value?.permissions, runStatus.value)
 )
 ```
 
-- [ ] **Step 4: Replace the submit handler**
+- [ ] **Step 5: Replace the submit handler**
 
 Implement a node-scoped handler that validates the opinion, passes only confirmed selected evidence, uses the project etag, and refreshes the workspace:
 
@@ -224,16 +261,9 @@ const handleSaveReviewOpinion = async () => {
     await saveReviewOpinionApi(
       activeProjectId.value,
       activeNodeId.value,
+      buildFinalConclusionPayload(reviewResult.value, reviewOpinion.value, selectedEvidence.value),
       {
-        result: reviewResult.value,
-        opinion: reviewOpinion.value.trim(),
-        evidenceLinkIds: selectedEvidence.value
-          .filter((item) => item.manualStatus === 'confirmed')
-          .map((item) => item.id)
-      },
-      {
-        etag: workspace.value?.project.etag,
-        idempotencyKey: `review-b-opinion-${activeProjectId.value}-${activeNodeId.value}-${reviewResult.value}`
+        etag: workspace.value?.project.etag
       }
     )
     ElMessage.success('人工复核结论已保存')
@@ -246,7 +276,7 @@ const handleSaveReviewOpinion = async () => {
 }
 ```
 
-- [ ] **Step 5: Replace the template controls and copy**
+- [ ] **Step 6: Replace the template controls and copy**
 
 Remove the ReviewRun prerequisite alert. Bind the radio group and button to `canSubmitReviewOpinion`, and render exactly:
 
@@ -261,7 +291,7 @@ Remove the ReviewRun prerequisite alert. Bind the radio group and button to `can
 
 Keep the opinion textarea enabled for users with submission permission and change the button click to `handleSaveReviewOpinion`.
 
-- [ ] **Step 6: Format and run focused frontend checks**
+- [ ] **Step 7: Format and run focused frontend checks**
 
 Run:
 
@@ -269,6 +299,7 @@ Run:
 cd frontend
 pnpm prettier --write src/types/ai-review-b.ts \
   src/views/AIReviewB/ConversationalReviewWorkbenchB.vue \
+  src/views/AIReviewB/finalConclusion.ts \
   src/views/AIReviewB/finalConclusionDecoupling.test.ts
 pnpm test:unit
 pnpm ts:check
@@ -276,11 +307,12 @@ pnpm ts:check
 
 Expected: all unit scripts and TypeScript checks pass.
 
-- [ ] **Step 7: Commit the frontend workflow change**
+- [ ] **Step 8: Commit the frontend workflow change**
 
 ```bash
 git add frontend/src/types/ai-review-b.ts \
   frontend/src/views/AIReviewB/ConversationalReviewWorkbenchB.vue \
+  frontend/src/views/AIReviewB/finalConclusion.ts \
   frontend/src/views/AIReviewB/finalConclusionDecoupling.test.ts
 git commit -m "feat: submit Review B conclusions by project node"
 ```
@@ -311,10 +343,18 @@ def test_node_review_opinion_does_not_mutate_running_review_run() -> None:
         "revision": 1,
     }
     repo.state["review_runs"].insert(0, run)
+    workspace = assert_ok(client.get(
+        f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+        headers=HEADERS,
+    ))
 
     response = assert_ok(client.post(
         f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-opinions",
-        headers={**HEADERS, "Idempotency-Key": "review-b-node-opinion-independent"},
+        headers={
+            **HEADERS,
+            "Idempotency-Key": "review-b-node-opinion-independent",
+            "If-Match": workspace["project"]["etag"],
+        },
         json={"result": "证据不足", "opinion": "先形成节点人工结论", "evidenceLinkIds": []},
     ))
 

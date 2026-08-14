@@ -162,6 +162,50 @@ def test_review_b_latest_human_decision_prefers_node_review_opinion() -> None:
     assert workspace["latestHumanDecision"] == opinion
 
 
+def test_node_review_opinion_does_not_mutate_running_review_run() -> None:
+    repo.state["review_runs"] = [
+        item
+        for item in repo.state["review_runs"]
+        if item.get("projectId") != PROJECT_ID
+        or int(item.get("nodeId") or 0) != NODE_ID
+    ]
+    run = {
+        "id": "RRUN-DECOUPLE-INVARIANT",
+        "reviewRunId": "RRUN-DECOUPLE-INVARIANT",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "status": "running",
+        "revision": 1,
+    }
+    repo.state["review_runs"].insert(0, run)
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+
+    response = assert_ok(
+        client.post(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-opinions",
+            headers={
+                **HEADERS,
+                "Idempotency-Key": "review-b-node-opinion-independent",
+                "If-Match": workspace["project"]["etag"],
+            },
+            json={
+                "result": "证据不足",
+                "opinion": "先形成节点人工结论",
+                "evidenceLinkIds": [],
+            },
+        )
+    )
+
+    assert response["opinion"]["result"] == "证据不足"
+    assert run["status"] == "running"
+    assert "humanDecision" not in run
+
+
 def test_review_b_routes_and_api_are_limited_to_inspection_role() -> None:
     routes = assert_ok(client.get("/api/auth/routes?role=inspection"))
     assert "/ai-review-b" in [route["path"] for route in routes]
