@@ -1,4 +1,6 @@
-# 监检人员默认进入 AI 审查页实施计划
+# 监检人员默认进入 AI 审查页实施计划（已废弃）
+
+> 本计划对应整页默认路由方案，已被 `2026-08-13-inspection-inline-ai-review.md` 取代，不得执行。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
