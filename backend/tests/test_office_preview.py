@@ -15,7 +15,10 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 
-import apps.api.routes as routes_module
+# Office 预览已从 routes.py 拆到独立模块（issue #12 A-2 的增量拆分）。
+# monkeypatch 必须打在真正持有这些符号的模块上——打在 routes 上不会报错，
+# 只是替身没生效、用例静默测了真实实现。
+import apps.api.office_preview_routes as routes_module
 from apps.api.main import app
 from libs.db.repository import repo
 from libs.office_preview import (
@@ -172,7 +175,7 @@ def test_cache_hit_requires_the_object_to_actually_exist() -> None:
 
     这是最贵的那种失败：所有信号都说成功了。
     """
-    from apps.api import routes
+    from apps.api import office_preview_routes as routes
 
     calls: list[tuple[str, str]] = []
 
@@ -195,7 +198,7 @@ def test_cache_hit_requires_the_object_to_actually_exist() -> None:
 
 def test_metadata_lookup_error_is_treated_as_cache_miss() -> None:
     """查不动就当没有：多转一次浪费几秒，判成「有」则是返回一个坏链接。"""
-    from apps.api import routes
+    from apps.api import office_preview_routes as routes
 
     class _Storage:
         def object_metadata(self, bucket: str, object_name: str) -> None:

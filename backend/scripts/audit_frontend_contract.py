@@ -6,14 +6,13 @@ import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from apps.api.main import app
 from apps.api.routes import mock_router, router
-
 
 REQUEST_PATTERN = re.compile(
     r"request\.(get|post|put|patch|delete)(?:<[^>()]*>)?\s*\(\s*\{.*?url\s*:\s*([`'\"])(.*?)\2",
@@ -113,7 +112,7 @@ def backend_route_keys() -> set[tuple[str, str]]:
                 continue
             keys.add((method, normalize_path(path)))
     for api_router, prefixes in ((router, ("", "/api")), (mock_router, ("", "/api"))):
-        for route in api_router.routes:
+        for route in expanded_routes(api_router):
             methods = getattr(route, "methods", set()) or set()
             path = getattr(route, "path", "")
             if not path:
@@ -144,6 +143,27 @@ def path_pattern_matches(backend_path: str, frontend_path: str) -> bool:
     if len(backend_parts) != len(frontend_parts):
         return False
     return all(backend == "{}" or frontend == "{}" or backend == frontend for backend, frontend in zip(backend_parts, frontend_parts))
+
+
+def expanded_routes(api_router: Any) -> list[Any]:
+    """展开 include_router 挂进来的子路由。
+
+    FastAPI 0.138 的 include_router 是惰性的：router.routes 里留下的是没有 .path
+    的 _IncludedRouter 占位。原先这里 `if not path: continue` 会把它整段静默跳过——
+    于是拆分出去的端点在契约审计眼里等于「后端没有」，前端调用被报成缺失。
+
+    静默跳过比报错更贵：审计工具自己漏看了东西，却照常输出一份「已审计」的结论。
+    """
+    collected: list[Any] = []
+    for route in getattr(api_router, "routes", []) or []:
+        if getattr(route, "path", ""):
+            collected.append(route)
+            continue
+        # FastAPI 0.138 的占位类把子路由挂在 original_router 上（不是 router）
+        nested = getattr(route, "original_router", None) or getattr(route, "router", None)
+        if nested is not None:
+            collected.extend(expanded_routes(nested))
+    return collected
 
 
 def audit(frontend_root: Path, patterns: Iterable[str], *, include_mock: bool = False) -> AuditResult:

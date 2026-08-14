@@ -13,7 +13,6 @@ import subprocess
 import tempfile
 import threading
 import time
-import urllib.request
 import zipfile
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
@@ -35,6 +34,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
+from apps.api.office_preview_routes import router as office_preview_router
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from apps.ocr_service.utils import parse_bool
@@ -61,6 +61,7 @@ from libs.business_pack.clause_store import (
     bind_project_node_clause_packages,
     clause_package_snapshot_for_project_node,
 )
+from libs.content_hash import normalized_content_hash
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import (
@@ -112,13 +113,6 @@ from libs.material_targeting import (
 from libs.model_usage import normalize_model_usage
 from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.ocr_structured_view import build_ocr_structured_view
-from libs.office_preview import (
-    CONVERTIBLE_SUFFIXES,
-    OfficeConversionFailed,
-    OfficeConversionUnavailable,
-    convert_office_to_pdf,
-    office_preview_available,
-)
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
 from libs.raw_vault import (
     capture_agent_turn,
@@ -6800,20 +6794,6 @@ def upload_session_state_records(session_id: str) -> dict[str, list[dict[str, An
     }
 
 
-def normalized_content_hash(value: Any) -> str:
-    """把内容哈希归一到纯十六进制，便于比较。
-
-    两边格式本来就不一致：经 API 中转的上传写入 "sha256-<hex>"，而客户端
-    （以及直传路径）算的是裸 <hex>。原先那条一致性校验因为字段名错配从没生效，
-    这个差异一直被掩盖着；一旦校验开始工作，每次上传都会误报「哈希不一致」。
-    """
-    text = str(value or "").strip().lower()
-    for prefix in ("sha256-", "sha256:"):
-        if text.startswith(prefix):
-            return text[len(prefix):]
-    return text
-
-
 def validate_upload_session_completion(
     session: dict[str, Any],
     body: dict[str, Any],
@@ -7867,198 +7847,6 @@ def document_read_scope_error(request: Request, project_id: str, document_id: st
         project_id,
         effective_role_for_request(request)[0],
         node_ids=document_node_ids(project_id, document_id),
-    )
-
-
-OFFICE_PREVIEW_BUCKET = "documents"
-
-
-def office_preview_object_name(document_id: str, content_hash: str) -> str:
-    """转换产物的对象名。
-
-    按内容哈希命名：同一版本只转一次，内容变了哈希就变、缓存自然失效，
-    不需要手动清理。
-    """
-    return f"office-preview/{document_id}/{content_hash}.pdf"
-
-
-def ensure_office_preview_pdf(document: dict[str, Any], file_name: str) -> bytes:
-    """确保转换产物存在并返回 PDF 字节。已有缓存则直接取回。"""
-    version = repo.current_version(str(document.get("id") or "")) or {}
-    content_hash = normalized_content_hash(version.get("hash"))
-    object_name = office_preview_object_name(str(document.get("id") or ""), content_hash)
-    if office_preview_cached(object_name):
-        return object_storage.get_bytes(OFFICE_PREVIEW_BUCKET, object_name)
-    source_url = repo.document_storage_url(document, fallback_prefix="preview")
-    source_signed = object_storage.presigned_get_url(source_url, internal=True)
-    if not source_signed:
-        raise OfficeConversionFailed("该资料没有可用的存储对象，无法预览。")
-    with urllib.request.urlopen(source_signed, timeout=60) as response:
-        source_bytes = response.read()
-    pdf_bytes = convert_office_to_pdf(source_bytes, file_name)
-    object_storage.put_bytes(
-        OFFICE_PREVIEW_BUCKET, object_name, pdf_bytes, content_type="application/pdf"
-    )
-    return pdf_bytes
-
-
-def office_preview_cached(object_name: str) -> bool:
-    """转换产物是否已在对象存储里。
-
-    必须实查 stat，不能拿 presigned_get_url 的返回值当判据：签发是纯计算，
-    对不存在的对象照样给出一个合法 URL。踩过这个坑——接口返回 200 带地址，
-    前端取回 404，而转换从头到尾没执行过。
-    """
-    try:
-        return bool(object_storage.object_metadata(OFFICE_PREVIEW_BUCKET, object_name))
-    except ObjectStorageUnavailable:
-        raise
-    except Exception:  # noqa: BLE001 — 存储侧异常五花八门（网络、权限、S3Error），
-        # 这里不关心是哪一种：查不动就当没有。多转一次只浪费几秒，
-        # 判成「有」则是返回一个坏链接，代价不对等。
-        return False
-
-
-@router.get("/projects/{project_id}/documents/{document_id}/office-preview/content")
-def document_office_preview_content(request: Request, project_id: str, document_id: str):
-    """直接返回转换后的 PDF 字节。
-
-    不能给前端一个 MinIO 预签名地址：那个地址是 http://127.0.0.1:19000/...，
-    指向的是**服务器自己的回环**，用户浏览器根本到不了——线上实测过，接口 200、
-    地址合法，浏览器一取就失败，界面显示「Office 预览服务不可用」，而服务好好的。
-
-    已经能用的 PDF/图片预览走的就是「经 API 取字节 → 前端 createObjectURL」，
-    这里沿用同一套路：MinIO 不必对外暴露，鉴权也仍在 API 这一层。
-    """
-    scope_error = document_read_scope_error(request, project_id, document_id)
-    if scope_error:
-        return scope_error
-    document = repo.find_one("documents", document_id)
-    if not document:
-        return fail(errors.NOT_FOUND, request)
-    if not office_preview_available():
-        return fail(
-            errors.OFFICE_PREVIEW_UNAVAILABLE,
-            request,
-            message="Office 预览服务未就绪（运行环境缺少 LibreOffice）。",
-            http_status=503,
-        )
-    file_name = str(document.get("fileName") or "")
-    suffix = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-    if suffix not in CONVERTIBLE_SUFFIXES:
-        return fail(
-            errors.VALIDATION_ERROR,
-            request,
-            message=f"{suffix or '该'} 格式不支持 Office 在线预览。",
-        )
-    try:
-        pdf_bytes = ensure_office_preview_pdf(document, file_name)
-    except (OfficeConversionUnavailable, OfficeConversionFailed) as exc:
-        return fail(
-            errors.OFFICE_PREVIEW_UNAVAILABLE, request, message=str(exc), http_status=503
-        )
-    except ObjectStorageUnavailable as exc:
-        return fail(
-            errors.OBJECT_STORAGE_REQUIRED,
-            request,
-            message=str(exc) or "对象存储不可用，无法生成预览。",
-            http_status=503,
-        )
-    if not pdf_bytes:
-        return fail(
-            errors.OFFICE_PREVIEW_UNAVAILABLE,
-            request,
-            message="Office 转换未产出内容。",
-            http_status=503,
-        )
-    return Response(content=pdf_bytes, media_type="application/pdf")
-
-
-@router.get("/projects/{project_id}/documents/{document_id}/office-preview")
-def document_office_preview(request: Request, project_id: str, document_id: str):
-    """Office 文件的在线预览：转成 PDF，复用已验证可用的 PDF 预览路径。
-
-    这个项目的资料全是 .docx，此前在系统里完全无法查看——界面只提示「请下载后用
-    Word 打开」，监检得离开系统、在本地比对，再回来填结论。
-
-    先接过 ONLYOFFICE Document Server，卡在转换器 error:-7 未果（详见
-    libs/office_preview.py 的说明），改用 LibreOffice headless 转 PDF。
-    """
-    scope_error = document_read_scope_error(request, project_id, document_id)
-    if scope_error:
-        return scope_error
-    document = repo.find_one("documents", document_id)
-    if not document:
-        return fail(errors.NOT_FOUND, request)
-
-    if not office_preview_available():
-        return fail(
-            errors.OFFICE_PREVIEW_UNAVAILABLE,
-            request,
-            message="Office 预览服务未就绪（运行环境缺少 LibreOffice）。",
-            data={"reason": "LIBREOFFICE_NOT_INSTALLED"},
-            http_status=503,
-        )
-
-    file_name = str(document.get("fileName") or "")
-    suffix = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-    if suffix not in CONVERTIBLE_SUFFIXES:
-        return fail(
-            errors.VALIDATION_ERROR,
-            request,
-            message=f"{suffix or '该'} 格式不支持 Office 在线预览。",
-            data={"fileName": file_name, "suffix": suffix},
-        )
-
-    version = repo.current_version(document_id) or {}
-    content_hash = normalized_content_hash(version.get("hash"))
-    if not content_hash:
-        return fail(
-            errors.NOT_FOUND,
-            request,
-            message="该资料没有可用的存储对象，无法预览。",
-            data={"reason": "STORAGE_OBJECT_MISSING"},
-        )
-
-    try:
-        # 先把转换做掉（有缓存就直接命中），失败要在这里就报出来，
-        # 而不是给前端一个地址、让它取的时候才发现是空的。
-        ensure_office_preview_pdf(document, file_name)
-    except OfficeConversionUnavailable as exc:
-        return fail(
-            errors.OFFICE_PREVIEW_UNAVAILABLE,
-            request,
-            message=str(exc),
-            data={"reason": "LIBREOFFICE_NOT_INSTALLED"},
-            http_status=503,
-        )
-    except OfficeConversionFailed as exc:
-        return fail(
-            errors.OFFICE_PREVIEW_UNAVAILABLE,
-            request,
-            message=str(exc),
-            data={"reason": "OFFICE_CONVERSION_FAILED"},
-            http_status=503,
-        )
-    except ObjectStorageUnavailable as exc:
-        return fail(
-            errors.OBJECT_STORAGE_REQUIRED,
-            request,
-            message=str(exc) or "对象存储不可用，无法生成预览。",
-            http_status=503,
-        )
-
-    return ok(
-        {
-            "previewType": "pdf",
-            # 给 API 路径而不是 MinIO 预签名地址：后者是服务器回环，浏览器到不了
-            "url": f"/api/projects/{project_id}/documents/{document_id}/office-preview/content",
-            "fileName": f"{Path(file_name).stem or document_id}.pdf",
-            "sourceFileName": file_name,
-            "readonly": True,
-            "convertedFrom": suffix,
-        },
-        request,
     )
 
 
@@ -32224,3 +32012,10 @@ def admin_generic_list(
     collection = admin_collection_for(kind)
     items = repo.state["admin_config"].get(collection, [])
     return ok(page(repo.clone(items), page_no, page_size), request)
+
+
+# Office 预览按业务域拆到独立模块（issue #12 A-2 的增量拆分）。
+# 必须挂在文件末尾：include_router 是「拷贝当下已注册的路由」，
+# 放在 router 定义处会在子模块装饰器执行前就拷贝，结果一条也挂不上——
+# 而且不会报错，只是那几个端点 404。踩过一次。
+router.include_router(office_preview_router)
