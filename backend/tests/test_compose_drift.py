@@ -17,6 +17,7 @@ from scripts.compose_drift_check import (
     UNRESOLVED_DRIFT,
     declared_services,
     drift,
+    gateway_exemption,
 )
 
 # 2026-08-13 线上实测的容器清单
@@ -57,6 +58,41 @@ def test_gateway_and_office_are_declared() -> None:
     assert "onlyoffice" in services
 
 
+def test_模型网关豁免是查出来的不是写死的() -> None:
+    """这条 2026-08-14 走过一整圈：一句没验证的手写理由按掉真警报，静默四天。
+
+    修好之后如果再写一句「已改直连，故不需要网关」，仍然是会过期的手写理由——
+    有人把模式改回 server，那句话立刻变成谎言，而检查依旧安静。
+    所以豁免要去查生产配置的实际声明。
+    """
+    from pathlib import Path as _Path
+    from tempfile import TemporaryDirectory
+
+    # 当前生产声明为直连 → 网关可以合法缺席
+    assert "official_api" in gateway_exemption()
+    assert "deepseek" in gateway_exemption()
+
+    with TemporaryDirectory() as tmp:
+        # 改回网关模式 → 豁免立刻失效
+        gateway = _Path(tmp) / "builder.py"
+        gateway.write_text('"AICHECK_QWEN_CALL_MODE": "server",\n', encoding="utf-8")
+        assert gateway_exemption(gateway) == ""
+
+        # 声明成直连却把地址指回网关：配置自相矛盾，不给豁免
+        contradictory = _Path(tmp) / "c.py"
+        contradictory.write_text(
+            '"AICHECK_QWEN_CALL_MODE": "official_api",\n'
+            '"AICHECK_LLM_API_BASE": "http://litellm-service:4000",\n',
+            encoding="utf-8",
+        )
+        assert gateway_exemption(contradictory) == ""
+
+        # 声明了模式却没有地址，也不算配好
+        no_base = _Path(tmp) / "n.py"
+        no_base.write_text('"AICHECK_QWEN_CALL_MODE": "official_api",\n', encoding="utf-8")
+        assert gateway_exemption(no_base) == ""
+
+
 def test_unresolved_drift_only_shrinks() -> None:
     """未决漂移是棘轮：只能删，不能加。
 
@@ -64,7 +100,7 @@ def test_unresolved_drift_only_shrinks() -> None:
     等于把「暂时不管」变成常态——litellm 缺失静默四天，正是因为它当时被写进了
     「有意不跑」的豁免表，还配了一条我没验证过的理由。
     """
-    assert set(UNRESOLVED_DRIFT) == {"litellm-service"}, (
+    assert set(UNRESOLVED_DRIFT) == set(), (
         "未决漂移清单变了。删除条目=问题已解决，欢迎；"
         "新增条目=请先确认这真的没法当场解决，再连同决定选项一起写进理由。"
     )
@@ -75,12 +111,12 @@ def test_unresolved_drift_only_shrinks() -> None:
         assert len(note) >= 40, f"{name} 的说明太短，读的人无法据此决策"
 
 
-def test_unresolved_is_reported_separately_from_missing() -> None:
-    """未决项不能混进 missing——老问题会一直盖着新问题。"""
+def test_网关缺席不再报成漂移() -> None:
+    """决定已经做出并在线上验证：official_api 直连 DeepSeek。"""
     report = drift(PRODUCTION_CONTAINERS, declared_services())
-    assert "aicheck-litellm" in report["unresolved"]
     assert "aicheck-litellm" not in report["missing"]
-    # 也不能悄悄进「有意不跑」——那是「就这么定了」的意思
+    assert "aicheck-litellm" not in report["unresolved"]
+    # 但不能靠塞进「有意不跑」的手写名单来实现——那正是当初出事的做法
     assert "litellm-service" not in INTENTIONALLY_ABSENT
 
 

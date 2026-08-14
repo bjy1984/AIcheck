@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -89,15 +90,47 @@ INTENTIONALLY_ABSENT = {
 #
 # 放这里而不是塞回豁免表，是因为豁免表意味着「不用管了」——正是那个态度让
 # litellm 缺失静默了四天。
-UNRESOLVED_DRIFT = {
-    "litellm-service": (
-        "生产无模型网关：镜像 ghcr.io/berriai/litellm 境内拉不到，容器从未创建。"
-        "而历史上真正跑通的 4 次模型调用走的是 official_api 直连 DashScope"
-        "（2026-07-21 至 08-10），说明 compose 声明的拓扑与实际意图本就不一致。"
-        "待定：恢复 official_api 直连（需 QWEN_API_KEY），或换可达镜像把网关立起来。"
-        "在决定之前，模型相关功能一律降级，降级文案见 libs/review_conversation_fallback。"
-    ),
-}
+UNRESOLVED_DRIFT: dict[str, str] = {}
+
+
+# 模型网关的豁免不写死成一句话，而是**去查生产配置**。
+#
+# 这条 2026-08-14 走过一整圈：先是被我用一句没验证的「模型直连供应商」按掉警报，
+# 静默四天无模型可用；查清后先登记为「未决」；当天决定改走 official_api 直连
+# DeepSeek，并在线上实测通过（deepseek-v4-pro，真实 token 计数）。
+#
+# 如果这时再写一句「已改直连，故不需要网关」——就又变回一句会过期的手写理由：
+# 哪天有人把 AICHECK_QWEN_CALL_MODE 改回 server，这句话立刻变成谎言，
+# 而漂移检查仍然安静。
+#
+# 所以改成从 deploy/build_runtime_env.py 里读实际声明。那个文件是生产 env 的
+# 唯一生成处（也已纳入版本管理），配置一旦改回网关模式，豁免自动失效、检查变红。
+_GATEWAY_CONSUMERS = {"litellm-service"}
+
+
+def model_path_declaration(builder_path: Path | None = None) -> dict[str, str]:
+    """读生产 env 生成器里声明的模型链路配置。"""
+    path = builder_path or (BACKEND_ROOT / "deploy" / "build_runtime_env.py")
+    source = path.read_text(encoding="utf-8")
+    declared: dict[str, str] = {}
+    for key in ("AICHECK_QWEN_CALL_MODE", "AICHECK_LLM_API_BASE"):
+        match = re.search(rf'"{key}":\s*"([^"]*)"', source)
+        if match:
+            declared[key] = match.group(1)
+    return declared
+
+
+def gateway_exemption(builder_path: Path | None = None) -> str:
+    """模型网关是否可以合法缺席。可以则返回理由，不可以返回空串。"""
+    declared = model_path_declaration(builder_path)
+    mode = declared.get("AICHECK_QWEN_CALL_MODE", "")
+    base = declared.get("AICHECK_LLM_API_BASE", "")
+    if mode != "official_api" or not base:
+        return ""
+    if "litellm" in base:
+        # 声明成直连却指回网关，说明配置自相矛盾，不给豁免
+        return ""
+    return f"生产声明为 official_api 直连（{base}），不经网关；见 deploy/build_runtime_env.py"
 
 
 def declared_services(compose_path: Path | None = None) -> dict[str, Any]:
@@ -116,6 +149,8 @@ def drift(running: set[str], services: dict[str, Any]) -> dict[str, list[str]]:
     合成一类的话，老问题会一直盖着新问题。
     """
     exempt = set(INTENTIONALLY_ABSENT) | set(UNRESOLVED_DRIFT)
+    if gateway_exemption():
+        exempt |= _GATEWAY_CONSUMERS
     expected = {
         SERVICE_TO_CONTAINER.get(name, f"aicheck-{name}")
         for name in services
@@ -165,8 +200,11 @@ def main() -> int:
         if container in report["unresolved"]:
             print(f"  ⏳ 已知未决：{container}")
             print(f"     {note}")
+    exemption = gateway_exemption()
+    if exemption and SERVICE_TO_CONTAINER["litellm-service"] not in running:
+        print(f"  · 模型网关缺席已核验：{exemption}")
     if not report["missing"] and not report["undeclared"]:
-        print("  ✓ 声明与现实一致（已知未决项除外）")
+        print("  ✓ 声明与现实一致" + ("（已知未决项除外）" if report["unresolved"] else ""))
     return 1 if (args.strict and (report["missing"] or report["undeclared"])) else 0
 
 
