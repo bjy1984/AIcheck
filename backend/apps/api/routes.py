@@ -9903,6 +9903,7 @@ def review_workspace_payload(
             "canStartReview": can_review and bool(available_modes),
             "canSubmitHumanInput": can_review and bool(active_task),
             "canSubmitHumanDecision": can_review and run_status == "waiting_human_review",
+            "canSubmitReviewOpinion": can_review,
             "canManageEvidence": can_review,
         },
         "evidenceReadiness": repo.clone(evidence_readiness),
@@ -9913,7 +9914,11 @@ def review_workspace_payload(
         "session": review_session_view(session) if session else None,
         "activeReviewRun": review_run_view(review_run) if review_run else None,
         "activeHumanInputTask": active_task,
-        "latestHumanDecision": repo.clone((review_run or {}).get("humanDecision")) or (review_opinions[0] if review_opinions else None),
+        "latestHumanDecision": (
+            repo.clone(review_opinions[0])
+            if review_opinions
+            else repo.clone((review_run or {}).get("humanDecision"))
+        ),
         "contextSummary": {
             "currentTask": current_task,
             "selectedEvidenceCount": len(selected_evidence),

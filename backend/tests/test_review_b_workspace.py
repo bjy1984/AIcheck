@@ -85,6 +85,83 @@ def test_review_b_workspace_creates_and_recovers_node_session() -> None:
     assert after["contextSummary"]["currentTask"] == "核对设计单位许可证"
 
 
+@pytest.mark.parametrize(
+    "run_status",
+    [
+        None,
+        "queued",
+        "running",
+        "waiting_human_input",
+        "waiting_human_review",
+        "failed",
+        "cancelled",
+    ],
+)
+def test_review_b_node_conclusion_permission_is_independent_of_review_run(
+    run_status,
+) -> None:
+    repo.state["review_runs"] = [
+        item
+        for item in repo.state["review_runs"]
+        if item.get("projectId") != PROJECT_ID
+        or int(item.get("nodeId") or 0) != NODE_ID
+    ]
+    if run_status:
+        repo.state["review_runs"].insert(
+            0,
+            {
+                "id": f"RRUN-DECOUPLE-{run_status}",
+                "reviewRunId": f"RRUN-DECOUPLE-{run_status}",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "status": run_status,
+                "revision": 1,
+            },
+        )
+
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+
+    assert workspace["permissions"]["canSubmitReviewOpinion"] is True
+
+
+def test_review_b_latest_human_decision_prefers_node_review_opinion() -> None:
+    repo.state["review_runs"].insert(
+        0,
+        {
+            "id": "RRUN-DECOUPLE-PRECEDENCE",
+            "reviewRunId": "RRUN-DECOUPLE-PRECEDENCE",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "status": "accepted_by_human",
+            "humanDecision": {"decision": "accept", "comment": "AI feedback only"},
+            "revision": 1,
+        },
+    )
+    opinion = {
+        "id": "OPN-DECOUPLE",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "result": "证据不足",
+        "opinion": "节点正式结论",
+        "createdAt": "2026-08-14 12:00:00",
+    }
+    repo.state["review_opinions"].insert(0, opinion)
+
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+
+    assert workspace["latestHumanDecision"] == opinion
+
+
 def test_review_b_routes_and_api_are_limited_to_inspection_role() -> None:
     routes = assert_ok(client.get("/api/auth/routes?role=inspection"))
     assert "/ai-review-b" in [route["path"] for route in routes]
