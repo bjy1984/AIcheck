@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 EXTERNAL_REGISTRY_TOOL_NAMES = frozenset(
     {
         "search_cnse_organizations",

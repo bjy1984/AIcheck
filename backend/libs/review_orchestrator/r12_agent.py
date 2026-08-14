@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from libs.contracts.responses import server_time
 
-
 R12_NODE_ID = 12
 R12_TASK_TYPE = "official_registry_license_verification"
 R12_VERIFICATION_OUTCOMES = {

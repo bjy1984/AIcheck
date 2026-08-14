@@ -6,7 +6,6 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
-
 RESULT_SCHEMA = "deterministic-tool-result-v1"
 
 

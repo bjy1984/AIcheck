@@ -12,7 +12,6 @@ from libs.review_orchestrator.material_facts import (
     material_document_kind,
 )
 
-
 R18_NODE_ID = 18
 
 

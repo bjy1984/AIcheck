@@ -6,7 +6,6 @@ from typing import Any
 
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
 
-
 R13_NODE_ID = 13
 
 

@@ -16,13 +16,12 @@ from libs.review_orchestrator.r13_facts import (
     _file_name,
     _normalized_business_row,
     _present,
-    _record_evidence,
     _r13_document_kind,
+    _record_evidence,
     _unique_evidence_refs,
     _unique_records,
     _value,
 )
-
 
 R15_NODE_ID = 15
 

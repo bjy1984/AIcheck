@@ -53,10 +53,21 @@ TRACKED_FILES = (
 
 
 def measure_file(path: Path) -> dict[str, int]:
+    """量一个文件。
+
+    行数不含空行与纯注释行：ruff --fix 会把一行长导入拆成六行，那是格式化噪音，
+    不是巨石长大。第一次冻基线后就被这种噪音误报过一次——棘轮报的必须是
+    「代码变多了」，报格式变动只会让人学会忽略它。
+    """
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8")
-    metrics = {"lines": len(text.splitlines())}
+    code_lines = [
+        line
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "//"))
+    ]
+    metrics = {"lines": len(code_lines)}
     if path.suffix == ".py":
         metrics["directStateAccess"] = len(DIRECT_ACCESS_PATTERN.findall(text))
         metrics["directStateWrite"] = len(DIRECT_WRITE_PATTERN.findall(text))

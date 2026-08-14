@@ -17,7 +17,6 @@ from libs.review_orchestrator.r13_facts import (
     _value,
 )
 
-
 R14_NODE_ID = 14
 
 _REPORT_TYPE_MARKERS = {

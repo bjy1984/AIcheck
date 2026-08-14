@@ -7,7 +7,6 @@ from uuid import uuid4
 from libs.contracts.responses import server_time
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 
-
 R19_NODE_ID = 19
 R19_EXECUTION_MODE = "llm_semantic_primary"
 R19_TASK_TYPE = "r19_semantic_evidence_confirmation"

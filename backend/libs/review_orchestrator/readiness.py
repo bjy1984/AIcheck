@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 REVIEW_SCORECARD_V2_WEIGHTS = {
     "detection": 30,
     "evidence": 25,

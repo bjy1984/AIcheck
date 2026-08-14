@@ -3,10 +3,19 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
-from libs.review_orchestrator.material_facts import build_material_judgment, deduplicate, iter_requested_parse_results
+from libs.review_orchestrator.material_facts import (
+    build_material_judgment,
+    deduplicate,
+    iter_requested_parse_results,
+)
 from libs.review_orchestrator.r12_agent import stable_payload_hash
-from libs.review_orchestrator.r13_facts import _common_document_fields, _file_name, _normalized_business_row, _record_evidence, _value
-
+from libs.review_orchestrator.r13_facts import (
+    _common_document_fields,
+    _file_name,
+    _normalized_business_row,
+    _record_evidence,
+    _value,
+)
 
 NODE_CONFIG: dict[str, dict[str, tuple[str, ...]]] = {
     "r24": {"certificates": ("welder_certificate",), "workItems": ("welding_record",)},

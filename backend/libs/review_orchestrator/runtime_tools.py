@@ -6,13 +6,6 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
-from libs.integrations.external_registry_queries import (
-    query_cnse_organizations,
-    query_cnse_persons,
-    query_standard_search,
-    query_standard_status,
-)
 from libs.integrations.cnse_client import (
     CnseConfigurationError,
     CnseProtocolError,
@@ -21,6 +14,12 @@ from libs.integrations.cnse_client import (
     normalize_id_number,
     normalize_keyword,
 )
+from libs.integrations.external_registry_queries import (
+    query_cnse_organizations,
+    query_cnse_persons,
+    query_standard_search,
+    query_standard_status,
+)
 from libs.integrations.std_samr_client import (
     StdSamrConfigurationError,
     StdSamrProtocolError,
@@ -28,13 +27,13 @@ from libs.integrations.std_samr_client import (
     normalize_standard_ref,
     parse_review_date,
 )
+from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
 from libs.review_orchestrator.deterministic_tools import (
     DETERMINISTIC_TOOL_DESCRIPTORS,
     DETERMINISTIC_TOOL_NAMES,
     dispatch_deterministic_tool,
 )
 from libs.review_tools import BUSINESS_TOOL_DESCRIPTORS, BUSINESS_TOOL_NAMES, dispatch_business_tool
-
 
 RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
     {

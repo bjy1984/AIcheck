@@ -7,26 +7,38 @@ import re
 from typing import Any
 from uuid import uuid4
 
-from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, build_ai_review_prompt, load_business_pack, matching_rule_for_node
+from libs.audit_runtime import (
+    audit_runtime_config,
+    audit_runtime_for_run,
+    audit_runtime_public_config,
+)
+from libs.business_pack import (
+    DEFAULT_BUSINESS_PACK_ID,
+    build_ai_review_prompt,
+    load_business_pack,
+    matching_rule_for_node,
+)
 from libs.business_pack.clause_store import (
     freeze_review_run_clause_snapshot,
     review_run_clause_snapshot,
 )
 from libs.contracts.responses import server_time
-from libs.audit_runtime import audit_runtime_config, audit_runtime_for_run, audit_runtime_public_config
 from libs.db.repository import flush_state_records, repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
-from libs.review_grounding import apply_grounding_guardrails, build_grounded_review_input, grounding_prompt_block
-from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.raw_vault import raw_context_from_record
+from libs.review_grounding import (
+    apply_grounding_guardrails,
+    build_grounded_review_input,
+    grounding_prompt_block,
+)
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
     truncation_requirements,
 )
-from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
 from libs.review_orchestrator.r12_agent import (
     apply_r12_human_input,
@@ -42,6 +54,20 @@ from libs.review_orchestrator.r15_facts import build_r15_business_facts
 from libs.review_orchestrator.r16_facts import build_r16_business_facts
 from libs.review_orchestrator.r17_facts import build_r17_business_facts
 from libs.review_orchestrator.r18_facts import build_r18_business_facts
+from libs.review_orchestrator.r19_agent import (
+    R19_EXECUTION_MODE,
+    R19_REVIEW_QUESTIONS,
+    R19_TASK_TYPE,
+    apply_r19_human_input,
+    build_r19_agent_context,
+    ensure_r19_human_input_task,
+    is_r19_formal_review,
+    validate_r19_human_input,
+    validate_r19_semantic_submission,
+)
+from libs.review_orchestrator.r19_agent import (
+    context_for_model as r19_context_for_model,
+)
 from libs.review_orchestrator.r20_r23_facts import (
     build_r20_business_facts,
     build_r21_business_facts,
@@ -49,20 +75,10 @@ from libs.review_orchestrator.r20_r23_facts import (
     build_r23_business_facts,
 )
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
-from libs.review_orchestrator.r19_agent import (
-    R19_EXECUTION_MODE,
-    R19_REVIEW_QUESTIONS,
-    R19_TASK_TYPE,
-    apply_r19_human_input,
-    build_r19_agent_context,
-    context_for_model as r19_context_for_model,
-    ensure_r19_human_input_task,
-    is_r19_formal_review,
-    validate_r19_human_input,
-    validate_r19_semantic_submission,
-)
+from libs.review_orchestrator.retry_policy import has_review_retry_consumer
+from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
-from libs.raw_vault import raw_context_from_record
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 REVIEW_GRAPH_STEPS: list[dict[str, Any]] = [
@@ -1992,6 +2008,14 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         return {"reviewRunId": review_run_id, "status": review_run["status"]}
     except Exception as exc:
         retryable = review_failure_retryable(exc)
+        # 只有 Temporal 编排下才有东西真的会来重试（apps/review_worker/activities.py
+        # 是 retry_pending 的唯一消费方）。线上跑的是 inline 模式、根本没起
+        # review-worker——这时候标成 retry_pending，运行就永远停在那儿，而界面
+        # 显示「等待重试」，等的却是一个不存在的人。
+        #
+        # 没有重试者就不说等待重试：标成失败，并把 retryable 如实带出去，
+        # 由失败横幅给出「可以重跑」的按钮，让人自己决定要不要花这次成本。
+        retryable = retryable and has_review_retry_consumer()
         failure_status = "retry_pending" if retryable else "failed"
         error_code = (
             str(exc.reason)

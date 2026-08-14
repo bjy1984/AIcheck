@@ -358,18 +358,15 @@
  "libs/review_orchestrator/deterministic_tools.py": {
   "DTZ011": 1,
   "FURB157": 7,
-  "I001": 1,
   "RUF007": 1,
   "UP035": 1
  },
  "libs/review_orchestrator/dispatcher.py": {
-  "BLE001": 2,
-  "I001": 1
+  "BLE001": 2
  },
  "libs/review_orchestrator/execution.py": {
   "BLE001": 4,
   "C401": 1,
-  "I001": 1,
   "ISC004": 1
  },
  "libs/review_orchestrator/graph.py": {
@@ -377,50 +374,22 @@
   "UP035": 1
  },
  "libs/review_orchestrator/llm_tool_schemas.py": {
-  "I001": 1,
   "UP034": 3
  },
  "libs/review_orchestrator/material_facts.py": {
   "PIE810": 1
  },
- "libs/review_orchestrator/r12_agent.py": {
-  "I001": 1
- },
- "libs/review_orchestrator/r13_facts.py": {
-  "I001": 1
- },
- "libs/review_orchestrator/r14_facts.py": {
-  "I001": 1
- },
- "libs/review_orchestrator/r15_facts.py": {
-  "I001": 1
- },
- "libs/review_orchestrator/r16_facts.py": {
-  "I001": 1
- },
- "libs/review_orchestrator/r17_facts.py": {
-  "I001": 1
- },
- "libs/review_orchestrator/r18_facts.py": {
-  "I001": 1
- },
  "libs/review_orchestrator/r19_agent.py": {
-  "I001": 1,
   "PIE810": 1
  },
  "libs/review_orchestrator/r20_r23_facts.py": {
   "FURB167": 1
  },
  "libs/review_orchestrator/r24_r34_facts.py": {
-  "I001": 1,
   "PLC0206": 1,
   "UP035": 1
  },
- "libs/review_orchestrator/readiness.py": {
-  "I001": 1
- },
  "libs/review_orchestrator/runtime_tools.py": {
-  "I001": 1,
   "UP017": 1
  },
  "libs/review_tools/__init__.py": {
