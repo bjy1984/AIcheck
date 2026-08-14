@@ -182,14 +182,14 @@ def find_doclaynet_annotation(root: Path, *, split: str | None) -> Path | None:
             if str(term).casefold() in path.name.casefold():
                 try:
                     payload = json.loads(path.read_text(encoding="utf-8"))
-                except Exception:
+                except (ValueError, UnicodeDecodeError):
                     continue
                 if isinstance(payload, dict) and isinstance(payload.get("images"), list) and isinstance(payload.get("annotations"), list):
                     return path
     for path in candidates:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             continue
         if isinstance(payload, dict) and isinstance(payload.get("images"), list) and isinstance(payload.get("annotations"), list):
             return path

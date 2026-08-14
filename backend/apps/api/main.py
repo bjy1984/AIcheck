@@ -157,7 +157,7 @@ async def attach_operation_id(request: Request, call_next):
     if predecoded_claims is None and request.method == "POST" and canonical_path(request.url.path) == "/auth/login":
         try:
             login_payload = json.loads((await request.body()).decode("utf-8"))
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             login_payload = None
         requested_tenant_id = str((login_payload or {}).get("tenantId") or "").strip()
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", requested_tenant_id):
@@ -486,7 +486,7 @@ async def request_fingerprint(request: Request) -> str:
     else:
         try:
             parsed_body = json.loads(body.decode("utf-8"))
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             parsed_body = {
                 "kind": "binary",
                 "contentType": request.headers.get("Content-Type"),
@@ -624,7 +624,7 @@ async def finalize_mutation_response(request: Request, response: Response) -> Re
     )
     try:
         payload = json.loads(body.decode("utf-8")) if body else None
-    except Exception:
+    except (ValueError, UnicodeDecodeError):
         return replay_response
     if response.status_code == 200 and isinstance(payload, dict) and payload.get("code") == 0:
         if scope:

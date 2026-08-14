@@ -1778,7 +1778,7 @@ def litellm_client_contract_check(
     def success_transport(request: httpx.Request) -> httpx.Response:
         try:
             body = json.loads(request.content.decode("utf-8"))
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             body = {}
         requests.append(
             {

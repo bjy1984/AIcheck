@@ -264,7 +264,10 @@ def page_count(path: Path) -> int | None:
     try:
         with fitz.open(path) as document:
             return int(document.page_count)
-    except Exception:
+    except Exception:  # noqa: BLE001 - PyMuPDF 打不开的原因五花八门（损坏、加密、
+        # 非 PDF、底层 C 库异常），且都不该让整条采样流水线停下；
+        # 这里的语义就是「取不到页数就当没有」。
+        # 收窄成 (TypeError, ValueError) 试过——5 个测试当场变红。
         return None
 
 

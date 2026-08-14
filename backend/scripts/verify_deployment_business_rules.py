@@ -56,7 +56,7 @@ def call(method, path, *, role="inspection", body=None, action=None):
     except urllib.error.HTTPError as exc:
         try:
             return json.loads(exc.read().decode())
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             return {"code": exc.code, "data": {"reason": "HTTP_ERROR"}}
 
 

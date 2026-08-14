@@ -1,12 +1,12 @@
 {
  "apps/api/main.py": {
-  "BLE001": 9,
+  "BLE001": 6,
   "DTZ005": 1,
   "S110": 1
  },
  "apps/api/routes.py": {
   "B023": 3,
-  "BLE001": 24,
+  "BLE001": 23,
   "C405": 2,
   "S110": 3,
   "SIM101": 1,
@@ -35,10 +35,6 @@
   "B023": 15,
   "BLE001": 2,
   "S112": 1
- },
- "apps/ocr_service/public_benchmarks.py": {
-  "BLE001": 2,
-  "S112": 2
  },
  "apps/ocr_service/quality.py": {
   "BLE001": 3
@@ -187,7 +183,7 @@
   "FURB162": 1
  },
  "scripts/deployment_report.py": {
-  "BLE001": 23,
+  "BLE001": 22,
   "C405": 1
  },
  "scripts/document_ai_shadow_doctor.py": {
@@ -245,7 +241,7 @@
   "BLE001": 1
  },
  "scripts/ocr_100_ingest_samples.py": {
-  "BLE001": 2,
+  "BLE001": 1,
   "TRY004": 1
  },
  "scripts/ocr_100_label_studio_export.py": {
@@ -257,10 +253,6 @@
  },
  "scripts/ocr_100_label_studio_verify.py": {
   "BLE001": 2
- },
- "scripts/ocr_100_manifest_audit.py": {
-  "BLE001": 1,
-  "S112": 1
  },
  "scripts/ocr_100_prelabel_retry_plan.py": {
   "TRY004": 1
@@ -324,7 +316,7 @@
   "BLE001": 24
  },
  "scripts/verify_deployment_business_rules.py": {
-  "BLE001": 2
+  "BLE001": 1
  },
  "tests/test_business_today.py": {
   "UP017": 1

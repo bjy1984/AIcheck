@@ -153,7 +153,7 @@ def load_ocr_result(case_id: str, result_dirs: list[Path]) -> tuple[dict[str, An
                 continue
             try:
                 payload = json.loads(candidate.read_text(encoding="utf-8"))
-            except Exception:
+            except (ValueError, UnicodeDecodeError):
                 continue
             return payload if isinstance(payload, dict) else None, candidate
     return None, None

@@ -1110,7 +1110,7 @@ def parse_structured_business_rules(
 ) -> list[dict[str, Any]]:
     try:
         payload = json.loads(text) if source_file_name.lower().endswith(".json") else yaml.safe_load(text)
-    except Exception:
+    except (ValueError, UnicodeDecodeError):
         payload = None
     raw_rules: list[Any] = []
     if isinstance(payload, dict):
