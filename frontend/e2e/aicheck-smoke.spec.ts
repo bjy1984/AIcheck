@@ -190,12 +190,18 @@ const expectRouteVisible = async (page: Page, routeCase: RouteCase) => {
 
 const openRoute = async (page: Page, routeCase: RouteCase) => {
   await loginTo(page, routeCase.path)
+  if (routeCase.path === '/workbench/inspection') {
+    await page.getByRole('button', { name: '文件列表', exact: true }).click()
+    await page.waitForURL(/view=list/)
+  }
   await expectRouteVisible(page, routeCase)
 }
 
 const gotoRoute = async (page: Page, routeCase: RouteCase) => {
-  await page.goto(`/#${routeCase.path}`)
-  await page.waitForURL((url) => url.hash.includes(routeCase.path))
+  const targetPath =
+    routeCase.path === '/workbench/inspection' ? '/workbench/inspection?view=list' : routeCase.path
+  await page.goto(`/#${targetPath}`)
+  await page.waitForURL((url) => url.hash.includes(targetPath))
   await page.waitForLoadState('networkidle')
   await expectRouteVisible(page, routeCase)
 }
@@ -665,6 +671,97 @@ test.describe('AIcheck route smoke', () => {
       await expect(rolePage.getByText(routeCase.title).first()).toBeVisible()
       await context.close()
     }
+  })
+
+  test('inspection switches AI review and review list inside the same workspace', async ({
+    page
+  }) => {
+    await page.setViewportSize({ width: 1120, height: 900 })
+    await loginTo(page, '/workbench/inspection')
+    await expect(page.getByText('监检工作台').first()).toBeVisible()
+
+    const topActions = page.locator('.top-actions')
+    await expect(page.getByRole('button', { name: /待办消息/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: '文件预览', exact: true })).toHaveCount(0)
+    await expect
+      .poll(() =>
+        topActions.locator(':scope > *').evaluateAll((elements) => {
+          const tops = elements
+            .filter((element) => getComputedStyle(element).display !== 'none')
+            .map((element) => Math.round(element.getBoundingClientRect().top))
+          return new Set(tops).size
+        })
+      )
+      .toBe(1)
+
+    await page.getByRole('button', { name: /待办消息/ }).click()
+    const quickAccessDialog = page.getByRole('dialog', { name: '全局入口' })
+    await expect(quickAccessDialog.getByRole('tab', { name: /待办/ })).toBeVisible()
+    await expect(quickAccessDialog.getByRole('tab', { name: /消息/ })).toBeVisible()
+    await quickAccessDialog.getByRole('button', { name: 'Close' }).click()
+
+    await page.waitForURL((url) => {
+      const params = new URLSearchParams(url.hash.split('?')[1] || '')
+      return Boolean(params.get('projectId') && params.get('nodeId'))
+    })
+    const initialUrl = new URL(page.url())
+    const initialParams = new URLSearchParams(initialUrl.hash.split('?')[1] || '')
+    const projectId = initialParams.get('projectId')
+    const nodeId = initialParams.get('nodeId')
+
+    await expect(page.locator('.inspection-ai-review-region')).toBeVisible()
+    await expect(page.locator('.review-b-shell.is-embedded')).toBeVisible()
+    await expect(page.locator('.review-b-shell.is-embedded .context-chips')).toHaveCount(0)
+    await expect(page.locator('.review-b-shell.is-embedded .trace-collapse')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '查看执行轨迹' })).toHaveCount(0)
+    await expect(page.locator('#audit-node-navigation')).toHaveCount(1)
+    await expect(page.locator('.project-title-select')).toHaveCount(1)
+    await expectNoPageOverflow(page)
+
+    const center = page.locator('#aicheck-workbench-main')
+    const timeline = page.locator('.conversation-timeline')
+    const contextPanel = page.locator('.context-panel')
+    await expect
+      .poll(() =>
+        Promise.all([
+          center.evaluate((element) => getComputedStyle(element).overflowY),
+          timeline.evaluate((element) => getComputedStyle(element).overflowY),
+          contextPanel.evaluate((element) => getComputedStyle(element).overflowY)
+        ])
+      )
+      .toEqual(['hidden', 'auto', 'auto'])
+    const timelineTopBeforeRightScroll = await timeline.evaluate(
+      (element) => element.getBoundingClientRect().top
+    )
+    await contextPanel.evaluate((element) => {
+      element.scrollTop = Math.min(120, element.scrollHeight - element.clientHeight)
+    })
+    await expect
+      .poll(() => contextPanel.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0)
+    expect(await center.evaluate((element) => element.scrollTop)).toBe(0)
+    expect(await timeline.evaluate((element) => element.getBoundingClientRect().top)).toBe(
+      timelineTopBeforeRightScroll
+    )
+
+    await page.getByRole('button', { name: '文件列表', exact: true }).click()
+    await expect(page).toHaveURL(/#\/workbench\/inspection\?.*view=list/)
+    await expect(page.locator('.inspection-review-list-region')).toBeVisible()
+    await expect(page.locator('.inspection-ai-review-region')).toBeHidden()
+    expect(new URLSearchParams(page.url().split('?')[1] || '').get('projectId')).toBe(projectId)
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(page.locator('.inspection-review-list-region')).toBeVisible()
+    await expect(page.locator('.inspection-ai-review-region')).toBeHidden()
+
+    await page.getByRole('button', { name: 'AI审查', exact: true }).click()
+    await expect(page).toHaveURL(/#\/workbench\/inspection\?.*view=ai/)
+    await expect(page.locator('.inspection-ai-review-region')).toBeVisible()
+    await expect(page.locator('.inspection-review-list-region')).toBeHidden()
+    expect(new URLSearchParams(page.url().split('?')[1] || '').get('nodeId')).toBe(nodeId)
+
+    await page.setViewportSize({ width: 390, height: 900 })
+    await expectNoPageOverflow(page)
   })
 
   test('login business errors stay visible instead of resolving undefined data', async ({
@@ -1819,7 +1916,9 @@ test.describe('AIcheck business writeback flows', () => {
     await expect(reportUploadDrawer.getByLabel('报告编号')).toBeVisible()
     await expect(reportUploadDrawer.getByLabel('检测方法')).toBeVisible()
     await expect(reportUploadDrawer).toContainText('关联底片/影像')
-    await expect(reportUploadDrawer.getByRole('button', { name: '上传并生成检测报告' })).toBeVisible()
+    await expect(
+      reportUploadDrawer.getByRole('button', { name: '上传并生成检测报告' })
+    ).toBeVisible()
     await reportUploadDrawer.getByRole('button', { name: '取消' }).click()
 
     await page.setViewportSize({ width: 390, height: 900 })
