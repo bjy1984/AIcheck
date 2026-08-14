@@ -182,6 +182,14 @@ from libs.material_targeting import (
     set_node_evidence_link_manual_status,
 )
 from libs.model_usage import normalize_model_usage
+from libs.node_document_identity import (
+    document_ai_shadow_run_summary,
+    document_audit_pipeline_comparison_summary,
+    record_etag,
+    record_if_match_valid,
+    record_references_report,
+    record_revision,
+)
 from libs.ocr.utils import parse_bool
 from libs.ocr_expected_geometry import (
     expected_bbox_extents,
@@ -297,6 +305,7 @@ from libs.security.tenant import (
     tenant_id_for_record,
     tenant_is_allowed,
 )
+from libs.todo_visibility import visible_todos
 from scripts.ocr_100_action_board import (
     ACTION_BOARD_LANES,
     action_board_csv,
@@ -2920,12 +2929,8 @@ def bump_singleton_revision(config: dict[str, Any]) -> None:
     config["updatedAt"] = server_time()
 
 
-def record_revision(record: dict[str, Any]) -> int:
-    return int(record.get("revision") or 1)
 
 
-def record_etag(prefix: str, record: dict[str, Any]) -> str:
-    return f'W/"{prefix}-{record["id"]}-r{record_revision(record)}"'
 
 
 def versioned_record(prefix: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -2936,11 +2941,6 @@ def versioned_record(prefix: str, record: dict[str, Any]) -> dict[str, Any]:
     return cloned
 
 
-def record_if_match_valid(prefix: str, record: dict[str, Any], if_match: str | None) -> bool:
-    if not if_match:
-        return True
-    revision = record_revision(record)
-    return if_match in {"*", str(revision), f'W/"{revision}"', record_etag(prefix, record)}
 
 
 def review_run_precondition_error(
@@ -3515,8 +3515,6 @@ def record_node_ids(project_id: str, record: dict[str, Any]) -> set[int]:
     return node_ids
 
 
-def record_references_report(record: dict[str, Any]) -> bool:
-    return bool(record.get("reportId")) or record.get("targetType") == "report" or record.get("exportType") == "report"
 
 
 def ndt_film_node_ids(project_id: str, film_id: str | None) -> set[int]:
@@ -13349,6 +13347,11 @@ def save_fact_correction(
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/fact-corrections")
 def list_fact_corrections(request: Request, project_id: str, node_id: int, status: str | None = None):
+    # 与 ai-runs / review-opinions 同闸：这也是监检的工作过程，
+    # 被检方读到它等于看审查方的底稿（2026-08-14 审计 F-4）。
+    process_error = review_process_read_error(request, "监检对 OCR 事实的人工修正")
+    if process_error:
+        return process_error
     items = [
         repo.clone(item)
         for item in repo.state["fact_corrections"]
@@ -13736,6 +13739,11 @@ def standards(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/date-compare")
 def date_compare(request: Request, project_id: str, node_id: int):
+    # 与 ai-runs / review-opinions 同闸：这也是监检的工作过程，
+    # 被检方读到它等于看审查方的底稿（2026-08-14 审计 F-4）。
+    process_error = review_process_read_error(request, "日期比对分析")
+    if process_error:
+        return process_error
     version_ids = node_document_version_ids(project_id, node_id)
     scope = confirmed_node_evidence_scope(project_id, node_id)
     rows = []
@@ -13786,6 +13794,11 @@ def current_rule_version(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/inspection/nodes/{node_id}/review-log")
 def review_log(request: Request, project_id: str, node_id: int):
+    # 与 ai-runs / review-opinions 同闸：这也是监检的工作过程，
+    # 被检方读到它等于看审查方的底稿（2026-08-14 审计 F-4）。
+    process_error = review_process_read_error(request, "监检复核记录")
+    if process_error:
+        return process_error
     return ok([repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == project_id and int(item["nodeId"]) == int(node_id)], request)
 
 
@@ -15971,6 +15984,12 @@ def search(
 @router.get("/todos")
 def list_todos(request: Request, role: str | None = None, projectId: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
     items = [versioned_record("todo", item) for item in repo.state["todos"] if record_visible_for_request(request, item)]
+    # 按人过滤。此前监检方与施工方拿到的是逐条相同的同一批待办——
+    # 接口声明了 role 参数却从未使用（见 libs/todo_visibility 模块头）。
+    effective, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    items = visible_todos(items, getattr(request.state, "auth_user", None), str(effective or ""))
     if projectId:
         items = [item for item in items if item.get("projectId") == projectId]
     if status:
@@ -24448,44 +24467,6 @@ def fde_ocr_quality(
     return ok(fde_ocr_quality_snapshot(projectId, nodeId, profileId), request)
 
 
-def document_ai_shadow_run_summary(run: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: run.get(key)
-        for key in [
-            "id",
-            "runId",
-            "status",
-            "advisoryOnly",
-            "businessImpact",
-            "documentId",
-            "documentVersionId",
-            "parseResultId",
-            "profileId",
-            "templateVersion",
-            "fileName",
-            "operationId",
-            "taskId",
-            "remoteRunId",
-            "modelRevision",
-            "paddleModelRevision",
-            "priorCandidateCount",
-            "priorOmittedCandidateCount",
-            "priorEstimatedTokenCount",
-            "selectedPageNos",
-            "queueTimeMs",
-            "inferenceTimeMs",
-            "totalTimeMs",
-            "jsonRetryCount",
-            "tableExtractionDeferred",
-            "failureReason",
-            "createdAt",
-            "queuedAt",
-            "startedAt",
-            "finishedAt",
-            "updatedAt",
-        ]
-        if run.get(key) is not None
-    }
 
 
 @router.get("/fde/document-ai/shadow-runs")
@@ -24526,41 +24507,6 @@ def fde_document_ai_shadow_run_detail(request: Request, run_id: str):
     return ok(detail, request)
 
 
-def document_audit_pipeline_comparison_summary(run: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: run.get(key)
-        for key in [
-            "id",
-            "runId",
-            "status",
-            "documentAiShadowRunId",
-            "documentId",
-            "documentVersionId",
-            "profileId",
-            "fileName",
-            "selectedPageNos",
-            "baselinePipelineId",
-            "baselineProvider",
-            "baselineModel",
-            "baselineModelResolved",
-            "challengerPipelineId",
-            "challengerProvider",
-            "challengerModel",
-            "challengerModelResolved",
-            "baselineTimeMs",
-            "challengerUpstreamDocumentAiTimeMs",
-            "challengerDeepSeekTimeMs",
-            "challengerEndToEndTimeMs",
-            "comparisonMetrics",
-            "failureReason",
-            "createdAt",
-            "queuedAt",
-            "startedAt",
-            "finishedAt",
-            "updatedAt",
-        ]
-        if run.get(key) is not None
-    }
 
 
 @router.get("/fde/document-audit/pipeline-comparisons")
@@ -29040,6 +28986,18 @@ def knowledge_audit_logs(request: Request, page_no: int = Query(default=1, alias
 
 @router.get("/reasoning/logs")
 def reasoning_logs(request: Request, projectId: str | None = None, nodeId: int | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+    # 与 /nodes/{n}/ai-runs 用同一道闸。
+    #
+    # 2026-08-14 审计实测：这里只做了项目范围过滤（record_visible_for_request），
+    # 没有角色闸，于是施工方能读到本项目里监检方的 AI 判定——
+    # suggestion.result、opinionDraft、reasoningProcess 一应俱全。
+    # 而同样的数据在 /nodes/{n}/ai-runs 上是 403。
+    #
+    # 一道门拦住、另一道敞着，等于没拦。返回的是同一个 ai_runs 集合，
+    # 守卫也就该是同一个，别再各写各的。
+    process_error = review_process_read_error(request, "AI 推理过程记录")
+    if process_error:
+        return process_error
     items = [repo.clone(item) for item in repo.state["ai_runs"] if record_visible_for_request(request, item)]
     if projectId:
         items = [item for item in items if item["projectId"] == projectId]
@@ -29077,6 +29035,10 @@ def ai_run_evidence_snapshot(run: dict[str, Any]) -> list[dict[str, Any]]:
 
 @router.get("/reasoning/logs/{log_id}")
 def reasoning_log_detail(request: Request, log_id: str):
+    # 同 /reasoning/logs：这是 ai_runs 的另一个入口，守卫必须一致。
+    process_error = review_process_read_error(request, "AI 推理过程记录")
+    if process_error:
+        return process_error
     run = repo.find_one("ai_runs", log_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -29115,6 +29077,10 @@ def reasoning_log_detail(request: Request, log_id: str):
 
 @router.get("/reasoning/logs/{log_id}/evidence")
 def reasoning_log_evidence(request: Request, log_id: str):
+    # 同 /reasoning/logs：这是 ai_runs 的另一个入口，守卫必须一致。
+    process_error = review_process_read_error(request, "AI 推理过程记录")
+    if process_error:
+        return process_error
     run = repo.find_one("ai_runs", log_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
@@ -30362,9 +30328,32 @@ def legacy_orgs(request: Request):
     return ok(list_admin_org_units(), request)
 
 
+# 非管理员能看到的用户字段。
+#
+# 2026-08-14 审计：这个端点对全部 6 个角色返回完整用户目录，施工方能读到
+# 监检账号的 displayName、orgName、mobile、status、lastLoginAt、
+# mustChangePassword。mobile 当前为空只是测试数据没填——字段在契约里是开放的，
+# 真实部署一旦录入手机号，被检方就拿到了监检人员的联系方式；
+# mustChangePassword 还能指出哪些账号仍在用初始口令。
+#
+# 没有直接封死，是因为前端虽不调它、但可能有脚本在用「按 ID 查名字」这类用途。
+# 保留身份识别所需的最小集合，其余一律不出。管理端另有 /admin/users，
+# 那条是受管控的完整视图。
+_PUBLIC_USER_FIELDS = ("id", "username", "displayName", "role", "roleLabel", "orgName")
+
+
 @router.get("/users")
 def legacy_users(request: Request):
-    return ok(list_admin_users(), request)
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    users = list_admin_users()
+    if str(role or "") == "admin":
+        return ok(users, request)
+    return ok(
+        [{key: item.get(key) for key in _PUBLIC_USER_FIELDS if key in item} for item in users],
+        request,
+    )
 
 
 # Keep this catch-all route after every concrete /admin GET route.  Starlette

@@ -87,3 +87,28 @@ export const resolveRoleEntryPath = (role?: string, redirect?: string): string =
   }
   return isPathAllowedForRole(decoded, role) ? decoded : defaultPath
 }
+
+/** 本应用已知的业务路径前缀。用来区分「不存在」和「不属于你」。 */
+const KNOWN_APP_PREFIXES = ['/ai-review-b', '/workbench', '/admin', '/fde', '/knowledge']
+
+/**
+ * 这个路径是不是本应用的业务页面（不论属于哪个角色）。
+ *
+ * 2026-08-14 审计 F-14：施工方 / 无损检测 / 建设方各试 5 条越权路由，
+ * 4 条落到「404 页面不存在」，只有 /fde/* 那条正确退回工作台。
+ *
+ * 原因是通配路由 `/:path(.*)*` 无条件 redirect 到 /404——某个角色没被注册的
+ * 路由，vue-router 匹配不上就当成不存在。而 /fde/* 注册了通配子路由，
+ * 守卫才看得到真实路径。
+ *
+ * 访问本身是拦住了，没有安全问题；错在**语义**：权限不足说成「页面不存在」，
+ * 用户以为页面没了，拿到同事分享链接的人以为链接失效——两种都会让人去找
+ * 错误的原因。
+ */
+export const isKnownAppPath = (path: string): boolean => {
+  const pathname = String(path || '').split(/[?#]/, 1)[0]
+  if (!pathname) return false
+  return KNOWN_APP_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  )
+}

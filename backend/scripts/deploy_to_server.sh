@@ -144,6 +144,7 @@ sync_frontend() {
   (cd "$REPO_ROOT/frontend" && node node_modules/vite/bin/vite.js build --mode pro >/dev/null)
   tar czf "$STAGE/dist.tar.gz" -C "$REPO_ROOT/frontend/dist-pro" .
   scp -q "$STAGE/dist.tar.gz" "$HOST:$REMOTE_HOME/aicheck-dist.tar.gz"
+  scp -q "$REPO_ROOT/backend/deploy/nginx-default.conf" "$HOST:$REMOTE_HOME/aicheck-nginx.conf"
   echo "==> 发布静态资源"
   # 用 rm+解包而不是替换目录：容器按 inode 绑定挂载，换目录会让它看到空目录
   #
@@ -155,6 +156,9 @@ sync_frontend() {
     set -e
     rm -rf $REMOTE_HOME/aicheck-web/dist/*
     tar xzf $REMOTE_HOME/aicheck-dist.tar.gz -C $REMOTE_HOME/aicheck-web/dist
+    cp $REMOTE_HOME/aicheck-nginx.conf $REMOTE_HOME/aicheck-web/conf/default.conf
+    docker exec aicheck-web nginx -t >/dev/null 2>&1 && docker exec aicheck-web nginx -s reload >/dev/null 2>&1 || {
+      echo "nginx 配置校验失败，保留原配置" >&2; exit 1; }
     docker exec aicheck-web nginx -s reload
   "
   # 验的是「浏览器拿到的 index.html 引用的入口，正是这次构建出来的那个」。
@@ -167,6 +171,32 @@ sync_frontend() {
   echo "                  线上返回 ${served:-（未找到）}"
   [ "$served" = "$expected" ] || { echo "  ✗ 线上仍是旧入口，静态资源发布未生效"; exit 1; }
   echo "  ✓ 入口一致"
+
+  # 入口一致只证明「传上去的正是刚构建的」，不证明「构建的正是仓库里的」。
+  #
+  # 2026-08-14 实测：线上跑的 chunk 与本地任何一次构建都对不上，
+  # 推荐问题功能在界面上一条都不显示，而入口校验全程报「✓ 一致」——
+  # 因为它比对的两端同源。**同源比对不是校验。**
+  #
+  # 这里改成用源码里的特征串反查线上产物：随便挑几个只可能来自当前源码的
+  # 标记，去线上实际下载的 JS 里搜。搜不到就是发布没生效。
+  echo "==> 校验线上产物确实来自当前源码"
+  local marker_file marker missing
+  missing=0
+  for marker_file in \
+    "frontend/src/views/AIReviewB/ConversationalReviewWorkbenchB.vue:composer-suggestion" \
+    "frontend/src/views/AICheck/Workbench.vue:inspectionOnlyAttentionNodes"
+  do
+    local f="${marker_file%%:*}" m="${marker_file##*:}"
+    grep -q "$m" "$REPO_ROOT/$f" 2>/dev/null || continue   # 源码里没有就跳过，不误判
+    if grep -rq "$m" "$REPO_ROOT/frontend/dist-pro/assets/" 2>/dev/null; then
+      echo "  ✓ ${m}"
+    else
+      echo "  ✗ 源码有 ${m}，构建产物里没有——发布的不是当前源码" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" = 0 ] || exit 1
 }
 
 verify() {

@@ -7,7 +7,7 @@ import {
 } from '@/utils/routerHelper'
 import { store } from '../index'
 import { cloneDeep } from 'lodash-es'
-import { getRoleDefaultPath, normalizeAicheckRole } from '@/utils/roleAccess'
+import { getRoleDefaultPath, isKnownAppPath, normalizeAicheckRole } from '@/utils/roleAccess'
 
 export interface PermissionState {
   routers: AppRouteRecordRaw[]
@@ -60,7 +60,10 @@ export const usePermissionStore = defineStore('permission', {
         this.addRouters = routerMap.concat([
           {
             path: '/:path(.*)*',
-            redirect: '/404',
+            // 属于本应用、只是不属于当前角色的路径，退回自己的工作台；
+            // 真正不存在的才 404。详见 utils/roleAccess.isKnownAppPath。
+            redirect: (to) =>
+              isKnownAppPath(to.path) ? getRoleDefaultPath(normalizedRole) : '/404',
             name: '404Page',
             meta: {
               hidden: true,

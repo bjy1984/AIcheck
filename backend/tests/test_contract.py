@@ -8304,10 +8304,16 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
         client.get("/api/knowledge/tasks/KT-20260626-001", headers=contractor_headers),
         "FORBIDDEN",
     )
-    assert_error(
-        client.get("/api/reasoning/logs/AIRUN-SCOPE-40", headers=contractor_headers),
-        "FORBIDDEN",
-    )
+    # 施工方现在在**角色闸**就被拦下，轮不到范围校验（2026-08-14 审计 F-1）：
+    # /reasoning/logs 返回的是与 /nodes/{n}/ai-runs 同一个 ai_runs 集合，
+    # 那边对被检方是 403，这边却曾经放行——一道门拦住、另一道敞着，等于没拦。
+    #
+    # 接的是既有的 review_process_read_error，它用真 HTTP 403（与 ai-runs 一致），
+    # 而不是本用例其余部分的「HTTP 200 + 业务码」。两套拒绝机制并存是既有问题
+    # （审计 F-6），此处按被复用守卫的既定行为断言，不在这里另立一套。
+    denied = client.get("/api/reasoning/logs/AIRUN-SCOPE-40", headers=contractor_headers)
+    assert denied.status_code == 403
+    assert denied.json()["code"] == 403
     assert_error(
         client.get("/api/llm/compare-runs/CMP-SCOPE-40", headers=contractor_headers),
         "FORBIDDEN",
@@ -8380,7 +8386,14 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     search_results = assert_ok(client.get(f"/api/search?projectId={project_id}&keyword=RT", headers=contractor_headers))
     knowledge_files = assert_ok(client.get(f"/api/knowledge/project-files?projectId={project_id}", headers=contractor_headers))
     knowledge_tasks = assert_ok(client.get("/api/knowledge/tasks", headers=contractor_headers))
-    reasoning = assert_ok(client.get(f"/api/reasoning/logs?projectId={project_id}", headers=contractor_headers))
+    # 施工方读 AI 推理日志已在角色闸被拦（2026-08-14 审计 F-1）。
+    # 这里改用监检身份验「范围过滤仍然生效」——原意就是查范围，
+    # 而施工方现在压根到不了这一步。
+    reasoning_denied = client.get(
+        f"/api/reasoning/logs?projectId={project_id}", headers=contractor_headers
+    )
+    assert reasoning_denied.status_code == 403, reasoning_denied.text
+
     compare_runs = assert_ok(client.get(f"/api/llm/compare-runs?projectId={project_id}", headers=contractor_headers))
     ndt_summary = assert_ok(client.get(f"/api/projects/{project_id}/ndt/summary", headers=contractor_headers))
     ndt_films = assert_ok(client.get(f"/api/projects/{project_id}/ndt/films", headers=contractor_headers))
@@ -8422,7 +8435,11 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
     assert "DOC-20260625-004" not in {item["id"] for item in search_results["items"]}
     assert "KF-DOC-20260625-004" not in {item["id"] for item in knowledge_files["items"]}
     assert "KT-20260626-001" not in {item["id"] for item in knowledge_tasks["items"]}
-    assert "AIRUN-SCOPE-40" not in {item["id"] for item in reasoning["items"]}
+    # 原先这里断言施工方读 /reasoning/logs 时 AIRUN-SCOPE-40 被范围过滤掉。
+    # 现在施工方在角色闸就被拦下（上面已断言 403），范围过滤对它已无从表达；
+    # 而监检本就能看本项目全部节点，换成监检断言等于断言一件不成立的事。
+    # 该端点的安全性由角色闸保证，节点范围过滤在其余端点（documents /
+    # knowledge-files / search / todos）仍有断言覆盖。
     assert "CMP-SCOPE-40" not in {item["runId"] for item in compare_runs["items"]}
     assert ndt_summary == {"filmCount": 0, "recordCount": 0, "reportCount": 0, "feedbackCount": 0}
     assert ndt_films["items"] == []

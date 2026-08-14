@@ -531,6 +531,19 @@ watch(activeTab, (tab) => {
     router.push(targetPath)
   }
 })
+
+// 切换后台子页要重新取数——loadData 按 activeTab 分派本页要用的那一个请求，
+// 而 /admin/* 十二个子页共用同一个组件实例，切页不会重新挂载。
+//
+// 原先只有 onMounted 里那一次 loadData()：直接整页打开 /admin/audit 能看到
+// 2008 条审计记录，从别的管理页点过去就是「共 0 条 / 当前筛选下暂无审计日志」。
+// 2026-08-14 实测确认，同样影响项目清单、联调清单、Prompt 与报告模板。
+//
+// 对监督检验系统来说这条尤其要紧：审计留痕是法定要求，而验证的人多半是
+// 从总览点进审计页的——他看到的是「一条记录都没有」。
+watch(activeTab, () => {
+  loadData()
+})
 const configOperationRetry = ref<'preview' | 'save' | null>(null)
 const configEditTarget = ref<AdminConfigTarget>('permission')
 const configEditMode = ref<'create' | 'edit'>('edit')
