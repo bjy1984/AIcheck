@@ -23,15 +23,17 @@
 监检面前，人会记住那个名字。这两条用例（test_contract / test_fde_console）
 在我第一版实现里变红，拦住了一次真实的安全回退。
 
-## 已知：正面断言检测器有误报
+## 正面断言检测器的误报：修了一类，留了一类
 
 线上三条里有一条被判 UNSUPPORTED_LLM_CLAIM，理由包括
 `{"claim": "DV-SCAN66B96692-V1", "reason": "not_present_in_supplied_evidence"}`
-——那是模型正确引用的文档版本号。POSITIVE_CLAIM_RE 只做关键词匹配、不处理否定，
-「规则要求核查许可范围是否覆盖」这种陈述要查什么的句子也会命中「覆盖」。
+——那是**我们自己发给模型的文档版本号**。模型复述它按定义不可能是幻觉，
+而检测器只拿 OCR 正文比对，看不见这些标识符。这一类已修（见文件末尾用例）。
 
-误报的代价是这类 finding 的诊断被丢掉（保守，可接受）；放松检测器的代价是
-真实幻觉漏出去。所以这里不动它，单独记录。
+**未修的那一类**：POSITIVE_CLAIM_RE 只做关键词匹配、不处理否定，
+「规则要求核查许可范围是否覆盖」这种陈述要查什么的句子也会命中「覆盖」。
+放松它的代价是真实幻觉漏出去，所以从严保留——代价是这类 finding 的诊断
+仍会被丢掉，监检看到的是模板。这是当前 AI 复核可用性的主要瓶颈。
 """
 
 from __future__ import annotations
@@ -166,3 +168,36 @@ def test_证据充分时不动模型原文():
     )[0]
     assert guarded["title"] == "许可范围行已解析"
     assert "⚠️" not in guarded["description"]
+
+
+# ── 引用我们自己给的 ID 不算无据断言 ──────────────────────────────────
+
+
+def test_模型复述我们给的资料编号不算幻觉():
+    """线上 RRUN-DD7097107E 的真实误判：
+
+        {"claim": "DV-SCAN66B96692-V1", "reason": "not_present_in_supplied_evidence"}
+
+    那是我们发给模型的文档版本号。模型复述它按定义不可能是幻觉，
+    而检测器只拿 OCR 正文比对，看不见这些标识符——整条诊断因此被丢掉。
+    """
+    guarded = _guard(GAP_TITLE, GAP_DESCRIPTION)
+    flagged = {str(c.get("claim")) for c in guarded.get("unsupportedClaims") or []}
+    assert "DV-SCAN66B96692-V1" not in flagged
+
+
+def test_规则正文里的等级词仍从严():
+    """规则里写着 GC1/GC2/GCD，模型说「覆盖 GC2」时究竟是在复述要求
+    还是在下结论，无法从字面区分——那一类不放行。"""
+    from libs.review_grounding import unsupported_claims
+
+    corpus = ["证书编号 TS3234", "有效期至 2028 年"]
+    claims = unsupported_claims("施工单位许可范围覆盖 GC2 级管道", corpus)
+    assert claims, "无据的等级覆盖断言必须被拦住"
+
+
+def test_没有标识符时行为不变():
+    from libs.review_grounding import _supplied_identifiers
+
+    assert _supplied_identifiers({}) == []
+    assert _supplied_identifiers({"evidenceLinks": [None, 3]}) == []

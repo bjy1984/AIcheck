@@ -195,6 +195,16 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
     default_refs = [_evidence_ref(item) for item in evidence_links[:3]]
     allowed_version_ids = {str(item) for item in grounding_input.get("documentVersionIds") or [] if item}
     evidence_texts = [str(item) for item in grounding_input.get("evidenceTextCorpus") or [] if str(item).strip()]
+    # 比对语料里补上**我们自己发给模型的标识符**。
+    #
+    # 2026-08-14 线上（RRUN-DD7097107E）：模型正确引用了资料编号，却被判成
+    #   {"claim": "DV-SCAN66B96692-V1", "reason": "not_present_in_supplied_evidence"}
+    # 于是整条诊断被丢弃。模型复述我们给它的 ID，按定义不可能是幻觉——
+    # 检测器却只拿 OCR 正文比对，看不见这些标识符。
+    #
+    # 只补标识符，不补规则正文：规则里写着「GC1/GC2/GCD」，模型说「覆盖 GC2」时
+    # 究竟是在复述要求还是在下结论，无法从字面区分，那一类仍应从严。
+    claim_reference_corpus = evidence_texts + _supplied_identifiers(grounding_input)
     input_status = str(grounding_input.get("groundingStatus") or "insufficient_evidence")
     grounding_policy = str(grounding_input.get("groundingPolicy") or "evidence_only")
     review_mode = _review_mode(grounding_input)
@@ -245,7 +255,7 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
             continue
         unsupported = unsupported_claims(
             " ".join(str(item.get(key) or "") for key in ["title", "description"]),
-            evidence_texts,
+            claim_reference_corpus,
         )
         if unsupported:
             evidence_failures.extend(
@@ -308,6 +318,26 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
             item.setdefault("unsupportedClaims", [])
         guarded.append(item)
     return guarded
+
+
+def _supplied_identifiers(grounding_input: dict[str, Any]) -> list[str]:
+    """我们发给模型的各类标识符。
+
+    模型复述这些 ID 不构成断言，只是引用。放进比对语料是为了不把「正确引用」
+    误判成「无据断言」——那会让整条诊断被丢掉，代价是监检不知道去查哪一份。
+    """
+    identifiers: list[str] = [
+        str(item) for item in grounding_input.get("documentVersionIds") or [] if item
+    ]
+    for key in ("evidenceLinks", "fields", "tables", "seals", "fragments"):
+        for item in grounding_input.get(key) or []:
+            if not isinstance(item, dict):
+                continue
+            for id_key in ("id", "evidenceLinkId", "documentVersionId", "parseResultId"):
+                value = item.get(id_key)
+                if value:
+                    identifiers.append(str(value))
+    return identifiers
 
 
 def unsupported_claims(text: str, evidence_texts: list[str]) -> list[dict[str, Any]]:
