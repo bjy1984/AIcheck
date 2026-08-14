@@ -6,8 +6,7 @@
  },
  "apps/api/routes.py": {
   "B023": 3,
-  "BLE001": 23,
-  "C405": 2,
+  "BLE001": 16,
   "S110": 3,
   "SIM101": 1,
   "SIM102": 1,
@@ -85,6 +84,9 @@
  "libs/document_audit_pipeline_comparison.py": {
   "BLE001": 1,
   "TRY004": 1
+ },
+ "libs/fde_console_views.py": {
+  "BLE001": 7
  },
  "libs/integrations/cnse_client.py": {
   "PYI034": 1

@@ -10898,8 +10898,16 @@ def test_heic_preview_sips_fallback_caps_preview_size(monkeypatch, tmp_path) -> 
         return Result()
 
     monkeypatch.setattr(routes, "fde_render_image_page_preview", lambda _path: None)
-    monkeypatch.setattr(routes.shutil, "which", lambda name: "/usr/bin/sips" if name == "sips" else None)
-    monkeypatch.setattr(routes.subprocess, "run", fake_run)
+    # HEIC 预览的实现已搬到 libs.fde_console_views，patch 点跟着走。
+    # 原先 patch 的是 routes.shutil——函数搬走后那个 patch 什么也不影响，
+    # 测试会静默变成「没在测东西」。这次它响亮地报了 AttributeError，
+    # 是因为 routes.py 里 shutil 的 import 也一并清掉了。
+    from libs import fde_console_views
+
+    monkeypatch.setattr(
+        fde_console_views.shutil, "which", lambda name: "/usr/bin/sips" if name == "sips" else None
+    )
+    monkeypatch.setattr(fde_console_views.subprocess, "run", fake_run)
 
     content, content_type = routes.fde_render_heic_page_preview(source) or (b"", "")
 
