@@ -119,6 +119,7 @@ from libs.reasoning_budget import (
     output_budget_exhausted_by_reasoning,
 )
 from libs.review_conversation_fallback import fallback_answer_text
+from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_conversation_blocks import review_message_source_references
 from libs.raw_vault import (
     capture_agent_turn,
@@ -11110,6 +11111,8 @@ def review_conversation_llm_answer(
             executed_tool_cache[memory_signature] = repo.clone(memory_output)
             memory_seeded_signatures.add(memory_signature)
     tool_trace: list[dict[str, str]] = []
+    # 各轮推理过程，最终随消息一起存档（结论要能回答「凭什么」）
+    reasoning_transcript: list[dict[str, Any]] = []
     # Token 预算与上下文压缩：估算超预算时，把最旧的工具结果替换为一行摘要；
     # 压缩后仍超预算则提前强制输出最终结论。
     input_token_budget = max(
@@ -11239,6 +11242,8 @@ def review_conversation_llm_answer(
             stream_state: dict[str, Any] = {
                 "emitted": {"content": 0, "reasoning": 0},
                 "buffers": {"content": "", "reasoning": ""},
+                # buffers 会被 _flush_stream_delta 清空，存档要另攒一份
+                "transcript": {"reasoning": ""},
             }
 
             def _flush_stream_delta(kind: str, *, force: bool = False, turn: int = turn) -> None:
@@ -11259,10 +11264,19 @@ def review_conversation_llm_answer(
                     },
                 )
 
-            def _stream_handler(kind: str, text: str) -> None:
+            # turn / state 都用默认参数绑定当前轮，不闭包捕获循环变量。
+            def _stream_handler(
+                kind: str, text: str, turn: int = turn, state: dict[str, Any] = stream_state
+            ) -> None:
                 if kind not in ("content", "reasoning"):
                     return
-                stream_state["buffers"][kind] += str(text)
+                state["buffers"][kind] += str(text)
+                if kind == "reasoning":
+                    # 单独攒一份：buffers 冲给事件流之后就清空了，存档拿不到。
+                    state["transcript"]["reasoning"] += str(text)
+                    append_reasoning_turn(
+                        reasoning_transcript, turn, state["transcript"]["reasoning"]
+                    )
                 _flush_stream_delta(kind)
 
             prompt_chars_estimate = _raw_prompt_chars_estimate()
@@ -11329,6 +11343,7 @@ def review_conversation_llm_answer(
             reasoning_delta = str(
                 message.get("reasoning_content") or message.get("reasoning") or ""
             ).strip()
+            append_reasoning_turn(reasoning_transcript, turn, reasoning_delta)
             if reasoning_delta and not stream_state["emitted"]["reasoning"]:
                 append_review_session_event(
                     session,
@@ -11419,6 +11434,7 @@ def review_conversation_llm_answer(
                 )
                 return {
                     "text": content[:4000],
+                    "reasoning": repo.clone(reasoning_transcript),
                     "execution": {
                         "executionId": execution_id,
                         "mode": "llm_agent",
@@ -11609,6 +11625,7 @@ def review_conversation_llm_answer(
             lines.append("以上结果均来自只读/确定性工具，最终结论仍需人工确认。")
         return {
             "text": "\n".join(lines),
+            "reasoning": repo.clone(reasoning_transcript),
             "execution": {
                 "executionId": execution_id,
                 "mode": "cancelled",
@@ -11647,6 +11664,7 @@ def review_conversation_llm_answer(
             partial_text = "\n".join(lines)
         return {
             "text": partial_text,
+            "reasoning": repo.clone(reasoning_transcript),
             "execution": {
                 "executionId": execution_id,
                 "mode": "deterministic_fallback",
@@ -11825,7 +11843,14 @@ def review_agent_answer_blocks(
             "turnCount": 0,
         }
     )
-    blocks: list[dict[str, Any]] = [
+    blocks: list[dict[str, Any]] = []
+    # 推理过程排在正文之前，与串流期间的顺序一致；前端默认折叠成一行。
+    # 存档而不是丢弃：这套系统出的是监督检验意见，事后被问「凭什么」时，
+    # 「去查事件流」不是一个能给监检的答案。
+    reasoning = reasoning_block(agent_result.get("reasoning"))
+    if reasoning:
+        blocks.append(reasoning)
+    blocks += [
         {
             "type": "text",
             # 模型没跑成时，正文必须先说「没答上」再给状态数字。
