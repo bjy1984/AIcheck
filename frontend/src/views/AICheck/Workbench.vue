@@ -6,7 +6,6 @@ import {
   ElBreadcrumb,
   ElBreadcrumbItem,
   ElButton,
-  ElCard,
   ElCollapse,
   ElCollapseItem,
   ElDrawer,
@@ -863,6 +862,18 @@ const handleInspectionNodeTableSort = ({
  * 计数写在开关上——关着的时候也得知道有几个在等，否则筛选本身就成了新的隐藏。
  */
 const inspectionOnlyAttentionNodes = ref(true)
+
+/* 需处理的「审计项」数——与需处理的「节点」数是两个单位。
+ * 一个节点可能有两项需要处理，两个数字不相等是正常的；并排显示时必须写清楚
+ * 单位，否则会被当成其中一个算错了。 */
+const inspectionAttentionItemCount = computed(() => {
+  let total = 0
+  for (const node of projectTreeNodes.value) {
+    const items = inspectionAuditOverviewNodeMap.value.get(node.nodeId)?.items || []
+    total += items.filter((item) => nodeNeedsAttention([item])).length
+  }
+  return total
+})
 
 const inspectionAttentionNodeCount = computed(
   () =>
@@ -5169,33 +5180,35 @@ onBeforeUnmount(() => {
                   id="inspection-overview-status"
                   class="inspection-overview-panel inspection-overview-panel--status"
                 >
-                  <div class="inspection-chart-head">
-                    <div>
-                      <strong>审计项状态总览</strong>
-                      <small>七个审计项独立统计；需关注或失败不会阻塞其他审计项。</small>
+                  <!-- 原先这里是四张数字卡片：471 未开始 / 1 处理中 / 9 需关注 / 2 已完成。
+                       471 是 69 节点 × 7 审计项里还没动过的——监检不会去「消灭 471」，
+                       这个数不驱动任何行动，却占着首屏最贵的位置。
+
+                       业务口径是「监检最好只需要知道状态，全程不需要人工干预」，
+                       那这块要回答的就一句话：现在有没有要我管的、在哪儿。
+                       全量数字降为次要信息，仍然保留——需要核对整体进度时还得看。 -->
+                  <div
+                    class="inspection-headline"
+                    :class="{ 'is-clear': !inspectionAttentionItemCount }"
+                  >
+                    <div class="inspection-headline-main">
+                      <strong v-if="inspectionAttentionItemCount">
+                        {{ inspectionAttentionItemCount }} 项需要你处理
+                      </strong>
+                      <strong v-else>暂无需要你处理的事项</strong>
+                      <small v-if="inspectionAttentionItemCount">
+                        分布在 {{ inspectionAttentionNodeCount }} 个节点，已列在下方清单
+                      </small>
+                      <small v-else>系统在跑的部分完成后会自动出现在这里</small>
                     </div>
-                    <AuditStatusTag tone="blue" round>
-                      {{ inspectionAuditOverview?.summary.nodeCount || projectTreeNodes.length }}
-                      个节点
-                    </AuditStatusTag>
-                  </div>
-                  <div class="inspection-audit-status-summary" aria-label="独立审计项状态统计">
-                    <ElCard
-                      v-for="row in inspectionAuditStatusSummaryRows"
-                      :key="row.key"
-                      shadow="never"
-                      :class="['inspection-audit-status-card', `is-${row.key}`]"
-                      :aria-label="`${row.label}：${row.value} 个审计项`"
-                    >
-                      <div class="inspection-audit-status-card__label">
-                        <i aria-hidden="true"></i>
-                        <span>{{ row.label }}</span>
+                    <!-- 单位不同要写清楚：上面数的是「审计项」，清单里数的是「节点」。
+                         两个数字并排而不说明单位，会让人以为其中一个算错了。 -->
+                    <dl class="inspection-headline-rest" aria-label="全部审计项统计">
+                      <div v-for="row in inspectionAuditStatusSummaryRows" :key="row.key">
+                        <dt>{{ row.label }}</dt>
+                        <dd>{{ row.value }}</dd>
                       </div>
-                      <div class="inspection-audit-status-card__metric">
-                        <strong>{{ row.value }}</strong>
-                        <small>审计项</small>
-                      </div>
-                    </ElCard>
+                    </dl>
                   </div>
                 </article>
 
@@ -6958,6 +6971,71 @@ onBeforeUnmount(() => {
   gap: 14px;
   align-items: center;
   justify-content: flex-end;
+}
+
+/* 首屏第一句话：现在有没有要我管的、在哪儿。
+   原先这里是四张数字卡片，最大的那个 471 不驱动任何行动。 */
+.inspection-headline {
+  display: flex;
+  padding: 14px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 没有待办时不该继续用告警色——那会让人一直处在「有事没办」的错觉里 */
+.inspection-headline.is-clear {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.inspection-headline-main {
+  display: flex;
+  min-width: 220px;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+}
+
+.inspection-headline-main strong {
+  font-size: 20px;
+  color: #7f1d1d;
+}
+
+.inspection-headline.is-clear .inspection-headline-main strong {
+  color: #14532d;
+}
+
+.inspection-headline-main small {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.inspection-headline-rest {
+  display: flex;
+  margin: 0;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.inspection-headline-rest div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inspection-headline-rest dt {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.inspection-headline-rest dd {
+  margin: 0;
+  font-size: 15px;
+  color: #475569;
 }
 
 .node-filter-toggle {
