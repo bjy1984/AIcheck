@@ -237,6 +237,7 @@ def test_review_b_return_correction_atomically_creates_opinion_and_todo() -> Non
         "opinions": len(repo.state["review_opinions"]),
         "rectifications": len(repo.state["rectifications"]),
         "todos": len(repo.state["todos"]),
+        "audits": len(repo.state["audit_logs"]),
     }
 
     result = assert_ok(
@@ -262,6 +263,7 @@ def test_review_b_return_correction_atomically_creates_opinion_and_todo() -> Non
     assert len(repo.state["review_opinions"]) == before["opinions"] + 1
     assert len(repo.state["rectifications"]) == before["rectifications"] + 1
     assert len(repo.state["todos"]) == before["todos"] + 1
+    assert len(repo.state["audit_logs"]) == before["audits"] + 1
     assert repo.find_one("bindings", "BIND-ATOMIC-RETURN")["bindingStatus"] == "需补正"
     assert run["status"] == "running"
     assert "humanDecision" not in run
@@ -287,6 +289,7 @@ def test_review_b_return_correction_atomically_creates_opinion_and_todo() -> Non
     assert len(repo.state["review_opinions"]) == before["opinions"] + 1
     assert len(repo.state["rectifications"]) == before["rectifications"] + 1
     assert len(repo.state["todos"]) == before["todos"] + 1
+    assert len(repo.state["audit_logs"]) == before["audits"] + 1
 
 
 def test_review_b_supplement_request_creates_task_without_binding(
@@ -339,6 +342,11 @@ def test_review_b_supplement_request_creates_task_without_binding(
                         "id": "REQ-MISSING-DESIGN-LICENSE",
                         "source": "system",
                         "name": "设计单位许可证",
+                    },
+                    {
+                        "id": "MANUAL-AUTHORIZATION",
+                        "source": "manual",
+                        "name": "项目负责人授权书",
                     }
                 ],
             },
@@ -350,8 +358,51 @@ def test_review_b_supplement_request_creates_task_without_binding(
     assert result["rectification"]["supplementRequirements"][0]["id"] == (
         "REQ-MISSING-DESIGN-LICENSE"
     )
+    assert result["rectification"]["supplementRequirements"][1] == {
+        "id": "MANUAL-AUTHORIZATION",
+        "source": "manual",
+        "name": "项目负责人授权书",
+        "note": None,
+    }
     assert len(repo.state["bindings"]) == before_binding_count
     assert repo.state["todos"][0]["targetId"] == result["rectification"]["id"]
+
+
+def test_review_b_empty_supplement_request_writes_nothing() -> None:
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+    before = {
+        key: len(repo.state[key])
+        for key in ("review_opinions", "rectifications", "todos")
+    }
+    before_audit_count = len(repo.state["audit_logs"])
+
+    response = client.post(
+        f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/actions/return-correction",
+        headers={
+            **HEADERS,
+            "If-Match": workspace["project"]["etag"],
+            "Idempotency-Key": "review-b-empty-supplement",
+        },
+        json={
+            "mode": "supplement_request",
+            "reason": "请补充资料。",
+            "opinion": "请补充资料。",
+            "bindingIds": [],
+            "supplementRequirements": [],
+        },
+    )
+
+    assert response.json()["code"] != 0
+    assert {
+        key: len(repo.state[key])
+        for key in ("review_opinions", "rectifications", "todos")
+    } == before
+    assert len(repo.state["audit_logs"]) == before_audit_count + 1
 
 
 def test_review_b_latest_human_decision_prefers_node_review_opinion() -> None:

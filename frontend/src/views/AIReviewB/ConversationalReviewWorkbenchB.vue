@@ -1082,6 +1082,7 @@ const handleReturnCorrection = async (payload: ReturnCorrectionRequest) => {
     await refreshLiveState()
   } catch (error) {
     ElMessage.error(getAicheckErrorMessage(error, `${actionLabel}失败。`))
+    await refreshLiveState()
   } finally {
     actionLoading.value = false
   }
