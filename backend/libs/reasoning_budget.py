@@ -163,3 +163,35 @@ def truncation_caused_by_reasoning(
         return False
     reasoning = reasoning_tokens_from_usage(data)
     return reasoning >= completion * _REASONING_DOMINANCE
+
+
+# 推理强度。留成可配置而不是写死，因为它是**质量与可靠性的取舍**，不是技术细节。
+#
+# 2026-08-14 实测（节点 2，deepseek-v4-pro，同一份输入）：
+#   上限 6000 → 推理用满 6000，失败
+#   上限 8000 → 推理 6,570、总输出顶到 8000，失败
+#   上限 6000 → 另一次 completion 5,245（推理 3,619），成功
+#
+# 推理会膨胀到填满给它的额度，继续加数字不收敛。供应商侧实测可接受
+# `reasoning_effort`（low / minimal）与 `thinking: {"type": "disabled"}`。
+#
+# 默认取 low 而不是 disabled：这条链路出的是监督检验意见，完全关掉思考是
+# 另一个量级的决定，应该由人来做。留空则不下发该参数（回到供应商默认）。
+REVIEW_REASONING_EFFORT_ENV = "AICHECK_REVIEW_REASONING_EFFORT"
+DEFAULT_REVIEW_REASONING_EFFORT = "low"
+_ALLOWED_REASONING_EFFORT = {"minimal", "low", "medium", "high", ""}
+
+
+def review_reasoning_effort() -> str:
+    """正式审查调用的推理强度。空串表示不下发该参数。
+
+    认不出的取值退回默认，不原样透传——把笔误发给供应商换来的是一次
+    400，而那会被归因成「模型服务异常」，查起来完全不着边。
+    """
+    raw = os.getenv(REVIEW_REASONING_EFFORT_ENV)
+    if raw is None:
+        return DEFAULT_REVIEW_REASONING_EFFORT
+    value = raw.strip().lower()
+    if value in _ALLOWED_REASONING_EFFORT:
+        return value
+    return DEFAULT_REVIEW_REASONING_EFFORT

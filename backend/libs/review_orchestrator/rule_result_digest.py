@@ -1,4 +1,4 @@
-"""把规则引擎的原子核查结果压成能进提示词的体积。
+"""把工具输出压成能进提示词的体积。
 
 ## 线上实测（2026-08-14，节点 2「施工单位许可资质」）
 
@@ -103,3 +103,60 @@ def compact_rule_results(
             ]
         compacted.append(item)
     return compacted
+
+
+# ── 单个工具输出的摘要 ─────────────────────────────────────────────
+#
+# 从 execution.py 搬过来，与 compact_rule_results 放在一起。
+#
+# 分处两地正是今天这个 bug 的结构性原因：组装提示词时
+# runtimeToolResults 走了 compact_tool_output（1,053 字符），
+# ruleResults 直接原样进（52,828 字符）。两个函数做的是同一件事——
+# 「把工具输出压到能进提示词」——却没有任何地方让人看出漏了一条路。
+# 放在同一个模块里，下次再漏一眼就能看见。
+def compact_tool_output(result: dict[str, Any]) -> dict[str, Any]:
+    summary_keys = [
+        "toolCallId",
+        "toolName",
+        "status",
+        "result",
+        "ruleVersion",
+        "errorCode",
+        "candidateCount",
+        "fieldCount",
+        "tableCount",
+        "sealCount",
+        "fragmentCount",
+        "welderCertificateCount",
+        "verificationCount",
+        "qualifiedItemCount",
+        "matchedIssuerSealCount",
+        "recognizedSealCount",
+        "groundingStatus",
+        "summary",
+        "warnings",
+        "keyword",
+        "total",
+        "rowCount",
+        "idNumber",
+        "personName",
+        "issuer",
+        "qualifiedItems",
+        "validUntil",
+        "citedRef",
+        "canonicalRef",
+        "verdict",
+        "standardReferences",
+        "matched",
+        "currentExecution",
+        "query",
+    ]
+    summary = {key: result.get(key) for key in summary_keys if key in result}
+    if result.get("verificationCount") is not None:
+        summary["riskFlags"] = [
+            flag
+            for item in result.get("verifications") or []
+            if isinstance(item, dict)
+            for flag in item.get("riskFlags") or []
+        ][:12]
+    return summary

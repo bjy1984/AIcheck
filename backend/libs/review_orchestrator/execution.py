@@ -36,6 +36,7 @@ from libs.qwen_runtime import (
 from libs.raw_vault import raw_context_from_record
 from libs.reasoning_budget import (
     review_max_output_tokens,
+    review_reasoning_effort,
     truncation_caused_by_reasoning,
 )
 from libs.review_grounding import (
@@ -86,7 +87,10 @@ from libs.review_orchestrator.r20_r23_facts import (
 )
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
 from libs.review_orchestrator.retry_policy import has_review_retry_consumer
-from libs.review_orchestrator.rule_result_digest import compact_rule_results
+from libs.review_orchestrator.rule_result_digest import (
+    compact_rule_results,
+    compact_tool_output,
+)
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
@@ -2879,6 +2883,7 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         "updatedAt": server_time(),
     }
     persist_review_model_attempt(attempt)
+    reasoning_effort = review_reasoning_effort()
     try:
         response = qwen_runtime_client().chat_sync(
             messages,
@@ -2886,6 +2891,9 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
             temperature=0.1,
             response_format={"type": "json_object"},
             max_tokens=budget_policy["maxOutputTokens"],
+            # 给推理设上界。只调大 max_tokens 不收敛——实测推理会膨胀到填满
+            # 给它的额度（6000→用满 6000，8000→推理 6570 总输出顶满）。
+            **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
             timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
             _raw_capture_context=raw_context_from_record(
                 review_run,
@@ -3595,54 +3603,6 @@ def execute_agent_tool(
     )
     append_tool_call(review_run, node_key, tool_name, compact_tool_output(result))
     return result
-
-
-def compact_tool_output(result: dict[str, Any]) -> dict[str, Any]:
-    summary_keys = [
-        "toolCallId",
-        "toolName",
-        "status",
-        "result",
-        "ruleVersion",
-        "errorCode",
-        "candidateCount",
-        "fieldCount",
-        "tableCount",
-        "sealCount",
-        "fragmentCount",
-        "welderCertificateCount",
-        "verificationCount",
-        "qualifiedItemCount",
-        "matchedIssuerSealCount",
-        "recognizedSealCount",
-        "groundingStatus",
-        "summary",
-        "warnings",
-        "keyword",
-        "total",
-        "rowCount",
-        "idNumber",
-        "personName",
-        "issuer",
-        "qualifiedItems",
-        "validUntil",
-        "citedRef",
-        "canonicalRef",
-        "verdict",
-        "standardReferences",
-        "matched",
-        "currentExecution",
-        "query",
-    ]
-    summary = {key: result.get(key) for key in summary_keys if key in result}
-    if result.get("verificationCount") is not None:
-        summary["riskFlags"] = [
-            flag
-            for item in result.get("verifications") or []
-            if isinstance(item, dict)
-            for flag in item.get("riskFlags") or []
-        ][:12]
-    return summary
 
 
 def graph_nodes_for_review_run(review_run_id: str) -> list[dict[str, Any]]:

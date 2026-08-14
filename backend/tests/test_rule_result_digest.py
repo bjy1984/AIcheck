@@ -232,3 +232,28 @@ def test_env_覆盖有下限():
             os.environ.pop("AICHECK_QWEN_REVIEW_MAX_TOKENS", None)
         else:
             os.environ["AICHECK_QWEN_REVIEW_MAX_TOKENS"] = old
+
+
+def test_推理强度可配且认不出的取值退回默认():
+    """把笔误原样透传给供应商换来的是一次 400，而那会被归因成
+    「模型服务异常」——查起来完全不着边。"""
+    import os
+
+    from libs.reasoning_budget import review_reasoning_effort
+
+    old = os.environ.get("AICHECK_REVIEW_REASONING_EFFORT")
+    try:
+        os.environ.pop("AICHECK_REVIEW_REASONING_EFFORT", None)
+        assert review_reasoning_effort() == "low"
+        os.environ["AICHECK_REVIEW_REASONING_EFFORT"] = "minimal"
+        assert review_reasoning_effort() == "minimal"
+        # 空串＝不下发该参数，回到供应商默认
+        os.environ["AICHECK_REVIEW_REASONING_EFFORT"] = ""
+        assert review_reasoning_effort() == ""
+        os.environ["AICHECK_REVIEW_REASONING_EFFORT"] = "拼错了"
+        assert review_reasoning_effort() == "low"
+    finally:
+        if old is None:
+            os.environ.pop("AICHECK_REVIEW_REASONING_EFFORT", None)
+        else:
+            os.environ["AICHECK_REVIEW_REASONING_EFFORT"] = old
