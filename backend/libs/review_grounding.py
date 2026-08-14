@@ -160,6 +160,35 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
     }
 
 
+_DOWNGRADE_NOTICE = (
+    "⚠️ 未经证据核实：当前 OCR 证据不足以支撑自动结论，本条已降级为待人工确认。"
+    "以下为 AI 初判，仅用于定位问题，不得直接作为监督检验结论。"
+)
+
+
+# 模型作出无据正面断言时的替代文案。这里不能带出原文——原文本身就是问题。
+_UNSUPPORTED_CLAIM_DESCRIPTION = (
+    "模型给出的业务结论缺少证据支持，已整条丢弃并降级为待人工确认。"
+    "具体是哪些断言没有依据，见本条的 unsupportedClaims；"
+    "请核对原件、OCR 文本、表格、印章和证据链后自行判定。"
+)
+
+
+def _downgraded_description(model_title: str, model_description: str) -> str:
+    """降级说明在前，模型原文在后。
+
+    顺序不能反：任何照直渲染 description 的地方，第一眼读到的必须是「未经核实」。
+    模型原文放后面，是因为它才是能让人知道「去查哪一份、查哪个字段」的东西。
+    """
+    detail = "\n".join(
+        part for part in (model_title.strip(), model_description.strip()) if part
+    )
+    if not detail:
+        # 模型没写出内容时不留悬空标题，退回原来的通用说明
+        return "当前 OCR 证据不足以支撑模型输出的业务结论，已降级为待人工确认；请核对原件、OCR 文本、表格、印章和证据链。"
+    return f"{_DOWNGRADE_NOTICE}\n\n{detail}"
+
+
 def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: dict[str, Any]) -> list[dict[str, Any]]:
     evidence_links = [item for item in grounding_input.get("evidenceLinks") or [] if isinstance(item, dict)]
     evidence_link_map = {str(item.get("id")): item for item in evidence_links if item.get("id")}
@@ -234,8 +263,40 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
             item["groundingStatus"] = "insufficient_evidence"
             item["suggestedAction"] = "human_confirm"
             item["confidence"] = min(_safe_float(item.get("confidence"), default=0.5), 0.5)
+            # 降级结论，但**不销毁模型写了什么**。
+            #
+            # 2026-08-14 线上实测（节点 2，RRUN-DD7097107E）：模型花了 5,245 token
+            # 产出三条具体诊断，例如「仅识别到证书编号、单位名称、有效期至等字段，
+            # 未提取到『许可范围/级别/类别』；规则要求核查许可范围是否覆盖项目管道
+            # 等级（GC1/GC2/GCD）」。原实现把 title 和 description 一起覆盖成同一句
+            # 模板，监检看到的是三条一模一样的「请核对原件、OCR 文本、表格、印章和
+            # 证据链」——真正该去查的那份扫描件、那个字段，全没了。
+            #
+            # 降级要降的是**结论的效力**（不许自动判定、置信度封顶、必须人工确认），
+            # 不是诊断信息。把定位问题的线索一起抹掉，等于让人从头再查一遍，
+            # AI 复核的价值也就没了。
+            #
+            # 仍然把降级说明放在最前：任何照直渲染 description 的地方，
+            # 第一眼读到的都是「未经核实」，不会把它当成已核实的结论。
+            #
+            # 但只在「模型诊断的是缺口」时保留原文。模型作出**没有证据支持的正面
+            # 断言**时（unsupported 非空），原文必须丢弃——例如
+            # 「焊工王建国证书编号、有效期和持证项目与焊接工艺要求匹配，建议通过」：
+            # 那是一个凭空产生的结论，加再多警告横幅也不该把它摆到监检面前，
+            # 人会记住那个名字。
+            #
+            # 两种降级原因的处置因此不同：
+            #   证据不足（缺字段、缺资料）→ 诊断的是缺口本身，保留，它指出去查什么
+            #   unsupportedClaims        → 断言了没有依据的事，丢弃
+            model_title = str(item.get("title") or "")
+            model_description = str(item.get("description") or "")
             item["title"] = "证据不足，需人工确认"
-            item["description"] = "当前 OCR 证据不足以支撑模型输出的业务结论，已降级为待人工确认；请核对原件、OCR 文本、表格、印章和证据链。"
+            if unsupported:
+                item["description"] = _UNSUPPORTED_CLAIM_DESCRIPTION
+            else:
+                item["modelTitle"] = model_title
+                item["modelDescription"] = model_description
+                item["description"] = _downgraded_description(model_title, model_description)
             item.setdefault("llmGroundingWarnings", []).append(
                 {
                     "code": "UNSUPPORTED_LLM_CLAIM" if unsupported else "INSUFFICIENT_OCR_EVIDENCE",
