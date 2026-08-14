@@ -714,14 +714,26 @@ export type AiSuggestionAdoptPayload = {
 }
 
 export type ReturnCorrectionPayload = {
+  rectificationType?: 'return_correction' | 'supplement_request'
   rectification: {
     id: string
     projectId: string
     nodeId: number
     status: string
+    supplementRequirements?: SupplementRequirementInput[]
   }
+  opinion?: ReviewOpinion | null
   nextStatus: string
   createdTodos: TodoItem[]
+}
+
+export type SupplementRequirementInput = {
+  id: string
+  source: 'system' | 'manual'
+  name: string
+  note?: string
+  materialTypeCode?: string
+  responsibleParty?: string
 }
 
 export type EvidenceChainPayload = {
@@ -3445,7 +3457,14 @@ export const rejectAiSuggestionApi = (
 export const returnCorrectionApi = (
   projectId: string,
   nodeId: number,
-  payload: { reason: string; bindingIds: string[]; evidenceLinkIds: string[] },
+  payload: {
+    reason: string
+    bindingIds: string[]
+    evidenceLinkIds: string[]
+    mode?: 'return_correction' | 'supplement_request'
+    opinion?: string
+    supplementRequirements?: SupplementRequirementInput[]
+  },
   options?: MutationHeaderOptions
 ): Promise<IResponse<ReturnCorrectionPayload>> => {
   return request.post({

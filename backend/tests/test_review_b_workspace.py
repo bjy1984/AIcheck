@@ -189,6 +189,149 @@ def test_review_b_return_correction_projection_only_lists_submitted_bindings() -
     ]
 
 
+def test_review_b_return_correction_atomically_creates_opinion_and_todo() -> None:
+    repo.state["documents"].append(
+        {
+            "id": "DOC-ATOMIC-RETURN",
+            "projectId": PROJECT_ID,
+            "fileName": "需修改的许可证.pdf",
+            "materialCategory": "设计文件",
+        }
+    )
+    repo.state["bindings"].append(
+        {
+            "id": "BIND-ATOMIC-RETURN",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "documentId": "DOC-ATOMIC-RETURN",
+            "fileName": "需修改的许可证.pdf",
+            "bindingStatus": "已提交",
+        }
+    )
+    repo.state["submissions"].append(
+        {
+            "id": "SUB-ATOMIC-RETURN",
+            "submissionId": "SUB-ATOMIC-RETURN",
+            "projectId": PROJECT_ID,
+            "bindingIds": ["BIND-ATOMIC-RETURN"],
+            "withdrawnBindingIds": [],
+            "submittedAt": "2026-08-14 10:00:00",
+        }
+    )
+    run = {
+        "id": "RRUN-ATOMIC-RETURN",
+        "reviewRunId": "RRUN-ATOMIC-RETURN",
+        "projectId": PROJECT_ID,
+        "nodeId": NODE_ID,
+        "status": "running",
+        "revision": 1,
+    }
+    repo.state["review_runs"].insert(0, run)
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+    before = {
+        "opinions": len(repo.state["review_opinions"]),
+        "rectifications": len(repo.state["rectifications"]),
+        "todos": len(repo.state["todos"]),
+    }
+
+    result = assert_ok(
+        client.post(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/actions/return-correction",
+            headers={
+                **HEADERS,
+                "If-Match": workspace["project"]["etag"],
+                "Idempotency-Key": "review-b-atomic-return",
+            },
+            json={
+                "mode": "return_correction",
+                "reason": "许可证范围与项目不一致，请修改。",
+                "opinion": "许可证范围与项目不一致，请修改。",
+                "bindingIds": ["BIND-ATOMIC-RETURN"],
+                "evidenceLinkIds": [],
+            },
+        )
+    )
+
+    assert result["rectificationType"] == "return_correction"
+    assert result["opinion"]["result"] == "需补正"
+    assert len(repo.state["review_opinions"]) == before["opinions"] + 1
+    assert len(repo.state["rectifications"]) == before["rectifications"] + 1
+    assert len(repo.state["todos"]) == before["todos"] + 1
+    assert repo.find_one("bindings", "BIND-ATOMIC-RETURN")["bindingStatus"] == "需补正"
+    assert run["status"] == "running"
+    assert "humanDecision" not in run
+
+
+def test_review_b_supplement_request_creates_task_without_binding(
+    monkeypatch,
+) -> None:
+    original_readiness = routes_module.build_node_evidence_readiness
+
+    def readiness_with_missing(*args, **kwargs):
+        readiness = original_readiness(*args, **kwargs)
+        readiness["missingRequirements"] = [
+            {
+                "id": "REQ-MISSING-DESIGN-LICENSE",
+                "nodeId": NODE_ID,
+                "name": "设计单位许可证",
+                "requiredType": "必传",
+                "materialTypeCode": "DESIGN_LICENSE",
+                "responsibleParty": "施工单位",
+                "matchedBindingCount": 0,
+                "matchedFileNames": [],
+                "fulfilled": False,
+            }
+        ]
+        readiness["missingCount"] = 1
+        return readiness
+
+    monkeypatch.setattr(routes_module, "build_node_evidence_readiness", readiness_with_missing)
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+    before_binding_count = len(repo.state["bindings"])
+
+    result = assert_ok(
+        client.post(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/actions/return-correction",
+            headers={
+                **HEADERS,
+                "If-Match": workspace["project"]["etag"],
+                "Idempotency-Key": "review-b-supplement-request",
+            },
+            json={
+                "mode": "supplement_request",
+                "reason": "请补充提交设计单位许可证。",
+                "opinion": "缺少设计单位许可证，需补充后复核。",
+                "bindingIds": [],
+                "supplementRequirements": [
+                    {
+                        "id": "REQ-MISSING-DESIGN-LICENSE",
+                        "source": "system",
+                        "name": "设计单位许可证",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert result["rectificationType"] == "supplement_request"
+    assert result["opinion"]["result"] == "需补正"
+    assert result["rectification"]["supplementRequirements"][0]["id"] == (
+        "REQ-MISSING-DESIGN-LICENSE"
+    )
+    assert len(repo.state["bindings"]) == before_binding_count
+    assert repo.state["todos"][0]["targetId"] == result["rectification"]["id"]
+
+
 def test_review_b_latest_human_decision_prefers_node_review_opinion() -> None:
     repo.state["review_runs"].insert(
         0,
