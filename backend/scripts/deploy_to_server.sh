@@ -102,13 +102,13 @@ PY
       aicheck-api:local uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 >/dev/null
     # 直接问新容器自己，不经网关——此刻网关还指着旧容器
     ready=no
-    for i in $(seq 1 60); do
+    for i in \$(seq 1 60); do
       sleep 3
       if docker exec aicheck-api-next python -c \
-        \"import urllib.request,sys; sys.exit(0 if b'ready\\\":true' in urllib.request.urlopen('http://127.0.0.1:8000/api/readyz',timeout=5).read() else 1)\" \
+        \"import urllib.request,sys; sys.exit(0 if b'ready' in urllib.request.urlopen('http://127.0.0.1:8000/api/readyz',timeout=5).read() else 1)\" \
         >/dev/null 2>&1; then ready=yes; break; fi
     done
-    if [ \"$ready\" != yes ]; then
+    if [ \"\$ready\" != yes ]; then
       echo '新容器未能就绪，保留旧容器继续服务' >&2
       docker logs aicheck-api-next --tail 30 >&2 || true
       docker rm -f aicheck-api-next >/dev/null 2>&1 || true
