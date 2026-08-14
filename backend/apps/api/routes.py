@@ -9890,6 +9890,25 @@ def review_workspace_payload(
     ]
     role = effective_role_for_request(request)[0] or "inspection"
     can_review = role in {"inspection", "admin", "fde"}
+    can_return_correction = "review:return-correction" in repo.role_actions(role)
+    returnable_bindings = []
+    for binding in project_bindings:
+        if (
+            int(binding.get("nodeId") or 0) != int(node_id)
+            or binding.get("bindingStatus") != "已提交"
+        ):
+            continue
+        document = repo.find_one("documents", str(binding.get("documentId") or "")) or {}
+        returnable_bindings.append(
+            {
+                "id": binding.get("id"),
+                "documentId": binding.get("documentId"),
+                "fileName": binding.get("fileName") or document.get("fileName"),
+                "materialTypeName": document.get("materialTypeName"),
+                "materialCategory": document.get("materialCategory"),
+                "bindingStatus": binding.get("bindingStatus"),
+            }
+        )
     run_status = str((review_run or {}).get("status") or "")
     available_modes = evidence_readiness.get("availableReviewModes") or []
     current_task = str((session or {}).get("currentTask") or basis.get("inspectionItem") or node.get("name") or "")
@@ -9904,11 +9923,13 @@ def review_workspace_payload(
             "canSubmitHumanInput": can_review and bool(active_task),
             "canSubmitHumanDecision": can_review and run_status == "waiting_human_review",
             "canSubmitReviewOpinion": can_review,
+            "canReturnCorrection": can_return_correction,
             "canManageEvidence": can_review,
         },
         "evidenceReadiness": repo.clone(evidence_readiness),
         "evidenceLinks": evidence_links,
         "selectedEvidence": selected_evidence,
+        "returnableBindings": returnable_bindings,
         "businessBasis": repo.clone(basis),
         "basisSnapshot": fixed_basis,
         "session": review_session_view(session) if session else None,

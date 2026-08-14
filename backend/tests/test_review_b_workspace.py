@@ -129,6 +129,66 @@ def test_review_b_node_conclusion_permission_is_independent_of_review_run(
     assert workspace["permissions"]["canSubmitReviewOpinion"] is True
 
 
+def test_review_b_return_correction_projection_only_lists_submitted_bindings() -> None:
+    repo.state["documents"].extend(
+        [
+            {
+                "id": "DOC-RETURNABLE",
+                "projectId": PROJECT_ID,
+                "fileName": "已提交设计许可证.pdf",
+                "materialTypeName": "设计单位许可证",
+                "materialCategory": "设计文件",
+            },
+            {
+                "id": "DOC-DRAFT",
+                "projectId": PROJECT_ID,
+                "fileName": "尚未提交资料.pdf",
+                "materialTypeName": "设计人员证明",
+                "materialCategory": "设计文件",
+            },
+        ]
+    )
+    repo.state["bindings"].extend(
+        [
+            {
+                "id": "BIND-RETURNABLE",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "documentId": "DOC-RETURNABLE",
+                "fileName": "已提交设计许可证.pdf",
+                "bindingStatus": "已提交",
+            },
+            {
+                "id": "BIND-DRAFT",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "documentId": "DOC-DRAFT",
+                "fileName": "尚未提交资料.pdf",
+                "bindingStatus": "草稿挂载",
+            },
+        ]
+    )
+
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+
+    assert workspace["permissions"]["canReturnCorrection"] is True
+    assert workspace["returnableBindings"] == [
+        {
+            "id": "BIND-RETURNABLE",
+            "documentId": "DOC-RETURNABLE",
+            "fileName": "已提交设计许可证.pdf",
+            "materialTypeName": "设计单位许可证",
+            "materialCategory": "设计文件",
+            "bindingStatus": "已提交",
+        }
+    ]
+
+
 def test_review_b_latest_human_decision_prefers_node_review_opinion() -> None:
     repo.state["review_runs"].insert(
         0,
