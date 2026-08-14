@@ -76,6 +76,9 @@ PY
     set -eo pipefail
     cd $REMOTE_HOME/AIcheck/backend
     docker build -q -f Dockerfile.server -t aicheck-api:local . >/dev/null
+    # 运行时 env 生成器以仓库版本为准，覆盖服务器上可能被手改过的副本。
+    # 此前它只存在于服务器，部署逻辑有一半没有版本管理。
+    cp deploy/build_runtime_env.py /home/dev-bjy/build-runtime-env.py
     python3 /home/dev-bjy/build-runtime-env.py
     docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.env \
       aicheck-api:local python scripts/migrate_backend.py | tail -1
