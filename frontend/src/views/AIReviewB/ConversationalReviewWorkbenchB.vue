@@ -1154,7 +1154,7 @@ onBeforeUnmount(() => {
       <div class="brand">
         <span class="brand-mark">AI</span>
         <div>
-          <strong>AI 工程监检复核工作台</strong>
+          <strong>压力管道监检工作台</strong>
         </div>
       </div>
       <ElSelect

@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <ElDialog v-model="visible" :title="locationTitle" width="1040px" append-to-body>
+  <ElDialog v-model="visible" :title="locationTitle" width="1040px" top="32px" append-to-body>
     <template v-if="evidence">
       <ElDescriptions
         v-if="evidence.objectType !== 'knowledgeClause'"
