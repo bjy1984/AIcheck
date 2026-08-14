@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from apps.ocr_service.utils import parse_bool
+from libs.ocr.utils import parse_bool
 
 
 PACKAGE_CHECKS = {

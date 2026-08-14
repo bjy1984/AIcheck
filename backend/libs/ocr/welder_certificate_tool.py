@@ -5,7 +5,6 @@ from datetime import date, datetime
 from typing import Any
 from uuid import uuid4
 
-
 TOOL_NAME = "ocr.welder_certificate.extract"
 TOOL_VERSION = "welder-certificate-extractor-v1"
 

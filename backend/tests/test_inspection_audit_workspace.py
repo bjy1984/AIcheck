@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from apps.api.main import app
 from libs.db.repository import repo
 
-
 client = TestClient(app)
 PROJECT_ID = "P-2026-HDCP-001"
 NODE_ID = 24

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.ocr_service.utils import parse_bool
+from libs.ocr.utils import parse_bool
 
 
 TEXT_ENGINES = {"pymupdf_text_layer", "paddle_ocr_subprocess", "paddle_ocr_v6", "tesseract_cli", "docling_local"}

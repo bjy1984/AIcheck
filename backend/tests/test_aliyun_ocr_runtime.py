@@ -25,7 +25,11 @@ from libs.ocr_runtime import (
     ocr_runtime_public_config,
     official_ocr_primary_enabled,
 )
-from libs.official_ocr_pipeline import detect_color_seal_rois, official_ocr_extract, selected_source_pages
+from libs.official_ocr_pipeline import (
+    detect_color_seal_rois,
+    official_ocr_extract,
+    selected_source_pages,
+)
 
 
 def official_env(**overrides: str) -> dict[str, str]:

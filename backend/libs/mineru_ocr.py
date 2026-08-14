@@ -13,7 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from apps.ocr_service.engines import html_table_to_structure
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from apps.ocr_service.service import enrich_parse_result
 from libs.contracts.responses import server_time
 

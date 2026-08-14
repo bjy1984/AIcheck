@@ -5,8 +5,12 @@ from pathlib import Path
 
 import httpx
 
-from libs.qwen_runtime import CONFIG_PATH, QwenRuntimeClient, qwen_runtime_config, qwen_runtime_public_config
-
+from libs.qwen_runtime import (
+    CONFIG_PATH,
+    QwenRuntimeClient,
+    qwen_runtime_config,
+    qwen_runtime_public_config,
+)
 
 CONFIG_TEXT = """
 schemaVersion: aicheck-qwen-runtime@1

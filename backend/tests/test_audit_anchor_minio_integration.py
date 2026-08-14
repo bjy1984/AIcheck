@@ -12,7 +12,6 @@ from libs import audit_anchor
 from libs.integrations.storage import ObjectStorage
 from scripts.migrate_backend import apply_migrations
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("AICHECK_TEST_POSTGRES_URL") or not os.getenv("AICHECK_TEST_MINIO_ENDPOINT"),
     reason="AICHECK_TEST_POSTGRES_URL and AICHECK_TEST_MINIO_ENDPOINT are required",

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from libs.audit_runtime import audit_runtime_config, audit_runtime_for_run, audit_runtime_public_config
+from libs.audit_runtime import (
+    audit_runtime_config,
+    audit_runtime_for_run,
+    audit_runtime_public_config,
+)
 from libs.review_grounding import apply_grounding_guardrails, grounding_prompt_block
 from libs.review_orchestrator.execution import validate_review_evidence_refs
-
 
 CONFIG_TEXT = """
 schemaVersion: aicheck-audit-runtime@1

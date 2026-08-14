@@ -14,6 +14,7 @@
   "BLE001": 24,
   "C405": 2,
   "F841": 3,
+  "I001": 1,
   "PIE810": 1,
   "S110": 3,
   "SIM101": 1,
@@ -75,10 +76,6 @@
   "BLE001": 2,
   "S112": 1
  },
- "apps/ocr_service/profiles.py": {
-  "BLE001": 1,
-  "I001": 1
- },
  "apps/ocr_service/public_benchmarks.py": {
   "BLE001": 2,
   "I001": 1,
@@ -122,11 +119,6 @@
   "SIM114": 1,
   "SIM118": 2,
   "UP012": 1
- },
- "apps/ocr_service/welder_certificate_tool.py": {
-  "DTZ007": 1,
-  "DTZ011": 1,
-  "I001": 1
  },
  "apps/review_worker/activities.py": {
   "I001": 1
@@ -305,6 +297,16 @@
   "FURB192": 1,
   "I001": 1,
   "PIE810": 1
+ },
+ "libs/mineru_ocr.py": {
+  "I001": 1
+ },
+ "libs/ocr/profiles.py": {
+  "BLE001": 1
+ },
+ "libs/ocr/welder_certificate_tool.py": {
+  "DTZ007": 1,
+  "DTZ011": 1
  },
  "libs/ocr_accuracy_pipeline.py": {
   "I001": 1,
@@ -501,7 +503,6 @@
   "UP035": 1
  },
  "scripts/audit_frontend_contract.py": {
-  "I001": 1,
   "UP035": 1
  },
  "scripts/audit_standard_clause_artifacts.py": {
@@ -545,6 +546,10 @@
  },
  "scripts/create_roles.py": {
   "I001": 1
+ },
+ "scripts/data_migration.py": {
+  "I001": 1,
+  "UP035": 1
  },
  "scripts/deployment_report.py": {
   "BLE001": 23,
@@ -849,152 +854,55 @@
   "BLE001": 2,
   "EXE001": 1
  },
- "tests/test_aliyun_ocr_runtime.py": {
-  "I001": 1
- },
- "tests/test_audit_anchor_minio_integration.py": {
-  "I001": 1
+ "scripts/verify_restored_migration.py": {
+  "EXE001": 1
  },
  "tests/test_audit_fix_regressions.py": {
   "FURB167": 1,
   "RUF059": 1
  },
- "tests/test_audit_runtime.py": {
-  "I001": 1
- },
- "tests/test_auth_tokens.py": {
-  "I001": 1
- },
  "tests/test_backend_audit_remediation.py": {
-  "I001": 1,
   "UP017": 1
- },
- "tests/test_backend_migrations.py": {
-  "I001": 1
  },
  "tests/test_backup_recoverability.py": {
   "UP017": 4
  },
- "tests/test_business_pack.py": {
-  "I001": 1
- },
  "tests/test_check_96_preflight.py": {
-  "FLY002": 1,
-  "I001": 1
+  "FLY002": 1
  },
  "tests/test_cnse_api.py": {
-  "I001": 1,
   "PLR0402": 1,
   "UP031": 1
  },
  "tests/test_contract.py": {
-  "I001": 6,
   "PLC0208": 1,
   "PLR0402": 1,
   "PLR1711": 1,
   "RET501": 1,
   "UP017": 1
  },
+ "tests/test_data_migration.py": {
+  "ISC004": 1,
+  "PLW1510": 2
+ },
  "tests/test_deployment_report.py": {
   "F401": 1,
-  "I001": 1,
   "RUF012": 5
- },
- "tests/test_document_ai_shadow.py": {
-  "I001": 1
- },
- "tests/test_document_ai_shadow_service.py": {
-  "I001": 1
- },
- "tests/test_document_audit_pipeline_comparison.py": {
-  "I001": 1
- },
- "tests/test_fde_console.py": {
-  "I001": 1
  },
  "tests/test_import_layering.py": {
   "B009": 1
  },
- "tests/test_import_scan_test_scenario.py": {
-  "I001": 1
- },
- "tests/test_inspection_audit_workspace.py": {
-  "I001": 1
- },
- "tests/test_knowledge_graph.py": {
-  "I001": 1
- },
- "tests/test_material_targeting.py": {
-  "I001": 1
- },
  "tests/test_mineru_postgres_queue.py": {
-  "I001": 1,
   "UP017": 2
  },
- "tests/test_mineru_postgres_worker.py": {
-  "I001": 1
- },
- "tests/test_mineru_worker_health.py": {
-  "I001": 1
- },
- "tests/test_model_usage_accounting.py": {
-  "I001": 1
- },
- "tests/test_ocr_100_corpus.py": {
-  "I001": 1
- },
- "tests/test_ocr_100_label_studio_verify.py": {
-  "I001": 1
- },
- "tests/test_ocr_accuracy_pipeline.py": {
-  "I001": 1
- },
- "tests/test_ocr_accuracy_pipeline_compose.py": {
-  "I001": 1
- },
- "tests/test_ocr_fast_first.py": {
-  "I001": 1
- },
- "tests/test_ocr_paddlex_subprocess.py": {
-  "I001": 1
- },
- "tests/test_ocr_page_scope.py": {
-  "I001": 18
- },
  "tests/test_ocr_pipeline_hardening.py": {
-  "I001": 1,
   "PIE807": 1
  },
- "tests/test_postgres_real_integration.py": {
-  "I001": 1
- },
  "tests/test_production_remediation_tools.py": {
-  "I001": 1,
   "UP017": 1
- },
- "tests/test_qwen_runtime.py": {
-  "I001": 1
- },
- "tests/test_r13_facts.py": {
-  "I001": 1
- },
- "tests/test_r14_facts.py": {
-  "I001": 1
- },
- "tests/test_r15_facts.py": {
-  "I001": 1
- },
- "tests/test_r24_r34_tools.py": {
-  "I001": 1
  },
  "tests/test_raw_vault_agent_capture.py": {
   "F401": 1
- },
- "tests/test_raw_vault_api.py": {
-  "I001": 1
- },
- "tests/test_raw_vault_postgres_integration.py": {
-  "I001": 1
  },
  "tests/test_release_manifest.py": {
   "F401": 1
@@ -1007,11 +915,7 @@
   "UP017": 1,
   "UP037": 1
  },
- "tests/test_review_business_tools.py": {
-  "I001": 1
- },
  "tests/test_review_orchestration_100_probe.py": {
-  "I001": 1,
   "SIM117": 2
  },
  "tests/test_review_p0_correctness.py": {
@@ -1020,43 +924,16 @@
  "tests/test_review_runtime_tool_dispatcher.py": {
   "FLY002": 1
  },
- "tests/test_scan_audit_context_score.py": {
-  "I001": 1
- },
- "tests/test_security_hardening.py": {
-  "I001": 1
- },
- "tests/test_setup_local_ocr.py": {
-  "I001": 1
- },
  "tests/test_silent_failure_guards.py": {
   "F401": 1
  },
  "tests/test_standard_clause_store.py": {
-  "I001": 1,
   "PLR0402": 1
  },
  "tests/test_std_samr_api.py": {
-  "I001": 1,
   "PLR0402": 1
  },
- "tests/test_task_lifecycle_p1.py": {
-  "I001": 1
- },
- "tests/test_temporal_live_integration.py": {
-  "I001": 1
- },
- "tests/test_upload_scoped_persistence.py": {
-  "I001": 1
- },
  "tests/test_validate_deployment_config.py": {
-  "FLY002": 1,
-  "I001": 1
- },
- "tests/test_verify_deployment.py": {
-  "I001": 1
- },
- "tests/test_workflow_outbox_postgres_integration.py": {
-  "I001": 1
+  "FLY002": 1
  }
 }

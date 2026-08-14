@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 
 from apps.ocr_service.evaluation import OCR_100_REQUIRED_SCENARIOS
-from scripts.ocr_100_corpus import OCR_100_SCENARIO_TARGETS, build_corpus_report, collection_todo_csv, has_evidence
+from scripts.ocr_100_corpus import (
+    OCR_100_SCENARIO_TARGETS,
+    build_corpus_report,
+    collection_todo_csv,
+    has_evidence,
+)
 
 
 def test_ocr_100_corpus_accepts_100_cases_with_required_scenarios(tmp_path) -> None:

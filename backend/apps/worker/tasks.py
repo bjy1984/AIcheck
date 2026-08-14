@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from apps.ocr_service.service import ocr_service
 from apps.worker.celery_app import celery_app
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node

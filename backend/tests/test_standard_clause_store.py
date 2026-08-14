@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
+import libs.review_orchestrator.execution as execution
 from libs.business_pack import load_business_pack
 from libs.business_pack.clause_store import (
     CLAUSE_STATE_COLLECTIONS,
@@ -11,9 +12,7 @@ from libs.business_pack.clause_store import (
     publish_standard_clause_release,
     review_run_clause_snapshot,
 )
-from libs.db.repository import InMemoryRepository
-from libs.db.repository import repo
-import libs.review_orchestrator.execution as execution
+from libs.db.repository import InMemoryRepository, repo
 
 
 def test_clause_release_is_idempotent_and_review_snapshot_is_immutable() -> None:

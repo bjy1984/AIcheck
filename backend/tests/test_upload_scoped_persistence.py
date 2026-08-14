@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from apps.api.routes import create_ndt_atomic_drafts_for_completed_session, upload_session_state_records
+from apps.api.routes import (
+    create_ndt_atomic_drafts_for_completed_session,
+    upload_session_state_records,
+)
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
 

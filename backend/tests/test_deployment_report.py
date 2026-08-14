@@ -11,11 +11,12 @@ from types import SimpleNamespace
 from fastapi.responses import JSONResponse
 
 from scripts.deployment_report import (
+    REQUIRED_STORAGE_BUCKETS,
     DeploymentReportBuilder,
     auth_security_contract_check,
-    backup_recoverability_contract_section,
     backend_action_coverage_check,
     backend_mutation_idempotency_check,
+    backup_recoverability_contract_section,
     called_function_names,
     export_artifact_contract_check,
     fde_governance_contract_check,
@@ -28,10 +29,9 @@ from scripts.deployment_report import (
     ocr_evaluation_contract_check,
     ocr_service_contract_check,
     postgres_index_contract_check,
-    review_orchestration_contract_check,
     release_gate_contract_section,
     response_envelope_contract_check,
-    REQUIRED_STORAGE_BUCKETS,
+    review_orchestration_contract_check,
     role_contract_check,
     storage_contract_check,
     worker_task_contract_check,
@@ -392,7 +392,7 @@ def test_ocr_evaluation_contract_and_cli_fixture_pass(tmp_path) -> None:
 
 
 def test_ocr_profile_contract_rejects_missing_critical_conflict_fields() -> None:
-    from apps.ocr_service.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
+    from libs.ocr.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
 
     profiles = {key: json.loads(json.dumps(value, ensure_ascii=False)) for key, value in OCR_PROFILES.items()}
     profiles["broken_profile_v1"] = {

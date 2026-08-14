@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import os
+from copy import deepcopy
 
 import pytest
 
@@ -12,7 +12,6 @@ from libs.db.repository import InMemoryRepository
 from libs.integrations.mineru_client import MinerUProtocolError
 from libs.security.tenant import current_tenant_id
 from scripts.migrate_backend import apply_migrations
-
 
 EXPECTED_FRAGMENTS = [
     {

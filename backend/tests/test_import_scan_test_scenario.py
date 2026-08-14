@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from apps.api.routes import requirement_matches_binding
+from libs.business_pack.clause_store import clause_package_snapshot_for_project_node
+from libs.db.repository import InMemoryRepository
+from libs.material_targeting import load_review_points_from_mapping_doc
 from scripts.import_scan_test_scenario import (
     FILE_MAPPINGS,
     fields_from_ocr,
@@ -13,10 +17,6 @@ from scripts.import_scan_test_scenario import (
     validate_file_mappings,
     vision_bbox_to_xyxy,
 )
-from libs.material_targeting import load_review_points_from_mapping_doc
-from libs.business_pack.clause_store import clause_package_snapshot_for_project_node
-from libs.db.repository import InMemoryRepository
-from apps.api.routes import requirement_matches_binding
 
 
 def test_heic_import_uses_full_resolution_png(tmp_path: Path) -> None:

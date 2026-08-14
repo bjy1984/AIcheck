@@ -12,7 +12,6 @@ from apps.review_worker.outbox import (
 )
 from scripts.migrate_backend import apply_migrations
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("AICHECK_TEST_POSTGRES_URL"),
     reason="AICHECK_TEST_POSTGRES_URL is required for PostgreSQL outbox integration tests",

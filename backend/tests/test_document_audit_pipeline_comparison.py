@@ -9,7 +9,11 @@ from fastapi.testclient import TestClient
 from apps.api.main import app
 from apps.worker import tasks
 from libs.db.repository import repo
-from libs.deepseek_runtime import DeepSeekAuditClient, deepseek_runtime_config, deepseek_runtime_public_config
+from libs.deepseek_runtime import (
+    DeepSeekAuditClient,
+    deepseek_runtime_config,
+    deepseek_runtime_public_config,
+)
 from libs.document_audit_pipeline_comparison import (
     QwenVisionAuditClient,
     build_deepseek_messages,
@@ -20,7 +24,6 @@ from libs.document_audit_pipeline_comparison import (
     stable_hash_payload,
     unwrap_pipeline_payload,
 )
-
 
 client = TestClient(app)
 

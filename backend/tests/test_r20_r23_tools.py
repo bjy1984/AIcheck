@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apps.ocr_service.profiles import profile_for, validate_profiles
+from libs.ocr.profiles import profile_for, validate_profiles
 from libs.review_orchestrator.r20_r23_facts import build_r23_business_facts
 from libs.review_tools.r20_r23_tools import (
     classify_r20_new_material_applicability,

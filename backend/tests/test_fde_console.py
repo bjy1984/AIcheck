@@ -10,7 +10,6 @@ from apps.api.routes import fde_ocr_100_action_handoff_snapshot
 from libs.db.repository import repo
 from libs.db.seed import STANDARD_RULES_SOURCE_ID
 
-
 client = TestClient(app)
 
 

@@ -17,7 +17,6 @@ from libs.integrations.std_samr_client import (
     parse_search_html,
 )
 
-
 client = TestClient(app)
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "std_samr"
 

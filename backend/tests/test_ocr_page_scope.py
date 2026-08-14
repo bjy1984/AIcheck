@@ -282,7 +282,7 @@ def test_text_only_seal_candidate_cannot_satisfy_required_seal() -> None:
 
 
 def test_unmapped_bbox_does_not_count_as_valid_evidence() -> None:
-    from apps.ocr_service.fusion import has_evidence_box, fuse_parse_result
+    from apps.ocr_service.fusion import fuse_parse_result, has_evidence_box
 
     field = {
         "fieldCode": "report_no",
@@ -323,8 +323,8 @@ def test_bbox_without_explicit_coordinate_system_is_not_valid_evidence() -> None
 
 
 def test_crop_bbox_maps_to_page_coordinates() -> None:
-    from apps.ocr_service.service import attach_variant_metadata
     from apps.ocr_service.fusion import has_evidence_box
+    from apps.ocr_service.service import attach_variant_metadata
 
     result = {
         "fragments": [{"text": "报告编号 R-001", "bbox": [5, 6, 25, 16], "confidence": 0.9}],
@@ -428,6 +428,7 @@ def test_document_level_pdf_routes_without_page_variants() -> None:
 
 def test_remediation_builds_table_crop_variant(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     source = tmp_path / "page-1.png"
@@ -468,6 +469,7 @@ def test_remediation_builds_table_crop_variant(tmp_path: Path) -> None:
 
 def test_remediation_builds_field_crop_and_routes_to_text_engine(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.routing import route_engine_variants
     from apps.ocr_service.service import remediation_variants_for_reasons
 
@@ -516,7 +518,7 @@ def test_remediation_builds_field_crop_and_routes_to_text_engine(tmp_path: Path)
 
 
 def test_default_vlm_fallback_reasons_include_seal_not_found() -> None:
-    from apps.ocr_service.profiles import DEFAULT_VLM_FALLBACK_REASONS
+    from libs.ocr.profiles import DEFAULT_VLM_FALLBACK_REASONS
 
     assert "SEAL_NOT_FOUND" in DEFAULT_VLM_FALLBACK_REASONS
 
@@ -547,7 +549,12 @@ def test_cache_schema_versions_are_upgraded() -> None:
 
 def test_pdf_page_render_manifest_round_trips_matrix_metadata(tmp_path: Path) -> None:
     from PIL import Image
-    from apps.ocr_service.pages import PAGE_RENDER_VERSION, load_pdf_page_manifest, save_pdf_page_manifest
+
+    from apps.ocr_service.pages import (
+        PAGE_RENDER_VERSION,
+        load_pdf_page_manifest,
+        save_pdf_page_manifest,
+    )
 
     page_path = tmp_path / "page-1.png"
     Image.new("RGB", (20, 20), (255, 255, 255)).save(page_path)
@@ -576,7 +583,13 @@ def test_pdf_page_cache_hit_uses_manifest_not_get_pixmap(monkeypatch, tmp_path: 
     import types
 
     from PIL import Image
-    from apps.ocr_service.pages import PAGE_RENDER_VERSION, render_pdf_pages, rendered_page_cache_dir, save_pdf_page_manifest
+
+    from apps.ocr_service.pages import (
+        PAGE_RENDER_VERSION,
+        render_pdf_pages,
+        rendered_page_cache_dir,
+        save_pdf_page_manifest,
+    )
 
     source = tmp_path / "cached.pdf"
     source.write_bytes(b"%PDF-1.7 cached")
@@ -634,6 +647,7 @@ def test_pdf_page_render_falls_back_to_configured_subprocess(monkeypatch, tmp_pa
     import sys
 
     from PIL import Image
+
     from apps.ocr_service.pages import PAGE_RENDER_VERSION, render_pdf_pages
 
     source = tmp_path / "subprocess.pdf"
@@ -695,7 +709,8 @@ def test_pdf_page_render_falls_back_to_configured_subprocess(monkeypatch, tmp_pa
 
 def test_profile_validator_checks_min_table_cell_evidence_coverage() -> None:
     from copy import deepcopy
-    from apps.ocr_service.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
+
+    from libs.ocr.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
 
     profile = deepcopy(OCR_PROFILES[DEFAULT_PROFILE_ID])
     profile["qualityRules"]["minTableCellEvidenceCoverage"] = 1.2
@@ -717,7 +732,8 @@ def test_profile_validator_checks_min_table_cell_evidence_coverage() -> None:
 
 def test_profile_validator_accepts_parseable_boolean_strings_for_required_seal() -> None:
     from copy import deepcopy
-    from apps.ocr_service.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
+
+    from libs.ocr.profiles import DEFAULT_PROFILE_ID, OCR_PROFILES, validate_profiles
 
     profile = deepcopy(OCR_PROFILES[DEFAULT_PROFILE_ID])
     profile["sealRules"]["required"] = "false"
@@ -852,8 +868,8 @@ def test_opencv_grid_alignment_keeps_multiple_text_segments() -> None:
 
 
 def test_piping_profile_keeps_drawing_title_block_table_candidate() -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result
+    from libs.ocr.profiles import profile_for
 
     fragments = [
         {"pageNo": 1, "text": "广东星燃石化设计院有限公司", "bbox": [120, 12, 430, 42], "confidence": 0.95},
@@ -1096,6 +1112,7 @@ def test_nested_crop_bbox_is_not_double_offset() -> None:
 
 def test_build_crop_variants_rejects_coordinate_transform_unmapped(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     source = tmp_path / "page-1.png"
@@ -1141,6 +1158,7 @@ def test_purpose_variant_does_not_route_all_pages_without_page_clue() -> None:
 
 def test_field_remediation_prioritizes_missing_field_label_crop(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     source = tmp_path / "page-1.png"
@@ -1182,6 +1200,7 @@ def test_field_remediation_prioritizes_missing_field_label_crop(tmp_path: Path) 
 
 def test_required_table_missing_generates_page_region_crop(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     source = tmp_path / "page-1.png"
@@ -1202,6 +1221,7 @@ def test_required_table_missing_generates_page_region_crop(tmp_path: Path) -> No
 
 def test_seal_not_found_generates_tail_page_signature_region_crop(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     first = tmp_path / "page-1.png"
@@ -1611,6 +1631,7 @@ def test_generic_seal_region_crop_ocr_is_candidate_only() -> None:
 
 def test_seal_not_found_routes_tail_crop_to_visual_seal_candidate_engine(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.routing import route_engine_variants
     from apps.ocr_service.service import remediation_variants_for_reasons
 
@@ -1655,6 +1676,7 @@ def test_seal_not_found_routes_tail_crop_to_visual_seal_candidate_engine(tmp_pat
 
 def test_seal_not_found_targets_middle_visual_seal_page(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     variants = []
@@ -1683,6 +1705,7 @@ def test_seal_not_found_targets_middle_visual_seal_page(tmp_path: Path) -> None:
 
 def test_missing_table_crop_targets_table_clue_pages_not_only_first_three(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     variants = []
@@ -1716,6 +1739,7 @@ def test_missing_table_crop_targets_table_clue_pages_not_only_first_three(tmp_pa
 
 def test_crop_variant_id_unique_for_same_field_multiple_bboxes(tmp_path: Path) -> None:
     from PIL import Image
+
     from apps.ocr_service.service import remediation_variants_for_reasons
 
     source = tmp_path / "page-1.png"
@@ -1878,9 +1902,10 @@ def test_required_table_auto_pass_requires_cell_evidence_coverage() -> None:
 
 def test_table_cell_evidence_low_triggers_remediation(tmp_path: Path) -> None:
     from PIL import Image
-    from apps.ocr_service.profiles import DEFAULT_VLM_FALLBACK_REASONS
+
     from apps.ocr_service.routing import route_engine_variants
     from apps.ocr_service.service import remediation_variants_for_reasons
+    from libs.ocr.profiles import DEFAULT_VLM_FALLBACK_REASONS
 
     assert "TABLE_CELL_EVIDENCE_LOW" in DEFAULT_VLM_FALLBACK_REASONS
 

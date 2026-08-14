@@ -6,7 +6,6 @@ from libs.review_orchestrator.execution import ALLOWED_AGENT_TOOLS
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_tools import BUSINESS_TOOL_NAMES
 
-
 R16_R18_TOOL_NAMES = {
     "resolve_r16_product_standard_profile",
     "evaluate_r16_quality_certificate_batch_coverage",

@@ -6,7 +6,10 @@ import zlib
 from pathlib import Path
 
 from scripts.ocr_100_label_studio_export import export_label_studio_pack
-from scripts.ocr_100_label_studio_verify import label_studio_verify_markdown, verify_label_studio_pack
+from scripts.ocr_100_label_studio_verify import (
+    label_studio_verify_markdown,
+    verify_label_studio_pack,
+)
 
 
 def png_bytes(width: int, height: int) -> bytes:

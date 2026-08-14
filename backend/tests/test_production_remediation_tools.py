@@ -17,7 +17,6 @@ from scripts.prepare_legacy_production import apply_preparation, legacy_report
 from scripts.production_audit_ops import canonical_event_hash
 from scripts.reconcile_review_runs import load_plan, mark_failed_to_start
 
-
 POSTGRES_URL = os.getenv("AICHECK_TEST_POSTGRES_URL")
 
 

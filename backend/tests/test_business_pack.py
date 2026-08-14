@@ -9,10 +9,10 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import app
 from libs.business_pack import (
-    business_pack_fixtures,
     build_ai_review_prompt,
     build_project_requirements,
     build_project_tree,
+    business_pack_fixtures,
     list_business_packs,
     load_business_pack,
     matching_rule_for_node,
@@ -20,7 +20,6 @@ from libs.business_pack import (
 )
 from libs.business_pack.boundary import scan_core_boundary
 from libs.db.repository import repo
-
 
 client = TestClient(app)
 BACKEND_ROOT = Path(__file__).resolve().parents[1]

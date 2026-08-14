@@ -6,7 +6,6 @@ import yaml
 
 from scripts.validate_deployment_config import DeploymentConfigValidator, default_value
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 

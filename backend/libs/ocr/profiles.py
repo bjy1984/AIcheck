@@ -3,8 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from apps.ocr_service.utils import parse_bool
-
+from libs.ocr.utils import parse_bool
 
 DEFAULT_PROFILE_ID = "generic_document_v1"
 PROFILE_ALIASES = {

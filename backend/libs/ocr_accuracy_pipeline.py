@@ -10,7 +10,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterable
 
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from libs.ocr_runtime import qwen_render_max_long_side
 from libs.document_ai_shadow import (
     build_evidence_prior,

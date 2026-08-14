@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from libs.review_orchestrator.r16_facts import build_r16_business_facts
 from libs.review_orchestrator.r17_facts import build_r17_business_facts
 from libs.review_orchestrator.r18_facts import build_r18_business_facts

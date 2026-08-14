@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import io
 import importlib.util
-import json
 import inspect
+import io
+import json
 import sys
 import zipfile
 from argparse import Namespace
@@ -14,10 +14,15 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.api.main import app
 from libs.db.indexes import POSTGRES_INDEXES
 from libs.db.postgres import bootstrap_local_roles_if_configured, run_transaction_probe
-from apps.api.main import app
-from libs.db.repository import IDEMPOTENCY_COLLECTION, SINGLETON_COLLECTIONS, STATE_COLLECTIONS, repo
+from libs.db.repository import (
+    IDEMPOTENCY_COLLECTION,
+    SINGLETON_COLLECTIONS,
+    STATE_COLLECTIONS,
+    repo,
+)
 from libs.integrations import task_dispatcher
 from libs.knowledge_retrieval import (
     canonical_standard_text,
@@ -26,7 +31,6 @@ from libs.knowledge_retrieval import (
     standard_alias_match_score,
     standard_alias_matches,
 )
-
 
 client = TestClient(app)
 
@@ -750,7 +754,7 @@ def test_piping_continuation_row_inherits_pipe_no_and_normalizes_values() -> Non
 
 def test_piping_visual_seal_priority_prefers_bottom_right_red_candidate() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = {
         "status": "success",
@@ -810,7 +814,7 @@ def test_visual_seal_candidates_do_not_create_business_fields() -> None:
 
 def test_visual_seal_candidate_enriched_from_ocr_fragments_requires_crop_ocr_for_required_seal() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     required_fields = [
         "company_name",
@@ -1020,7 +1024,7 @@ def test_fragment_text_can_create_drawing_approval_seal_without_visual_candidate
 def test_agentdesign_seal_payload_normalizes_to_readable_formal_seal() -> None:
     from apps.ocr_service.engines import normalize_agentdesign_seal_result
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     seals = normalize_agentdesign_seal_result(
         {
@@ -1105,7 +1109,7 @@ def test_ocr_fusion_wrong_formal_seal_type_requires_review() -> None:
 
 def test_formal_agentdesign_seal_beats_overlapping_visual_candidate() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     fused = fuse_parse_result(
         {
@@ -1151,8 +1155,8 @@ def test_formal_agentdesign_seal_beats_overlapping_visual_candidate() -> None:
 
 def test_piping_grid_aligned_table_is_not_flagged_as_heuristic() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import align_piping_text_table_with_grid
+    from libs.ocr.profiles import profile_for
 
     text_table = {
         "tableId": "piping_characteristic_table_1",
@@ -1338,8 +1342,8 @@ def test_ocr_normalize_does_not_treat_seal_summary_as_text() -> None:
 
 
 def test_piping_profile_infers_table_and_fields_from_fragments() -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result
+    from libs.ocr.profiles import profile_for
 
     fragments = [
         {"pageNo": 1, "text": "广东星燃石化设计院有限公司", "bbox": [100, 20, 450, 60], "confidence": 0.94},
@@ -1412,8 +1416,8 @@ def test_piping_profile_infers_table_and_fields_from_fragments() -> None:
 
 
 def test_piping_profile_maps_formal_table_rows_to_business_fields() -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result
+    from libs.ocr.profiles import profile_for
 
     result = enrich_parse_result(
         {
@@ -1468,8 +1472,8 @@ def test_piping_profile_maps_formal_table_rows_to_business_fields() -> None:
 
 
 def test_quality_certificate_profile_extracts_business_fields_and_table_schemas() -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result
+    from libs.ocr.profiles import profile_for
 
     fragments = [
         {"pageNo": 1, "text": "河北广浩管件有限公司", "bbox": [10, 10, 180, 30], "confidence": 0.95},
@@ -1532,8 +1536,8 @@ def test_quality_certificate_profile_extracts_business_fields_and_table_schemas(
 
 
 def test_quality_certificate_profile_does_not_extract_fields_from_design_spec_text() -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result
+    from libs.ocr.profiles import profile_for
 
     result = enrich_parse_result(
         {
@@ -1561,8 +1565,8 @@ def test_quality_certificate_profile_does_not_extract_fields_from_design_spec_te
 
 
 def test_welding_record_profile_extracts_process_assessment_identifiers() -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result
+    from libs.ocr.profiles import profile_for
 
     result = enrich_parse_result(
         {
@@ -1595,8 +1599,8 @@ def test_welding_record_profile_extracts_process_assessment_identifiers() -> Non
 
 
 def test_welding_record_profile_does_not_extract_from_unrelated_design_text() -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import enrich_parse_result
+    from libs.ocr.profiles import profile_for
 
     result = enrich_parse_result(
         {
@@ -1821,7 +1825,11 @@ def test_pp_structure_html_table_handles_rowspan_and_colspan() -> None:
 
 
 def test_ocr_engine_normalizers_preserve_zero_confidence() -> None:
-    from apps.ocr_service.engines import normalize_paddle_fragments, normalize_seal_result, normalize_structure_result
+    from apps.ocr_service.engines import (
+        normalize_paddle_fragments,
+        normalize_seal_result,
+        normalize_structure_result,
+    )
 
     fragments = normalize_paddle_fragments(
         {"rec_texts": ["低置信文字"], "rec_scores": [0], "dt_polys": [[[0, 0], [10, 0], [10, 10], [0, 10]]]},
@@ -1842,7 +1850,11 @@ def test_ocr_engine_normalizers_preserve_zero_confidence() -> None:
 
 
 def test_ocr_engine_normalizers_do_not_invent_missing_confidence() -> None:
-    from apps.ocr_service.engines import normalize_paddle_fragments, normalize_seal_result, normalize_structure_result
+    from apps.ocr_service.engines import (
+        normalize_paddle_fragments,
+        normalize_seal_result,
+        normalize_structure_result,
+    )
 
     fragments = normalize_paddle_fragments({"rec_texts": ["未知置信文字"], "dt_polys": []}, page_no=1, source_engine="paddle")
     tables, blocks = normalize_structure_result(
@@ -2114,7 +2126,7 @@ def test_ocr_parse_document_merges_agentdesign_candidate_with_local_engines(monk
 
 def test_ocr_preprocess_uses_page_scoped_original_variants(monkeypatch, tmp_path) -> None:
     from apps.ocr_service.preprocess import generate_image_variants
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     source = tmp_path / "two-pages.pdf"
     source.write_bytes(b"%PDF-1.4")
@@ -2141,7 +2153,11 @@ def test_ocr_preprocess_uses_page_scoped_original_variants(monkeypatch, tmp_path
 
 
 def test_ocr_preprocess_variant_cache_round_trips(monkeypatch, tmp_path) -> None:
-    from apps.ocr_service.preprocess import load_cached_variants, save_cached_variants, variant_cache_dir
+    from apps.ocr_service.preprocess import (
+        load_cached_variants,
+        save_cached_variants,
+        variant_cache_dir,
+    )
 
     source = tmp_path / "source.png"
     source.write_bytes(b"source-image")
@@ -2178,7 +2194,7 @@ def test_ocr_preprocess_variant_cache_round_trips(monkeypatch, tmp_path) -> None
 
 def test_ocr_preprocess_keeps_table_and_seal_variants_in_priority_cap() -> None:
     from apps.ocr_service.preprocess import requested_variant_names
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     requested = requested_variant_names(
         profile_for("piping_characteristic_list_v1"),
@@ -2190,8 +2206,8 @@ def test_ocr_preprocess_keeps_table_and_seal_variants_in_priority_cap() -> None:
 
 
 def test_ocr_service_result_cache_skips_repeated_engine_run(monkeypatch, tmp_path) -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import OcrService
+    from libs.ocr.profiles import profile_for
 
     class FakeEngine:
         name = "paddle_ocr_subprocess"
@@ -3067,8 +3083,8 @@ def test_ocr_engine_result_cache_key_ignores_profile_postprocess_version(tmp_pat
 
 
 def test_ocr_engine_result_cache_survives_profile_postprocess_change(monkeypatch, tmp_path) -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import OcrService
+    from libs.ocr.profiles import profile_for
 
     class FakeEngine:
         name = "paddle_ocr_subprocess"
@@ -3158,8 +3174,8 @@ def test_ocr_engine_result_cache_survives_profile_postprocess_change(monkeypatch
 
 
 def test_ocr_remediation_cache_key_includes_remediation_context(monkeypatch, tmp_path) -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import OcrService
+    from libs.ocr.profiles import profile_for
 
     class RemediationEngine:
         name = "paddleocr_vl_1_6"
@@ -3543,7 +3559,7 @@ def test_ocr_parse_document_text_layer_only_does_not_run_visual_ocr(monkeypatch,
 
 def test_ocr_fusion_quality_gate_marks_missing_required_data_for_review() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3565,7 +3581,7 @@ def test_ocr_fusion_quality_gate_marks_missing_required_data_for_review() -> Non
 
 def test_ocr_fusion_required_table_matches_business_schema_suffix() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3605,7 +3621,7 @@ def test_ocr_fusion_required_table_matches_business_schema_suffix() -> None:
 
 def test_ocr_fusion_normalizes_common_business_field_aliases() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3657,7 +3673,7 @@ def test_ocr_fusion_normalizes_common_business_field_aliases() -> None:
 
 def test_ocr_fusion_required_table_matches_header_aliases() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3696,7 +3712,7 @@ def test_ocr_fusion_required_table_matches_header_aliases() -> None:
 
 def test_ocr_fusion_unmatched_table_does_not_satisfy_required_schema() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3739,7 +3755,7 @@ def test_ocr_fusion_unmatched_table_does_not_satisfy_required_schema() -> None:
 
 def test_ocr_fusion_required_table_matches_row_zero_headers_without_header_flag() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3781,7 +3797,7 @@ def test_ocr_fusion_required_table_matches_row_zero_headers_without_header_flag(
 
 def test_ocr_fusion_merges_duplicate_required_table_matches() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3828,7 +3844,7 @@ def test_ocr_fusion_merges_duplicate_required_table_matches() -> None:
 
 def test_ocr_fusion_visual_seal_only_requires_human_review() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -3915,7 +3931,7 @@ def test_ocr_fusion_field_value_conflict_requires_human_review() -> None:
 
 def test_ocr_profile_critical_conflict_fields_drive_quality_gate() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     profile = profile_for("piping_characteristic_list_v1")
     assert "drawing_no" in profile["qualityRules"]["criticalConflictFields"]
@@ -4050,7 +4066,7 @@ def test_ocr_fusion_prefers_valid_field_candidate_over_invalid_high_confidence()
 
 def test_ocr_fusion_low_confidence_required_field_requires_human_review() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -4258,7 +4274,7 @@ def test_ocr_fusion_invalid_optional_field_format_does_not_block_auto_usable() -
 
 def test_ocr_fusion_missing_required_evidence_requires_human_review() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     result = fuse_parse_result(
         {
@@ -4370,7 +4386,7 @@ def test_ocr_fusion_noncritical_optional_field_conflict_does_not_block_auto_usab
 
 def test_ocr_fusion_heuristic_table_requires_human_review() -> None:
     from apps.ocr_service.fusion import fuse_parse_result
-    from apps.ocr_service.profiles import profile_for
+    from libs.ocr.profiles import profile_for
 
     complete_fields = [
         {"fieldCode": "company_name", "fieldName": "公司名称", "fieldValue": "广东星燃石化设计院有限公司", "confidence": 0.9},
@@ -5302,8 +5318,8 @@ def test_ocr_100_scorecard_rejects_fixture_derived_cases() -> None:
 
 
 def test_ocr_service_adds_quality_variants_and_engine_run_metadata(monkeypatch, tmp_path) -> None:
-    from apps.ocr_service.profiles import profile_for
     from apps.ocr_service.service import OcrService
+    from libs.ocr.profiles import profile_for
 
     class FakeEngine:
         name = "paddle_ocr_subprocess"
@@ -7987,8 +8003,8 @@ def test_project_mutating_routes_are_archived_readonly_guarded() -> None:
 
 
 def test_all_non_public_mutating_routes_are_audit_logged() -> None:
-    from apps.api.routes import mock_router, router
     from apps.api.main import audit_scope
+    from apps.api.routes import mock_router, router
     from libs.security.actions import MUTATING_METHODS
 
     unaudited_public_routes = {
@@ -8687,7 +8703,11 @@ def test_import_rules_standards_folder_uploads_local_standard_files(monkeypatch,
 
 
 def test_offline_hash_vectorizer_is_stable_normalized_and_rankable() -> None:
-    from libs.knowledge_indexing import OFFLINE_VECTOR_DIMENSIONS, cosine_similarity, offline_hash_embedding
+    from libs.knowledge_indexing import (
+        OFFLINE_VECTOR_DIMENSIONS,
+        cosine_similarity,
+        offline_hash_embedding,
+    )
 
     text = "无损检测报告签章要求"
     same = offline_hash_embedding(text)

@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import app
 from apps.ocr_service.fusion import fuse_parse_result
-from apps.ocr_service.profiles import profile_for, validate_profiles
 from apps.ocr_service.service import sparse_table_remediation_targets, split_bbox_along_long_axis
 from apps.worker import tasks
 from libs.db.repository import repo
@@ -23,7 +22,7 @@ from libs.document_ai_shadow import (
     validate_shadow_attribution,
 )
 from libs.integrations.document_ai_client import DocumentAiClient
-
+from libs.ocr.profiles import profile_for, validate_profiles
 
 client = TestClient(app)
 

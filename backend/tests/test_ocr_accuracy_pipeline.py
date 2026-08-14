@@ -4,15 +4,15 @@ from pathlib import Path
 
 from PIL import Image
 
-from apps.ocr_service.profiles import profile_for
 from apps.worker.celery_app import celery_app
 from libs.db.repository import InMemoryRepository
+from libs.ocr.profiles import profile_for
 from libs.ocr_accuracy_pipeline import (
     PIPELINE_STAGES,
     build_batch_prior,
     build_batch_priors,
-    initial_stage_records,
     infer_preliminary_profile_id,
+    initial_stage_records,
     merge_batch_outputs,
     normalize_qwen_structured_output,
     page_batches,
@@ -23,8 +23,8 @@ from libs.ocr_accuracy_pipeline import (
     qwen_messages,
     required_field_blockers,
     stage_engine_summary,
-    validated_ocr_fields,
     validate_batch_output,
+    validated_ocr_fields,
 )
 
 

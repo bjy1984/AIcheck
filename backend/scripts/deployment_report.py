@@ -1712,7 +1712,7 @@ def ocr_evaluation_contract_check(
 
 
 def ocr_profile_contract_check() -> dict[str, Any]:
-    from apps.ocr_service.profiles import OCR_PROFILES, validate_profiles
+    from libs.ocr.profiles import OCR_PROFILES, validate_profiles
 
     failures = validate_profiles()
     profile_ids = sorted(OCR_PROFILES)

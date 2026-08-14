@@ -8,7 +8,6 @@ from libs.db.seed import PROJECT_ID
 from libs.integrations import task_dispatcher
 from libs.material_targeting import PARTIAL_STATUS, build_node_evidence_readiness
 
-
 client = TestClient(app)
 
 

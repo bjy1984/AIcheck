@@ -10,7 +10,6 @@ from libs.security.runtime import security_runtime_problems
 from libs.security.session import security_sessions
 from scripts.migrate_auth_users import migrate_users
 
-
 client = TestClient(app)
 
 

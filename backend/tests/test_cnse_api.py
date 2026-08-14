@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 import apps.api.cnse_routes as cnse_routes
-from apps.api.main import app
 from apps.api.cnse_service import app as service_app
+from apps.api.main import app
 from libs.integrations.cnse_client import (
     PERSON_FIELDS,
     PERSON_SEARCH_PATH,
@@ -22,7 +22,6 @@ from libs.integrations.cnse_client import (
     normalize_id_number,
 )
 from libs.integrations.cnse_opencv_solver import OpenCvMatch, solve_opencv_from_bytes
-
 
 client = TestClient(app)
 

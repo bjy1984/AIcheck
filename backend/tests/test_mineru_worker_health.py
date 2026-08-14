@@ -9,7 +9,6 @@ from apps.api import main as api_main
 from apps.mineru_worker.queue import write_heartbeat
 from scripts.migrate_backend import apply_migrations
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("AICHECK_TEST_POSTGRES_URL"),
     reason="AICHECK_TEST_POSTGRES_URL is required for worker health integration tests",

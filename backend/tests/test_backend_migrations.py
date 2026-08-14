@@ -7,7 +7,6 @@ import pytest
 from scripts import migrate_backend
 from scripts.migrate_backend import apply_migrations
 
-
 POSTGRES_URL = os.getenv("AICHECK_TEST_POSTGRES_URL")
 
 

@@ -6,7 +6,6 @@ from apps.ocr_service import engines
 from scripts import ocr_prefetch_models
 from scripts.ocr_prefetch_models import prefetch_report
 
-
 SEAL_MODEL_ENVS = {
     "layout": ("AICHECK_SEAL_LAYOUT_MODEL_DIR", "PP-DocLayout-L"),
     "doc_orientation": ("AICHECK_SEAL_DOC_ORI_MODEL_DIR", "PP-LCNet_x1_0_doc_ori"),

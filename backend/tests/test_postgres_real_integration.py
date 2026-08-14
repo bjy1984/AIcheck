@@ -13,7 +13,6 @@ from libs.security.auth import decode_token, hash_password
 from libs.security.tenant import reset_request_tenant_id, set_request_tenant_id
 from scripts.migrate_backend import apply_migrations
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("AICHECK_TEST_POSTGRES_URL"),
     reason="AICHECK_TEST_POSTGRES_URL is required for PostgreSQL integration tests",

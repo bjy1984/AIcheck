@@ -10,7 +10,6 @@ from libs.knowledge_graph import (
     build_business_pack_knowledge_network,
 )
 
-
 client = TestClient(app)
 
 

@@ -79,17 +79,19 @@ def test_unknown_attribute_still_raises_attribute_error() -> None:
 # libs 是业务库，apps 是入口（HTTP 路由、worker、OCR 服务）。libs → apps 的依赖
 # 意味着「业务规则装载即绑定到某个入口」，既没法单独复用，也容易绕出循环导入。
 #
-# 现存 6 处全部指向 apps.ocr_service，是 OCR 服务尚未下沉造成的，属独立搬迁课题。
-# 这里用棘轮冻住：**只许减，不许增**。新代码一律不得新增 libs → apps 的模块级导入。
+# 原有 6 处全部指向 apps.ocr_service。已下沉 utils / profiles /
+# welder_certificate_tool 到 libs.ocr（issue #12 A-3），消掉其中 4 处。
+#
+# 剩下 2 处都在 libs/mineru_ocr.py，卡在体量上：engines.py 3418 行、service.py
+# 7207 行且自身有 15 处跨模块依赖，整体搬迁是独立课题，不该塞进这次改动里
+# 顺手做——改动越大越难验，而这两个文件是 OCR 主链路。
+#
+# 棘轮冻住剩余项：**只许减，不许增**。新代码一律不得新增 libs → apps 的模块级导入。
 LIBS_TO_APPS_BASELINE = {
-    "libs/document_audit_pipeline_comparison.py": {"apps.ocr_service.profiles"},
     "libs/mineru_ocr.py": {
         "apps.ocr_service.engines",
-        "apps.ocr_service.profiles",
         "apps.ocr_service.service",
     },
-    "libs/ocr_accuracy_pipeline.py": {"apps.ocr_service.profiles"},
-    "libs/review_orchestrator/runtime_tools.py": {"apps.ocr_service.welder_certificate_tool"},
 }
 
 

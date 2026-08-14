@@ -13,7 +13,6 @@ from temporalio.worker import Worker
 from apps.review_worker.outbox import deliver_command
 from apps.review_worker.workflows import ReviewRunWorkflow
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("AICHECK_TEST_TEMPORAL_LIVE", "false").lower() != "true",
     reason="AICHECK_TEST_TEMPORAL_LIVE=true is required for the Temporal live test server",

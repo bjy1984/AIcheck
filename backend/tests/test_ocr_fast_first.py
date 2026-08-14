@@ -1,12 +1,11 @@
 from apps.ocr_service.fusion import fragment_seal_candidates_from_text, fuse_parse_result
-from apps.ocr_service.profiles import profile_for
 from apps.ocr_service.service import (
-    attach_variant_metadata,
     apply_business_pdf_deep_scan_default_options,
     apply_fast_first_default_options,
     apply_profile_postprocessing,
-    detect_engineering_drawing_profile,
+    attach_variant_metadata,
     detect_engineering_drawing_list_profile,
+    detect_engineering_drawing_profile,
     detect_scan_business_document_profile,
     extract_engineering_drawing_common_fields,
     extract_engineering_drawing_list_fields,
@@ -16,6 +15,7 @@ from apps.ocr_service.service import (
     find_project_fragment,
     should_defer_heavy_engine,
 )
+from libs.ocr.profiles import profile_for
 
 
 def test_engineering_photo_profile_enables_fast_first_defaults() -> None:

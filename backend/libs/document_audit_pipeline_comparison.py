@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from libs.contracts.responses import server_time
 from libs.db.repository import repo, sync_state_records
 from libs.deepseek_runtime import deepseek_runtime_config, deepseek_runtime_public_config

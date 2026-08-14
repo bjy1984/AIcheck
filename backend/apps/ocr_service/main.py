@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 
 from apps.ocr_service.service import AGENTDESIGN_BACKEND, ocr_service
 from apps.ocr_service.result_cache import prune_ocr_cache
-from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_payload
+from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_payload
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_ocr_result
+from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
 from libs.integrations.external_registry_queries import (
     query_cnse_organizations,
     query_cnse_persons,

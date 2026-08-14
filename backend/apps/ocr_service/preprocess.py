@@ -16,7 +16,7 @@ from apps.ocr_service.result_cache import (
     PAGE_SELECTION_VERSION,
     REMEDIATION_VERSION,
 )
-from apps.ocr_service.utils import parse_bool
+from libs.ocr.utils import parse_bool
 
 PREPROCESS_CACHE_SCHEMA = "aicheck-ocr-preprocess-cache-v2"
 

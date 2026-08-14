@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from apps.ocr_service.utils import parse_bool
+from libs.ocr.utils import parse_bool
 
 
 def env_path(name: str, default: str) -> Path:

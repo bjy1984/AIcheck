@@ -12,7 +12,12 @@ from fastapi.testclient import TestClient
 
 from libs.capacity_guard import GIB, cpu_heavy_dispatch_status, disk_capacity_status, swap_capacity
 from libs.db.repository import InMemoryRepository
-from libs.pipeline_lock import PipelineLockUnavailable, advisory_lock_id, pipeline_lock, pipeline_task_lock
+from libs.pipeline_lock import (
+    PipelineLockUnavailable,
+    advisory_lock_id,
+    pipeline_lock,
+    pipeline_task_lock,
+)
 from scripts.ocr_accuracy_pipeline_batch import (
     register_state_record,
     safe_campaign,

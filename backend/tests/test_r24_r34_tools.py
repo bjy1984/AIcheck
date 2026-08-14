@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from libs.review_orchestrator.deterministic_tools import check_welder_work_coverage, decode_welder_qualification
+from libs.review_orchestrator.deterministic_tools import (
+    check_welder_work_coverage,
+    decode_welder_qualification,
+)
 from libs.review_tools.r24_r34_tools import (
     check_wps_pqr_coverage,
     evaluate_heat_treatment,

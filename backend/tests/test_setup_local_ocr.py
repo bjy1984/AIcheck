@@ -10,7 +10,6 @@ from scripts.setup_local_ocr import (
     summarize,
 )
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 

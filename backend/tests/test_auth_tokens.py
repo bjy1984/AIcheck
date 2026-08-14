@@ -8,7 +8,6 @@ from libs.db.repository import repo
 from libs.security import auth
 from libs.security.auth import decode_token, issue_token
 
-
 client = TestClient(app)
 
 

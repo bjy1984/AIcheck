@@ -6,7 +6,7 @@ import re
 from copy import deepcopy
 from typing import Any
 
-from apps.ocr_service.utils import parse_bool
+from libs.ocr.utils import parse_bool
 
 FIELD_ALIASES = {
     "公司名称": "company_name",

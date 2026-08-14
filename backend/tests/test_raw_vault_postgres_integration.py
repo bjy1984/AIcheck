@@ -7,7 +7,6 @@ import pytest
 from libs.raw_vault import PostgresRawVaultStore, RawCapture, RawCaptureContext
 from scripts.migrate_backend import apply_migrations
 
-
 POSTGRES_URL = os.getenv("AICHECK_TEST_POSTGRES_URL")
 
 

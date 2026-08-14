@@ -15,7 +15,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from libs.contracts.responses import server_time
 from libs.db.repository import flush_state_records, load_state, repo
 from libs.integrations import task_dispatcher

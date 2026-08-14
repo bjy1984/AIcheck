@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from libs.ocr_accuracy_pipeline import infer_preliminary_profile_id
-from libs.review_orchestrator.execution import ALLOWED_AGENT_TOOLS  # noqa: F401 - establishes runtime import order
+from libs.review_orchestrator.execution import (
+    ALLOWED_AGENT_TOOLS,  # noqa: F401 - establishes runtime import order
+)
 from libs.review_orchestrator.r14_facts import build_r14_business_facts
 
 

@@ -8,16 +8,15 @@ from datetime import datetime, timezone
 import pytest
 
 from apps.mineru_worker.queue import (
-    claim_knowledge_tasks,
     claim_jobs,
-    finish_knowledge_claim,
+    claim_knowledge_tasks,
     finish_claim,
-    reschedule_knowledge_claim,
+    finish_knowledge_claim,
     reschedule_claim,
+    reschedule_knowledge_claim,
     write_heartbeat,
 )
 from scripts.migrate_backend import apply_migrations
-
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("AICHECK_TEST_POSTGRES_URL"),

@@ -11,7 +11,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-
 SERVICE_PATH = (
     Path(__file__).resolve().parents[1]
     / "deployment"

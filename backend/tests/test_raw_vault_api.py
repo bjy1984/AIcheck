@@ -10,7 +10,6 @@ from apps.api.main import app
 from libs.db.repository import repo
 from libs.raw_vault import InMemoryRawVaultStore, RawCapture, RawCaptureContext
 
-
 client = TestClient(app)
 
 

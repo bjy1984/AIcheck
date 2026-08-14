@@ -18,7 +18,6 @@ from libs.security import auth
 from libs.security.auth import decode_token
 from libs.security.tenant import reset_request_tenant_id, set_request_tenant_id
 
-
 client = TestClient(app)
 
 

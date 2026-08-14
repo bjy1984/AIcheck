@@ -15,7 +15,6 @@ from scripts.verify_deployment import (
     role_login_password,
 )
 
-
 probe_state = {
     "fileName": "deployment-verify-test.pdf",
     "signedPut": "",

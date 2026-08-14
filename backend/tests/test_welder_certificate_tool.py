@@ -1,6 +1,6 @@
-from apps.ocr_service.profiles import profile_for, validate_profiles
 from apps.ocr_service.service import enrich_parse_result
-from apps.ocr_service.welder_certificate_tool import extract_welder_certificate_from_ocr_result
+from libs.ocr.profiles import profile_for, validate_profiles
+from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
 
 
 def test_extract_welder_certificate_identity_and_qualified_items() -> None:

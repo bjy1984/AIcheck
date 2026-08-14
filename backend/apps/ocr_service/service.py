@@ -27,7 +27,7 @@ from apps.ocr_service.fusion import (
 from apps.ocr_service.jobs import DocumentParseJobStore
 from apps.ocr_service.pages import public_document_pages, render_document_pages, render_pdf_page_preview
 from apps.ocr_service.preprocess import generate_image_variants, requested_variant_names
-from apps.ocr_service.profiles import profile_for
+from libs.ocr.profiles import profile_for
 from apps.ocr_service.quality import probe_page_quality
 from apps.ocr_service.result_cache import (
     EVIDENCE_CONTRACT_VERSION,
@@ -45,8 +45,8 @@ from apps.ocr_service.result_cache import (
 )
 from apps.ocr_service.routing import route_engine_variants
 from apps.ocr_service.runtime_doctor import build_runtime_doctor
-from apps.ocr_service.utils import parse_bool
-from apps.ocr_service.welder_certificate_tool import (
+from libs.ocr.utils import parse_bool
+from libs.ocr.welder_certificate_tool import (
     extract_welder_certificate_from_ocr_result,
     extraction_metadata as welder_certificate_extraction_metadata,
     welder_certificate_ocr_fields,
