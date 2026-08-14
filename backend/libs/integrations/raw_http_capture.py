@@ -12,6 +12,24 @@ def json_transport_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
+def json_request_headers(headers: dict[str, str]) -> dict[str, str]:
+    """补上 Content-Type: application/json。
+
+    这几个函数都用 `content=<bytes>` 发送而不是 `json=`——为的是原样留痕
+    （raw vault 记的必须是真正上线的那串字节）。代价是 httpx 不会自动带
+    Content-Type，只有用 `json=` 才会。
+
+    2026-08-14 因此踩坑：DashScope 和 LiteLLM 都容忍缺这个头，换到 DeepSeek
+    直接 HTTP 415。**能跑通不等于请求是对的**——之前一直发着不合规的请求，
+    只是对端宽容。
+
+    调用方显式给了 Content-Type 就以调用方为准。
+    """
+    resolved = {"Content-Type": "application/json"}
+    resolved.update(headers or {})
+    return resolved
+
+
 def _capture(
     capture: RawCapture | None,
     context: RawCaptureContext | None,
@@ -39,7 +57,7 @@ def post_json_with_raw_capture(
     metadata = {"provider": provider, "operation": operation}
     _capture(capture, context, "llm.request.prepared", body, "application/json", metadata)
     try:
-        response = client.post(url, headers=headers, content=body)
+        response = client.post(url, headers=json_request_headers(headers), content=body)
     except httpx.HTTPError as exc:
         error_body = canonical_json_bytes(
             {"exceptionType": type(exc).__name__, "phase": "transport", "provider": provider}
@@ -74,7 +92,7 @@ async def post_json_with_raw_capture_async(
     metadata = {"provider": provider, "operation": operation}
     _capture(capture, context, "llm.request.prepared", body, "application/json", metadata)
     try:
-        response = await client.post(url, headers=headers, content=body)
+        response = await client.post(url, headers=json_request_headers(headers), content=body)
     except httpx.HTTPError as exc:
         error_body = canonical_json_bytes(
             {"exceptionType": type(exc).__name__, "phase": "transport", "provider": provider}
@@ -123,7 +141,7 @@ def stream_chat_completion_with_raw_capture(
     response_id: Any = None
     model_name: Any = None
     try:
-        with client.stream("POST", url, headers=headers, content=body) as response:
+        with client.stream("POST", url, headers=json_request_headers(headers), content=body) as response:
             if response.status_code >= 400:
                 error_body = response.read()
                 _capture(
