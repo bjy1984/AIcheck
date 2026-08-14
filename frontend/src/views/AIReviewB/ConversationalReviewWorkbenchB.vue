@@ -2274,23 +2274,34 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 推荐问题：横向排，超出换行。按当前节点卡点定制，点击填进输入框而不是直接发送 */
+/* 推荐问题：按当前节点卡点定制，点击填进输入框而不是直接发送。
+   单行横向滚动——推荐最多 4 条，换行会把对话框顶高、挤掉消息区。
+   滚动条隐藏——它出现在这么窄的一条上只是噪音，横向滚动靠触控板/滚轮即可。 */
 .composer-suggestions {
   display: flex;
   margin-bottom: 8px;
+  overflow-x: auto;
   gap: 6px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+}
+
+.composer-suggestions::-webkit-scrollbar {
+  display: none;
 }
 
 .composer-suggestions-label {
   font-size: 12px;
   color: #94a3b8;
+  white-space: nowrap;
   flex: none;
 }
 
 .composer-suggestion {
-  max-width: 100%;
+  /* 不许被压扁：flex 默认会收缩子项，一行放不下时会把所有按钮挤成一堆省略号，
+     那样每条都看不出问的是什么。宁可横向滚，也不要每条都读不了。 */
+  max-width: 280px;
   padding: 4px 10px;
   overflow: hidden;
   font: inherit;
@@ -2302,6 +2313,7 @@ onBeforeUnmount(() => {
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-radius: 999px;
+  flex: none;
 }
 
 .composer-suggestion:hover {
