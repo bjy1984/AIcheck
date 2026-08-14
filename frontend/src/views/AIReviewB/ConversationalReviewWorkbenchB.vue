@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+
+import { blockingReasonsAsItems, buildSuggestedQuestions } from './suggestedQuestions'
 import {
   ElAlert,
   ElButton,
@@ -157,6 +159,26 @@ const liveAgentTraceLatest = computed(() => liveAgentTrace.value.at(-1))
 const displayUser = computed(
   () => userStore.getUserInfo?.displayName || userStore.getUserInfo?.username || '监检人员'
 )
+/* 推荐问题：按当前节点卡在哪、规则要求什么来拼，不经 LLM。
+ *
+ * 系统已经知道这个节点此刻的问题（items 里的 needs_attention issue）和它的
+ * 审查要点（businessBasis.criteria / checkMethod）。让模型生成推荐，得先把这些
+ * 事实喂给它——而喂进去的那一刻答案已经在手上了。详见 suggestedQuestions 模块。
+ */
+const suggestedQuestions = computed(() =>
+  buildSuggestedQuestions(
+    // 这个工作台手上没有七项审计明细，卡点信号在 evidenceReadiness 里
+    blockingReasonsAsItems(workspace.value?.evidenceReadiness?.blockingReasons),
+    businessBasis.value as never
+  )
+)
+
+const useSuggestedQuestion = (text: string) => {
+  // 填进输入框而不是直接发出去：监检往往要在这个基础上补一句
+  // （「…针对第 3 份资料」）。直接发送会剥夺这次修改的机会。
+  composer.value = text
+}
+
 const businessBasis = computed(
   () => (workspace.value?.businessBasis || {}) as Record<string, unknown>
 )
@@ -1443,6 +1465,21 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="composer-card">
+          <!-- 推荐问题按「这个节点此刻卡在哪」定制，不经 LLM——系统已经知道答案，
+               让模型再生成一遍只会加两秒延迟和一次 token（见 suggestedQuestions）。 -->
+          <div v-if="suggestedQuestions.length" class="composer-suggestions">
+            <span class="composer-suggestions-label">试试问：</span>
+            <button
+              v-for="question in suggestedQuestions"
+              :key="question.text"
+              type="button"
+              class="composer-suggestion"
+              :title="question.text"
+              @click="useSuggestedQuestion(question.text)"
+            >
+              {{ question.text }}
+            </button>
+          </div>
           <ElInput
             v-model="composer"
             type="textarea"
@@ -2235,6 +2272,40 @@ onBeforeUnmount(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* 推荐问题：横向排，超出换行。按当前节点卡点定制，点击填进输入框而不是直接发送 */
+.composer-suggestions {
+  display: flex;
+  margin-bottom: 8px;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.composer-suggestions-label {
+  font-size: 12px;
+  color: #94a3b8;
+  flex: none;
+}
+
+.composer-suggestion {
+  max-width: 100%;
+  padding: 4px 10px;
+  overflow: hidden;
+  font: inherit;
+  font-size: 12px;
+  color: #1d4ed8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+}
+
+.composer-suggestion:hover {
+  background: #dbeafe;
 }
 
 .composer-card {
