@@ -7,7 +7,10 @@ const alertsSource = readFileSync(
   'utf8'
 )
 
-assert.match(workbenchSource, /import AiReviewRunAlerts from '.\/components\/AiReviewRunAlerts\.vue'/)
+assert.match(
+  workbenchSource,
+  /import AiReviewRunAlerts from '.\/components\/AiReviewRunAlerts\.vue'/
+)
 assert.match(workbenchSource, /<AiReviewRunAlerts/)
 assert.match(workbenchSource, /:evidence-budget="aiEvidenceBudget"/)
 assert.match(workbenchSource, /:failure="aiRunFailure"/)
