@@ -113,12 +113,27 @@ sync_frontend() {
   scp -q "$STAGE/dist.tar.gz" "$HOST:$REMOTE_HOME/aicheck-dist.tar.gz"
   echo "==> 发布静态资源"
   # 用 rm+解包而不是替换目录：容器按 inode 绑定挂载，换目录会让它看到空目录
+  #
+  # tar 的错误不再丢进 /dev/null。曾经因此出过事（2026-08-14）：新 chunk 解开了、
+  # index.html 没换掉，dist 里同时躺着两次构建的产物，浏览器照旧加载旧入口。
+  # 而部署一路绿灯——它当时只查 `/` 返回 200，而一份陈旧但完整的 index.html
+  # 当然是 200。查错了对象的验证比不验证更坏，它会让人停止怀疑。
   ssh "$HOST" "
     set -e
     rm -rf $REMOTE_HOME/aicheck-web/dist/*
-    tar xzf $REMOTE_HOME/aicheck-dist.tar.gz -C $REMOTE_HOME/aicheck-web/dist 2>/dev/null
+    tar xzf $REMOTE_HOME/aicheck-dist.tar.gz -C $REMOTE_HOME/aicheck-web/dist
     docker exec aicheck-web nginx -s reload
   "
+  # 验的是「浏览器拿到的 index.html 引用的入口，正是这次构建出来的那个」。
+  local expected served
+  expected="$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' "$REPO_ROOT/frontend/dist-pro/index.html" | head -1)"
+  [ -n "$expected" ] || { echo "  ✗ 构建产物里没找到入口，无法校验发布是否生效"; exit 1; }
+  served="$(ssh "$HOST" "curl -s --max-time 10 http://127.0.0.1:${GATEWAY_PORT}/" \
+    | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)"
+  echo "==> 校验前端入口：本次构建 ${expected}"
+  echo "                  线上返回 ${served:-（未找到）}"
+  [ "$served" = "$expected" ] || { echo "  ✗ 线上仍是旧入口，静态资源发布未生效"; exit 1; }
+  echo "  ✓ 入口一致"
 }
 
 verify() {
