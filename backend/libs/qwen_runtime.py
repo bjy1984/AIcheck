@@ -50,6 +50,21 @@ _PROVIDER_BY_HOST = {
 }
 
 
+def official_api_key(config: dict[str, Any] | None = None) -> str:
+    """official_api 模式实际使用的密钥。
+
+    调用处必须走这里，不要各自 `os.getenv("QWEN_API_KEY")`。
+    2026-08-14 就栽在这上面：qwen_runtime_config 已经按「通用变量优先」解析出了
+    密钥（apiKeyConfigured=True，就绪检查也报绿），而 _official_chat_sync 里
+    又照着 apiKeyEnv 重读一遍 env，读到空，当场抛错。
+
+    配置说配好了、调用说没配好——两个来源，谁也没错，合起来就是错的。
+    """
+    resolved = config if config is not None else qwen_runtime_config()
+    fallback_env = str(resolved.get("apiKeyEnv") or "QWEN_API_KEY")
+    return str(os.getenv(GENERIC_API_KEY_ENV) or os.getenv(fallback_env) or "")
+
+
 def provider_label_for(mode: str, base_url: str) -> str:
     """供应商显示名。
 
@@ -268,12 +283,14 @@ class QwenRuntimeClient:
         raw_context: RawCaptureContext | None = kwargs.pop("_raw_capture_context", None)
         stream_handler = kwargs.pop("stream_handler", None)
         base_url = str(self.config.get("baseUrl") or "").rstrip("/")
-        api_key_env = str(self.config.get("apiKeyEnv") or "QWEN_API_KEY")
-        api_key = os.getenv(api_key_env)
+        api_key = official_api_key(self.config)
         if not base_url:
-            raise RuntimeError("Qwen official API base URL is not configured")
+            raise RuntimeError("模型地址未配置（AICHECK_LLM_API_BASE 或 QWEN_API_BASE）")
         if not api_key:
-            raise RuntimeError(f"{api_key_env} is required for Qwen official API mode")
+            raise RuntimeError(
+                f"模型密钥未配置（{GENERIC_API_KEY_ENV} 或 "
+                f"{self.config.get('apiKeyEnv') or 'QWEN_API_KEY'}）"
+            )
         model = self._official_model_for(role_or_model)
         client_kwargs: dict[str, Any] = {"timeout": float(kwargs.pop("timeout", 60))}
         if self.transport is not None:

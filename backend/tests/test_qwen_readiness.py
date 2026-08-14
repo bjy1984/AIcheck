@@ -135,3 +135,27 @@ def test_模型名可按环境覆盖(monkeypatch: pytest.MonkeyPatch):
     assert base["review"] == "qwen3.7-plus", "不能就地改传入的字典"
     # 空值不算覆盖——env 里写个空串不该把模型名清掉
     assert model_names_with_env_overrides(base, {"AICHECK_LLM_MODEL_REVIEW": "  "})["review"] == "qwen3.7-plus"
+
+
+def test_就绪检查与实际调用用同一份密钥解析(monkeypatch: pytest.MonkeyPatch):
+    """两个来源必须给同一个答案。
+
+    2026-08-14 栽过：qwen_runtime_config 按「通用变量优先」解析出了密钥，
+    apiKeyConfigured=True、就绪检查报绿；而 _official_chat_sync 里照着
+    apiKeyEnv 重读一遍 env，读到空，当场抛错。
+    配置说配好了、调用说没配好——合起来就是错的。
+    """
+    from libs.qwen_runtime import official_api_key, qwen_runtime_config
+
+    monkeypatch.setenv("AICHECK_QWEN_CALL_MODE", "official_api")
+    monkeypatch.setenv("AICHECK_LLM_API_KEY", "sk-generic-only")
+    config = qwen_runtime_config()
+    assert config["apiKeyConfigured"] is True, "配置侧认为配好了"
+    assert official_api_key(config) == "sk-generic-only", "调用侧必须拿到同一个"
+    assert qwen_configuration_status()["ready"] is True
+
+    # 旧变量单独存在时同样要两边一致
+    monkeypatch.delenv("AICHECK_LLM_API_KEY")
+    monkeypatch.setenv("QWEN_API_KEY", "sk-legacy")
+    assert official_api_key() == "sk-legacy"
+    assert qwen_configuration_status()["ready"] is True
