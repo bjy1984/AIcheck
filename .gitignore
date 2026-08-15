@@ -43,3 +43,11 @@ output/document_uploads/
 
 # Local bundled runtime link used by the standalone R01-R69 XLSX renderer.
 scripts/r01_r69_pack/node_modules
+
+# 本机产物，别让它们混进提交：.claude 1.7G、Scan.zip 513M，
+# 一次误 `git add -A` 就是两个多 G 推上去。
+.claude/
+.vite/
+Scan.zip
+# 写错的重定向留下的空文件（`> 127.0.0.1:8001` 之类）
+127.0.0.1:*
