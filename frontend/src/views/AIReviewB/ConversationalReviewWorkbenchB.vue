@@ -513,7 +513,12 @@ const updateRouteQuery = async () => {
 let loadedAuditViewSignature = ''
 
 const auditViewSignature = () =>
-  [activeRunId.value, activeRun.value?.status, activeRun.value?.revision, activeRun.value?.updatedAt]
+  [
+    activeRunId.value,
+    activeRun.value?.status,
+    activeRun.value?.revision,
+    activeRun.value?.updatedAt
+  ]
     .map((item) => String(item ?? ''))
     .join('|')
 
