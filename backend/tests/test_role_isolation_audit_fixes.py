@@ -175,3 +175,25 @@ def test_不再用同名局部变量遮住过滤函数():
     start = source.index("def workbench_context(")
     body = source[start : start + 2000]
     assert "    visible_todos = [" not in body, "局部变量又把过滤函数遮住了"
+
+
+# ── B-4 续：latestHumanDecision 必须是**最新**那条 ────────────────
+#
+# 2026-08-15 实测：刚存下 22:10 的结论，界面「已保存」显示的却是 11:17 的旧结论。
+# review_opinions 没排序，而 latestHumanDecision 取的是 [0]——拿到的是最早那条。
+#
+# 这比不显示更糟：它会把一条过期结论当成当前结论摆在监检面前。
+
+
+def test_最近人工结论按时间倒序取():
+    import pathlib
+
+    source = (
+        pathlib.Path(__file__).resolve().parents[1] / "apps" / "api" / "routes.py"
+    ).read_text(encoding="utf-8")
+    idx = source.index("def review_workspace_payload(")
+    body = source[idx : idx + 6000]
+    assert "sorted(" in body and "reverse=True" in body, "review_opinions 没有按时间倒序"
+    assert 'item.get("updatedAt") or item.get("createdAt")' in body, "排序键要覆盖更新时间"
+    # 取 [0] 的前提是排过序
+    assert "review_opinions[0]" in body

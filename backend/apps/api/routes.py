@@ -10003,11 +10003,19 @@ def review_workspace_payload(
     selected_evidence_ids = set((session or {}).get("selectedEvidenceLinkIds") or [])
     selected_evidence = [item for item in evidence_links if item.get("id") in selected_evidence_ids]
     active_task = active_human_input_task_for_run(review_run)
-    review_opinions = [
-        repo.clone(item)
-        for item in repo.state.get("review_opinions", [])
-        if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
-    ]
+    # 按时间倒序：latestHumanDecision 取的是 [0]，不排序拿到的是**最早**那条。
+    #
+    # 2026-08-15 实测：刚存下 22:10 的结论，界面上「已保存」显示的是 11:17 的旧结论。
+    # 这比不显示更糟——它会把一条过期结论当成当前结论摆在监检面前。
+    review_opinions = sorted(
+        (
+            repo.clone(item)
+            for item in repo.state.get("review_opinions", [])
+            if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+        ),
+        key=lambda item: str(item.get("updatedAt") or item.get("createdAt") or ""),
+        reverse=True,
+    )
     role = effective_role_for_request(request)[0] or "inspection"
     can_review = role in {"inspection", "admin", "fde"}
     can_return_correction = "review:return-correction" in repo.role_actions(role)
