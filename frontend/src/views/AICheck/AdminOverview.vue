@@ -34,7 +34,8 @@ import {
   ElTable,
   ElTableColumn,
   ElTabs,
-  ElTag
+  ElTag,
+  ElTooltip
 } from 'element-plus'
 import {
   authorizeProjectMemberApi,
@@ -568,7 +569,16 @@ const reportTemplateLoading = ref(false)
 const reportTemplateError = ref('')
 const reportTemplateSaving = ref(false)
 const reportTemplateDialogVisible = ref(false)
-const reportTemplateDialogMode = ref<'create' | 'edit'>('create')
+const reportTemplateDialogMode = ref<'create' | 'edit' | 'view'>('create')
+
+// 生产版本的模板不允许改内容——报告已生成的那些引用着当时的快照。
+// 但原来的做法是「编辑/发布/删除三个按钮一起禁用，不给任何说明」，
+// 管理员看到的就是一排点不动的按钮，也不知道该怎么办（实测被当成 bug 报上来）。
+// 规则不变，改成把规则讲出来，并且留一条能走的路：生产版本可以查看。
+const REPORT_TEMPLATE_LOCKED_STATUSES = ['production', '已发布']
+const reportTemplateLocked = (status?: string) =>
+  REPORT_TEMPLATE_LOCKED_STATUSES.includes(String(status || ''))
+const reportTemplateLockedHint = '生产版本已被已生成的报告引用，不能改动；请新增一个模板版本。'
 const reportTemplateOperationError = ref('')
 
 const auditFilters = reactive({
@@ -1768,7 +1778,11 @@ const handleReportTemplateSortChange = (event: { prop?: string; order?: TableSor
 }
 
 const openReportTemplateDialog = (template?: ReportTemplate) => {
-  reportTemplateDialogMode.value = template ? 'edit' : 'create'
+  reportTemplateDialogMode.value = template
+    ? reportTemplateLocked(template.status)
+      ? 'view'
+      : 'edit'
+    : 'create'
   resetReportTemplateForm(template)
   reportTemplateDialogVisible.value = true
 }
@@ -4569,32 +4583,45 @@ onMounted(() => {
               <ElTableColumn prop="updatedAt" label="更新时间" width="170" sortable="custom" />
               <ElTableColumn label="操作" width="180" fixed="right">
                 <template #default="{ row }">
-                  <ElButton
-                    link
-                    type="primary"
-                    :disabled="['production', '已发布'].includes(row.status)"
-                    @click="openReportTemplateDialog(row)"
-                  >
-                    编辑
+                  <!-- 生产版本不可改，但得让人看得到内容、且知道为什么点不动。
+                       原来三个按钮一起灰掉、不给任何说明，管理员只能当它坏了。 -->
+                  <ElButton link type="primary" @click="openReportTemplateDialog(row)">
+                    {{ reportTemplateLocked(row.status) ? '查看' : '编辑' }}
                   </ElButton>
-                  <ElButton
-                    link
-                    type="success"
-                    :disabled="['production', '已发布'].includes(row.status)"
-                    :loading="reportTemplateSaving"
-                    @click="handlePublishReportTemplate(row)"
+                  <ElTooltip
+                    :disabled="!reportTemplateLocked(row.status)"
+                    :content="reportTemplateLockedHint"
+                    placement="top"
                   >
-                    发布
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="danger"
-                    :disabled="['production', '已发布'].includes(row.status)"
-                    :loading="reportTemplateSaving"
-                    @click="handleDeleteReportTemplate(row)"
+                    <span>
+                      <ElButton
+                        link
+                        type="success"
+                        :disabled="reportTemplateLocked(row.status)"
+                        :loading="reportTemplateSaving"
+                        @click="handlePublishReportTemplate(row)"
+                      >
+                        发布
+                      </ElButton>
+                    </span>
+                  </ElTooltip>
+                  <ElTooltip
+                    :disabled="!reportTemplateLocked(row.status)"
+                    :content="reportTemplateLockedHint"
+                    placement="top"
                   >
-                    删除
-                  </ElButton>
+                    <span>
+                      <ElButton
+                        link
+                        type="danger"
+                        :disabled="reportTemplateLocked(row.status)"
+                        :loading="reportTemplateSaving"
+                        @click="handleDeleteReportTemplate(row)"
+                      >
+                        删除
+                      </ElButton>
+                    </span>
+                  </ElTooltip>
                 </template>
               </ElTableColumn>
             </ElTable>
@@ -6051,11 +6078,31 @@ onMounted(() => {
 
       <ElDrawer
         v-model="reportTemplateDialogVisible"
-        :title="reportTemplateDialogMode === 'create' ? '新增报告模板' : '编辑报告模板'"
+        :title="
+          reportTemplateDialogMode === 'create'
+            ? '新增报告模板'
+            : reportTemplateDialogMode === 'view'
+              ? '查看报告模板（生产版本，不可改）'
+              : '编辑报告模板'
+        "
         size="min(820px, 94vw)"
       >
-        <ElForm label-position="top" class="prompt-template-form">
+        <!-- disabled 加在 ElForm 上，整张表单一起只读；逐个控件加会漏，
+             漏掉的那个就是「看起来能改、保存却没有按钮」。 -->
+        <ElForm
+          label-position="top"
+          class="prompt-template-form"
+          :disabled="reportTemplateDialogMode === 'view'"
+        >
           <ElAlert
+            v-if="reportTemplateDialogMode === 'view'"
+            type="warning"
+            show-icon
+            :closable="false"
+            :title="reportTemplateLockedHint"
+          />
+          <ElAlert
+            v-else
             type="info"
             show-icon
             :closable="false"
@@ -6119,8 +6166,13 @@ onMounted(() => {
           </ElFormItem>
         </ElForm>
         <div class="drawer-footer">
-          <ElButton @click="reportTemplateDialogVisible = false">取消</ElButton>
+          <ElButton @click="reportTemplateDialogVisible = false">
+            {{ reportTemplateDialogMode === 'view' ? '关闭' : '取消' }}
+          </ElButton>
+          <!-- 查看模式不留保存按钮：留着就是一个能改却存不进去的假编辑，
+               比直接说明不可改更糟。 -->
           <ElButton
+            v-if="reportTemplateDialogMode !== 'view'"
             type="primary"
             :loading="reportTemplateSaving"
             @click="handleSaveReportTemplate"

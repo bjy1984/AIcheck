@@ -758,15 +758,37 @@ const handleStartReview = async () => {
       res.data.dispatch?.reviewRunId || res.data.latestRun?.reviewRunId || ''
     )
     if (session.value?.id && reviewRunId) {
-      await runReviewBSessionActionApi(
-        session.value.id,
-        'set_active_review_run',
-        { reviewRunId },
-        {
-          etag: session.value.etag,
-          idempotencyKey: `review-b-link-${session.value.id}-${reviewRunId}`
+      // 这里原来是 `.catch(() => undefined)`——绑定失败悄悄丢掉。
+      //
+      // 后果不是「少了个链接」：工作台读的是会话上的 activeReviewRunId，
+      // 绑不上就永远停在上一条运行。2026-08-15 实测，界面钉在 09:59 那条
+      // 永久 queued 的旧运行上显示「执行中」，而新运行早已跑完。
+      //
+      // 失败的常见原因是 etag 过期（页面开着这段时间会话被别的请求改过），
+      // 所以先取一份新的会话再重试一次；仍然不行就如实说，别让人对着
+      // 一条陈旧的运行等下去。
+      const bindActiveRun = (etag?: string) =>
+        runReviewBSessionActionApi(
+          session.value!.id,
+          'set_active_review_run',
+          { reviewRunId },
+          { etag, idempotencyKey: `review-b-link-${session.value!.id}-${reviewRunId}` }
+        )
+      try {
+        await bindActiveRun(session.value.etag)
+      } catch {
+        await loadNodeWorkspace(false)
+        try {
+          await bindActiveRun(session.value?.etag)
+        } catch (error) {
+          ElMessage.warning(
+            getAicheckErrorMessage(
+              error,
+              '复核已发起，但没能把它设为当前运行；页面可能仍显示上一条运行，请刷新后查看。'
+            )
+          )
         }
-      ).catch(() => undefined)
+      }
     }
     ElMessage.success(`${modeLabel}已发起`)
     await refreshLiveState()
