@@ -49,3 +49,21 @@ def test_等待人工的状态仍然算启动成功():
     # 免得每加一个状态就要回来改一次，漏改就又变成静默失败。
     assert "not in" in inline_block
     assert "waiting" not in inline_block, "别用白名单，新状态会漏"
+
+
+def test_落库认执行时手上那个对象而不是再查一次():
+    """跑完了却落库落成旧的——同一个根因咬的第二口。
+
+    实测：事件一路到 review_run.waiting_human_review，库里那条运行仍是
+    queued、promptAudit 0。因为并发重载换掉了 repo.state["review_runs"]，
+    执行改的那个对象已经和 state 脱钩，再 find_one 查到的是重载来的干净副本。
+    """
+    source = inspect.getsource(execution.execute_review_run_inline)
+    assert "_INFLIGHT_REVIEW_RUNS" in source, "落库要认执行时手上那个对象"
+    assert 'records["review_runs"] = [inflight]' in source
+
+    body = inspect.getsource(execution._execute_review_run_inline)
+    assert "_INFLIGHT_REVIEW_RUNS[review_run_id] = review_run" in body
+
+    # 用完要清掉，否则长跑进程会把每一条运行记录都留在内存里。
+    assert "_INFLIGHT_REVIEW_RUNS.pop" in source
