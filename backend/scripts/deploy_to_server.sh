@@ -134,6 +134,41 @@ PY
     done
     echo \"    直连后端端口：127.0.0.1:\$NEXT_PORT（蓝绿轮换，每次部署会换）\"
   "
+  # worker 也要跟着换。这一段是补上的洞：脚本此前只重建 API，
+  # 四个 worker 从创建那天起就没动过——跑的是当天的镜像、当天的 env-file。
+  # 症状不会是报错，是**任务默默按旧逻辑执行**：2026-08-15 查 MinerU 时发现
+  # ocr-remote worker 里 AICHECK_MINERU_API_KEY / AICHECK_OCR_DEFAULT_PROVIDER
+  # 全是空的——配置早已写进 runtime.env，容器却还揣着三天前那份。
+  #
+  # 与 API 不同，worker 不做蓝绿：它们没有入口流量，任务在 Redis 队列里等着，
+  # 重建期间只是没人消费，恢复后照常取走。用 rm + run 而非 restart，
+  # 理由与上面 API 那段完全相同——restart 绑定旧镜像层。
+  echo "==> 重建 worker 容器（同镜像同 env-file）"
+  ssh "$HOST" "
+    set -eo pipefail
+    recreate_worker() {
+      name=\$1; shift
+      docker rm -f \$name >/dev/null 2>&1 || true
+      docker run -d --name \$name --network aicheck-net --restart unless-stopped \
+        --env-file /home/dev-bjy/aicheck-runtime.env aicheck-api:local \
+        sh -c \"celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --prefetch-multiplier=1 \$*\" >/dev/null
+    }
+    recreate_worker aicheck-worker-business --concurrency=2 -Q business.light,ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
+    recreate_worker aicheck-worker-cpu-heavy --concurrency=1 -Q cpu.heavy
+    recreate_worker aicheck-worker-llm --concurrency=1 -Q llm.remote
+    recreate_worker aicheck-worker-ocr-remote --concurrency=1 -Q ocr.remote
+    sleep 5
+    for c in aicheck-worker-business aicheck-worker-cpu-heavy aicheck-worker-llm aicheck-worker-ocr-remote; do
+      state=\$(docker inspect \$c --format '{{.State.Status}}' 2>/dev/null || echo missing)
+      if [ \"\$state\" != running ]; then
+        echo \"    worker \$c 未起来（\$state）\" >&2
+        docker logs \$c --tail 20 >&2 || true
+        exit 1
+      fi
+    done
+    echo '    四个 worker 均已用新镜像重建'
+  "
+
   # 确认容器真的换成了新代码，而不是又跑起旧实例
   echo "==> 校验容器代码与本地一致"
   ssh "$HOST" "

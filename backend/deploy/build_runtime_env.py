@@ -85,6 +85,19 @@ runtime = {
     "AICHECK_LLM_MODEL_DEFAULT": "deepseek-v4-pro",
     "AICHECK_LLM_MODEL_COMPARE_FAST": "deepseek-v4-flash",
     "AICHECK_LLM_MODEL_VISION": "deepseek-v4-pro",
+    # OCR 分工：正文/表格走 MinerU 云端 API，印章留给本地方案。
+    #
+    # 密钥 AICHECK_MINERU_API_KEY 在凭证文件里，由下面的 update 带进来。
+    # 这里只写路由，不写密钥——密钥进仓库这条线不能开。
+    #
+    # 本地那份 .env 同时带着 AICHECK_OCR_OFFLINE_ONLY / AICHECK_OCR_DISABLE_NETWORK
+    # =true，那是给 ocr-service 容器用的；照抄到服务器会把 MinerU 这条云端调用
+    # 直接堵死，且不会报错——只会静默退回占位结果。所以这两项一个都不带上来。
+    #
+    # 印章：服务器上还没有 ocr-service 容器和那 3.5 GB 模型，
+    # 两个 seal 开关先保持关闭，等模型落地再打开。
+    "AICHECK_OCR_DEFAULT_PROVIDER": "mineru",
+    "AICHECK_OCR_ALLOW_PLACEHOLDER": "false",
 }
 # 凭证覆盖固定配置：口令、密钥以文件为准
 runtime.update({k: v for k, v in secrets.items() if not k.startswith("AICHECK_BOOTSTRAP_PASSWORD_")})
