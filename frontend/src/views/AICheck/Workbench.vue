@@ -5196,9 +5196,12 @@ onBeforeUnmount(() => {
                 >
                   文件库
                 </ElButton>
-                <ElButton v-if="role === 'owner'" class="btn" @click="handleDownloadArchivePackage">
-                  导出状态摘要
-                </ElButton>
+                <!-- 这里原来有一个「导出状态摘要」按钮，绑的却是
+                     handleDownloadArchivePackage——点下去导出的是归档包。
+                     而建设方的归档区里本来就有「归档包」按钮，两个入口做同一件事，
+                     其中一个还挂着错名字：用户点「状态摘要」拿到的是（0 项的）归档包。
+                     前后端都没有「状态摘要导出」这个能力，这个名字从来只是个误会。
+                     与其保留一个骗人的入口，不如去掉——真要做状态摘要，是另一个功能。 -->
               </div>
             </div>
 
