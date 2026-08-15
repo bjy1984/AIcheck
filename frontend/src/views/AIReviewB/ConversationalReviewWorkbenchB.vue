@@ -57,6 +57,7 @@ import {
   getReviewBWorkspaceApi,
   listReviewBEventsApi,
   listReviewBMessagesApi,
+  cancelReviewRunApi,
   streamReviewBEventsApi,
   runReviewBSessionActionApi,
   sendReviewBMessageApi
@@ -184,6 +185,24 @@ const liveAgentTrace = computed(() => {
   return agentEvents.slice(-12)
 })
 const liveAgentTraceLatest = computed(() => liveAgentTrace.value.at(-1))
+
+// 正式复核跑的是 graph_node / quality_gate / review_run 这些事件，
+// 一条都不是 agent.*。原来执行动态只认 agent.*，于是发起复核之后界面上
+// 只有一个「执行中」在转，后台七八十条事件一条都没露面（实测用户反馈）。
+const REVIEW_RUN_EVENT_PREFIXES = /^(graph_node|quality_gate|review_run|rule_check|retrieval)\./
+const liveRunTrace = computed(() =>
+  executionEvents.value
+    .filter((event) => REVIEW_RUN_EVENT_PREFIXES.test(String(event.eventType || '')))
+    .slice(-12)
+)
+/** 当前该展示哪一条流：聊天看 agent.*，复核看运行事件，闲时看最近几条。 */
+const liveTrace = computed(() => {
+  if (sending.value) return liveAgentTrace.value
+  if (reviewStarting.value) return liveRunTrace.value
+  return latestExecutionEvents.value
+})
+/** 有东西正在跑——聊天或复核，两条路径共用一个口径。 */
+const executionInFlight = computed(() => sending.value || reviewStarting.value)
 const displayUser = computed(
   () => userStore.getUserInfo?.displayName || userStore.getUserInfo?.username || '监检人员'
 )
@@ -259,7 +278,12 @@ const executionSummary = computed(() => {
     if (latest?.title) return latest.title
     return '正在理解问题并核查当前节点上下文…'
   }
-  if (reviewStarting.value) return '正在启动 AI 复核流程…'
+  if (reviewStarting.value) {
+    // 「正在启动」只在真的还没跑起来时才成立。跑起来之后要报当前这步在做什么，
+    // 否则一场几分钟的复核，用户全程只看到同一句话。
+    const latest = liveRunTrace.value.at(-1)
+    return latest?.title || latest?.eventType || '正在启动 AI 复核流程…'
+  }
   const execution = latestAssistantExecution.value
   if (execution?.mode === 'llm_agent') {
     const model = [execution.provider, execution.model].filter(Boolean).join(' / ') || '真实模型'
@@ -899,6 +923,27 @@ const sendMessage = async (preset?: string) => {
     sending.value = false
     activityExpanded.value = false
   }
+}
+
+/** 叫停当前正在跑的东西：聊天走会话取消，复核走 ReviewRun 取消。
+ *
+ * 后端 /review-runs/{id}/cancel 一直都在，前端从来没接——所以正式复核
+ * 一旦跑起来就没有任何办法停下。 */
+const stopCurrentExecution = async () => {
+  if (cancelling.value) return
+  if (reviewStarting.value && activeRunId.value) {
+    cancelling.value = true
+    try {
+      await cancelReviewRunApi(activeRunId.value)
+      ElMessage.info('已请求停止本次复核，正在等待执行器响应…')
+    } catch (error) {
+      ElMessage.error(getAicheckErrorMessage(error, '停止复核失败。'))
+    } finally {
+      cancelling.value = false
+    }
+    return
+  }
+  await stopCurrentAnswer()
 }
 
 const stopCurrentAnswer = async () => {
@@ -1579,11 +1624,8 @@ onBeforeUnmount(() => {
                   :stroke-width="4"
                   :show-text="false"
                 />
-                <ol v-if="(sending ? liveAgentTrace : latestExecutionEvents).length">
-                  <li
-                    v-for="event in sending ? liveAgentTrace : latestExecutionEvents"
-                    :key="event.eventId"
-                  >
+                <ol v-if="liveTrace.length">
+                  <li v-for="event in liveTrace" :key="event.eventId">
                     <span class="execution-event-dot"></span>
                     <span>
                       {{ event.title || event.eventType }}
@@ -1640,10 +1682,22 @@ onBeforeUnmount(() => {
               <ElButton size="small" @click="sendMessage('/草拟意见')">/草拟意见</ElButton>
             </div>
             <div>
-              <ElButton v-if="sending" :loading="cancelling" @click="stopCurrentAnswer"
-                >停止回答</ElButton
+              <!-- 停止/发送两个按钮原来只认聊天（sending）。正式复核跑起来时
+                   sending 是 false：发送按钮不转圈、还能再点，也没有任何叫停的
+                   入口——用户只能干等（实测反馈）。两条路径统一用 executionInFlight。 -->
+              <ElButton
+                v-if="executionInFlight"
+                :loading="cancelling"
+                @click="stopCurrentExecution"
               >
-              <ElButton type="primary" :icon="Promotion" :loading="sending" @click="sendMessage()"
+                {{ reviewStarting ? '停止复核' : '停止回答' }}
+              </ElButton>
+              <ElButton
+                type="primary"
+                :icon="Promotion"
+                :loading="executionInFlight"
+                :disabled="executionInFlight"
+                @click="sendMessage()"
                 >发送</ElButton
               >
             </div>

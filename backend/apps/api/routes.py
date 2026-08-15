@@ -12527,6 +12527,37 @@ def refresh_review_live_state_shared(min_interval_seconds: float = 0.4) -> None:
     refresh_state_from_postgres_for_live_read(REVIEW_SESSION_EVENT_LIVE_KEYS)
 
 
+#: 事件列表里单条 payload 的上限。超过就换成摘要——原文仍在库里，
+#: 需要细节的入口（audit-view / 执行轨迹）照常给全量。
+MAX_EVENT_PAYLOAD_CHARS = 2000
+
+
+def slim_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """把过大的事件 payload 换成摘要。
+
+    2026-08-15 实测：打开工作台，`/review-sessions/{id}/events` 一次返回
+    **3.9 MB、耗时 8 秒**，是首屏最大的一块。拆开看，453 条事件里
+    `graph_node.succeeded` 184 条就占了 details 总量的 99.6%（每条约 42 KB）。
+
+    而前端的 ReviewBEvent 契约里**根本没有这些内容的位置**——它只用
+    eventType / title / status 排执行轨迹，payload 只在流式增量时读。
+    也就是说这 3.9 MB 传过去就被丢掉。
+
+    `agent.*` 一律不动：流式增量要逐字拼接，少一个字就是错的。
+    """
+    if not payload or event_type.startswith("agent."):
+        return payload
+    encoded = json.dumps(payload, ensure_ascii=False, default=str)
+    if len(encoded) <= MAX_EVENT_PAYLOAD_CHARS:
+        return payload
+    return {
+        "summary": f"内容较大（{len(encoded):,} 字符），已在列表中折叠",
+        "keys": sorted(payload)[:20],
+        "payloadTruncated": True,
+        "originalChars": len(encoded),
+    }
+
+
 def review_session_event_snapshot(session_id: str, session: dict[str, Any]) -> list[dict[str, Any]]:
     """合并会话事件与 ReviewRun 事件，按发生时间重排并重新编号。"""
     run_ids = {
@@ -12565,7 +12596,11 @@ def review_session_event_snapshot(session_id: str, session: dict[str, Any]) -> l
                 "title": item.get("title"),
                 "sessionId": session_id,
                 "reviewRunId": item.get("reviewRunId"),
-                "payload": repo.clone(item.get("details") or {}),
+                "payload": slim_event_payload(
+                    str(item.get("eventType") or ""), repo.clone(item.get("details") or {})
+                ),
+                # hash 照原文算——折叠只是传输层的事，指纹要指向真正的内容，
+                # 否则拿摘要算出来的哈希会让人以为内容变了。
                 "payloadHash": stable_hash_payload(item.get("details") or {}),
                 "occurredAt": item.get("createdAt"),
                 "status": item.get("status"),

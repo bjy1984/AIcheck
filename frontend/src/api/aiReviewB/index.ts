@@ -104,6 +104,22 @@ export const runReviewBSessionActionApi = (
   })
 }
 
+/** 取消一次正在跑的 ReviewRun。
+ *
+ * 后端 /review-runs/{id}/cancel 一直都在，只是前端从来没接——
+ * 于是「发起复核」跑起来之后，用户没有任何办法叫停，只能干等。 */
+export const cancelReviewRunApi = (
+  reviewRunId: string,
+  data: Record<string, unknown> = {},
+  options?: MutationOptions
+): Promise<IResponse<{ reviewRunId: string; status: string }>> => {
+  return request.post({
+    url: `/api/review-runs/${reviewRunId}/cancel`,
+    data,
+    headers: mutationHeaders('review-run-cancel', options)
+  })
+}
+
 export const listReviewBEventsApi = (
   sessionId: string,
   after = 0
