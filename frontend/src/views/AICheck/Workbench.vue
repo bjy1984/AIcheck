@@ -1951,6 +1951,18 @@ const assertRealUploadTarget = (target: DocumentUploadTarget, file: File) => {
   }
 }
 
+/** 这个上传地址是不是我们自己的 API。
+ *
+ * 只有自家 API 才需要 JWT。发往对象存储的预签名 URL 绝不能带 Authorization：
+ * S3/MinIO 一看到这个头就改用它来鉴权、不再认预签名参数，而 JWT 不是合法的
+ * AWS 签名，直接回 400。
+ *
+ * 2026-08-15 实测就是这么卡住的：服务器侧用同一个预签名 URL curl（不带该头）
+ * 返回 200，浏览器带着头 PUT 返回 400 Bad Request。
+ */
+const isOwnApiUploadTarget = (url: string) =>
+  url.startsWith('/api/') || url.startsWith(`${window.location.origin}/api/`)
+
 const uploadFileToSignedUrl = async (target: DocumentUploadTarget, file: File) => {
   assertRealUploadTarget(target, file)
   // 登录态由本地会话补，不再依赖服务端在会话响应里回显 Authorization（M-3）——
@@ -1960,7 +1972,9 @@ const uploadFileToSignedUrl = async (target: DocumentUploadTarget, file: File) =
     method: target.method || 'PUT',
     headers: {
       ...(target.headers || {}),
-      [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? ''
+      ...(isOwnApiUploadTarget(target.url)
+        ? { [userStore.getTokenKey ?? 'Authorization']: userStore.getToken ?? '' }
+        : {})
     },
     body: file
   })
