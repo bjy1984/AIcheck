@@ -18,7 +18,9 @@ const sfc = readFileSync(
 const fn = sfc.slice(sfc.indexOf('const loadAuditView'), sfc.indexOf('const loadSessionData'))
 
 assert.ok(fn.includes('loadedAuditViewSignature'), 'audit-view 没有做变更判据')
-assert.ok(/if \(!force && auditView\.value && signature === loadedAuditViewSignature\) return/.test(fn))
+assert.ok(
+  /if \(!force && auditView\.value && signature === loadedAuditViewSignature\) return/.test(fn)
+)
 
 // 指纹要覆盖真正会让内容变化的字段
 const sig = sfc.slice(sfc.indexOf('const auditViewSignature'), sfc.indexOf('const loadAuditView'))
@@ -27,9 +29,6 @@ for (const field of ['status', 'revision', 'updatedAt']) {
 }
 
 // 失败不能留下指纹，否则一次失败会被当成「已经取过了」，永远不再重试
-assert.ok(
-  /catch[\s\S]*loadedAuditViewSignature = ''/.test(fn),
-  '取失败要清掉指纹，下一轮还得重试'
-)
+assert.ok(/catch[\s\S]*loadedAuditViewSignature = ''/.test(fn), '取失败要清掉指纹，下一轮还得重试')
 
 console.log('Review B audit-view refetch contract passed')

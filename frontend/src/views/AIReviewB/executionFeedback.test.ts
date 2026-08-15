@@ -30,14 +30,8 @@ assert.ok(
 assert.ok(sfc.includes('executionInFlight'), '发送/停止还在只认聊天路径')
 const composer = sfc.slice(sfc.indexOf('class="composer-actions"'))
 const composerBlock = composer.slice(0, composer.indexOf('</section>'))
-assert.ok(
-  composerBlock.includes(':loading="executionInFlight"'),
-  '复核期间发送按钮要转圈'
-)
-assert.ok(
-  composerBlock.includes(':disabled="executionInFlight"'),
-  '复核期间不该还能再点发送'
-)
+assert.ok(composerBlock.includes(':loading="executionInFlight"'), '复核期间发送按钮要转圈')
+assert.ok(composerBlock.includes(':disabled="executionInFlight"'), '复核期间不该还能再点发送')
 assert.ok(composerBlock.includes('stopCurrentExecution'), '要有叫停入口')
 
 // 叫停复核走的是 ReviewRun 取消，不是会话取消

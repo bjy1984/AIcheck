@@ -540,6 +540,22 @@ const loadAuditView = async (force = false) => {
   }
 }
 
+/** 轮询取事件用的游标——往回退一段，别用 0。
+ *
+ * 原来每一轮都 `after=0` 取完整快照，理由是「合并会话事件与 ReviewRun 事件后
+ * 会重排，用游标怕漏读」。这个担心是对的，但代价是每 3 秒 204 KB：
+ * 切一次节点的 9 秒里就拉了 3 次、600 多 KB，纯背景流量。
+ *
+ * 重排只会发生在最近这一小段（后台刚追加、时间戳交错的那些），
+ * 所以往回退一个安全窗口即可：既容忍重排，又不必每次搬运全部历史。
+ * mergeEvents 本来就按 eventId 去重，重复取回来不会有副作用。
+ */
+const EVENT_POLL_OVERLAP = 30
+const eventPollCursor = () => {
+  const latest = events.value.at(-1)?.sequence || 0
+  return Math.max(0, latest - EVENT_POLL_OVERLAP)
+}
+
 const loadSessionData = async (reset = false) => {
   if (!session.value?.id) return
   const sessionId = session.value.id
@@ -549,8 +565,7 @@ const loadSessionData = async (reset = false) => {
   }
   const [messageRes, eventRes] = await Promise.all([
     listReviewBMessagesApi(sessionId, reset ? 0 : messages.value.at(-1)?.sequence || 0),
-    // 执行事件会合并会话事件与 ReviewRun 事件；始终取完整快照，避免并发事件重排造成游标漏读。
-    listReviewBEventsApi(sessionId, 0)
+    listReviewBEventsApi(sessionId, reset ? 0 : eventPollCursor())
   ])
   // 在响应返回后再判断，避免用户恰好在轮询请求期间向上滚动时被带回底部。
   const shouldFollowLatest = reset || isTimelineNearBottom()
@@ -562,7 +577,7 @@ const loadSessionData = async (reset = false) => {
 const pollLiveAgentTrace = async () => {
   if (!session.value?.id) return
   try {
-    const eventRes = await listReviewBEventsApi(session.value.id, 0)
+    const eventRes = await listReviewBEventsApi(session.value.id, eventPollCursor())
     mergeEvents(eventRes.data.events)
   } catch {
     // 发送中的旁路轮询失败不影响主请求。
