@@ -488,6 +488,20 @@ const metrics = computed(() => summary.value?.metrics || [])
 const todos = computed(() => summary.value?.todos || [])
 const messages = computed(() => summary.value?.messages || [])
 const selectedNode = computed<ProjectTreeNode | undefined>(() => nodePackage.value?.node)
+
+/** 静态视图（施工方/建设方）的组件实例，待办跳转要调它的定位方法。 */
+const staticSectionsRef = ref<{
+  focusContractorNode?: (node: { id: number; name: string }) => Promise<boolean>
+} | null>(null)
+
+/** 节点显示名。取不到就退回「节点 N」——搜索框里宁可填个编号，也不填空串。 */
+const nodeDisplayName = (nodeId: number) => {
+  const fromPackage = nodePackage.value?.node
+  if (fromPackage && Number(fromPackage.id) === nodeId) {
+    return String(fromPackage.name || `节点 ${nodeId}`)
+  }
+  return `节点 ${nodeId}`
+}
 const bindings = computed(() => nodePackage.value?.bindings || [])
 const nodeScopedFiles = computed(() => {
   const documentIds = new Set(bindings.value.map((binding) => binding.documentId))
@@ -2461,13 +2475,28 @@ const handleOpenQuickTodo = async (todo: TodoItem) => {
     activeProjectId.value = targetProjectId
     await loadProjectBundle()
   }
+  let located = false
   if (Number.isFinite(targetNodeId) && targetNodeId > 0) {
     await loadNodePackage(targetNodeId)
+    // 取回节点数据 ≠ 用户看见了它。施工方/建设方这个视图是文件库，
+    // 不渲染节点包——线上实测点完提示「已定位」，页面首屏一字未变。
+    // 这里让静态视图真的把节点名填进筛选并滚过去，滚不动就如实降级措辞。
+    const focus = staticSectionsRef.value?.focusContractorNode
+    if (typeof focus === 'function') {
+      located = (await focus({ id: targetNodeId, name: nodeDisplayName(targetNodeId) })) === true
+    } else {
+      located = Boolean(selectedNode.value && Number(selectedNode.value.id) === targetNodeId)
+    }
   }
   quickAccessVisible.value = false
-  ElMessage.success(
-    targetNodeId > 0 ? '已定位到待办对应的节点' : '已切换到待办所属项目（该待办未指向具体节点）'
-  )
+  if (targetNodeId > 0 && located) {
+    ElMessage.success('已定位到待办对应的节点')
+  } else if (targetNodeId > 0) {
+    // 宁可说清楚「只切了项目」，也不谎称定位成功——用户会以为自己看漏了。
+    ElMessage.warning('已切换到待办所属项目；当前视图无法直接定位到该节点，请在列表中查找。')
+  } else {
+    ElMessage.success('已切换到待办所属项目（该待办未指向具体节点）')
+  }
 }
 
 const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
@@ -5545,6 +5574,7 @@ onBeforeUnmount(() => {
 
             <WorkbenchRoleStaticSections
               v-if="role === 'contractor' || role === 'owner'"
+              ref="staticSectionsRef"
               :role="role"
               :project="currentProject"
               :node="selectedNode"

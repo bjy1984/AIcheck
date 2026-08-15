@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -74,6 +74,8 @@ type ContractorFileRow = {
 
 const props = defineProps<{
   role: RoleCode
+  /** 从待办跳过来时要定位的节点。改变即触发一次定位。 */
+  focusNode?: { id: number; name: string } | null
   project?: Project
   node?: ProjectTreeNode
   packageData?: NodePackagePayload
@@ -111,6 +113,30 @@ const latestArchive = computed(() => props.archiveItems[0])
 const correctionFeedback = computed(() =>
   props.ndtFeedback.find((item) => item.status === '待反馈')
 )
+
+/* 待办跳转要**真的**把人带到那儿。
+ *
+ * 线上实测：点「去该节点处理」，提示弹出「已定位到待办对应的节点」，
+ * 而页面首屏一字未变——施工方这个视图是文件库，压根不渲染节点包，
+ * 后台把节点数据取回来了，用户看不见任何变化。
+ * **系统声称做了一件它没做的事**，比什么都不做更糟：用户会以为自己看漏了。
+ *
+ * 施工方这边能按「审核环节」过滤，所以定位＝把节点名填进搜索框并滚过去；
+ * 做不到的情况由调用方如实降级措辞，不再说「已定位」。
+ */
+const focusContractorNode = async (node: { id: number; name: string }) => {
+  contractorStatusFilter.value = '全部'
+  contractorUsageFilter.value = '全部用途'
+  contractorKeyword.value = String(node.name || '').trim()
+  contractorPage.value = 1
+  await nextTick()
+  document
+    .querySelector('#contractor-file-list')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  return contractorKeyword.value.length > 0
+}
+
+defineExpose({ focusContractorNode })
 
 const contractorStatusFilter = ref<ContractorFileStatus>('全部')
 const contractorUsageFilter = ref('全部用途')
@@ -692,7 +718,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
                 {{ status }} {{ contractorStatusCounts[status] }}
               </ElRadioButton>
             </ElRadioGroup>
-            <div class="filter-row">
+            <div id="contractor-file-list" class="filter-row">
               <ElInput
                 v-model="contractorKeyword"
                 class="filter-input"
