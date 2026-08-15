@@ -51,6 +51,10 @@ from libs.review_orchestrator.evidence_budget import (
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
+from libs.review_orchestrator.node_fact_overrides import (
+    apply_node_fact_corrections,
+    pure_llm_grounding_input,
+)
 from libs.review_orchestrator.r12_agent import (
     apply_r12_human_input,
     build_r12_business_facts,
@@ -102,51 +106,6 @@ def qwen_runtime_client() -> QwenRuntimeClient:
 
 
 
-def apply_node_fact_corrections(
-    state: dict[str, Any],
-    project_id: str,
-    node_id: int,
-    facts: dict[str, Any] | None,
-) -> list[dict[str, Any]]:
-    """把监检人员的事实修正覆盖到本节点的业务事实上（issue #5 / D-1）。
-
-    业务口径：修正仅对本节点生效、不跨节点传播；重跑由人工显式触发，
-    本函数只在节点重跑的 load_context 步骤被调用。
-    """
-    if not isinstance(facts, dict):
-        return []
-    applied: list[dict[str, Any]] = []
-    corrections = [
-        item
-        for item in state.get("fact_corrections", []) or []
-        if item.get("projectId") == project_id
-        and int(item.get("nodeId") or 0) == int(node_id)
-        and item.get("status") == "active"
-    ]
-    for correction in sorted(corrections, key=lambda item: str(item.get("createdAt") or "")):
-        path = str(correction.get("factPath") or "")
-        parts = [part for part in path.split(".") if part]
-        if not parts:
-            continue
-        cursor: Any = facts
-        for part in parts[:-1]:
-            nested = cursor.get(part) if isinstance(cursor, dict) else None
-            if not isinstance(nested, dict):
-                nested = {}
-                if isinstance(cursor, dict):
-                    cursor[part] = nested
-            cursor = nested
-        if isinstance(cursor, dict):
-            cursor[parts[-1]] = correction.get("correctedValue")
-            applied.append(
-                {
-                    "correctionId": correction.get("id"),
-                    "factPath": path,
-                    "correctedBy": correction.get("correctedBy"),
-                    "createdAt": correction.get("createdAt"),
-                }
-            )
-    return applied
 
 
 # 确定性判定 → AI 建议结论展示词。所有结论均为建议，最终由监检人员确认。
@@ -1766,6 +1725,37 @@ def apply_review_human_input_for_review_run(
 
 
 def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
+    """同步执行一次 ReviewRun，并保证结果落库。
+
+    ## 为什么要包这一层
+
+    2026-08-15 前端操作审计实测：监检点「发起缺项预审」，接口返回
+    `status: waiting_human_review`，而数据库里那条运行永远停在 `queued`、
+    promptAudit 0 字符、findingDrafts 0 条。等 45 秒仍是 queued。
+
+    界面轮询读的是落库状态，所以**永远显示排队中**——AI 复核在界面上出不来结果。
+
+    原因是里面这个函数体有 6 个返回点，**一次 flush_state_records 都没有**。
+    失败之所以能落库，是因为异常路径在 dispatcher 和各 except 分支里另外显式
+    调了 flush。于是形成一个很坏的不对称：**失败看得见，成功看不见。**
+
+    用 try/finally 而不是在 6 个 return 前各加一行：出口还会再增加，
+    加一个忘一个，这个 bug 就会以同样的形状回来。
+    """
+    try:
+        return _execute_review_run_inline(review_run_id)
+    finally:
+        # 落库失败不能把已经跑完的审查结果连带吞掉——那会从「结果看不见」
+        # 变成「结果没了」。这里记下来继续，由调用方拿到的返回值兜住。
+        try:
+            records = review_run_state_records(review_run_id)
+            if records:
+                flush_state_records(records)
+        except Exception:  # noqa: BLE001 - 落库尽力而为，不遮盖主流程结果
+            pass
+
+
+def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
     ensure_review_state()
     review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
     if not review_run:
@@ -2473,48 +2463,6 @@ def review_llm_execution_mode() -> str:
     return "deterministic"
 
 
-def pure_llm_grounding_input(version_ids: set[str], audit_runtime: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "schemaVersion": "PureLlmReviewInput@1.0.0",
-        "documentVersionIds": sorted(version_ids),
-        "auditInputMode": audit_runtime["mode"],
-        "groundingPolicy": audit_runtime["groundingPolicy"],
-        "groundingStatus": "insufficient_evidence",
-        "blockingIssues": [
-            {
-                "code": "PURE_LLM_REVIEW_NO_OCR_EVIDENCE",
-                "message": "This audit run is configured to skip OCR evidence; all findings are advisory and require human confirmation.",
-            }
-        ],
-        "fields": [],
-        "tables": [],
-        "seals": [],
-        "fragments": [],
-        "evidenceLinks": [],
-        "quality": [],
-        "evidenceTextCorpus": [],
-        "summary": {
-            "fieldCount": 0,
-            "tableCount": 0,
-            "sealCount": 0,
-            "fragmentCount": 0,
-            "evidenceLinkCount": 0,
-            "lowConfidenceEvidenceCount": 0,
-            "missingPositionEvidenceCount": 0,
-            "tableContentMissingCount": 0,
-            "sealTextRiskCount": 0,
-            "criticalQualityFlagCount": 0,
-            "blockingIssueCount": 1,
-            "groundingStatus": "insufficient_evidence",
-            "auditInputMode": audit_runtime["mode"],
-        },
-        "reviewWarnings": [
-            {
-                "code": "PURE_LLM_REVIEW_ADVISORY_ONLY",
-                "message": "Pure LLM mode does not provide OCR/page/bbox evidence and cannot support automatic compliance conclusions.",
-            }
-        ],
-    }
 
 
 def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:

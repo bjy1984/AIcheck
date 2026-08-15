@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+
 from libs.contracts.responses import business_today
 
 RESULT_SCHEMA = "deterministic-tool-result-v1"

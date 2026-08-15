@@ -2174,7 +2174,11 @@ def review_orchestration_contract_check(
     )
     require_source_terms(
         "execute_review_run_inline",
-        source_for_callable(getattr(execution_module, "execute_review_run_inline", None)),
+        # 真身在 _execute_review_run_inline，外层只负责落库（2026-08-15）。
+        # 契约要钉的是「inline 路径确实跑审查图」，所以两段源码合起来看；
+        # 只看外层会把一层薄包装误判成「审查图没了」。
+        source_for_callable(getattr(execution_module, "execute_review_run_inline", None))
+        + source_for_callable(getattr(execution_module, "_execute_review_run_inline", None)),
         [
             "execute_review_graph",
             "graphRunner",

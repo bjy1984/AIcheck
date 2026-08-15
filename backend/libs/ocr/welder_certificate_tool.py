@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
+
 from libs.contracts.responses import business_today
 
 TOOL_NAME = "ocr.welder_certificate.extract"

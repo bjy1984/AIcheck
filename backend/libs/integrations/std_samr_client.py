@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
+
 from libs.contracts.responses import business_today
 
 DEFAULT_ORIGIN = "https://std.samr.gov.cn"

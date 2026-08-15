@@ -102,7 +102,6 @@
   "SIM117": 1
  },
  "libs/integrations/std_samr_client.py": {
-  "I001": 1,
   "PYI034": 1
  },
  "libs/integrations/storage.py": {
@@ -115,9 +114,7 @@
   "BLE001": 1
  },
  "libs/ocr/welder_certificate_tool.py": {
-  "DTZ007": 1,
-  "F401": 1,
-  "I001": 1
+  "DTZ007": 1
  },
  "libs/ocr_accuracy_pipeline.py": {
   "TRY004": 1
@@ -147,7 +144,6 @@
   "BLE001": 1
  },
  "libs/review_orchestrator/deterministic_tools.py": {
-  "I001": 1,
   "RUF007": 1
  },
  "libs/review_orchestrator/dispatcher.py": {
@@ -155,16 +151,14 @@
  },
  "libs/review_orchestrator/execution.py": {
   "BLE001": 4,
-  "ISC004": 1
+  "ISC004": 1,
+  "S110": 1
  },
  "libs/review_orchestrator/graph.py": {
   "BLE001": 3
  },
  "libs/review_orchestrator/r24_r34_facts.py": {
   "PLC0206": 1
- },
- "libs/review_tools/r24_r34_tools.py": {
-  "F401": 1
  },
  "libs/runtime_readiness.py": {
   "BLE001": 1
