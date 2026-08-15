@@ -2789,6 +2789,50 @@ class InMemoryRepository:
     def object_is_pinned(self, collection_name: str, object_id: str) -> bool:
         return (collection_name, str(object_id)) in self._pinned_objects
 
+    def apply_loaded_collection(self, state_key: str, incoming: list[dict[str, Any]]) -> None:
+        """用加载结果替换一个集合，但**保留钉住的那几条**。
+
+        原来这里是 `self.state[state_key] = loaded.get(state_key, [])`——整张列表
+        丢弃重建。别的请求正在改的对象就此消失，改动无声蒸发。
+
+        钉住的记录（pin_object）跳过替换；其余照旧。
+        """
+        if not self._pinned_objects:
+            self.state[state_key] = incoming
+            return
+        collection_name = STATE_COLLECTIONS.get(state_key, state_key)
+        pinned = [
+            item
+            for index, item in enumerate(self.state.get(state_key, []))
+            if isinstance(item, dict)
+            and self.object_is_pinned(
+                collection_name, self.persistence_object_id(collection_name, item, index)
+            )
+        ]
+        if not pinned:
+            self.state[state_key] = incoming
+            return
+        pinned_ids = {
+            self.persistence_object_id(collection_name, item, index)
+            for index, item in enumerate(pinned)
+        }
+        self.state[state_key] = [
+            *pinned,
+            *[
+                item
+                for index, item in enumerate(incoming)
+                if self.persistence_object_id(collection_name, item, index) not in pinned_ids
+            ],
+        ]
+
+    def pinned_baseline_entries(self) -> dict[tuple[str, str], str]:
+        """钉住记录的 baseline 快照。
+
+        光保住对象还不够：加载会把 baseline 一起换成库里的值，落库时就会
+        判定「没改过」而跳过写入——同一次丢失，换个入口而已。
+        """
+        return {key: value for key, value in self._persistence_baseline.items() if key in self._pinned_objects}
+
     def unchanged_since_baseline(self, key: tuple[str, str], payload: str) -> bool:
         """这条记录本次没被改过，因此没有任何内容需要写。
 
@@ -2958,15 +3002,17 @@ class InMemoryRepository:
             selected_collections_set = {
                 STATE_COLLECTIONS[key] for key in selected_state_keys if key in STATE_COLLECTIONS
             }
+            pinned_baseline = self.pinned_baseline_entries()
             for state_key in selected_state_keys:
                 if state_key in STATE_COLLECTIONS:
-                    self.state[state_key] = loaded.get(state_key, [])
+                    self.apply_loaded_collection(state_key, loaded.get(state_key, []))
             self._persistence_baseline = {
                 key: value
                 for key, value in self._persistence_baseline.items()
                 if key[0] not in selected_collections_set
             }
             self._persistence_baseline.update(loaded_baseline)
+            self._persistence_baseline.update(pinned_baseline)
             self.apply_tenant_scope()
             return
         self.state = loaded
@@ -3484,15 +3530,17 @@ class InMemoryRepository:
                 selected_collections_set = {
                     STATE_COLLECTIONS[key] for key in selected_state_keys if key in STATE_COLLECTIONS
                 }
+                pinned_baseline = self.pinned_baseline_entries()
                 for state_key in selected_state_keys:
                     if state_key in STATE_COLLECTIONS:
-                        self.state[state_key] = loaded.get(state_key, [])
+                        self.apply_loaded_collection(state_key, loaded.get(state_key, []))
                 self._persistence_baseline = {
                     key: value
                     for key, value in self._persistence_baseline.items()
                     if key[0] not in selected_collections_set
                 }
                 self._persistence_baseline.update(loaded_baseline)
+                self._persistence_baseline.update(pinned_baseline)
                 self.apply_tenant_scope()
                 self.sync_postgres.commit()
                 return

@@ -102,3 +102,25 @@ def test_加载时钉住的记录既不被覆盖也不刷新_baseline():
     idx = source.index("def load_review_run_scope_from_sync_postgres")
     block = source[idx : idx + 6000]
     assert block.count("object_is_pinned") >= 2, "覆盖与 baseline 两处都要挡"
+
+
+def test_三条加载路径都要保住钉住的记录():
+    """钉住只挡了 review-run 专用加载器，通用作用域加载照样把整张列表丢弃重建——
+    轮询走的正是后者。只堵一个入口等于没堵：实测运行照样停在 queued。
+
+    三处替换 state 的地方（两处通用 + 一处 review-run 作用域）必须一致。
+    """
+    import pathlib
+
+    source = (
+        pathlib.Path(__file__).resolve().parents[1] / "libs" / "db" / "repository.py"
+    ).read_text(encoding="utf-8")
+    # 只看真正的语句行——注释和文档字符串里提到这句话是在解释历史，不算违规。
+    offending = [
+        line.strip()
+        for line in source.splitlines()
+        if line.strip().startswith("self.state[state_key] = loaded")
+    ]
+    assert not offending, f"还有加载路径在整张丢弃重建：{offending}"
+    assert source.count("apply_loaded_collection(state_key") == 2
+    assert source.count("pinned_baseline_entries()") >= 2, "baseline 也要保住，否则落库判为未改动"
