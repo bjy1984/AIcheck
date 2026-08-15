@@ -1607,6 +1607,7 @@ class InMemoryRepository:
         document_id: str,
         version_id: str,
         storage_key: str,
+        storage_bucket: str | None = None,
         file_name: str | None = None,
         profile_id: str | None = None,
         document_type: str | None = None,
@@ -1628,6 +1629,9 @@ class InMemoryRepository:
             "documentId": document_id,
             "documentVersionId": version_id,
             "storageKey": safe_source_url if source_url else storage_key,
+            # 桶名要跟着 key 一起记。上传会话存的是桶相对键（documents/项目/版本），
+            # 桶名单独放在版本记录里；只带 key 的任务到了 worker 就拼不回对象地址。
+            "storageBucket": storage_bucket or "documents",
             "fileName": file_name,
             "profileId": profile_id,
             "documentType": document_type,

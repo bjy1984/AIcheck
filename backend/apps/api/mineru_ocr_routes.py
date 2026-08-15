@@ -318,6 +318,7 @@ def create_mineru_job_record(source: dict[str, Any]) -> dict[str, Any]:
         document_id=str(source.get("documentId") or ""),
         version_id=str(source.get("documentVersionId") or ""),
         storage_key=str(source.get("storageKey") or ""),
+        storage_bucket=str(source.get("storageBucket") or "documents"),
         file_name=str(source.get("fileName") or ""),
         profile_id=source.get("profileId"),
         document_type=source.get("documentType"),

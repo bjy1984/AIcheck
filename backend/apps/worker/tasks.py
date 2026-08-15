@@ -944,6 +944,22 @@ def mineru_source_path(
     storage_key = str(job.get("storageKey") or "")
     parsed = parse_storage_url(storage_key)
     suffix = Path(str(job.get("fileName") or "")).suffix
+    if not parsed:
+        # 桶相对键的回退。parse_storage_url 只认 minio://bucket/key，而上传会话
+        # 落库的是 `documents/项目/版本` 这种桶相对键，桶名另存一处。
+        # 少了这一步，MinerU 分支会一路走到「本地文件系统里找找看」，
+        # 找不到就报 MINERU_SOURCE_MISSING——线上实测就是这么失败的：
+        # 文件明明在 MinIO 里躺着，任务却说源文件不存在。
+        # 同一个文件里 3538 行那条路径早就做了这个回退，两处口径不一致。
+        bucket = str(job.get("storageBucket") or "documents")
+        if bucket and storage_key and not Path(storage_key).is_file():
+            downloaded = object_storage.download_to_temp(
+                bucket,
+                storage_key,
+                suffix=suffix,
+            )
+            if downloaded is not None:
+                return downloaded, downloaded.parent
     if parsed:
         downloaded = object_storage.download_to_temp(
             parsed[0],
@@ -1586,6 +1602,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         document_id=document_id,
         version_id=version_id,
         storage_key=storage_key,
+        storage_bucket=str((version or {}).get("storageBucket") or "documents"),
         file_name=file_name,
         profile_id=resolved_profile_id,
         document_type=document_type,
@@ -1952,6 +1969,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 document_id=document_id,
                 version_id=version_id,
                 storage_key=storage_key,
+                storage_bucket=str(run.get("storageBucket") or "documents"),
                 file_name=file_name,
                 profile_id=routed_profile_id,
                 document_type=routed_profile.get("documentType") or document_type,
@@ -2142,6 +2160,7 @@ def _persist_pipeline_stage_result(
         document_id=str(run.get("documentId") or ""),
         version_id=str(run.get("documentVersionId") or ""),
         storage_key=str(run.get("storageKey") or ""),
+        storage_bucket=str(run.get("storageBucket") or "documents"),
         file_name=run.get("fileName"),
         profile_id=run.get("profileId"),
         document_type=run.get("documentType"),
