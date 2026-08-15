@@ -103,6 +103,11 @@ runtime = {
     # 两个 seal 开关先保持关闭，等模型落地再打开。
     "AICHECK_OCR_DEFAULT_PROVIDER": "mineru",
     "AICHECK_OCR_ALLOW_PLACEHOLDER": "false",
+    # 印章读字走本地模型，模型只装在 ocr-service 容器里（2.4 GB 镜像 + 360 MB 模型）。
+    # 代码里的默认值是 http://ocr-service:8010，而这台机器上的容器叫
+    # aicheck-ocr-service——名字对不上就连不通，而症状只是印章一直没有文字，
+    # 不会有任何人来报错。
+    "AICHECK_OCR_BASE_URL": "http://aicheck-ocr-service:8010",
 }
 # 凭证覆盖固定配置：口令、密钥以文件为准
 runtime.update({k: v for k, v in secrets.items() if not k.startswith("AICHECK_BOOTSTRAP_PASSWORD_")})

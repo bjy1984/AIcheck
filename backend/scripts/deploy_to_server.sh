@@ -143,6 +143,48 @@ PY
   # 与 API 不同，worker 不做蓝绿：它们没有入口流量，任务在 Redis 队列里等着，
   # 重建期间只是没人消费，恢复后照常取走。用 rm + run 而非 restart，
   # 理由与上面 API 那段完全相同——restart 绑定旧镜像层。
+  # 本地 OCR 服务（印章读字）。镜像与 API 不同：带 paddle，2.4 GB，
+  # 构建一次约十分钟，所以只在镜像不存在或代码变了时重建，其余情况只重启容器。
+  #
+  # 模型 360 MB 挂在宿主机 /home/dev-bjy/aicheck-ocr-models，只读；
+  # paddlex 缓存必须另给一个**可写**卷——它启动时要在缓存目录下建 temp，
+  # 挂只读会让 import paddlex 直接抛 PermissionError，报错长得像模型坏了。
+  echo "==> 重建本地 OCR 服务（印章）"
+  ssh "$HOST" "
+    set -eo pipefail
+    cd $REMOTE_HOME/AIcheck/backend
+    if ! docker image inspect aicheck-ocr:local >/dev/null 2>&1; then
+      echo '    首次构建 OCR 镜像（约 10 分钟）'
+      docker build -q -f Dockerfile.ocr -t aicheck-ocr:local \
+        --build-arg AICHECK_PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+        --build-arg AICHECK_APT_DEBIAN_MIRROR=http://mirrors.aliyun.com/debian \
+        --build-arg AICHECK_APT_SECURITY_MIRROR=http://mirrors.aliyun.com/debian-security \
+        --build-arg AICHECK_OCR_REQUIREMENTS=requirements-ocr-core.txt . >/dev/null
+    fi
+    mkdir -p /home/dev-bjy/aicheck-paddlex-cache && chmod 777 /home/dev-bjy/aicheck-paddlex-cache
+    docker rm -f aicheck-ocr-service >/dev/null 2>&1 || true
+    docker run -d --name aicheck-ocr-service --network aicheck-net --restart unless-stopped \
+      -v /home/dev-bjy/aicheck-ocr-models/official_models:/models/official_models:ro \
+      -v /home/dev-bjy/aicheck-paddlex-cache:/paddlex-cache \
+      --env-file /home/dev-bjy/aicheck-runtime.env \
+      -e AICHECK_PADDLEX_MODEL_CACHE=/paddlex-cache \
+      -e PADDLE_PDX_CACHE_HOME=/paddlex-cache \
+      -e AICHECK_SEAL_DET_MODEL_DIR=/models/official_models/PP-OCRv4_server_seal_det \
+      -e AICHECK_SEAL_REC_MODEL_DIR=/models/official_models/PP-OCRv4_server_rec \
+      -e AICHECK_SEAL_LAYOUT_MODEL_DIR=/models/official_models/PP-DocLayoutV3 \
+      -e AICHECK_SEAL_DOC_ORI_MODEL_DIR=/models/official_models/PP-LCNet_x1_0_doc_ori \
+      -e AICHECK_SEAL_DOC_UNWARP_MODEL_DIR=/models/official_models/UVDoc \
+      -e AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE=true \
+      -e AICHECK_OCR_SUBPROCESS_PYTHON=/usr/local/bin/python \
+      -e AICHECK_OCR_OFFLINE_ONLY=true -e AICHECK_OCR_DISABLE_NETWORK=true \
+      aicheck-ocr:local uvicorn apps.ocr_service.main:app --host 0.0.0.0 --port 8010 >/dev/null
+    sleep 15
+    if [ \"\$(docker inspect aicheck-ocr-service --format '{{.State.Status}}')\" != running ]; then
+      echo '    OCR 服务未起来' >&2; docker logs aicheck-ocr-service --tail 20 >&2; exit 1
+    fi
+    echo '    OCR 服务已重建'
+  "
+
   echo "==> 重建 worker 容器（同镜像同 env-file）"
   ssh "$HOST" "
     set -eo pipefail
