@@ -64,3 +64,43 @@ assert.throws(
 )
 
 console.log('Review B return correction behavior passed')
+
+// ── 补充资料单：给施工方看的东西，不能是给引擎看的码 ──────────────
+//
+// 实操所见（2026-08-15，监检点「退回补正」）：
+//
+//   需要提交的资料： design_license  design_document  design_document
+//
+// 两个问题：
+//   1. 列的是资料类型码。这是规则引擎比对用的，而这张单子是发给施工方的——
+//      收到「请补交 design_document」，没人知道该交什么；
+//   2. design_document 出现两次，两项同名同码、勾选框也是两个。
+//      同一资料类型对应多个审查点是正常的，但「要交什么」只该出现一次。
+//
+// 后端其实同时发了 materialTypeName / reviewContent，只是没被用上。
+import { readFileSync as _readFileSync } from 'node:fs'
+import { fileURLToPath as _fileURLToPath } from 'node:url'
+
+const dialog = _readFileSync(
+  _fileURLToPath(new URL('./components/ReturnCorrectionDialog.vue', import.meta.url)),
+  'utf8'
+)
+
+assert.ok(dialog.includes('const requirementLabel'), '缺失资料还在直接显示码')
+assert.ok(/materialTypeName/.test(dialog), '没有优先用中文名')
+assert.ok(dialog.includes('const visibleRequirements'), '没有按资料类型去重')
+
+// 去重必须贯穿到草稿与提交——只改显示的话，被隐藏那条仍在勾选集合里，
+// 生成的单子上照样出现两次，去重就只是障眼法
+assert.ok(
+  /createReturnCorrectionDraft\(\s*props\.bindings,\s*visibleRequirements\.value/.test(dialog),
+  '默认勾选还在用未去重的清单'
+)
+assert.ok(
+  /buildReturnCorrectionPayload\(draft\.value, props\.bindings, visibleRequirements\.value\)/.test(
+    dialog
+  ),
+  '提交时还在用未去重的清单'
+)
+
+console.log('Supplement requirement label & dedupe contract passed')
