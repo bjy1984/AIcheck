@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -72,7 +73,9 @@ from libs.mineru_ocr import (
     MinerUNormalizationError,
     MinerUNormalizedBundle,
     normalize_mineru_zip,
+    validated_zip_members,
 )
+from libs.seal_vision import read_seal_texts
 from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.ocr.profiles import profile_for
 from libs.ocr_accuracy_pipeline import (
@@ -938,6 +941,45 @@ def _finalize_mineru_pipeline(
     )
 
 
+def _read_seal_texts_from_zip(
+    job: dict[str, Any],
+    bundle: Any,
+    zip_bytes: bytes,
+) -> None:
+    """就地补齐 bundle.result 里的印章文字，失败只记诊断、不抛。"""
+    seals = (bundle.result or {}).get("seals") or []
+    if not seals:
+        return
+    try:
+        images = {
+            name: payload
+            for name, payload in validated_zip_members(zip_bytes).items()
+            if name.lower().endswith((".png", ".jpg", ".jpeg"))
+        }
+        summary = read_seal_texts(seals, images, client=qwen_runtime_client())
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "印章读字整体失败 jobId=%s", job.get("id")
+        )
+        (bundle.result.setdefault("diagnostics", [])).append(
+            {
+                "code": "seal_vision_reading_failed",
+                "level": "warning",
+                "stage": "normalize",
+                "retryable": True,
+            }
+        )
+        return
+    (bundle.result.setdefault("diagnostics", [])).append(
+        {
+            "code": "seal_vision_reading",
+            "level": "info",
+            "stage": "normalize",
+            "detail": summary,
+        }
+    )
+
+
 def mineru_source_path(
     job: dict[str, Any],
 ) -> tuple[Path | None, Path | None]:
@@ -1208,6 +1250,10 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
             ),
             provider_task_id=str(job.get("providerTaskId") or ""),
         )
+        # 印章读字。MinerU 只把印章框出来，不读上面的字——而监检确认「盖章了没有」
+        # 靠的正是章上的单位名。裁图就在这份 zip 里，直接送视觉模型读，
+        # 不重新渲染 PDF，也就不引入坐标换算这层新的出错机会。
+        _read_seal_texts_from_zip(job, bundle, zip_bytes)
         repo.update_ocr_job_record(
             job,
             status="running",
