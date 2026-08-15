@@ -30,6 +30,7 @@ const emit = defineEmits<{
   'update:keyword': [value: string]
   search: []
   completeTodo: [todoId: string]
+  openTodo: [todo: TodoItem]
   readMessage: [messageId: string]
   readAllMessages: []
   locateResult: [result: SearchResult]
@@ -91,7 +92,23 @@ const unreadCount = computed(() => props.messages.filter((item) => !item.read).l
 
       <ElTabPane :label="`待办 ${todos.length}`" name="todos">
         <ElTable v-if="todos.length" :data="todos" border height="420">
-          <ElTableColumn prop="title" label="待办事项" min-width="240" show-overflow-tooltip />
+          <!-- 待办要能点过去处理。原来只有一个「完成」：告诉你「资料已提交、
+               待监检处理」，却不告诉你去哪处理——用户只能自己回项目树里翻。 -->
+          <ElTableColumn label="待办事项" min-width="240" show-overflow-tooltip>
+            <template #default="{ row }">
+              <ElButton
+                v-if="row.projectId"
+                link
+                type="primary"
+                class="todo-title-link"
+                :title="row.nodeId ? '去该节点处理' : '切换到该待办所属项目'"
+                @click="emit('openTodo', row)"
+              >
+                {{ row.title }}
+              </ElButton>
+              <span v-else>{{ row.title }}</span>
+            </template>
+          </ElTableColumn>
           <ElTableColumn prop="assigneeName" label="责任人" width="92" />
           <ElTableColumn prop="deadline" label="期限" width="158" />
           <ElTableColumn label="优先级" width="88">
@@ -172,6 +189,15 @@ const unreadCount = computed(() => props.messages.filter((item) => !item.read).l
 <style scoped>
 .quick-tabs {
   min-height: 460px;
+}
+
+/* 待办标题是链接，但要保持表格行的排版：左对齐、可换行、不被按钮样式撑高 */
+.todo-title-link {
+  height: auto;
+  padding: 0;
+  font-weight: inherit;
+  text-align: left;
+  white-space: normal;
 }
 
 .search-bar,

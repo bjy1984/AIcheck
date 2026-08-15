@@ -514,6 +514,24 @@ const handleAdminMenuSelect = () => {
   scrollAdminContentIntoView()
 }
 
+/** 顶部「项目 10 / 配置待办 1 / 审计 99+」点了要能到对应的地方去处理。
+ *
+ * 原来它们是纯展示：告诉你有 1 条配置待办，却不告诉你在哪，
+ * 也不让你点——一个提醒如果不能通向处理，就只是让人焦虑。
+ */
+const TOP_STAT_TABS: Record<string, AdminTabKey> = {
+  project: 'projects',
+  'pending-rule': 'rule',
+  audit: 'audit'
+}
+
+const handleTopStatJump = async (stat: { key?: string }) => {
+  const tab = stat.key ? TOP_STAT_TABS[stat.key] : undefined
+  if (!tab) return
+  await router.push(adminTabRouteMap[tab])
+  scrollAdminContentIntoView()
+}
+
 watch(
   () => route.path,
   (path, oldPath) => {
@@ -3375,10 +3393,32 @@ onMounted(() => {
       right-collapsed-default
       boundary-collapsed-default
       :top-stats="[
-        { label: '项目', value: projectTotal, tone: 'blue' },
-        { label: '配置待办', value: pendingRuleCount, tone: 'orange' },
-        { label: '审计', value: auditPagination.total, tone: 'red' }
+        {
+          key: 'project',
+          label: '项目',
+          value: projectTotal,
+          tone: 'blue',
+          clickable: true,
+          title: '查看项目清单'
+        },
+        {
+          key: 'pending-rule',
+          label: '配置待办',
+          value: pendingRuleCount,
+          tone: 'orange',
+          clickable: true,
+          title: '查看待处理的规则配置'
+        },
+        {
+          key: 'audit',
+          label: '审计',
+          value: auditPagination.total,
+          tone: 'red',
+          clickable: true,
+          title: '查看审计日志'
+        }
       ]"
+      @top-stat-click="handleTopStatJump"
       menu-title="后台菜单"
       menu-root="后台管理功能"
       :menu-sections="adminShellMenuSections"

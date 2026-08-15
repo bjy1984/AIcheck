@@ -2384,6 +2384,32 @@ const handleLocateQuickResult = async (result: SearchResult) => {
   ElMessage.success('已定位到相关业务对象')
 }
 
+/** 待办点了要能去处理它，而不只是标记完成。
+ *
+ * 原来待办列表只有一个「完成」按钮：告诉你「项目资料已提交到资料池，待监检处理」，
+ * 却不告诉你去哪处理，也点不过去——用户只能自己回到项目树里翻。
+ * 待办上本来就带着 projectId / nodeId，定位逻辑也现成（handleLocateQuickResult）。
+ */
+const handleOpenQuickTodo = async (todo: TodoItem) => {
+  const targetProjectId = String(todo.projectId || '')
+  const targetNodeId = Number(todo.nodeId || 0)
+  if (!targetProjectId) {
+    ElMessage.warning('这条待办没有关联项目，无法定位。')
+    return
+  }
+  if (targetProjectId !== activeProjectId.value) {
+    activeProjectId.value = targetProjectId
+    await loadProjectBundle()
+  }
+  if (Number.isFinite(targetNodeId) && targetNodeId > 0) {
+    await loadNodePackage(targetNodeId)
+  }
+  quickAccessVisible.value = false
+  ElMessage.success(
+    targetNodeId > 0 ? '已定位到待办对应的节点' : '已切换到待办所属项目（该待办未指向具体节点）'
+  )
+}
+
 const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
   if (!activeProjectId.value) return
   if (!options.silent) loading.value = true
@@ -6681,6 +6707,7 @@ onBeforeUnmount(() => {
         :loading="quickAccessLoading"
         @search="handleQuickSearch"
         @complete-todo="handleCompleteQuickTodo"
+        @open-todo="handleOpenQuickTodo"
         @read-message="handleReadQuickMessage"
         @read-all-messages="handleReadAllQuickMessages"
         @locate-result="handleLocateQuickResult"
