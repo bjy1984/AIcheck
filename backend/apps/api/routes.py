@@ -7025,9 +7025,26 @@ def validate_upload_session_completion(
             # 返回值，却从没写回 version，于是每一份走完整上传流程的文件都停在
             # hash=None，挂载与提交被 40900「尚未上传成功」拒绝，而文件其实好好地
             # 躺在对象存储里（线上实测：MinIO 里 15818 字节可取，挂载照样被拒）。
+            # 哈希以**存储里的实际字节**为准，客户端声明只作为兜底。
+            #
+            # 原先只用客户端在 complete 时声明的 contentHash，而前端从来没填过
+            # 这个字段——于是每一份走完整上传流程的文件都停在 hash=None，
+            # 挂载与提交被 DOCUMENT_BODY_MISSING 拒绝，文件却好端端躺在存储里。
+            # 2026-08-15 实操：MinIO 里 80 字节可 stat，界面仍报「尚未上传成功」。
+            #
+            # 客户端也算不了：站点是 http，非安全上下文，crypto.subtle 不可用。
+            # 何况「文件本体是否真的传上来了」本就不该以被审计方声明的值为准。
             resolved_hash = str((verified.get(version_id) or {}).get("hash") or "").strip()
+            try:
+                storage_hash = object_storage.content_hash(
+                    update["storageBucket"], update["storageKey"]
+                )
+            except Exception:  # noqa: BLE001 - 算不出就退回声明值，别让整次上传失败
+                storage_hash = None
+            resolved_hash = storage_hash or resolved_hash
             if resolved_hash:
                 version["hash"] = resolved_hash
+                verified.setdefault(version_id, {})["hash"] = resolved_hash
         document = repo.find_one("documents", update["documentId"])
         if document:
             document["fileStatus"] = "已上传"

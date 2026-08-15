@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 from dataclasses import dataclass
@@ -209,6 +210,41 @@ class ObjectStorage:
             "etag": str(getattr(stat, "etag", "") or "").strip() or None,
             "contentType": str(getattr(stat, "content_type", "") or "").strip() or None,
         }
+
+    def content_hash(self, bucket: str, object_name: str) -> str | None:
+        """按对象存储里的**实际字节**算内容哈希。
+
+        `document_body_uploaded()` 只认 version["hash"]——那是「文件本体真的传上来了」
+        的唯一判据。原先这个值来自客户端在 complete 时声明的 contentHash，
+        而前端从来没填过这个字段，于是每一份走完整上传流程的文件都停在 hash=None：
+        字节好端端躺在存储里，挂载和提交却被 DOCUMENT_BODY_MISSING 拒绝。
+
+        2026-08-15 实操验证：文件在 MinIO 里 80 字节可 stat，界面仍报「尚未上传成功」。
+
+        客户端算这个值本来也走不通——站点是 http，非安全上下文，
+        浏览器的 crypto.subtle 不可用。而且「文件本体是否真的上传成功」这种判断，
+        本就不该以被审计方声明的值为准：读存储里的字节自己算，才是可信的那一份。
+        """
+        client = self.client()
+        if client is None:
+            if self.required:
+                raise ObjectStorageUnavailable("对象存储不可用，无法计算内容哈希。")
+            return None
+        try:
+            response = client.get_object(self.bucket_name(bucket), self.object_name(object_name))
+        except Exception as exc:
+            if self.required:
+                raise ObjectStorageUnavailable(f"读取对象失败，无法计算内容哈希：{exc}") from exc
+            return None
+        digest = hashlib.sha256()
+        try:
+            # 分块读：上传的可能是几百兆的图纸，整份读进内存不合适
+            for chunk in response.stream(1024 * 1024):
+                digest.update(chunk)
+        finally:
+            response.close()
+            response.release_conn()
+        return "sha256:" + digest.hexdigest()
 
     def put_bytes(self, bucket: str, object_name: str, data: bytes, *, content_type: str) -> str | None:
         client = self.client()
