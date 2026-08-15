@@ -206,7 +206,9 @@ sync_frontend() {
     # 通过、「本地构建 → 线上」由入口校验通过，两段都绿而中间断了：
     # 2026-08-15 实测线上 chunk 里没有 composer-suggestion，而源码有 9 处引用，
     # 两道校验全程报 ✓。**只要有一段不是在线上量的，整条链就不成立。**
-    if ssh "$HOST" "docker exec aicheck-web sh -c \"grep -rql '$m' /usr/share/nginx/html/assets/ 2>/dev/null | head -1\"" | grep -q .; then
+    # 注意别写成 grep -rql：-q 会压掉 -l 的输出，命令永远没结果、校验永远报缺失。
+    # 第一版就是这么写的，把一次成功的发布判成了失败。
+    if ssh "$HOST" "docker exec aicheck-web sh -c \"grep -rl '$m' /usr/share/nginx/html/assets/ 2>/dev/null | head -1\"" | grep -q .; then
       echo "  ✓ ${m}"
     else
       echo "  ✗ 源码有 ${m}，线上产物里没有——线上跑的不是当前源码" >&2
