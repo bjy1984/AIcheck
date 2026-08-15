@@ -214,7 +214,10 @@ def main() -> int:
             for seal in seals[:5]:
                 print(f"  印章：{seal.get('text') or seal.get('content') or seal}")
             for field in fields[:8]:
-                print(f"  字段：{field.get('fieldName')} = {str(field.get('value'))[:60]}")
+                print(
+                    f"  字段：{field.get('fieldName')}"
+                    f" [{field.get('reviewStatus')}] = {str(field.get('fieldValue'))[:50]}"
+                )
             if text:
                 print("正文前 300 字：")
                 print(text[:300])
