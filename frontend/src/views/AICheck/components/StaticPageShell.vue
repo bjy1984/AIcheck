@@ -1724,12 +1724,16 @@ onBeforeUnmount(() => {
   border-radius: 7px;
 }
 
+/* 分组标题和条目原来字号只差 0 号、颜色也接近，扫一眼分不出哪层是哪层。
+   标题压暗、加字距，条目留给蓝色——层级靠对比，不靠缩进。 */
 .tree-group-title {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 700;
   line-height: 1.25;
-  color: #182437;
+  color: #4a5b74;
+  letter-spacing: 0.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1821,8 +1825,9 @@ onBeforeUnmount(() => {
 .tree-section-menu :deep(> .el-menu.el-menu--inline) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
-  padding: 4px 0 6px 20px;
+  /* 2px 太挤，条目粘成一片；4px 让每条自己成行，仍不至于把侧栏撑长 */
+  gap: 4px;
+  padding: 6px 0 8px 20px;
   overflow: visible;
 }
 
@@ -1845,18 +1850,25 @@ onBeforeUnmount(() => {
   content: '';
 }
 
+/* 层级连接线调淡：它是辅助线索，不该和条目本身抢注意力 */
 .tree-node::before {
   top: -3px;
   bottom: -3px;
   left: -11px;
-  border-left: 1px solid #d8e5f5;
+  border-left: 1px solid #e6eef8;
 }
 
 .tree-node::after {
   top: 50%;
   left: -11px;
   width: 10px;
-  border-top: 1px solid #d8e5f5;
+  border-top: 1px solid #e6eef8;
+}
+
+/* 选中那条的连接线跟着点亮，视线能从分组一路连到当前位置 */
+.tree-node.active::before,
+.tree-node.active::after {
+  border-color: #9cc0f2;
 }
 
 .tree-node-marker {
@@ -1884,21 +1896,24 @@ onBeforeUnmount(() => {
 .tree-node:focus-visible,
 .tree-node.is-active {
   color: var(--blue-2);
-  background: #f5f9ff;
-  border-color: #d7e6fb;
+  background: #f2f7ff;
+  border-color: #dbe8fb;
   outline: 0;
-  transform: translateY(-1px);
+  /* 原来悬浮时 translateY(-1px)：鼠标扫过侧栏，整列条目一个个往上跳，
+     像在抖。菜单是用来瞄准点击的，位移只会让目标更难点中。 */
 }
 
+/* 选中态要一眼看出「我在这」：左侧一道实心色条 + 更实的底色 + 更重的字重。
+   原来只有 3px 内阴影加浅渐变，和悬浮态几乎分不开。 */
 .tree-node.active,
 .tree-node.is-active {
-  font-weight: 600;
-  color: var(--blue-2);
-  background: linear-gradient(180deg, #eff6ff, #e8f1ff);
-  border-color: #bad2f7;
+  font-weight: 700;
+  color: #10315f;
+  background: linear-gradient(180deg, #e8f1ff, #dfebff);
+  border-color: #b3cdf6;
   box-shadow:
-    inset 3px 0 0 var(--blue),
-    0 8px 18px rgb(37 99 235 / 10%);
+    inset 4px 0 0 var(--blue),
+    0 6px 14px rgb(37 99 235 / 12%);
 }
 
 .tree-node.active > span:first-child,
