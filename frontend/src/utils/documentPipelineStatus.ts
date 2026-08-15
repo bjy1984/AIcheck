@@ -6,7 +6,18 @@ export type DocumentPipelineState = {
   bodyUploaded?: boolean
 }
 
-export type DocumentUploadStatus = '上传中' | '上传成功' | '失败重新上传'
+/**
+ * `识别失败` 与 `失败重新上传` 必须分开。
+ *
+ * 2026-08-15 实操：文件上传成功（对象存储里字节可读、哈希已落库、挂载也成功），
+ * 只是 OCR 没识别出来，界面却写「失败重新上传」。这句话有两处不对：
+ *
+ * - 事实不对：上传成功了；
+ * - 指路不对：重新上传同一份文件，OCR 照样识别不出来。
+ *
+ * 用户按提示重传，然后再次看到同样的字——这种提示比不给提示更耗人。
+ */
+export type DocumentUploadStatus = '上传中' | '上传成功' | '识别失败' | '失败重新上传'
 
 export type DocumentBusinessStatus = DocumentUploadStatus
 
@@ -36,9 +47,11 @@ export const documentPipelineStatus = (file: DocumentPipelineState): DocumentUpl
   const ocrStatus = String(file.currentOcrStatus || '')
   const sliceStatus = String(file.sliceStatus || '')
   const vectorStatus = String(file.vectorStatus || '')
+  // 只有本体没落盘才叫「上传失败」——那种情况重传确实有用。
   if (file.bodyUploaded === false) return '失败重新上传'
+  // 本体在、识别链路挂了：重传解决不了，得重新识别或人工修正。
   if ([ocrStatus, sliceStatus, vectorStatus].some((status) => status.includes('失败'))) {
-    return '失败重新上传'
+    return '识别失败'
   }
   if (isDocumentUploadSuccessful(file)) return '上传成功'
   return '上传中'

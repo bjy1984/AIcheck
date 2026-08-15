@@ -547,6 +547,9 @@ const requestFileDelete = (file: ContractorFileRow) => {
 
 const getContractorSubmitHint = (file: ContractorFileRow) => {
   if (props.readOnly) return '当前项目为只读状态，不能提交文件'
+  // 「识别失败」和「上传失败」得分开说：前者重传没用，后者重传才有用。
+  if (file.processingStatus === '识别失败')
+    return '文件已上传，但 OCR 识别失败，暂不能作为可定位证据提交；请联系管理员重新识别或人工修正。'
   if (file.processingStatus !== '上传成功') return '文件上传处理成功后才可提交'
   if (file.status === '未关联') return '提交到项目资料池，供监检处理（可不关联审核环节）'
   return ['待提交', '需补正'].includes(file.status)

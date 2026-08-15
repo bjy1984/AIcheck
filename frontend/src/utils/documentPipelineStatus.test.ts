@@ -20,11 +20,9 @@ const cases = [
   ],
   [{ currentOcrStatus: '人工修正', sliceStatus: '已切片', vectorStatus: '已向量化' }, '上传成功'],
   [{ currentOcrStatus: '抽取不完整', sliceStatus: '已切片', vectorStatus: '已向量化' }, '上传成功'],
-  [{ currentOcrStatus: '已识别', sliceStatus: '切片失败' }, '失败重新上传'],
-  [
-    { currentOcrStatus: '已识别', sliceStatus: '已切片', vectorStatus: '向量化失败' },
-    '失败重新上传'
-  ],
+  // 本体已落盘、识别链路挂了：不叫「上传失败」——重传同一份文件解决不了。
+  [{ currentOcrStatus: '已识别', sliceStatus: '切片失败' }, '识别失败'],
+  [{ currentOcrStatus: '已识别', sliceStatus: '已切片', vectorStatus: '向量化失败' }, '识别失败'],
   [{ currentOcrStatus: '未知状态' }, '上传中'],
   [{}, '上传中']
 ] as const
