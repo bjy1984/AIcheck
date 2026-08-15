@@ -84,8 +84,13 @@ runtime = {
     "AICHECK_LLM_MODEL_REVIEW": "deepseek-v4-pro",
     "AICHECK_LLM_MODEL_DEFAULT": "deepseek-v4-pro",
     "AICHECK_LLM_MODEL_COMPARE_FAST": "deepseek-v4-flash",
-    "AICHECK_LLM_MODEL_VISION": "deepseek-v4-pro",
-    # OCR 分工：正文/表格走 MinerU 云端 API，印章留给本地方案。
+    # 视觉单独走一家：DeepSeek 的 chat.completions 不接受图片，发 image_url
+    # 直接 400（unknown variant `image_url`）。此前这一项也写着 deepseek-v4-pro，
+    # 等于声明了一个不存在的能力——印章读字上线第一次实跑就栽在这里。
+    # 地址与密钥在凭证文件里（AICHECK_LLM_VISION_API_BASE / _API_KEY），
+    # 两个都配齐才生效，只配一半会退回主供应商。
+    "AICHECK_LLM_MODEL_VISION": "qwen-vl-max",
+    # OCR 分工：正文/表格走 MinerU 云端 API，印章由视觉模型读字。
     #
     # 密钥 AICHECK_MINERU_API_KEY 在凭证文件里，由下面的 update 带进来。
     # 这里只写路由，不写密钥——密钥进仓库这条线不能开。

@@ -64,6 +64,27 @@ def official_api_key(config: dict[str, Any] | None = None) -> str:
     return str(os.getenv(GENERIC_API_KEY_ENV) or os.getenv(fallback_env) or "")
 
 
+def vision_override(role_or_model: str) -> tuple[str, str]:
+    """视觉角色可以走另一家供应商。
+
+    起因很实在：生产的主模型是 DeepSeek，而 DeepSeek 的 chat.completions
+    **不接受图片**——发 image_url 直接 400
+    「unknown variant `image_url`, expected `text`」。
+    可配置里 visionReview 却指着 deepseek-v4-pro，等于声明了一个不存在的能力：
+    任何走视觉的功能都会失败，而失败点在调用处，看起来像那个功能自己坏了。
+
+    所以视觉单独配一组地址与密钥（DashScope 的 qwen-vl 之类）。
+    两个都配齐才生效——只配一半就退回主供应商，避免出现
+    「地址是新的、密钥是旧的」这种拼出来的组合。
+    """
+    role = MODEL_ROLE_ALIASES.get(role_or_model, role_or_model)
+    if role != "visionReview":
+        return "", ""
+    base = str(os.getenv("AICHECK_LLM_VISION_API_BASE") or "").rstrip("/")
+    key = str(os.getenv("AICHECK_LLM_VISION_API_KEY") or "")
+    return (base, key) if base and key else ("", "")
+
+
 def provider_label_for(mode: str, base_url: str) -> str:
     """供应商显示名。
 
@@ -283,6 +304,9 @@ class QwenRuntimeClient:
         stream_handler = kwargs.pop("stream_handler", None)
         base_url = str(self.config.get("baseUrl") or "").rstrip("/")
         api_key = official_api_key(self.config)
+        vision_base, vision_key = vision_override(role_or_model)
+        if vision_base and vision_key:
+            base_url, api_key = vision_base, vision_key
         if not base_url:
             raise RuntimeError("模型地址未配置（AICHECK_LLM_API_BASE 或 QWEN_API_BASE）")
         if not api_key:
