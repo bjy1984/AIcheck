@@ -83,3 +83,46 @@ router.afterEach((to) => {
   done() // 结束Progress
   loadDone()
 })
+
+/** 发版之后，开着旧页面的用户下一次路由跳转必然白屏——这里兜住。
+ *
+ * 每次构建 chunk 文件名的哈希全变，旧 chunk 在部署时被删除。而用户手上的
+ * index.html 还是上一版的，它记的还是旧名字；一跳到尚未加载过的路由，
+ * 就去要一个已经不存在的 chunk：
+ *
+ *   Failed to fetch dynamically imported module: /assets/Login-CjKYWBpL.js
+ *
+ * 后果不是报错，是**那个路由什么都渲染不出来**。2026-08-15 实测：部署后点退出
+ * 登录，落到一片空白的登录页——标题在、表单没有，除了硬刷新没有出路，
+ * 而普通用户不会知道要硬刷。
+ *
+ * 早前修 nginx 时已经把「返回 HTML 冒充 JS」改成干净的 404（错误信息不再误导），
+ * 但「前端据此自愈」这一半一直没做。现在补上：重载一次页面就能拿到新的
+ * index.html 和新的 chunk 名。
+ *
+ * 用 sessionStorage 打标记防死循环——万一重载后仍然失败（比如资源真的缺失），
+ * 就不再自动重载，改为如实报错，免得把用户关进无限刷新里。
+ */
+const CHUNK_RELOAD_FLAG = 'aicheck:chunk-reloaded-at'
+const CHUNK_RELOAD_COOLDOWN_MS = 60_000
+
+const isStaleChunkError = (error: unknown): boolean => {
+  const message = String((error as Error)?.message || error || '')
+  return (
+    message.includes('Failed to fetch dynamically imported module') ||
+    message.includes('Importing a module script failed') ||
+    message.includes('error loading dynamically imported module')
+  )
+}
+
+router.onError((error) => {
+  if (!isStaleChunkError(error)) return
+  const last = Number(sessionStorage.getItem(CHUNK_RELOAD_FLAG) || 0)
+  if (Date.now() - last < CHUNK_RELOAD_COOLDOWN_MS) {
+    // 刚重载过还是失败，说明不是版本错位。别再刷了，把真相留在控制台。
+    console.error('[aicheck] 资源加载失败，且刚刚已重载过一次，不再自动重试。', error)
+    return
+  }
+  sessionStorage.setItem(CHUNK_RELOAD_FLAG, String(Date.now()))
+  window.location.reload()
+})
