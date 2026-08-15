@@ -200,10 +200,16 @@ sync_frontend() {
   do
     local f="${marker_file%%:*}" m="${marker_file##*:}"
     grep -q "$m" "$REPO_ROOT/$f" 2>/dev/null || continue   # 源码里没有就跳过，不误判
-    if grep -rq "$m" "$REPO_ROOT/frontend/dist-pro/assets/" 2>/dev/null; then
+    # 查**服务器实际提供的文件**，不是本地构建目录。
+    #
+    # 第一版查的是 $REPO_ROOT/frontend/dist-pro/assets/，结果是「源码 → 本地构建」
+    # 通过、「本地构建 → 线上」由入口校验通过，两段都绿而中间断了：
+    # 2026-08-15 实测线上 chunk 里没有 composer-suggestion，而源码有 9 处引用，
+    # 两道校验全程报 ✓。**只要有一段不是在线上量的，整条链就不成立。**
+    if ssh "$HOST" "docker exec aicheck-web sh -c \"grep -rql '$m' /usr/share/nginx/html/assets/ 2>/dev/null | head -1\"" | grep -q .; then
       echo "  ✓ ${m}"
     else
-      echo "  ✗ 源码有 ${m}，构建产物里没有——发布的不是当前源码" >&2
+      echo "  ✗ 源码有 ${m}，线上产物里没有——线上跑的不是当前源码" >&2
       missing=1
     fi
   done
