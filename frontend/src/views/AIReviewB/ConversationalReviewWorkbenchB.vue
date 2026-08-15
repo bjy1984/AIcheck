@@ -243,6 +243,32 @@ const currentTask = computed(
 )
 const canStartReview = computed(() => workspace.value?.permissions.canStartReview === true)
 const runStatus = computed(() => String(activeRun.value?.status || '未发起'))
+
+/** 一条 queued/running 的运行，多久没动静就不能再叫「执行中」。
+ *
+ * 实测（2026-08-15）：工作台上挂着一条 09:59 建的 queued 运行，
+ * 十几个小时之后仍显示「执行中」、顶部刷新状态一直转圈。
+ * 它早就没有任何执行器在跑了——那是修 I-1 之前留下的僵尸运行。
+ *
+ * 「排队中」和「已经死了」在界面上长得一模一样，是这条问题最耗人的地方：
+ * 监检不知道该继续等，还是该重新发起。
+ */
+const STALE_RUN_AFTER_MS = 10 * 60 * 1000
+
+const runLastActivityAt = computed(() => {
+  const raw = String(activeRun.value?.updatedAt || activeRun.value?.createdAt || '').trim()
+  if (!raw) return 0
+  const parsed = new Date(raw.replace(' ', 'T')).getTime()
+  return Number.isNaN(parsed) ? 0 : parsed
+})
+
+/** 这条运行看着在跑，其实已经很久没动了。 */
+const runLooksStalled = computed(() => {
+  if (!['queued', 'running', 'resuming', '推理中'].includes(runStatus.value)) return false
+  const at = runLastActivityAt.value
+  if (!at) return false
+  return Date.now() - at > STALE_RUN_AFTER_MS
+})
 const canSubmitReviewOpinion = computed(() =>
   canSubmitFinalConclusion(workspace.value?.permissions, runStatus.value)
 )
@@ -291,11 +317,21 @@ const executionActive = computed(
   () =>
     sending.value ||
     reviewStarting.value ||
+    // 久无动静的运行不再算「执行中」——否则一条僵尸运行会让转圈永远停不下来。
     (conversationStarted.value &&
+      !runLooksStalled.value &&
       ['queued', 'running', 'resuming', '推理中'].includes(runStatus.value))
 )
 const showExecutionActivity = computed(() => executionActive.value || conversationStarted.value)
 const executionSummary = computed(() => {
+  // 停住的运行要给出「停在哪一刻」和「现在能做什么」，
+  // 而不是继续显示一句像还在推进的话。
+  if (runLooksStalled.value) {
+    const at = runLastActivityAt.value
+      ? formatTime(activeRun.value?.updatedAt || activeRun.value?.createdAt)
+      : ''
+    return `这次运行自${at ? ' ' + at + ' ' : ''}起没有新的进展，可重新发起复核。`
+  }
   if (sending.value) {
     const latest = liveAgentTraceLatest.value
     if (latest?.title) return latest.title
@@ -321,6 +357,8 @@ const executionSummary = computed(() => {
 })
 const executionStatusLabel = computed(() => {
   if (executionActive.value) return '执行中'
+  // 说清楚是「停住了」，而不是继续假装在跑；下一句 executionSummary 给出停在哪一刻。
+  if (runLooksStalled.value) return '执行已中断'
   if (['waiting_human_input', 'waiting_human_review'].includes(runStatus.value))
     return '等待人工处理'
   if (['failed', 'cancelled', 'rejected_by_human', '失败'].includes(runStatus.value))
