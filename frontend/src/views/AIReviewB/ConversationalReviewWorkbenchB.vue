@@ -9,6 +9,9 @@ import {
   ElButton,
   ElCollapse,
   ElCollapseItem,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
   ElEmpty,
   ElIcon,
   ElInput,
@@ -766,6 +769,15 @@ const handleNodeSelect = async (node: ProjectTreeNode) => {
   await loadNodeWorkspace(true)
 }
 
+/** 退出用 logoutConfirm（带二次确认），与完整工作台那边一个口径。 */
+const handleUserCommand = (command: string | number | object) => {
+  if (command === 'logout') {
+    userStore.logoutConfirm()
+    return
+  }
+  if (command === 'workbench') handleBackToWorkbench()
+}
+
 const handleBackToWorkbench = () => {
   void router.push({
     path: '/workbench/inspection',
@@ -1373,8 +1385,25 @@ onBeforeUnmount(() => {
       <div class="topbar-spacer"></div>
       <ElButton :icon="Refresh" :loading="polling" @click="refreshLiveState">刷新状态</ElButton>
       <ElButton :icon="Files" @click="handleOpenFileLibrary">文件库</ElButton>
-      <ElButton type="primary" :icon="ArrowLeft" @click="handleBackToWorkbench">文件列表</ElButton>
-      <div class="review-user"><span></span>{{ displayUser }}</div>
+      <!-- 「文件列表」名不副实：它去的是完整的传统工作台（审计项总览 + 节点清单 +
+           已提交资料）。Workbench.vue 里早就因为「有人问怎么切换回传统视图」改叫
+           「完整工作台」了，这边漏改——而监检登录后落地的正是这一页。 -->
+      <ElButton type="primary" :icon="ArrowLeft" @click="handleBackToWorkbench">
+        完整工作台
+      </ElButton>
+      <!-- 这一页原来只把用户名当文字摆着：监检登录后落在这里，
+           既切不回完整工作台（名字看不懂），也**没有任何退出登录的入口**。 -->
+      <ElDropdown trigger="click" @command="handleUserCommand">
+        <button class="review-user" type="button" aria-label="打开用户菜单">
+          <span></span>{{ displayUser }}
+        </button>
+        <template #dropdown>
+          <ElDropdownMenu>
+            <ElDropdownItem command="workbench">完整工作台</ElDropdownItem>
+            <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
+          </ElDropdownMenu>
+        </template>
+      </ElDropdown>
     </header>
 
     <ElAlert
@@ -2010,8 +2039,14 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+  /* 从 div 改成 button（要挂用户菜单），把浏览器默认按钮样式清掉，外观不变 */
+  padding: 0;
+  color: inherit;
   font-size: 13px;
   font-weight: 600;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .review-user span {
