@@ -658,10 +658,12 @@ for run in AI_RUNS:
         "promptTemplateName": "工程监检审查 Prompt 模板",
         "promptTemplateVersion": "2026.06",
         "messagesHash": "sha256:prompt-demo-node24",
+        # 演示数据里的提示词留痕，与 PROMPT_TEMPLATES 里的正文保持一致，
+        # 否则界面上会出现「模板是中文、留痕是英文」的两套说法。
         "systemPrompt": (
-            "You are 资料合规复核员 for business pack engineering_inspection_v1 version "
-            f"{DEFAULT_BUSINESS_PACK['version']}. Return evidence-backed review suggestions only. "
-            "Do not approve final business state."
+            "你是资料合规复核员，服务于业务包 engineering_inspection_v1 的 "
+            f"{DEFAULT_BUSINESS_PACK['version']} 版本。只输出有证据支撑的审查建议。"
+            "不得对最终业务状态作出批准。"
         ),
         "userPrompt": (
             "{\"businessPack\":{\"id\":\"engineering_inspection_v1\",\"name\":\"工业管道\"},"
@@ -979,19 +981,21 @@ PROMPT_TEMPLATES = [
         "businessPackId": DEFAULT_BUSINESS_PACK_ID,
         "agentId": "compliance_review_agent",
         "promptVersionId": "PROMPT-review-202606",
+        # 这几段是真正发给模型的指令，不是界面文案。改动会改变模型行为，
+        # 因此逐句对译、不增不减，{{占位符}} 原样保留。
         "systemPrompt": (
-            "You are {{agentName}} for business pack {{businessPackId}} version {{businessPackVersion}}. "
-            "Return evidence-backed review suggestions only. Do not approve final business state."
+            "你是{{agentName}}，服务于业务包 {{businessPackId}} 的 {{businessPackVersion}} 版本。"
+            "只输出有证据支撑的审查建议。不得对最终业务状态作出批准。"
         ),
         "userPromptTemplate": "{{basePromptJson}}\n\n{{reviewTaskJson}}",
         "plannerPromptTemplate": (
-            "Use the fixed AIcheck review graph plan: load project context, load OCR evidence, run deterministic rules, "
-            "retrieve knowledge clauses, build prompt, generate finding drafts, validate schema/evidence/references, "
-            "run critic review, evaluate quality gate, then persist drafts. Do not skip human confirmation."
+            "按 AIcheck 固定的审查流程图执行：载入项目上下文、载入 OCR 证据、运行确定性规则、"
+            "检索知识条款、构造提示词、生成结论草稿、校验结构/证据/引用、执行评审复核、"
+            "评估质量闸门，最后落库草稿。不得跳过人工确认。"
         ),
         "criticPromptTemplate": (
-            "Check whether each finding is evidence-backed, references only supplied rule/kb IDs, and keeps all final "
-            "business decisions under human control."
+            "逐条检查：结论是否有证据支撑、是否只引用了给定的规则/知识库编号、"
+            "以及是否把全部最终业务判断都留给人工决定。"
         ),
         "outputSchema": {
             "type": "ReviewFindingDraftList",

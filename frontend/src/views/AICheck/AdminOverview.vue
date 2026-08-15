@@ -103,6 +103,7 @@ import type {
 } from '@/api/aicheck'
 import type { ActionCode, ExportTask, Project, RoleCode } from '@/types/aicheck'
 import { useUserStore } from '@/store/modules/user'
+import { actionLabel, actionLabelWithCode } from '@/utils/actionLabels'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
@@ -3973,13 +3974,18 @@ onMounted(() => {
                   <ElTableColumn prop="actions" label="动作权限" min-width="220" sortable="custom">
                     <template #default="{ row }">
                       <div class="tag-list">
+                        <!-- 原来直接摊 project:view 这类码。那是给中间件比对用的，
+                             不是给人读的：配一个角色要先在心里翻译一遍，
+                             ai:adopt 和 ai:recheck 还容易看混。
+                             悬浮时给出原始码，配权限的人有时确实需要它。 -->
                         <ElTag
                           v-for="action in row.actions.slice(0, 5)"
                           :key="action"
                           size="small"
                           effect="plain"
+                          :title="actionLabelWithCode(action)"
                         >
-                          {{ action }}
+                          {{ actionLabel(action) }}
                         </ElTag>
                         <ElTag
                           v-if="row.actions.length > 5"
@@ -5646,8 +5652,13 @@ onMounted(() => {
             </ElFormItem>
             <ElFormItem label="动作权限">
               <ElCheckboxGroup v-model="configForm.actions" class="action-checkbox-grid">
-                <ElCheckbox v-for="action in allActionOptions" :key="action" :label="action">
-                  {{ action }}
+                <ElCheckbox
+                  v-for="action in allActionOptions"
+                  :key="action"
+                  :label="action"
+                  :title="actionLabelWithCode(action)"
+                >
+                  {{ actionLabel(action) }}
                 </ElCheckbox>
               </ElCheckboxGroup>
             </ElFormItem>
