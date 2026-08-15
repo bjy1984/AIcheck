@@ -717,12 +717,30 @@ const aiRecheckDisabledReason = computed(() => {
 const aiRecheckButtonLabel = computed(() =>
   selectedAiReviewMode.value === 'formal' ? '发起正式复核' : '运行缺项预审'
 )
+/** 正式复核为什么点不了——说清楚还差什么，而不是只把按钮灰掉。 */
+const formalReviewBlockedReason = computed(() => {
+  if (availableAiReviewModes.value.includes('formal')) return ''
+  const readiness = evidenceReadiness.value
+  const missing = Number(readiness?.missingCount || 0)
+  const pending = Number(readiness?.pendingCount || 0)
+  const parts: string[] = []
+  if (missing) parts.push(`${missing} 项必传资料未提交`)
+  if (pending) parts.push(`${pending} 条候选证据待确认`)
+  if (!parts.length) return '正式复核需要必传资料齐全且所有候选证据已确认。'
+  return `正式复核暂不可用：${parts.join('、')}。补齐后即可发起。`
+})
+
 const aiReviewModeHint = computed(() => {
+  // 原来这句只描述**当前选中**的模式。而正式复核不可用时选中的必然是缺项预审，
+  // 于是用户看到的是「缺项预审只生成补充资料建议…」——为什么正式复核是灰的，
+  // 一个字都没有。用户实际反馈就是「是流程没推进到这一步还是 bug？」
+  const blocked = formalReviewBlockedReason.value
   if (selectedAiReviewMode.value === 'gap_precheck') {
-    return '缺项预审只生成补充资料建议，不改变节点正式审查状态。'
+    const base = '缺项预审只生成补充资料建议，不改变节点正式审查状态。'
+    return blocked ? `${base} ${blocked}` : base
   }
   if (readyForAiFormal.value) return '正式复核完成后进入待人工确认，AI 不会自动通过节点。'
-  return '正式复核需要必传资料齐全且所有候选证据已确认。'
+  return blocked || '正式复核需要必传资料齐全且所有候选证据已确认。'
 })
 const reviewSaveDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
@@ -5563,6 +5581,7 @@ onBeforeUnmount(() => {
                     <ElRadioButton
                       value="formal"
                       :disabled="!availableAiReviewModes.includes('formal')"
+                      :title="formalReviewBlockedReason || '按当前文件版本发起正式 AI 复核'"
                     >
                       正式复核
                     </ElRadioButton>

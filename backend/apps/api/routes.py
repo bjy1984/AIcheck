@@ -5681,11 +5681,19 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
     if role_error:
         return role_error
     scope = authorized_node_scope(request, project_id)
-    visible_todos = [
-        item
-        for item in repo.state["todos"]
-        if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
-    ]
+    # 这里原来把局部变量也叫 visible_todos，正好遮住同名的过滤函数——
+    # 于是这个端点想按责任人过滤也调不到它，`todoCount` 一直是全项目口径。
+    # 顶部徽标读的就是这个数。改名并接上真正的过滤。
+    scoped_todos = visible_todos(
+        [
+            item
+            for item in repo.state["todos"]
+            if item.get("projectId") == project_id
+            and record_visible_for_scope(item, scope, project_id=project_id)
+        ],
+        getattr(request.state, "auth_user", None),
+        str(resolved_role or ""),
+    )
     visible_messages = [
         item
         for item in repo.state["messages"]
@@ -5699,7 +5707,7 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
             "role": resolved_role,
             "currentNodeId": current_node_id,
             "topbar": {
-                "todoCount": len(visible_todos),
+                "todoCount": len(scoped_todos),
                 "messageCount": len([item for item in visible_messages if not item.get("read")]),
                 "statusText": project.get("status"),
                 "projectSwitcherEnabled": True,
@@ -5744,11 +5752,22 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
     if role_error:
         return role_error
     scope = authorized_node_scope(request, project_id)
-    role_todos = [
-        item
-        for item in repo.state["todos"]
-        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
-    ]
+    # 和 /api/todos 用同一道过滤。
+    #
+    # 2026-08-15 实测：顶部「待办消息」徽标显示 7，点开只有待办 1 + 消息 2。
+    # 因为徽标读 workbench/summary（5 条待处理 + 2 未读），列表读 /api/todos（1 条）。
+    # F-3 那轮我给 /todos 加了按责任人过滤，**漏了这里**——于是同一批待办两个口径，
+    # 用户被告知有 7 件事要办，点进去只有 3 件。
+    role_todos = visible_todos(
+        [
+            item
+            for item in repo.state["todos"]
+            if item["projectId"] == project_id
+            and record_visible_for_scope(item, scope, project_id=project_id)
+        ],
+        getattr(request.state, "auth_user", None),
+        str(resolved_role or ""),
+    )
     visible_nodes = [
         item
         for item in repo.state["tree_nodes"]

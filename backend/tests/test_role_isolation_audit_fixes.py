@@ -141,3 +141,37 @@ def test_非管理员只拿得到身份识别字段():
         assert f'"{allowed}"' in block
     for denied in ("mobile", "mustChangePassword", "lastLoginAt", "status"):
         assert f'"{denied}"' not in block, f"{denied} 不该在非管理员可见字段里"
+
+
+# ── C-2：徽标与列表必须同一道过滤 ──────────────────────────────────
+#
+# 2026-08-15 实测：施工方顶部「待办消息」徽标显示 7，点开只有待办 1 + 消息 2。
+# 徽标读 workbench/summary（5 条待处理 + 2 未读），列表读 /api/todos（1 条）。
+#
+# 根因是 F-3 那轮**只给 /todos 加了按责任人过滤**，另外两个端点漏了。
+# 用户被告知有 7 件事要办，点进去只有 3 件——比不显示数字更糟。
+
+
+def test_三个待办口径都接了同一道过滤():
+    import pathlib
+
+    source = (
+        pathlib.Path(__file__).resolve().parents[1] / "apps" / "api" / "routes.py"
+    ).read_text(encoding="utf-8")
+    for marker in ("def workbench_summary(", "def workbench_context("):
+        start = source.index(marker)
+        body = source[start : start + 2000]
+        assert "visible_todos(" in body, f"{marker} 没接按责任人过滤，徽标会和列表对不上"
+
+
+def test_不再用同名局部变量遮住过滤函数():
+    """workbench_context 里原来把局部列表也叫 visible_todos，正好遮住导入的函数——
+    想调也调不到，而且没有任何报错。这类遮蔽是静默失效，值得单独钉住。"""
+    import pathlib
+
+    source = (
+        pathlib.Path(__file__).resolve().parents[1] / "apps" / "api" / "routes.py"
+    ).read_text(encoding="utf-8")
+    start = source.index("def workbench_context(")
+    body = source[start : start + 2000]
+    assert "    visible_todos = [" not in body, "局部变量又把过滤函数遮住了"
