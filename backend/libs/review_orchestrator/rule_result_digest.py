@@ -50,32 +50,99 @@ from typing import Any
 # 出结论需要的是「指得出几条像样的证据」，不是把候选池全部背下来。
 MAX_EVIDENCE_REFS_IN_PROMPT = 20
 
-# 带证据引用列表的工具。列出来而不是「凡是 list 就截」——后者会误伤
-# warnings、standardReferences 这类本来就该完整给出的短列表。
-_REF_LIST_KEYS = ("evidenceRefs", "fragments", "candidates")
+# 会撑爆提示词的列表字段 → 各自的条数上限。
+#
+# 列出来而不是「凡是 list 就截」——后者会误伤 warnings、standardReferences
+# 这类本来就该完整给出的短列表。
+#
+# 2026-08-15 实测（节点 1，提示词 1,371,194 字符、ruleResults 占 98.9%）：
+#
+#     extract_table_records.tables            983,208 字符  44 张表
+#     extract_document_fields.fields          314,440
+#     locate_evidence_fragment.evidenceRefs    42,784
+#     recognize_signatures_and_seals.seals      9,905
+#
+# 第一版只截了 evidenceRefs（42,784），漏掉的 130 万一点没动，
+# 于是这个节点每次发起复核必然 REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED。
+# **只堵最显眼的那个洞，等于没堵。**
+#
+# 上限按单项体积反着定：表格单张就 8,765 字符，给 5 张已是 4 万；
+# 字段单条几十字符，给 60 条才三千。
+_LIST_CAPS = {
+    "evidenceRefs": 20,
+    "fragments": 20,
+    "candidates": 20,
+    "tables": 5,
+    "fields": 60,
+    "seals": 10,
+    "verifications": 20,
+    "records": 30,
+}
+
+# 表格里 html 与 cells / normalizedRows 是同一份内容的三种写法。
+# 模型读 cells 就够了，html 纯属重复付费——单张表里它占 1,314 字符。
+_DROP_IN_TABLE = ("html",)
+
+
+def _strip_table_duplicates(tables: list[Any]) -> list[Any]:
+    """去掉表格里与 cells 重复的表述。"""
+    out = []
+    for table in tables:
+        if isinstance(table, dict):
+            table = {k: v for k, v in table.items() if k not in _DROP_IN_TABLE}
+        out.append(table)
+    return out
 
 
 def _digest_tool_result(result: dict[str, Any], max_refs: int) -> dict[str, Any]:
     compacted = deepcopy(result)
-    for key in _REF_LIST_KEYS:
+    for key, default_cap in _LIST_CAPS.items():
         refs = compacted.get(key)
-        if not isinstance(refs, list) or len(refs) <= max_refs:
+        if not isinstance(refs, list):
             continue
-        omitted = len(refs) - max_refs
-        compacted[key] = refs[:max_refs]
-        # 明说省了多少。不说的话模型会把这 20 条当成全部，
-        # 进而得出「只找到 20 条证据」这种基于残缺事实的判断。
+        # evidenceRefs 沿用调用方传入的上限（既有测试按它断言）；
+        # 其余用各自的默认上限。
+        # 收紧轮次里 max_refs 会被逐次减半，各字段上限跟着同比例收，
+        # 否则只有 evidenceRefs 在缩，其余纹丝不动。
+        ratio = max_refs / MAX_EVIDENCE_REFS_IN_PROMPT
+        cap = max_refs if key == "evidenceRefs" else max(1, int(default_cap * ratio))
+        if key == "tables":
+            refs = _strip_table_duplicates(refs)
+            compacted[key] = refs
+        if len(refs) <= cap:
+            continue
+        omitted = len(refs) - cap
+        compacted[key] = refs[:cap]
+        # 明说省了多少。不说的话模型会把这几条当成全部，
+        # 进而得出「只找到 N 条证据」这种基于残缺事实的判断。
         compacted[f"{key}Omitted"] = omitted
         compacted[f"{key}Note"] = (
-            f"仅列出前 {max_refs} 条，另有 {omitted} 条未列出；"
+            f"仅列出前 {cap} 条，另有 {omitted} 条未列出；"
             "需要更多可再次调用对应取证工具。"
         )
     return compacted
 
 
+# 规则结果在提示词里的总字符预算。
+#
+# 逐字段设上限治标不治本：单条 field 只有 1,054 字符，但每份文档都会调一次
+# extract_document_fields，177 条加起来仍有 18.6 万。**该管的是总量。**
+#
+# 60,000 字符 ≈ 17k token，给 24,000 token 的输入预算留出条款、证据、
+# 工具目录的位置。
+MAX_RULE_RESULTS_CHARS = 60000
+
+
+def _measure(value: Any) -> int:
+    import json as _json
+
+    return len(_json.dumps(value, ensure_ascii=False))
+
+
 def compact_rule_results(
     rule_results: list[dict[str, Any]] | None,
     max_refs: int = MAX_EVIDENCE_REFS_IN_PROMPT,
+    max_chars: int = MAX_RULE_RESULTS_CHARS,
 ) -> list[dict[str, Any]]:
     """压缩规则结果里嵌套的工具输出，供提示词使用。
 
@@ -102,6 +169,33 @@ def compact_rule_results(
                 for check in checks
             ]
         compacted.append(item)
+    # 逐字段截完仍超总量预算，就整体收紧到能装下为止。
+    #
+    # 2026-08-15 实测：节点 1 只做逐字段截断后仍有 254,571 字符（超预算 3 倍），
+    # 因为大头不在单条有多大，而在调用次数有多少。
+    shrink = max_refs
+    while _measure(compacted) > max_chars and shrink > 1:
+        shrink = max(1, shrink // 2)
+        compacted = [
+            {
+                **rule,
+                "atomicCheckResults": [
+                    {
+                        **check,
+                        "toolResults": [
+                            _digest_tool_result(tool, shrink) if isinstance(tool, dict) else tool
+                            for tool in check.get("toolResults") or []
+                        ],
+                    }
+                    if isinstance(check, dict) and isinstance(check.get("toolResults"), list)
+                    else check
+                    for check in rule.get("atomicCheckResults") or []
+                ],
+            }
+            if isinstance(rule.get("atomicCheckResults"), list)
+            else rule
+            for rule in compacted
+        ]
     return compacted
 
 

@@ -257,3 +257,88 @@ def test_推理强度可配且认不出的取值退回默认():
             os.environ.pop("AICHECK_REVIEW_REASONING_EFFORT", None)
         else:
             os.environ["AICHECK_REVIEW_REASONING_EFFORT"] = old
+
+
+# ── 总量预算：逐字段截断不够，要管总量 ──────────────────────────────
+
+
+def test_大量工具调用累加超预算时整体收紧():
+    """2026-08-15 节点 1 实测：提示词 1,371,194 字符，ruleResults 占 98.9%。
+
+    大头不在「单条有多大」而在「调了多少次」——单条 field 只有 1,054 字符，
+    但每份文档都调一次 extract_document_fields，177 条加起来 18.6 万。
+    只做逐字段截断后仍有 254,571 字符，超预算 3 倍。
+    """
+    # 仿真：多次工具调用，每次都不算大，但累加起来撑爆
+    rules = [
+        {
+            "ruleCode": "R01",
+            "result": "需补正",
+            "atomicCheckResults": [
+                {
+                    "atomicCheckId": f"AC-{i:02d}",
+                    "result": "证据不足",
+                    "toolResults": [
+                        {
+                            "toolName": "extract_document_fields",
+                            "status": "succeeded",
+                            "fields": [
+                                {"fieldCode": f"f{n}", "fieldValue": "x" * 300}
+                                for n in range(40)
+                            ],
+                        }
+                    ],
+                }
+                for i in range(20)
+            ],
+        }
+    ]
+    before = _size(rules)
+    assert before > 200_000, f"基线没还原出「累加撑爆」的量级：{before}"
+    after = _size(compact_rule_results(rules))
+    assert after <= 60_000 + 2000, f"总量预算没生效，仍有 {after} 字符"
+
+
+def test_表格里的_html_是重复内容不进提示词():
+    """单张表 8,765 字符里，html 占 1,314——与 cells / normalizedRows
+    是同一份内容的三种写法。模型读 cells 就够了。"""
+    rules = [
+        {
+            "atomicCheckResults": [
+                {
+                    "toolResults": [
+                        {
+                            "toolName": "extract_table_records",
+                            "tables": [{"cells": [1, 2], "html": "<table>…</table>"}],
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+    table = compact_rule_results(rules)[0]["atomicCheckResults"][0]["toolResults"][0]["tables"][0]
+    assert "cells" in table
+    assert "html" not in table
+
+
+def test_收紧时各字段一起缩而不是只缩一个():
+    """收紧轮次里 max_refs 逐次减半，其余字段上限要按同比例跟着缩，
+    否则只有 evidenceRefs 在变小，tables / fields 纹丝不动。"""
+    rules = [
+        {
+            "atomicCheckResults": [
+                {
+                    "toolResults": [
+                        {
+                            "toolName": "mixed",
+                            "evidenceRefs": [{"id": i} for i in range(50)],
+                            "fields": [{"v": "y" * 800} for _ in range(60)],
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+    tool = compact_rule_results(rules, max_chars=20_000)[0]["atomicCheckResults"][0]["toolResults"][0]
+    assert len(tool["evidenceRefs"]) < 20
+    assert len(tool["fields"]) < 60, "fields 没有跟着收紧"
