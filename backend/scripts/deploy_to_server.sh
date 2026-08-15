@@ -153,14 +153,15 @@ PY
   ssh "$HOST" "
     set -eo pipefail
     cd $REMOTE_HOME/AIcheck/backend
-    if ! docker image inspect aicheck-ocr:local >/dev/null 2>&1; then
-      echo '    首次构建 OCR 镜像（约 10 分钟）'
-      docker build -q -f Dockerfile.ocr -t aicheck-ocr:local \
-        --build-arg AICHECK_PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
-        --build-arg AICHECK_APT_DEBIAN_MIRROR=http://mirrors.aliyun.com/debian \
-        --build-arg AICHECK_APT_SECURITY_MIRROR=http://mirrors.aliyun.com/debian-security \
-        --build-arg AICHECK_OCR_REQUIREMENTS=requirements-ocr-core.txt . >/dev/null
-    fi
+    # **每次都构建**，不要写成「镜像不存在才构建」。
+    # 那样写过一版，当天就踩到：给 ocr-service 加了 /internal/ocr/seal-read，
+    # 部署跑完一切正常，调用返回 404——容器跑的还是加端点之前的镜像。
+    # 层缓存会让没变化时只花几秒；省这几秒的代价是代码更新静默失效。
+    docker build -q -f Dockerfile.ocr -t aicheck-ocr:local \
+      --build-arg AICHECK_PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+      --build-arg AICHECK_APT_DEBIAN_MIRROR=http://mirrors.aliyun.com/debian \
+      --build-arg AICHECK_APT_SECURITY_MIRROR=http://mirrors.aliyun.com/debian-security \
+      --build-arg AICHECK_OCR_REQUIREMENTS=requirements-ocr-core.txt . >/dev/null
     mkdir -p /home/dev-bjy/aicheck-paddlex-cache && chmod 777 /home/dev-bjy/aicheck-paddlex-cache
     docker rm -f aicheck-ocr-service >/dev/null 2>&1 || true
     docker run -d --name aicheck-ocr-service --network aicheck-net --restart unless-stopped \
@@ -182,7 +183,22 @@ PY
     if [ \"\$(docker inspect aicheck-ocr-service --format '{{.State.Status}}')\" != running ]; then
       echo '    OCR 服务未起来' >&2; docker logs aicheck-ocr-service --tail 20 >&2; exit 1
     fi
-    echo '    OCR 服务已重建'
+    # 容器起来了 ≠ 新代码进去了。直接探印章端点存不存在——
+    # 404 说明跑的是旧镜像，这种情况部署必须失败，而不是报「完成」。
+    code=\$(docker exec aicheck-ocr-service python -c \"
+import urllib.request, urllib.error
+req = urllib.request.Request('http://127.0.0.1:8010/internal/ocr/seal-read', data=b'x', method='POST')
+try:
+    print(urllib.request.urlopen(req, timeout=30).status)
+except urllib.error.HTTPError as e:
+    print(e.code)
+except Exception:
+    print(0)
+\")
+    if [ \"\$code\" = 404 ] || [ \"\$code\" = 0 ]; then
+      echo \"    印章端点不可用（HTTP \$code）——容器可能跑着旧镜像\" >&2; exit 1
+    fi
+    echo \"    OCR 服务已重建，印章端点在（HTTP \$code）\"
   "
 
   echo "==> 重建 worker 容器（同镜像同 env-file）"
