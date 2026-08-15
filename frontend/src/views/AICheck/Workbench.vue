@@ -2152,17 +2152,40 @@ const loadInspectionAuditWorkspace = async (nodeId = activeNodeId.value) => {
   }
 }
 
+// 同一个节点包正在飞的那次请求。多个入口会在同一轮里各叫一次
+// （进场加载、路由 watcher、静默刷新……），实测施工方进场时
+// nodes/16/package 连发两次，第二次等了 11.4 秒——两个相同请求打在一起，
+// 服务端按顺序处理，后一个白等前一个。
+//
+// 与其在六千行里追每个触发点（追一个漏一个），不如在请求这层去重。
+let inFlightNodePackage: { key: string; promise: Promise<unknown> } | undefined
+
 const loadNodePackage = async (
   nodeId = activeNodeId.value,
   options: LoadNodePackageOptions = {}
 ) => {
   if (!activeProjectId.value) return
+  const requestKey = `${activeProjectId.value}#${nodeId}`
+  if (inFlightNodePackage?.key === requestKey) {
+    // 复用飞行中的那次；loading 态仍按本次调用的意图设置，
+    // 免得静默刷新把界面的 loading 关掉。
+    if (!options.silent) nodeLoading.value = true
+    try {
+      await inFlightNodePackage.promise
+    } finally {
+      if (!options.silent) nodeLoading.value = false
+    }
+    return
+  }
   if (!options.silent) {
     nodeLoading.value = true
     nodeIssue.value = undefined
   }
   try {
-    const res = await getNodePackageApi(activeProjectId.value, nodeId)
+    const request = getNodePackageApi(activeProjectId.value, nodeId)
+    // 先登记再 await：登记晚一步，同一轮里的第二次调用就看不到它，去重也就不成立。
+    inFlightNodePackage = { key: requestKey, promise: request.catch(() => undefined) }
+    const res = await request
     if (!res) {
       if (!options.silent) {
         nodePackage.value = undefined
@@ -2199,6 +2222,7 @@ const loadNodePackage = async (
     }
   } finally {
     if (!options.silent) nodeLoading.value = false
+    if (inFlightNodePackage?.key === requestKey) inFlightNodePackage = undefined
   }
 }
 
