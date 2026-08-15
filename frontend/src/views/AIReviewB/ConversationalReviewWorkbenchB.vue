@@ -506,15 +506,32 @@ const updateRouteQuery = async () => {
   })
 }
 
-const loadAuditView = async () => {
+// 上一次真正取回来的那份 audit-view 对应的运行指纹。
+// 实测：轮询每 3 秒把 339 KB 的 audit-view 整个再拉一遍，13 秒里拉了 4 次，
+// 而且越拉越慢（1.4s → 3.0s → 4.4s → 13.2s）——服务端被自己人打崩了。
+// 运行没变就没有任何新东西可看，重取纯属浪费。
+let loadedAuditViewSignature = ''
+
+const auditViewSignature = () =>
+  [activeRunId.value, activeRun.value?.status, activeRun.value?.revision, activeRun.value?.updatedAt]
+    .map((item) => String(item ?? ''))
+    .join('|')
+
+const loadAuditView = async (force = false) => {
   if (!activeRunId.value) {
     auditView.value = undefined
+    loadedAuditViewSignature = ''
     return
   }
+  const signature = auditViewSignature()
+  if (!force && auditView.value && signature === loadedAuditViewSignature) return
   try {
     auditView.value = (await getReviewBAuditViewApi(activeRunId.value)).data
+    loadedAuditViewSignature = signature
   } catch {
     auditView.value = undefined
+    // 指纹不留：下一轮要重试，别把一次失败当成「已经取过了」。
+    loadedAuditViewSignature = ''
   }
 }
 
