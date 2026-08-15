@@ -20,6 +20,7 @@
 
 部署时由 deploy_to_server.sh 从仓库同步到服务器，不再手工维护。
 """
+import os
 import pathlib
 
 SECRET_FILES = ["/home/dev-bjy/stack-secrets.env", "/home/dev-bjy/aicheck-secrets.env"]
@@ -50,9 +51,20 @@ runtime = {
     "AICHECK_BOOTSTRAP_LOCAL_ROLES": "true",
     "AICHECK_STRICT_PRODUCTION": "false",
     "AICHECK_ALLOWED_HOSTS": "*",
-    # 对象存储：容器间走服务名，浏览器侧走宿主机映射端口
+    # 对象存储：容器间走服务名；浏览器侧必须走**浏览器能连上的**地址。
+    #
+    # 这里原来写的是 127.0.0.1:19000——那是服务器自己的回环地址。
+    # 预签名 URL 直接发给浏览器，浏览器连的是自己的 127.0.0.1，必然失败。
+    # 2026-08-15 实操上传实测：upload-session 建会话 176ms 成功，
+    # 随后传字节那步报 `Failed to fetch`，**通过浏览器上传对所有角色 100% 失败**。
+    # 库里那批「有记录、无内容哈希」的空壳文件就是这么来的。
+    #
+    # MinIO 只绑在宿主机 127.0.0.1:19000，对外不通；不新开端口，
+    # 改由页面同源的 nginx 按桶前缀 /documents/ 反代过去
+    # （见 deploy/nginx-default.conf）。预签名按这个 host 计算，
+    # nginx 原样透传 Host，签名才对得上。
     "AICHECK_MINIO_ENDPOINT": "minio:9000",
-    "AICHECK_MINIO_PUBLIC_ENDPOINT": "127.0.0.1:19000",
+    "AICHECK_MINIO_PUBLIC_ENDPOINT": os.getenv("AICHECK_PUBLIC_ORIGIN", "39.108.65.148:8081"),
     "AICHECK_MINIO_SECURE": "false",
     # 任务派发走 celery，队列由各 worker 容器消费
     "AICHECK_TASK_DISPATCH": "celery",
