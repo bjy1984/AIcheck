@@ -246,6 +246,26 @@ const runStatus = computed(() => String(activeRun.value?.status || '未发起'))
 const canSubmitReviewOpinion = computed(() =>
   canSubmitFinalConclusion(workspace.value?.permissions, runStatus.value)
 )
+/** 本节点最近一次已保存的人工结论。
+ *
+ * 接口一直在 latestHumanDecision 里返回它，前端从来没渲染——于是保存成功之后
+ * 页面上没有任何痕迹，监检只能凭记忆判断「我到底存没存」，然后再点一次。
+ */
+const savedHumanDecision = computed(() => {
+  const raw = workspace.value?.latestHumanDecision
+  if (!raw || typeof raw !== 'object') return undefined
+  const result = String((raw as Record<string, unknown>).result || '').trim()
+  const opinion = String((raw as Record<string, unknown>).opinion || '').trim()
+  if (!result && !opinion) return undefined
+  return {
+    result: result || '（未填结论）',
+    opinion,
+    savedAt: String(
+      (raw as Record<string, unknown>).updatedAt || (raw as Record<string, unknown>).createdAt || ''
+    ).trim()
+  }
+})
+
 const canReturnCorrection = computed(
   () => workspace.value?.permissions.canReturnCorrection === true
 )
@@ -1195,6 +1215,10 @@ const handleSaveReviewOpinion = async () => {
       }
     )
     ElMessage.success('人工复核结论已保存')
+    // 清空输入框：内容已经保存，上方的「已保存」区块会把它显示出来。
+    // 不清空的话，页面看起来和保存前一模一样——监检据此认为没存成功，
+    // 于是再点一次。同一节点因此攒下过 3 条重复的「证据不足」。
+    reviewOpinion.value = ''
     await refreshLiveState()
   } catch (error) {
     ElMessage.error(getAicheckErrorMessage(error, '人工复核结论保存失败。'))
@@ -1898,6 +1922,16 @@ onBeforeUnmount(() => {
 
           <section class="side-card human-decision-card">
             <h2>最终人工结论</h2>
+            <!-- 保存成功后，页面上必须留下痕迹。
+                 实测：结论已写进库（OPN-6758E422），而界面上输入框原封不动、
+                 任何地方都看不到刚保存的那条——监检只能再点一次。
+                 同一节点因此攒下 3 条重复的「证据不足」。
+                 数据本来就在 latestHumanDecision 里，只是从来没渲染过。 -->
+            <div v-if="savedHumanDecision" class="saved-decision">
+              <strong>已保存：{{ savedHumanDecision.result }}</strong>
+              <small v-if="savedHumanDecision.savedAt">{{ savedHumanDecision.savedAt }}</small>
+              <p v-if="savedHumanDecision.opinion">{{ savedHumanDecision.opinion }}</p>
+            </div>
             <label>审查结论</label>
             <ElRadioGroup v-model="reviewResult" :disabled="!canSubmitReviewOpinion">
               <ElRadioButton value="满足要求">满足要求</ElRadioButton>
@@ -2033,6 +2067,34 @@ onBeforeUnmount(() => {
 
 .topbar-spacer {
   flex: 1;
+}
+
+/* 已保存的人工结论：绿色左条，一眼看出「这条已经存下了」 */
+.saved-decision {
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #f0f9f2;
+  border-left: 3px solid #52a86a;
+  border-radius: 6px;
+}
+
+.saved-decision strong {
+  font-size: 13px;
+  color: #1f6b3a;
+}
+
+.saved-decision small {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.saved-decision p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #344054;
+  word-break: break-word;
 }
 
 .review-user {
