@@ -271,6 +271,8 @@ class InMemoryRepository:
         self._singleton_baseline: dict[str, str] = {}
         self._idempotency_baseline: dict[str, str] = {}
         self._pgvector_baseline_ids: set[str] = set()
+        # 正在被某个请求改写、不许被并发加载覆盖的记录（见 pin_object）
+        self._pinned_objects: set[tuple[str, str]] = set()
         self.apply_tenant_scope()
         self.state.setdefault("knowledge_chunks", [])
         self.state.setdefault("knowledge_vectors", [])
@@ -2763,6 +2765,30 @@ class InMemoryRepository:
                 f"Concurrent persistence update detected for {key[0]}/{key[1]}; reload before retrying."
             )
 
+    def pin_object(self, collection_name: str, object_id: str) -> None:
+        """把一条记录钉住：并发的作用域加载不许用库里的副本覆盖它。
+
+        `repo.state` 是**进程级共享**的，多个请求同时在上面读写。作用域加载
+        最后一步是 `self.state[key] = [*incoming, *retained]`——incoming 是刚从
+        库里读出来的克隆，同 id 的内存对象直接被顶掉，连 baseline 也一并改写。
+
+        于是任何一个请求都可能在任何时刻，把另一个请求正在改的对象无声丢弃。
+
+        2026-08-15 线上实测：监检点「发起缺项预审」，工作台每 3 秒轮询一次，
+        审查跑完了（事件一路到 review_run.waiting_human），库里那条运行却仍是
+        queued、revision=1——**执行改的那个对象在中途被换掉了，落库落的是旧的。**
+
+        钉住只影响「覆盖」这一步：库里的新数据照常进 baseline 以外的判断，
+        只是不拿它去顶一个正在被改的对象。执行结束必须解钉（unpin_object）。
+        """
+        self._pinned_objects.add((collection_name, str(object_id)))
+
+    def unpin_object(self, collection_name: str, object_id: str) -> None:
+        self._pinned_objects.discard((collection_name, str(object_id)))
+
+    def object_is_pinned(self, collection_name: str, object_id: str) -> bool:
+        return (collection_name, str(object_id)) in self._pinned_objects
+
     def unchanged_since_baseline(self, key: tuple[str, str], payload: str) -> bool:
         """这条记录本次没被改过，因此没有任何内容需要写。
 
@@ -3851,20 +3877,30 @@ class InMemoryRepository:
                 if state_key:
                     grouped.setdefault(state_key, []).append(self.clone(payload))
             for state_key, incoming in grouped.items():
+                collection_name = STATE_COLLECTIONS[state_key]
+                # 钉住的记录不许被库里的副本顶掉——那会把别的请求正在改的对象丢了。
+                incoming = [
+                    item
+                    for index, item in enumerate(incoming)
+                    if not self.object_is_pinned(
+                        collection_name, self.persistence_object_id(collection_name, item, index)
+                    )
+                ]
                 incoming_ids = {
-                    self.persistence_object_id(STATE_COLLECTIONS[state_key], item, index)
+                    self.persistence_object_id(collection_name, item, index)
                     for index, item in enumerate(incoming)
                 }
                 retained = [
                     item
                     for index, item in enumerate(self.state.get(state_key, []))
-                    if self.persistence_object_id(STATE_COLLECTIONS[state_key], item, index) not in incoming_ids
+                    if self.persistence_object_id(collection_name, item, index) not in incoming_ids
                 ]
                 self.state[state_key] = [*incoming, *retained]
             self._persistence_baseline.update(
                 {
                     (str(collection_name), str(object_id)): self.canonical_persistence_payload(payload)
                     for collection_name, object_id, payload in rows
+                    if not self.object_is_pinned(str(collection_name), str(object_id))
                 }
             )
             self.apply_tenant_scope()

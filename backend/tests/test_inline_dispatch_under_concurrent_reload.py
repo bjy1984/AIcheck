@@ -67,3 +67,38 @@ def test_落库认执行时手上那个对象而不是再查一次():
 
     # 用完要清掉，否则长跑进程会把每一条运行记录都留在内存里。
     assert "_INFLIGHT_REVIEW_RUNS.pop" in source
+
+
+def test_执行期间的运行记录被钉住不许被并发加载覆盖():
+    """只「记住对象」不够：执行体里后续还会再 find_one 拿这条运行，
+    被覆盖之后拿到的是另一个对象，改在那上面，记住的那份反而成了旧的。
+
+    实测就栽在这：事件一路跑到 review_run.waiting_human，
+    库里那条运行仍是 queued、revision=1。
+    """
+    body = inspect.getsource(execution._execute_review_run_inline)
+    assert "repo.pin_object(" in body, "执行期间要钉住，别让并发加载把它换掉"
+
+    wrapper = inspect.getsource(execution.execute_review_run_inline)
+    assert "unpin_object" in wrapper, "跑完必须解钉，否则这条记录永远读不到新数据"
+
+
+def test_钉住的集合名取自_STATE_COLLECTIONS_而不是写死():
+    """写死字符串一旦和真实集合名对不上，钉住会**静默失效**：
+    钉了个不存在的集合，谁都不会报错，bug 原样回来。"""
+    from libs.db.repository import STATE_COLLECTIONS
+
+    assert execution.REVIEW_RUN_COLLECTION_NAME == STATE_COLLECTIONS["review_runs"]
+
+
+def test_加载时钉住的记录既不被覆盖也不刷新_baseline():
+    """baseline 也要一起跳过。只挡覆盖、却把 baseline 换成库里的值，
+    落库时就会认为「没改过」而跳过写入——又是一次静默的丢失。"""
+    import pathlib
+
+    source = (
+        pathlib.Path(__file__).resolve().parents[1] / "libs" / "db" / "repository.py"
+    ).read_text(encoding="utf-8")
+    idx = source.index("def load_review_run_scope_from_sync_postgres")
+    block = source[idx : idx + 6000]
+    assert block.count("object_is_pinned") >= 2, "覆盖与 baseline 两处都要挡"

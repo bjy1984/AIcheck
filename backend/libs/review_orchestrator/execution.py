@@ -24,7 +24,7 @@ from libs.business_pack.clause_store import (
     review_run_clause_snapshot,
 )
 from libs.contracts.responses import server_time
-from libs.db.repository import flush_state_records, load_review_run_state, repo
+from libs.db.repository import STATE_COLLECTIONS, flush_state_records, load_review_run_state, repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
@@ -1769,12 +1769,17 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             logging.getLogger(__name__).exception("ReviewRun %s 落库失败", review_run_id)
         finally:
             _INFLIGHT_REVIEW_RUNS.pop(review_run_id, None)
+            repo.unpin_object(REVIEW_RUN_COLLECTION_NAME, review_run_id)
 
 
 # 正在执行中的运行记录，按 reviewRunId 索引。存在的唯一理由是并发重载会把
 # repo.state["review_runs"] 整体换掉，导致执行中的对象与 state 脱钩——
 # 落库时得认这个对象，而不是重新去 state 里查一个已经不是它的副本。
 _INFLIGHT_REVIEW_RUNS: dict[str, dict[str, Any]] = {}
+
+# 物理集合名，pin_object 用。走 STATE_COLLECTIONS 取而不是写死字符串——
+# 两者一旦不一致，钉住会静默失效（钉了个不存在的集合，谁都不会报错）。
+REVIEW_RUN_COLLECTION_NAME = STATE_COLLECTIONS["review_runs"]
 
 
 def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
@@ -1800,6 +1805,10 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         return {"reviewRunId": review_run_id, "status": "missing"}
     # 记下这一份，落库时认它——中途若被并发重载换掉，state 里那份就不是它了。
     _INFLIGHT_REVIEW_RUNS[review_run_id] = review_run
+    # 更根本的一道：让并发加载别去覆盖它。只记住对象还不够——执行体里后续
+    # 还会再 find_one 拿这条运行，覆盖之后拿到的就是另一个对象，改在那上面，
+    # 我记住的这份反而成了旧的。实测就栽在这：事件跑完了，库里仍是 queued。
+    repo.pin_object(REVIEW_RUN_COLLECTION_NAME, review_run_id)
     if review_run.get("status") in {"waiting_human_input", "waiting_human_review", *REVIEW_RUN_TERMINAL_STATUSES}:
         return {"reviewRunId": review_run_id, "status": review_run.get("status"), "alreadyCompleted": True}
     ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId")))
