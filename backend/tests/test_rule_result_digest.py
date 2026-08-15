@@ -342,3 +342,66 @@ def test_收紧时各字段一起缩而不是只缩一个():
     tool = compact_rule_results(rules, max_chars=20_000)[0]["atomicCheckResults"][0]["toolResults"][0]
     assert len(tool["evidenceRefs"]) < 20
     assert len(tool["fields"]) < 60, "fields 没有跟着收紧"
+
+
+# ── 兜底裁剪：白名单以外的键名也要收得住 ──────────────────────────
+#
+# 2026-08-15 实测：节点 24（R24 焊工资格证）按键名裁剪之后仍有 103,660 字符，
+# 整场提示词 137,869，运行报 REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED。
+# 大头在 atomicCheckResults[].toolResults[].input.facts（112,089 字符）
+# 和 certificates——两个键名都不在白名单里。
+#
+# 白名单修得好今天这个节点，下一条规则换一组键名又会漏。
+
+
+def test_白名单没覆盖的键名也能压到预算内():
+    from libs.review_orchestrator.rule_result_digest import compact_rule_results
+
+    # facts / certificates 都不在 _LIST_CAPS 里
+    rule_results = [
+        {
+            "ruleId": "R24",
+            "atomicCheckResults": [
+                {
+                    "atomicCheckId": f"AC-R24-{index:02d}",
+                    "toolResults": [
+                        {
+                            "tool": "extract_document_fields",
+                            "input": {
+                                "facts": [{"text": "焊工资格" * 40} for _ in range(200)],
+                                "certificates": [{"no": f"TS-{i}" * 20} for i in range(200)],
+                            },
+                        }
+                    ],
+                }
+                for index in range(6)
+            ],
+        }
+    ]
+    import json
+
+    raw = len(json.dumps(rule_results, ensure_ascii=False))
+    compacted = compact_rule_results(rule_results)
+    size = len(json.dumps(compacted, ensure_ascii=False))
+    assert raw > 200000, "样本要足够大才说明问题"
+    assert size <= 60000, f"压缩后仍有 {size} 字符，超预算"
+
+
+def test_兜底截断要说明省略了多少():
+    """截断本身不可怕，装作没截才可怕——模型和人都要看得出这里少了东西。"""
+    from libs.review_orchestrator.rule_result_digest import _trim_generic
+
+    trimmed = _trim_generic({"items": list(range(100))}, 5, 50)
+    assert len(trimmed["items"]) == 6
+    assert "另有 95 条" in trimmed["items"][-1]
+
+    long_text = _trim_generic("字" * 500, 5, 50)
+    assert long_text.endswith("（原文 500 字）")
+
+
+def test_能收住就不多截():
+    """本来就在预算内的，一个字都不该动。"""
+    from libs.review_orchestrator.rule_result_digest import compact_rule_results
+
+    small = [{"ruleId": "R01", "conclusion": "符合", "atomicCheckResults": []}]
+    assert compact_rule_results(small) == small

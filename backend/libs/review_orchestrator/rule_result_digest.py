@@ -196,6 +196,48 @@ def compact_rule_results(
             else rule
             for rule in compacted
         ]
+    if _measure(compacted) > max_chars:
+        compacted = _trim_by_shape(compacted, max_chars)
+    return compacted
+
+
+#: 兜底裁剪一轮里，列表最多留几项、字符串最多留多少字。逐轮收紧。
+_FALLBACK_ROUNDS = ((20, 600), (10, 300), (5, 200), (3, 120), (1, 80))
+
+
+def _trim_generic(value: Any, max_items: int, max_text: int) -> Any:
+    """与形状无关地裁剪：列表截断、超长字符串截断，其余原样。"""
+    if isinstance(value, dict):
+        return {key: _trim_generic(item, max_items, max_text) for key, item in value.items()}
+    if isinstance(value, list):
+        kept = [_trim_generic(item, max_items, max_text) for item in value[:max_items]]
+        dropped = len(value) - len(kept)
+        if dropped > 0:
+            kept.append(f"…（另有 {dropped} 条同类记录已省略）")
+        return kept
+    if isinstance(value, str) and len(value) > max_text:
+        return value[:max_text] + f"…（原文 {len(value)} 字）"
+    return value
+
+
+def _trim_by_shape(compacted: list[dict[str, Any]], max_chars: int) -> list[dict[str, Any]]:
+    """按键名裁剪之后仍然超预算时的兜底。
+
+    2026-08-15 实测：节点 24（R24 焊工资格证）逐字段截断后仍有 103,660 字符，
+    整场提示词 137,869 字符，运行报 REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED。
+    大头在 `atomicCheckResults[].toolResults[].input.facts`（112,089 字符）
+    和 `certificates`——这两个键名都不在按键名裁剪的白名单里。
+
+    白名单能修好今天这个节点，但下一条规则换一组键名又会漏。所以再加一道
+    **不认键名**的兜底：只按「列表太长、字符串太长」收，形状怎么变都收得住。
+
+    代价是可能截到判断要用的内容，所以它排在按键名裁剪之后——
+    能靠语义收住就不动这一刀；真到这一步，截断处会明说省略了多少。
+    """
+    for max_items, max_text in _FALLBACK_ROUNDS:
+        compacted = _trim_generic(compacted, max_items, max_text)
+        if _measure(compacted) <= max_chars:
+            break
     return compacted
 
 
