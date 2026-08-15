@@ -16950,6 +16950,14 @@ def fde_ai_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dict[st
     view.pop("llmMetadata", None)
     view.pop("reasoningProcess", None)
     view.pop("llmResultText", None)
+    # 绑定表快照每条 110 KB，一页 20 条就是 2.2 MB——2026-08-15 实测
+    # /fde/review-runs 返回 2,281 KB、6.6 秒，几乎全是它。
+    #
+    # 治理页要的是「用的哪套绑定表、哪个版本、哈希是多少」，这几个字段
+    # （atomicCheckToolBindingSetId / Version / Hash / Lifecycle）都还在，
+    # 追溯性不受影响；快照正文本身前端一次都没读过。
+    for bulky in ("atomicCheckToolBindingsSnapshot", "atomicCheckToolBindingSetSnapshot", "clausePackageSnapshot"):
+        view.pop(bulky, None)
     if not raw_access:
         suggestion = view.get("suggestion") or {}
         if isinstance(suggestion, dict):
@@ -16971,6 +16979,14 @@ def fde_review_run_view(run: dict[str, Any], *, raw_access: bool = False) -> dic
     view.pop("llmMetadata", None)
     view.pop("reasoningProcess", None)
     view.pop("llmResultText", None)
+    # 绑定表快照每条 110 KB，一页 20 条就是 2.2 MB——2026-08-15 实测
+    # /fde/review-runs 返回 2,281 KB、6.6 秒，几乎全是它。
+    #
+    # 治理页要的是「用的哪套绑定表、哪个版本、哈希是多少」，这几个字段
+    # （atomicCheckToolBindingSetId / Version / Hash / Lifecycle）都还在，
+    # 追溯性不受影响；快照正文本身前端一次都没读过。
+    for bulky in ("atomicCheckToolBindingsSnapshot", "atomicCheckToolBindingSetSnapshot", "clausePackageSnapshot"):
+        view.pop(bulky, None)
     if not raw_access:
         for finding in view.get("findingDrafts") or []:
             if isinstance(finding, dict):
@@ -22974,6 +22990,27 @@ def fde_rollback_business_pack(
     return idempotent(request, idempotency_key, produce, fingerprint_source={"packId": pack_id, "body": body})
 
 
+#: 解析结果里体量最大、而列表视图用不到的几块。留计数，去内容。
+_OCR_PARSE_BULK_KEYS = ("fragments", "pages", "layoutBlocks", "tables", "seals")
+
+
+def slim_ocr_parse_result(item: dict[str, Any]) -> dict[str, Any]:
+    """把一条 OCR 解析结果压成列表能用的形状。
+
+    fragments 平均 163 KB、最大 1.8 MB；pages 平均 41 KB。质量看板要的是
+    「有多少片段、多少页、几张表」，不是每一片的文字。计数留下，内容去掉——
+    去掉了还看不出少了什么，才是真的坏，所以补一个 xxxCount。
+    """
+    if not isinstance(item, dict):
+        return item
+    slimmed = {key: value for key, value in item.items() if key not in _OCR_PARSE_BULK_KEYS}
+    for key in _OCR_PARSE_BULK_KEYS:
+        value = item.get(key)
+        if isinstance(value, list):
+            slimmed[f"{key}Count"] = len(value)
+    return slimmed
+
+
 def fde_ocr_quality_snapshot(project_id: str | None = None, node_id: int | None = None, profile_id: str | None = None) -> dict[str, Any]:
     documents = repo.state.get("documents", [])
     fields = repo.state.get("extracted_fields", [])
@@ -23080,7 +23117,11 @@ def fde_ocr_quality_snapshot(project_id: str | None = None, node_id: int | None 
         },
         "lowConfidenceFields": repo.clone(low_confidence[:20]),
         "jobs": repo.clone(jobs[:20]),
-        "parseResults": repo.clone(results[:20]),
+        # 每条解析结果平均 163 KB（fragments 最大 1.8 MB），20 条就是 3 MB 出头——
+        # 2026-08-15 实测 /fde/ocr-quality 一次返回 4.6 MB、6.9 秒，是 FDE 首屏最大的一块。
+        # 而前端只在类型声明里出现过 parseResults，没有任何视图读它。
+        # 保留能看的字段，去掉整份 OCR 明细；要明细走单文档的 OCR 接口。
+        "parseResults": [slim_ocr_parse_result(item) for item in repo.clone(results[:20])],
         "corrections": repo.clone(corrections[:20]),
         "evalRuns": repo.clone(eval_runs[:20]),
         "cacheMetrics": cache_metrics,
