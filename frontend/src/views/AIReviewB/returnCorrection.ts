@@ -18,6 +18,25 @@ export type ReturnCorrectionDraft = {
   evidenceLinkIds: string[]
 }
 
+/** 缺失资料的可读名称：优先中文名，实在没有才退回原始码。
+ *
+ * 对话框显示与提交载荷必须用同一套口径——只改显示的那一层，
+ * 生成的单子里仍然是码，施工方照样看不懂。
+ */
+export const requirementDisplayName = (item: NodeRequirementMatch): string => {
+  const candidate = item as NodeRequirementMatch & {
+    materialTypeName?: string
+    reviewContent?: string
+  }
+  return (
+    String(candidate.materialTypeName || '').trim() ||
+    String(candidate.reviewContent || '').trim() ||
+    String(candidate.name || '').trim() ||
+    String(candidate.materialTypeCode || '').trim() ||
+    '未命名资料'
+  )
+}
+
 export const createReturnCorrectionDraft = (
   bindings: ReturnableBinding[],
   missingRequirements: NodeRequirementMatch[],
@@ -45,7 +64,16 @@ export const buildReturnCorrectionPayload = (
   const supplementRequirements: SupplementRequirementInput[] = draft.selectedRequirementIds
     .map((id) => missingById.get(id))
     .filter((item): item is NodeRequirementMatch => Boolean(item))
-    .map((item) => ({ id: item.id, source: 'system', name: item.name }))
+    // name 要写**能读懂的名字**，不是资料类型码。
+    //
+    // 实操验证：生成的补充单里 supplementRequirements[].name 是 null，
+    // 只剩 materialTypeCode——施工方打开这张单子，看到的还是 design_license。
+    // 界面上刚把码换成中文名，这里不跟上，等于只改了监检自己看的那一屏。
+    .map((item) => ({
+      id: item.id,
+      source: 'system' as const,
+      name: requirementDisplayName(item)
+    }))
   const manualItems = draft.manualRequirementsText
     .split('\n')
     .map((item) => item.trim())

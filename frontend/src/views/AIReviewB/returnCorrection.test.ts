@@ -86,7 +86,7 @@ const dialog = _readFileSync(
   'utf8'
 )
 
-assert.ok(dialog.includes('const requirementLabel'), '缺失资料还在直接显示码')
+assert.ok(dialog.includes('requirementDisplayName'), '缺失资料还在直接显示码')
 assert.ok(/materialTypeName/.test(dialog), '没有优先用中文名')
 assert.ok(dialog.includes('const visibleRequirements'), '没有按资料类型去重')
 
@@ -104,3 +104,35 @@ assert.ok(
 )
 
 console.log('Supplement requirement label & dedupe contract passed')
+
+// 提交载荷里的 name 也必须是可读名字。
+//
+// 实操验证：生成的补充单里 supplementRequirements[].name 是 null，只剩
+// materialTypeCode——施工方打开单子看到的还是 design_license。
+// 界面改了而载荷没改，等于只修了监检自己看的那一屏。
+const payload = buildReturnCorrectionPayload(
+  {
+    mode: 'supplement_request',
+    reason: '请补交',
+    selectedBindingIds: [],
+    selectedRequirementIds: ['MRP-1-design_license-05AB35'],
+    manualRequirementsText: '',
+    evidenceLinkIds: []
+  },
+  [],
+  [
+    {
+      id: 'MRP-1-design_license-05AB35',
+      nodeId: 1,
+      requiredType: '必传',
+      materialTypeCode: 'design_license',
+      materialTypeName: '设计单位许可证',
+      matchedBindingCount: 0,
+      matchedFileNames: [],
+      fulfilled: false
+    } as never
+  ]
+)
+assert.equal(payload.supplementRequirements[0].name, '设计单位许可证')
+
+console.log('Supplement requirement payload name contract passed')

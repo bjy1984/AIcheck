@@ -13,7 +13,8 @@ import {
 import type { NodeRequirementMatch } from '@/types/aicheck'
 import {
   buildReturnCorrectionPayload,
-  createReturnCorrectionDraft
+  createReturnCorrectionDraft,
+  requirementDisplayName
 } from '@/views/AIReviewB/returnCorrection'
 import type { ReturnCorrectionDraft, ReturnableBinding } from '@/views/AIReviewB/returnCorrection'
 
@@ -31,27 +32,6 @@ const emit = defineEmits<{
 }>()
 
 const draft = ref<ReturnCorrectionDraft>()
-
-/** 缺失资料的显示名：优先中文名，实在没有才退回原始码。
- *
- * 实操所见：补充资料单里列的是 `design_license`、`design_document`——
- * 这是给规则引擎比对用的码，而这张单子是发给施工方看的，
- * 收到「请补交 design_document」没人知道该交什么。
- * 后端其实同时发了 materialTypeName / reviewContent，只是没被用上。
- */
-const requirementLabel = (item: NodeRequirementMatch) => {
-  const candidate = item as NodeRequirementMatch & {
-    materialTypeName?: string
-    reviewContent?: string
-  }
-  return (
-    String(candidate.materialTypeName || '').trim() ||
-    String(candidate.reviewContent || '').trim() ||
-    String(candidate.name || '').trim() ||
-    String(candidate.materialTypeCode || '').trim() ||
-    '未命名资料'
-  )
-}
 
 /** 按资料类型去重。
  *
@@ -175,7 +155,7 @@ const submit = () => {
               :value="requirement.id"
               border
             >
-              <span>{{ requirementLabel(requirement) }}</span>
+              <span>{{ requirementDisplayName(requirement) }}</span>
               <small>{{
                 requirement.note || requirement.materialTypeCode || '系统识别缺失项'
               }}</small>
