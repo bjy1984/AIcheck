@@ -168,7 +168,21 @@ const revokePreviewObjectUrl = () => {
   previewObjectUrl.value = ''
 }
 
+/* 取原文的「代次」。
+ *
+ * 连着看两份资料时，两次取字节会重叠：先点的那份后返回，就把后点的那份
+ * 覆盖掉；而 loadPreviewOriginal 开头的 revoke 又可能把已经就绪的地址清空。
+ * 结果是界面永远停在「原文预览加载中」——不转圈、不报错、也没有内容。
+ * 线上实测遇到过一次：接口 200、字节 678 KB、objectURL 也建得出来，
+ * 界面就是不显示。**既不成功也不失败的状态，比失败更难查**，
+ * 因为它看起来像还没加载完，人会一直等下去。
+ *
+ * 代次一变，旧请求的结果直接丢弃，也不去动状态。
+ */
+let previewLoadToken = 0
+
 const loadPreviewOriginal = async () => {
+  const token = ++previewLoadToken
   revokePreviewObjectUrl()
   previewOriginalError.value = ''
   const url = String(preview.value?.url || '')
@@ -176,14 +190,26 @@ const loadPreviewOriginal = async () => {
   previewLoadingOriginal.value = true
   try {
     const res = await getDocumentOriginalBlobApi(url)
-    previewObjectUrl.value = URL.createObjectURL(res.data)
+    if (token !== previewLoadToken) return
+    const blob = res?.data
+    // 后端未登录时会回 HTTP 200 + {"code":401}；responseType=blob 会把这段
+    // JSON 原样包成 Blob，塞进 iframe 就是一片空白。类型对不上就直说，
+    // 不要让用户对着空白框猜。
+    if (!(blob instanceof Blob)) {
+      previewOriginalError.value = '原文预览返回的内容无法识别，请尝试下载后查看。'
+      return
+    }
+    if (blob.type && blob.type.includes('json')) {
+      previewOriginalError.value = '原文预览未通过权限校验，请重新登录后再试。'
+      return
+    }
+    previewObjectUrl.value = URL.createObjectURL(blob)
   } catch (error) {
-    previewOriginalError.value = getAicheckErrorMessage(
-      error,
-      '原文预览加载失败，请尝试下载后查看。'
-    )
+    if (token !== previewLoadToken) return
+    previewOriginalError.value =
+      getAicheckErrorMessage(error, '') || '原文预览加载失败，请尝试下载后查看。'
   } finally {
-    previewLoadingOriginal.value = false
+    if (token === previewLoadToken) previewLoadingOriginal.value = false
   }
 }
 
