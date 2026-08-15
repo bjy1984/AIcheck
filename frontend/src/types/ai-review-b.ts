@@ -1,4 +1,10 @@
-import type { EvidenceLink, NodeEvidenceReadiness, Project, ProjectTreeNode } from '@/types/aicheck'
+import type {
+  EvidenceLink,
+  NodeEvidenceReadiness,
+  NodeFileBinding,
+  Project,
+  ProjectTreeNode
+} from '@/types/aicheck'
 
 export type ReviewBSession = {
   id: string
@@ -91,11 +97,19 @@ export type ReviewBWorkspace = {
     canStartReview: boolean
     canSubmitHumanInput: boolean
     canSubmitHumanDecision: boolean
+    canSubmitReviewOpinion: boolean
+    canReturnCorrection: boolean
     canManageEvidence: boolean
   }
   evidenceReadiness: NodeEvidenceReadiness
   evidenceLinks: EvidenceLink[]
   selectedEvidence: EvidenceLink[]
+  returnableBindings: Array<
+    Pick<NodeFileBinding, 'id' | 'documentId' | 'fileName' | 'bindingStatus'> & {
+      materialTypeName?: string | null
+      materialCategory?: string | null
+    }
+  >
   businessBasis?: Record<string, unknown>
   basisSnapshot: ReviewBBasisItem[]
   session: ReviewBSession | null

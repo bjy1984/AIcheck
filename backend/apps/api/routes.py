@@ -9974,6 +9974,25 @@ def review_workspace_payload(
     ]
     role = effective_role_for_request(request)[0] or "inspection"
     can_review = role in {"inspection", "admin", "fde"}
+    can_return_correction = "review:return-correction" in repo.role_actions(role)
+    returnable_bindings = []
+    for binding in project_bindings:
+        if (
+            int(binding.get("nodeId") or 0) != int(node_id)
+            or binding.get("bindingStatus") != "已提交"
+        ):
+            continue
+        document = repo.find_one("documents", str(binding.get("documentId") or "")) or {}
+        returnable_bindings.append(
+            {
+                "id": binding.get("id"),
+                "documentId": binding.get("documentId"),
+                "fileName": binding.get("fileName") or document.get("fileName"),
+                "materialTypeName": document.get("materialTypeName"),
+                "materialCategory": document.get("materialCategory"),
+                "bindingStatus": binding.get("bindingStatus"),
+            }
+        )
     run_status = str((review_run or {}).get("status") or "")
     available_modes = evidence_readiness.get("availableReviewModes") or []
     current_task = str((session or {}).get("currentTask") or basis.get("inspectionItem") or node.get("name") or "")
@@ -9987,17 +10006,24 @@ def review_workspace_payload(
             "canStartReview": can_review and bool(available_modes),
             "canSubmitHumanInput": can_review and bool(active_task),
             "canSubmitHumanDecision": can_review and run_status == "waiting_human_review",
+            "canSubmitReviewOpinion": can_review,
+            "canReturnCorrection": can_return_correction,
             "canManageEvidence": can_review,
         },
         "evidenceReadiness": repo.clone(evidence_readiness),
         "evidenceLinks": evidence_links,
         "selectedEvidence": selected_evidence,
+        "returnableBindings": returnable_bindings,
         "businessBasis": repo.clone(basis),
         "basisSnapshot": fixed_basis,
         "session": review_session_view(session) if session else None,
         "activeReviewRun": review_run_view(review_run) if review_run else None,
         "activeHumanInputTask": active_task,
-        "latestHumanDecision": repo.clone((review_run or {}).get("humanDecision")) or (review_opinions[0] if review_opinions else None),
+        "latestHumanDecision": (
+            repo.clone(review_opinions[0])
+            if review_opinions
+            else repo.clone((review_run or {}).get("humanDecision"))
+        ),
         "contextSummary": {
             "currentTask": current_task,
             "selectedEvidenceCount": len(selected_evidence),
@@ -13497,8 +13523,16 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
         correction_reason = compact_plain_text(body.get("reason") or body.get("requirement"), 2000)
         if not correction_reason:
             return fail(errors.VALIDATION_ERROR, request, message="退回补正必须填写具体原因和处理要求。")
+        requested_mode = compact_plain_text(body.get("mode"), 40)
+        mode = requested_mode or "return_correction"
+        if mode not in {"return_correction", "supplement_request"}:
+            return fail(errors.VALIDATION_ERROR, request, message="退回补正操作模式不支持。")
+        opinion_text = compact_plain_text(body.get("opinion"), 2000)
+        is_review_b_request = bool(requested_mode or opinion_text or body.get("supplementRequirements"))
+        if is_review_b_request and not opinion_text:
+            return fail(errors.VALIDATION_ERROR, request, message="B 版退回补正必须填写人工复核意见。")
         binding_ids = compact_id_list(body.get("bindingIds"))
-        if not binding_ids:
+        if mode == "return_correction" and not binding_ids:
             return fail(errors.EMPTY_BINDINGS, request, message="退回补正必须选择本次退回的已提交资料。")
         binding_by_id = {
             str(item.get("id")): item
@@ -13512,47 +13546,127 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             or int(binding_by_id[binding_id].get("nodeId") or 0) != int(node_id)
             or binding_by_id[binding_id].get("bindingStatus") != "已提交"
         )
-        if invalid_binding_ids:
+        if mode == "return_correction" and invalid_binding_ids:
             return fail(
                 errors.CONFLICT,
                 request,
                 message="只能退回当前节点中处于待审查状态的已提交资料。",
                 data={"invalidBindingIds": invalid_binding_ids},
             )
-        matching_submissions = sorted(
-            (
-                item
-                for item in repo.state.get("submissions", [])
-                if item.get("projectId") == project_id
-                and set(binding_ids).issubset({str(value) for value in item.get("bindingIds") or []})
-                and not set(binding_ids) & {str(value) for value in item.get("withdrawnBindingIds") or []}
-            ),
-            key=lambda item: str(item.get("submittedAt") or ""),
-            reverse=True,
-        )
-        if not matching_submissions:
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="所选资料没有可退回的有效提交记录。",
+        source_submission = None
+        supplement_requirements: list[dict[str, Any]] = []
+        if mode == "return_correction":
+            matching_submissions = sorted(
+                (
+                    item
+                    for item in repo.state.get("submissions", [])
+                    if item.get("projectId") == project_id
+                    and set(binding_ids).issubset({str(value) for value in item.get("bindingIds") or []})
+                    and not set(binding_ids) & {str(value) for value in item.get("withdrawnBindingIds") or []}
+                ),
+                key=lambda item: str(item.get("submittedAt") or ""),
+                reverse=True,
             )
-        source_submission = matching_submissions[0]
+            if not matching_submissions:
+                return fail(errors.CONFLICT, request, message="所选资料没有可退回的有效提交记录。")
+            source_submission = matching_submissions[0]
+        else:
+            if binding_ids:
+                return fail(errors.VALIDATION_ERROR, request, message="补充资料模式不能携带待退回资料。")
+            has_returnable_binding = any(
+                item.get("projectId") == project_id
+                and int(item.get("nodeId") or 0) == int(node_id)
+                and item.get("bindingStatus") == "已提交"
+                for item in repo.state.get("bindings", [])
+            )
+            if has_returnable_binding:
+                return fail(errors.CONFLICT, request, message="当前节点存在可退回资料，请选择资料后发起退回补正。")
+            missing_requirements = {
+                str(item.get("id") or ""): item
+                for item in build_node_evidence_readiness(repo, project_id, node_id).get("missingRequirements", [])
+                if isinstance(item, dict) and item.get("id")
+            }
+            for raw in body.get("supplementRequirements") or []:
+                if not isinstance(raw, dict):
+                    continue
+                source = compact_plain_text(raw.get("source"), 20) or "system"
+                if source == "manual":
+                    name = compact_plain_text(raw.get("name"), 200)
+                    if name:
+                        supplement_requirements.append(
+                            {
+                                "id": compact_plain_text(raw.get("id"), 120) or f"MANUAL-{uuid4().hex[:8].upper()}",
+                                "source": "manual",
+                                "name": name,
+                                "note": compact_plain_text(raw.get("note"), 500) or None,
+                            }
+                        )
+                    continue
+                requirement = missing_requirements.get(compact_plain_text(raw.get("id"), 120))
+                if requirement:
+                    supplement_requirements.append(
+                        {
+                            "id": requirement.get("id"),
+                            "source": "system",
+                            "name": requirement.get("name"),
+                            "materialTypeCode": requirement.get("materialTypeCode"),
+                            "responsibleParty": requirement.get("responsibleParty"),
+                            "note": compact_plain_text(raw.get("note"), 500) or requirement.get("note"),
+                        }
+                    )
+            if not supplement_requirements:
+                return fail(errors.VALIDATION_ERROR, request, message="补充资料单必须至少包含一项需要提交的资料。")
+        evidence_validation = validate_node_evidence_selection(
+            project_id,
+            node_id,
+            body.get("evidenceLinkIds") or [],
+            require_non_empty=False,
+        )
+        if not evidence_validation["passed"]:
+            return fail(errors.VALIDATION_ERROR, request, message=evidence_validation["message"])
         returned_at = server_time()
+        opinion = None
+        if opinion_text:
+            latest_ai_run = next(
+                (
+                    item
+                    for item in repo.state.get("ai_runs", [])
+                    if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+                ),
+                None,
+            )
+            opinion = {
+                "id": f"OPN-{uuid4().hex[:8].upper()}",
+                "projectId": project_id,
+                "nodeId": node_id,
+                "result": "需补正",
+                "opinion": opinion_text,
+                "riskLevel": "中",
+                "closeStatus": "未关闭",
+                "evidenceLinkIds": evidence_validation["acceptedEvidenceLinkIds"],
+                "reviewerName": request_actor_name(request),
+                "aiRunId": latest_ai_run.get("id") if latest_ai_run else None,
+                "createdAt": returned_at,
+            }
         rectification = {
             "id": f"REC-{uuid4().hex[:8].upper()}",
             "projectId": project_id,
             "nodeId": node_id,
             "status": "待反馈",
+            "rectificationType": mode,
             "comment": correction_reason,
-            "submissionId": source_submission.get("submissionId"),
+            "submissionId": source_submission.get("submissionId") if source_submission else None,
             "bindingIds": binding_ids,
+            "supplementRequirements": supplement_requirements,
             "returnedAt": returned_at,
             "reviewerName": request_actor_name(request),
             "createdAt": returned_at,
         }
+        if opinion:
+            repo.state["review_opinions"].insert(0, opinion)
         repo.state["rectifications"].insert(0, rectification)
         changed = []
-        for binding_id in binding_ids:
+        for binding_id in binding_ids if mode == "return_correction" else []:
             binding = binding_by_id[binding_id]
             before = binding.get("bindingStatus")
             binding["bindingStatus"] = "需补正"
@@ -13568,18 +13682,18 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             repo.find_one("documents", str(binding_by_id[binding_id].get("documentId") or ""))
             for binding_id in binding_ids
         ]
-        assignee_role = (
-            "ndt"
-            if returned_documents
-            and all(
-                document and str(document.get("materialCategory") or "").strip() == NDT_ATOMIC_MATERIAL_CATEGORY
-                for document in returned_documents
-            )
-            else "contractor"
+        all_supplement_ndt = bool(supplement_requirements) and all(
+            str(item.get("responsibleParty") or "").strip().lower() in {"ndt", "无损检测单位"}
+            for item in supplement_requirements
         )
+        all_returned_ndt = bool(returned_documents) and all(
+            document and str(document.get("materialCategory") or "").strip() == NDT_ATOMIC_MATERIAL_CATEGORY
+            for document in returned_documents
+        )
+        assignee_role = "ndt" if all_returned_ndt or all_supplement_ndt else "contractor"
         todo = {
             "id": f"TODO-{uuid4().hex[:8].upper()}",
-            "title": f"节点 {node_id} 退回补正",
+            "title": f"节点 {node_id} {'补充资料' if mode == 'supplement_request' else '退回补正'}",
             "projectId": project_id,
             "nodeId": node_id,
             "targetType": "rectification",
@@ -13590,7 +13704,30 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             "actions": ["rectification:submit"],
         }
         repo.state["todos"].insert(0, todo)
-        return ok({"rectification": {"id": rectification["id"], "projectId": project_id, "nodeId": node_id, "status": rectification["status"]}, "nextStatus": "需补正", "createdTodos": [todo], **repo.mutation_result("退回补正", "Rectification", rectification["id"], next_status="需补正", changed=changed)}, request)
+        mutation = repo.mutation_result(
+            "退回补正" if mode == "return_correction" else "发起补充资料",
+            "Rectification",
+            rectification["id"],
+            next_status="需补正",
+            changed=changed,
+        )
+        return ok(
+            {
+                "rectificationType": mode,
+                "rectification": {
+                    "id": rectification["id"],
+                    "projectId": project_id,
+                    "nodeId": node_id,
+                    "status": rectification["status"],
+                    "supplementRequirements": supplement_requirements,
+                },
+                "opinion": repo.clone(opinion),
+                "nextStatus": "需补正",
+                "createdTodos": [todo],
+                **mutation,
+            },
+            request,
+        )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
