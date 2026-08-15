@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { blockingReasonsAsItems, buildSuggestedQuestions } from './suggestedQuestions'
+import { isRunSettled } from './runPolling'
 import {
   ElAlert,
   ElButton,
@@ -1215,7 +1216,19 @@ onMounted(async () => {
   const context = resolveReviewWorkbenchContext(props)
   if (context.source === 'standalone') await loadPage()
   else await loadEmbeddedContext()
-  pollTimer = window.setInterval(() => void refreshLiveState(), 3000)
+  pollTimer = window.setInterval(() => {
+    // 原来是无条件每 3 秒打一次：不管有没有在跑、不管标签页是否在前台。
+    //
+    // 它不只是浪费。2026-08-15 线上实测，正是这个轮询把正在派发的 ReviewRun
+    // 弄丢的——同一个「发起缺项预审」，工作台开着 5.4 秒返回 missing、运行永远
+    // 停在排队中；工作台关掉 91 秒正常跑完。后端那条已单独修（找不到就回库里捞），
+    // 但没有理由继续这样空转。
+    //
+    // 执行期间的动态由 SSE 推送承担，这里只负责收尾那一下。
+    if (document.hidden) return
+    if (!executionStarted.value && isRunSettled(activeRun.value?.status)) return
+    void refreshLiveState()
+  }, 3000)
 })
 
 watch(

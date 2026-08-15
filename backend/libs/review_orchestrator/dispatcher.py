@@ -27,7 +27,18 @@ def dispatch_existing_review_run(review_run: dict[str, Any]) -> dict[str, Any]:
     review_run["updatedAt"] = review_run.get("updatedAt") or review_run.get("createdAt")
     if mode == "inline":
         result = execute_review_run_inline(review_run["reviewRunId"])
-        return {"mode": mode, "status": "completed", "reviewRunId": review_run["reviewRunId"], "result": result}
+        # 这里原来写死 "completed"。于是执行体报 missing（运行根本没跑），
+        # 上层照样收到「已完成」——界面显示排队中，接口说成功，两边都不报错。
+        # 2026-08-15 线上就是这样把一串运行永久卡在 queued 而无人察觉的。
+        result_status = str((result or {}).get("status") or "")
+        started = result_status not in {"", "missing", "failed_to_start"}
+        return {
+            "mode": mode,
+            "status": "completed" if started else "failed_to_start",
+            "reviewRunId": review_run["reviewRunId"],
+            "result": result,
+            **({} if started else {"errorCode": f"REVIEW_RUN_{result_status.upper() or 'NOT_STARTED'}"}),
+        }
     if mode == "temporal":
         return start_temporal_workflow(review_run)
     review_run["status"] = "failed_to_start"

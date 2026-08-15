@@ -24,7 +24,7 @@ from libs.business_pack.clause_store import (
     review_run_clause_snapshot,
 )
 from libs.contracts.responses import server_time
-from libs.db.repository import flush_state_records, repo
+from libs.db.repository import flush_state_records, load_review_run_state, repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
@@ -1762,6 +1762,22 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
 def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
     ensure_review_state()
     review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one("review_runs", review_run_id)
+    if not review_run:
+        # 2026-08-15 线上实测：工作台开着（每 3 秒轮一次）时，这里必然找不到。
+        #
+        #   工作台开着：5.4s 返回 → status=missing → 运行永远停在 queued
+        #   工作台关掉：91.1s 返回 → waiting_human_review → 正常完成
+        #
+        # 并发请求做作用域加载时会**整体替换** repo.state["review_runs"] 这个列表。
+        # ai-recheck 刚把新运行插进内存、还没轮到执行，轮询把列表换掉，记录就没了。
+        #
+        # 建记录时已经落过库（create_review_run_from_ai_run 末尾那次 flush），
+        # 所以从库里捞回来即可——比起「让上游别并发」，这条更结实：
+        # 谁都可能在任何时刻触发一次重载。
+        load_review_run_state(review_run_id)
+        review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
+            "review_runs", review_run_id
+        )
     if not review_run:
         return {"reviewRunId": review_run_id, "status": "missing"}
     if review_run.get("status") in {"waiting_human_input", "waiting_human_review", *REVIEW_RUN_TERMINAL_STATUSES}:
