@@ -75,6 +75,7 @@ from libs.mineru_ocr import (
     normalize_mineru_zip,
     validated_zip_members,
 )
+from libs.seal_local_reader import read_seal_texts_locally
 from libs.seal_vision import read_seal_texts
 from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.ocr.profiles import profile_for
@@ -956,7 +957,15 @@ def _read_seal_texts_from_zip(
             for name, payload in validated_zip_members(zip_bytes).items()
             if name.lower().endswith((".png", ".jpg", ".jpeg"))
         }
-        summary = read_seal_texts(seals, images, client=qwen_runtime_client())
+        # 本地优先：印章图带着单位名，属于最不该随便出内网的内容，
+        # 本地模型跑在 ocr-service 容器里，图片不出这台机器。
+        # 云端只兜底本地读不出的那些——两条都失败就空着，绝不猜。
+        summary = read_seal_texts_locally(seals, images)
+        if summary.get("recognized", 0) == 0 and (
+            summary.get("illegible", 0) or summary.get("failed", 0)
+        ):
+            fallback = read_seal_texts(seals, images, client=qwen_runtime_client())
+            summary = {"local": summary, "visionFallback": fallback}
     except Exception:
         logging.getLogger(__name__).exception(
             "印章读字整体失败 jobId=%s", job.get("id")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 from base64 import urlsafe_b64decode
@@ -157,6 +158,33 @@ async def page_preview(request: Request, payload: dict):
             "X-AICheck-Page-Height": str(page.get("height") or ""),
         },
     )
+
+
+@app.post("/internal/ocr/seal-read")
+async def read_seal_crop(request: Request):
+    """读一张**已裁好的**印章图，返回章上的文字。
+
+    为什么单开一条：整份文档那条路要先有「印章用途」的候选切图才会把活派给
+    印章引擎，直接丢一张裁图进去会一路 skipped，理由是 no_routed_variant——
+    看起来像引擎坏了，其实是没派活。MinerU 已经把印章裁好了，这里直接调管线。
+
+    模型只在这个容器里，图片不出本机。
+    """
+    from libs.seal_local_reader import read_seal_image
+
+    body = await request.body()
+    if not body:
+        return fail(errors.VALIDATION_ERROR, request, message="印章图片内容不能为空。")
+    suffix = str(request.headers.get("X-AICheck-Seal-Suffix") or ".jpg")
+    try:
+        return ok(read_seal_image(body, suffix=suffix if suffix.startswith(".") else ".jpg"), request)
+    except Exception as exc:  # 读不出只是印章少个属性，不该把整条链路带崩
+        logging.getLogger(__name__).exception("印章读字失败")
+        return fail(
+            errors.EXTERNAL_TOOL_FAILED,
+            request,
+            message=f"印章识别失败：{type(exc).__name__}",
+        )
 
 
 @app.post("/internal/tools/ocr/welder-certificate/extract")
