@@ -4098,7 +4098,9 @@ export const deleteKnowledgeFileApi = (
 
 export const listKnowledgeFileChunksApi = (
   fileId: string,
-  params?: { page?: number; pageSize?: number },
+  // pageNo 是**原文页码**筛选，page 是分页页号——两个都叫 page 容易看串，
+  // 后端也是按这两个名字分开收的。
+  params?: { page?: number; pageSize?: number; pageNo?: number },
   options?: RequestHeaderOptions
 ): Promise<IResponse<PagePayload<KnowledgeChunk>>> => {
   return request.get({

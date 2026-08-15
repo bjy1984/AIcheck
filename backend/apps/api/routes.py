@@ -27475,7 +27475,19 @@ async def replace_knowledge_file_version(
 
 
 @router.get("/knowledge/files/{file_id}/chunks")
-def knowledge_file_chunks(request: Request, file_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
+def knowledge_file_chunks(
+    request: Request,
+    file_id: str,
+    page_no: int = Query(default=1, alias="page"),
+    page_size: int = Query(default=20, alias="pageSize"),
+    document_page: int | None = Query(default=None, alias="pageNo"),
+):
+    """`pageNo` 按原文页码筛切片，别和分页的 `page` 搞混。
+
+    证据定位对话框只要「条款所在那一页」的 OCR 文本。没有这个筛选，
+    前端就得把整份规范的切片全拉回来再自己挑——一份 TSG 上万条，
+    为了看一页正文传几兆，值不当。
+    """
     file_id = resolve_knowledge_file_id(file_id)
     file = repo.find_one("knowledge_files", file_id)
     if file:
@@ -27485,6 +27497,9 @@ def knowledge_file_chunks(request: Request, file_id: str, page_no: int = Query(d
         if scope_error:
             return scope_error
     chunks = [repo.clone(item) for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id]
+    if document_page is not None:
+        chunks = [item for item in chunks if int(item.get("pageNo") or 0) == int(document_page)]
+    chunks.sort(key=lambda item: (int(item.get("pageNo") or 0), int(item.get("chunkNo") or 0)))
     return ok(page(chunks, page_no, page_size), request)
 
 

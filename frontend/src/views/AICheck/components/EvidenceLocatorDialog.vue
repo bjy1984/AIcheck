@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElAlert, ElDescriptions, ElDescriptionsItem, ElDialog, ElEmpty, ElTag } from 'element-plus'
-import { getDocumentDetailApi, getDocumentOriginalBlobApi } from '@/api/aicheck'
-import type { DocumentDetailPayload } from '@/api/aicheck'
+import {
+  getDocumentDetailApi,
+  getDocumentOriginalBlobApi,
+  listKnowledgeFileChunksApi
+} from '@/api/aicheck'
+import type { DocumentDetailPayload, KnowledgeChunk } from '@/api/aicheck'
 import type { EvidenceLink, ExtractedField } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
@@ -152,6 +156,58 @@ const loadFilePreview = async () => {
   }
 }
 
+// ── 标准条款的 OCR 正文 ────────────────────────────────────────────
+//
+// 原来这个对话框对 knowledgeClause 只给一张 PDF：翻到第 N 页，
+// 条款正文一个字都不显示（quotedText 只在预览**加载不出来**时才露脸）。
+// 于是要么看图自己找，要么什么都看不到——正文在预览可用时反而被藏起来了。
+//
+// 这里把该页的 OCR 文本取回来放在右侧，和预览并排。
+
+const clauseChunks = ref<KnowledgeChunk[]>([])
+const clauseOcrLoading = ref(false)
+const clauseOcrError = ref('')
+let clauseOcrSeq = 0
+
+const knowledgeFileId = computed(() => {
+  const match = directPreviewUrl.value.match(/\/knowledge\/files\/([^/?#]+)/)
+  return match ? decodeURIComponent(match[1]) : ''
+})
+
+const clauseOcrText = computed(() =>
+  clauseChunks.value
+    .map((chunk) => String(chunk.text || '').trim())
+    .filter(Boolean)
+    .join('\n')
+)
+
+const clauseOcrEmptyText = computed(() => {
+  if (!knowledgeFileId.value) return '该条款没有关联规范库文件，取不到原文 OCR。'
+  if (!props.evidence?.pageNo) return '该条款没有记录页码，无法定位到具体某页的 OCR 文本。'
+  return `第 ${props.evidence.pageNo} 页没有 OCR 切片，可能这份规范尚未完成文本化。`
+})
+
+const loadClauseOcr = async () => {
+  const seq = ++clauseOcrSeq
+  clauseChunks.value = []
+  clauseOcrError.value = ''
+  if (props.evidence?.objectType !== 'knowledgeClause') return
+  const fileId = knowledgeFileId.value
+  const pageNo = Number(props.evidence?.pageNo || 0)
+  if (!fileId || pageNo <= 0) return
+  clauseOcrLoading.value = true
+  try {
+    const res = await listKnowledgeFileChunksApi(fileId, { pageNo, pageSize: 500 })
+    if (seq !== clauseOcrSeq) return
+    clauseChunks.value = res.data?.items || []
+  } catch (error) {
+    if (seq !== clauseOcrSeq) return
+    clauseOcrError.value = getAicheckErrorMessage(error, '条款原文 OCR 加载失败。')
+  } finally {
+    if (seq === clauseOcrSeq) clauseOcrLoading.value = false
+  }
+}
+
 const handlePreviewImageError = () => {
   previewError.value = '图片预览加载失败，请尝试下载后查看。'
 }
@@ -169,8 +225,13 @@ watch(
   ([open]) => {
     if (open) {
       void loadFilePreview()
+      void loadClauseOcr()
     } else {
       resetPreviewState()
+      clauseOcrSeq += 1
+      clauseChunks.value = []
+      clauseOcrError.value = ''
+      clauseOcrLoading.value = false
     }
   }
 )
@@ -214,7 +275,7 @@ onBeforeUnmount(() => {
         <strong>{{ evidence.fileName || '-' }}</strong>
       </div>
 
-      <div :class="['locator-grid', { 'is-standard': evidence.objectType === 'knowledgeClause' }]">
+      <div class="locator-grid">
         <section class="preview-box">
           <div class="preview-title">定位预览</div>
           <div
@@ -222,7 +283,8 @@ onBeforeUnmount(() => {
             class="clause-preview"
           >
             <strong>{{ evidence.objectId }}</strong>
-            <p>{{ evidence.quotedText || filePreviewUnavailableText }}</p>
+            <!-- 条款正文已经固定显示在右侧，这里只说明为什么没有原文图 -->
+            <p>{{ filePreviewUnavailableText }}</p>
           </div>
           <div v-else class="file-preview" v-loading="previewLoading">
             <ElAlert
@@ -267,7 +329,39 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-if="evidence.objectType !== 'knowledgeClause'" class="detail-box">
+        <section v-if="evidence.objectType === 'knowledgeClause'" class="detail-box">
+          <div class="preview-title">
+            条款原文<span v-if="evidence.pageNo" class="preview-subtitle">
+              · 第 {{ evidence.pageNo }} 页 OCR</span
+            >
+          </div>
+          <div class="detail-row">
+            <span>条款号</span>
+            <strong>{{ evidence.clauseNo || evidence.objectId || '-' }}</strong>
+          </div>
+          <div class="detail-row">
+            <span>标准</span>
+            <strong>{{ evidence.standardRef || '-' }}</strong>
+          </div>
+          <div v-if="evidence.quotedText" class="clause-quote">
+            <span>引用条款</span>
+            <p>{{ evidence.quotedText }}</p>
+          </div>
+          <div class="clause-ocr" v-loading="clauseOcrLoading">
+            <span>本页 OCR 文本</span>
+            <ElAlert
+              v-if="clauseOcrError"
+              :title="clauseOcrError"
+              type="warning"
+              :closable="false"
+              show-icon
+            />
+            <pre v-else-if="clauseOcrText">{{ clauseOcrText }}</pre>
+            <p v-else-if="!clauseOcrLoading" class="clause-ocr-empty">{{ clauseOcrEmptyText }}</p>
+          </div>
+        </section>
+
+        <section v-else class="detail-box">
           <div class="preview-title">提取信息</div>
           <div class="detail-row">
             <span>引用文本</span>
@@ -323,8 +417,52 @@ onBeforeUnmount(() => {
   gap: 14px;
 }
 
-.locator-grid.is-standard {
-  grid-template-columns: minmax(0, 1fr);
+.preview-subtitle {
+  font-weight: 400;
+  color: #667085;
+}
+
+.clause-quote,
+.clause-ocr {
+  padding: 9px 0;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.clause-quote span,
+.clause-ocr span {
+  display: block;
+  margin-bottom: 6px;
+  color: #667085;
+}
+
+.clause-quote p {
+  line-height: 1.7;
+  color: #1f2937;
+}
+
+.clause-ocr {
+  min-height: 60px;
+  border-bottom: none;
+}
+
+.clause-ocr pre {
+  max-height: 420px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #344054;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.clause-ocr-empty {
+  color: #667085;
 }
 
 .preview-box,
