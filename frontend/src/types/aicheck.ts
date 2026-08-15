@@ -373,7 +373,7 @@ export type ExtractedField = {
   fieldValue: string
   pageNo?: number
   confidence: number
-  reviewStatus: '未复核' | '已确认' | '已修正' | '低置信度'
+  reviewStatus: '未复核' | '已确认' | '已修正' | '低置信度' | '置信度未知'
   evidenceLinkId: string
 }
 

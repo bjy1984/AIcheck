@@ -73,7 +73,7 @@ const handleLocateById = (evidenceLinkId?: string) => {
             <div v-for="field in extractedFields" :key="field.id" class="field-item">
               <span>{{ field.fieldName }}</span>
               <strong>{{ field.fieldValue }}</strong>
-              <ElTag :type="field.reviewStatus === '低置信度' ? 'warning' : 'success'" size="small">
+              <ElTag :type="['低置信度', '置信度未知'].includes(field.reviewStatus) ? 'warning' : 'success'" size="small">
                 {{ formatConfidence(field.confidence) }}
               </ElTag>
             </div>

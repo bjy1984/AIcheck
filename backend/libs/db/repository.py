@@ -1928,6 +1928,18 @@ class InMemoryRepository:
         fields = normalize_fields(result)
         if not fields:
             fields = fields_from_fragments(result)
+        # 「引擎不报置信度」不等于「置信度低」。
+        #
+        # MinerU 的 VLM 通道逐片不给分数，适配层如实记了
+        # provider_confidence_unavailable，可数值仍然是 0.0；落到这里被
+        # `confidence >= 0.85` 一刀切成「低置信度」，结果是一整份许可证
+        # 每个字段都显示成可疑——线上实测 5/5 全中。
+        # 审查员看到满屏低置信度，要么逐条人工复核（白费工），
+        # 要么开始无视这个标记（那它就再也不起作用了）。
+        # 标成「置信度未知」：既不冒充已确认，也不诬告识别质量。
+        confidence_unavailable = "provider_confidence_unavailable" in (
+            ((result.get("quality") or {}).get("reasons") or [])
+        )
         for index, field in enumerate(fields, start=1):
             field_id = f"FIELD-{version_id}-{index}"
             evidence_id = f"EV-{version_id}-{index}"
@@ -1943,7 +1955,13 @@ class InMemoryRepository:
                     "bbox": field.get("bbox"),
                     "confidence": confidence,
                     "extractionMethod": field.get("extractionMethod") or "PaddleOCR+seal",
-                    "reviewStatus": "已确认" if confidence >= 0.85 else "低置信度",
+                    "reviewStatus": (
+                        "已确认"
+                        if confidence >= 0.85
+                        else "置信度未知"
+                        if confidence_unavailable
+                        else "低置信度"
+                    ),
                     "evidenceLinkId": evidence_id,
                 }
             )

@@ -442,25 +442,32 @@ const structuredLocatables = computed<LocatableItem[]>(() => [
  *   根本没数值   —— 管线没产出这个指标，可信度未知，得回原文重核。
  * 合并成一句话说清楚，比并排两个矛盾标签强。 */
 const LOW_CONFIDENCE_STATUS = '低置信度'
+/* 后端现在会区分二者：引擎给了低分是「低置信度」，引擎压根不报分数是
+ * 「置信度未知」（MinerU 的 VLM 通道逐片不给分）。这里两者同属一族，
+ * 都要走下面这套合成陈述，否则「置信度未知」会既进复核状态标签、
+ * 又在旁边显示「未提供置信度」——又变回两个标签说同一件事。 */
+const UNKNOWN_CONFIDENCE_STATUS = '置信度未知'
+const CONFIDENCE_FLAG_STATUSES = [LOW_CONFIDENCE_STATUS, UNKNOWN_CONFIDENCE_STATUS]
 
 const confidenceSummary = (item: LocatableItem) => {
   const hasValue = typeof item.confidence === 'number' && item.confidence > 0
   const isLow = item.status === LOW_CONFIDENCE_STATUS
   if (hasValue)
     return isLow ? `低置信度 ${confidenceText(item.confidence)}` : confidenceText(item.confidence)
-  return isLow ? '置信度未知 · 需回原文核对' : '未提供置信度'
+  if (isLow || item.status === UNKNOWN_CONFIDENCE_STATUS) return '置信度未知 · 需回原文核对'
+  return '未提供置信度'
 }
 
 /** 置信度未知比「低」更需要提醒——低还有个数，未知是完全不知道。 */
 const confidenceTone = (item: LocatableItem) => {
   const hasValue = typeof item.confidence === 'number' && item.confidence > 0
-  if (item.status !== LOW_CONFIDENCE_STATUS) return ''
-  return hasValue ? 'is-low' : 'is-unknown'
+  if (!CONFIDENCE_FLAG_STATUSES.includes(String(item.status))) return ''
+  return hasValue && item.status === LOW_CONFIDENCE_STATUS ? 'is-low' : 'is-unknown'
 }
 
 /** 复核状态标签：低置信度已并入置信度那句，不再重复。 */
 const reviewStatusLabel = (item: LocatableItem) =>
-  item.status && item.status !== LOW_CONFIDENCE_STATUS ? item.status : ''
+  item.status && !CONFIDENCE_FLAG_STATUSES.includes(String(item.status)) ? item.status : ''
 
 const activeLocatable = computed(() =>
   [...locatableItems.value, ...structuredLocatables.value].find(

@@ -17533,12 +17533,21 @@ def fde_project_quality_blockers(project_id: str, node_id: int | None = None) ->
     for field in repo.state.get("extracted_fields", []):
         if str(field.get("documentVersionId")) not in version_ids:
             continue
-        if float(field.get("confidence") or 0) < 0.85 or field.get("reviewStatus") == "低置信度":
+        if float(field.get("confidence") or 0) < 0.85 or field.get("reviewStatus") in {
+            "低置信度",
+            "置信度未知",
+        }:
             blockers.append(
                 {
                     "type": "ocr-field",
                     "level": "warning",
-                    "title": "低置信字段需要复核",
+                    # 两种成因要分开说：引擎说它没把握，和引擎压根不给分数，
+                    # 处理方式不同——前者要核对识别对不对，后者是核对有没有别的佐证。
+                    "title": (
+                        "置信度未知字段需要复核"
+                        if field.get("reviewStatus") == "置信度未知"
+                        else "低置信字段需要复核"
+                    ),
                     "targetId": field.get("id"),
                     "targetName": field.get("fieldName"),
                     "action": "修正字段值或 bbox 后入评估集",
@@ -20314,7 +20323,10 @@ def fde_project_audit_summary(project: dict[str, Any]) -> dict[str, Any]:
         item
         for item in repo.state.get("extracted_fields", [])
         if str(item.get("documentVersionId")) in version_ids
-        and (float(item.get("confidence") or 0) < 0.85 or item.get("reviewStatus") == "低置信度")
+        and (
+            float(item.get("confidence") or 0) < 0.85
+            or item.get("reviewStatus") in {"低置信度", "置信度未知"}
+        )
     ]
     vector_quality = fde_project_vector_quality(documents, review_runs)
     metrics = {

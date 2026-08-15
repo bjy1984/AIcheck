@@ -1783,7 +1783,9 @@ const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
     },
     {
       title: '字段与证据识别',
-      conclusion: extractedFields.value.some((field) => field.reviewStatus === '低置信度')
+      conclusion: extractedFields.value.some((field) =>
+        ['低置信度', '置信度未知'].includes(field.reviewStatus)
+      )
         ? '需人工确认'
         : extractedFields.value.length
           ? '通过'
@@ -1834,7 +1836,9 @@ const reviewChainSteps = computed(() => {
       tags: extractedFields.value
         .slice(0, 2)
         .map((field) => `${field.fieldName} ${formatConfidence(field.confidence)}`),
-      result: extractedFields.value.some((field) => field.reviewStatus === '低置信度')
+      result: extractedFields.value.some((field) =>
+        ['低置信度', '置信度未知'].includes(field.reviewStatus)
+      )
         ? '需人工确认'
         : '通过'
     },
