@@ -737,6 +737,13 @@ const handleStartReview = async () => {
   reviewStarting.value = true
   executionStarted.value = true
   activityExpanded.value = true
+  // ai-recheck 是**同步执行整场审查**的一次 POST，实测要跑好几分钟。
+  // 在这几分钟里原来页面上什么都不动：没有进度、没有步骤、没有事件——
+  // 监检不知道是在跑、卡住了、还是已经挂了，只能干等。
+  //
+  // 聊天路径早就有现成的执行动态（SSE 推送 + 轮询兜底，事件流里会合并
+  // ReviewRun 事件），这里只是从来没接上。
+  startLiveAgentTrace()
   try {
     const res = await requestAiRecheckApi(
       activeProjectId.value,
@@ -765,6 +772,7 @@ const handleStartReview = async () => {
   } catch (error) {
     ElMessage.error(getAicheckErrorMessage(error, `${modeLabel}发起失败。`))
   } finally {
+    stopLiveAgentTrace()
     actionLoading.value = false
     reviewStarting.value = false
     activityExpanded.value = false
