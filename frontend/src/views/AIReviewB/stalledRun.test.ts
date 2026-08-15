@@ -42,3 +42,25 @@ assert.ok(
 )
 
 console.log('Stalled run contract passed')
+
+// ── 必须用服务端时钟比，不能用浏览器本地时间 ──────────────────────
+//
+// 实测：服务器写的是 `2026-08-15 13:56:11`（**不带时区**），而浏览器在
+// GMT-0700、当时 09:40。按本地时区解析后，这条运行「在 256 分钟之后」——
+// 差值为负，任何「已经过去多久」的判断都失效，转圈照样停不下来。
+//
+// 这不只影响停滞判断：界面上所有时间对不在服务器时区的用户都是偏的。
+assert.ok(sfc.includes('const serverNow'), '没有引入服务端时钟')
+assert.ok(
+  /serverNow\.value - at > STALE_RUN_AFTER_MS/.test(sfc),
+  '还在拿浏览器时间和服务端时间戳相减'
+)
+assert.ok(sfc.includes('const fetchWorkspace'), '取工作区没有统一入口')
+// 统一入口的意义就在于「不会漏更新」——散着调迟早漏一处
+assert.equal(
+  (sfc.match(/getReviewBWorkspaceApi\(/g) || []).length,
+  1,
+  '还有绕过统一入口直接取工作区的地方，那条路径上服务端时钟不会更新'
+)
+
+console.log('Server clock contract passed')

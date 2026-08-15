@@ -255,19 +255,31 @@ const runStatus = computed(() => String(activeRun.value?.status || '未发起'))
  */
 const STALE_RUN_AFTER_MS = 10 * 60 * 1000
 
-const runLastActivityAt = computed(() => {
-  const raw = String(activeRun.value?.updatedAt || activeRun.value?.createdAt || '').trim()
+/** 服务端时钟。响应里的时间戳**不带时区**，拿浏览器本地时间去比会算出荒谬的结果。
+ *
+ * 实测：服务器写的是 `2026-08-15 13:56:11`，而浏览器在 GMT-0700 且当时是 09:40，
+ * 按本地时区解析后这条运行「在 256 分钟之后」——差值为负，任何「过去多久」的
+ * 判断都失效。两边都用服务端时钟，时区差自然抵消。
+ */
+const serverNow = ref(0)
+
+const parseServerTimestamp = (value?: string | null) => {
+  const raw = String(value || '').trim()
   if (!raw) return 0
   const parsed = new Date(raw.replace(' ', 'T')).getTime()
   return Number.isNaN(parsed) ? 0 : parsed
-})
+}
+
+const runLastActivityAt = computed(() =>
+  parseServerTimestamp(activeRun.value?.updatedAt || activeRun.value?.createdAt)
+)
 
 /** 这条运行看着在跑，其实已经很久没动了。 */
 const runLooksStalled = computed(() => {
   if (!['queued', 'running', 'resuming', '推理中'].includes(runStatus.value)) return false
   const at = runLastActivityAt.value
-  if (!at) return false
-  return Date.now() - at > STALE_RUN_AFTER_MS
+  if (!at || !serverNow.value) return false
+  return serverNow.value - at > STALE_RUN_AFTER_MS
 })
 const canSubmitReviewOpinion = computed(() =>
   canSubmitFinalConclusion(workspace.value?.permissions, runStatus.value)
@@ -699,13 +711,19 @@ const ensureSession = async () => {
     },
     { idempotencyKey: `review-session-${activeProjectId.value}-${activeNodeId.value}` }
   )
-  workspace.value = (
-    await getReviewBWorkspaceApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      String(route.query.reviewRunId || '') || undefined
-    )
-  ).data
+  workspace.value = await fetchWorkspace(String(route.query.reviewRunId || '') || undefined)
+}
+
+/** 取工作区，并顺手把服务端时钟对上。
+ *
+ * 直接调 getReviewBWorkspaceApi 的地方有两处，各自记得更新时钟迟早会漏一个——
+ * 漏掉的那条路径上，「运行停了多久」就又变回拿浏览器时间去比。
+ */
+const fetchWorkspace = async (reviewRunId?: string) => {
+  const res = await getReviewBWorkspaceApi(activeProjectId.value, activeNodeId.value, reviewRunId)
+  const stamp = parseServerTimestamp((res as { serverTime?: string }).serverTime)
+  if (stamp) serverNow.value = stamp
+  return res.data
 }
 
 const loadNodeWorkspace = async (reset = true) => {
@@ -718,13 +736,7 @@ const loadNodeWorkspace = async (reset = true) => {
     reviewOpinion.value = ''
   }
   try {
-    workspace.value = (
-      await getReviewBWorkspaceApi(
-        activeProjectId.value,
-        activeNodeId.value,
-        String(route.query.reviewRunId || '') || undefined
-      )
-    ).data
+    workspace.value = await fetchWorkspace(String(route.query.reviewRunId || '') || undefined)
     await ensureSession()
     await Promise.all([loadSessionData(reset), loadAuditView()])
     if (reset) await updateRouteQuery()
@@ -792,13 +804,7 @@ const refreshLiveState = async () => {
   polling.value = true
   try {
     const previousRunId = activeRunId.value
-    workspace.value = (
-      await getReviewBWorkspaceApi(
-        activeProjectId.value,
-        activeNodeId.value,
-        previousRunId || undefined
-      )
-    ).data
+    workspace.value = await fetchWorkspace(previousRunId || undefined)
     await ensureSession()
     await Promise.all([loadSessionData(false), loadAuditView()])
     pageError.value = ''
