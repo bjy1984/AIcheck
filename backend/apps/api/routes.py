@@ -3610,6 +3610,25 @@ def safe_ai_run_view(run: dict[str, Any]) -> dict[str, Any]:
     # 证据被裁减过就要说出来。悄悄少送几份、模型照常给结论，是这轮审计里
     # 反复出现的那类最贵的失败——看起来一切正常。
     review_run = linked_review_run(run) or {}
+    # 对账：ai_run 说「推理中」而它的 ReviewRun 早已终结，就按 ReviewRun 的实况显示。
+    #
+    # 线上实测（2026-08-16）：节点 24 的 ReviewRun 9 秒 failed，ai_run 却一直
+    # 停在「推理中」——全库 80 条里有 15 条这样，界面于是永远「执行中 3/7」，
+    # 刷新也不变。写侧的漏回写已经修了（resolve_ai_run 找不到会出声），
+    # 但**已经卡住的这些记录不会自己好**，读侧不兜住就还会继续骗人。
+    #
+    # 只改展示，不改库：库里那份是执行留痕，事后追责要看原样。
+    settled = {
+        "failed": "失败",
+        "failed_to_start": "失败",
+        "completed": "完成",
+        "waiting_human_review": "待人工确认",
+        "waiting_human_input": "待人工确认",
+        "canceled": "已取消",
+    }.get(str(review_run.get("status") or "").lower())
+    if settled and str(view.get("status") or "") in {"推理中", "queued", "running", "等待重试"}:
+        view["status"] = settled
+        view["statusReconciledFrom"] = "reviewRun"
     budget = review_run.get("evidenceBudget")
     if isinstance(budget, dict) and budget.get("truncated"):
         view["evidenceBudget"] = repo.clone(budget)

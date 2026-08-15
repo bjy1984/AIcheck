@@ -254,6 +254,57 @@ def review_failure_retryable(exc: Exception) -> bool:
     return isinstance(exc, (ConnectionError, TimeoutError, OSError, RuntimeError))
 
 
+def resolve_ai_run(
+    review_run: dict[str, Any],
+    *,
+    allow_reload: bool = False,
+) -> dict[str, Any] | None:
+    """取这次 ReviewRun 对应的 ai_run，取不到就出声。
+
+    线上实测（2026-08-16）：节点 24 的 ReviewRun 9 秒就 failed，而它的 ai_run
+    至今停在「推理中」——全库 80 条 ai_run 里有 15 条这样。界面于是永远显示
+    「执行中 3/7」，刷新也不变，因为**数据本身就停在那里**。
+
+    成因是收尾时 `repo.find_one("ai_runs", ...)` 返回 None，随后的
+    `if ai_run:` 就把整段状态回写跳过了。而 find_one 返回 None 未必是记录不存在，
+    也可能是并发的作用域加载把进程内那份 ai_runs 列表换成了另一批——
+    这个坑在 review_runs 上已经付过一次学费。
+
+    所以这里：内存里找不到就按 ReviewRun 作用域重新加载再找一次；
+    还找不到就 **logging.exception**。静默跳过等于让运行永远「执行中」，
+    而没有任何人会收到通知。
+    """
+    ai_run_id = str(review_run.get("aiRunId") or "").strip()
+    if not ai_run_id:
+        return None
+    # 查一次；内存里没有且允许重载时，按作用域重载后再查同一处。
+    # 写成循环而不是「查—重载—再查」，是为了只留一处直连状态访问——
+    # 架构棘轮盯着这个计数，为了省事把上限抬高，等于把闸门卸了。
+    for attempt in (0, 1):
+        ai_run = repo.find_one("ai_runs", ai_run_id)
+        if ai_run is not None:
+            return ai_run
+        if attempt or not allow_reload:
+            break
+        try:
+            load_review_run_state(
+                str(review_run.get("reviewRunId") or review_run.get("id") or "")
+            )
+        except Exception:
+            logging.exception("重新加载 ReviewRun 作用域失败 aiRunId=%s", ai_run_id)
+            return None
+    if allow_reload:
+        logging.exception(
+            "收尾时找不到 ai_run，状态无法回写，界面会一直显示执行中 aiRunId=%s", ai_run_id
+        )
+    else:
+        # API 请求路径里不能重载：作用域加载会把这次请求正在改的记录整批换掉，
+        # 请求随后按旧对象提交，报的却是幂等冲突——查起来完全指不到这里。
+        # 实测被 test_review_run_terminal_mutation... 逮到过一次。
+        logging.warning("内存中找不到 ai_run（不重载）aiRunId=%s", ai_run_id)
+    return None
+
+
 def mark_review_run_retry_exhausted(review_run_id: str) -> dict[str, Any] | None:
     review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
         "review_runs", review_run_id
@@ -272,7 +323,7 @@ def mark_review_run_retry_exhausted(review_run_id: str) -> dict[str, Any] | None
         status="failed",
         details={"errorCode": "REVIEW_RETRY_EXHAUSTED"},
     )
-    ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or ""))
+    ai_run = resolve_ai_run(review_run, allow_reload=True)
     if ai_run:
         ai_run["status"] = "失败"
         ai_run["errorCode"] = "REVIEW_RETRY_EXHAUSTED"
@@ -1632,7 +1683,7 @@ def apply_r12_human_input_for_review_run(
     if result.get("status") != "applied":
         return result
     bump_review_run_revision(review_run)
-    ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or ""))
+    ai_run = resolve_ai_run(review_run)
     if ai_run:
         ai_run["status"] = "推理中"
     append_review_event(
@@ -1694,7 +1745,7 @@ def apply_review_human_input_for_review_run(
         if result.get("status") != "applied":
             return result
         bump_review_run_revision(review_run)
-        ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or ""))
+        ai_run = resolve_ai_run(review_run)
         if ai_run:
             ai_run["status"] = "推理中"
         append_review_event(
@@ -1811,7 +1862,7 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
     repo.pin_object(REVIEW_RUN_COLLECTION_NAME, review_run_id)
     if review_run.get("status") in {"waiting_human_input", "waiting_human_review", *REVIEW_RUN_TERMINAL_STATUSES}:
         return {"reviewRunId": review_run_id, "status": review_run.get("status"), "alreadyCompleted": True}
-    ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId")))
+    ai_run = resolve_ai_run(review_run, allow_reload=True)
     if is_r12_formal_review(review_run):
         candidates = extract_r12_license_candidates(repo.state, review_run)
         completed_for_input = any(
@@ -4119,7 +4170,7 @@ def confirmed_findings_for_human_decision(
         # An edited claim must never inherit previously validated references without
         # re-grounding. Re-run every evidence/rule/KB gate even when the user keeps
         # the original reference arrays unchanged.
-        ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId") or "")) or {}
+        ai_run = resolve_ai_run(review_run) or {}
         evidence_links = review_run.get("evidenceLinks") or ai_run.get("evidenceLinks") or [
             item
             for item in repo.state.get("node_evidence_links", [])
@@ -4229,7 +4280,7 @@ def human_decision_for_review_run(
             confirmed_findings=confirmed_findings,
             human_edited=decision == "edit",
         )
-    ai_run = repo.find_one("ai_runs", str(review_run.get("aiRunId")))
+    ai_run = resolve_ai_run(review_run)
     if ai_run:
         ai_run["status"] = "已人工确认" if decision in {"accept", "edit"} else "已驳回"
     return {"status": review_run["status"], "reviewRun": review_run, "feedback": feedback}
