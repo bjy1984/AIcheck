@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 from typing import Any
@@ -1751,8 +1752,11 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             records = review_run_state_records(review_run_id)
             if records:
                 flush_state_records(records)
-        except Exception:  # noqa: BLE001 - 落库尽力而为，不遮盖主流程结果
-            pass
+        except Exception:  # noqa: BLE001 - 落库尽力而为，不掀翻已跑完的结果
+            # 但必须留下声音。第一版这里是 `pass`，结果把真正的根因盖了整整一轮：
+            # flush 抛在 ai_runs 上（别的进程改过那条），事务回滚，
+            # review_runs 跟着一起没落库——界面永远显示排队中，日志里一个字都没有。
+            logging.getLogger(__name__).exception("ReviewRun %s 落库失败", review_run_id)
 
 
 def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:

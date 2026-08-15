@@ -2763,6 +2763,27 @@ class InMemoryRepository:
                 f"Concurrent persistence update detected for {key[0]}/{key[1]}; reload before retrying."
             )
 
+    def unchanged_since_baseline(self, key: tuple[str, str], payload: str) -> bool:
+        """这条记录本次没被改过，因此没有任何内容需要写。
+
+        作用域 flush（review_run_state_records 之类）交上来的是**整个聚合**，
+        里面混着这次根本没动过的共享记录——最典型的是 ai_runs：
+        执行期间 worker 进程会写它。于是出现这样一条链：
+
+            我们加载 ai_run（记下 baseline）
+              → worker 改了库里的 ai_run
+              → 我们 flush，批次里捎带着那条没改过的 ai_run
+              → baseline 与库里对不上 → ConcurrentPersistenceError
+              → **整个事务回滚**，审查运行的完成状态一起没了
+
+        2026-08-15 实测就是这么丢的：接口返回 waiting_human_review，
+        库里永远停在 queued。冲突记录是 ai_runs，被牺牲的是 review_runs——
+        **报错的和丢数据的不是同一条记录**，这也是它难查的原因。
+
+        没改过就不写，冲突自然不成立；真改过还撞上，守卫照旧拦。
+        """
+        return self._persistence_baseline.get(key) == payload
+
     def prepare_audit_records_for_postgres_transaction(
         self,
         records_by_state_key: dict[str, list[dict[str, Any]]],
@@ -4130,6 +4151,8 @@ class InMemoryRepository:
                         object_id = self.persistence_object_id(collection_name, doc, index)
                         key = (collection_name, object_id)
                         payload = self.canonical_persistence_payload(doc)
+                        if self.unchanged_since_baseline(key, payload):
+                            continue
                         row = self.sync_postgres.execute(
                             "SELECT payload FROM aicheck_state WHERE tenant_id = %s AND collection = %s AND object_id = %s FOR UPDATE",
                             (tenant_id, collection_name, object_id),
@@ -4217,6 +4240,8 @@ class InMemoryRepository:
                     object_id = self.persistence_object_id(collection_name, doc, index)
                     key = (collection_name, object_id)
                     payload = self.canonical_persistence_payload(doc)
+                    if self.unchanged_since_baseline(key, payload):
+                        continue
                     row = connection.execute(
                         "SELECT payload FROM aicheck_state WHERE tenant_id = ? AND collection = ? AND object_id = ?",
                         (tenant_id, collection_name, object_id),
