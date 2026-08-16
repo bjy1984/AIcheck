@@ -43,9 +43,12 @@ def test_读出来就写进印章并标注来源():
     assert summary["recognized"] == 1
     assert seals[0]["sealName"] == "贵州化工建设有限责任公司"
     assert seals[0]["text"] == seals[0]["sealName"], "structured_seals 读的是 sealName/text"
-    assert seals[0]["recognized"] is True
     assert seals[0]["recognitionSource"] == "local_seal_model"
     assert seals[0]["ocrConfidence"] == 0.93
+    # 本地读数同样只是候选。实测 0.978 的那次漏字、0.877 的那次错字——
+    # 分数高低跟字对不对没有稳定关系，本地不比云端更可信，只是不出内网。
+    assert seals[0]["recognized"] is False
+    assert seals[0]["requiresHumanConfirmation"] is True
 
 
 def test_读不出就空着():
@@ -171,6 +174,7 @@ def test_逐页扫描按页判重():
     added = next(x for x in seals if x["pageNo"] == 1)
     assert added["sealName"] == "封面漏掉的章"
     assert added["recognitionSource"] == "local_seal_model"
+    assert added["recognized"] is False and added["requiresHumanConfirmation"] is True
     blank = next(x for x in seals if x["pageNo"] == 5)
     assert blank["recognized"] is False
     assert "请对照原图确认" in blank["recognitionNote"], "检出但没读出也要说清楚"
@@ -198,3 +202,15 @@ def test_触发判据看可信识别而不是有没有文字():
     source = inspect.getsource(tasks._scan_missed_seal_pages)
     assert 'item.get("recognized") is True' in source, "要按可信识别判，不能按有没有文字判"
     assert "seal_scan_enabled" in source, "要能关掉——每页几秒 CPU"
+
+
+def test_扫描路径也要走分数下限():
+    """线上实测 0.268 分的「建汉经地板」被当成读数写进证据。
+
+    下限原先只写在 read_seal_image 里，逐页扫描那条路绕过了它——
+    **同一条规则写在两处、只生效一处**，是这轮反复出现的形态。
+    """
+    import inspect
+
+    source = inspect.getsource(seal_local_reader._detect_seals_on_image)
+    assert "_MIN_SEAL_SCORE" in source, "扫描路径没有分数下限"

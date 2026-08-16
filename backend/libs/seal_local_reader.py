@@ -185,7 +185,13 @@ def _detect_seals_on_image(payload: bytes) -> list[dict[str, Any]]:
                 if position < len(seal_texts):
                     item = seal_texts[position]
                     pairs = list(zip(item.get("rec_texts") or [], item.get("rec_scores") or []))
-                    named = [(t, float(sc)) for t, sc in pairs if looks_like_seal_name(str(t))]
+                    # 分数下限这条也要走——之前只在 read_seal_image 里有，
+                    # 扫描这条路绕过了它，于是 0.268 分的「建汉经地板」被当成读数。
+                    named = [
+                        (t, float(sc))
+                        for t, sc in pairs
+                        if looks_like_seal_name(str(t)) and float(sc) >= _MIN_SEAL_SCORE
+                    ]
                     if named:
                         text, score = max(named, key=lambda pair: pair[1])
                 results.append(
@@ -283,9 +289,11 @@ def merge_scanned_seals(
                     "sealName": text,
                     "name": text,
                     "text": text,
-                    "recognized": True,
+                    "recognized": False,
+                    "requiresHumanConfirmation": True,
+                    "recognitionNote": "逐页扫描读数，未经核对，请对照原图确认单位名",
                     "ocrConfidence": item.get("score"),
-                    "sealEvidenceLevel": "model_read",
+                    "sealEvidenceLevel": "model_read_unverified",
                 }
             )
             summary["recognizedByScan"] += 1
@@ -358,10 +366,20 @@ def read_seal_texts_locally(
         seal["sealName"] = outcome["text"]
         seal["name"] = outcome["text"]
         seal["text"] = outcome["text"]
-        seal["recognized"] = True
+        # **模型读数一律是候选，不是已识别。**
+        #
+        # 证据（2026-08-16，真实素材）：
+        #   0.978 「中华人共和国国家质量监督检验检疫总局」——漏了「民」
+        #   0.877 「珠海经济技术开发区灵采五金店」——「灵采」应为「灵彩」
+        #   0.821 「海经济技术开发区灵彩区会店」——丢了「珠」，后半段乱码
+        #   0.963 「C33520」——底弧编号，压根不是单位名
+        # 分数高低跟字对不对没有稳定关系。本地不比云端更可信，
+        # 只是它不出内网；两者都只能作候选，由人对照原图确认。
+        seal["recognized"] = False
+        seal["requiresHumanConfirmation"] = True
+        seal["recognitionNote"] = "本地模型读数，未经核对，请对照原图确认单位名"
         seal["recognitionSource"] = "local_seal_model"
-        # 这是模型自报的置信度，不是逐字正确率——实测 0.978 的那次漏了一个字。
         seal["ocrConfidence"] = outcome["score"]
-        seal["sealEvidenceLevel"] = seal.get("sealEvidenceLevel") or "model_read"
+        seal["sealEvidenceLevel"] = "model_read_unverified"
         summary["recognized"] += 1
     return summary
