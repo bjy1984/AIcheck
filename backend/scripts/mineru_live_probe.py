@@ -211,8 +211,14 @@ def main() -> int:
             print(f"表格数：{len(structured.get('tables') or [])}")
             seals = structured.get("seals") or []
             print(f"印章数：{len(seals)}")
-            for seal in seals[:5]:
-                print(f"  印章：{seal.get('text') or seal.get('content') or seal}")
+            for seal in seals[:8]:
+                print(
+                    f"  印章 p{seal.get('pageNo')}"
+                    f" 识别={'是' if seal.get('recognized') else '否'}"
+                    f" 来源={seal.get('recognitionSource') or seal.get('evidenceLevel') or '-'}"
+                    f" 分数={seal.get('confidence')}"
+                    f" 文字={seal.get('name') or seal.get('text') or '(空)'}"
+                )
             for field in fields[:8]:
                 print(
                     f"  字段：{field.get('fieldName')}"

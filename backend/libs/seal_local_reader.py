@@ -68,6 +68,20 @@ def _pipeline():
 _PIPELINE: Any = None
 
 
+def looks_like_seal_name(text: str) -> bool:
+    """像不像一个单位名/印章名。
+
+    印章上通常是「XX有限公司」「XX监督管理局」这类中文名，中间可能夹编号。
+    只有字母数字的碎片（"C33520"、"2021"）是底弧上的编号被单独框出来了，
+    不能当成印章文字——它对核验没有用，却会让人以为这枚章已经认出来了。
+    """
+    value = str(text or "").strip()
+    if len(value) < 4:
+        return False
+    han = sum(1 for ch in value if "\u4e00" <= ch <= "\u9fff")
+    return han >= 4
+
+
 def read_seal_image(payload: bytes, *, suffix: str = ".jpg") -> dict[str, Any]:
     """读一张印章图。返回 {text, score, ok}；读不出就 ok=False，不猜。"""
     tmp_path = ""
@@ -94,6 +108,19 @@ def read_seal_image(payload: bytes, *, suffix: str = ".jpg") -> dict[str, Any]:
         if scores[best] < _MIN_SEAL_SCORE:
             # 分数太低时宁可空着。印章认错一个单位名，比没认出来危险得多。
             return {"ok": False, "text": "", "score": scores[best]}
+        if not looks_like_seal_name(texts[best]):
+            # **高分不等于内容对。** 线上实测：射线检测报告第 4 页的章读出
+            # "C33520"、分数 0.963——那是印章底弧上的编号碎片，不是单位名，
+            # 却会以「印章文字」的身份进入证据链。监检看到这一条，
+            # 既核不出单位，也不会怀疑它是错的，因为它带着 0.96 的分数。
+            # 认不出全名就交回人工，别拿碎片充数。
+            return {
+                "ok": False,
+                "text": "",
+                "score": scores[best],
+                "rejected": texts[best],
+                "reason": "seal_text_not_a_name",
+            }
         return {"ok": True, "text": texts[best], "score": scores[best]}
     finally:
         if tmp_path:
@@ -170,8 +197,15 @@ def read_seal_texts_locally(
         if not outcome["ok"]:
             seal["recognized"] = False
             seal["recognitionSource"] = "local_seal_model"
-            seal["recognitionNote"] = "本地模型未能读出印章文字"
+            seal["recognitionNote"] = (
+                f"本地模型读到「{outcome['rejected']}」，不像单位名，未采用"
+                if outcome.get("rejected")
+                else "本地模型未能读出印章文字"
+            )
             summary["illegible"] += 1
+            # 逐枚记下来，供云端兜底只补这些——原先是「整份一枚都没读出才兜底」，
+            # 于是一份 4 枚章的报告里只要有 1 枚读出来，另外 3 枚就再没机会。
+            summary.setdefault("pendingSealIds", []).append(str(seal.get("sealId") or ""))
             continue
         seal["sealName"] = outcome["text"]
         seal["name"] = outcome["text"]

@@ -961,9 +961,11 @@ def _read_seal_texts_from_zip(
         # 本地模型跑在 ocr-service 容器里，图片不出这台机器。
         # 云端只兜底本地读不出的那些——两条都失败就空着，绝不猜。
         summary = read_seal_texts_locally(seals, images)
-        if summary.get("recognized", 0) == 0 and (
-            summary.get("illegible", 0) or summary.get("failed", 0)
-        ):
+        # 逐枚兜底，不是整份兜底。原先写的是「一枚都没读出才兜底」——
+        # 线上实测一份 4 枚章的射线检测报告里读出 1 枚，另外 3 枚就再没机会，
+        # 而它们恰恰是压字、倾斜那些真正需要另一双眼睛的。
+        # read_seal_texts 自己会跳过已有文字的章，所以直接整份交给它即可。
+        if summary.get("illegible", 0) or summary.get("failed", 0):
             fallback = read_seal_texts(seals, images, client=qwen_runtime_client())
             summary = {"local": summary, "visionFallback": fallback}
     except Exception:

@@ -107,3 +107,47 @@ def test_低分不写值():
     source = inspect.getsource(seal_local_reader.read_seal_image)
     assert "_MIN_SEAL_SCORE" in source, "没有置信度下限，低分结果会被当成事实写进证据"
     assert seal_local_reader._MIN_SEAL_SCORE > 0
+
+
+def test_编号碎片不算印章文字():
+    """线上实测：射线检测报告第 4 页读出 "C33520"、分数 0.963。
+
+    那是印章底弧上的编号被单独框出来了，不是单位名。**高分不等于内容对**——
+    监检看到这一条既核不出单位，也不会怀疑它错，因为它带着 0.96 的分数。
+    """
+    seals = [_seal()]
+    summary = seal_local_reader.read_seal_texts_locally(
+        seals,
+        IMAGES,
+        reader=lambda p, suffix=".jpg": {
+            "ok": False,
+            "text": "",
+            "score": 0.963,
+            "rejected": "C33520",
+            "reason": "seal_text_not_a_name",
+        },
+    )
+    assert summary["illegible"] == 1
+    assert not seals[0].get("sealName")
+    assert "C33520" in seals[0]["recognitionNote"], "要说清模型读到了什么却没采用"
+
+
+def test_像单位名的才算():
+    assert seal_local_reader.looks_like_seal_name("贵州化工建设有限责任公司")
+    assert seal_local_reader.looks_like_seal_name("国家市场监督管理总局")
+    assert not seal_local_reader.looks_like_seal_name("C33520")
+    assert not seal_local_reader.looks_like_seal_name("2021")
+    assert not seal_local_reader.looks_like_seal_name("章")
+    assert not seal_local_reader.looks_like_seal_name("")
+
+
+def test_读不出的章要逐枚登记():
+    """云端兜底要按枚补，不能因为同一份里有一枚读出来就放弃其余的。"""
+    seals = [_seal(), {**_seal(), "sealId": "S2"}]
+    summary = seal_local_reader.read_seal_texts_locally(
+        seals,
+        IMAGES,
+        reader=lambda p, suffix=".jpg": {"ok": False, "text": "", "score": 0.1},
+    )
+    assert summary["illegible"] == 2
+    assert len(summary.get("pendingSealIds") or []) == 2
