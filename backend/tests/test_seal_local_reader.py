@@ -151,3 +151,36 @@ def test_读不出的章要逐枚登记():
     )
     assert summary["illegible"] == 2
     assert len(summary.get("pendingSealIds") or []) == 2
+
+
+def test_逐页扫描按页判重():
+    """两条链路坐标系不同（MinerU 归一化到 1000 vs 渲染像素），
+    拿 bbox 比大小会得出看似精确实则无意义的结论。按页判重，宁可少补一枚。"""
+    seals = [{"sealId": "MINERU-1", "pageNo": 2, "sealName": "已有的章"}]
+    scanned = [
+        {"pageNo": 2, "text": "重复的章", "score": 0.9, "bbox": [1, 2, 3, 4]},
+        {"pageNo": 1, "text": "封面漏掉的章", "score": 0.88, "bbox": [5, 6, 7, 8]},
+        {"pageNo": 5, "text": "", "score": 0.0, "bbox": [9, 9, 9, 9]},
+    ]
+    summary = seal_local_reader.merge_scanned_seals(seals, scanned)
+
+    assert summary["added"] == 2, "第 2 页已有章，不该重复添加"
+    assert summary["recognizedByScan"] == 1
+    pages = sorted(int(x["pageNo"]) for x in seals)
+    assert pages == [1, 2, 5]
+    added = next(x for x in seals if x["pageNo"] == 1)
+    assert added["sealName"] == "封面漏掉的章"
+    assert added["recognitionSource"] == "local_seal_model"
+    blank = next(x for x in seals if x["pageNo"] == 5)
+    assert blank["recognized"] is False
+    assert "请对照原图确认" in blank["recognitionNote"], "检出但没读出也要说清楚"
+    assert blank["canSatisfyRequiredSeal"] is False
+
+
+def test_扫描出来的章不能自动满足必盖章要求():
+    seals: list = []
+    seal_local_reader.merge_scanned_seals(
+        seals, [{"pageNo": 1, "text": "某某公司公章", "score": 0.99, "bbox": [1, 1, 2, 2]}]
+    )
+    assert seals[0]["canSatisfyRequiredSeal"] is False
+    assert seals[0]["candidateOnly"] is True

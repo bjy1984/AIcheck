@@ -127,6 +127,81 @@ def read_seal_image(payload: bytes, *, suffix: str = ".jpg") -> dict[str, Any]:
             Path(tmp_path).unlink(missing_ok=True)
 
 
+MAX_SCAN_PAGES = 30
+
+
+def scan_pdf_for_seals(payload: bytes, *, dpi: int = 150) -> list[dict[str, Any]]:
+    """逐页渲染 PDF，用本地印章管线自己找章。
+
+    为什么需要这条：MinerU 会漏检。线上实测射线检测报告封面那枚红章压在
+    「二零二一年四月」上，MinerU 的 content_list 里 page_idx 0 一个图片条目都没有
+    ——**没有裁图，后面读字的一切都无从谈起**。
+
+    这条路不依赖 MinerU 的判断：把整页交给版面检测，它自己框印章区域再读字。
+    代价是每页几秒 CPU，所以设了页数上限，并且只在需要时调用。
+
+    返回 [{pageNo, text, score, bbox}]，读不出字的章也返回（text 为空），
+    因为「这里有一枚章」本身就是监检要的信息。
+    """
+    import fitz  # ocr-service 镜像里有；worker 侧不会走到这条
+
+    found: list[dict[str, Any]] = []
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(prefix="aicheck-sealscan-", suffix=".pdf", delete=False) as tmp:
+            tmp.write(payload)
+            tmp_path = tmp.name
+        document = fitz.open(tmp_path)
+        try:
+            for index, page in enumerate(document):
+                if index >= MAX_SCAN_PAGES:
+                    break
+                image = page.get_pixmap(dpi=dpi).tobytes("png")
+                for item in _detect_seals_on_image(image):
+                    found.append({**item, "pageNo": index + 1})
+        finally:
+            document.close()
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+    return found
+
+
+def _detect_seals_on_image(payload: bytes) -> list[dict[str, Any]]:
+    """一页图里的所有印章。检出但读不出的也返回，text 留空。"""
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(prefix="aicheck-sealpage-", suffix=".png", delete=False) as tmp:
+            tmp.write(payload)
+            tmp_path = tmp.name
+        results: list[dict[str, Any]] = []
+        for result in _pipeline().predict(tmp_path):
+            data = result.json.get("res", {}) if hasattr(result, "json") else (result or {})
+            boxes = ((data.get("layout_det_res") or {}).get("boxes")) or []
+            seal_boxes = [b for b in boxes if str(b.get("label") or "").lower() == "seal"]
+            seal_texts = data.get("seal_res_list") or []
+            for position, box in enumerate(seal_boxes):
+                text, score = "", 0.0
+                if position < len(seal_texts):
+                    item = seal_texts[position]
+                    pairs = list(zip(item.get("rec_texts") or [], item.get("rec_scores") or []))
+                    named = [(t, float(sc)) for t, sc in pairs if looks_like_seal_name(str(t))]
+                    if named:
+                        text, score = max(named, key=lambda pair: pair[1])
+                results.append(
+                    {
+                        "text": str(text).strip(),
+                        "score": float(score),
+                        "bbox": box.get("coordinate"),
+                        "detectionScore": float(box.get("score") or 0),
+                    }
+                )
+        return results
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+
+
 def read_seal_image_via_service(payload: bytes, *, suffix: str = ".jpg") -> dict[str, Any]:
     """从 worker 侧调 ocr-service 读印章。
 
@@ -152,6 +227,79 @@ def read_seal_image_via_service(payload: bytes, *, suffix: str = ".jpg") -> dict
     if int(body.get("code") or 0) != 0:
         raise RuntimeError(str(body.get("message") or "印章识别失败"))
     return body.get("data") or {"ok": False, "text": "", "score": 0.0}
+
+
+def scan_document_seals_via_service(payload: bytes, *, dpi: int = 150) -> list[dict[str, Any]]:
+    """worker 侧调 ocr-service 做整份印章扫描。模型只在那个容器里。"""
+    import json
+    import urllib.request
+
+    base = str(os.getenv("AICHECK_OCR_BASE_URL") or "http://ocr-service:8010").rstrip("/")
+    request = urllib.request.Request(
+        f"{base}/internal/ocr/seal-scan",
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/octet-stream", "X-AICheck-Seal-Dpi": str(dpi)},
+    )
+    timeout = float(os.getenv("AICHECK_SEAL_SCAN_TIMEOUT", "900"))
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = json.loads(response.read().decode() or "{}")
+    if int(body.get("code") or 0) != 0:
+        raise RuntimeError(str(body.get("message") or "印章扫描失败"))
+    return list((body.get("data") or {}).get("seals") or [])
+
+
+def merge_scanned_seals(
+    seals: list[dict[str, Any]],
+    scanned: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """把逐页扫出来的章并进现有列表。
+
+    同一页已经有章就不重复添加——判重按页码，不按 bbox：两条链路的坐标系
+    不一样（MinerU 归一化到 1000，这里是渲染像素），拿它们比大小会得出
+    看似精确实则无意义的结论。宁可少补一枚，也不制造重影。
+    """
+    summary = {"added": 0, "recognizedByScan": 0}
+    pages_with_seal = {int(item.get("pageNo") or 0) for item in seals if item.get("pageNo")}
+    for index, item in enumerate(scanned):
+        page_no = int(item.get("pageNo") or 0)
+        if not page_no or page_no in pages_with_seal:
+            continue
+        text = str(item.get("text") or "").strip()
+        seal = {
+            "sealId": f"LOCALSCAN-SEAL-{page_no}-{index}",
+            "pageNo": page_no,
+            "bbox": item.get("bbox"),
+            "sourceEngine": "paddlex_seal_recognition",
+            "coordinateSystem": "rendered_pixels",
+            "candidateOnly": True,
+            "canSatisfyRequiredSeal": False,
+            "recognitionSource": "local_seal_model",
+            "detectionScore": item.get("detectionScore"),
+        }
+        if text:
+            seal.update(
+                {
+                    "sealName": text,
+                    "name": text,
+                    "text": text,
+                    "recognized": True,
+                    "ocrConfidence": item.get("score"),
+                    "sealEvidenceLevel": "model_read",
+                }
+            )
+            summary["recognizedByScan"] += 1
+        else:
+            seal.update(
+                {
+                    "recognized": False,
+                    "recognitionNote": "逐页扫描检出印章，文字未读出，请对照原图确认",
+                }
+            )
+        seals.append(seal)
+        pages_with_seal.add(page_no)
+        summary["added"] += 1
+    return summary
 
 
 def read_seal_texts_locally(

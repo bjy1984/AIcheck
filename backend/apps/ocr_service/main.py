@@ -187,6 +187,36 @@ async def read_seal_crop(request: Request):
         )
 
 
+@app.post("/internal/ocr/seal-scan")
+async def scan_document_seals(request: Request):
+    """整份 PDF 逐页找印章——**不依赖 MinerU 是否标出了印章**。
+
+    线上实测：射线检测报告封面那枚红章压在「二零二一年四月」上，
+    MinerU 的 content_list 里那一页一个图片条目都没有，也就没有裁图，
+    后面读字的一切都无从谈起。这条路把整页交给版面检测自己框。
+
+    代价是每页几秒 CPU，所以由调用方决定何时用，并且有页数上限。
+    """
+    from libs.seal_local_reader import scan_pdf_for_seals
+
+    body = await request.body()
+    if not body:
+        return fail(errors.VALIDATION_ERROR, request, message="文件内容不能为空。")
+    try:
+        dpi = int(request.headers.get("X-AICheck-Seal-Dpi") or 150)
+    except ValueError:
+        dpi = 150
+    try:
+        return ok({"seals": scan_pdf_for_seals(body, dpi=max(72, min(dpi, 300)))}, request)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("整份印章扫描失败")
+        return fail(
+            errors.EXTERNAL_TOOL_FAILED,
+            request,
+            message=f"印章扫描失败：{type(exc).__name__}",
+        )
+
+
 @app.post("/internal/tools/ocr/welder-certificate/extract")
 async def extract_welder_certificate(request: Request, payload: dict):
     storage_key = str(payload.get("storageKey") or "").strip()

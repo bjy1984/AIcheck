@@ -75,7 +75,11 @@ from libs.mineru_ocr import (
     normalize_mineru_zip,
     validated_zip_members,
 )
-from libs.seal_local_reader import read_seal_texts_locally
+from libs.seal_local_reader import (
+    merge_scanned_seals,
+    read_seal_texts_locally,
+    scan_document_seals_via_service,
+)
 from libs.seal_vision import read_seal_texts
 from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.ocr.profiles import profile_for
@@ -949,8 +953,6 @@ def _read_seal_texts_from_zip(
 ) -> None:
     """就地补齐 bundle.result 里的印章文字，失败只记诊断、不抛。"""
     seals = (bundle.result or {}).get("seals") or []
-    if not seals:
-        return
     try:
         images = {
             name: payload
@@ -989,6 +991,57 @@ def _read_seal_texts_from_zip(
             "detail": summary,
         }
     )
+    _scan_missed_seal_pages(job, bundle, seals)
+
+
+def _scan_missed_seal_pages(job: dict[str, Any], bundle: Any, seals: list) -> None:
+    """MinerU 没标出印章的页，用本地管线自己再找一遍。
+
+    线上实测：射线检测报告封面那枚红章压在「二零二一年四月」上，
+    MinerU 的 content_list 里那一页一个图片条目都没有——**没有裁图，
+    后面读字的一切都无从谈起**，界面上那枚章就等于不存在。
+
+    只在「一枚都没检出」或「检出的全都没读出文字」时才扫：这条要逐页跑
+    版面检测，每页几秒 CPU，不该每份资料都付。
+    """
+    recognized = [item for item in seals if str(item.get("sealName") or "").strip()]
+    if seals and recognized:
+        return
+    if not seal_scan_enabled():
+        return
+    source_path, temp_root = mineru_source_path(job)
+    if not source_path or not source_path.is_file():
+        return
+    started = time.time()
+    try:
+        scanned = scan_document_seals_via_service(source_path.read_bytes())
+        merged = merge_scanned_seals(seals, scanned)
+        bundle.result["seals"] = seals
+    except Exception:
+        logging.getLogger(__name__).exception("逐页印章扫描失败 jobId=%s", job.get("id"))
+        (bundle.result.setdefault("diagnostics", [])).append(
+            {"code": "seal_page_scan_failed", "level": "warning", "stage": "normalize"}
+        )
+        return
+    finally:
+        if temp_root is not None:
+            shutil.rmtree(temp_root, ignore_errors=True)
+    (bundle.result.setdefault("diagnostics", [])).append(
+        {
+            "code": "seal_page_scan",
+            "level": "info",
+            "stage": "normalize",
+            "detail": {**merged, "durationMs": int((time.time() - started) * 1000)},
+        }
+    )
+
+
+def seal_scan_enabled() -> bool:
+    return str(os.getenv("AICHECK_ENABLE_SEAL_PAGE_SCAN", "true")).strip().lower() not in {
+        "false",
+        "0",
+        "no",
+    }
 
 
 def mineru_source_path(
