@@ -4476,11 +4476,13 @@ def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[st
         # 业务包的 toolCatalog 里有权威名称与能力描述，一并下发，让前端能显示
         # 「查焊工持证范围」而不是「T07」。
         "toolCatalog": business_pack_tool_catalog(project),
-        "referencedStandards": [
-            enrich_standard_reference(item)
-            for item in rule.get("referencedStandards") or []
-            if isinstance(item, dict)
-        ],
+        # 去重在源头做。实测（2026-08-16，NDT 节点 40）：发来 69 条，
+        # 去重后只有 23 条——**46 条是重复的**，每条 451 字节，白传约 20 KB。
+        # 前端只好自己去重（Workbench.vue nodeReferencedStandards 里那段 seen/Set）。
+        # 让每个调用方各去一遍，是把同一件事做 N 遍，还容易有人漏做。
+        "referencedStandards": dedupe_standard_references(
+            rule.get("referencedStandards") or []
+        ),
         "aiExecution": {
             "schemaVersion": ai_execution.get("schemaVersion"),
             "sourceFields": repo.clone(ai_execution.get("sourceFields") or {}),
@@ -4492,6 +4494,34 @@ def node_business_basis(project: dict[str, Any] | None, node_id: int) -> dict[st
             "promptContext": ai_execution.get("promptContext") or "",
         },
     }
+
+
+def dedupe_standard_references(items: list[Any]) -> list[dict[str, Any]]:
+    """同一份标准只发一次，保持原有顺序。
+
+    去重键与前端一致：sourceRelativePath → file → fileName → reference。
+    键取不到的条目原样保留——**宁可多发一条，也不要因为字段缺失把一条
+    真实引用悄悄丢掉**：审查依据少一条，比多一条重复危险得多。
+    """
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        enriched = enrich_standard_reference(item)
+        key = str(
+            enriched.get("sourceRelativePath")
+            or enriched.get("file")
+            or enriched.get("fileName")
+            or enriched.get("reference")
+            or ""
+        ).strip()
+        if key:
+            if key in seen:
+                continue
+            seen.add(key)
+        result.append(enriched)
+    return result
 
 
 def project_pack_member_roles(pack: dict[str, Any]) -> list[dict[str, Any]]:
