@@ -129,6 +129,9 @@ export type DocumentUploadSessionFile = {
   materialTypeCode?: string
   materialTypeName?: string
   nodeIds?: number[]
+  /** 替换既有资料：在那份文档上加新版本，而不是新建一份。
+      新建会换 documentId，节点挂接和审查意见里引用的证据就全断了。 */
+  replaceDocumentId?: string
 }
 
 export type UploadSessionCompletePayload = MockMutationResult & {

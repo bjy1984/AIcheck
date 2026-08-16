@@ -99,6 +99,8 @@ const emit = defineEmits<{
   bind: []
   rectify: [rectificationId?: string]
   'file-view': [documentId: string]
+  /** 替换：在原文档上加新版本。只对未提交的资料开放。 */
+  'file-replace': [file: { documentId: string; fileName: string; materialCategory: string }]
   'file-bind': [documentId: string]
   'file-submit': [documentId: string]
   'file-retry-upload': [documentId: string]
@@ -561,6 +563,29 @@ const getElementTagType = (value?: string): ElementTagType => {
   return 'primary'
 }
 
+/** 某个资料类别下已经传了几份。
+ *
+ * 上传成功之后这一行必须变——否则用户只看到一句转瞬即逝的 toast，
+ * 回到表格发现毫无变化，就会以为没传上去、再传一遍。
+ * 实测线上就有同一份「产品质量证明part1.pdf」重复上传的记录。
+ */
+const categoryFileCount = (category: string) =>
+  contractorFileRows.value.filter((file) => file.materialCategory === category).length
+
+/** 点数量 → 把台账筛到这个类别并滚过去，让人当场看到是哪几份。 */
+const focusCategoryFiles = async (category: string) => {
+  contractorNodeFilter.value = null
+  contractorStatusFilter.value = '全部'
+  contractorUsageFilter.value = '全部用途'
+  contractorKeyword.value = ''
+  contractorMaterialFilter.value = category
+  contractorPage.value = 1
+  await nextTick()
+  document
+    .querySelector('#contractor-file-list')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 const requestUpload = (materialCategory?: string) => {
   if (!props.readOnly) emit('upload', materialCategory)
 }
@@ -571,6 +596,28 @@ const requestBind = () => {
 
 const requestFileView = (file: ContractorFileRow) => {
   emit('file-view', file.documentId)
+}
+
+/** 能不能替换：只有还没提交出去的才行。
+ *  已提交的那份可能正被监检看着、已写进审查意见的证据链——
+ *  在审查员眼皮底下换掉证据，比不让替换危险得多。 */
+const canReplaceContractorFile = (file: ContractorFileRow) =>
+  !props.readOnly && ['未关联', '待提交'].includes(file.status)
+
+const getContractorReplaceHint = (file: ContractorFileRow) => {
+  if (props.readOnly) return '当前项目为只读状态，不能替换文件'
+  return canReplaceContractorFile(file)
+    ? '上传新版本替换这份资料，原版本留作历史'
+    : '文件已提交审核，不能直接替换；请通过补正流程处理'
+}
+
+const requestFileReplace = (file: ContractorFileRow) => {
+  if (!canReplaceContractorFile(file)) return
+  emit('file-replace', {
+    documentId: file.documentId,
+    fileName: file.fileName,
+    materialCategory: file.materialCategory
+  })
 }
 
 const requestFileBind = (file: ContractorFileRow) => {
@@ -707,6 +754,22 @@ const getPillClass = (value?: string): AuditStatusTone => {
             >
               <ElTableColumn type="index" label="序号" width="64" align="center" />
               <ElTableColumn prop="category" label="资料类别" width="150" />
+              <!-- 传完看不到自己传了什么，是这张表最大的问题：
+                   用户点「上传资料」→ 提示成功 → 这一行毫无变化，
+                   于是以为没传上去，再传一遍。数量本来就算得出来。 -->
+              <ElTableColumn label="已上传" width="96">
+                <template #default="{ row }">
+                  <ElButton
+                    v-if="categoryFileCount(row.category)"
+                    link
+                    type="primary"
+                    @click="focusCategoryFiles(row.category)"
+                  >
+                    {{ categoryFileCount(row.category) }} 份
+                  </ElButton>
+                  <span v-else class="muted-action">0 份</span>
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="操作" width="96">
                 <template #default="{ row }">
                   <ElButton
@@ -874,10 +937,29 @@ const getPillClass = (value?: string): AuditStatusTone => {
               show-overflow-tooltip
             />
             <ElTableColumn prop="usage" label="文件用途" min-width="130" show-overflow-tooltip />
-            <ElTableColumn label="操作" width="220" fixed="right">
+            <!-- 五个操作（查看/替换/提交/删除/挂接）挤不进 220px：
+                 列宽不够时按钮会被裁掉，等于加了个看不见的功能。 -->
+            <ElTableColumn label="操作" width="290" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
                   <ElButton link type="primary" @click="requestFileView(row)">查看</ElButton>
+                  <ElTooltip
+                    :content="getContractorReplaceHint(row)"
+                    :disabled="canReplaceContractorFile(row)"
+                    placement="top"
+                    popper-class="audit-action-tooltip-popper"
+                  >
+                    <span class="table-action-tooltip">
+                      <ElButton
+                        link
+                        type="primary"
+                        :disabled="!canReplaceContractorFile(row)"
+                        @click="requestFileReplace(row)"
+                      >
+                        替换
+                      </ElButton>
+                    </span>
+                  </ElTooltip>
                   <ElTooltip
                     :content="getContractorSubmitHint(row)"
                     :disabled="canSubmitContractorFile(row)"

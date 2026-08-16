@@ -361,6 +361,8 @@ const previewDrawerOriginalError = ref('')
 const uploadDrawerVisible = ref(false)
 const uploadDrawerError = ref('')
 const uploadDrawerMaterialCategory = ref('')
+/** 替换目标。有值时这次上传是「给这份资料出新版本」，不是新建一份。 */
+const uploadDrawerReplaceTarget = ref<{ documentId: string; fileName: string } | null>(null)
 const uploadDrawerAtomicMaterial = ref<NdtAtomicMaterial>()
 const uploadDrawerMode = ref<'project' | 'inspection'>('project')
 const ndtReportUploadVisible = ref(false)
@@ -3092,6 +3094,9 @@ const openLocalArchiveDownloadTask = (item: ArchiveItem) => {
 
 const handleOpenUploadDrawer = (target?: string | NdtAtomicMaterial) => {
   if (!ensureWritableProject()) return
+  // 普通上传必须清掉替换目标——不清的话，上一次替换会让这次新传的文件
+  // 悄悄覆盖掉那份旧资料，而用户以为自己在新增。
+  uploadDrawerReplaceTarget.value = null
   uploadDrawerMode.value = 'project'
   uploadDrawerError.value = ''
   uploadDrawerAtomicMaterial.value = typeof target === 'object' ? target : undefined
@@ -3100,6 +3105,21 @@ const handleOpenUploadDrawer = (target?: string | NdtAtomicMaterial) => {
     : typeof target === 'string'
       ? target
       : ''
+  uploadDrawerVisible.value = true
+}
+
+/** 替换某份资料：打开同一个上传抽屉，但这次带着替换目标。 */
+const handleReplaceProjectFile = (payload: {
+  documentId: string
+  fileName: string
+  materialCategory: string
+}) => {
+  if (!ensureWritableProject()) return
+  uploadDrawerMode.value = 'project'
+  uploadDrawerError.value = ''
+  uploadDrawerAtomicMaterial.value = undefined
+  uploadDrawerMaterialCategory.value = payload.materialCategory || ''
+  uploadDrawerReplaceTarget.value = { documentId: payload.documentId, fileName: payload.fileName }
   uploadDrawerVisible.value = true
 }
 
@@ -3121,10 +3141,18 @@ const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: nu
   actionLoading.value = true
   uploadDrawerError.value = ''
   try {
+    if (uploadDrawerReplaceTarget.value && files.length !== 1) {
+      // 替换是一对一的：选多个文件却只替换一份，剩下的会被静默丢弃。
+      showUploadDrawerError('替换资料时只能选择一个文件。')
+      return
+    }
     const uploadFiles = files.map((file) => ({
       fileName: file.name,
       fileSize: file.size,
       fileType: inferUploadFileType(file),
+      ...(uploadDrawerReplaceTarget.value
+        ? { replaceDocumentId: uploadDrawerReplaceTarget.value.documentId }
+        : {}),
       ...(uploadDrawerMaterialCategory.value
         ? { materialCategory: uploadDrawerMaterialCategory.value }
         : {}),
@@ -5628,6 +5656,7 @@ onBeforeUnmount(() => {
               @bind="handleOpenBindDialog"
               @rectify="handleOpenRectificationDialog"
               @file-view="handleOpenFileDetail"
+              @file-replace="handleReplaceProjectFile"
               @file-bind="handleOpenBindDialog"
               @file-submit="handleSubmitProjectFile"
               @file-retry-upload="handleRetryProjectFileUpload"
@@ -6713,11 +6742,13 @@ onBeforeUnmount(() => {
       <UploadSessionDrawer
         v-model="uploadDrawerVisible"
         :title="
-          uploadDrawerMode === 'inspection'
-            ? '上传监检资料'
-            : uploadDrawerAtomicMaterial
-              ? '上传无损检测资料'
-              : '上传项目文件'
+          uploadDrawerReplaceTarget
+            ? `替换资料：${uploadDrawerReplaceTarget.fileName}`
+            : uploadDrawerMode === 'inspection'
+              ? '上传监检资料'
+              : uploadDrawerAtomicMaterial
+                ? '上传无损检测资料'
+                : '上传项目文件'
         "
         :node-name="selectedNode?.name"
         :material-category="uploadDrawerMaterialCategory"

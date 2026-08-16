@@ -1155,6 +1155,60 @@ class InMemoryRepository:
         self.state["knowledge_files"].insert(0, knowledge_file)
         self.state["knowledge_tasks"].insert(0, knowledge_task)
 
+    def next_document_version(
+        self,
+        document: dict[str, Any],
+        *,
+        file_size: int = 0,
+        content_hash: str | None = None,
+        uploader_name: str | None = None,
+    ) -> dict[str, Any]:
+        """在既有文档上追加一个新版本，旧版本让位为历史。
+
+        「替换」不是删掉重传：删掉重传会换一个新的 documentId，
+        挂接关系、证据引用、审查意见里指向的那份资料就全断了——
+        监检那边看到的是「原来那份不见了，多了一份陌生的」。
+        同一个文档下加版本，历史留痕，引用不断。
+
+        只在这里更新 isCurrent 与 currentVersionId，不动 bindings：
+        绑定挂在文档上，本来就该跟着走。
+        """
+        document_id = str(document.get("id") or "")
+        existing = [item for item in self.state["versions"] if item.get("documentId") == document_id]
+        next_no = len(existing) + 1
+        now = server_time()
+        version_id = f"{document_id.replace('DOC-', 'DV-')}-V{next_no}"
+        project_id = str(document.get("projectId") or "")
+        for item in existing:
+            if item.get("isCurrent"):
+                item["isCurrent"] = False
+                item["replacedAt"] = now
+                item["updatedAt"] = now
+        version = {
+            "id": version_id,
+            "documentId": document_id,
+            "versionNo": f"V{next_no}",
+            "hash": (content_hash or "").strip() or None,
+            "fileSize": max(0, int(file_size or 0)),
+            "storageKey": f"documents/{project_id}/{version_id}",
+            "storageBucket": "documents",
+            "ocrStatus": "排队中",
+            "sliceStatus": "未切片",
+            "vectorStatus": "未向量化",
+            "uploaderName": uploader_name or document.get("uploaderName") or "系统",
+            "uploadTime": now,
+            "isCurrent": True,
+            "tenantId": configured_tenant_id(),
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        self.state["versions"].append(version)
+        document["currentVersionId"] = version_id
+        document["currentOcrStatus"] = "排队中"
+        document["fileStatus"] = "已上传"
+        document["updatedAt"] = now
+        return version
+
     def create_upload_session(
         self,
         project_id: str,
@@ -1172,23 +1226,50 @@ class InMemoryRepository:
         session_files = []
         pending_records: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         for file in files:
-            doc, version, knowledge_file, knowledge_task = self._build_document_records(
-                project_id,
-                file.get("fileName") or "未命名资料.pdf",
-                file.get("fileType") or "pdf",
-                source_org_name=source_org_name,
-                uploader_name=uploader_name,
-                material_category=file.get("materialCategory"),
-                material_type_code=file.get("materialTypeCode"),
-                material_type_name=file.get("materialTypeName"),
-                file_size=int(file.get("fileSize") or 0),
-                content_hash=str(file.get("contentHash") or "").strip() or None,
-                ocr_options=(
-                    file.get("ocrOptions")
-                    if isinstance(file.get("ocrOptions"), dict)
-                    else None
-                ),
-            )
+            replace_document_id = str(file.get("replaceDocumentId") or "").strip()
+            if replace_document_id:
+                # 替换：在既有文档上加版本，不新建文档
+                target = self.find_one("documents", replace_document_id)
+                if target is None or str(target.get("projectId") or "") != project_id:
+                    raise ValueError(f"要替换的资料不存在：{replace_document_id}")
+                doc = target
+                version = self.next_document_version(
+                    target,
+                    file_size=int(file.get("fileSize") or 0),
+                    content_hash=str(file.get("contentHash") or "").strip() or None,
+                    uploader_name=uploader_name,
+                )
+                knowledge_file = next(
+                    (
+                        item
+                        for item in self.state["knowledge_files"]
+                        if item.get("documentId") == replace_document_id
+                    ),
+                    None,
+                )
+                if knowledge_file is not None:
+                    knowledge_file["documentVersionId"] = version["id"]
+                    knowledge_file["ocrStatus"] = "排队中"
+                    knowledge_file["updatedAt"] = server_time()
+                knowledge_task = None
+            else:
+                doc, version, knowledge_file, knowledge_task = self._build_document_records(
+                    project_id,
+                    file.get("fileName") or "未命名资料.pdf",
+                    file.get("fileType") or "pdf",
+                    source_org_name=source_org_name,
+                    uploader_name=uploader_name,
+                    material_category=file.get("materialCategory"),
+                    material_type_code=file.get("materialTypeCode"),
+                    material_type_name=file.get("materialTypeName"),
+                    file_size=int(file.get("fileSize") or 0),
+                    content_hash=str(file.get("contentHash") or "").strip() or None,
+                    ocr_options=(
+                        file.get("ocrOptions")
+                        if isinstance(file.get("ocrOptions"), dict)
+                        else None
+                    ),
+                )
             content_type = file.get("fileType") or "application/octet-stream"
             node_ids = sorted(
                 {
@@ -1250,7 +1331,10 @@ class InMemoryRepository:
                 doc["nodeId"] = node_ids[0]
                 if knowledge_file:
                     knowledge_file["nodeId"] = node_ids[0]
-            pending_records.append((doc, version, knowledge_file, knowledge_task))
+            # 替换分支的文档/版本已经在 next_document_version 里就地更新过了，
+            # 再走一次插入会把同一个文档插两遍——列表上会出现两条同名资料。
+            if not replace_document_id:
+                pending_records.append((doc, version, knowledge_file, knowledge_task))
         for records in pending_records:
             self._insert_document_records(*records)
         self.state["upload_sessions"].insert(

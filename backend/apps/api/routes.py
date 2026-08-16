@@ -7159,6 +7159,41 @@ def unuploaded_document_error(
     )
 
 
+def validate_replace_targets(
+    request: Request,
+    project_id: str,
+    files: list[dict[str, Any]],
+) -> JSONResponse | None:
+    """替换目标必须存在、同项目，且**尚未提交**。
+
+    已提交/已审批的资料不允许直接替换：那份文件此刻可能正被监检看着、
+    已经被写进审查意见的证据链。在审查员眼皮底下换掉证据，
+    比不让替换危险得多——要改就走补正流程，留下痕迹。
+    """
+    replaceable_status = {"草稿", "已上传"}
+    for file in files:
+        document_id = str((file or {}).get("replaceDocumentId") or "").strip()
+        if not document_id:
+            continue
+        document = repo.find_one("documents", document_id)
+        if not document or str(document.get("projectId") or "") != project_id:
+            return fail(
+                errors.NOT_FOUND,
+                request,
+                message="要替换的资料不存在或不属于当前项目。",
+                data={"replaceDocumentId": document_id},
+            )
+        status = str(document.get("fileStatus") or "")
+        if status not in replaceable_status:
+            return fail(
+                errors.CONFLICT,
+                request,
+                message=f"该资料当前状态为「{status}」，不能直接替换；请通过补正流程处理。",
+                data={"replaceDocumentId": document_id, "fileStatus": status},
+            )
+    return None
+
+
 @router.post("/projects/{project_id}/documents/upload-session")
 def create_upload_session(
     request: Request,
@@ -7175,6 +7210,9 @@ def create_upload_session(
         validation_error = validate_upload_files(request, files)
         if validation_error:
             return validation_error
+        replace_error = validate_replace_targets(request, project_id, files)
+        if replace_error:
+            return replace_error
         atomic_validation_error = validate_ndt_atomic_upload_files(request, files)
         if atomic_validation_error:
             return atomic_validation_error

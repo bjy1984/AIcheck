@@ -1,0 +1,131 @@
+"""替换资料 = 在原文档上加版本，不是删掉重传。
+
+## 来源
+
+施工方反馈：上传成功后看不到已传资料，也没有预览／替换／删除。
+预览和删除本来就有，**替换整个不存在**——上传永远新建文档。
+
+## 为什么不能用「删掉重传」凑合
+
+删掉重传会换一个新的 documentId，于是：
+- 节点挂接断了（原来挂在哪个审查点，要重挂一次）；
+- 审查意见里引用的证据指向一份已经不存在的资料；
+- 监检看到的是「原来那份没了，多了一份陌生的」，无从判断是不是同一件事。
+
+同一个文档下加版本，历史留痕、引用不断。
+
+## 一条硬约束
+
+**已提交/已审批的资料不允许直接替换。** 那份文件此刻可能正被监检看着、
+已经写进审查意见的证据链。在审查员眼皮底下换掉证据，比不让替换危险得多——
+要改就走补正流程，留下痕迹。
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from libs.db.repository import repo
+
+
+def _make_document(project_id: str = "P-REPLACE", status: str = "已上传") -> dict:
+    session_id, urls = repo.create_upload_session(
+        project_id,
+        [{"fileName": "质量证明.pdf", "fileType": "pdf", "fileSize": 1024}],
+    )
+    document_id = urls[0]["documentId"]
+    document = repo.find_one("documents", document_id)
+    document["fileStatus"] = status
+    return document
+
+
+@pytest.fixture(autouse=True)
+def _project():
+    repo.state.setdefault("projects", [])
+    if not repo.find_one("projects", "P-REPLACE"):
+        repo.state["projects"].insert(
+            0, {"id": "P-REPLACE", "name": "替换测试项目", "contractorOrgName": "施工测试"}
+        )
+    yield
+
+
+def test_替换在原文档上加版本():
+    document = _make_document()
+    document_id = document["id"]
+    before = len(repo.state["documents"])
+
+    repo.create_upload_session(
+        "P-REPLACE",
+        [
+            {
+                "fileName": "质量证明-修订.pdf",
+                "fileType": "pdf",
+                "fileSize": 2048,
+                "replaceDocumentId": document_id,
+            }
+        ],
+    )
+
+    assert len(repo.state["documents"]) == before, "替换不该新建文档——新建就等于挂接和证据全断了"
+    versions = repo.versions_for_document(document_id)
+    assert len(versions) == 2
+    assert [item["versionNo"] for item in versions] == ["V1", "V2"] or sorted(
+        item["versionNo"] for item in versions
+    ) == ["V1", "V2"]
+
+
+def test_旧版本让位为历史():
+    document = _make_document()
+    document_id = document["id"]
+    repo.create_upload_session(
+        "P-REPLACE",
+        [{"fileName": "新版.pdf", "fileType": "pdf", "fileSize": 99, "replaceDocumentId": document_id}],
+    )
+    versions = repo.versions_for_document(document_id)
+    current = [item for item in versions if item.get("isCurrent")]
+    assert len(current) == 1, "同一时刻只能有一个当前版本"
+    assert current[0]["versionNo"] == "V2"
+    old = next(item for item in versions if item["versionNo"] == "V1")
+    assert old.get("replacedAt"), "旧版本要留下被替换的时间，否则看不出发生过替换"
+
+
+def test_文档指向新版本并重新排队识别():
+    document = _make_document()
+    document_id = document["id"]
+    repo.create_upload_session(
+        "P-REPLACE",
+        [{"fileName": "新版.pdf", "fileType": "pdf", "fileSize": 99, "replaceDocumentId": document_id}],
+    )
+    updated = repo.find_one("documents", document_id)
+    assert updated["currentVersionId"].endswith("-V2")
+    assert updated["currentOcrStatus"] == "排队中", "换了文件就要重新识别，沿用旧结果等于认了旧内容"
+
+
+def test_替换不存在的资料要报错():
+    with pytest.raises(ValueError, match="要替换的资料不存在"):
+        repo.create_upload_session(
+            "P-REPLACE",
+            [{"fileName": "x.pdf", "fileType": "pdf", "replaceDocumentId": "DOC-NOT-EXIST"}],
+        )
+
+
+def test_跨项目替换要报错():
+    """A 项目的人不能用替换这条路去改 B 项目的资料。"""
+    document = _make_document()
+    repo.state["projects"].insert(0, {"id": "P-OTHER", "name": "另一个项目"})
+    with pytest.raises(ValueError):
+        repo.create_upload_session(
+            "P-OTHER",
+            [{"fileName": "x.pdf", "fileType": "pdf", "replaceDocumentId": document["id"]}],
+        )
+
+
+def test_路由层拦住已提交资料():
+    """已提交的资料正被监检看着，替换要走补正流程。"""
+    import inspect
+
+    from apps.api import routes
+
+    source = inspect.getsource(routes.validate_replace_targets)
+    assert '"草稿", "已上传"' in source, "只有未提交状态可替换"
+    assert "补正流程" in source, "要说清楚该走哪条路，而不是只说不行"
