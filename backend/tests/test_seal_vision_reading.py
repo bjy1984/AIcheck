@@ -39,7 +39,7 @@ def _seal(seal_id: str = "S1", image_path: str = "images/seal-1.png") -> dict:
 IMAGES = {"images/seal-1.png": b"\x89PNG\r\n\x1a\n fake"}
 
 
-def test_读得出就写进印章():
+def test_读得出也只作未核对的候选():
     seals = [_seal()]
     client = FakeClient(
         [json.dumps({"text": "贵州化工建设有限责任公司", "sealType": "公章", "legible": True})]
@@ -50,8 +50,16 @@ def test_读得出就写进印章():
     assert seals[0]["sealName"] == "贵州化工建设有限责任公司"
     assert seals[0]["text"] == "贵州化工建设有限责任公司"
     assert seals[0]["sealType"] == "公章"
-    assert seals[0]["recognized"] is True
     assert seals[0]["recognitionSource"] == "vision_model"
+    # 云端读数**不算已识别**。线上实测（射线检测报告 2026-08-16）：
+    # 封面写明出具单位是「广州声华科技股份有限公司」，同一枚检测专用章
+    # 在四页上被读成山东华科／华科技／广州迪华／杭州科科技——四个城市、
+    # 四个公司名，模型在编。文字照给，但必须挂上「未核对」，
+    # 否则编造的单位名会以「已识别」的身份进入审查证据。
+    assert seals[0]["recognized"] is False
+    assert seals[0]["requiresHumanConfirmation"] is True
+    assert "未经核对" in seals[0]["recognitionNote"]
+    assert seals[0]["sealEvidenceLevel"] == "model_read_unverified"
 
 
 def test_读不清就不写值():

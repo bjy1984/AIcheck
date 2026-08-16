@@ -296,6 +296,11 @@ export type OcrSealItem = {
   confidence?: number
   evidenceLevel?: string
   canSatisfyRequired?: boolean
+  /** 谁读的：local_seal_model / vision_model。云端读数一律要人工核对——
+   *  实测同一枚章在四页上被读出四个不同公司名。 */
+  recognitionSource?: string
+  requiresHumanConfirmation?: boolean
+  recognitionNote?: string
 }
 
 export type OcrStructuredView = {

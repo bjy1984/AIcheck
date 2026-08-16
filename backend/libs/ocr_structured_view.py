@@ -236,7 +236,13 @@ def structured_seals(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
                         item.get("sealId") or item.get("signatureId") or item.get("candidateId") or ""
                     ),
                     "name": name,
-                    "recognized": bool(name),
+                    # 有文字 ≠ 已核实。云端视觉模型在压字、印泥不匀的章上会**编**
+                    # 出一个像样的单位名——实测同一枚章在四页上给了四个公司名。
+                    # 所以「已识别」以记录里的 recognized 为准，读数另标来源与提示。
+                    "recognized": bool(name) and item.get("recognized") is not False,
+                    "recognitionSource": str(item.get("recognitionSource") or ""),
+                    "requiresHumanConfirmation": bool(item.get("requiresHumanConfirmation")),
+                    "recognitionNote": str(item.get("recognitionNote") or ""),
                     "sealType": str(item.get("sealType") or ""),
                     "pageNo": item.get("pageNo"),
                     "bbox": _clean_bbox(item.get("bbox")),

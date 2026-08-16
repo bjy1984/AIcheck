@@ -849,7 +849,7 @@ watch(visible, (open) => {
                     <!-- 视觉检出但文字未识别：是证据，只是要人工看图，不能混进上面 -->
                     <div v-if="pendingSeals.length" class="ocr-pending">
                       <div class="ocr-pending-head">
-                        待人工辨认 {{ pendingSeals.length }} 处 · 检出印章但文字未识别
+                        待人工辨认 {{ pendingSeals.length }} 处 · 需对照原图确认
                       </div>
                       <div class="ocr-pending-pages">
                         <button
@@ -861,9 +861,16 @@ watch(visible, (open) => {
                             { 'is-active': activeLocateKey === `seal:${seal.id}` }
                           ]"
                           :aria-pressed="activeLocateKey === `seal:${seal.id}`"
+                          :title="seal.recognitionNote || '检出印章但文字未识别'"
                           @click="toggleLocateKey(`seal:${seal.id}`)"
                         >
                           第 {{ seal.pageNo || '?' }} 页
+                          <!-- 模型读到了字也要显示出来，但必须带上「未核对」。
+                               只显示页码等于把线索藏起来；只显示名字则会被直接采信——
+                               实测同一枚章在四页上被读出四个不同公司名。 -->
+                          <span v-if="seal.name" class="ocr-pending-read">
+                            模型读作「{{ seal.name }}」·未核对
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1438,6 +1445,13 @@ watch(visible, (open) => {
   margin-top: 6px;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.ocr-pending-read {
+  display: block;
+  margin-top: 2px;
+  color: #b88230;
+  font-size: 12px;
 }
 
 .ocr-pending-chip {

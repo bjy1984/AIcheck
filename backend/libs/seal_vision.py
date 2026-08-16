@@ -143,15 +143,32 @@ def read_seal_texts(
             continue
         # 字段名跟 structured_seals 的读法对齐：它读 sealName / text。
         # 只写 name 会「看起来写了」而界面上一个字都不显示——这种错不会报警。
+        # **云端读数一律标为未核对。**
+        #
+        # 线上实测（射线检测报告，2026-08-16）：封面写明出具单位是
+        # 「广州声华科技股份有限公司」，而同一枚检测专用章在四页上被读成
+        #     p2 山东华科科技胶粘有限公司…
+        #     p3 华科技股份有限公司…
+        #     p4 广州迪华科技股份有限公司…
+        #     p5 杭州科科技股份有限公司…
+        # 四个城市、四个公司名——**模型在编**。印泥不匀、压字、弧形排布之下，
+        # 视觉模型会给出「读起来很像那么回事」的名字。
+        #
+        # 对一个出具审查结论的系统，编造的单位名比空白危险得多：空白会让人去看图，
+        # 编造会让人直接采信。所以文字照样给出来供人参考，但：
+        #   - recognized 保持 False：不计入「已识别」，不满足「必须盖章」
+        #   - 明确标注来源与「需人工核对」，让界面能把这件事说出来
         seal["sealName"] = str(text).strip()
         seal["name"] = str(text).strip()
         seal["text"] = str(text).strip()
         seal["sealType"] = str(parsed.get("sealType") or "").strip() or seal.get("sealType") or ""
-        seal["recognized"] = True
+        seal["recognized"] = False
+        seal["requiresHumanConfirmation"] = True
+        seal["recognitionNote"] = "云端模型读数，未经核对，请对照原图确认单位名"
         seal["recognitionSource"] = "vision_model"
         # 模型不给逐字置信度。写 0.0 会被下游当成「低置信度」——那是另一个坑，
         # 这里如实标注来源，由复核环节按来源判断可信程度。
-        seal["sealEvidenceLevel"] = seal.get("sealEvidenceLevel") or "model_read"
+        seal["sealEvidenceLevel"] = "model_read_unverified"
         summary["recognized"] += 1
     if len(seals) > MAX_SEALS_PER_DOCUMENT:
         summary["skipped"] += len(seals) - MAX_SEALS_PER_DOCUMENT
