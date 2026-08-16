@@ -26,14 +26,29 @@ assert.ok(
 )
 
 // 三行上限
-assert.ok(/liveTrace\.value\.slice\(-3\)/.test(sfc), '预览最多三条')
+assert.ok(/\.slice\(-3\)/.test(sfc), '预览最多三条')
+
+// **要显示真正的流式文字，不是事件名。**
+// 第一版只渲染 event.title，三行全是「模型推理流 / 回答内容增量 / 模型推理流」——
+// 用户看到的仍然只是标签。真正的文字在 payload.content 里
+// （agent.reasoning.delta / agent.message.delta，实测各 91 / 24 条），
+// 而第一版读的是 payload.summary——那个字段在这些事件上根本不存在。
+// **读错字段和没实现，在界面上长得一模一样。**
+assert.ok(/STREAM_TEXT_KEYS/.test(sfc), '要有取流式文字的字段清单')
+assert.ok(/'content'/.test(sfc), 'payload.content 是实测里真正装文字的字段')
+assert.ok(/const streamTextOf/.test(sfc), '要有取文字的函数')
+assert.ok(/\.filter\(\(item\) => item\.text\)/.test(sfc), '优先显示带文字的事件')
 
 // 展开后仍是全量，不能因为加了预览就把详情砍掉
 assert.ok(/v-if="activityExpanded" class="execution-details"/.test(sfc), '展开后仍要有完整轨迹')
 assert.ok(/v-for="event in liveTrace"/.test(sfc), '完整轨迹用的仍是 liveTrace')
 
 // 预览与完整列表的 key 不能重复——同一批事件同时渲染两处会撞 key
-assert.ok(/:key="'preview-' \+ event\.eventId"/.test(sfc), '预览的 key 要加前缀')
+assert.ok(/:key="'preview-' \+ item\.eventId"/.test(sfc), '预览的 key 要加前缀')
+
+// 「刷新状态」按钮已去掉：实测 16 次采样 14 次在转圈，文字被 spinner 盖住，
+// 看起来就是「时有时无」；而状态本来就在自动轮询。
+assert.ok(!/>刷新状态</.test(sfc), '不应再有手动刷新按钮')
 
 // 单行不换行：三行是硬上限，长文案要省略而不是撑高
 assert.ok(/\.execution-preview li \{[^}]*white-space: nowrap/s.test(sfc), '预览每条限一行')

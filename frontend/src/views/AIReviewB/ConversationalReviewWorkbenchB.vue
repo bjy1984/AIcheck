@@ -34,7 +34,6 @@ import {
   Files,
   MagicStick,
   Promotion,
-  Refresh,
   Search,
   View
 } from '@element-plus/icons-vue'
@@ -204,16 +203,42 @@ const liveTrace = computed(() => {
   if (reviewStarting.value) return liveRunTrace.value
   return latestExecutionEvents.value
 })
-/** 收起状态下常驻的执行动态：只取最近三条，多了会把输入框挤下去。 */
-const livePreview = computed(() => liveTrace.value.slice(-3))
+/* 收起状态下常驻的执行动态。
+ *
+ * 第一版只显示 event.title，于是三行全是「模型推理流 / 回答内容增量 /
+ * 模型推理流」——事件名重复三遍，**用户看到的仍然只是标签**，
+ * 跟没有一样。用户第二次反馈就是这个：「只显示模型推理流，没有详细过程」。
+ *
+ * 真正的流式文字在 payload.content 里（agent.reasoning.delta /
+ * agent.message.delta，实测各 91 / 24 条）。我第一版读的是 payload.summary
+ * ——那个字段在这些事件上根本不存在。**读错字段和没实现，在界面上长得一样。**
+ */
+const STREAM_TEXT_KEYS = ['content', 'delta', 'text', 'summary', 'message'] as const
 
-/** 一条事件的补充说明。取不到就返回空串，模板据此不渲染那个 small。 */
-const livePreviewDetail = (event: { payload?: unknown }) => {
+/** 事件里那段真正给人看的文字。取不到返回空串。 */
+const streamTextOf = (event: { payload?: unknown }) => {
   const payload = event.payload
   if (!payload || typeof payload !== 'object') return ''
-  const summary = (payload as Record<string, unknown>).summary
-  return typeof summary === 'string' ? summary.slice(0, 60) : ''
+  const holder = payload as Record<string, unknown>
+  for (const key of STREAM_TEXT_KEYS) {
+    const value = holder[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
 }
+
+/** 三行流式预览：优先带文字的事件，凑不满再用事件名兜底。 */
+const livePreview = computed(() => {
+  const withText = liveTrace.value
+    .map((event) => ({ event, text: streamTextOf(event) }))
+    .filter((item) => item.text)
+  const source = withText.length ? withText : liveTrace.value.map((event) => ({ event, text: '' }))
+  return source.slice(-3).map(({ event, text }) => ({
+    eventId: event.eventId,
+    // 一行放得下的量；换行会把三行撑成十几行，输入框就被挤下去了
+    label: (text || event.title || event.eventType || '').replace(/\s+/g, ' ').slice(0, 120)
+  }))
+})
 
 /** 有东西正在跑——聊天或复核，两条路径共用一个口径。 */
 const executionInFlight = computed(() => sending.value || reviewStarting.value)
@@ -1462,7 +1487,11 @@ onBeforeUnmount(() => {
         />
       </ElSelect>
       <div class="topbar-spacer"></div>
-      <ElButton :icon="Refresh" :loading="polling" @click="refreshLiveState">刷新状态</ElButton>
+      <!-- 「刷新状态」已去掉。
+           实测 16 次采样里 14 次处于 :loading="polling" 的转圈态——轮询几乎一直在跑，
+           文字被 spinner 盖住，用户看到的就是「这个按钮时有时无」。
+           而状态本来就在自动轮询，这个按钮除了制造闪烁没有别的作用：
+           **一个几乎一直在转的手动刷新按钮，传达的信息是「系统可能卡了」**。 -->
       <ElButton :icon="Files" @click="handleOpenFileLibrary">文件库</ElButton>
       <!-- 「文件列表」名不副实：它去的是完整的传统工作台（审计项总览 + 节点清单 +
            已提交资料）。Workbench.vue 里早就因为「有人问怎么切换回传统视图」改叫
@@ -1768,10 +1797,9 @@ onBeforeUnmount(() => {
                    一条都露不出来。**过程不可见的等待，会被当成卡死。**
                    这里常驻最近三条，展开仍看全量。 -->
               <ol v-if="!activityExpanded && livePreview.length" class="execution-preview">
-                <li v-for="event in livePreview" :key="'preview-' + event.eventId">
-                  {{ event.title || event.eventType }}
-                  <small v-if="livePreviewDetail(event)">· {{ livePreviewDetail(event) }}</small>
-                </li>
+                <li v-for="item in livePreview" :key="'preview-' + item.eventId">{{
+                  item.label
+                }}</li>
               </ol>
 
               <div v-if="activityExpanded" class="execution-details">
