@@ -30,7 +30,12 @@ import type {
 import { getStatusTagType } from './status'
 import { pendingNdtFilms, pendingNdtReports } from '@/utils/ndtReadiness'
 import { documentBusinessStatus, documentPipelineStatus } from '@/utils/documentPipelineStatus'
-import { canRetryDocumentUpload, canSubmitNdtDocumentUpload } from '@/utils/documentUploadActions'
+import {
+  canRetryDocumentUpload,
+  canSubmitNdtDocumentUpload,
+  ndtEditBlockedReason,
+  ndtSubmitBlockedReason
+} from '@/utils/documentUploadActions'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
 import {
   NDT_ATOMIC_MATERIALS,
@@ -212,7 +217,9 @@ const atomicFileRows = computed(() =>
       uploadStatus,
       editableBindingIds: canEdit ? editableBindings.map((binding) => binding.id) : [],
       canEdit,
-      canSubmit: canSubmitNdtDocumentUpload(approvalStatus, uploadStatus)
+      canSubmit: canSubmitNdtDocumentUpload(approvalStatus, uploadStatus),
+      submitBlockedReason: ndtSubmitBlockedReason(approvalStatus, uploadStatus),
+      editBlockedReason: ndtEditBlockedReason(approvalStatus)
     }
   })
 )
@@ -586,23 +593,37 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           <ElTableColumn prop="updatedAt" label="更新时间" min-width="150" show-overflow-tooltip />
           <ElTableColumn label="操作" width="190" fixed="right">
             <template #default="{ row }">
-              <ElButton
-                link
-                type="primary"
-                :disabled="!row.canEdit"
-                @click="openBindingDialog(row)"
+              <ElTooltip :disabled="row.canEdit" :content="row.editBlockedReason" placement="top">
+                <span>
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="!row.canEdit"
+                    @click="openBindingDialog(row)"
+                  >
+                    调整业务规则
+                  </ElButton>
+                </span>
+              </ElTooltip>
+              <!-- 禁用时把理由挂在 tooltip 上：三种情况该做的事完全不同
+                   （等一等 / 重新上传 / 已经提交过了），不能都用一个灰按钮打发。 -->
+              <ElTooltip
+                :disabled="row.canSubmit"
+                :content="row.submitBlockedReason"
+                placement="top"
               >
-                调整业务规则
-              </ElButton>
-              <ElButton
-                link
-                type="primary"
-                :disabled="!row.canSubmit"
-                :loading="loading"
-                @click="submitAtomicFile(row)"
-              >
-                提交审批
-              </ElButton>
+                <span>
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="!row.canSubmit"
+                    :loading="loading"
+                    @click="submitAtomicFile(row)"
+                  >
+                    提交审批
+                  </ElButton>
+                </span>
+              </ElTooltip>
             </template>
           </ElTableColumn>
         </ElTable>
