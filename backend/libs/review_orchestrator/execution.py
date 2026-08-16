@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -4050,8 +4051,47 @@ def review_run_audit_trace(review_run_id: str) -> dict[str, Any]:
     }
 
 
+# 排队多久算「没人执行了」。inline 模式下派发即执行，正常运行几十秒内就会动；
+# 半小时不动只有两种可能：派发丢了，或者执行进程中途没了（部署重建 worker 就会）。
+# 两种都不会有人来把它改成失败——它会永远停在 queued。
+STALE_QUEUED_AFTER_SECONDS = 1800
+
+
+def review_run_looks_abandoned(review_run: dict[str, Any]) -> bool:
+    """排队/运行中但长期无进展。
+
+    线上实测（2026-08-16）：节点 1 的 RRUN-DC8068527E 从 2026-08-15 13:56:11 起
+    一直是 queued，20 小时没动。谁打开这个节点都看到「执行中」，
+    **审查结果永远出不来**，也没人知道该重跑——这就是「现在审计结果出不来」。
+    """
+    if str(review_run.get("status") or "") not in {"queued", "running", "retrying"}:
+        return False
+    stamp = str(
+        review_run.get("updatedAt") or review_run.get("startedAt") or review_run.get("createdAt") or ""
+    ).strip()
+    if not stamp:
+        return False
+    try:
+        moment = datetime.strptime(stamp[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return False
+    # 时间戳不带时区，跟服务器当前时间比——两边同一口径才有意义。
+    try:
+        now = datetime.strptime(str(server_time())[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return False
+    return (now - moment).total_seconds() > STALE_QUEUED_AFTER_SECONDS
+
+
 def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = False) -> dict[str, Any]:
     view = repo.clone(review_run)
+    if review_run_looks_abandoned(view):
+        # 只改展示，不改库：库里那份是执行留痕。界面据此显示「未能执行」
+        # 并允许重新发起，而不是让人对着「执行中」等下去。
+        view["status"] = "failed"
+        view["statusReconciledFrom"] = "stale_queue"
+        view["errorCode"] = view.get("errorCode") or "REVIEW_RUN_ABANDONED"
+        view["errorMessage"] = view.get("errorMessage") or "任务排队后长时间没有进展，可能是执行进程已重启；请重新发起复核。"
     if not include_sensitive:
         prompt_audit = view.get("promptAudit") if isinstance(view.get("promptAudit"), dict) else {}
         view["promptSummary"] = {

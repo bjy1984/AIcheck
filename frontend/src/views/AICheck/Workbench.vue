@@ -239,6 +239,7 @@ import AuditItemDirectory from './components/AuditItemDirectory.vue'
 import ConversationalReviewWorkbenchB from '@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'
 import { useUserStore } from '@/store/modules/user'
 import { formatConfidence } from '@/utils/confidence'
+import { parseAiFindings } from '@/utils/aiFindings'
 import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
 import { resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
 import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
@@ -656,6 +657,9 @@ const aiRecheckResultText = computed(() => {
     (actionLoading.value && aiRecheckOutputVisible.value ? '正在等待模型输出。' : '暂无模型输出。')
   )
 })
+/** 模型输出解析成的结论条目；空数组表示不是 findings JSON，按原文显示。 */
+const aiRecheckFindings = computed(() => parseAiFindings(aiRecheckResultText.value))
+
 const aiRecheckOutputMeta = computed(() => {
   const run = aiRecheckDisplayRun.value
   if (!run) return actionLoading.value && aiRecheckOutputVisible.value ? '触发中' : '等待触发'
@@ -5692,7 +5696,41 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="ai-recheck-output-section">
                   <label>AI 建议（待人工确认）</label>
-                  <pre>{{ aiRecheckResultText }}</pre>
+                  <!-- 模型输出是 findings JSON 时按条渲染。原先直接 <pre> 打出
+                       原始 JSON，监检要在花括号和转义引号里找结论——
+                       **那不是不好看，是让人读不到判定**。
+                       解析不出来仍原样显示文本：模型偶尔回纯文字，硬套结构会吃掉内容。 -->
+                  <ul v-if="aiRecheckFindings.length" class="ai-finding-list">
+                    <li v-for="(finding, index) in aiRecheckFindings" :key="index">
+                      <div class="ai-finding-head">
+                        <ElTag size="small" effect="plain">{{ finding.typeLabel }}</ElTag>
+                        <ElTag
+                          v-if="finding.severityLabel"
+                          size="small"
+                          :type="
+                            finding.severity === 'high'
+                              ? 'danger'
+                              : finding.severity === 'medium'
+                                ? 'warning'
+                                : 'info'
+                          "
+                        >
+                          严重度 {{ finding.severityLabel }}
+                        </ElTag>
+                        <span v-if="finding.evidenceCount" class="ai-finding-meta">
+                          证据 {{ finding.evidenceCount }} 条
+                        </span>
+                        <span v-if="finding.ruleCount" class="ai-finding-meta">
+                          条款 {{ finding.ruleCount }} 条
+                        </span>
+                      </div>
+                      <div v-if="finding.title" class="ai-finding-title">{{ finding.title }}</div>
+                      <div v-if="finding.description" class="ai-finding-desc">
+                        {{ finding.description }}
+                      </div>
+                    </li>
+                  </ul>
+                  <pre v-else>{{ aiRecheckResultText }}</pre>
                 </div>
                 <ElCollapse
                   v-model="aiTechnicalPanels"
@@ -9903,6 +9941,47 @@ h3 {
 
 .ai-recheck-output-alert {
   margin: 10px 12px 0;
+}
+
+.ai-finding-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-finding-list li {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e6ebf2;
+  border-radius: 8px;
+}
+
+.ai-finding-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-finding-meta {
+  color: #667085;
+  font-size: 12px;
+}
+
+.ai-finding-title {
+  margin-top: 6px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.ai-finding-desc {
+  margin-top: 4px;
+  color: #47536b;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .ai-recheck-output-section {

@@ -204,6 +204,17 @@ const liveTrace = computed(() => {
   if (reviewStarting.value) return liveRunTrace.value
   return latestExecutionEvents.value
 })
+/** 收起状态下常驻的执行动态：只取最近三条，多了会把输入框挤下去。 */
+const livePreview = computed(() => liveTrace.value.slice(-3))
+
+/** 一条事件的补充说明。取不到就返回空串，模板据此不渲染那个 small。 */
+const livePreviewDetail = (event: { payload?: unknown }) => {
+  const payload = event.payload
+  if (!payload || typeof payload !== 'object') return ''
+  const summary = (payload as Record<string, unknown>).summary
+  return typeof summary === 'string' ? summary.slice(0, 60) : ''
+}
+
 /** 有东西正在跑——聊天或复核，两条路径共用一个口径。 */
 const executionInFlight = computed(() => sending.value || reviewStarting.value)
 const displayUser = computed(
@@ -1751,6 +1762,18 @@ onBeforeUnmount(() => {
                 <span :class="['execution-chevron', { 'is-open': activityExpanded }]">⌄</span>
               </button>
 
+              <!-- 收起时也要能看见进展。
+                   执行动态原先只在展开后才显示，而它默认是收起的——于是跑一次复核，
+                   用户看到的只有一个「执行中」标签在那儿待着，后台七八十条事件
+                   一条都露不出来。**过程不可见的等待，会被当成卡死。**
+                   这里常驻最近三条，展开仍看全量。 -->
+              <ol v-if="!activityExpanded && livePreview.length" class="execution-preview">
+                <li v-for="event in livePreview" :key="'preview-' + event.eventId">
+                  {{ event.title || event.eventType }}
+                  <small v-if="livePreviewDetail(event)">· {{ livePreviewDetail(event) }}</small>
+                </li>
+              </ol>
+
               <div v-if="activityExpanded" class="execution-details">
                 <ElProgress
                   v-if="runProgress !== null"
@@ -2754,6 +2777,25 @@ onBeforeUnmount(() => {
 
 .execution-chevron.is-open {
   transform: rotate(180deg);
+}
+
+.execution-preview {
+  margin: 6px 0 0;
+  padding: 0 0 0 18px;
+  list-style: none;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.execution-preview li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-preview small {
+  color: #98a2b3;
 }
 
 .execution-details {
