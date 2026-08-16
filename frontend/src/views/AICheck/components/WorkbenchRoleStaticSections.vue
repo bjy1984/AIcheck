@@ -65,6 +65,9 @@ type ContractorFileRow = {
   status: Exclude<ContractorFileStatus, '全部'>
   sourceOrgName: string
   relationNode: string
+  /** 关联的审核环节 id。用 id 精确判定，不去解析 relationNode 那串文字——
+      「1. 设计单位许可资质」用字符串匹配，节点 1 会连节点 11、12 一起命中。 */
+  relationNodeIds: number[]
   feedback: string
   ocr: string
   processingStatus: DocumentBusinessStatus
@@ -125,15 +128,32 @@ const correctionFeedback = computed(() =>
  * 做不到的情况由调用方如实降级措辞，不再说「已定位」。
  */
 const focusContractorNode = async (node: { id: number; name: string }) => {
+  /* 按**节点归属**筛选，不是往搜索框塞词。
+   *
+   * 第一版把节点名填进搜索框，结果线上「0 / 10 个文件 · 暂无文件」——
+   * 搜索匹配的是文件名/资料类别，而「节点 16」这四个字不在任何文件名里。
+   * **把「定位」做成「搜索」，看起来像在筛选，实际是把人筛没了。**
+   * 而空列表比原来的错误提示更糟：用户会以为自己的资料丢了。
+   */
   contractorStatusFilter.value = '全部'
   contractorUsageFilter.value = '全部用途'
-  contractorKeyword.value = String(node.name || '').trim()
+  contractorMaterialFilter.value = '全部资料类别'
+  contractorKeyword.value = ''
+  contractorNodeFilter.value = Number(node.id) || null
   contractorPage.value = 1
   await nextTick()
   document
     .querySelector('#contractor-file-list')
     ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  return contractorKeyword.value.length > 0
+  // 该节点一份资料都没有也算定位成功——「这个节点确实还没有资料」
+  // 本身就是用户要的答案，只是必须说出来（见下方提示条）。
+  return contractorNodeFilter.value !== null
+}
+
+/** 待办跳转时锁定的节点。null = 不限。 */
+const contractorNodeFilter = ref<number | null>(null)
+const clearContractorNodeFilter = () => {
+  contractorNodeFilter.value = null
 }
 
 defineExpose({ focusContractorNode })
@@ -384,6 +404,9 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
       status,
       sourceOrgName: file.sourceOrgName,
       relationNode: getRelationNodeText(file.bindings),
+      relationNodeIds: (file.bindings || [])
+        .map((binding) => Number(binding.nodeId))
+        .filter((id) => Number.isFinite(id)),
       feedback: binding?.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
       ocr: file.currentOcrStatus,
       processingStatus: documentBusinessStatus(file),
@@ -412,6 +435,7 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
             : '审核中',
     sourceOrgName: binding.sourceOrgName,
     relationNode: getRelationNodeText([binding]),
+    relationNodeIds: Number.isFinite(Number(binding.nodeId)) ? [Number(binding.nodeId)] : [],
     feedback: binding.bindingStatus === '需补正' ? rectificationIdForBinding(binding.id) : '--',
     ocr: '--',
     processingStatus: '上传中',
@@ -487,8 +511,15 @@ const filteredContractorFileRows = computed(() => {
     ]
       .join(' ')
       .toLowerCase()
+    const matchesNode =
+      contractorNodeFilter.value === null ||
+      file.relationNodeIds.includes(contractorNodeFilter.value)
     return (
-      matchesStatus && matchesUsage && matchesMaterial && (!keyword || haystack.includes(keyword))
+      matchesStatus &&
+      matchesUsage &&
+      matchesMaterial &&
+      matchesNode &&
+      (!keyword || haystack.includes(keyword))
     )
   })
   return rows.slice().sort((a, b) => {
@@ -718,6 +749,24 @@ const getPillClass = (value?: string): AuditStatusTone => {
                 {{ status }} {{ contractorStatusCounts[status] }}
               </ElRadioButton>
             </ElRadioGroup>
+            <!-- 锁定节点时必须明说，并给一键退出。
+                 不说的话，用户只会看到「文件忽然少了」——而这正是上一版
+                 「0 / 10 个文件 · 暂无文件」让人以为资料丢了的原因。 -->
+            <ElAlert
+              v-if="contractorNodeFilter !== null"
+              class="node-filter-tip"
+              type="info"
+              :closable="false"
+              show-icon
+            >
+              <template #title>
+                当前只显示「节点 {{ contractorNodeFilter }}」关联的资料（共
+                {{ filteredContractorFileRows.length }} 份）。
+                <ElButton link type="primary" @click="clearContractorNodeFilter">
+                  查看全部资料
+                </ElButton>
+              </template>
+            </ElAlert>
             <div id="contractor-file-list" class="filter-row">
               <ElInput
                 v-model="contractorKeyword"

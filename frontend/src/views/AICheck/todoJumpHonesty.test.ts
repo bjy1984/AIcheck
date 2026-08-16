@@ -40,9 +40,23 @@ const loadAt = fn.indexOf('await loadNodePackage')
 const focusAt = fn.indexOf('focusContractorNode')
 assert.ok(loadAt > 0 && focusAt > loadAt, '先取数据再定位')
 
+// **定位要按节点筛选，不能往搜索框塞词。**
+// 第一版把节点名填进搜索框，线上得到「0 / 10 个文件 · 暂无文件」——
+// 搜索匹配的是文件名/资料类别，「节点 16」这四个字不在任何文件名里。
+// 把「定位」做成「搜索」，看起来像在筛选，实际是把人筛没了；
+// 而空列表比原来的错误提示更糟：用户会以为自己的资料丢了。
+assert.ok(/contractorNodeFilter/.test(sections), '要有按节点的筛选状态')
+assert.ok(/contractorKeyword\.value = ''/.test(sections), '定位时要清空关键词，不能靠关键词筛选')
+assert.ok(
+  /file\.relationNodeIds\.includes\(contractorNodeFilter\.value\)/.test(sections),
+  '按节点 id 精确判定——用 relationNode 文本匹配，节点 1 会连 11、12 一起命中'
+)
+// 锁定后必须让用户看见并能退出，否则又是一次「列表莫名其妙变空」
+assert.ok(/当前只显示「节点/.test(sections), '锁定节点要有明确提示')
+assert.ok(/clearContractorNodeFilter/.test(sections), '要有一键查看全部资料')
+
 // 静态视图这边：定位＝填筛选 + 滚动，并回报是否成功
 assert.ok(/const focusContractorNode = async/.test(sections), '静态视图要暴露定位方法')
-assert.ok(/contractorKeyword\.value = String\(node\.name/.test(sections), '定位要把节点名填进筛选')
 assert.ok(/scrollIntoView/.test(sections), '定位要把列表滚到可见处')
 assert.ok(/defineExpose\(\{ focusContractorNode \}\)/.test(sections), '方法要暴露给父组件')
 assert.ok(

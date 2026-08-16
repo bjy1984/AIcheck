@@ -24,6 +24,15 @@ const props = defineProps<{
   loading: boolean
 }>()
 
+/** 这条消息能不能定位过去。定位不了就不做成可点——
+ *  给一条去不了的消息配个按钮，点了没反应比不可点更伤。 */
+const messageTarget = (message: MessageItem) => {
+  if (!message.projectId) return ''
+  if (message.targetType === 'node' && message.targetId) return `节点 ${message.targetId}`
+  if (message.targetType === 'rectification' && message.targetId) return '补正单'
+  return '所属项目'
+}
+
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'update:activeTab': [value: 'search' | 'todos' | 'messages']
@@ -32,6 +41,7 @@ const emit = defineEmits<{
   completeTodo: [todoId: string]
   openTodo: [todo: TodoItem]
   readMessage: [messageId: string]
+  openMessage: [message: MessageItem]
   readAllMessages: []
   locateResult: [result: SearchResult]
 }>()
@@ -163,8 +173,36 @@ const unreadCount = computed(() => props.messages.filter((item) => !item.read).l
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="title" label="标题" min-width="190" show-overflow-tooltip />
-          <ElTableColumn prop="content" label="内容" min-width="260" show-overflow-tooltip />
+          <ElTableColumn label="标题" min-width="190" show-overflow-tooltip>
+            <template #default="{ row }">
+              <!-- 能定位的消息才做成可点。给一条定位不了的消息配个按钮，
+                   点了没反应比不可点更伤——用户会以为系统坏了。 -->
+              <ElButton
+                v-if="messageTarget(row)"
+                link
+                type="primary"
+                :title="`去${messageTarget(row)}处理`"
+                @click="emit('openMessage', row)"
+              >
+                {{ row.title }}
+              </ElButton>
+              <span v-else>{{ row.title }}</span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="内容" min-width="260" show-overflow-tooltip>
+            <template #default="{ row }">
+              <ElButton
+                v-if="messageTarget(row)"
+                link
+                type="primary"
+                class="message-content-link"
+                @click="emit('openMessage', row)"
+              >
+                {{ row.content }}
+              </ElButton>
+              <span v-else>{{ row.content }}</span>
+            </template>
+          </ElTableColumn>
           <ElTableColumn prop="createdAt" label="时间" width="158" />
           <ElTableColumn label="操作" width="90">
             <template #default="{ row }">

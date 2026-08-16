@@ -2468,6 +2468,20 @@ const handleLocateQuickResult = async (result: SearchResult) => {
  * 却不告诉你去哪处理，也点不过去——用户只能自己回到项目树里翻。
  * 待办上本来就带着 projectId / nodeId，定位逻辑也现成（handleLocateQuickResult）。
  */
+/** 消息里的内容也要能点过去。走的是和待办同一套定位——
+ *  两套定位逻辑迟早会分叉，而分叉的那天没人会发现。 */
+const handleOpenQuickMessage = async (message: MessageItem) => {
+  await handleOpenQuickTodo({
+    id: message.id,
+    title: message.title,
+    projectId: message.projectId,
+    targetType: message.targetType,
+    targetId: message.targetId,
+    nodeId: message.targetType === 'node' ? Number(message.targetId) : undefined
+  } as unknown as TodoItem)
+  if (!message.read) void handleReadQuickMessage(message.id)
+}
+
 const handleOpenQuickTodo = async (todo: TodoItem) => {
   const targetProjectId = String(todo.projectId || '')
   const targetNodeId = Number(todo.nodeId || 0)
@@ -6840,6 +6854,7 @@ onBeforeUnmount(() => {
         @search="handleQuickSearch"
         @complete-todo="handleCompleteQuickTodo"
         @open-todo="handleOpenQuickTodo"
+        @open-message="handleOpenQuickMessage"
         @read-message="handleReadQuickMessage"
         @read-all-messages="handleReadAllQuickMessages"
         @locate-result="handleLocateQuickResult"
