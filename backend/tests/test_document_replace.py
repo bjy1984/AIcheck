@@ -149,3 +149,29 @@ def test_落库范围要覆盖被顶下去的旧版本():
     assert 'str(item.get("documentId") or "") in document_ids' in source, (
         "versions 要按文档取全部版本，否则被替换掉的旧版本不会落库"
     )
+
+
+def test_每个版本记住自己的文件名():
+    """替换之后文档名不变（标识要稳），但要看得出这一版换进去的是哪个文件。
+
+    **换对了没有，是替换这个动作的全部意义**——界面上只显示原文档名，
+    用户没有任何办法确认自己刚才传的是不是想传的那份。
+    """
+    document = _make_document()
+    document_id = document["id"]
+    repo.create_upload_session(
+        "P-REPLACE",
+        [
+            {
+                "fileName": "质量证明-第二版.pdf",
+                "fileType": "pdf",
+                "fileSize": 4096,
+                "replaceDocumentId": document_id,
+            }
+        ],
+    )
+    versions = {item["versionNo"]: item for item in repo.versions_for_document(document_id)}
+    assert versions["V1"]["fileName"] == "质量证明.pdf", "第一版也要记，否则历史里 V1 是空的"
+    assert versions["V2"]["fileName"] == "质量证明-第二版.pdf"
+    # 文档名不跟着变：它是这份资料的标识，跟着每次替换改会让引用它的地方对不上
+    assert repo.find_one("documents", document_id)["fileName"] == "质量证明.pdf"

@@ -57,3 +57,15 @@ assert.ok(
   /替换资料：\$\{uploadDrawerReplaceTarget\.fileName\}/.test(workbench),
   '抽屉标题要写明在替换哪一份，否则和普通上传长得一样'
 )
+
+// ④ 每个版本要显示自己的文件名。
+// 替换之后文档名不变（标识要稳），但界面上只看到原来那个名字，
+// 用户无从确认换进去的是哪个文件——**换对了没有，是替换这个动作的全部意义**。
+const dialog = readFileSync(
+  fileURLToPath(new URL('./components/FileDetailDialog.vue', import.meta.url)),
+  'utf8'
+)
+assert.ok(
+  /\{\{ row\.fileName \|\| document\.fileName \}\}/.test(dialog),
+  '历史版本要显示每版各自的文件名，取不到再退回文档名'
+)

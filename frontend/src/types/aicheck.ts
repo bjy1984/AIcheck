@@ -244,6 +244,9 @@ export type DocumentVersion = {
   id: string
   documentId: string
   versionNo: string
+  /** 这一版实际上传的文件名。文档名保持不变（标识要稳），
+      但替换之后要能看出这一版换进去的是哪个文件。 */
+  fileName?: string
   hash: string
   fileSize: number
   uploaderName: string

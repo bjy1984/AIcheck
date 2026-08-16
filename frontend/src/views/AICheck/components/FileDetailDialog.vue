@@ -992,7 +992,15 @@ watch(visible, (open) => {
 
               <ElTabPane :label="`历史版本 (${versions.length})`" name="versions">
                 <ElTable :data="versions" border size="small" max-height="100%">
-                  <ElTableColumn prop="versionNo" label="版本" width="80" />
+                  <ElTableColumn prop="versionNo" label="版本" width="70" />
+                  <!-- 每版各自的文件名。文档名保持不变（标识要稳），
+                       但替换之后「这一版换进去的是哪个文件」必须看得见——
+                       否则界面上还是原来那个名字，用户无从确认换对了没有。 -->
+                  <ElTableColumn label="文件" min-width="160" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      {{ row.fileName || document.fileName }}
+                    </template>
+                  </ElTableColumn>
                   <ElTableColumn
                     prop="uploaderName"
                     label="上传人"

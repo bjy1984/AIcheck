@@ -1095,6 +1095,9 @@ class InMemoryRepository:
             "id": version_id,
             "documentId": document_id,
             "versionNo": "V1",
+            # 第一版也要记文件名：不记的话历史列表里 V1 一栏是空的，
+            # 而它恰恰是「原来传的是什么」这个问题的答案。
+            "fileName": file_name,
             "hash": content_hash,
             "fileSize": max(0, int(file_size or 0)),
             "storageKey": f"documents/{project_id}/{version_id}",
@@ -1159,6 +1162,7 @@ class InMemoryRepository:
         self,
         document: dict[str, Any],
         *,
+        file_name: str | None = None,
         file_size: int = 0,
         content_hash: str | None = None,
         uploader_name: str | None = None,
@@ -1195,6 +1199,10 @@ class InMemoryRepository:
             "ocrStatus": "排队中",
             "sliceStatus": "未切片",
             "vectorStatus": "未向量化",
+            # 每个版本记自己的文件名。文档名保持不变（标识要稳），
+            # 但「这一版换进去的是哪个文件」必须看得见——
+            # 否则替换之后界面上还是原来那个名字，用户无从确认换对了没有。
+            "fileName": (file_name or "").strip() or document.get("fileName"),
             "uploaderName": uploader_name or document.get("uploaderName") or "系统",
             "uploadTime": now,
             "isCurrent": True,
@@ -1235,6 +1243,7 @@ class InMemoryRepository:
                 doc = target
                 version = self.next_document_version(
                     target,
+                    file_name=str(file.get("fileName") or "").strip() or None,
                     file_size=int(file.get("fileSize") or 0),
                     content_hash=str(file.get("contentHash") or "").strip() or None,
                     uploader_name=uploader_name,
