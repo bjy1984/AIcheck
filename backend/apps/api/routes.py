@@ -29509,13 +29509,37 @@ def repository_state_footprint() -> dict[str, Any]:
     }
 
 
+# 这个总览的两块重货：ruleVersions 375 KB、materialReviewPoints 118 KB，
+# 合起来占 787 KB 里的 63%。而它们只有「业务规则」那一页在用，
+# 权限、Prompt、报告模板、联调各页都得先等它们传完——线上实测切一次
+# 5.6~8.0 秒，跟 PDF 里报的「8-9 秒」是同一件事。
+#
+# 用 sections 让调用方声明要哪几节。默认仍下发全部：省略参数的老调用方
+# （包括发布预览那条链路）不能因为这次优化而少拿数据——**为提速而悄悄少发，
+# 是这轮审计里最贵的那类失败**。
+ADMIN_OVERVIEW_OPTIONAL_SECTIONS = ("ruleVersions", "materialReviewPoints")
+
+
 @router.get("/admin/config-overview")
-def admin_config_overview(request: Request):
+def admin_config_overview(
+    request: Request,
+    sections: str | None = Query(default=None),
+):
     overview = repo.build_admin_overview()
     overview["businessPacks"] = list_business_packs()
     overview["orgUnits"] = list_admin_org_units()
     overview["users"] = list_admin_users()
     overview["stateFootprint"] = repository_state_footprint()
+    wanted = {item.strip() for item in str(sections or "").split(",") if item.strip()}
+    if wanted:
+        for section in ADMIN_OVERVIEW_OPTIONAL_SECTIONS:
+            if section not in wanted:
+                # 不是删掉键，是给一个空列表并标注被省略——前端才分得清
+                # 「这一节没有数据」和「这一节这次没要」。
+                overview[section] = []
+        overview["omittedSections"] = [
+            section for section in ADMIN_OVERVIEW_OPTIONAL_SECTIONS if section not in wanted
+        ]
     overview.update(
         {
             "revision": singleton_revision(repo.state["admin_config"]),

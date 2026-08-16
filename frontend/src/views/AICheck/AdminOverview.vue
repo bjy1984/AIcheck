@@ -1988,6 +1988,12 @@ const loadIntegrationContract = async () => {
   }
 }
 
+/** 当前页签是否真的要用 ruleVersions / materialReviewPoints。
+ *  判据放在一处，省得下次新增页签时漏掉又变成空表。 */
+const needsHeavySections = computed(() =>
+  ['business-rule', 'material-review-point', 'node-template'].includes(activeTab.value)
+)
+
 const loadData = async () => {
   loading.value = true
   overviewError.value = ''
@@ -2004,10 +2010,29 @@ const loadData = async () => {
               : activeTab.value === 'report-template'
                 ? loadReportTemplates()
                 : Promise.resolve(true)
-    const [tabResult, configRes] = await Promise.all([tabRequest, getAdminConfigOverviewApi()])
+    // 只要当前页签用得上的重数据。ruleVersions / materialReviewPoints 合计
+    // 493 KB，只有业务规则页在用；此前每个页签都在等它们传完。
+    const heavySections = ['business-rule', 'material-review-point', 'node-template'].includes(
+      activeTab.value
+    )
+      ? ['ruleVersions', 'materialReviewPoints']
+      : []
+    const [tabResult, configRes] = await Promise.all([
+      tabRequest,
+      getAdminConfigOverviewApi(heavySections)
+    ])
     if (configRes) {
       const nextOverview = { ...configRes.data }
       nextOverview.materialReviewPoints = nextOverview.materialReviewPoints || []
+      // 兜底：这次省略了重数据，但当前页真的要显示它——补拉一次完整的。
+      // 少发数据换来的速度，代价是表格默默变空，那比慢更糟：
+      // 用户看到的是「没有规则」，而不是「还没加载」。
+      const omitted: string[] =
+        (configRes.data as { omittedSections?: string[] }).omittedSections || []
+      if (omitted.length && needsHeavySections.value) {
+        const fullRes = await getAdminConfigOverviewApi().catch(() => undefined)
+        if (fullRes) Object.assign(nextOverview, fullRes.data)
+      }
       if (!nextOverview.businessPacks?.length) {
         const businessPackRes = await listBusinessPacksApi().catch(() => undefined)
         if (businessPackRes) nextOverview.businessPacks = businessPackRes.data

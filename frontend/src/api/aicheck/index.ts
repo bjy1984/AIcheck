@@ -4533,8 +4533,19 @@ export const getAuditLogsApi = (params?: {
   return request.get({ url: '/api/admin/audit-logs', params })
 }
 
-export const getAdminConfigOverviewApi = (): Promise<IResponse<AdminConfigOverviewPayload>> => {
-  return request.get({ url: '/api/admin/config-overview' })
+/** 后台总览。
+ *
+ * sections 声明这次要哪几节重数据（ruleVersions / materialReviewPoints）。
+ * 这两节合起来 493 KB，只有「业务规则」页在用，而每个页签都在等它们传完——
+ * 线上实测切一次 5.6~8.0 秒。不传 sections 时后端仍下发全部，老调用方不受影响。
+ */
+export const getAdminConfigOverviewApi = (
+  sections?: string[]
+): Promise<IResponse<AdminConfigOverviewPayload>> => {
+  return request.get({
+    url: '/api/admin/config-overview',
+    ...(sections?.length ? { params: { sections: sections.join(',') } } : {})
+  })
 }
 
 export const listAdminOrgUnitsApi = (params?: {
