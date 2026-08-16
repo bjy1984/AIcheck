@@ -43,6 +43,15 @@ assert.ok(/\.filter\(\(item\) => item\.text\)/.test(sfc), '优先显示带文字
 assert.ok(/v-if="activityExpanded" class="execution-details"/.test(sfc), '展开后仍要有完整轨迹')
 assert.ok(/v-for="event in liveTrace"/.test(sfc), '完整轨迹用的仍是 liveTrace')
 
+// 展开那份也要显示真正的文字。第一次修复只改了收起的预览，展开的列表
+// 仍然只认 payload.summary——于是展开后满屏「模型推理流」，一个字都没有。
+// **同一条规则写在两处、只改一处**，是这轮反复出现的形态。
+assert.ok(
+  /<small v-if="streamTextOf\(event\)">· \{\{ streamTextOf\(event\) \}\}<\/small>/.test(sfc),
+  '展开的轨迹要用同一套取字逻辑'
+)
+assert.ok(!/'summary' in event\.payload/.test(sfc), '不该再只认 payload.summary')
+
 // 预览与完整列表的 key 不能重复——同一批事件同时渲染两处会撞 key
 assert.ok(/:key="'preview-' \+ item\.eventId"/.test(sfc), '预览的 key 要加前缀')
 

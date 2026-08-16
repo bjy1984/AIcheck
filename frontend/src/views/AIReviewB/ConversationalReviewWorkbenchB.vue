@@ -1814,16 +1814,10 @@ onBeforeUnmount(() => {
                     <span class="execution-event-dot"></span>
                     <span>
                       {{ event.title || event.eventType }}
-                      <small
-                        v-if="
-                          event.payload &&
-                          typeof event.payload === 'object' &&
-                          'summary' in event.payload &&
-                          event.payload.summary
-                        "
-                      >
-                        · {{ String(event.payload.summary) }}
-                      </small>
+                      <!-- 展开这份也要给内容。原先只认 payload.summary，而推理流和
+                           回答增量的文字在 payload.content 里——于是这里跟收起的
+                           预览犯同一个错：满屏「模型推理流」，一个字都没有。 -->
+                      <small v-if="streamTextOf(event)">· {{ streamTextOf(event) }}</small>
                     </span>
                     <time>{{ formatTime(event.occurredAt) }}</time>
                   </li>
