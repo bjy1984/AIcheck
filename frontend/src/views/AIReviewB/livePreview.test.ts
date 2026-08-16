@@ -55,6 +55,13 @@ assert.ok(!/'summary' in event\.payload/.test(sfc), '不该再只认 payload.sum
 // 预览与完整列表的 key 不能重复——同一批事件同时渲染两处会撞 key
 assert.ok(/:key="'preview-' \+ item\.eventId"/.test(sfc), '预览的 key 要加前缀')
 
+// 发送时不许自动展开：展开渲染的是全量轨迹，收起态才是三行滚动预览。
+// 自动展开会把用户要的那三行直接跳过去，面板还会把输入框挤下屏。
+const sendAt = sfc.indexOf('const sendMessage = async')
+const sendFn = sfc.slice(sendAt, sfc.indexOf('const stopCurrentExecution'))
+assert.ok(!/activityExpanded\.value = true/.test(sendFn), '发送时不该自动展开执行面板')
+assert.ok(!/activityExpanded\.value = false/.test(sendFn), '执行结束不该替用户合上他打开的面板')
+
 // 推理过程要有打字感：光标只跟最新一条、且只在执行中显示。
 // 静止时还闪会让人以为内容还在生成——**假的进行中比没有反馈更糟**。
 assert.ok(/class="typing-caret"/.test(sfc), '流式预览要有打字光标')

@@ -1070,7 +1070,9 @@ const sendMessage = async (preset?: string) => {
   const sessionId = session.value.id
   sending.value = true
   executionStarted.value = true
-  activityExpanded.value = true
+  // **不要**在发送时自动展开。展开态渲染的是全量轨迹，收起态才是那三行滚动预览；
+  // 自动展开会把用户要的「标签下面滚三行」直接跳过去，
+  // 而且 800 多像素的面板会把输入框挤下屏。展不展开由用户点。
   startLiveAgentTrace()
 
   /* 先把用户这句话放上屏、清空输入框，再去等接口。
@@ -1126,7 +1128,8 @@ const sendMessage = async (preset?: string) => {
   } finally {
     stopLiveAgentTrace()
     sending.value = false
-    activityExpanded.value = false
+    // 不再强制收起：用户中途点开是想看全过程，
+    // 执行一结束就替他合上，等于把他刚打开的东西关掉。
   }
 }
 
