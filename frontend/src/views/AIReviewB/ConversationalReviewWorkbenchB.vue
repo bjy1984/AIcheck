@@ -1041,6 +1041,9 @@ const waitForAssistantCompletion = async (sessionId: string, messageId: string) 
   }
 }
 
+/** 本地占位消息的 id 前缀。服务端回来后按这个前缀清掉。 */
+const PENDING_MESSAGE_PREFIX = 'local-pending-'
+
 const sendMessage = async (preset?: string) => {
   const text = (preset || composer.value).trim()
   if (!text || !session.value?.id || sending.value) return
@@ -1049,12 +1052,41 @@ const sendMessage = async (preset?: string) => {
   executionStarted.value = true
   activityExpanded.value = true
   startLiveAgentTrace()
+
+  /* 先把用户这句话放上屏、清空输入框，再去等接口。
+   *
+   * 原先这两件事都排在 await sendReviewBMessageApi 之后，而那个接口要等
+   * Agent 跑完才返回——线上实测 5.6 秒采样八次，**输入框始终是原文、
+   * 自己发的问题一次都没出现**。用户看到的是「点了发送什么都没发生」，
+   * 于是会再点一次、或者以为系统坏了。
+   *
+   * 占位消息用本地 id，服务端回来后连同它一起换成真实记录：
+   * 不这么做就会出现同一句话显示两遍。
+   */
+  const pendingId = `${PENDING_MESSAGE_PREFIX}${Date.now()}`
+  const lastSequence = messages.value.at(-1)?.sequence ?? 0
+  messages.value = [
+    ...messages.value,
+    {
+      id: pendingId,
+      sessionId,
+      sequence: lastSequence + 1,
+      role: 'user',
+      messageType: 'user_question',
+      status: 'running',
+      contentBlocks: [{ type: 'text', text }]
+    } as ReviewBMessage
+  ]
+  if (!preset) composer.value = ''
+  await scrollTimelineToEnd(true)
+
   try {
     const res = await sendReviewBMessageApi(sessionId, text, {
       etag: session.value.etag
     })
+    // 换成服务端的真实记录：先摘掉占位，再合并，避免同一句显示两遍
+    messages.value = messages.value.filter((item) => item.id !== pendingId)
     mergeMessages([res.data.userMessage, res.data.assistantMessage])
-    if (!preset) composer.value = ''
     workspace.value = workspace.value
       ? { ...workspace.value, session: res.data.session }
       : undefined
@@ -1066,6 +1098,10 @@ const sendMessage = async (preset?: string) => {
     await Promise.all([loadSessionData(false), refreshLiveState()])
     await scrollTimelineToEnd(true)
   } catch (error) {
+    // 发失败了就把占位摘掉，并把原话还回输入框——
+    // 让用户重新打一遍自己刚写的东西，是最不该有的惩罚。
+    messages.value = messages.value.filter((item) => item.id !== pendingId)
+    if (!preset && !composer.value) composer.value = text
     ElMessage.error(getAicheckErrorMessage(error, 'AI 辅助消息发送失败。'))
   } finally {
     stopLiveAgentTrace()
