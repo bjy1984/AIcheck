@@ -271,7 +271,11 @@ services:
       AICHECK_OCR_DISABLE_NETWORK: ${AICHECK_OCR_DISABLE_NETWORK:-true}
       PADDLEOCR_MODEL_DIR: ${PADDLEOCR_MODEL_DIR:-/models/paddleocr}
       PADDLEX_MODEL_DIR: ${PADDLEX_MODEL_DIR:-/models/paddlex}
-      AICHECK_PADDLEX_MODEL_CACHE: ${AICHECK_PADDLEX_MODEL_CACHE:-/models/paddlex}
+      # 缓存目录必须**可写且独立**：paddlex 启动时要在这个目录下建 temp，
+      # 指到只读挂载的模型目录会让 import paddlex 直接抛
+      # PermissionError: '/models/temp'，报错长得像模型坏了。线上实测踩过。
+      AICHECK_PADDLEX_MODEL_CACHE: ${AICHECK_PADDLEX_MODEL_CACHE:-/paddlex-cache}
+      PADDLE_PDX_CACHE_HOME: ${PADDLE_PDX_CACHE_HOME:-/paddlex-cache}
       AICHECK_PADDLEOCR_DET_MODEL_DIR: ${AICHECK_PADDLEOCR_DET_MODEL_DIR:-/models/paddleocr/PP-OCRv6_medium_det}
       AICHECK_PADDLEOCR_REC_MODEL_DIR: ${AICHECK_PADDLEOCR_REC_MODEL_DIR:-/models/paddleocr/PP-OCRv6_medium_rec}
       AICHECK_OCR_SUBPROCESS_PYTHON: ${AICHECK_OCR_SUBPROCESS_PYTHON:-/usr/local/bin/python}
@@ -284,9 +288,15 @@ services:
       AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR: ${AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR:-/models/paddlex/RT-DETR-L_wireless_table_cell_det}
       AICHECK_ENABLE_OPENCV_TABLE_GRID: ${AICHECK_ENABLE_OPENCV_TABLE_GRID:-true}
       AICHECK_OPENCV_TABLE_GRID_MAX_CELLS: ${AICHECK_OPENCV_TABLE_GRID_MAX_CELLS:-1800}
+      # 印章五件套。默认值按**线上实际挂载**写（/models/official_models），
+      # 不是 /models/paddlex——后者是本地开发那套目录结构，照它理解生产会找不到模型，
+      # 而症状只是 available=False、印章一直没有文字。
       AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE: ${AICHECK_ENABLE_PADDLEX_SEAL_PIPELINE:-true}
-      AICHECK_SEAL_DET_MODEL_DIR: ${AICHECK_SEAL_DET_MODEL_DIR:-/models/paddlex/PP-OCRv4_server_seal_det}
-      AICHECK_SEAL_REC_MODEL_DIR: ${AICHECK_SEAL_REC_MODEL_DIR:-/models/paddleocr/PP-OCRv4_server_rec}
+      AICHECK_SEAL_DET_MODEL_DIR: ${AICHECK_SEAL_DET_MODEL_DIR:-/models/official_models/PP-OCRv4_server_seal_det}
+      AICHECK_SEAL_REC_MODEL_DIR: ${AICHECK_SEAL_REC_MODEL_DIR:-/models/official_models/PP-OCRv4_server_rec}
+      AICHECK_SEAL_LAYOUT_MODEL_DIR: ${AICHECK_SEAL_LAYOUT_MODEL_DIR:-/models/official_models/PP-DocLayoutV3}
+      AICHECK_SEAL_DOC_ORI_MODEL_DIR: ${AICHECK_SEAL_DOC_ORI_MODEL_DIR:-/models/official_models/PP-LCNet_x1_0_doc_ori}
+      AICHECK_SEAL_DOC_UNWARP_MODEL_DIR: ${AICHECK_SEAL_DOC_UNWARP_MODEL_DIR:-/models/official_models/UVDoc}
       AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR: ${AICHECK_ENABLE_AGENTDESIGN_SEAL_OCR:-false}
       AICHECK_AGENTDESIGN_SEAL_TIMEOUT: ${AICHECK_AGENTDESIGN_SEAL_TIMEOUT:-140}
       AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES: ${AICHECK_AGENTDESIGN_SEAL_MAX_CANDIDATES:-6}
@@ -312,8 +322,13 @@ services:
     ports:
       - "127.0.0.1:18010:8010"
     volumes:
-      - ${AICHECK_AGENTDESIGN_HOST_PATH:?AICHECK_AGENTDESIGN_HOST_PATH is required}:/opt/agentdesign:ro
-      - ${AICHECK_OCR_MODELS_HOST_PATH:?AICHECK_OCR_MODELS_HOST_PATH is required}:/models:ro
+      # agentdesign 那条在生产是可选的：线上没有这份代码，印章走 paddlex 本地管线。
+      # 写成 :? 必填会让 compose 在生产直接拒绝启动。
+      - ${AICHECK_AGENTDESIGN_HOST_PATH:-/dev/null}:/opt/agentdesign:ro
+      # 模型只读挂在 /models/official_models（线上实际路径），
+      # 缓存另给一个可写卷——见上面 PADDLEX_MODEL_CACHE 那段注释。
+      - ${AICHECK_OCR_MODELS_HOST_PATH:-/home/dev-bjy/aicheck-ocr-models/official_models}:/models/official_models:ro
+      - ${AICHECK_PADDLEX_CACHE_HOST_PATH:-/home/dev-bjy/aicheck-paddlex-cache}:/paddlex-cache
     depends_on:
       minio:
         condition: service_healthy

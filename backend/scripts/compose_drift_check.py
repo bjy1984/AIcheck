@@ -55,7 +55,7 @@ SERVICE_TO_CONTAINER = {
     "llm-remote-worker-service": "aicheck-worker-llm",
     "ocr-remote-worker-service": "aicheck-worker-ocr-remote",
     "review-worker-service": "aicheck-review-worker",
-    "ocr-service": "aicheck-ocr",
+    "ocr-service": "aicheck-ocr-service",
     "embedding-service": "aicheck-embedding",
     "litellm-service": "aicheck-litellm",
     "temporal-ui": "aicheck-temporal-ui",
@@ -76,7 +76,7 @@ SERVICE_TO_CONTAINER = {
 # 而漂移检查一片安静。**免检名单上一条错误的理由，比不写这份名单更危险。**
 INTENTIONALLY_ABSENT = {
     "temporal-ui": "调试用界面，生产不暴露",
-    "ocr-service": "OCR 走远端 API，本地不起",
+
     "embedding-service": "向量化走远端 API，本地不起",
     "worker-service": "已按队列拆成 business/cpu-heavy/llm/ocr 四个专用 worker",
     "review-worker-service": "编排当前是 inline 模式，未启用独立审查 worker",

@@ -33,6 +33,9 @@ PRODUCTION_CONTAINERS = {
     "aicheck-worker-cpu-heavy",
     "aicheck-worker-llm",
     "aicheck-worker-ocr-remote",
+    # 印章读字的本地模型服务（2026-08-16 起）。图片不出内网，
+    # 模型 360 MB 挂在宿主机、缓存另给可写卷；部署脚本每次重建它。
+    "aicheck-ocr-service",
 }
 
 
