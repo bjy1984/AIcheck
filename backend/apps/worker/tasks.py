@@ -1004,8 +1004,11 @@ def _scan_missed_seal_pages(job: dict[str, Any], bundle: Any, seals: list) -> No
     只在「一枚都没检出」或「检出的全都没读出文字」时才扫：这条要逐页跑
     版面检测，每页几秒 CPU，不该每份资料都付。
     """
-    recognized = [item for item in seals if str(item.get("sealName") or "").strip()]
-    if seals and recognized:
+    # 判据是「有没有**可信**的识别」，不是「有没有文字」。
+    # 云端兜底也会写 sealName，但它 recognized=False（读数未经核对）——
+    # 按文字判会让这份文档正好不触发扫描，而它恰恰是封面漏检的那一份。
+    trusted = [item for item in seals if item.get("recognized") is True]
+    if seals and trusted:
         return
     if not seal_scan_enabled():
         return

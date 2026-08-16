@@ -184,3 +184,17 @@ def test_扫描出来的章不能自动满足必盖章要求():
     )
     assert seals[0]["canSatisfyRequiredSeal"] is False
     assert seals[0]["candidateOnly"] is True
+
+
+def test_触发判据看可信识别而不是有没有文字():
+    """云端兜底会写 sealName 但 recognized=False。
+
+    按「有没有文字」判，封面漏检的那份文档正好不会触发逐页扫描——
+    而它恰恰是最需要扫的那一份。
+    """
+    import inspect
+    from apps.worker import tasks
+
+    source = inspect.getsource(tasks._scan_missed_seal_pages)
+    assert 'item.get("recognized") is True' in source, "要按可信识别判，不能按有没有文字判"
+    assert "seal_scan_enabled" in source, "要能关掉——每页几秒 CPU"
