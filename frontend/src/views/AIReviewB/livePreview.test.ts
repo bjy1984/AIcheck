@@ -55,6 +55,23 @@ assert.ok(!/'summary' in event\.payload/.test(sfc), '不该再只认 payload.sum
 // 预览与完整列表的 key 不能重复——同一批事件同时渲染两处会撞 key
 assert.ok(/:key="'preview-' \+ item\.eventId"/.test(sfc), '预览的 key 要加前缀')
 
+// 自动展开必须**一处都不剩**。第一版只去掉了 sendMessage 里那句，
+// startLiveAgentTrace 和发起复核处还有两句，线上面板依旧 aria-expanded=true，
+// 三行预览和光标一个都没渲染出来。**同一条规则写在三处，改一处等于没改。**
+assert.ok(
+  !/activityExpanded\.value = true/.test(sfc),
+  '任何地方都不该自动展开执行面板——展开就没有三行预览'
+)
+
+// 右侧「当前状态」要说人话，且说的是这一轮
+assert.ok(/RUN_STATUS_LABELS/.test(sfc), '状态枚举要翻成中文，不能把 failed 原样打给用户')
+assert.ok(/const runStatusText = computed/.test(sfc), '要有面向用户的状态文案')
+assert.ok(/\{\{ runStatusText \}\}/.test(sfc), '模板要用中文状态而不是原始枚举')
+assert.ok(
+  /if \(runStatusText\.value === '本轮已完成'\) return 'success'/.test(sfc),
+  '颜色要跟着文字走，否则文字说完成、颜色还是红的'
+)
+
 // 发送时不许自动展开：展开渲染的是全量轨迹，收起态才是三行滚动预览。
 // 自动展开会把用户要的那三行直接跳过去，面板还会把输入框挤下屏。
 const sendAt = sfc.indexOf('const sendMessage = async')

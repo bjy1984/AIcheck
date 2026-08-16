@@ -343,7 +343,46 @@ const savedHumanDecision = computed(() => {
 const canReturnCorrection = computed(
   () => workspace.value?.permissions.canReturnCorrection === true
 )
+/* 「当前状态」要说人话，而且要说的是**这一轮**的状态。
+ *
+ * 线上实测两个毛病叠在一起：
+ *   1. 直接把后端枚举 `failed` 原样打在标签上——监检看到的是个英文单词；
+ *   2. 这个 failed 来自 RRUN-DC8068527E，8/15 卡死、被判 REVIEW_RUN_ABANDONED
+ *      的老运行。用户刚问完、AI 也答完了，右边却写着 failed。
+ *
+ * 处理：枚举翻成中文；本轮助手已答完时，这里显示的是本轮结果，
+ * 而不是那条僵尸运行的死亡状态。僵尸运行本身在复核区照常可见，不隐藏。
+ */
+const RUN_STATUS_LABELS: Record<string, string> = {
+  queued: '排队中',
+  running: '执行中',
+  resuming: '恢复中',
+  completed: '已完成',
+  failed: '执行失败',
+  cancelled: '已取消',
+  waiting_human_input: '等待人工补充',
+  waiting_human_review: '等待人工确认',
+  accepted_by_human: '人工已采纳',
+  edited_by_human: '人工已修改',
+  rejected_by_human: '人工已否决',
+  blocked_by_gate: '质量门禁拦截',
+  未发起: '未发起'
+}
+
+const runStatusText = computed(() => {
+  if (sending.value) return '执行中'
+  // 本轮已经答完，就报本轮的结果——不要拿上一条运行的结局当「当前状态」
+  if (latestAssistantExecution.value && !reviewStarting.value && !executionActive.value) {
+    return '本轮已完成'
+  }
+  const raw = runStatus.value
+  return RUN_STATUS_LABELS[raw] || raw
+})
+
 const runStatusTone = computed(() => {
+  // 颜色跟着文字走：文字说「本轮已完成」而颜色still 红的，比不改还糟
+  if (runStatusText.value === '本轮已完成') return 'success'
+  if (runStatusText.value === '执行中') return 'primary'
   if (['accepted_by_human', 'edited_by_human', 'completed', '完成'].includes(runStatus.value))
     return 'success'
   if (['failed', 'cancelled', 'rejected_by_human', '失败'].includes(runStatus.value))
@@ -729,7 +768,9 @@ const startLivePolling = () => {
 
 const startLiveAgentTrace = () => {
   stopLiveAgentTrace()
-  activityExpanded.value = true
+  // 这里曾经也自动展开。**同一条规则写在三处，改一处等于没改**——
+  // 上一版只去掉了 sendMessage 里那句，线上验证时面板依旧 aria-expanded=true，
+  // 三行预览和打字光标一个都没渲染出来。
   const sessionId = session.value?.id
   if (!sessionId) return
   // 优先走 SSE 增量推送；连接失败或中途断开时降级为快速轮询。
@@ -930,7 +971,6 @@ const handleStartReview = async () => {
   actionLoading.value = true
   reviewStarting.value = true
   executionStarted.value = true
-  activityExpanded.value = true
   // ai-recheck 是**同步执行整场审查**的一次 POST，实测要跑好几分钟。
   // 在这几分钟里原来页面上什么都不动：没有进度、没有步骤、没有事件——
   // 监检不知道是在跑、卡住了、还是已经挂了，只能干等。
@@ -2003,7 +2043,7 @@ onBeforeUnmount(() => {
               <div
                 ><dt>当前状态</dt
                 ><dd
-                  ><ElTag :type="runStatusTone">{{ runStatus }}</ElTag></dd
+                  ><ElTag :type="runStatusTone">{{ runStatusText }}</ElTag></dd
                 ></div
               >
               <div
