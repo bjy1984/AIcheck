@@ -4471,6 +4471,16 @@ def clone_review_run_for_replay(
             "outputHash": stable_hash_payload(parent.get("findingDrafts") or []),
             "findingDrafts": [],
             "humanDecision": None,
+            # 上一次的失败不能跟着重跑走。
+            #
+            # 线上实测（2026-08-16）：RRUN-REPLAY-D748CE0E 全程 succeeded
+            # （生成草稿→Schema→证据→依据→Critic→质量门禁→持久化→等待人工确认），
+            # 界面却显示「执行异常」后转失败——因为 repo.clone 把父运行的
+            # errorCode/errorMessage 一起抄了过来，而这两个字段没人清。
+            # 重跑的意义就是「再试一次」，**带着上次的死亡证明重生，等于没重跑**。
+            "errorCode": None,
+            "errorMessage": None,
+            "failureReason": None,
             "revision": 1,
         }
     )
