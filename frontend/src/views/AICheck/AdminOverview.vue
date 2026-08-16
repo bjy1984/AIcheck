@@ -2012,11 +2012,13 @@ const loadData = async () => {
                 : Promise.resolve(true)
     // 只要当前页签用得上的重数据。ruleVersions / materialReviewPoints 合计
     // 493 KB，只有业务规则页在用；此前每个页签都在等它们传完。
-    const heavySections = ['business-rule', 'material-review-point', 'node-template'].includes(
-      activeTab.value
-    )
+    // 注意方向：**轻量页要显式声明只要核心数据**，才会让后端省掉那两块。
+    // 第一版写反了——不需要重数据时什么都不传，后端按默认下发全部，
+    // 于是线上实测一切照旧：788 KB、5.4 秒、请求里连 sections 都没有。
+    // 「改了但没生效」在耗时上跟「没改」长得一模一样，只能靠抓请求参数分辨。
+    const heavySections = needsHeavySections.value
       ? ['ruleVersions', 'materialReviewPoints']
-      : []
+      : ['core']
     const [tabResult, configRes] = await Promise.all([
       tabRequest,
       getAdminConfigOverviewApi(heavySections)
