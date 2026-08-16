@@ -29472,6 +29472,9 @@ def compare_run_detail(request: Request, run_id: str):
     return ok(repo.clone(run), request)
 
 
+_STATE_FOOTPRINT_CACHE: dict[str, Any] = {"key": None, "value": None}
+
+
 def repository_state_footprint() -> dict[str, Any]:
     """当前进程内业务状态的占用概览（A-1 / issue #9）。
 
@@ -29479,6 +29482,20 @@ def repository_state_footprint() -> dict[str, Any]:
     评估要有实测数据——先把占用量暴露在管理端，让容量风险在触线前可见，
     而不是等到 OOM 才发现。只统计条数与近似字节数，不导出业务内容。
     """
+    # 这个统计要把**全部 41024 条记录**序列化一遍才能得出字节数——实测 5.08 秒。
+    # 而它挂在 config-overview 上，于是每打开一个 admin 页都要付这 5 秒：
+    # 权限 7.98s、报告模板 6.74s、Prompt 5.98s，PDF 里报的「8-9 秒」就是它。
+    #
+    # 一个纯诊断指标，不该让每次开页都等它。按「各集合条数」做指纹缓存：
+    # 条数没变就复用，容量评估要的是量级，不是实时精确值。
+    # （不做内容级哈希——那要遍历全部记录，跟直接算一样贵，等于用一个慢操作
+    #  去省另一个慢操作。这条教训在知识库探针那里已经付过一次。）
+    cache_key = tuple(
+        sorted((key, len(value)) for key, value in repo.state.items() if isinstance(value, list))
+    )
+    cached = _STATE_FOOTPRINT_CACHE.get("value")
+    if cached is not None and _STATE_FOOTPRINT_CACHE.get("key") == cache_key:
+        return repo.clone(cached)
     top: list[tuple[int, str, int]] = []
     total_bytes = 0
     total_records = 0
@@ -29498,7 +29515,7 @@ def repository_state_footprint() -> dict[str, Any]:
         total_records += len(value)
         top.append((size, key, len(value)))
     top.sort(reverse=True)
-    return {
+    footprint = {
         "totalBytes": total_bytes,
         "totalMegabytes": round(total_bytes / 1024 / 1024, 2),
         "totalRecords": total_records,
@@ -29506,7 +29523,12 @@ def repository_state_footprint() -> dict[str, Any]:
             {"collection": key, "bytes": size, "recordCount": count} for size, key, count in top[:5]
         ],
         "unmeasuredCollections": unmeasured,
+        # 说清这是按条数指纹缓存的近似值，别让人以为是实时精确读数
+        "measuredAt": server_time(),
     }
+    _STATE_FOOTPRINT_CACHE["key"] = cache_key
+    _STATE_FOOTPRINT_CACHE["value"] = footprint
+    return repo.clone(footprint)
 
 
 # 这个总览的两块重货：ruleVersions 375 KB、materialReviewPoints 118 KB，
