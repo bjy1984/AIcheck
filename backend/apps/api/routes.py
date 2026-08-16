@@ -4658,11 +4658,40 @@ def build_node_requirements_summary(
     }
 
 
+def slim_requirements_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """树视图用的瘦身版摘要：只留计数和缺失项名称。
+
+    实测（2026-08-16，建设方首屏）：/tree 返回 382 KB，其中
+    requirementsSummary 一个字段占 349 KB——**91%**。69 个节点，
+    每个都拖着 requirements 和 missingRequirements 两份完整明细
+    （两个数组长度一模一样，同一批需求装了两遍），每项还带着
+    source 文档路径、revision、updatedAt、minConfidence、evidenceItems……
+
+    而树上只用到四个计数和缺失项的 name（见 Workbench.vue
+    inspectionProjectNodeRows）。明细在 /nodes/{id}/package 里另发一份，
+    点开哪个节点才取哪个——**列表页不该替详情页把数据先背一遍**。
+    """
+    return {
+        "requiredCount": summary.get("requiredCount", 0),
+        "satisfiedCount": summary.get("satisfiedCount", 0),
+        "missingCount": summary.get("missingCount", 0),
+        "progressPercent": summary.get("progressPercent", 0),
+        "hasRequirementDetails": summary.get("hasRequirementDetails", False),
+        # 树上只显示名字。带 id 是为了点进去能对上，不是为了展示。
+        "missingRequirements": [
+            {"id": item.get("id"), "name": item.get("name")}
+            for item in (summary.get("missingRequirements") or [])
+            if isinstance(item, dict)
+        ],
+    }
+
+
 def enrich_node_with_requirements_summary(
     project_id: str,
     node: dict[str, Any],
     *,
     project_bindings: list[dict[str, Any]] | None = None,
+    slim: bool = False,
 ) -> dict[str, Any]:
     enriched = repo.clone(node)
     node_bindings = [
@@ -4671,7 +4700,7 @@ def enrich_node_with_requirements_summary(
         if int(binding.get("nodeId") or 0) == int(node["nodeId"])
     ]
     summary = build_node_requirements_summary(project_id, enriched, node_bindings=node_bindings)
-    enriched["requirementsSummary"] = summary
+    enriched["requirementsSummary"] = slim_requirements_summary(summary) if slim else summary
     enriched["fileCount"] = len(node_bindings)
     if summary["hasRequirementDetails"]:
         enriched["requiredProgress"] = {
@@ -5841,7 +5870,9 @@ def project_tree(request: Request, project_id: str):
     groups = filter_node_groups_for_scope(repo.node_groups(project_id), scope)
     for group in groups:
         group["nodes"] = [
-            enrich_node_with_requirements_summary(project_id, node, project_bindings=project_bindings)
+            enrich_node_with_requirements_summary(
+                project_id, node, project_bindings=project_bindings, slim=True
+            )
             for node in group.get("nodes", [])
         ]
     return ok({"project": versioned_project(project), "groups": groups}, request)
