@@ -13,7 +13,7 @@ export const AICHECK_ROLE_LABELS: Record<AicheckRole, string> = {
 }
 
 export const ROLE_DEFAULT_PATHS: Record<AicheckRole, string> = {
-  inspection: '/ai-review-b',
+  inspection: '/workbench/inspection',
   contractor: '/workbench/contractor',
   ndt: '/workbench/ndt',
   owner: '/workbench/owner',
@@ -46,11 +46,41 @@ export const getRoleDefaultPath = (role?: string): string => {
   return ROLE_DEFAULT_PATHS[normalizeAicheckRole(role)]
 }
 
+/** 已下线路径 → 现在应该去哪。收藏夹和历史待办里存着老地址，
+ *  直接 404 会让人以为功能没了；实际上对话式复核只是搬进了工作台。 */
+export const RETIRED_PATH_REDIRECTS: Record<string, string> = {
+  '/ai-review-b': '/workbench/inspection'
+}
+
+export const resolveRetiredPath = (path: string): string | null => {
+  const pathname = path.split(/[?#]/, 1)[0]
+  for (const [retired, target] of Object.entries(RETIRED_PATH_REDIRECTS)) {
+    if (pathname === retired || pathname.startsWith(`${retired}/`)) {
+      // 查询串带着 projectId/nodeId，要原样带过去——去掉就等于把人送到
+      // 一个空工作台，还得自己重新选项目和节点。
+      /* 查询串原样带走，并补上 view=ai。
+       *
+       * 工作台默认落在资料列表；从对话页过来的人要的是对话。
+       * 不补这一下，重定向虽然「成功」了，人看到的却是另一个界面——
+       * **到了但没到，比 404 更耗时间**：他会以为对话功能真的被删了。
+       */
+      const query = path.slice(pathname.length)
+      const separator = query.startsWith('?') ? '&' : '?'
+      const withView = /[?&]view=/.test(query) ? query : `${query}${separator}view=ai`
+      return `${target}${withView}`
+    }
+  }
+  return null
+}
+
 export const isPathAllowedForRole = (path: string, role?: string): boolean => {
   const normalizedRole = normalizeAicheckRole(role)
   const pathname = path.split(/[?#]/, 1)[0]
   if (!pathname || pathname === '/') return false
   if (['/login', '/404', '/redirect'].some((prefix) => pathname.startsWith(prefix))) return true
+  // /ai-review-b 已下线（两套监检界面合并为一套）。老链接仍判为监检可访问，
+  // 由重定向送去 /workbench/inspection——直接判不可访问会让收藏夹里的旧地址
+  // 弹「无权访问」，那是最容易被当成故障的表现。
   if (pathname === '/ai-review-b' || pathname.startsWith('/ai-review-b/')) {
     return normalizedRole === 'inspection'
   }
@@ -85,6 +115,10 @@ export const resolveRoleEntryPath = (role?: string, redirect?: string): string =
   ) {
     return defaultPath
   }
+  // 老地址先翻译再判断：收藏了 /ai-review-b?projectId=…&nodeId=… 的人
+  // 登录后应当落在工作台的对应节点上，而不是被打回默认页重新找一遍。
+  const retired = resolveRetiredPath(decoded)
+  if (retired) return isPathAllowedForRole(retired, role) ? retired : defaultPath
   return isPathAllowedForRole(decoded, role) ? decoded : defaultPath
 }
 

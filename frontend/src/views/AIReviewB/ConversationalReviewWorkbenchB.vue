@@ -679,15 +679,10 @@ const scrollTimelineToEnd = async (force = false) => {
 }
 
 const updateRouteQuery = async () => {
+  // 这个组件现在只以 embedded 方式存在（/workbench/inspection 的 AI 审查区），
+  // 独立路由 /ai-review-b 已下线。地址栏由宿主工作台维护，这里不再改路由——
+  // 往一条已经不存在的路径 replace，会被守卫重定向回来，变成来回打架。
   if (props.embedded) return
-  await router.replace({
-    path: '/ai-review-b',
-    query: {
-      projectId: activeProjectId.value,
-      nodeId: String(activeNodeId.value),
-      ...(activeRunId.value ? { reviewRunId: activeRunId.value } : {})
-    }
-  })
 }
 
 // 上一次真正取回来的那份 audit-view 对应的运行指纹。

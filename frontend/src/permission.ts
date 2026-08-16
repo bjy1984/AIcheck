@@ -7,7 +7,7 @@ import { usePermissionStoreWithOut } from '@/store/modules/permission'
 import { usePageLoading } from '@/hooks/web/usePageLoading'
 import { NO_REDIRECT_WHITE_LIST } from '@/constants'
 import { useUserStoreWithOut } from '@/store/modules/user'
-import { getRoleDefaultPath, isPathAllowedForRole } from '@/utils/roleAccess'
+import { getRoleDefaultPath, isPathAllowedForRole, resolveRetiredPath } from '@/utils/roleAccess'
 
 const { start, done } = useNProgress()
 
@@ -32,6 +32,17 @@ router.beforeEach(async (to, from, next) => {
     }
     if (to.path === '/change-password') {
       next({ path: defaultPath, replace: true })
+      return
+    }
+    /* 已下线的路径（/ai-review-b）原地重定向。
+     *
+     * 收藏夹、历史待办、别人发来的链接里都存着老地址。直接 404 会让人以为
+     * 功能被删了——实际上对话式复核只是搬进了 /workbench/inspection。
+     * 查询串原样带过去，否则送到的是一个空工作台，还得自己重选项目和节点。
+     */
+    const retiredTarget = resolveRetiredPath(to.fullPath)
+    if (retiredTarget) {
+      next({ path: retiredTarget.split(/[?#]/, 1)[0], query: to.query, replace: true })
       return
     }
     if (to.path === '/login') {

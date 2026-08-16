@@ -102,30 +102,16 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
 ]
 
 export const asyncRouterMap: AppRouteRecordRaw[] = [
-  {
-    path: '/ai-review-b',
-    component: AICheckStaticLayout,
-    name: 'AIReviewB',
-    meta: {
-      title: 'AI 复核工作台（B 版）',
-      hidden: true,
-      noCache: true,
-      roles: ['inspection']
-    },
-    children: [
-      {
-        path: '',
-        component: () => import('@/views/AIReviewB/ConversationalReviewWorkbenchB.vue'),
-        name: 'ConversationalReviewWorkbenchB',
-        meta: {
-          title: 'AI 复核工作台（B 版）',
-          hidden: true,
-          noCache: true,
-          roles: ['inspection']
-        }
-      }
-    ]
-  },
+  /* /ai-review-b 这条独立路由已去掉（2026-08-16，两套监检界面合并为一套）。
+   *
+   * 对话式复核**没有被删掉**：ConversationalReviewWorkbenchB 仍以 embedded
+   * 方式挂在 /workbench/inspection 的「AI 审查」区（见 Workbench.vue）。
+   * 去掉的只是那个并行的独立入口——两套界面并存时，同一件事有两个位置、
+   * 两套状态，用户不知道该信哪个，问题也要修两遍。
+   *
+   * 老链接（收藏夹、待办里存的 URL）由 permission.ts 统一重定向到
+   * /workbench/inspection，不让它们撞 404。
+   */
   {
     path: '/workbench',
     component: AICheckStaticLayout,
