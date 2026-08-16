@@ -6894,7 +6894,19 @@ def upload_session_state_records(session_id: str) -> dict[str, list[dict[str, An
     return {
         "upload_sessions": [session],
         "documents": [item for item in repo.state.get("documents", []) if str(item.get("id") or "") in document_ids],
-        "versions": [item for item in repo.state.get("versions", []) if str(item.get("id") or "") in version_ids],
+        # 按**文档**取全部版本，不能只取本次会话里的那几个 version_id。
+        #
+        # 替换时旧版本会被顶成历史（isCurrent=false），而它不在本次会话的
+        # version_ids 里——只写新记录，旧版本那行就留在库里仍然标着「当前」。
+        # 线上实测：替换成功、V2 建出来了，文档却仍指向 V1，两条都写着当前。
+        # **内存里改对了、没写回去，和没改一样**，而且更难查：单测直接操作
+        # 内存，一路全绿。
+        "versions": [
+            item
+            for item in repo.state.get("versions", [])
+            if str(item.get("id") or "") in version_ids
+            or str(item.get("documentId") or "") in document_ids
+        ],
         "bindings": [
             item
             for item in repo.state.get("bindings", [])
