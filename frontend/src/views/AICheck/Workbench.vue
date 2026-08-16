@@ -4596,6 +4596,27 @@ const handleDownloadUrl = (url: string) => {
 
 const exportManifestHint = (hash?: string) => (hash ? ` · ${hash.slice(0, 18)}` : '')
 
+/* 导出 0 项不是成功。
+ *
+ * 线上实测（2026-08-16，建设方 P-2026-8FC0B5）：点「归档包」「证据包」，
+ * 两次都弹绿色的「导出任务已创建（0 项 · sha256:…）」。而项目里 69 个节点、
+ * **已通过 0 个**、归档条目 0 条——确实无内容可导。
+ *
+ * 问题不在导出空包，在于**系统把一件没做成的事报成了成功**：建设方拿着
+ * 那串 sha256 会以为交工资料已经齐了。空包和齐全的包，在提示上长得一模一样。
+ *
+ * 0 项时给警告并说明为什么、下一步做什么；有内容时才算成功。
+ */
+const notifyExportResult = (label: string, itemCount: number, hash?: string, emptyHint = '') => {
+  if (!itemCount) {
+    ElMessage.warning(
+      `${label}里没有任何内容（0 项）。${emptyHint}导出任务仍会留档，但这个包不能作为交付依据。`
+    )
+    return
+  }
+  ElMessage.success(`${label}导出任务已创建（${itemCount} 项${exportManifestHint(hash)}）`)
+}
+
 const handleDownloadArchivePackage = async () => {
   if (!activeProjectId.value) return
   actionLoading.value = true
@@ -4605,8 +4626,11 @@ const handleDownloadArchivePackage = async () => {
       showActionError('归档包生成失败，请检查项目归档状态和下载权限。')
       return
     }
-    ElMessage.success(
-      `归档包导出任务已创建（${res.data.itemCount} 项${exportManifestHint(res.data.manifestHash)}）`
+    notifyExportResult(
+      '归档包',
+      Number(res.data.itemCount || 0),
+      res.data.manifestHash,
+      '通常是因为还没有节点通过审查。'
     )
     await handleOpenExportTask(res.data.exportId)
   } finally {
@@ -4628,8 +4652,11 @@ const handleDownloadEvidencePackage = async (payload?: { reportId?: string }) =>
       showActionError('证据定位包生成失败，请检查节点证据和下载权限。')
       return
     }
-    ElMessage.success(
-      `证据包导出任务已创建（${res.data.itemCount} 项${exportManifestHint(res.data.manifestHash)}）`
+    notifyExportResult(
+      '证据包',
+      Number(res.data.itemCount || 0),
+      res.data.manifestHash,
+      '通常是因为该节点还没有已确认的证据。'
     )
     await handleOpenExportTask(res.data.exportId)
   } finally {
