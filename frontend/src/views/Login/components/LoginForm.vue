@@ -254,7 +254,21 @@ watch(
 
 // 登录
 const signIn = async () => {
-  if (loading.value) return
+  /* 这个函数原先有三条静默 return：校验不过、拿不到表单实例、接口没返回，
+   * 三条都是直接 return——**不发请求、不提示、什么都不说**。
+   *
+   * 实测（2026-08-16，用 owner 登录）：用户名和密码都填好、界面上没有任何
+   * 红字，点「登录」两次 + 回车一次，`/api/auth/login` 一次都没发出去，
+   * 控制台也是干净的。后端那边 owner 明明能登（code=0、拿到 token）。
+   *
+   * **登录页是整个系统的第一道门**，在这里「点了没反应」的代价最大：
+   * 用户没有任何线索，只能反复点，然后认定系统坏了。
+   * 每条退出路径都必须留下一句人能看懂的话。
+   */
+  if (loading.value) {
+    errorMessage.value = '正在登录，请稍候…'
+    return
+  }
 
   loading.value = true
   errorMessage.value = ''
@@ -262,12 +276,22 @@ const signIn = async () => {
 
   try {
     const formRef = await getElFormExpose()
-    const isValid = formRef ? await formRef.validate().catch(() => false) : false
-    if (!isValid) return
+    if (!formRef) {
+      errorMessage.value = '登录表单未就绪，请刷新页面后重试。'
+      return
+    }
+    const isValid = await formRef.validate().catch(() => false)
+    if (!isValid) {
+      errorMessage.value = '请填写用户名和密码。'
+      return
+    }
 
     const formData = await getFormData<UserLoginType>()
     const res = await loginApi(formData)
-    if (!res) return
+    if (!res) {
+      errorMessage.value = '登录没有收到服务端响应，请稍后重试。'
+      return
+    }
 
     // 是否记住我 - 只保存用户名
     if (unref(remember)) {
