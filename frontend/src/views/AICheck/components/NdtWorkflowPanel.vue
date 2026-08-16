@@ -42,6 +42,8 @@ import {
 
 type NdtMaterialChecklistItem = NdtAtomicMaterial & {
   uploadedCount: number
+  /** 该类型下已上传的文件。展开时直接用，不再另外请求。 */
+  files: DocumentAsset[]
 }
 const props = defineProps<{
   node?: ProjectTreeNode
@@ -82,6 +84,7 @@ const emit = defineEmits<{
   openReportDetail: [reportId: string]
   openFeedbackDetail: [feedbackId: string]
   uploadMaterial: [material: NdtAtomicMaterial]
+  viewMaterialFile: [documentId: string]
   uploadReport: []
   replaceMaterialBindings: [payload: { documentId: string; nodeIds: number[] }]
   submitMaterial: [payload: { documentId: string; bindingIds: string[] }]
@@ -167,13 +170,25 @@ const atomicProjectFiles = computed(() =>
   props.projectFiles.filter((file) => file.materialCategory === '无损检测资料')
 )
 const ndtMaterialChecklist = computed<NdtMaterialChecklistItem[]>(() =>
-  NDT_ATOMIC_MATERIALS.map((material) => ({
-    ...material,
-    uploadedCount: atomicProjectFiles.value.filter(
-      (file) => file.materialTypeCode === material.code
-    ).length
-  }))
+  NDT_ATOMIC_MATERIALS.map((material) => {
+    const files = atomicProjectFiles.value.filter((file) => file.materialTypeCode === material.code)
+    return { ...material, uploadedCount: files.length, files }
+  })
 )
+
+/* 「已上传 N 项」要能点开看是哪几份。
+ *
+ * 原来这一列只是个数字，旁边只有「上传文件」——传完之后没有任何入口
+ * 确认自己传了什么。**只报数不报内容，等于让人凭记忆核对**：
+ * 传漏了、传错了、传重了，都要等监检退回来才知道。
+ * 数据本来就在手上（atomicProjectFiles），不需要新接口。
+ */
+const expandedMaterialCodes = ref<string[]>([])
+const toggleMaterialFiles = (code: string) => {
+  expandedMaterialCodes.value = expandedMaterialCodes.value.includes(code)
+    ? expandedMaterialCodes.value.filter((item) => item !== code)
+    : [...expandedMaterialCodes.value, code]
+}
 const ndtChecklistSummary = computed(() => ({
   uploaded: atomicProjectFiles.value.length,
   types: new Set(atomicProjectFiles.value.map((file) => file.materialTypeCode)).size,
@@ -457,8 +472,21 @@ const handleRectifyNdt = async (rectificationId?: string) => {
           <ElTableColumn type="index" label="序号" width="72" />
           <ElTableColumn prop="name" label="资料类型" min-width="250" show-overflow-tooltip />
           <ElTableColumn prop="group" label="业务规则" min-width="360" show-overflow-tooltip />
-          <ElTableColumn label="已上传" width="100">
-            <template #default="{ row }">{{ row.uploadedCount }} 项</template>
+          <ElTableColumn label="已上传" width="110">
+            <template #default="{ row }">
+              <!-- 0 项不做成可点：点开是空的，不如让人一眼看出还没传 -->
+              <ElButton
+                v-if="row.uploadedCount"
+                link
+                type="primary"
+                @click="toggleMaterialFiles(row.code)"
+              >
+                {{ row.uploadedCount }} 项{{
+                  expandedMaterialCodes.includes(row.code) ? ' ▴' : ' ▾'
+                }}
+              </ElButton>
+              <span v-else class="ndt-empty-count">0 项</span>
+            </template>
           </ElTableColumn>
           <ElTableColumn label="操作" width="120" fixed="right">
             <template #default="{ row }">
@@ -468,9 +496,36 @@ const handleRectifyNdt = async (rectificationId?: string) => {
             </template>
           </ElTableColumn>
         </ElTable>
+
+        <!-- 展开的已传文件清单。放表下方而不是 expand 列：
+             这张表只有五行，独立区块比每行塞一个展开箭头更好读。 -->
+        <div
+          v-for="material in ndtMaterialChecklist.filter(
+            (item) => expandedMaterialCodes.includes(item.code) && item.files.length
+          )"
+          :key="`expanded-${material.code}`"
+          class="ndt-uploaded-files"
+        >
+          <div class="ndt-uploaded-head">
+            <strong>{{ material.name }}</strong>
+            <span>已上传 {{ material.files.length }} 份</span>
+          </div>
+          <ul>
+            <li v-for="file in material.files" :key="file.id">
+              <ElButton link type="primary" @click="emit('viewMaterialFile', file.id)">
+                {{ file.fileName }}
+              </ElButton>
+              <!-- 上传状态和识别状态是两件事：文件已上传但 OCR 还在排队，
+                   跟文件根本没传上去，处置完全不同。 -->
+              <small>{{ file.fileStatus }} · OCR {{ file.currentOcrStatus }}</small>
+            </li>
+          </ul>
+        </div>
       </section>
 
-      <section class="ndt-library">
+      <!-- 摘要卡片「待提交/补正」滚到这里。锚点必须真实存在——
+           选择器写了而元素没有，滚动会静默失败（本轮已踩过两次）。 -->
+      <section id="ndt-pending-files" class="ndt-library">
         <div class="ndt-section-head">
           <div>
             <strong>已上传资料</strong>

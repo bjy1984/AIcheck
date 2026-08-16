@@ -752,21 +752,15 @@ const getPillClass = (value?: string): AuditStatusTone => {
             <!-- 锁定节点时必须明说，并给一键退出。
                  不说的话，用户只会看到「文件忽然少了」——而这正是上一版
                  「0 / 10 个文件 · 暂无文件」让人以为资料丢了的原因。 -->
-            <ElAlert
-              v-if="contractorNodeFilter !== null"
-              class="node-filter-tip"
-              type="info"
-              :closable="false"
-              show-icon
-            >
-              <template #title>
+            <div v-if="contractorNodeFilter !== null" class="node-filter-tip">
+              <span>
                 当前只显示「节点 {{ contractorNodeFilter }}」关联的资料（共
                 {{ filteredContractorFileRows.length }} 份）。
-                <ElButton link type="primary" @click="clearContractorNodeFilter">
-                  查看全部资料
-                </ElButton>
-              </template>
-            </ElAlert>
+              </span>
+              <ElButton link type="primary" @click="clearContractorNodeFilter">
+                查看全部资料
+              </ElButton>
+            </div>
             <div id="contractor-file-list" class="filter-row">
               <ElInput
                 v-model="contractorKeyword"

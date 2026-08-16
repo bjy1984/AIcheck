@@ -1104,7 +1104,9 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
         label: '待提交/补正',
         value: pendingFileCount,
         hint: '每个文件可单独提交审批',
-        tone: 'orange'
+        tone: 'orange',
+        // 有数字就要能看到是哪几份。只报数不给入口，等于让人自己去列表里翻。
+        ...(pendingFileCount ? { actionKey: 'ndt-pending', actionLabel: '查看待处理文件' } : {})
       },
       {
         label: '监检反馈',
@@ -2470,6 +2472,20 @@ const handleLocateQuickResult = async (result: SearchResult) => {
  */
 /** 消息里的内容也要能点过去。走的是和待办同一套定位——
  *  两套定位逻辑迟早会分叉，而分叉的那天没人会发现。 */
+/** 摘要卡片上的「查看明细」。
+ *
+ * 只处理明确登记过的动作：认不出的 key 什么都不做，也不弹提示——
+ * 一个凭空冒出来的动作 key 说明是代码写错了，不该让用户来承担。
+ */
+const handleSummaryCardAction = async (actionKey: string) => {
+  if (actionKey === 'ndt-pending') {
+    await nextTick()
+    document
+      .querySelector('#ndt-pending-files')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 const handleOpenQuickMessage = async (message: MessageItem) => {
   await handleOpenQuickTodo({
     id: message.id,
@@ -5304,6 +5320,7 @@ onBeforeUnmount(() => {
               "
               :cards="workbenchAuditCards"
               aria-label="业务工作台审计摘要"
+              @card-action="handleSummaryCardAction"
             />
 
             <section
@@ -6428,6 +6445,7 @@ onBeforeUnmount(() => {
               @create-film="handleCreateNdtFilm"
               @import-records="handleImportNdtRecords"
               @upload-material="handleOpenUploadDrawer"
+              @view-material-file="handleOpenFileDetail"
               @upload-report="handleOpenNdtReportUpload"
               @replace-material-bindings="handleReplaceNdtAtomicBindings"
               @submit-material="handleSubmitNdtAtomicMaterial"

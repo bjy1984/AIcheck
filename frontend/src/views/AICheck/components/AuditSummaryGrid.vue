@@ -9,12 +9,18 @@ export type AuditSummaryCard = {
   value: string | number
   hint?: string
   tone?: AuditSummaryTone
+  /** 配了才可点。**没有去处的卡片不做成按钮**——
+      点了没反应比不可点更伤，用户会以为系统坏了。 */
+  actionKey?: string
+  actionLabel?: string
 }
 
 const props = defineProps<{
   cards: ReadonlyArray<AuditSummaryCard>
   ariaLabel?: string
 }>()
+
+const emit = defineEmits<{ cardAction: [actionKey: string] }>()
 
 const normalizedCards = computed(() =>
   props.cards.map((card) => {
@@ -62,11 +68,33 @@ const normalizedCards = computed(() =>
         </strong>
       </template>
       <small v-if="card.hint" :title="card.hint">{{ card.hint }}</small>
+      <button
+        v-if="card.actionKey"
+        type="button"
+        class="audit-summary-action"
+        @click="emit('cardAction', card.actionKey)"
+      >
+        {{ card.actionLabel || '查看明细' }}
+      </button>
     </ElCard>
   </section>
 </template>
 
 <style scoped>
+.audit-summary-action {
+  padding: 0;
+  margin-top: 6px;
+  color: #2f6fd0;
+  font-size: 12px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.audit-summary-action:hover {
+  text-decoration: underline;
+}
+
 .audit-summary-grid {
   display: grid;
   grid-template-columns: repeat(var(--audit-summary-columns, 4), minmax(0, 1fr));
