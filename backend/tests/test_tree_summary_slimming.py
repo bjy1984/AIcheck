@@ -80,6 +80,46 @@ def test_缺失项只留名字和id():
     assert "evidenceItems" not in item, "证据项清单在详情里，列表页不需要"
 
 
+def test_名称按前端同一套优先级取():
+    """**真实需求项没有 name 字段**——名称在 materialTypeName 里。
+
+    线上实测：树上「缺失资料名」这一列本来就是空的（前端 `.map(r => r.name)`
+    一直取到 undefined），只是没人注意，我做瘦身时才把它暴露出来。
+    取法要和前端 requirementDisplayName 一致，否则同一条资料在列表和详情里
+    会显示成两个名字——那比没有名字更让人怀疑数据。
+    """
+    real_item = {
+        "id": "MRP-1",
+        "materialTypeName": "设计单位许可证",
+        "reviewContent": "设计单位许可资质",
+        "nodeName": "设计单位许可资质",
+    }
+    slim = slim_requirements_summary({"missingRequirements": [real_item]})
+    assert slim["missingRequirements"][0]["name"] == "设计单位许可证"
+
+    # 依次降级
+    assert (
+        slim_requirements_summary({"missingRequirements": [{"reviewContent": "审查内容"}]})[
+            "missingRequirements"
+        ][0]["name"]
+        == "审查内容"
+    )
+    # 占位分支写的是 name，也要认
+    assert (
+        slim_requirements_summary({"missingRequirements": [{"name": "资料要求明细未配置"}]})[
+            "missingRequirements"
+        ][0]["name"]
+        == "资料要求明细未配置"
+    )
+    # 什么都没有时给个可读的兜底，不要 null——前端拿 null 会显示成空白
+    assert (
+        slim_requirements_summary({"missingRequirements": [{"id": "X"}]})["missingRequirements"][0][
+            "name"
+        ]
+        == "未命名资料"
+    )
+
+
 def test_不再下发完整需求明细():
     """requirements 和 missingRequirements 长度一样——同一批需求装了两遍。"""
     slim = slim_requirements_summary(FULL)

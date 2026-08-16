@@ -4658,6 +4658,19 @@ def build_node_requirements_summary(
     }
 
 
+def _requirement_display_name(item: dict[str, Any]) -> str:
+    """需求项对人显示的名字。
+
+    与前端 requirementDisplayName 同一套优先级——两处写不一致时，
+    同一条资料在列表和详情里会显示成两个名字，那比没有名字更让人怀疑数据。
+    """
+    for key in ("materialTypeName", "reviewContent", "name", "materialTypeCode"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value
+    return "未命名资料"
+
+
 def slim_requirements_summary(summary: dict[str, Any]) -> dict[str, Any]:
     """树视图用的瘦身版摘要：只留计数和缺失项名称。
 
@@ -4678,8 +4691,15 @@ def slim_requirements_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "progressPercent": summary.get("progressPercent", 0),
         "hasRequirementDetails": summary.get("hasRequirementDetails", False),
         # 树上只显示名字。带 id 是为了点进去能对上，不是为了展示。
+        #
+        # 名称的取法要和前端 requirementDisplayName 一致：
+        # materialTypeName → reviewContent → name → materialTypeCode。
+        # **真实需求项根本没有 name 字段**——名称在 materialTypeName 里，
+        # 只有「明细未配置」那个占位分支才写 name。所以前端那句
+        # `.map(r => r.name)` 一直取到 undefined，缺失资料名这一列本来就是空的，
+        # 只是没人注意；我做瘦身时才把它暴露出来。
         "missingRequirements": [
-            {"id": item.get("id"), "name": item.get("name")}
+            {"id": item.get("id"), "name": _requirement_display_name(item)}
             for item in (summary.get("missingRequirements") or [])
             if isinstance(item, dict)
         ],
