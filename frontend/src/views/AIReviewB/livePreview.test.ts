@@ -21,8 +21,8 @@ const sfc = readFileSync(
 
 // 常驻预览：收起时渲染
 assert.ok(
-  /v-if="!activityExpanded && livePreview\.length"/.test(sfc),
-  '收起状态下要渲染执行动态预览'
+  /v-if="!activityExpanded && executionActive && livePreview\.length"/.test(sfc),
+  '收起且执行中时要渲染执行动态预览'
 )
 
 // 三行上限
@@ -78,6 +78,23 @@ const sendAt = sfc.indexOf('const sendMessage = async')
 const sendFn = sfc.slice(sendAt, sfc.indexOf('const stopCurrentExecution'))
 assert.ok(!/activityExpanded\.value = true/.test(sendFn), '发送时不该自动展开执行面板')
 assert.ok(!/activityExpanded\.value = false/.test(sendFn), '执行结束不该替用户合上他打开的面板')
+
+// 跑完就收起推理预览：还挂着三行推理残片会把刚出的结论往下挤，
+// 而那三行此刻已经没有信息量——过程看完了，该让位给结果。
+assert.ok(
+  /v-if="!activityExpanded && executionActive && livePreview\.length"/.test(sfc),
+  '三行预览只在执行中显示'
+)
+
+// 答完把回答的开头滚进视口。一条几千字的结论，滚到最底看到的是它的尾巴，
+// 用户还得自己往上翻才能读到判定。
+assert.ok(/const scrollToLatestAnswer = async/.test(sfc), '要有对准回答开头的滚动')
+assert.ok(/data-message-role="assistant"/.test(sfc), '选择器要有对应的真实属性')
+assert.ok(
+  /:data-message-role="message\.role"/.test(sfc),
+  '消息节点要带上这个属性——选择器写了而元素没有，滚动会静默失败'
+)
+assert.ok(/await scrollToLatestAnswer\(\)/.test(sfc), '发送流程结束要调用它')
 
 // 推理过程要有打字感：光标只跟最新一条、且只在执行中显示。
 // 静止时还闪会让人以为内容还在生成——**假的进行中比没有反馈更糟**。

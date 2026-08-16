@@ -652,6 +652,26 @@ const isTimelineNearBottom = () => {
   )
 }
 
+/* 答完之后，把最后一条回答的**开头**滚进视口。
+ *
+ * 原来一律滚到最底：而一条几千字的结论，最底是它的末尾——
+ * 用户看到的是「结论的尾巴」，还得自己往上翻才能读到判定。
+ * 过程结束时要把镜头对准结果的第一行，不是最后一行。
+ */
+const scrollToLatestAnswer = async () => {
+  await nextTick()
+  const timeline = timelineRef.value
+  if (!timeline) return
+  const blocks = timeline.querySelectorAll('[data-message-role="assistant"]')
+  const last = blocks[blocks.length - 1] as HTMLElement | undefined
+  if (!last) {
+    timeline.scrollTop = timeline.scrollHeight
+    return
+  }
+  // 留一点上边距，让人看得出这条是新的，而不是贴着顶被截断
+  timeline.scrollTop = Math.max(0, last.offsetTop - 12)
+}
+
 const scrollTimelineToEnd = async (force = false) => {
   if (!force && !isTimelineNearBottom()) return
   await nextTick()
@@ -1158,7 +1178,8 @@ const sendMessage = async (preset?: string) => {
       await waitForAssistantCompletion(sessionId, res.data.assistantMessage.id)
     }
     await Promise.all([loadSessionData(false), refreshLiveState()])
-    await scrollTimelineToEnd(true)
+    // 过程看完了，镜头对准结果的第一行——不是滚到最底看结论的尾巴
+    await scrollToLatestAnswer()
   } catch (error) {
     // 发失败了就把占位摘掉，并把原话还回输入框——
     // 让用户重新打一遍自己刚写的东西，是最不该有的惩罚。
@@ -1713,6 +1734,7 @@ onBeforeUnmount(() => {
               v-for="message in messages"
               :key="message.id"
               :class="['conversation-message', `is-${message.role}`]"
+              :data-message-role="message.role"
               :aria-label="message.role === 'user' ? `${displayUser}的消息` : 'AI 复核助手回复'"
             >
               <div class="message-body">
@@ -1895,7 +1917,12 @@ onBeforeUnmount(() => {
                    用户看到的只有一个「执行中」标签在那儿待着，后台七八十条事件
                    一条都露不出来。**过程不可见的等待，会被当成卡死。**
                    这里常驻最近三条，展开仍看全量。 -->
-              <ol v-if="!activityExpanded && livePreview.length" class="execution-preview">
+              <!-- 只在执行中显示。跑完还挂着三行推理残片，会把刚出的结论往下挤，
+                   而那三行此刻已经没有信息量——过程看完了，该让位给结果。 -->
+              <ol
+                v-if="!activityExpanded && executionActive && livePreview.length"
+                class="execution-preview"
+              >
                 <li v-for="(item, index) in livePreview" :key="'preview-' + item.eventId">
                   {{ item.label }}
                   <!-- 打字光标只跟在最新那条后面，且只在执行中显示：
