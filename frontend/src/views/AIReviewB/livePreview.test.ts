@@ -55,6 +55,27 @@ assert.ok(!/'summary' in event\.payload/.test(sfc), '不该再只认 payload.sum
 // 预览与完整列表的 key 不能重复——同一批事件同时渲染两处会撞 key
 assert.ok(/:key="'preview-' \+ item\.eventId"/.test(sfc), '预览的 key 要加前缀')
 
+// 推理过程要有打字感：光标只跟最新一条、且只在执行中显示。
+// 静止时还闪会让人以为内容还在生成——**假的进行中比没有反馈更糟**。
+assert.ok(/class="typing-caret"/.test(sfc), '流式预览要有打字光标')
+assert.ok(
+  /v-if="executionActive && index === livePreview\.length - 1"/.test(sfc),
+  '光标只跟在最新一条且仅执行中显示'
+)
+assert.ok(/prefers-reduced-motion/.test(sfc), '要尊重系统的减少动效设置')
+
+// 新内容进来要跟到底部，且跟随判断必须在合并之前取——
+// 合并后高度已变，那时再问「是否贴底」永远是 false，新内容会一直在屏幕外。
+const pollAt = sfc.indexOf('const pollLiveAgentTrace')
+const pollFn = sfc.slice(pollAt, sfc.indexOf('const LIVE_TRACE_FALLBACK_POLL_INTERVAL_MS'))
+const followAt = pollFn.indexOf('const shouldFollow = isTimelineNearBottom()')
+const mergeAt2 = pollFn.indexOf('mergeEvents(')
+assert.ok(followAt > 0 && followAt < mergeAt2, '跟随判断要在合并事件之前取')
+assert.ok(
+  /if \(shouldFollow\) await scrollTimelineToEnd\(true\)/.test(pollFn),
+  '流式刷新后要滚到底部'
+)
+
 // 「刷新状态」按钮已去掉：实测 16 次采样 14 次在转圈，文字被 spinner 盖住，
 // 看起来就是「时有时无」；而状态本来就在自动轮询。
 assert.ok(!/>刷新状态</.test(sfc), '不应再有手动刷新按钮')

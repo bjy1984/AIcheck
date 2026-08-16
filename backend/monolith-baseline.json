@@ -7,7 +7,7 @@
   "backend/libs/review_orchestrator/execution.py": {
     "directStateAccess": 21,
     "directStateWrite": 10,
-    "lines": 4147
+    "lines": 4165
   },
   "frontend/src/views/AICheck/FdeConsole.vue": {
     "lines": 27183

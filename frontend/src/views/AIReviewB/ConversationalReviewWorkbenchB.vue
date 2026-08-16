@@ -407,6 +407,22 @@ const executionStatusLabel = computed(() => {
   if (executionActive.value) return '执行中'
   // 说清楚是「停住了」，而不是继续假装在跑；下一句 executionSummary 给出停在哪一刻。
   if (runLooksStalled.value) return '执行已中断'
+  /* 刚刚答完的这一轮，状态由这一轮自己说了算。
+   *
+   * 线上实测：对话每次都跑完（「✓ … 已完成回答」），标签却写着「执行异常」——
+   * 因为页面绑着的活动 ReviewRun 是 RRUN-DC8068527E，那条 8/15 13:56 卡死、
+   * 被判 REVIEW_RUN_ABANDONED 的老运行。**聊天成功了，标签在替一条早就死掉的
+   * 运行报丧。**
+   *
+   * 对话与正式复核是两件事：本轮助手已给出回答时，先按本轮结果显示；
+   * 那条僵尸运行的失败仍留在复核区，不会被藏掉。
+   */
+  if (latestAssistantExecution.value && !reviewStarting.value) {
+    const mode = latestAssistantExecution.value.mode
+    if (mode === 'llm_agent') return 'Agent 已完成'
+    if (mode === 'deterministic_fallback') return '已降级'
+    if (mode === 'deterministic_command') return '本地完成'
+  }
   if (['waiting_human_input', 'waiting_human_review'].includes(runStatus.value))
     return '等待人工处理'
   if (['failed', 'cancelled', 'rejected_by_human', '失败'].includes(runStatus.value))
@@ -686,8 +702,12 @@ const loadSessionData = async (reset = false) => {
 const pollLiveAgentTrace = async () => {
   if (!session.value?.id) return
   try {
+    // 跟随判断要在合并**之前**取：合并后高度已经变了，
+    // 那时再问「是不是贴着底部」永远得到 false，于是新内容一直在屏幕外滚。
+    const shouldFollow = isTimelineNearBottom()
     const eventRes = await listReviewBEventsApi(session.value.id, eventPollCursor())
     mergeEvents(eventRes.data.events)
+    if (shouldFollow) await scrollTimelineToEnd(true)
   } catch {
     // 发送中的旁路轮询失败不影响主请求。
   }
@@ -1833,9 +1853,16 @@ onBeforeUnmount(() => {
                    一条都露不出来。**过程不可见的等待，会被当成卡死。**
                    这里常驻最近三条，展开仍看全量。 -->
               <ol v-if="!activityExpanded && livePreview.length" class="execution-preview">
-                <li v-for="item in livePreview" :key="'preview-' + item.eventId">{{
-                  item.label
-                }}</li>
+                <li v-for="(item, index) in livePreview" :key="'preview-' + item.eventId">
+                  {{ item.label }}
+                  <!-- 打字光标只跟在最新那条后面，且只在执行中显示：
+                       静止时还闪，会让人以为内容还在生成。 -->
+                  <span
+                    v-if="executionActive && index === livePreview.length - 1"
+                    class="typing-caret"
+                    aria-hidden="true"
+                  ></span>
+                </li>
               </ol>
 
               <div v-if="activityExpanded" class="execution-details">
@@ -2835,6 +2862,32 @@ onBeforeUnmount(() => {
 
 .execution-chevron.is-open {
   transform: rotate(180deg);
+}
+
+/* 打字光标：跟着文字走的闪动方块。
+ * 用 CSS 动画而不是定时器改 DOM——已经有 1.5 秒一次的轮询了，
+ * 再加个 500ms 计时器只会让这页更难安静下来。 */
+.typing-caret {
+  display: inline-block;
+  width: 6px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentcolor;
+  opacity: 0.75;
+  animation: typing-blink 1s steps(2, start) infinite;
+}
+
+@keyframes typing-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-caret {
+    animation: none;
+  }
 }
 
 .execution-preview {
