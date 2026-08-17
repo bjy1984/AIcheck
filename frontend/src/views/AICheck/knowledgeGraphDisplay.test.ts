@@ -189,7 +189,13 @@ const relatedFn = sfc.slice(
   sfc.indexOf('function selectRelatedNode'),
   sfc.indexOf('async function loadGraph')
 )
-assert.ok(/centerOnNode\(node\.id\)/.test(relatedFn), '点一跳关系没有定位过去')
+assert.ok(/focusNode\(node\.id\)/.test(relatedFn), '点一跳关系没有定位过去')
+
+/* 只对准一次不够——力导向布局在持续挪节点，视图移过去之后节点又漂走，
+   屏幕中央最后是一片空白。线上实测确认过：红十字落在空处。
+   所以要等布局停下来（finished）再对一次。 */
+assert.ok(/chart\.on\('finished'/.test(sfc), '布局停下来后要再对准一次，否则节点已经漂走了')
+assert.ok(/pendingFocusId = ''/.test(sfc), '对准之后要清掉待办，不能每次 finished 都把视图拽回去')
 
 // ---- 全屏 ----
 assert.ok(/const isFullscreen = ref\(false\)/.test(sfc), '要有全屏状态')

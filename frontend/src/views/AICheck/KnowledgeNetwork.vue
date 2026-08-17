@@ -543,6 +543,13 @@ function buildChartOption(): EChartsOption {
  * 只把它标成选中是不够的：节点可能在屏幕外，用户看到的就是「点了没反应」。
  * 位置要从**布局结果**里取（getItemLayout），不能用数据里的 x/y——
  * 力导向布局的坐标是算出来的，数据上根本没有。 */
+/* 力导向布局在**持续移动节点**。
+ *
+ * 只在点击那一刻对准一次是不够的：视图移过去了，节点接着又漂走，
+ * 屏幕中央最后是一片空白——线上实测就是这个结果（红十字落在空处）。
+ * 记下要看的节点，等布局停下来（finished）再对一次。 */
+let pendingFocusId = ''
+
 function centerOnNode(nodeId: string) {
   if (!chart || !nodeId) return
   const index = visibleNodes.value.findIndex((node) => node.id === nodeId)
@@ -560,6 +567,12 @@ function centerOnNode(nodeId: string) {
     : [(layout as { x?: number })?.x, (layout as { y?: number })?.y]
   if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return
   chart.setOption({ series: [{ center: [point[0], point[1]], zoom: FOCUS_ZOOM }] })
+}
+
+/** 请求定位：先对一次（有反馈），布局停了再对一次（对得准）。 */
+function focusNode(nodeId: string) {
+  pendingFocusId = nodeId
+  centerOnNode(nodeId)
 }
 
 /** 把选中态推给图表——用 action，不重建 option，这样不会丢平移缩放。 */
@@ -604,6 +617,14 @@ function renderChart(reset = false) {
     })
     zr.on('mouseup', endInteraction)
     zr.on('globalout', endInteraction)
+    /* 布局停下来之后再对准一次。力导向一直在挪节点，
+     * 点击那一刻算出来的坐标，两秒后已经不是那个节点所在的位置了。 */
+    chart.on('finished', () => {
+      if (!pendingFocusId) return
+      const target = pendingFocusId
+      pendingFocusId = ''
+      centerOnNode(target)
+    })
   }
   /* 拖到一半来的重绘，攒着等松手——直接重绘会把正在拖的图元换掉，手势就断了。
    * reset 是用户主动要求重置视图，那时没有正在进行的手势，不用等。 */
@@ -652,7 +673,7 @@ function selectRelatedNode(node: KnowledgeNetworkNode | undefined) {
    * 这一条之前一直没做。 */
   nextTick(() => {
     renderChart()
-    centerOnNode(node.id)
+    focusNode(node.id)
   })
 }
 
