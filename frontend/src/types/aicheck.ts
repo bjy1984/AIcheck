@@ -175,6 +175,18 @@ export type DocumentAsset = {
   materialTypeCode?: string | null
   materialTypeName?: string | null
   materialCategory?: string | null
+  /* 类别是**谁定的**（0817 第 2 条）。
+     后端自动识别时给 autoClassification（带 reason，说明凭什么这么分）；
+     人工改过之后 materialCategorySource 变成 'manual'。
+     两者分不开的话，下次批量重跑自动分类会把人工改过的一把冲掉。 */
+  materialCategorySource?: 'auto' | 'manual' | null
+  autoClassification?: {
+    materialCategory: string
+    materialTypeCode: string
+    materialTypeName: string
+    matchedBy: 'fileName' | 'ocrText'
+    reason: string
+  } | null
   sourceOrgName: string
   uploaderName: string
   currentVersionId: string

@@ -57,6 +57,13 @@ type ContractorFileRow = {
   documentId: string
   fileName: string
   materialCategory: string
+  /* 这个类别是**谁定的**。三种来源在界面上必须分得开：
+       auto     后端按文件名自动识别的（带 reason，说明凭什么这么分）
+       manual   人工改过的
+       inferred 后端没给，前端按关键词兜底猜的——最不可信的一种
+     混成一个「类别」字段的话，用户没法判断要不要去核对它。 */
+  materialCategorySource: 'auto' | 'manual' | 'inferred'
+  materialCategoryReason: string
   requirementName: string
   usage: string
   version: string
@@ -300,16 +307,30 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
   const rows = projectFiles.value.map((file) => {
     const binding = bindingForProjectFile(file)
     const status = mapContractorFileStatus(file)
+    const auto = file.autoClassification
+    const backendCategory = file.materialCategory || ''
     const materialCategory =
-      file.materialCategory ||
+      backendCategory ||
       inferMaterialCategory(
         normalizeSearchText(file.fileName, binding?.usage, binding?.requirementName)
       )
+    /* 后端没给类别时前端才兜底猜——而且要标成 inferred。
+       把兜底猜的说成「自动识别」是在夸大可信度：后端那份用的是
+       164 条审查点词典，前端这份只有十来个关键词。 */
+    const materialCategorySource: 'auto' | 'manual' | 'inferred' = !backendCategory
+      ? 'inferred'
+      : file.materialCategorySource === 'manual'
+        ? 'manual'
+        : auto
+          ? 'auto'
+          : 'manual'
     return {
       id: file.id,
       documentId: file.id,
       fileName: file.fileName,
       materialCategory,
+      materialCategorySource,
+      materialCategoryReason: String(auto?.reason || ''),
       requirementName: binding?.requirementName || '--',
       usage: binding?.usage || '--',
       version: binding?.versionNo || '--',
@@ -334,6 +355,9 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
     materialCategory: inferMaterialCategory(
       normalizeSearchText(binding.fileName, binding.usage, binding.requirementName)
     ),
+    // 这一路没有后端类别可用，只能前端猜——如实标成 inferred
+    materialCategorySource: 'inferred' as const,
+    materialCategoryReason: '',
     requirementName: binding.requirementName || '--',
     usage: binding.usage,
     version: binding.versionNo,
@@ -795,12 +819,29 @@ const getPillClass = (value?: string): AuditStatusTone => {
               </template>
             </ElTableColumn>
             <ElTableColumn prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
-            <ElTableColumn
-              prop="materialCategory"
-              label="资料类别"
-              min-width="130"
-              show-overflow-tooltip
-            />
+            <ElTableColumn prop="materialCategory" label="资料类别" min-width="168">
+              <template #default="{ row }">
+                <!-- 类别本身，加上**谁定的**。
+                     只显示类别的话，「系统猜的」和「人定的」长得一模一样，
+                     用户没法判断要不要去核对它——这正是第 1 条那个坑的形状。 -->
+                <span class="material-category-value">{{ row.materialCategory }}</span>
+                <ElTag
+                  v-if="row.materialCategorySource !== 'manual'"
+                  class="material-category-source"
+                  size="small"
+                  :type="row.materialCategorySource === 'auto' ? 'primary' : 'info'"
+                  effect="plain"
+                  :title="
+                    row.materialCategoryReason ||
+                    (row.materialCategorySource === 'auto'
+                      ? '系统自动识别'
+                      : '系统未识别，按文件名关键词推测，准确度较低')
+                  "
+                >
+                  {{ row.materialCategorySource === 'auto' ? '自动识别' : '推测' }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
             <ElTableColumn prop="uploader" label="上传人" width="112" />
             <ElTableColumn prop="updatedAt" label="更新时间" width="176" />
             <ElTableColumn
@@ -1484,6 +1525,15 @@ const getPillClass = (value?: string): AuditStatusTone => {
 </template>
 
 <style scoped>
+.material-category-value {
+  margin-right: 6px;
+}
+
+/* 「谁定的」这个标记不能比类别本身还抢眼——它是注解，不是主角 */
+.material-category-source {
+  transform: scale(0.9);
+}
+
 .role-static-sections {
   width: 100%;
 }

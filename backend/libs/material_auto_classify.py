@@ -138,3 +138,12 @@ def classify_material(file_name: str = "", ocr_text: str = "") -> dict[str, Any]
                     "reason": f"{'文件名' if source == 'fileName' else '正文'}中出现「{name}」",
                 }
     return None
+
+
+def known_categories() -> set[str]:
+    """配置里存在的全部资料类别。
+
+    给「人工改类别」做白名单：允许任意字符串的话，规则按类别取证时
+    永远取不到，而界面上看着「已经归好类了」——又一个静默失败。
+    """
+    return {category for _, category, _ in _dictionary() if category}

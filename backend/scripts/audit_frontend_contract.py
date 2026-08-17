@@ -102,16 +102,24 @@ def extract_frontend_endpoints(root: Path, patterns: Iterable[str], *, include_m
 
 def backend_route_keys() -> set[tuple[str, str]]:
     keys: set[tuple[str, str]] = set()
-    for route in app.routes:
+    # app.routes 里也有 _IncludedRouter 占位（直接 include 到 app 上的模块，
+    # 例如 batch_review / org_delegation / document_category）。
+    # 不展开的话，这些端点在审计眼里等于「后端没有」，前端调用被报成缺失——
+    # 而这份工具照常输出一份「已审计」的结论。**审计自己漏看，比不审计更贵。**
+    #
+    # 展开会丢掉 include_router(prefix="/api") 的前缀，所以和下面 router 一样
+    # 两种前缀都登记：每个模块都被挂了裸路径和 /api 两次。
+    for route in expanded_routes(app):
         methods = getattr(route, "methods", set()) or set()
         path = getattr(route, "path", "")
         if not path:
             continue
-        for method in methods:
-            method = method.upper()
-            if method in {"HEAD", "OPTIONS"}:
-                continue
-            keys.add((method, normalize_path(path)))
+        for prefix in ("", "/api"):
+            for method in methods:
+                method = method.upper()
+                if method in {"HEAD", "OPTIONS"}:
+                    continue
+                keys.add((method, normalize_path(f"{prefix}{path}")))
     for api_router, prefixes in ((router, ("", "/api")), (mock_router, ("", "/api"))):
         for route in expanded_routes(api_router):
             methods = getattr(route, "methods", set()) or set()

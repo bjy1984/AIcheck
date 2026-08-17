@@ -3360,6 +3360,49 @@ export const requestAiRecheckApi = (
   })
 }
 
+/** 改一份资料的类别（0817 第 2 条的配套）。
+ *
+ * **自动分类一定会错**，没有纠正出口的自动化，用户错一次就没有办法了：
+ * 他看得见分错了，却只能重新传一遍，或者眼睁睁看着规则去错的地方取证。 */
+export const updateDocumentMaterialCategoryApi = (
+  projectId: string,
+  documentId: string,
+  materialCategory: string,
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{ documentId: string; materialCategory: string; previousCategory: string }>
+> => {
+  return request.patch({
+    url: `/api/projects/${projectId}/documents/${documentId}/material-category`,
+    data: { materialCategory },
+    headers: mutationHeaders(options)
+  })
+}
+
+/** 一键审查：对一批节点一次性发起 AI 复核（0817 第 3 条）。
+ *
+ * 返回里 **skipped 必须展示给用户**——只显示「已发起 N 个」的话，
+ * 剩下的去哪了没人知道，监检会以为全跑过了。 */
+export type BatchRecheckPayload = {
+  startedCount: number
+  started: Array<{ nodeId: number; accepted: boolean }>
+  skippedCount: number
+  skipped: Array<{ nodeId: number; reason: string; message: string }>
+  batchLimit: number
+}
+
+export const requestAiRecheckBatchApi = (
+  projectId: string,
+  payload: { nodeIds?: number[] } = {},
+  options?: MutationHeaderOptions
+): Promise<IResponse<BatchRecheckPayload>> => {
+  return request.post({
+    url: `/api/projects/${projectId}/inspection/ai-recheck-batch`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const getActiveReviewHumanInputTaskApi = (
   reviewRunId: string
 ): Promise<IResponse<ActiveReviewHumanInputTaskPayload>> => {

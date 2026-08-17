@@ -48,6 +48,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     # 真正的闸门在端点里：必须是本组织负责人，且目标同组织。
     ("POST", r"/org-units/[^/]+/invitations$", "org:delegate"),
     ("POST", r"/org-units/[^/]+/members/[^/]+/role$", "org:delegate"),
+    # 改资料类别属于资料维护，和上传/挂载同一档
+    ("PATCH", r"/projects/[^/]+/documents/[^/]+/material-category$", "file:upload"),
     (
         "POST",
         r"/internal/ocr/mineru/tasks(?:/upload)?$",

@@ -206,6 +206,8 @@ type EvidenceConfirmationRow = {
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
+import BatchRecheckPanel from './components/BatchRecheckPanel.vue'
+import { useBatchRecheck } from './useBatchRecheck'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
 import EvidenceLocatorDialog from './components/EvidenceLocatorDialog.vue'
@@ -3936,6 +3938,14 @@ const handleSubmitRectification = async (payload: {
   }
 }
 
+/* 一键审查的状态与调用抽在 useBatchRecheck 里：
+   Workbench.vue 有行数棘轮，棘轮的用意就是逼新功能别再往这个大文件堆。 */
+const { batchRecheckLoading, batchRecheckResult, handleAiRecheckBatch } = useBatchRecheck({
+  projectId: () => activeProjectId.value,
+  etag: () => currentProject.value?.etag,
+  onFinished: () => loadProjectBundle()
+})
+
 const handleAiRecheck = async () => {
   if (!ensureWritableNode()) return
   if (aiRecheckDisabledReason.value) {
@@ -5732,6 +5742,14 @@ onBeforeUnmount(() => {
                 >
                   {{ aiRecheckButtonLabel }}
                 </ElButton>
+                <!-- 一键审查拆成独立组件：Workbench.vue 有行数棘轮，
+                     棘轮的用意就是逼新功能不要再往这个大文件里堆。 -->
+                <BatchRecheckPanel
+                  :loading="batchRecheckLoading"
+                  :disabled="isReadOnly"
+                  :result="batchRecheckResult"
+                  @run="handleAiRecheckBatch"
+                />
               </div>
               <div v-if="aiRecheckOutputVisible" class="ai-recheck-output" aria-live="polite">
                 <div class="ai-recheck-output-head">
