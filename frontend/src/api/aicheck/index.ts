@@ -421,6 +421,9 @@ export type AdminUser = {
   role: RoleCode
   roleLabel?: string
   mobile: string
+  /* 组织负责人（0817 第 5 条）。勾上之后这个人能在**本组织内**
+     给成员分配角色、生成邀请链接。只有系统管理员能设。 */
+  isOrgLeader?: boolean
   status: '启用' | '停用'
   lastLoginAt: string
   updatedAt?: string
@@ -443,6 +446,7 @@ export type AdminUserSavePayload = {
   role: RoleCode
   orgId?: string
   orgName?: string
+  isOrgLeader?: boolean
   status?: AdminUser['status']
   password?: string
   initialPassword?: string
@@ -3356,6 +3360,58 @@ export const requestAiRecheckApi = (
   return request.post({
     url: `/api/projects/${projectId}/inspection/nodes/${nodeId}/ai-recheck`,
     data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+/* ---- 组织邀请注册（0817 第 4 条）---- */
+
+export type InvitationInfo = {
+  orgId: string
+  orgName: string
+  role: RoleCode
+  expiresAt: string
+}
+
+/** 查看邀请。**不需要登录**——收件人本来就还没有账号。 */
+export const getInvitationApi = (token: string): Promise<IResponse<InvitationInfo>> => {
+  return request.get({ url: `/api/invitations/${encodeURIComponent(token)}` })
+}
+
+/** 凭邀请建账号。角色和组织由邀请写死，请求里带 role/orgId 也不会生效。 */
+export const acceptInvitationApi = (
+  token: string,
+  payload: { username: string; password: string; displayName?: string }
+): Promise<IResponse<{ userId: string; username: string; role: RoleCode }>> => {
+  return request.post({
+    url: `/api/invitations/${encodeURIComponent(token)}/accept`,
+    data: payload
+  })
+}
+
+/** 生成邀请链接（组织负责人 / 管理员）。 */
+export const createOrgInvitationApi = (
+  orgId: string,
+  role: RoleCode,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ token: string; orgId: string; role: RoleCode; expiresAt: string }>> => {
+  return request.post({
+    url: `/api/org-units/${encodeURIComponent(orgId)}/invitations`,
+    data: { role },
+    headers: mutationHeaders(options)
+  })
+}
+
+/** 组织负责人在本组织内调整成员角色。 */
+export const assignOrgMemberRoleApi = (
+  orgId: string,
+  userId: string,
+  role: RoleCode,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ userId: string; role: RoleCode; previousRole: RoleCode }>> => {
+  return request.post({
+    url: `/api/org-units/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}/role`,
+    data: { role },
     headers: mutationHeaders(options)
   })
 }

@@ -303,6 +303,24 @@ const rectificationIdForBinding = (bindingId?: string) => {
   return rectifications.value.find((item) => item.bindingIds?.includes(bindingId))?.id || '--'
 }
 
+/* 缺项与未通过（0817 第 2 条：「提示缺的内容以及未通过的部分」）。
+ *
+ * 这两份数据一直都在——missingRequirements 在节点上，需补正在挂载状态里——
+ * 但施工方的页面从来没显示过。他只能传完等着被退回，
+ * 而退回往往已经过了几天。**数据有、界面没有，对用户就是没有。**
+ */
+const missingRequirementNames = computed(() =>
+  (props.node?.requirementsSummary?.missingRequirements || [])
+    // 契约里这一条叫 name（materialTypeName 是资料审查点那边的字段，
+    // 两者不是一回事）。猜字段名的代价是列表恒空，而且不报错。
+    .map((item) => String(item.name || item.materialTypeCode || ''))
+    .filter(Boolean)
+)
+
+const rejectedFileNames = computed(() =>
+  contractorFileRows.value.filter((row) => row.status === '需补正').map((row) => row.fileName)
+)
+
 const contractorFileRows = computed<ContractorFileRow[]>(() => {
   const rows = projectFiles.value.map((file) => {
     const binding = bindingForProjectFile(file)
@@ -677,9 +695,36 @@ const getPillClass = (value?: string): AuditStatusTone => {
             <div class="material-checklist-head">
               <div>
                 <h4>资料分类与上传指引</h4>
-                <p>按资料用途选择分类，并参考提示成套上传；分类仅用于资料整理和上传参考。</p>
+                <p>直接上传即可，系统会自动识别类别；下面的分类只是整理参考。</p>
               </div>
             </div>
+            <!-- 缺项与未通过（0817 第 2 条的后半句）。
+                 数据一直在节点上，施工方却从来看不到——他只能传完等着被退回，
+                 而退回的时候往往已经过了几天。 -->
+            <ElAlert
+              v-if="missingRequirementNames.length"
+              class="material-gap-alert"
+              type="warning"
+              :closable="false"
+              show-icon
+            >
+              <template #title> 当前环节还缺 {{ missingRequirementNames.length }} 项资料 </template>
+              <ul class="material-gap-list">
+                <li v-for="name in missingRequirementNames" :key="name">{{ name }}</li>
+              </ul>
+            </ElAlert>
+            <ElAlert
+              v-if="rejectedFileNames.length"
+              class="material-gap-alert"
+              type="error"
+              :closable="false"
+              show-icon
+            >
+              <template #title> 有 {{ rejectedFileNames.length }} 份资料需要补正 </template>
+              <ul class="material-gap-list">
+                <li v-for="name in rejectedFileNames" :key="name">{{ name }}</li>
+              </ul>
+            </ElAlert>
             <ElTable
               class="material-gap-table"
               :data="CONTRACTOR_MATERIAL_REQUIREMENTS"

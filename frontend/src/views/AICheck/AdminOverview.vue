@@ -115,6 +115,7 @@ import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
+import OrgDelegationPanel from './components/OrgDelegationPanel.vue'
 import {
   formatNodeScope,
   formatParticipantType,
@@ -329,6 +330,17 @@ const projectOperationError = ref('')
 const orgDialogVisible = ref(false)
 const orgDialogMode = ref<'create' | 'edit'>('create')
 const orgSaving = ref(false)
+
+/* 组织的「成员与邀请」抽屉（0817 第 4、5 条）。
+   界面上的禁用只是省得用户白点，真正拦住越权的是服务端。 */
+const orgDelegationVisible = ref(false)
+const orgDelegationTarget = ref<AdminOrgUnit | undefined>(undefined)
+const currentUserId = computed(() => String(userStore.getUserInfo?.id || ''))
+
+const openOrgDelegation = (row: AdminOrgUnit) => {
+  orgDelegationTarget.value = row
+  orgDelegationVisible.value = true
+}
 const orgOperationError = ref('')
 const userDialogVisible = ref(false)
 const userDialogMode = ref<'create' | 'edit'>('create')
@@ -639,6 +651,9 @@ const userForm = reactive({
   mobile: '',
   role: 'contractor' as RoleCode,
   orgId: '',
+  /* 组织负责人（0817 第 5 条）。勾上之后这个人能在**本组织内**给成员分配角色。
+     只有系统管理员能勾——让负责人自己勾，权限下放就成了提权通道。 */
+  isOrgLeader: false,
   status: '启用' as AdminUser['status'],
   password: '',
   etag: ''
@@ -2365,6 +2380,7 @@ const resetUserForm = () => {
   userForm.username = ''
   userForm.name = ''
   userForm.mobile = ''
+  userForm.isOrgLeader = false
   userForm.role = 'contractor'
   userForm.orgId = ''
   userForm.status = '启用'
@@ -2381,6 +2397,7 @@ const openUserDialog = (row?: AdminUser) => {
     userForm.username = row.username
     userForm.name = row.name
     userForm.mobile = row.mobile
+    userForm.isOrgLeader = Boolean(row.isOrgLeader)
     userForm.role = row.role
     userForm.orgId =
       row.orgId || overview.value.orgUnits.find((org) => org.name === row.orgName)?.id || ''
@@ -2438,6 +2455,7 @@ const handleSaveUser = async () => {
       role: userForm.role,
       orgId: userForm.orgId || undefined,
       orgName: org?.name,
+      isOrgLeader: userForm.isOrgLeader,
       status: userForm.status,
       password: userDialogMode.value === 'create' ? initialPassword : initialPassword || undefined
     }
@@ -3698,9 +3716,14 @@ onMounted(() => {
                       </ElTag>
                     </template>
                   </ElTableColumn>
-                  <ElTableColumn label="操作" width="116" fixed="right">
+                  <ElTableColumn label="操作" width="176" fixed="right">
                     <template #default="{ row }">
                       <ElButton link type="primary" @click="openOrgDialog(row)">编辑</ElButton>
+                      <!-- 成员与邀请（0817 第 4、5 条）。
+                           界面上的禁用只是省得用户白点，真正拦越权的是服务端。 -->
+                      <ElButton link type="primary" @click="openOrgDelegation(row)">
+                        成员与邀请
+                      </ElButton>
                       <ElButton
                         link
                         type="danger"
@@ -3712,6 +3735,20 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElDrawer
+                  v-model="orgDelegationVisible"
+                  :title="`${orgDelegationTarget?.name || ''} · 成员与邀请`"
+                  size="520px"
+                >
+                  <OrgDelegationPanel
+                    v-if="orgDelegationTarget"
+                    :org-id="orgDelegationTarget.id"
+                    :org-name="orgDelegationTarget.name"
+                    :members="overview.users"
+                    :current-user-id="currentUserId"
+                    @changed="loadData()"
+                  />
+                </ElDrawer>
                 <ElPagination
                   v-model:current-page="tableStates.orgUnits.page"
                   v-model:page-size="tableStates.orgUnits.pageSize"
@@ -5570,6 +5607,21 @@ onMounted(() => {
               </ElFormItem>
             </ElCol>
           </ElRow>
+          <ElRow :gutter="12">
+            <ElCol :span="24">
+              <!-- 组织负责人（0817 第 5 条）。
+                   勾上之后这个人能在**本组织内**给成员分配角色、发邀请链接。
+                   只有系统管理员能勾——让负责人自己勾，权限下放就成了提权通道；
+                   所以这个勾选框只出现在后台建/改用户这里。 -->
+              <ElFormItem label="组织负责人">
+                <ElCheckbox v-model="userForm.isOrgLeader" :disabled="!userForm.orgId">
+                  可在本组织内分配成员角色、生成邀请链接
+                </ElCheckbox>
+                <!-- 没选组织就没有「本组织」可言，勾了也不知道管哪一个 -->
+                <small v-if="!userForm.orgId" class="org-leader-hint"> 需要先选择所属组织 </small>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
           <ElFormItem :label="userDialogMode === 'create' ? '初始密码' : '重置密码'">
             <ElInput
               v-model="userForm.password"
@@ -6801,6 +6853,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.org-leader-hint {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+}
+
 .admin-page {
   min-height: 100vh;
   padding: 0;

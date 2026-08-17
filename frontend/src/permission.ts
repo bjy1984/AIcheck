@@ -81,7 +81,17 @@ router.beforeEach(async (to, from, next) => {
       next(to.path === '/' ? { path: defaultPath, replace: true } : nextData)
     }
   } else {
-    if (NO_REDIRECT_WHITE_LIST.indexOf(to.path) !== -1) {
+    /* 前缀匹配，不是精确匹配。
+     *
+     * 邀请页的路径是 /invite/<token>，而白名单里写的是 /invite。
+     * 用 indexOf(to.path) 的话永远匹配不上——**白名单加了却不生效**，
+     * 而且不报错：收件人点开链接被弹回登录页，看起来像链接坏了。
+     *
+     * 用 startsWith 时要带上分隔符判断，否则 /login-anything 也会被放行。 */
+    const allowlisted = NO_REDIRECT_WHITE_LIST.some(
+      (item) => to.path === item || to.path.startsWith(`${item}/`)
+    )
+    if (allowlisted) {
       next()
     } else {
       next(`/login?redirect=${to.path}`) // 否则全部重定向到登录页

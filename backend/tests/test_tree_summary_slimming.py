@@ -21,7 +21,7 @@ inspectionProjectNodeRows）。明细在 /nodes/{id}/package 里另发一份，
 
 ## 判据
 
-- 树里只留计数 + 缺失项的 id/name
+- 树里只留计数 + 缺失项的身份（id/materialTypeCode）和名字
 - **不能顺手把计数也砍了**：树上的进度条就靠它们
 - 详情那条路径必须保持完整——瘦身只针对列表
 """
@@ -53,6 +53,9 @@ FULL = {
     "missingRequirements": [
         {
             "id": "MRP-1-design_license-05AB35",
+            # 真实需求项带 materialTypeCode（业务包 requiredMaterials 里就有）。
+            # 夹具漏了它的话，用例只会测到「取到 None 也叫通过」。
+            "materialTypeCode": "design_license",
             "name": "设计单位许可证",
             "source": "docs/工程监检资料映射表.md",
             "revision": 1,
@@ -72,12 +75,26 @@ def test_计数一个都不能少():
     assert slim["hasRequirementDetails"] is True
 
 
-def test_缺失项只留名字和id():
+def test_缺失项只留身份和名字():
+    """砍的是**明细**，不是**身份**。
+
+    第一版把 materialTypeCode 也砍了，只留 id + name——于是调用方只能靠
+    显示名去对，而显示名会随配置改动。test_business_pack 立刻红了，
+    我当时误判成「既有失败、与我无关」，直到查到提交记录才发现是自己砍的。
+
+    id / materialTypeCode 都是短字符串，占不了几个字节；
+    真正撑大响应的是 source 路径、evidenceItems、revision 那些。
+    """
     slim = slim_requirements_summary(FULL)
     item = slim["missingRequirements"][0]
-    assert item == {"id": "MRP-1-design_license-05AB35", "name": "设计单位许可证"}
+    assert item == {
+        "id": "MRP-1-design_license-05AB35",
+        "materialTypeCode": "design_license",
+        "name": "设计单位许可证",
+    }
     assert "source" not in item, "文档路径是详情页的东西"
     assert "evidenceItems" not in item, "证据项清单在详情里，列表页不需要"
+    assert "revision" not in item
 
 
 def test_名称按前端同一套优先级取():

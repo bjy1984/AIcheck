@@ -59,6 +59,7 @@ from libs.business_pack.clause_store import (
 )
 from libs.content_hash import normalized_content_hash
 from libs.contracts import errors
+from libs.auto_review_status import auto_review_status
 from libs.field_confidence import field_confirm_confidence, is_low_confidence
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import (
@@ -3773,6 +3774,8 @@ def admin_user_projection(user: dict[str, Any]) -> dict[str, Any]:
         "roleId": user.get("roleId") or role,
         "roleLabel": user.get("roleLabel") or ROLE_LABELS.get(role, role),
         "mobile": user.get("mobile") or "",
+        # 界面要显示「这个人是不是本组织负责人」，不带出来的话后台没法勾选
+        "isOrgLeader": bool(user.get("isOrgLeader")),
         "status": user.get("status") or "启用",
         "mustChangePassword": bool(user.get("mustChangePassword")),
         "lastLoginAt": user.get("lastLoginAt") or "",
@@ -3915,6 +3918,10 @@ def build_admin_user_record(
         "orgName": org_name,
         "orgUnitName": org_name,
         "mobile": body.get("mobile") or (existing or {}).get("mobile") or "",
+        # 组织负责人标记（0817 第 5 条）。**只有系统管理员能设**——
+        # 让负责人自己给自己或别人加这个标记，就等于把权限下放变成了提权通道。
+        # 只认显式的 True/False：不写这个字段时保持原值，别把没提到的当成取消。
+        "isOrgLeader": bool(body["isOrgLeader"]) if "isOrgLeader" in body else bool((existing or {}).get("isOrgLeader")),
         "status": body.get("status") or (existing or {}).get("status") or "启用",
         "defaultPath": ROLE_DEFAULT_PATHS.get(role, ROLE_DEFAULT_PATHS["inspection"]),
         "lastLoginAt": body.get("lastLoginAt") or (existing or {}).get("lastLoginAt") or "",
@@ -4729,8 +4736,12 @@ def slim_requirements_summary(summary: dict[str, Any]) -> dict[str, Any]:
         # 只有「明细未配置」那个占位分支才写 name。所以前端那句
         # `.map(r => r.name)` 一直取到 undefined，缺失资料名这一列本来就是空的，
         # 只是没人注意；我做瘦身时才把它暴露出来。
+        # materialTypeCode 要留：它是这条需求的**身份**，不是明细。
+        # 瘦身那次把它一起砍了（76fbcf2），于是调用方只能靠显示名去对，
+        # 而显示名会随配置改动——test_business_pack 立刻红了，我当时
+        # 误判成「既有失败、与我无关」。砍大字段没错，砍身份是错的。
         "missingRequirements": [
-            {"id": item.get("id"), "name": _requirement_display_name(item)}
+            {"id": item.get("id"), "materialTypeCode": item.get("materialTypeCode"), "name": _requirement_display_name(item)}
             for item in (summary.get("missingRequirements") or [])
             if isinstance(item, dict)
         ],
@@ -17787,6 +17798,8 @@ def fde_project_node_audit_summary(project_id: str, node: dict[str, Any]) -> dic
         "blockerCount": len(blockers),
         "latestReviewRun": review_runs[0] if review_runs else None,
         "latestAiRun": ai_runs[0] if ai_runs else None,
+        # 自动审核状态（0817 第 3 条）。口径只有一份：libs/auto_review_status
+        "autoReviewStatus": auto_review_status(review_runs[0] if review_runs else None),
     }
 
 

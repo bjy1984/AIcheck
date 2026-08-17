@@ -62,6 +62,10 @@ MUTATION_HEADER_EXEMPT_URLS = {
     # 前端侧此前漏加，导致两份名单口径不一致。
     "/api/fde/review-runs/${reviewRunId}/raw-vault/verify",
     "/api/rules/versions/${versionId}/${action}-preview",
+    # 邀请注册：调用者**还没有账号**，幂等头依赖当前用户身份，无从生成。
+    # 后端同名路由也在 PUBLIC_MUTATION_ROUTES 里豁免，两份名单口径一致。
+    # 防重复的闸门是邀请令牌本身：单次有效、会过期、绑死组织和角色。
+    "/api/invitations/${encodeURIComponent(token)}/accept",
 }
 PUBLIC_MUTATION_ROUTES = {
     ("POST", "/mock/user/login"),

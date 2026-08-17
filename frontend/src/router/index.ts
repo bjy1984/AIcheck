@@ -38,6 +38,19 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
     }
   },
   {
+    /* 邀请注册。**不挂在需要登录的布局下**，也在 NO_REDIRECT_WHITE_LIST 里
+       ——收件人还没有账号，被守卫弹回登录页的话这个链接就废了。
+       token 走路径参数而不是查询串：查询串更容易在日志和 Referer 里泄露。 */
+    path: '/invite/:token',
+    component: () => import('@/views/Login/AcceptInvitation.vue'),
+    name: 'AcceptInvitation',
+    meta: {
+      hidden: true,
+      title: '接受邀请',
+      noTagsView: true
+    }
+  },
+  {
     path: '/login',
     component: () => import('@/views/Login/Login.vue'),
     name: 'Login',
