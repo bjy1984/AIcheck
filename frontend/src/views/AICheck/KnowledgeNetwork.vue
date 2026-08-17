@@ -56,10 +56,7 @@ const FAMILY_LABELS: Record<string, string> = {
  * 那是圆形时代的妥协：圆里塞不下字，只好给大类留标签。
  * 现在框宽跟着文字走，这个妥协没有理由继续存在。 */
 
-/** 节点里最多显示几个字。主类型给得宽些，末梢节点短些，免得图上全是长条。 */
 const MAJOR_TYPES = new Set(['business_pack', 'domain_module'])
-const MAX_LABEL_CHARS_MAJOR = 12
-const MAX_LABEL_CHARS_MINOR = 8
 
 /* 节点画成**矩形**而不是圆。
  *
@@ -67,19 +64,55 @@ const MAX_LABEL_CHARS_MINOR = 8
  * 要么截成「压力管道安…」。为了塞下字去放大球径，图上又全是巨型圆饼。
  * 矩形按文字长度定宽就没有这个矛盾：名字多长，框就多宽。 */
 const NODE_HEIGHT_RATIO = 0.66
-const LABEL_PADDING_X = 14
+const LABEL_PADDING_X = 12
+const LABEL_PADDING_Y = 6
 
-/** 估算文本像素宽。中日韩按一个字宽，其余按 0.56 个字宽——够定框宽了。 */
-function estimateTextWidth(text: string, fontSize: number): number {
-  let units = 0
-  for (const ch of text) units += /[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56
-  return Math.ceil(units * fontSize)
+/* 名字**一个字都不省略**，长了就折行。
+ *
+ * 上一版是截到 8/12 个字加省略号，于是图上一排「压力管道安…」
+ * 「监检业务判…」——看得见有东西，仍然不知道是哪一条，
+ * 还得逐个悬停去问，和之前的纯色块只差半步。
+ * 折行不丢信息：框长高一点，字全在。 */
+const MAX_LINE_WIDTH_MAJOR = 132
+const MAX_LINE_WIDTH_MINOR = 96
+
+/** 单字像素宽。中日韩按一个字宽，其余按 0.56 个字宽——够定框宽了。 */
+function charWidth(ch: string, fontSize: number): number {
+  return (/[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56) * fontSize
 }
 
-function clipLabel(text: string, type: string): string {
-  const limit = MAJOR_TYPES.has(type) ? MAX_LABEL_CHARS_MAJOR : MAX_LABEL_CHARS_MINOR
-  const chars = [...String(text || '')]
-  return chars.length > limit ? `${chars.slice(0, limit - 1).join('')}…` : chars.join('')
+function estimateTextWidth(text: string, fontSize: number): number {
+  let width = 0
+  for (const ch of text) width += charWidth(ch, fontSize)
+  return Math.ceil(width)
+}
+
+/** 按像素宽折行。按字数折的话，「NB/T 47013」这种半角串会折得过早。 */
+function wrapLabel(text: string, type: string): string[] {
+  const fontSize = labelFontSize(type)
+  const maxWidth = MAJOR_TYPES.has(type) ? MAX_LINE_WIDTH_MAJOR : MAX_LINE_WIDTH_MINOR
+  const lines: string[] = []
+  let line = ''
+  let width = 0
+  for (const ch of String(text || '')) {
+    if (ch === '\n') {
+      lines.push(line)
+      line = ''
+      width = 0
+      continue
+    }
+    const w = charWidth(ch, fontSize)
+    if (line && width + w > maxWidth) {
+      lines.push(line)
+      line = ch
+      width = w
+    } else {
+      line += ch
+      width += w
+    }
+  }
+  if (line) lines.push(line)
+  return lines.length ? lines : ['']
 }
 
 const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
@@ -106,12 +139,23 @@ function labelFontSize(type: string): number {
   return MAJOR_TYPES.has(type) ? 12 : 10
 }
 
-/** 矩形尺寸 [宽, 高]。宽度跟着标签走——每个节点都有名字，所以每个框都按字定宽。 */
+function lineHeightOf(type: string): number {
+  return labelFontSize(type) + 4
+}
+
+/** 矩形尺寸 [宽, 高]：宽按最长那一行，高按行数——折行之后高度必须跟着涨，
+ *  否则第二行直接画到框外面，就成了另一种溢出。 */
 function nodeRectSize(type: string, label: string): [number, number] {
   const base = SYMBOL_SIZE_BY_TYPE[type] || 18
-  const height = Math.max(18, Math.round(base * NODE_HEIGHT_RATIO))
-  const text = estimateTextWidth(clipLabel(label, type), labelFontSize(type))
-  return [Math.max(base, text + LABEL_PADDING_X * 2), height]
+  const fontSize = labelFontSize(type)
+  const lines = wrapLabel(label, type)
+  const widest = Math.max(...lines.map((line) => estimateTextWidth(line, fontSize)))
+  const width = Math.max(base, widest + LABEL_PADDING_X * 2)
+  const height = Math.max(
+    Math.round(base * NODE_HEIGHT_RATIO),
+    lines.length * lineHeightOf(type) + LABEL_PADDING_Y * 2
+  )
+  return [width, height]
 }
 
 const graph = ref<KnowledgeNetworkPayload | null>(null)
@@ -338,14 +382,20 @@ function buildChartOption(): EChartsOption {
   const familyIndex = new Map(families.map((family, index) => [family, index]))
   const data = visibleNodes.value.map((node) => ({
     id: node.id,
-    name: clipLabel(node.label, node.type),
+    name: wrapLabel(node.label, node.type).join('\n'),
     value: node.typeLabel,
     category: familyIndex.get(node.family) ?? familyIndex.get('semantic') ?? 0,
     /* 直角矩形，宽度跟着文字走。圆形的可用宽度只有直径，
      * 中文名字要么溢到外面压住连线，要么被截成「压力管道安…」。 */
     symbol: 'rect' as const,
     symbolSize: nodeRectSize(node.type, node.label),
-    draggable: true,
+    /* 节点不可拖。
+     *
+     * 可拖的时候，鼠标按在节点上是「拖这个点」，按在空白处才是「平移画布」。
+     * 圆形时代节点小，多数落点是空白，问题不明显；换成矩形后节点占的面积
+     * 大了好几倍，随手一拖经常拖的是某个节点——在用户看来就是「滑动失灵」。
+     * 平移是主要操作，挪单个节点不是；力导向布局本来也会把它拉回去。 */
+    draggable: false,
     /* 标签画在框**里**：白字、居中，每个节点都有。
      * 原先是默认位置（节点右侧）+ 主题文字色，长名字拖在外面和连线叠在一起；
      * 深色主题下还会和背景撞色。 */
@@ -354,16 +404,22 @@ function buildChartOption(): EChartsOption {
       position: 'inside' as const,
       color: '#ffffff',
       fontSize: labelFontSize(node.type),
+      lineHeight: lineHeightOf(node.type),
       fontWeight: 600
     },
+    /* 选中态**不写在这里**。
+     *
+     * 原先 borderWidth / opacity 都读 selectedNodeId，于是点一下节点就要重建
+     * 整个 option——而重建会把画布的平移缩放一起清掉，手一松图就弹回原位。
+     * 「滑动有时失灵」就是这么来的。选中交给 series.select.itemStyle，
+     * 用 dispatchAction 切换，不碰 option。 */
     itemStyle: {
       color: colors[node.family as keyof typeof colors] || colors.semantic,
       borderColor: themeColor('--el-bg-color', '#ffffff'),
-      borderWidth: selectedNodeId.value === node.id ? 4 : 1.5,
-      opacity: selectedNodeId.value && selectedNodeId.value !== node.id ? 0.78 : 0.96
+      borderWidth: 1.5,
+      opacity: 0.96
     },
-    /* 框里的名字可能被截断，完整名字放这里给 tooltip 用——
-     * 截断只是「这里放不下」，不该变成「你看不到全名」。 */
+    /* 框里显示的是折行后的名字，原始名字放这里给 tooltip 用。 */
     fullName: node.label,
     nodeType: node.type,
     nodeTypeLabel: node.typeLabel,
@@ -465,6 +521,15 @@ function buildChartOption(): EChartsOption {
   }
 }
 
+/** 把选中态推给图表——用 action，不重建 option，这样不会丢平移缩放。 */
+function syncSelectionToChart() {
+  if (!chart) return
+  chart.dispatchAction({ type: 'unselect', seriesIndex: 0 })
+  if (!selectedNodeId.value) return
+  const index = visibleNodes.value.findIndex((node) => node.id === selectedNodeId.value)
+  if (index >= 0) chart.dispatchAction({ type: 'select', seriesIndex: 0, dataIndex: index })
+}
+
 function renderChart(reset = false) {
   if (!chartHost.value || loading.value) return
   if (!chartHost.value.clientWidth || !chartHost.value.clientHeight) {
@@ -482,9 +547,15 @@ function renderChart(reset = false) {
       }
     })
   }
+  /* notMerge 只在**明确要重置视图**时用（首次加载、点「重置视图」）。
+   *
+   * 原先每次 setOption 都传 true，等于每次重画都把画布的平移缩放清零。
+   * 而重画的触发点很多——筛选类型、搜索、切主题、选中节点——
+   * 用户拖到一半只要碰上一次，图就弹回原位，看起来就是「滑动失灵」。 */
   if (reset) chart.clear()
-  chart.setOption(buildChartOption(), true)
+  chart.setOption(buildChartOption(), { notMerge: reset, lazyUpdate: true })
   chart.resize()
+  syncSelectionToChart()
 }
 
 function resetView() {
@@ -540,11 +611,16 @@ async function loadGraph() {
   }
 }
 
+/* 数据/主题变了才重画。
+ * selectedNodeId **不在这里**——选中只是换个描边，却会连带重建 option，
+ * 把用户拖好的视图清零。它走 syncSelectionToChart。 */
 watch(
-  () => [visibleNodes.value, visibleEdges.value, selectedNodeId.value, appStore.getIsDark],
+  () => [visibleNodes.value, visibleEdges.value, appStore.getIsDark],
   () => nextTick(() => renderChart()),
   { deep: false }
 )
+
+watch(selectedNodeId, () => syncSelectionToChart())
 
 onMounted(() => {
   if (chartHost.value && typeof ResizeObserver !== 'undefined') {

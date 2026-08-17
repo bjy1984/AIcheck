@@ -51,11 +51,35 @@ assert.ok(labelBlocks.length >= 3, '静态、悬停、选中三处标签都要�
 const whiteLabels = sfc.match(/color: '#ffffff'/g) || []
 assert.ok(whiteLabels.length >= 3, '三处标签都要是白字')
 
-// 超长名字先截，再据此定框宽——两者用同一个函数，不然框宽和实际文字对不上
-assert.ok(/ellipsis|…/.test(sfc), '截断要有省略号，否则看不出还有内容')
+/* 名字一个字都不省略，长了折行。
+ *
+ * 上一版截到 8/12 字加省略号，图上一排「压力管道安…」「监检业务判…」——
+ * 看得见有东西，仍然不知道是哪一条，和纯色块只差半步。 */
+assert.ok(!/clipLabel/.test(sfc), '不许再截断标签，长了要折行')
+// 只看图表配置那段：页面别处的 text-overflow: ellipsis 是列表用的，不相干
+const optionPart = sfc.slice(sfc.indexOf('function buildChartOption'), sfc.indexOf('</script>'))
+assert.ok(!/ellipsis/.test(optionPart), '图表标签不该还留着省略号配置')
+assert.ok(/function wrapLabel/.test(sfc), '要有折行函数')
 assert.ok(
-  /const text = estimateTextWidth\(clipLabel\(label, type\)/.test(sfc),
-  '定框宽要用截断后的文字，否则超长名字会撑出一个巨宽的框'
+  /name: wrapLabel\(node\.label, node\.type\)\.join\('\\n'\)/.test(sfc),
+  '节点名字要用折行后的多行文本'
+)
+
+/* 折行后**高度必须跟着行数涨**，否则第二行直接画到框外面——
+   那只是把「横着溢出」换成了「竖着溢出」。 */
+const rectBody = sfc.slice(
+  sfc.indexOf('function nodeRectSize'),
+  sfc.indexOf('function buildChartOption')
+)
+assert.ok(/lines\.length \* lineHeightOf\(type\)/.test(rectBody), '框高要按行数算')
+assert.ok(
+  /lines\.map\(\(line\) => estimateTextWidth\(line, fontSize\)\)/.test(rectBody),
+  '框宽要按最长那行算'
+)
+// 行高要同时给 label，否则 ECharts 按默认行距排，和框高对不上
+assert.ok(
+  /lineHeight: lineHeightOf\(node\.type\)/.test(sfc),
+  'label 要用同一个行高，否则文字和框高对不上'
 )
 
 /* 每个节点都要有名字。
@@ -87,6 +111,42 @@ assert.ok(
   !/label: \{ show: true, color: colors\.text/.test(seriesPart),
   '还留着主题文字色的标签——深色节点上会是深色字'
 )
+
+/* ---- 平移不能被重画清掉 ----
+ *
+ * 「滑动有时失灵」的真身：每次 setOption 都传 notMerge=true，
+ * 等于每次重画都把画布的平移缩放清零。而重画的触发点很多——
+ * 筛选类型、搜索、切主题、选中节点——用户拖到一半碰上一次，图就弹回原位。
+ *
+ * 三条一起才算修好，少一条都会复发。 */
+
+// 1. notMerge 只在明确要重置视图时用
+assert.ok(
+  /setOption\(buildChartOption\(\), \{ notMerge: reset, lazyUpdate: true \}\)/.test(sfc),
+  'setOption 又写死了 notMerge——平移会被每次重画清掉'
+)
+
+// 2. 选中不走重建：它只是换个描边，不该连带清空视图
+assert.ok(
+  /watch\(selectedNodeId, \(\) => syncSelectionToChart\(\)\)/.test(sfc),
+  '选中要用 dispatchAction 同步，不能触发重画'
+)
+const renderWatch = sfc.slice(sfc.indexOf('watch(\n  () => [visibleNodes'))
+assert.ok(
+  !/\[visibleNodes\.value, visibleEdges\.value, selectedNodeId\.value/.test(renderWatch),
+  'selectedNodeId 又被塞回重画监听了——点一下节点视图就弹回原位'
+)
+// itemStyle 也不能读 selectedNodeId，否则 option 仍然随选中而变
+const itemStylePart = sfc.slice(sfc.indexOf('itemStyle: {'), sfc.indexOf('fullName: node.label'))
+assert.ok(
+  !/selectedNodeId/.test(itemStylePart),
+  'itemStyle 还在读 selectedNodeId——option 会随选中重建'
+)
+
+/* 3. 节点不可拖。矩形比圆占的面积大好几倍，随手一拖经常拖的是某个节点，
+      在用户看来就是「滑动失灵」。平移是主要操作，挪单个节点不是。 */
+assert.ok(/draggable: false/.test(sfc), '节点可拖会把平移吃掉——矩形面积大，命中概率很高')
+assert.ok(/roam: true/.test(sfc), '要能平移缩放')
 
 // ---- 全屏 ----
 assert.ok(/const isFullscreen = ref\(false\)/.test(sfc), '要有全屏状态')
