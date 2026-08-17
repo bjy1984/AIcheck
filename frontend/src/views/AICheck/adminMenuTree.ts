@@ -42,6 +42,15 @@ export type AdminMenuSection = {
 /** 后台根节点名。三个页面原来写了三个不同的名字。 */
 export const ADMIN_MENU_ROOT = '后台管理功能'
 
+/** 左侧栏标题。原来是「后台菜单 / 知识库菜单 / 知识资产」三种。 */
+export const ADMIN_MENU_TITLE = '后台菜单'
+
+/* 边界说明。说的是**同一个后台的边界**，不该随页面改口径——
+ * 原来是「后台边界·无业务办理」「后台边界·只管理」「知识网络边界·可追溯」，
+ * 同一件事三种说法，读的人会以为这几页的权限范围真的不同。 */
+export const ADMIN_BOUNDARY_TITLE = '后台边界'
+export const ADMIN_BOUNDARY_BADGE = '无业务办理'
+
 const SECTION_DEFS: Array<{ title: string; items: AdminMenuItem[] }> = [
   {
     title: '基础管理',

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ADMIN_MENU_ROOT, buildAdminMenuSections } from './adminMenuTree'
+import {
+  ADMIN_BOUNDARY_BADGE,
+  ADMIN_BOUNDARY_TITLE,
+  ADMIN_MENU_ROOT,
+  ADMIN_MENU_TITLE,
+  buildAdminMenuSections
+} from './adminMenuTree'
 import {
   ElAlert,
   ElButton,
@@ -208,84 +214,20 @@ const routeQueryNumber = (key: string, fallback: number) => {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
-const knowledgePeerNavItems = computed(
-  () =>
-    [
-      {
-        index: 'admin-peer-10',
-        label: '业务类型管理',
-        badge: '复用',
-        tone: 'green',
-        route: '/admin/business-packs'
-      },
-      {
-        index: 'admin-peer-11',
-        label: '审核节点维护',
-        hint: '项目审核节点',
-        badge: '按业务包',
-        tone: 'blue',
-        route: '/admin/permission'
-      },
-      {
-        index: 'admin-peer-12',
-        label: '节点角色矩阵',
-        hint: '动作级权限',
-        badge: '权限',
-        tone: 'blue',
-        route: '/admin/permission'
-      },
-      {
-        index: 'admin-peer-13',
-        label: 'AI 业务规则模板',
-        badge: '规则',
-        tone: 'orange',
-        route: '/admin/rules'
-      },
-      {
-        index: 'admin-peer-14',
-        label: 'AI 知识库管理',
-        badge: '当前',
-        tone: 'green',
-        route: '/knowledge/overview',
-        active: route.path.startsWith('/knowledge')
-      },
-      {
-        index: 'admin-peer-15',
-        label: '外部核验工具源',
-        badge: '工具',
-        tone: 'blue',
-        route: '/admin/fine-config'
-      },
-      {
-        index: 'admin-peer-16',
-        label: '证据字段映射',
-        badge: '字段',
-        tone: 'blue',
-        route: '/admin/fine-config'
-      },
-      {
-        index: 'admin-peer-17',
-        label: '角色单位人员',
-        badge: '基础',
-        tone: 'green',
-        route: '/admin/org'
-      },
-      {
-        index: 'admin-peer-18',
-        label: '联调清单',
-        badge: '对账',
-        tone: 'orange',
-        route: '/admin/integration'
-      },
-      {
-        index: 'admin-peer-19',
-        label: '操作日志',
-        badge: '审计',
-        tone: 'blue',
-        route: '/admin/audit'
-      }
-    ] as const
-)
+/* 「后台同级功能」这块已去掉。
+ *
+ * 它是第二套导航：10 个按钮，指向的目的地统一后的菜单树里全都有，
+ * 而名字还对不上——「审核节点维护」vs「权限与节点」、
+ * 「AI 业务规则模板」vs「AI 业务规则与流程」、「角色单位人员」vs「组织用户」、
+ * 「操作日志」vs「审计日志」。**同一批入口，两套名字并排摆着**，
+ * 用户没法判断它们是不是同一个地方。
+ *
+ * 而且只有这一页传了它：admin 主页面没有、知识网络页传的是空数组，
+ * 于是进到知识库时左侧凭空多出一整块，看起来就是「菜单完全变了」。
+ *
+ * 导航要么统一到那棵树里，要么不要——重复的入口不会让人更好找，
+ * 只会让人怀疑自己点错了地方。
+ */
 
 const knowledgeShellBoundaryRows = [
   { label: '不办理', value: '退回补正、审查意见、报告复核' },
@@ -2903,13 +2845,11 @@ onMounted(() => {
       right-collapsed-default
       boundary-collapsed-default
       :top-stats="knowledgeTopStats"
-      menu-title="知识库菜单"
+      :menu-title="ADMIN_MENU_TITLE"
       :menu-root="ADMIN_MENU_ROOT"
-      peer-nav-title="后台同级功能"
-      :peer-nav-items="knowledgePeerNavItems"
       :menu-sections="knowledgeShellMenuSections"
-      boundary-title="后台边界"
-      boundary-badge="只管理"
+      :boundary-title="ADMIN_BOUNDARY_TITLE"
+      :boundary-badge="ADMIN_BOUNDARY_BADGE"
       boundary-tone="green"
       :boundary-rows="knowledgeShellBoundaryRows"
       right-title="运行状态"

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ADMIN_MENU_ROOT, buildAdminMenuSections } from './adminMenuTree'
+import {
+  ADMIN_BOUNDARY_BADGE,
+  ADMIN_BOUNDARY_TITLE,
+  ADMIN_MENU_ROOT,
+  ADMIN_MENU_TITLE,
+  buildAdminMenuSections
+} from './adminMenuTree'
 import {
   ElAlert,
   ElButton,
@@ -3348,11 +3354,11 @@ onMounted(() => {
         }
       ]"
       @top-stat-click="handleTopStatJump"
-      menu-title="后台菜单"
+      :menu-title="ADMIN_MENU_TITLE"
       :menu-root="ADMIN_MENU_ROOT"
       :menu-sections="adminShellMenuSections"
-      boundary-title="后台边界"
-      boundary-badge="无业务办理"
+      :boundary-title="ADMIN_BOUNDARY_TITLE"
+      :boundary-badge="ADMIN_BOUNDARY_BADGE"
       boundary-tone="green"
       :boundary-rows="adminShellBoundaryRows"
       right-title="运行摘要"

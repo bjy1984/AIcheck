@@ -24,8 +24,11 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import {
+  ADMIN_BOUNDARY_BADGE,
+  ADMIN_BOUNDARY_TITLE,
   ADMIN_MENU_ROOT,
   ADMIN_MENU_SECTIONS,
+  ADMIN_MENU_TITLE,
   buildAdminMenuSections,
   findAdminMenuItem
 } from './adminMenuTree'
@@ -71,10 +74,25 @@ for (const page of pages) {
   const sfc = readFileSync(fileURLToPath(new URL(`./${page}`, import.meta.url)), 'utf8')
   assert.ok(/from '\.\/adminMenuTree'/.test(sfc), `${page} 没有使用共享菜单树，它会再长出一棵`)
   assert.ok(/:menu-root="ADMIN_MENU_ROOT"/.test(sfc), `${page} 的根名字仍是硬写的`)
+  assert.ok(/:menu-title="ADMIN_MENU_TITLE"/.test(sfc), `${page} 的左栏标题仍是硬写的`)
+  assert.ok(/:boundary-title="ADMIN_BOUNDARY_TITLE"/.test(sfc), `${page} 的边界标题仍是硬写的`)
+  assert.ok(/:boundary-badge="ADMIN_BOUNDARY_BADGE"/.test(sfc), `${page} 的边界徽标仍是硬写的`)
+  /* 「同级功能」那块不许再出现。
+   *
+   * 它是第二套导航：10 个按钮指向的目的地树里全都有，名字却对不上
+   * （审核节点维护 vs 权限与节点、AI 业务规则模板 vs AI 业务规则与流程、
+   * 角色单位人员 vs 组织用户、操作日志 vs 审计日志）。
+   * **同一批入口两套名字并排摆着**，用户没法判断是不是同一个地方；
+   * 而且只有知识库那一页传了它，于是进去时左侧凭空多出一整块。
+   */
+  assert.ok(!/peer-nav-items/.test(sfc), `${page} 还挂着重复的「同级功能」导航`)
   assert.ok(!/const \w*[Mm]enuSections\w*Base = \[/.test(sfc), `${page} 还留着自己的菜单定义`)
 }
 
-// 根名字只有一个
+// 这几个标识各自只有一个值——左侧栏说的是同一个后台，不该随页面改口径
 assert.equal(ADMIN_MENU_ROOT, '后台管理功能')
+assert.equal(ADMIN_MENU_TITLE, '后台菜单')
+assert.equal(ADMIN_BOUNDARY_TITLE, '后台边界')
+assert.equal(ADMIN_BOUNDARY_BADGE, '无业务办理')
 
 console.log('Admin menu tree contract passed')

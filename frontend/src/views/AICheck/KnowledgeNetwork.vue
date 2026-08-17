@@ -16,7 +16,13 @@ import {
 import type { EChartsOption } from 'echarts'
 import echarts from '@/plugins/echarts'
 import { getKnowledgeNetworkApi } from '@/api/aicheck'
-import { ADMIN_MENU_ROOT, buildAdminMenuSections } from './adminMenuTree'
+import {
+  ADMIN_BOUNDARY_BADGE,
+  ADMIN_BOUNDARY_TITLE,
+  ADMIN_MENU_ROOT,
+  ADMIN_MENU_TITLE,
+  buildAdminMenuSections
+} from './adminMenuTree'
 import type { KnowledgeNetworkNode, KnowledgeNetworkPayload } from '@/api/aicheck'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
@@ -467,13 +473,11 @@ onBeforeUnmount(() => {
     search-placeholder="搜索知识库、标准、规则或项目"
     :user-label="userLabel"
     :top-stats="topStats"
-    menu-title="知识资产"
+    :menu-title="ADMIN_MENU_TITLE"
     :menu-root="ADMIN_MENU_ROOT"
     :menu-sections="menuSections"
-    peer-nav-title="同级功能"
-    :peer-nav-items="[]"
-    boundary-title="知识网络边界"
-    boundary-badge="可追溯"
+    :boundary-title="ADMIN_BOUNDARY_TITLE"
+    :boundary-badge="ADMIN_BOUNDARY_BADGE"
     boundary-tone="green"
     :boundary-rows="boundaryRows"
     right-title="网络说明"
