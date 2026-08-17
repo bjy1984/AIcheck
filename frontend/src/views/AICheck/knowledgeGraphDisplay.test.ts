@@ -4,9 +4,12 @@
  * 三条都是用户实际提出的：
  *
  * 1. **全屏**——关系图挤在半个屏幕里，节点一多就看不清谁连谁。
- * 2. **文字不要溢出球**——标签原先用默认位置（球右侧），长名字直接拖在球外，
- *    和连线、别的球叠在一起。
- * 3. **文字白色**——原先用主题文字色，深色球上是深色字。
+ * 2. **文字不要溢出**——标签原先用默认位置（节点右侧），长名字直接拖在外面，
+ *    和连线、别的节点叠在一起。
+ * 3. **文字白色**——原先用主题文字色，深色节点上是深色字。
+ * 4. **换成矩形**——先按「画在球里 + 截断」改过一版，但圆的可用宽度只有直径，
+ *    中文名字不是溢出就是截成「压力管道安…」；为了塞字放大球径，
+ *    图上又全成了巨型圆饼。矩形按文字长度定宽，这个矛盾就不存在。
  *
  * ## 几个容易漏的地方
  *
@@ -24,26 +27,43 @@ import { fileURLToPath } from 'node:url'
 
 const sfc = readFileSync(fileURLToPath(new URL('./KnowledgeNetwork.vue', import.meta.url)), 'utf8')
 
-// ---- 文字：白色、球内、截断 ----
+// ---- 形状：矩形，宽度跟着文字走 ----
+assert.ok(/symbol: 'roundRect' as const/.test(sfc), '节点要画成矩形，不是圆')
+assert.ok(
+  /symbolSize: nodeRectSize\(node\.type, node\.label\)/.test(sfc),
+  '尺寸要按类型和标签算出来，不能是一个标量球径'
+)
+
+/* 宽度必须真的依赖文本，否则「换成矩形」只是把圆压扁，
+   长名字照样溢出——这是最容易糊弄过去的一步。 */
+const rectFn = sfc.slice(sfc.indexOf('function nodeRectSize'), sfc.indexOf('function buildChartOption'))
+assert.ok(/estimateTextWidth\(/.test(rectFn), '矩形宽度没有参考文字宽度，等于把圆压扁了')
+assert.ok(/LABEL_PADDING_X \* 2/.test(rectFn), '文字两侧要留内边距，否则字贴着边框')
+
+// ---- 文字：白色、框内 ----
 const labelBlocks = sfc.match(/position: 'inside'/g) || []
-assert.ok(labelBlocks.length >= 3, '静态、悬停、选中三处标签都要画在球内')
+assert.ok(labelBlocks.length >= 3, '静态、悬停、选中三处标签都要画在框内')
 
 const whiteLabels = sfc.match(/color: '#ffffff'/g) || []
 assert.ok(whiteLabels.length >= 3, '三处标签都要是白字')
 
-// 截断宽度按球径算——写死字数的话，大球留白、小球照样溢出
+// 超长名字先截，再据此定框宽——两者用同一个函数，不然框宽和实际文字对不上
+assert.ok(/ellipsis|…/.test(sfc), '截断要有省略号，否则看不出还有内容')
 assert.ok(
-  /width: Math\.max\(0, \(SYMBOL_SIZE_BY_TYPE\[node\.type\] \|\| 18\) \* 2 - 8\)/.test(sfc),
-  '截断宽度要按 symbolSize 算，不能写死字数'
+  /const text = estimateTextWidth\(clipLabel\(label\)/.test(sfc),
+  '定框宽要用截断后的文字，否则超长名字会撑出一个巨宽的框'
 )
-assert.ok(/overflow: 'truncate'/.test(sfc), '超出球径要截断')
-assert.ok(/ellipsis: '…'/.test(sfc), '截断要有省略号，否则看不出还有内容')
+
+/* 截断的是显示，不是信息：完整名字要留给 tooltip。
+   否则「放不下」就变成了「看不到」。 */
+assert.ok(/fullName: node\.label/.test(sfc), '完整名字要带在数据里')
+assert.ok(/datum\.fullName \?\? datum\.name/.test(sfc), 'tooltip 要显示完整名字')
 
 // 不该再用会随主题变深的文字色
 const seriesPart = sfc.slice(sfc.indexOf('series: ['))
 assert.ok(
   !/label: \{ show: true, color: colors\.text/.test(seriesPart),
-  '还留着主题文字色的标签——深色球上会是深色字'
+  '还留着主题文字色的标签——深色节点上会是深色字'
 )
 
 // ---- 全屏 ----

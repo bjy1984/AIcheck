@@ -48,6 +48,32 @@ const FAMILY_LABELS: Record<string, string> = {
   execution: 'Agent 与 Tool'
 }
 
+/** 会把名字写在节点里的类型。其余类型只在悬停/选中时显示标签。 */
+const LABELLED_TYPES = new Set(['business_pack', 'domain_module'])
+
+/** 节点里最多显示几个字。超出截断——不是不给看，是 tooltip 和详情里有全名。 */
+const MAX_LABEL_CHARS = 12
+
+/* 节点画成**矩形**而不是圆。
+ *
+ * 圆的可用宽度只有直径，中文标签一长，要么溢到球外面压住连线，
+ * 要么截成「压力管道安…」。为了塞下字去放大球径，图上又全是巨型圆饼。
+ * 矩形按文字长度定宽就没有这个矛盾：名字多长，框就多宽。 */
+const NODE_HEIGHT_RATIO = 0.66
+const LABEL_PADDING_X = 14
+
+/** 估算文本像素宽。中日韩按一个字宽，其余按 0.56 个字宽——够定框宽了。 */
+function estimateTextWidth(text: string, fontSize: number): number {
+  let units = 0
+  for (const ch of text) units += /[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56
+  return Math.ceil(units * fontSize)
+}
+
+function clipLabel(text: string): string {
+  const chars = [...String(text || '')]
+  return chars.length > MAX_LABEL_CHARS ? `${chars.slice(0, MAX_LABEL_CHARS - 1).join('')}…` : chars.join('')
+}
+
 const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
   business_pack: 54,
   domain_module: 36,
@@ -65,6 +91,19 @@ const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
   tool: 16,
   thinking_mode: 18,
   agent: 30
+}
+
+function labelFontSize(type: string): number {
+  return type === 'business_pack' ? 13 : 11
+}
+
+/** 矩形尺寸 [宽, 高]。宽度跟着标签走，没有标签的按基准尺寸做小方块。 */
+function nodeRectSize(type: string, label: string): [number, number] {
+  const base = SYMBOL_SIZE_BY_TYPE[type] || 18
+  const height = Math.max(16, Math.round(base * NODE_HEIGHT_RATIO))
+  if (!LABELLED_TYPES.has(type)) return [Math.max(16, Math.round(base * 0.8)), height]
+  const text = estimateTextWidth(clipLabel(label), labelFontSize(type))
+  return [Math.max(base, text + LABEL_PADDING_X * 2), height]
 }
 
 const graph = ref<KnowledgeNetworkPayload | null>(null)
@@ -289,28 +328,25 @@ function buildChartOption(): EChartsOption {
   const colors = chartColors()
   const families = Object.keys(FAMILY_LABELS)
   const familyIndex = new Map(families.map((family, index) => [family, index]))
-  const majorLabelTypes = new Set(['business_pack', 'domain_module'])
   const data = visibleNodes.value.map((node) => ({
     id: node.id,
-    name: node.label,
+    name: clipLabel(node.label),
     value: node.typeLabel,
     category: familyIndex.get(node.family) ?? familyIndex.get('semantic') ?? 0,
-    symbolSize: SYMBOL_SIZE_BY_TYPE[node.type] || 18,
+    /* 矩形，宽度跟着文字走。圆形的可用宽度只有直径，
+     * 中文名字要么溢到外面压住连线，要么被截成「压力管道安…」。 */
+    symbol: 'roundRect' as const,
+    symbolSize: nodeRectSize(node.type, node.label),
     draggable: true,
-    /* 标签画在球**里**：白字、居中，按球径截断。
-     *
-     * 原先是默认位置（球右侧）+ 主题文字色，长名字直接拖在球外面，
-     * 和旁边的连线、别的球叠在一起；深色主题下还会和背景撞色。
-     * 截断宽度按 symbolSize 算——写死一个字数，大球留白、小球照样溢出。 */
+    /* 标签画在框**里**：白字、居中。
+     * 原先是默认位置（节点右侧）+ 主题文字色，长名字拖在外面和连线叠在一起；
+     * 深色主题下还会和背景撞色。 */
     label: {
-      show: majorLabelTypes.has(node.type),
+      show: LABELLED_TYPES.has(node.type),
       position: 'inside' as const,
       color: '#ffffff',
-      fontSize: node.type === 'business_pack' ? 13 : 11,
-      fontWeight: 600,
-      width: Math.max(0, (SYMBOL_SIZE_BY_TYPE[node.type] || 18) * 2 - 8),
-      overflow: 'truncate' as const,
-      ellipsis: '…'
+      fontSize: labelFontSize(node.type),
+      fontWeight: 600
     },
     itemStyle: {
       color: colors[node.family as keyof typeof colors] || colors.semantic,
@@ -318,6 +354,9 @@ function buildChartOption(): EChartsOption {
       borderWidth: selectedNodeId.value === node.id ? 4 : 1.5,
       opacity: selectedNodeId.value && selectedNodeId.value !== node.id ? 0.78 : 0.96
     },
+    /* 框里的名字可能被截断，完整名字放这里给 tooltip 用——
+     * 截断只是「这里放不下」，不该变成「你看不到全名」。 */
+    fullName: node.label,
     nodeType: node.type,
     nodeTypeLabel: node.typeLabel,
     description: node.description
@@ -351,7 +390,7 @@ function buildChartOption(): EChartsOption {
         if (item.dataType === 'edge') {
           return `<strong>${escapeHtml(datum.edgeLabel)}</strong><br/><span>${escapeHtml(datum.edgeType)}</span>`
         }
-        return `<strong>${escapeHtml(datum.name)}</strong><br/><span>${escapeHtml(datum.nodeTypeLabel)}</span>${datum.description ? `<br/><span>${escapeHtml(datum.description)}</span>` : ''}`
+        return `<strong>${escapeHtml(datum.fullName ?? datum.name)}</strong><br/><span>${escapeHtml(datum.nodeTypeLabel)}</span>${datum.description ? `<br/><span>${escapeHtml(datum.description)}</span>` : ''}`
       }
     },
     legend: [
