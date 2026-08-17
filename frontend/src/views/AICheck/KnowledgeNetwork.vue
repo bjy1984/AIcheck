@@ -590,14 +590,8 @@ function relaxRectOverlaps(
   }
 }
 
-/** 力导向跑完之后：按矩形分离，再固定坐标；顺带把视图对准要看的节点。
- *
- * 定位和固定坐标**必须在同一次 setOption 里**做完。
- * 分开做栽过两次：先按 series.center 单独下发——无效（graph 只在坐标系
- * 建立时读 center）；再改用 graphRoam 动作算差值——位移对不上，
- * 目标节点落在左下角。而这里的坐标本来就是我们自己算出来的，
- * 和 layout:'none' 一起下发时坐标系会重建，center 必定生效。 */
-function settleLayout(focusId = '') {
+/** 力导向跑完之后：按矩形分离，再固定坐标。 */
+function settleLayout() {
   if (!chart || !lastNodeData.length) return
   const model = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
     | {
@@ -620,53 +614,37 @@ function settleLayout(focusId = '') {
     boxes.push({ x: point[0] as number, y: point[1] as number, w: size[0], h: size[1] })
   }
   relaxRectOverlaps(boxes)
-  const focusIndex = focusId ? lastNodeData.findIndex((node) => String(node.id) === focusId) : -1
-  const seriesPatch: Record<string, unknown> = {
-    layout: 'none',
-    data: lastNodeData.map((node, index) => ({
-      ...node,
-      x: boxes[index].x,
-      y: boxes[index].y
-    }))
-  }
-  if (focusIndex >= 0) {
-    /* 只设 center，不动 zoom。
-     *
-     * 同时改 zoom 的那一版线上量出来偏差 −43 / +81（CSS 像素，视口 433×524）：
-     * center 生效了，但缩放让它落不准。定位的目的是「让我看见它」，
-     * 不是「放大它」——少改一个量，就少一处对不齐。 */
-    seriesPatch.center = [boxes[focusIndex].x, boxes[focusIndex].y]
-  }
-  /* 要对准节点时用 **notMerge 整份下发**。
-   *
-   * center 只在坐标系**建立**的那一刻被读取。合并式 setOption 不会重建坐标系，
-   * 于是 center 写了也没用——这一点前面用合并式试过三版，线上都验证是不生效的
-   * （画布正中心标红十字，中央始终不是目标节点）。
-   * 不带定位时仍走合并，免得白白清掉用户已有的平移缩放。 */
-  if (focusIndex >= 0) {
-    const full = buildChartOption() as unknown as { series: Array<Record<string, unknown>> }
-    full.series[0] = { ...full.series[0], ...seriesPatch }
-    chart.setOption(full as unknown as EChartsOption, { notMerge: true })
-    return
-  }
-  chart.setOption({ series: [seriesPatch] })
+  chart.setOption({
+    series: [
+      {
+        layout: 'none',
+        data: lastNodeData.map((node, index) => ({
+          ...node,
+          x: boxes[index].x,
+          y: boxes[index].y
+        }))
+      }
+    ]
+  })
 }
 
-/* 力导向布局在**持续移动节点**。
+/* 「点一跳关系把视图定位过去」——**尚未实现**，五种做法线上都验过无效。
  *
- * 只在点击那一刻对准一次是不够的：视图移过去了，节点接着又漂走，
- * 屏幕中央最后是一片空白——线上实测就是这个结果（红十字落在空处）。
- * 记下要看的节点，等布局停下来（finished）再对一次。 */
-let pendingFocusId = ''
+ * 记录在这里，免得下一个人再走一遍：
+ *   1. setOption({series:[{center,zoom}]}) 合并式下发 —— 视图不动
+ *   2. 等布局 finished 之后再下发一次 —— 仍不动
+ *   3. dispatchAction graphRoam 算 dx/dy —— 动了，但位移对不上
+ *   4. 和 layout:'none' 放同一次 setOption —— 不动
+ *   5. notMerge 整份下发 —— 视图回到默认铺开，中心永远是 hub 节点「工业管道」
+ *
+ * 共同现象：视图最终总是回到「按包围盒自动铺开」的状态，
+ * 也就是 center 根本没被采纳。原因还没查清。
+ *
+ * 曾经带着第 5 版上线过一阵，副作用是**点一跳关系会把视图重置**——
+ * 比不做更糟，所以撤掉了。现在点一跳关系只选中，不动视图。 */
 
 /** 这一版布局是否已经分离并固定。每次重绘都要重新来过。 */
 let layoutSettled = false
-
-/** 请求定位。真正的对准发生在 settleLayout 里——那时坐标已经算好并固定，
- *  是唯一能把「移到哪」和「节点在哪」对齐的时刻。 */
-function focusNode(nodeId: string) {
-  pendingFocusId = nodeId
-}
 
 /** 把选中态推给图表——用 action，不重建 option，这样不会丢平移缩放。 */
 function syncSelectionToChart() {
@@ -707,9 +685,6 @@ function renderChart(reset = false) {
     }
     zr.on('mousedown', () => {
       interacting = true
-      /* 用户自己动手了，定位目标作废。
-       * 不清的话，之后任何一次落定都会把他刚拖好的视图拽回去。 */
-      pendingFocusId = ''
     })
     zr.on('mouseup', endInteraction)
     zr.on('globalout', endInteraction)
@@ -721,13 +696,7 @@ function renderChart(reset = false) {
        * layoutSettled 防重入：settleLayout 自己也会触发 finished。 */
       if (!layoutSettled) {
         layoutSettled = true
-        /* pendingFocusId **不在这里清**。
-         *
-         * 点一跳关系时若那个类型没显示，selectedTypes 会变，于是还会来
-         * 第二次重绘。第一次 finished 就把目标清掉的话，第二次落定时没有
-         * focus，视图按默认铺开——线上看到的正是「动了，但没对上」。
-         * 让每次落定都重新对准同一个目标（幂等），改由用户动手时清掉。 */
-        settleLayout(pendingFocusId)
+        settleLayout()
       }
     })
   }
@@ -755,7 +724,6 @@ function renderChart(reset = false) {
 }
 
 function resetView() {
-  pendingFocusId = ''
   selectedNodeId.value = ''
   renderChart(true)
 }
@@ -778,13 +746,10 @@ function selectRelatedNode(node: KnowledgeNetworkNode | undefined) {
     selectedTypes.value = [...selectedTypes.value, node.type]
   keyword.value = ''
   selectedNodeId.value = node.id
-  /* 点「一跳关系」里的某一项，是**要去看那个节点**。
-   * 只标选中不移动视图，节点在屏幕外时用户看到的就是「点了没反应」——
-   * 这一条之前一直没做。 */
-  nextTick(() => {
-    renderChart()
-    focusNode(node.id)
-  })
+  /* 注意：这里**不会把视图移到那个节点上**。
+   * 定位试过五种做法，线上都验证无效，详见上面 layoutSettled 附近的记录。
+   * 节点在屏幕外时，用户仍然只能看到右侧详情变了，图上没动静。 */
+  nextTick(() => renderChart())
 }
 
 async function loadGraph() {

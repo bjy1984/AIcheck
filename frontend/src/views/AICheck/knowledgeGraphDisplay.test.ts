@@ -178,40 +178,21 @@ assert.ok(/zr\.on\('mouseup', endInteraction\)/.test(sfc), '松手要结束交�
 assert.ok(/if \(interacting\) return\s*chart\?\.resize\(\)/.test(sfc), '拖动中不许 resize')
 assert.ok(/if \(reset\) chart\.resize\(\)/.test(sfc), '只在重置时 resize，不要每次重绘都排一次')
 
-/* ---- 点「一跳关系」要把视图移过去 ----
+/* ---- 定位到节点：**尚未实现** ----
  *
- * 只标选中是不够的：节点可能在屏幕外，用户看到的就是「点了没反应」。
- * 位置要从布局结果取——力导向的坐标是算出来的，数据里没有 x/y。 */
-/* 定位和固定坐标必须在**同一次 setOption** 里完成。
+ * 「点一跳关系把视图移过去」试过五种做法，线上都验证无效：
+ *   1. setOption({series:[{center,zoom}]}) 合并式 —— 视图不动
+ *   2. 等 finished 之后再下发一次 —— 仍不动
+ *   3. dispatchAction graphRoam 算 dx/dy —— 动了，但位移对不上
+ *   4. 和 layout:'none' 放同一次 setOption —— 不动
+ *   5. notMerge 整份下发 —— 视图回到默认铺开，中心永远是 hub 节点
  *
- * 分开做栽过两次：
- *   1. 单独下发 series.center —— 无效，graph 只在坐标系建立时读 center；
- *      线上把画布正中心标成红十字，中央是空的，上一个节点还在原位。
- *   2. 改用 graphRoam 动作算差值 —— 位移对不上，目标节点落在左下角。
- * 而去重叠那一步的坐标本来就是我们自己算出来的，和 layout:'none'
- * 一起下发时坐标系会重建，center 必定生效。 */
-assert.ok(/function settleLayout\(focusId = ''\)/.test(sfc), 'settleLayout 要能顺带对准节点')
-assert.ok(
-  /seriesPatch\.center = \[boxes\[focusIndex\]\.x, boxes\[focusIndex\]\.y\]/.test(sfc),
-  'center 要用去重叠之后的真实坐标'
-)
-/* 只看有没有真的**派**这个动作。注释里复述踩过的坑是应该的，
-   不能因为提到名字就判成回归——这个自摆乌龙今天已经犯过一次。 */
-assert.ok(
-  !/dispatchAction\(\{[^}]*graphRoam/.test(sfc),
-  'graphRoam 那条路线上验过位移对不上，不要再用'
-)
-assert.ok(/getItemLayout/.test(sfc), '位置要从布局结果取，数据里没有力导向坐标')
-const relatedFn = sfc.slice(
-  sfc.indexOf('function selectRelatedNode'),
-  sfc.indexOf('async function loadGraph')
-)
-assert.ok(/focusNode\(node\.id\)/.test(relatedFn), '点一跳关系没有定位过去')
-
-/* 只对准一次不够——力导向布局在持续挪节点，视图移过去之后节点又漂走，
-   屏幕中央最后是一片空白。线上实测确认过：红十字落在空处。
-   所以要等布局停下来（finished）再对一次。 */
-assert.ok(/chart\.on\('finished'/.test(sfc), '布局停下来后要再对准一次，否则节点已经漂走了')
+ * 第 5 版上线过一阵，副作用是**点一跳关系会把视图重置**，比不做更糟，已撤掉。
+ * 这里锁住「撤干净了」这个状态：留着半个不生效的实现，
+ * 下一个人会以为功能存在，然后花同样的时间再验一遍。 */
+assert.ok(!/function centerOnNode/.test(sfc), '未生效的定位实现要撤干净，不要留半个')
+assert.ok(!/pendingFocusId/.test(sfc), '定位相关状态要一起撤掉')
+assert.ok(!/dispatchAction\(\{[^}]*graphRoam/.test(sfc), 'graphRoam 那条路线上验过位移对不上')
 
 /* ---- 矩形不能重叠 ----
  *
@@ -233,24 +214,6 @@ assert.ok(
   '每次重绘要重新跑布局'
 )
 assert.ok(/if \(!layoutSettled\) \{/.test(sfc), 'settleLayout 自己也会触发 finished，要防重入')
-/* 定位目标要**跨多次落定**保留。
- *
- * 点一跳关系时若那个类型没显示，selectedTypes 会变，于是还会来第二次重绘。
- * 第一次 finished 就清掉目标的话，第二次落定没有 focus，视图按默认铺开——
- * 线上看到的正是「动了，但没对上」。
- * 改由用户动手（zr mousedown）和重置视图时清掉，否则会把他刚拖好的视图拽回去。 */
-const finishedHandler = sfc.slice(
-  sfc.indexOf("chart.on('finished'"),
-  sfc.indexOf('/* 拖到一半来的重绘')
-)
-assert.ok(
-  !/pendingFocusId = ''/.test(finishedHandler),
-  'finished 里清掉目标会让第二次落定失去 focus'
-)
-assert.ok(/settleLayout\(pendingFocusId\)/.test(sfc), '每次落定都要重新对准同一个目标')
-const mousedownHandler = sfc.slice(sfc.indexOf("zr.on('mousedown'"), sfc.indexOf("zr.on('mouseup'"))
-assert.ok(/pendingFocusId = ''/.test(mousedownHandler), '用户动手后定位目标要作废')
-
 // ---- 全屏 ----
 assert.ok(/const isFullscreen = ref\(false\)/.test(sfc), '要有全屏状态')
 assert.ok(/requestFullscreen\(\)/.test(sfc), '要真的进全屏，不是放大 div')
