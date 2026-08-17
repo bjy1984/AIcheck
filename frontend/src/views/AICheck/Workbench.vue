@@ -207,6 +207,7 @@ import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSumma
 import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
 import BatchRecheckPanel from './components/BatchRecheckPanel.vue'
+import NodeReviewTimeline from './components/NodeReviewTimeline.vue'
 import { useBatchRecheck } from './useBatchRecheck'
 import ArchiveDetailDrawer from './components/ArchiveDetailDrawer.vue'
 import DocumentBindDialog from './components/DocumentBindDialog.vue'
@@ -3940,6 +3941,9 @@ const handleSubmitRectification = async (payload: {
 
 /* 一键审查的状态与调用抽在 useBatchRecheck 里：
    Workbench.vue 有行数棘轮，棘轮的用意就是逼新功能别再往这个大文件堆。 */
+const nodeAutoReviewStatus = computed(() => nodePackage.value?.autoReviewStatus)
+const nodeReviewTimeline = computed(() => nodePackage.value?.reviewTimeline || [])
+
 const { batchRecheckLoading, batchRecheckResult, handleAiRecheckBatch } = useBatchRecheck({
   projectId: () => activeProjectId.value,
   etag: () => currentProject.value?.etag,
@@ -5751,6 +5755,8 @@ onBeforeUnmount(() => {
                   @run="handleAiRecheckBatch"
                 />
               </div>
+              <!-- 自动审核状态 + 合并时间线（0817 第 3 条），拆在独立组件里 -->
+              <NodeReviewTimeline :events="nodeReviewTimeline" :status="nodeAutoReviewStatus" />
               <div v-if="aiRecheckOutputVisible" class="ai-recheck-output" aria-live="polite">
                 <div class="ai-recheck-output-head">
                   <strong>AI 复核输出</strong>

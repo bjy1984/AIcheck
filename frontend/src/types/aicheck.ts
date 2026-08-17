@@ -897,6 +897,27 @@ export type NodePackagePayload = {
   reviewOpinions: ReviewOpinion[]
   rectifications: RectificationItem[]
   aiRuns: AiReviewRun[]
+  /* 自动审核状态（0817 第 3 条）。每个状态都带 reason——
+     说不出理由的状态标签，和没有标签一样没用。 */
+  autoReviewStatus?: {
+    status: string
+    reason: string
+    source: 'none' | 'auto' | 'human'
+    overriddenAutoConclusion: string
+  }
+  /* AI 回复和人工回复排在同一条线上。分在两个列表里的话，
+     监检要自己按时间对一遍，而人一旦要自己对时间就一定会对错。 */
+  reviewTimeline?: Array<{
+    type: 'aiRun' | 'humanOpinion' | 'rectification'
+    actor: 'ai' | 'human'
+    at: string
+    title: string
+    summary: string
+    conclusion?: string
+    operator?: string
+    overrides?: string
+    refId?: string
+  }>
   actions: ActionCode[]
 }
 

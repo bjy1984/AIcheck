@@ -105,4 +105,25 @@ assert.match(batchPanel, /result\.batchLimit/, '单次上限没有展示，用�
 assert.match(batchComposable, /没有可发起的节点/, '零发起时没有给出解释')
 assert.match(batchComposable, /个已跳过，见下方说明/, '提示里没有把跳过数带出来')
 
+/* ---- 自动审核状态 + 合并时间线（0817 第 3 条）----
+ *
+ * AI 回复和人工回复分在两个列表里的话，监检要自己按时间对一遍，
+ * **而人一旦要自己对时间，就一定会对错**——尤其是 AI 跑了几轮、
+ * 中间还夹着人工改判的时候。 */
+const timeline = read('./components/NodeReviewTimeline.vue')
+assert.match(types, /autoReviewStatus\?: \{/, '契约类型缺少自动审核状态')
+assert.match(types, /reviewTimeline\?: Array</, '契约类型缺少合并时间线')
+assert.match(workbench, /nodeAutoReviewStatus/, '工作台没有显示自动审核状态')
+assert.match(workbench, /NodeReviewTimeline/, '工作台没有挂上合并时间线')
+
+/* 状态和时间线拆在同一个组件里：它们是同一件事的两个粒度
+   （「现在到哪了」和「怎么走到这的」），分在两处会让人对不上。
+   Workbench.vue 有行数棘轮，这也是它必须拆出去的原因。 */
+assert.match(timeline, /status\.reason/, '状态没有带理由')
+assert.match(timeline, /status\.overriddenAutoConclusion/, '人工改判没有显示它覆盖了哪条 AI 判定')
+
+// 来源要一眼看出来，不能都写成一行「结论：xxx」
+assert.match(timeline, /event\.actor === 'human' \? '人工' : 'AI'/, '时间线没有标出是谁说的')
+assert.match(timeline, /该结论覆盖了 AI 判定/, '时间线没有显示改判覆盖了哪一条')
+
 console.log('Auto classify + batch review wiring contract passed')

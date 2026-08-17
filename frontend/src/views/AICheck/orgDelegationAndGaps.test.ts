@@ -37,7 +37,11 @@ const sections = read('./components/WorkbenchRoleStaticSections.vue')
 // ---- 邀请页免登录 ----
 
 assert.match(router, /path: '\/invite\/:token'/, '没有邀请注册路由')
-assert.match(constants, /NO_REDIRECT_WHITE_LIST = \['\/login', '\/invite'\]/, '邀请页不在免登录白名单')
+assert.match(
+  constants,
+  /NO_REDIRECT_WHITE_LIST = \['\/login', '\/invite'\]/,
+  '邀请页不在免登录白名单'
+)
 
 /* 白名单必须前缀匹配。/invite/<token> 用精确匹配永远命中不了——
    **白名单加了却不生效，而且不报错**：收件人点开链接被弹回登录页，
@@ -51,10 +55,7 @@ assert.match(
 assert.match(permission, /startsWith\(`\$\{item\}\/`\)/, '前缀匹配没带分隔符，会误放行相似路径')
 
 // 角色和组织由邀请写死，页面不提供选择——自选角色的链接是公开提权入口
-assert.ok(
-  !/v-model="[^"]*\.role"/.test(invitePage),
-  '注册页让用户自己选角色了，这是提权入口'
-)
+assert.ok(!/v-model="[^"]*\.role"/.test(invitePage), '注册页让用户自己选角色了，这是提权入口')
 assert.match(invitePage, /两次输入的口令不一致/, '没有在提交前校验两次口令')
 
 // ---- 组织负责人 ----
@@ -83,7 +84,11 @@ assert.match(delegation, /真正拦住越权的是服务端|真正拦越权的�
 
 assert.match(sections, /missingRequirementNames/, '施工方页面没有缺项提示')
 assert.match(sections, /rejectedFileNames/, '施工方页面没有「需补正」提示')
-assert.match(sections, /当前环节还缺 \{\{ missingRequirementNames\.length \}\} 项资料/, '缺项没有显示条数')
+assert.match(
+  sections,
+  /当前环节还缺 \{\{ missingRequirementNames\.length \}\} 项资料/,
+  '缺项没有显示条数'
+)
 
 /* 字段名要按契约来。missingRequirements 里那一条叫 name，
    materialTypeName 是资料审查点那边的字段——猜错的代价是列表恒空，

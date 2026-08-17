@@ -60,6 +60,7 @@ from libs.business_pack.clause_store import (
 from libs.content_hash import normalized_content_hash
 from libs.contracts import errors
 from libs.auto_review_status import auto_review_status
+from libs.node_review_timeline import node_review_timeline
 from libs.field_confidence import field_confirm_confidence, is_low_confidence
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import (
@@ -6891,6 +6892,7 @@ def node_package(request: Request, project_id: str, node_id: int):
     # 人工结论。既给 reviewOpinions，也给自动审核状态当输入——
     # 两处各查一遍的话，界面上「有人工结论」和「状态按人工算」会不同步。
     node_review_opinions = [] if review_process_hidden else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
+    node_rectifications = [] if observer_view else [repo.clone(item) for item in repo.state["rectifications"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
     evidence_readiness = build_node_evidence_readiness(repo, effective_project_id, node_id)
     return ok(
         {
@@ -6915,15 +6917,10 @@ def node_package(request: Request, project_id: str, node_id: int):
             "reviewOpinions": node_review_opinions,
             # 自动审核状态（0817 第 3 条）。口径只有一份：libs/auto_review_status
             "autoReviewStatus": auto_review_status(node_ai_runs[0] if node_ai_runs else None, node_review_opinions[0] if node_review_opinions else None),
-            "rectifications": (
-                []
-                if observer_view
-                else [
-                    repo.clone(item)
-                    for item in repo.state["rectifications"]
-                    if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
-                ]
-            ),
+            # AI 回复和人工回复排在同一条线上——分在两个列表里的话，
+            # 监检要自己按时间对一遍，而人一旦要自己对时间就一定会对错
+            "reviewTimeline": node_review_timeline(node_ai_runs, node_review_opinions, node_rectifications),
+            "rectifications": node_rectifications,
             # 只带最近几次运行：工作台展示的是当前状态与最近一次结果，而全量历史会让
             # 本响应膨胀到数百 KB（实测 9 次运行即 665KB），且轮询会反复重取。
             # 需要完整历史时用 /inspection/nodes/{id}/ai-runs。
