@@ -46,6 +46,17 @@ ROLE_ACTIONS["ndt"] = list(
     dict.fromkeys([*ROLE_ACTIONS.get("ndt", []), "file:upload", "file:bind"])
 )
 
+# 组织内的邀请与权限下放（0817 第 4、5 条）。
+#
+# 动作层按**角色**授权，而「组织负责人」是用户上的一个标记、不是角色——
+# 所以这一档只能授给全部业务角色，真正的闸门在端点里：
+# 必须 isOrgLeader 且目标用户同组织（见 apps/api/org_delegation_routes.py）。
+#
+# 把动作层当唯一闸门是危险的：它只知道你是「施工方」，不知道你是**哪个**
+# 施工单位的负责人。那道判断只有端点做得了，所以那里的护栏必须写死并配反向用例。
+for _role in ("admin", "inspection", "contractor", "owner", "ndt"):
+    ROLE_ACTIONS[_role] = list(dict.fromkeys([*ROLE_ACTIONS.get(_role, []), "org:delegate"]))
+
 WORKSPACE_ROOT = repo_root_from_backend()
 RULES_STANDARDS_ROOT = WORKSPACE_ROOT / "rules" / "standards"
 MATERIAL_MAPPING_DOC = WORKSPACE_ROOT / "docs" / "工程监检资料映射表.md"

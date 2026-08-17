@@ -241,8 +241,74 @@ def check_auto_classify() -> bool:
     return ok_all and unknown is None
 
 
+def check_batch_review() -> bool:
+    """0817 第 3 条：一键审查端点可用，且跳过的都带理由。"""
+    body = api(
+        "/api/projects/P-2026-HDCP-001/inspection/ai-recheck-batch",
+        username="inspection",
+        payload={"nodeIds": [9998, 9999]},
+    )
+    if body.get("code") != 0:
+        print(f"接口未成功：code={body.get('code')} msg={body.get('message') or body.get('detail')}")
+        return False
+    data = body.get("data") or {}
+    skipped = data.get("skipped") or []
+    print(f"发起 {data.get('startedCount')} 个，跳过 {data.get('skippedCount')} 个")
+    for item in skipped:
+        print(f"  节点 {item.get('nodeId')}: {item.get('reason')} · {item.get('message')}")
+    all_explained = bool(skipped) and all(i.get("reason") and i.get("message") for i in skipped)
+    print(f"  跳过都带理由：{'✓' if all_explained else '✗'}")
+    print(f"  上限回给了前端：{'✓' if data.get('batchLimit') else '✗'}")
+    return all_explained and bool(data.get("batchLimit"))
+
+
+def check_org_delegation() -> bool:
+    """0817 第 4、5 条：邀请与权限下放的**护栏**在线上真的挡得住。
+
+    只验反向：能做什么由单测覆盖，线上要确认的是「不能做的确实做不到」。
+    """
+    from apps.api import org_delegation_routes as delegation
+    from libs.db.repository import repo
+
+    ok_all = True
+
+    protected = delegation.PROTECTED_ROLES >= {"admin", "fde"}
+    print(f"  受保护角色名单含 admin/fde：{'✓' if protected else '✗'}")
+    ok_all = ok_all and protected
+
+    ttl = delegation.INVITE_TTL_HOURS
+    bounded = 0 < ttl <= 168
+    print(f"  邀请有效期 {ttl} 小时（有上限）：{'✓' if bounded else '✗ 没有过期时间等于长期后门'}")
+    ok_all = ok_all and bounded
+
+    # 跨组织：造两个不同组织的用户对象，直接问护栏函数
+    lead_a = {"id": "X", "username": "x", "role": "contractor", "orgId": "ORG-A", "isOrgLeader": True}
+    cross = delegation._is_org_leader(lead_a, "ORG-B")
+    print(f"  A 组织负责人对 B 组织无权：{'✓' if not cross else '✗ 跨组织越权'}")
+    ok_all = ok_all and not cross
+
+    plain = delegation._is_org_leader({**lead_a, "isOrgLeader": False}, "ORG-A")
+    print(f"  普通成员不是负责人：{'✓' if not plain else '✗'}")
+    ok_all = ok_all and not plain
+
+    # 端点确实挂上了（拆模块最容易漏 include_router）
+    mounted = any(
+        "/invitations/" in str(getattr(r, "path", "")) for r in _app_routes()
+    )
+    print(f"  邀请端点已挂载：{'✓' if mounted else '✗ 路由 404 且不会报错'}")
+    return ok_all and mounted
+
+
+def _app_routes():
+    from apps.api.main import app
+
+    return app.routes
+
+
 CHECKS = {
     "material-category": check_material_category,
+    "org-delegation": check_org_delegation,
+    "batch-review": check_batch_review,
     "auto-classify": check_auto_classify,
     "inspection-visibility": check_inspection_visibility,
     "license-scope": check_license_scope,

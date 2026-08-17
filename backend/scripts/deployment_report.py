@@ -72,6 +72,11 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/auth/logout"),
     ("POST", "/auth/change-password"),
     ("POST", "/api/auth/change-password"),
+    # 邀请注册：被邀请人**还没有账号**，不可能带登录态，
+    # 也不可能有幂等键。闸门是邀请令牌本身——单次有效、会过期、
+    # 绑死组织和角色（apps/api/org_delegation_routes.py）。
+    ("POST", "/invitations/{token}/accept"),
+    ("POST", "/api/invitations/{token}/accept"),
 }
 READ_ONLY_POST_ROUTES = {
     # 外部登记信息检索：用 POST 只为传递结构化查询条件，不写任何状态，

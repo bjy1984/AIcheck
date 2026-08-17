@@ -18,6 +18,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from apps.api.batch_review_routes import batch_review_router
+from apps.api.org_delegation_routes import org_delegation_router
 from apps.api.cnse_routes import router as cnse_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
 from apps.api.routes import (
@@ -1277,6 +1278,8 @@ app.include_router(router, prefix="/api")
 # 抬高上限则等于把这条约束取消掉。新端点一律挂在这里。
 app.include_router(batch_review_router)
 app.include_router(batch_review_router, prefix="/api")
+app.include_router(org_delegation_router)
+app.include_router(org_delegation_router, prefix="/api")
 app.include_router(cnse_router)
 app.include_router(cnse_router, prefix="/api")
 app.include_router(std_samr_router)
