@@ -71,7 +71,9 @@ function estimateTextWidth(text: string, fontSize: number): number {
 
 function clipLabel(text: string): string {
   const chars = [...String(text || '')]
-  return chars.length > MAX_LABEL_CHARS ? `${chars.slice(0, MAX_LABEL_CHARS - 1).join('')}…` : chars.join('')
+  return chars.length > MAX_LABEL_CHARS
+    ? `${chars.slice(0, MAX_LABEL_CHARS - 1).join('')}…`
+    : chars.join('')
 }
 
 const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
