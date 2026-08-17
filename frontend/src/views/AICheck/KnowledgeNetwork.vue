@@ -547,9 +547,6 @@ function buildChartOption(): EChartsOption {
 /* 矩形之间要留的最小间距。0 的话框会贴在一起，看着仍像连成一片。 */
 const RECT_GAP = 10
 
-/** 定位到某个节点时的缩放级别。太大只剩一个框，太小等于没定位。 */
-const FOCUS_ZOOM = 1.6
-
 /* 力导向把节点当**圆点**算斥力，而这里的节点是宽扁的矩形。
  *
  * 「圆心距够远」和「矩形不相交」完全是两回事：一个 150×22 的框和一个
@@ -633,8 +630,12 @@ function settleLayout(focusId = '') {
     }))
   }
   if (focusIndex >= 0) {
+    /* 只设 center，不动 zoom。
+     *
+     * 同时改 zoom 的那一版线上量出来偏差 −43 / +81（CSS 像素，视口 433×524）：
+     * center 生效了，但缩放让它落不准。定位的目的是「让我看见它」，
+     * 不是「放大它」——少改一个量，就少一处对不齐。 */
     seriesPatch.center = [boxes[focusIndex].x, boxes[focusIndex].y]
-    seriesPatch.zoom = FOCUS_ZOOM
   }
   chart.setOption({ series: [seriesPatch] })
 }
