@@ -184,7 +184,18 @@ assert.ok(/if \(reset\) chart\.resize\(\)/.test(sfc), '只在重置时 resize，
  * 位置要从布局结果取——力导向的坐标是算出来的，数据里没有 x/y。 */
 assert.ok(/function centerOnNode/.test(sfc), '要有定位到节点的能力')
 assert.ok(/getItemLayout\?\.\(index\)/.test(sfc), '位置要从布局结果取，数据里没有力导向坐标')
-assert.ok(/center: \[point\[0\], point\[1\]\], zoom: FOCUS_ZOOM/.test(sfc), '要真的把视图移过去')
+/* 定位必须走 graphRoam 动作。
+ *
+ * 先按 series.center/zoom 写过一版，线上实测**无效**：把画布正中心标出来看，
+ * 中央是空的，上一个节点还在原位。graph 系列只在初始化时读 center/zoom，
+ * 之后视图由 roam 的变换掌管——往 option 里塞 center 不会挪动它。 */
+assert.ok(!/zoom: FOCUS_ZOOM/.test(sfc), 'series.center/zoom 这条路线上验过是无效的，不要再用')
+assert.ok(
+  /dispatchAction\(\{ type: 'graphRoam', seriesIndex: 0, dx, dy \}\)/.test(sfc),
+  '要用 graphRoam 动作平移，这是唯一实测有效的方式'
+)
+// 屏幕坐标要问坐标系要，不能拿模型坐标直接当像素用
+assert.ok(/coordinateSystem\?\.dataToPoint/.test(sfc), '模型坐标要换算成屏幕坐标')
 const relatedFn = sfc.slice(
   sfc.indexOf('function selectRelatedNode'),
   sfc.indexOf('async function loadGraph')

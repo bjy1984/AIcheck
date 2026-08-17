@@ -76,9 +76,6 @@ const LABEL_PADDING_Y = 6
 const MAX_LINE_WIDTH_MAJOR = 132
 const MAX_LINE_WIDTH_MINOR = 96
 
-/** 定位到某个节点时的缩放级别。太大只剩一个框，太小等于没定位。 */
-const FOCUS_ZOOM = 1.6
-
 /** 单字像素宽。中日韩按一个字宽，其余按 0.56 个字宽——够定框宽了。 */
 function charWidth(ch: string, fontSize: number): number {
   return (/[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56) * fontSize
@@ -641,23 +638,43 @@ let pendingFocusId = ''
 /** 这一版布局是否已经分离并固定。每次重绘都要重新来过。 */
 let layoutSettled = false
 
+/* 定位靠 **graphRoam 动作**，不是 series.center。
+ *
+ * 先按 center/zoom 写过一版：线上实测无效——把画布正中心标出来看，
+ * 中央是空的，上一个节点还在原位。graph 系列只在初始化时读 center/zoom，
+ * 之后视图由 roam 的变换掌管，往 option 里塞 center 不会挪动它。
+ *
+ * 正确做法是问坐标系要屏幕坐标（dataToPoint），算出差值，再派 graphRoam。 */
 function centerOnNode(nodeId: string) {
   if (!chart || !nodeId) return
   const index = visibleNodes.value.findIndex((node) => node.id === nodeId)
   if (index < 0) return
-  const model = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
+  const series = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
     | {
         getSeriesByIndex?: (i: number) => {
           getData?: () => { getItemLayout?: (i: number) => unknown }
+          coordinateSystem?: { dataToPoint?: (p: number[]) => number[] }
         }
       }
     | undefined
-  const layout = model?.getSeriesByIndex?.(0)?.getData?.()?.getItemLayout?.(index)
-  const point = Array.isArray(layout)
+  const seriesModel = series?.getSeriesByIndex?.(0)
+  const layout = seriesModel?.getData?.()?.getItemLayout?.(index)
+  const modelPoint = Array.isArray(layout)
     ? layout
     : [(layout as { x?: number })?.x, (layout as { y?: number })?.y]
-  if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return
-  chart.setOption({ series: [{ center: [point[0], point[1]], zoom: FOCUS_ZOOM }] })
+  if (!Number.isFinite(modelPoint[0]) || !Number.isFinite(modelPoint[1])) return
+  const screen = seriesModel?.coordinateSystem?.dataToPoint?.([
+    modelPoint[0] as number,
+    modelPoint[1] as number
+  ])
+  if (!screen || !Number.isFinite(screen[0]) || !Number.isFinite(screen[1])) return
+  const width = chart.getWidth()
+  const height = chart.getHeight()
+  const dx = width / 2 - screen[0]
+  const dy = height / 2 - screen[1]
+  // 已经在中心附近就别抖一下，那种无意义的位移看着像 bug
+  if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return
+  chart.dispatchAction({ type: 'graphRoam', seriesIndex: 0, dx, dy })
 }
 
 /** 请求定位：先对一次（有反馈），布局停了再对一次（对得准）。 */
