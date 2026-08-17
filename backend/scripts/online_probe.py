@@ -55,7 +55,14 @@ def _token(username: str = "admin") -> str:
     return issue_token(user)
 
 
-def api(path: str, username: str = "admin", payload: dict | None = None) -> dict:
+def api(
+    path: str, username: str = "admin", payload: dict | None = None, method: str | None = None
+) -> dict:
+    """method 不给就按有没有 body 猜 GET/POST。
+
+    **PATCH/PUT 必须显式传**：第一版只会 GET/POST，去打一个 PATCH 端点
+    结果拿到 405，被判成「端点未挂载」——判据自己错了，却报得像代码有问题。
+    """
     request = urllib.request.Request(
         f"{BASE}{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
@@ -63,7 +70,7 @@ def api(path: str, username: str = "admin", payload: dict | None = None) -> dict
             "Authorization": f"Bearer {_token(username)}",
             "Content-Type": "application/json",
         },
-        method="POST" if payload is not None else "GET",
+        method=method or ("POST" if payload is not None else "GET"),
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
@@ -304,8 +311,33 @@ def check_org_delegation() -> bool:
     return ok_all and mounted
 
 
+def check_category_correction() -> bool:
+    """0817 第 2 条配套：自动分类必须能人工改。
+
+    只验**拒绝**：非法类别不能被写进去。允许任意字符串的话，
+    规则按类别取证时永远取不到，而界面上看着「已经归好类了」。
+    """
+    from libs.material_auto_classify import known_categories
+
+    cats = known_categories()
+    print(f"配置里的合法类别数：{len(cats)}")
+
+    body = api(
+        "/api/projects/P-2026-HDCP-001/documents/DOC-NOT-EXIST/material-category",
+        payload={"materialCategory": "我随便写的类别"},
+        method="PATCH",
+    )
+    # 端点存在（不是 FastAPI 的 detail=Not Found），且拒绝了这次调用
+    mounted = "detail" not in body and body.get("code") is not None
+    rejected = body.get("code") != 0
+    print(f"  端点已挂载：{'✓' if mounted else '✗'}")
+    print(f"  非法类别被拒：{'✓' if rejected else '✗'}（code={body.get('code')}）")
+    return bool(cats) and mounted and rejected
+
+
 CHECKS = {
     "material-category": check_material_category,
+    "category-correction": check_category_correction,
     "org-delegation": check_org_delegation,
     "batch-review": check_batch_review,
     "auto-classify": check_auto_classify,
