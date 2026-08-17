@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ADMIN_MENU_ROOT, buildAdminMenuSections } from './adminMenuTree'
 import {
   ElAlert,
   ElButton,
@@ -158,97 +159,6 @@ const routeQueryNumber = (key: string, fallback: number) => {
   const value = Number(routeQueryText(key))
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
-
-const adminShellMenuSectionsBase = [
-  {
-    title: '基础管理',
-    meta: '3页',
-    items: [
-      { index: '01', label: '项目管理', badge: '多项目', tone: 'blue', route: '/admin/projects' },
-      {
-        index: '02',
-        label: '组织用户',
-        route: '/admin/org'
-      },
-      {
-        index: '03',
-        label: '权限与节点',
-        badge: '动作级',
-        tone: 'blue',
-        route: '/admin/permission'
-      }
-    ]
-  },
-  {
-    title: '规则与业务配置',
-    meta: '6页',
-    items: [
-      {
-        index: '04',
-        label: '业务类型管理',
-        badge: '复用',
-        tone: 'green',
-        route: '/admin/business-packs'
-      },
-      {
-        index: '05',
-        label: 'AI业务规则与流程',
-        badge: '发布',
-        tone: 'blue',
-        route: '/admin/rules'
-      },
-      {
-        index: '06',
-        label: '业务资料审查点',
-        badge: '打靶',
-        tone: 'orange',
-        route: '/admin/material-review-points'
-      },
-      {
-        index: '07',
-        label: 'Prompt 模板管理',
-        badge: 'Prompt',
-        tone: 'blue',
-        route: '/admin/prompt-templates'
-      },
-      {
-        index: '08',
-        label: '报告模板管理',
-        badge: '报告',
-        tone: 'green',
-        route: '/admin/report-templates'
-      },
-      {
-        index: '09',
-        label: '细项配置',
-        badge: '字段',
-        tone: 'orange',
-        route: '/admin/fine-config'
-      }
-    ]
-  },
-  {
-    title: '知识与审计',
-    meta: '3页',
-    items: [
-      {
-        index: '08',
-        label: 'AI 知识库管理',
-        badge: 'OCR/向量',
-        tone: 'green',
-        route: '/knowledge/overview'
-      },
-      {
-        index: '09',
-        label: '联调清单',
-        badge: '对账',
-        tone: 'orange',
-        route: '/admin/integration'
-      },
-      { index: '10', label: '审计日志', badge: '审计', tone: 'blue', route: '/admin/audit' }
-    ]
-  }
-] as const
 
 const adminShellBoundaryRows = [
   { label: '合同1', value: '项目管理、组织用户、权限与节点' },
@@ -492,17 +402,9 @@ const adminPublishAvailable = computed(() =>
   )
 )
 
-const adminShellMenuSections = computed(() => {
-  let activeMatched = false
-  return adminShellMenuSectionsBase.map((section) => ({
-    ...section,
-    items: section.items.map((item) => {
-      const active = !activeMatched && item.route === adminMenuActiveRoute.value
-      if (active) activeMatched = true
-      return { ...item, active }
-    })
-  }))
-})
+/* 菜单来自 adminMenuTree —— 后台**只有一棵树**。
+ * 原先这里各写一份，点进知识库整棵树就被换掉，admin 的分组全部消失。 */
+const adminShellMenuSections = computed(() => buildAdminMenuSections(adminMenuActiveRoute.value))
 
 const scrollAdminContentIntoView = () => {
   nextTick(() => {
@@ -3447,7 +3349,7 @@ onMounted(() => {
       ]"
       @top-stat-click="handleTopStatJump"
       menu-title="后台菜单"
-      menu-root="后台管理功能"
+      :menu-root="ADMIN_MENU_ROOT"
       :menu-sections="adminShellMenuSections"
       boundary-title="后台边界"
       boundary-badge="无业务办理"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ADMIN_MENU_ROOT, buildAdminMenuSections } from './adminMenuTree'
 import {
   ElAlert,
   ElButton,
@@ -206,86 +207,6 @@ const routeQueryNumber = (key: string, fallback: number) => {
   const value = Number(routeQueryText(key))
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
-
-const knowledgeShellMenuSectionsBase = [
-  {
-    title: '知识库管理',
-    meta: '10页',
-    items: [
-      {
-        index: '01',
-        label: '知识库总览',
-        badge: '运行',
-        tone: 'blue',
-        route: '/knowledge/overview'
-      },
-      {
-        index: '02',
-        label: '标准规范库',
-        badge: '标准',
-        tone: 'green',
-        route: '/knowledge/sources'
-      },
-      {
-        index: '03',
-        label: '项目文件知识库',
-        badge: '项目',
-        tone: 'blue',
-        route: '/knowledge/files'
-      },
-      {
-        index: '04',
-        label: 'OCR/向量任务中心',
-        badge: '失败',
-        tone: 'orange',
-        route: '/knowledge/tasks'
-      },
-      {
-        index: '05',
-        label: '监检业务判断规则管理',
-        badge: '规则',
-        tone: 'blue',
-        route: '/knowledge/rules'
-      },
-      {
-        index: '06',
-        label: '知识检索测试',
-        badge: '测试',
-        tone: 'blue',
-        route: '/knowledge/retrieval'
-      },
-      {
-        index: '07',
-        label: '知识网络',
-        badge: '图谱',
-        tone: 'green',
-        route: '/knowledge/network'
-      },
-      {
-        index: '08',
-        label: '推理链路历史日志',
-        badge: '日志',
-        tone: 'green',
-        route: '/knowledge/reasoning'
-      },
-      {
-        index: '09',
-        label: '多 LLM 反馈对比',
-        badge: '评估',
-        tone: 'green',
-        route: '/knowledge/compare'
-      },
-      { index: '10', label: '知识库配置', badge: '策略', tone: 'blue', route: '/knowledge/config' },
-      {
-        index: '11',
-        label: '操作审计日志',
-        badge: '审计',
-        tone: 'blue',
-        route: '/knowledge/config'
-      }
-    ]
-  }
-] as const
 
 const knowledgePeerNavItems = computed(
   () =>
@@ -522,17 +443,9 @@ const fileDetail = ref<KnowledgeFileDetailPayload | null>(null)
 const fileChunks = ref<KnowledgeChunk[]>([])
 const fileReferences = ref<KnowledgeReasoningReference[]>([])
 
-const knowledgeShellMenuSections = computed(() => {
-  let activeMatched = false
-  return knowledgeShellMenuSectionsBase.map((section) => ({
-    ...section,
-    items: section.items.map((item) => {
-      const active = !activeMatched && item.route === route.path
-      if (active) activeMatched = true
-      return { ...item, active }
-    })
-  }))
-})
+/* 菜单来自 adminMenuTree —— 知识库是后台的一个分组，不是另一棵树。
+ * 原先这里自带一份，进到知识库后 admin 的三个分组全部消失，人回不去。 */
+const knowledgeShellMenuSections = computed(() => buildAdminMenuSections(route.path))
 
 const scrollKnowledgeContentIntoView = () => {
   nextTick(() => {
@@ -2991,7 +2904,7 @@ onMounted(() => {
       boundary-collapsed-default
       :top-stats="knowledgeTopStats"
       menu-title="知识库菜单"
-      menu-root="AI 知识库管理"
+      :menu-root="ADMIN_MENU_ROOT"
       peer-nav-title="后台同级功能"
       :peer-nav-items="knowledgePeerNavItems"
       :menu-sections="knowledgeShellMenuSections"

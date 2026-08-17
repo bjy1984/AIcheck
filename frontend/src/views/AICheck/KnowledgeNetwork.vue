@@ -16,6 +16,7 @@ import {
 import type { EChartsOption } from 'echarts'
 import echarts from '@/plugins/echarts'
 import { getKnowledgeNetworkApi } from '@/api/aicheck'
+import { ADMIN_MENU_ROOT, buildAdminMenuSections } from './adminMenuTree'
 import type { KnowledgeNetworkNode, KnowledgeNetworkPayload } from '@/api/aicheck'
 import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
@@ -81,87 +82,11 @@ const userLabel = computed(
     '系统管理员'
 )
 
-const menuSections = [
-  {
-    id: 'knowledge-network-navigation',
-    title: '知识库管理',
-    meta: '现有知识资产',
-    defaultOpen: true,
-    items: [
-      {
-        index: '01',
-        label: '知识库总览',
-        badge: '总览',
-        tone: 'green' as const,
-        route: '/knowledge/overview'
-      },
-      {
-        index: '02',
-        label: '标准规范库',
-        badge: '标准',
-        tone: 'blue' as const,
-        route: '/knowledge/sources'
-      },
-      {
-        index: '03',
-        label: '项目文件知识库',
-        badge: '项目',
-        tone: 'green' as const,
-        route: '/knowledge/files'
-      },
-      {
-        index: '04',
-        label: '任务中心',
-        badge: '任务',
-        tone: 'orange' as const,
-        route: '/knowledge/tasks'
-      },
-      {
-        index: '05',
-        label: '监检业务判断规则管理',
-        badge: '规则',
-        tone: 'blue' as const,
-        route: '/knowledge/rules'
-      },
-      {
-        index: '06',
-        label: '知识检索测试',
-        badge: '测试',
-        tone: 'blue' as const,
-        route: '/knowledge/retrieval'
-      },
-      {
-        index: '07',
-        label: '知识网络',
-        badge: '当前',
-        tone: 'green' as const,
-        route: '/knowledge/network',
-        active: true
-      },
-      {
-        index: '08',
-        label: '推理链路历史日志',
-        badge: '日志',
-        tone: 'green' as const,
-        route: '/knowledge/reasoning'
-      },
-      {
-        index: '09',
-        label: '多 LLM 反馈对比',
-        badge: '评估',
-        tone: 'green' as const,
-        route: '/knowledge/compare'
-      },
-      {
-        index: '10',
-        label: '知识库配置与审计',
-        badge: '策略',
-        tone: 'blue' as const,
-        route: '/knowledge/config'
-      }
-    ]
-  }
-]
+/* 菜单来自 adminMenuTree —— 后台只有一棵树。
+ * 这一页原先自带第三份定义、根名字叫「AI 知识库」，
+ * 于是同一个后台在三个页面上显示三副面孔，进来之后 admin 的分组还会消失。
+ * 这一页没有 route 对象，用它自己的固定路径高亮。 */
+const menuSections = computed(() => buildAdminMenuSections('/knowledge/network'))
 
 const boundaryRows = [
   { label: '模式层', value: '业务包、节点、资料、规则、条款、事实与 Tool' },
@@ -543,7 +468,7 @@ onBeforeUnmount(() => {
     :user-label="userLabel"
     :top-stats="topStats"
     menu-title="知识资产"
-    menu-root="AI 知识库"
+    :menu-root="ADMIN_MENU_ROOT"
     :menu-sections="menuSections"
     peer-nav-title="同级功能"
     :peer-nav-items="[]"
