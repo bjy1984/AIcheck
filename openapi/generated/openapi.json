@@ -1256,6 +1256,24 @@
     "/admin/config-overview": {
       "get": {
         "operationId": "admin_config_overview_admin_config_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sections",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sections"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1264,6 +1282,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Admin Config Overview",
@@ -4201,6 +4229,24 @@
     "/api/admin/config-overview": {
       "get": {
         "operationId": "admin_config_overview_api_admin_config_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sections",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sections"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4209,6 +4255,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Admin Config Overview",
@@ -14229,6 +14285,7 @@
     },
     "/api/knowledge/files/{file_id}/chunks": {
       "get": {
+        "description": "`pageNo` 按原文页码筛切片，别和分页的 `page` 搞混。\n\n证据定位对话框只要「条款所在那一页」的 OCR 文本。没有这个筛选，\n前端就得把整份规范的切片全拉回来再自己挑——一份 TSG 上万条，\n为了看一页正文传几兆，值不当。",
         "operationId": "knowledge_file_chunks_api_knowledge_files__file_id__chunks_get",
         "parameters": [
           {
@@ -14258,6 +14315,22 @@
               "default": 20,
               "title": "Pagesize",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageNo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pageno"
             }
           }
         ],
@@ -19316,6 +19389,87 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/api/projects/{project_id}/inspection/ai-recheck-batch": {
+      "post": {
+        "description": "对一批节点一次性发起 AI 复核。\n\n不传 nodeIds 就取「有已提交资料」的全部节点——这正是监检想要的\n「把该审的都审一遍」，而不是逼他先自己列清单。",
+        "operationId": "ai_recheck_batch_api_projects__project_id__inspection_ai_recheck_batch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Recheck Batch"
       }
     },
     "/api/projects/{project_id}/inspection/audit-overview": {
@@ -35590,6 +35744,7 @@
     },
     "/knowledge/files/{file_id}/chunks": {
       "get": {
+        "description": "`pageNo` 按原文页码筛切片，别和分页的 `page` 搞混。\n\n证据定位对话框只要「条款所在那一页」的 OCR 文本。没有这个筛选，\n前端就得把整份规范的切片全拉回来再自己挑——一份 TSG 上万条，\n为了看一页正文传几兆，值不当。",
         "operationId": "knowledge_file_chunks_knowledge_files__file_id__chunks_get",
         "parameters": [
           {
@@ -35619,6 +35774,22 @@
               "default": 20,
               "title": "Pagesize",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageNo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pageno"
             }
           }
         ],
@@ -40677,6 +40848,87 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/projects/{project_id}/inspection/ai-recheck-batch": {
+      "post": {
+        "description": "对一批节点一次性发起 AI 复核。\n\n不传 nodeIds 就取「有已提交资料」的全部节点——这正是监检想要的\n「把该审的都审一遍」，而不是逼他先自己列清单。",
+        "operationId": "ai_recheck_batch_projects__project_id__inspection_ai_recheck_batch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Recheck Batch"
       }
     },
     "/projects/{project_id}/inspection/audit-overview": {

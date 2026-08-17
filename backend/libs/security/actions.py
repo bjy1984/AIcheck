@@ -40,6 +40,10 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/file-bindings$", "file:bind"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/file-bindings/submit$", "file:bind"),
     ("POST", r"/projects/[^/]+/inspection/nodes/[^/]+/ai-recheck$", "ai:recheck"),
+    # 一键审查用**同一个动作**：批量不该比单个更宽松。
+    # 给它单开一个动作的话，权限矩阵里就会出现「能批量、不能单个」这种
+    # 谁也说不清的组合。
+    ("POST", r"/projects/[^/]+/inspection/ai-recheck-batch$", "ai:recheck"),
     (
         "POST",
         r"/internal/ocr/mineru/tasks(?:/upload)?$",
