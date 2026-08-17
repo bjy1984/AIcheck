@@ -195,6 +195,27 @@ assert.ok(/focusNode\(node\.id\)/.test(relatedFn), '点一跳关系没有定位�
    屏幕中央最后是一片空白。线上实测确认过：红十字落在空处。
    所以要等布局停下来（finished）再对一次。 */
 assert.ok(/chart\.on\('finished'/.test(sfc), '布局停下来后要再对准一次，否则节点已经漂走了')
+
+/* ---- 矩形不能重叠 ----
+ *
+ * 力导向把节点当圆点算斥力，而这里的节点是宽扁矩形：
+ * 「圆心距够远」和「矩形不相交」是两回事。150×22 的框和 60×22 的框，
+ * 圆心距 90 像素在力导向看来很宽松，实际两个框还压在一起。
+ * 加大 repulsion 只能把稀疏区推得更散，密集区照样叠。 */
+assert.ok(/function relaxRectOverlaps/.test(sfc), '要按真实矩形做一次分离')
+assert.ok(
+  /const overlapX = \(a\.w \+ b\.w\) \/ 2 \+ RECT_GAP/.test(sfc),
+  '判定要用矩形半宽之和，不是半径'
+)
+assert.ok(/if \(overlapX < overlapY\)/.test(sfc), '要沿重叠较小的轴推开——挑另一个轴会把图撕散')
+assert.ok(/layout: 'none'/.test(sfc), '分离之后要固定坐标，否则力导向立刻把它们拉回去')
+/* 复位不能忘：上一版的「已固定」会让新数据永远停在 layout:'none'，
+   新节点全部叠在原点——一个只在筛选之后才出现的错位。 */
+assert.ok(
+  /layoutSettled = false\s*chart\.setOption\(buildChartOption/.test(sfc),
+  '每次重绘要重新跑布局'
+)
+assert.ok(/if \(!layoutSettled\) \{/.test(sfc), 'settleLayout 自己也会触发 finished，要防重入')
 assert.ok(/pendingFocusId = ''/.test(sfc), '对准之后要清掉待办，不能每次 finished 都把视图拽回去')
 
 // ---- 全屏 ----

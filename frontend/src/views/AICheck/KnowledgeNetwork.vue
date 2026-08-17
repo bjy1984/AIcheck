@@ -393,6 +393,9 @@ const toggleGraphFullscreen = async () => {
   }
 }
 
+/** 上一次交给图表的节点数据。去重叠时要在它基础上补 x/y，不能凭空重建。 */
+let lastNodeData: Array<Record<string, unknown>> = []
+
 function buildChartOption(): EChartsOption {
   const colors = chartColors()
   const families = Object.keys(FAMILY_LABELS)
@@ -442,6 +445,7 @@ function buildChartOption(): EChartsOption {
     nodeTypeLabel: node.typeLabel,
     description: node.description
   }))
+  lastNodeData = data as unknown as Array<Record<string, unknown>>
   const links = visibleEdges.value.map((edge) => ({
     id: edge.id,
     source: edge.source,
@@ -543,12 +547,99 @@ function buildChartOption(): EChartsOption {
  * 只把它标成选中是不够的：节点可能在屏幕外，用户看到的就是「点了没反应」。
  * 位置要从**布局结果**里取（getItemLayout），不能用数据里的 x/y——
  * 力导向布局的坐标是算出来的，数据上根本没有。 */
+/* 矩形之间要留的最小间距。0 的话框会贴在一起，看着仍像连成一片。 */
+const RECT_GAP = 10
+
+/* 力导向把节点当**圆点**算斥力，而这里的节点是宽扁的矩形。
+ *
+ * 「圆心距够远」和「矩形不相交」完全是两回事：一个 150×22 的框和一个
+ * 60×22 的框，圆心距 90 像素在力导向看来已经很宽松，实际两个框还压在一起。
+ * 加大 repulsion 只能缓解——把稀疏区推得更散，密集区照样叠。
+ *
+ * 所以：力导向负责**大致结构**，跑完之后按真实矩形做一次分离，
+ * 然后把坐标固定下来（layout: 'none'）。固定下来还有个额外好处——
+ * 节点不再持续漂移，定位才对得准。
+ */
+function relaxRectOverlaps(
+  boxes: Array<{ x: number; y: number; w: number; h: number }>,
+  iterations = 80
+) {
+  for (let round = 0; round < iterations; round++) {
+    let moved = false
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]
+        const b = boxes[j]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const overlapX = (a.w + b.w) / 2 + RECT_GAP - Math.abs(dx)
+        const overlapY = (a.h + b.h) / 2 + RECT_GAP - Math.abs(dy)
+        if (overlapX <= 0 || overlapY <= 0) continue
+        moved = true
+        /* 沿**重叠较小**的那个轴推开。挑另一个轴会把两个框推出很远，
+         * 图会被撕得七零八落，连线也跟着变长。 */
+        if (overlapX < overlapY) {
+          const push = (overlapX / 2) * (dx < 0 ? -1 : 1)
+          a.x -= push
+          b.x += push
+        } else {
+          const push = (overlapY / 2) * (dy < 0 ? -1 : 1)
+          a.y -= push
+          b.y += push
+        }
+      }
+    }
+    if (!moved) return
+  }
+}
+
+/** 力导向跑完之后：按矩形分离，再固定坐标。 */
+function settleLayout() {
+  if (!chart || !lastNodeData.length) return
+  const model = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
+    | {
+        getSeriesByIndex?: (i: number) => {
+          getData?: () => { getItemLayout?: (i: number) => unknown }
+        }
+      }
+    | undefined
+  const series = model?.getSeriesByIndex?.(0)?.getData?.()
+  if (!series?.getItemLayout) return
+  const boxes: Array<{ x: number; y: number; w: number; h: number }> = []
+  for (let i = 0; i < lastNodeData.length; i++) {
+    const layout = series.getItemLayout(i)
+    const point = Array.isArray(layout)
+      ? layout
+      : [(layout as { x?: number })?.x, (layout as { y?: number })?.y]
+    // 有一个点算不出来就整体放弃：半套坐标比不动更糟，图会散架
+    if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return
+    const size = lastNodeData[i].symbolSize as [number, number]
+    boxes.push({ x: point[0] as number, y: point[1] as number, w: size[0], h: size[1] })
+  }
+  relaxRectOverlaps(boxes)
+  chart.setOption({
+    series: [
+      {
+        layout: 'none',
+        data: lastNodeData.map((node, index) => ({
+          ...node,
+          x: boxes[index].x,
+          y: boxes[index].y
+        }))
+      }
+    ]
+  })
+}
+
 /* 力导向布局在**持续移动节点**。
  *
  * 只在点击那一刻对准一次是不够的：视图移过去了，节点接着又漂走，
  * 屏幕中央最后是一片空白——线上实测就是这个结果（红十字落在空处）。
  * 记下要看的节点，等布局停下来（finished）再对一次。 */
 let pendingFocusId = ''
+
+/** 这一版布局是否已经分离并固定。每次重绘都要重新来过。 */
+let layoutSettled = false
 
 function centerOnNode(nodeId: string) {
   if (!chart || !nodeId) return
@@ -620,6 +711,13 @@ function renderChart(reset = false) {
     /* 布局停下来之后再对准一次。力导向一直在挪节点，
      * 点击那一刻算出来的坐标，两秒后已经不是那个节点所在的位置了。 */
     chart.on('finished', () => {
+      /* 力导向停了：先按矩形分离并固定坐标，再对准要看的节点。
+       * 顺序不能反——先定位的话，紧接着的分离会把节点又挪走。
+       * layoutSettled 防重入：settleLayout 自己也会触发 finished。 */
+      if (!layoutSettled) {
+        layoutSettled = true
+        settleLayout()
+      }
       if (!pendingFocusId) return
       const target = pendingFocusId
       pendingFocusId = ''
@@ -638,6 +736,10 @@ function renderChart(reset = false) {
    * 而重画的触发点很多——筛选类型、搜索、切主题、选中节点——
    * 用户拖到一半只要碰上一次，图就弹回原位，看起来就是「滑动失灵」。 */
   if (reset) chart.clear()
+  /* 换了数据就要重新跑一遍力导向 + 分离。
+   * 忘了复位的话，上一版的「已固定」会让新数据永远停在 layout:'none'，
+   * 新节点全部叠在原点——一个只在筛选之后才出现的错位。 */
+  layoutSettled = false
   chart.setOption(buildChartOption(), { notMerge: reset, lazyUpdate: true })
   /* 只有重置时才 resize。容器尺寸变化由 ResizeObserver 负责——
    * 每次重绘都无脑 resize 是多余的一次重排，也多一次打断手势的机会。 */
