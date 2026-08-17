@@ -2715,6 +2715,66 @@ class InMemoryRepository:
             )
         return True
 
+    # 这些字段由业务包**生成**（scripts/generate_material_review_asset.py），
+    # 后台没有单独的编辑入口，只随配置包整体导入导出。所以它们以配置文件为准。
+    # 不在这个名单里的字段（备注、启用状态之类）一律不碰。
+    MATERIAL_REVIEW_DERIVED_FIELDS = (
+        "materialCategory",
+        "businessModule",
+        "materialTypeCode",
+        "materialTypeName",
+        "reviewClass",
+    )
+
+    def reconcile_material_review_points(
+        self, loaded: dict[str, Any], seeded: dict[str, Any]
+    ) -> bool:
+        """把库里已有条目的**派生字段**对齐到配置文件。
+
+        ## 为什么必须有这一步
+
+        原先只有「库里没有才播种」。一旦播过种，**改配置文件就再也不生效了**——
+        而且不报错：文件是新的，容器里也是新的，接口却一直回答旧值。
+
+        2026-08-17 实测踩到：把两条 manufacturing_license 的资料类别从
+        「资质证照」改成「材料验收与复验」，容器内文件确认已更新，
+        接口仍然返回「资质证照」。查到这里才发现配置文件只是种子。
+
+        **配置文件看起来是真相，实际只是初始值**——这是这个仓库里最贵的一类
+        误解，因为它让「我改了」和「线上变了」之间断开，而中间没有任何提示。
+
+        只对齐生成字段，按 id 匹配；库里多出来的条目原样保留（可能是配置包
+        导入的），不做删除——对齐不该变成清空。
+        """
+        current = loaded.get("admin_config", {}).get("materialReviewPoints") or []
+        expected = {
+            str(item.get("id")): item
+            for item in seeded.get("admin_config", {}).get("materialReviewPoints", [])
+            if item.get("id")
+        }
+        if not expected:
+            return False
+
+        drifted: list[str] = []
+        for item in current:
+            source = expected.get(str(item.get("id")))
+            if not source:
+                continue
+            for field in self.MATERIAL_REVIEW_DERIVED_FIELDS:
+                if field not in source:
+                    continue
+                if item.get(field) != source[field]:
+                    item[field] = source[field]
+                    drifted.append(f"{item.get('id')}.{field}")
+        if drifted:
+            # 说清楚改了什么。静默地改数据比不改更难查。
+            LOGGER.info(
+                "资料审查点与配置文件不一致，已按配置对齐 %d 处：%s",
+                len(drifted),
+                drifted[:10],
+            )
+        return bool(drifted)
+
     def apply_seed_compatibility_defaults(self, loaded: dict[str, Any]) -> bool:
         """Backfill fields added after an existing local database was initialized."""
         changed = False
@@ -2729,6 +2789,8 @@ class InMemoryRepository:
             loaded.setdefault("admin_config", {})["materialReviewPoints"] = self.clone(
                 seeded.get("admin_config", {}).get("materialReviewPoints", [])
             )
+            changed = True
+        elif self.reconcile_material_review_points(loaded, seeded):
             changed = True
         from libs.business_pack import list_business_packs, load_business_pack
         from libs.business_pack.clause_store import (
