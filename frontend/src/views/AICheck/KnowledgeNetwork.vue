@@ -695,6 +695,9 @@ function renderChart(reset = false) {
     }
     zr.on('mousedown', () => {
       interacting = true
+      /* 用户自己动手了，定位目标作废。
+       * 不清的话，之后任何一次落定都会把他刚拖好的视图拽回去。 */
+      pendingFocusId = ''
     })
     zr.on('mouseup', endInteraction)
     zr.on('globalout', endInteraction)
@@ -706,9 +709,13 @@ function renderChart(reset = false) {
        * layoutSettled 防重入：settleLayout 自己也会触发 finished。 */
       if (!layoutSettled) {
         layoutSettled = true
-        const target = pendingFocusId
-        pendingFocusId = ''
-        settleLayout(target)
+        /* pendingFocusId **不在这里清**。
+         *
+         * 点一跳关系时若那个类型没显示，selectedTypes 会变，于是还会来
+         * 第二次重绘。第一次 finished 就把目标清掉的话，第二次落定时没有
+         * focus，视图按默认铺开——线上看到的正是「动了，但没对上」。
+         * 让每次落定都重新对准同一个目标（幂等），改由用户动手时清掉。 */
+        settleLayout(pendingFocusId)
       }
     })
   }
@@ -736,6 +743,7 @@ function renderChart(reset = false) {
 }
 
 function resetView() {
+  pendingFocusId = ''
   selectedNodeId.value = ''
   renderChart(true)
 }

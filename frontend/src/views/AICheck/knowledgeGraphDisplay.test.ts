@@ -233,7 +233,23 @@ assert.ok(
   '每次重绘要重新跑布局'
 )
 assert.ok(/if \(!layoutSettled\) \{/.test(sfc), 'settleLayout 自己也会触发 finished，要防重入')
-assert.ok(/pendingFocusId = ''/.test(sfc), '对准之后要清掉待办，不能每次 finished 都把视图拽回去')
+/* 定位目标要**跨多次落定**保留。
+ *
+ * 点一跳关系时若那个类型没显示，selectedTypes 会变，于是还会来第二次重绘。
+ * 第一次 finished 就清掉目标的话，第二次落定没有 focus，视图按默认铺开——
+ * 线上看到的正是「动了，但没对上」。
+ * 改由用户动手（zr mousedown）和重置视图时清掉，否则会把他刚拖好的视图拽回去。 */
+const finishedHandler = sfc.slice(
+  sfc.indexOf("chart.on('finished'"),
+  sfc.indexOf('/* 拖到一半来的重绘')
+)
+assert.ok(
+  !/pendingFocusId = ''/.test(finishedHandler),
+  'finished 里清掉目标会让第二次落定失去 focus'
+)
+assert.ok(/settleLayout\(pendingFocusId\)/.test(sfc), '每次落定都要重新对准同一个目标')
+const mousedownHandler = sfc.slice(sfc.indexOf("zr.on('mousedown'"), sfc.indexOf("zr.on('mouseup'"))
+assert.ok(/pendingFocusId = ''/.test(mousedownHandler), '用户动手后定位目标要作废')
 
 // ---- 全屏 ----
 assert.ok(/const isFullscreen = ref\(false\)/.test(sfc), '要有全屏状态')
