@@ -637,6 +637,18 @@ function settleLayout(focusId = '') {
      * 不是「放大它」——少改一个量，就少一处对不齐。 */
     seriesPatch.center = [boxes[focusIndex].x, boxes[focusIndex].y]
   }
+  /* 要对准节点时用 **notMerge 整份下发**。
+   *
+   * center 只在坐标系**建立**的那一刻被读取。合并式 setOption 不会重建坐标系，
+   * 于是 center 写了也没用——这一点前面用合并式试过三版，线上都验证是不生效的
+   * （画布正中心标红十字，中央始终不是目标节点）。
+   * 不带定位时仍走合并，免得白白清掉用户已有的平移缩放。 */
+  if (focusIndex >= 0) {
+    const full = buildChartOption() as unknown as { series: Array<Record<string, unknown>> }
+    full.series[0] = { ...full.series[0], ...seriesPatch }
+    chart.setOption(full as unknown as EChartsOption, { notMerge: true })
+    return
+  }
   chart.setOption({ series: [seriesPatch] })
 }
 
