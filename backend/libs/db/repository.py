@@ -20,6 +20,7 @@ from libs.audit_context import current_request_audit_context
 from libs.contracts.responses import server_time
 from libs.db.state_freshness import StateFreshnessProbe
 from libs.field_confidence import field_review_status, is_low_confidence
+from libs.material_auto_classify import classify_material
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
@@ -1039,6 +1040,17 @@ class InMemoryRepository:
             material_type_code=material_type_code,
             material_type_name=material_type_name,
         )
+        # 0817 第 2 条：施工方不必先选类别，上传后自动判。
+        # **只在他没选时才判**——人选过的不许被机器覆盖。
+        # 建议单独放 autoClassification，不直接写进 materialCategory：
+        # 「系统猜的」和「人定的」混在一个字段里，之后谁也说不清哪个是哪个。
+        if not material_category:
+            suggestion = classify_material(file_name=file_name)
+            if suggestion:
+                doc["autoClassification"] = suggestion
+                doc["materialCategory"] = suggestion["materialCategory"]
+                doc["materialTypeCode"] = suggestion["materialTypeCode"]
+                doc["materialTypeName"] = suggestion["materialTypeName"]
         self._insert_document_records(doc, version, knowledge_file, knowledge_task)
         return doc, version
 

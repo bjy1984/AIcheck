@@ -220,8 +220,30 @@ def check_inspection_visibility() -> bool:
     return bool(bindings) and len(marked) == len(bindings) and bool(unsubmitted)
 
 
+def check_auto_classify() -> bool:
+    """0817 第 2 条：上传后自动识别类别，认不出来就不猜。"""
+    from libs.material_auto_classify import classify_material
+
+    cases = [
+        ("特种设备生产许可证-贵州化工.pdf", "manufacturing_license", "材料验收与复验"),
+        ("特种设备设计资质.png", "design_license", "资质证照"),
+        ("材料复验报告-20260817.pdf", "material_retest_report", "材料验收与复验"),
+    ]
+    ok_all = True
+    for file_name, code, category in cases:
+        got = classify_material(file_name=file_name) or {}
+        hit = got.get("materialTypeCode") == code and got.get("materialCategory") == category
+        ok_all = ok_all and hit
+        print(f"  {file_name} -> {got.get('materialCategory') or '（认不出）'} {'✓' if hit else '✗'}")
+
+    unknown = classify_material(file_name="扫描件001.pdf")
+    print(f"  认不出的文件不硬塞类别：{'✓' if unknown is None else '✗ 猜成了 ' + str(unknown)}")
+    return ok_all and unknown is None
+
+
 CHECKS = {
     "material-category": check_material_category,
+    "auto-classify": check_auto_classify,
     "inspection-visibility": check_inspection_visibility,
     "license-scope": check_license_scope,
     "confidence-threshold": check_confidence_threshold,
