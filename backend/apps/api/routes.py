@@ -6888,6 +6888,9 @@ def node_package(request: Request, project_id: str, node_id: int):
         for item in repo.state["ai_runs"]
         if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
     ]
+    # 人工结论。既给 reviewOpinions，也给自动审核状态当输入——
+    # 两处各查一遍的话，界面上「有人工结论」和「状态按人工算」会不同步。
+    node_review_opinions = [] if review_process_hidden else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
     evidence_readiness = build_node_evidence_readiness(repo, effective_project_id, node_id)
     return ok(
         {
@@ -6909,11 +6912,9 @@ def node_package(request: Request, project_id: str, node_id: int):
             ],
             "extractedFields": document_repo.fields_for_versions(version_ids),
             # 与独立端点同口径，否则堵了端点、节点包照漏（M-9 修复时踩过这个坑）。
-            "reviewOpinions": (
-                []
-                if review_process_hidden
-                else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
-            ),
+            "reviewOpinions": node_review_opinions,
+            # 自动审核状态（0817 第 3 条）。口径只有一份：libs/auto_review_status
+            "autoReviewStatus": auto_review_status(node_ai_runs[0] if node_ai_runs else None, node_review_opinions[0] if node_review_opinions else None),
             "rectifications": (
                 []
                 if observer_view
@@ -17798,8 +17799,6 @@ def fde_project_node_audit_summary(project_id: str, node: dict[str, Any]) -> dic
         "blockerCount": len(blockers),
         "latestReviewRun": review_runs[0] if review_runs else None,
         "latestAiRun": ai_runs[0] if ai_runs else None,
-        # 自动审核状态（0817 第 3 条）。口径只有一份：libs/auto_review_status
-        "autoReviewStatus": auto_review_status(review_runs[0] if review_runs else None),
     }
 
 

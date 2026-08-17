@@ -335,8 +335,57 @@ def check_category_correction() -> bool:
     return bool(cats) and mounted and rejected
 
 
+def check_auto_review_status() -> bool:
+    """0817 第 3 条：节点带自动审核状态，且每个状态说得出理由。"""
+    from libs.auto_review_status import auto_review_status
+    from libs.db.repository import repo
+
+    # 先看纯口径：每个状态都必须有 reason
+    cases = [
+        auto_review_status(None),
+        auto_review_status({"status": "运行中"}),
+        auto_review_status({"status": "失败"}),
+        auto_review_status({"status": "已完成", "conclusion": "满足要求"}),
+        auto_review_status(None, {"conclusion": "满足要求"}),
+    ]
+    all_explained = all(item.get("reason") for item in cases)
+    print(f"  每个状态都有理由：{'✓' if all_explained else '✗ 说不出理由的标签等于没有'}")
+
+    # 再看接口真的把它带出来了
+    project_id = next(
+        (str(b.get("projectId")) for b in repo.state.get("bindings", []) if b.get("projectId")), ""
+    )
+    node_id = next(
+        (str(b.get("nodeId")) for b in repo.state.get("bindings", []) if str(b.get("projectId")) == project_id),
+        "",
+    )
+    body = api(f"/api/projects/{project_id}/nodes/{node_id}/package", username="inspection")
+    # 状态挂在节点包顶层，不是 summary 里——第一版写 summary，
+    # 那个 key 根本不存在，于是报成「接口没带出来」。判据自己找错了地方。
+    status = (body.get("data") or {}).get("autoReviewStatus") or {}
+    exposed = bool(status.get("status")) and bool(status.get("reason"))
+    print(f"  节点 {project_id}/{node_id} 的状态：{status.get('status') or '（没有）'}")
+    print(f"    理由：{status.get('reason') or '（没有）'}")
+    print(f"  接口已带出：{'✓' if exposed else '✗'}")
+    return all_explained and exposed
+
+
+def check_org_leader_flag() -> bool:
+    """0817 第 5 条前提：isOrgLeader 不传时保持原值，不能被顺手撤掉。"""
+    from apps.api.routes import admin_user_projection, build_admin_user_record
+
+    existing = {"id": "U1", "username": "u1", "role": "contractor", "isOrgLeader": True}
+    kept = build_admin_user_record({"mobile": "13800000000"}, existing=existing)["isOrgLeader"]
+    print(f"  只改手机号后仍是负责人：{'✓' if kept else '✗ 顺手把负责人身份撤了'}")
+    exposed = admin_user_projection(existing)["isOrgLeader"] is True
+    print(f"  投影里带得出来：{'✓' if exposed else '✗ 后台没法勾选'}")
+    return kept and exposed
+
+
 CHECKS = {
     "material-category": check_material_category,
+    "auto-review-status": check_auto_review_status,
+    "org-leader-flag": check_org_leader_flag,
     "category-correction": check_category_correction,
     "org-delegation": check_org_delegation,
     "batch-review": check_batch_review,
