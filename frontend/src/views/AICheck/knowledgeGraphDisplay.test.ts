@@ -148,6 +148,12 @@ assert.ok(
 assert.ok(/draggable: false/.test(sfc), '节点可拖会把平移吃掉——矩形面积大，命中概率很高')
 assert.ok(/roam: true/.test(sfc), '要能平移缩放')
 
+/* 页面上的「使用说明」必须跟着行为改。
+   原先写「拖动节点调整位置」，节点改不可拖之后它就成了假说明——
+   照着做没反应，用户只会以为页面坏了。 */
+assert.ok(!/拖动节点调整位置/.test(sfc), '使用说明还教用户拖节点，而节点已经不可拖了')
+assert.ok(/拖动空白处平移画布/.test(sfc), '使用说明要告诉用户怎么平移')
+
 // ---- 全屏 ----
 assert.ok(/const isFullscreen = ref\(false\)/.test(sfc), '要有全屏状态')
 assert.ok(/requestFullscreen\(\)/.test(sfc), '要真的进全屏，不是放大 div')
