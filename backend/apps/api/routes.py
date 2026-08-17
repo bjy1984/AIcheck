@@ -6252,7 +6252,14 @@ def build_inspection_audit_workspace(
         and node_id in {int(value) for value in item.get("nodeIds") or []}
         and record_visible_for_scope(item, scope, project_id=project_id)
     ]
-    submission_drafts: list[dict[str, Any]] = []
+    # 原先恒为空列表——一个永远说「没有草稿」的字段，监检因此不知道施工方
+    # 手上还有没交的东西（0817 第 8 条）。草稿单独成一栏，不混进「提交内容」：
+    # 那一栏是审查依据，要保持纯净。
+    submission_drafts = [
+        item
+        for item in repo.state.get("submission_drafts", [])
+        if item.get("projectId") == project_id and node_id in {int(v) for v in item.get("nodeIds") or []}
+    ]
     ai_runs = [
         safe_ai_run_view(item)
         for item in repo.state.get("ai_runs", [])
@@ -6821,15 +6828,17 @@ def node_package(request: Request, project_id: str, node_id: int):
             for item in submitted_rows
             for binding in item.get("submittedBindings") or []
         }
-        bindings = [item for item in bindings if str(item.get("id") or "") in submitted_binding_ids]
-        project_bindings = [
-            item
-            for item in project_bindings
-            if str(item.get("id") or "") in submitted_binding_ids
-        ]
-        project_files = [
-            item for item in project_files if str(item.get("id") or "") in submitted_document_ids
-        ]
+        # 0817 第 8 条：施工方一上传监检就能看见，不再按已提交过滤掉；
+        # 但每条要标出有没有正式提交——去掉门，不是去掉区分。
+        # 口径统一用 SUBMITTED_DOCUMENT_BINDING_STATUSES（不用「有没有提交记录」，
+        # 两者实测不等价）。理由详见 tests/test_inspection_sees_unsubmitted.py。
+        _submitted = lambda item: str(item.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES  # noqa: E731
+        submitted_doc_ids = submitted_document_ids | {
+            str(item.get("documentId") or "") for item in project_bindings if _submitted(item)
+        }
+        bindings = [{**item, "submittedToInspection": _submitted(item)} for item in bindings]
+        project_bindings = [{**item, "submittedToInspection": _submitted(item)} for item in project_bindings]
+        project_files = [{**item, "submittedToInspection": str(item.get("id") or "") in submitted_doc_ids} for item in project_files]
     elif observer_view:
         # M-11：建设方原先看到的比监检还多，含施工方尚未提交的草稿挂载。
         # 与监检同一口径——只有进入审查视野的资料才对出资方可见。

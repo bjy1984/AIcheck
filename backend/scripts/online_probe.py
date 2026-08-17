@@ -181,8 +181,48 @@ def check_confidence_threshold() -> bool:
     return lowered and status == "已确认" and unknown == "置信度未知"
 
 
+def check_inspection_visibility() -> bool:
+    """0817 第 8 条：监检能看到未提交的资料，且看得出没提交。"""
+    from libs.db.repository import repo
+
+    project_id = next(
+        (
+            str(p.get("id"))
+            for p in repo.state.get("projects", [])
+            if any(
+                str(b.get("projectId")) == str(p.get("id"))
+                and str(b.get("bindingStatus") or "") not in {"已提交", "需补正", "已通过"}
+                for b in repo.state.get("bindings", [])
+            )
+        ),
+        "",
+    )
+    if not project_id:
+        print("线上没有「未提交挂载」的项目，这条无法用真实数据验证")
+        return False
+    node_id = next(
+        str(b.get("nodeId"))
+        for b in repo.state.get("bindings", [])
+        if str(b.get("projectId")) == project_id
+        and str(b.get("bindingStatus") or "") not in {"已提交", "需补正", "已通过"}
+    )
+    body = api(f"/api/projects/{project_id}/nodes/{node_id}/package", username="inspection")
+    if body.get("code") != 0:
+        print(f"接口未成功：code={body.get('code')} msg={body.get('message')}")
+        return False
+    data = body.get("data") or {}
+    bindings = data.get("bindings") or []
+    marked = [b for b in bindings if "submittedToInspection" in b]
+    unsubmitted = [b for b in marked if b.get("submittedToInspection") is False]
+    print(f"项目 {project_id} 节点 {node_id}：监检拿到 {len(bindings)} 条挂载")
+    print(f"  带提交标记的：{len(marked)}")
+    print(f"  其中未提交（原先监检根本看不到）：{len(unsubmitted)}")
+    return bool(bindings) and len(marked) == len(bindings) and bool(unsubmitted)
+
+
 CHECKS = {
     "material-category": check_material_category,
+    "inspection-visibility": check_inspection_visibility,
     "license-scope": check_license_scope,
     "confidence-threshold": check_confidence_threshold,
 }

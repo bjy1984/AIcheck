@@ -6095,18 +6095,35 @@ def test_inspection_submitted_documents_excludes_uploads_and_uses_submission_tim
         )
 
 
-def test_inspection_node_package_does_not_expose_unsubmitted_documents_or_bindings() -> None:
+def test_inspection_sees_unsubmitted_documents_but_marked() -> None:
+    """监检要能看见施工方刚上传、还没正式提交的资料——但要看得出没提交。
+
+    ## 这条契约被**有意反转**过（0817 第 8 条）
+
+    原先叫 test_inspection_node_package_does_not_expose_unsubmitted_documents_or_bindings，
+    断言监检看不到草稿。用户明确要求改掉：
+
+        「文件上传后，不用通过检查端，监检平台直接能看到」
+
+    原来的行为下，施工方以为传了、监检以为没传，两边都没错，事情卡住。
+
+    ## 但去掉门不等于去掉区分
+
+    - 节点包：看得见，且每条带 submittedToInspection 标出有没有正式提交
+    - 审查工作台的「提交内容」：仍然只含已提交的——**那是审查依据，要纯净**
+    - 未提交的走 drafts 一栏单独呈现
+    """
     project_id = "P-2026-HDCP-001"
     headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
     draft_document, draft_version = repo.create_document(
         project_id,
-        "监检不可见草稿.pdf",
+        "监检可见但未提交.pdf",
         "application/pdf",
         source_org_name="中石化第五建设有限公司",
         uploader_name="李工",
     )
     draft_binding = {
-        "id": "BIND-INSPECTION-HIDDEN-DRAFT",
+        "id": "BIND-INSPECTION-VISIBLE-DRAFT",
         "projectId": project_id,
         "nodeId": 24,
         "documentId": draft_document["id"],
@@ -6116,12 +6133,24 @@ def test_inspection_node_package_does_not_expose_unsubmitted_documents_or_bindin
     }
     repo.state["bindings"].append(draft_binding)
 
-    package = assert_ok(
-        client.get(f"/projects/{project_id}/nodes/24/package", headers=headers)
+    package = assert_ok(client.get(f"/projects/{project_id}/nodes/24/package", headers=headers))
+
+    files_by_id = {item["id"]: item for item in package["projectFiles"]}
+    assert draft_document["id"] in files_by_id, "监检看不到刚上传的资料——施工方传了他也不知道"
+    assert files_by_id[draft_document["id"]]["submittedToInspection"] is False, (
+        "没标出未提交，监检会以为施工方已经正式交付了"
     )
 
-    assert draft_document["id"] not in {item["id"] for item in package["projectFiles"]}
-    assert draft_binding["id"] not in {item["id"] for item in package["bindings"]}
+    bindings_by_id = {item["id"]: item for item in package["bindings"]}
+    assert draft_binding["id"] in bindings_by_id
+    assert bindings_by_id[draft_binding["id"]]["submittedToInspection"] is False
+
+    # 已提交的那些要标成 True，否则这个字段等于恒假，什么也没说
+    submitted = [item for item in package["bindings"] if item.get("bindingStatus") == "已提交"]
+    if submitted:
+        assert any(item["submittedToInspection"] for item in submitted), (
+            "已提交的资料没被标成已提交，这个标记就成了摆设"
+        )
 
     audit_workspace = assert_ok(
         client.get(
@@ -6130,13 +6159,8 @@ def test_inspection_node_package_does_not_expose_unsubmitted_documents_or_bindin
         )
     )
     submission_content = audit_workspace["content"]["submission"]
-    assert draft_document["id"] not in {
-        item["id"] for item in submission_content["documents"]
-    }
-    assert draft_binding["id"] not in {
-        item["id"] for item in submission_content["bindings"]
-    }
-    assert submission_content["drafts"] == []
+    # 「提交内容」是审查依据，草稿不该混进来
+    assert draft_binding["id"] not in {item["id"] for item in submission_content["bindings"]}
 
 
 def test_submitted_items_cannot_be_withdrawn_by_submitter() -> None:
