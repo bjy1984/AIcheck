@@ -119,7 +119,55 @@ def check_material_category() -> bool:
     return ok and not conflicts
 
 
-CHECKS = {"material-category": check_material_category}
+def check_license_scope() -> bool:
+    """0817 第 6 条：许可范围要从表格取，抽不到就说抽不到。
+
+    **在 ocr-service 容器里跑**，验的是线上那份代码的行为，
+    不是仓库里的代码——两者不一致过（镜像没重建那次）。
+    """
+    from apps.ocr_service.service import qualification_scope_candidate
+
+    lines = [
+        "中华人民共和国",
+        "特种设备生产许可证",
+        "编号；TS3810436-2025",
+        "单位名称：贵州化工建设有限责任公司",
+        "住所：贵州省贵阳市乌当区洛湾",
+        "经审查，获准从事以下特种设备生产活动：",
+        "许可项目",
+        "许可子项目",
+        "发证机关：国家市场监督管理总局",
+        "有效期至：2025年04月27日",
+    ]
+    items = [(line, {"text": line}) for line in lines]
+    table = {
+        "rows": [
+            ["许可项目", "许可子项目", "许可参数", "备注"],
+            ["压力管道安装", "长输管道安装（GA2）", "", ""],
+            ["", "公用管道安装（GB1、GB2）", "", ""],
+            ["", "工业管道安装（GC1、GC2）", "", ""],
+        ]
+    }
+
+    with_table = qualification_scope_candidate(items, {"tables": [table]})
+    scope = str((with_table or {}).get("text") or "")
+    from_table = all(
+        term in scope for term in ("压力管道安装", "长输管道安装（GA2）", "工业管道安装（GC1、GC2）")
+    )
+    print(f"有表格时抽到：{scope or '（空）'}")
+    print(f"  三项许可子项目齐全：{'✓' if from_table else '✗'}")
+
+    without_table = qualification_scope_candidate(items, {"tables": []})
+    refused = without_table is None
+    print(f"没有表格时抽到：{without_table if without_table else '（空，正确）'}")
+    print(f"  引导语没被当成许可范围：{'✓' if refused else '✗ 又把「以下特种设备生产活动」填进去了'}")
+    return from_table and refused
+
+
+CHECKS = {
+    "material-category": check_material_category,
+    "license-scope": check_license_scope,
+}
 
 
 def main() -> int:

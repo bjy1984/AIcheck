@@ -6275,7 +6275,9 @@ def extract_qualification_certificate_fields(result: dict[str, Any]) -> None:
         return
     add_field_if_missing(result, "certificate_no", "许可证编号", qualification_certificate_no_candidate(text_items))
     add_field_if_missing(result, "organization_name", "单位名称", qualification_organization_candidate(text_items))
-    add_field_if_missing(result, "license_scope", "许可范围", qualification_scope_candidate(text_items))
+    add_field_if_missing(
+        result, "license_scope", "许可范围", qualification_scope_candidate(text_items, result)
+    )
     add_field_if_missing(result, "valid_until", "有效期至", qualification_valid_until_candidate(text_items))
     add_field_if_missing(result, "issuer", "发证机关", qualification_issuer_candidate(text_items))
     add_field_if_missing(result, "issue_date", "发证日期", qualification_issue_date_candidate(text_items))
@@ -6304,13 +6306,124 @@ def qualification_organization_candidate(text_items: list[tuple[str, dict[str, A
     ) or find_organization_fragment(text_items)
 
 
-def qualification_scope_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
-    return value_from_labeled_text(
+# 「经审查，获准从事以下特种设备生产活动：」是一句**引导语**，不是字段标签。
+# 把它当标签的话，取到的值是「以下特种设备生产活动」——一句话的后半截。
+LICENSE_SCOPE_LEAD_IN_RE = re.compile(
+    r"^(?:以下|如下|下列)?(?:各类|各项)?(?:特种设备)?(?:生产|制造|安装|设计)?活动?[：:。]?$"
+)
+
+# 许可范围里必须出现的东西：具体的许可项目或级别代号。
+# 一句没有任何项目名的话，不管它跟在什么标签后面，都不是许可范围。
+LICENSE_SCOPE_TERMS = (
+    "压力管道",
+    "压力容器",
+    "锅炉",
+    "管件",
+    "钢管",
+    "阀门",
+    "安全阀",
+    "工业管道",
+    "长输管道",
+    "公用管道",
+    "GA1",
+    "GA2",
+    "GB1",
+    "GB2",
+    "GC1",
+    "GC2",
+    "GCD",
+)
+
+
+def license_scope_text_is_usable(text: str) -> bool:
+    """这段文字能不能当许可范围。
+
+    **抽不到要标成抽不到，不能拿相邻的正文行凑一个值。**
+    线上实测过这个失败方式：界面上「许可范围＝以下特种设备生产活动」，
+    每个字段后面照样跟着「可定位」，看起来和抽对了一模一样——
+    这比留空危险得多，因为没有人会去核对一个看起来已经填好的字段。
+    """
+    raw = re.sub(r"\s+", "", str(text or "")).strip(" ：:，,。")
+    if not raw:
+        return False
+    if LICENSE_SCOPE_LEAD_IN_RE.match(raw):
+        return False
+    return any(term.lower() in raw.lower() for term in LICENSE_SCOPE_TERMS)
+
+
+def license_scope_from_tables(result: dict[str, Any]) -> dict[str, Any] | None:
+    """从「许可项目 / 许可子项目」表格里取许可范围。
+
+    许可证上真正的许可范围是一张表，不是一行「标签：值」：
+
+        许可项目      许可子项目            许可参数  备注
+        压力管道安装   长输管道安装（GA2）
+                      公用管道安装（GB1、GB2）
+                      工业管道安装（GC1、GC2）
+
+    按行读单元格，把非空的项目/子项目串起来——表格没被当成表格，
+    是这个字段一直抽错的根本原因。
+    """
+    tables = result.get("tables")
+    if not isinstance(tables, list):
+        return None
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        rows = table.get("rows")
+        if not isinstance(rows, list):
+            continue
+        cells: list[str] = []
+        for row in rows:
+            # 行可能是数组、也可能是 {cells:[...]}；其它形状（字符串、None）直接跳过。
+            # OCR 上游的形状不止一种，这里宁可少认一张表，也不要在解析时抛异常——
+            # 抽取环节一炸，整份资料就没有任何字段了。
+            if isinstance(row, list):
+                values = row
+            elif isinstance(row, dict):
+                values = row.get("cells")
+            else:
+                continue
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                text = re.sub(r"\s+", "", str(value if not isinstance(value, dict) else value.get("text") or ""))
+                # 表头本身不是范围
+                if not text or text in {"许可项目", "许可子项目", "许可参数", "备注"}:
+                    continue
+                if text not in cells:
+                    cells.append(text)
+        usable = [text for text in cells if license_scope_text_is_usable(text)]
+        if usable:
+            return {"text": "；".join(usable[:8]), "fragment": table.get("fragment") or {}}
+    return None
+
+
+def qualification_scope_candidate(
+    text_items: list[tuple[str, dict[str, Any]]], result: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """许可范围。**表格优先**，标签其次，都拿不到就返回 None。
+
+    原实现把「获准从事」列进标签，于是引导语后半截被当成了值，
+    而真正会去找许可项目的 find_license_scope_fragment 根本没机会跑
+    —— 前一个分支已经返回了一个「看起来有值」的结果。
+    """
+    from_table = license_scope_from_tables(result or {})
+    if from_table:
+        return from_table
+    labeled = value_from_labeled_text(
         text_items,
-        ["许可范围", "许可项目", "业务范围", "获准从事"],
+        # 「获准从事」不在这里：它是引导语，不是标签
+        ["许可范围", "许可项目", "业务范围"],
         max_steps=10,
         max_length=180,
-    ) or find_license_scope_fragment(text_items)
+    )
+    if labeled and license_scope_text_is_usable(str(labeled.get("text") or "")):
+        return labeled
+    fragment = find_license_scope_fragment(text_items)
+    if fragment and license_scope_text_is_usable(str(fragment.get("text") or "")):
+        return fragment
+    return None
 
 
 def qualification_valid_until_candidate(text_items: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
