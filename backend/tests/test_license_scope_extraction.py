@@ -49,11 +49,34 @@ LICENSE_LINES = [
     "有效期至：2025年04月27日",
 ]
 
+# 线上真实结构（MinerU）：rows 是**行数**不是行数组，单元格在扁平的 cells 里。
+# 第一版按「rows 是行数组」写，整张表被跳过 —— 「有表格却抽不到」，
+# 比抽错更隐蔽。这份夹具照抄线上 DOC-AB0A3AA4 的形状。
 SCOPE_TABLE = {
+    "bbox": [87.465, 374.245, 498.61, 481.893],
+    "pageNo": 1,
+    "rows": 4,
+    "columns": 4,
+    "normalizedRows": [
+        {"许可项目": "压力管道安装", "许可子项目": "长输管道安装(GA2)", "许可参数": "—"},
+        {"许可子项目": "公用管道安装(GB1、GB2)", "许可参数": "—"},
+        {"许可子项目": "工业管道安装(GC1、GC2)", "许可参数": "—"},
+    ],
+    "cells": [
+        {"row": 0, "col": 0, "text": "许可项目", "isHeader": True},
+        {"row": 0, "col": 1, "text": "许可子项目", "isHeader": True},
+        {"row": 1, "col": 0, "text": "压力管道安装", "isHeader": False},
+        {"row": 1, "col": 1, "text": "长输管道安装(GA2)", "isHeader": False},
+        {"row": 2, "col": 1, "text": "公用管道安装(GB1、GB2)", "isHeader": False},
+        {"row": 3, "col": 1, "text": "工业管道安装(GC1、GC2)", "isHeader": False},
+    ],
+}
+
+# 另一种上游形状：行数组。两种都要认。
+SCOPE_TABLE_ROW_ARRAY = {
     "rows": [
         ["许可项目", "许可子项目", "许可参数", "备注"],
         ["压力管道安装", "长输管道安装（GA2）", "", ""],
-        ["", "公用管道安装（GB1、GB2）", "", ""],
         ["", "工业管道安装（GC1、GC2）", "", ""],
     ]
 }
@@ -81,7 +104,7 @@ def test_从表格里取到全部许可子项目():
     found = license_scope_from_tables({"tables": [SCOPE_TABLE]})
     assert found, "表格里明明有许可项目，却没取到"
     text = found["text"]
-    for expected in ("压力管道安装", "长输管道安装（GA2）", "公用管道安装（GB1、GB2）", "工业管道安装（GC1、GC2）"):
+    for expected in ("压力管道安装", "长输管道安装(GA2)", "公用管道安装(GB1、GB2)", "工业管道安装(GC1、GC2)"):
         assert expected in text, f"少了 {expected}"
     assert "许可项目" not in text, "表头被当成了范围"
     assert "备注" not in text
@@ -111,6 +134,33 @@ def test_没有表格但正文里有真实项目时仍然能取到():
     found = qualification_scope_candidate(_items(lines), {"tables": []})
     assert found
     assert "GC1" in found["text"]
+
+
+def test_只用normalizedRows时不把许可参数串进来():
+    """「许可参数＝—」不是许可范围。"""
+    text = license_scope_from_tables({"tables": [SCOPE_TABLE]})["text"]
+    assert "—" not in text
+
+
+def test_cells形状也能读():
+    """normalizedRows 缺失时退回扁平 cells，并跳过表头。"""
+    table = {k: v for k, v in SCOPE_TABLE.items() if k != "normalizedRows"}
+    text = license_scope_from_tables({"tables": [table]})["text"]
+    assert "工业管道安装(GC1、GC2)" in text
+    assert "许可子项目" not in text, "表头被当成了范围"
+
+
+def test_行数组形状也能读():
+    text = license_scope_from_tables({"tables": [SCOPE_TABLE_ROW_ARRAY]})["text"]
+    assert "工业管道安装（GC1、GC2）" in text
+    assert "许可项目" not in text
+
+
+def test_rows是行数时不会把整张表跳过():
+    """第一版就是在这里失手的：rows=4 是行数，isinstance(rows, list) 为假，
+    整张表被跳过 —— 界面上变成「有表格却抽不到」。"""
+    assert isinstance(SCOPE_TABLE["rows"], int)
+    assert license_scope_from_tables({"tables": [SCOPE_TABLE]}) is not None
 
 
 def test_表格结构异常时不炸():

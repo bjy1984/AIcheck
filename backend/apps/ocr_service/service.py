@@ -6351,6 +6351,65 @@ def license_scope_text_is_usable(text: str) -> bool:
     return any(term.lower() in raw.lower() for term in LICENSE_SCOPE_TERMS)
 
 
+LICENSE_SCOPE_TABLE_HEADERS = {"许可项目", "许可子项目", "许可参数", "备注"}
+
+
+def _table_scope_texts(table: dict[str, Any]) -> list[str]:
+    """从一张表里把候选文字取出来，兼容上游的几种形状。
+
+    线上实测的真实结构（MinerU 表格）：
+
+        rows            = 4          ← **是行数，不是行数组**
+        columns         = 4
+        cells           = [{row, col, text, isHeader, ...}, ...]   扁平列表
+        normalizedRows  = [{"许可项目": "压力管道安装", "许可子项目": "长输管道安装(GA2)"}, ...]
+        html            = "<table>...</table>"
+
+    第一版我按「rows 是行数组」写，于是 `isinstance(rows, list)` 为假、整张表被跳过，
+    结果是「有表格但抽不到」——比抽错更隐蔽。**先 dry-run 看真实数据，
+    比照着想象写解析靠得住。**
+
+    normalizedRows 最干净，优先用它；否则退回 cells；再退回 rows 是数组的形状。
+    """
+    texts: list[str] = []
+
+    def push(value: Any) -> None:
+        text = re.sub(r"\s+", "", str(value or ""))
+        if text and text not in LICENSE_SCOPE_TABLE_HEADERS and text not in texts:
+            texts.append(text)
+
+    normalized = table.get("normalizedRows")
+    if isinstance(normalized, list) and normalized:
+        for row in normalized:
+            if isinstance(row, dict):
+                # 只要项目/子项目两列，别把「许可参数=—」也串进去
+                for key in ("许可项目", "许可子项目"):
+                    push(row.get(key))
+            elif isinstance(row, list):
+                for value in row:
+                    push(value)
+        if texts:
+            return texts
+
+    cells = table.get("cells")
+    if isinstance(cells, list):
+        for cell in cells:
+            if isinstance(cell, dict) and not cell.get("isHeader"):
+                push(cell.get("text"))
+        if texts:
+            return texts
+
+    rows = table.get("rows")
+    if isinstance(rows, list):  # 另一些引擎给的是行数组
+        for row in rows:
+            values = row if isinstance(row, list) else (row.get("cells") if isinstance(row, dict) else None)
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                push(value.get("text") if isinstance(value, dict) else value)
+    return texts
+
+
 def license_scope_from_tables(result: dict[str, Any]) -> dict[str, Any] | None:
     """从「许可项目 / 许可子项目」表格里取许可范围。
 
@@ -6361,8 +6420,7 @@ def license_scope_from_tables(result: dict[str, Any]) -> dict[str, Any] | None:
                       公用管道安装（GB1、GB2）
                       工业管道安装（GC1、GC2）
 
-    按行读单元格，把非空的项目/子项目串起来——表格没被当成表格，
-    是这个字段一直抽错的根本原因。
+    **表格没被当成表格，是这个字段一直抽错的根本原因。**
     """
     tables = result.get("tables")
     if not isinstance(tables, list):
@@ -6370,32 +6428,12 @@ def license_scope_from_tables(result: dict[str, Any]) -> dict[str, Any] | None:
     for table in tables:
         if not isinstance(table, dict):
             continue
-        rows = table.get("rows")
-        if not isinstance(rows, list):
-            continue
-        cells: list[str] = []
-        for row in rows:
-            # 行可能是数组、也可能是 {cells:[...]}；其它形状（字符串、None）直接跳过。
-            # OCR 上游的形状不止一种，这里宁可少认一张表，也不要在解析时抛异常——
-            # 抽取环节一炸，整份资料就没有任何字段了。
-            if isinstance(row, list):
-                values = row
-            elif isinstance(row, dict):
-                values = row.get("cells")
-            else:
-                continue
-            if not isinstance(values, list):
-                continue
-            for value in values:
-                text = re.sub(r"\s+", "", str(value if not isinstance(value, dict) else value.get("text") or ""))
-                # 表头本身不是范围
-                if not text or text in {"许可项目", "许可子项目", "许可参数", "备注"}:
-                    continue
-                if text not in cells:
-                    cells.append(text)
-        usable = [text for text in cells if license_scope_text_is_usable(text)]
+        usable = [text for text in _table_scope_texts(table) if license_scope_text_is_usable(text)]
         if usable:
-            return {"text": "；".join(usable[:8]), "fragment": table.get("fragment") or {}}
+            return {
+                "text": "；".join(usable[:8]),
+                "fragment": {"bbox": table.get("bbox"), "pageNo": table.get("pageNo")},
+            }
     return None
 
 
