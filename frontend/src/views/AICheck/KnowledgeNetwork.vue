@@ -76,6 +76,9 @@ const LABEL_PADDING_Y = 6
 const MAX_LINE_WIDTH_MAJOR = 132
 const MAX_LINE_WIDTH_MINOR = 96
 
+/** 定位到某个节点时的缩放级别。太大只剩一个框，太小等于没定位。 */
+const FOCUS_ZOOM = 1.6
+
 /** 单字像素宽。中日韩按一个字宽，其余按 0.56 个字宽——够定框宽了。 */
 function charWidth(ch: string, fontSize: number): number {
   return (/[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56) * fontSize
@@ -170,6 +173,17 @@ const userStore = useUserStore()
 
 let chart: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
+
+/* 用户正在图上按着鼠标（拖动/缩放）时，不许重绘。
+ *
+ * setOption 会重建图元。**正在被拖的那个图元一旦被换掉，手势就断了**——
+ * 手还按着，图却不动了。这就是「拖拽有时失灵」里剩下的那一半：
+ * 前面修掉的是「重绘把视图清零」，这里修的是「重绘把手势打断」。
+ * 时机决定了它必然是偶发的：只有重绘恰好落在拖动过程中才会发生。
+ *
+ * 重绘请求不丢，攒着，等手松开再执行。 */
+let interacting = false
+let pendingRender = false
 
 const userLabel = computed(
   () =>
@@ -524,6 +538,30 @@ function buildChartOption(): EChartsOption {
   }
 }
 
+/** 把视图移到某个节点上。
+ *
+ * 只把它标成选中是不够的：节点可能在屏幕外，用户看到的就是「点了没反应」。
+ * 位置要从**布局结果**里取（getItemLayout），不能用数据里的 x/y——
+ * 力导向布局的坐标是算出来的，数据上根本没有。 */
+function centerOnNode(nodeId: string) {
+  if (!chart || !nodeId) return
+  const index = visibleNodes.value.findIndex((node) => node.id === nodeId)
+  if (index < 0) return
+  const model = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
+    | {
+        getSeriesByIndex?: (i: number) => {
+          getData?: () => { getItemLayout?: (i: number) => unknown }
+        }
+      }
+    | undefined
+  const layout = model?.getSeriesByIndex?.(0)?.getData?.()?.getItemLayout?.(index)
+  const point = Array.isArray(layout)
+    ? layout
+    : [(layout as { x?: number })?.x, (layout as { y?: number })?.y]
+  if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return
+  chart.setOption({ series: [{ center: [point[0], point[1]], zoom: FOCUS_ZOOM }] })
+}
+
 /** 把选中态推给图表——用 action，不重建 option，这样不会丢平移缩放。 */
 function syncSelectionToChart() {
   if (!chart) return
@@ -549,6 +587,29 @@ function renderChart(reset = false) {
         selectedNodeId.value = String(event.data.id)
       }
     })
+    /* 手按下去到松开之间不重绘。globalout 也要收——鼠标拖出画布外松开时
+     * 不会有 mouseup，漏掉这一路会把 interacting 永久卡在 true，
+     * 那样图就再也不刷新了：一个比原问题更难查的静默故障。 */
+    const zr = chart.getZr()
+    const endInteraction = () => {
+      if (!interacting) return
+      interacting = false
+      if (pendingRender) {
+        pendingRender = false
+        renderChart()
+      }
+    }
+    zr.on('mousedown', () => {
+      interacting = true
+    })
+    zr.on('mouseup', endInteraction)
+    zr.on('globalout', endInteraction)
+  }
+  /* 拖到一半来的重绘，攒着等松手——直接重绘会把正在拖的图元换掉，手势就断了。
+   * reset 是用户主动要求重置视图，那时没有正在进行的手势，不用等。 */
+  if (interacting && !reset) {
+    pendingRender = true
+    return
   }
   /* notMerge 只在**明确要重置视图**时用（首次加载、点「重置视图」）。
    *
@@ -557,7 +618,9 @@ function renderChart(reset = false) {
    * 用户拖到一半只要碰上一次，图就弹回原位，看起来就是「滑动失灵」。 */
   if (reset) chart.clear()
   chart.setOption(buildChartOption(), { notMerge: reset, lazyUpdate: true })
-  chart.resize()
+  /* 只有重置时才 resize。容器尺寸变化由 ResizeObserver 负责——
+   * 每次重绘都无脑 resize 是多余的一次重排，也多一次打断手势的机会。 */
+  if (reset) chart.resize()
   syncSelectionToChart()
 }
 
@@ -584,7 +647,13 @@ function selectRelatedNode(node: KnowledgeNetworkNode | undefined) {
     selectedTypes.value = [...selectedTypes.value, node.type]
   keyword.value = ''
   selectedNodeId.value = node.id
-  nextTick(() => renderChart())
+  /* 点「一跳关系」里的某一项，是**要去看那个节点**。
+   * 只标选中不移动视图，节点在屏幕外时用户看到的就是「点了没反应」——
+   * 这一条之前一直没做。 */
+  nextTick(() => {
+    renderChart()
+    centerOnNode(node.id)
+  })
 }
 
 async function loadGraph() {
@@ -627,7 +696,12 @@ watch(selectedNodeId, () => syncSelectionToChart())
 
 onMounted(() => {
   if (chartHost.value && typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(() => chart?.resize())
+    // 拖动中不 resize：选中节点会让右侧详情变高，容器跟着抖一下，
+    // 这一下 resize 足够把正在进行的拖动打断。
+    resizeObserver = new ResizeObserver(() => {
+      if (interacting) return
+      chart?.resize()
+    })
     resizeObserver.observe(chartHost.value)
   }
   // 退出全屏可以不经过按钮（Esc / F11 / 浏览器手势），所以听事件而不是在点击时取反

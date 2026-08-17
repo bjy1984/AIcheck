@@ -157,6 +157,40 @@ assert.ok(noteLine, '找不到使用说明')
 assert.ok(!/拖动节点调整位置/.test(noteLine), '使用说明还教用户拖节点，而节点已经不可拖了')
 assert.ok(/拖动空白处平移画布/.test(noteLine), '使用说明要告诉用户怎么平移')
 
+/* ---- 拖到一半的重绘要等，不能打断手势 ----
+ *
+ * 前面修的是「重绘把视图清零」；这里修的是「重绘把手势打断」：
+ * setOption 会重建图元，正在被拖的那个一旦被换掉，手还按着图却不动了。
+ * 时机决定了它必然偶发——只有重绘恰好落在拖动过程中才会发生。 */
+assert.ok(/let interacting = false/.test(sfc), '要记录用户是否正在图上操作')
+assert.ok(
+  /if \(interacting && !reset\) \{\s*pendingRender = true\s*return\s*\}/.test(sfc),
+  '拖动中的重绘要挂起，不能直接执行'
+)
+// 挂起的重绘必须补做，否则筛选/搜索的结果会静默丢失
+assert.ok(/pendingRender = false\s*renderChart\(\)/.test(sfc), '挂起的重绘要在松手后补做')
+/* globalout 必须收：鼠标拖出画布外松开时没有 mouseup，
+   漏掉这一路 interacting 会永久卡在 true，图再也不刷新——
+   比原问题更难查的静默故障。 */
+assert.ok(/zr\.on\('globalout', endInteraction\)/.test(sfc), '拖出画布外松手也要结束交互态')
+assert.ok(/zr\.on\('mouseup', endInteraction\)/.test(sfc), '松手要结束交互态')
+// resize 也会打断手势
+assert.ok(/if \(interacting\) return\s*chart\?\.resize\(\)/.test(sfc), '拖动中不许 resize')
+assert.ok(/if \(reset\) chart\.resize\(\)/.test(sfc), '只在重置时 resize，不要每次重绘都排一次')
+
+/* ---- 点「一跳关系」要把视图移过去 ----
+ *
+ * 只标选中是不够的：节点可能在屏幕外，用户看到的就是「点了没反应」。
+ * 位置要从布局结果取——力导向的坐标是算出来的，数据里没有 x/y。 */
+assert.ok(/function centerOnNode/.test(sfc), '要有定位到节点的能力')
+assert.ok(/getItemLayout\?\.\(index\)/.test(sfc), '位置要从布局结果取，数据里没有力导向坐标')
+assert.ok(/center: \[point\[0\], point\[1\]\], zoom: FOCUS_ZOOM/.test(sfc), '要真的把视图移过去')
+const relatedFn = sfc.slice(
+  sfc.indexOf('function selectRelatedNode'),
+  sfc.indexOf('async function loadGraph')
+)
+assert.ok(/centerOnNode\(node\.id\)/.test(relatedFn), '点一跳关系没有定位过去')
+
 // ---- 全屏 ----
 assert.ok(/const isFullscreen = ref\(false\)/.test(sfc), '要有全屏状态')
 assert.ok(/requestFullscreen\(\)/.test(sfc), '要真的进全屏，不是放大 div')
