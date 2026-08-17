@@ -59,6 +59,7 @@ from libs.business_pack.clause_store import (
 )
 from libs.content_hash import normalized_content_hash
 from libs.contracts import errors
+from libs.field_confidence import field_confirm_confidence, is_low_confidence
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import (
     flush_mutation_records,
@@ -17683,10 +17684,8 @@ def fde_project_quality_blockers(project_id: str, node_id: int | None = None) ->
     for field in repo.state.get("extracted_fields", []):
         if str(field.get("documentVersionId")) not in version_ids:
             continue
-        if float(field.get("confidence") or 0) < 0.85 or field.get("reviewStatus") in {
-            "低置信度",
-            "置信度未知",
-        }:
+        # 阈值口径只有一份：libs/field_confidence（原先这里和写入侧各写一个 0.85）
+        if is_low_confidence(field.get("confidence")) or field.get("reviewStatus") in {"低置信度", "置信度未知"}:
             blockers.append(
                 {
                     "type": "ocr-field",
@@ -17775,7 +17774,7 @@ def fde_project_node_audit_summary(project_id: str, node: dict[str, Any]) -> dic
         "ocrJobCount": len(ocr_jobs),
         "reviewRunCount": len(review_runs),
         "aiRunCount": len(ai_runs),
-        "lowConfidenceFieldCount": len([item for item in fields if float(item.get("confidence") or 0) < 0.85]),
+        "lowConfidenceFieldCount": len([item for item in fields if is_low_confidence(item.get("confidence"))]),
         "blockerCount": len(blockers),
         "latestReviewRun": review_runs[0] if review_runs else None,
         "latestAiRun": ai_runs[0] if ai_runs else None,
@@ -20474,7 +20473,7 @@ def fde_project_audit_summary(project: dict[str, Any]) -> dict[str, Any]:
         for item in repo.state.get("extracted_fields", [])
         if str(item.get("documentVersionId")) in version_ids
         and (
-            float(item.get("confidence") or 0) < 0.85
+            is_low_confidence(item.get("confidence"))
             or item.get("reviewStatus") in {"低置信度", "置信度未知"}
         )
     ]
@@ -23261,7 +23260,7 @@ def fde_ocr_quality_snapshot(project_id: str | None = None, node_id: int | None 
     if profile_id:
         jobs = [item for item in jobs if str(item.get("profileId") or "") == profile_id]
         results = [item for item in results if str(item.get("profileId") or "") == profile_id]
-    low_confidence = [item for item in fields if float(item.get("confidence") or 0) < 0.85]
+    low_confidence = [item for item in fields if is_low_confidence(item.get("confidence"))]
     result_diagnostics = [
         diagnostic
         for result in results
@@ -23356,7 +23355,7 @@ def fde_ocr_field_failures(results: list[dict[str, Any]], extracted_fields: list
                 continue
             flags = [str(flag) for flag in field.get("qualityFlags") or []]
             confidence = float(field.get("confidence") or 0)
-            if flags or confidence < 0.75:
+            if flags or confidence < field_confirm_confidence():
                 if "field_value_conflict" in flags:
                     code = "FIELD_VALUE_CONFLICT"
                 elif "field_evidence_missing" in flags:
@@ -23385,7 +23384,7 @@ def fde_ocr_field_failures(results: list[dict[str, Any]], extracted_fields: list
         )
     for field in extracted_fields:
         confidence = float(field.get("confidence") or 0)
-        if confidence < 0.75:
+        if confidence < field_confirm_confidence():
             failures.append(
                 {
                     "code": "FIELD_LOW_CONFIDENCE",
@@ -23565,14 +23564,14 @@ def fde_ocr_field_level(
             flag_counts[flag] = flag_counts.get(flag, 0) + 1
         confidence = safe_float(field.get("confidence"))
         confidence_values.append(confidence)
-        if confidence < 0.75:
+        if confidence < field_confirm_confidence():
             low_confidence_parse_fields.append(field)
         if any("conflict" in flag.lower() for flag in flags):
             conflict_fields.append(field)
         if any("evidence_missing" in flag.lower() or "missing_evidence" in flag.lower() for flag in flags):
             evidence_missing_fields.append(field)
 
-    low_confidence_extracted = [item for item in extracted_fields if safe_float(item.get("confidence")) < 0.85]
+    low_confidence_extracted = [item for item in extracted_fields if is_low_confidence(item.get("confidence"))]
     field_count = len(parse_fields)
     return {
         "total": len(extracted_fields),

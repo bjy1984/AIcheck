@@ -19,6 +19,7 @@ from uuid import uuid4
 from libs.audit_context import current_request_audit_context
 from libs.contracts.responses import server_time
 from libs.db.state_freshness import StateFreshnessProbe
+from libs.field_confidence import field_review_status, is_low_confidence
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
@@ -1910,7 +1911,7 @@ class InMemoryRepository:
         fields = [field for result in results for field in result.get("fields", []) if isinstance(field, dict)]
         tables = [table for result in results for table in result.get("tables", []) if isinstance(table, dict)]
         seals = [seal for result in results for seal in result.get("seals", []) if isinstance(seal, dict)]
-        low_conf = [field for field in fields if float(field.get("confidence") if field.get("confidence") is not None else 0) < 0.85]
+        low_conf = [field for field in fields if is_low_confidence(field.get("confidence"))]
         total_results = len(results) or 1
         success_count = len([item for item in results if item.get("status") == "success"])
         case_count = payload.get("caseCount")
@@ -2048,12 +2049,11 @@ class InMemoryRepository:
                     "bbox": field.get("bbox"),
                     "confidence": confidence,
                     "extractionMethod": field.get("extractionMethod") or "PaddleOCR+seal",
-                    "reviewStatus": (
-                        "已确认"
-                        if confidence >= 0.85
-                        else "置信度未知"
-                        if confidence_unavailable
-                        else "低置信度"
+                    # 阈值口径只有一份：libs/field_confidence。
+                    # 原先这里和 routes.py 各写一个 0.85，改一处就会出现
+                    # 「字段标着已确认，却仍然挂在阻塞项里」。
+                    "reviewStatus": field_review_status(
+                        confidence, confidence_unavailable=confidence_unavailable
                     ),
                     "evidenceLinkId": evidence_id,
                 }

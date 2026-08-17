@@ -164,9 +164,27 @@ def check_license_scope() -> bool:
     return from_table and refused
 
 
+def check_confidence_threshold() -> bool:
+    """0817 第 7 条：置信度阈值调低，且只有一份口径。"""
+    from libs.field_confidence import field_confirm_confidence, field_review_status
+
+    threshold = field_confirm_confidence()
+    print(f"线上生效的阈值：{threshold}")
+    lowered = threshold <= 0.70
+    print(f"  已调低（<=0.70）：{'✓' if lowered else '✗'}")
+
+    # 0.75 这一档原先会被判「低置信度」，现在应当算已确认
+    status = field_review_status(0.75, confidence_unavailable=False)
+    print(f"  0.75 的字段判为：{status}")
+    unknown = field_review_status(None, confidence_unavailable=True)
+    print(f"  没有分数的字段判为：{unknown}")
+    return lowered and status == "已确认" and unknown == "置信度未知"
+
+
 CHECKS = {
     "material-category": check_material_category,
     "license-scope": check_license_scope,
+    "confidence-threshold": check_confidence_threshold,
 }
 
 
