@@ -116,6 +116,7 @@ import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
 import OrgDelegationPanel from './components/OrgDelegationPanel.vue'
+import ProjectRegistrationPanel from './components/ProjectRegistrationPanel.vue'
 import {
   formatNodeScope,
   formatParticipantType,
@@ -336,6 +337,14 @@ const orgSaving = ref(false)
 const orgDelegationVisible = ref(false)
 const orgDelegationTarget = ref<AdminOrgUnit | undefined>(undefined)
 const currentUserId = computed(() => String(userStore.getUserInfo?.id || ''))
+
+const projectRegistrationVisible = ref(false)
+const projectRegistrationTarget = ref<Project | undefined>(undefined)
+
+const openProjectRegistration = (row: Project) => {
+  projectRegistrationTarget.value = row
+  projectRegistrationVisible.value = true
+}
 
 const openOrgDelegation = (row: AdminOrgUnit) => {
   orgDelegationTarget.value = row
@@ -3594,6 +3603,11 @@ onMounted(() => {
                       <ElButton link type="primary" @click="handleOpenProjectDetail(row)"
                         >详情</ElButton
                       >
+                      <!-- 注册链接与审核（按项目发链接 → 自选角色 → 负责人审核）。
+                           界面上的禁用只是省得白点，真正拦越权的是服务端。 -->
+                      <ElButton link type="primary" @click="openProjectRegistration(row)"
+                        >注册审核</ElButton
+                      >
                       <ElButton link type="primary" @click="openProjectEditDialog(row)"
                         >编辑</ElButton
                       >
@@ -3735,6 +3749,17 @@ onMounted(() => {
                     </template>
                   </ElTableColumn>
                 </ElTable>
+                <ElDrawer
+                  v-model="projectRegistrationVisible"
+                  :title="`${projectRegistrationTarget?.name || ''} · 注册链接与审核`"
+                  size="640px"
+                >
+                  <ProjectRegistrationPanel
+                    v-if="projectRegistrationTarget"
+                    :project-id="projectRegistrationTarget.id"
+                    :project-name="projectRegistrationTarget.name"
+                  />
+                </ElDrawer>
                 <ElDrawer
                   v-model="orgDelegationVisible"
                   :title="`${orgDelegationTarget?.name || ''} · 成员与邀请`"

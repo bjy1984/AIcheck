@@ -38,6 +38,18 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
     }
   },
   {
+    /* 项目注册：按项目发链接，进来自选角色，提交后等负责人审核。
+       和下面的组织邀请一样必须免登录——申请人本来就还没有账号。 */
+    path: '/join/:token',
+    component: () => import('@/views/Login/ProjectRegistration.vue'),
+    name: 'ProjectRegistration',
+    meta: {
+      hidden: true,
+      title: '加入项目',
+      noTagsView: true
+    }
+  },
+  {
     /* 邀请注册。**不挂在需要登录的布局下**，也在 NO_REDIRECT_WHITE_LIST 里
        ——收件人还没有账号，被守卫弹回登录页的话这个链接就废了。
        token 走路径参数而不是查询串：查询串更容易在日志和 Referer 里泄露。 */

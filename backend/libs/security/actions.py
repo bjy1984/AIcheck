@@ -50,6 +50,12 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/org-units/[^/]+/members/[^/]+/role$", "org:delegate"),
     # 改资料类别属于资料维护，和上传/挂载同一档
     ("PATCH", r"/projects/[^/]+/documents/[^/]+/material-category$", "file:upload"),
+    # 项目注册链接与审核（按项目发链接、自选角色、负责人审核）。
+    # 用 org:delegate 这一档：动作层只能按角色放行，真正的闸门在端点里
+    # ——必须是**这个项目**的负责人（project_members.isProjectLeader）。
+    ("POST", r"/projects/[^/]+/registration-links$", "org:delegate"),
+    ("POST", r"/projects/[^/]+/registration-links/[^/]+/disable$", "org:delegate"),
+    ("POST", r"/projects/[^/]+/registration-requests/[^/]+/review$", "org:delegate"),
     (
         "POST",
         r"/internal/ocr/mineru/tasks(?:/upload)?$",

@@ -81,6 +81,10 @@ PUBLIC_MUTATION_ROUTES = {
     # 绑死组织和角色（apps/api/org_delegation_routes.py）。
     ("POST", "/invitations/{token}/accept"),
     ("POST", "/api/invitations/{token}/accept"),
+    # 项目注册申请：申请人还没有账号，不可能带登录态和幂等键。
+    # 闸门是**审核**——提交只是排队，不产生任何可用凭证。
+    ("POST", "/registration-links/{token}/apply"),
+    ("POST", "/api/registration-links/{token}/apply"),
 }
 READ_ONLY_POST_ROUTES = {
     # 外部登记信息检索：用 POST 只为传递结构化查询条件，不写任何状态，

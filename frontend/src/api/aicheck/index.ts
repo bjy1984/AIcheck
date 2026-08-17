@@ -3364,6 +3364,93 @@ export const requestAiRecheckApi = (
   })
 }
 
+/* ---- 项目注册链接（按项目发链接 → 自选角色 → 负责人审核）---- */
+
+export type RegistrationLinkInfo = {
+  projectId: string
+  projectName: string
+  selectableRoles: RoleCode[]
+  expiresAt: string
+}
+
+export type RegistrationRequestItem = {
+  id: string
+  projectId: string
+  username: string
+  displayName: string
+  mobile: string
+  role: RoleCode
+  status: '待审核' | '已通过' | '已拒绝'
+  createdAt: string
+  rejectReason?: string
+}
+
+/** 看链接。不需要登录——申请人本来就还没有账号。 */
+export const getRegistrationLinkApi = (token: string): Promise<IResponse<RegistrationLinkInfo>> => {
+  return request.get({ url: `/api/registration-links/${encodeURIComponent(token)}` })
+}
+
+/** 提交申请。**不会产生可用账号**，通过审核后才建。 */
+export const submitRegistrationApi = (
+  token: string,
+  payload: {
+    username: string
+    password: string
+    role: RoleCode
+    displayName?: string
+    mobile?: string
+  }
+): Promise<IResponse<{ requestId: string; status: string; message: string }>> => {
+  return request.post({
+    url: `/api/registration-links/${encodeURIComponent(token)}/apply`,
+    data: payload
+  })
+}
+
+export const createProjectRegistrationLinkApi = (
+  projectId: string,
+  payload: { maxUses?: number } = {},
+  options?: MutationHeaderOptions
+): Promise<
+  IResponse<{
+    token: string
+    projectId: string
+    expiresAt: string
+    maxUses: number
+    selectableRoles: RoleCode[]
+  }>
+> => {
+  return request.post({
+    url: `/api/projects/${encodeURIComponent(projectId)}/registration-links`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const listRegistrationRequestsApi = (
+  projectId: string,
+  status?: string
+): Promise<IResponse<{ items: RegistrationRequestItem[]; total: number }>> => {
+  return request.get({
+    url: `/api/projects/${encodeURIComponent(projectId)}/registration-requests`,
+    params: status ? { status } : undefined
+  })
+}
+
+/** 审核。拒绝时必须写理由——不写的话申请人只看到「被拒了」，不知道要改什么。 */
+export const reviewRegistrationRequestApi = (
+  projectId: string,
+  requestId: string,
+  payload: { approved: boolean; reason?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ requestId: string; status: string; userId?: string }>> => {
+  return request.post({
+    url: `/api/projects/${encodeURIComponent(projectId)}/registration-requests/${encodeURIComponent(requestId)}/review`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
 /* ---- 组织邀请注册（0817 第 4 条）---- */
 
 export type InvitationInfo = {
