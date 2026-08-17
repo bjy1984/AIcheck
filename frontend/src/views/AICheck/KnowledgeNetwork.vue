@@ -48,11 +48,18 @@ const FAMILY_LABELS: Record<string, string> = {
   execution: 'Agent 与 Tool'
 }
 
-/** 会把名字写在节点里的类型。其余类型只在悬停/选中时显示标签。 */
-const LABELLED_TYPES = new Set(['business_pack', 'domain_module'])
+/* 每个节点都写名字。
+ *
+ * 原先只有 business_pack / domain_module 显示标签，其余十几种类型
+ * （规则、标准条款、原子检查项、项目、工具……）在图上就是一个个纯色块——
+ * **看得见有东西，但不知道是什么**，只能一个个悬停去问。
+ * 那是圆形时代的妥协：圆里塞不下字，只好给大类留标签。
+ * 现在框宽跟着文字走，这个妥协没有理由继续存在。 */
 
-/** 节点里最多显示几个字。超出截断——不是不给看，是 tooltip 和详情里有全名。 */
-const MAX_LABEL_CHARS = 12
+/** 节点里最多显示几个字。主类型给得宽些，末梢节点短些，免得图上全是长条。 */
+const MAJOR_TYPES = new Set(['business_pack', 'domain_module'])
+const MAX_LABEL_CHARS_MAJOR = 12
+const MAX_LABEL_CHARS_MINOR = 8
 
 /* 节点画成**矩形**而不是圆。
  *
@@ -69,11 +76,10 @@ function estimateTextWidth(text: string, fontSize: number): number {
   return Math.ceil(units * fontSize)
 }
 
-function clipLabel(text: string): string {
+function clipLabel(text: string, type: string): string {
+  const limit = MAJOR_TYPES.has(type) ? MAX_LABEL_CHARS_MAJOR : MAX_LABEL_CHARS_MINOR
   const chars = [...String(text || '')]
-  return chars.length > MAX_LABEL_CHARS
-    ? `${chars.slice(0, MAX_LABEL_CHARS - 1).join('')}…`
-    : chars.join('')
+  return chars.length > limit ? `${chars.slice(0, limit - 1).join('')}…` : chars.join('')
 }
 
 const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
@@ -96,15 +102,15 @@ const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
 }
 
 function labelFontSize(type: string): number {
-  return type === 'business_pack' ? 13 : 11
+  if (type === 'business_pack') return 13
+  return MAJOR_TYPES.has(type) ? 12 : 10
 }
 
-/** 矩形尺寸 [宽, 高]。宽度跟着标签走，没有标签的按基准尺寸做小方块。 */
+/** 矩形尺寸 [宽, 高]。宽度跟着标签走——每个节点都有名字，所以每个框都按字定宽。 */
 function nodeRectSize(type: string, label: string): [number, number] {
   const base = SYMBOL_SIZE_BY_TYPE[type] || 18
-  const height = Math.max(16, Math.round(base * NODE_HEIGHT_RATIO))
-  if (!LABELLED_TYPES.has(type)) return [Math.max(16, Math.round(base * 0.8)), height]
-  const text = estimateTextWidth(clipLabel(label), labelFontSize(type))
+  const height = Math.max(18, Math.round(base * NODE_HEIGHT_RATIO))
+  const text = estimateTextWidth(clipLabel(label, type), labelFontSize(type))
   return [Math.max(base, text + LABEL_PADDING_X * 2), height]
 }
 
@@ -332,19 +338,19 @@ function buildChartOption(): EChartsOption {
   const familyIndex = new Map(families.map((family, index) => [family, index]))
   const data = visibleNodes.value.map((node) => ({
     id: node.id,
-    name: clipLabel(node.label),
+    name: clipLabel(node.label, node.type),
     value: node.typeLabel,
     category: familyIndex.get(node.family) ?? familyIndex.get('semantic') ?? 0,
-    /* 矩形，宽度跟着文字走。圆形的可用宽度只有直径，
+    /* 直角矩形，宽度跟着文字走。圆形的可用宽度只有直径，
      * 中文名字要么溢到外面压住连线，要么被截成「压力管道安…」。 */
-    symbol: 'roundRect' as const,
+    symbol: 'rect' as const,
     symbolSize: nodeRectSize(node.type, node.label),
     draggable: true,
-    /* 标签画在框**里**：白字、居中。
+    /* 标签画在框**里**：白字、居中，每个节点都有。
      * 原先是默认位置（节点右侧）+ 主题文字色，长名字拖在外面和连线叠在一起；
      * 深色主题下还会和背景撞色。 */
     label: {
-      show: LABELLED_TYPES.has(node.type),
+      show: true,
       position: 'inside' as const,
       color: '#ffffff',
       fontSize: labelFontSize(node.type),
@@ -418,10 +424,13 @@ function buildChartOption(): EChartsOption {
         roam: true,
         edgeSymbol: ['none', 'arrow'],
         edgeSymbolSize: [0, 5],
+        /* 斥力和边长都比圆形时代放大了一截：矩形按文字定宽，
+         * 一个「监检业务判断规则」就有 150 多像素宽，
+         * 沿用原来的间距会让框整片压在一起。 */
         force: {
-          repulsion: data.length > 500 ? 85 : 150,
-          gravity: 0.08,
-          edgeLength: data.length > 500 ? [24, 70] : [48, 120],
+          repulsion: data.length > 500 ? 180 : 320,
+          gravity: 0.06,
+          edgeLength: data.length > 500 ? [60, 140] : [110, 240],
           friction: 0.55,
           layoutAnimation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches
         },
@@ -443,7 +452,12 @@ function buildChartOption(): EChartsOption {
           label: { show: true, position: 'inside', color: '#ffffff', fontWeight: 600 }
         },
         selectedMode: 'single',
-        labelLayout: { hideOverlap: true },
+        /* 不开 hideOverlap。
+         *
+         * 标签画在框**里**，一旦被判为重叠就整个隐掉，图上又会出现
+         * 「一个纯色块，不知道是什么」——正是这次要修的问题。
+         * 宁可挤，也不要让节点重新变回无名色块。 */
+        labelLayout: { hideOverlap: false },
         lineStyle: { color: colors.edge, opacity: 0.45 },
         scaleLimit: { min: 0.25, max: 5 }
       }

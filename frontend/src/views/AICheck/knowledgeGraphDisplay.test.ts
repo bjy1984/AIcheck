@@ -27,8 +27,9 @@ import { fileURLToPath } from 'node:url'
 
 const sfc = readFileSync(fileURLToPath(new URL('./KnowledgeNetwork.vue', import.meta.url)), 'utf8')
 
-// ---- 形状：矩形，宽度跟着文字走 ----
-assert.ok(/symbol: 'roundRect' as const/.test(sfc), '节点要画成矩形，不是圆')
+// ---- 形状：直角矩形，宽度跟着文字走 ----
+assert.ok(/symbol: 'rect' as const/.test(sfc), '节点要画成矩形，不是圆')
+assert.ok(!/roundRect/.test(sfc), '不要圆角')
 assert.ok(
   /symbolSize: nodeRectSize\(node\.type, node\.label\)/.test(sfc),
   '尺寸要按类型和标签算出来，不能是一个标量球径'
@@ -36,7 +37,10 @@ assert.ok(
 
 /* 宽度必须真的依赖文本，否则「换成矩形」只是把圆压扁，
    长名字照样溢出——这是最容易糊弄过去的一步。 */
-const rectFn = sfc.slice(sfc.indexOf('function nodeRectSize'), sfc.indexOf('function buildChartOption'))
+const rectFn = sfc.slice(
+  sfc.indexOf('function nodeRectSize'),
+  sfc.indexOf('function buildChartOption')
+)
 assert.ok(/estimateTextWidth\(/.test(rectFn), '矩形宽度没有参考文字宽度，等于把圆压扁了')
 assert.ok(/LABEL_PADDING_X \* 2/.test(rectFn), '文字两侧要留内边距，否则字贴着边框')
 
@@ -50,8 +54,26 @@ assert.ok(whiteLabels.length >= 3, '三处标签都要是白字')
 // 超长名字先截，再据此定框宽——两者用同一个函数，不然框宽和实际文字对不上
 assert.ok(/ellipsis|…/.test(sfc), '截断要有省略号，否则看不出还有内容')
 assert.ok(
-  /const text = estimateTextWidth\(clipLabel\(label\)/.test(sfc),
+  /const text = estimateTextWidth\(clipLabel\(label, type\)/.test(sfc),
   '定框宽要用截断后的文字，否则超长名字会撑出一个巨宽的框'
+)
+
+/* 每个节点都要有名字。
+ *
+ * 原先只有 business_pack / domain_module 显示标签，其余十几种类型在图上
+ * 就是一个个纯色块——**看得见有东西，但不知道是什么**，只能逐个悬停去问。
+ * 那是圆形时代的妥协（圆里塞不下字）；框宽跟着文字走之后没有理由保留。 */
+assert.ok(
+  /label: \{\s*show: true,\s*position: 'inside'/.test(sfc),
+  '还在按类型决定显不显示标签——图上会剩下一片无名色块'
+)
+assert.ok(!/LABELLED_TYPES/.test(sfc), '标签白名单要去掉，不是改一下成员')
+
+/* hideOverlap 必须关掉：标签在框里，一旦判为重叠就整个隐掉，
+   图上又会出现「一个纯色块，不知道是什么」——正是这次要修的问题。 */
+assert.ok(
+  /labelLayout: \{ hideOverlap: false \}/.test(sfc),
+  'hideOverlap 开着会把框里的字整个隐掉，节点重新变回无名色块'
 )
 
 /* 截断的是显示，不是信息：完整名字要留给 tooltip。
