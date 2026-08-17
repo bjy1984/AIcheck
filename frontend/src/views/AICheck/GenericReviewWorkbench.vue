@@ -244,8 +244,10 @@ onMounted(loadData)
 </script>
 
 <template>
-  <div class="generic-workbench" v-loading="loading">
+  <div class="generic-workbench">
+    <!-- 整页遮罩改为 shell 顶部细条：刷新期间页面仍可操作。 -->
     <StaticPageShell
+      :refreshing="loading"
       brand-mark="审"
       title="通用资料审查工作台"
       :status="loading ? '加载中' : '可复用内核'"

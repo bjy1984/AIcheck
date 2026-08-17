@@ -2829,8 +2829,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="knowledge-page" v-loading="loading">
+  <div class="knowledge-page">
+    <!-- 同 AdminOverview：整页遮罩改为顶部细条，刷新期间页面仍可操作。 -->
     <StaticPageShell
+      :refreshing="loading"
       brand-mark="知"
       title="AI 知识库管理"
       :status="knowledgeRuntimeStatus"

@@ -3311,9 +3311,11 @@ onMounted(() => {
   <div
     class="admin-page"
     :class="{ 'admin-page--expanded': activeTab === 'org' || activeTab === 'permission' }"
-    v-loading="loading"
   >
+    <!-- 不再整页 v-loading：实测切页时整页被遮罩挡住 605ms（网络慢会更久），
+         期间连菜单和页签都点不动。改为 shell 顶部细进度条，只报告不阻断。 -->
     <StaticPageShell
+      :refreshing="loading"
       brand-mark="管"
       title="项目与权限配置"
       :status="adminRuntimeStatus"

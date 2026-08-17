@@ -96,6 +96,9 @@ type StaticShellRightCard = {
 
 const props = defineProps<{
   brandMark: string
+  /** 数据正在刷新。**只画一条顶部细条，不遮挡页面**——
+   *  整页遮罩会让网络慢的时候整页点不动（实测本地就挡了 605ms）。 */
+  refreshing?: boolean
   title: string
   status?: string
   statusTone?: StaticShellTone
@@ -315,6 +318,13 @@ onBeforeUnmount(() => {
     ]"
   >
     <div class="aicheck-page app-shell">
+      <!-- 刷新指示：一条两像素的顶部细条。
+           不用整页 v-loading——那会在网络慢时把整页锁死，
+           用户连切页签、点菜单都做不到，只能干等。
+           告诉用户「在更新」就够了，不必替他决定「现在不许操作」。 -->
+      <div v-if="refreshing" class="shell-refreshing" role="status" aria-live="polite">
+        <span class="sr-only">正在刷新数据</span>
+      </div>
       <a class="skip-main" href="#aicheck-static-main">跳到主内容</a>
       <header class="topbar">
         <div class="brand">
@@ -772,6 +782,38 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 顶部刷新条：贴在页面最上沿，不占布局高度、不拦点击。 */
+.shell-refreshing {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2000;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, #3f7df0 40%, #1f66d8 60%, transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: shell-refreshing-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes shell-refreshing-sweep {
+  0% {
+    background-position: -40% 0;
+  }
+
+  100% {
+    background-position: 140% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-refreshing {
+    background: #3f7df0;
+    animation: none;
+  }
+}
+
 .aicheck-static-viewport {
   --bg: var(--aicheck-bg, #eef3f8);
   --panel: var(--aicheck-surface, #fff);

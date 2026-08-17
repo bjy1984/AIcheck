@@ -252,6 +252,39 @@ function chartColors() {
   }
 }
 
+const graphPane = ref<HTMLElement | null>(null)
+const isFullscreen = ref(false)
+
+/* 全屏切换。
+ *
+ * 两个容易漏的点：
+ * 1. **退出全屏不一定经过按钮**——Esc、F11、浏览器手势都会退出，
+ *    所以状态要跟着 fullscreenchange 事件走，不能只在点击时取反，
+ *    否则退出后按钮还写着「退出全屏」。
+ * 2. 容器尺寸变了必须 resize 图表，否则全屏后画布还是原来那么大，
+ *    看起来像「点了没反应」。
+ */
+const syncFullscreenState = () => {
+  isFullscreen.value = document.fullscreenElement === graphPane.value
+  nextTick(() => chart?.resize())
+}
+
+const toggleGraphFullscreen = async () => {
+  const host = graphPane.value
+  if (!host) return
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+    } else {
+      await host.requestFullscreen()
+    }
+  } catch {
+    // 浏览器可能拒绝（权限策略、iframe 限制）。退回普通视图，不弹错——
+    // 用户点的是「看大一点」，失败了保持原样即可，不必打断他。
+    isFullscreen.value = false
+  }
+}
+
 function buildChartOption(): EChartsOption {
   const colors = chartColors()
   const families = Object.keys(FAMILY_LABELS)
@@ -264,11 +297,20 @@ function buildChartOption(): EChartsOption {
     category: familyIndex.get(node.family) ?? familyIndex.get('semantic') ?? 0,
     symbolSize: SYMBOL_SIZE_BY_TYPE[node.type] || 18,
     draggable: true,
+    /* 标签画在球**里**：白字、居中，按球径截断。
+     *
+     * 原先是默认位置（球右侧）+ 主题文字色，长名字直接拖在球外面，
+     * 和旁边的连线、别的球叠在一起；深色主题下还会和背景撞色。
+     * 截断宽度按 symbolSize 算——写死一个字数，大球留白、小球照样溢出。 */
     label: {
       show: majorLabelTypes.has(node.type),
-      color: colors.text,
+      position: 'inside' as const,
+      color: '#ffffff',
       fontSize: node.type === 'business_pack' ? 13 : 11,
-      fontWeight: 500
+      fontWeight: 600,
+      width: Math.max(0, (SYMBOL_SIZE_BY_TYPE[node.type] || 18) * 2 - 8),
+      overflow: 'truncate' as const,
+      ellipsis: '…'
     },
     itemStyle: {
       color: colors[node.family as keyof typeof colors] || colors.semantic,
@@ -344,7 +386,8 @@ function buildChartOption(): EChartsOption {
         },
         emphasis: {
           focus: 'adjacency',
-          label: { show: true, color: colors.text, fontWeight: 500 },
+          // 悬停态也要白字居中：只改静态样式的话，鼠标一移上去标签又跳回球外。
+          label: { show: true, position: 'inside', color: '#ffffff', fontWeight: 600 },
           lineStyle: { opacity: 0.9, width: 2 }
         },
         blur: {
@@ -356,7 +399,7 @@ function buildChartOption(): EChartsOption {
             borderColor: themeColor('--el-text-color-primary', '#111827'),
             borderWidth: 4
           },
-          label: { show: true, color: colors.text }
+          label: { show: true, position: 'inside', color: '#ffffff', fontWeight: 600 }
         },
         selectedMode: 'single',
         labelLayout: { hideOverlap: true },
@@ -453,10 +496,13 @@ onMounted(() => {
     resizeObserver = new ResizeObserver(() => chart?.resize())
     resizeObserver.observe(chartHost.value)
   }
+  // 退出全屏可以不经过按钮（Esc / F11 / 浏览器手势），所以听事件而不是在点击时取反
+  document.addEventListener('fullscreenchange', syncFullscreenState)
   loadGraph()
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
   resizeObserver?.disconnect()
   resizeObserver = null
   chart?.dispose()
@@ -558,7 +604,16 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="network-layout">
-          <div class="graph-pane">
+          <div ref="graphPane" class="graph-pane">
+            <!-- 全屏：关系图在半个屏幕里根本看不清，节点一多就挤成一团。 -->
+            <ElButton
+              class="graph-fullscreen-btn"
+              size="small"
+              :title="isFullscreen ? '退出全屏（Esc）' : '全屏查看'"
+              @click="toggleGraphFullscreen"
+            >
+              {{ isFullscreen ? '退出全屏' : '全屏' }}
+            </ElButton>
             <ElSkeleton v-if="loading" animated :rows="12" />
             <ElEmpty v-else-if="!visibleNodes.length" description="当前条件下没有匹配的知识节点" />
             <div
@@ -721,7 +776,30 @@ onBeforeUnmount(() => {
   min-height: 680px;
 }
 
+/* 全屏时铺满整屏。:fullscreen 下容器脱离原布局，
+   不给高度的话画布会塌成 0 高——「点了全屏结果一片空白」。 */
+.graph-pane:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: 12px;
+  background: var(--el-bg-color, #fff);
+}
+
+.graph-pane:fullscreen .knowledge-graph {
+  height: calc(100vh - 24px);
+}
+
+.graph-fullscreen-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+}
+
 .graph-pane {
+  /* 全屏按钮用 absolute 定位，这里必须是定位上下文——
+     不加的话按钮会挂到更外层的祖先上，飘到页面别处去。 */
+  position: relative;
   min-width: 0;
   min-height: 680px;
   padding: 8px;
