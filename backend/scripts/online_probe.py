@@ -291,18 +291,17 @@ def check_org_delegation() -> bool:
     print(f"  普通成员不是负责人：{'✓' if not plain else '✗'}")
     ok_all = ok_all and not plain
 
-    # 端点确实挂上了（拆模块最容易漏 include_router）
-    mounted = any(
-        "/invitations/" in str(getattr(r, "path", "")) for r in _app_routes()
-    )
+    # 端点确实挂上了（拆模块最容易漏 include_router）。
+    #
+    # 第一版判据是扫 app.routes 里的 path——**错的**：app.routes 只有 21 条
+    # 顶层挂载，子路由在里面展开，于是永远扫不到，报成「未挂载」。
+    # 正确做法是真的调一次：路由不存在会回 FastAPI 的 detail=Not Found，
+    # 路由存在但邀请无效会回业务码——两者分得开。
+    body = api("/api/invitations/probe-nonexistent-token")
+    mounted = "detail" not in body and body.get("code") is not None
     print(f"  邀请端点已挂载：{'✓' if mounted else '✗ 路由 404 且不会报错'}")
+    print(f"    无效令牌回应：code={body.get('code')} msg={body.get('message') or body.get('detail')}")
     return ok_all and mounted
-
-
-def _app_routes():
-    from apps.api.main import app
-
-    return app.routes
 
 
 CHECKS = {
