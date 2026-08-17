@@ -547,6 +547,9 @@ function buildChartOption(): EChartsOption {
 /* 矩形之间要留的最小间距。0 的话框会贴在一起，看着仍像连成一片。 */
 const RECT_GAP = 10
 
+/** 定位到某个节点时的缩放级别。太大只剩一个框，太小等于没定位。 */
+const FOCUS_ZOOM = 1.6
+
 /* 力导向把节点当**圆点**算斥力，而这里的节点是宽扁的矩形。
  *
  * 「圆心距够远」和「矩形不相交」完全是两回事：一个 150×22 的框和一个
@@ -590,8 +593,14 @@ function relaxRectOverlaps(
   }
 }
 
-/** 力导向跑完之后：按矩形分离，再固定坐标。 */
-function settleLayout() {
+/** 力导向跑完之后：按矩形分离，再固定坐标；顺带把视图对准要看的节点。
+ *
+ * 定位和固定坐标**必须在同一次 setOption 里**做完。
+ * 分开做栽过两次：先按 series.center 单独下发——无效（graph 只在坐标系
+ * 建立时读 center）；再改用 graphRoam 动作算差值——位移对不上，
+ * 目标节点落在左下角。而这里的坐标本来就是我们自己算出来的，
+ * 和 layout:'none' 一起下发时坐标系会重建，center 必定生效。 */
+function settleLayout(focusId = '') {
   if (!chart || !lastNodeData.length) return
   const model = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
     | {
@@ -614,18 +623,20 @@ function settleLayout() {
     boxes.push({ x: point[0] as number, y: point[1] as number, w: size[0], h: size[1] })
   }
   relaxRectOverlaps(boxes)
-  chart.setOption({
-    series: [
-      {
-        layout: 'none',
-        data: lastNodeData.map((node, index) => ({
-          ...node,
-          x: boxes[index].x,
-          y: boxes[index].y
-        }))
-      }
-    ]
-  })
+  const focusIndex = focusId ? lastNodeData.findIndex((node) => String(node.id) === focusId) : -1
+  const seriesPatch: Record<string, unknown> = {
+    layout: 'none',
+    data: lastNodeData.map((node, index) => ({
+      ...node,
+      x: boxes[index].x,
+      y: boxes[index].y
+    }))
+  }
+  if (focusIndex >= 0) {
+    seriesPatch.center = [boxes[focusIndex].x, boxes[focusIndex].y]
+    seriesPatch.zoom = FOCUS_ZOOM
+  }
+  chart.setOption({ series: [seriesPatch] })
 }
 
 /* 力导向布局在**持续移动节点**。
@@ -638,49 +649,10 @@ let pendingFocusId = ''
 /** 这一版布局是否已经分离并固定。每次重绘都要重新来过。 */
 let layoutSettled = false
 
-/* 定位靠 **graphRoam 动作**，不是 series.center。
- *
- * 先按 center/zoom 写过一版：线上实测无效——把画布正中心标出来看，
- * 中央是空的，上一个节点还在原位。graph 系列只在初始化时读 center/zoom，
- * 之后视图由 roam 的变换掌管，往 option 里塞 center 不会挪动它。
- *
- * 正确做法是问坐标系要屏幕坐标（dataToPoint），算出差值，再派 graphRoam。 */
-function centerOnNode(nodeId: string) {
-  if (!chart || !nodeId) return
-  const index = visibleNodes.value.findIndex((node) => node.id === nodeId)
-  if (index < 0) return
-  const series = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
-    | {
-        getSeriesByIndex?: (i: number) => {
-          getData?: () => { getItemLayout?: (i: number) => unknown }
-          coordinateSystem?: { dataToPoint?: (p: number[]) => number[] }
-        }
-      }
-    | undefined
-  const seriesModel = series?.getSeriesByIndex?.(0)
-  const layout = seriesModel?.getData?.()?.getItemLayout?.(index)
-  const modelPoint = Array.isArray(layout)
-    ? layout
-    : [(layout as { x?: number })?.x, (layout as { y?: number })?.y]
-  if (!Number.isFinite(modelPoint[0]) || !Number.isFinite(modelPoint[1])) return
-  const screen = seriesModel?.coordinateSystem?.dataToPoint?.([
-    modelPoint[0] as number,
-    modelPoint[1] as number
-  ])
-  if (!screen || !Number.isFinite(screen[0]) || !Number.isFinite(screen[1])) return
-  const width = chart.getWidth()
-  const height = chart.getHeight()
-  const dx = width / 2 - screen[0]
-  const dy = height / 2 - screen[1]
-  // 已经在中心附近就别抖一下，那种无意义的位移看着像 bug
-  if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return
-  chart.dispatchAction({ type: 'graphRoam', seriesIndex: 0, dx, dy })
-}
-
-/** 请求定位：先对一次（有反馈），布局停了再对一次（对得准）。 */
+/** 请求定位。真正的对准发生在 settleLayout 里——那时坐标已经算好并固定，
+ *  是唯一能把「移到哪」和「节点在哪」对齐的时刻。 */
 function focusNode(nodeId: string) {
   pendingFocusId = nodeId
-  centerOnNode(nodeId)
 }
 
 /** 把选中态推给图表——用 action，不重建 option，这样不会丢平移缩放。 */
@@ -733,12 +705,10 @@ function renderChart(reset = false) {
        * layoutSettled 防重入：settleLayout 自己也会触发 finished。 */
       if (!layoutSettled) {
         layoutSettled = true
-        settleLayout()
+        const target = pendingFocusId
+        pendingFocusId = ''
+        settleLayout(target)
       }
-      if (!pendingFocusId) return
-      const target = pendingFocusId
-      pendingFocusId = ''
-      centerOnNode(target)
     })
   }
   /* 拖到一半来的重绘，攒着等松手——直接重绘会把正在拖的图元换掉，手势就断了。

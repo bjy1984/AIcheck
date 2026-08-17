@@ -182,20 +182,26 @@ assert.ok(/if \(reset\) chart\.resize\(\)/.test(sfc), '只在重置时 resize，
  *
  * 只标选中是不够的：节点可能在屏幕外，用户看到的就是「点了没反应」。
  * 位置要从布局结果取——力导向的坐标是算出来的，数据里没有 x/y。 */
-assert.ok(/function centerOnNode/.test(sfc), '要有定位到节点的能力')
-assert.ok(/getItemLayout\?\.\(index\)/.test(sfc), '位置要从布局结果取，数据里没有力导向坐标')
-/* 定位必须走 graphRoam 动作。
+/* 定位和固定坐标必须在**同一次 setOption** 里完成。
  *
- * 先按 series.center/zoom 写过一版，线上实测**无效**：把画布正中心标出来看，
- * 中央是空的，上一个节点还在原位。graph 系列只在初始化时读 center/zoom，
- * 之后视图由 roam 的变换掌管——往 option 里塞 center 不会挪动它。 */
-assert.ok(!/zoom: FOCUS_ZOOM/.test(sfc), 'series.center/zoom 这条路线上验过是无效的，不要再用')
+ * 分开做栽过两次：
+ *   1. 单独下发 series.center —— 无效，graph 只在坐标系建立时读 center；
+ *      线上把画布正中心标成红十字，中央是空的，上一个节点还在原位。
+ *   2. 改用 graphRoam 动作算差值 —— 位移对不上，目标节点落在左下角。
+ * 而去重叠那一步的坐标本来就是我们自己算出来的，和 layout:'none'
+ * 一起下发时坐标系会重建，center 必定生效。 */
+assert.ok(/function settleLayout\(focusId = ''\)/.test(sfc), 'settleLayout 要能顺带对准节点')
 assert.ok(
-  /dispatchAction\(\{ type: 'graphRoam', seriesIndex: 0, dx, dy \}\)/.test(sfc),
-  '要用 graphRoam 动作平移，这是唯一实测有效的方式'
+  /seriesPatch\.center = \[boxes\[focusIndex\]\.x, boxes\[focusIndex\]\.y\]/.test(sfc),
+  'center 要用去重叠之后的真实坐标'
 )
-// 屏幕坐标要问坐标系要，不能拿模型坐标直接当像素用
-assert.ok(/coordinateSystem\?\.dataToPoint/.test(sfc), '模型坐标要换算成屏幕坐标')
+/* 只看有没有真的**派**这个动作。注释里复述踩过的坑是应该的，
+   不能因为提到名字就判成回归——这个自摆乌龙今天已经犯过一次。 */
+assert.ok(
+  !/dispatchAction\(\{[^}]*graphRoam/.test(sfc),
+  'graphRoam 那条路线上验过位移对不上，不要再用'
+)
+assert.ok(/getItemLayout/.test(sfc), '位置要从布局结果取，数据里没有力导向坐标')
 const relatedFn = sfc.slice(
   sfc.indexOf('function selectRelatedNode'),
   sfc.indexOf('async function loadGraph')
