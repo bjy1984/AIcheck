@@ -490,6 +490,11 @@ function buildChartOption(): EChartsOption {
           itemStyle: { color: colors[family as keyof typeof colors] || colors.semantic }
         })),
         roam: true,
+        /* 符号必须与坐标**严格同步**缩放（默认 0.6 是次幂跟随）。
+           否则布局尺度下零重叠的几何在其他缩放级别被渲染层破坏：
+           缩小时盒子相对间距变大互相压住，放大到头也散不开——
+           线上实拍过：布局零重叠、屏幕上却一墙盒子叠盒子。 */
+        nodeScaleRatio: 1,
         edgeSymbol: ['none', 'arrow'],
         edgeSymbolSize: [0, 5],
         emphasis: {
