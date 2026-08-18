@@ -28,6 +28,7 @@ import { useAppStore } from '@/store/modules/app'
 import { useUserStore } from '@/store/modules/user'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import StaticPageShell from './components/StaticPageShell.vue'
+import { radialLayout } from './knowledgeGraphLayout'
 
 const DEFAULT_BUSINESS_PACK_ID = 'engineering_inspection_v1'
 const DEFAULT_VISIBLE_TYPES = [
@@ -390,15 +391,28 @@ const toggleGraphFullscreen = async () => {
   }
 }
 
-/** 上一次交给图表的节点数据。去重叠时要在它基础上补 x/y，不能凭空重建。 */
-let lastNodeData: Array<Record<string, unknown>> = []
-
 function buildChartOption(): EChartsOption {
   const colors = chartColors()
   const families = Object.keys(FAMILY_LABELS)
   const familyIndex = new Map(families.map((family, index) => [family, index]))
+  /* 确定性径向分层布局，替掉力导向。
+   * 这份数据是层级（业务包→模块→节点→条款），力导向把层级揉成一坨
+   * 互相压的矩形——「知识图谱根本没法看」。理由与几何约束见
+   * knowledgeGraphLayout.ts 的文件头。根固定用业务包节点：
+   * 度数最大者通常就是它，但显式指定不依赖这个巧合。 */
+  const rootId = visibleNodes.value.find((node) => node.type === 'business_pack')?.id
+  const layout = radialLayout(
+    visibleNodes.value.map((node) => {
+      const [width, height] = nodeRectSize(node.type, node.label)
+      return { id: node.id, width, height }
+    }),
+    visibleEdges.value.map((edge) => ({ source: edge.source, target: edge.target })),
+    rootId
+  )
   const data = visibleNodes.value.map((node) => ({
     id: node.id,
+    x: layout.positions.get(node.id)?.x ?? 0,
+    y: layout.positions.get(node.id)?.y ?? 0,
     name: wrapLabel(node.label, node.type).join('\n'),
     value: node.typeLabel,
     category: familyIndex.get(node.family) ?? familyIndex.get('semantic') ?? 0,
@@ -411,7 +425,7 @@ function buildChartOption(): EChartsOption {
      * 可拖的时候，鼠标按在节点上是「拖这个点」，按在空白处才是「平移画布」。
      * 圆形时代节点小，多数落点是空白，问题不明显；换成矩形后节点占的面积
      * 大了好几倍，随手一拖经常拖的是某个节点——在用户看来就是「滑动失灵」。
-     * 平移是主要操作，挪单个节点不是；力导向布局本来也会把它拉回去。 */
+     * 平移是主要操作，挪单个节点不是；坐标由布局统一算，单独挪一个只会破坏环形结构。 */
     draggable: false,
     /* 标签画在框**里**：白字、居中，每个节点都有。
      * 原先是默认位置（节点右侧）+ 主题文字色，长名字拖在外面和连线叠在一起；
@@ -442,20 +456,26 @@ function buildChartOption(): EChartsOption {
     nodeTypeLabel: node.typeLabel,
     description: node.description
   }))
-  lastNodeData = data as unknown as Array<Record<string, unknown>>
-  const links = visibleEdges.value.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    edgeLabel: edge.label,
-    edgeType: edge.type,
-    lineStyle: {
-      color: colors.edge,
-      opacity: 0.45,
-      width: edge.type === 'EVALUATED_BY' || edge.type === 'GOVERNED_BY' ? 1.4 : 0.8,
-      curveness: 0.08
+  const links = visibleEdges.value.map((edge) => {
+    /* 树边（层级骨架）画实、交叉边画淡画弯。294 条边全一样重的话，
+       横向交叉线会把放射结构糊掉——图「没法看」有它一半功劳。 */
+    const isTreeEdge =
+      layout.treeEdgeKeys.has(`${edge.source}->${edge.target}`) ||
+      layout.treeEdgeKeys.has(`${edge.target}->${edge.source}`)
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      edgeLabel: edge.label,
+      edgeType: edge.type,
+      lineStyle: {
+        color: colors.edge,
+        opacity: isTreeEdge ? 0.5 : 0.16,
+        width: isTreeEdge ? 1.2 : 0.8,
+        curveness: isTreeEdge ? 0 : 0.35
+      }
     }
-  }))
+  })
   return {
     animationDurationUpdate: 280,
     backgroundColor: 'transparent',
@@ -488,7 +508,9 @@ function buildChartOption(): EChartsOption {
     series: [
       {
         type: 'graph',
-        layout: 'force',
+        /* 坐标已由 radialLayout 算好——确定性布局，打开即稳定。
+           不再有「布局一直在漂、定位对不准、截图判据被动画污染」那一类问题。 */
+        layout: 'none',
         data,
         links,
         categories: families.map((family) => ({
@@ -498,16 +520,6 @@ function buildChartOption(): EChartsOption {
         roam: true,
         edgeSymbol: ['none', 'arrow'],
         edgeSymbolSize: [0, 5],
-        /* 斥力和边长都比圆形时代放大了一截：矩形按文字定宽，
-         * 一个「监检业务判断规则」就有 150 多像素宽，
-         * 沿用原来的间距会让框整片压在一起。 */
-        force: {
-          repulsion: data.length > 500 ? 180 : 320,
-          gravity: 0.06,
-          edgeLength: data.length > 500 ? [60, 140] : [110, 240],
-          friction: 0.55,
-          layoutAnimation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        },
         emphasis: {
           focus: 'adjacency',
           // 悬停态也要白字居中：只改静态样式的话，鼠标一移上去标签又跳回球外。
@@ -533,102 +545,17 @@ function buildChartOption(): EChartsOption {
          * 宁可挤，也不要让节点重新变回无名色块。 */
         labelLayout: { hideOverlap: false },
         lineStyle: { color: colors.edge, opacity: 0.45 },
-        scaleLimit: { min: 0.25, max: 5 }
+        scaleLimit: { min: 0.2, max: 12 }
       }
     ]
   }
-}
-
-/** 把视图移到某个节点上。
- *
- * 只把它标成选中是不够的：节点可能在屏幕外，用户看到的就是「点了没反应」。
- * 位置要从**布局结果**里取（getItemLayout），不能用数据里的 x/y——
- * 力导向布局的坐标是算出来的，数据上根本没有。 */
-/* 矩形之间要留的最小间距。0 的话框会贴在一起，看着仍像连成一片。 */
-const RECT_GAP = 10
-
-/* 力导向把节点当**圆点**算斥力，而这里的节点是宽扁的矩形。
- *
- * 「圆心距够远」和「矩形不相交」完全是两回事：一个 150×22 的框和一个
- * 60×22 的框，圆心距 90 像素在力导向看来已经很宽松，实际两个框还压在一起。
- * 加大 repulsion 只能缓解——把稀疏区推得更散，密集区照样叠。
- *
- * 所以：力导向负责**大致结构**，跑完之后按真实矩形做一次分离，
- * 然后把坐标固定下来（layout: 'none'）。固定下来还有个额外好处——
- * 节点不再持续漂移，定位才对得准。
- */
-function relaxRectOverlaps(
-  boxes: Array<{ x: number; y: number; w: number; h: number }>,
-  iterations = 80
-) {
-  for (let round = 0; round < iterations; round++) {
-    let moved = false
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i]
-        const b = boxes[j]
-        const dx = b.x - a.x
-        const dy = b.y - a.y
-        const overlapX = (a.w + b.w) / 2 + RECT_GAP - Math.abs(dx)
-        const overlapY = (a.h + b.h) / 2 + RECT_GAP - Math.abs(dy)
-        if (overlapX <= 0 || overlapY <= 0) continue
-        moved = true
-        /* 沿**重叠较小**的那个轴推开。挑另一个轴会把两个框推出很远，
-         * 图会被撕得七零八落，连线也跟着变长。 */
-        if (overlapX < overlapY) {
-          const push = (overlapX / 2) * (dx < 0 ? -1 : 1)
-          a.x -= push
-          b.x += push
-        } else {
-          const push = (overlapY / 2) * (dy < 0 ? -1 : 1)
-          a.y -= push
-          b.y += push
-        }
-      }
-    }
-    if (!moved) return
-  }
-}
-
-/** 力导向跑完之后：按矩形分离，再固定坐标。 */
-function settleLayout() {
-  if (!chart || !lastNodeData.length) return
-  const model = (chart as unknown as { getModel?: () => unknown }).getModel?.() as
-    | {
-        getSeriesByIndex?: (i: number) => {
-          getData?: () => { getItemLayout?: (i: number) => unknown }
-        }
-      }
-    | undefined
-  const series = model?.getSeriesByIndex?.(0)?.getData?.()
-  if (!series?.getItemLayout) return
-  const boxes: Array<{ x: number; y: number; w: number; h: number }> = []
-  for (let i = 0; i < lastNodeData.length; i++) {
-    const layout = series.getItemLayout(i)
-    const point = Array.isArray(layout)
-      ? layout
-      : [(layout as { x?: number })?.x, (layout as { y?: number })?.y]
-    // 有一个点算不出来就整体放弃：半套坐标比不动更糟，图会散架
-    if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return
-    const size = lastNodeData[i].symbolSize as [number, number]
-    boxes.push({ x: point[0] as number, y: point[1] as number, w: size[0], h: size[1] })
-  }
-  relaxRectOverlaps(boxes)
-  chart.setOption({
-    series: [
-      {
-        layout: 'none',
-        data: lastNodeData.map((node, index) => ({
-          ...node,
-          x: boxes[index].x,
-          y: boxes[index].y
-        }))
-      }
-    ]
-  })
 }
 
 /* 「点一跳关系把视图定位过去」——**尚未实现**，五种做法线上都验过无效。
+ *
+ * 补记：现在布局换成了确定性 radial（见 knowledgeGraphLayout.ts），
+ * 坐标不再漂移，「点击那一刻的坐标两秒后就不对了」这层障碍已经不存在。
+ * 若要重做定位，别再从下面五条老路里挑，先从 fitView/dataZoom 方向验证。
  *
  * 记录在这里，免得下一个人再走一遍：
  *   1. setOption({series:[{center,zoom}]}) 合并式下发 —— 视图不动
@@ -642,9 +569,6 @@ function settleLayout() {
  *
  * 曾经带着第 5 版上线过一阵，副作用是**点一跳关系会把视图重置**——
  * 比不做更糟，所以撤掉了。现在点一跳关系只选中，不动视图。 */
-
-/** 这一版布局是否已经分离并固定。每次重绘都要重新来过。 */
-let layoutSettled = false
 
 /** 把选中态推给图表——用 action，不重建 option，这样不会丢平移缩放。 */
 function syncSelectionToChart() {
@@ -688,17 +612,6 @@ function renderChart(reset = false) {
     })
     zr.on('mouseup', endInteraction)
     zr.on('globalout', endInteraction)
-    /* 布局停下来之后再对准一次。力导向一直在挪节点，
-     * 点击那一刻算出来的坐标，两秒后已经不是那个节点所在的位置了。 */
-    chart.on('finished', () => {
-      /* 力导向停了：先按矩形分离并固定坐标，再对准要看的节点。
-       * 顺序不能反——先定位的话，紧接着的分离会把节点又挪走。
-       * layoutSettled 防重入：settleLayout 自己也会触发 finished。 */
-      if (!layoutSettled) {
-        layoutSettled = true
-        settleLayout()
-      }
-    })
   }
   /* 拖到一半来的重绘，攒着等松手——直接重绘会把正在拖的图元换掉，手势就断了。
    * reset 是用户主动要求重置视图，那时没有正在进行的手势，不用等。 */
@@ -712,10 +625,6 @@ function renderChart(reset = false) {
    * 而重画的触发点很多——筛选类型、搜索、切主题、选中节点——
    * 用户拖到一半只要碰上一次，图就弹回原位，看起来就是「滑动失灵」。 */
   if (reset) chart.clear()
-  /* 换了数据就要重新跑一遍力导向 + 分离。
-   * 忘了复位的话，上一版的「已固定」会让新数据永远停在 layout:'none'，
-   * 新节点全部叠在原点——一个只在筛选之后才出现的错位。 */
-  layoutSettled = false
   chart.setOption(buildChartOption(), { notMerge: reset, lazyUpdate: true })
   /* 只有重置时才 resize。容器尺寸变化由 ResizeObserver 负责——
    * 每次重绘都无脑 resize 是多余的一次重排，也多一次打断手势的机会。 */

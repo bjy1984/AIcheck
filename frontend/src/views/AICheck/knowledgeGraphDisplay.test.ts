@@ -194,26 +194,30 @@ assert.ok(!/function centerOnNode/.test(sfc), '未生效的定位实现要撤干
 assert.ok(!/pendingFocusId/.test(sfc), '定位相关状态要一起撤掉')
 assert.ok(!/dispatchAction\(\{[^}]*graphRoam/.test(sfc), 'graphRoam 那条路线上验过位移对不上')
 
-/* ---- 矩形不能重叠 ----
+/* ---- 布局：确定性径向分层，不再用力导向 ----
  *
- * 力导向把节点当圆点算斥力，而这里的节点是宽扁矩形：
- * 「圆心距够远」和「矩形不相交」是两回事。150×22 的框和 60×22 的框，
- * 圆心距 90 像素在力导向看来很宽松，实际两个框还压在一起。
- * 加大 repulsion 只能把稀疏区推得更散，密集区照样叠。 */
-assert.ok(/function relaxRectOverlaps/.test(sfc), '要按真实矩形做一次分离')
+ * 数据是层级（业务包→模块→节点→条款），力导向把层级揉成中心一坨
+ * 互相压的矩形——用户的原话是「知识图谱根本没法看」。
+ * 几何契约（零重叠、层级半径单调、确定性）在 knowledgeGraphLayout.test.ts
+ * 里按真实规模验证；这里只钉住组件**确实在用**那个布局：
+ * 模块写对了但组件没接上，图照样没法看，而且不会报错。 */
+assert.ok(/from '\.\/knowledgeGraphLayout'/.test(sfc), '组件没有接上径向布局模块')
+assert.ok(/const layout = radialLayout\(/.test(sfc), '没有调用径向布局')
+assert.ok(/layout: 'none'/.test(sfc), '坐标算好了却没告诉 ECharts 用它（layout 该是 none）')
+assert.ok(!/layout: 'force'/.test(sfc), '力导向又回来了——层级会被重新揉成一坨')
+assert.ok(!/force: \{/.test(sfc), '力导向参数还留着')
+/* 根显式指定为业务包节点。靠「度数最大者恰好是它」是巧合，
+   巧合破掉的那天，圆心会换成某个规则节点，整张图的语义就错了。 */
 assert.ok(
-  /const overlapX = \(a\.w \+ b\.w\) \/ 2 \+ RECT_GAP/.test(sfc),
-  '判定要用矩形半宽之和，不是半径'
+  /node\.type === 'business_pack'\)\?\.id/.test(sfc),
+  '根节点没有显式指定为业务包'
 )
-assert.ok(/if \(overlapX < overlapY\)/.test(sfc), '要沿重叠较小的轴推开——挑另一个轴会把图撕散')
-assert.ok(/layout: 'none'/.test(sfc), '分离之后要固定坐标，否则力导向立刻把它们拉回去')
-/* 复位不能忘：上一版的「已固定」会让新数据永远停在 layout:'none'，
-   新节点全部叠在原点——一个只在筛选之后才出现的错位。 */
-assert.ok(
-  /layoutSettled = false\s*chart\.setOption\(buildChartOption/.test(sfc),
-  '每次重绘要重新跑布局'
-)
-assert.ok(/if \(!layoutSettled\) \{/.test(sfc), 'settleLayout 自己也会触发 finished，要防重入')
+/* 树边画实、交叉边画淡。294 条边全一样重的话，
+   横向交叉线会把放射结构糊掉——图「没法看」有它一半功劳。 */
+assert.ok(/treeEdgeKeys/.test(sfc), '没有区分树边和交叉边')
+assert.ok(/isTreeEdge \? 0\.5 : 0\.16/.test(sfc), '交叉边没有画淡')
+assert.ok(/curveness: isTreeEdge \? 0 : 0\.35/.test(sfc), '交叉边没有画弯，会和树边混在一起')
+
 // ---- 全屏 ----
 assert.ok(/const isFullscreen = ref\(false\)/.test(sfc), '要有全屏状态')
 assert.ok(/requestFullscreen\(\)/.test(sfc), '要真的进全屏，不是放大 div')
