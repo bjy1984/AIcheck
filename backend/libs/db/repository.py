@@ -10,7 +10,7 @@ import re
 import sqlite3
 import threading
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -56,6 +56,12 @@ from .seed import (
 )
 
 LOGGER = logging.getLogger("aicheck.repository")
+
+
+# 空集合的水位线：一个不可能比任何真实 updated_at 更大的时刻。
+# 不给空集合记水位线的话，它每次刷新都被判成「从没加载过」而整表重来——
+# 而整表重来正是这套增量机制要消灭的东西。
+_EPOCH_WATERMARK = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class ConcurrentPersistenceError(RuntimeError):
@@ -328,6 +334,9 @@ class InMemoryRepository:
         self._sync_postgres_lock = threading.RLock()
         # 进程外写入的探测器（issue #9），见 libs/db/state_freshness
         self._state_probe = StateFreshnessProbe()
+        # 每个集合已加载到哪个时刻。有它才能只拉变化的行，
+        # 没有它（进程刚起、或该集合从没整表加载过）就退回整表加载。
+        self._collection_watermarks: dict[tuple[str, str], Any] = {}
 
     @property
     def state(self) -> dict[str, Any]:
@@ -3674,9 +3683,130 @@ class InMemoryRepository:
             state_keys = {reverse[name] for name in stale_collections if name in reverse}
             if not state_keys:
                 return set()
-        self.load_from_sync_postgres(state_keys, tenant_id=tenant_id)
+        # 只拉变化的行。整表重载的代价见 refresh_collections_incrementally：
+        # 向量化期间每个请求要先付 25 秒以上，页面看起来就是一直在转圈。
+        self.refresh_collections_incrementally(state_keys, tenant_id=tenant_id)
         LOGGER.info("state_reloaded_from_postgres: %s", sorted(state_keys))
         return state_keys
+
+    def refresh_collections_incrementally(
+        self, state_keys: set[str], tenant_id: str | None = None
+    ) -> None:
+        """只把**变化过的行**拉回内存，而不是整张表重来。
+
+        ## 为什么必须这样
+
+        请求中间件发现某个集合过期就整表重载。而向量化每写一个断点批次就
+        弄脏两张大表：knowledge_vectors 61 MB（重载 17.4 秒）、
+        knowledge_embedding_batches 21 MB（7.6 秒）。于是只要有**任何一份资料
+        在向量化**，其后每个 API 请求都要先付 25 秒以上——知识网络页面实测
+        47 秒才出内容，看起来就是「一直在转圈」。而那个页面自己构建只要 0.15 秒。
+
+        这不是批量重建才有的问题：正常业务上传一份资料，同样会让全站变慢几分钟。
+
+        ## 判断变化的方式
+
+        - 变化行：updated_at > 本集合水位线（这些行取 payload）；
+        - 删除行：另查一次**只取 object_id** 的全量清单做差集——
+          只有 id 的查询很便宜，而漏掉删除会让内存里留下库里已经没有的记录。
+
+        没有水位线时（进程刚起、或该集合没整表加载过）退回整表加载，
+        这样行为与原先完全一致，只是快了。
+        """
+        with self._sync_postgres_lock:
+            effective_tenant_id = str(tenant_id or configured_tenant_id())
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            full_reload_keys: set[str] = set()
+            for state_key in sorted(state_keys):
+                collection_name = STATE_COLLECTIONS.get(state_key)
+                if not collection_name:
+                    continue
+                watermark = self._collection_watermarks.get((effective_tenant_id, collection_name))
+                if watermark is None:
+                    full_reload_keys.add(state_key)
+                    continue
+                try:
+                    changed = self.sync_postgres.execute(
+                        """
+                        SELECT object_id, payload, updated_at FROM aicheck_state
+                        WHERE tenant_id = %s AND collection = %s AND updated_at > %s
+                        """,
+                        (effective_tenant_id, collection_name, watermark),
+                    ).fetchall()
+                    live_ids = {
+                        str(row[0])
+                        for row in self.sync_postgres.execute(
+                            "SELECT object_id FROM aicheck_state WHERE tenant_id = %s AND collection = %s",
+                            (effective_tenant_id, collection_name),
+                        ).fetchall()
+                    }
+                except Exception as exc:  # noqa: BLE001 - 增量失败就退回整表，别让请求挂掉
+                    LOGGER.warning("incremental_refresh_failed: %s %s", collection_name, exc)
+                    full_reload_keys.add(state_key)
+                    continue
+                self._merge_incremental_collection(
+                    state_key,
+                    collection_name,
+                    changed,
+                    live_ids,
+                    tenant_id=effective_tenant_id,
+                )
+            if full_reload_keys:
+                # 锁是可重入的（RLock），整表加载会自己再取一次
+                self.load_from_sync_postgres(full_reload_keys, tenant_id=tenant_id)
+
+    def _merge_incremental_collection(
+        self,
+        state_key: str,
+        collection_name: str,
+        changed_rows: list[Any],
+        live_ids: set[str],
+        *,
+        tenant_id: str,
+    ) -> None:
+        """把变化行并进内存列表，并删掉库里已经不存在的记录。
+
+        钉住的对象（pin_object）不动：别的请求正在改它，用库里的副本覆盖等于
+        让那次改动无声蒸发——整表加载路径同样有这条保护，见 apply_loaded_collection。
+        """
+        current = [item for item in (self.state.get(state_key) or []) if isinstance(item, dict)]
+        index_by_id: dict[str, int] = {}
+        for index, item in enumerate(current):
+            index_by_id.setdefault(self.persistence_object_id(collection_name, item, index), index)
+
+        highest = self._collection_watermarks.get((tenant_id, collection_name))
+        appended: list[dict[str, Any]] = []
+        for object_id, payload, updated_at in changed_rows:
+            key = str(object_id)
+            if self.object_is_pinned(collection_name, key):
+                continue
+            document = json.loads(json.dumps(payload))
+            position = index_by_id.get(key)
+            if position is None:
+                appended.append(document)
+            else:
+                current[position] = document
+            self._persistence_baseline[(collection_name, key)] = self.canonical_persistence_payload(payload)
+            if highest is None or (updated_at is not None and updated_at > highest):
+                highest = updated_at
+
+        merged = [*appended, *current] if appended else current
+        if len(merged) != len(live_ids) or appended:
+            kept: list[dict[str, Any]] = []
+            for index, item in enumerate(merged):
+                object_id = self.persistence_object_id(collection_name, item, index)
+                if object_id in live_ids or self.object_is_pinned(collection_name, object_id):
+                    kept.append(item)
+                else:
+                    self._persistence_baseline.pop((collection_name, object_id), None)
+            merged = kept
+
+        self.state[state_key] = merged
+        apply_default_tenant(self.state.get(state_key), tenant_id=tenant_id)
+        if highest is not None:
+            self._collection_watermarks[(tenant_id, collection_name)] = highest
 
     def load_from_sync_postgres(
         self, selected_state_keys: set[str] | None = None, tenant_id: str | None = None
@@ -3703,7 +3833,7 @@ class InMemoryRepository:
             if selected_state_keys is not None:
                 rows = self.sync_postgres.execute(
                     """
-                    SELECT collection, object_id, payload FROM aicheck_state
+                    SELECT collection, object_id, payload, updated_at FROM aicheck_state
                     WHERE collection = ANY(%s)
                       AND tenant_id = %s
                     ORDER BY collection, object_id
@@ -3713,7 +3843,7 @@ class InMemoryRepository:
             else:
                 rows = self.sync_postgres.execute(
                     """
-                    SELECT collection, object_id, payload FROM aicheck_state
+                    SELECT collection, object_id, payload, updated_at FROM aicheck_state
                     WHERE tenant_id = %s
                     ORDER BY collection, object_id
                     """,
@@ -3721,8 +3851,16 @@ class InMemoryRepository:
                 ).fetchall()
             has_project_seed = any(row[0] == STATE_COLLECTIONS["projects"] for row in rows)
             grouped: dict[str, list[dict[str, Any]]] = {}
-            for collection_name, _, payload in rows:
+            # 记下每个集合加载到哪个时刻——下次刷新才有可能只拉变化的行
+            for collection_name, _, payload, updated_at in rows:
                 grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
+                key = (effective_tenant_id, str(collection_name))
+                seen = self._collection_watermarks.get(key)
+                if updated_at is not None and (seen is None or updated_at > seen):
+                    self._collection_watermarks[key] = updated_at
+            for collection_name in selected_collections or []:
+                # 空集合也要有水位线，否则每次都判成「没加载过」而整表重来
+                self._collection_watermarks.setdefault((effective_tenant_id, str(collection_name)), _EPOCH_WATERMARK)
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 documents = grouped.get(collection_name, [])
                 if selected_state_keys is not None and state_key in selected_state_keys or has_project_seed or documents:
@@ -3740,7 +3878,7 @@ class InMemoryRepository:
             loaded["idempotency"] = {scope: json.loads(json.dumps(payload)) for scope, payload in idempotency_rows}
             loaded_baseline = {
                 (str(collection_name), str(object_id)): self.canonical_persistence_payload(payload)
-                for collection_name, object_id, payload in rows
+                for collection_name, object_id, payload, _updated_at in rows
             }
             self.mark_tenant_loaded()
             if selected_state_keys is not None:

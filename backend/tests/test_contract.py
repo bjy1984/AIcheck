@@ -12421,9 +12421,14 @@ class FakePostgresConnection:
     def execute(self, sql, params=None):
         normalized = " ".join(str(sql).split())
         self.executed.append(normalized)
-        if normalized.startswith("SELECT collection, object_id, payload FROM aicheck_state"):
+        if normalized.startswith("SELECT collection, object_id, payload, updated_at FROM aicheck_state"):
+            # updated_at 是增量刷新的水位线来源（见 refresh_collections_incrementally）；
+            # 假连接不给这一列的话，加载路径拿不到水位线，会退回整表重载。
             return FakePostgresCursor(
-                [(collection, object_id, payload) for (collection, object_id), payload in sorted(self.state_rows.items())]
+                [
+                    (collection, object_id, payload, None)
+                    for (collection, object_id), payload in sorted(self.state_rows.items())
+                ]
             )
         if normalized.startswith("SELECT payload FROM aicheck_state"):
             collection, object_id = params[-2:]

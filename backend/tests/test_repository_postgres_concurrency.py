@@ -231,7 +231,7 @@ def test_scoped_postgres_load_queries_only_selected_collections() -> None:
     query = next(
         (statement, params)
         for statement, params in connection.statements
-        if "SELECT collection, object_id, payload FROM aicheck_state WHERE collection = ANY" in statement
+        if "SELECT collection, object_id, payload, updated_at FROM aicheck_state WHERE collection = ANY" in statement
     )
     assert set(query[1][0]) == {"documents", "document_versions", "ocr_parse_results"}
     assert "knowledge_vectors" not in query[1][0]
