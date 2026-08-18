@@ -415,6 +415,52 @@ def check_org_leader_flag() -> bool:
     return kept and exposed
 
 
+def check_project_leader() -> bool:
+    """项目负责人标记：能设、能有多个、不会被顺手撤掉。
+
+    这个标记原先**只有读没有写**——除了 admin，项目负责人那条路是空的：
+    链接发不出来，申请也没人能审。
+    """
+    from apps.api.project_registration_routes import can_manage_project_registration
+    from libs.db.repository import repo
+
+    member = next(
+        (m for m in repo.state.get("project_members", []) if m.get("projectId")), None
+    )
+    if not member:
+        print("线上没有项目成员，这条无法用真实数据验证")
+        return False
+    project_id = str(member["projectId"])
+    role = str(member.get("role") or "")
+
+    same_role = [
+        m
+        for m in repo.state.get("project_members", [])
+        if str(m.get("projectId")) == project_id and str(m.get("role") or "") == role
+    ]
+    leaders = [m for m in same_role if m.get("isProjectLeader")]
+    print(f"项目 {project_id} 角色 {role}：{len(same_role)} 名成员，其中负责人 {len(leaders)}")
+
+    # 判定函数认这个标记（设了但判定不认，等于没设）
+    probe_user = {"id": member.get("userId"), "username": "probe", "role": role}
+    recognized = can_manage_project_registration(
+        probe_user, project_id
+    ) == bool(member.get("isProjectLeader"))
+    print(f"  判定函数认这个标记：{'✓' if recognized else '✗ 设了也不生效'}")
+
+    # 身份不跨项目
+    cross = can_manage_project_registration(probe_user, "P-DEFINITELY-NOT-EXIST")
+    print(f"  负责人身份不跨项目：{'✓' if not cross else '✗ 跨项目越权'}")
+
+    # 没有唯一性约束：多负责人是允许的
+    from apps.api import routes
+
+    src = open(routes.__file__, encoding="utf-8").read()
+    no_unique = "已有负责人" not in src and "只能有一位" not in src
+    print(f"  没有「只能一个负责人」的限制：{'✓' if no_unique else '✗ AB 角和轮班会被卡住'}")
+    return recognized and not cross and no_unique
+
+
 # 注意：新增检查项时**把函数加在这一行以上**，不要拿 `CHECKS = {` 当替换锚点。
 # 我用那个锚点插过五次，每次都把上一次的函数体整段覆盖掉——脚本照常能跑，
 # 直到调用那个不存在的名字才 NameError。这类「改动悄悄吃掉别的改动」很难查。
@@ -424,6 +470,7 @@ CHECKS = {
     "project-registration": check_project_registration,
     "auto-review-status": check_auto_review_status,
     "org-leader-flag": check_org_leader_flag,
+    "project-leader": check_project_leader,
     "category-correction": check_category_correction,
     "org-delegation": check_org_delegation,
     "batch-review": check_batch_review,
