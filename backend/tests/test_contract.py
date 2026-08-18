@@ -9701,7 +9701,10 @@ def test_ndt_atomic_documents_require_upload_success_before_submission() -> None
         "VALIDATION_ERROR",
     )
 
-    assert first_blocked["message"] == "文件上传处理尚未成功，暂不能提交。"
+    # 文案要指名卡住的环节。原先三个入口统一说「文件上传处理尚未成功」，
+    # 而上传早就成功了——线上照着这句去查上传，什么也查不出来。
+    assert "上传" not in first_blocked["message"], "又把锅甩给上传了"
+    assert first_blocked["data"]["blockedDocuments"][0]["stage"] in {"ocr", "slice", "vector"}
     assert first_blocked["data"]["incompleteDocumentIds"] == [first["documentId"]]
     assert second_blocked["data"]["incompleteDocumentIds"] == [second["documentId"]]
     assert repo.find_one("bindings", first["bindingIds"][0])["bindingStatus"] == "草稿挂载"
@@ -9783,7 +9786,8 @@ def test_contractor_project_submission_requires_upload_success() -> None:
         client.post(f"/projects/{project_id}/submissions", json=submission, headers=headers),
         "VALIDATION_ERROR",
     )
-    assert blocked["message"] == "文件上传处理尚未成功，暂不能提交。"
+    assert "上传" not in blocked["message"], "又把锅甩给上传了"
+    assert blocked["data"]["blockedDocuments"][0]["stage"] in {"ocr", "slice", "vector"}
     assert blocked["data"]["incompleteDocumentIds"] == [document_id]
 
     document = repo.find_one("documents", document_id)

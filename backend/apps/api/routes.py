@@ -32,6 +32,7 @@ from fastapi.responses import (
 )
 
 from apps.api.office_preview_routes import router as office_preview_router
+from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from libs.ai_run_failure import ai_run_failure_view
@@ -8709,30 +8710,35 @@ def pending_rectification_for_bindings(
     )
 
 
-def document_upload_pipeline_complete(document: dict[str, Any]) -> bool:
+def document_upload_pipeline_stage(document: dict[str, Any]) -> dict[str, Any] | None:
+    """没就绪时返回卡住的环节；判定本身在 submission_pipeline 里。"""
     version_id = str(document.get("currentVersionId") or "")
-    version = repo.find_one("versions", version_id) or {}
-    knowledge_file = next(
-        (
-            item
-            for item in repo.state.get("knowledge_files", [])
-            if str(item.get("documentVersionId") or "") == version_id
+    return pipeline_stage_of(
+        document,
+        repo.find_one("versions", version_id) or {},
+        next(
+            (
+                item
+                for item in repo.state.get("knowledge_files", [])
+                if str(item.get("documentVersionId") or "") == version_id
+            ),
+            {},
         ),
-        {},
     )
-    ocr_status = str(
-        document.get("currentOcrStatus")
-        or version.get("ocrStatus")
-        or knowledge_file.get("ocrStatus")
-        or ""
-    )
-    slice_status = str(knowledge_file.get("sliceStatus") or version.get("sliceStatus") or "")
-    vector_status = str(knowledge_file.get("vectorStatus") or version.get("vectorStatus") or "")
-    return (
-        ocr_status in {"已识别", "人工修正", "抽取不完整"}
-        and slice_status == "已切片"
-        and vector_status == "已向量化"
-    )
+
+
+def document_upload_pipeline_complete(document: dict[str, Any]) -> bool:
+    return document_upload_pipeline_stage(document) is None
+
+
+def blocked_pipeline_documents(document_ids: list[str]) -> list[dict[str, Any]]:
+    """挑出没就绪的资料，每条带上卡住的环节。"""
+    blocked: list[dict[str, Any]] = []
+    for document_id in document_ids:
+        stage = document_upload_pipeline_stage(repo.find_one("documents", document_id) or {})
+        if stage:
+            blocked.append({"documentId": document_id, **stage})
+    return blocked
 
 
 def link_resubmission_to_rectification(
@@ -8790,23 +8796,22 @@ def submit_node_package(
                 return fail(errors.NOT_FOUND, request, data={"invalidDocumentIds": invalid_document_ids})
             if not document_ids:
                 return fail(errors.EMPTY_PROJECT_PACKAGE, request)
-            incomplete_document_ids = (
-                [
-                    document_id
-                    for document_id in document_ids
-                    if not document_upload_pipeline_complete(
-                        repo.find_one("documents", document_id) or {}
-                    )
-                ]
+            blocked_documents = (
+                blocked_pipeline_documents(document_ids)
                 if submission_role == "contractor"
                 else []
             )
-            if incomplete_document_ids:
+            if blocked_documents:
                 return fail(
                     errors.VALIDATION_ERROR,
                     request,
-                    message="文件上传处理尚未成功，暂不能提交。",
-                    data={"incompleteDocumentIds": incomplete_document_ids},
+                    message=pipeline_incomplete_message(blocked_documents),
+                    data={
+                        "incompleteDocumentIds": [
+                            item["documentId"] for item in blocked_documents
+                        ],
+                        "blockedDocuments": blocked_documents,
+                    },
                 )
             already_submitted = [
                 document_id
@@ -8904,23 +8909,20 @@ def submit_node_package(
                 if binding.get("id") in binding_ids and binding.get("documentId")
             )
         )
-        incomplete_document_ids = (
-            [
-                document_id
-                for document_id in submission_document_ids
-                if not document_upload_pipeline_complete(
-                    repo.find_one("documents", document_id) or {}
-                )
-            ]
+        blocked_documents = (
+            blocked_pipeline_documents(submission_document_ids)
             if submission_role == "contractor"
             else []
         )
-        if incomplete_document_ids:
+        if blocked_documents:
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message="文件上传处理尚未成功，暂不能提交。",
-                data={"incompleteDocumentIds": incomplete_document_ids},
+                message=pipeline_incomplete_message(blocked_documents),
+                data={
+                    "incompleteDocumentIds": [item["documentId"] for item in blocked_documents],
+                    "blockedDocuments": blocked_documents,
+                },
             )
         body_error = unuploaded_document_error(
             request,
@@ -15563,12 +15565,16 @@ def submit_ndt_atomic_material(
             or str(document.get("materialTypeCode") or "").strip() in {"", "generic_review_material"}
         ):
             return fail(errors.VALIDATION_ERROR, request, message="该文件不属于无损检测资料。")
-        if not document_upload_pipeline_complete(document):
+        blocked_documents = blocked_pipeline_documents([document_id])
+        if blocked_documents:
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
-                message="文件上传处理尚未成功，暂不能提交。",
-                data={"incompleteDocumentIds": [document_id]},
+                message=pipeline_incomplete_message(blocked_documents),
+                data={
+                    "incompleteDocumentIds": [document_id],
+                    "blockedDocuments": blocked_documents,
+                },
             )
         current_bindings = document_bindings(project_id, document_id)
         current_binding_ids = {str(item.get("id") or "") for item in current_bindings}
