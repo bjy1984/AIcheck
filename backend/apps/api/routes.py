@@ -5640,6 +5640,12 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
                         "nodeScope": merged_scope,
                         "actions": incoming_actions,
                         "status": "启用",
+                        # 项目负责人（可发注册链接、审核注册申请）。
+                        # **同一角色允许多个**：现场本来就有 AB 角和轮班，
+                        # 限成一个的话，那个人休假整条审批就卡住了。
+                        # 不传时保持原值——前端常常只提交改动过的字段，
+                        # 当成 false 的话每改一次节点范围就顺手把负责人撤了。
+                        "isProjectLeader": bool(body["isProjectLeader"]) if "isProjectLeader" in body else bool(existing.get("isProjectLeader")),
                         "expiresAt": body.get("expiresAt") or existing.get("expiresAt"),
                         "updatedAt": server_time(),
                     }
@@ -5660,6 +5666,7 @@ def authorize_member(request: Request, project_id: str, body: dict[str, Any] = B
                 "nodeScope": incoming_scope,
                 "actions": incoming_actions,
                 "status": "启用",
+                "isProjectLeader": bool(body.get("isProjectLeader")),
                 "expiresAt": body.get("expiresAt"),
                 "updatedAt": server_time(),
                 "revision": 1,
@@ -5714,7 +5721,9 @@ def update_member(
         if body.get("role") and user.get("role") and body.get("role") != user.get("role"):
             return fail(errors.VALIDATION_ERROR, request, message="项目成员角色必须等于用户角色。")
         changed = []
-        for field in ["role", "nodeScope", "actions", "status", "expiresAt"]:
+        # isProjectLeader 也走这条白名单：同一角色允许多个负责人，
+        # 现场本来就有 AB 角和轮班。见 project_registration_routes。
+        for field in ["role", "nodeScope", "actions", "status", "expiresAt", "isProjectLeader"]:
             if field in body and member.get(field) != body[field]:
                 changed.append({"field": field, "before": member.get(field), "after": body[field]})
                 member[field] = body[field]

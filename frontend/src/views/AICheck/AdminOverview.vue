@@ -117,6 +117,7 @@ import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSumma
 import StaticPageShell from './components/StaticPageShell.vue'
 import OrgDelegationPanel from './components/OrgDelegationPanel.vue'
 import ProjectRegistrationPanel from './components/ProjectRegistrationPanel.vue'
+import ProjectUnitMemberTree from './components/ProjectUnitMemberTree.vue'
 import {
   formatNodeScope,
   formatParticipantType,
@@ -3158,6 +3159,39 @@ const openMemberDialog = () => {
   memberForm.userId = firstUser?.id || ''
   memberBatchUserIds.value = []
   memberDialogVisible.value = true
+}
+
+/* 切换项目负责人（可发注册链接、审核注册申请）。
+ *
+ * **同一角色允许多个**：现场本来就有 AB 角和轮班，
+ * 限成一个的话，那个人休假整条审批就卡住了。
+ *
+ * 取消最后一位负责人是允许的——但界面上要提示，
+ * 否则会悄悄失去审批能力，等到有人来注册才发现没人能审。 */
+const handleToggleProjectLeader = async (member: ProjectMember, next: boolean) => {
+  if (!projectDetail.value) return
+  memberOperationError.value = ''
+  try {
+    const res = await updateProjectMemberApi(
+      projectDetail.value.project.id,
+      member.id,
+      { isProjectLeader: next },
+      { etag: member.etag }
+    )
+    if (!res) {
+      memberOperationError.value = buildOperationFailureMessage('项目负责人设置')
+      return
+    }
+    ElMessage.success(
+      next ? `已将 ${member.name} 设为项目负责人` : `已取消 ${member.name} 的负责人`
+    )
+    await loadProjectDetail(projectDetail.value.project.id)
+  } catch (error) {
+    memberOperationError.value = getRequestErrorMessage(
+      error,
+      buildOperationFailureMessage('项目负责人设置')
+    )
+  }
 }
 
 const openMemberBatchDialog = () => {
@@ -6579,38 +6613,7 @@ onMounted(() => {
               }}</ElDescriptionsItem>
             </ElDescriptions>
 
-            <ElDivider content-position="left">参建单位</ElDivider>
-            <ElTable
-              :data="tableRows(projectDetail.participantUnits, tableStates.projectParticipants)"
-              border
-              height="210"
-              @sort-change="handleTableSortChange('projectParticipants', $event)"
-            >
-              <ElTableColumn
-                prop="unitName"
-                label="单位"
-                min-width="220"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn prop="unitType" label="类型" width="140" sortable="custom">
-                <template #default="{ row }">{{ formatParticipantType(row.unitType) }}</template>
-              </ElTableColumn>
-              <ElTableColumn prop="contactName" label="联系人" width="100" sortable="custom" />
-              <ElTableColumn prop="contactPhone" label="电话" width="140" sortable="custom" />
-            </ElTable>
-            <ElPagination
-              v-model:current-page="tableStates.projectParticipants.page"
-              v-model:page-size="tableStates.projectParticipants.pageSize"
-              class="table-pagination"
-              background
-              :page-sizes="tablePageSizes"
-              layout="total, sizes, prev, pager, next, jumper"
-              :total="projectDetail.participantUnits.length"
-              @size-change="resetTablePage('projectParticipants')"
-            />
-
-            <ElDivider content-position="left">成员授权</ElDivider>
+            <ElDivider content-position="left">参建单位与成员</ElDivider>
             <div v-if="memberOperationError" class="local-error local-error--compact">
               <ElAlert type="error" show-icon :closable="false" :title="memberOperationError" />
             </div>
@@ -6621,82 +6624,20 @@ onMounted(() => {
                 <ElButton type="primary" @click="openMemberDialog">新增授权</ElButton>
               </ElSpace>
             </div>
-            <ElTable
-              :data="tableRows(selectedProjectMembers, tableStates.projectMembers)"
-              border
-              height="280"
-              @sort-change="handleTableSortChange('projectMembers', $event)"
-            >
-              <ElTableColumn prop="name" label="姓名" width="96" sortable="custom" />
-              <ElTableColumn
-                prop="orgName"
-                label="组织"
-                min-width="190"
-                show-overflow-tooltip
-                sortable="custom"
-              />
-              <ElTableColumn prop="role" label="角色" width="100" sortable="custom">
-                <template #default="{ row }">
-                  <ElTag effect="plain">{{ roleLabel(row.role) }}</ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="nodeScope" label="节点范围" min-width="160" sortable="custom">
-                <template #default="{ row }">{{ formatNodeScope(row.nodeScope) }}</template>
-              </ElTableColumn>
-              <ElTableColumn prop="actions" label="动作" min-width="220" sortable="custom">
-                <template #default="{ row }">
-                  <div class="tag-list">
-                    <ElTag
-                      v-for="action in row.actions.slice(0, 4)"
-                      :key="action"
-                      size="small"
-                      effect="plain"
-                    >
-                      {{ action }}
-                    </ElTag>
-                    <ElTag v-if="row.actions.length > 4" size="small" type="info" effect="plain">
-                      +{{ row.actions.length - 4 }}
-                    </ElTag>
-                  </div>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="status" label="状态" width="96" sortable="custom">
-                <template #default="{ row }">
-                  <ElTag :type="statusType(row.status)" size="small" effect="plain">
-                    {{ row.status }}
-                  </ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn label="操作" width="124" fixed="right">
-                <template #default="{ row }">
-                  <ElButton
-                    link
-                    :type="row.status === '启用' ? 'danger' : 'success'"
-                    :loading="memberSaving"
-                    @click="handleToggleMemberStatus(row)"
-                  >
-                    {{ row.status === '启用' ? '停用' : '启用' }}
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="danger"
-                    :loading="memberSaving"
-                    @click="handleDeleteMember(row)"
-                  >
-                    移除
-                  </ElButton>
-                </template>
-              </ElTableColumn>
-            </ElTable>
-            <ElPagination
-              v-model:current-page="tableStates.projectMembers.page"
-              v-model:page-size="tableStates.projectMembers.pageSize"
-              class="table-pagination"
-              background
-              :page-sizes="tablePageSizes"
-              layout="total, sizes, prev, pager, next, jumper"
-              :total="selectedProjectMembers.length"
-              @size-change="resetTablePage('projectMembers')"
+            <!-- 参建单位和成员合并成一棵树：原先是上下两张表，
+                 靠组织名这串文字对应，看不出某个成员属于哪个参建单位。
+                 不平铺成一张——单位有自己的类型和联系人，平铺后要么消失、
+                 要么每行重复一遍。 -->
+            <ProjectUnitMemberTree
+              :units="projectDetail.participantUnits"
+              :members="selectedProjectMembers"
+              :format-unit-type="formatParticipantType"
+              :format-node-scope="formatNodeScope"
+              :role-label="roleLabel"
+              @edit="openMemberDialog"
+              @toggle-leader="handleToggleProjectLeader"
+              @toggle-status="handleToggleMemberStatus"
+              @remove="handleDeleteMember"
             />
 
             <ElDivider content-position="left">节点概况</ElDivider>

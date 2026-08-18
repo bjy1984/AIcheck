@@ -365,6 +365,10 @@ export type ProjectMember = {
   nodeScope: number[]
   actions: ActionCode[]
   status: '启用' | '停用' | '已过期'
+  /* 项目负责人：能发注册链接、审核注册申请。
+     **同一角色可以有多个**——现场本来就有 AB 角和轮班，
+     限成一个的话，那个人休假整条审批就卡住了。 */
+  isProjectLeader?: boolean
   expiresAt?: string
   updatedAt: string
   revision?: number
@@ -377,6 +381,9 @@ export type ProjectMemberSavePayload = {
   role?: RoleCode
   nodeScope?: number[]
   actions?: ActionCode[]
+  /* 不传时保持原值。前端常常只提交改动过的字段，
+     当成 false 的话每改一次节点范围就顺手把负责人撤了。 */
+  isProjectLeader?: boolean
   expiresAt?: string
 }
 
