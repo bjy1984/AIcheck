@@ -256,26 +256,20 @@ def main() -> int:
         # 报审前置：OCR→切片→向量化整条管线要走完，轮询等它（上限 6 分钟）
         import time as _time
 
-        deadline = _time.time() + 360
-        pipe_ok = False
-        last_status = ""
+        # 报审就绪判定是 OCR/切片/向量化三段全绿——最忠实的等法就是
+        # 直接重试报审本身，直到不再回「处理尚未成功」（上限 8 分钟）
+        deadline = _time.time() + 480
+        sub = None
         while _time.time() < deadline:
-            doc_view = api(f"/api/projects/{pid}/documents/{doc_id}", "contractor")
-            doc_rec = (doc_view.get("data") or {}).get("document") or {}
-            last_status = str(doc_rec.get("currentOcrStatus") or doc_rec.get("ocrStatus") or "")
-            if last_status in {"已识别", "人工修正", "抽取不完整"}:
-                pipe_ok = True
+            sub = api(
+                f"/api/projects/{pid}/submissions",
+                "contractor",
+                {"nodeIds": [node_id], "bindingIds": [binding_id], "batchName": "写操作审计批次"},
+            )
+            if "尚未成功" not in str(sub.get("message") or ""):
                 break
-            if "失败" in last_status:
-                break
-            _time.sleep(10)
-        record("上传处理管线就绪（OCR/切片/向量化）", pipe_ok, f"ocrStatus={last_status}")
-        sub = api(
-            f"/api/projects/{pid}/submissions",
-            "contractor",
-            {"nodeIds": [node_id], "bindingIds": [binding_id], "batchName": "写操作审计批次"},
-        )
-        sub_data = expect_ok("contractor 正式报审", sub, "submissionId")
+            _time.sleep(15)
+        sub_data = expect_ok("contractor 正式报审（等管线就绪后）", sub or {}, "submissionId")
         if sub_data:
             node_pkg = api(f"/api/projects/{pid}/inspection/nodes/{node_id}/package", "inspection")
             record(
