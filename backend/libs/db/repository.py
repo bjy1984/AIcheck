@@ -2882,8 +2882,36 @@ class InMemoryRepository:
             changed = True
         return changed
 
+    # 落库主键的候选字段。没有任何一个命中时会退化成**列表下标**，
+    # 而下标不是身份：
+    #
+    #   submissions 是 insert(0, …) 插到头部的。新来一条，其余 60 条的
+    #   主键整体位移一格 → 谁的 baseline 都对不上 → ConcurrentPersistenceError。
+    #   api 和 4 个 worker 各自持有一份 state 各自 flush，列表顺序一旦分叉，
+    #   它们就会互相覆盖对方的行，且**永远**再也协调不回来。
+    #
+    # 0818 线上实测就是这个形态：62 条 submissions 里 60 条按下标落库，
+    # embed_knowledge 反复抛 submissions/2 冲突，新 API 容器连启动都过不去
+    # （启动期一次写入即触发）。报错指向 submissions，被卡住的却是向量化和整个进程。
+    #
+    # 加字段时想清楚：这里要的是**跨进程稳定**的身份，不是「本地看着唯一」。
+    PERSISTENCE_ID_FIELDS = (
+        "id",
+        "reviewRunId",
+        "jobId",
+        "parseResultId",
+        "submissionId",
+        "runId",
+        "taskId",
+    )
+
     def persistence_object_id(self, collection_name: str, doc: dict[str, Any], index: int) -> str:
-        object_id = str(doc.get("id") or doc.get("reviewRunId") or doc.get("jobId") or doc.get("parseResultId") or index)
+        object_id = str(
+            next(
+                (value for field in self.PERSISTENCE_ID_FIELDS if (value := doc.get(field))),
+                index,
+            )
+        )
         if collection_name == STATE_COLLECTIONS["requirements"] and doc.get("projectId") and doc.get("id"):
             return f"{doc['projectId']}:{doc['id']}"
         return object_id
