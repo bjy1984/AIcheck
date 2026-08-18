@@ -53,17 +53,23 @@ const FAMILY_LABELS: Record<string, string> = {
  *
  * 原先只有 business_pack / domain_module 显示标签，其余十几种类型
  * （规则、标准条款、原子检查项、项目、工具……）在图上就是一个个纯色块——
- * **看得见有东西，但不知道是什么**，只能一个个悬停去问。
- * 那是圆形时代的妥协：圆里塞不下字，只好给大类留标签。
- * 现在框宽跟着文字走，这个妥协没有理由继续存在。 */
+ * **看得见有东西，但不知道是什么**，只能一个个悬停去问。 */
 
 const MAJOR_TYPES = new Set(['business_pack', 'domain_module'])
 
-/* 节点画成**矩形**而不是圆。
+/* 节点画成**圆**，文字放在圆外面。
  *
- * 圆的可用宽度只有直径，中文标签一长，要么溢到球外面压住连线，
- * 要么截成「压力管道安…」。为了塞下字去放大球径，图上又全是巨型圆饼。
- * 矩形按文字长度定宽就没有这个矛盾：名字多长，框就多宽。 */
+ * 这里走过一个来回，记下来免得再绕：
+ *   圆 + 圆外默认标签 → 长名字压住连线和别的节点
+ *   → 改矩形 + 框内白字（矩形按文字定宽，字才塞得下）
+ *   → 现在回到圆 + 圆外浅灰字。
+ *
+ * 能回来是因为中间补上了两样东西：确定性径向布局（坐标不再漂）和
+ * hideOverlap（挤不下的标签自动让位）。当年逼着改矩形的两个前提都没有了，
+ * 而圆点更轻、放射结构更清楚。
+ *
+ * 但**间距仍按「圆 + 标签」整体算**（见 nodeLayoutBox）：文字不撑节点了，
+ * 却照样占版面，只按圆径排的话 1:1 时标签会压成一片。 */
 const LABEL_PADDING_X = 6
 const LABEL_PADDING_Y = 4
 
@@ -121,14 +127,27 @@ function lineHeightOf(type: string): number {
   return labelFontSize(type) + 4
 }
 
-/** 矩形尺寸 [宽, 高]。单行：宽按截断后的文字，高按一行字加内边距。
- *  定宽必须用**截断后**的文字——用全名定宽的话，框又会被撑回长条。 */
-function nodeRectSize(type: string, label: string): [number, number] {
+/** 圆的直径。按类型给固定值——文字不再撑着节点，节点只表示「这是什么量级」。 */
+function nodeCircleSize(type: string): number {
+  return SYMBOL_SIZE_BY_TYPE[type] || 18
+}
+
+/** 标签与圆之间的距离。太近会压住描边，太远看不出属于谁。 */
+const LABEL_DISTANCE = 6
+
+/** 布局占位盒 [宽, 高] = 圆 + 右侧标签。
+ *
+ * 标签画在圆**外面**之后，它不再撑大节点，但仍然占版面——布局若只按圆的
+ * 直径排，1:1 时标签会互相压成一片。所以占位仍按「圆 + 标签」整体算，
+ * 图看起来是小圆点配灰字，间距却是按文字实际宽度留出来的。 */
+function nodeLayoutBox(type: string, label: string): [number, number] {
+  const diameter = nodeCircleSize(type)
   const fontSize = labelFontSize(type)
   const text = estimateTextWidth(truncateLabel(label), fontSize)
-  const width = Math.max(SYMBOL_SIZE_BY_TYPE[type] || 18, text + LABEL_PADDING_X * 2)
-  const height = lineHeightOf(type) + LABEL_PADDING_Y * 2
-  return [width, height]
+  return [
+    diameter + LABEL_DISTANCE + text + LABEL_PADDING_X,
+    Math.max(diameter, lineHeightOf(type)) + LABEL_PADDING_Y
+  ]
 }
 
 const graph = ref<KnowledgeNetworkPayload | null>(null)
@@ -375,7 +394,7 @@ function buildChartOption(): EChartsOption {
   const rootId = visibleNodes.value.find((node) => node.type === 'business_pack')?.id
   const layout = radialLayout(
     visibleNodes.value.map((node) => {
-      const [width, height] = nodeRectSize(node.type, node.label)
+      const [width, height] = nodeLayoutBox(node.type, node.label)
       return { id: node.id, width, height }
     }),
     visibleEdges.value.map((edge) => ({ source: edge.source, target: edge.target })),
@@ -388,27 +407,33 @@ function buildChartOption(): EChartsOption {
     name: truncateLabel(node.label),
     value: node.typeLabel,
     category: familyIndex.get(node.family) ?? familyIndex.get('semantic') ?? 0,
-    /* 直角矩形，宽度跟着文字走。圆形的可用宽度只有直径，
-     * 中文名字要么溢到外面压住连线，要么被截成「压力管道安…」。 */
-    symbol: 'rect' as const,
-    symbolSize: nodeRectSize(node.type, node.label),
+    /* 圆形节点。文字移到圆外面之后，「圆里塞不下中文」这个原本逼着改矩形的
+     * 理由就不成立了——圆点更轻，放射结构也更清楚。 */
+    symbol: 'circle' as const,
+    symbolSize: nodeCircleSize(node.type),
     /* 节点不可拖。
      *
      * 可拖的时候，鼠标按在节点上是「拖这个点」，按在空白处才是「平移画布」。
-     * 圆形时代节点小，多数落点是空白，问题不明显；换成矩形后节点占的面积
-     * 大了好几倍，随手一拖经常拖的是某个节点——在用户看来就是「滑动失灵」。
+     * 节点可拖时，随手一拖经常拖的是某个节点而不是画布——在用户看来
+     * 就是「滑动失灵」。圆点比矩形小、误触少一些，但仍然会中。
      * 平移是主要操作，挪单个节点不是；坐标由布局统一算，单独挪一个只会破坏环形结构。 */
     draggable: false,
-    /* 标签画在框**里**：白字、居中，每个节点都有。
-     * 原先是默认位置（节点右侧）+ 主题文字色，长名字拖在外面和连线叠在一起；
-     * 深色主题下还会和背景撞色。 */
+    /* 标签画在圆**外面**，浅灰色。
+     *
+     * 走过一个来回：默认位置 + 主题文字色（长名字压连线、深色主题撞色）
+     * → 画进框里白字居中（为此把节点改成矩形）→ 现在回到外侧灰字。
+     * 这次能成立是因为中间做了两件事：确定性径向布局让坐标不再漂，
+     * hideOverlap 让挤不下的标签自动让位——当年「文字溢出压住一切」的
+     * 两个前提都没有了。
+     *
+     * 颜色用次要文字色而不是写死的灰：浅色主题下写死的浅灰几乎看不见。 */
     label: {
       show: true,
-      position: 'inside' as const,
-      color: '#ffffff',
+      position: 'right' as const,
+      distance: LABEL_DISTANCE,
+      color: colors.muted,
       fontSize: labelFontSize(node.type),
-      lineHeight: lineHeightOf(node.type),
-      fontWeight: 600
+      fontWeight: 400
     },
     /* 选中态**不写在这里**。
      *
@@ -422,7 +447,7 @@ function buildChartOption(): EChartsOption {
       borderWidth: 1.5,
       opacity: 0.96
     },
-    /* 框里显示的是折行后的名字，原始名字放这里给 tooltip 用。 */
+    /* 圆外面显示的是截断后的名字，完整名字放这里给 tooltip 用。 */
     fullName: node.label,
     nodeType: node.type,
     nodeTypeLabel: node.typeLabel,
@@ -501,8 +526,16 @@ function buildChartOption(): EChartsOption {
         edgeSymbolSize: [0, 5],
         emphasis: {
           focus: 'adjacency',
-          // 悬停态也要白字居中：只改静态样式的话，鼠标一移上去标签又跳回球外。
-          label: { show: true, position: 'inside', color: '#ffffff', fontWeight: 600 },
+          /* 悬停态单独写一份：只改静态那份的话，鼠标一移上去标签又跳回默认位置
+             和默认颜色——同一条规则要写在静态、悬停、选中三处，这轮栽过五次。
+             悬停时把灰字提亮成主文字色，位置不变（跳位置会让人以为点错了）。 */
+          label: {
+            show: true,
+            position: 'right',
+            distance: LABEL_DISTANCE,
+            color: themeColor('--el-text-color-primary', '#111827'),
+            fontWeight: 600
+          },
           lineStyle: { opacity: 0.9, width: 2 }
         },
         blur: {
@@ -514,7 +547,13 @@ function buildChartOption(): EChartsOption {
             borderColor: themeColor('--el-text-color-primary', '#111827'),
             borderWidth: 4
           },
-          label: { show: true, position: 'inside', color: '#ffffff', fontWeight: 600 }
+          label: {
+            show: true,
+            position: 'right',
+            distance: LABEL_DISTANCE,
+            color: themeColor('--el-text-color-primary', '#111827'),
+            fontWeight: 600
+          }
         },
         selectedMode: 'single',
         /* hideOverlap 必须开。

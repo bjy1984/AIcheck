@@ -7,9 +7,10 @@
  * 2. **文字不要溢出**——标签原先用默认位置（节点右侧），长名字直接拖在外面，
  *    和连线、别的节点叠在一起。
  * 3. **文字白色**——原先用主题文字色，深色节点上是深色字。
- * 4. **换成矩形**——先按「画在球里 + 截断」改过一版，但圆的可用宽度只有直径，
- *    中文名字不是溢出就是截成「压力管道安…」；为了塞字放大球径，
- *    图上又全成了巨型圆饼。矩形按文字长度定宽，这个矛盾就不存在。
+ * 4. **形状与标签位置翻过两次**——圆 + 圆外标签（长名字压住连线）
+ *    → 矩形 + 框内白字（为了塞下中文）→ 现在回到圆 + 圆外浅灰字。
+ *    最后这次能成立，靠的是中间补上的确定性径向布局和 hideOverlap：
+ *    坐标不再漂、挤不下的标签会自动让位，当年逼着改矩形的前提没有了。
  *
  * ## 几个容易漏的地方
  *
@@ -27,29 +28,38 @@ import { fileURLToPath } from 'node:url'
 
 const sfc = readFileSync(fileURLToPath(new URL('./KnowledgeNetwork.vue', import.meta.url)), 'utf8')
 
-// ---- 形状：直角矩形，宽度跟着文字走 ----
-assert.ok(/symbol: 'rect' as const/.test(sfc), '节点要画成矩形，不是圆')
-assert.ok(!/roundRect/.test(sfc), '不要圆角')
+/* ---- 形状：圆，文字在圆外面，浅灰色 ----
+ *
+ * 这里走过一个来回，判据也跟着翻过一次，记下来免得下一个人再绕：
+ *   圆 + 圆外默认标签 → 长名字压住连线和别的节点
+ *   → 矩形 + 框内白字（矩形按文字定宽，字才塞得下）
+ *   → 现在回到圆 + 圆外浅灰字。
+ *
+ * 能回来是因为中间补上了确定性径向布局（坐标不再漂）和 hideOverlap
+ * （挤不下的标签自动让位）——当年逼着改矩形的两个前提都没有了。 */
+assert.ok(/symbol: 'circle' as const/.test(sfc), '节点要画成圆')
+assert.ok(/symbolSize: nodeCircleSize\(node\.type\)/.test(sfc), '圆的大小按类型给，不再由文字撑')
+
+/* 间距仍要按「圆 + 标签」整体算。
+   只按圆径排的话，1:1 时圆是不挤了，标签会压成一片——
+   这是「文字移到外面」最容易漏掉的代价。 */
+const layoutBoxFn = sfc.slice(
+  sfc.indexOf('function nodeLayoutBox'),
+  sfc.indexOf('const graph = ref')
+)
+assert.ok(/estimateTextWidth\(/.test(layoutBoxFn), '布局占位没有算标签宽度，标签会互相压')
+assert.ok(/LABEL_DISTANCE/.test(layoutBoxFn), '占位要含标签与圆之间的距离')
 assert.ok(
-  /symbolSize: nodeRectSize\(node\.type, node\.label\)/.test(sfc),
-  '尺寸要按类型和标签算出来，不能是一个标量球径'
+  /const \[width, height\] = nodeLayoutBox\(node\.type, node\.label\)/.test(sfc),
+  '布局没有用含标签的占位盒'
 )
 
-/* 宽度必须真的依赖文本，否则「换成矩形」只是把圆压扁，
-   长名字照样溢出——这是最容易糊弄过去的一步。 */
-const rectFn = sfc.slice(
-  sfc.indexOf('function nodeRectSize'),
-  sfc.indexOf('function buildChartOption')
-)
-assert.ok(/estimateTextWidth\(/.test(rectFn), '矩形宽度没有参考文字宽度，等于把圆压扁了')
-assert.ok(/LABEL_PADDING_X \* 2/.test(rectFn), '文字两侧要留内边距，否则字贴着边框')
-
-// ---- 文字：白色、框内 ----
-const labelBlocks = sfc.match(/position: 'inside'/g) || []
-assert.ok(labelBlocks.length >= 3, '静态、悬停、选中三处标签都要画在框内')
-
-const whiteLabels = sfc.match(/color: '#ffffff'/g) || []
-assert.ok(whiteLabels.length >= 3, '三处标签都要是白字')
+// ---- 文字：圆外、浅灰 ----
+const outsideLabels = sfc.match(/position: 'right'/g) || []
+assert.ok(outsideLabels.length >= 3, '静态、悬停、选中三处标签都要放在圆外面')
+assert.ok(/color: colors\.muted/.test(sfc), '静态标签要用次要文字色（浅灰）')
+/* 颜色不能写死成浅灰：浅色主题下几乎看不见。用主题变量才两种主题都成立。 */
+assert.ok(!/color: '#9[0-9a-f]{5}'/.test(sfc), '不要写死的浅灰，要跟主题走')
 
 /* 标签**默认最多 10 个字符**，超出截断加省略号。
  *
@@ -63,19 +73,21 @@ assert.ok(/name: truncateLabel\(node\.label\)/.test(sfc), '节点名字要用截
 assert.ok(/\}…`/.test(sfc), '截断要带省略号，否则看不出还有内容')
 assert.ok(!/function wrapLabel/.test(sfc), '折行已撤——全名折行会把周长推到几万像素')
 
-/* 定框宽必须用**截断后**的文字。用全名定宽的话，
-   框又被撑回长条，截断就白做了。 */
-const rectSizeFn = sfc.slice(sfc.indexOf('function nodeRectSize'), sfc.indexOf('const graph = ref'))
-assert.ok(/estimateTextWidth\(truncateLabel\(label\)/.test(rectSizeFn), '框宽没有按截断后的文字算')
+/* 占位宽必须用**截断后**的文字。用全名算的话，
+   占位又被撑回长条，截断就白做了。 */
+assert.ok(
+  /estimateTextWidth\(truncateLabel\(label\)/.test(layoutBoxFn),
+  '占位宽没有按截断后的文字算'
+)
 
 /* 每个节点都要有名字。
  *
  * 原先只有 business_pack / domain_module 显示标签，其余十几种类型在图上
  * 就是一个个纯色块——**看得见有东西，但不知道是什么**，只能逐个悬停去问。
- * 那是圆形时代的妥协（圆里塞不下字）；框宽跟着文字走之后没有理由保留。 */
+ * 那是「圆里塞不下字」时代的妥协；文字挪到圆外面之后更没有理由保留。 */
 assert.ok(
-  /label: \{\s*show: true,\s*position: 'inside'/.test(sfc),
-  '还在按类型决定显不显示标签——图上会剩下一片无名色块'
+  /label: \{\s*show: true,\s*position: 'right'/.test(sfc),
+  '还在按类型决定显不显示标签——图上会剩下一片无名色点'
 )
 assert.ok(!/LABELLED_TYPES/.test(sfc), '标签白名单要去掉，不是改一下成员')
 
@@ -142,9 +154,10 @@ assert.ok(
   'itemStyle 还在读 selectedNodeId——option 会随选中重建'
 )
 
-/* 3. 节点不可拖。矩形比圆占的面积大好几倍，随手一拖经常拖的是某个节点，
-      在用户看来就是「滑动失灵」。平移是主要操作，挪单个节点不是。 */
-assert.ok(/draggable: false/.test(sfc), '节点可拖会把平移吃掉——矩形面积大，命中概率很高')
+/* 3. 节点不可拖。随手一拖经常拖的是某个节点而不是画布，在用户看来
+      就是「滑动失灵」。平移是主要操作，挪单个节点不是——何况坐标由布局
+      统一算，单独挪一个只会破坏环形结构。 */
+assert.ok(/draggable: false/.test(sfc), '节点可拖会把平移吃掉')
 assert.ok(/roam: true/.test(sfc), '要能平移缩放')
 
 /* 页面上的「使用说明」必须跟着行为改。
