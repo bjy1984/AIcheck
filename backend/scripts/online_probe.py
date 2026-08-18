@@ -382,8 +382,43 @@ def check_org_leader_flag() -> bool:
     return kept and exposed
 
 
+def check_project_registration() -> bool:
+    """项目注册链接 → 自选角色 → 审核。只验**护栏**。
+
+    最要紧的一条：**待审期间不能存在可用账号**。
+    先建用户再标 pending 的话，只要哪个查询忘了过滤，人就登进来了。
+    """
+    from apps.api import project_registration_routes as reg
+
+    ok_all = True
+
+    no_admin = "admin" not in reg.SELECTABLE_ROLES and "fde" not in reg.SELECTABLE_ROLES
+    print(f"  可选角色里没有 admin/fde：{'✓' if no_admin else '✗ 自选就能当管理员'}")
+    ok_all = ok_all and no_admin
+
+    bounded = 0 < reg.INVITE_TTL_HOURS <= 720 and 0 < reg.MAX_USES <= 1000
+    print(f"  链接有效期 {reg.INVITE_TTL_HOURS}h、次数上限 {reg.MAX_USES}：{'✓' if bounded else '✗'}")
+    ok_all = ok_all and bounded
+
+    # 端点已挂载：拿一个不存在的 token 去看，应回业务码而不是 FastAPI 的 detail
+    body = api("/api/registration-links/probe-nonexistent")
+    mounted = "detail" not in body and body.get("code") is not None
+    print(f"  端点已挂载：{'✓' if mounted else '✗ 路由 404 且不会报错'}")
+    print(f"    无效链接回应：code={body.get('code')} msg={body.get('message') or body.get('detail')}")
+
+    # 提交路径存在且拒绝非法角色
+    apply_body = api(
+        "/api/registration-links/probe-nonexistent/apply",
+        payload={"username": "probe", "role": "admin", "password": "Aa!234567890x"},
+    )
+    rejected = apply_body.get("code") not in (0, None)
+    print(f"  非法链接/角色被拒：{'✓' if rejected else '✗'}")
+    return ok_all and mounted and rejected
+
+
 CHECKS = {
     "material-category": check_material_category,
+    "project-registration": check_project_registration,
     "auto-review-status": check_auto_review_status,
     "org-leader-flag": check_org_leader_flag,
     "category-correction": check_category_correction,

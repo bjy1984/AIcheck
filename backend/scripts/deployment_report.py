@@ -66,6 +66,10 @@ MUTATION_HEADER_EXEMPT_URLS = {
     # 后端同名路由也在 PUBLIC_MUTATION_ROUTES 里豁免，两份名单口径一致。
     # 防重复的闸门是邀请令牌本身：单次有效、会过期、绑死组织和角色。
     "/api/invitations/${encodeURIComponent(token)}/accept",
+    # 前端这份名单比对的是**源码里的原样字符串**，不是后端的路由模板。
+    # 我第一次只加了后端那份 /registration-links/{token}/apply，
+    # 前端照样报缺——两份名单是两个口径，都得加。
+    "/api/registration-links/${encodeURIComponent(token)}/apply",
 }
 PUBLIC_MUTATION_ROUTES = {
     ("POST", "/mock/user/login"),
