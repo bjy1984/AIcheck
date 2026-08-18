@@ -79,10 +79,15 @@ assert.ok(
 )
 assert.ok(!/LABELLED_TYPES/.test(sfc), '标签白名单要去掉，不是改一下成员')
 
-/* 符号与坐标必须严格同步缩放。默认 nodeScaleRatio 0.6 是次幂跟随：
-   布局尺度下零重叠的几何，换个缩放级别就被渲染层破坏（0818 线上实拍：
-   布局零重叠、屏幕上一墙盒子叠盒子）。 */
-assert.ok(/nodeScaleRatio: 1/.test(sfc), 'nodeScaleRatio 不是 1 的话，几何保证只在一个缩放级别成立')
+/* 符号固定像素（nodeScaleRatio 0）。隔离页实测：1 会把全景的 13 倍
+   堆叠比锁死在所有缩放级别（放大到头也散不开——0818 线上实拍）；
+   0.6（默认）放大时符号仍在长，永远到不了干净的 1:1；
+   0 才能「越放越开」，~13 倍时达到布局尺度的零重叠。 */
+assert.ok(
+  /nodeScaleRatio: 0[,\s]/.test(sfc),
+  'nodeScaleRatio 必须是 0：放大时只让间距长，才能越放越干净'
+)
+assert.ok(/max: 20/.test(sfc), 'scaleLimit.max 要够得着 1:1（~13 倍），12 差一点')
 
 /* hideOverlap 必须开：roam 缩放只缩放坐标和符号，标签字号是固定像素。
    布局尺度下零重叠的几何，在「适配全图」的默认视角（zoom≈0.15）仍是

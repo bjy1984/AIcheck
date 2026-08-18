@@ -490,11 +490,13 @@ function buildChartOption(): EChartsOption {
           itemStyle: { color: colors[family as keyof typeof colors] || colors.semantic }
         })),
         roam: true,
-        /* 符号必须与坐标**严格同步**缩放（默认 0.6 是次幂跟随）。
-           否则布局尺度下零重叠的几何在其他缩放级别被渲染层破坏：
-           缩小时盒子相对间距变大互相压住，放大到头也散不开——
-           线上实拍过：布局零重叠、屏幕上却一墙盒子叠盒子。 */
-        nodeScaleRatio: 1,
+        /* 符号固定像素、不随缩放变（0）。隔离页逐项实测过三种取值：
+           - 1：符号跟缩放一起长，「适配全图」视角的 13 倍堆叠比被锁死，
+             放大到头也散不开（0818 线上实拍就是这个状态）；
+           - 0.6（默认）：次幂跟随，放大时符号仍在长，永远到不了干净的 1:1；
+           - 0：放大时只有间距在长，放到 ~13 倍即布局尺度的零重叠 1:1，
+             全景视角的标签拥挤交给 hideOverlap。 */
+        nodeScaleRatio: 0,
         edgeSymbol: ['none', 'arrow'],
         edgeSymbolSize: [0, 5],
         emphasis: {
@@ -526,7 +528,9 @@ function buildChartOption(): EChartsOption {
          * 也读不了，色块反而是正确的表达。 */
         labelLayout: { hideOverlap: true },
         lineStyle: { color: colors.edge, opacity: 0.45 },
-        scaleLimit: { min: 0.2, max: 12 }
+        /* max 要够得着 1:1：布局包围盒 ~6200px、画布 ~500px，位置比例到 1
+           需要 ~13 倍。12 的旧上限刚好停在「差一点就干净」的位置。 */
+        scaleLimit: { min: 0.2, max: 20 }
       }
     ]
   }
