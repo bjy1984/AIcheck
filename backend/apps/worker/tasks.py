@@ -1447,6 +1447,29 @@ def _execute_mineru_ocr_extract(
                     else [],
                 }
             )
+        # OCR 之后必须接上切片，否则资料**永远停在「待切片」**。
+        #
+        # parse_document 里有一处 dispatch_slice，但只在它自己算完 OCR 的
+        # 内联分支上；走 MinerU（生产默认提供方）时它 dispatch 完就
+        # `return queued`，根本到不了那一行。于是链条断在这里：
+        # OCR 成功 → 没有切片 → 没有向量化 → document_upload_pipeline_complete
+        # 永远为假 → 施工方报审被永久拦下，报错还写着「文件上传处理尚未成功」。
+        # 线上实测：114 份项目态知识文件里 21 份待切片、36 份待向量化。
+        #
+        # 派发失败不能影响 OCR 本身的成功结论——OCR 确实成功了。
+        next_dispatch: dict[str, Any] | None = None
+        if applied and applied.get("status") == "success":
+            knowledge_file = repo.knowledge_file_for_version(version_id)
+            if knowledge_file:
+                try:
+                    next_dispatch = task_dispatcher.dispatch_slice(
+                        str(knowledge_file["id"])
+                    )
+                except Exception as exc:  # noqa: BLE001 - 切片派发不该翻掉 OCR 结果
+                    next_dispatch = {
+                        "status": "not_dispatched",
+                        "statusReason": f"slice_dispatch_{exc.__class__.__name__.lower()}",
+                    }
         return {
             "jobId": job_record_id,
             "status": "success",
@@ -1455,6 +1478,7 @@ def _execute_mineru_ocr_extract(
                 or result.get("parseResultId")
             ),
             "applied": applied,
+            "nextDispatch": next_dispatch,
             "artifactReferences": deepcopy(
                 job.get("artifactReferences") or {}
             ),

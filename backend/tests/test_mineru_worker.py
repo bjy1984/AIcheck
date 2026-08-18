@@ -895,3 +895,204 @@ def test_document_ocr_resolves_explicit_or_configured_provider(
         assert output["status"] == "success"
         assert remote_jobs == []
         assert local_calls == ["minio://documents/doc.pdf"]
+
+
+def test_mineru_success_dispatches_slice(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """OCR 成功之后必须接上切片——**这条链断过，而且完全没有报错**。
+
+    parse_document 里确实有一处 dispatch_slice，但它只在「自己算完 OCR」
+    的内联分支上。走 MinerU（生产默认提供方）时，parse_document 把活派给
+    mineru_ocr_extract 之后就 `return queued`，根本走不到那一行；
+    而 mineru_ocr_extract 应用完结果也不派发。
+
+    后果是沉默的：OCR 显示「已识别」，切片停在「待切片」，向量化停在
+    「待向量化」，document_upload_pipeline_complete 永远为假，施工方点报审
+    永远被拦，错误文案还写着「文件上传处理尚未成功」——去查上传反而查不出
+    问题。线上实测积压：114 份项目态知识文件里 21 待切片、36 待向量化。
+
+    所以这里断言的不是「函数被调用过」，而是**这条链是通的**。
+    """
+    repository = InMemoryRepository()
+    repository.state["documents"].append({"id": "DOC-MINERU-SLICE"})
+    repository.state["versions"].append(
+        {"id": "VER-MINERU-SLICE", "documentId": "DOC-MINERU-SLICE"}
+    )
+    repository.state.setdefault("knowledge_files", []).append(
+        {
+            "id": "KF-MINERU-SLICE",
+            "fileName": "doc.pdf",
+            "documentId": "DOC-MINERU-SLICE",
+            "documentVersionId": "VER-MINERU-SLICE",
+            "sliceStatus": "待切片",
+            "vectorStatus": "待向量化",
+        }
+    )
+    source = tmp_path / "doc.pdf"
+    source.write_bytes(b"%PDF-test")
+    job = repository.create_ocr_job_record(
+        document_id="DOC-MINERU-SLICE",
+        version_id="VER-MINERU-SLICE",
+        storage_key="minio://documents/doc.pdf",
+        file_name="doc.pdf",
+        profile_id="generic_document_v1",
+        document_type="generic_document",
+        provider="mineru",
+        options={"provider": "mineru"},
+    )
+    pipeline_run = repository.create_or_resume_ocr_pipeline_run(
+        run_key="DOC-MINERU-SLICE:VER-MINERU-SLICE",
+        document_id="DOC-MINERU-SLICE",
+        version_id="VER-MINERU-SLICE",
+        storage_key="minio://documents/doc.pdf",
+        storage_bucket="documents",
+        file_name="doc.pdf",
+        profile_id="generic_document_v1",
+        document_type="generic_document",
+        mode="active",
+        pipeline_version="test",
+    )
+    pipeline_run["ocrJobRecordId"] = job["id"]
+    job["pipelineRunId"] = pipeline_run["id"]
+
+    class FakeClient:
+        def submit_file(self, path, *, data_id, options, submission_callback):
+            submission = {"kind": "batch", "providerTaskId": "BATCH-SLICE"}
+            submission_callback(submission)
+            return submission
+
+        def wait_for_result(self, submission, *, progress_callback):
+            return {
+                "state": "done",
+                "extract_progress": {"extracted_pages": 1, "total_pages": 1},
+                "full_zip_url": "https://cdn.example/result.zip",
+            }
+
+        def download_result(self, _url):
+            return b"zip"
+
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "MinerUClient", FakeClient)
+    monkeypatch.setattr(tasks, "mineru_source_path", lambda _job: (source, None))
+    monkeypatch.setattr(
+        tasks,
+        "normalize_mineru_zip",
+        lambda *_args, **_kwargs: _bundle(job["storageKey"]),
+    )
+    monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
+    monkeypatch.setattr(
+        tasks.object_storage,
+        "put_bytes",
+        lambda bucket, object_name, data, *, content_type: (
+            f"minio://{bucket}/{object_name}"
+        ),
+    )
+
+    sliced: list[str] = []
+    monkeypatch.setattr(
+        tasks.task_dispatcher,
+        "dispatch_slice",
+        lambda file_id: sliced.append(file_id) or {"mode": "celery", "taskId": "T-1"},
+    )
+
+    output = tasks.mineru_ocr_extract.run(job["id"])
+
+    assert output["status"] == "success"
+    assert sliced == ["KF-MINERU-SLICE"], "OCR 成功了却没派切片——资料会永远停在待切片"
+    assert output["nextDispatch"]["taskId"] == "T-1"
+
+
+def test_slice_dispatch_failure_does_not_fail_the_ocr_job(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """派切片失败不能翻掉 OCR 的成功结论。
+
+    OCR 确实成功了，结果也已经落库。这时候如果因为 broker 抖动把整个任务
+    判失败，用户看到的是「OCR 失败」，还会触发重跑——**把一次成功的
+    远端识别白白丢掉**，而真正的问题只是切片没排上队。
+    """
+    repository = InMemoryRepository()
+    repository.state["documents"].append({"id": "DOC-MINERU-SLICE-ERR"})
+    repository.state["versions"].append(
+        {"id": "VER-MINERU-SLICE-ERR", "documentId": "DOC-MINERU-SLICE-ERR"}
+    )
+    repository.state.setdefault("knowledge_files", []).append(
+        {
+            "id": "KF-MINERU-SLICE-ERR",
+            "fileName": "doc.pdf",
+            "documentId": "DOC-MINERU-SLICE-ERR",
+            "documentVersionId": "VER-MINERU-SLICE-ERR",
+        }
+    )
+    source = tmp_path / "doc.pdf"
+    source.write_bytes(b"%PDF-test")
+    job = repository.create_ocr_job_record(
+        document_id="DOC-MINERU-SLICE-ERR",
+        version_id="VER-MINERU-SLICE-ERR",
+        storage_key="minio://documents/doc.pdf",
+        file_name="doc.pdf",
+        profile_id="generic_document_v1",
+        document_type="generic_document",
+        provider="mineru",
+        options={"provider": "mineru"},
+    )
+    pipeline_run = repository.create_or_resume_ocr_pipeline_run(
+        run_key="DOC-MINERU-SLICE-ERR:VER-MINERU-SLICE-ERR",
+        document_id="DOC-MINERU-SLICE-ERR",
+        version_id="VER-MINERU-SLICE-ERR",
+        storage_key="minio://documents/doc.pdf",
+        storage_bucket="documents",
+        file_name="doc.pdf",
+        profile_id="generic_document_v1",
+        document_type="generic_document",
+        mode="active",
+        pipeline_version="test",
+    )
+    pipeline_run["ocrJobRecordId"] = job["id"]
+    job["pipelineRunId"] = pipeline_run["id"]
+
+    class FakeClient:
+        def submit_file(self, path, *, data_id, options, submission_callback):
+            submission = {"kind": "batch", "providerTaskId": "BATCH-ERR"}
+            submission_callback(submission)
+            return submission
+
+        def wait_for_result(self, submission, *, progress_callback):
+            return {
+                "state": "done",
+                "extract_progress": {"extracted_pages": 1, "total_pages": 1},
+                "full_zip_url": "https://cdn.example/result.zip",
+            }
+
+        def download_result(self, _url):
+            return b"zip"
+
+    def explode(_file_id):
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "MinerUClient", FakeClient)
+    monkeypatch.setattr(tasks, "mineru_source_path", lambda _job: (source, None))
+    monkeypatch.setattr(
+        tasks,
+        "normalize_mineru_zip",
+        lambda *_args, **_kwargs: _bundle(job["storageKey"]),
+    )
+    monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
+    monkeypatch.setattr(
+        tasks.object_storage,
+        "put_bytes",
+        lambda bucket, object_name, data, *, content_type: (
+            f"minio://{bucket}/{object_name}"
+        ),
+    )
+    monkeypatch.setattr(tasks.task_dispatcher, "dispatch_slice", explode)
+
+    output = tasks.mineru_ocr_extract.run(job["id"])
+
+    assert output["status"] == "success", "切片派发失败把 OCR 判成失败了"
+    assert output["nextDispatch"]["status"] == "not_dispatched"
+    assert repository.find_one("ocr_jobs", job["id"])["status"] == "success"
