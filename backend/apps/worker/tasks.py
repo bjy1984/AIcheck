@@ -400,8 +400,29 @@ def env_bool(name: str, default: bool) -> bool:
 
 
 def refresh_worker_state(selected_state_keys: set[str] | None = None) -> None:
-    if worker_state_persistence_enabled():
-        load_state(selected_state_keys)
+    """把进程外的写入拉回内存。**只拉变化的行**，不要整份重来。
+
+    原先无论如何都调 load_state()：整份状态重新加载，线上实测 39 秒
+    （其中 knowledge_vectors 一张表就 61 MB）。而一个切片任务真正的活只有几秒，
+    向量化一批 8 个分块的 Qwen 调用只要 0.5 秒——开销比正事大一个数量级，
+    一份 500 分块的资料要走 60 多个断点，全耗在这里。
+
+    首次仍然整表加载：增量只拉「变化的行」，对**从没加载过**的集合来说
+    等于什么都没拉，而调用方会把空内存当成「库里就是没有」——
+    那是比慢得多的故障。
+    """
+    if not worker_state_persistence_enabled():
+        return
+    pending = {
+        state_key
+        for state_key in (selected_state_keys or STATE_COLLECTIONS)
+        if not repo.collection_is_loaded(state_key)
+    }
+    if pending:
+        load_state(selected_state_keys if selected_state_keys else None)
+        return
+    # force 跳过那 1 秒节流：worker 刚被派发，要的是此刻最新的数据
+    repo.refresh_stale_state_from_postgres(force=True)
 
 
 def refresh_ocr_worker_state(document_id: str, version_id: str) -> None:
@@ -4226,7 +4247,13 @@ def embed_knowledge(
                         "queue": "cpu.heavy",
                         "priority": 1,
                     }
-                flush_state()
+                # 中间断点只动了批次记录和任务进度，flush 就限定在这两张表。
+                #
+                # 不限定的话每次断点都要把**整份内存状态**序列化一遍去比对基线，
+                # 其中 knowledge_vectors 有 61 MB——线上实测：全量 flush 17.4 秒，
+                # 限定到这两张表 2.1 秒，而这一批真正的活（Qwen 向量化 8 段）只要
+                # 0.5 秒。一份 500 分块的资料要走 60 多个断点，差别是几十分钟。
+                flush_state({"knowledge_embedding_batches", "knowledge_tasks"})
                 return {
                     "fileId": file_id,
                     "status": "checkpointed",
@@ -4268,13 +4295,23 @@ def embed_knowledge(
                 task["status"] = "排队中"
                 task["updatedAt"] = server_time()
                 repo.append_task_log(task, "warning", f"向量批次失败，将在 {countdown} 秒后重试。")
-            flush_state()
+            # 重试路径同样只动任务状态，不必为此序列化 61 MB 向量
+            flush_state({"knowledge_tasks"})
             raise self.retry(exc=exc, countdown=countdown)
         message = "EXTERNAL_TOOL_FAILED: embedding 向量化失败，请检查远程 Qwen3 服务、隧道和向量索引状态。"
         result = {"fileId": file_id, "status": "failed", "errorMessage": message}
         if task:
             repo.mark_task_failed(task, message)
-    flush_state()
+    # 收尾这次确实动了向量本体，范围要含 knowledge_vectors；
+    # 但仍然不必带上项目、文档、审查那一大片没碰过的表。
+    flush_state(
+        {
+            "knowledge_vectors",
+            "knowledge_files",
+            "knowledge_tasks",
+            "knowledge_embedding_batches",
+        }
+    )
     return result
 
 

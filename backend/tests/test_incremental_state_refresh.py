@@ -137,3 +137,41 @@ def test_没有水位线时退回整表加载() -> None:
     repository.refresh_collections_incrementally({"knowledge_vectors"})
 
     assert calls == [{"knowledge_vectors"}], "没有水位线却没走整表加载"
+
+
+def test_没加载过的集合不能只走增量() -> None:
+    """worker 刷新状态的契约：首次整表，之后增量。
+
+    方向写反的后果不是「慢」，而是**读到空数据**：增量只拉「变化的行」，
+    对从没加载过的集合来说等于什么都没拉，而调用方会把空内存当成
+    「库里就是没有」——切片任务会认为文件不存在、向量化会认为没有分块。
+    """
+    from apps.worker import tasks
+
+    repository = InMemoryRepository()
+    calls: list[object] = []
+    repository.refresh_stale_state_from_postgres = lambda **_kwargs: calls.append("增量")  # type: ignore[method-assign]
+
+    original_repo = tasks.repo
+    original_load = tasks.load_state
+    original_enabled = tasks.worker_state_persistence_enabled
+    try:
+        tasks.repo = repository  # type: ignore[assignment]
+        tasks.load_state = lambda keys=None: calls.append(("整表", keys))  # type: ignore[assignment]
+        tasks.worker_state_persistence_enabled = lambda: True  # type: ignore[assignment]
+
+        # 没有任何水位线 → 必须整表
+        tasks.refresh_worker_state({"knowledge_chunks"})
+        assert calls and calls[0][0] == "整表", "从没加载过却直接走了增量——会读到空数据"
+
+        # 加载过之后 → 走增量
+        calls.clear()
+        repository._collection_watermarks[("TENANT-DEFAULT", "knowledge_chunks")] = datetime(
+            2026, 8, 18, tzinfo=UTC
+        )
+        tasks.refresh_worker_state({"knowledge_chunks"})
+        assert calls == ["增量"], "已经加载过了还在整表重来——每个任务白付几十秒"
+    finally:
+        tasks.repo = original_repo  # type: ignore[assignment]
+        tasks.load_state = original_load  # type: ignore[assignment]
+        tasks.worker_state_persistence_enabled = original_enabled  # type: ignore[assignment]

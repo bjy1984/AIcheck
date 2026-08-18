@@ -387,6 +387,17 @@ class InMemoryRepository:
     def _pgvector_baseline_ids(self, value: set[str]) -> None:
         self._tenant_pgvector_baseline_ids[configured_tenant_id()] = value
 
+    def collection_is_loaded(self, state_key: str, tenant_id: str | None = None) -> bool:
+        """这个集合在本进程里整表加载过吗？
+
+        有水位线就等于加载过（水位线是整表加载时记下的）。增量刷新只拉「变化的行」，
+        对**从没加载过**的集合来说，那等于什么都没拉——内存里是空的，
+        而调用方会当成「库里就是没有」。所以增量之前必须先确认它加载过。
+        """
+        collection_name = STATE_COLLECTIONS.get(state_key, state_key)
+        key = (str(tenant_id or configured_tenant_id()), str(collection_name))
+        return key in self._collection_watermarks
+
     def tenant_is_loaded(self, tenant_id: str | None = None) -> bool:
         return str(tenant_id or configured_tenant_id()) in self._loaded_tenants
 
