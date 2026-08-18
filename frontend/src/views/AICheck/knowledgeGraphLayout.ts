@@ -46,8 +46,6 @@ export const RECT_GAP = 10
 /** 相邻两环的最小径向间隔：要放得下一个矩形的高再留出走线的空。 */
 const MIN_RING_STEP = 150
 
-
-
 export function radialLayout(
   nodes: LayoutNode[],
   edges: LayoutEdge[],
@@ -158,7 +156,8 @@ export function radialLayout(
     if (members.length > 1) {
       const a = byId.get(members[members.length - 1])!
       const b = byId.get(members[0])!
-      const gap = Math.PI * 2 - (angleOf.get(members[members.length - 1])! - angleOf.get(members[0])!)
+      const gap =
+        Math.PI * 2 - (angleOf.get(members[members.length - 1])! - angleOf.get(members[0])!)
       if (gap > 1e-6) {
         const w = (a.width + b.width) / 2 + RECT_GAP
         const h = (a.height + b.height) / 2 + RECT_GAP
