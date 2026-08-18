@@ -140,7 +140,7 @@ assert.equal(result.positions.size, nodes.length, '有节点没拿到坐标—�
     ],
     'r'
   )
-  const boxes = ['r', 'a', 'b'].map((id, i) => ({
+  const boxes = ['r', 'a', 'b'].map((id) => ({
     ...chain.positions.get(id)!,
     width: 160,
     height: 26,

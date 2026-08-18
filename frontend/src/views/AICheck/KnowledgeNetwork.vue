@@ -510,12 +510,16 @@ function buildChartOption(): EChartsOption {
           label: { show: true, position: 'inside', color: '#ffffff', fontWeight: 600 }
         },
         selectedMode: 'single',
-        /* 不开 hideOverlap。
+        /* hideOverlap 必须开。
          *
-         * 标签画在框**里**，一旦被判为重叠就整个隐掉，图上又会出现
-         * 「一个纯色块，不知道是什么」——正是这次要修的问题。
-         * 宁可挤，也不要让节点重新变回无名色块。 */
-        labelLayout: { hideOverlap: false },
+         * roam 缩放只缩放坐标和符号，**标签字号是固定像素**：布局尺度下
+         * 零重叠的几何，在「适配全图」的默认视角（zoom≈0.15）仍是一墙文字
+         * 压文字——线上 259 个节点的全景就是这么糊掉的。
+         * 开了之后：全景挤不下的标签自动隐藏（节点缩成彩色小块，颜色即类别），
+         * 放大到 1:1 附近，几何保证生效，标签一个不隐。
+         * 之前担心的「隐掉标签变无名色块」只发生在缩得很小时——那时字本来
+         * 也读不了，色块反而是正确的表达。 */
+        labelLayout: { hideOverlap: true },
         lineStyle: { color: colors.edge, opacity: 0.45 },
         scaleLimit: { min: 0.2, max: 12 }
       }

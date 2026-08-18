@@ -79,11 +79,14 @@ assert.ok(
 )
 assert.ok(!/LABELLED_TYPES/.test(sfc), '标签白名单要去掉，不是改一下成员')
 
-/* hideOverlap 必须关掉：标签在框里，一旦判为重叠就整个隐掉，
-   图上又会出现「一个纯色块，不知道是什么」——正是这次要修的问题。 */
+/* hideOverlap 必须开：roam 缩放只缩放坐标和符号，标签字号是固定像素。
+   布局尺度下零重叠的几何，在「适配全图」的默认视角（zoom≈0.15）仍是
+   一墙文字压文字——线上 259 个节点的全景就是这么糊掉的（0818 实拍）。
+   全景时标签自动隐藏、节点缩成彩色小块；放大到 1:1 附近几何保证生效，
+   标签一个不隐。此前「关掉以免节点变无名色块」的判断只对 zoom=1 成立。 */
 assert.ok(
-  /labelLayout: \{ hideOverlap: false \}/.test(sfc),
-  'hideOverlap 开着会把框里的字整个隐掉，节点重新变回无名色块'
+  /labelLayout: \{ hideOverlap: true \}/.test(sfc),
+  'hideOverlap 关着的话，全景视角是一墙文字压文字，图根本没法看'
 )
 
 /* 截断的是显示，不是信息：完整名字要留给 tooltip。
