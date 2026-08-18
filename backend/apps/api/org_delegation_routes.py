@@ -1,34 +1,36 @@
-"""组织内的邀请注册与权限下放（0817 第 4、5 条）。
+"""组织内的权限下放（0817 第 5 条）。
 
-    「4、邀请链接注册」
-    「5、各个组织内的负责人。拥有权限分配」
+    「各个组织内的负责人。拥有权限分配」
 
-## 这是本轮唯一有安全后果的改动
+## 邀请注册已经从这里撤掉
 
-前面几条改错了最多是显示不对、判定不准。**这一条改错了是越权**：
-A 组织的负责人能改到 B 组织的人，或者把自己提成系统管理员。
-所以护栏写死在服务端，并且每条都有反向用例——
+原先这里还有一套「组织邀请链接」：绑组织和角色、单次有效、提交即建账号。
+后来需求改成**按项目发链接、注册者自选角色、项目负责人审核通过**
+（apps/api/project_registration_routes.py），两套并存会出问题：
+
+- 两条路都能建账号，但一条即时生效、一条要审核——
+  **同一个系统里两种「注册」意味着两种安全边界**，
+  而看界面的人分不出自己走的是哪一条；
+- 组织邀请那条没有审核，是两者中更宽的一条。留着它，
+  等于给「必须审核」这个新要求留了个绕过口。
+
+所以撤掉，只保留角色分配。
+
+## 这里剩下的部分仍有安全后果
+
+A 组织的负责人不能改 B 组织的人，也不能把谁提成系统管理员。
+护栏写死在服务端，每条都有反向用例——
 「能做什么」好验，「不能做什么」不验就等于没有。
 
-四条硬规则：
+三条硬规则：
 
 1. **只能动同组织的人。** 跨组织一律 403，不管请求里写了什么。
-2. **不能授出 admin / fde。** 否则「组织内的权限分配」就变成了提权通道。
+2. **不能授出 admin / fde。** 否则「组织内的权限分配」就成了提权通道。
 3. **不能改自己。** 自己给自己升权是所有越权里最常见的一种。
-4. **邀请链接单次有效、会过期、绑死组织和角色。** 链接会被转发、被截图、
-   被贴进群里——它必须是「一次性的、只能干一件事的」东西。
-
-## 为什么不做成通用的权限模型改造
-
-那需要把所有按角色过滤数据的地方都改成按「角色 + 组织」，漏一处就是
-跨组织读到别人的数据。这里只开一个**受限的下放口**：负责人在自己组织内
-改成员角色，其余判权路径一律不动。范围小，才检查得完。
 """
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
@@ -42,14 +44,6 @@ org_delegation_router = APIRouter()
 # 组织负责人不能授出的角色。给出去就等于开了提权通道。
 PROTECTED_ROLES = {"admin", "fde"}
 
-# 邀请链接的有效期。太长等于长期有效的后门。
-INVITE_TTL_HOURS = 72
-
-INVITATIONS = "org_invitations"
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
 
 
 def _actor(request: Request) -> dict[str, Any] | None:
@@ -80,170 +74,6 @@ def _guard(request: Request, org_id: str) -> tuple[dict[str, Any] | None, Any]:
         # 不区分「不是负责人」和「组织不存在」——区分了就成了组织存在性的探测口
         return None, fail(errors.FORBIDDEN, request, http_status=403, message="只有本组织负责人可以操作。")
     return actor, None
-
-
-# --------------------------------------------------------------------------
-# 第 4 条：邀请链接注册
-# --------------------------------------------------------------------------
-
-
-@org_delegation_router.post("/org-units/{org_id}/invitations")
-def create_invitation(
-    request: Request,
-    org_id: str,
-    body: dict[str, Any] = Body(default_factory=dict),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    from apps.api.routes import idempotent
-
-    actor, error = _guard(request, org_id)
-    if error:
-        return error
-
-    role = str(body.get("role") or "").strip()
-    if not role:
-        return fail(errors.VALIDATION_ERROR, request, message="必须指定邀请的角色。")
-    if role in PROTECTED_ROLES:
-        # 「组织内的权限分配」不该能造出系统管理员
-        return fail(errors.FORBIDDEN, request, http_status=403, message=f"不能通过邀请授予 {role} 角色。")
-
-    def produce():
-        token = secrets.token_urlsafe(24)
-        invitation = {
-            "token": token,
-            "orgId": org_id,
-            "role": role,
-            "createdBy": actor.get("id"),
-            "createdAt": server_time(),
-            "expiresAt": (_now() + timedelta(hours=INVITE_TTL_HOURS)).isoformat(),
-            # 单次有效：链接会被转发、被截图、被贴进群里
-            "usedAt": None,
-            "usedBy": None,
-        }
-        repo.state.setdefault(INVITATIONS, []).insert(0, invitation)
-        repo.add_audit("创建组织邀请", "OrgInvitation", token[:8], result="成功")
-        return ok(
-            {
-                "token": token,
-                "orgId": org_id,
-                "role": role,
-                "expiresAt": invitation["expiresAt"],
-                "expiresInHours": INVITE_TTL_HOURS,
-            },
-            request,
-        )
-
-    return idempotent(request, idempotency_key, produce, fingerprint_source=body)
-
-
-def _find_invitation(token: str) -> dict[str, Any] | None:
-    return next(
-        (i for i in repo.state.get(INVITATIONS, []) if str(i.get("token")) == str(token)),
-        None,
-    )
-
-
-def _invitation_problem(invitation: dict[str, Any] | None) -> str:
-    """邀请为什么不能用。**对外只回一句笼统的话**——
-    区分「不存在」「已用过」「已过期」等于给撞令牌的人送反馈。"""
-    if not invitation:
-        return "INVITE_INVALID"
-    if invitation.get("usedAt"):
-        return "INVITE_INVALID"
-    try:
-        expires = datetime.fromisoformat(str(invitation.get("expiresAt")))
-    except ValueError:
-        return "INVITE_INVALID"
-    if expires <= _now():
-        return "INVITE_INVALID"
-    return ""
-
-
-@org_delegation_router.get("/invitations/{token}")
-def inspect_invitation(request: Request, token: str):
-    """注册页用它显示「你被邀请加入 X，角色 Y」。
-
-    不需要登录——邀请链接的收件人本来就还没有账号。
-    只回组织名和角色，不回任何成员信息。
-    """
-    invitation = _find_invitation(token)
-    if _invitation_problem(invitation):
-        return fail(errors.NOT_FOUND, request, message="邀请链接无效或已过期。")
-    org = next(
-        (o for o in repo.state.get("org_units", []) if str(o.get("id")) == str(invitation["orgId"])),
-        None,
-    )
-    return ok(
-        {
-            "orgId": invitation["orgId"],
-            "orgName": (org or {}).get("name") or "",
-            "role": invitation["role"],
-            "expiresAt": invitation["expiresAt"],
-        },
-        request,
-    )
-
-
-@org_delegation_router.post("/invitations/{token}/accept")
-def accept_invitation(request: Request, token: str, body: dict[str, Any] = Body(default_factory=dict)):
-    """凭邀请链接建账号。
-
-    口令由**注册者自己**在页面上设置，服务端只做长度校验后交给既有的
-    用户创建逻辑处理——这里不生成、不打印、不记录任何口令。
-    """
-    invitation = _find_invitation(token)
-    if _invitation_problem(invitation):
-        return fail(errors.NOT_FOUND, request, message="邀请链接无效或已过期。")
-
-    from apps.api.routes import (
-        build_admin_user_record,
-        find_org_unit,
-        password_strength_errors,
-        upsert_admin_config_user,
-    )
-
-    username = str(body.get("username") or "").strip()
-    password = str(body.get("password") or "")
-    if not username:
-        return fail(errors.VALIDATION_ERROR, request, message="用户名不能为空。")
-    # 口令强度**复用后台建用户那一套**。自己另写一套弱一点的规则，
-    # 等于开了一条绕过口令策略的注册通道。
-    problems = password_strength_errors(username, password)
-    if problems:
-        return fail(
-            errors.VALIDATION_ERROR,
-            request,
-            message="口令不符合安全要求。",
-            data={"field": "password", "problems": problems},
-        )
-    if any(str(u.get("username")) == username for u in repo.state.get("users", [])):
-        return fail(errors.CONFLICT, request, http_status=409, message="该用户名已存在。")
-
-    org = find_org_unit(invitation["orgId"], "")
-    user = build_admin_user_record(
-        {
-            "username": username,
-            "password": password,
-            "role": invitation["role"],
-            "orgId": invitation["orgId"],
-            "name": str(body.get("displayName") or username),
-        },
-        org=org,
-    )
-    user["authVersion"] = 1
-    user["mustChangePassword"] = False
-    repo.state["users"].insert(0, user)
-    upsert_admin_config_user(user)
-    invitation["usedAt"] = server_time()
-    invitation["usedBy"] = user.get("id")
-    repo.add_audit("邀请注册", "User", str(user.get("id")), result="成功")
-    # 不回口令、不回令牌：注册完让他正常登录
-    return ok({"userId": user.get("id"), "username": username, "role": invitation["role"]}, request)
-
-
-# --------------------------------------------------------------------------
-# 第 5 条：组织负责人分配权限
-# --------------------------------------------------------------------------
 
 
 @org_delegation_router.post("/org-units/{org_id}/members/{user_id}/role")

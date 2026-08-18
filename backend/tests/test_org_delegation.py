@@ -1,4 +1,12 @@
-"""组织内邀请注册与权限下放（0817 第 4、5 条）。
+"""组织内权限下放（0817 第 5 条）。
+
+## 邀请注册已经撤掉
+
+注册统一走「按项目发链接 → 自选角色 → 项目负责人审核」
+（test_project_registration.py）。两套并存的话，一条即时生效、一条要审核，
+**同一个系统里两种「注册」意味着两种安全边界**；组织邀请是更宽的那条，
+留着等于给「必须审核」留了个绕过口。
+
 
 ## 这是本轮唯一有安全后果的改动
 
@@ -15,8 +23,6 @@ A 组织的负责人能改到 B 组织的人，或者把自己提成系统管理
 """
 
 from __future__ import annotations
-
-from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -142,108 +148,6 @@ def test_普通成员不能分配权限():
         headers=_headers("a-member"),
     )
     assert response.json()["code"] != 0
-
-
-# ---- 第 4 条：邀请链接 -----------------------------------------------------
-
-
-def _create_invite(role: str = "contractor", username: str = "a-lead"):
-    return client.post(
-        f"/api/org-units/{ORG_A}/invitations",
-        json={"role": role},
-        headers=_headers(username),
-    ).json()
-
-
-def test_负责人能创建邀请且链接带过期时间():
-    body = _create_invite()
-    assert body["code"] == 0, body
-    assert body["data"]["token"]
-    assert body["data"]["expiresAt"], "没有过期时间的邀请链接是长期后门"
-
-
-def test_不能邀请成管理员():
-    assert _create_invite(role="admin")["code"] != 0
-    assert _create_invite(role="fde")["code"] != 0
-
-
-def test_别的组织的负责人不能给本组织发邀请():
-    body = _create_invite(username="b-lead")
-    assert body["code"] != 0
-
-
-def test_邀请可被未登录者查看但只回组织和角色():
-    token = _create_invite()["data"]["token"]
-    body = client.get(f"/api/invitations/{token}").json()
-    assert body["code"] == 0
-    assert body["data"]["orgName"] == "甲施工单位"
-    assert body["data"]["role"] == "contractor"
-    assert "createdBy" not in body["data"], "不该把创建人这类成员信息回出去"
-
-
-def test_邀请只能用一次():
-    token = _create_invite()["data"]["token"]
-    payload = {"username": "invited-1", "password": "Aa!234567890x", "displayName": "被邀请人"}
-    first = client.post(f"/api/invitations/{token}/accept", json=payload).json()
-    assert first["code"] == 0, first
-    second = client.post(
-        f"/api/invitations/{token}/accept",
-        json={**payload, "username": "invited-2"},
-    ).json()
-    assert second["code"] != 0, "同一个链接能反复注册——链接会被转发和截图"
-    repo.state["users"] = [u for u in repo.state["users"] if u.get("username") != "invited-1"]
-
-
-def test_过期的邀请不能用():
-    token = _create_invite()["data"]["token"]
-    invite = next(i for i in repo.state["org_invitations"] if i["token"] == token)
-    invite["expiresAt"] = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-    body = client.post(
-        f"/api/invitations/{token}/accept",
-        json={"username": "invited-late", "password": "Aa!234567890x"},
-    ).json()
-    assert body["code"] != 0
-
-
-def test_注册者拿到的是邀请里写死的角色和组织():
-    """如果注册请求里能带 role，链接就成了自选角色的入口。"""
-    token = _create_invite(role="owner")["data"]["token"]
-    client.post(
-        f"/api/invitations/{token}/accept",
-        json={
-            "username": "invited-role",
-            "password": "Aa!234567890x",
-            "role": "admin",  # 恶意注入
-            "orgId": ORG_B,
-        },
-    )
-    created = next((u for u in repo.state["users"] if u.get("username") == "invited-role"), None)
-    assert created, "注册没成功，用例本身失效"
-    assert created["role"] == "owner", "请求里的 role 覆盖了邀请里的角色"
-    assert str(created.get("orgId")) == ORG_A, "请求里的 orgId 覆盖了邀请里的组织"
-    repo.state["users"] = [u for u in repo.state["users"] if u.get("username") != "invited-role"]
-
-
-def test_弱口令被拒并且用的是后台同一套规则():
-    token = _create_invite()["data"]["token"]
-    body = client.post(
-        f"/api/invitations/{token}/accept",
-        json={"username": "invited-weak", "password": "123456"},
-    ).json()
-    assert body["code"] != 0
-    assert not any(u.get("username") == "invited-weak" for u in repo.state["users"])
-
-
-def test_无效令牌不泄露它为什么无效():
-    """区分「不存在」「已用过」「已过期」等于给撞令牌的人送反馈。"""
-    messages = set()
-    for token in ("nope", ""):
-        body = client.post(
-            f"/api/invitations/{token or 'x'}/accept",
-            json={"username": "u", "password": "Aa!234567890x"},
-        ).json()
-        messages.add(body.get("message"))
-    assert len(messages) == 1, f"不同的失效原因回了不同的话：{messages}"
 
 
 def test_受保护角色名单没被悄悄放宽():

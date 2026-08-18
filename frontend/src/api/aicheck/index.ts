@@ -3451,44 +3451,6 @@ export const reviewRegistrationRequestApi = (
   })
 }
 
-/* ---- 组织邀请注册（0817 第 4 条）---- */
-
-export type InvitationInfo = {
-  orgId: string
-  orgName: string
-  role: RoleCode
-  expiresAt: string
-}
-
-/** 查看邀请。**不需要登录**——收件人本来就还没有账号。 */
-export const getInvitationApi = (token: string): Promise<IResponse<InvitationInfo>> => {
-  return request.get({ url: `/api/invitations/${encodeURIComponent(token)}` })
-}
-
-/** 凭邀请建账号。角色和组织由邀请写死，请求里带 role/orgId 也不会生效。 */
-export const acceptInvitationApi = (
-  token: string,
-  payload: { username: string; password: string; displayName?: string }
-): Promise<IResponse<{ userId: string; username: string; role: RoleCode }>> => {
-  return request.post({
-    url: `/api/invitations/${encodeURIComponent(token)}/accept`,
-    data: payload
-  })
-}
-
-/** 生成邀请链接（组织负责人 / 管理员）。 */
-export const createOrgInvitationApi = (
-  orgId: string,
-  role: RoleCode,
-  options?: MutationHeaderOptions
-): Promise<IResponse<{ token: string; orgId: string; role: RoleCode; expiresAt: string }>> => {
-  return request.post({
-    url: `/api/org-units/${encodeURIComponent(orgId)}/invitations`,
-    data: { role },
-    headers: mutationHeaders(options)
-  })
-}
-
 /** 组织负责人在本组织内调整成员角色。 */
 export const assignOrgMemberRoleApi = (
   orgId: string,

@@ -1,12 +1,12 @@
 /**
  * 组织权限下放、邀请注册、缺项提示的前端对接（0817 第 2、4、5 条）。
  *
- * ## 邀请页必须免登录
+ * ## 注册页必须免登录
  *
- * 收件人**本来就还没有账号**。被路由守卫弹回登录页的话，
+ * 申请人**本来就还没有账号**。被路由守卫弹回登录页的话，
  * 一个专门发给「还没账号的人」的链接却要求先登录，这条路整个走不通。
  *
- * 而且白名单要**前缀匹配**：路径是 /invite/<token>，白名单里写的是 /invite，
+ * 而且白名单要**前缀匹配**：路径是 /join/<token>，白名单里写的是 /join，
  * 用精确匹配的话永远命中不了——白名单加了却不生效，而且不报错。
  *
  * ## 界面上的禁用不是安全措施
@@ -29,43 +29,45 @@ const read = (relative: string) =>
 const router = read('../../router/index.ts')
 const constants = read('../../constants/index.ts')
 const permission = read('../../permission.ts')
-const invitePage = read('../Login/AcceptInvitation.vue')
+const api = read('../../api/aicheck/index.ts')
 const delegation = read('./components/OrgDelegationPanel.vue')
 const adminOverview = read('./AdminOverview.vue')
 const sections = read('./components/WorkbenchRoleStaticSections.vue')
 
-// ---- 邀请页免登录 ----
+// ---- 注册页免登录 ----
 
-assert.match(router, /path: '\/invite\/:token'/, '没有邀请注册路由')
 /* 用「包含」而不是写死整个数组：以后再加一条免登录路径不该让这条用例红。
-   要守的是「这两条在里面」，不是「里面只有这两条」。 */
-for (const path of ["'/invite'", "'/join'"]) {
-  assert.ok(
-    constants.includes('NO_REDIRECT_WHITE_LIST') && constants.includes(path),
-    `${path} 不在免登录白名单——收件人会被弹回登录页`
-  )
-}
+   要守的是「这一条在里面」，不是「里面只有这一条」。 */
+assert.ok(
+  constants.includes('NO_REDIRECT_WHITE_LIST') && constants.includes("'/join'"),
+  "'/join' 不在免登录白名单——申请人会被弹回登录页"
+)
 
-/* 白名单必须前缀匹配。/invite/<token> 用精确匹配永远命中不了——
-   **白名单加了却不生效，而且不报错**：收件人点开链接被弹回登录页，
+/* 白名单必须前缀匹配。/join/<token> 用精确匹配永远命中不了——
+   **白名单加了却不生效，而且不报错**：申请人点开链接被弹回登录页，
    看起来像链接坏了。 */
 assert.match(
   permission,
   /to\.path === item \|\| to\.path\.startsWith\(`\$\{item\}\/`\)/,
-  '白名单还是精确匹配，邀请链接会被弹回登录页'
+  '白名单还是精确匹配，注册链接会被弹回登录页'
 )
 // 但也不能宽到 /login-anything 都放行
 assert.match(permission, /startsWith\(`\$\{item\}\/`\)/, '前缀匹配没带分隔符，会误放行相似路径')
 
-// 角色和组织由邀请写死，页面不提供选择——自选角色的链接是公开提权入口
-assert.ok(!/v-model="[^"]*\.role"/.test(invitePage), '注册页让用户自己选角色了，这是提权入口')
-assert.match(invitePage, /两次输入的口令不一致/, '没有在提交前校验两次口令')
+/* 组织邀请那条路已经撤掉：注册统一走「按项目发链接 → 自选角色 → 审核」。
+   两套并存的话，一条即时生效、一条要审核，**同一个系统里两种「注册」
+   意味着两种安全边界**，而组织邀请是更宽的那条——留着等于给
+   「必须审核」留了个绕过口。 */
+assert.ok(!router.includes("path: '/invite"), '组织邀请路由还在')
+assert.ok(!constants.includes("'/invite'"), '组织邀请还在免登录白名单里')
+assert.ok(!api.includes('acceptInvitationApi'), '组织邀请接口还在')
+assert.ok(!api.includes('createOrgInvitationApi'), '组织邀请生成接口还在')
+assert.ok(!delegation.includes('createOrgInvitationApi'), '组织面板里还留着邀请入口')
 
 // ---- 组织负责人 ----
 
 assert.match(adminOverview, /isOrgLeader/, '后台没有设置组织负责人的入口')
-assert.match(adminOverview, /OrgDelegationPanel/, '后台没有挂上成员与邀请面板')
-assert.match(delegation, /createOrgInvitationApi/, '面板没有生成邀请链接的能力')
+assert.match(adminOverview, /OrgDelegationPanel/, '后台没有挂上成员角色面板')
 assert.match(delegation, /assignOrgMemberRoleApi/, '面板没有调整成员角色的能力')
 
 /* admin / fde 不出现在可选角色里。服务端也会拒，
@@ -75,9 +77,6 @@ const roles = delegation.slice(
   delegation.indexOf('const inviteRole')
 )
 assert.ok(!/'admin'/.test(roles) && !/'fde'/.test(roles), '可选角色里出现了管理员')
-
-// 邀请链接的有效期必须写出来：链接会被转发、被截图
-assert.match(delegation, /只能使用一次，有效期至/, '没有说明链接的有效期和单次限制')
 
 /* 前端的禁用不能被当成安全措施——注释里要写清楚这一层的定位，
    免得后人以为界面挡住了就等于管住了。 */
@@ -128,5 +127,16 @@ assert.match(registrationPanel, /有效期至 \{\{ linkExpiresAt \}\}/, '没说�
 assert.match(registrationPanel, /最多可注册\s*\n?\s*\{\{ linkMaxUses \}\} 人/, '没说链接还能用几次')
 
 assert.match(adminOverview, /ProjectRegistrationPanel/, '后台没有挂上注册审核面板')
+
+/* 二维码：收链接的人多半在工地用手机，扫一下比长按 URL 再粘贴实际得多。
+   必须**本地生成**——一个「帮你生成二维码」的外部服务，
+   等于把注册链接交给了它。 */
+assert.match(registrationPanel, /import QRCode from 'qrcode'/, '二维码没有本地生成')
+assert.match(registrationPanel, /QRCode\.toDataURL/, '没有生成二维码')
+assert.match(registrationPanel, /alt="项目注册链接二维码"/, '二维码没有可访问名称')
+// 二维码画不出来不该让人以为整个链接失败了
+assert.match(registrationPanel, /qrDataUrl\.value = ''/, '二维码失败时没有降级，会连累链接本身')
+// 深色主题下透明底扫不出来
+assert.match(registrationPanel, /background: #fff/, '二维码没有白底，深色主题下扫不出来')
 
 console.log('Org delegation + invite + gap hints contract passed')

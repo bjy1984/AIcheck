@@ -17,8 +17,16 @@
  *
  * 有效期、剩余次数、能停用。链接会被转发、被截图、被贴进群里，
  * 发的人得知道它什么时候作废、还能用几次、后悔了怎么收回。
+ *
+ * ## 二维码
+ *
+ * 收链接的人多半在工地，用手机。**让他在群里长按一串 URL 再粘进浏览器，
+ * 不如让他扫一下。** 二维码在本地生成（qrcode 依赖已在包里），
+ * 不发到任何第三方——一个能生成二维码的外部服务，
+ * 等于把注册链接交给了它。
  */
 import { computed, ref, watch } from 'vue'
+import QRCode from 'qrcode'
 import {
   ElAlert,
   ElButton,
@@ -44,6 +52,7 @@ const linkLoading = ref(false)
 const link = ref('')
 const linkExpiresAt = ref('')
 const linkMaxUses = ref(0)
+const qrDataUrl = ref('')
 
 const requests = ref<RegistrationRequestItem[]>([])
 const listLoading = ref(false)
@@ -76,6 +85,7 @@ watch(() => props.projectId, loadRequests, { immediate: true })
 const handleCreateLink = async () => {
   linkLoading.value = true
   link.value = ''
+  qrDataUrl.value = ''
   try {
     const res = await createProjectRegistrationLinkApi(props.projectId)
     if (!res) return
@@ -83,6 +93,15 @@ const handleCreateLink = async () => {
     link.value = `${window.location.origin}/#/join/${res.data.token}`
     linkExpiresAt.value = res.data.expiresAt
     linkMaxUses.value = res.data.maxUses
+    /* 二维码本地生成，不经任何第三方服务——
+       一个「帮你生成二维码」的外部接口，等于把注册链接交给了它。 */
+    try {
+      qrDataUrl.value = await QRCode.toDataURL(link.value, { width: 220, margin: 1 })
+    } catch {
+      // 二维码画不出来不影响发链接：链接本身就在上面，复制照样能用。
+      // 这里不弹错误，免得让人以为整个链接失败了。
+      qrDataUrl.value = ''
+    }
     ElMessage.success('注册链接已生成')
   } catch (error) {
     ElMessage.error(getAicheckErrorMessage(error, '生成注册链接失败。'))
@@ -148,6 +167,11 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
           <ElButton @click="handleCopy">复制</ElButton>
         </template>
       </ElInput>
+      <!-- 收链接的人多半在工地用手机：扫一下比长按 URL 再粘贴实际得多 -->
+      <div v-if="qrDataUrl" class="link-qr">
+        <img :src="qrDataUrl" alt="项目注册链接二维码" width="180" height="180" />
+        <small>手机扫码即可打开注册页</small>
+      </div>
       <!-- 有效期和次数都要写出来：链接会被转发、被截图 -->
       <small
         >有效期至 {{ linkExpiresAt }}，最多可注册
@@ -217,6 +241,20 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
 
 .link-result {
   margin: 10px 0 16px;
+}
+
+.link-qr {
+  margin-top: 10px;
+  text-align: center;
+}
+
+.link-qr img {
+  display: block;
+  margin: 0 auto 4px;
+  padding: 6px;
+  background: #fff; /* 二维码必须白底：深色主题下透明底会扫不出来 */
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
 }
 
 .link-result small {

@@ -1,6 +1,14 @@
 <script setup lang="ts">
 /**
- * 组织负责人：生成邀请链接、调整本组织成员角色（0817 第 4、5 条）。
+ * 组织负责人：调整本组织成员角色（0817 第 5 条）。
+ *
+ * ## 邀请链接已经从这里撤掉
+ *
+ * 注册统一走「按项目发链接 → 自选角色 → 项目负责人审核」
+ * （ProjectRegistrationPanel）。两套并存的话，一条即时生效、一条要审核，
+ * **同一个系统里两种「注册」意味着两种安全边界**，而看界面的人分不出
+ * 自己走的是哪一条；组织邀请又是更宽的那条，留着等于给「必须审核」
+ * 留了个绕过口。
  *
  * ## 界面只是入口，闸门在服务端
  *
@@ -10,18 +18,11 @@
  *
  * **前端的禁用不能当成安全措施**：改一行请求就绕过去了。
  * 这两层的分工要写清楚，免得后人以为「界面上没有这个选项」就等于管住了。
- *
- * ## 邀请链接展示的两个决定
- *
- * - 明确写出有效期。链接会被转发、被截图、被贴进群里，
- *   看的人得知道它什么时候作废。
- * - 只在生成的那一刻显示一次，不做历史列表：
- *   一份能随时翻出来的链接清单，等于一堆长期有效的入口。
- */
+ * */
 import { computed, ref } from 'vue'
-import { ElAlert, ElButton, ElInput, ElMessage, ElOption, ElSelect, ElTag } from 'element-plus'
+import { ElAlert, ElMessage, ElOption, ElSelect, ElTag } from 'element-plus'
 
-import { assignOrgMemberRoleApi, createOrgInvitationApi, type AdminUser } from '@/api/aicheck'
+import { assignOrgMemberRoleApi, type AdminUser } from '@/api/aicheck'
 import type { RoleCode } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 
@@ -44,43 +45,11 @@ const ASSIGNABLE_ROLES: Array<{ value: RoleCode; label: string }> = [
   { value: 'owner', label: '建设单位' }
 ]
 
-const inviteRole = ref<RoleCode>('contractor')
-const inviteLoading = ref(false)
-const inviteLink = ref('')
-const inviteExpiresAt = ref('')
-
 const assigning = ref('')
 
 const orgMembers = computed(() =>
   props.members.filter((item) => String(item.orgId || '') === String(props.orgId))
 )
-
-const handleCreateInvite = async () => {
-  inviteLoading.value = true
-  inviteLink.value = ''
-  try {
-    const res = await createOrgInvitationApi(props.orgId, inviteRole.value)
-    if (!res) return
-    // 组成收件人真正要点的地址，而不是把裸 token 丢给用户让他自己拼
-    inviteLink.value = `${window.location.origin}/#/invite/${res.data.token}`
-    inviteExpiresAt.value = res.data.expiresAt
-    ElMessage.success('邀请链接已生成')
-  } catch (error) {
-    ElMessage.error(getAicheckErrorMessage(error, '生成邀请链接失败。'))
-  } finally {
-    inviteLoading.value = false
-  }
-}
-
-const handleCopy = async () => {
-  try {
-    await navigator.clipboard.writeText(inviteLink.value)
-    ElMessage.success('已复制')
-  } catch {
-    // 复制失败不是错误，链接就在输入框里，用户可以自己选中
-    ElMessage.info('复制失败，请手动选中链接复制')
-  }
-}
 
 const handleAssign = async (member: AdminUser, role: RoleCode) => {
   if (role === member.role) return
@@ -100,38 +69,13 @@ const handleAssign = async (member: AdminUser, role: RoleCode) => {
 
 <template>
   <section class="org-delegation">
-    <h4>{{ orgName }} · 成员与邀请</h4>
-
-    <!-- 邀请链接 -->
-    <div class="invite-row">
-      <ElSelect v-model="inviteRole" class="invite-role">
-        <ElOption
-          v-for="item in ASSIGNABLE_ROLES"
-          :key="item.value"
-          :label="item.label"
-          :value="item.value"
-        />
-      </ElSelect>
-      <ElButton type="primary" :loading="inviteLoading" @click="handleCreateInvite">
-        生成邀请链接
-      </ElButton>
-    </div>
-
-    <div v-if="inviteLink" class="invite-result">
-      <ElInput :model-value="inviteLink" readonly>
-        <template #append>
-          <ElButton @click="handleCopy">复制</ElButton>
-        </template>
-      </ElInput>
-      <!-- 有效期必须写出来：链接会被转发、被截图，看的人得知道它什么时候作废 -->
-      <small>此链接只能使用一次，有效期至 {{ inviteExpiresAt }}</small>
-    </div>
+    <h4>{{ orgName }} · 成员角色</h4>
 
     <!-- 成员角色 -->
     <ElAlert
       v-if="!orgMembers.length"
       type="info"
-      title="本组织还没有成员。可以用上面的邀请链接把人拉进来。"
+      title="本组织还没有成员。新成员通过项目注册链接加入并经审核后出现在这里。"
       :closable="false"
       show-icon
     />
@@ -171,26 +115,6 @@ const handleAssign = async (member: AdminUser, role: RoleCode) => {
 <style scoped>
 .org-delegation h4 {
   margin: 0 0 12px;
-}
-
-.invite-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.invite-role {
-  width: 140px;
-}
-
-.invite-result {
-  margin: 10px 0 16px;
-}
-
-.invite-result small {
-  display: block;
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
 }
 
 .member-list {

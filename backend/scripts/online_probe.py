@@ -283,11 +283,6 @@ def check_org_delegation() -> bool:
     print(f"  受保护角色名单含 admin/fde：{'✓' if protected else '✗'}")
     ok_all = ok_all and protected
 
-    ttl = delegation.INVITE_TTL_HOURS
-    bounded = 0 < ttl <= 168
-    print(f"  邀请有效期 {ttl} 小时（有上限）：{'✓' if bounded else '✗ 没有过期时间等于长期后门'}")
-    ok_all = ok_all and bounded
-
     # 跨组织：造两个不同组织的用户对象，直接问护栏函数
     lead_a = {"id": "X", "username": "x", "role": "contractor", "orgId": "ORG-A", "isOrgLeader": True}
     cross = delegation._is_org_leader(lead_a, "ORG-B")
@@ -298,122 +293,7 @@ def check_org_delegation() -> bool:
     print(f"  普通成员不是负责人：{'✓' if not plain else '✗'}")
     ok_all = ok_all and not plain
 
-    # 端点确实挂上了（拆模块最容易漏 include_router）。
-    #
-    # 第一版判据是扫 app.routes 里的 path——**错的**：app.routes 只有 21 条
-    # 顶层挂载，子路由在里面展开，于是永远扫不到，报成「未挂载」。
-    # 正确做法是真的调一次：路由不存在会回 FastAPI 的 detail=Not Found，
-    # 路由存在但邀请无效会回业务码——两者分得开。
-    body = api("/api/invitations/probe-nonexistent-token")
-    mounted = "detail" not in body and body.get("code") is not None
-    print(f"  邀请端点已挂载：{'✓' if mounted else '✗ 路由 404 且不会报错'}")
-    print(f"    无效令牌回应：code={body.get('code')} msg={body.get('message') or body.get('detail')}")
-    return ok_all and mounted
-
-
-def check_category_correction() -> bool:
-    """0817 第 2 条配套：自动分类必须能人工改。
-
-    只验**拒绝**：非法类别不能被写进去。允许任意字符串的话，
-    规则按类别取证时永远取不到，而界面上看着「已经归好类了」。
-    """
-    from libs.material_auto_classify import known_categories
-
-    cats = known_categories()
-    print(f"配置里的合法类别数：{len(cats)}")
-
-    body = api(
-        "/api/projects/P-2026-HDCP-001/documents/DOC-NOT-EXIST/material-category",
-        payload={"materialCategory": "我随便写的类别"},
-        method="PATCH",
-    )
-    # 端点存在（不是 FastAPI 的 detail=Not Found），且拒绝了这次调用
-    mounted = "detail" not in body and body.get("code") is not None
-    rejected = body.get("code") != 0
-    print(f"  端点已挂载：{'✓' if mounted else '✗'}")
-    print(f"  非法类别被拒：{'✓' if rejected else '✗'}（code={body.get('code')}）")
-    return bool(cats) and mounted and rejected
-
-
-def check_auto_review_status() -> bool:
-    """0817 第 3 条：节点带自动审核状态，且每个状态说得出理由。"""
-    from libs.auto_review_status import auto_review_status
-    from libs.db.repository import repo
-
-    # 先看纯口径：每个状态都必须有 reason
-    cases = [
-        auto_review_status(None),
-        auto_review_status({"status": "运行中"}),
-        auto_review_status({"status": "失败"}),
-        auto_review_status({"status": "已完成", "conclusion": "满足要求"}),
-        auto_review_status(None, {"conclusion": "满足要求"}),
-    ]
-    all_explained = all(item.get("reason") for item in cases)
-    print(f"  每个状态都有理由：{'✓' if all_explained else '✗ 说不出理由的标签等于没有'}")
-
-    # 再看接口真的把它带出来了
-    project_id = next(
-        (str(b.get("projectId")) for b in repo.state.get("bindings", []) if b.get("projectId")), ""
-    )
-    node_id = next(
-        (str(b.get("nodeId")) for b in repo.state.get("bindings", []) if str(b.get("projectId")) == project_id),
-        "",
-    )
-    body = api(f"/api/projects/{project_id}/nodes/{node_id}/package", username="inspection")
-    # 状态挂在节点包顶层，不是 summary 里——第一版写 summary，
-    # 那个 key 根本不存在，于是报成「接口没带出来」。判据自己找错了地方。
-    status = (body.get("data") or {}).get("autoReviewStatus") or {}
-    exposed = bool(status.get("status")) and bool(status.get("reason"))
-    print(f"  节点 {project_id}/{node_id} 的状态：{status.get('status') or '（没有）'}")
-    print(f"    理由：{status.get('reason') or '（没有）'}")
-    print(f"  接口已带出：{'✓' if exposed else '✗'}")
-    return all_explained and exposed
-
-
-def check_org_leader_flag() -> bool:
-    """0817 第 5 条前提：isOrgLeader 不传时保持原值，不能被顺手撤掉。"""
-    from apps.api.routes import admin_user_projection, build_admin_user_record
-
-    existing = {"id": "U1", "username": "u1", "role": "contractor", "isOrgLeader": True}
-    kept = build_admin_user_record({"mobile": "13800000000"}, existing=existing)["isOrgLeader"]
-    print(f"  只改手机号后仍是负责人：{'✓' if kept else '✗ 顺手把负责人身份撤了'}")
-    exposed = admin_user_projection(existing)["isOrgLeader"] is True
-    print(f"  投影里带得出来：{'✓' if exposed else '✗ 后台没法勾选'}")
-    return kept and exposed
-
-
-def check_project_registration() -> bool:
-    """项目注册链接 → 自选角色 → 审核。只验**护栏**。
-
-    最要紧的一条：**待审期间不能存在可用账号**。
-    先建用户再标 pending 的话，只要哪个查询忘了过滤，人就登进来了。
-    """
-    from apps.api import project_registration_routes as reg
-
-    ok_all = True
-
-    no_admin = "admin" not in reg.SELECTABLE_ROLES and "fde" not in reg.SELECTABLE_ROLES
-    print(f"  可选角色里没有 admin/fde：{'✓' if no_admin else '✗ 自选就能当管理员'}")
-    ok_all = ok_all and no_admin
-
-    bounded = 0 < reg.INVITE_TTL_HOURS <= 720 and 0 < reg.MAX_USES <= 1000
-    print(f"  链接有效期 {reg.INVITE_TTL_HOURS}h、次数上限 {reg.MAX_USES}：{'✓' if bounded else '✗'}")
-    ok_all = ok_all and bounded
-
-    # 端点已挂载：拿一个不存在的 token 去看，应回业务码而不是 FastAPI 的 detail
-    body = api("/api/registration-links/probe-nonexistent")
-    mounted = "detail" not in body and body.get("code") is not None
-    print(f"  端点已挂载：{'✓' if mounted else '✗ 路由 404 且不会报错'}")
-    print(f"    无效链接回应：code={body.get('code')} msg={body.get('message') or body.get('detail')}")
-
-    # 提交路径存在且拒绝非法角色
-    apply_body = api(
-        "/api/registration-links/probe-nonexistent/apply",
-        payload={"username": "probe", "role": "admin", "password": "Aa!234567890x"},
-    )
-    rejected = apply_body.get("code") not in (0, None)
-    print(f"  非法链接/角色被拒：{'✓' if rejected else '✗'}")
-    return ok_all and mounted and rejected
+    return ok_all
 
 
 CHECKS = {

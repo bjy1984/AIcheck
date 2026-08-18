@@ -65,10 +65,8 @@ MUTATION_HEADER_EXEMPT_URLS = {
     # 邀请注册：调用者**还没有账号**，幂等头依赖当前用户身份，无从生成。
     # 后端同名路由也在 PUBLIC_MUTATION_ROUTES 里豁免，两份名单口径一致。
     # 防重复的闸门是邀请令牌本身：单次有效、会过期、绑死组织和角色。
-    "/api/invitations/${encodeURIComponent(token)}/accept",
-    # 前端这份名单比对的是**源码里的原样字符串**，不是后端的路由模板。
-    # 我第一次只加了后端那份 /registration-links/{token}/apply，
-    # 前端照样报缺——两份名单是两个口径，都得加。
+    # 这份名单比对的是**源码里的原样字符串**，不是后端的路由模板——
+    # 两份名单是两个口径，加豁免时都得加。
     "/api/registration-links/${encodeURIComponent(token)}/apply",
 }
 PUBLIC_MUTATION_ROUTES = {
@@ -80,11 +78,6 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/auth/logout"),
     ("POST", "/auth/change-password"),
     ("POST", "/api/auth/change-password"),
-    # 邀请注册：被邀请人**还没有账号**，不可能带登录态，
-    # 也不可能有幂等键。闸门是邀请令牌本身——单次有效、会过期、
-    # 绑死组织和角色（apps/api/org_delegation_routes.py）。
-    ("POST", "/invitations/{token}/accept"),
-    ("POST", "/api/invitations/{token}/accept"),
     # 项目注册申请：申请人还没有账号，不可能带登录态和幂等键。
     # 闸门是**审核**——提交只是排队，不产生任何可用凭证。
     ("POST", "/registration-links/{token}/apply"),
