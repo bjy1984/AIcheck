@@ -532,6 +532,60 @@ def check_ocr_routing() -> bool:
 
 
 
+def check_shell_documents() -> bool:
+    """不该存在「OCR 说识别成功、存储里却没有文件」的资料。
+
+    空壳资料是这个项目吃过的老亏：预签名上传拿到了地址、字节没传成，
+    台账里却留下一条「已识别」的记录。它不会报错，只会在监检打开资料时
+    显示一片空白——而那时资料早就被挂到节点上、甚至提交过了。
+    U-5 那轮加了上传完成校验，新上传不会再产生空壳。
+
+    **只看修复之后的资料。** 库里还有 9 份历史空壳（PNG/图纸那批，
+    源文件确实不在了），拿它们判当前能力的话，这条检查会永远红着，
+    红久了就没人看了——而没人看的探针等于不存在。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from libs.db.repository import load_state, repo
+    from libs.integrations.storage import object_storage
+
+    load_state()
+    cutoff = (datetime.now(UTC) - timedelta(days=7)).strftime("%Y-%m-%d")
+    OCR_OK = {"已识别", "人工修正", "抽取不完整"}
+
+    recent = [
+        doc
+        for doc in repo.state.get("documents", [])
+        if str(doc.get("currentOcrStatus") or "") in OCR_OK
+        and str(doc.get("createdAt") or doc.get("updatedAt") or "")[:10] >= cutoff
+    ]
+    shells = []
+    for doc in recent:
+        version = repo.find_one("versions", doc.get("currentVersionId")) or {}
+        key = str(version.get("storageKey") or "")
+        bucket = str(version.get("storageBucket") or "documents")
+        if not key:
+            shells.append((doc, "没有存储键"))
+            continue
+        try:
+            present = bool(object_storage.object_metadata(bucket, key))
+        except Exception as exc:  # noqa: BLE001 - 存储不可用要报出来，不能算通过
+            print(f"存储不可用，无法判定：{exc.__class__.__name__}")
+            return False
+        if not present:
+            shells.append((doc, "存储里没有对象"))
+
+    print(f"近 7 天识别成功的资料：{len(recent)} 份")
+    print(f"其中空壳（无源文件）：{len(shells)} 份（判据：0）")
+    for doc, reason in shells[:5]:
+        print(f"  ✗ {doc.get('id')} {str(doc.get('fileName'))[:30]} —— {reason}")
+    if not recent:
+        print("这 7 天没有新识别成功的资料，判据无从检验")
+        return False
+    return not shells
+
+
+
 CHECKS = {
     "material-category": check_material_category,
     "org-invite-removed": check_org_invite_removed,
@@ -547,6 +601,7 @@ CHECKS = {
     "license-scope": check_license_scope,
     "confidence-threshold": check_confidence_threshold,
     "ocr-routing": check_ocr_routing,
+    "shell-documents": check_shell_documents,
 }
 
 
