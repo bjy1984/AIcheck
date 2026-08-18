@@ -99,8 +99,12 @@ runtime = {
     # =true，那是给 ocr-service 容器用的；照抄到服务器会把 MinerU 这条云端调用
     # 直接堵死，且不会报错——只会静默退回占位结果。所以这两项一个都不带上来。
     #
-    # 印章：服务器上还没有 ocr-service 容器和那 3.5 GB 模型，
-    # 两个 seal 开关先保持关闭，等模型落地再打开。
+    # 印章：ocr-service 容器已经在这台机器上跑起来了（镜像 2.4 GB、模型 360 MB），
+    # 本地读字默认开启（AICHECK_ENABLE_LOCAL_SEAL_READING 默认 true），
+    # 所以这里不需要显式写开关。0818 实测读字率 81%（59/73 枚）。
+    # 分工是否真的生效由 online_probe.py 的 ocr-routing 检查项断言——
+    # 这条链路坏掉的方式很安静：印章一直没有文字，不报错也不降级提示，
+    # 监检看到的是「这份资料没盖章」，而实际盖了。
     "AICHECK_OCR_DEFAULT_PROVIDER": "mineru",
     "AICHECK_OCR_ALLOW_PLACEHOLDER": "false",
     # 印章读字走本地模型，模型只装在 ocr-service 容器里（2.4 GB 镜像 + 360 MB 模型）。

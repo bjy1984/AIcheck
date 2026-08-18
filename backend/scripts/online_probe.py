@@ -464,6 +464,74 @@ def check_project_leader() -> bool:
 # 注意：新增检查项时**把函数加在这一行以上**，不要拿 `CHECKS = {` 当替换锚点。
 # 我用那个锚点插过五次，每次都把上一次的函数体整段覆盖掉——脚本照常能跑，
 # 直到调用那个不存在的名字才 NameError。这类「改动悄悄吃掉别的改动」很难查。
+def check_ocr_routing() -> bool:
+    """OCR 分工：正文/表格走 MinerU 云端，印章走本地模型。
+
+    这条分工原先只写在部署注释里，没有任何地方校验。而它坏掉的方式很安静：
+    印章模型连不上时，印章就是一直没有文字——不报错、不降级提示，
+    监检看到的是「这份资料没盖章」，而实际盖了。
+
+    判据取自**实际产出**而不是环境变量：变量对了但容器名写错、模型没装，
+    照样读不出字。所以这里查已识别文档里印章的实际读字率。
+    """
+    import os
+
+    from libs.db.repository import load_state
+    from libs.seal_local_reader import local_seal_reading_enabled
+
+    load_state()
+
+    provider = str(os.getenv("AICHECK_OCR_DEFAULT_PROVIDER") or "").strip().lower()
+    seal_local = local_seal_reading_enabled()
+    seal_base = str(os.getenv("AICHECK_OCR_BASE_URL") or "")
+    print(f"默认 OCR 提供方：{provider}（判据：mineru）")
+    print(f"本地印章读字：{'开' if seal_local else '关'}（判据：开）")
+    print(f"印章服务地址：{seal_base or '(未设置，用代码默认值)'}")
+
+    from libs.db.repository import repo
+
+    # 只看**真的走过印章读字环节**的结果。
+    #
+    # 第一版判据把全库印章一起算，得到 43%——而 08-16 之前的结果 0%，
+    # 那时本地读字还不存在。拿历史数据判当前能力，结论必然是错的：
+    # 同一个数字既可能是「模型坏了」，也可能是「那时候还没这个功能」。
+    # 诊断里带 seal_vision_reading 的才是经过这条链路的。
+    def went_through_seal_reading(item: dict) -> bool:
+        # 诊断项有两种历史形态：早期是字符串，后来是 {code, level, ...}。
+        # 只认字典会把老结果全判成「没走过」，只认字符串则反过来。
+        for entry in item.get("diagnostics") or []:
+            code = entry.get("code") if isinstance(entry, dict) else entry
+            if str(code or "").startswith("seal_vision_reading"):
+                return True
+        return False
+
+    results = [
+        item
+        for item in repo.state.get("ocr_parse_results", [])
+        if isinstance(item, dict) and (item.get("seals") or []) and went_through_seal_reading(item)
+    ]
+    total_seals = sum(len(item.get("seals") or []) for item in results)
+    with_text = sum(
+        1
+        for item in results
+        for seal in item.get("seals") or []
+        if str((seal or {}).get("text") or "").strip()
+    )
+    rate = (with_text / total_seals) if total_seals else 0.0
+    print(f"经过本地读字的印章：{with_text}/{total_seals} 枚有文字（{rate:.0%}）")
+    if total_seals == 0:
+        print("还没有任何印章走过这条链路——无法判定，先上传一份带章的资料")
+        return False
+
+    # 阈值取 0.6：压字、倾斜、模糊的章本来就有读不出的，要求 100% 等于要求
+    # 探针长期红着；低于 0.6 才说明是链路问题而不是个别难件。
+    ok = provider == "mineru" and seal_local and rate >= 0.6
+    if not ok and rate < 0.6:
+        print("读出文字的比例过低——本地模型可能没装好或连不通")
+    return ok
+
+
+
 CHECKS = {
     "material-category": check_material_category,
     "org-invite-removed": check_org_invite_removed,
@@ -478,6 +546,7 @@ CHECKS = {
     "inspection-visibility": check_inspection_visibility,
     "license-scope": check_license_scope,
     "confidence-threshold": check_confidence_threshold,
+    "ocr-routing": check_ocr_routing,
 }
 
 
