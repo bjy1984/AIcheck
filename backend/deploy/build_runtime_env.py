@@ -108,6 +108,23 @@ runtime = {
     # aicheck-ocr-service——名字对不上就连不通，而症状只是印章一直没有文字，
     # 不会有任何人来报错。
     "AICHECK_OCR_BASE_URL": "http://aicheck-ocr-service:8010",
+    # 向量化走 Qwen 官方 API（DashScope 兼容模式）。
+    #
+    # 这台机器上没有本地 embedding 服务：compose 里的 embedding-service
+    # 从来没在这里起过。而 embed_knowledge 跑在 worker 里——配置缺了它不会
+    # 报「没配置」，只会让资料一直停在「待向量化」，进而让施工方**永远报不了审**
+    # （报审前置要求 OCR/切片/向量化三段全绿）。0818 实测积压 36 份。
+    #
+    # SERVED_MODEL_NAME 必须是 API 真认的模型名：请求体里的 model 字段取的是它，
+    # 不是 MODEL_ID。两个都写成 text-embedding-v4，少写一个就是 400。
+    #
+    # 密钥沿用视觉那把 DashScope key（AICHECK_LLM_VISION_API_KEY，见下方 update）：
+    # 同一个账号同一把钥匙，复制成两份的代价是轮换时漏改一处，
+    # 而漏改的那处不会报错——只会静默停摆。
+    "AICHECK_EMBEDDING_PROVIDER": "official_api",
+    "AICHECK_EMBEDDING_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "AICHECK_EMBEDDING_MODEL_ID": "text-embedding-v4",
+    "AICHECK_EMBEDDING_SERVED_MODEL_NAME": "text-embedding-v4",
 }
 # 凭证覆盖固定配置：口令、密钥以文件为准
 runtime.update({k: v for k, v in secrets.items() if not k.startswith("AICHECK_BOOTSTRAP_PASSWORD_")})
@@ -117,6 +134,13 @@ runtime.update({k: v for k, v in secrets.items() if not k.startswith("AICHECK_BO
 # 放在 update 之后：这一行的来源就是凭证文件本身，不能反过来被它覆盖成空。
 if secrets.get("DEEPSEEK_API_KEY"):
     runtime["AICHECK_LLM_API_KEY"] = secrets["DEEPSEEK_API_KEY"]
+
+# embedding 复用视觉那把 DashScope 密钥（同账号同 key）。
+# 同样放在 update 之后，且只在真有值时写：写成空串的话 EmbeddingClient
+# 仍然 enabled（它只看 base_url），请求会带一个空 Authorization 打过去，
+# 报 401 而不是「没配置」——比缺配置更难查。
+if secrets.get("AICHECK_LLM_VISION_API_KEY"):
+    runtime["AICHECK_EMBEDDING_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
 
 TARGET.write_text("".join("%s=%s\n" % (k, v) for k, v in sorted(runtime.items())))
 TARGET.chmod(0o600)
