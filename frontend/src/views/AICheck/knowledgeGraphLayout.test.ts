@@ -122,6 +122,67 @@ assert.equal(result.positions.size, nodes.length, '有节点没拿到坐标—�
   assert.ok(orphanRadius >= maxRing - 1, '孤立节点混进了正常层级里，会被误读成有归属')
 }
 
+/* ---- 跨环同角度的宽框不重叠 ----
+ *
+ * 线上第一版叠起来的形状之一：固定环距 150px，而单链父子（同角度）
+ * 各是 160px 宽的框，θ≈0 处径向≈横向，150 < (160+160)/2+gap。
+ * 环距必须按两环矩形的实际尺寸算。 */
+{
+  const chain = radialLayout(
+    [
+      { id: 'r', width: 160, height: 26 },
+      { id: 'a', width: 160, height: 26 },
+      { id: 'b', width: 160, height: 26 }
+    ],
+    [
+      { source: 'r', target: 'a' },
+      { source: 'a', target: 'b' }
+    ],
+    'r'
+  )
+  const boxes = ['r', 'a', 'b'].map((id, i) => ({
+    ...chain.positions.get(id)!,
+    width: 160,
+    height: 26,
+    id
+  }))
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      assert.ok(
+        !rectanglesOverlap(boxes[i], boxes[j]),
+        `跨环同角度重叠：${boxes[i].id} × ${boxes[j].id}`
+      )
+    }
+  }
+}
+
+/* ---- 孤立节点环自己也不许重叠 ----
+ *
+ * 线上第一版叠起来的形状之二：孤立环只均匀撒角度、没做间距约束，
+ * 两个以上孤立节点就可能叠——而孤立数据恰恰是最需要被看清的。 */
+{
+  const orphanNodes = Array.from({ length: 12 }, (_, i) => ({
+    id: `iso-${i}`,
+    width: 140,
+    height: 26
+  }))
+  const withOrphans = radialLayout([...nodes, ...orphanNodes], edges, 'root')
+  const boxes = orphanNodes.map((node) => ({
+    ...withOrphans.positions.get(node.id)!,
+    width: node.width,
+    height: node.height,
+    id: node.id
+  }))
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      assert.ok(
+        !rectanglesOverlap(boxes[i], boxes[j]),
+        `孤立环重叠：${boxes[i].id} × ${boxes[j].id}`
+      )
+    }
+  }
+}
+
 // ---- 空输入不炸 ----
 assert.equal(radialLayout([], [], undefined).positions.size, 0)
 

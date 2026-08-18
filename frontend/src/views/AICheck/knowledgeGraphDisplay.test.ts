@@ -51,36 +51,22 @@ assert.ok(labelBlocks.length >= 3, '静态、悬停、选中三处标签都要�
 const whiteLabels = sfc.match(/color: '#ffffff'/g) || []
 assert.ok(whiteLabels.length >= 3, '三处标签都要是白字')
 
-/* 名字一个字都不省略，长了折行。
+/* 标签**默认最多 10 个字符**，超出截断加省略号。
  *
- * 上一版截到 8/12 字加省略号，图上一排「压力管道安…」「监检业务判…」——
- * 看得见有东西，仍然不知道是哪一条，和纯色块只差半步。 */
-assert.ok(!/clipLabel/.test(sfc), '不许再截断标签，长了要折行')
-// 只看图表配置那段：页面别处的 text-overflow: ellipsis 是列表用的，不相干
-const optionPart = sfc.slice(sfc.indexOf('function buildChartOption'), sfc.indexOf('</script>'))
-assert.ok(!/ellipsis/.test(optionPart), '图表标签不该还留着省略号配置')
-assert.ok(/function wrapLabel/.test(sfc), '要有折行函数')
-assert.ok(
-  /name: wrapLabel\(node\.label, node\.type\)\.join\('\\n'\)/.test(sfc),
-  '节点名字要用折行后的多行文本'
-)
+ * 这里走过一个来回：先截断（8/12 字）→ 用户要求显示全名 → 改成折行显示全
+ * → 259 个全名矩形把周长需求推到几万像素，整图 fit 之后缩没了，
+ * 用户反馈「根本没法看」→ 定为 10 字符截断。
+ * 图上的标签是**索引**不是文档；全名一直在 tooltip 和右侧详情里。 */
+assert.match(sfc, /const MAX_LABEL_CHARS = 10/, '默认最多显示 10 个字符')
+assert.ok(/function truncateLabel/.test(sfc), '要有截断函数')
+assert.ok(/name: truncateLabel\(node\.label\)/.test(sfc), '节点名字要用截断后的文本')
+assert.ok(/\}…`/.test(sfc), '截断要带省略号，否则看不出还有内容')
+assert.ok(!/function wrapLabel/.test(sfc), '折行已撤——全名折行会把周长推到几万像素')
 
-/* 折行后**高度必须跟着行数涨**，否则第二行直接画到框外面——
-   那只是把「横着溢出」换成了「竖着溢出」。 */
-const rectBody = sfc.slice(
-  sfc.indexOf('function nodeRectSize'),
-  sfc.indexOf('function buildChartOption')
-)
-assert.ok(/lines\.length \* lineHeightOf\(type\)/.test(rectBody), '框高要按行数算')
-assert.ok(
-  /lines\.map\(\(line\) => estimateTextWidth\(line, fontSize\)\)/.test(rectBody),
-  '框宽要按最长那行算'
-)
-// 行高要同时给 label，否则 ECharts 按默认行距排，和框高对不上
-assert.ok(
-  /lineHeight: lineHeightOf\(node\.type\)/.test(sfc),
-  'label 要用同一个行高，否则文字和框高对不上'
-)
+/* 定框宽必须用**截断后**的文字。用全名定宽的话，
+   框又被撑回长条，截断就白做了。 */
+const rectSizeFn = sfc.slice(sfc.indexOf('function nodeRectSize'), sfc.indexOf('const graph = ref'))
+assert.ok(/estimateTextWidth\(truncateLabel\(label\)/.test(rectSizeFn), '框宽没有按截断后的文字算')
 
 /* 每个节点都要有名字。
  *
@@ -208,10 +194,7 @@ assert.ok(!/layout: 'force'/.test(sfc), '力导向又回来了——层级会被
 assert.ok(!/force: \{/.test(sfc), '力导向参数还留着')
 /* 根显式指定为业务包节点。靠「度数最大者恰好是它」是巧合，
    巧合破掉的那天，圆心会换成某个规则节点，整张图的语义就错了。 */
-assert.ok(
-  /node\.type === 'business_pack'\)\?\.id/.test(sfc),
-  '根节点没有显式指定为业务包'
-)
+assert.ok(/node\.type === 'business_pack'\)\?\.id/.test(sfc), '根节点没有显式指定为业务包')
 /* 树边画实、交叉边画淡。294 条边全一样重的话，
    横向交叉线会把放射结构糊掉——图「没法看」有它一半功劳。 */
 assert.ok(/treeEdgeKeys/.test(sfc), '没有区分树边和交叉边')

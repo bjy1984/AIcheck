@@ -43,8 +43,24 @@ export type LayoutResult = {
 /** 矩形之间的最小间距。0 的话框贴在一起，看着仍像连成一片。 */
 export const RECT_GAP = 10
 
-/** 相邻两环的最小径向间隔：要放得下一个矩形的高再留出走线的空。 */
-const MIN_RING_STEP = 150
+/** 相邻两环的最小径向间隔下限。真正的间隔按两环矩形的实际尺寸算——
+ *  见 ringStep()：150px 的固定环距放不下两个 160px 宽的框在 θ≈0 处同角相邻，
+ *  线上第一版就是这么叠起来的。 */
+const MIN_RING_STEP = 90
+
+/** 相邻两环需要的径向间隔。
+ *
+ * 两个框在同一角度上下环相邻时，间隔向量是径向的：θ≈0 处径向≈横向，
+ * 卡的是**宽度**；θ≈π/2 处卡的是高度。hypot 同时盖住两轴（与同环
+ * 相邻对的推导相同）。用两环各自的最大尺寸算——保守，但不会再叠。 */
+function ringStep(
+  a: { maxWidth: number; maxHeight: number },
+  b: { maxWidth: number; maxHeight: number }
+): number {
+  const w = (a.maxWidth + b.maxWidth) / 2 + RECT_GAP
+  const h = (a.maxHeight + b.maxHeight) / 2 + RECT_GAP
+  return Math.max(MIN_RING_STEP, Math.hypot(w, h))
+}
 
 export function radialLayout(
   nodes: LayoutNode[],
@@ -125,13 +141,22 @@ export function radialLayout(
   positions.set(root, { x: 0, y: 0 })
   const ringRadii: number[] = []
   let previousRadius = 0
+  const rootNode = byId.get(root)!
+  let previousRingSize = { maxWidth: rootNode.width, maxHeight: rootNode.height }
   const maxDepth = Math.max(0, ...rings.keys())
   for (let depth = 1; depth <= maxDepth; depth++) {
     const members = (rings.get(depth) || []).sort((a, b) => angleOf.get(a)! - angleOf.get(b)!)
     // 周长需求 = 所有矩形宽 + 间距。除以排数就是单排要占的弧长。
-    /* 半径下限一：周长平均够放（宽度之和 / 2π）。 */
+    /* 半径下限一：周长平均够放（宽度之和 / 2π）；环距按两环实际尺寸算。 */
     const needed = members.reduce((sum, id) => sum + byId.get(id)!.width + RECT_GAP, 0)
-    let radius = Math.max(previousRadius + MIN_RING_STEP, needed / (2 * Math.PI))
+    const ringSize = {
+      maxWidth: Math.max(...members.map((id) => byId.get(id)!.width)),
+      maxHeight: Math.max(...members.map((id) => byId.get(id)!.height))
+    }
+    let radius = Math.max(
+      previousRadius + ringStep(previousRingSize, ringSize),
+      needed / (2 * Math.PI)
+    )
     /* 半径下限二：相邻对逐一收紧，条件是 rΔθ ≥ hypot(W, H)。
      *
      * 为什么是 hypot：矩形是**轴对齐**的，圆上两点的间隔向量随角度旋转。
@@ -169,13 +194,49 @@ export function radialLayout(
       positions.set(id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) })
     })
     previousRadius = radius
+    previousRingSize = ringSize
     ringRadii.push(radius)
   }
 
+  /* 回拉平滑：外环因周长约束被推得很远时，内环如果还贴着中心，
+   * 中间就是一大片空——「padding 太大」的观感一半来自这里。
+   * 把内环按深度比例外推（只外推、不内收，且保持与外环的最小环距），
+   * 环变成近似等距的同心圆，走线也更短。只增不减，不会制造新的重叠：
+   * 同环各节点半径一起变，弧长 rΔθ 只会变大。 */
+  for (let depth = maxDepth - 1; depth >= 1; depth--) {
+    const current = ringRadii[depth - 1]
+    const outer = ringRadii[depth]
+    const proportional = (outer * depth) / (depth + 1)
+    const pulled = Math.min(Math.max(current, proportional), outer - MIN_RING_STEP)
+    if (pulled > current) {
+      ringRadii[depth - 1] = pulled
+      for (const id of rings.get(depth) || []) {
+        const angle = angleOf.get(id)!
+        positions.set(id, { x: pulled * Math.cos(angle), y: pulled * Math.sin(angle) })
+      }
+    }
+  }
+
   if (orphans.length) {
-    const radius = Math.max(previousRadius + MIN_RING_STEP, 300)
+    /* 孤立环也要做间距约束。第一版只均匀撒角度——两个以上孤立节点
+       就可能叠在一起，而孤立数据恰恰是最需要被看清的。 */
+    const orphanSize = {
+      maxWidth: Math.max(...orphans.map((node) => node.width)),
+      maxHeight: Math.max(...orphans.map((node) => node.height))
+    }
+    const slice = (Math.PI * 2) / orphans.length
+    let radius = Math.max(previousRadius + ringStep(previousRingSize, orphanSize), 200)
+    for (let i = 0; i < orphans.length; i++) {
+      const a = orphans[i]
+      const b = orphans[(i + 1) % orphans.length]
+      if (orphans.length > 1) {
+        const w = (a.width + b.width) / 2 + RECT_GAP
+        const h = (a.height + b.height) / 2 + RECT_GAP
+        radius = Math.max(radius, Math.hypot(w, h) / slice)
+      }
+    }
     orphans.forEach((node, index) => {
-      const angle = (index / orphans.length) * Math.PI * 2
+      const angle = index * slice
       positions.set(node.id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) })
     })
     ringRadii.push(radius)

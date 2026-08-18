@@ -64,18 +64,23 @@ const MAJOR_TYPES = new Set(['business_pack', 'domain_module'])
  * 圆的可用宽度只有直径，中文标签一长，要么溢到球外面压住连线，
  * 要么截成「压力管道安…」。为了塞下字去放大球径，图上又全是巨型圆饼。
  * 矩形按文字长度定宽就没有这个矛盾：名字多长，框就多宽。 */
-const NODE_HEIGHT_RATIO = 0.66
-const LABEL_PADDING_X = 12
-const LABEL_PADDING_Y = 6
+const LABEL_PADDING_X = 6
+const LABEL_PADDING_Y = 4
 
-/* 名字**一个字都不省略**，长了就折行。
+/* 标签**默认最多 10 个字符**，超出截断加省略号。
  *
- * 上一版是截到 8/12 个字加省略号，于是图上一排「压力管道安…」
- * 「监检业务判…」——看得见有东西，仍然不知道是哪一条，
- * 还得逐个悬停去问，和之前的纯色块只差半步。
- * 折行不丢信息：框长高一点，字全在。 */
-const MAX_LINE_WIDTH_MAJOR = 132
-const MAX_LINE_WIDTH_MINOR = 96
+ * 中间试过一版「一个字都不省略、长了折行」：259 个全名矩形把周长需求
+ * 推到几万像素，整图 fit 之后缩没了——用户的反馈是「根本没法看」。
+ * 图上的标签是**索引**，不是文档：认得出是哪一条就够了，
+ * 全名在 tooltip（fullName）和右侧详情里，一直都拿得到。 */
+const MAX_LABEL_CHARS = 10
+
+function truncateLabel(text: string): string {
+  const chars = [...String(text || '')]
+  return chars.length > MAX_LABEL_CHARS
+    ? `${chars.slice(0, MAX_LABEL_CHARS).join('')}…`
+    : chars.join('')
+}
 
 /** 单字像素宽。中日韩按一个字宽，其余按 0.56 个字宽——够定框宽了。 */
 function charWidth(ch: string, fontSize: number): number {
@@ -86,34 +91,6 @@ function estimateTextWidth(text: string, fontSize: number): number {
   let width = 0
   for (const ch of text) width += charWidth(ch, fontSize)
   return Math.ceil(width)
-}
-
-/** 按像素宽折行。按字数折的话，「NB/T 47013」这种半角串会折得过早。 */
-function wrapLabel(text: string, type: string): string[] {
-  const fontSize = labelFontSize(type)
-  const maxWidth = MAJOR_TYPES.has(type) ? MAX_LINE_WIDTH_MAJOR : MAX_LINE_WIDTH_MINOR
-  const lines: string[] = []
-  let line = ''
-  let width = 0
-  for (const ch of String(text || '')) {
-    if (ch === '\n') {
-      lines.push(line)
-      line = ''
-      width = 0
-      continue
-    }
-    const w = charWidth(ch, fontSize)
-    if (line && width + w > maxWidth) {
-      lines.push(line)
-      line = ch
-      width = w
-    } else {
-      line += ch
-      width += w
-    }
-  }
-  if (line) lines.push(line)
-  return lines.length ? lines : ['']
 }
 
 const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
@@ -144,18 +121,13 @@ function lineHeightOf(type: string): number {
   return labelFontSize(type) + 4
 }
 
-/** 矩形尺寸 [宽, 高]：宽按最长那一行，高按行数——折行之后高度必须跟着涨，
- *  否则第二行直接画到框外面，就成了另一种溢出。 */
+/** 矩形尺寸 [宽, 高]。单行：宽按截断后的文字，高按一行字加内边距。
+ *  定宽必须用**截断后**的文字——用全名定宽的话，框又会被撑回长条。 */
 function nodeRectSize(type: string, label: string): [number, number] {
-  const base = SYMBOL_SIZE_BY_TYPE[type] || 18
   const fontSize = labelFontSize(type)
-  const lines = wrapLabel(label, type)
-  const widest = Math.max(...lines.map((line) => estimateTextWidth(line, fontSize)))
-  const width = Math.max(base, widest + LABEL_PADDING_X * 2)
-  const height = Math.max(
-    Math.round(base * NODE_HEIGHT_RATIO),
-    lines.length * lineHeightOf(type) + LABEL_PADDING_Y * 2
-  )
+  const text = estimateTextWidth(truncateLabel(label), fontSize)
+  const width = Math.max(SYMBOL_SIZE_BY_TYPE[type] || 18, text + LABEL_PADDING_X * 2)
+  const height = lineHeightOf(type) + LABEL_PADDING_Y * 2
   return [width, height]
 }
 
@@ -413,7 +385,7 @@ function buildChartOption(): EChartsOption {
     id: node.id,
     x: layout.positions.get(node.id)?.x ?? 0,
     y: layout.positions.get(node.id)?.y ?? 0,
-    name: wrapLabel(node.label, node.type).join('\n'),
+    name: truncateLabel(node.label),
     value: node.typeLabel,
     category: familyIndex.get(node.family) ?? familyIndex.get('semantic') ?? 0,
     /* 直角矩形，宽度跟着文字走。圆形的可用宽度只有直径，
