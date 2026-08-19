@@ -3034,15 +3034,25 @@ class InMemoryRepository:
         return documents
 
     def persistence_tenant_document(self, document: dict[str, Any]) -> dict[str, Any]:
-        """Bind persisted records to this process's configured tenant."""
+        """给要落库的记录打上本进程的租户标记。
 
+        **返回的是浅拷贝，嵌套结构与内存状态共享**——调用方只能读它（序列化），
+        不能改它的嵌套内容，否则会直接改到运行中的状态。
+        现有调用点都是「取来→序列化→丢弃」，符合这个约定。
+
+        原先这里是 deepcopy。它只为序列化一次就被丢掉，代价却极高：
+        76323 条记录实测 deepcopy 7.4 秒、浅拷贝 0.1 秒（74 倍）。
+        而落库前要对整份状态逐条做这件事，这段时间占着解释器，
+        同进程的所有请求都被挤住——0819 实测一次写入期间
+        /api/healthz 要十几秒，**不是写慢，是全站都慢**。
+        """
         tenant_id = configured_tenant_id()
         explicit_tenant = str(document.get("tenantId") or document.get("tenant_id") or "").strip()
         if explicit_tenant and explicit_tenant != tenant_id:
             raise RuntimeError("Cross-tenant persistence is not allowed in this process.")
         if not explicit_tenant:
             document["tenantId"] = tenant_id
-        scoped = self.clone(document)
+        scoped = dict(document)
         scoped.pop("tenant_id", None)
         scoped["tenantId"] = tenant_id
         return scoped

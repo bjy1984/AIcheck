@@ -45,3 +45,28 @@ def test_无法直接序列化的对象退回字符串() -> None:
 def test_中文不转义() -> None:
     """转义成 \\uXXXX 的话体积翻几倍，而这份状态有几十 MB。"""
     assert "压力管道" in payload({"name": "压力管道"})
+
+
+def test_落库拷贝是浅拷贝且不影响原记录() -> None:
+    """这是一条**有代价的约定**，必须钉住两头。
+
+    浅拷贝的理由：原先是 deepcopy，只为序列化一次就丢掉，
+    76323 条记录实测 7.4 秒 vs 0.1 秒（74 倍）。落库前要对整份状态逐条做，
+    这段时间占着解释器，同进程所有请求都被挤住。
+
+    代价是嵌套结构与运行中的状态**共享**：调用方只能读，不能改。
+    所以这里钉两件事——顶层改动不回写原记录（拷贝确实发生了），
+    以及嵌套确实是共享的（提醒后来者别在返回值上改嵌套内容）。
+    """
+    from libs.db.repository import repo
+
+    original = {"id": "X", "nested": {"k": "v"}}
+    scoped = repo.persistence_tenant_document(original)
+
+    scoped["id"] = "改过了"
+    assert original["id"] == "X", "顶层被改回原记录了——那就不是拷贝"
+
+    assert scoped["nested"] is original["nested"], (
+        "嵌套不再共享——要么有人改回了 deepcopy（每次落库多付 7 秒），"
+        "要么改成了别的拷贝方式，请连同这条注释一起更新"
+    )
