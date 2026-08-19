@@ -58,6 +58,21 @@ class StateFreshnessProbe:
         self._seen_global: Any = None
         self._seen_by_collection: dict[str, Any] = {}
 
+    def prime(self, *, global_max: Any, collection_max: dict[str, Any]) -> None:
+        """整表加载之后立刻建立基线。
+
+        不建的话，下一次探测会被判成「首次探测」——而首次探测按设计**只建基线、
+        不刷新任何东西**。于是 worker 的第二个任务读到的还是整表加载那一刻的数据，
+        中间由别的进程写入的东西一概看不见。
+
+        0819 线上就是这样：OCR worker 写好解析结果，切片 worker 读到 0 片段，
+        判成 empty_text，报审因此永久卡住——**症状和一个已修的老 bug 一模一样，
+        只是换了机制**。加载完就把基线建上，这条缝就没有了。
+        """
+        with self._lock:
+            self._seen_global = global_max
+            self._seen_by_collection.update(collection_max)
+
     def reset(self) -> None:
         """把「见过的最新时间」清空，下次探针会认为一切都需要重载。"""
         with self._lock:

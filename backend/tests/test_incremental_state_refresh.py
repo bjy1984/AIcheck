@@ -219,3 +219,39 @@ def test_整表加载后空集合也要算加载过() -> None:
 
     missing = [key for key in STATE_COLLECTIONS if not repository.collection_is_loaded(key)]
     assert not missing, f"这些集合没有水位线，增量刷新会一直退回整表：{missing[:5]}"
+
+
+def test_整表加载后立刻建立探针基线() -> None:
+    """加载完就要建基线，否则「第一次增量刷新」什么都不刷。
+
+    探针的首次探测按设计只建基线、不返回过期集合。如果整表加载没有顺带把
+    基线建上，那么 worker 的**第二个任务**才触发首次探测——它读到的仍是
+    整表那一刻的数据，中间由别的进程写入的东西一概看不见。
+
+    0819 线上实测的后果：OCR worker 写好解析结果，切片 worker 读到 0 片段、
+    判成 empty_text，报审因此永久卡住——**症状和一个已修的老 bug 一模一样，
+    只是换了机制**，而且同样不报错。
+    """
+    stamp = datetime(2026, 8, 19, 3, 0, tzinfo=UTC)
+    repository = InMemoryRepository()
+    connection = RecordingConnection({("knowledge_chunks", "C-1"): ({"id": "C-1"}, stamp)})
+    repository.sync_postgres = connection
+    repository.postgres_dsn = "postgresql://fake"
+    repository.postgres_enabled = True
+    repository.configure_sync_postgres = lambda: None  # type: ignore[method-assign]
+    repository.ensure_postgres_schema = lambda: None  # type: ignore[method-assign]
+    repository.flush_to_sync_postgres = lambda **_kwargs: None  # type: ignore[method-assign]
+
+    repository.load_from_sync_postgres()
+
+    # 基线建上了 → 下一次探测不再是「首次」，能真正判出过期集合
+    later = datetime(2026, 8, 19, 3, 5, tzinfo=UTC)
+    stale = repository._state_probe.stale_collections(
+        global_max=later,
+        collection_max={"knowledge_chunks": later},
+        force=True,
+    )
+    assert stale == {"knowledge_chunks"}, (
+        "整表加载后没建基线——第一次增量刷新会静默地什么都不刷，"
+        "worker 于是一直读旧数据"
+    )

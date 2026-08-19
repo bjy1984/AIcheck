@@ -3875,6 +3875,19 @@ class InMemoryRepository:
             for collection_name in selected_collections or []:
                 # 空集合也要有水位线，否则每次都判成「没加载过」而整表重来
                 self._collection_watermarks.setdefault((effective_tenant_id, str(collection_name)), _EPOCH_WATERMARK)
+            # 建立过期探针的基线——见 StateFreshnessProbe.prime 的说明：
+            # 不建的话下一次探测只建基线、不刷新，worker 会一直读到旧数据。
+            collection_max: dict[str, Any] = {}
+            global_max: Any = None
+            for collection_name, _object_id, _payload, updated_at in rows:
+                if updated_at is None:
+                    continue
+                name = str(collection_name)
+                if collection_max.get(name) is None or updated_at > collection_max[name]:
+                    collection_max[name] = updated_at
+                if global_max is None or updated_at > global_max:
+                    global_max = updated_at
+            self._state_probe.prime(global_max=global_max, collection_max=collection_max)
             for state_key, collection_name in STATE_COLLECTIONS.items():
                 documents = grouped.get(collection_name, [])
                 if selected_state_keys is not None and state_key in selected_state_keys or has_project_seed or documents:
