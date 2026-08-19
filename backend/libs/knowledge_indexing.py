@@ -717,3 +717,37 @@ def vector_payload_for_pg(row: dict[str, Any]) -> dict[str, Any]:
         "index_version": row.get("indexVersion"),
         "metadata": json.dumps({key: value for key, value in row.items() if key != "embedding"}, ensure_ascii=False),
     }
+
+
+# --------------------------------------------------------------------------
+# 哪些知识文件不许走通用重建管线
+# --------------------------------------------------------------------------
+
+#: 分块由专用摄取路径生成、通用切片器重建不出来的来源类型。
+DEDICATED_INGESTION_SOURCE_TYPES = frozenset({"standard"})
+
+
+def reject_if_dedicated_ingestion(file: dict[str, Any]) -> None:
+    """标准条款库不许走通用重建管线（dispatch_knowledge_file_index_pipeline）。
+
+    那条管线会先清掉派生索引、再用**通用切片器**重建。项目资料没问题
+    （OCR 正文按长度切），标准库不行：它的分块由专用摄取路径生成、与条款
+    一一对齐（见 scripts/backfill_knowledge_pgvector.py，2134 分块对 2134 向量）。
+
+    0819 拿它给标准库换向量模型，结果 31 份标准的分块直接归零，另 29 份被切成
+    完全不同的粒度（13594 个碎块），靠迁移前的备份才救回来。
+
+    最难受的是**它不报错**：切片任务返回 succeeded，只是 chunkCount 为 0。
+    所以这道拦截必须在入口，而且要在清空之前——先清后拒等于照样丢了分块。
+
+    正确做法：只换向量模型用 dispatch_embed（保留分块）；
+    要重建分块走 scripts/backfill_knowledge_pgvector.py。
+    """
+    source_type = str(file.get("sourceType") or "")
+    if source_type in DEDICATED_INGESTION_SOURCE_TYPES:
+        raise ValueError(
+            "standard_library_uses_dedicated_ingestion: "
+            f"{source_type} 类知识文件的分块由专用摄取路径生成，通用切片器重建不出来。"
+            "只换向量模型请用 dispatch_embed（保留分块），"
+            "要重建分块请走 scripts/backfill_knowledge_pgvector.py。"
+        )

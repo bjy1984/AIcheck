@@ -173,6 +173,7 @@ from libs.knowledge_indexing import (
     STANDARD_INDEX_VERSION,
     active_embedding_target,
     offline_hash_embedding,
+    reject_if_dedicated_ingestion,
 )
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
@@ -1909,6 +1910,8 @@ def dispatch_knowledge_file_ocr_pipeline(file: dict[str, Any], *, reason: str) -
 
 
 def dispatch_knowledge_file_index_pipeline(file: dict[str, Any], *, reason: str) -> list[dict[str, Any]]:
+    # 标准库不走这条路——理由与那次数据损坏见 libs/knowledge_indexing.py
+    reject_if_dedicated_ingestion(file)
     document = repo.find_one("documents", file.get("documentId"))
     version = repo.find_one("versions", file.get("documentVersionId"))
     if not document or not version:

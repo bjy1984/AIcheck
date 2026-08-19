@@ -23,7 +23,9 @@ load_state()
 OCR_OK = {"已识别", "人工修正", "抽取不完整"}
 targets = [
     f for f in repo.state.get("knowledge_files", [])
+    # 标准库排除在外：它的分块由专用摄取路径生成，重建管线会把它们清掉
     if f.get("projectId")
+    and str(f.get("sourceType")) != "standard"
     and str(f.get("ocrStatus") or "") in OCR_OK
     and str(f.get("sliceStatus") or "") != "已切片"
 ]

@@ -31,6 +31,7 @@ sys.path.insert(0, "/app")
 
 from apps.api.routes import dispatch_knowledge_file_index_pipeline  # noqa: E402
 from libs.db.repository import flush_state, load_state, repo  # noqa: E402
+from libs.integrations import task_dispatcher  # noqa: E402
 from libs.integrations.embedding_client import EmbeddingClient  # noqa: E402
 
 load_state()
@@ -76,7 +77,12 @@ if "--apply" not in sys.argv:
 ok = err = 0
 for f in stale:
     try:
-        dispatch_knowledge_file_index_pipeline(f, reason=f"索引版本迁移到 {current_index}")
+        if str(f.get("sourceType")) == "standard":
+            # 标准库只换向量、不动分块：它的分块与条款一一对齐，
+            # 通用切片器重建不出来（0819 因此丢过 31 份标准的分块）。
+            task_dispatcher.dispatch_embed(str(f["id"]))
+        else:
+            dispatch_knowledge_file_index_pipeline(f, reason=f"索引版本迁移到 {current_index}")
         ok += 1
     except Exception as exc:  # noqa: BLE001
         err += 1

@@ -99,23 +99,29 @@ function estimateTextWidth(text: string, fontSize: number): number {
   return Math.ceil(width)
 }
 
+/* 圆的直径，按类型分档。
+ *
+ * 这套值是矩形时代留下的——那时框要装下文字，只能往大了给。
+ * 文字挪到圆外面之后，圆只承担「这是哪一层」这一个信息，
+ * 大约六折就够：层级差别照样看得出来，图却清爽很多。
+ * 根节点保留明显的体量差，否则一眼找不到圆心。 */
 const SYMBOL_SIZE_BY_TYPE: Record<string, number> = {
-  business_pack: 54,
-  domain_module: 36,
-  inspection_node: 25,
-  project: 30,
-  rule: 24,
-  atomic_check: 18,
-  clause_package: 23,
-  required_fact: 14,
-  standard: 28,
-  standard_clause: 16,
-  material_type: 18,
-  knowledge_source: 24,
-  knowledge_file: 16,
-  tool: 16,
-  thinking_mode: 18,
-  agent: 30
+  business_pack: 30,
+  domain_module: 20,
+  inspection_node: 14,
+  project: 16,
+  rule: 12,
+  atomic_check: 10,
+  clause_package: 12,
+  required_fact: 8,
+  standard: 14,
+  standard_clause: 9,
+  material_type: 10,
+  knowledge_source: 13,
+  knowledge_file: 9,
+  tool: 9,
+  thinking_mode: 10,
+  agent: 16
 }
 
 function labelFontSize(type: string): number {
