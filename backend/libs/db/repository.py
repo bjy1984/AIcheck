@@ -3864,7 +3864,10 @@ class InMemoryRepository:
             grouped: dict[str, list[dict[str, Any]]] = {}
             # 记下每个集合加载到哪个时刻——下次刷新才有可能只拉变化的行
             for collection_name, _, payload, updated_at in rows:
-                grouped.setdefault(collection_name, []).append(json.loads(json.dumps(payload)))
+                # 不再 json.loads(json.dumps(payload)) 兜一圈：psycopg 每行都返回
+                # 新解析出来的对象，没有共享，那次「防御性深拷贝」纯属白做——
+                # 线上实测 46321 行要 15.5 秒，占整份加载的 43%。
+                grouped.setdefault(collection_name, []).append(payload)
                 key = (effective_tenant_id, str(collection_name))
                 seen = self._collection_watermarks.get(key)
                 if updated_at is not None and (seen is None or updated_at > seen):
@@ -3912,6 +3915,16 @@ class InMemoryRepository:
                 return
             self.state = loaded
             self.mark_tenant_loaded()
+            # 整表加载完成 → 每个集合都算「加载过」，**包括一行都没有的**。
+            #
+            # 漏掉空集合的后果不是数据错，是性能塌方：collection_is_loaded 对它们
+            # 永远返回 False，于是 refresh_worker_state 每次都判定「还没加载过」
+            # 而整份重来。线上实测——worker 每个任务白付 38 秒，改了增量也没用，
+            # 因为根本走不到增量那条路。
+            for collection_name in STATE_COLLECTIONS.values():
+                self._collection_watermarks.setdefault(
+                    (effective_tenant_id, str(collection_name)), _EPOCH_WATERMARK
+                )
             self._persistence_baseline = {
                 **loaded_baseline
             }

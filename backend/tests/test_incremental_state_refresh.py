@@ -46,15 +46,31 @@ class RecordingConnection:
         if normalized.startswith("SELECT object_id FROM aicheck_state"):
             _tenant, collection = params
             return _Cursor([(object_id,) for (coll, object_id) in sorted(self.rows) if coll == collection])
+        if normalized.startswith("SELECT collection, object_id, payload, updated_at FROM aicheck_state"):
+            # 整表加载。带一条 projects：库里没有项目时加载路径会去播种 demo 数据，
+            # 那条分支与本用例无关，却会把断言淹掉。
+            return _Cursor(
+                [("projects", "P-1", {"id": "P-1"}, datetime(2026, 8, 18, tzinfo=UTC))]
+                + [
+                    (coll, object_id, payload, stamp)
+                    for (coll, object_id), (payload, stamp) in sorted(self.rows.items())
+                ]
+            )
         return _Cursor([])
 
     def commit(self) -> None:
         pass
 
+    def transaction(self):
+        from contextlib import nullcontext
+
+        return nullcontext()
+
 
 class _Cursor:
     def __init__(self, rows):
         self._rows = rows
+        self.rowcount = len(rows)
 
     def fetchall(self):
         return self._rows
@@ -175,3 +191,31 @@ def test_没加载过的集合不能只走增量() -> None:
         tasks.repo = original_repo  # type: ignore[assignment]
         tasks.load_state = original_load  # type: ignore[assignment]
         tasks.worker_state_persistence_enabled = original_enabled  # type: ignore[assignment]
+
+
+def test_整表加载后空集合也要算加载过() -> None:
+    """一行都没有的集合，同样要记水位线。
+
+    漏掉它们不会报错，也不会让数据出错——只会让**所有增量优化悄悄失效**：
+    collection_is_loaded 对空集合永远返回 False，refresh_worker_state 每次都
+    判定「还没加载过」而整份重来。0819 线上就是这样：增量代码部署了，
+    worker 每个任务照旧付 38 秒，因为根本走不到增量那条路。
+
+    这类 bug 最难查的地方在于——优化「上线了」，指标却一点没动。
+    """
+    repository = InMemoryRepository()
+    connection = RecordingConnection({})
+    repository.sync_postgres = connection
+    repository.postgres_dsn = "postgresql://fake"
+    repository.postgres_enabled = True
+    repository.configure_sync_postgres = lambda: None  # type: ignore[method-assign]
+    repository.ensure_postgres_schema = lambda: None  # type: ignore[method-assign]
+    # 加载路径里的条款漂移修复会顺带 flush，与本用例要钉的东西无关，打桩掉
+    repository.flush_to_sync_postgres = lambda **_kwargs: None  # type: ignore[method-assign]
+
+    repository.load_from_sync_postgres()
+
+    from libs.db.repository import STATE_COLLECTIONS
+
+    missing = [key for key in STATE_COLLECTIONS if not repository.collection_is_loaded(key)]
+    assert not missing, f"这些集合没有水位线，增量刷新会一直退回整表：{missing[:5]}"
