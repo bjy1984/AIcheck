@@ -40,11 +40,27 @@ if not client.enabled:
     raise SystemExit("当前没有可用的 embedding 服务——先把配置修好再重建，否则只是把状态推回待向量化")
 
 only_hash = "--only-hash" in sys.argv
-files = [f for f in repo.state.get("knowledge_files", []) if f.get("projectId")]
+# 不能只看项目文件。
+#
+# 原先这里过滤 `f.get("projectId")`，于是**标准条款库整批被漏掉**——
+# 而它才是检索的主体（GB/TSG 那 60 份）。漏掉的后果不是「少迁了几份」：
+# 查询向量用新模型、标准条款还留在旧模型上，跨模型算余弦相似度
+# 得到的是**乱序**，而且不报错——检索照常返回结果，只是排的不对。
+files = [f for f in repo.state.get("knowledge_files", []) if isinstance(f, dict)]
 vectorized = [f for f in files if f.get("vectorStatus") == "已向量化"]
 
 print(f"当前索引版本：{current_index}")
 print("现存分布：", dict(Counter(str(f.get("indexVersion") or "(无)") for f in vectorized)))
+print(
+    "  其中标准库：",
+    dict(
+        Counter(
+            str(f.get("indexVersion") or "(无)")
+            for f in vectorized
+            if str(f.get("sourceType")) == "standard"
+        )
+    ),
+)
 
 stale = [f for f in vectorized if str(f.get("indexVersion") or "") != current_index]
 if only_hash:
