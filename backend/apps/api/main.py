@@ -26,6 +26,7 @@ from apps.api.mineru_ocr_routes import router as mineru_ocr_router
 from apps.api.routes import (
     binding_node_ids,
     document_node_ids,
+    authorization_membership_snapshot,
     idempotency_fingerprint,
     member_node_scope_error,
     mock_router,
@@ -553,7 +554,10 @@ async def idempotency_replay_response(request: Request) -> JSONResponse | None:
     if cached.get("requestHash") and cached["requestHash"] != fingerprint:
         return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
     if cached.get("authorizationDigest") != request_authorization_digest(request):
-        return fail(errors.FORBIDDEN, request, message="当前授权上下文已变化，不能重放历史响应。", http_status=403)
+        # 旧格式（全局成员快照）就地升级：旧口径仍吻合说明授权没有实质变化
+        if cached.get("authorizationDigest") != request_authorization_digest(request, all_projects=True):
+            return fail(errors.FORBIDDEN, request, message="当前授权上下文已变化，不能重放历史响应。", http_status=403)
+        cached["authorizationDigest"] = request_authorization_digest(request)
     return JSONResponse(
         repo.clone(cached["response"]),
         status_code=int(cached.get("httpStatus") or 200),
@@ -609,20 +613,18 @@ def client_declared_identity(request: Request) -> str | None:
     return value or None
 
 
-def request_authorization_digest(request: Request) -> str:
+def request_authorization_digest(request: Request, *, all_projects: bool = False) -> str:
+    """幂等重放的授权摘要。成员关系**只取请求所涉项目**——
+    粒度与 mutation_guard 的授权判定一致；全局口径的事故见
+    authorization_membership_snapshot 的说明（0819：加入新项目击穿
+    该用户在所有项目的缓存重放）。all_projects=True 仅用于旧格式兼容。"""
     actor = getattr(request.state, "auth_user", None) or {}
     claims = getattr(request.state, "auth", None) or {}
     user_id = str(actor.get("id") or client_declared_identity(request) or "anonymous")
     tenant_id = str(claims.get("tid") or tenant_id_for_record(actor) or configured_tenant_id())
     role = str(claims.get("role") or request.headers.get("X-Role") or "anonymous")
-    memberships = sorted(
-        (
-            str(item.get("projectId") or ""),
-            tuple(sorted(int(node_id) for node_id in item.get("nodeScope") or [])),
-            str(item.get("status") or ""),
-        )
-        for item in repo.state.get("project_members", [])
-        if str(item.get("userId") or "") == user_id and tenant_id_for_record(item) == tenant_id
+    memberships = authorization_membership_snapshot(
+        request, user_id, tenant_id, all_projects=all_projects
     )
     return idempotency_fingerprint(
         {"tenantId": tenant_id, "actorId": user_id, "role": role, "memberships": memberships}
