@@ -48,6 +48,7 @@ from libs.db.postgres import (
     run_transaction_probe,
 )
 from libs.db.repository import (
+    STATE_COLLECTIONS,
     ConcurrentPersistenceError,
     IllegalNodeStatusTransition,
     flush_mutation_records,
@@ -386,7 +387,9 @@ async def handle_request(
                     state_keys = getattr(request.state, "flush_state_keys", None)
                     singleton_keys = getattr(request.state, "flush_singleton_keys", None)
                     flush_state(
-                        selected_state_keys=set(state_keys) if state_keys is not None else None,
+                        selected_state_keys=(
+                            set(state_keys) if state_keys is not None else API_FLUSH_STATE_KEYS
+                        ),
                         selected_singleton_keys=set(singleton_keys) if singleton_keys is not None else None,
                     )
             return response
@@ -470,6 +473,19 @@ def idempotency_scope(request: Request) -> str | None:
     role = str(claims.get("role") or request.headers.get("X-Role") or "anonymous")
     key_hash = idempotency_fingerprint(key)
     return f"{tenant_id}:{actor_id}:{role}:{request.method}:{canonical_path(request.url.path)}:{key_hash}"
+
+
+#: 只有 worker 会写的大表：向量本体 61 MB、向量化断点批次 21 MB。
+#:
+#: 请求处理器从不写它们，但没声明范围的 flush 会把它们一并序列化去比对基线——
+#: 实测全量 flush 17.4 秒，其中这两张表占 10.7 秒。而这段时间持有的锁，
+#: 读路径也要拿：0819 实测一次写入期间 /api/healthz 连续 36s、53s、28s，
+#: **不是写慢，是全站都慢**。
+#:
+#: 所以由 API 显式声明「我负责这些」，而不是在仓库层猜进程角色。
+#: worker 侧的 flush 会显式带上这两张表（见 embed_knowledge 的收尾）。
+API_OWNED_BULK_EXCLUSIONS = frozenset({"knowledge_vectors", "knowledge_embedding_batches"})
+API_FLUSH_STATE_KEYS = frozenset(STATE_COLLECTIONS) - API_OWNED_BULK_EXCLUSIONS
 
 
 def should_flush_state(request: Request) -> bool:

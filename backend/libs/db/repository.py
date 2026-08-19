@@ -4483,11 +4483,24 @@ class InMemoryRepository:
             if self.sync_postgres is None:
                 return
             self.ensure_postgres_schema()
-            plan = self._build_flush_dirty_plan(
-                selected_state_keys=selected_state_keys,
-                selected_singleton_keys=selected_singleton_keys,
-            )
-            if not plan["has_work"]:
+        # 算 diff 放在锁**外面**。
+        #
+        # 这一步要把当前状态序列化一遍去和基线比对：全量时实测 17.4 秒
+        # （其中 knowledge_vectors 一张表 61 MB 就占 8.7 秒）。原先它在锁内，
+        # 而同一把锁也是读路径要拿的——于是一次写入期间，**所有请求**都在锁上排队：
+        # 0819 实测 /api/healthz 连续 36s、53s、28s，不只是写慢，是全站都慢。
+        #
+        # 算 diff 只读内存状态、不碰数据库，放在锁外不影响一致性：
+        # 真正需要串行的是下面那段数据库事务，而它本来就有乐观锁守卫
+        # （assert_persistence_baseline）——并发写会被它挡下并回滚重来。
+        plan = self._build_flush_dirty_plan(
+            selected_state_keys=selected_state_keys,
+            selected_singleton_keys=selected_singleton_keys,
+        )
+        if not plan["has_work"]:
+            return
+        with self._sync_postgres_lock:
+            if self.sync_postgres is None:
                 return
             dirty_documents: dict[tuple[str, str], tuple[dict[str, Any], str]] = plan["dirty_documents"]
             deleted_keys: list[tuple[str, str]] = plan["deleted_keys"]
