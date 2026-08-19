@@ -206,8 +206,14 @@ def main() -> int:
     import glob as _glob
     import os as _os
 
-    real_samples = sorted(_glob.glob("/app/rules/standards/*.pdf"))
-    real_samples = [p for p in real_samples if _os.path.getsize(p) < 3_000_000]
+    # 取**最小**的那份，不是第一份。
+    #
+    # 标准库里多是上百页的完整规范，MinerU 识别一份要十几分钟——
+    # 探针会因此超时，而那是素材选大了，不是产品慢。
+    # 最小的一份约 145 KB，几分钟内能跑完，同样是中文、有版面、有表格。
+    real_samples = sorted(
+        _glob.glob("/app/rules/standards/*.pdf"), key=lambda item: _os.path.getsize(item)
+    )
     probe_source = "真实标准 PDF"
     if real_samples:
         with open(real_samples[0], "rb") as handle:
@@ -226,7 +232,12 @@ def main() -> int:
             b"5 0 obj<</Length " + str(len(stream)).encode() + b">>stream\n" + stream + b"\nendstream endobj\n"
             b"trailer<</Root 1 0 R>>\n%%EOF\n"
         )
-    record("探针素材", bool(real_samples), probe_source)
+    record(
+        "探针素材",
+        bool(real_samples),
+        f"{probe_source} {len(pdf) // 1024} KB"
+        + (f" {_os.path.basename(real_samples[0])}" if real_samples else ""),
+    )
     sess = api(
         f"/api/projects/{pid}/documents/upload-session",
         "contractor",
@@ -274,12 +285,20 @@ def main() -> int:
             record("拿到挂载 ID", bool(binding_id), str(binding_id))
 
     if binding_id:
-        # 报审前置：OCR→切片→向量化整条管线要走完，轮询等它（上限 6 分钟）
         import time as _time
 
-        # 报审就绪判定是 OCR/切片/向量化三段全绿——最忠实的等法就是
-        # 直接重试报审本身，直到不再回「处理尚未成功」（上限 8 分钟）
-        deadline = _time.time() + 480
+        # 报审就绪要 OCR→切片→向量化三段全绿，最忠实的等法是**直接重试报审本身**。
+        #
+        # 重试条件按 code 判断，**不匹配提示文案**：
+        # 上一版写的是「文案里没有『尚未成功』就退出」，而后来我把提示改准确了
+        # （改成按卡住的环节说「文字识别还在进行中」），这个探针没跟着改，
+        # 于是第一次调用就退出、报「等待 3s 仍未就绪」——
+        # **探针挂在自己身上，看起来却像产品缺陷**。
+        #
+        # 真实素材识别要几分钟，窗口给足；超时要能分清「产品慢」和「素材选大了」，
+        # 所以下面打印实际等待秒数。
+        started_at = _time.time()
+        deadline = started_at + 900
         sub = None
         while _time.time() < deadline:
             sub = api(
@@ -287,10 +306,22 @@ def main() -> int:
                 "contractor",
                 {"nodeIds": [node_id], "bindingIds": [binding_id], "batchName": "写操作审计批次"},
             )
-            if "尚未成功" not in str(sub.get("message") or ""):
+            if sub.get("code") == 0:
+                break
+            # 40001 是「还没就绪」这一类；其余错误码是真的失败，没必要空等
+            if sub.get("code") != 40001:
                 break
             _time.sleep(15)
-        sub_data = expect_ok("contractor 正式报审（等管线就绪后）", sub or {}, "submissionId")
+        waited = int(_time.time() - started_at)
+        if (sub or {}).get("code") == 0:
+            record("contractor 正式报审（等管线就绪后）", True, f"等待 {waited}s")
+        else:
+            record(
+                "contractor 正式报审（等管线就绪后）",
+                False,
+                f"等待 {waited}s 仍未就绪：{(sub or {}).get('message')}",
+            )
+        sub_data = (sub or {}).get("data") if (sub or {}).get("code") == 0 else None
         if sub_data:
             node_pkg = api(f"/api/projects/{pid}/inspection/nodes/{node_id}/package", "inspection")
             record(

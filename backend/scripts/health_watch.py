@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import sys
 import urllib.request
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 sys.path.insert(0, "/app")
 
@@ -37,9 +37,15 @@ ALERT_PATH = "/tmp/health-alert.log"
 
 
 def check() -> tuple[list[str], list[str]]:
+    from libs.contracts.responses import SERVER_TZ, server_time
     from libs.db.repository import load_state, repo
 
     load_state()
+    # 时间口径必须和库里一致：记录写的是 SERVER_TZ（Asia/Shanghai），
+    # 容器跑的是 UTC。拿 UTC 去比会得到**负数**的「多久没动」，
+    # 于是「长时间无进展」这条告警永远不触发——
+    # 0819 实测 -469 分钟。不会报警的监控比没有监控更糟。
+    now = datetime.now(SERVER_TZ)
     alerts: list[str] = []
     facts: list[str] = []
 
@@ -53,8 +59,8 @@ def check() -> tuple[list[str], list[str]]:
         newest = max(str(k.get("updatedAt") or "") for k in pending)
         stalled_since = str(newest)[:19]
         try:
-            moved_at = datetime.fromisoformat(stalled_since).replace(tzinfo=UTC)
-            idle_minutes = (datetime.now(UTC) - moved_at).total_seconds() / 60
+            moved_at = datetime.fromisoformat(stalled_since).replace(tzinfo=SERVER_TZ)
+            idle_minutes = (now - moved_at).total_seconds() / 60
         except ValueError:
             idle_minutes = 0
         facts.append(f"最近一次处理进展：{stalled_since}（{idle_minutes:.0f} 分钟前）")
@@ -71,7 +77,7 @@ def check() -> tuple[list[str], list[str]]:
         )
 
     tasks = [item for item in repo.state.get("knowledge_tasks", []) if isinstance(item, dict)]
-    hour_ago = (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    hour_ago = (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
     recent = [t for t in tasks if str(t.get("updatedAt") or "") >= hour_ago]
     recent_failed = [t for t in recent if str(t.get("status")) == "失败"]
     if recent:
@@ -96,7 +102,9 @@ def check() -> tuple[list[str], list[str]]:
 
 
 def main() -> int:
-    stamp = datetime.now(UTC).strftime("%F %T")
+    from libs.contracts.responses import server_time as _server_time
+
+    stamp = _server_time()
     try:
         alerts, facts = check()
     except Exception as exc:  # noqa: BLE001 - 巡检自己挂了也要说出来，不能静默
