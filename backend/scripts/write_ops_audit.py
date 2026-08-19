@@ -323,11 +323,16 @@ def main() -> int:
             )
         sub_data = (sub or {}).get("data") if (sub or {}).get("code") == 0 else None
         if sub_data:
-            node_pkg = api(f"/api/projects/{pid}/inspection/nodes/{node_id}/package", "inspection")
+            # 走监检**实际用的**那个接口（review-workspace），
+            # 不是凭印象拼一个 /package——那个路径根本不存在，
+            # 探针会因此报「检验侧看不到」，看起来像权限或数据问题。
+            node_pkg = api(
+                f"/api/projects/{pid}/inspection/nodes/{node_id}/review-workspace", "inspection"
+            )
             record(
-                "报审后检验侧能看到该节点包",
+                "报审后检验侧能看到该节点",
                 node_pkg.get("code") == 0,
-                str((node_pkg.get("data") or {}).get("status") or "")[:40],
+                str(node_pkg.get("message") or "")[:60] or "review-workspace 可读",
             )
 
     expect_denied(
