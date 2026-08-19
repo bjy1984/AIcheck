@@ -196,3 +196,40 @@ assert.equal(radialLayout([], [], undefined).positions.size, 0)
 assert.ok(RECT_GAP > 0)
 
 console.log('Knowledge graph radial layout contract passed')
+
+/* ---- 同一层分多圈错排 ----
+ *
+ * 绑定约束是**周长**：138 个节点 × 约 150px 标签宽 ÷ 2π 直接把半径顶到 3000+，
+ * 角度怎么分配都改不了这个和。分成 rows 圈之后每圈只放 1/rows 个，
+ * 半径同比例下降——线上 259 节点实测包围盒 6623 → 3209，填充率 1.2% → 5.1%。
+ *
+ * 这条路**上一版试过并失败**：当时行距写了固定 46px，而这份数据要 ~162px，
+ * θ≈0 处径向≈横向，错开的量全落在 x 轴，抓出 89 对重叠。所以这里钉两件事：
+ * 确实分了圈（半径不止一个值），以及分圈之后仍然零重叠。
+ */
+{
+  const wide = Array.from({ length: 60 }, (_, index) => ({
+    id: `leaf-${index}`,
+    width: 160,
+    height: 24
+  }))
+  const nodes = [{ id: 'root', width: 60, height: 24 }, ...wide]
+  const edges = wide.map((leaf) => ({ source: 'root', target: leaf.id }))
+  const result = radialLayout(nodes, edges, 'root')
+  const radii = new Set(
+    wide.map((leaf) => {
+      const point = result.positions.get(leaf.id)!
+      return Math.round(Math.hypot(point.x, point.y))
+    })
+  )
+  assert.ok(radii.size > 1, '一层 60 个宽标签仍然挤在同一个半径上——没有分圈，半径会被周长顶到很大')
+
+  const boxes = wide.map((leaf) => ({ ...result.positions.get(leaf.id)!, width: 160, height: 24 }))
+  const overlaps: string[] = []
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      if (rectanglesOverlap(boxes[i], boxes[j])) overlaps.push(`${i}×${j}`)
+    }
+  }
+  assert.deepEqual(overlaps, [], `分圈之后出现重叠——行距没按 hypot 给：${overlaps.slice(0, 5)}`)
+}

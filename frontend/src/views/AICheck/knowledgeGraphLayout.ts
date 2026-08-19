@@ -140,6 +140,16 @@ export function radialLayout(
 
   positions.set(root, { x: 0, y: 0 })
   const ringRadii: number[] = []
+  /** 每个节点实际落在哪个半径上（一层可能分成多圈错排）。 */
+  const rowRadiusOf = new Map<string, number>()
+  /** 每层的厚度：分了几圈就有 (rows-1)*rowGap 那么厚。
+   *  回拉平滑必须知道它——只按基准半径判断与外层的距离，会把本层的外圈
+   *  推进外层里去（0819 实测：第 1 层外圈 783 撞上第 2 层 877，差 94 < 需要的 146）。 */
+  const ringThickness: number[] = []
+  /** 每层与**内侧那层**之间真正需要的径向间距（按两层的实际尺寸算）。
+   *  回拉平滑拿它当上限：用 MIN_RING_STEP 那个下限去判，等于允许推到
+   *  比实际需求更近的位置，跨环重叠就是这么回来的。 */
+  const ringStepNeeded: number[] = []
   let previousRadius = 0
   const rootNode = byId.get(root)!
   let previousRingSize = { maxWidth: rootNode.width, maxHeight: rootNode.height }
@@ -153,10 +163,46 @@ export function radialLayout(
       maxWidth: Math.max(...members.map((id) => byId.get(id)!.width)),
       maxHeight: Math.max(...members.map((id) => byId.get(id)!.height))
     }
-    let radius = Math.max(
-      previousRadius + ringStep(previousRingSize, ringSize),
-      needed / (2 * Math.PI)
-    )
+    /* 一层拆成几圈错排。
+     *
+     * 绑定约束是**周长**：138 个节点 × 约 150px 标签宽 ÷ 2π 直接把半径顶到 3000+，
+     * 而角度怎么分配都改不了这个和。唯一的杠杆是分成 rows 圈——每圈只放
+     * 1/rows 个节点，周长需求同比例下降。
+     *
+     * 行距必须按 hypot 给（见下方相邻对推导的同一条理由）：
+     * 若两个框的间隔向量长度 L ≥ hypot(W, H)，则不可能同时 |dx|<W 且 |dy|<H
+     * （否则 L² = dx²+dy² < W²+H² = hypot² ≤ L²，矛盾）。
+     *
+     * **上一版就死在这里**：当时行距写了固定 46px，而这份数据要 ~162px，
+     * θ≈0 处径向≈横向，错开的量全落在 x 轴，测试抓出 89 对重叠。
+     * 不是「分圈错排」这个想法错，是行距给错了。 */
+    const rowGap = ringStep(ringSize, ringSize)
+    const stepFromInner = ringStep(previousRingSize, ringSize)
+    const radiusForRows = (rows: number) => {
+      let base = Math.max(previousRadius + stepFromInner, needed / rows / (2 * Math.PI))
+      // 同圈相邻的是隔 rows 个的那两个，角间隔相应放大
+      for (let i = rows; i < members.length; i += 1) {
+        const a = byId.get(members[i - rows])!
+        const b = byId.get(members[i])!
+        const gap = angleOf.get(members[i])! - angleOf.get(members[i - rows])!
+        if (gap > 1e-6) {
+          const w = (a.width + b.width) / 2 + RECT_GAP
+          const h = (a.height + b.height) / 2 + RECT_GAP
+          base = Math.max(base, Math.hypot(w, h) / gap)
+        }
+      }
+      return base
+    }
+    let rows = 1
+    let radius = radiusForRows(1)
+    for (let candidate = 2; candidate <= 4 && members.length > candidate; candidate++) {
+      const base = radiusForRows(candidate)
+      // 比的是这一层的**最外沿**：圈数多了内圈小，但整体厚度会增加
+      if (base + (candidate - 1) * rowGap < radius + (rows - 1) * rowGap) {
+        rows = candidate
+        radius = base
+      }
+    }
     /* 半径下限二：相邻对逐一收紧，条件是 rΔθ ≥ hypot(W, H)。
      *
      * 为什么是 hypot：矩形是**轴对齐**的，圆上两点的间隔向量随角度旋转。
@@ -167,10 +213,10 @@ export function radialLayout(
      * 排偏移是径向的，θ≈0 处径向≈横向，错开的 60px 全落在 x 轴，
      * y 轴只剩 Δθ 那一点点，宽扁矩形照样叠，测试抓出 89 对。
      * 大圈就是大圈：初始 fitView 看结构轮廓，放大看细节，别硬压。 */
-    for (let i = 1; i < members.length; i++) {
-      const a = byId.get(members[i - 1])!
+    for (let i = rows; i < members.length; i++) {
+      const a = byId.get(members[i - rows])!
       const b = byId.get(members[i])!
-      const gap = angleOf.get(members[i])! - angleOf.get(members[i - 1])!
+      const gap = angleOf.get(members[i])! - angleOf.get(members[i - rows])!
       if (gap > 1e-6) {
         const w = (a.width + b.width) / 2 + RECT_GAP
         const h = (a.height + b.height) / 2 + RECT_GAP
@@ -178,24 +224,33 @@ export function radialLayout(
       }
     }
     // 首尾也是相邻（圆是闭合的）——漏掉的话 θ=0 两侧的两个框会叠
-    if (members.length > 1) {
-      const a = byId.get(members[members.length - 1])!
+    if (members.length > rows) {
+      const a = byId.get(members[members.length - rows])!
       const b = byId.get(members[0])!
       const gap =
-        Math.PI * 2 - (angleOf.get(members[members.length - 1])! - angleOf.get(members[0])!)
+        Math.PI * 2 - (angleOf.get(members[members.length - rows])! - angleOf.get(members[0])!)
       if (gap > 1e-6) {
         const w = (a.width + b.width) / 2 + RECT_GAP
         const h = (a.height + b.height) / 2 + RECT_GAP
         radius = Math.max(radius, Math.hypot(w, h) / gap)
       }
     }
-    members.forEach((id) => {
+    members.forEach((id, index) => {
       const angle = angleOf.get(id)!
-      positions.set(id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) })
+      // 依角序轮流落到各圈：相邻两个必然不同圈，靠径向的 rowGap 隔开
+      const memberRadius = radius + (index % rows) * rowGap
+      positions.set(id, {
+        x: memberRadius * Math.cos(angle),
+        y: memberRadius * Math.sin(angle)
+      })
+      rowRadiusOf.set(id, memberRadius)
     })
-    previousRadius = radius
+    // 下一层要从本层**最外沿**起算，否则内外层会咬在一起
+    previousRadius = radius + (rows - 1) * rowGap
     previousRingSize = ringSize
     ringRadii.push(radius)
+    ringThickness.push((rows - 1) * rowGap)
+    ringStepNeeded.push(stepFromInner)
   }
 
   /* 回拉平滑：外环因周长约束被推得很远时，内环如果还贴着中心，
@@ -207,12 +262,20 @@ export function radialLayout(
     const current = ringRadii[depth - 1]
     const outer = ringRadii[depth]
     const proportional = (outer * depth) / (depth + 1)
-    const pulled = Math.min(Math.max(current, proportional), outer - MIN_RING_STEP)
+    // 上限要扣掉本层自己的厚度：本层最外圈才是真正会撞上外层的那一圈
+    const ceiling =
+      outer - (ringStepNeeded[depth] ?? MIN_RING_STEP) - (ringThickness[depth - 1] ?? 0)
+    const pulled = Math.min(Math.max(current, proportional), ceiling)
     if (pulled > current) {
+      const delta = pulled - current
       ringRadii[depth - 1] = pulled
       for (const id of rings.get(depth) || []) {
         const angle = angleOf.get(id)!
-        positions.set(id, { x: pulled * Math.cos(angle), y: pulled * Math.sin(angle) })
+        // 整层一起外移同一个量：同层内部的分圈错排（rowGap）必须保持原样，
+        // 全部压到同一半径会把错排抹掉，重叠立刻回来。
+        const moved = (rowRadiusOf.get(id) ?? current) + delta
+        rowRadiusOf.set(id, moved)
+        positions.set(id, { x: moved * Math.cos(angle), y: moved * Math.sin(angle) })
       }
     }
   }
@@ -255,3 +318,20 @@ export function rectanglesOverlap(
     Math.abs(a.x - b.x) < (a.width + b.width) / 2 && Math.abs(a.y - b.y) < (a.height + b.height) / 2
   )
 }
+
+/* ==========================================================================
+ * 试过但**实测更差**的两条路，写在这里免得下一个人再走一遍
+ * ==========================================================================
+ *
+ * 1. balloon（层次气泡）：每个父节点把孩子摆在自己周围的小圆上。
+ *    想法是「拥挤只影响那一支、不传染全图」，实现完拿线上 259 个节点一测：
+ *    包围盒 8465x8404、填充率 0.7%，比同心环的 6623x6561 / 1.2% **还差**。
+ *    原因是把子树外接成圆本身就浪费（圆比它的包围盒大 ~40%），
+ *    而根节点的 18 个大圆盘会把距离顶得更远。
+ *
+ * 2. 交叉最小化（Sugiyama 那一类的重心排序）：先量了再说——这份数据
+ *    294 条边**交叉数为 0**，非树边的角跨度中位数只有 3°。没有交叉可减。
+ *
+ * 真正起作用的是同一层分多圈错排（见上方 radiusForRows）：绑定约束是周长，
+ * 而周长需求 = Σ标签宽 / 2π，角度怎么分配都改不了这个和，只能靠分圈摊薄。
+ */
