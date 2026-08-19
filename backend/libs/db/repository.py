@@ -2153,6 +2153,40 @@ class InMemoryRepository:
             self.mark_task_failed(task, "切片任务失败：未抽取到可切片文本。")
             return {"fileId": file_id, "status": "failed", "chunkCount": 0, "errorMessage": "empty_text"}
         chunks = build_chunks_for_file(file, source_fragments, index_version=STANDARD_INDEX_VERSION)
+        if not chunks:
+            # 抽到了文本，却一条分块都没留下——**全被噪声规则隔离了**。
+            #
+            # 这和「没抽到文本」是两回事，必须分开报：原先两者都走到下面那段，
+            # 结果是 sliceStatus=已切片、chunkCount=0，看起来像切成功了，
+            # 而报审那边提示「切片还在进行中」——切片早就完了，只是一个都没留下。
+            # 报错指向的环节不是出问题的环节，这是本项目反复栽的同一个坑。
+            #
+            # 0819 实测：一份纯英文的资料整份被 symbol_ascii_only 隔离
+            # （规则本身没错：中文语料里纯 ASCII 片段多是页眉页脚页码）。
+            file["sliceStatus"] = "切片失败"
+            file["chunkCount"] = 0
+            file["vectorStatus"] = "向量化失败"
+            file["vectorCount"] = 0
+            file["sliceStatusReason"] = "all_chunks_quarantined"
+            file["updatedAt"] = server_time()
+            task = next(
+                (
+                    item
+                    for item in self.state["knowledge_tasks"]
+                    if item.get("taskType") == "slice" and item.get("targetId") == file_id
+                ),
+                None,
+            )
+            self.mark_task_failed(
+                task,
+                "切片任务失败：抽出的文本全部被判为噪声（页眉页脚、纯符号或纯英文），没有可索引内容。",
+            )
+            return {
+                "fileId": file_id,
+                "status": "failed",
+                "chunkCount": 0,
+                "errorMessage": "all_chunks_quarantined",
+            }
         now = server_time()
         for chunk in chunks:
             chunk["createdAt"] = now

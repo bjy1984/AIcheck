@@ -97,3 +97,36 @@ def test_失败和进行中要说得不一样(_doc):
     assert "进行中" in waiting
     assert "失败" in failed and "重试" in failed
     assert waiting != failed
+
+
+def test_全部被判为噪声时要说清原因() -> None:
+    """「切片失败」不够——用户会反复重传同一份文件。
+
+    0819 线上实测：一份纯英文资料的文本整份被 symbol_ascii_only 隔离
+    （规则本身没错：中文语料里纯 ASCII 片段多是页眉页脚页码）。
+    资料传上来了、文字也认出来了，只是内容被当成干扰整份丢掉——
+    这种情况重试一百次也不会变，必须直说原因。
+    """
+    from apps.api.submission_pipeline import pipeline_stage_of
+
+    stage = pipeline_stage_of(
+        {"currentOcrStatus": "已识别"},
+        {},
+        {"sliceStatus": "切片失败", "sliceStatusReason": "all_chunks_quarantined"},
+    )
+    assert stage is not None
+    assert stage["stage"] == "slice"
+    assert "噪声" in str(stage.get("reason") or ""), "没有把隔离原因带出来"
+
+    message = pipeline_incomplete_message([stage])
+    assert "噪声" in message, f"提示里没说原因：{message}"
+    assert "重试" not in message, f"还在让用户重试一件重试也没用的事：{message}"
+
+
+def test_切片确实在进行中时仍然说等待() -> None:
+    """别把「还在跑」也说成失败——那会让人以为要去处理什么。"""
+    from apps.api.submission_pipeline import pipeline_stage_of
+
+    stage = pipeline_stage_of({"currentOcrStatus": "已识别"}, {}, {"sliceStatus": "切片中"})
+    message = pipeline_incomplete_message([stage])
+    assert "还在进行中" in message, message

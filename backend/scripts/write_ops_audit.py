@@ -195,21 +195,42 @@ def main() -> int:
     # ---------------- contractor：上传 → 绑定 → 报审 ----------------
     print("\n== contractor：上传资料 / 挂载节点 / 报审 ==")
     node_id = 16
-    # 带真实文字的最小 PDF：空白页会让 OCR 管线判失败，报审就永远等不到就绪
-    stream = b"BT /F1 24 Tf 40 160 Td (AUDIT PROBE 2026) Tj 0 -40 Td (Manufacturing License Sample) Tj ET"
-    pdf = (
-        b"%PDF-1.4\n"
-        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 400 220]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>endobj\n"
-        b"4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
-        b"5 0 obj<</Length " + str(len(stream)).encode() + b">>stream\n" + stream + b"\nendstream endobj\n"
-        b"trailer<</Root 1 0 R>>\n%%EOF\n"
-    )
+    # 素材必须像真实资料，否则测的不是产品而是探针自己。
+    #
+    # 上一版用纯英文合成 PDF，整份被知识库的噪声规则 symbol_ascii_only 隔离
+    # （规则没错：中文语料里纯 ASCII 片段多是页眉页脚页码），切片产出 0 分块，
+    # 报审因此不过——**连追四轮才发现是素材不合格**。
+    #
+    # 改用镜像里自带的真实标准 PDF：中文、有版面、有表格，和现场资料同构。
+    # 找不到就退回合成 PDF 并在结论里标注，免得静默地测了个假东西。
+    import glob as _glob
+    import os as _os
+
+    real_samples = sorted(_glob.glob("/app/rules/standards/*.pdf"))
+    real_samples = [p for p in real_samples if _os.path.getsize(p) < 3_000_000]
+    probe_source = "真实标准 PDF"
+    if real_samples:
+        with open(real_samples[0], "rb") as handle:
+            pdf = handle.read()
+        probe_file_name = f"写操作审计-{stamp}-{_os.path.basename(real_samples[0])}"
+    else:
+        probe_source = "合成 PDF（未找到真实样本，噪声规则可能整份隔离）"
+        probe_file_name = f"写操作审计-{stamp}.pdf"
+        stream = b"BT /F1 24 Tf 40 160 Td (AUDIT PROBE) Tj ET"
+        pdf = (
+            b"%PDF-1.4\n"
+            b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+            b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+            b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 400 220]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>endobj\n"
+            b"4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+            b"5 0 obj<</Length " + str(len(stream)).encode() + b">>stream\n" + stream + b"\nendstream endobj\n"
+            b"trailer<</Root 1 0 R>>\n%%EOF\n"
+        )
+    record("探针素材", bool(real_samples), probe_source)
     sess = api(
         f"/api/projects/{pid}/documents/upload-session",
         "contractor",
-        {"files": [{"fileName": f"写操作审计-{stamp}.pdf", "fileSize": len(pdf), "fileType": "pdf", "materialTypeCode": "manufacturing_license"}]},
+        {"files": [{"fileName": probe_file_name, "fileSize": len(pdf), "fileType": "pdf", "materialTypeCode": "manufacturing_license"}]},
     )
     sess_data = expect_ok("contractor 创建上传会话", sess, "uploadSessionId")
     doc_id = None

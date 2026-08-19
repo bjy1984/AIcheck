@@ -45,7 +45,17 @@ def pipeline_stage_of(
     if ocr_status not in OCR_DONE_STATUSES:
         return {"stage": "ocr", "stageLabel": "文字识别", "status": ocr_status or "未开始"}
     if slice_status != "已切片":
-        return {"stage": "slice", "stageLabel": "切片", "status": slice_status or "未开始"}
+        stage: dict[str, Any] = {
+            "stage": "slice",
+            "stageLabel": "切片",
+            "status": slice_status or "未开始",
+        }
+        # 「全部被判为噪声」是最需要说清楚的一种失败：资料本身传上来了、
+        # 文字也认出来了，只是内容被当成页眉页脚一类的干扰整份丢掉。
+        # 不说明原因的话，用户只会反复重传同一份文件。
+        if str(knowledge_file.get("sliceStatusReason") or "") == "all_chunks_quarantined":
+            stage["reason"] = "抽出的文本全部被判为噪声（页眉页脚、纯符号或纯英文），没有可索引内容"
+        return stage
     if vector_status != "已向量化":
         return {"stage": "vector", "stageLabel": "向量化", "status": vector_status or "未开始"}
     return None
@@ -59,5 +69,9 @@ def pipeline_incomplete_message(blocked: list[dict[str, Any]]) -> str:
     failed = [item for item in blocked if "失败" in str(item.get("status") or "")]
     scope = "、".join(labels)
     if failed:
+        reasons = list(dict.fromkeys(str(item.get("reason") or "") for item in failed if item.get("reason")))
+        if reasons:
+            # 有确切原因就直说，别让人去「重试」一件重试一百次也不会变的事
+            return f"资料的{scope}未完成：{'；'.join(reasons)}。"
         return f"资料的{scope}未完成（有处理失败），请在资料详情里重试后再提交。"
     return f"资料的{scope}还在进行中，等它完成后即可提交。"
