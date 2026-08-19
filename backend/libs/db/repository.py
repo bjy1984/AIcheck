@@ -4,6 +4,8 @@ import asyncio
 import base64
 import hashlib
 import json
+
+import orjson
 import logging
 import os
 import re
@@ -2972,7 +2974,24 @@ class InMemoryRepository:
 
     @staticmethod
     def canonical_persistence_payload(value: Any) -> str:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        """落库前的规范化表示，只用于**和基线比对**是否改过。
+
+        用 orjson 而不是标准库 json：这个函数会对整份状态逐条调用，
+        标准库实测 18 秒、orjson 2.6 秒（7 倍）。而这段时间占着解释器，
+        同进程的所有请求都被挤住——0819 实测一次写入期间
+        /api/healthz 要 16~26 秒，**不是写慢，是全站都慢**。
+
+        OPT_NON_STR_KEYS 不能少：库里有以整数为键的映射，
+        不带这个选项 orjson 会直接抛错，而标准库 json 会把它转成字符串。
+        两边行为必须一致，否则同一条记录会被判成「改过」，天天重写。
+
+        输出统一 decode 成 str：基线是字符串，比对的是字符串。
+        """
+        return orjson.dumps(
+            value,
+            option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS,
+            default=str,
+        ).decode("utf-8")
 
     def capture_persistence_baseline(self) -> None:
         baseline: dict[tuple[str, str], str] = {}
