@@ -460,6 +460,19 @@ def latest_successful_ocr_parse_result(version_id: str | None) -> dict[str, Any]
     return results[0] if results else None
 
 
+def ocr_says_recognized_but_result_missing(file: dict[str, Any]) -> bool:
+    """文档标着「已识别」，却取不到成功的解析结果——只可能是还没落定。
+
+    真的没有文字时，OCR 状态不会是已识别；所以这两件事同时成立就是时序问题，
+    应当重试，而不是当成「这份资料没有内容」。
+    """
+    if latest_successful_ocr_parse_result(file.get("documentVersionId")):
+        return False
+    document = repo.find_one("documents", file.get("documentId")) or {}
+    status = str(document.get("currentOcrStatus") or "")
+    return status in {"已识别", "人工修正", "抽取不完整"}
+
+
 def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, Any]]:
     result = latest_successful_ocr_parse_result(file.get("documentVersionId"))
     raw_fragments = [item for item in (result or {}).get("fragments") or [] if isinstance(item, dict)]
@@ -4128,6 +4141,20 @@ def slice_knowledge(self, file_id: str, dispatch_next: bool = True) -> dict[str,
         flush_state()
         return {"fileId": file_id, "status": "missing", "chunkCount": 0}
     fragments = knowledge_slice_fragments_from_ocr(file)
+    if not fragments and ocr_says_recognized_but_result_missing(file):
+        # OCR 说识别成功，却读不到解析结果——这是**时序**，不是「没有文字」。
+        #
+        # 切片是在 OCR 任务内部派发的：0819 实测两者只差 3 毫秒，
+        # 切片读库时那条解析结果还没完全落定。而原先的处理是默默往下走，
+        # 最后按 0 分块「成功」收场——一次几毫秒的竞态就此固化成永久状态：
+        # chunkCount=0 → 向量化失败 → **报审永久卡住**，全程没有任何报错。
+        #
+        # 重试即可：解析结果就在库里，下一次就能读到。
+        # 把「读不到」当成「没有」，是这轮反复栽跟头的同一个模式。
+        raise self.retry(
+            exc=RuntimeError("ocr_result_not_visible_yet"),
+            countdown=(5, 15, 45)[min(int(getattr(self.request, "retries", 0) or 0), 2)],
+        )
     if not fragments:
         version = repo.find_one("versions", file.get("documentVersionId"))
         source_path = local_path_from_storage_key((version or {}).get("storageKey"), WORKSPACE_ROOT)
