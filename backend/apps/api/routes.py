@@ -32,6 +32,7 @@ from fastapi.responses import (
 )
 
 from apps.api.office_preview_routes import router as office_preview_router
+from apps.api.idempotency_scope import replay_authorization_digests
 from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
@@ -3683,49 +3684,6 @@ def idempotency_fingerprint(source: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-_PROJECT_IN_PATH = re.compile(r"/projects/([^/]+)")
-
-
-def authorization_scope_project_id(request: Request) -> str | None:
-    """请求路径里的项目 id；不带项目的路径返回 None。"""
-    match = _PROJECT_IN_PATH.search(str(request.url.path or ""))
-    return match.group(1) if match else None
-
-
-def authorization_membership_snapshot(
-    request: Request,
-    user_id: str | None,
-    tenant_id: str,
-    *,
-    all_projects: bool = False,
-) -> list[tuple[str, tuple[int, ...], str]]:
-    """授权摘要里的成员关系快照。
-
-    **默认只取请求所涉项目**（路径里的 /projects/{id}），不是全局。
-
-    全局快照是个真实事故的根源：任何管理员把用户加进一个新项目，
-    该用户在**其他所有项目**里已缓存的幂等重放会全部永久 FORBIDDEN——
-    0819 实测：审计脚本反复把监检员加进审计项目，其 242 条缓存记录
-    全部被击穿，工作台一打开就是「当前授权上下文已变化」。
-    授权判定（mutation_guard）本来就只看**本项目**的成员关系，
-    摘要的粒度应当与它一致。
-
-    all_projects=True 保留旧口径，只用于识别旧格式记录并就地升级。
-    """
-    scope_project = None if all_projects else authorization_scope_project_id(request)
-    return sorted(
-        (
-            str(item.get("projectId") or ""),
-            tuple(sorted(int(node_id) for node_id in item.get("nodeScope") or [])),
-            str(item.get("status") or ""),
-        )
-        for item in repo.state.get("project_members", [])
-        if str(item.get("userId") or "") == str(user_id or "")
-        and tenant_id_for_record(item) == tenant_id
-        and (all_projects or str(item.get("projectId") or "") == scope_project)
-    )
-
-
 def idempotent(request: Request, key: str | None, producer, fingerprint_source: Any | None = None):
     if not key:
         return producer()
@@ -3735,33 +3693,20 @@ def idempotent(request: Request, key: str | None, producer, fingerprint_source: 
     scope = f"{request_tenant_id(request)}:{actor_id}:{role}:{request.method}:{request.url.path}:{key_hash}"
     cached = repo.state["idempotency"].get(scope)
     fingerprint = idempotency_fingerprint(fingerprint_source) if fingerprint_source is not None else None
-    digest_source = {
-        "tenantId": request_tenant_id(request),
-        "actorId": actor_id,
-        "role": role,
-        "memberships": authorization_membership_snapshot(
-            request, request_user_id(request), request_tenant_id(request)
-        ),
-    }
-    authorization_digest = idempotency_fingerprint(digest_source)
+    # 摘要只看请求所涉项目；粒度依据与旧格式升级见 idempotency_scope 模块
+    authorization_digest, legacy_digest = replay_authorization_digests(
+        request,
+        fingerprint=idempotency_fingerprint,
+        tenant_id=request_tenant_id(request),
+        actor_id=actor_id,
+        role=role,
+        user_id=request_user_id(request),
+    )
     if cached is not None:
         if isinstance(cached, dict) and "response" in cached:
             if fingerprint and cached.get("requestHash") and cached["requestHash"] != fingerprint:
                 return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
             if cached.get("authorizationDigest") != authorization_digest:
-                # 旧格式记录（全局成员快照）就地升级：当时的全局口径仍然吻合，
-                # 说明授权没有实质变化，只是摘要粒度改了——不该把用户拒在外面。
-                legacy_digest = idempotency_fingerprint(
-                    {
-                        **digest_source,
-                        "memberships": authorization_membership_snapshot(
-                            request,
-                            request_user_id(request),
-                            request_tenant_id(request),
-                            all_projects=True,
-                        ),
-                    }
-                )
                 if cached.get("authorizationDigest") != legacy_digest:
                     return fail(errors.FORBIDDEN, request, message="当前授权上下文已变化，不能重放历史响应。")
                 cached["authorizationDigest"] = authorization_digest

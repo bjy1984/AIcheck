@@ -23,10 +23,10 @@ from apps.api.org_delegation_routes import org_delegation_router
 from apps.api.project_registration_routes import project_registration_router
 from apps.api.cnse_routes import router as cnse_router
 from apps.api.mineru_ocr_routes import router as mineru_ocr_router
+from apps.api.idempotency_scope import authorization_membership_snapshot
 from apps.api.routes import (
     binding_node_ids,
     document_node_ids,
-    authorization_membership_snapshot,
     idempotency_fingerprint,
     member_node_scope_error,
     mock_router,
