@@ -77,18 +77,34 @@ def dispatch_parse_document(document_id: str, version_id: str, storage_key: str,
     return {"mode": mode, "taskId": None}
 
 
-def dispatch_slice(file_id: str) -> dict[str, Any]:
+def dispatch_slice(file_id: str, expect_parse_result_id: str | None = None) -> dict[str, Any]:
+    """派发切片。
+
+    expect_parse_result_id：派发方刚写下的那条 OCR 解析结果的 id。
+    切片任务会**等到这条具体记录可见**才开工——不传就退回旧行为。
+
+    为什么需要它：切片是在 OCR 任务内部派发的，两者只差毫秒级。
+    切片读库时那次提交可能还没可见，于是读到 0 片段、按「没有文字」处理，
+    最后写出一个 0 分块的「成功」结果——报审从此永久卡住，且不报错。
+
+    试过用「文档状态是已识别」当判据，**同样失败**：文档状态和解析结果是
+    同一次提交写的，一个看不见另一个也看不见。所以要传具体 id，不靠推断。
+    """
     mode = dispatch_mode()
     if mode == "inline":
         from apps.worker.tasks import slice_knowledge
 
-        return {"mode": mode, "result": slice_knowledge.run(file_id)}
+        return {"mode": mode, "result": slice_knowledge.run(file_id, True, expect_parse_result_id)}
     if mode == "celery":
         if blocker := cpu_heavy_dispatch_blocker(mode):
             return blocker
         from apps.worker.tasks import slice_knowledge
 
-        result = slice_knowledge.apply_async(args=[file_id], queue="cpu.heavy", priority=broker_priority(2))
+        result = slice_knowledge.apply_async(
+            args=[file_id, True, expect_parse_result_id],
+            queue="cpu.heavy",
+            priority=broker_priority(2),
+        )
         return {"mode": mode, "taskId": result.id, "queue": "cpu.heavy", "priority": 2}
     return {"mode": mode, "taskId": None}
 

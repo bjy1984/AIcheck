@@ -460,17 +460,23 @@ def latest_successful_ocr_parse_result(version_id: str | None) -> dict[str, Any]
     return results[0] if results else None
 
 
-def ocr_says_recognized_but_result_missing(file: dict[str, Any]) -> bool:
-    """文档标着「已识别」，却取不到成功的解析结果——只可能是还没落定。
+def parse_result_visible(file_id: str, parse_result_id: str) -> bool:
+    """派发方刚写下的那条解析结果，本进程看得见了吗？
 
-    真的没有文字时，OCR 状态不会是已识别；所以这两件事同时成立就是时序问题，
-    应当重试，而不是当成「这份资料没有内容」。
+    切片在 OCR 任务内部派发，两者只差毫秒级；切片读库时那次提交可能还没可见。
+    此时读到 0 片段就当「没有文字」，会写出一个 0 分块的「成功」结果，
+    报审从此永久卡住——而且任务日志里写的是 succeeded。
+
+    比对**具体 id** 而不是推断状态：文档状态与解析结果同属一次提交，
+    拿状态当判据等于用一个同样看不见的东西去判断另一个看不见的东西。
     """
-    if latest_successful_ocr_parse_result(file.get("documentVersionId")):
-        return False
-    document = repo.find_one("documents", file.get("documentId")) or {}
-    status = str(document.get("currentOcrStatus") or "")
-    return status in {"已识别", "人工修正", "抽取不完整"}
+    file = repo.find_one("knowledge_files", file_id) or {}
+    version_id = str(file.get("documentVersionId") or "")
+    return any(
+        str(item.get("parseResultId") or "") == str(parse_result_id)
+        and str(item.get("documentVersionId") or "") == version_id
+        for item in repo.state.get("ocr_parse_results", [])
+    )
 
 
 def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1497,7 +1503,13 @@ def _execute_mineru_ocr_extract(
             if knowledge_file:
                 try:
                     next_dispatch = task_dispatcher.dispatch_slice(
-                        str(knowledge_file["id"])
+                        str(knowledge_file["id"]),
+                        expect_parse_result_id=str(
+                            (result_record or {}).get("parseResultId")
+                            or result.get("parseResultId")
+                            or ""
+                        )
+                        or None,
                     )
                 except Exception as exc:  # noqa: BLE001 - 切片派发不该翻掉 OCR 结果
                     next_dispatch = {
@@ -4120,8 +4132,23 @@ def recognize_seals(self, document_id: str, version_id: str) -> dict[str, Any]:
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-def slice_knowledge(self, file_id: str, dispatch_next: bool = True) -> dict[str, Any]:
+def slice_knowledge(
+    self,
+    file_id: str,
+    dispatch_next: bool = True,
+    expect_parse_result_id: str | None = None,
+) -> dict[str, Any]:
     refresh_worker_state()
+    if expect_parse_result_id and not parse_result_visible(file_id, expect_parse_result_id):
+        # 派发方明确告诉了我们它刚写下哪条解析结果，而这里还看不见——
+        # 那就是**还没可见**，不是「没有文字」。等一下再来。
+        #
+        # 之前试过用「文档状态是已识别」来推断，失败了：文档状态和解析结果是
+        # 同一次提交写的，一个看不见另一个也看不见。所以必须比对具体 id。
+        raise self.retry(
+            exc=RuntimeError(f"parse_result_not_visible: {expect_parse_result_id}"),
+            countdown=(3, 10, 30)[min(int(getattr(self.request, "retries", 0) or 0), 2)],
+        )
     task = next((item for item in repo.state["knowledge_tasks"] if item.get("taskType") == "slice" and item.get("targetId") == file_id), None)
     file = repo.find_one("knowledge_files", file_id)
     if task is None and file is None:
@@ -4141,20 +4168,6 @@ def slice_knowledge(self, file_id: str, dispatch_next: bool = True) -> dict[str,
         flush_state()
         return {"fileId": file_id, "status": "missing", "chunkCount": 0}
     fragments = knowledge_slice_fragments_from_ocr(file)
-    if not fragments and ocr_says_recognized_but_result_missing(file):
-        # OCR 说识别成功，却读不到解析结果——这是**时序**，不是「没有文字」。
-        #
-        # 切片是在 OCR 任务内部派发的：0819 实测两者只差 3 毫秒，
-        # 切片读库时那条解析结果还没完全落定。而原先的处理是默默往下走，
-        # 最后按 0 分块「成功」收场——一次几毫秒的竞态就此固化成永久状态：
-        # chunkCount=0 → 向量化失败 → **报审永久卡住**，全程没有任何报错。
-        #
-        # 重试即可：解析结果就在库里，下一次就能读到。
-        # 把「读不到」当成「没有」，是这轮反复栽跟头的同一个模式。
-        raise self.retry(
-            exc=RuntimeError("ocr_result_not_visible_yet"),
-            countdown=(5, 15, 45)[min(int(getattr(self.request, "retries", 0) or 0), 2)],
-        )
     if not fragments:
         version = repo.find_one("versions", file.get("documentVersionId"))
         source_path = local_path_from_storage_key((version or {}).get("storageKey"), WORKSPACE_ROOT)

@@ -994,13 +994,21 @@ def test_mineru_success_dispatches_slice(
     monkeypatch.setattr(
         tasks.task_dispatcher,
         "dispatch_slice",
-        lambda file_id: sliced.append(file_id) or {"mode": "celery", "taskId": "T-1"},
+        # 签名带上 expect_parse_result_id：切片要等这条具体记录可见才开工
+        lambda file_id, expect_parse_result_id=None: sliced.append(
+            (file_id, expect_parse_result_id)
+        )
+        or {"mode": "celery", "taskId": "T-1"},
     )
 
     output = tasks.mineru_ocr_extract.run(job["id"])
 
     assert output["status"] == "success"
-    assert sliced == ["KF-MINERU-SLICE"], "OCR 成功了却没派切片——资料会永远停在待切片"
+    assert sliced and sliced[0][0] == "KF-MINERU-SLICE", "OCR 成功了却没派切片——资料会永远停在待切片"
+    assert sliced[0][1] == "PARSE-MINERU-1", (
+        "派切片时没带上刚写的 parseResultId——切片会在那条记录可见之前开工，"
+        "读到 0 片段当成「没有文字」，报审永久卡住"
+    )
     assert output["nextDispatch"]["taskId"] == "T-1"
 
 
