@@ -41,6 +41,16 @@ CONFIG = Path(__file__).resolve().parents[1] / "config" / "material_review_point
 
 # 太短的名字当关键词会误伤：「材料」「阀门」这种两字词几乎出现在所有文件名里。
 MIN_KEYWORD_LENGTH = 3
+UNCLASSIFIED_MATERIAL_CODE = "unclassified_material"
+UNCLASSIFIED_MATERIAL_NAME = "未分类资料"
+CLASSIFIER_VERSION = "material-classifier-v2"
+SOURCE_CONFIDENCE = {
+    "documentType": 1.0,
+    "profileId": 0.95,
+    "fileName": 0.85,
+    "ocrText": 0.6,
+}
+SOURCE_RANK = {source: rank for rank, source in enumerate(SOURCE_CONFIDENCE, start=1)}
 
 
 # 现实里的文件名不会照抄审查点的名字。
@@ -115,29 +125,132 @@ def _normalize(text: str) -> str:
     return re.sub(r"[\s_\-—－()（）\[\]【】]+", "", str(text or "")).lower()
 
 
-def classify_material(file_name: str = "", ocr_text: str = "") -> dict[str, Any] | None:
-    """给一份资料建议类别。拿不准返回 None。
+def _classified_result(
+    *,
+    category: str,
+    code: str,
+    name: str,
+    source: str,
+    reason: str,
+    confidence: float,
+) -> dict[str, Any]:
+    return {
+        "materialCategory": category,
+        "materialTypeCode": code,
+        "materialTypeName": name,
+        "matchedBy": source,
+        "reason": reason,
+        "classificationStatus": "classified",
+        "classificationConfidence": float(confidence),
+        "classificationSource": "ocr_classifier",
+        "classificationReasons": [reason],
+        "classifierVersion": CLASSIFIER_VERSION,
+    }
+
+
+def unclassified_material_result(*, reason: str = "未发现资料类型分类信号") -> dict[str, Any]:
+    return {
+        "materialCategory": UNCLASSIFIED_MATERIAL_NAME,
+        "materialTypeCode": UNCLASSIFIED_MATERIAL_CODE,
+        "materialTypeName": UNCLASSIFIED_MATERIAL_NAME,
+        "matchedBy": "none",
+        "reason": reason,
+        "classificationStatus": "unclassified",
+        "classificationConfidence": 0.0,
+        "classificationSource": "ocr_classifier",
+        "classificationReasons": [reason],
+        "classifierVersion": CLASSIFIER_VERSION,
+    }
+
+
+def classify_material(
+    file_name: str = "",
+    ocr_text: str = "",
+    profile_id: str = "",
+    document_type: str = "",
+) -> dict[str, Any]:
+    """给一份资料确定标准类型；零信号统一返回“未分类资料”。
 
     文件名优先于正文：文件名是人**特意起的**，正文里出现「制造许可证」
     可能只是引用了一句法规。正文只在文件名认不出来时才用，
     并且把 source 标出来——两种来源的可信度不一样，界面上要能区分。
     """
+    dictionary = _dictionary()
+    by_code: dict[str, tuple[str, str]] = {}
+    for name, category, code in dictionary:
+        if code:
+            by_code.setdefault(code, (name, category))
+
+    candidates: list[tuple[tuple[float, int, int, int], dict[str, Any]]] = []
+
+    def add_candidate(code: str, source: str, reason: str, keyword_length: int, order: int) -> None:
+        target = by_code.get(code)
+        if not target:
+            return
+        name, category = target
+        confidence = SOURCE_CONFIDENCE[source]
+        key = (confidence, SOURCE_RANK[source], keyword_length, -order)
+        candidates.append(
+            (
+                key,
+                _classified_result(
+                    category=category,
+                    code=code,
+                    name=name,
+                    source=source,
+                    reason=reason,
+                    confidence=confidence,
+                ),
+            )
+        )
+
+    normalized_document_type = _normalize(document_type)
+    if normalized_document_type:
+        for order, code in enumerate(by_code):
+            if normalized_document_type == _normalize(code):
+                add_candidate(
+                    code,
+                    "documentType",
+                    f"OCR文档类型精确匹配「{code}」",
+                    len(code),
+                    order,
+                )
+
+    normalized_profile = _normalize(profile_id)
+    if normalized_profile:
+        profile_matches = sorted(by_code, key=len, reverse=True)
+        for order, code in enumerate(profile_matches):
+            normalized_code = _normalize(code)
+            if normalized_profile == normalized_code or normalized_profile.startswith(f"{normalized_code}v"):
+                add_candidate(
+                    code,
+                    "profileId",
+                    f"OCR识别档案「{profile_id}」匹配资料类型「{code}」",
+                    len(code),
+                    order,
+                )
+                break
+
     for source, raw in (("fileName", file_name), ("ocrText", ocr_text)):
         haystack = _normalize(raw)
         if not haystack:
             continue
-        for name, category, code in _dictionary():
-            if _normalize(name) in haystack:
-                return {
-                    "materialCategory": category,
-                    "materialTypeCode": code,
-                    "materialTypeName": name,
-                    "matchedBy": source,
-                    # 说清楚**凭什么**这么分。只给结论不给依据的话，
-                    # 用户发现分错了也不知道该改什么。
-                    "reason": f"{'文件名' if source == 'fileName' else '正文'}中出现「{name}」",
-                }
-    return None
+        for order, (name, _category, code) in enumerate(dictionary):
+            normalized_name = _normalize(name)
+            if normalized_name and normalized_name in haystack:
+                label = "文件名" if source == "fileName" else "正文"
+                add_candidate(
+                    code,
+                    source,
+                    f"{label}中出现「{name}」",
+                    len(normalized_name),
+                    order,
+                )
+
+    if not candidates:
+        return unclassified_material_result()
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
 
 
 def known_categories() -> set[str]:

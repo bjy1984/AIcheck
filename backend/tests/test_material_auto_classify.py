@@ -70,11 +70,18 @@ def test_分隔符不影响命中():
     assert classify_material(file_name="材料-复验_报告（正本）.pdf")
 
 
-def test_认不出来就返回None():
-    """**不许猜。** 猜错的分类比不分类更贵。"""
-    assert classify_material(file_name="扫描件001.pdf") is None
-    assert classify_material(file_name="") is None
-    assert classify_material() is None
+def test_没有任何分类信号时统一进入未分类资料():
+    """零信号不能返回空值，否则后续切片无法形成稳定的未分类检索池。"""
+    for result in (
+        classify_material(file_name="扫描件001.pdf"),
+        classify_material(file_name=""),
+        classify_material(),
+    ):
+        assert result["materialCategory"] == "未分类资料"
+        assert result["materialTypeCode"] == "unclassified_material"
+        assert result["materialTypeName"] == "未分类资料"
+        assert result["classificationStatus"] == "unclassified"
+        assert result["classificationConfidence"] == 0.0
 
 
 def test_文件名优先于正文():
@@ -91,6 +98,39 @@ def test_文件名认不出时才用正文并标出来源():
     result = classify_material(file_name="scan001.pdf", ocr_text="本页为材料复验报告")
     assert result
     assert result["matchedBy"] == "ocrText"
+
+
+def test_任何非零分类信号都产生正式分类结果():
+    result = classify_material(file_name="scan001.pdf", ocr_text="本页为材料复验报告")
+
+    assert result["materialTypeCode"] == "material_retest_report"
+    assert result["classificationStatus"] == "classified"
+    assert result["classificationConfidence"] > 0
+    assert result["classificationSource"] == "ocr_classifier"
+    assert result["classifierVersion"]
+
+
+def test_document_type精确提示优先于较弱的文件名和正文信号():
+    result = classify_material(
+        file_name="材料复验报告.pdf",
+        ocr_text="材料复验报告",
+        document_type="design_license",
+    )
+
+    assert result["materialTypeCode"] == "design_license"
+    assert result["matchedBy"] == "documentType"
+    assert result["classificationConfidence"] == 1.0
+
+
+def test_profile提示能够映射到标准资料类型():
+    result = classify_material(
+        file_name="scan001.pdf",
+        profile_id="quality_certificate_v1",
+    )
+
+    assert result["materialTypeCode"] == "quality_certificate"
+    assert result["matchedBy"] == "profileId"
+    assert result["classificationConfidence"] > 0
 
 
 def test_给出依据():
@@ -124,7 +164,9 @@ def test_没选类别时自动填并留下建议来源():
     assert doc["autoClassification"]["materialTypeName"] == "材料复验报告"
 
 
-def test_认不出来时不硬塞一个类别():
+def test_认不出来时写入统一未分类结果而不是猜测具体类别():
     repo = InMemoryRepository()
     doc, _ = repo.create_document("P-2026-HDCP-001", "扫描件001.pdf", "application/pdf")
-    assert not doc.get("autoClassification")
+    assert doc["materialCategory"] == "未分类资料"
+    assert doc["materialTypeCode"] == "unclassified_material"
+    assert doc["autoClassification"]["classificationConfidence"] == 0.0
