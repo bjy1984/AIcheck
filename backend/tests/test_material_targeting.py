@@ -119,6 +119,14 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
         material_category="资质证照",
     )
     document["materialTypeCode"] = "design_license"
+    design_license_point = next(
+        item
+        for item in repo.state["admin_config"]["materialReviewPoints"]
+        if int(item.get("nodeId") or 0) == 1
+        and item.get("materialTypeCode") == "design_license"
+    )
+    # 自动打靶资格由资料类型、上下文和可定位事实决定，不能再被置信度阈值挡住。
+    design_license_point["minConfidence"] = 1.1
     result = {
         "status": "success",
         "fileName": document["fileName"],
@@ -160,6 +168,7 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
         if item["materialTypeCode"] == "design_license"
     )
     assert license_link["formalEvidenceEligible"] is True
+    assert license_link["manualStatus"] == "confirmed"
     assert license_link["quotedText"] not in {"设计单位许可证", "资质证照"}
     assert license_link["fieldName"] not in {"资料类型", "OCR分类依据", "页数"}
     assert license_link["evidenceFacts"]
@@ -172,6 +181,18 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
         binding["documentVersionId"] == version["id"] and int(binding["nodeId"]) == 1
         for binding in repo.state["bindings"]
     )
+
+    second = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+    auto_bindings = [
+        binding
+        for binding in repo.state["bindings"]
+        if binding.get("documentVersionId") == version["id"]
+        and str(binding.get("id") or "").startswith("BIND-AUTO-")
+    ]
+    assert second["createdBindingCount"] >= 1
+    assert len(auto_bindings) == 1
 
 
 def test_unlocatable_fact_is_separated_as_advisory_file() -> None:
@@ -335,7 +356,7 @@ def test_apply_ocr_result_accepts_usable_table_without_text_fragments() -> None:
     assert version["vectorStatus"] == "待向量化"
 
 
-def test_node2_license_evidence_requires_manual_confirmation() -> None:
+def test_node2_license_evidence_is_system_confirmed_without_confidence_queue() -> None:
     document, version = repo.create_document(
         PROJECT_ID,
         "施工单位安装许可证.pdf",
@@ -366,29 +387,14 @@ def test_node2_license_evidence_requires_manual_confirmation() -> None:
     license_link = next(link for link in node2_links if link["materialTypeCode"] == "construction_license")
 
     assert license_link["supportStatus"] == "命中"
-    assert license_link["manualStatus"] == "pending"
+    assert license_link["manualStatus"] == "confirmed"
+    assert license_link["confirmedByName"] == "系统自动打靶"
 
     readiness = assert_ok(client.get(f"/api/projects/{PROJECT_ID}/nodes/2/evidence-readiness"))
     license_row = next(row for row in readiness["requirements"] if row["materialTypeCode"] == "construction_license")
-    assert license_row["evidenceReviewStatus"] == "待确认"
-    assert license_row["fulfilled"] is False
-    assert readiness["readyForAi"] is False
-
-    confirmed = assert_ok(
-        client.post(
-            f"/api/projects/{PROJECT_ID}/nodes/2/evidence-links/{license_link['id']}/confirm",
-            json={"comment": "原文与资料项一致。"},
-        )
-    )
-    confirmed_row = next(
-        row
-        for row in confirmed["evidenceReadiness"]["requirements"]
-        if row["materialTypeCode"] == "construction_license"
-    )
-    assert confirmed["evidenceLink"]["manualStatus"] == "confirmed"
-    assert confirmed_row["evidenceReviewStatus"] == "已确认"
-    assert confirmed_row["fulfilled"] is True
-    assert confirmed["evidenceReadiness"]["unlocatableConfirmedCount"] == 0
+    assert license_row["evidenceReviewStatus"] == "已确认"
+    assert license_row["fulfilled"] is True
+    assert readiness["unlocatableConfirmedCount"] == 0
 
     rejected = assert_ok(
         client.post(
@@ -438,7 +444,7 @@ def test_node2_schedule_can_target_construction_plan_text() -> None:
     ]
 
     assert schedule_links
-    assert schedule_links[0]["manualStatus"] == "pending"
+    assert schedule_links[0]["manualStatus"] == "confirmed"
 
 
 def test_ai_recheck_allows_pending_evidence_decisions(monkeypatch) -> None:

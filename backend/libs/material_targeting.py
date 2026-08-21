@@ -858,6 +858,7 @@ def score_review_point(
             "formalEvidenceFacts": [],
             "formalEvidenceEligible": False,
             "evidenceTier": "advisory",
+            "bindingEligible": False,
             "excerpt": {"quotedText": "", "pageNo": 1, "bbox": None, "fieldName": None, "fieldId": None},
         }
 
@@ -872,6 +873,7 @@ def score_review_point(
             "matchedEvidenceItems": [],
             "evidenceCoverage": 0.0,
             "reasons": [context_reason] if context_reason else [],
+            "bindingEligible": False,
             "excerpt": {"quotedText": "", "pageNo": 1, "bbox": None, "fieldName": None, "fieldId": None},
         }
 
@@ -922,17 +924,13 @@ def score_review_point(
         score += 25
         reasons.append("人工挂载节点一致")
 
+    responsible_party_matches = str(point.get("responsibleParty") or "") == document_party(document)
     score = min(score, 100)
     confidence = round(score / 100, 4)
-    material_hit = any(reason.startswith("标准资料类型") or "资料类型" in reason for reason in reasons)
-    if score >= 70 and evidence_coverage > 0 and (material_hit or evidence_coverage > 0):
-        support_status = SUPPORTED_STATUS
-    elif score >= 45:
-        support_status = PARTIAL_STATUS
-    else:
-        support_status = UNMATCHED_STATUS
-
     formal_facts = [item for item in evidence_facts if item.get("formalEvidenceEligible") is True]
+    deterministic_match = bool(material_score > 0 and evidence_facts and responsible_party_matches)
+    support_status = SUPPORTED_STATUS if deterministic_match else UNMATCHED_STATUS
+    binding_eligible = bool(deterministic_match and formal_facts)
     excerpt = repo_safe_fact(formal_facts[0] if formal_facts else evidence_facts[0] if evidence_facts else {})
     return {
         "reviewPointId": point.get("id"),
@@ -947,6 +945,7 @@ def score_review_point(
         "formalEvidenceFacts": [repo_safe_fact(item) for item in formal_facts],
         "formalEvidenceEligible": bool(formal_facts),
         "evidenceTier": "formal" if formal_facts else "advisory",
+        "bindingEligible": binding_eligible,
         "excerpt": excerpt,
     }
 
@@ -1055,8 +1054,10 @@ def node_evidence_link_from_match(
         "formalEvidenceFactCount": len([item for item in evidence_facts if item.get("formalEvidenceEligible") is True]),
         "formalEvidenceEligible": bool(match.get("formalEvidenceEligible")),
         "evidenceTier": match.get("evidenceTier") or "advisory",
-        "manualStatus": MANUAL_PENDING,
-        "manualStatusLabel": MANUAL_STATUS_LABELS[MANUAL_PENDING],
+        "manualStatus": MANUAL_CONFIRMED,
+        "manualStatusLabel": MANUAL_STATUS_LABELS[MANUAL_CONFIRMED],
+        "confirmedByName": "系统自动打靶",
+        "confirmedAt": server_time(),
         "source": "material_targeting",
         "createdAt": server_time(),
     }
@@ -1161,10 +1162,8 @@ def run_material_targeting(
     touched_nodes: set[int] = set()
     for candidate in candidates:
         point = candidate.pop("reviewPoint")
-        min_confidence = float(point.get("minConfidence") or 0.65)
         if (
             candidate["supportStatus"] == UNMATCHED_STATUS
-            or float(candidate["confidence"] or 0) < min_confidence
             or not candidate.get("evidenceFacts")
         ):
             continue
@@ -1174,7 +1173,7 @@ def run_material_targeting(
         repo.state.setdefault("node_evidence_links", []).insert(0, link)
         created_links.append(link)
         touched_nodes.add(int(point.get("nodeId") or 0))
-        if auto_bind and candidate["supportStatus"] == SUPPORTED_STATUS and candidate.get("formalEvidenceEligible") is True:
+        if auto_bind and candidate.get("bindingEligible") is True:
             binding = upsert_auto_binding(repo, project_id, point, document, str(version_id), candidate)
             if binding:
                 touched_bindings.append(binding)
