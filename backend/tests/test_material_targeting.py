@@ -6,7 +6,11 @@ from apps.api.main import app
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
 from libs.integrations import task_dispatcher
-from libs.material_targeting import PARTIAL_STATUS, build_node_evidence_readiness
+from libs.material_targeting import (
+    PARTIAL_STATUS,
+    build_node_evidence_readiness,
+    targeting_input_versions_for_node,
+)
 
 client = TestClient(app)
 
@@ -517,6 +521,52 @@ def test_scan_import_expands_contractor_member_scope() -> None:
     assert member["userId"] == "USER-CONTRACTOR-001"
     assert member["orgName"] == "粤海安装工程有限公司"
     assert {1, 2, 4, 16, 24, 25, 53}.issubset(set(member["nodeScope"]))
+
+
+def test_node_input_versions_fall_back_to_ready_unclassified_documents() -> None:
+    repo.state["bindings"] = []
+    repo.state["node_evidence_links"] = []
+    ready_document, ready_version = repo.create_document(
+        PROJECT_ID,
+        "扫描件-ready.pdf",
+        "application/pdf",
+    )
+    blocked_document, blocked_version = repo.create_document(
+        PROJECT_ID,
+        "扫描件-not-vectorized.pdf",
+        "application/pdf",
+    )
+    for document, version, vector_status in (
+        (ready_document, ready_version, "已向量化"),
+        (blocked_document, blocked_version, "待向量化"),
+    ):
+        document.update(
+            {
+                "materialTypeCode": "unclassified_material",
+                "classificationStatus": "unclassified",
+                "currentOcrStatus": "已识别",
+            }
+        )
+        version.update(
+            {
+                "ocrStatus": "已识别",
+                "sliceStatus": "已切片",
+                "vectorStatus": vector_status,
+            }
+        )
+        knowledge_file = repo.knowledge_file_for_version(version["id"])
+        assert knowledge_file is not None
+        knowledge_file.update(
+            {
+                "materialTypeCode": "unclassified_material",
+                "classificationStatus": "unclassified",
+                "ocrStatus": "已识别",
+                "sliceStatus": "已切片",
+                "vectorStatus": vector_status,
+            }
+        )
+
+    assert targeting_input_versions_for_node(repo, PROJECT_ID, 1) == [ready_version["id"]]
 
 
 def test_domestic_manufacturing_license_does_not_auto_bind_overseas_node() -> None:

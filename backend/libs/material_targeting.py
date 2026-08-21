@@ -1493,7 +1493,42 @@ def targeting_input_versions_for_node(repo: Any, project_id: str, node_id: int) 
     readiness = build_node_evidence_readiness(repo, project_id, node_id)
     if readiness.get("inputDocumentVersionIds"):
         return list(readiness["inputDocumentVersionIds"])
-    return [item["documentVersionId"] for item in repo.bindings_for_node(project_id, node_id)]
+    bound_versions = [item["documentVersionId"] for item in repo.bindings_for_node(project_id, node_id)]
+    if bound_versions:
+        return bound_versions
+    return unclassified_input_versions_for_project(repo, project_id)
+
+
+def unclassified_input_versions_for_project(repo: Any, project_id: str) -> list[str]:
+    ready: list[str] = []
+    for document in repo.state.get("documents", []):
+        if document.get("projectId") != project_id:
+            continue
+        if str(document.get("materialTypeCode") or "") != "unclassified_material":
+            continue
+        if str(document.get("currentOcrStatus") or "") not in {"已识别", "人工修正", "抽取不完整"}:
+            continue
+        version_id = str(document.get("currentVersionId") or "")
+        version = repo.find_one("versions", version_id)
+        knowledge_file = repo.knowledge_file_for_version(version_id)
+        if not version or not knowledge_file:
+            continue
+        if str(version.get("documentId") or "") != str(document.get("id") or ""):
+            continue
+        if str(version.get("ocrStatus") or "") not in {"已识别", "人工修正", "抽取不完整"}:
+            continue
+        if str(version.get("sliceStatus") or "") != "已切片":
+            continue
+        if str(version.get("vectorStatus") or "") != "已向量化":
+            continue
+        if str(knowledge_file.get("materialTypeCode") or "") != "unclassified_material":
+            continue
+        if str(knowledge_file.get("sliceStatus") or "") != "已切片":
+            continue
+        if str(knowledge_file.get("vectorStatus") or "") != "已向量化":
+            continue
+        ready.append(version_id)
+    return sorted(set(ready))
 
 
 def targeting_run_snapshot(run: dict[str, Any]) -> dict[str, Any]:

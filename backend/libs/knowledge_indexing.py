@@ -447,6 +447,12 @@ def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, 
                         "documentId": file.get("documentId"),
                         "documentVersionId": file.get("documentVersionId"),
                         "sourceId": file.get("sourceId"),
+                        "projectId": file.get("projectId"),
+                        "materialCategory": file.get("materialCategory"),
+                        "materialTypeCode": file.get("materialTypeCode"),
+                        "materialTypeName": file.get("materialTypeName"),
+                        "classificationStatus": file.get("classificationStatus"),
+                        "classificationConfidence": file.get("classificationConfidence"),
                         "sourceRelativePath": file.get("sourceRelativePath"),
                         "chunkNo": sequence,
                         "text": text,
@@ -682,6 +688,16 @@ def build_vector_rows(
                 "payload": {
                     "text": chunk.get("text"),
                     "fileName": file.get("fileName"),
+                    "projectId": chunk.get("projectId") or file.get("projectId"),
+                    "materialCategory": chunk.get("materialCategory") or file.get("materialCategory"),
+                    "materialTypeCode": chunk.get("materialTypeCode") or file.get("materialTypeCode"),
+                    "materialTypeName": chunk.get("materialTypeName") or file.get("materialTypeName"),
+                    "classificationStatus": chunk.get("classificationStatus") or file.get("classificationStatus"),
+                    "classificationConfidence": (
+                        chunk.get("classificationConfidence")
+                        if chunk.get("classificationConfidence") is not None
+                        else file.get("classificationConfidence")
+                    ),
                     "sourceRelativePath": file.get("sourceRelativePath"),
                     "contextType": chunk_context_type,
                     "sourceMethod": source_method,
