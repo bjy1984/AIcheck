@@ -290,7 +290,7 @@ git commit -m "feat: run document intelligence before slicing"
 **Files:**
 - Modify: `backend/libs/knowledge_indexing.py`
 - Modify: `backend/libs/material_targeting.py`
-- Modify: `backend/tests/test_knowledge_indexing.py`
+- Create: `backend/tests/test_knowledge_indexing.py`
 - Modify: `backend/tests/test_material_targeting.py`
 
 **Interfaces:**
