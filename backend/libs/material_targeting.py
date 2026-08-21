@@ -1517,10 +1517,6 @@ def unclassified_input_versions_for_project(repo: Any, project_id: str) -> list[
             continue
         if str(version.get("ocrStatus") or "") not in {"已识别", "人工修正", "抽取不完整"}:
             continue
-        if str(version.get("sliceStatus") or "") != "已切片":
-            continue
-        if str(version.get("vectorStatus") or "") != "已向量化":
-            continue
         if str(knowledge_file.get("materialTypeCode") or "") != "unclassified_material":
             continue
         if str(knowledge_file.get("sliceStatus") or "") != "已切片":
