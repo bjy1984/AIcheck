@@ -120,6 +120,32 @@ def _dictionary() -> tuple[tuple[str, str, str], ...]:
     )
 
 
+@lru_cache(maxsize=1)
+def _canonical_by_code() -> dict[str, tuple[str, str]]:
+    """标准类型编码对应的正式名称和类别；别名只参与命中，不参与展示。"""
+    canonical: dict[str, tuple[str, str]] = {}
+    try:
+        data = json.loads(CONFIG.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return canonical
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            name = str(node.get("materialTypeName") or "").strip()
+            category = str(node.get("materialCategory") or "").strip()
+            code = str(node.get("materialTypeCode") or "").strip()
+            if name and category and code:
+                canonical.setdefault(code, (name, category))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(data)
+    return canonical
+
+
 def _normalize(text: str) -> str:
     # 去掉空白和常见分隔符：「特种设备生产许可证-贵州化工.pdf」也要能命中
     return re.sub(r"[\s_\-—－()（）\[\]【】]+", "", str(text or "")).lower()
@@ -176,10 +202,7 @@ def classify_material(
     并且把 source 标出来——两种来源的可信度不一样，界面上要能区分。
     """
     dictionary = _dictionary()
-    by_code: dict[str, tuple[str, str]] = {}
-    for name, category, code in dictionary:
-        if code:
-            by_code.setdefault(code, (name, category))
+    by_code = _canonical_by_code()
 
     candidates: list[tuple[tuple[float, int, int, int], dict[str, Any]]] = []
 

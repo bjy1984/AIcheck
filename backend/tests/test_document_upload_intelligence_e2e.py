@@ -10,7 +10,9 @@ from fastapi.testclient import TestClient
 from apps.api import routes as routes_module
 from apps.api.main import app
 from apps.worker import tasks
+from libs.business_pack import load_business_pack
 from libs.db.repository import repo
+from libs.integrations import task_dispatcher
 from libs.material_targeting import targeting_input_versions_for_node
 
 
@@ -26,6 +28,11 @@ NDT = {
     "X-Dev-Role": "ndt",
     "X-Dev-User": "USER-NDT-001",
     "X-Role": "ndt",
+}
+INSPECTION = {
+    "X-Dev-Role": "inspection",
+    "X-Dev-User": "USER-INSPECTION-001",
+    "X-Role": "inspection",
 }
 
 
@@ -314,3 +321,24 @@ def test_zero_signal_upload_is_searchable_fallback_without_binding(monkeypatch: 
     repo.state["bindings"] = []
     repo.state["node_evidence_links"] = []
     assert targeting_input_versions_for_node(repo, PROJECT_ID, 1) == [version["id"]]
+
+    pack = load_business_pack("engineering_inspection_v1")
+    monkeypatch.setitem(pack["atomicCheckToolBindingSet"], "lifecycleStatus", "published")
+    monkeypatch.setattr(
+        task_dispatcher,
+        "ai_recheck_dispatch_readiness",
+        lambda: {"ready": True, "mode": "test", "statusReason": "test_dispatch"},
+    )
+    monkeypatch.setattr(
+        task_dispatcher,
+        "dispatch_ai_recheck",
+        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+    )
+    review = _ok(
+        client.post(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck",
+            headers={**INSPECTION, "Idempotency-Key": "e2e-unclassified-fallback-review"},
+        ),
+        "unclassified-fallback-review",
+    )
+    assert review["latestRun"]["inputDocumentVersionIds"] == [version["id"]]

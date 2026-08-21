@@ -32,6 +32,7 @@ def test_识别元件制造许可证():
     assert result["materialTypeCode"] == "manufacturing_license"
     # 第 1 条修过：元件制造许可证属于材料，不是资质证照
     assert result["materialCategory"] == "材料验收与复验"
+    assert result["materialTypeName"] == "制造单位许可证"
     assert result["matchedBy"] == "fileName"
 
 
@@ -41,6 +42,7 @@ def test_设计资质归到资质证照():
     assert result
     assert result["materialTypeCode"] == "design_license"
     assert result["materialCategory"] == "资质证照"
+    assert result["materialTypeName"] == "设计单位许可证"
 
 
 def test_别名的类别取自配置而不是写死():

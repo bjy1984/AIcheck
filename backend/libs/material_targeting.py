@@ -780,6 +780,15 @@ def material_type_matches_point(point: dict[str, Any], document: dict[str, Any],
     return 0, None
 
 
+def material_type_is_binding_compatible(point: dict[str, Any], document: dict[str, Any]) -> bool:
+    """自动挂载只认最终类型或明确兼容关系；OCR中提到某类型只作诊断。"""
+    expected = str(point.get("materialTypeCode") or "").strip()
+    declared = str(document.get("materialTypeCode") or "").strip()
+    if expected and declared == expected:
+        return True
+    return expected == "construction_schedule" and declared == "construction_organization_design"
+
+
 def best_excerpt(parse_result: dict[str, Any] | None, fields: list[dict[str, Any]], keywords: list[str]) -> dict[str, Any]:
     for field in fields:
         haystack = normalized_text(f"{field.get('fieldName') or ''}{field.get('fieldValue') or ''}")
@@ -928,7 +937,12 @@ def score_review_point(
     score = min(score, 100)
     confidence = round(score / 100, 4)
     formal_facts = [item for item in evidence_facts if item.get("formalEvidenceEligible") is True]
-    deterministic_match = bool(material_score > 0 and evidence_facts and responsible_party_matches)
+    deterministic_match = bool(
+        material_type_is_binding_compatible(point, document)
+        and material_score > 0
+        and evidence_facts
+        and responsible_party_matches
+    )
     support_status = SUPPORTED_STATUS if deterministic_match else UNMATCHED_STATUS
     binding_eligible = bool(deterministic_match and formal_facts)
     excerpt = repo_safe_fact(formal_facts[0] if formal_facts else evidence_facts[0] if evidence_facts else {})
@@ -961,13 +975,13 @@ def upsert_auto_binding(
     node_id = int(point.get("nodeId") or 0)
     if not node_id:
         return None
+    auto_binding_id = f"BIND-AUTO-{stable_short_id(project_id, node_id, version_id, length=10)}"
     existing = next(
         (
             item
             for item in repo.state.get("bindings", [])
-            if item.get("projectId") == project_id
-            and int(item.get("nodeId") or 0) == node_id
-            and item.get("documentVersionId") == version_id
+            if item.get("id") == auto_binding_id
+            and item.get("source") == "material_targeting"
         ),
         None,
     )
@@ -980,7 +994,7 @@ def upsert_auto_binding(
         return existing
 
     binding = {
-        "id": f"BIND-AUTO-{stable_short_id(project_id, node_id, version_id, length=10)}",
+        "id": auto_binding_id,
         "projectId": project_id,
         "nodeId": node_id,
         "requirementId": point.get("id"),

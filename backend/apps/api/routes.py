@@ -186,6 +186,7 @@ from libs.material_targeting import (
     review_points_for_project,
     run_material_targeting,
     set_node_evidence_link_manual_status,
+    targeting_input_versions_for_node,
 )
 from libs.model_usage import normalize_model_usage
 from libs.node_document_identity import (
@@ -9646,6 +9647,8 @@ def ai_recheck(
             if str(link.get("manualStatus") or "").lower() != "rejected"
         ]
         input_document_version_ids = sorted({str(link.get("documentVersionId")) for link in node_evidence_links if link.get("documentVersionId")})
+        if not input_document_version_ids:
+            input_document_version_ids = targeting_input_versions_for_node(repo, project_id, node_id)
         rule = (
             current_business_rule_for_node(node_id, business_pack_id=pack["id"])
             or next(

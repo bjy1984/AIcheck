@@ -68,6 +68,8 @@ def persist_document_classification(
     for record in (document, knowledge_file):
         if record is None:
             continue
+        if classification.get("classificationError") is None:
+            record.pop("classificationError", None)
         record.update(repo.clone(persisted))
         record["autoClassification"] = repo.clone(classification)
         record["updatedAt"] = now
@@ -88,6 +90,20 @@ def process_document_classification_and_targeting(
             "status": "missing_document",
             "documentId": document_id,
             "documentVersionId": document_version_id,
+        }
+    version = repo.find_one("versions", document_version_id)
+    if not version or str(version.get("documentId") or "") != str(document_id):
+        return {
+            "status": "version_mismatch",
+            "documentId": document_id,
+            "documentVersionId": document_version_id,
+        }
+    if str(document.get("currentVersionId") or "") != str(document_version_id):
+        return {
+            "status": "stale_version",
+            "documentId": document_id,
+            "documentVersionId": document_version_id,
+            "currentDocumentVersionId": document.get("currentVersionId"),
         }
     parse_result = latest_parse_result(repo, document_version_id)
     if not parse_result:

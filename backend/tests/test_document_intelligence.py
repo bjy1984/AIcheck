@@ -143,3 +143,105 @@ def test_classifier_exception_falls_back_without_blocking_postprocessing(monkeyp
     assert result["classification"]["materialTypeCode"] == "unclassified_material"
     assert result["classification"]["classificationError"] == "RuntimeError"
     assert document["classificationStatus"] == "unclassified"
+
+    monkeypatch.setattr(
+        intelligence,
+        "classify_material",
+        lambda **_kwargs: {
+            "materialCategory": "资质证照",
+            "materialTypeCode": "design_license",
+            "materialTypeName": "设计单位许可证",
+            "matchedBy": "documentType",
+            "reason": "OCR文档类型精确匹配",
+            "classificationStatus": "classified",
+            "classificationConfidence": 1.0,
+            "classificationSource": "ocr_classifier",
+            "classificationReasons": ["OCR文档类型精确匹配"],
+            "classifierVersion": "material-classifier-v2",
+        },
+    )
+    recovered = intelligence.process_document_classification_and_targeting(
+        repository,
+        PROJECT_ID,
+        document["id"],
+        version["id"],
+        triggered_by="test-retry",
+    )
+    knowledge_file = repository.knowledge_file_for_version(version["id"])
+    assert recovered["classification"]["materialTypeCode"] == "design_license"
+    assert "classificationError" not in document
+    assert knowledge_file is not None
+    assert "classificationError" not in knowledge_file
+
+
+def test_document_intelligence_rejects_version_from_another_document() -> None:
+    from libs.document_intelligence import process_document_classification_and_targeting
+
+    repository = InMemoryRepository()
+    document, _version = repository.create_document(
+        PROJECT_ID,
+        "目标文档.pdf",
+        "application/pdf",
+    )
+    other_document, other_version = repository.create_document(
+        PROJECT_ID,
+        "其他文档.pdf",
+        "application/pdf",
+    )
+    _apply_ocr(
+        repository,
+        document=other_document,
+        version=other_version,
+        document_type="design_license",
+        text="设计单位许可证",
+    )
+    before = repository.clone(document)
+
+    result = process_document_classification_and_targeting(
+        repository,
+        PROJECT_ID,
+        document["id"],
+        other_version["id"],
+        triggered_by="test",
+    )
+
+    assert result["status"] == "version_mismatch"
+    assert document == before
+
+
+def test_late_old_version_ocr_does_not_overwrite_current_document_classification() -> None:
+    from libs.document_intelligence import process_document_classification_and_targeting
+
+    repository = InMemoryRepository()
+    document, old_version = repository.create_document(
+        PROJECT_ID,
+        "历史版本.pdf",
+        "application/pdf",
+    )
+    _apply_ocr(
+        repository,
+        document=document,
+        version=old_version,
+        document_type="design_license",
+        text="设计单位许可证",
+    )
+    current_version = repository.next_document_version(document, file_name="当前版本.pdf")
+    document.update(
+        {
+            "materialTypeCode": "quality_certificate",
+            "materialTypeName": "产品质量证明书",
+            "classificationStatus": "classified",
+        }
+    )
+
+    result = process_document_classification_and_targeting(
+        repository,
+        PROJECT_ID,
+        document["id"],
+        old_version["id"],
+        triggered_by="late-ocr",
+    )
+
+    assert result["status"] == "stale_version"
+    assert document["currentVersionId"] == current_version["id"]
+    assert document["materialTypeCode"] == "quality_certificate"

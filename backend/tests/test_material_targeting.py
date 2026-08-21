@@ -199,6 +199,95 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
     assert len(auto_bindings) == 1
 
 
+def test_auto_targeting_preserves_manual_binding_and_creates_separate_auto_binding() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "设计单位许可证-人工绑定并存.pdf",
+        "application/pdf",
+        material_category="资质证照",
+    )
+    document["materialTypeCode"] = "design_license"
+    apply_ocr(
+        document,
+        version,
+        document_type="design_license",
+        text="设计许可证机构名称 华东设计院 许可范围 压力管道设计 有效期至 2029年08月11日",
+        fields=[
+            {"fieldName": "设计许可证机构名称", "fieldValue": "华东设计院", "pageNo": 1, "confidence": 0.96},
+            {"fieldName": "许可范围", "fieldValue": "压力管道设计 GC1", "pageNo": 1, "confidence": 0.95},
+            {"fieldName": "有效期至", "fieldValue": "2029年08月11日", "pageNo": 1, "confidence": 0.95},
+        ],
+    )
+    manual = {
+        "id": "BIND-MANUAL-PRESERVE",
+        "projectId": PROJECT_ID,
+        "nodeId": 1,
+        "documentId": document["id"],
+        "documentVersionId": version["id"],
+        "fileName": document["fileName"],
+        "bindingStatus": "草稿挂载",
+        "usage": "人工指定用途",
+        "boundByName": "李工",
+        "boundAt": "2026-08-21 10:00:00",
+        "tenantId": "TENANT-DEFAULT",
+        "actions": ["submission:submit"],
+    }
+    repo.state["bindings"].insert(0, manual)
+    before = repo.clone(manual)
+
+    targeting = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+
+    assert repo.find_one("bindings", manual["id"]) == before
+    auto_bindings = [
+        binding
+        for binding in repo.state["bindings"]
+        if binding.get("documentVersionId") == version["id"]
+        and str(binding.get("id") or "").startswith("BIND-AUTO-")
+    ]
+    assert targeting["createdBindingCount"] >= 1
+    assert len(auto_bindings) == 1
+
+
+def test_ocr_mention_of_unrelated_type_cannot_create_cross_type_binding() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "产品质量证明书-提到复验.pdf",
+        "application/pdf",
+        material_category="材料验收与复验",
+    )
+    document["materialTypeCode"] = "quality_certificate"
+    apply_ocr(
+        document,
+        version,
+        document_type="quality_certificate",
+        text="产品质量证明书附注：另见材料复验报告。报告编号 RT-001，样品编号 S-001，批号 B-001，结论合格。",
+        fields=[
+            {"fieldName": "报告编号", "fieldValue": "RT-001", "pageNo": 1, "confidence": 0.95},
+            {"fieldName": "样品编号", "fieldValue": "S-001", "pageNo": 1, "confidence": 0.95},
+            {"fieldName": "批号", "fieldValue": "B-001", "pageNo": 1, "confidence": 0.95},
+            {"fieldName": "结论", "fieldValue": "合格", "pageNo": 1, "confidence": 0.95},
+        ],
+    )
+
+    targeting = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+
+    assert not [
+        link
+        for link in targeting["createdLinks"]
+        if link.get("materialTypeCode") == "material_retest_report"
+    ]
+    assert not [
+        binding
+        for binding in repo.state["bindings"]
+        if binding.get("documentVersionId") == version["id"]
+        and binding.get("requirementName") == "材料复验报告"
+    ]
+
+
 def test_unlocatable_fact_is_separated_as_advisory_file() -> None:
     document, version = repo.create_document(
         PROJECT_ID,
