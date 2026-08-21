@@ -50,6 +50,7 @@ from libs.document_audit_pipeline_comparison import (
     persist_pipeline_comparison_run,
     schedule_pipeline_comparison,
 )
+from libs.document_intelligence import process_document_classification_and_targeting
 from libs.integrations import task_dispatcher
 from libs.integrations.document_ai_client import DocumentAiClient
 from libs.integrations.embedding_client import EmbeddingClient
@@ -68,7 +69,6 @@ from libs.knowledge_indexing import (
     offline_hash_embeddings,
     units_from_local_file,
 )
-from libs.material_targeting import run_material_targeting
 from libs.mineru_ocr import (
     MinerUNormalizationError,
     MinerUNormalizedBundle,
@@ -765,11 +765,11 @@ def pipeline_apply_result(
     previous_record_ids: dict[str, set[str]],
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     applied = repo.apply_ocr_result(document_id, version_id, result)
-    targeting = None
+    document_intelligence = None
     if applied.get("status") == "success":
         document = repo.find_one("documents", document_id)
         if document and document.get("projectId"):
-            targeting = run_material_targeting(
+            document_intelligence = process_document_classification_and_targeting(
                 repo,
                 str(document["projectId"]),
                 document_id,
@@ -784,7 +784,7 @@ def pipeline_apply_result(
         if object_ids - current_record_ids.get(state_key, set())
     }
     sync_state_records(current_records, deleted_record_ids)
-    return applied, targeting
+    return applied, document_intelligence
 
 
 def mark_local_pipeline_stages(
@@ -1469,12 +1469,21 @@ def _execute_mineru_ocr_extract(
             repo.find_one("versions", version_id) if version_id else None
         )
         applied = None
+        document_intelligence = None
         if (
             bound_document is not None
             and bound_version is not None
             and str(bound_version.get("documentId") or "") == document_id
         ):
             applied = repo.apply_ocr_result(document_id, version_id, result)
+            if applied.get("status") == "success" and bound_document.get("projectId"):
+                document_intelligence = process_document_classification_and_targeting(
+                    repo,
+                    str(bound_document["projectId"]),
+                    document_id,
+                    version_id,
+                    triggered_by="mineru_ocr",
+                )
             flush_state_records(
                 ocr_result_state_records(document_id, version_id)
             )
@@ -1524,6 +1533,7 @@ def _execute_mineru_ocr_extract(
                 or result.get("parseResultId")
             ),
             "applied": applied,
+            "documentIntelligence": document_intelligence,
             "nextDispatch": next_dispatch,
             "artifactReferences": deepcopy(
                 job.get("artifactReferences") or {}
@@ -2136,8 +2146,10 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
     )
     applied: dict[str, Any] = {"status": "queued"}
     targeting = None
+    document_intelligence = None
     if current_pipeline_mode != "active" or not accuracy_pipeline_enabled:
-        applied, targeting = pipeline_apply_result(document_id, version_id, result, previous_record_ids)
+        applied, document_intelligence = pipeline_apply_result(document_id, version_id, result, previous_record_ids)
+        targeting = (document_intelligence or {}).get("targeting")
     next_dispatch = None
     document_ai_shadow_dispatch = None
     qwen_pipeline_dispatch = None
@@ -2251,6 +2263,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         "applied": applied,
         "nextDispatch": next_dispatch,
         "targeting": targeting,
+        "documentIntelligence": document_intelligence,
         "ocrJobRecordId": ocr_job_record.get("id"),
         "ocrParseResultId": (parse_result_record or {}).get("parseResultId"),
         "documentAiShadowDispatch": document_ai_shadow_dispatch,
@@ -3616,6 +3629,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
     repo.mark_ocr_pipeline_stage(run, "finalize", "running")
     applied: dict[str, Any] | None = None
     targeting: dict[str, Any] | None = None
+    document_intelligence: dict[str, Any] | None = None
     if run.get("mode") == "active":
         authoritative = deepcopy(merged)
         authoritative["parseResultId"] = f"{baseline.get('parseResultId')}-QWEN"
@@ -3638,12 +3652,13 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
         previous_ids = state_record_ids(
             ocr_result_state_records(str(run.get("documentId") or ""), str(run.get("documentVersionId") or ""))
         )
-        applied, targeting = pipeline_apply_result(
+        applied, document_intelligence = pipeline_apply_result(
             str(run.get("documentId") or ""),
             str(run.get("documentVersionId") or ""),
             authoritative,
             previous_ids,
         )
+        targeting = (document_intelligence or {}).get("targeting")
         knowledge_file = repo.knowledge_file_for_version(str(run.get("documentVersionId") or ""))
         if applied.get("status") == "success" and knowledge_file:
             run["nextDispatch"] = task_dispatcher.dispatch_slice(str(knowledge_file["id"]))
@@ -3671,6 +3686,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
             "formalEvidenceReady": formal_ready,
             "applied": applied,
             "targeting": targeting,
+            "documentIntelligence": document_intelligence,
         },
     )
     repo.mark_ocr_pipeline_stage(
@@ -3689,6 +3705,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
         "blockingReasons": blockers,
         "formalReadinessBlockingReasons": formal_readiness_blockers,
         "applied": applied,
+        "documentIntelligence": document_intelligence,
     }
 
 

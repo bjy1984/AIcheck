@@ -152,7 +152,7 @@ def test_postgres_execution_indexes_usable_review_incomplete_result(
     repository = InMemoryRepository()
     document, version = repository.create_document(
         "PRJ-001",
-        "材料代用单.docx",
+        "扫描件-postocr.docx",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
     job = repository.create_ocr_job_record(
@@ -184,6 +184,8 @@ def test_postgres_execution_indexes_usable_review_incomplete_result(
         "outcomeStatus": "partial",
         "storageKey": version["storageKey"],
         "fileName": document["fileName"],
+        "documentType": "material_substitution_approval",
+        "profileId": "material_substitution_approval_v1",
         "pages": [{"pageNo": 1}],
         "fragments": deepcopy(EXPECTED_FRAGMENTS),
         "layoutBlocks": [],
@@ -205,6 +207,18 @@ def test_postgres_execution_indexes_usable_review_incomplete_result(
     monkeypatch.setattr(tasks, "refresh_ocr_worker_state", lambda *_args: None)
     monkeypatch.setattr(tasks, "flush_state_records", lambda _records: None)
     monkeypatch.setattr(tasks, "run_mineru_job", lambda _job: deepcopy(result))
+    classification_seen_by_slice: list[str] = []
+
+    def capture_slice(file_id: str, expect_parse_result_id: str | None = None) -> dict:
+        knowledge_file = repository.find_one("knowledge_files", file_id)
+        classification_seen_by_slice.append(str((knowledge_file or {}).get("materialTypeCode") or ""))
+        return {
+            "mode": "test",
+            "taskId": "slice-test",
+            "expectParseResultId": expect_parse_result_id,
+        }
+
+    monkeypatch.setattr(tasks.task_dispatcher, "dispatch_slice", capture_slice)
 
     output = tasks.execute_mineru_postgres_job(
         job["id"],
@@ -217,6 +231,8 @@ def test_postgres_execution_indexes_usable_review_incomplete_result(
     assert document["currentOcrStatus"] == "已识别"
     assert version["sliceStatus"] == "待切片"
     assert version["vectorStatus"] == "待向量化"
+    assert document["materialTypeCode"] == "material_substitution_approval"
+    assert classification_seen_by_slice == ["material_substitution_approval"]
     downstream = [
         item
         for item in repository.state["knowledge_tasks"]
