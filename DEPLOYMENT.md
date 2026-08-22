@@ -60,6 +60,110 @@ OCR 100+ 人工标注样本准确率评估报告
 
 延期项不豁免 OCR 运行态。`ocr_runtime_doctor.py --strict-production` 仍必须无 fail，`--ocr-object-probe` 仍必须证明 OCR 服务能读取 MinIO 对象并返回结构化失败或成功结果。
 
+### 0.1 注册、上传与正式 AI 复核浏览器门禁
+
+发布候选版本必须在非生产验收副本的一次性 PostgreSQL schema 中执行
+`frontend/e2e/project-registration-upload-review.spec.ts`。禁止把正在运行的业务库
+直接提供给 E2E；浏览器、API、worker 和 Review Worker 必须连接同一个
+`aicheck_test_<run>` schema。`backend/tests/conftest.py` 会在
+`AICHECK_TEST_POSTGRES_URL` 与应用 DSN 指向同一目标但未声明隔离 search path 时，
+在 pytest 收集阶段直接失败；比较只使用规范化后的 host/port/database，不把数据库
+用户名或密码当成隔离边界，`localhost`/IPv4/IPv6 loopback 视为同一主机。
+
+必需服务及状态：
+
+- API 鉴权开启、Demo 用户关闭，PostgreSQL 事务和对象存储可用；
+- OCR provider ready，MinerU/OCR/切片/向量 worker 心跳正常；
+- embedding provider 已配置；
+- Temporal 协议连接、workflow schema 和 Review Worker 心跳全部 ready；
+- 工程监检业务包及节点固定规则/条款引用已绑定到本次新建项目；
+- 正式复核必须走 Temporal，不得临时切换 `inline` 或 deterministic 结果完成验收。
+
+浏览器默认只允许 `localhost`、`127.0.0.1`、`::1` 或 `0.0.0.0`。确需访问远端验收
+副本时必须显式设置 `AICHECK_E2E_ALLOW_EXTERNAL_NON_PRODUCTION=true`；测试仍会读取
+`/api/runtime/ui-context`，拒绝 `strictProduction=true`、production/prod 环境标识、
+Demo UI 数据或与 `AICHECK_E2E_BUILD_SHA` 不一致的目标。
+
+`/api/runtime/ui-context` 还必须返回以下非秘密字段，并与
+`AICHECK_TEST_POSTGRES_URL`、`AICHECK_E2E_RUN_MARKER` 精确一致；字段缺失即阻断，
+不能只信环境名称：
+
+```json
+{
+  "buildVersion": "<AICHECK_E2E_BUILD_VERSION>",
+  "databaseScope": {
+    "engine": "postgresql",
+    "database": "<lowercase database name>",
+    "schema": "aicheck_test_<run>",
+    "runMarker": "<AICHECK_E2E_RUN_MARKER>",
+    "participants": {
+      "api": { "ready": true, "database": "<same>", "schema": "<same>", "runMarker": "<same>" },
+      "processingWorker": { "ready": true, "database": "<same>", "schema": "<same>", "runMarker": "<same>" },
+      "reviewWorker": { "ready": true, "database": "<same>", "schema": "<same>", "runMarker": "<same>" }
+    }
+  }
+}
+```
+
+`databaseScope` 不得包含 DSN、用户名、密码或 host secret。`ready` 必须来自当前 run
+marker 的新鲜心跳，而不是静态配置值。
+production/strict/demo/build 身份在首次响应不匹配时立即失败；只允许 databaseScope
+及 worker heartbeat 最多预热 30 秒，每 750 ms 重读一次。超时必须输出全部剩余差异并
+附加最后一份非秘密 identity 快照，不得吞掉数据库、schema 或 run marker 不匹配。
+
+凭证和 DSN 只能从环境注入，不得写入测试文件或验收报告：
+
+```bash
+export AICHECK_BASE_URL='http://127.0.0.1:4000'
+export AICHECK_E2E_ADMIN_USERNAME='<admin-username>'
+export AICHECK_E2E_ADMIN_PASSWORD='<admin-password>'
+export AICHECK_E2E_LEADER_USERNAME='<existing-inspection-leader-username>'
+export AICHECK_E2E_LEADER_PASSWORD='<leader-password>'
+export AICHECK_E2E_LEADER_MEMBER_LABEL='<leader-name-as-shown-in-member-selector>'
+export AICHECK_E2E_FIXTURE_ROOT='/secure/aicheck-e2e-fixtures'
+# 可选：JSON 对象，key 为 23 个精确相对路径，value 为小写 SHA-256。
+# export AICHECK_E2E_FIXTURE_CHECKSUM_MANIFEST='/secure/aicheck-e2e-fixtures.sha256.json'
+export AICHECK_E2E_BUILD_VERSION='<release-build-version>'
+export AICHECK_E2E_BUILD_SHA='<release-git-sha>'
+export AICHECK_E2E_RUN_MARKER='<unique-e2e-run-marker>'
+export AICHECK_TEST_POSTGRES_URL='postgresql://<test-user>:<secret>@<test-host>:5432/<test-db>?options=-c%20search_path%3Daicheck_test_<run>%2Cpublic'
+
+# 仅远端非生产验收副本需要；生产目标即使设置也会被 runtime preflight 拒绝。
+# export AICHECK_E2E_ALLOW_EXTERNAL_NON_PRODUCTION=true
+```
+
+fixture corpus 必须由验收环境单独供应，不得依赖 fresh checkout 中未跟踪的 `test/`
+目录。`AICHECK_E2E_FIXTURE_ROOT` 下只能存在 spec 声明的 15 份施工资料和 8 份 NDT
+资料；basename 精确为 `.DS_Store` 的 macOS 元数据会忽略，但不会宽泛忽略其它隐藏
+文件或 metadata。有缺失、额外业务文件、不支持格式或 0-byte 文件时，Playwright 收集阶段直接非零
+退出。未提供固定 checksum manifest 时，测试仍会在首个 mutation 前计算并附加 23 份
+文件的 SHA-256 manifest；提供 manifest 时路径集合和每个 hash 都必须精确相等。
+
+启动发布候选 API/worker 时将其应用 DSN 设置为上述隔离 DSN；确认所有进程的
+search path 一致后执行：
+
+```bash
+cd frontend
+pnpm playwright test e2e/project-registration-upload-review.spec.ts
+```
+
+报告固定写入 `audit-reports/e2e-remediation-acceptance/`。JSON/HTML reporter 是附件
+索引；命名截图、runtime/health preflight 和 `acceptance-summary.json` 作为 reporter
+索引中的命名附件保存在每个 Playwright test result 目录，不伪装成顶层稳定文件。
+摘要必须记录项目 ID、构建 SHA、两名链接签发人、四个注册角色、15/8 文件计数、
+列表及 detail/preview/download/original/office-preview 直接 ID 隔离结果、OCR/切片/向量
+完成数、证据确认结果、AI Run/ReviewRun 标识、建议结论、置信度、证据及规则引用。
+`openRequiredGateCount` 从必需 gate assertion 的通过/未通过状态计算，不得写死为
+0。`gateResults` 是覆盖清单；独立
+`defectInventory` 只由 `gateStep` 捕获到的失败生成，带 P0/P1 severity 和错误信息，
+`openP0P1Defects` 只从这些实际 defect records 计算。缺少任何必需环境变量会在
+Playwright 收集阶段非零退出，不允许以 skipped test 通过发布命令。
+
+以下任一情况均阻断发布并回滚候选版本：公开注册或交叉审核失败；审核后项目授权
+不完整；施工方、无损检测方或建设方读到越权草稿；15 文件选择或 8 文件绑定不完整；
+owner 获得上传入口；处理流水线未完成仍可提交；正式 Temporal 复核不可用；AI 结果、
+时间线、证据或规则引用不一致。验收报告必须为 P0/P1 未关闭缺陷数 0。
+
 ## 1. 项目架构
 
 AIcheck 采用前后端分离、主业务 API 与异步能力服务拆分的架构。浏览器只访问前端站点、`api-service` 和 MinIO signed URL；OCR、LiteLLM、PostgreSQL、Redis 均应部署在内网。

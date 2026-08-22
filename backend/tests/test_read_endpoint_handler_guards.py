@@ -36,7 +36,11 @@ SENSITIVE_READ_HANDLERS = [
 
 
 # 直接调用，或经这些共享辅助间接调用，都算数
-SCOPE_CHECK_MARKERS = ("member_node_scope_error", "document_read_scope_error")
+SCOPE_CHECK_MARKERS = (
+    "member_node_scope_error",
+    "document_read_error",
+    "document_read_scope_error",
+)
 
 
 def test_sensitive_read_handlers_carry_their_own_scope_check() -> None:

@@ -11,8 +11,9 @@ import os
 import re
 import sqlite3
 import threading
+from collections.abc import Callable
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -177,6 +178,8 @@ STATE_COLLECTIONS = {
     "knowledge_chunk_quarantines": "knowledge_chunk_quarantines",
     "rule_versions": "rule_versions",
     "llm_compare_runs": "llm_compare_runs",
+    "project_invitations": "project_invitations",
+    "registration_requests": "registration_requests",
     "project_members": "project_members",
     "users": "users",
     "roles": "roles",
@@ -1046,6 +1049,7 @@ class InMemoryRepository:
         file_name: str,
         file_type: str,
         *,
+        source_org_id: str | None = None,
         source_org_name: str | None = None,
         uploader_name: str | None = None,
         material_category: str | None = None,
@@ -1056,6 +1060,7 @@ class InMemoryRepository:
             project_id,
             file_name,
             file_type,
+            source_org_id=source_org_id,
             source_org_name=source_org_name,
             uploader_name=uploader_name,
             material_category=material_category,
@@ -1082,6 +1087,7 @@ class InMemoryRepository:
         file_name: str,
         file_type: str,
         *,
+        source_org_id: str | None = None,
         source_org_name: str | None = None,
         uploader_name: str | None = None,
         material_category: str | None = None,
@@ -1097,6 +1103,7 @@ class InMemoryRepository:
         version_id = f"DV-{seed}-V1"
         now = server_time()
         project = self.require_project(project_id)
+        resolved_source_org_id = str(source_org_id or "").strip() or None
         resolved_source_org_name = source_org_name or (project or {}).get("contractorOrgName") or "项目参建单位"
         resolved_uploader_name = uploader_name or "系统"
         resolved_material_category = str(material_category or "").strip()
@@ -1118,6 +1125,7 @@ class InMemoryRepository:
             "materialCategory": resolved_material_category or None,
             "fileName": file_name,
             "fileType": file_type or file_name.split(".")[-1],
+            "sourceOrgId": resolved_source_org_id,
             "sourceOrgName": resolved_source_org_name,
             "uploaderName": resolved_uploader_name,
             "currentVersionId": version_id,
@@ -1158,6 +1166,8 @@ class InMemoryRepository:
             "materialCategory": resolved_material_category or None,
             "materialTypeCode": resolved_material_type_code or "generic_review_material",
             "materialTypeName": resolved_material_type_name or None,
+            "sourceOrgId": resolved_source_org_id,
+            "sourceOrgName": resolved_source_org_name,
             "ocrStatus": "排队中",
             "sliceStatus": "未切片",
             "vectorStatus": "待向量化",
@@ -1260,7 +1270,9 @@ class InMemoryRepository:
         require_signed_urls: bool = False,
         local_upload_url_prefix: str | None = None,
         upload_headers: dict[str, str] | None = None,
+        source_org_id: str | None = None,
         source_org_name: str | None = None,
+        creator_user_id: str | None = None,
         uploader_name: str | None = None,
     ) -> tuple[str, list[dict[str, Any]]]:
         session_id = f"UPS-{uuid4().hex[:10].upper()}"
@@ -1280,7 +1292,9 @@ class InMemoryRepository:
                     target,
                     file_name=str(file.get("fileName") or "").strip() or None,
                     file_size=int(file.get("fileSize") or 0),
-                    content_hash=str(file.get("contentHash") or "").strip() or None,
+                    # contentHash in create-session input is only a later completion
+                    # claim. No bytes have been stored yet, so it cannot authorize V2.
+                    content_hash=None,
                     uploader_name=uploader_name,
                 )
                 knowledge_file = next(
@@ -1301,13 +1315,15 @@ class InMemoryRepository:
                     project_id,
                     file.get("fileName") or "未命名资料.pdf",
                     file.get("fileType") or "pdf",
+                    source_org_id=source_org_id,
                     source_org_name=source_org_name,
                     uploader_name=uploader_name,
                     material_category=file.get("materialCategory"),
                     material_type_code=file.get("materialTypeCode"),
                     material_type_name=file.get("materialTypeName"),
                     file_size=int(file.get("fileSize") or 0),
-                    content_hash=str(file.get("contentHash") or "").strip() or None,
+                    # Never seed bodyUploaded from an uploader-controlled declaration.
+                    content_hash=None,
                     ocr_options=(
                         file.get("ocrOptions")
                         if isinstance(file.get("ocrOptions"), dict)
@@ -1389,16 +1405,911 @@ class InMemoryRepository:
                 "status": "待上传",
                 "files": session_files,
                 "uploadToken": upload_token,
+                "creatorOrgId": str(source_org_id or "").strip() or None,
+                "creatorUserId": str(creator_user_id or "").strip() or None,
                 "createdAt": server_time(),
                 "expiresAt": object_storage.expires_at(),
             },
         )
         return session_id, upload_urls
 
+    _UPLOAD_SESSION_TRANSACTION_STATE_KEYS = (
+        "upload_sessions",
+        "documents",
+        "versions",
+        "bindings",
+        "ndt_reports",
+        "knowledge_files",
+        "knowledge_tasks",
+    )
+
+    def _remove_upload_session_from_memory(self, session_id: str) -> None:
+        # A missing session does not imply its documents were deleted: replacement
+        # sessions intentionally point at pre-existing documents.
+        self.state["upload_sessions"] = [
+            item for item in self.state.get("upload_sessions", [])
+            if str(item.get("id") or "") != session_id
+        ]
+        self._persistence_baseline.pop(
+            (STATE_COLLECTIONS["upload_sessions"], session_id), None
+        )
+
+    def _merge_authoritative_upload_session_rows(
+        self,
+        session: dict[str, Any],
+        rows_by_state_key: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        document_ids = {
+            str(item.get("documentId") or "")
+            for item in session.get("files") or []
+            if item.get("documentId")
+        }
+        version_ids = {
+            str(item.get("documentVersionId") or "")
+            for item in session.get("files") or []
+            if item.get("documentVersionId")
+        }
+        session_id = str(session.get("id") or "")
+        predicates = {
+            "upload_sessions": lambda item: str(item.get("id") or "") == session_id,
+            "documents": lambda item: str(item.get("id") or "") in document_ids,
+            "versions": lambda item: (
+                str(item.get("id") or "") in version_ids
+                or str(item.get("documentId") or "") in document_ids
+            ),
+            "bindings": lambda item: str(item.get("documentId") or "") in document_ids,
+            "ndt_reports": lambda item: str(item.get("fileId") or "") in document_ids,
+            "knowledge_files": lambda item: str(item.get("documentId") or "") in document_ids,
+            "knowledge_tasks": lambda item: (
+                str(item.get("documentId") or "") in document_ids
+                or str(item.get("documentVersionId") or "") in version_ids
+            ),
+        }
+        authoritative = {"upload_sessions": [session], **rows_by_state_key}
+        for state_key in self._UPLOAD_SESSION_TRANSACTION_STATE_KEYS:
+            incoming = authoritative.get(state_key, [])
+            predicate = predicates[state_key]
+            self.state[state_key] = [
+                *incoming,
+                *[item for item in self.state.get(state_key, []) if not predicate(item)],
+            ]
+            apply_default_tenant(self.state[state_key], tenant_id=configured_tenant_id())
+        return self.find_one("upload_sessions", session_id) or session
+
+    def _load_upload_session_from_postgres_for_update(
+        self,
+        session_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any] | None:
+        if self.sync_postgres is None:
+            return None
+        session_collection = STATE_COLLECTIONS["upload_sessions"]
+        row = self.sync_postgres.execute(
+            """
+            SELECT payload FROM aicheck_state
+            WHERE tenant_id = %s AND collection = %s AND object_id = %s
+            FOR UPDATE
+            """,
+            (tenant_id, session_collection, session_id),
+        ).fetchone()
+        if not row:
+            self._remove_upload_session_from_memory(session_id)
+            return None
+        session = dict(row[0])
+        document_ids = sorted(
+            {
+                str(item.get("documentId") or "")
+                for item in session.get("files") or []
+                if item.get("documentId")
+            }
+        )
+        version_ids = sorted(
+            {
+                str(item.get("documentVersionId") or "")
+                for item in session.get("files") or []
+                if item.get("documentVersionId")
+            }
+        )
+        rows_by_state_key: dict[str, list[dict[str, Any]]] = {}
+        if document_ids:
+            rows_by_state_key["documents"] = [
+                dict(item[0])
+                for item in self.sync_postgres.execute(
+                    """
+                    SELECT payload FROM aicheck_state
+                    WHERE tenant_id = %s AND collection = %s AND object_id = ANY(%s)
+                    FOR UPDATE
+                    """,
+                    (tenant_id, STATE_COLLECTIONS["documents"], document_ids),
+                ).fetchall()
+            ]
+            for state_key, document_field in (
+                ("versions", "documentId"),
+                ("bindings", "documentId"),
+                ("ndt_reports", "fileId"),
+                ("knowledge_files", "documentId"),
+                ("knowledge_tasks", "documentId"),
+            ):
+                rows_by_state_key[state_key] = [
+                    dict(item[0])
+                    for item in self.sync_postgres.execute(
+                        """
+                        SELECT payload FROM aicheck_state
+                        WHERE tenant_id = %s AND collection = %s
+                          AND payload ->> %s = ANY(%s)
+                        FOR UPDATE
+                        """,
+                        (
+                            tenant_id,
+                            STATE_COLLECTIONS[state_key],
+                            document_field,
+                            document_ids,
+                        ),
+                    ).fetchall()
+                ]
+        else:
+            rows_by_state_key.update(
+                {
+                    "documents": [],
+                    "versions": [],
+                    "bindings": [],
+                    "ndt_reports": [],
+                    "knowledge_files": [],
+                    "knowledge_tasks": [],
+                }
+            )
+        if version_ids:
+            known_version_ids = {
+                str(item.get("id") or "") for item in rows_by_state_key.get("versions", [])
+            }
+            missing_versions = sorted(set(version_ids) - known_version_ids)
+            if missing_versions:
+                rows_by_state_key.setdefault("versions", []).extend(
+                    dict(item[0])
+                    for item in self.sync_postgres.execute(
+                        """
+                        SELECT payload FROM aicheck_state
+                        WHERE tenant_id = %s AND collection = %s AND object_id = ANY(%s)
+                        FOR UPDATE
+                        """,
+                        (tenant_id, STATE_COLLECTIONS["versions"], missing_versions),
+                    ).fetchall()
+                )
+        return self._merge_authoritative_upload_session_rows(session, rows_by_state_key)
+
+    def _load_upload_session_from_sqlite_for_update(
+        self,
+        connection: sqlite3.Connection,
+        session_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any] | None:
+        row = connection.execute(
+            """
+            SELECT payload FROM aicheck_state
+            WHERE tenant_id = ? AND collection = ? AND object_id = ?
+            """,
+            (tenant_id, STATE_COLLECTIONS["upload_sessions"], session_id),
+        ).fetchone()
+        if not row:
+            self._remove_upload_session_from_memory(session_id)
+            return None
+        session = json.loads(row[0])
+        document_ids = sorted(
+            {
+                str(item.get("documentId") or "")
+                for item in session.get("files") or []
+                if item.get("documentId")
+            }
+        )
+        rows_by_state_key: dict[str, list[dict[str, Any]]] = {}
+        placeholders = ",".join("?" for _ in document_ids) or "NULL"
+        for state_key, selector in (
+            ("documents", "object_id"),
+            ("versions", "json_extract(payload, '$.documentId')"),
+            ("bindings", "json_extract(payload, '$.documentId')"),
+            ("ndt_reports", "json_extract(payload, '$.fileId')"),
+            ("knowledge_files", "json_extract(payload, '$.documentId')"),
+            ("knowledge_tasks", "json_extract(payload, '$.documentId')"),
+        ):
+            rows_by_state_key[state_key] = [
+                json.loads(item[0])
+                for item in connection.execute(
+                    f"""
+                    SELECT payload FROM aicheck_state
+                    WHERE tenant_id = ? AND collection = ?
+                      AND {selector} IN ({placeholders})
+                    """,
+                    [tenant_id, STATE_COLLECTIONS[state_key], *document_ids],
+                ).fetchall()
+            ]
+        return self._merge_authoritative_upload_session_rows(session, rows_by_state_key)
+
+    def _upload_session_aggregate_records(
+        self,
+        session_id: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        session = self.find_one("upload_sessions", session_id)
+        if not session:
+            return {}
+        document_ids = {
+            str(item.get("documentId") or "")
+            for item in session.get("files") or []
+            if item.get("documentId")
+        }
+        return {
+            "upload_sessions": [session],
+            "documents": [
+                item for item in self.state.get("documents", [])
+                if str(item.get("id") or "") in document_ids
+            ],
+            "versions": [
+                item for item in self.state.get("versions", [])
+                if str(item.get("documentId") or "") in document_ids
+            ],
+            "bindings": [
+                item for item in self.state.get("bindings", [])
+                if str(item.get("documentId") or "") in document_ids
+            ],
+            "ndt_reports": [
+                item for item in self.state.get("ndt_reports", [])
+                if str(item.get("fileId") or "") in document_ids
+            ],
+            "knowledge_files": [
+                item for item in self.state.get("knowledge_files", [])
+                if str(item.get("documentId") or "") in document_ids
+            ],
+            "knowledge_tasks": [
+                item for item in self.state.get("knowledge_tasks", [])
+                if str(item.get("documentId") or "") in document_ids
+            ],
+        }
+
+    def _persist_upload_session_records_to_postgres(
+        self,
+        records_by_state_key: dict[str, list[dict[str, Any]]],
+        tenant_id: str,
+    ) -> None:
+        if self.sync_postgres is None:
+            return
+        for state_key, documents in records_by_state_key.items():
+            collection = STATE_COLLECTIONS[state_key]
+            for index, document in enumerate(documents):
+                scoped = self.persistence_tenant_document(document)
+                object_id = self.persistence_object_id(collection, scoped, index)
+                payload = self.canonical_persistence_payload(scoped)
+                self.sync_postgres.execute(
+                    """
+                    INSERT INTO aicheck_state
+                        (tenant_id, collection, object_id, payload, updated_at)
+                    VALUES (%s, %s, %s, %s::jsonb, now())
+                    ON CONFLICT (tenant_id, collection, object_id)
+                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                    """,
+                    (tenant_id, collection, object_id, payload),
+                )
+
+    def _persist_upload_session_records_to_sqlite(
+        self,
+        connection: sqlite3.Connection,
+        records_by_state_key: dict[str, list[dict[str, Any]]],
+        tenant_id: str,
+    ) -> None:
+        for state_key, documents in records_by_state_key.items():
+            collection = STATE_COLLECTIONS[state_key]
+            for index, document in enumerate(documents):
+                scoped = self.persistence_tenant_document(document)
+                object_id = self.persistence_object_id(collection, scoped, index)
+                payload = self.canonical_persistence_payload(scoped)
+                connection.execute(
+                    """
+                    INSERT INTO aicheck_state
+                        (tenant_id, collection, object_id, payload, updated_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT (tenant_id, collection, object_id)
+                    DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (tenant_id, collection, object_id, payload),
+                )
+
+    def mutate_upload_session_atomically(
+        self,
+        session_id: str,
+        mutation: Callable[[dict[str, Any] | None], tuple[Any, bool]],
+    ) -> Any:
+        """Run upload aggregate reload, mutation, and persistence under one lock."""
+        with self._sync_postgres_lock:
+            tenant_id = configured_tenant_id()
+            if (
+                self.sync_postgres is not None
+                or self.postgres_dsn
+                or os.getenv("AICHECK_DATABASE_URL")
+                or os.getenv("DATABASE_URL")
+            ):
+                self.configure_sync_postgres()
+                if self.sync_postgres is None:
+                    raise RuntimeError("PostgreSQL upload transaction is unavailable.")
+                self.ensure_postgres_schema()
+                # Freshness probes use the shared synchronous connection and may leave
+                # a read transaction open. End it before taking the session xact lock.
+                self.sync_postgres.commit()
+                with self.sync_postgres.transaction():
+                    self.sync_postgres.execute(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                        (f"aicheck:upload-session:{tenant_id}:{session_id}",),
+                    )
+                    session = self._load_upload_session_from_postgres_for_update(
+                        session_id, tenant_id
+                    )
+                    self.update_scoped_persistence_baseline(
+                        self._upload_session_aggregate_records(session_id), {}
+                    )
+                    snapshot = {
+                        key: self.clone(self.state.get(key, []))
+                        for key in self._UPLOAD_SESSION_TRANSACTION_STATE_KEYS
+                    }
+                    try:
+                        result, should_commit = mutation(session)
+                        if not should_commit:
+                            for key, value in snapshot.items():
+                                self.state[key] = value
+                            return result
+                        records = self._upload_session_aggregate_records(session_id)
+                        self._persist_upload_session_records_to_postgres(records, tenant_id)
+                    except BaseException:
+                        for key, value in snapshot.items():
+                            self.state[key] = value
+                        raise
+                self.sync_postgres.commit()
+                self.update_scoped_persistence_baseline(records, {})
+                return result
+
+            if self.sqlite_enabled or self.sqlite_path or os.getenv("AICHECK_SQLITE_PATH"):
+                self.configure_sqlite(self.sqlite_path)
+                self.ensure_sqlite_schema()
+                with self.sqlite_connection() as connection:
+                    connection.execute("BEGIN IMMEDIATE")
+                    session = self._load_upload_session_from_sqlite_for_update(
+                        connection, session_id, tenant_id
+                    )
+                    self.update_scoped_persistence_baseline(
+                        self._upload_session_aggregate_records(session_id), {}
+                    )
+                    snapshot = {
+                        key: self.clone(self.state.get(key, []))
+                        for key in self._UPLOAD_SESSION_TRANSACTION_STATE_KEYS
+                    }
+                    try:
+                        result, should_commit = mutation(session)
+                        if not should_commit:
+                            for key, value in snapshot.items():
+                                self.state[key] = value
+                            connection.rollback()
+                            return result
+                        records = self._upload_session_aggregate_records(session_id)
+                        self._persist_upload_session_records_to_sqlite(
+                            connection, records, tenant_id
+                        )
+                        connection.commit()
+                    except BaseException:
+                        for key, value in snapshot.items():
+                            self.state[key] = value
+                        connection.rollback()
+                        raise
+                self.update_scoped_persistence_baseline(records, {})
+                return result
+
+            snapshot = {
+                key: self.clone(self.state.get(key, []))
+                for key in self._UPLOAD_SESSION_TRANSACTION_STATE_KEYS
+            }
+            try:
+                result, should_commit = mutation(
+                    self.find_one("upload_sessions", session_id)
+                )
+                if not should_commit:
+                    for key, value in snapshot.items():
+                        self.state[key] = value
+                return result
+            except BaseException:
+                for key, value in snapshot.items():
+                    self.state[key] = value
+                raise
+
+    @staticmethod
+    def _require_upload_session_file_target(
+        session: dict[str, Any] | None,
+        document_version_id: str,
+        *,
+        project_id: str | None,
+        upload_token: str | None,
+        allowed_file_statuses: set[str] | None = None,
+    ) -> dict[str, Any]:
+        if not session or (project_id and str(session.get("projectId") or "") != project_id):
+            raise ValueError("UPLOAD_SESSION_NOT_FOUND")
+        if upload_token is not None and upload_token != session.get("uploadToken"):
+            raise ValueError("UPLOAD_SESSION_TOKEN_INVALID")
+        if session.get("status") != "待上传":
+            raise ValueError("UPLOAD_SESSION_NOT_PENDING")
+        file_entry = next(
+            (
+                item
+                for item in session.get("files") or []
+                if str(item.get("documentVersionId") or "") == document_version_id
+            ),
+            None,
+        )
+        if not file_entry:
+            raise ValueError("UPLOAD_SESSION_FILE_NOT_FOUND")
+        allowed_statuses = allowed_file_statuses or {"待上传"}
+        if str(file_entry.get("status") or "") not in allowed_statuses:
+            raise ValueError("UPLOAD_SESSION_FILE_NOT_PENDING")
+        return file_entry
+
+    def validate_upload_session_file_target(
+        self,
+        session_id: str,
+        document_version_id: str,
+        *,
+        project_id: str,
+        upload_token: str,
+    ) -> dict[str, Any]:
+        def inspect(session: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
+            file_entry = self._require_upload_session_file_target(
+                session,
+                document_version_id,
+                project_id=project_id,
+                upload_token=upload_token,
+                allowed_file_statuses={"待上传", "待落盘"},
+            )
+            document_id = str(file_entry.get("documentId") or "")
+            document = self.find_one("documents", document_id)
+            version = self.find_one("versions", document_version_id)
+            if (
+                not document
+                or not version
+                or str(version.get("documentId") or "") != document_id
+                or str(document.get("currentVersionId") or "") != document_version_id
+            ):
+                raise ValueError("UPLOAD_SESSION_AGGREGATE_INCOMPLETE")
+            return self.clone(file_entry), False
+
+        return self.mutate_upload_session_atomically(session_id, inspect)
+
+    def stage_upload_session_file(
+        self,
+        session_id: str,
+        document_version_id: str,
+        *,
+        storage_bucket: str,
+        storage_key: str,
+        file_size: int,
+        content_type: str,
+        content_hash: str,
+        temporary_storage_key: str | None = None,
+        staging_id: str | None = None,
+        project_id: str | None = None,
+        upload_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Durably reserve a verified body for post-commit filesystem promotion."""
+
+        def mutate(session: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
+            file_entry = self._require_upload_session_file_target(
+                session,
+                document_version_id,
+                project_id=project_id,
+                upload_token=upload_token,
+            )
+            document_id = str(file_entry.get("documentId") or "")
+            document = self.find_one("documents", document_id)
+            version = self.find_one("versions", document_version_id)
+            if (
+                not document
+                or not version
+                or str(version.get("documentId") or "") != document_id
+                or str(document.get("currentVersionId") or "") != document_version_id
+            ):
+                raise ValueError("UPLOAD_SESSION_AGGREGATE_INCOMPLETE")
+            staged_at = server_time()
+            resolved_staging_id = str(staging_id or uuid4().hex)
+            file_entry.update(
+                {
+                    "status": "待落盘",
+                    "promotionStatus": "待落盘",
+                    "promotionRetryable": True,
+                    "stagedStorageBucket": storage_bucket,
+                    "stagedStorageKey": storage_key,
+                    "stagedFileSize": max(0, int(file_size)),
+                    "stagedContentType": content_type,
+                    "stagedContentHash": str(content_hash or "").strip() or None,
+                    "stagedTemporaryStorageKey": (
+                        str(temporary_storage_key or "").strip() or None
+                    ),
+                    "stagingId": resolved_staging_id,
+                    "stagedAt": staged_at,
+                }
+            )
+            for field in (
+                "promotionErrorCode",
+                "promotionFailedAt",
+                "promotionCleanupRequired",
+                "recoveryStorageKey",
+                "staleRecoveryStorageKeys",
+            ):
+                file_entry.pop(field, None)
+            assert session is not None
+            session["updatedAt"] = staged_at
+            return (
+                {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry),
+                    "document": self.clone(document),
+                    "version": self.clone(version),
+                },
+                True,
+            )
+
+        return self.mutate_upload_session_atomically(session_id, mutate)
+
+    def finalize_upload_session_file_promotion(
+        self,
+        session_id: str,
+        document_version_id: str,
+        *,
+        project_id: str | None = None,
+        upload_token: str | None = None,
+        expected_staging_id: str | None = None,
+        recovery_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Publish the hash/body-uploaded state only after filesystem promotion."""
+
+        def mutate(session: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
+            if not session or (project_id and str(session.get("projectId") or "") != project_id):
+                raise ValueError("UPLOAD_SESSION_NOT_FOUND")
+            if upload_token is not None and upload_token != session.get("uploadToken"):
+                raise ValueError("UPLOAD_SESSION_TOKEN_INVALID")
+            if session.get("status") != "待上传":
+                raise ValueError("UPLOAD_SESSION_NOT_PENDING")
+            file_entry = next(
+                (
+                    item for item in session.get("files") or []
+                    if str(item.get("documentVersionId") or "") == document_version_id
+                ),
+                None,
+            )
+            if not file_entry or file_entry.get("status") != "待落盘":
+                raise ValueError("UPLOAD_SESSION_FILE_NOT_STAGED")
+            if (
+                expected_staging_id
+                and str(file_entry.get("stagingId") or "") != expected_staging_id
+            ):
+                raise ValueError("UPLOAD_SESSION_STAGE_CHANGED")
+            if recovery_token:
+                if (
+                    str(file_entry.get("recoveryToken") or "") != recovery_token
+                    or file_entry.get("promotionStatus") != "恢复中"
+                ):
+                    raise ValueError("UPLOAD_SESSION_RECOVERY_LEASE_CHANGED")
+            elif file_entry.get("promotionStatus") == "恢复中":
+                raise ValueError("UPLOAD_SESSION_RECOVERY_IN_PROGRESS")
+            document_id = str(file_entry.get("documentId") or "")
+            document = self.find_one("documents", document_id)
+            version = self.find_one("versions", document_version_id)
+            if (
+                not document
+                or not version
+                or str(version.get("documentId") or "") != document_id
+                or str(document.get("currentVersionId") or "") != document_version_id
+            ):
+                raise ValueError("UPLOAD_SESSION_AGGREGATE_INCOMPLETE")
+            uploaded_at = server_time()
+            published_storage_key = (
+                file_entry.get("recoveryStorageKey")
+                if recovery_token
+                else file_entry.get("stagedStorageKey")
+            )
+            version.update(
+                {
+                    "storageBucket": file_entry.get("stagedStorageBucket") or "local",
+                    "storageKey": published_storage_key,
+                    "fileSize": max(0, int(file_entry.get("stagedFileSize") or 0)),
+                    "hash": str(file_entry.get("stagedContentHash") or "").strip() or None,
+                    "uploadTime": uploaded_at,
+                }
+            )
+            document.update(
+                {
+                    "fileStatus": "已上传",
+                    "currentOcrStatus": "排队中",
+                    "updatedAt": uploaded_at,
+                }
+            )
+            file_entry.update(
+                {
+                    "status": "已上传",
+                    "promotionStatus": "已落盘",
+                    "promotionRetryable": False,
+                    "storageBucket": version.get("storageBucket"),
+                    "storageKey": version.get("storageKey"),
+                    "fileSize": version.get("fileSize"),
+                    "contentType": file_entry.get("stagedContentType"),
+                    "uploadedAt": uploaded_at,
+                }
+            )
+            for field in (
+                "stagedStorageBucket",
+                "stagedStorageKey",
+                "stagedFileSize",
+                "stagedContentType",
+                "stagedContentHash",
+                "stagedTemporaryStorageKey",
+                "stagedAt",
+                "promotionErrorCode",
+                "promotionFailedAt",
+                "promotionCleanupRequired",
+                "stagingId",
+                "recoveryToken",
+                    "recoveryLeaseAt",
+                    "recoveryStorageKey",
+                    "staleRecoveryStorageKeys",
+            ):
+                file_entry.pop(field, None)
+            assert session is not None
+            session["updatedAt"] = uploaded_at
+            return (
+                {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry),
+                    "document": self.clone(document),
+                    "version": self.clone(version),
+                },
+                True,
+            )
+
+        return self.mutate_upload_session_atomically(session_id, mutate)
+
+    def fail_upload_session_file_promotion(
+        self,
+        session_id: str,
+        document_version_id: str,
+        *,
+        error_code: str,
+        cleanup_required: bool = False,
+        expected_staging_id: str | None = None,
+        recovery_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Compensate a failed promotion/finalization without claiming body upload."""
+
+        def mutate(session: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
+            if not session:
+                return {"session": None, "file": None}, False
+            file_entry = next(
+                (
+                    item for item in session.get("files") or []
+                    if str(item.get("documentVersionId") or "") == document_version_id
+                ),
+                None,
+            )
+            if not file_entry:
+                return {"session": self.clone(session), "file": None}, False
+            if file_entry.get("status") == "已上传":
+                return {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry),
+                    "applied": False,
+                }, False
+            if (
+                expected_staging_id
+                and str(file_entry.get("stagingId") or "") != expected_staging_id
+            ):
+                return {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry),
+                    "applied": False,
+                }, False
+            if recovery_token:
+                if str(file_entry.get("recoveryToken") or "") != recovery_token:
+                    return {
+                        "session": self.clone(session),
+                        "file": self.clone(file_entry),
+                        "applied": False,
+                    }, False
+            elif file_entry.get("promotionStatus") == "恢复中":
+                return {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry),
+                    "applied": False,
+                }, False
+            failed_at = server_time()
+            file_entry.update(
+                {
+                    "status": "待落盘" if cleanup_required else "待上传",
+                    "promotionStatus": "待清理" if cleanup_required else "失败",
+                    "promotionRetryable": True,
+                    "promotionErrorCode": str(error_code or "PROMOTION_FAILED")[:120],
+                    "promotionFailedAt": failed_at,
+                    "promotionCleanupRequired": bool(cleanup_required),
+                }
+            )
+            file_entry.pop("recoveryToken", None)
+            file_entry.pop("recoveryLeaseAt", None)
+            if not cleanup_required:
+                for field in (
+                    "stagedStorageBucket",
+                    "stagedStorageKey",
+                    "stagedFileSize",
+                    "stagedContentType",
+                    "stagedContentHash",
+                    "stagedTemporaryStorageKey",
+                    "stagedAt",
+                    "stagingId",
+                    "recoveryStorageKey",
+                    "staleRecoveryStorageKeys",
+                ):
+                    file_entry.pop(field, None)
+            version = self.find_one("versions", document_version_id)
+            if version:
+                version["hash"] = None
+            document = self.find_one("documents", str(file_entry.get("documentId") or ""))
+            if document:
+                document["fileStatus"] = "上传失败"
+                document["updatedAt"] = failed_at
+            session["updatedAt"] = failed_at
+            return {
+                "session": self.clone(session),
+                "file": self.clone(file_entry),
+                "applied": True,
+            }, True
+
+        return self.mutate_upload_session_atomically(session_id, mutate)
+
+    def claim_upload_session_file_recovery(
+        self,
+        session_id: str,
+        document_version_id: str,
+        *,
+        expected_staging_id: str,
+        recovery_token: str | None = None,
+    ) -> dict[str, Any]:
+        """CAS-claim one staged generation before recovery touches filesystem paths."""
+
+        def mutate(session: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
+            if not session:
+                return {"session": None, "file": None, "applied": False}, False
+            file_entry = next(
+                (
+                    item for item in session.get("files") or []
+                    if str(item.get("documentVersionId") or "") == document_version_id
+                ),
+                None,
+            )
+            if (
+                not file_entry
+                or file_entry.get("status") != "待落盘"
+                or str(file_entry.get("stagingId") or "") != expected_staging_id
+            ):
+                return {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry) if file_entry else None,
+                    "applied": False,
+                }, False
+            existing_token = str(file_entry.get("recoveryToken") or "")
+            lease_at = str(file_entry.get("recoveryLeaseAt") or "")
+            if recovery_token:
+                if existing_token != recovery_token:
+                    return {
+                        "session": self.clone(session),
+                        "file": self.clone(file_entry),
+                        "applied": False,
+                    }, False
+                file_entry["recoveryLeaseAt"] = server_time()
+                session["updatedAt"] = file_entry["recoveryLeaseAt"]
+                return {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry),
+                    "recoveryToken": recovery_token,
+                    "applied": True,
+                }, True
+            lease_stale = False
+            if existing_token and lease_at:
+                try:
+                    lease_stale = datetime.strptime(
+                        server_time(), "%Y-%m-%d %H:%M:%S"
+                    ) - datetime.strptime(
+                        lease_at, "%Y-%m-%d %H:%M:%S"
+                    ) > timedelta(minutes=2)
+                except ValueError:
+                    lease_stale = True
+            if existing_token and not lease_stale:
+                return {
+                    "session": self.clone(session),
+                    "file": self.clone(file_entry),
+                    "applied": False,
+                }, False
+            new_recovery_token = uuid4().hex
+            previous_recovery_key = str(file_entry.get("recoveryStorageKey") or "")
+            stale_recovery_keys = [
+                str(item) for item in file_entry.get("staleRecoveryStorageKeys") or []
+                if str(item)
+            ]
+            if previous_recovery_key and previous_recovery_key not in stale_recovery_keys:
+                stale_recovery_keys.append(previous_recovery_key)
+            staged_storage_key = str(file_entry.get("stagedStorageKey") or "")
+            recovery_storage_key = (
+                f"{staged_storage_key}.recovery-{new_recovery_token}"
+                if staged_storage_key
+                else ""
+            )
+            file_entry["promotionStatus"] = "恢复中"
+            file_entry["recoveryToken"] = new_recovery_token
+            file_entry["recoveryLeaseAt"] = server_time()
+            file_entry["recoveryStorageKey"] = recovery_storage_key
+            file_entry["staleRecoveryStorageKeys"] = stale_recovery_keys
+            session["updatedAt"] = file_entry["recoveryLeaseAt"]
+            return {
+                "session": self.clone(session),
+                "file": self.clone(file_entry),
+                "recoveryToken": new_recovery_token,
+                "applied": True,
+            }, True
+
+        return self.mutate_upload_session_atomically(session_id, mutate)
+
+    def update_upload_session_file(
+        self,
+        session_id: str,
+        document_version_id: str,
+        *,
+        storage_bucket: str,
+        storage_key: str,
+        file_size: int,
+        content_type: str,
+        content_hash: str,
+        temporary_storage_key: str | None = None,
+        staging_id: str | None = None,
+        project_id: str | None = None,
+        upload_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Compatibility wrapper for non-filesystem callers and existing tests."""
+        staged = self.stage_upload_session_file(
+            session_id,
+            document_version_id,
+            storage_bucket=storage_bucket,
+            storage_key=storage_key,
+            file_size=file_size,
+            content_type=content_type,
+            content_hash=content_hash,
+            temporary_storage_key=temporary_storage_key,
+            staging_id=staging_id,
+            project_id=project_id,
+            upload_token=upload_token,
+        )
+        return self.finalize_upload_session_file_promotion(
+            session_id,
+            document_version_id,
+            project_id=project_id,
+            upload_token=upload_token,
+            expected_staging_id=str(staged["file"].get("stagingId") or ""),
+        )
+
+    def upload_session_missing_body_hashes(self, session_id: str) -> list[str]:
+        session = self.find_one("upload_sessions", session_id)
+        if not session:
+            return []
+        missing: list[str] = []
+        for file_entry in session.get("files") or []:
+            version_id = str(file_entry.get("documentVersionId") or "").strip()
+            version = self.find_one("versions", version_id) if version_id else None
+            if not version or not str(version.get("hash") or "").strip():
+                missing.append(version_id)
+        return missing
+
     def complete_upload_session(self, session_id: str) -> list[dict[str, Any]]:
         session = self.find_one("upload_sessions", session_id)
         if not session:
             return []
+        missing_version_ids = self.upload_session_missing_body_hashes(session_id)
+        if missing_version_ids:
+            raise ValueError("UPLOAD_SESSION_BODY_HASH_MISSING:" + ",".join(missing_version_ids))
         session["status"] = "已完成"
         session["completedAt"] = server_time()
         return self.clone(session.get("files") or [])
@@ -1459,19 +2370,69 @@ class InMemoryRepository:
         return entry
 
     def ocr_task_for(self, document_id: str, version_id: str, file_name: str | None = None) -> dict[str, Any] | None:
-        return next(
-            (
-                item
-                for item in self.state["knowledge_tasks"]
-                if item.get("taskType") == "ocr"
-                and (
-                    item.get("documentVersionId") == version_id
-                    or item.get("targetId") == f"KF-{document_id}"
-                    or (file_name and item.get("targetName") == file_name)
+        tasks = [
+            item for item in self.state["knowledge_tasks"]
+            if item.get("taskType") == "ocr"
+        ]
+        if version_id:
+            exact_version = next(
+                (
+                    item for item in tasks
+                    if str(item.get("documentVersionId") or "") == str(version_id)
+                    and (
+                        not document_id
+                        or str(item.get("documentId") or "") == str(document_id)
+                    )
+                ),
+                None,
+            )
+            if exact_version:
+                return exact_version
+            if document_id:
+                legacy_target = next(
+                    (
+                        item for item in tasks
+                        if str(item.get("targetId") or "") == f"KF-{document_id}"
+                        and not str(item.get("documentVersionId") or "")
+                        and (
+                            not item.get("documentId")
+                            or str(item.get("documentId") or "") == str(document_id)
+                        )
+                    ),
+                    None,
                 )
-            ),
-            None,
-        )
+                if legacy_target:
+                    return legacy_target
+            return None
+        if document_id:
+            exact_document = next(
+                (
+                    item for item in tasks
+                    if str(item.get("documentId") or "") == str(document_id)
+                ),
+                None,
+            )
+            if exact_document:
+                return exact_document
+            legacy_target = next(
+                (
+                    item for item in tasks
+                    if str(item.get("targetId") or "") == f"KF-{document_id}"
+                ),
+                None,
+            )
+            if legacy_target:
+                return legacy_target
+            return None
+        if file_name:
+            return next(
+                (
+                    item for item in tasks
+                    if str(item.get("targetName") or "") == str(file_name)
+                ),
+                None,
+            )
+        return None
 
     def knowledge_file_for_version(self, version_id: str) -> dict[str, Any] | None:
         return next(

@@ -381,6 +381,32 @@ class DeploymentVerifier:
             "fail" if mismatches else "pass",
             "; ".join(mismatches) if mismatches else "Production flags match expected values.",
         )
+        review_readiness = self.api_health.get("reviewDispatchReadiness")
+        review_readiness = review_readiness if isinstance(review_readiness, dict) else {}
+        status_reason = str(review_readiness.get("statusReason") or "runtime_readiness_unavailable")
+        readiness_failures = []
+        if self.api_health.get("runtimeReady") is not True:
+            readiness_failures.append("runtimeReady must be true")
+        if self.api_health.get("workflowReady") is not True:
+            readiness_failures.append("workflowReady must be true")
+        if review_readiness.get("ready") is not True:
+            readiness_failures.append(status_reason)
+        readiness_data = {
+            "runtimeReady": self.api_health.get("runtimeReady"),
+            "workflowReady": self.api_health.get("workflowReady"),
+            "mode": review_readiness.get("mode"),
+            "statusReason": status_reason,
+            "reasonCodes": list(review_readiness.get("reasonCodes") or []),
+            "dependencies": dict(review_readiness.get("dependencies") or {}),
+        }
+        self.add(
+            "api.runtime-readiness",
+            "fail" if readiness_failures else "pass",
+            "; ".join(readiness_failures)
+            if readiness_failures
+            else "Runtime and workflow dispatch dependencies are ready.",
+            readiness_data,
+        )
 
     def check_auth_gate(self) -> None:
         if not self.api_health.get("authRequired"):

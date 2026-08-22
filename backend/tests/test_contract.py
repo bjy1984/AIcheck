@@ -6541,7 +6541,9 @@ def test_review_opinion_requires_current_node_confirmed_evidence() -> None:
     assert saved["opinion"]["readinessSnapshot"]["readyForAiFormal"] is True
 
 
-def test_ai_recheck_dispatch_disabled_fails_closed_for_formal_and_allows_gap_summary() -> None:
+def test_ai_recheck_dispatch_disabled_denies_gap_summary_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK", raising=False)
+    monkeypatch.delenv("AICHECK_STRICT_PRODUCTION", raising=False)
     seed_reviewed_node_24()
     before_run_count = len(repo.state["ai_runs"])
     before_status = repo.node("P-2026-HDCP-001", 24)["status"]
@@ -6553,6 +6555,32 @@ def test_ai_recheck_dispatch_disabled_fails_closed_for_formal_and_allows_gap_sum
     assert formal.status_code == 409
     assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
     assert len(repo.state["ai_runs"]) == before_run_count
+
+    gap = client.post(
+        "/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+        json={"reviewMode": "gap_precheck"},
+    )
+    assert gap.status_code == 409
+    payload = gap.json()
+    assert payload["data"]["reason"] == "CONFLICT"
+    assert payload["data"]["dispatch"]["ready"] is False
+    assert payload["data"]["requestedReviewMode"] == "gap_precheck"
+    assert payload["data"]["fallbackPolicy"] == {
+        "environmentVariable": "AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK",
+        "explicitOptIn": False,
+        "strictProduction": False,
+        "allowed": False,
+    }
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
+    assert len(repo.state["ai_runs"]) == before_run_count
+
+
+def test_ai_recheck_dispatch_disabled_allows_explicit_local_gap_summary(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK", "true")
+    monkeypatch.delenv("AICHECK_STRICT_PRODUCTION", raising=False)
+    seed_reviewed_node_24()
+    before_run_count = len(repo.state["ai_runs"])
+    before_status = repo.node("P-2026-HDCP-001", 24)["status"]
 
     result = assert_ok(
         client.post(
@@ -6575,6 +6603,31 @@ def test_ai_recheck_dispatch_disabled_fails_closed_for_formal_and_allows_gap_sum
     assert latest_run["llmResultText"] == latest_run["suggestion"]["opinionDraft"]
     assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
     assert len(repo.state["ai_runs"]) == before_run_count + 1
+
+
+def test_ai_recheck_strict_production_denies_local_gap_summary_even_with_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK", "true")
+    monkeypatch.setenv("AICHECK_STRICT_PRODUCTION", "true")
+    seed_reviewed_node_24()
+    before_run_count = len(repo.state["ai_runs"])
+    before_status = repo.node("P-2026-HDCP-001", 24)["status"]
+
+    response = client.post(
+        "/projects/P-2026-HDCP-001/inspection/nodes/24/ai-recheck",
+        json={"reviewMode": "gap_precheck"},
+    )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["data"]["reason"] == "CONFLICT"
+    assert payload["data"]["fallbackPolicy"] == {
+        "environmentVariable": "AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK",
+        "explicitOptIn": True,
+        "strictProduction": True,
+        "allowed": False,
+    }
+    assert repo.node("P-2026-HDCP-001", 24)["status"] == before_status
+    assert len(repo.state["ai_runs"]) == before_run_count
 
 
 def test_owner_write_forbidden_and_archived_readonly() -> None:
@@ -8005,6 +8058,12 @@ def test_project_mutating_routes_are_archived_readonly_guarded() -> None:
         ("POST", "/projects/{project_id}/inspection/nodes/{node_id}/file-bindings"),
         ("POST", "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/confirm"),
         ("POST", "/projects/{project_id}/nodes/{node_id}/evidence-links/{evidence_link_id}/reject"),
+        # The endpoint is a thin wrapper after the upload workflow extraction;
+        # upload_session_file_workflow owns the tested mutation_guard call.
+        (
+            "PUT",
+            "/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}",
+        ),
     }
     missing = []
     checked = 0
@@ -8342,18 +8401,14 @@ def test_read_project_scope_enforces_url_query_and_resource_nodes(monkeypatch) -
         client.get("/api/llm/compare-runs/CMP-SCOPE-40", headers=contractor_headers),
         "FORBIDDEN",
     )
-    assert_error(
-        client.get(f"/api/projects/{project_id}/ndt/films/FILM-RT-001", headers=contractor_headers),
-        "FORBIDDEN",
-    )
-    assert_error(
-        client.get(f"/api/projects/{project_id}/ndt/reports/NDT-RPT-001", headers=contractor_headers),
-        "FORBIDDEN",
-    )
-    assert_error(
-        client.get(f"/api/projects/{project_id}/ndt/inspection-feedback/NDT-FB-001", headers=contractor_headers),
-        "FORBIDDEN",
-    )
+    for ndt_path in (
+        f"/api/projects/{project_id}/ndt/films/FILM-RT-001",
+        f"/api/projects/{project_id}/ndt/reports/NDT-RPT-001",
+        f"/api/projects/{project_id}/ndt/inspection-feedback/NDT-FB-001",
+    ):
+        ndt_denied = client.get(ndt_path, headers=contractor_headers)
+        assert ndt_denied.status_code == 403
+        assert ndt_denied.json()["code"] == 403
     assert_error(
         client.get(f"/api/projects/{project_id}/export-tasks/EXP-RPT-20260625-001", headers=contractor_headers),
         "FORBIDDEN",

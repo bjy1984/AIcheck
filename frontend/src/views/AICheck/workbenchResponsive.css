@@ -1,0 +1,217 @@
+@keyframes workbench-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (width <= 1360px) {
+  .topbar {
+    grid-template-columns: minmax(260px, 360px) minmax(220px, 1fr);
+  }
+
+  .top-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .inspection-overview-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-overview-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width <= 900px) {
+  .aicheck-static-viewport {
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .aicheck-page.app-shell {
+    grid-template-rows: auto 1fr;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .aicheck-page.app-shell.is-inspection-ai-page {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .aicheck-page.app-shell.is-inspection-ai-page .workspace {
+    display: grid;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aicheck-page.app-shell.is-inspection-ai-page .center {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .topbar,
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-project-overview-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-overview-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .basis-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .basis-block-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspection-audit-status-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inspection-audit-status-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .workspace {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .topbar {
+    gap: 10px;
+    min-height: 68px;
+    padding: 10px 12px;
+  }
+
+  .brand {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .top-status {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .left,
+  .center {
+    min-height: auto;
+  }
+
+  .left {
+    display: none;
+  }
+
+  .mobile-tree-trigger {
+    display: inline-flex;
+  }
+
+  .center {
+    --center-top-gutter: 14px;
+
+    height: auto;
+    padding: 14px 12px 18px;
+  }
+
+  .center.has-flush-audit-directory {
+    padding-top: 0;
+  }
+
+  .center-support-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workbench-audit-board,
+  .metrics,
+  .result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width <= 560px) {
+  .basis-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .basis-block {
+    padding: 16px;
+  }
+
+  .basis-reference-list p,
+  .basis-method-item p {
+    font-size: 15px;
+  }
+
+  .basis-agent-note li {
+    font-size: 14px;
+  }
+
+  .workbench-audit-board,
+  .metrics,
+  .result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inspection-node-status-row {
+    grid-template-columns: minmax(76px, 92px) minmax(120px, 1fr) minmax(62px, auto);
+    gap: 8px;
+  }
+
+  .inspection-node-status-row span {
+    font-size: 13px;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .center.is-workbench-page-entering {
+    animation: none;
+  }
+
+  .center,
+  .workspace,
+  .tree-wrap,
+  .sidebar-collapse-toggle .el-icon {
+    transition: none;
+  }
+
+  .global-search,
+  .top-actions .top-action.el-button,
+  .tree-wrap :deep(.node-button),
+  .btn,
+  .card,
+  .right-card,
+  .table th,
+  .table td,
+  .mini-doc-table td {
+    transition: none;
+  }
+
+  .left {
+    transition: none;
+  }
+}

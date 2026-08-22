@@ -31,6 +31,9 @@ class _FakeStorage:
     def object_metadata(self, bucket: str, key: str) -> dict[str, object]:
         return {"size": self.size, "contentType": "application/pdf", "etag": "etag-1"}
 
+    def content_hash(self, bucket: str, key: str) -> str:
+        return CLAIMED_HASH
+
 
 CLAIMED_HASH = "a" * 64
 FILE_SIZE = 15818

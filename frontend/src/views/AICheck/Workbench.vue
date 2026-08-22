@@ -105,6 +105,11 @@ import {
   submitReviewHumanInputResponseApi,
   updateReportApi
 } from '@/api/aicheck'
+import {
+  projectRegistrationDrawerStateFor,
+  selectAiReviewDisplay,
+  uploadCompletionPresentationFor
+} from '@/types/aicheck'
 import type {
   ArchiveItemDetailPayload,
   DateComparisonItem,
@@ -221,6 +226,7 @@ import NdtReportUploadDrawer from './components/NdtReportUploadDrawer.vue'
 import NdtWorkflowPanel from './components/NdtWorkflowPanel.vue'
 import NodePackagePanel from './components/NodePackagePanel.vue'
 import ProjectNodeTree from './components/ProjectNodeTree.vue'
+import ProjectRegistrationPanel from './components/ProjectRegistrationPanel.vue'
 import RectificationDetailDialog from './components/RectificationDetailDialog.vue'
 import R12RegistryVerificationDialog from './components/R12RegistryVerificationDialog.vue'
 import R19SemanticEvidenceDialog from './components/R19SemanticEvidenceDialog.vue'
@@ -248,6 +254,8 @@ import { resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
 import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
 import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
+import { workbenchRolePresentation } from './workbenchRolePresentation'
+import { buildCorrectionUploadBindingPayload } from './contractorCorrectionUpload'
 
 type PreviewDrawerTarget = {
   source: 'node' | 'file' | 'standard' | 'report' | 'archive'
@@ -337,6 +345,8 @@ const inspectionAuditItemByNode = ref<Record<number, InspectionAuditItemKey>>({}
 const inspectionRouteSyncing = ref(false)
 const context = ref<WorkbenchContextPayload>()
 const summary = ref<WorkbenchSummaryPayload>()
+const projectRegistrationVisible = ref(false)
+const projectRegistrationTarget = ref<Project>()
 const treeGroups = ref<ProjectTreePayload['groups']>([])
 const nodePackage = ref<NodePackagePayload>()
 const reports = ref<ReportVersion[]>([])
@@ -363,9 +373,12 @@ const previewDrawerLoadingOriginal = ref(false)
 const previewDrawerOriginalError = ref('')
 const uploadDrawerVisible = ref(false)
 const uploadDrawerError = ref('')
+const uploadPostProcessingWarning = ref('')
 const uploadDrawerMaterialCategory = ref('')
 /** 替换目标。有值时这次上传是「给这份资料出新版本」，不是新建一份。 */
 const uploadDrawerReplaceTarget = ref<{ documentId: string; fileName: string } | null>(null)
+const uploadDrawerRectificationTarget = ref<{ rectificationId: string; nodeId: number }>()
+const inlineUploadResetKey = ref(0)
 const uploadDrawerAtomicMaterial = ref<NdtAtomicMaterial>()
 const uploadDrawerMode = ref<'project' | 'inspection'>('project')
 const ndtReportUploadVisible = ref(false)
@@ -379,6 +392,7 @@ const submissionHistoryLoading = ref(false)
 const evidenceDialogVisible = ref(false)
 const rectificationDialogVisible = ref(false)
 const activeRectificationId = ref('')
+const rectificationDialogMode = ref<'view' | 'submit'>('submit')
 const fileDetailVisible = ref(false)
 const fileDetailLoading = ref(false)
 const submissionDetailVisible = ref(false)
@@ -490,6 +504,7 @@ const currentProject = computed(() => {
     projectOptions.value.find((project) => project.id === activeProjectId.value)
   )
 })
+const canManageRegistration = computed(() => context.value?.canManageRegistration === true)
 const metrics = computed(() => summary.value?.metrics || [])
 const todos = computed(() => summary.value?.todos || [])
 const messages = computed(() => summary.value?.messages || [])
@@ -554,8 +569,12 @@ const extractedFieldCountByVersion = computed(() => {
   return counts
 })
 const rectifications = computed(() => nodePackage.value?.rectifications || [])
+const activeRectification = computed(() =>
+  rectifications.value.find((item) => item.id === activeRectificationId.value)
+)
 const reviewOpinions = computed(() => nodePackage.value?.reviewOpinions || [])
 const latestAiRun = computed(() => nodePackage.value?.aiRuns[0])
+const latestAiReviewDisplay = computed(() => selectAiReviewDisplay(latestAiRun.value))
 const aiRecheckOutputVisible = ref(false)
 const aiTechnicalPanels = ref<string[]>([])
 const mobileTreeOpen = ref(false)
@@ -578,6 +597,12 @@ const getAiMetadataText = (metadata: Record<string, unknown> | undefined, keys: 
   return ''
 }
 const aiRecheckDisplayRun = computed(() => aiRecheckRunOverride.value || latestAiRun.value)
+const aiRecheckDisplay = computed(() =>
+  selectAiReviewDisplay(
+    aiRecheckDisplayRun.value,
+    actionLoading.value && aiRecheckOutputVisible.value
+  )
+)
 const activeHumanInputTask = ref<ReviewHumanInputTask | null>(null)
 const humanInputReviewEtag = ref('')
 const humanInputDialogVisible = ref(false)
@@ -653,14 +678,7 @@ const aiRecheckDeepThinkLabel = computed(() =>
   aiRecheckIsLocalFallback.value ? 'DeepThink 内容（未调用模型）' : 'DeepThink 内容'
 )
 const aiRecheckResultText = computed(() => {
-  const run = aiRecheckDisplayRun.value
-  const metadata = run?.llmMetadata
-  return (
-    run?.llmResultText?.trim() ||
-    getAiMetadataText(metadata, ['resultText', 'answer', 'content']) ||
-    run?.suggestion?.opinionDraft ||
-    (actionLoading.value && aiRecheckOutputVisible.value ? '正在等待模型输出。' : '暂无模型输出。')
-  )
+  return aiRecheckDisplay.value.outputText
 })
 /** 模型输出解析成的结论条目；空数组表示不是 findings JSON，按原文显示。 */
 const aiRecheckFindings = computed(() => parseAiFindings(aiRecheckResultText.value))
@@ -996,6 +1014,16 @@ const handleUserCommand = (command: string | number | object) => {
     userStore.logoutConfirm()
   }
 }
+const handleOpenProjectRegistration = () => {
+  const state = projectRegistrationDrawerStateFor(canManageRegistration.value, currentProject.value)
+  projectRegistrationVisible.value = state.visible
+  projectRegistrationTarget.value = state.target
+}
+const closeProjectRegistration = () => {
+  const state = projectRegistrationDrawerStateFor<Project>(false)
+  projectRegistrationVisible.value = state.visible
+  projectRegistrationTarget.value = state.target
+}
 const topbarStatus = computed(() => {
   return (
     context.value?.topbar.statusText ||
@@ -1017,7 +1045,7 @@ const globalSearchPlaceholder = computed(() => {
 const pageHeadline = computed(() => {
   const headlines: Record<RoleCode, string> = {
     inspection: 'AI 业务审查链路',
-    contractor: '项目文件库与补正反馈',
+    contractor: '施工资料工作台',
     ndt: '检测资料库与补正反馈',
     owner: '建设方项目概况',
     admin: '管理工作台',
@@ -1025,11 +1053,11 @@ const pageHeadline = computed(() => {
   }
   return headlines[role.value]
 })
+const currentWorkbenchPresentation = computed(() => workbenchRolePresentation(role.value))
 const pageIntro = computed(() => {
   const intros: Record<RoleCode, string> = {
     inspection: '当前节点资料、AI 业务核验链路、人工审查意见和报告归档动作在同一工作区完成。',
-    contractor:
-      '施工方以项目文件库为主办理资料上传、资料齐套、提交和补正反馈，审核环节仅作为可选定位字段。',
+    contractor: currentWorkbenchPresentation.value.intro,
     ndt: '无损检测单位在资料库中上传、核对并逐份提交检测资料，同时处理监检反馈。',
     owner: '只读查看项目进展、节点资料状态、异常提醒、报告状态和归档资料。',
     admin: '后台只维护配置、权限、流程和审计，不替代工作台业务办理。',
@@ -1136,13 +1164,13 @@ const workbenchAuditCards = computed<AuditSummaryCard[]>(() => {
     },
     {
       label: 'AI 审查',
-      value: latestAiRun.value?.suggestion.result || '等待预审',
+      value: latestAiRun.value ? latestAiReviewDisplay.value.conclusion : '等待预审',
       hint: 'AI 只生成建议，正式结论由人工确认',
       tone: 'orange'
     },
     {
       label: '人工确认',
-      value: `${latestAiRun.value?.suggestion.manualConfirmItems.length || 0} 项`,
+      value: `${latestAiReviewDisplay.value.failed ? 0 : latestAiRun.value?.suggestion.manualConfirmItems.length || 0} 项`,
       hint: role.value === 'owner' ? '只读查看，不办理审批' : '低置信和阻断项优先处理',
       tone: 'red'
     }
@@ -1305,6 +1333,7 @@ const previewDrawerFrameUrl = computed(() => {
 })
 const previewDrawerIsImage = computed(() => previewDrawerTarget.value.previewType === 'image')
 const aiConfidence = computed(() => {
+  if (latestAiReviewDisplay.value.failed) return '-'
   const confidence = latestAiRun.value?.suggestion.confidence
   return formatConfidence(confidence)
 })
@@ -1591,7 +1620,8 @@ const standardReferenceTreeHeight = computed(() =>
 const aiExecutionSteps = computed<AiExecutionDisplayStep[]>(() => {
   const basis = businessBasis.value
   const verificationSteps = basis?.aiExecution?.verificationSteps || []
-  const manualItems = latestAiRun.value?.suggestion.manualConfirmItems || []
+  const aiRunFailed = latestAiReviewDisplay.value.failed
+  const manualItems = aiRunFailed ? [] : latestAiRun.value?.suggestion.manualConfirmItems || []
   const missingCount = selectedNode.value?.requirementsSummary?.missingCount || 0
   const statusFor = (index: number, title: string) => {
     const runStatus = latestAiRun.value?.status
@@ -1643,10 +1673,12 @@ const aiExecutionSteps = computed<AiExecutionDisplayStep[]>(() => {
       input: basis?.inspectionItem || selectedNode.value?.name || '-',
       feedback: verificationSteps.length
         ? verificationSteps.slice(0, 2).join('；')
-        : compactText(
-            latestAiRun.value?.suggestion.opinionDraft,
-            '按当前节点规则执行一致性、完整性和适用性核验'
-          ),
+        : aiRunFailed
+          ? latestAiReviewDisplay.value.outputText
+          : compactText(
+              latestAiRun.value?.suggestion.opinionDraft,
+              '按当前节点规则执行一致性、完整性和适用性核验'
+            ),
       tools: ['T07', 'T08'],
       evidenceLinks: evidenceLinks.value.slice(0, 3)
     },
@@ -1665,7 +1697,9 @@ const aiExecutionSteps = computed<AiExecutionDisplayStep[]>(() => {
       title: '证据链与结论回写',
       input: latestAiRun.value?.id || '等待 AI Run',
       feedback: latestAiRun.value
-        ? `${latestAiRun.value.suggestion.result} / 置信度 ${aiConfidence.value}`
+        ? aiRunFailed
+          ? latestAiReviewDisplay.value.conclusion
+          : `${latestAiReviewDisplay.value.conclusion} / 置信度 ${aiConfidence.value}`
         : '尚未形成 AI 审查结果',
       tools: ['T12'],
       evidenceLinks: evidenceLinks.value.slice(0, 3)
@@ -1796,7 +1830,8 @@ const reviewConclusionOverall = computed(() => {
 })
 const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
   const summary = selectedNode.value?.requirementsSummary
-  const manualItems = latestAiRun.value?.suggestion.manualConfirmItems || []
+  const aiRunFailed = latestAiReviewDisplay.value.failed
+  const manualItems = aiRunFailed ? [] : latestAiRun.value?.suggestion.manualConfirmItems || []
   const points = [
     {
       title: '资料齐全性',
@@ -1822,7 +1857,7 @@ const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
     },
     {
       title: '规则核验结论',
-      conclusion: latestAiRun.value?.suggestion.result || '待审查',
+      conclusion: latestAiRun.value ? latestAiReviewDisplay.value.conclusion : '待审查',
       description: latestAiRun.value
         ? `依据 ${businessBasis.value?.ruleId || latestAiRun.value.ruleVersion} 执行核验，运行状态为 ${latestAiRun.value.status}。`
         : '尚未获取当前节点 AI Run。',
@@ -1842,16 +1877,19 @@ const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
 })
 const reviewChainSteps = computed(() => {
   const fieldNames = extractedFields.value.map((field) => field.fieldName).join('、')
+  const aiRunFailed = latestAiReviewDisplay.value.failed
   return [
     {
       title: role.value === 'ndt' ? '底片编号与报告一致性' : '证书真实性核验',
       desc:
-        latestAiRun.value?.suggestion.opinionDraft ||
+        (aiRunFailed
+          ? latestAiReviewDisplay.value.outputText
+          : latestAiRun.value?.suggestion.opinionDraft) ||
         '系统从过程文件中提取关键字段，并与项目要求、规则模板和证据链进行比对。',
       tags: evidenceLinks.value
         .slice(0, 2)
         .map((evidence) => evidence.fieldName || evidence.fileName || '证据'),
-      result: latestAiRun.value?.suggestion.result || '待核验'
+      result: latestAiRun.value ? latestAiReviewDisplay.value.conclusion : '待核验'
     },
     {
       title: role.value === 'contractor' ? '关联环节完整性' : '关键字段一致性',
@@ -3100,6 +3138,7 @@ const handleOpenUploadDrawer = (target?: string | NdtAtomicMaterial) => {
   // 普通上传必须清掉替换目标——不清的话，上一次替换会让这次新传的文件
   // 悄悄覆盖掉那份旧资料，而用户以为自己在新增。
   uploadDrawerReplaceTarget.value = null
+  uploadDrawerRectificationTarget.value = undefined
   uploadDrawerMode.value = 'project'
   uploadDrawerError.value = ''
   uploadDrawerAtomicMaterial.value = typeof target === 'object' ? target : undefined
@@ -3119,6 +3158,7 @@ const handleReplaceProjectFile = (payload: {
 }) => {
   if (!ensureWritableProject()) return
   uploadDrawerMode.value = 'project'
+  uploadDrawerRectificationTarget.value = undefined
   uploadDrawerError.value = ''
   uploadDrawerAtomicMaterial.value = undefined
   uploadDrawerMaterialCategory.value = payload.materialCategory || ''
@@ -3129,10 +3169,22 @@ const handleReplaceProjectFile = (payload: {
 const handleOpenInspectionUploadDrawer = () => {
   if (!ensureWritableNode()) return
   uploadDrawerMode.value = 'inspection'
+  uploadDrawerRectificationTarget.value = undefined
   uploadDrawerError.value = ''
   uploadDrawerMaterialCategory.value = '监检现场补充证据'
   uploadDrawerAtomicMaterial.value = undefined
   uploadDrawerVisible.value = true
+}
+
+const presentUploadCompletion = (
+  payload: Parameters<typeof uploadCompletionPresentationFor>[0]
+) => {
+  const presentation = uploadCompletionPresentationFor(payload)
+  uploadDrawerError.value = ''
+  uploadPostProcessingWarning.value = presentation.tone === 'warning' ? presentation.message : ''
+  if (presentation.tone === 'warning') ElMessage.warning(presentation.message)
+  else ElMessage.success(presentation.message)
+  return presentation
 }
 
 const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: number[] }) => {
@@ -3143,6 +3195,8 @@ const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: nu
   }
   actionLoading.value = true
   uploadDrawerError.value = ''
+  let correctionFileUploaded = false
+  let uploadedCorrectionDocumentId = ''
   try {
     if (uploadDrawerReplaceTarget.value && files.length !== 1) {
       // 替换是一对一的：选多个文件却只替换一份，剩下的会被静默丢弃。
@@ -3203,6 +3257,10 @@ const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: nu
     if (!completeRes) {
       throw new Error('上传完成确认失败，请刷新项目文件库后重试。')
     }
+    correctionFileUploaded = Boolean(uploadDrawerRectificationTarget.value)
+    uploadedCorrectionDocumentId = correctionFileUploaded
+      ? String(res.data.uploadUrls[0]?.documentId || '')
+      : ''
     if (uploadDrawerMode.value === 'inspection') {
       const bindRes = await bindInspectionDocumentsApi(
         activeProjectId.value,
@@ -3237,9 +3295,8 @@ const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: nu
       if (!submitRes || submitRes.data.bindingIds?.length !== bindingIds.length) {
         throw new Error('监检文件已挂载，但提交快照未包含全部文件。')
       }
-      uploadDrawerError.value = ''
+      presentUploadCompletion(completeRes.data)
       uploadDrawerVisible.value = false
-      ElMessage.success(`已上传并提交 ${files.length} 份监检资料`)
       await Promise.all([
         loadProjectBundle(),
         loadInspectionAuditWorkspace(activeNodeId.value),
@@ -3247,19 +3304,70 @@ const handleCreateUploadSession = async (files: File[], metadata?: { nodeIds: nu
       ])
       return
     }
-    uploadDrawerError.value = ''
-    ElMessage.success(
-      uploadDrawerAtomicMaterial.value
-        ? `已上传 ${files.length} 个文件并分别保存为草稿，OCR 已异步排队`
-        : `已上传 ${files.length} 个文件，OCR 和索引处理已进入队列`
-    )
+    if (uploadDrawerRectificationTarget.value) {
+      const target = uploadDrawerRectificationTarget.value
+      const bindRes = await bindDocumentsToNodeApi(
+        activeProjectId.value,
+        buildCorrectionUploadBindingPayload(target, res.data.uploadUrls),
+        { etag: currentProject.value?.etag }
+      )
+      const correctionBindingIds = bindRes?.data.affectedIds || []
+      if (correctionBindingIds.length !== files.length) {
+        throw new Error('补正资料已上传但尚未关联补正意见，请使用“关联已有文件”继续办理。')
+      }
+      presentUploadCompletion(completeRes.data)
+      uploadDrawerVisible.value = false
+      await loadProjectBundle()
+      activeRectificationId.value = target.rectificationId
+      rectificationDialogMode.value = 'submit'
+      rectificationDialogVisible.value = true
+      return
+    }
+    const presentation = presentUploadCompletion(completeRes.data)
     uploadDrawerVisible.value = false
     await loadProjectBundle()
+    return presentation
   } catch (error) {
-    showUploadDrawerError('文件上传失败，请检查对象存储、网络连接和当前项目权限。', error)
+    if (correctionFileUploaded) {
+      const message = getAicheckErrorMessage(
+        error,
+        '补正资料已上传但尚未关联补正意见，请使用“关联已有文件”继续办理。'
+      )
+      uploadDrawerVisible.value = false
+      await loadProjectBundle()
+      bindDialogDocumentId.value = uploadedCorrectionDocumentId
+      bindDialogError.value = message
+      bindDialogVisible.value = true
+      ElMessage.warning(message)
+    } else {
+      showUploadDrawerError('文件上传失败，请检查对象存储、网络连接和当前项目权限。', error)
+    }
   } finally {
     actionLoading.value = false
   }
+}
+
+const handleInlineContractorUpload = async (files: File[]) => {
+  if (!ensureWritableProject()) return
+  uploadDrawerMode.value = 'project'
+  uploadDrawerReplaceTarget.value = null
+  uploadDrawerRectificationTarget.value = undefined
+  uploadDrawerAtomicMaterial.value = undefined
+  uploadDrawerMaterialCategory.value = ''
+  uploadDrawerError.value = ''
+  const presentation = await handleCreateUploadSession(files)
+  if (presentation) inlineUploadResetKey.value += 1
+}
+
+const handleOpenCorrectionUpload = (payload: { rectificationId: string; nodeId: number }) => {
+  if (!ensureWritableProject()) return
+  uploadDrawerMode.value = 'project'
+  uploadDrawerReplaceTarget.value = null
+  uploadDrawerRectificationTarget.value = payload
+  uploadDrawerAtomicMaterial.value = undefined
+  uploadDrawerMaterialCategory.value = '补正资料'
+  uploadDrawerError.value = ''
+  uploadDrawerVisible.value = true
 }
 
 const handleReplaceNdtAtomicBindings = async (payload: {
@@ -3805,6 +3913,13 @@ const handleSubmitBatch = async (payload: {
 const handleOpenRectificationDialog = (rectificationId?: string) => {
   if (!ensureWritableNode()) return
   activeRectificationId.value = rectificationId || ''
+  rectificationDialogMode.value = 'submit'
+  rectificationDialogVisible.value = true
+}
+
+const handleViewRectification = (rectificationId: string) => {
+  activeRectificationId.value = rectificationId
+  rectificationDialogMode.value = 'view'
   rectificationDialogVisible.value = true
 }
 
@@ -4047,6 +4162,10 @@ const handleSaveReviewOpinion = async () => {
 
 const handleAdoptAiSuggestion = async (suggestionId: string) => {
   if (!ensureWritableNode() || !latestAiRun.value) return
+  if (latestAiReviewDisplay.value.failed) {
+    ElMessage.warning('本次 AI 复核失败，未生成可采纳的建议。')
+    return
+  }
   const confirmed = await confirmIrreversibleAction({
     title: '采纳 AI 建议',
     message: `将以 AI 建议「${latestAiRun.value.suggestion.result}」生成人工结论草稿。AI 建议不能替代人工判断，请确认已核对证据与条款依据。`,
@@ -4874,6 +4993,13 @@ watch(
 )
 
 watch(
+  () => [canManageRegistration.value, activeProjectId.value] as const,
+  ([canManageRegistration, projectId], previous) => {
+    if (!canManageRegistration || projectId !== previous?.[1]) closeProjectRegistration()
+  }
+)
+
+watch(
   () => String(aiRecheckDisplayRun.value?.status || ''),
   (status) => {
     if (status && !aiReviewTerminalStatuses.has(status)) {
@@ -4959,7 +5085,10 @@ watch(
 watch(
   () => rectificationDialogVisible.value,
   (open) => {
-    if (!open) activeRectificationId.value = ''
+    if (!open) {
+      activeRectificationId.value = ''
+      rectificationDialogMode.value = 'submit'
+    }
   }
 )
 
@@ -4970,6 +5099,7 @@ watch(
       uploadDrawerError.value = ''
       uploadDrawerMaterialCategory.value = ''
       uploadDrawerAtomicMaterial.value = undefined
+      uploadDrawerRectificationTarget.value = undefined
     }
   }
 )
@@ -5117,6 +5247,14 @@ onBeforeUnmount(() => {
               完整工作台
             </button>
           </div>
+          <ElButton
+            v-if="role === 'inspection' && canManageRegistration"
+            class="top-action"
+            text
+            @click="handleOpenProjectRegistration"
+          >
+            注册链接与审核
+          </ElButton>
           <ElDropdown trigger="click" class="user-menu" @command="handleUserCommand">
             <button class="user" type="button" aria-label="打开用户菜单">
               <span class="avatar"></span>
@@ -5153,6 +5291,15 @@ onBeforeUnmount(() => {
           }
         ]"
       >
+        <ElAlert
+          v-if="uploadPostProcessingWarning"
+          class="post-processing-warning"
+          type="warning"
+          :title="uploadPostProcessingWarning"
+          :closable="true"
+          show-icon
+          @close="uploadPostProcessingWarning = ''"
+        />
         <aside
           v-if="role !== 'contractor' && role !== 'ndt' && !compactNodeNavigation"
           id="audit-node-navigation"
@@ -5246,7 +5393,11 @@ onBeforeUnmount(() => {
 
             <div class="page-head">
               <div>
-                <ElBreadcrumb class="crumbs" separator="/">
+                <ElBreadcrumb
+                  v-if="currentWorkbenchPresentation.showBreadcrumb"
+                  class="crumbs"
+                  separator="/"
+                >
                   <ElBreadcrumbItem>当前位置：{{ currentRoleConfig.title }}</ElBreadcrumbItem>
                   <ElBreadcrumbItem>
                     {{
@@ -5275,7 +5426,9 @@ onBeforeUnmount(() => {
                   {{
                     role === 'inspection' && activeWorkbenchSection === 'node'
                       ? currentNodeLabel
-                      : `${currentRoleConfig.title} · ${pageHeadline}`
+                      : role === 'contractor'
+                        ? pageHeadline
+                        : `${currentRoleConfig.title} · ${pageHeadline}`
                   }}
                 </h1>
                 <div class="sub">
@@ -5295,15 +5448,6 @@ onBeforeUnmount(() => {
                   @click="mobileTreeOpen = true"
                 >
                   审核节点
-                </ElButton>
-                <ElButton
-                  v-if="role === 'contractor' && hasAction('file:upload')"
-                  class="btn primary"
-                  type="primary"
-                  :disabled="actionLoading || isReadOnly"
-                  @click="handleOpenUploadDrawer()"
-                >
-                  批量上传文件
                 </ElButton>
                 <ElButton
                   v-if="
@@ -5684,6 +5828,9 @@ onBeforeUnmount(() => {
               :node="selectedNode"
               :package-data="nodePackage"
               :read-only="isReadOnly"
+              :action-loading="actionLoading"
+              :upload-error="uploadDrawerError"
+              :upload-reset-key="inlineUploadResetKey"
               :metrics="metrics"
               :review-steps="reviewChainSteps"
               :ai-confidence="aiConfidence"
@@ -5696,6 +5843,9 @@ onBeforeUnmount(() => {
               @upload="handleOpenUploadDrawer"
               @bind="handleOpenBindDialog"
               @rectify="handleOpenRectificationDialog"
+              @view-rectification="handleViewRectification"
+              @upload-correction="handleOpenCorrectionUpload"
+              @upload-files="handleInlineContractorUpload"
               @file-view="handleOpenFileDetail"
               @file-replace="handleReplaceProjectFile"
               @file-bind="handleOpenBindDialog"
@@ -6476,7 +6626,7 @@ onBeforeUnmount(() => {
                   v-model:selected-evidence-ids="selectedReviewEvidenceIds"
                   :role="role"
                   :actions="availableActions"
-                  :latest-ai-run="latestAiRun"
+                  :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
                   :evidence-count="evidenceLinks.length"
                   :confirmed-evidence-links="confirmedEvidenceLinks"
                   :save-disabled-reason="reviewSaveDisabledReason"
@@ -6632,7 +6782,7 @@ onBeforeUnmount(() => {
                 v-model:selected-evidence-ids="selectedReviewEvidenceIds"
                 :role="role"
                 :actions="availableActions"
-                :latest-ai-run="latestAiRun"
+                :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
                 :evidence-count="evidenceLinks.length"
                 :confirmed-evidence-links="confirmedEvidenceLinks"
                 :save-disabled-reason="reviewSaveDisabledReason"
@@ -6646,7 +6796,7 @@ onBeforeUnmount(() => {
               />
               <WorkbenchSidePanel
                 v-model="activeSideTab"
-                :latest-ai-run="latestAiRun"
+                :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
                 :extracted-fields="extractedFields"
                 :evidence-links="evidenceLinks"
                 :standards="standardReferences"
@@ -6661,6 +6811,19 @@ onBeforeUnmount(() => {
           </div>
         </main>
       </div>
+
+      <ElDrawer
+        v-if="canManageRegistration && projectRegistrationTarget"
+        v-model="projectRegistrationVisible"
+        :title="`${projectRegistrationTarget.name} · 注册链接与审核`"
+        size="640px"
+        append-to-body
+      >
+        <ProjectRegistrationPanel
+          :project-id="projectRegistrationTarget.id"
+          :project-name="projectRegistrationTarget.name"
+        />
+      </ElDrawer>
 
       <ElDrawer
         v-if="role !== 'contractor' && role !== 'ndt' && compactNodeNavigation"
@@ -6795,11 +6958,13 @@ onBeforeUnmount(() => {
         :title="
           uploadDrawerReplaceTarget
             ? `替换资料：${uploadDrawerReplaceTarget.fileName}`
-            : uploadDrawerMode === 'inspection'
-              ? '上传监检资料'
-              : uploadDrawerAtomicMaterial
-                ? '上传无损检测资料'
-                : '上传项目文件'
+            : uploadDrawerRectificationTarget
+              ? '上传补正资料'
+              : uploadDrawerMode === 'inspection'
+                ? '上传监检资料'
+                : uploadDrawerAtomicMaterial
+                  ? '上传无损检测资料'
+                  : '上传项目文件'
         "
         :node-name="selectedNode?.name"
         :material-category="uploadDrawerMaterialCategory"
@@ -6939,6 +7104,8 @@ onBeforeUnmount(() => {
         :bindings="bindings"
         :todos="todos"
         :rectification-id="activeRectificationId"
+        :rectification="activeRectification"
+        :mode="rectificationDialogMode"
         :loading="actionLoading"
         @submit="handleSubmitRectification"
       />
@@ -7234,8 +7401,8 @@ onBeforeUnmount(() => {
 
 .top-actions {
   display: flex;
-  min-width: 0;
   max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   font-size: 15px;
   color: #27364d;
@@ -7825,8 +7992,8 @@ onBeforeUnmount(() => {
 }
 
 .node-unselected-hint {
-  margin: 0;
   max-width: 420px;
+  margin: 0;
   font-size: 13px;
   line-height: 1.6;
   color: #64748b;
@@ -7836,21 +8003,21 @@ onBeforeUnmount(() => {
 .execution-toggle {
   display: flex;
   width: 100%;
-  margin-bottom: 12px;
   padding: 10px 14px;
+  margin-bottom: 12px;
   font: inherit;
-  text-align: left;
   color: inherit;
+  text-align: left;
+  cursor: pointer;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
   transition:
     background 0.15s,
     border-color 0.15s;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .execution-toggle:hover {
@@ -7890,16 +8057,16 @@ onBeforeUnmount(() => {
   padding: 2px 8px;
   font-size: 12px;
   color: #1d4ed8;
+  cursor: help;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-radius: 10px;
-  cursor: help;
 }
 
 /* AI 结论置顶卡片 */
 .ai-outcome {
-  margin-bottom: 14px;
   padding: 14px 16px;
+  margin-bottom: 14px;
   background: linear-gradient(180deg, #f8fafc, #fff);
   border: 1px solid #dbe3ee;
   border-radius: 10px;
@@ -7986,18 +8153,6 @@ onBeforeUnmount(() => {
 .center.is-workbench-page-entering {
   will-change: opacity, transform;
   animation: workbench-page-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes workbench-page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .center-support-grid {
@@ -10059,10 +10214,10 @@ h3 {
 }
 
 .ai-finding-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
   display: flex;
+  padding: 0;
+  margin: 0;
+  list-style: none;
   flex-direction: column;
   gap: 10px;
 }
@@ -10082,8 +10237,8 @@ h3 {
 }
 
 .ai-finding-meta {
-  color: #667085;
   font-size: 12px;
+  color: #667085;
 }
 
 .ai-finding-title {
@@ -10094,8 +10249,8 @@ h3 {
 
 .ai-finding-desc {
   margin-top: 4px;
-  color: #47536b;
   line-height: 1.6;
+  color: #47536b;
   white-space: pre-wrap;
 }
 
@@ -10161,183 +10316,6 @@ h3 {
   border-radius: 5px;
 }
 
-@media (width <= 1360px) {
-  .topbar {
-    grid-template-columns: minmax(260px, 360px) minmax(220px, 1fr);
-  }
-
-  .top-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
-
-  .workspace {
-    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-    overflow-y: auto;
-  }
-
-  .inspection-overview-main-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .inspection-overview-card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (width <= 900px) {
-  .aicheck-static-viewport {
-    height: 100vh;
-    overflow-y: auto;
-  }
-
-  .aicheck-page.app-shell {
-    grid-template-rows: auto 1fr;
-    height: auto;
-    min-height: 100vh;
-  }
-
-  .aicheck-page.app-shell.is-inspection-ai-page {
-    height: 100vh;
-    min-height: 0;
-    overflow: hidden;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .aicheck-page.app-shell.is-inspection-ai-page .workspace {
-    display: grid;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .aicheck-page.app-shell.is-inspection-ai-page .center {
-    height: 100%;
-    min-height: 0;
-  }
-
-  .topbar,
-  .workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .inspection-project-overview-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .inspection-overview-card-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .basis-meta-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .basis-block-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .inspection-audit-status-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .inspection-audit-status-card:last-child {
-    grid-column: 1 / -1;
-  }
-
-  .workspace {
-    display: block;
-    height: auto;
-    overflow: visible;
-  }
-
-  .topbar {
-    gap: 10px;
-    min-height: 68px;
-    padding: 10px 12px;
-  }
-
-  .brand {
-    grid-template-columns: 34px minmax(0, 1fr);
-  }
-
-  .top-status {
-    grid-column: 1 / -1;
-    justify-self: start;
-  }
-
-  .left,
-  .center {
-    min-height: auto;
-  }
-
-  .left {
-    display: none;
-  }
-
-  .mobile-tree-trigger {
-    display: inline-flex;
-  }
-
-  .center {
-    --center-top-gutter: 14px;
-
-    height: auto;
-    padding: 14px 12px 18px;
-  }
-
-  .center.has-flush-audit-directory {
-    padding-top: 0;
-  }
-
-  .center-support-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .workbench-audit-board,
-  .metrics,
-  .result-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (width <= 560px) {
-  .basis-meta-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .basis-block {
-    padding: 16px;
-  }
-
-  .basis-reference-list p,
-  .basis-method-item p {
-    font-size: 15px;
-  }
-
-  .basis-agent-note li {
-    font-size: 14px;
-  }
-
-  .workbench-audit-board,
-  .metrics,
-  .result-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .inspection-node-status-row {
-    grid-template-columns: minmax(76px, 92px) minmax(120px, 1fr) minmax(62px, auto);
-    gap: 8px;
-  }
-
-  .inspection-node-status-row span {
-    font-size: 13px;
-    text-align: left;
-  }
-}
-
 .ai-human-input-card {
   display: flex;
   align-items: center;
@@ -10359,33 +10337,6 @@ h3 {
   font-size: 13px;
   color: #765827;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .center.is-workbench-page-entering {
-    animation: none;
-  }
-
-  .center,
-  .workspace,
-  .tree-wrap,
-  .sidebar-collapse-toggle .el-icon {
-    transition: none;
-  }
-
-  .global-search,
-  .top-actions .top-action.el-button,
-  .tree-wrap :deep(.node-button),
-  .btn,
-  .card,
-  .right-card,
-  .table th,
-  .table td,
-  .mini-doc-table td {
-    transition: none;
-  }
-
-  .left {
-    transition: none;
-  }
-}
 </style>
+
+<style scoped src="./workbenchResponsive.css"></style>

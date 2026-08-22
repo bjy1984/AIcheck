@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
+
+from libs.runtime_database_scope import postgres_connection_identity, postgres_connection_kwargs
 
 OCR_JOBS_COLLECTION = "ocr_jobs"
 KNOWLEDGE_TASKS_COLLECTION = "knowledge_tasks"
@@ -416,7 +419,16 @@ def write_heartbeat(dsn: str, worker_id: str, payload: dict[str, Any]) -> None:
     from psycopg.types.json import Jsonb
 
     service_id = f"mineru-worker:{worker_id}"
-    with psycopg.connect(dsn, autocommit=False) as connection:
+    with psycopg.connect(
+        dsn,
+        autocommit=False,
+        **postgres_connection_kwargs(dsn),
+    ) as connection:
+        heartbeat_payload = {
+            **dict(payload),
+            **postgres_connection_identity(connection),
+            "runMarker": os.getenv("AICHECK_E2E_RUN_MARKER", ""),
+        }
         connection.execute(
             """
             INSERT INTO service_heartbeats (service_id, service_role, instance_id, payload, last_seen_at)
@@ -428,6 +440,6 @@ def write_heartbeat(dsn: str, worker_id: str, payload: dict[str, Any]) -> None:
                 payload = EXCLUDED.payload,
                 last_seen_at = now()
             """,
-            (service_id, worker_id, Jsonb(dict(payload))),
+            (service_id, worker_id, Jsonb(heartbeat_payload)),
         )
         connection.commit()

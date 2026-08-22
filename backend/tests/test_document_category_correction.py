@@ -33,6 +33,7 @@ def _document():
         "id": DOC_ID,
         "projectId": PROJECT_ID,
         "fileName": "扫描件001.pdf",
+        "sourceOrgName": "中石化安装有限公司",
         "materialCategory": "资质证照",
         "autoClassification": {"matchedBy": "fileName"},
     }

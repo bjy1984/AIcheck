@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import sys
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
 from apps.review_worker.activities import run_review_graph_activity
 from apps.review_worker.workflows import ReviewRunWorkflow
+from libs import runtime_readiness
 from libs.db.repository import repo
+from libs.integrations import task_dispatcher
 from libs.review_orchestrator.dispatcher import (
     _start_temporal_workflow,
     dispatch_existing_review_run,
@@ -17,6 +21,351 @@ from libs.review_orchestrator.execution import clone_review_run_for_replay, revi
 from libs.security.tenant import current_tenant_id
 
 client = TestClient(app)
+
+
+@pytest.mark.parametrize(
+    ("dependencies", "expected_ready", "expected_reason", "expected_reason_codes"),
+    [
+        (
+            {"service": False, "schema": True, "workerHeartbeat": True},
+            False,
+            "temporal_service_unavailable",
+            ["temporal_service_unavailable"],
+        ),
+        (
+            {"service": True, "schema": False, "workerHeartbeat": True},
+            False,
+            "temporal_schema_unavailable",
+            ["temporal_schema_unavailable"],
+        ),
+        (
+            {"service": True, "schema": True, "workerHeartbeat": False},
+            False,
+            "temporal_worker_unavailable",
+            ["temporal_worker_unavailable"],
+        ),
+        (
+            {"service": True, "schema": True, "workerHeartbeat": True},
+            True,
+            "temporal_dependencies_ready",
+            [],
+        ),
+    ],
+)
+def test_temporal_dispatch_readiness_requires_every_live_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+    dependencies: dict[str, bool],
+    expected_ready: bool,
+    expected_reason: str,
+    expected_reason_codes: list[str],
+) -> None:
+    """Removing any live dependency must stop Temporal dispatch before a run is queued."""
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+
+    readiness = task_dispatcher.ai_recheck_dispatch_readiness(lambda: dependencies)
+
+    assert readiness["ready"] is expected_ready
+    assert readiness["mode"] == "temporal"
+    assert readiness["orchestrationMode"] == "temporal"
+    assert readiness["statusReason"] == expected_reason
+    assert readiness["reasonCodes"] == expected_reason_codes
+    assert readiness["dependencies"] == dependencies
+
+
+def test_temporal_dispatch_reads_cached_health_snapshot_without_live_probes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An AI request must never repeat the health path's network and database probes."""
+    calls = 0
+
+    def live_dependencies() -> dict[str, bool]:
+        nonlocal calls
+        calls += 1
+        return {"service": True, "schema": True, "workerHeartbeat": True}
+
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+    monkeypatch.setenv("AICHECK_REVIEW_READINESS_TTL_SECONDS", "30")
+    monkeypatch.setattr(runtime_readiness, "_review_readiness_cache", None, raising=False)
+    monkeypatch.setattr(runtime_readiness, "live_review_runtime_dependencies", live_dependencies)
+
+    refreshed = runtime_readiness.cached_review_dispatch_readiness(refresh_if_stale=True)
+    first = task_dispatcher.ai_recheck_dispatch_readiness()
+    second = task_dispatcher.ai_recheck_dispatch_readiness()
+    health = runtime_readiness.production_runtime_status()
+
+    assert refreshed["ready"] is True
+    assert first == second
+    assert first["ready"] is True
+    assert calls == 1
+    assert health["reviewDispatchReadiness"] == first
+    assert health["workflowReady"] == first["ready"]
+    assert health["temporalReadiness"]["ready"] == first["ready"]
+    assert first["cache"]["ttlSeconds"] == 30.0
+    assert first["cache"]["fresh"] is True
+    first["dependencies"]["service"] = False
+    assert task_dispatcher.ai_recheck_dispatch_readiness()["dependencies"]["service"] is True
+
+
+def test_expired_temporal_snapshot_fails_closed_without_request_path_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An expired cache must block dispatch, not turn an AI request into a refresh worker."""
+    calls = 0
+    now = 100.0
+
+    def live_dependencies() -> dict[str, bool]:
+        nonlocal calls
+        calls += 1
+        return {"service": True, "schema": True, "workerHeartbeat": True}
+
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+    monkeypatch.setenv("AICHECK_REVIEW_READINESS_TTL_SECONDS", "1")
+    monkeypatch.setattr(runtime_readiness, "_review_readiness_cache", None)
+    monkeypatch.setattr(runtime_readiness, "live_review_runtime_dependencies", live_dependencies)
+    monkeypatch.setattr(runtime_readiness.time, "monotonic", lambda: now)
+    runtime_readiness.cached_review_dispatch_readiness(refresh_if_stale=True)
+    now = 102.0
+
+    readiness = task_dispatcher.ai_recheck_dispatch_readiness()
+
+    assert readiness["ready"] is False
+    assert readiness["statusReason"] == "temporal_readiness_snapshot_stale"
+    assert readiness["cache"]["stale"] is True
+    assert calls == 1
+
+
+def test_slow_health_refresh_starts_ttl_when_probes_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful 1.05s refresh must still be fresh immediately with the supported 1s TTL."""
+    now = 100.0
+
+    def slow_live_dependencies() -> dict[str, bool]:
+        nonlocal now
+        now += 1.05
+        return {"service": True, "schema": True, "workerHeartbeat": True}
+
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+    monkeypatch.setenv("AICHECK_REVIEW_READINESS_TTL_SECONDS", "1")
+    monkeypatch.setattr(runtime_readiness, "_review_readiness_cache", None)
+    monkeypatch.setattr(runtime_readiness, "live_review_runtime_dependencies", slow_live_dependencies)
+    monkeypatch.setattr(runtime_readiness.time, "monotonic", lambda: now)
+
+    health = runtime_readiness.production_runtime_status(refresh_review_readiness=True)
+    dispatch = task_dispatcher.ai_recheck_dispatch_readiness()
+
+    assert health["workflowReady"] is True
+    assert health["reviewDispatchReadiness"]["ready"] is True
+    assert dispatch["ready"] is True
+    assert dispatch["statusReason"] == "temporal_dependencies_ready"
+    assert dispatch == health["reviewDispatchReadiness"]
+
+
+def test_postgres_readiness_probes_bound_connection_and_statement_waits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Removing either PostgreSQL timeout must make readiness probes unsafe and fail this test."""
+    connect_kwargs: list[dict] = []
+
+    class Result:
+        def __init__(self, query: str) -> None:
+            self.query = query
+
+        def fetchall(self):
+            if "service_heartbeats" in self.query:
+                return [(_review_worker_payload(), None)]
+            return [(name,) for name in runtime_readiness.REQUIRED_TABLES]
+
+        def fetchone(self):
+            return (1, None)
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, query: str, *_args):
+            return Result(query)
+
+        def rollback(self) -> None:
+            return None
+
+    class Psycopg:
+        @staticmethod
+        def connect(_dsn: str, **kwargs):
+            connect_kwargs.append(kwargs)
+            return Connection()
+
+    monkeypatch.setitem(sys.modules, "psycopg", Psycopg())
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+    monkeypatch.setenv("LANGGRAPH_CHECKPOINT_DSN", "postgresql://checkpoint.test/db")
+    monkeypatch.setenv("AICHECK_DATABASE_URL", "postgresql://application.test/db")
+    monkeypatch.setenv("AICHECK_REVIEW_READINESS_PROBE_TIMEOUT_SECONDS", "0.4")
+    monkeypatch.setenv("TEMPORAL_ADDRESS", "temporal.test:7233")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "aicheck")
+
+    schema = runtime_readiness.workflow_schema_status()
+    heartbeat = runtime_readiness.review_worker_heartbeat_status()
+
+    assert schema["ready"] is True
+    assert heartbeat["ready"] is True
+    assert len(connect_kwargs) == 2
+    assert all(options["connect_timeout"] == 1 for options in connect_kwargs)
+    assert all(options["options"] == "-c statement_timeout=400" for options in connect_kwargs)
+
+
+def test_temporal_service_probe_uses_bounded_protocol_handshake(monkeypatch) -> None:
+    """A listening non-Temporal TCP socket must not be sufficient for dispatch readiness."""
+    observed: dict[str, str] = {}
+
+    async def connect(address: str, *, namespace: str):
+        observed.update({"address": address, "namespace": namespace})
+        raise RuntimeError("protocol handshake failed")
+
+    monkeypatch.setenv("TEMPORAL_ADDRESS", "temporal.test:7233")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "aicheck")
+    monkeypatch.setenv("AICHECK_REVIEW_READINESS_PROBE_TIMEOUT_SECONDS", "0.4")
+    monkeypatch.setattr("temporalio.client.Client.connect", connect)
+
+    status = runtime_readiness.temporal_service_connectivity_status()
+
+    assert status["ready"] is False
+    assert status["errorType"] == "RuntimeError"
+    assert status["address"] == "temporal.test:7233"
+    assert status["namespace"] == "aicheck"
+    assert observed == {"address": "temporal.test:7233", "namespace": "aicheck"}
+
+
+def _review_worker_payload(task_queue: str = "review.workflow") -> dict[str, str]:
+    return {
+        "taskQueue": task_queue,
+        "temporalAddress": "temporal.test:7233",
+        "temporalNamespace": "aicheck",
+    }
+
+
+def test_review_worker_heartbeat_matching_runtime_identity_is_ready(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow")
+    monkeypatch.setenv("TEMPORAL_ADDRESS", "temporal.test:7233")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "aicheck")
+
+    status = runtime_readiness.review_worker_heartbeat_status(
+        lambda: [{"payload": _review_worker_payload(), "lastSeenAt": "2026-08-22T12:00:00+00:00"}]
+    )
+
+    assert status["ready"] is True
+    assert status["statusReason"] == "review_worker_heartbeat_ready"
+    assert status["expectedTaskQueue"] == "review.workflow"
+    assert status["observedTaskQueues"] == ["review.workflow"]
+
+
+def test_review_worker_heartbeat_wrong_task_queue_is_not_ready(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow")
+    monkeypatch.setenv("TEMPORAL_ADDRESS", "temporal.test:7233")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "aicheck")
+
+    status = runtime_readiness.review_worker_heartbeat_status(
+        lambda: [{"payload": _review_worker_payload("review.other"), "lastSeenAt": None}]
+    )
+
+    assert status["ready"] is False
+    assert status["statusReason"] == "review_worker_task_queue_mismatch"
+    assert status["reasonCodes"] == ["review_worker_task_queue_mismatch"]
+    assert status["observedTaskQueues"] == ["review.other"]
+
+
+def test_review_worker_heartbeat_mixed_fresh_worker_queues_fail_closed(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow")
+    monkeypatch.setenv("TEMPORAL_ADDRESS", "temporal.test:7233")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "aicheck")
+
+    status = runtime_readiness.review_worker_heartbeat_status(
+        lambda: [
+            {"payload": _review_worker_payload(), "lastSeenAt": "2026-08-22T12:00:00+00:00"},
+            {"payload": _review_worker_payload("review.old"), "lastSeenAt": "2026-08-22T12:00:01+00:00"},
+        ]
+    )
+
+    assert status["ready"] is False
+    assert status["activeCount"] == 2
+    assert status["statusReason"] == "review_worker_task_queue_mismatch"
+    assert status["observedTaskQueues"] == ["review.old", "review.workflow"]
+
+
+def test_review_worker_heartbeat_missing_identity_payload_fails_closed(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow")
+    monkeypatch.setenv("TEMPORAL_ADDRESS", "temporal.test:7233")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "aicheck")
+
+    status = runtime_readiness.review_worker_heartbeat_status(
+        lambda: [{"payload": None, "lastSeenAt": "2026-08-22T12:00:00+00:00"}]
+    )
+
+    assert status["ready"] is False
+    assert status["statusReason"] == "review_worker_identity_missing"
+    assert status["reasonCodes"] == ["review_worker_identity_missing"]
+    assert status["missingIdentityCount"] == 1
+
+
+def test_worker_queue_mismatch_reason_propagates_to_shared_health_and_dispatch_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = {
+        "ready": False,
+        "statusReason": "review_worker_task_queue_mismatch",
+        "reasonCodes": ["review_worker_task_queue_mismatch"],
+        "expectedTaskQueue": "review.workflow",
+        "observedTaskQueues": ["review.old"],
+    }
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+    monkeypatch.setattr(runtime_readiness, "_review_readiness_cache", None)
+    monkeypatch.setattr(
+        runtime_readiness,
+        "live_review_runtime_dependencies",
+        lambda: {"service": {"ready": True}, "schema": {"ready": True}, "workerHeartbeat": worker},
+    )
+
+    health = runtime_readiness.production_runtime_status(refresh_review_readiness=True)
+    dispatch = task_dispatcher.ai_recheck_dispatch_readiness()
+
+    assert dispatch == health["reviewDispatchReadiness"]
+    assert dispatch["ready"] is False
+    assert dispatch["statusReason"] == "temporal_worker_unavailable"
+    assert dispatch["dependencyDetails"]["workerHeartbeat"] == worker
+
+
+def test_strict_legacy_celery_uses_same_policy_for_dispatch_and_health(monkeypatch) -> None:
+    """Strict production must not disagree about the supported legacy Celery path."""
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "legacy")
+    monkeypatch.setenv("AICHECK_TASK_DISPATCH", "celery")
+    monkeypatch.setenv("AICHECK_STRICT_PRODUCTION", "true")
+    monkeypatch.setattr(
+        runtime_readiness,
+        "material_review_asset_status",
+        lambda: {"ready": True, "version": "test", "itemCount": 1, "sourceSha256": "sha256:test"},
+    )
+    monkeypatch.setattr(
+        runtime_readiness,
+        "audit_service_configuration_status",
+        lambda: {
+            "ocr": {"ready": True},
+            "qwen": {"ready": True},
+            "embedding": {"ready": True},
+            "temporal": {"configured": False, "mode": "legacy"},
+        },
+    )
+
+    dispatch = task_dispatcher.ai_recheck_dispatch_readiness()
+    health = runtime_readiness.production_runtime_status()
+
+    assert dispatch["ready"] is True
+    assert dispatch["mode"] == "celery"
+    assert dispatch["statusReason"] == "task_dispatch_enabled"
+    assert health["workflowReady"] is True
+    assert health["reviewDispatchReadiness"] == dispatch
+    assert health["runtimeReady"] is True
 
 
 def setup_function() -> None:

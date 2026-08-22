@@ -12,6 +12,7 @@ import textwrap
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import httpx
@@ -113,17 +114,6 @@ READ_ONLY_POST_ROUTES = {
     ("POST", "/api/knowledge/reindex-preview"),
     ("POST", "/rules/versions/{version_id}/{action}-preview"),
     ("POST", "/api/rules/versions/{version_id}/{action}-preview"),
-}
-IDEMPOTENT_DELEGATE_CALLS = {
-    "admin_generic_create",
-    "admin_generic_update",
-    "bind_documents",
-    "create_admin_project",
-    "create_upload_session",
-    "fde_replay_review_run",
-    # 监检提交资料转交 submit_node_package 处理，幂等在被委托方实现。
-    "submit_node_package",
-    "update_knowledge_source",
 }
 REQUIRED_WORKER_TASKS = {
     "parse_document": {
@@ -3297,6 +3287,83 @@ def called_function_names(source: str) -> set[str]:
     return names
 
 
+_TRUSTED_DELEGATE_MODULE_PREFIXES = ("apps.api", "libs")
+_MAX_DELEGATE_CALL_DEPTH = 8
+_MAX_DELEGATE_CALLABLES = 64
+
+
+def resolved_handler_callables(source: str, globals_map: dict[str, Any]) -> list[Any]:
+    """Resolve direct call targets from a handler's own globals without name matching."""
+    try:
+        tree = ast.parse(textwrap.dedent(source))
+    except SyntaxError:
+        return []
+
+    def resolve(expression: ast.expr) -> Any | None:
+        if isinstance(expression, ast.Name):
+            return globals_map.get(expression.id)
+        if isinstance(expression, ast.Attribute):
+            owner = resolve(expression.value)
+            if isinstance(owner, ModuleType):
+                return getattr(owner, expression.attr, None)
+        return None
+
+    return [
+        candidate
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (candidate := resolve(node.func)) is not None
+    ]
+
+
+def is_trusted_project_callable(candidate: Any) -> bool:
+    module_name = getattr(candidate, "__module__", "")
+    return bool(
+        callable(candidate)
+        and isinstance(module_name, str)
+        and any(module_name == prefix or module_name.startswith(f"{prefix}.") for prefix in _TRUSTED_DELEGATE_MODULE_PREFIXES)
+    )
+
+
+def calls_trusted_idempotent_delegate(endpoint: Any, source: str) -> bool:
+    """Boundedly follow trusted project-local helpers resolved from real globals.
+
+    The analyzer follows callable objects, not terminal AST spellings. Only
+    `apps.api` and `libs` callables may extend the graph; arbitrary imports,
+    same-named functions, cycles, and unexpectedly deep graphs fail closed.
+    """
+    globals_map = getattr(endpoint, "__globals__", None)
+    if not isinstance(globals_map, dict):
+        return False
+
+    visited: set[int] = {id(endpoint)}
+
+    def helper_calls_idempotent(candidate: Any, depth: int) -> bool:
+        if (
+            depth > _MAX_DELEGATE_CALL_DEPTH
+            or len(visited) >= _MAX_DELEGATE_CALLABLES
+            or not is_trusted_project_callable(candidate)
+            or id(candidate) in visited
+        ):
+            return False
+        visited.add(id(candidate))
+        candidate_source = source_for_callable(candidate)
+        if "idempotent" in called_function_names(candidate_source):
+            return True
+        candidate_globals = getattr(candidate, "__globals__", None)
+        if not isinstance(candidate_globals, dict):
+            return False
+        return any(
+            helper_calls_idempotent(next_candidate, depth + 1)
+            for next_candidate in resolved_handler_callables(candidate_source, candidate_globals)
+        )
+
+    return any(
+        helper_calls_idempotent(candidate, 1)
+        for candidate in resolved_handler_callables(source, globals_map)
+    )
+
+
 def backend_mutation_idempotency_check(route_source: Any | None = None) -> dict[str, Any]:
     routes: list[dict[str, Any]] = []
     for route in iter_effective_routes(route_source):
@@ -3322,7 +3389,7 @@ def backend_mutation_idempotency_check(route_source: Any | None = None) -> dict[
                 category = "read-only-post"
             elif "idempotent" in called_names:
                 category = "direct"
-            elif called_names & IDEMPOTENT_DELEGATE_CALLS:
+            elif calls_trusted_idempotent_delegate(endpoint, source):
                 category = "delegated"
             else:
                 category = "missing"

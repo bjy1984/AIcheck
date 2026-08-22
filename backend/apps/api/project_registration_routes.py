@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime, timedelta
+from threading import Lock
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
@@ -57,6 +58,13 @@ MAX_USES = 200  # 链接外流后被灌注册的上限
 
 INVITES = "project_invitations"
 REQUESTS = "registration_requests"
+ROLE_ORG_FIELDS = {
+    "inspection": "inspectionOrgName",
+    "contractor": "contractorOrgName",
+    "ndt": "ndtOrgName",
+    "owner": "ownerOrgName",
+}
+_REGISTRATION_IDENTITY_LOCK = Lock()
 
 
 def _now() -> datetime:
@@ -103,6 +111,28 @@ def _guard(request: Request, project_id: str):
     return actor, None
 
 
+def _registration_flush_records(
+    *,
+    invite: dict[str, Any] | None = None,
+    registration_request: dict[str, Any] | None = None,
+    user: dict[str, Any] | None = None,
+    member: dict[str, Any] | None = None,
+    admin_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    records: dict[str, Any] = {}
+    for state_key, item in (
+        (INVITES, invite),
+        (REQUESTS, registration_request),
+        ("users", user),
+        ("project_members", member),
+    ):
+        if item is not None:
+            records[state_key] = [item]
+    if admin_config is not None:
+        records["admin_config"] = admin_config
+    return records
+
+
 # --------------------------------------------------------------------------
 # 一、项目负责人生成注册链接
 # --------------------------------------------------------------------------
@@ -126,6 +156,7 @@ def create_registration_link(
     def produce():
         token = secrets.token_urlsafe(24)
         invite = {
+            "id": f"PINV-{secrets.token_hex(8).upper()}",
             "token": token,
             "projectId": project_id,
             "createdBy": actor.get("id"),
@@ -137,6 +168,7 @@ def create_registration_link(
         }
         repo.state.setdefault(INVITES, []).insert(0, invite)
         repo.add_audit("创建项目注册链接", "ProjectInvitation", token[:8], result="成功")
+        request.state.scoped_flush_records = lambda: _registration_flush_records(invite=invite)
         return ok(
             {
                 "token": token,
@@ -178,6 +210,7 @@ def disable_registration_link(
     def produce():
         invite["disabled"] = True
         repo.add_audit("停用项目注册链接", "ProjectInvitation", token[:8], result="成功")
+        request.state.scoped_flush_records = lambda: _registration_flush_records(invite=invite)
         return ok({"token": token, "disabled": True}, request)
 
     return idempotent(request, idempotency_key, produce)
@@ -228,6 +261,11 @@ def inspect_registration_link(request: Request, token: str):
 
 @project_registration_router.post("/registration-links/{token}/apply")
 def submit_registration(request: Request, token: str, body: dict[str, Any] = Body(default_factory=dict)):
+    with _REGISTRATION_IDENTITY_LOCK:
+        return _submit_registration_locked(request, token, body)
+
+
+def _submit_registration_locked(request: Request, token: str, body: dict[str, Any]):
     """提交注册申请。**不建用户**——批准的那一刻才建。
 
     先建用户再标 pending 的话，只要哪个查询忘了过滤 pending，人就登进来了，
@@ -286,6 +324,9 @@ def submit_registration(request: Request, token: str, body: dict[str, Any] = Bod
     repo.state.setdefault(REQUESTS, []).insert(0, record)
     invite["useCount"] = int(invite.get("useCount") or 0) + 1
     repo.add_audit("提交项目注册申请", "RegistrationRequest", record["id"], result="成功")
+    request.state.scoped_flush_records = lambda: _registration_flush_records(
+        invite=invite, registration_request=record
+    )
     # 不回任何令牌：账号还不存在，现在还不能登录
     return ok(
         {"requestId": record["id"], "status": record["status"], "message": "已提交，等待项目负责人审核。"},
@@ -322,11 +363,29 @@ def review_registration_request(
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    with _REGISTRATION_IDENTITY_LOCK:
+        return _review_registration_request_locked(
+            request,
+            project_id,
+            request_id,
+            body,
+            idempotency_key,
+        )
+
+
+def _review_registration_request_locked(
+    request: Request,
+    project_id: str,
+    request_id: str,
+    body: dict[str, Any],
+    idempotency_key: str | None,
+):
     """通过或拒绝。通过时才真正创建账号。"""
     from apps.api.routes import (
         build_admin_user_record,
         find_org_unit,
         idempotent,
+        resolve_project_member_grant,
         upsert_admin_config_user,
     )
 
@@ -356,6 +415,26 @@ def review_registration_request(
         # 拒绝必须写理由。不写的话申请人只看到「被拒了」，不知道要改什么
         return fail(errors.VALIDATION_ERROR, request, message="拒绝时必须填写理由。")
 
+    project = repo.require_project(project_id) or {}
+    org_name = str(project.get(ROLE_ORG_FIELDS[record["role"]]) or "").strip()
+    org = find_org_unit(None, org_name) if org_name else None
+    if approved and not org:
+        return fail(
+            errors.VALIDATION_ERROR,
+            request,
+            message="项目未配置该注册角色对应的组织。",
+        )
+    if approved and any(
+        str(item.get("username")) == str(record["username"])
+        for item in repo.state.get("users", [])
+    ):
+        return fail(
+            errors.CONFLICT,
+            request,
+            http_status=409,
+            message="该用户名已创建账号。",
+        )
+
     def produce():
         if not approved:
             record.update(
@@ -367,10 +446,11 @@ def review_registration_request(
                 }
             )
             repo.add_audit("拒绝注册申请", "RegistrationRequest", request_id, result="成功")
+            request.state.scoped_flush_records = lambda: _registration_flush_records(
+                registration_request=record
+            )
             return ok({"requestId": request_id, "status": "已拒绝"}, request)
 
-        project = repo.require_project(project_id) or {}
-        org_name = project.get("contractorOrgName") or ""
         user = build_admin_user_record(
             {
                 "username": record["username"],
@@ -379,30 +459,53 @@ def review_registration_request(
                 "mobile": record.get("mobile") or "",
                 "orgName": org_name,
             },
-            org=find_org_unit(None, org_name),
+            org=org,
         )
         # 口令沿用申请时定的那个：审核人不该知道、也不该代设别人的口令
         user["passwordHash"] = record["passwordHash"]
         user["authVersion"] = 1
         user["mustChangePassword"] = False
+        if any(
+            str(item.get("projectId")) == str(project_id)
+            and str(item.get("userId")) == str(user["id"])
+            for item in repo.state.get("project_members", [])
+        ):
+            return fail(
+                errors.CONFLICT,
+                request,
+                http_status=409,
+                message="该用户已是项目成员。",
+            )
         repo.state["users"].insert(0, user)
         upsert_admin_config_user(user)
         # 建账号的同时把他加进项目成员，否则批准了却进不了这个项目
-        repo.state.setdefault("project_members", []).insert(
-            0,
-            {
-                "id": f"PM-{secrets.token_hex(4).upper()}",
-                "projectId": project_id,
-                "userId": user["id"],
-                "role": record["role"],
-                "name": record["displayName"],
-                "status": "启用",
-            },
-        )
+        grant = resolve_project_member_grant(project_id, record["role"])
+        member = {
+            "id": f"PM-{secrets.token_hex(4).upper()}",
+            "projectId": project_id,
+            "userId": user["id"],
+            "name": record["displayName"],
+            "orgId": org["id"],
+            "orgName": org_name,
+            "role": record["role"],
+            "nodeScope": grant["nodeScope"],
+            "actions": grant["actions"],
+            "status": "启用",
+            "isProjectLeader": False,
+            "updatedAt": server_time(),
+            "revision": 1,
+        }
+        repo.state.setdefault("project_members", []).insert(0, member)
         record.update(
             {"status": "已通过", "reviewedAt": server_time(), "reviewedBy": actor.get("id")}
         )
         repo.add_audit("通过注册申请", "RegistrationRequest", request_id, result="成功")
+        request.state.scoped_flush_records = lambda: _registration_flush_records(
+            registration_request=record,
+            user=user,
+            member=member,
+            admin_config=repo.state["admin_config"],
+        )
         return ok({"requestId": request_id, "status": "已通过", "userId": user["id"]}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)

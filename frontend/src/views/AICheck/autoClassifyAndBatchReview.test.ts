@@ -42,6 +42,7 @@ const batchPanel = read('./components/BatchRecheckPanel.vue')
 const batchComposable = read('./useBatchRecheck.ts')
 const api = read('../../api/aicheck/index.ts')
 const types = read('../../types/aicheck.ts')
+const adminOverview = read('./AdminOverview.vue')
 
 // ---- 一、类别来源要分得开 ----
 
@@ -125,5 +126,27 @@ assert.match(timeline, /status\.overriddenAutoConclusion/, '人工改判没有�
 // 来源要一眼看出来，不能都写成一行「结论：xxx」
 assert.match(timeline, /event\.actor === 'human' \? '人工' : 'AI'/, '时间线没有标出是谁说的')
 assert.match(timeline, /该结论覆盖了 AI 判定/, '时间线没有显示改判覆盖了哪一条')
+
+/* Element Plus 在这个项目不是全局全量注册；漏导入时页面仍会渲染一部分，
+   但控制台会连续报 unresolved component。模板中新用到的每一个 El 组件都必须
+   在本页 script setup 显式导入。 */
+const template = adminOverview.slice(adminOverview.indexOf('<template>'))
+const usedElementComponents = new Set(
+  Array.from(template.matchAll(/<\/?(El[A-Z][A-Za-z0-9]*)\b/g), ([, name]) => name)
+)
+const importedElementComponents = new Set(
+  Array.from(
+    adminOverview
+      .slice(0, adminOverview.indexOf("} from 'element-plus'"))
+      .matchAll(/\b(El[A-Z][A-Za-z0-9]*)\b/g),
+    ([, name]) => name
+  )
+)
+for (const component of usedElementComponents) {
+  assert.ok(
+    importedElementComponents.has(component),
+    `管理员页缺少 Element Plus 导入：${component}`
+  )
+}
 
 console.log('Auto classify + batch review wiring contract passed')

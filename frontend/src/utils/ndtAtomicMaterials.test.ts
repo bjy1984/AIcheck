@@ -9,8 +9,14 @@ import {
   ndtFileApprovalStatus
 } from './ndtAtomicMaterials'
 
-assert.equal(NDT_ATOMIC_MATERIALS.length, 21)
+assert.equal(NDT_ATOMIC_MATERIALS.length, 22)
 assert.deepEqual(NDT_NODE_IDS, [35, 36, 37, 38, 39, 40, 41, 42])
+assert.deepEqual(ndtAtomicMaterialByCode('ndt_org_certificate'), {
+  code: 'ndt_org_certificate',
+  name: '无损检测机构核准证',
+  group: NDT_BUSINESS_RULE_NAMES[35],
+  defaultNodeIds: [35]
+})
 assert.deepEqual(ndtAtomicMaterialByCode('ndt_entrustment')?.defaultNodeIds, [37, 42])
 assert.equal(ndtAtomicMaterialByCode('missing'), undefined)
 assert.deepEqual(NDT_BUSINESS_RULE_NAMES, {

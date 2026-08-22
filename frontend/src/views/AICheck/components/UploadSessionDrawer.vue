@@ -1,18 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import {
-  ElAlert,
-  ElButton,
-  ElCheckbox,
-  ElCheckboxGroup,
-  ElDrawer,
-  ElMessage,
-  ElTable,
-  ElTableColumn,
-  ElUpload
-} from 'element-plus'
-import type { UploadFile, UploadInstance } from 'element-plus'
+import { ElAlert, ElButton, ElCheckbox, ElCheckboxGroup, ElDrawer, ElMessage } from 'element-plus'
 import { ndtBusinessRuleNames } from '@/utils/ndtAtomicMaterials'
+import UploadFilePicker from './UploadFilePicker.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -37,20 +27,9 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
-const uploadRef = ref<UploadInstance>()
 const selectedFiles = ref<File[]>([])
 const selectedNodeIds = ref<number[]>([])
 const isAtomicNdtUpload = computed(() => Boolean(props.materialTypeCode))
-
-const fileRows = computed(() =>
-  selectedFiles.value.map((file, index) => ({
-    id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
-    file,
-    fileName: file.name,
-    fileType: file.type || file.name.split('.').pop()?.toLowerCase() || 'unknown',
-    fileSizeKb: Math.max(1, Math.round(file.size / 1024))
-  }))
-)
 
 const primaryActionLabel = computed(() => {
   const fileCount = selectedFiles.value.length
@@ -59,32 +38,6 @@ const primaryActionLabel = computed(() => {
 
 const resetFiles = () => {
   selectedFiles.value = []
-  uploadRef.value?.clearFiles()
-}
-
-const appendFiles = (fileList: File[]) => {
-  const incoming = Array.from(fileList)
-  if (!incoming.length) return
-  const existingKeys = new Set(
-    selectedFiles.value.map((file) => `${file.name}:${file.size}:${file.lastModified}`)
-  )
-  selectedFiles.value = [
-    ...selectedFiles.value,
-    ...incoming.filter((file) => {
-      const key = `${file.name}:${file.size}:${file.lastModified}`
-      if (existingKeys.has(key)) return false
-      existingKeys.add(key)
-      return true
-    })
-  ]
-}
-
-const handleUploadChange = (uploadFile: UploadFile) => {
-  if (uploadFile.raw) appendFiles([uploadFile.raw])
-}
-
-const removeFile = (id: string) => {
-  selectedFiles.value = fileRows.value.filter((row) => row.id !== id).map((row) => row.file)
 }
 
 const handleSubmit = () => {
@@ -157,34 +110,7 @@ watch(
         </div>
       </ElAlert>
 
-      <ElUpload
-        ref="uploadRef"
-        class="file-uploader"
-        drag
-        multiple
-        :auto-upload="false"
-        :show-file-list="false"
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
-        :on-change="handleUploadChange"
-      >
-        <div class="file-drop-zone">
-          <strong>选择或拖拽文件到此处</strong>
-          <span>支持 pdf、doc、docx、xls、xlsx、jpg、png、zip，可一次选择多个文件</span>
-        </div>
-      </ElUpload>
-
-      <div class="upload-table-shell">
-        <ElTable class="upload-table" :data="fileRows" border>
-          <ElTableColumn prop="fileName" label="文件名称" min-width="260" show-overflow-tooltip />
-          <ElTableColumn prop="fileType" label="类型" width="150" show-overflow-tooltip />
-          <ElTableColumn prop="fileSizeKb" label="大小 KB" width="120" />
-          <ElTableColumn label="操作" width="80">
-            <template #default="{ row }">
-              <ElButton link type="danger" @click="removeFile(row.id)">移除</ElButton>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-      </div>
+      <UploadFilePicker v-model="selectedFiles" :disabled="loading" />
 
       <div class="drawer-actions">
         <ElButton @click="visible = false">取消</ElButton>

@@ -14,10 +14,10 @@
  * 改一行请求就绕过去了。真正拦越权的是服务端。这两层的分工要写清楚，
  * 免得后人以为「界面上没有这个选项」就等于管住了。
  *
- * ## 缺项和未通过要显示出来
+ * ## 上传指引不展示节点缺项和补正文件
  *
- * 这两份数据一直都在，但施工方页面从来没显示过——他只能传完等着被退回。
- * **数据有、界面没有，对用户就是没有。**
+ * 施工方项目文件库中的分类指引只负责说明资料分类和上传方式；节点缺项与
+ * 补正文件有各自的业务入口，不能混在分类指引里成为无上下文的裸列表。
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -82,23 +82,11 @@ assert.ok(!/'admin'/.test(roles) && !/'fde'/.test(roles), '可选角色里出现
    免得后人以为界面挡住了就等于管住了。 */
 assert.match(delegation, /真正拦住越权的是服务端|真正拦越权的是服务端/, '没有写清楚闸门在服务端')
 
-// ---- 缺项与未通过 ----
+// ---- 上传指引不展示节点缺项和补正文件 ----
 
-assert.match(sections, /missingRequirementNames/, '施工方页面没有缺项提示')
-assert.match(sections, /rejectedFileNames/, '施工方页面没有「需补正」提示')
-assert.match(
-  sections,
-  /当前环节还缺 \{\{ missingRequirementNames\.length \}\} 项资料/,
-  '缺项没有显示条数'
-)
-
-/* 字段名要按契约来。missingRequirements 里那一条叫 name，
-   materialTypeName 是资料审查点那边的字段——猜错的代价是列表恒空，
-   而且不报错。 */
-assert.ok(
-  !/item\.materialTypeName/.test(sections),
-  '用了 materialTypeName —— 契约里没有这个字段，列表会恒空'
-)
+assert.ok(!sections.includes('missingRequirementNames'), '上传指引仍在展示当前节点缺项')
+assert.ok(!sections.includes('rejectedFileNames'), '上传指引仍在展示需补正文件名')
+assert.ok(!sections.includes('当前环节还缺'), '上传指引仍包含缺项提示文案')
 
 /* ---- 项目注册：发链接 → 自选角色 → 负责人审核 ----
  *

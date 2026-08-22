@@ -37,8 +37,9 @@ def update_document_material_category(
     document_id: str,
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_role: str | None = Header(default=None, alias="X-Role"),
 ):
-    from apps.api.routes import idempotent
+    from apps.api.routes import document_read_error, idempotent, mutation_guard
 
     category = str(body.get("materialCategory") or "").strip()
     if not category:
@@ -67,6 +68,12 @@ def update_document_material_category(
         return fail(errors.NOT_FOUND, request, message="资料不存在。")
 
     def produce():
+        guard = mutation_guard(request, project_id, x_role=x_role)
+        if guard:
+            return guard
+        access_error = document_read_error(request, project_id, document)
+        if access_error:
+            return access_error
         before = document.get("materialCategory")
         document["materialCategory"] = category
         # 「系统猜的」和「人改的」必须分得开：分不开的话，

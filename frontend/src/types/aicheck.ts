@@ -439,13 +439,143 @@ export type AiReviewRun = {
   }
   suggestion: {
     id: string
-    result: '满足要求' | '需补正' | '不适用' | '需人工确认'
+    result: '满足要求' | '需补正' | '不适用' | '需人工确认' | '证据不足'
     opinionDraft: string
     confidence: number
     manualConfirmItems: string[]
   }
   evidenceLinks: EvidenceLink[]
   finishedAt?: string
+}
+
+export type AiReviewDisplay = {
+  conclusion: string
+  outputText: string
+  failed: boolean
+}
+
+/**
+ * The suggestion is created when a run is queued, so it is not evidence of a completed model
+ * response. Failed runs must always prefer their normalized failure reason over that placeholder.
+ */
+export const selectAiReviewDisplay = (
+  run?: Pick<AiReviewRun, 'status' | 'failure' | 'llmResultText' | 'llmMetadata' | 'suggestion'>,
+  waiting = false
+): AiReviewDisplay => {
+  const failureReason = String(run?.failure?.reason || '').trim()
+  if (run?.status === '失败') {
+    const text = failureReason || 'AI 复核失败，未产出模型输出。'
+    return { conclusion: text, outputText: text, failed: true }
+  }
+
+  const metadata = run?.llmMetadata
+  const metadataOutput = ['resultText', 'answer', 'content']
+    .map((key) => metadata?.[key])
+    .find(
+      (value) => (typeof value === 'string' && value.trim()) || (value && typeof value === 'object')
+    )
+  const metadataText =
+    typeof metadataOutput === 'string'
+      ? metadataOutput.trim()
+      : metadataOutput && typeof metadataOutput === 'object'
+        ? JSON.stringify(metadataOutput, null, 2)
+        : ''
+  const outputText =
+    String(run?.llmResultText || '').trim() ||
+    metadataText ||
+    String(run?.suggestion?.opinionDraft || '').trim() ||
+    (waiting ? '正在等待模型输出。' : '暂无模型输出。')
+  return {
+    conclusion: String(run?.suggestion?.result || '待判定'),
+    outputText,
+    failed: false
+  }
+}
+
+export type ProjectRegistrationDrawerState<T> = {
+  visible: boolean
+  target?: T
+}
+
+/** The drawer is only meaningful while the current backend context grants this capability. */
+export const projectRegistrationDrawerStateFor = <T>(
+  canManageRegistration: boolean,
+  target?: T
+): ProjectRegistrationDrawerState<T> =>
+  canManageRegistration && target
+    ? { visible: true, target }
+    : { visible: false, target: undefined }
+
+export type UploadProcessingStatus = '排队中' | '等待派发' | '需重试'
+
+export type UploadCompletionDispatch = {
+  documentId?: string
+  documentVersionId?: string
+  taskId?: string
+  status?: 'dispatched' | 'dispatch_deferred' | 'dispatch_failed' | string
+  retryable?: boolean
+  errorCode?: string
+  statusReason?: string
+  statePersistence?: 'pending' | string
+}
+
+export type UploadCompletionWarning = {
+  stage?: string
+  status?: string
+  errorCode?: string
+}
+
+export type UploadCompletionPresentation = {
+  tone: 'success' | 'warning'
+  message: string
+  resetSelection: boolean
+}
+
+/**
+ * Upload completion makes file records durable before it dispatches OCR/indexing. A dispatch
+ * warning must not be presented as an all-clear queue success; selected files must still clear
+ * because re-uploading a durable file would create a duplicate.
+ */
+export const uploadCompletionPresentationFor = (payload: {
+  fileCount?: number
+  processingStatus?: UploadProcessingStatus | string
+  completionWarnings?: UploadCompletionWarning[]
+  queuedTasks?: UploadCompletionDispatch[]
+}): UploadCompletionPresentation => {
+  const fileCount = Number(payload.fileCount || 0)
+  const fileLabel = `${fileCount} 个文件`
+  const dispatchFailed = (payload.queuedTasks || []).some(
+    (task) => task.status === 'dispatch_failed'
+  )
+  const hasWarnings = Boolean(payload.completionWarnings?.length)
+  const processingStatus = String(payload.processingStatus || '')
+
+  if (processingStatus === '需重试' || dispatchFailed) {
+    return {
+      tone: 'warning',
+      message: '文件已保存，请联系管理员在 OCR/向量任务中心重试后续处理。',
+      resetSelection: true
+    }
+  }
+  if (hasWarnings) {
+    return {
+      tone: 'warning',
+      message: '文件已保存，请联系管理员在 OCR/向量任务中心重试后续处理。',
+      resetSelection: true
+    }
+  }
+  if (processingStatus === '等待派发') {
+    return {
+      tone: 'warning',
+      message: `${fileLabel}已保存，OCR/索引任务正在等待派发。请联系项目管理员确认处理状态。`,
+      resetSelection: true
+    }
+  }
+  return {
+    tone: 'success',
+    message: `已上传 ${fileLabel}，OCR 和索引处理已进入队列`,
+    resetSelection: true
+  }
 }
 
 export type NodeBusinessBasis = {
@@ -863,6 +993,8 @@ export type WorkbenchContextPayload = {
   project: Project
   role: RoleCode
   currentNodeId: number
+  /** 由服务端按项目负责人授权计算，不能从 inspection 角色推断。 */
+  canManageRegistration: boolean
   topbar: {
     todoCount: number
     messageCount: number

@@ -27,23 +27,67 @@ import hashlib
 import inspect
 
 
-def test_按实际字节算而不是信客户端声明():
-    from apps.api import routes
+def test_权威哈希不可用时拒绝客户端声明且不改变上传状态(monkeypatch):
+    import apps.api.routes as routes_module
 
-    source = inspect.getsource(routes.validate_upload_session_completion)
-    block = source[source.index("for update in storage_updates:") :]
-    assert "object_storage.content_hash(" in block, "还在只信客户端声明的 contentHash"
-    # 存储算出来的要优先于声明值
-    assert "storage_hash or resolved_hash" in block, "存储算出的哈希要优先"
+    version = {
+        "id": "DV-AUTH-HASH-1",
+        "documentId": "DOC-AUTH-HASH-1",
+        "hash": None,
+        "fileSize": 0,
+        "storageBucket": "documents",
+        "storageKey": "documents/P/DV-AUTH-HASH-1",
+    }
+    document = {
+        "id": "DOC-AUTH-HASH-1",
+        "currentVersionId": version["id"],
+        "fileStatus": "已上传",
+    }
+    file_entry = {
+        "documentId": document["id"],
+        "documentVersionId": version["id"],
+        "status": "待上传",
+        "storageBucket": "documents",
+        "storageKey": version["storageKey"],
+        "fileSize": 0,
+    }
+    session = {"id": "UPS-AUTH-HASH", "status": "待上传", "files": [file_entry]}
+    store = {"versions": [version], "documents": [document]}
 
+    def find_one(collection: str, object_id: str):
+        return next(
+            (item for item in store.get(collection, []) if item.get("id") == object_id),
+            None,
+        )
 
-def test_算不出来时不掀翻整次上传():
-    """存储临时不可用时，退回客户端声明值——总比让用户重传一遍强。"""
-    from apps.api import routes
+    class HashUnavailableStorage:
+        def object_metadata(self, _bucket: str, _key: str):
+            return {"size": 80, "contentType": "application/pdf", "etag": "etag"}
 
-    source = inspect.getsource(routes.validate_upload_session_completion)
-    block = source[source.index("for update in storage_updates:") :]
-    assert "except Exception" in block
+        def content_hash(self, _bucket: str, _key: str):
+            raise RuntimeError("hash service unavailable")
+
+    monkeypatch.setattr(routes_module.repo, "find_one", find_one)
+    monkeypatch.setattr(routes_module, "object_storage", HashUnavailableStorage())
+
+    verified, error = routes_module.validate_upload_session_completion(
+        session,
+        {
+            "completedFiles": [
+                {
+                    "documentVersionId": version["id"],
+                    "fileSize": 80,
+                    "contentHash": "a" * 64,
+                }
+            ]
+        },
+    )
+
+    assert verified is None
+    assert error["reason"] == "AUTHORITATIVE_CONTENT_HASH_UNAVAILABLE"
+    assert error["retryable"] is True
+    assert file_entry["status"] == "待上传"
+    assert version["hash"] is None
 
 
 def test_内容哈希是分块读的():

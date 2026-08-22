@@ -124,9 +124,9 @@ def test_路由层拦住已提交资料():
     """已提交的资料正被监检看着，替换要走补正流程。"""
     import inspect
 
-    from apps.api import routes
+    from apps.api import upload_session_workflow
 
-    source = inspect.getsource(routes.validate_replace_targets)
+    source = inspect.getsource(upload_session_workflow.validate_replace_targets)
     assert '"草稿", "已上传"' in source, "只有未提交状态可替换"
     assert "补正流程" in source, "要说清楚该走哪条路，而不是只说不行"
 
@@ -143,9 +143,9 @@ def test_落库范围要覆盖被顶下去的旧版本():
     """
     import inspect
 
-    from apps.api import routes
+    from apps.api import upload_session_workflow
 
-    source = inspect.getsource(routes.upload_session_state_records)
+    source = inspect.getsource(upload_session_workflow.upload_session_state_records)
     assert 'str(item.get("documentId") or "") in document_ids' in source, (
         "versions 要按文档取全部版本，否则被替换掉的旧版本不会落库"
     )

@@ -162,16 +162,12 @@ def test_树接口用瘦身版而详情不用():
     **优化体积时最容易顺手削掉别人正在用的东西**。"""
     import inspect
 
-    from apps.api import routes
+    from apps.api import document_access_policy, routes
 
-    source = inspect.getsource(routes)
-    # 锚点要唯一：filter_node_groups_for_scope 在项目详情里也出现（那处只做计数），
-    # 按它定位会落到无关的函数上——**判据不精确的测试，失败时误导人去改对的代码**。
-    tree_at = source.index('group["nodes"] = [')
-    tree_block = source[tree_at : tree_at + 400]
+    # 直接检查目标函数，避免新增安全参数后超过固定字符窗口而误报。
+    tree_block = inspect.getsource(document_access_policy.enrich_project_tree_for_request)
     assert "slim=True" in tree_block, "树接口要用瘦身版"
 
     # 详情侧（节点包）不能带 slim=True
-    package_at = source.index("def node_package")
-    package_block = source[package_at : package_at + 4000]
+    package_block = inspect.getsource(routes.node_package)
     assert "slim=True" not in package_block, "详情页仍需完整明细"

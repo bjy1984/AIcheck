@@ -31,6 +31,12 @@ export type NdtFileApprovalStatus = '草稿' | '待审查' | '需补正' | '已�
 
 export const NDT_ATOMIC_MATERIALS: NdtAtomicMaterial[] = [
   {
+    code: 'ndt_org_certificate',
+    name: '无损检测机构核准证',
+    group: NDT_BUSINESS_RULE_NAMES[35],
+    defaultNodeIds: [35]
+  },
+  {
     code: 'ndt_quality_assurance_manual',
     name: '无损检测单位质量保证手册',
     group: NDT_BUSINESS_RULE_NAMES[35],

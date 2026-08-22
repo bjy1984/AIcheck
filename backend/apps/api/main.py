@@ -49,6 +49,7 @@ from libs.db.postgres import (
     run_transaction_probe,
 )
 from libs.db.repository import (
+    SINGLETON_COLLECTIONS,
     STATE_COLLECTIONS,
     ConcurrentPersistenceError,
     IllegalNodeStatusTransition,
@@ -61,6 +62,7 @@ from libs.db.repository import (
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage
 from libs.integrations.task_dispatcher import mineru_execution_mode
 from libs.review_orchestrator.dispatcher import review_orchestration_mode
+from libs.runtime_database_scope import refresh_runtime_database_scope
 from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path, required_action_for_request
 from libs.security.auth import (
@@ -90,11 +92,62 @@ from libs.security.tenant import (
 
 logger = logging.getLogger("aicheck.api")
 _tenant_mutation_locks: dict[tuple[int, str], asyncio.Lock] = {}
+PUBLIC_REGISTRATION_LINK_PATTERN = re.compile(
+    r"^(?:/api)?/registration-links/[^/]+(?:/apply)?$"
+)
+PUBLIC_REGISTRATION_LINK_INSPECT_PATTERN = re.compile(
+    r"^(?:/api)?/registration-links/[^/]+$"
+)
+PUBLIC_REGISTRATION_LINK_APPLY_PATTERN = re.compile(
+    r"^(?:/api)?/registration-links/[^/]+/apply$"
+)
 
 
 def tenant_mutation_lock(tenant_id: str) -> asyncio.Lock:
     loop_id = id(asyncio.get_running_loop())
     return _tenant_mutation_locks.setdefault((loop_id, tenant_id), asyncio.Lock())
+
+
+def _runtime_database_scope_refresh_interval_seconds() -> float:
+    try:
+        configured = float(
+            os.getenv("AICHECK_RUNTIME_DATABASE_SCOPE_REFRESH_SECONDS", "2")
+        )
+    except ValueError:
+        configured = 2.0
+    return min(30.0, max(0.5, configured))
+
+
+def _runtime_database_scope_refresh_configured() -> bool:
+    dsn = os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL")
+    return bool(dsn and os.getenv("AICHECK_E2E_RUN_MARKER"))
+
+
+async def _refresh_runtime_database_scope_once() -> None:
+    refresh_task = asyncio.create_task(asyncio.to_thread(refresh_runtime_database_scope))
+    try:
+        await asyncio.shield(refresh_task)
+    except asyncio.CancelledError:
+        # Cancelling an asyncio.to_thread await does not stop its thread. Keep PostgreSQL open
+        # until the bounded refresh has actually returned, then let lifespan close the pool.
+        await refresh_task
+        raise
+
+
+async def runtime_database_scope_refresh_loop() -> None:
+    """Refresh the public cache off-loop until lifespan cancellation."""
+    if not _runtime_database_scope_refresh_configured():
+        return
+    while True:
+        try:
+            await _refresh_runtime_database_scope_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The core refresh is fail-closed. Avoid exception text here because a driver error
+            # may contain connection identity; the next bounded interval retries.
+            logger.warning("Runtime database-scope refresh failed")
+        await asyncio.sleep(_runtime_database_scope_refresh_interval_seconds())
 
 
 @asynccontextmanager
@@ -114,8 +167,24 @@ async def lifespan(app: FastAPI):
         )
     if strict_production() and not await security_sessions.ready():
         raise RuntimeError("Redis security backend is unavailable")
-    yield
-    await close_postgres(app)
+    database_scope_task = (
+        asyncio.create_task(
+            runtime_database_scope_refresh_loop(),
+            name="runtime-database-scope-refresh",
+        )
+        if _runtime_database_scope_refresh_configured()
+        else None
+    )
+    try:
+        yield
+    finally:
+        if database_scope_task is not None:
+            database_scope_task.cancel()
+            try:
+                await database_scope_task
+            except asyncio.CancelledError:
+                pass
+        await close_postgres(app)
 
 
 app = FastAPI(
@@ -383,7 +452,16 @@ async def handle_request(
                     if audit_records:
                         records.setdefault("audit_logs", []).extend(audit_records)
                     scope = getattr(request.state, "idempotency_scope", None)
-                    flush_mutation_records(records, [scope] if scope else [])
+                    scoped_singleton_keys = {
+                        key for key in records if key in SINGLETON_COLLECTIONS
+                    }
+                    if scoped_singleton_keys:
+                        flush_state(
+                            selected_state_keys={key for key in records if key in STATE_COLLECTIONS},
+                            selected_singleton_keys=scoped_singleton_keys,
+                        )
+                    else:
+                        flush_mutation_records(records, [scope] if scope else [])
                 else:
                     state_keys = getattr(request.state, "flush_state_keys", None)
                     singleton_keys = getattr(request.state, "flush_singleton_keys", None)
@@ -442,8 +520,21 @@ def restore_failed_request_state(request: Request) -> None:
             reset_request_tenant_id(token)
 
 
+def is_public_registration_request(request: Request) -> bool:
+    path = request.url.path
+    if not PUBLIC_REGISTRATION_LINK_PATTERN.fullmatch(path):
+        return False
+    if request.method == "GET":
+        return bool(PUBLIC_REGISTRATION_LINK_INSPECT_PATTERN.fullmatch(path))
+    if request.method == "POST":
+        return bool(PUBLIC_REGISTRATION_LINK_APPLY_PATTERN.fullmatch(path))
+    return False
+
+
 def auth_required_for_path(request: Request) -> bool:
     if not authentication_enforced():
+        return False
+    if is_public_registration_request(request):
         return False
     public_prefixes = (
         "/healthz",
@@ -1013,12 +1104,20 @@ async def health_payload() -> dict[str, object]:
         key=lambda item: str(item.get("finishedAt") or item.get("updatedAt") or ""),
         default=None,
     )
-    temporal = await temporal_health_status()
-    workflow_metrics = review_workflow_metrics()
-    worker_ready = bool((workflow_metrics.get("reviewWorkerHeartbeat") or {}).get("ready"))
-    workflow_ready = bool(temporal.get("ready")) and (
-        review_orchestration_mode() != "temporal" or worker_ready
+    runtime_readiness = await asyncio.to_thread(
+        production_runtime_status,
+        refresh_review_readiness=True,
     )
+    temporal = dict(runtime_readiness.get("temporalReadiness") or {})
+    workflow_metrics = await asyncio.to_thread(review_workflow_metrics)
+    shared_worker_heartbeat = (
+        (runtime_readiness.get("reviewDispatchReadiness") or {})
+        .get("dependencyDetails", {})
+        .get("workerHeartbeat")
+    )
+    if isinstance(shared_worker_heartbeat, dict):
+        workflow_metrics["reviewWorkerHeartbeat"] = shared_worker_heartbeat
+    workflow_ready = bool(runtime_readiness.get("workflowReady"))
     raw_vault = await asyncio.to_thread(raw_vault_health_status)
     mineru_worker = await asyncio.to_thread(mineru_worker_health_status)
     return {
@@ -1045,7 +1144,7 @@ async def health_payload() -> dict[str, object]:
             "attemptCount": len(model_attempts),
             "successCount": len(successful_attempts),
         },
-        **production_runtime_status(),
+        **runtime_readiness,
         **security_runtime_status(rate_limiter_ready=rate_limiter_ready),
     }
 

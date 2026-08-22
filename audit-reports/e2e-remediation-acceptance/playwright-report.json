@@ -1,0 +1,124 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "/Volumes/7up/github/knowledgetools/frontend/node_modules/@playwright/test/cli.js",
+      "test",
+      "e2e/project-registration-upload-review.spec.ts",
+      "--list"
+    ],
+    "configFile": "/Volumes/7up/github/knowledgetools/frontend/playwright.config.ts",
+    "rootDir": "/Volumes/7up/github/knowledgetools/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Volumes/7up/github/knowledgetools/audit-reports/e2e-remediation-acceptance/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Volumes/7up/github/knowledgetools/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 45000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/Volumes/7up/github/knowledgetools/audit-reports/e2e-remediation-acceptance//playwright-report.json"
+        }
+      ],
+      [
+        "html",
+        {
+          "outputFolder": "/Volumes/7up/github/knowledgetools/audit-reports/e2e-remediation-acceptance//html-report",
+          "open": "never"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.1",
+    "workers": 1,
+    "webServer": {
+      "command": "pnpm vite --mode base --host 127.0.0.1 --port 4000",
+      "url": "http://127.0.0.1:4000",
+      "reuseExistingServer": true,
+      "timeout": 120000
+    }
+  },
+  "suites": [
+    {
+      "title": "project-registration-upload-review.spec.ts",
+      "file": "project-registration-upload-review.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "project registration, upload isolation, and formal review release gate",
+          "file": "project-registration-upload-review.spec.ts",
+          "line": 640,
+          "column": 6,
+          "specs": [
+            {
+              "title": "runs the complete business path in a real browser without API mutations",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "db4ada72bb3bc6cec076-bb29c0975b11fa49bf09",
+              "file": "project-registration-upload-review.spec.ts",
+              "line": 643,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-08-22T12:05:53.908Z",
+    "duration": 120.76899999999995,
+    "expected": 0,
+    "skipped": 1,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

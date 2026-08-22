@@ -678,7 +678,11 @@ def test_u5_project_file_rows_carry_body_uploaded_flag() -> None:
     在施工方台账里永远显示「上传中」——看不出该重传，只有点了提交才会撞到
     DOCUMENT_BODY_MISSING。前端的「上传失败 / 重新上传 / 禁用提交」全部依赖这个字段。
     """
-    headers = {"X-Dev-Role": "contractor", "X-Dev-User": "USER-CONTRACTOR-001"}
+    headers = {
+        "X-Dev-Role": "contractor",
+        "X-Dev-User": "USER-CONTRACTOR-001",
+        "X-Role": "contractor",
+    }
     project_id = "P-2026-HDCP-001"
 
     session = client.post(
@@ -1051,9 +1055,9 @@ def test_m8_declared_material_type_and_nodes_are_persisted() -> None:
     assert welder["materialTypeName"] == "焊工资格证", "类型名称应按业务包的 materialTypes 解析"
     assert welder["nodeId"] == 24, "声明的归属节点必须落库，否则资料仍是游离状态"
 
-    ndt = upload("ndt_report", 40, "m8-ndt")
-    assert ndt["materialTypeName"] == "无损检测报告"
-    assert ndt["nodeId"] == 40
+    wps = upload("wps_pqr", 25, "m8-wps")
+    assert wps["materialTypeName"] == "焊接工艺评定报告和焊接作业指导书"
+    assert wps["nodeId"] == 25
 
     # 业务包里没有的类型码不许瞎猜出名称
     unknown = upload("这个码不存在", 16, "m8-unknown")
@@ -1488,7 +1492,7 @@ def test_binding_honors_per_item_node_id() -> None:
     payload = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
 
     declared = []
-    for index, node_id in enumerate((24, 25, 40)):
+    for index, node_id in enumerate((16, 24, 25)):
         session = client.post(
             f"/api/projects/{project_id}/documents/upload-session",
             headers={**contractor, "Idempotency-Key": f"bind-node-{index}"},
@@ -1518,6 +1522,13 @@ def test_binding_honors_per_item_node_id() -> None:
         assert bound_nodes == [node_id], (
             f"声明 nodeId={node_id} 的资料应且只应挂到该节点，实际 {bound_nodes}"
         )
+
+    forbidden = client.post(
+        f"/api/projects/{project_id}/documents/bindings",
+        headers={**contractor, "Idempotency-Key": "bind-node-forbidden-40"},
+        json={"bindings": [{"documentId": declared[0][0], "nodeId": 40}]},
+    )
+    assert forbidden.json()["code"] == 403, forbidden.text
 
 
 # ---- M-1：资料自动分类准确率约 21% ----

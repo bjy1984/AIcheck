@@ -135,7 +135,23 @@ export type DocumentUploadSessionFile = {
 }
 
 export type UploadSessionCompletePayload = MockMutationResult & {
-  queuedTasks: unknown[]
+  /** 文件已持久化后的 OCR/索引派发结果；旧响应可能省略这些增强字段。 */
+  processingStatus?: '排队中' | '等待派发' | '需重试'
+  completionWarnings?: Array<{
+    stage?: string
+    status?: string
+    errorCode?: string
+  }>
+  queuedTasks?: Array<{
+    documentId?: string
+    documentVersionId?: string
+    taskId?: string
+    status?: 'dispatched' | 'dispatch_deferred' | 'dispatch_failed' | string
+    retryable?: boolean
+    errorCode?: string
+    statusReason?: string
+    statePersistence?: 'pending' | string
+  }>
   fileCount: number
   documents?: Array<{
     documentId: string

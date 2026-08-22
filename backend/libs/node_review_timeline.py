@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from libs.ai_run_failure import ai_run_failure_view
+
 # 时间未知的排到最后。用空串的话会排到最前，被当成「最早发生的」。
 _UNKNOWN_TIME = "9999-99-99"
 
@@ -53,16 +55,25 @@ def node_review_timeline(
     for run in ai_runs or []:
         if not isinstance(run, dict):
             continue
-        conclusion = str(run.get("conclusion") or "")
+        suggestion = run.get("suggestion") if isinstance(run.get("suggestion"), dict) else {}
+        conclusion = str(suggestion.get("result") or run.get("conclusion") or "").strip()
         status = str(run.get("status") or "")
+        failure = ai_run_failure_view(run)
+        if failure:
+            # 排队阶段预置的 suggestion/opinionDraft 不是失败运行的最终结论。
+            conclusion = ""
         events.append(
             {
                 "type": "aiRun",
                 "actor": "ai",
                 "at": _time_of(run, "finishedAt", "updatedAt", "createdAt"),
                 "title": "AI 审查",
-                # 没有结论时说「未给出结论」，不要留空——留空会被读成「通过」
-                "summary": conclusion or f"未给出结论（{status or '状态未知'}）",
+                # 失败先显示可执行的失败原因；其他无结论状态才明确写成未给出结论，不能留空。
+                "summary": (
+                    (str(failure.get("reason") or "") if failure else "")
+                    or conclusion
+                    or f"未给出结论（{status or '状态未知'}）"
+                ),
                 "conclusion": conclusion,
                 "status": status,
                 "refId": run.get("id") or run.get("aiRunId"),

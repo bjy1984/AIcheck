@@ -59,6 +59,54 @@ def test_没有结论时如实说没有():
     assert "运行中" in events[0]["summary"]
 
 
+def test_已完成运行优先采用嵌套建议结论():
+    """防止时间线读取旧 conclusion 而把已完成的 AI 建议显示错。"""
+    events = node_review_timeline(
+        [
+            {
+                "id": "R1",
+                "status": "completed",
+                "conclusion": "满足要求",
+                "suggestion": {"result": "证据不足"},
+            }
+        ],
+        [],
+    )
+    event = events[0]
+    assert event["conclusion"] == "证据不足"
+    assert event["summary"] == "证据不足"
+
+
+def test_失败运行没有结论时显示归一化失败原因():
+    """防止失败记录沿用排队阶段的“未给出结论”占位文案。"""
+    events = node_review_timeline(
+        [{"id": "R1", "status": "failed", "errorMessage": "TEMPORAL_START_FAILED"}],
+        [],
+    )
+    assert events[0]["summary"] == "编排服务（Temporal）连不上，本次审查没有真正开始执行。"
+    assert "未给出结论" not in events[0]["summary"]
+
+
+def test_失败状态覆盖已播种的建议结论和排队草稿():
+    """防止失败运行误把排队时写入的 suggestion/opinionDraft 当成最终结论。"""
+    events = node_review_timeline(
+        [
+            {
+                "id": "R1",
+                "status": "failed",
+                "errorMessage": "TEMPORAL_START_FAILED",
+                "suggestion": {"result": "需人工确认"},
+                "opinionDraft": "排队中，等待 AI 审查完成。",
+            }
+        ],
+        [],
+    )
+    event = events[0]
+    assert event["conclusion"] == ""
+    assert event["summary"] == "编排服务（Temporal）连不上，本次审查没有真正开始执行。"
+    assert "排队中" not in event["summary"]
+
+
 def test_人工未填结论也不留空():
     events = node_review_timeline([], [{"id": "O1", "createdAt": "1"}])
     assert events[0]["summary"] == "（未填写结论）"

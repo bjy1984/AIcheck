@@ -22,6 +22,7 @@ from scripts.deployment_report import (
     feedback_hr_contract_check,
     frontend_mutation_header_check,
     frontend_mutation_helper_check,
+    iter_effective_routes,
     knowledge_rule_contract_check,
     litellm_client_contract_check,
     markdown_report,
@@ -104,6 +105,17 @@ def report_args(**overrides):
     }
     values.update(overrides)
     return Namespace(**values)
+
+
+def _review_registration_request_locked(*_args):
+    return None
+
+
+def _external_idempotent_delegate_for_contract_test(*_args):
+    return None
+
+
+_external_idempotent_delegate_for_contract_test.__module__ = "external.workflow"
 
 
 def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
@@ -256,6 +268,17 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     api_check = next(check for check in sections["api-contract"]["checks"] if check["name"] == "api.mutation-idempotency")
     assert api_check["status"] == "pass"
     assert api_check["data"]["missing"] == []
+    assert any(
+        item["path"] == "/projects/{project_id}/registration-requests/{request_id}/review"
+        and item["endpoint"] == "review_registration_request"
+        for item in api_check["data"]["delegated"]
+    )
+    assert any(
+        item["path"]
+        == "/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}"
+        and item["endpoint"] == "upload_session_file"
+        for item in api_check["data"]["delegated"]
+    )
     action_check = next(check for check in sections["api-contract"]["checks"] if check["name"] == "api.action-coverage")
     assert action_check["status"] == "pass"
     assert action_check["data"]["missing"] == []
@@ -930,31 +953,129 @@ def test_backend_action_coverage_check_fails_unmapped_business_mutation() -> Non
     ]
 
 
-def test_backend_mutation_idempotency_check_classifies_direct_and_delegated_calls() -> None:
+def test_backend_mutation_idempotency_check_classifies_direct_calls() -> None:
     def direct_endpoint():
-        return None
-
-    def delegated_endpoint():
         return None
 
     direct_endpoint.__source__ = (
         "def direct_endpoint():\n"
         "    return idempotent(request, key, produce, fingerprint_source={})\n"
     )
-    delegated_endpoint.__source__ = (
-        "def delegated_endpoint():\n"
-        "    return create_admin_project(request, body, idempotency_key)\n"
-    )
     routes = [
         SimpleNamespace(path="/projects/{project_id}/direct", methods={"POST"}, endpoint=direct_endpoint),
-        SimpleNamespace(path="/projects/{project_id}/delegated", methods={"POST"}, endpoint=delegated_endpoint),
     ]
 
     check = backend_mutation_idempotency_check(routes)
-    categories = {item["path"]: item["category"] for item in [*check["data"]["direct"], *check["data"]["delegated"]]}
 
     assert check["status"] == "pass"
     assert check["data"]["missing"] == []
-    assert categories["/projects/{project_id}/direct"] == "direct"
-    assert categories["/projects/{project_id}/delegated"] == "delegated"
+    assert check["data"]["direct"] == [
+        {
+            "method": "POST",
+            "path": "/projects/{project_id}/direct",
+            "endpoint": "direct_endpoint",
+            "category": "direct",
+        }
+    ]
     assert "idempotent" in called_function_names(direct_endpoint.__source__)
+
+
+def test_backend_mutation_idempotency_check_recognizes_locked_idempotent_registration_review_delegate() -> None:
+    routes = [
+        route
+        for route in iter_effective_routes()
+        if getattr(route, "path", "") == "/projects/{project_id}/registration-requests/{request_id}/review"
+    ]
+
+    check = backend_mutation_idempotency_check(routes)
+
+    assert check["status"] == "pass"
+    assert check["data"]["missing"] == []
+    assert check["data"]["delegated"] == [
+        {
+            "method": "POST",
+            "path": "/projects/{project_id}/registration-requests/{request_id}/review",
+            "endpoint": "review_registration_request",
+            "category": "delegated",
+        }
+    ]
+
+
+def test_backend_mutation_idempotency_check_recognizes_trusted_upload_workflow_delegate() -> None:
+    routes = [
+        route
+        for route in iter_effective_routes()
+        if getattr(route, "path", "")
+        == "/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}"
+    ]
+
+    check = backend_mutation_idempotency_check(routes)
+
+    assert check["status"] == "pass"
+    assert check["data"]["missing"] == []
+    assert check["data"]["delegated"] == [
+        {
+            "method": "PUT",
+            "path": "/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}",
+            "endpoint": "upload_session_file",
+            "category": "delegated",
+        }
+    ]
+
+def test_backend_mutation_idempotency_check_rejects_same_named_unapproved_delegate() -> None:
+    """A same-spelled local helper is not trusted unless it calls idempotent."""
+    def unsafe_same_named_delegate_endpoint():
+        return None
+
+    unsafe_same_named_delegate_endpoint.__source__ = (
+        "def unsafe_same_named_delegate_endpoint():\n"
+        "    return _review_registration_request_locked(request, project_id, request_id, body, key)\n"
+    )
+    routes = [
+        SimpleNamespace(
+            path="/projects/{project_id}/unsafe-same-named-delegate",
+            methods={"POST"},
+            endpoint=unsafe_same_named_delegate_endpoint,
+        )
+    ]
+
+    check = backend_mutation_idempotency_check(routes)
+
+    assert check["status"] == "fail"
+    assert check["data"]["missing"] == [
+        {
+            "method": "POST",
+            "path": "/projects/{project_id}/unsafe-same-named-delegate",
+            "endpoint": "unsafe_same_named_delegate_endpoint",
+            "category": "missing",
+        }
+    ]
+
+
+def test_backend_mutation_idempotency_check_rejects_external_delegate_callable() -> None:
+    def unsafe_external_delegate_endpoint():
+        return None
+
+    unsafe_external_delegate_endpoint.__source__ = (
+        "def unsafe_external_delegate_endpoint():\n"
+        "    return _external_idempotent_delegate_for_contract_test(request, key)\n"
+    )
+    routes = [
+        SimpleNamespace(
+            path="/projects/{project_id}/unsafe-external-delegate",
+            methods={"POST"},
+            endpoint=unsafe_external_delegate_endpoint,
+        )
+    ]
+
+    check = backend_mutation_idempotency_check(routes)
+
+    assert check["status"] == "fail"
+    assert check["data"]["missing"] == [
+        {
+            "method": "POST",
+            "path": "/projects/{project_id}/unsafe-external-delegate",
+            "endpoint": "unsafe_external_delegate_endpoint",
+            "category": "missing",
+        }
+    ]

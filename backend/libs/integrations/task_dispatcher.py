@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from libs.capacity_guard import cpu_heavy_dispatch_status
+from libs.runtime_readiness import ReviewDependencyProvider, cached_review_dispatch_readiness
 from libs.security.tenant import current_tenant_id
 from libs.task_priority import broker_priority
 
@@ -305,29 +306,10 @@ def dispatch_document_audit_pipeline_comparison(run_id: str) -> dict[str, Any]:
     }
 
 
-def ai_recheck_dispatch_readiness() -> dict[str, Any]:
-    orchestration_mode = os.getenv("AICHECK_REVIEW_ORCHESTRATION", "legacy").strip().lower() or "legacy"
-    if orchestration_mode in {"temporal", "inline"}:
-        return {
-            "ready": True,
-            "mode": orchestration_mode,
-            "orchestrationMode": orchestration_mode,
-            "statusReason": "review_orchestration_enabled",
-        }
-    mode = dispatch_mode()
-    if mode in {"inline", "celery"}:
-        return {
-            "ready": True,
-            "mode": mode,
-            "orchestrationMode": orchestration_mode,
-            "statusReason": "task_dispatch_enabled",
-        }
-    return {
-        "ready": False,
-        "mode": mode,
-        "orchestrationMode": orchestration_mode,
-        "statusReason": "AICHECK_TASK_DISPATCH is disabled; AI recheck will not be queued.",
-    }
+def ai_recheck_dispatch_readiness(
+    dependency_provider: ReviewDependencyProvider | None = None,
+) -> dict[str, Any]:
+    return cached_review_dispatch_readiness(dependency_provider=dependency_provider)
 
 
 def dispatch_ai_recheck(project_id: str, node_id: int, run_id: str) -> dict[str, Any]:

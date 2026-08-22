@@ -10,6 +10,7 @@ from uuid import uuid4
 from temporalio.client import Client
 
 from libs.audit_anchor import write_pending_audit_anchors
+from libs.runtime_database_scope import postgres_connection_identity, postgres_connection_kwargs
 
 OUTBOX_COLLECTION = "workflow_outbox"
 COMMAND_SIGNALS = {
@@ -282,11 +283,19 @@ def write_worker_heartbeat(dsn: str) -> None:
     service_id = f"review-worker:{instance_id}"
     payload = {
         "taskQueue": os.getenv("AICHECK_REVIEW_WORKFLOW_TASK_QUEUE", "review.workflow"),
+        "temporalAddress": os.getenv("TEMPORAL_ADDRESS", "localhost:7233"),
+        "temporalNamespace": os.getenv("TEMPORAL_NAMESPACE", "default"),
         "outboxRelay": True,
         "auditAnchorWriter": True,
         "rawVaultRelay": True,
     }
-    with psycopg.connect(dsn, autocommit=False) as connection:
+    with psycopg.connect(
+        dsn,
+        autocommit=False,
+        **postgres_connection_kwargs(dsn),
+    ) as connection:
+        payload.update(postgres_connection_identity(connection))
+        payload["runMarker"] = os.getenv("AICHECK_E2E_RUN_MARKER", "")
         connection.execute(
             """
             INSERT INTO service_heartbeats (service_id, service_role, instance_id, payload, last_seen_at)

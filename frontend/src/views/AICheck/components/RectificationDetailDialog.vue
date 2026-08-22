@@ -11,7 +11,7 @@ import {
   ElTableColumn,
   ElTag
 } from 'element-plus'
-import type { NodeFileBinding, ProjectTreeNode, TodoItem } from '@/types/aicheck'
+import type { NodeFileBinding, ProjectTreeNode, RectificationItem, TodoItem } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 
 const props = defineProps<{
@@ -20,6 +20,8 @@ const props = defineProps<{
   bindings: NodeFileBinding[]
   todos: TodoItem[]
   rectificationId?: string
+  rectification?: RectificationItem
+  mode?: 'view' | 'submit'
   loading: boolean
 }>()
 
@@ -59,7 +61,12 @@ watch(
 </script>
 
 <template>
-  <ElDialog v-model="visible" title="补正详情与反馈" width="820px" append-to-body>
+  <ElDialog
+    v-model="visible"
+    :title="mode === 'view' ? '查看监检意见' : '补正详情与反馈'"
+    width="820px"
+    append-to-body
+  >
     <template v-if="node">
       <ElDescriptions :column="2" border class="summary">
         <ElDescriptionsItem label="节点"> {{ node.nodeId }} · {{ node.name }} </ElDescriptionsItem>
@@ -74,6 +81,9 @@ watch(
         </ElDescriptionsItem>
         <ElDescriptionsItem v-if="rectificationId" label="补正单">
           {{ rectificationId }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem v-if="rectification?.comment" label="监检意见" :span="2">
+          {{ rectification.comment }}
         </ElDescriptionsItem>
       </ElDescriptions>
 
@@ -96,21 +106,29 @@ watch(
         </ElTableColumn>
       </ElTable>
 
-      <div class="section-title">反馈说明</div>
-      <ElInput
-        v-model="comment"
-        type="textarea"
-        :rows="4"
-        maxlength="400"
-        show-word-limit
-        aria-label="补正反馈说明"
-      />
+      <template v-if="mode !== 'view'">
+        <div class="section-title">反馈说明</div>
+        <ElInput
+          v-model="comment"
+          type="textarea"
+          :rows="4"
+          maxlength="400"
+          show-word-limit
+          aria-label="补正反馈说明"
+        />
+      </template>
     </template>
     <ElEmpty v-else description="请先选择节点" />
 
     <template #footer>
-      <ElButton @click="visible = false">取消</ElButton>
-      <ElButton type="primary" :loading="loading" :disabled="!node" @click="handleSubmit">
+      <ElButton @click="visible = false">{{ mode === 'view' ? '关闭' : '取消' }}</ElButton>
+      <ElButton
+        v-if="mode !== 'view'"
+        type="primary"
+        :loading="loading"
+        :disabled="!node"
+        @click="handleSubmit"
+      >
         提交补正反馈
       </ElButton>
     </template>

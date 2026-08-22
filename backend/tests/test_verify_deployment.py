@@ -6,6 +6,7 @@ from argparse import Namespace
 import httpx
 import pytest
 
+from libs import runtime_readiness
 from scripts.verify_deployment import (
     DeploymentVerifier,
     VerifyConfig,
@@ -22,6 +23,111 @@ probe_state = {
     "reviewRunId": "RRUN-VERIFY",
     "replayReviewRunId": "RRUN-REPLAY-VERIFY",
 }
+
+
+@pytest.mark.parametrize(
+    ("missing_dependency", "expected_reason"),
+    [
+        ("service", "temporal_service_unavailable"),
+        ("schema", "temporal_schema_unavailable"),
+        ("workerHeartbeat", "temporal_worker_unavailable"),
+    ],
+)
+def test_strict_production_runtime_fails_temporal_dependency_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_dependency: str,
+    expected_reason: str,
+) -> None:
+    """A configured Temporal target must not pass deployment preflight on configuration alone."""
+    dependencies = {"service": True, "schema": True, "workerHeartbeat": True}
+    dependencies[missing_dependency] = False
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "temporal")
+    monkeypatch.setenv("AICHECK_STRICT_PRODUCTION", "true")
+    monkeypatch.setattr(
+        runtime_readiness,
+        "material_review_asset_status",
+        lambda: {"ready": True, "version": "test", "itemCount": 1, "sourceSha256": "sha256:test"},
+    )
+    monkeypatch.setattr(
+        runtime_readiness,
+        "audit_service_configuration_status",
+        lambda: {
+            "ocr": {"ready": True},
+            "qwen": {"ready": True},
+            "embedding": {"ready": True},
+            "temporal": {"configured": True, "mode": "temporal"},
+        },
+    )
+
+    status = runtime_readiness.production_runtime_status(
+        review_dependency_provider=lambda: dependencies,
+    )
+
+    assert status["runtimeReady"] is False
+    assert status["workflowReady"] is False
+    assert status["reviewDispatchReadiness"]["statusReason"] == expected_reason
+    assert status["reviewDispatchReadiness"]["dependencies"] == dependencies
+
+
+@pytest.mark.parametrize(
+    ("missing_dependency", "expected_reason"),
+    [
+        ("service", "temporal_service_unavailable"),
+        ("schema", "temporal_schema_unavailable"),
+        ("workerHeartbeat", "temporal_worker_unavailable"),
+    ],
+)
+def test_deployment_verifier_rejects_http_200_unready_temporal_health(
+    missing_dependency: str,
+    expected_reason: str,
+) -> None:
+    """The verifier must fail closed even when an unhealthy API responds with HTTP 200."""
+    dependencies = {"service": True, "schema": True, "workerHeartbeat": True}
+    dependencies[missing_dependency] = False
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/healthz":
+            return envelope(
+                {
+                    "service": "api-service",
+                    "authRequired": True,
+                    "demoUsersEnabled": False,
+                    "postgresEnabled": True,
+                    "postgresTransactions": True,
+                    "objectStorageEnabled": True,
+                    "runtimeReady": False,
+                    "workflowReady": False,
+                    "reviewDispatchReadiness": {
+                        "ready": False,
+                        "mode": "temporal",
+                        "statusReason": expected_reason,
+                        "reasonCodes": [expected_reason],
+                        "dependencies": dependencies,
+                    },
+                }
+            )
+        return api_transport(request)
+
+    config = config_from_args(verify_args(skip_ocr=True, skip_litellm=True, roles=""))
+    verifier = DeploymentVerifier(
+        config,
+        api_client=httpx.Client(base_url=config.api_base, transport=httpx.MockTransport(transport)),
+    )
+
+    verifier.check_api_health()
+    verifier.check_strict_production_flags()
+
+    readiness = next(item for item in verifier.results if item.name == "api.runtime-readiness")
+    assert readiness.status == "fail"
+    assert expected_reason in readiness.detail
+    assert readiness.data == {
+        "runtimeReady": False,
+        "workflowReady": False,
+        "mode": "temporal",
+        "statusReason": expected_reason,
+        "reasonCodes": [expected_reason],
+        "dependencies": dependencies,
+    }
 UPLOADED_STORAGE_KEY = "documents/P-2026-HDCP-001/DV-VERIFY-V1"
 
 
@@ -46,6 +152,15 @@ def api_transport(request: httpx.Request) -> httpx.Response:
                 "postgresEnabled": True,
                 "postgresTransactions": True,
                 "objectStorageEnabled": True,
+                "runtimeReady": True,
+                "workflowReady": True,
+                "reviewDispatchReadiness": {
+                    "ready": True,
+                    "mode": "temporal",
+                    "statusReason": "temporal_dependencies_ready",
+                    "reasonCodes": [],
+                    "dependencies": {"service": True, "schema": True, "workerHeartbeat": True},
+                },
             }
         )
     if path == "/api/auth/me":

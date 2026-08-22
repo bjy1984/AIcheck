@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from typing import Any
 
@@ -188,6 +189,94 @@ def bind_to_node(document_id: str, key: str) -> str:
 
 def node_status() -> str:
     return str(repo.node(PROJECT_ID, NODE_ID)["status"])
+
+
+def test_inline_review_readiness_is_explicitly_local_only(monkeypatch) -> None:
+    """Strict production must not accidentally treat the local inline executor as deployable."""
+    from libs.integrations import task_dispatcher
+
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    monkeypatch.delenv("AICHECK_STRICT_PRODUCTION", raising=False)
+
+    local = task_dispatcher.ai_recheck_dispatch_readiness()
+
+    assert local["ready"] is True
+    assert local["mode"] == "inline"
+    assert local["statusReason"] == "inline_local_development_enabled"
+    assert local["deploymentScope"] == "local_development"
+
+    monkeypatch.setenv("AICHECK_STRICT_PRODUCTION", "true")
+
+    production = task_dispatcher.ai_recheck_dispatch_readiness()
+
+    assert production["ready"] is False
+    assert production["mode"] == "inline"
+    assert production["statusReason"] == "inline_local_development_only"
+    assert production["deploymentScope"] == "local_development"
+
+
+def test_health_payload_uses_shared_dispatch_snapshot_without_second_temporal_probe(monkeypatch) -> None:
+    """Health must expose the exact service/worker result that dispatch consumes."""
+    from apps.api import main as api_main
+
+    shared = {
+        "runtimeReady": False,
+        "workflowReady": False,
+        "workflowSchemaReady": True,
+        "workflowSchema": {"ready": True},
+        "reviewDispatchReadiness": {
+            "ready": False,
+            "mode": "temporal",
+            "orchestrationMode": "temporal",
+            "statusReason": "temporal_worker_unavailable",
+            "reasonCodes": ["temporal_worker_unavailable"],
+            "dependencies": {"service": True, "schema": True, "workerHeartbeat": False},
+            "dependencyDetails": {
+                "workerHeartbeat": {"ready": False, "activeCount": 0, "lastSeenAt": None},
+            },
+        },
+        "temporalReadiness": {
+            "ready": False,
+            "serviceConnected": True,
+            "mode": "temporal",
+            "address": "temporal.test:7233",
+            "namespace": "default",
+            "statusReason": "temporal_worker_unavailable",
+        },
+        "materialMappingReady": True,
+        "materialMappingVersion": "test",
+        "materialMappingCount": 1,
+        "materialMappingHash": "sha256:test",
+        "serviceReadiness": {},
+    }
+
+    def runtime_status(**kwargs):
+        assert kwargs == {"refresh_review_readiness": True}
+        return shared
+
+    async def ready() -> bool:
+        return True
+
+    async def forbidden_temporal_probe():
+        raise AssertionError("health_payload must not perform a second Temporal probe")
+
+    monkeypatch.setattr(api_main, "production_runtime_status", runtime_status)
+    monkeypatch.setattr(api_main, "temporal_health_status", forbidden_temporal_probe)
+    monkeypatch.setattr(api_main.security_sessions, "ready", ready)
+    monkeypatch.setattr(api_main, "review_workflow_metrics", lambda: {})
+    monkeypatch.setattr(api_main, "raw_vault_health_status", lambda: {"ready": True})
+    monkeypatch.setattr(api_main, "mineru_worker_health_status", lambda: {"ready": True})
+
+    payload = asyncio.run(api_main.health_payload())
+
+    assert payload["workflowReady"] is False
+    assert payload["temporal"] == shared["temporalReadiness"]
+    assert payload["workflowMetrics"]["reviewWorkerHeartbeat"] == {
+        "ready": False,
+        "activeCount": 0,
+        "lastSeenAt": None,
+    }
+    assert payload["reviewDispatchReadiness"] == shared["reviewDispatchReadiness"]
 
 
 def test_main_chain_upload_review_return_rectify_pass(monkeypatch) -> None:

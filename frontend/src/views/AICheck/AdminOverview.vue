@@ -20,6 +20,9 @@ import {
   ElDialog,
   ElDivider,
   ElDrawer,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
   ElEmpty,
   ElForm,
   ElFormItem,
@@ -3784,17 +3787,6 @@ onMounted(() => {
                   </ElTableColumn>
                 </ElTable>
                 <ElDrawer
-                  v-model="projectRegistrationVisible"
-                  :title="`${projectRegistrationTarget?.name || ''} · 注册链接与审核`"
-                  size="640px"
-                >
-                  <ProjectRegistrationPanel
-                    v-if="projectRegistrationTarget"
-                    :project-id="projectRegistrationTarget.id"
-                    :project-name="projectRegistrationTarget.name"
-                  />
-                </ElDrawer>
-                <ElDrawer
                   v-model="orgDelegationVisible"
                   :title="`${orgDelegationTarget?.name || ''} · 成员与邀请`"
                   size="520px"
@@ -5256,6 +5248,18 @@ onMounted(() => {
           </ElCard>
         </ElTabPane>
       </ElTabs>
+
+      <ElDrawer
+        v-model="projectRegistrationVisible"
+        :title="`${projectRegistrationTarget?.name || ''} · 注册链接与审核`"
+        size="640px"
+      >
+        <ProjectRegistrationPanel
+          v-if="projectRegistrationTarget"
+          :project-id="projectRegistrationTarget.id"
+          :project-name="projectRegistrationTarget.name"
+        />
+      </ElDrawer>
 
       <ElDialog v-model="projectWizardVisible" title="项目立项向导" width="min(780px, 94vw)">
         <ElSteps :active="projectWizardStep" finish-status="success" align-center>

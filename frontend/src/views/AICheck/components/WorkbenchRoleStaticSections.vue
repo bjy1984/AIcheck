@@ -34,13 +34,23 @@ import type {
 } from '@/types/aicheck'
 import AuditStatusTag, { type AuditStatusTone } from './AuditStatusTag.vue'
 import AuditSummaryGrid, { type AuditSummaryCard } from './AuditSummaryGrid.vue'
+import ContractorFeedbackPanel from './contractor/ContractorFeedbackPanel.vue'
+import ContractorStatusCards from './contractor/ContractorStatusCards.vue'
+import ContractorUploadPanel from './contractor/ContractorUploadPanel.vue'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
 import { documentBusinessStatus, type DocumentBusinessStatus } from '@/utils/documentPipelineStatus'
 import { canRetryDocumentUpload, canSubmitDocumentUpload } from '@/utils/documentUploadActions'
 import {
+  buildContractorWorkbenchModel,
+  resolveContractorSummaryTarget,
+  sortContractorFeedback,
+  type ContractorStatusCardKey
+} from './contractor/contractorWorkbenchViewModel'
+import {
   CONTRACTOR_MATERIAL_REQUIREMENTS,
   inferMaterialCategory
 } from '../contractorMaterialCategories'
+import { CONTRACTOR_MATERIAL_GUIDE_COLUMNS } from '../contractorMaterialGuide'
 
 type ReviewChainStep = {
   title: string
@@ -88,6 +98,9 @@ const props = defineProps<{
   node?: ProjectTreeNode
   packageData?: NodePackagePayload
   readOnly?: boolean
+  actionLoading?: boolean
+  uploadError?: string
+  uploadResetKey?: number
   metrics: WorkbenchSummaryPayload['metrics']
   reviewSteps: ReviewChainStep[]
   aiConfidence: string
@@ -103,6 +116,9 @@ const emit = defineEmits<{
   upload: [materialCategory?: string]
   bind: []
   rectify: [rectificationId?: string]
+  'view-rectification': [rectificationId: string]
+  'upload-correction': [payload: { rectificationId: string; nodeId: number }]
+  'upload-files': [files: File[]]
   'file-view': [documentId: string]
   /** 替换：在原文档上加新版本。只对未提交的资料开放。 */
   'file-replace': [file: { documentId: string; fileName: string; materialCategory: string }]
@@ -123,6 +139,14 @@ const latestArchive = computed(() => props.archiveItems[0])
 const correctionFeedback = computed(() =>
   props.ndtFeedback.find((item) => item.status === '待反馈')
 )
+
+const contractorWorkbenchModel = computed(() =>
+  buildContractorWorkbenchModel({
+    projectFiles: projectFiles.value,
+    rectifications: rectifications.value
+  })
+)
+const activeContractorSummaryKey = ref<ContractorStatusCardKey | null>(null)
 
 /* 待办跳转要**真的**把人带到那儿。
  *
@@ -145,6 +169,7 @@ const focusContractorNode = async (node: { id: number; name: string }) => {
   contractorStatusFilter.value = '全部'
   contractorUsageFilter.value = '全部用途'
   contractorMaterialFilter.value = '全部资料类别'
+  contractorProcessingFilter.value = '全部'
   contractorKeyword.value = ''
   contractorNodeFilter.value = Number(node.id) || null
   contractorPage.value = 1
@@ -166,11 +191,27 @@ const clearContractorNodeFilter = () => {
 defineExpose({ focusContractorNode })
 
 const contractorStatusFilter = ref<ContractorFileStatus>('全部')
+type ContractorProcessingFilter = '全部' | '上传中' | '失败'
+const contractorProcessingFilter = ref<ContractorProcessingFilter>('全部')
 const contractorUsageFilter = ref('全部用途')
 const contractorKeyword = ref('')
 const contractorSort = ref<ContractorSortKey>('updatedDesc')
 const contractorPage = ref(1)
 const contractorPageSize = 5
+
+const handleContractorSummarySelect = async (key: ContractorStatusCardKey) => {
+  const nextKey = activeContractorSummaryKey.value === key ? null : key
+  activeContractorSummaryKey.value = nextKey
+  contractorProcessingFilter.value = '全部'
+  contractorStatusFilter.value = '全部'
+  contractorPage.value = 1
+  if (!nextKey) return
+
+  const target = resolveContractorSummaryTarget(nextKey)
+  if (target.tab) contractorStatusFilter.value = target.tab
+  await nextTick()
+  document.querySelector(target.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const contractorStatusOptions: ContractorFileStatus[] = [
   '全部',
@@ -303,24 +344,6 @@ const rectificationIdForBinding = (bindingId?: string) => {
   return rectifications.value.find((item) => item.bindingIds?.includes(bindingId))?.id || '--'
 }
 
-/* 缺项与未通过（0817 第 2 条：「提示缺的内容以及未通过的部分」）。
- *
- * 这两份数据一直都在——missingRequirements 在节点上，需补正在挂载状态里——
- * 但施工方的页面从来没显示过。他只能传完等着被退回，
- * 而退回往往已经过了几天。**数据有、界面没有，对用户就是没有。**
- */
-const missingRequirementNames = computed(() =>
-  (props.node?.requirementsSummary?.missingRequirements || [])
-    // 契约里这一条叫 name（materialTypeName 是资料审查点那边的字段，
-    // 两者不是一回事）。猜字段名的代价是列表恒空，而且不报错。
-    .map((item) => String(item.name || item.materialTypeCode || ''))
-    .filter(Boolean)
-)
-
-const rejectedFileNames = computed(() =>
-  contractorFileRows.value.filter((row) => row.status === '需补正').map((row) => row.fileName)
-)
-
 const contractorFileRows = computed<ContractorFileRow[]>(() => {
   const rows = projectFiles.value.map((file) => {
     const binding = bindingForProjectFile(file)
@@ -400,23 +423,28 @@ const contractorFileRows = computed<ContractorFileRow[]>(() => {
 
 const contractorFeedbackRows = computed(() => {
   if (rectifications.value.length) {
-    return rectifications.value.map((rectification) => {
-      const linkedBindings = rectification.bindingIds?.length
-        ? bindings.value.filter((binding) => rectification.bindingIds?.includes(binding.id))
-        : bindings.value.filter((binding) => binding.bindingStatus === '需补正')
-      return {
-        id: rectification.id,
-        rectificationId: rectification.id,
-        node: `${rectification.nodeId}. ${props.node?.name || '审核环节'}`,
-        issue: '监检退回补正',
-        requirement: rectification.comment || '请按监检意见补充资料。',
-        result: rectification.status,
-        status: rectification.status === '待反馈' ? '待处理' : rectification.status,
-        linkedFiles: linkedBindings.length,
-        feedbackAt: rectification.createdAt,
-        dueAt: rectification.status === '待反馈' ? '按监检要求' : rectification.feedbackAt || '-'
-      }
-    })
+    return sortContractorFeedback(
+      rectifications.value.map((rectification) => {
+        const linkedBindings = rectification.bindingIds?.length
+          ? bindings.value.filter((binding) => rectification.bindingIds?.includes(binding.id))
+          : bindings.value.filter((binding) => binding.bindingStatus === '需补正')
+        return {
+          id: rectification.id,
+          rectificationId: rectification.id,
+          nodeId: rectification.nodeId,
+          node: `${rectification.nodeId}. ${props.node?.name || '审核环节'}`,
+          issue: '监检退回补正',
+          requirement: rectification.comment || '请按监检意见补充资料。',
+          result: rectification.status,
+          sourceStatus: rectification.status,
+          status: rectification.status === '待反馈' ? '待处理' : rectification.status,
+          linkedFiles: linkedBindings.length,
+          feedbackAt: rectification.createdAt,
+          dueAt: '未设置截止日期',
+          createdAt: rectification.createdAt
+        }
+      })
+    )
   }
   return []
 })
@@ -453,6 +481,11 @@ const filteredContractorFileRows = computed(() => {
     const matchesMaterial =
       contractorMaterialFilter.value === '全部资料类别' ||
       file.materialCategory === contractorMaterialFilter.value
+    const matchesProcessing =
+      contractorProcessingFilter.value === '全部' ||
+      (contractorProcessingFilter.value === '上传中'
+        ? file.processingStatus === '上传中'
+        : ['识别失败', '失败重新上传'].includes(file.processingStatus))
     const haystack = [
       file.fileName,
       file.materialCategory,
@@ -472,6 +505,7 @@ const filteredContractorFileRows = computed(() => {
       matchesStatus &&
       matchesUsage &&
       matchesMaterial &&
+      matchesProcessing &&
       matchesNode &&
       (!keyword || haystack.includes(keyword))
     )
@@ -501,6 +535,28 @@ const resetContractorFilePage = () => {
   contractorPage.value = 1
 }
 
+const handleContractorRecentFilter = async (filter: ContractorProcessingFilter) => {
+  contractorProcessingFilter.value = filter
+  activeContractorSummaryKey.value = null
+  contractorPage.value = 1
+  await nextTick()
+  document
+    .querySelector('#contractor-file-list')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const requestInlineUpload = (files: File[]) => {
+  if (!props.readOnly) emit('upload-files', files)
+}
+
+const requestViewRectification = (rectificationId: string) => {
+  emit('view-rectification', rectificationId)
+}
+
+const requestCorrectionUpload = (payload: { rectificationId: string; nodeId: number }) => {
+  if (!props.readOnly) emit('upload-correction', payload)
+}
+
 const getElementTagType = (value?: string): ElementTagType => {
   if (!value) return 'info'
   if (['通过', '满足', '完成', '覆盖', '归档', '成功'].some((keyword) => value.includes(keyword))) {
@@ -513,29 +569,6 @@ const getElementTagType = (value?: string): ElementTagType => {
     return 'warning'
   }
   return 'primary'
-}
-
-/** 某个资料类别下已经传了几份。
- *
- * 上传成功之后这一行必须变——否则用户只看到一句转瞬即逝的 toast，
- * 回到表格发现毫无变化，就会以为没传上去、再传一遍。
- * 实测线上就有同一份「产品质量证明part1.pdf」重复上传的记录。
- */
-const categoryFileCount = (category: string) =>
-  contractorFileRows.value.filter((file) => file.materialCategory === category).length
-
-/** 点数量 → 把台账筛到这个类别并滚过去，让人当场看到是哪几份。 */
-const focusCategoryFiles = async (category: string) => {
-  contractorNodeFilter.value = null
-  contractorStatusFilter.value = '全部'
-  contractorUsageFilter.value = '全部用途'
-  contractorKeyword.value = ''
-  contractorMaterialFilter.value = category
-  contractorPage.value = 1
-  await nextTick()
-  document
-    .querySelector('#contractor-file-list')
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 const requestUpload = (materialCategory?: string) => {
@@ -677,11 +710,35 @@ const getPillClass = (value?: string): AuditStatusTone => {
 <template>
   <div class="role-static-sections">
     <template v-if="role === 'contractor'">
+      <ContractorStatusCards
+        :cards="contractorWorkbenchModel.summaryCards"
+        :active-key="activeContractorSummaryKey"
+        @select="handleContractorSummarySelect"
+      />
+      <div class="contractor-task-grid">
+        <ContractorUploadPanel
+          :recent-upload="contractorWorkbenchModel.recentUpload"
+          :loading="Boolean(actionLoading)"
+          :read-only="readOnly"
+          :operation-error="uploadError"
+          :reset-key="uploadResetKey"
+          @submit="requestInlineUpload"
+          @recent-filter="handleContractorRecentFilter"
+        />
+        <ContractorFeedbackPanel
+          :items="contractorFeedbackRows"
+          :read-only="readOnly"
+          @view="requestViewRectification"
+          @upload="requestCorrectionUpload"
+          @bind="requestBind"
+          @rectify="requestRectify"
+        />
+      </div>
       <ElCard class="role-section-card contractor-section-card" shadow="never">
         <template #header>
           <div class="card-head">
             <div>
-              <h2>一、项目文件库 / 施工资料台账</h2>
+              <h2>三、上传资料列表</h2>
             </div>
             <div class="file-library-head-actions">
               <AuditStatusTag tone="blue">
@@ -691,91 +748,6 @@ const getPillClass = (value?: string): AuditStatusTone => {
           </div>
         </template>
         <div class="card-body">
-          <div class="material-checklist">
-            <div class="material-checklist-head">
-              <div>
-                <h4>资料分类与上传指引</h4>
-                <p>直接上传即可，系统会自动识别类别；下面的分类只是整理参考。</p>
-              </div>
-            </div>
-            <!-- 缺项与未通过（0817 第 2 条的后半句）。
-                 数据一直在节点上，施工方却从来看不到——他只能传完等着被退回，
-                 而退回的时候往往已经过了几天。 -->
-            <ElAlert
-              v-if="missingRequirementNames.length"
-              class="material-gap-alert"
-              type="warning"
-              :closable="false"
-              show-icon
-            >
-              <template #title> 当前环节还缺 {{ missingRequirementNames.length }} 项资料 </template>
-              <ul class="material-gap-list">
-                <li v-for="name in missingRequirementNames" :key="name">{{ name }}</li>
-              </ul>
-            </ElAlert>
-            <ElAlert
-              v-if="rejectedFileNames.length"
-              class="material-gap-alert"
-              type="error"
-              :closable="false"
-              show-icon
-            >
-              <template #title> 有 {{ rejectedFileNames.length }} 份资料需要补正 </template>
-              <ul class="material-gap-list">
-                <li v-for="name in rejectedFileNames" :key="name">{{ name }}</li>
-              </ul>
-            </ElAlert>
-            <ElTable
-              class="material-gap-table"
-              :data="CONTRACTOR_MATERIAL_REQUIREMENTS"
-              row-key="category"
-              empty-text="暂无资料分类指引"
-            >
-              <ElTableColumn type="index" label="序号" width="64" align="center" />
-              <ElTableColumn prop="category" label="资料类别" width="150" />
-              <!-- 传完看不到自己传了什么，是这张表最大的问题：
-                   用户点「上传资料」→ 提示成功 → 这一行毫无变化，
-                   于是以为没传上去，再传一遍。数量本来就算得出来。 -->
-              <ElTableColumn label="已上传" width="96">
-                <template #default="{ row }">
-                  <ElButton
-                    v-if="categoryFileCount(row.category)"
-                    link
-                    type="primary"
-                    @click="focusCategoryFiles(row.category)"
-                  >
-                    {{ categoryFileCount(row.category) }} 份
-                  </ElButton>
-                  <span v-else class="muted-action">0 份</span>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn label="操作" width="96">
-                <template #default="{ row }">
-                  <ElButton
-                    link
-                    type="primary"
-                    :disabled="readOnly"
-                    @click="requestUpload(row.category)"
-                  >
-                    上传资料
-                  </ElButton>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                prop="requiredItems"
-                label="建议包含资料"
-                min-width="360"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="uploadHint"
-                label="上传提示"
-                min-width="320"
-                show-overflow-tooltip
-              />
-            </ElTable>
-          </div>
-
           <div class="file-library-tools">
             <ElRadioGroup
               v-model="contractorStatusFilter"
@@ -791,6 +763,15 @@ const getPillClass = (value?: string): AuditStatusTone => {
                 {{ status }} {{ contractorStatusCounts[status] }}
               </ElRadioButton>
             </ElRadioGroup>
+            <div v-if="contractorProcessingFilter !== '全部'" class="node-filter-tip">
+              <span>
+                当前只显示“{{ contractorProcessingFilter }}”资料（共
+                {{ filteredContractorFileRows.length }} 份）。
+              </span>
+              <ElButton link type="primary" @click="handleContractorRecentFilter('全部')">
+                查看全部资料
+              </ElButton>
+            </div>
             <!-- 锁定节点时必须明说，并给一键退出。
                  不说的话，用户只会看到「文件忽然少了」——而这正是上一版
                  「0 / 10 个文件 · 暂无文件」让人以为资料丢了的原因。 -->
@@ -1013,79 +994,32 @@ const getPillClass = (value?: string): AuditStatusTone => {
         </div>
       </ElCard>
 
-      <ElCard
-        id="contractor-feedback-list"
-        class="role-section-card contractor-section-card"
-        shadow="never"
-      >
+      <ElCard class="role-section-card material-guide-card" shadow="never">
         <template #header>
           <div class="card-head">
             <div>
-              <h2>二、审核反馈列表</h2>
-              <div class="sub"
-                >按监检退回补正意见逐项反馈，可上传新文件或关联项目文件库中的已有文件。</div
-              >
+              <h2>四、资料分类与上传指引</h2>
+              <div class="sub">直接上传即可，系统会自动识别类别；下面的分类只是整理参考。</div>
             </div>
-            <AuditStatusTag
-              :tone="
-                contractorFeedbackRows.some((item) => item.status !== '已关闭') ? 'orange' : 'green'
-              "
-            >
-              {{ contractorFeedbackRows.filter((item) => item.status !== '已关闭').length }}
-              项待处理
-            </AuditStatusTag>
           </div>
         </template>
-        <div class="card-body">
+        <div class="material-checklist">
           <ElTable
-            class="contractor-feedback-table"
-            :data="contractorFeedbackRows"
-            row-key="id"
-            empty-text="暂无审核反馈"
+            class="material-gap-table"
+            :data="CONTRACTOR_MATERIAL_REQUIREMENTS"
+            row-key="category"
+            empty-text="暂无资料分类指引"
           >
-            <ElTableColumn prop="id" label="反馈编号" width="160" />
-            <ElTableColumn prop="node" label="问题环节" min-width="170" show-overflow-tooltip />
-            <ElTableColumn label="问题说明" min-width="300">
-              <template #default="{ row }">
-                <strong>{{ row.issue }}</strong>
-                <div class="table-note">{{ row.requirement }}</div>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn label="反馈状态" width="104">
-              <template #default="{ row }">
-                <ElTag :type="getElementTagType(row.status)" effect="light">
-                  {{ row.status }}
-                </ElTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn label="关联文件" width="96">
-              <template #default="{ row }">{{ row.linkedFiles }} 个</template>
-            </ElTableColumn>
-            <ElTableColumn prop="feedbackAt" label="反馈时间" width="176" />
-            <ElTableColumn prop="dueAt" label="截止要求" width="150" />
-            <ElTableColumn label="操作" width="220" fixed="right">
-              <template #default="{ row }">
-                <div class="table-actions">
-                  <ElButton link type="primary" :disabled="readOnly" @click="requestUpload()">
-                    上传补正
-                  </ElButton>
-                  <ElButton link type="primary" :disabled="readOnly" @click="requestBind">
-                    关联文件
-                  </ElButton>
-                  <ElButton
-                    link
-                    type="primary"
-                    :disabled="readOnly"
-                    @click="requestRectify(row.rectificationId)"
-                  >
-                    提交反馈
-                  </ElButton>
-                </div>
-              </template>
-            </ElTableColumn>
-            <template #empty>
-              <ElEmpty :image-size="64" description="暂无审核反馈" />
-            </template>
+            <ElTableColumn type="index" label="序号" width="72" align="center" />
+            <ElTableColumn
+              v-for="column in CONTRACTOR_MATERIAL_GUIDE_COLUMNS"
+              :key="column.key"
+              :prop="column.key"
+              :label="column.label"
+              :width="column.width"
+              :min-width="column.minWidth"
+              :show-overflow-tooltip="column.key !== 'category'"
+            />
           </ElTable>
         </div>
       </ElCard>
@@ -1613,6 +1547,13 @@ const getPillClass = (value?: string): AuditStatusTone => {
 
 .contractor-section-card :deep(.el-card__body) {
   padding: 0;
+}
+
+.contractor-task-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .role-section-card .card-head {

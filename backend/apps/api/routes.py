@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -31,9 +32,15 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from apps.api.office_preview_routes import router as office_preview_router
+from apps.api import document_access_policy, upload_session_workflow
 from apps.api.idempotency_scope import replay_authorization_digests
+from apps.api.office_preview_routes import router as office_preview_router
 from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
+from apps.api.upload_session_workflow import (
+    local_review_confidence,
+    staged_local_upload_matches,
+    upload_session_transaction_error_response,
+)
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from libs.ai_run_failure import ai_run_failure_view
@@ -43,6 +50,7 @@ from libs.audit_context import (
     set_request_audit_context,
 )
 from libs.audit_runtime import audit_runtime_public_config
+from libs.auto_review_status import auto_review_status
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     build_project_requirements,
@@ -59,11 +67,7 @@ from libs.business_pack.clause_store import (
     bind_project_node_clause_packages,
     clause_package_snapshot_for_project_node,
 )
-from libs.content_hash import normalized_content_hash
 from libs.contracts import errors
-from libs.auto_review_status import auto_review_status
-from libs.node_review_timeline import node_review_timeline
-from libs.field_confidence import field_confirm_confidence, is_low_confidence
 from libs.contracts.responses import fail, ok, page, server_time
 from libs.db.repository import (
     flush_mutation_records,
@@ -163,6 +167,7 @@ from libs.fde_console_views import (
     fde_trace_selected_clauses,
     fde_vector_correction_summary,
 )
+from libs.field_confidence import field_confirm_confidence, is_low_confidence
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.errors import IntegrationServiceError
@@ -194,9 +199,9 @@ from libs.node_document_identity import (
     document_audit_pipeline_comparison_summary,
     record_etag,
     record_if_match_valid,
-    record_references_report,
     record_revision,
 )
+from libs.node_review_timeline import node_review_timeline
 from libs.ocr.utils import parse_bool
 from libs.ocr_expected_geometry import (
     expected_bbox_extents,
@@ -281,6 +286,7 @@ from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUIL
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.runtime_database_scope import runtime_database_scope
 from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path
 from libs.security.auth import (
@@ -327,6 +333,9 @@ from scripts.ocr_100_label_studio_export import (
 )
 from scripts.ocr_100_label_studio_import import import_label_studio_annotations
 from scripts.ocr_annotation_readiness import build_annotation_readiness_from_tasks
+
+_DOCUMENT_ACCESS_SERVICES = sys.modules[__name__]
+_UPLOAD_SESSION_SERVICES = _DOCUMENT_ACCESS_SERVICES
 
 router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
@@ -2075,7 +2084,7 @@ def request_user_id(request: Request) -> str | None:
     # 认证关闭是本地开发姿态，此时该头是唯一的身份来源，保留。
     if authentication_enforced():
         return None
-    return request.headers.get("X-User-Id")
+    return request.headers.get("X-User-Id") or request.headers.get("X-Dev-User")
 
 
 def request_tenant_id(request: Request) -> str:
@@ -2215,18 +2224,7 @@ def member_node_scope_error(
     user_id = request_user_id(request)
     if not user_id:
         return None
-    member = next(
-        (
-            item
-            for item in repo.state["project_members"]
-            if item.get("projectId") == project_id
-            and tenant_id_for_record(item) == request_tenant_id(request)
-            and item.get("userId") == user_id
-            and (not role or item.get("role") == role)
-            and item.get("status") == "启用"
-        ),
-        None,
-    )
+    member = active_project_member_for_request(request, project_id, role)
     if member is None:
         return fail(errors.FORBIDDEN, request, message="用户未获得该项目授权。")
     requested_node_ids = {int(item) for item in node_ids or []}
@@ -3168,6 +3166,19 @@ def upsert_ndt_node_evidence_links(project_id: str, node_id: int, reports: list[
     return created
 
 
+def active_project_member_for_request(
+    request: Request,
+    project_id: str,
+    role: str | None,
+) -> dict[str, Any] | None:
+    return document_access_policy.active_project_member_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        role,
+    )
+
+
 def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
     project = repo.require_project(project_id)
     if not project or tenant_id_for_record(project) != request_tenant_id(request):
@@ -3179,20 +3190,7 @@ def authorized_node_scope(request: Request, project_id: str) -> set[int] | None:
     user_id = request_user_id(request)
     if not user_id:
         return None
-    # Membership is keyed by userId + role. orgName on the member record is display/metadata
-    # and may differ across projects for the same test account (e.g. HDCP vs GDLNG contractor orgs).
-    member = next(
-        (
-            item
-            for item in repo.state["project_members"]
-            if item.get("projectId") == project_id
-            and tenant_id_for_record(item) == request_tenant_id(request)
-            and item.get("userId") == user_id
-            and item.get("role") == role
-            and item.get("status") == "启用"
-        ),
-        None,
-    )
+    member = active_project_member_for_request(request, project_id, role)
     if member is None:
         return set()
     return {int(item) for item in member.get("nodeScope") or []}
@@ -3214,16 +3212,18 @@ def filter_node_groups_for_scope(groups: list[dict[str, Any]], scope: set[int] |
     return scoped_groups
 
 
-def document_visible_in_scope(document: dict[str, Any], scope: set[int] | None) -> bool:
-    if scope is None:
-        return True
-    binding_node_ids = {
-        int(binding["nodeId"])
-        for binding in repo.state["bindings"]
-        if binding.get("projectId") == document.get("projectId") and binding.get("documentId") == document.get("id")
-    }
-    _add_node_id(binding_node_ids, document.get("nodeId"))
-    return not binding_node_ids or bool(binding_node_ids & scope)
+def document_visible_in_scope(
+    document: dict[str, Any],
+    scope: set[int] | None,
+    *,
+    document_repo: Any = None,
+) -> bool:
+    return document_access_policy.document_visible_in_scope(
+        _DOCUMENT_ACCESS_SERVICES,
+        document,
+        scope,
+        document_repo=document_repo,
+    )
 
 
 def report_visible_in_scope(report: dict[str, Any], scope: set[int] | None) -> bool:
@@ -3324,6 +3324,69 @@ def document_readable_for_role(document: dict[str, Any], role: str | None) -> bo
     )
 
 
+def document_is_submitted(document: dict[str, Any]) -> bool:
+    return document_access_policy.document_is_submitted(
+        _DOCUMENT_ACCESS_SERVICES,
+        document,
+    )
+
+
+def normalized_organization_name(value: Any) -> str:
+    return document_access_policy.normalized_organization_name(value)
+
+
+def document_visible_to_actor(
+    document: dict[str, Any],
+    role: str | None,
+    member: dict[str, Any] | None,
+) -> bool:
+    return document_access_policy.document_visible_to_actor(
+        _DOCUMENT_ACCESS_SERVICES,
+        document,
+        role,
+        member,
+    )
+
+
+def effective_document_actor_for_request(
+    request: Request,
+) -> tuple[str | None, JSONResponse | None]:
+    return document_access_policy.effective_document_actor_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+    )
+
+
+def visible_project_documents_for_request(
+    request: Request,
+    project_id: str,
+    *,
+    document_repo: Any = None,
+) -> list[dict[str, Any]]:
+    return document_access_policy.visible_project_documents_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        document_repo=document_repo,
+    )
+
+
+def actor_node_evidence_readiness(
+    request: Request,
+    project_id: str,
+    node_id: int,
+    *,
+    document_repo: Any = None,
+) -> dict[str, Any]:
+    return document_access_policy.actor_node_evidence_readiness(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        node_id,
+        document_repo=document_repo,
+    )
+
+
 def read_action_role_error(request: Request, action_code: str, subject: str) -> JSONResponse | None:
     """按角色动作表把关「读」（issue #18）。
 
@@ -3374,223 +3437,124 @@ def archive_visible_in_scope(item: dict[str, Any], scope: set[int] | None) -> bo
 
 
 def _add_node_id(node_ids: set[int], value: Any) -> None:
-    if value is None or value == "":
-        return
-    try:
-        node_ids.add(int(value))
-    except (TypeError, ValueError):
-        return
+    document_access_policy.add_node_id(node_ids, value)
 
 
 def _document_project_id(document_id: str | None) -> str | None:
-    if not document_id:
-        return None
-    document = repo.find_one("documents", document_id)
-    return document.get("projectId") if document else None
+    return document_access_policy.document_project_id(
+        _DOCUMENT_ACCESS_SERVICES,
+        document_id,
+    )
 
 
 def _document_id_from_version(version_id: str | None) -> str | None:
-    if not version_id:
-        return None
-    version = repo.find_one("versions", version_id)
-    return version.get("documentId") if version else None
+    return document_access_policy.document_id_from_version(
+        _DOCUMENT_ACCESS_SERVICES,
+        version_id,
+    )
+
+
+def _document_for_record(record: dict[str, Any]) -> dict[str, Any] | None:
+    return document_access_policy.document_for_record(
+        _DOCUMENT_ACCESS_SERVICES,
+        record,
+    )
 
 
 def _knowledge_file(file_id: str | None) -> dict[str, Any] | None:
-    if not file_id:
-        return None
-    return repo.find_one("knowledge_files", file_id)
+    return document_access_policy.knowledge_file(
+        _DOCUMENT_ACCESS_SERVICES,
+        file_id,
+    )
 
 
 def _knowledge_file_node_ids(file: dict[str, Any]) -> set[int]:
-    node_ids: set[int] = set()
-    _add_node_id(node_ids, file.get("nodeId"))
-    project_id = file.get("projectId") or _document_project_id(file.get("documentId"))
-    if project_id and file.get("documentId"):
-        node_ids.update(document_node_ids(project_id, file["documentId"]))
-    return node_ids
+    return document_access_policy.knowledge_file_node_ids(
+        _DOCUMENT_ACCESS_SERVICES,
+        file,
+    )
 
 
-def knowledge_file_visible_in_scope(file: dict[str, Any], scope: set[int] | None) -> bool:
-    if scope is None:
-        return True
-    if not scope:
-        return False
-    node_ids = _knowledge_file_node_ids(file)
-    return not node_ids or bool(node_ids & scope)
+def knowledge_file_visible_in_scope(
+    file: dict[str, Any],
+    scope: set[int] | None,
+) -> bool:
+    return document_access_policy.knowledge_file_visible_in_scope(
+        _DOCUMENT_ACCESS_SERVICES,
+        file,
+        scope,
+    )
 
 
-def _target_record(collection: str, record_id: str | None, id_field: str = "id") -> dict[str, Any] | None:
-    if not record_id:
-        return None
-    return repo.find_one(collection, record_id, id_field=id_field)
+def _target_record(
+    collection: str,
+    record_id: str | None,
+    id_field: str = "id",
+) -> dict[str, Any] | None:
+    return document_access_policy.target_record(
+        _DOCUMENT_ACCESS_SERVICES,
+        collection,
+        record_id,
+        id_field,
+    )
 
 
 def record_project_id(record: dict[str, Any]) -> str | None:
-    if record.get("projectId"):
-        return str(record["projectId"])
-    for key in ("documentId",):
-        project_id = _document_project_id(record.get(key))
-        if project_id:
-            return project_id
-    if record.get("documentVersionId"):
-        project_id = _document_project_id(_document_id_from_version(record.get("documentVersionId")))
-        if project_id:
-            return project_id
-    for key in ("fileId", "targetId"):
-        file_id = record.get(key)
-        file = _knowledge_file(file_id)
-        if file and file.get("projectId"):
-            return str(file["projectId"])
-        project_id = _document_project_id(file_id)
-        if project_id:
-            return project_id
-    target_type = record.get("targetType")
-    target_id = record.get("targetId")
-    if target_type == "rectification":
-        rectification = _target_record("rectifications", target_id)
-        return rectification.get("projectId") if rectification else None
-    if target_type == "submission":
-        submission = _target_record("submissions", target_id, id_field="submissionId")
-        return submission.get("projectId") if submission else None
-    if target_type == "report":
-        report = _target_record("reports", target_id)
-        return report.get("projectId") if report else None
-    return None
+    return document_access_policy.record_project_id(
+        _DOCUMENT_ACCESS_SERVICES,
+        record,
+    )
 
 
 def record_node_ids(project_id: str, record: dict[str, Any]) -> set[int]:
-    node_ids: set[int] = set()
-    _add_node_id(node_ids, record.get("nodeId"))
-    for node_id in record.get("nodeIds") or []:
-        _add_node_id(node_ids, node_id)
-
-    document_id = record.get("documentId") or _document_id_from_version(record.get("documentVersionId"))
-    if document_id:
-        node_ids.update(document_node_ids(project_id, document_id))
-
-    file_id = record.get("fileId")
-    if file_id:
-        file = _knowledge_file(file_id)
-        if file:
-            node_ids.update(_knowledge_file_node_ids(file))
-        else:
-            node_ids.update(document_node_ids(project_id, file_id))
-
-    film_id = record.get("filmId")
-    if not film_id and str(record.get("id", "")).startswith("FILM-"):
-        film_id = record.get("id")
-    node_ids.update(ndt_film_node_ids(project_id, film_id))
-
-    ndt_report_id = record.get("reportId")
-    if not ndt_report_id and str(record.get("id", "")).startswith("NDT-RPT-"):
-        ndt_report_id = record.get("id")
-    node_ids.update(ndt_report_node_ids(project_id, ndt_report_id))
-    for related_film_id in record.get("relatedFilmIds") or []:
-        node_ids.update(ndt_film_node_ids(project_id, related_film_id))
-    for related_report_id in record.get("relatedReportIds") or []:
-        node_ids.update(ndt_report_node_ids(project_id, related_report_id))
-
-    if record.get("reportId"):
-        node_ids.update(report_node_ids(project_id, str(record["reportId"])))
-    if record.get("exportType") == "report":
-        inferred_report_id = record.get("reportId")
-        if not inferred_report_id and str(record.get("id", "")).startswith("EXP-RPT-"):
-            inferred_report_id = str(record["id"]).replace("EXP-", "", 1)
-        if inferred_report_id:
-            node_ids.update(report_node_ids(project_id, str(inferred_report_id)))
-
-    target_type = record.get("targetType")
-    target_id = record.get("targetId")
-    if target_type == "node":
-        _add_node_id(node_ids, target_id)
-    elif target_type == "rectification":
-        rectification = _target_record("rectifications", target_id)
-        if rectification:
-            _add_node_id(node_ids, rectification.get("nodeId"))
-    elif target_type == "submission":
-        submission = _target_record("submissions", target_id, id_field="submissionId")
-        if submission:
-            for node_id in submission.get("nodeIds") or []:
-                _add_node_id(node_ids, node_id)
-    elif target_type == "report":
-        node_ids.update(report_node_ids(project_id, str(target_id)))
-    elif target_type == "file":
-        file = _knowledge_file(str(target_id))
-        if file:
-            node_ids.update(_knowledge_file_node_ids(file))
-        else:
-            node_ids.update(document_node_ids(project_id, str(target_id)))
-    return node_ids
-
-
+    return document_access_policy.record_node_ids(
+        _DOCUMENT_ACCESS_SERVICES,
+        project_id,
+        record,
+    )
 
 
 def ndt_film_node_ids(project_id: str, film_id: str | None) -> set[int]:
-    if not film_id:
-        return set()
-    node_ids: set[int] = set()
-    for record in repo.state["ndt_records"]:
-        if record.get("projectId") == project_id and record.get("filmId") == film_id:
-            _add_node_id(node_ids, record.get("nodeId"))
-    for feedback in repo.state["ndt_feedback"]:
-        if feedback.get("projectId") == project_id and film_id in set(feedback.get("relatedFilmIds") or []):
-            _add_node_id(node_ids, feedback.get("nodeId"))
-    for report in repo.state["ndt_reports"]:
-        if report.get("projectId") == project_id and film_id in set(report.get("relatedFilmIds") or []):
-            node_ids.update(ndt_report_node_ids(project_id, report.get("id")))
-    return node_ids
+    return document_access_policy.ndt_film_node_ids(
+        _DOCUMENT_ACCESS_SERVICES,
+        project_id,
+        film_id,
+    )
 
 
 def ndt_report_node_ids(project_id: str, report_id: str | None) -> set[int]:
-    if not report_id:
-        return set()
-    node_ids: set[int] = set()
-    report = repo.find_one("ndt_reports", report_id)
-    if report and report.get("projectId") == project_id:
-        _add_node_id(node_ids, report.get("nodeId"))
-        if report.get("fileId"):
-            node_ids.update(document_node_ids(project_id, report["fileId"]))
-        for film_id in report.get("relatedFilmIds") or []:
-            for record in repo.state["ndt_records"]:
-                if record.get("projectId") == project_id and record.get("filmId") == film_id:
-                    _add_node_id(node_ids, record.get("nodeId"))
-            for feedback in repo.state["ndt_feedback"]:
-                if feedback.get("projectId") == project_id and film_id in set(feedback.get("relatedFilmIds") or []):
-                    _add_node_id(node_ids, feedback.get("nodeId"))
-    for record in repo.state["ndt_records"]:
-        if record.get("projectId") == project_id and record.get("reportId") == report_id:
-            _add_node_id(node_ids, record.get("nodeId"))
-    for feedback in repo.state["ndt_feedback"]:
-        if feedback.get("projectId") == project_id and report_id in set(feedback.get("relatedReportIds") or []):
-            _add_node_id(node_ids, feedback.get("nodeId"))
-    return node_ids
+    return document_access_policy.ndt_report_node_ids(
+        _DOCUMENT_ACCESS_SERVICES,
+        project_id,
+        report_id,
+    )
 
 
-def record_visible_for_scope(record: dict[str, Any], scope: set[int] | None, *, project_id: str | None = None) -> bool:
-    if scope is None:
-        return True
-    if not scope:
-        return False
-    effective_project_id = project_id or record_project_id(record)
-    if not effective_project_id:
-        return True
-    node_ids = record_node_ids(effective_project_id, record)
-    if not node_ids:
-        return True
-    if record_references_report(record):
-        return node_ids.issubset(scope)
-    return bool(node_ids & scope)
+def record_visible_for_scope(
+    record: dict[str, Any],
+    scope: set[int] | None,
+    *,
+    project_id: str | None = None,
+) -> bool:
+    return document_access_policy.record_visible_for_scope(
+        _DOCUMENT_ACCESS_SERVICES,
+        record,
+        scope,
+        project_id=project_id,
+    )
 
 
-def record_visible_for_request(request: Request, record: dict[str, Any], project_id: str | None = None) -> bool:
-    if tenant_id_for_record(record) != request_tenant_id(request):
-        return False
-    effective_project_id = project_id or record_project_id(record)
-    if not effective_project_id:
-        return True
-    scope = authorized_node_scope(request, effective_project_id)
-    return record_visible_for_scope(record, scope, project_id=effective_project_id)
+def record_visible_for_request(
+    request: Request,
+    record: dict[str, Any],
+    project_id: str | None = None,
+) -> bool:
+    return document_access_policy.record_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        record,
+        project_id,
+    )
 
 
 def linked_review_run(run: dict[str, Any]) -> dict[str, Any] | None:
@@ -3832,14 +3796,18 @@ def list_admin_org_units() -> list[dict[str, Any]]:
 
 
 def find_org_unit(org_id: str | None = None, org_name: str | None = None) -> dict[str, Any] | None:
-    return next(
-        (
+    if org_id:
+        matches = [org for org in admin_org_units() if org.get("id") == org_id]
+    elif org_name:
+        normalized_name = normalized_organization_name(org_name)
+        matches = [
             org
             for org in admin_org_units()
-            if (org_id and org.get("id") == org_id) or (org_name and org.get("name") == org_name)
-        ),
-        None,
-    )
+            if normalized_organization_name(org.get("name")) == normalized_name
+        ]
+    else:
+        return None
+    return matches[0] if len(matches) == 1 else None
 
 
 def user_belongs_to_org(
@@ -4623,8 +4591,9 @@ def build_node_requirements_summary(
     node: dict[str, Any],
     *,
     node_bindings: list[dict[str, Any]] | None = None,
+    evidence_readiness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    evidence_readiness = build_node_evidence_readiness(repo, project_id, int(node["nodeId"]))
+    evidence_readiness = evidence_readiness or build_node_evidence_readiness(repo, project_id, int(node["nodeId"]))
     if evidence_readiness.get("hasReviewPoints"):
         return {
             "requiredCount": evidence_readiness["requiredCount"],
@@ -4729,6 +4698,7 @@ def slim_requirements_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "missingCount": summary.get("missingCount", 0),
         "progressPercent": summary.get("progressPercent", 0),
         "hasRequirementDetails": summary.get("hasRequirementDetails", False),
+        "supportingDocumentCount": summary.get("supportingDocumentCount", 0),
         # 树上只显示名字。带 id 是为了点进去能对上，不是为了展示。
         #
         # 名称的取法要和前端 requirementDisplayName 一致：
@@ -4754,6 +4724,7 @@ def enrich_node_with_requirements_summary(
     node: dict[str, Any],
     *,
     project_bindings: list[dict[str, Any]] | None = None,
+    evidence_readiness: dict[str, Any] | None = None,
     slim: bool = False,
 ) -> dict[str, Any]:
     enriched = repo.clone(node)
@@ -4762,7 +4733,7 @@ def enrich_node_with_requirements_summary(
         for binding in (project_bindings if project_bindings is not None else repo.bindings_for_node(project_id, int(node["nodeId"])))
         if int(binding.get("nodeId") or 0) == int(node["nodeId"])
     ]
-    summary = build_node_requirements_summary(project_id, enriched, node_bindings=node_bindings)
+    summary = build_node_requirements_summary(project_id, enriched, node_bindings=node_bindings, evidence_readiness=evidence_readiness)
     enriched["requirementsSummary"] = slim_requirements_summary(summary) if slim else summary
     enriched["fileCount"] = len(node_bindings)
     if summary["hasRequirementDetails"]:
@@ -4948,6 +4919,7 @@ def runtime_ui_context(request: Request):
             "strictProduction": is_strict,
             "demoDataAllowed": demo_allowed,
             "buildVersion": build_version,
+            "databaseScope": runtime_database_scope(),
             "release": {
                 "releaseId": os.getenv("AICHECK_RELEASE_ID") or build_version,
                 "gitSha": os.getenv("AICHECK_GIT_SHA") or build_version,
@@ -5794,6 +5766,8 @@ def initialize_workflow(
 
 @router.get("/projects/{project_id}/workbench/context")
 def workbench_context(request: Request, project_id: str, role: str = Query(default="inspection"), x_role: str | None = Header(default=None, alias="X-Role")):
+    from apps.api.project_registration_routes import can_manage_project_registration
+
     project = repo.require_project(project_id)
     if not project:
         return fail(errors.NOT_FOUND, request)
@@ -5825,6 +5799,10 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
         {
             "project": role_project,
             "role": resolved_role,
+            "canManageRegistration": can_manage_project_registration(
+                getattr(request.state, "auth_user", None),
+                project_id,
+            ),
             "currentNodeId": current_node_id,
             "topbar": {
                 "todoCount": len(scoped_todos),
@@ -5893,11 +5871,7 @@ def workbench_summary(request: Request, project_id: str, role: str = Query(defau
         for item in repo.state["tree_nodes"]
         if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
     ]
-    visible_documents = [
-        item
-        for item in repo.project_documents(project_id)
-        if document_visible_in_scope(item, scope)
-    ]
+    visible_documents = visible_project_documents_for_request(request, project_id)
     visible_reports = readable_project_reports(request, project_id, scope)
     visible_messages = [
         item
@@ -5934,19 +5908,8 @@ def project_tree(request: Request, project_id: str):
     if not project:
         return fail(errors.NOT_FOUND, request)
     scope = authorized_node_scope(request, project_id)
-    project_bindings = [
-        binding
-        for binding in repo.bindings_for_project(project_id)
-        if record_visible_for_scope(binding, scope, project_id=project_id)
-    ]
     groups = filter_node_groups_for_scope(repo.node_groups(project_id), scope)
-    for group in groups:
-        group["nodes"] = [
-            enrich_node_with_requirements_summary(
-                project_id, node, project_bindings=project_bindings, slim=True
-            )
-            for node in group.get("nodes", [])
-        ]
+    groups = document_access_policy.enrich_project_tree_for_request(_DOCUMENT_ACCESS_SERVICES, request, project_id, groups, enrich_node_with_requirements_summary)
     return ok({"project": versioned_project(project), "groups": groups}, request)
 
 
@@ -6838,8 +6801,20 @@ def node_package(request: Request, project_id: str, node_id: int):
     ]
     project_files = [
         attach_document_ocr_readiness(document_repo, item)
-        for item in document_repo.project_documents(effective_project_id)
-        if document_visible_in_scope(item, scope)
+        for item in visible_project_documents_for_request(
+            request,
+            effective_project_id,
+            document_repo=document_repo,
+        )
+    ]
+    visible_document_ids = {str(item.get("id") or "") for item in project_files}
+    bindings = [
+        item for item in bindings if document_access_policy.binding_relation_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, effective_project_id, item, document_repo=document_repo)
+    ]
+    project_bindings = [
+        item
+        for item in project_bindings
+        if document_access_policy.binding_relation_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, effective_project_id, item, document_repo=document_repo)
     ]
     if effective_role == "inspection":
         submitted_rows = build_inspection_submitted_document_rows(effective_project_id, scope)
@@ -6901,14 +6876,20 @@ def node_package(request: Request, project_id: str, node_id: int):
     # 人工结论。既给 reviewOpinions，也给自动审核状态当输入——
     # 两处各查一遍的话，界面上「有人工结论」和「状态按人工算」会不同步。
     node_review_opinions = [] if review_process_hidden else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
-    node_rectifications = [] if observer_view else [repo.clone(item) for item in repo.state["rectifications"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
-    evidence_readiness = build_node_evidence_readiness(repo, effective_project_id, node_id)
+    node_rectifications = [] if observer_view else [repo.clone(item) for item in repo.state["rectifications"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id) and document_access_policy.rectification_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, effective_project_id, item)]
+    evidence_readiness = actor_node_evidence_readiness(
+        request,
+        effective_project_id,
+        node_id,
+        document_repo=document_repo,
+    )
     return ok(
         {
             "node": enrich_node_with_requirements_summary(
                 effective_project_id,
                 node,
                 project_bindings=project_bindings,
+                evidence_readiness=evidence_readiness,
             ),
             "businessBasis": node_business_basis(project, node_id),
             "requirements": project_requirements_for_node(project_id, node_id),
@@ -6925,10 +6906,10 @@ def node_package(request: Request, project_id: str, node_id: int):
             # 与独立端点同口径，否则堵了端点、节点包照漏（M-9 修复时踩过这个坑）。
             "reviewOpinions": node_review_opinions,
             # 自动审核状态（0817 第 3 条）。口径只有一份：libs/auto_review_status
-            "autoReviewStatus": auto_review_status(node_ai_runs[0] if node_ai_runs else None, node_review_opinions[0] if node_review_opinions else None),
+            "autoReviewStatus": None if review_process_hidden else auto_review_status(node_ai_runs[0] if node_ai_runs else None, node_review_opinions[0] if node_review_opinions else None),
             # AI 回复和人工回复排在同一条线上——分在两个列表里的话，
             # 监检要自己按时间对一遍，而人一旦要自己对时间就一定会对错
-            "reviewTimeline": node_review_timeline(node_ai_runs, node_review_opinions, node_rectifications),
+            "reviewTimeline": node_review_timeline([] if review_process_hidden else node_ai_runs, node_review_opinions, node_rectifications),
             "rectifications": node_rectifications,
             # 只带最近几次运行：工作台展示的是当前状态与最近一次结果，而全量历史会让
             # 本响应膨胀到数百 KB（实测 9 次运行即 665KB），且轮询会反复重取。
@@ -6947,16 +6928,18 @@ def node_package(request: Request, project_id: str, node_id: int):
 
 @router.get("/projects/{project_id}/documents")
 def list_documents(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), keyword: str | None = None, nodeId: int | None = None):
-    scope = authorized_node_scope(request, project_id)
-    read_role, identity_error = effective_role_for_request(request)
+    _, identity_error = effective_role_for_request(request)
     if identity_error:
         return identity_error
     effective_project_id = project_id
     document_repo = repo.project_document_read_view(effective_project_id)
     items = [
         attach_document_ocr_readiness(document_repo, item)
-        for item in document_repo.project_documents(effective_project_id)
-        if document_visible_in_scope(item, scope) and document_readable_for_role(item, read_role)
+        for item in visible_project_documents_for_request(
+            request,
+            effective_project_id,
+            document_repo=document_repo,
+        )
     ]
     if nodeId:
         document_ids = {
@@ -6975,308 +6958,74 @@ def list_documents(request: Request, project_id: str, page_no: int = Query(defau
 
 @router.get("/projects/{project_id}/documents/bindings")
 def list_bindings(request: Request, project_id: str, nodeId: int | None = None):
-    scope = authorized_node_scope(request, project_id)
-    items = repo.bindings_for_project(project_id)
-    if scope is not None:
-        items = [item for item in items if int(item["nodeId"]) in scope]
+    _, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    items = [
+        item
+        for item in repo.bindings_for_project(project_id)
+        if record_visible_for_request(request, item, project_id)
+    ]
     if nodeId:
         items = [item for item in items if int(item["nodeId"]) == int(nodeId)]
     return ok(items, request)
-
-
-def upload_session_state_records(session_id: str) -> dict[str, list[dict[str, Any]]]:
-    session = repo.find_one("upload_sessions", session_id)
-    if not session:
-        return {}
-    document_ids = {str(item.get("documentId")) for item in session.get("files") or [] if item.get("documentId")}
-    version_ids = {
-        str(item.get("documentVersionId"))
-        for item in session.get("files") or []
-        if item.get("documentVersionId")
-    }
-    knowledge_file_ids = {
-        str(item.get("id"))
-        for item in repo.state.get("knowledge_files", [])
-        if str(item.get("documentId") or "") in document_ids
-        or str(item.get("documentVersionId") or "") in version_ids
-    }
-    return {
-        "upload_sessions": [session],
-        "documents": [item for item in repo.state.get("documents", []) if str(item.get("id") or "") in document_ids],
-        # 按**文档**取全部版本，不能只取本次会话里的那几个 version_id。
-        #
-        # 替换时旧版本会被顶成历史（isCurrent=false），而它不在本次会话的
-        # version_ids 里——只写新记录，旧版本那行就留在库里仍然标着「当前」。
-        # 线上实测：替换成功、V2 建出来了，文档却仍指向 V1，两条都写着当前。
-        # **内存里改对了、没写回去，和没改一样**，而且更难查：单测直接操作
-        # 内存，一路全绿。
-        "versions": [
-            item
-            for item in repo.state.get("versions", [])
-            if str(item.get("id") or "") in version_ids
-            or str(item.get("documentId") or "") in document_ids
-        ],
-        "bindings": [
-            item
-            for item in repo.state.get("bindings", [])
-            if str(item.get("documentId") or "") in document_ids
-        ],
-        "knowledge_files": [
-            item for item in repo.state.get("knowledge_files", []) if str(item.get("id") or "") in knowledge_file_ids
-        ],
-        "knowledge_tasks": [
-            item
-            for item in repo.state.get("knowledge_tasks", [])
-            if str(item.get("documentId") or "") in document_ids
-            or str(item.get("documentVersionId") or "") in version_ids
-            or str(item.get("targetId") or "") in knowledge_file_ids
-        ],
-        "ndt_reports": [
-            item for item in repo.state.get("ndt_reports", []) if str(item.get("fileId") or "") in document_ids
-        ],
-    }
 
 
 def validate_upload_session_completion(
     session: dict[str, Any],
     body: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Verify every declared upload against the session and authoritative storage state."""
-
-    session_files = [item for item in session.get("files") or [] if isinstance(item, dict)]
-    completed_files = [item for item in body.get("completedFiles") or [] if isinstance(item, dict)]
-    if not session_files:
-        return None, {"message": "上传会话中没有待确认文件。", "fields": ["completedFiles"]}
-
-    claims: dict[str, dict[str, Any]] = {}
-    duplicate_ids: list[str] = []
-    for item in completed_files:
-        version_id = str(item.get("documentVersionId") or "").strip()
-        if not version_id:
-            continue
-        if version_id in claims:
-            duplicate_ids.append(version_id)
-        claims[version_id] = item
-
-    expected_ids = {
-        str(item.get("documentVersionId") or "").strip()
-        for item in session_files
-        if item.get("documentVersionId")
-    }
-    claimed_ids = set(claims)
-    if duplicate_ids or claimed_ids != expected_ids:
-        return None, {
-            "message": "上传完成清单与上传会话文件不一致。",
-            "missingDocumentVersionIds": sorted(expected_ids - claimed_ids),
-            "unexpectedDocumentVersionIds": sorted(claimed_ids - expected_ids),
-            "duplicateDocumentVersionIds": sorted(set(duplicate_ids)),
-        }
-
-    verified: dict[str, Any] = {}
-    storage_updates: list[dict[str, Any]] = []
-    for file_entry in session_files:
-        version_id = str(file_entry.get("documentVersionId") or "")
-        claim = claims[version_id]
-        try:
-            claimed_size = int(claim.get("fileSize") or 0)
-        except (TypeError, ValueError):
-            claimed_size = 0
-        if claimed_size <= 0:
-            return None, {
-                "message": "上传完成清单缺少有效文件大小。",
-                "documentVersionId": version_id,
-            }
-
-        actual_size = int(file_entry.get("fileSize") or 0)
-        if file_entry.get("status") != "已上传":
-            storage_bucket = str(file_entry.get("storageBucket") or "documents")
-            storage_key = str(file_entry.get("storageKey") or "")
-            metadata = object_storage.object_metadata(storage_bucket, storage_key) if storage_key else None
-            if not metadata or int(metadata.get("size") or 0) <= 0:
-                return None, {
-                    "message": "文件尚未上传完成，不能完成上传会话。",
-                    "documentVersionId": version_id,
-                    "status": file_entry.get("status") or "待上传",
-                }
-            actual_size = int(metadata["size"])
-            storage_updates.append(
-                {
-                    "fileEntry": file_entry,
-                    "versionId": version_id,
-                    "documentId": str(file_entry.get("documentId") or ""),
-                    "storageBucket": storage_bucket,
-                    "storageKey": storage_key,
-                    "metadata": metadata,
-                }
-            )
-
-        if actual_size <= 0 or claimed_size != actual_size:
-            return None, {
-                "message": "上传文件大小与完成清单不一致。",
-                "documentVersionId": version_id,
-                "claimedFileSize": claimed_size,
-                "actualFileSize": actual_size,
-            }
-        # 契约里客户端字段名是 contentHash（见前端 DocumentUploadCompletion）。
-        # 原先只读 claim["hash"]，于是客户端声明的哈希从来没被读到过——
-        # 这条一致性校验形同虚设，version["hash"] 也永远拿不到值。
-        # 兼容 hash 是为了不打破可能存在的其他调用方。
-        claimed_hash = normalized_content_hash(claim.get("contentHash") or claim.get("hash"))
-        version = repo.find_one("versions", version_id) or {}
-        actual_hash = normalized_content_hash(version.get("hash"))
-        if claimed_hash and actual_hash and claimed_hash != actual_hash:
-            return None, {
-                "message": "上传文件哈希与完成清单不一致。",
-                "documentVersionId": version_id,
-            }
-        verified[version_id] = {
-            "documentVersionId": version_id,
-            "fileSize": actual_size,
-            "hash": actual_hash or claimed_hash or None,
-        }
-
-    for update in storage_updates:
-        metadata = update["metadata"]
-        actual_size = int(metadata["size"])
-        version_id = update["versionId"]
-        update["fileEntry"].update(
-            {
-                "status": "已上传",
-                "fileSize": actual_size,
-                "contentType": metadata.get("contentType"),
-                "etag": metadata.get("etag"),
-                "uploadedAt": server_time(),
-            }
-        )
-        version = repo.find_one("versions", update["versionId"])
-        if version:
-            version.update(
-                {
-                    "fileSize": actual_size,
-                    "storageBucket": update["storageBucket"],
-                    "storageKey": update["storageKey"],
-                    "uploadTime": server_time(),
-                }
-            )
-            # 内容哈希必须落到版本记录上。
-            #
-            # document_body_uploaded() 只认 version["hash"]——那是「文件本体真的
-            # 上传成功了」的唯一判据。原先这里漏写：哈希在上面算进了 verified
-            # 返回值，却从没写回 version，于是每一份走完整上传流程的文件都停在
-            # hash=None，挂载与提交被 40900「尚未上传成功」拒绝，而文件其实好好地
-            # 躺在对象存储里（线上实测：MinIO 里 15818 字节可取，挂载照样被拒）。
-            # 哈希以**存储里的实际字节**为准，客户端声明只作为兜底。
-            #
-            # 原先只用客户端在 complete 时声明的 contentHash，而前端从来没填过
-            # 这个字段——于是每一份走完整上传流程的文件都停在 hash=None，
-            # 挂载与提交被 DOCUMENT_BODY_MISSING 拒绝，文件却好端端躺在存储里。
-            # 2026-08-15 实操：MinIO 里 80 字节可 stat，界面仍报「尚未上传成功」。
-            #
-            # 客户端也算不了：站点是 http，非安全上下文，crypto.subtle 不可用。
-            # 何况「文件本体是否真的传上来了」本就不该以被审计方声明的值为准。
-            resolved_hash = str((verified.get(version_id) or {}).get("hash") or "").strip()
-            try:
-                storage_hash = object_storage.content_hash(
-                    update["storageBucket"], update["storageKey"]
-                )
-            except Exception:  # noqa: BLE001 - 算不出就退回声明值，别让整次上传失败
-                storage_hash = None
-            resolved_hash = storage_hash or resolved_hash
-            if resolved_hash:
-                version["hash"] = resolved_hash
-                verified.setdefault(version_id, {})["hash"] = resolved_hash
-        document = repo.find_one("documents", update["documentId"])
-        if document:
-            document["fileStatus"] = "已上传"
-            document["currentOcrStatus"] = "排队中"
-            document["updatedAt"] = server_time()
-    return verified, None
+    return upload_session_workflow.validate_upload_session_completion(
+        _UPLOAD_SESSION_SERVICES,
+        session,
+        body,
+        object_storage=object_storage,
+    )
 
 
-def local_review_confidence(missing_count: int, pending_count: int, manual_item_count: int) -> float:
-    """本地降级审查的置信度：按「已就绪的证据项占比」派生（N-3）。
-
-    缺项和待确认项越多，把握越低。全部就绪也不给满分——本地降级本就没有跑完整
-    的证据锚定，上限留出余量。
-    """
-    unresolved = max(0, int(missing_count)) + max(0, int(pending_count))
-    total = unresolved + max(0, int(manual_item_count))
-    if total <= 0:
-        return 0.7
-    ready_ratio = 1 - unresolved / total
-    return round(0.35 + 0.35 * ready_ratio, 2)
-
-
-def duplicate_documents_in_project(project_id: str, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """按 hash + projectId 找出项目内已存在的同一份文件（M-5）。
-
-    同一份资料（sha256 一致）重复上传原先产生多条独立文档记录，无标记、无提示。
-    只提示不阻断：换版、补拍同一份资料都是合法业务，由上传方决定复用还是保留新版本。
-    """
-    results: list[dict[str, Any]] = []
-    for file in files or []:
-        document_id = str(file.get("documentId") or "")
-        version = repo.current_version(document_id)
-        content_hash = str((version or {}).get("hash") or "").strip()
-        if not content_hash:
-            continue
-        existing = [
-            {"documentId": str(item.get("id") or ""), "fileName": item.get("fileName")}
-            for item in repo.project_documents(project_id)
-            if str(item.get("id") or "") != document_id
-            and str((repo.current_version(str(item.get("id") or "")) or {}).get("hash") or "") == content_hash
-        ]
-        if existing:
-            results.append(
-                {
-                    "documentId": document_id,
-                    "fileName": file.get("fileName"),
-                    "contentHash": content_hash,
-                    "existingDocuments": existing,
-                    "message": f"项目内已存在内容相同的资料（{len(existing)} 份），可考虑复用而非重复上传。",
-                }
-            )
-    return results
+def duplicate_documents_in_project(
+    project_id: str,
+    files: list[dict[str, Any]],
+    *,
+    request: Request | None = None,
+) -> list[dict[str, Any]]:
+    return upload_session_workflow.duplicate_documents_in_project(
+        _UPLOAD_SESSION_SERVICES,
+        project_id,
+        files,
+        request=request,
+        record_visible=record_visible_for_request,
+    )
 
 
-def document_body_uploaded(document: dict[str, Any] | None, version: dict[str, Any] | None = None) -> bool:
-    """文件本体是否真的上传成功。
+def upload_session_state_records(
+    session_id: str,
+) -> dict[str, list[dict[str, Any]]]:
+    return upload_session_workflow.upload_session_state_records(
+        _UPLOAD_SESSION_SERVICES,
+        session_id,
+    )
 
-    业务红线：「目录中列出文件不能等同于文件本体已上传」。创建上传会话时就会生成
-    document/version 记录，若客户端从未真正 PUT 内容（或上传中断），这些记录依然存在，
-    看起来与正常资料无异。
 
-    判据只用版本上的内容哈希：它由 complete 阶段按对象存储里的实际字节算出
-    （validate_upload_session_completion → storage_updates），文件没落盘就不会有值。
-    `fileStatus` 不能用——建档时就被写成「已上传」，未上传的空壳同样带这个值。
-    """
-    if not document:
-        return False
-    checked = version if version is not None else repo.current_version(str(document.get("id") or ""))
-    return bool(checked and checked.get("hash"))
+def document_body_uploaded(
+    document: dict[str, Any] | None,
+    version: dict[str, Any] | None = None,
+) -> bool:
+    return upload_session_workflow.document_body_uploaded(
+        _UPLOAD_SESSION_SERVICES,
+        document,
+        version,
+    )
 
 
 def unuploaded_document_error(
     request: Request,
     documents: list[tuple[dict[str, Any] | None, dict[str, Any] | None]],
 ) -> JSONResponse | None:
-    """任一文件本体缺失即拒绝，并回报具体是哪些文件。"""
-    missing = [
-        {
-            "documentId": str((document or {}).get("id") or ""),
-            "fileName": str((document or {}).get("fileName") or ""),
-        }
-        for document, version in documents
-        if not document_body_uploaded(document, version)
-    ]
-    if not missing:
-        return None
-    names = "、".join(item["fileName"] or item["documentId"] for item in missing[:3])
-    return fail(
-        errors.CONFLICT,
+    return upload_session_workflow.unuploaded_document_error(
         request,
-        message=f"以下资料尚未上传成功，不能挂载或提交：{names}。请重新上传后再试。",
-        data={"reason": "DOCUMENT_BODY_MISSING", "missingDocuments": missing},
+        documents,
+        body_uploaded=document_body_uploaded,
     )
 
 
@@ -7285,34 +7034,13 @@ def validate_replace_targets(
     project_id: str,
     files: list[dict[str, Any]],
 ) -> JSONResponse | None:
-    """替换目标必须存在、同项目，且**尚未提交**。
-
-    已提交/已审批的资料不允许直接替换：那份文件此刻可能正被监检看着、
-    已经被写进审查意见的证据链。在审查员眼皮底下换掉证据，
-    比不让替换危险得多——要改就走补正流程，留下痕迹。
-    """
-    replaceable_status = {"草稿", "已上传"}
-    for file in files:
-        document_id = str((file or {}).get("replaceDocumentId") or "").strip()
-        if not document_id:
-            continue
-        document = repo.find_one("documents", document_id)
-        if not document or str(document.get("projectId") or "") != project_id:
-            return fail(
-                errors.NOT_FOUND,
-                request,
-                message="要替换的资料不存在或不属于当前项目。",
-                data={"replaceDocumentId": document_id},
-            )
-        status = str(document.get("fileStatus") or "")
-        if status not in replaceable_status:
-            return fail(
-                errors.CONFLICT,
-                request,
-                message=f"该资料当前状态为「{status}」，不能直接替换；请通过补正流程处理。",
-                data={"replaceDocumentId": document_id, "fileStatus": status},
-            )
-    return None
+    return upload_session_workflow.validate_replace_targets(
+        _UPLOAD_SESSION_SERVICES,
+        request,
+        project_id,
+        files,
+        document_read_error=document_read_error,
+    )
 
 
 @router.post("/projects/{project_id}/documents/upload-session")
@@ -7324,10 +7052,11 @@ def create_upload_session(
     x_role: str | None = Header(default=None, alias="X-Role"),
 ):
     def produce():
-        guard = mutation_guard(request, project_id, x_role=x_role)
+        files = body.get("files") or []
+        requested_node_ids = document_access_policy.upload_session_requested_node_ids(_DOCUMENT_ACCESS_SERVICES, project_id, files)
+        guard = mutation_guard(request, project_id, x_role=x_role, node_ids=requested_node_ids or None)
         if guard:
             return guard
-        files = body.get("files") or []
         validation_error = validate_upload_files(request, files)
         if validation_error:
             return validation_error
@@ -7347,15 +7076,22 @@ def create_upload_session(
             for key in ("X-Role", "X-User-Id")
             if (value := request.headers.get(key))
         }
-        role_for_upload = str(x_role or request.headers.get("X-Role") or "").lower()
+        role_for_upload, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        role_for_upload = str(role_for_upload or "").lower()
         project = repo.find_one("projects", project_id) or {}
+        upload_member = active_project_member_for_request(request, project_id, role_for_upload)
         source_org_field = {
             "contractor": "contractorOrgName",
             "ndt": "ndtOrgName",
             "inspection": "inspectionOrgName",
             "owner": "ownerOrgName",
         }.get(role_for_upload)
-        source_org_name = project.get(source_org_field) if source_org_field else None
+        source_org_id = (upload_member or {}).get("orgId")
+        source_org_name = (upload_member or {}).get("orgName")
+        if not source_org_name and source_org_field:
+            source_org_name = project.get(source_org_field)
         uploader_name = request_actor_name(request)
         session_id, upload_urls = repo.create_upload_session(
             project_id,
@@ -7363,7 +7099,9 @@ def create_upload_session(
             require_signed_urls=require_signed_urls,
             local_upload_url_prefix=f"/api/projects/{project_id}/documents/upload-session",
             upload_headers=upload_headers,
+            source_org_id=source_org_id,
             source_org_name=source_org_name,
+            creator_user_id=request_user_id(request),
             uploader_name=uploader_name,
         )
         request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
@@ -7378,6 +7116,37 @@ def create_upload_session(
     )
 
 
+def local_upload_artifact_path(storage_key: Any) -> Path | None:
+    return upload_session_workflow.local_upload_artifact_path(
+        storage_key,
+        local_storage_path=local_storage_path,
+        document_upload_root=DOCUMENT_UPLOAD_ROOT,
+    )
+
+
+def reconcile_staged_local_upload(
+    request: Request,
+    *,
+    project_id: str,
+    session_id: str,
+    document_version_id: str,
+    upload_token: str,
+    file_entry: dict[str, Any],
+) -> tuple[dict[str, Any] | None, JSONResponse | None]:
+    return upload_session_workflow.reconcile_staged_local_upload(
+        _UPLOAD_SESSION_SERVICES,
+        request,
+        project_id=project_id,
+        session_id=session_id,
+        document_version_id=document_version_id,
+        upload_token=upload_token,
+        file_entry=file_entry,
+        document_upload_root=DOCUMENT_UPLOAD_ROOT,
+        artifact_path=local_upload_artifact_path,
+        artifact_matches=staged_local_upload_matches,
+    )
+
+
 @router.put("/projects/{project_id}/documents/upload-session/{session_id}/files/{document_version_id}")
 async def upload_session_file(
     request: Request,
@@ -7387,141 +7156,60 @@ async def upload_session_file(
     x_role: str | None = Header(default=None, alias="X-Role"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    session = repo.find_one("upload_sessions", session_id)
-    if not session or session.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request, message="未找到上传会话，请重新选择文件。")
-    upload_token = request.headers.get("X-Upload-Session-Token")
-    if not upload_token or upload_token != session.get("uploadToken"):
-        return fail(errors.FORBIDDEN, request, message="上传会话令牌无效，请重新选择文件。")
-    file_entry = next(
-        (
-            item
-            for item in session.get("files") or []
-            if str(item.get("documentVersionId") or "") == document_version_id
-        ),
-        None,
-    )
-    if not file_entry:
-        return fail(errors.NOT_FOUND, request, message="上传会话中未找到该文件。")
-    guard = mutation_guard(request, project_id, x_role=x_role)
-    if guard:
-        return guard
-    data = await request.body()
-    if not data:
-        return fail(errors.VALIDATION_ERROR, request, message="上传文件不能为空。")
-    if len(data) > MAX_UPLOAD_BYTES:
-        return fail(errors.FILE_TOO_LARGE, request, message=f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上传限制。")
-
-    def produce():
-        file_name = safe_upload_file_name(str(file_entry.get("fileName") or f"{document_version_id}.bin"))
-        content_type = str(request.headers.get("content-type") or "application/octet-stream")
-        target_dir = DOCUMENT_UPLOAD_ROOT / project_id / session_id / document_version_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = target_dir / file_name
-        target_path.write_bytes(data)
-        storage_key = f"local://{target_path.relative_to(WORKSPACE_ROOT)}"
-        version = repo.find_one("versions", document_version_id)
-        if version:
-            version.update(
-                {
-                    "storageBucket": "local",
-                    "storageKey": storage_key,
-                    "fileSize": len(data),
-                    "hash": f"sha256-{hashlib.sha256(data).hexdigest()}",
-                    "uploadTime": server_time(),
-                }
-            )
-        document = repo.find_one("documents", str(file_entry.get("documentId") or ""))
-        if document:
-            document["fileStatus"] = "已上传"
-            document["currentOcrStatus"] = "排队中"
-            document["updatedAt"] = server_time()
-        file_entry.update(
-            {
-                "status": "已上传",
-                "storageBucket": "local",
-                "storageKey": storage_key,
-                "fileSize": len(data),
-                "contentType": content_type,
-                "uploadedAt": server_time(),
-            }
-        )
-        session["updatedAt"] = server_time()
-        request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
-        return ok(
-            {
-                "documentId": file_entry.get("documentId"),
-                "documentVersionId": document_version_id,
-                "storageBucket": "local",
-                "storageKey": storage_key,
-                "fileSize": len(data),
-            },
-            request,
-        )
-
-    return idempotent(
+    return await upload_session_workflow.upload_session_file(
+        _UPLOAD_SESSION_SERVICES,
         request,
+        project_id,
+        session_id,
+        document_version_id,
+        x_role,
         idempotency_key,
-        produce,
-        fingerprint_source={
-            "projectId": project_id,
-            "sessionId": session_id,
-            "documentVersionId": document_version_id,
-            "size": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(),
-        },
+        mutation_guard=mutation_guard,
+        reconcile_upload=reconcile_staged_local_upload,
+        artifact_matches=staged_local_upload_matches,
+        safe_file_name=safe_upload_file_name,
+        idempotent=idempotent,
+        document_upload_root=DOCUMENT_UPLOAD_ROOT,
+        workspace_root=WORKSPACE_ROOT,
+        max_upload_bytes=MAX_UPLOAD_BYTES,
     )
 
 
-def dispatch_completed_upload_files(files: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    dispatches = []
-    for file in files:
-        dispatches.append(
-            task_dispatcher.dispatch_parse_document(
-                file["documentId"],
-                file["documentVersionId"],
-                file["storageKey"],
-                file.get("fileName"),
-            )
-        )
-    return dispatches
+def dispatch_completed_upload_files(
+    files: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return upload_session_workflow.dispatch_completed_upload_files(
+        _UPLOAD_SESSION_SERVICES,
+        files,
+    )
 
 
 def create_ndt_atomic_drafts_for_completed_session(
     project_id: str,
     files: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    documents: list[dict[str, Any]] = []
-    for file in files:
-        if str(file.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY:
-            continue
-        node_ids = sorted(
-            {
-                int(node_id)
-                for node_id in (file.get("nodeIds") or [])
-                if str(node_id).strip().isdigit() and int(node_id) in NDT_ATOMIC_NODE_IDS
-            }
-        )
-        document_id = str(file.get("documentId") or "").strip()
-        binding_ids, _, invalid_document_ids = ensure_submission_document_bindings(
-            project_id,
-            node_ids,
-            [document_id],
-            usage="证明材料",
-        )
-        if invalid_document_ids:
-            continue
-        documents.append(
-            {
-                "documentId": document_id,
-                "documentVersionId": file.get("documentVersionId"),
-                "materialTypeCode": file.get("materialTypeCode"),
-                "materialTypeName": file.get("materialTypeName"),
-                "nodeIds": node_ids,
-                "bindingIds": binding_ids,
-            }
-        )
-    return documents
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    return upload_session_workflow.create_ndt_atomic_drafts_for_completed_session(
+        _UPLOAD_SESSION_SERVICES,
+        project_id,
+        files,
+        material_category=NDT_ATOMIC_MATERIAL_CATEGORY,
+        allowed_node_ids=NDT_ATOMIC_NODE_IDS,
+        ensure_bindings=ensure_submission_document_bindings,
+    )
+
+
+def ndt_atomic_draft_consistency_error(
+    files: list[dict[str, Any]],
+    documents: list[dict[str, Any]],
+    draft_error: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    return upload_session_workflow.ndt_atomic_draft_consistency_error(
+        _UPLOAD_SESSION_SERVICES,
+        files,
+        documents,
+        draft_error,
+        material_category=NDT_ATOMIC_MATERIAL_CATEGORY,
+    )
 
 
 def create_ndt_reports_for_completed_session(
@@ -7529,44 +7217,49 @@ def create_ndt_reports_for_completed_session(
     session: dict[str, Any] | None,
     files: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    context = (session or {}).get("ndtReportContext") or {}
-    if context.get("kind") != "report":
-        return []
-    created = []
-    for file in files:
-        document = repo.find_one("documents", str(file.get("documentId") or ""))
-        if not document:
-            continue
-        existing = next(
-            (
-                report
-                for report in repo.state.get("ndt_reports", [])
-                if report.get("fileId") == document["id"]
-            ),
-            None,
-        )
-        if existing:
-            created.append(repo.clone(existing))
-            continue
-        file_name = document.get("fileName") or file.get("fileName") or "RT检测报告.pdf"
-        report_no = context.get("reportNo") or Path(str(file_name)).stem
-        method = context.get("method") or ("UT" if "UT" in str(file_name).upper() else "RT")
-        report = {
-            "id": f"NDT-RPT-{uuid4().hex[:8].upper()}",
-            "projectId": project_id,
-            "nodeId": int(context.get("nodeId") or document.get("nodeId") or 40),
-            "reportNo": report_no,
-            "method": method,
-            "fileId": document["id"],
-            "relatedFilmIds": context.get("relatedFilmIds") or [],
-            "status": "待提交",
-            "uploadedAt": server_time(),
-            "actions": ["ndt:submit"],
-        }
-        report.update({field: context.get(field) for field in NDT_REPORT_METADATA_FIELDS if context.get(field) is not None})
-        repo.state["ndt_reports"].insert(0, report)
-        created.append(repo.clone(report))
-    return created
+    return upload_session_workflow.create_ndt_reports_for_completed_session(
+        _UPLOAD_SESSION_SERVICES,
+        project_id,
+        session,
+        files,
+        metadata_fields=NDT_REPORT_METADATA_FIELDS,
+    )
+
+
+def complete_upload_session_aggregate_transaction(
+    project_id: str,
+    session_id: str,
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    return upload_session_workflow.complete_upload_session_aggregate_transaction(
+        _UPLOAD_SESSION_SERVICES,
+        project_id,
+        session_id,
+        body,
+        validate_completion=validate_upload_session_completion,
+        create_atomic_drafts=create_ndt_atomic_drafts_for_completed_session,
+        atomic_consistency_error=ndt_atomic_draft_consistency_error,
+        create_ndt_reports=create_ndt_reports_for_completed_session,
+    )
+
+
+def upload_session_completion_error(
+    request: Request,
+    project_id: str,
+    session: dict[str, Any] | None,
+) -> JSONResponse | None:
+    return upload_session_workflow.upload_session_completion_error(
+        _UPLOAD_SESSION_SERVICES,
+        request,
+        project_id,
+        session,
+        tenant_id_for_record=tenant_id_for_record,
+        request_tenant_id=request_tenant_id,
+        effective_document_actor=effective_document_actor_for_request,
+        active_project_member=active_project_member_for_request,
+        request_user_id=request_user_id,
+        document_read_error=document_read_error,
+    )
 
 
 @router.post("/projects/{project_id}/documents/upload-session/{session_id}/complete")
@@ -7583,36 +7276,29 @@ def complete_upload_session(
         if guard:
             return guard
         session = repo.find_one("upload_sessions", session_id)
-        if not session or session.get("projectId") != project_id:
-            return fail(errors.NOT_FOUND, request)
-        _, completion_error = validate_upload_session_completion(session, body)
+        completion_error = upload_session_completion_error(request, project_id, session)
         if completion_error:
-            return fail(
-                errors.VALIDATION_ERROR,
-                request,
-                message=str(completion_error.pop("message")),
-                data=completion_error,
+            return completion_error
+        stored_completion = (session or {}).get("completionResult")
+        if (session or {}).get("status") == "已完成" and isinstance(
+            stored_completion, dict
+        ):
+            outcome = {**repo.clone(stored_completion), "replayed": True}
+        else:
+            outcome = complete_upload_session_aggregate_transaction(
+                project_id, session_id, body
             )
-        files = repo.complete_upload_session(session_id)
-        dispatches = dispatch_completed_upload_files(files)
-        documents = create_ndt_atomic_drafts_for_completed_session(project_id, files)
-        ndt_reports = create_ndt_reports_for_completed_session(project_id, session, files)
-        duplicates = duplicate_documents_in_project(project_id, files)
-        request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
-        result = repo.mutation_result("完成上传会话", "UploadSession", session_id, next_status="排队中")
-        return ok(
-            {
-                **result,
-                "queuedTasks": dispatches,
-                "fileCount": len(files),
-                "documents": documents,
-                "ndtReports": ndt_reports,
-                # M-5：同一文件重复上传原先无标记、无提示，几千页规模下多人协作会
-                # 显著膨胀台账。这里只提示不阻断——换版、补拍同一份资料都是合法业务，
-                # 由上传方决定是复用既有文档还是保留新版本。
-                "duplicates": duplicates,
-            },
+        error_response = upload_session_transaction_error_response(request, outcome)
+        if error_response:
+            return error_response
+        return upload_session_workflow.completed_upload_response(
+            _UPLOAD_SESSION_SERVICES,
             request,
+            project_id=project_id,
+            session_id=session_id,
+            outcome=outcome,
+            dispatch_files=dispatch_completed_upload_files,
+            duplicate_projection=duplicate_documents_in_project,
         )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"sessionId": session_id, "body": body})
@@ -7621,8 +7307,9 @@ def complete_upload_session(
 @router.get("/projects/{project_id}/documents/{document_id}")
 def document_detail(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
+    read_error = document_read_error(request, project_id, document)
+    if read_error:
+        return read_error
     versions = repo.versions_for_document(document_id)
     version_ids = {item["id"] for item in versions}
     # O-2：这个端点同时承载元数据（文件名、资料类型、归属节点、OCR 状态、版本、
@@ -7663,8 +7350,9 @@ def document_detail(request: Request, project_id: str, document_id: str):
 @router.get("/projects/{project_id}/documents/{document_id}/targeting")
 def document_targeting(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
+    read_error = document_read_error(request, project_id, document)
+    if read_error:
+        return read_error
     version_id = document.get("currentVersionId")
     links = [
         repo.clone(item)
@@ -7703,11 +7391,14 @@ def recompute_document_targeting(
         document = repo.find_one("documents", document_id)
         if not document or document.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        version_id = body.get("documentVersionId") or document.get("currentVersionId")
+        if access_error := document_access_policy.binding_inputs_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, [{"documentId": document_id, "documentVersionId": version_id}]):
+            return access_error
         run = run_material_targeting(
             repo,
             project_id,
             document_id,
-            body.get("documentVersionId") or document.get("currentVersionId"),
+            version_id,
             triggered_by="manual_api",
         )
         return ok({"run": run, "auditLogId": repo.add_audit("重算资料打靶", "MaterialTargetingRun", run["id"])}, request)
@@ -7728,7 +7419,7 @@ def recompute_project_targeting(
             return guard
         if not repo.require_project(project_id):
             return fail(errors.NOT_FOUND, request)
-        result = recompute_project_material_targeting(repo, project_id, triggered_by="manual_api")
+        result = document_access_policy.recompute_visible_project_targeting(_DOCUMENT_ACCESS_SERVICES, request, project_id, run_material_targeting)
         audit_id = repo.add_audit("重算项目资料打靶", "MaterialTargetingRun", project_id)
         return ok({**result, "auditLogId": audit_id}, request)
 
@@ -7739,7 +7430,7 @@ def recompute_project_targeting(
 def node_evidence_readiness(request: Request, project_id: str, node_id: int):
     if not repo.node(project_id, node_id):
         return fail(errors.NOT_FOUND, request)
-    return ok(build_node_evidence_readiness(repo, project_id, node_id), request)
+    return ok(actor_node_evidence_readiness(request, project_id, node_id), request)
 
 
 def update_node_evidence_manual_status(
@@ -7833,20 +7524,9 @@ def document_versions(request: Request, project_id: str, document_id: str):
 
 def project_document_original_context(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return None, None, fail(errors.NOT_FOUND, request)
-    # S-2：单靠中间件按路径正则推断 scope 是单层防御——路由改名、id 改走 query，
-    # 正则跟不上就静默漏判，而 handler 又没有兜底。与 list_ai_runs / review-opinions
-    # 对齐，在 handler 里也校验一次。
-    # document_node_ids 与中间件是同一口径，避免两处推断出不同的 scope。
-    scope_error = member_node_scope_error(
-        request,
-        project_id,
-        effective_role_for_request(request)[0],
-        node_ids=document_node_ids(project_id, document_id),
-    )
-    if scope_error:
-        return None, None, scope_error
+    read_error = document_read_error(request, project_id, document)
+    if read_error:
+        return None, None, read_error
     version = repo.current_version(document_id)
     if not version:
         return document, None, fail(errors.NOT_FOUND, request, message="未找到原始文档版本。")
@@ -8036,16 +7716,18 @@ def project_document_original(
 @router.get("/projects/{project_id}/documents/{document_id}/preview-url")
 def document_preview_url(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
+    read_error = document_read_error(request, project_id, document)
+    if read_error:
+        return read_error
     return ok(project_document_original_payload(request, project_id, document)["preview"], request)
 
 
 @router.get("/projects/{project_id}/documents/{document_id}/download-url")
 def document_download_url(request: Request, project_id: str, document_id: str):
     document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
+    read_error = document_read_error(request, project_id, document)
+    if read_error:
+        return read_error
     return ok(project_document_original_payload(request, project_id, document)["download"], request)
 
 
@@ -8131,20 +7813,28 @@ def retry_failed_document_upload(
     )
 
 
-def document_read_scope_error(request: Request, project_id: str, document_id: str) -> JSONResponse | None:
-    """文档级读端点的归属 + 节点范围校验。
-
-    S-2：中间件按 URL 正则推断 scope 是单层防御，handler 必须自己也校验一次。
-    node_ids 走 document_node_ids——与中间件同一口径，避免两处推断出不同的 scope。
-    """
-    document = repo.find_one("documents", document_id)
-    if not document or document.get("projectId") != project_id:
-        return fail(errors.NOT_FOUND, request)
-    return member_node_scope_error(
+def document_read_error(
+    request: Request,
+    project_id: str,
+    document: dict[str, Any] | None,
+) -> JSONResponse | None:
+    return document_access_policy.document_read_error(
+        _DOCUMENT_ACCESS_SERVICES,
         request,
         project_id,
-        effective_role_for_request(request)[0],
-        node_ids=document_node_ids(project_id, document_id),
+        document,
+    )
+
+
+def document_read_scope_error(
+    request: Request,
+    project_id: str,
+    document_id: str,
+) -> JSONResponse | None:
+    return document_read_error(
+        request,
+        project_id,
+        repo.find_one("documents", document_id),
     )
 
 
@@ -8212,6 +7902,8 @@ def append_document_version(
         document = repo.find_one("documents", document_id)
         if not document or document.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, document_ids=[document_id]):
+            return access_error
         version_id = f"DV-{uuid4().hex[:8].upper()}-V{len(repo.versions_for_document(document_id)) + 1}"
         for version in repo.state["versions"]:
             if version["documentId"] == document_id:
@@ -8267,6 +7959,8 @@ def bind_documents(
         binding_inputs = body.get("bindings") or []
         if not binding_inputs:
             return fail(errors.EMPTY_BINDINGS, request)
+        if access_error := document_access_policy.binding_inputs_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, binding_inputs):
+            return access_error
         body_error = unuploaded_document_error(
             request,
             [
@@ -8340,6 +8034,8 @@ def update_binding(
         binding = repo.find_one("bindings", binding_id)
         if not binding or binding.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, binding_ids=[binding_id]):
+            return access_error
         changed = []
         for field in ["requirementId", "requirementName", "usage", "bindingStatus"]:
             if field in body and binding.get(field) != body[field]:
@@ -8365,6 +8061,8 @@ def delete_binding(
         binding = repo.find_one("bindings", binding_id)
         if not binding or binding.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, binding_ids=[binding_id]):
+            return access_error
         before = len(repo.state["bindings"])
         repo.state["bindings"] = [item for item in repo.state["bindings"] if item["id"] != binding_id]
         if len(repo.state["bindings"]) == before:
@@ -8389,6 +8087,8 @@ def delete_project_document(
         doc = repo.find_one("documents", document_id)
         if not doc or doc.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, document_ids=[document_id]):
+            return access_error
         if document_is_locked_from_delete(project_id, document_id):
             return fail(
                 errors.CONFLICT,
@@ -8444,6 +8144,8 @@ def withdraw_document(
         doc = repo.find_one("documents", document_id)
         if not doc or doc.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, document_ids=[document_id]):
+            return access_error
         if document_is_locked_from_delete(project_id, document_id):
             return fail(
                 errors.SUBMISSION_WITHDRAW_NOT_ALLOWED,
@@ -8472,6 +8174,8 @@ def void_document(
         doc = repo.find_one("documents", document_id)
         if not doc or doc.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, document_ids=[document_id]):
+            return access_error
         doc["fileStatus"] = "已作废"
         doc["updatedAt"] = server_time()
         return ok({**repo.mutation_result("作废文件", "Document", document_id, next_status="已作废"), "document": repo.clone(doc)}, request)
@@ -8609,7 +8313,7 @@ def batch_classify_documents(
             return guard
         suggestions = [
             classify_document_to_nodes(project_id, doc)
-            for doc in repo.project_documents(project_id)
+            for doc in visible_project_documents_for_request(request, project_id)
         ]
         audit_id = repo.add_audit("批量资料智能分类", "Document", project_id)
         return ok({"suggestions": suggestions, "auditLogId": audit_id}, request)
@@ -8631,6 +8335,8 @@ def save_submission_draft(
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        if access_error := document_access_policy.submission_body_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, node_ids, body):
+            return access_error
         draft_id = f"DRAFT-{uuid4().hex[:8].upper()}"
         binding_ids, created_binding_ids, invalid_document_ids = submission_binding_ids_from_body(project_id, node_ids, body)
         if invalid_document_ids:
@@ -8688,25 +8394,41 @@ def submission_summary(submission: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def submission_record_document_ids(record: dict[str, Any]) -> set[str]:
+    return document_access_policy.submission_record_document_ids(
+        _DOCUMENT_ACCESS_SERVICES,
+        record,
+    )
+
+
+def submission_record_visible_for_request(
+    request: Request,
+    record: dict[str, Any],
+) -> bool:
+    return document_access_policy.submission_record_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        record,
+    )
+
+
+def submission_snapshot_for_request(
+    request: Request,
+    submission: dict[str, Any],
+) -> Any:
+    return document_access_policy.submission_snapshot_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        submission,
+    )
+
+
 def pending_rectification_for_bindings(
+    request: Request,
     project_id: str,
     binding_ids: list[str],
-) -> dict[str, Any] | None:
-    requested_ids = {str(item) for item in binding_ids if item}
-    if not requested_ids:
-        return None
-    candidates = [
-        item
-        for item in repo.state.get("rectifications", [])
-        if item.get("projectId") == project_id
-        and item.get("status") == "待反馈"
-        and bool(requested_ids & {str(value) for value in item.get("bindingIds") or []})
-    ]
-    return max(
-        candidates,
-        key=lambda item: str(item.get("returnedAt") or item.get("createdAt") or ""),
-        default=None,
-    )
+) -> tuple[dict[str, Any] | None, bool]:
+    return document_access_policy.pending_rectification_for_bindings(_DOCUMENT_ACCESS_SERVICES, request, project_id, binding_ids)
 
 
 def document_upload_pipeline_stage(document: dict[str, Any]) -> dict[str, Any] | None:
@@ -8755,8 +8477,16 @@ def link_resubmission_to_rectification(
 
 @router.get("/projects/{project_id}/submissions")
 def list_submissions(request: Request, project_id: str):
-    drafts = [draft_summary(item) for item in repo.state["submission_drafts"] if item["projectId"] == project_id]
-    submissions = [submission_summary(item) for item in repo.state["submissions"] if item["projectId"] == project_id]
+    drafts = [
+        draft_summary(item)
+        for item in repo.state["submission_drafts"]
+        if item["projectId"] == project_id and submission_record_visible_for_request(request, item)
+    ]
+    submissions = [
+        submission_summary(item)
+        for item in repo.state["submissions"]
+        if item["projectId"] == project_id and submission_record_visible_for_request(request, item)
+    ]
     return ok({"drafts": drafts, "submissions": submissions}, request)
 
 
@@ -8765,6 +8495,8 @@ def get_submission_draft(request: Request, project_id: str, draft_id: str):
     draft = next((item for item in repo.state["submission_drafts"] if item["projectId"] == project_id and item["draftId"] == draft_id), None)
     if not draft:
         return fail(errors.NOT_FOUND, request)
+    if not submission_record_visible_for_request(request, draft):
+        return fail(errors.FORBIDDEN, request, message="当前角色无权查看该提交草稿。", http_status=403)
     bindings = [item for item in repo.bindings_for_project(project_id) if item["id"] in set(draft.get("bindingIds", []))]
     nodes = [repo.node(project_id, node_id) for node_id in draft.get("nodeIds", [])]
     return ok({**draft_summary(draft), "nodes": [repo.clone(item) for item in nodes if item], "bindings": bindings}, request)
@@ -8785,6 +8517,8 @@ def submit_node_package(
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids or None)
         if guard:
             return guard
+        if access_error := document_access_policy.submission_body_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, node_ids, body, project_level=project_level):
+            return access_error
         submission_role = effective_role_for_request(request, x_role)[0]
         submission_id = f"SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{uuid4().hex[:8].upper()}"
@@ -8933,7 +8667,9 @@ def submit_node_package(
         )
         if body_error:
             return body_error
-        rectification = pending_rectification_for_bindings(project_id, binding_ids)
+        rectification, rectification_forbidden = pending_rectification_for_bindings(request, project_id, binding_ids)
+        if rectification_forbidden:
+            return fail(errors.FORBIDDEN, request, message="当前角色无权关联该补正记录。", http_status=403)
         submitted_at = server_time()
         changed = []
         for binding in repo.state["bindings"]:
@@ -8987,13 +8723,24 @@ def get_submission_detail(request: Request, project_id: str, submission_id: str)
     submission = next((item for item in repo.state["submissions"] if item["projectId"] == project_id and item["submissionId"] == submission_id), None)
     if not submission:
         return fail(errors.NOT_FOUND, request)
+    if not submission_record_visible_for_request(request, submission):
+        return fail(errors.FORBIDDEN, request, message="当前角色无权查看该提交记录。", http_status=403)
     bindings = [item for item in repo.bindings_for_project(project_id) if item["id"] in set(submission.get("bindingIds", []))]
+    document_ids = submission_record_document_ids(submission)
+    for document_id in sorted(document_ids):
+        read_error = document_read_error(
+            request,
+            project_id,
+            repo.find_one("documents", document_id),
+        )
+        if read_error:
+            return read_error
     nodes = [repo.node(project_id, node_id) for node_id in submission.get("nodeIds", [])]
     todos = [item for item in repo.state["todos"] if item["id"] in set(submission.get("createdTodoIds", []))]
     documents = [
         repo.clone(item)
         for item in repo.state.get("documents", [])
-        if item.get("projectId") == project_id and item.get("id") in set(submission.get("documentIds") or [])
+        if item.get("projectId") == project_id and item.get("id") in document_ids
     ]
     return ok(
         {
@@ -9004,7 +8751,7 @@ def get_submission_detail(request: Request, project_id: str, submission_id: str)
             "documents": documents,
             "createdTodos": todos,
             "changed": submission.get("changed", []),
-            "snapshot": repo.clone(submission.get("snapshot")),
+            "snapshot": submission_snapshot_for_request(request, submission),
         },
         request,
     )
@@ -9058,6 +8805,8 @@ def submit_rectification(
         binding_ids = [str(item) for item in (body.get("bindingIds") or []) if item]
         if not binding_ids:
             return fail(errors.EMPTY_BINDINGS, request)
+        if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, binding_ids=binding_ids):
+            return access_error
         node_binding_ids = {item["id"] for item in repo.state["bindings"] if item["projectId"] == project_id and int(item["nodeId"]) == node_id}
         invalid_binding_ids = sorted(set(binding_ids) - node_binding_ids)
         if invalid_binding_ids:
@@ -9092,6 +8841,8 @@ def submit_rectification(
             )
             if not rectification:
                 return fail(errors.CONFLICT, request, message="当前节点没有待反馈补正单。")
+        if not document_access_policy.rectification_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, project_id, rectification):
+            return fail(errors.FORBIDDEN, request, message="当前角色无权修改该补正记录。", http_status=403)
         if rectification.get("status") != "待反馈":
             return fail(errors.CONFLICT, request, message="补正单当前状态不允许提交反馈。")
         # M-6：原先要求每个 binding 自身状态必须是「需补正」，而新上传并挂载的资料
@@ -9220,14 +8971,13 @@ def list_rectifications(request: Request, project_id: str, page_no: int = Query(
     process_error = rectification_read_error(request)
     if process_error:
         return process_error
-    scope = authorized_node_scope(request, project_id)
     return ok(
         page(
             [
                 repo.clone(item)
                 for item in repo.state["rectifications"]
                 if item.get("projectId") == project_id
-                and record_visible_for_scope(item, scope, project_id=project_id)
+                and document_access_policy.rectification_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, project_id, item)
             ],
             page_no,
             page_size,
@@ -9241,15 +8991,15 @@ def rectification_detail(request: Request, project_id: str, rectification_id: st
     item = repo.find_one("rectifications", rectification_id)
     if not item or item.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    scope = authorized_node_scope(request, project_id)
-    if not record_visible_for_scope(item, scope, project_id=project_id):
+    if not document_access_policy.rectification_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, project_id, item):
         return fail(errors.FORBIDDEN, request)
     node_id = int(item["nodeId"])
+    binding_ids = {str(value) for value in item.get("bindingIds") or [] if value}
     return ok(
         {
             "rectification": repo.clone(item),
-            "bindings": repo.bindings_for_node(project_id, node_id),
-            "evidenceLinks": confirmed_node_evidence_scope(project_id, node_id)["evidenceLinks"],
+            "bindings": [binding for binding in repo.bindings_for_node(project_id, node_id) if binding.get("id") in binding_ids and document_access_policy.binding_relation_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, project_id, binding)],
+            "evidenceLinks": [evidence for evidence in confirmed_node_evidence_scope(project_id, node_id)["evidenceLinks"] if document_access_policy.document_version_relation_visible_for_request(_DOCUMENT_ACCESS_SERVICES, request, project_id, evidence)],
         },
         request,
     )
@@ -9439,6 +9189,22 @@ def submit_inspection_file_bindings(
         idempotency_key=idempotency_key,
         x_role=x_role,
     )
+
+
+LOCAL_GAP_PRECHECK_FALLBACK_ENV = "AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK"
+
+
+def local_gap_precheck_fallback_policy() -> dict[str, Any]:
+    explicit_opt_in = (
+        os.getenv(LOCAL_GAP_PRECHECK_FALLBACK_ENV, "").strip().lower() == "true"
+    )
+    is_strict_production = strict_production()
+    return {
+        "environmentVariable": LOCAL_GAP_PRECHECK_FALLBACK_ENV,
+        "explicitOptIn": explicit_opt_in,
+        "strictProduction": is_strict_production,
+        "allowed": explicit_opt_in and not is_strict_production,
+    }
 
 
 @router.post("/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck")
@@ -9738,6 +9504,20 @@ def ai_recheck(
                     },
                     http_status=409,
                 )
+            fallback_policy = local_gap_precheck_fallback_policy()
+            if not fallback_policy["allowed"]:
+                return fail(
+                    errors.CONFLICT,
+                    request,
+                    message="缺项预审调度不可用，本地降级未按部署策略启用，节点状态未变更。",
+                    data={
+                        "dispatch": dispatch_readiness,
+                        "evidenceReadiness": evidence_readiness,
+                        "requestedReviewMode": review_mode,
+                        "fallbackPolicy": fallback_policy,
+                    },
+                    http_status=409,
+                )
             complete_local_disabled_ai_run(
                 run,
                 node=node,
@@ -9861,10 +9641,21 @@ def node_live_status(request: Request, project_id: str, node_id: int):
     ]
     latest = node_runs[0] if node_runs else None
     node = repo.node(project_id, node_id) or {}
+    document_repo = repo.project_document_read_view(project_id)
     documents = [
         item
-        for item in repo.project_documents(project_id)
-        if tenant_id_for_record(item) == tenant_id
+        for item in visible_project_documents_for_request(
+            request,
+            project_id,
+            document_repo=document_repo,
+        )
+        if any(
+            binding.get("projectId") == project_id
+            and binding.get("documentId") == item.get("id")
+            and int(binding.get("nodeId") or 0) == int(node_id)
+            for binding in document_repo.state.get("bindings", [])
+        )
+        or int(item.get("nodeId") or 0) == int(node_id)
     ]
     processing = [
         {
@@ -15020,13 +14811,98 @@ def create_export(request: Request, body: dict[str, Any] = Body(default_factory=
     return idempotent(request, idempotency_key, produce, fingerprint_source=body)
 
 
+def ndt_source_org_visible_for_request(
+    request: Request,
+    project_id: str,
+    record: dict[str, Any],
+) -> bool:
+    return document_access_policy.ndt_source_org_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        record,
+    )
+
+
+def ndt_report_document_visible_for_request(
+    request: Request,
+    project_id: str,
+    report: dict[str, Any],
+) -> bool:
+    return document_access_policy.ndt_report_document_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        report,
+    )
+
+
+def ndt_report_ids_for_film(project_id: str, film_id: str) -> set[str]:
+    return document_access_policy.ndt_report_ids_for_film(
+        _DOCUMENT_ACCESS_SERVICES,
+        project_id,
+        film_id,
+    )
+
+
+def ndt_film_visible_for_request(
+    request: Request,
+    project_id: str,
+    film: dict[str, Any],
+) -> bool:
+    return document_access_policy.ndt_film_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        film,
+    )
+
+
+def ndt_report_visible_for_request(
+    request: Request,
+    project_id: str,
+    report: dict[str, Any],
+) -> bool:
+    return document_access_policy.ndt_report_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        report,
+    )
+
+
+def ndt_record_visible_for_request(
+    request: Request,
+    project_id: str,
+    record: dict[str, Any],
+) -> bool:
+    return document_access_policy.ndt_record_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        record,
+    )
+
+
+def ndt_feedback_visible_for_request(
+    request: Request,
+    project_id: str,
+    feedback: dict[str, Any],
+) -> bool:
+    return document_access_policy.ndt_feedback_visible_for_request(
+        _DOCUMENT_ACCESS_SERVICES,
+        request,
+        project_id,
+        feedback,
+    )
+
+
 @router.get("/projects/{project_id}/ndt/summary")
 def ndt_summary(request: Request, project_id: str):
-    scope = authorized_node_scope(request, project_id)
-    films = [item for item in repo.state["ndt_films"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
-    records = [item for item in repo.state["ndt_records"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
-    reports = [item for item in repo.state["ndt_reports"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
-    feedback = [item for item in repo.state["ndt_feedback"] if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)]
+    films = [item for item in repo.state["ndt_films"] if ndt_film_visible_for_request(request, project_id, item)]
+    records = [item for item in repo.state["ndt_records"] if ndt_record_visible_for_request(request, project_id, item)]
+    reports = [item for item in repo.state["ndt_reports"] if ndt_report_visible_for_request(request, project_id, item)]
+    feedback = [item for item in repo.state["ndt_feedback"] if ndt_feedback_visible_for_request(request, project_id, item)]
     return ok({"filmCount": len(films), "recordCount": len(records), "reportCount": len(reports), "feedbackCount": len(feedback)}, request)
 
 
@@ -15084,11 +14960,10 @@ NDT_REPORT_METADATA_FIELDS = [
 
 @router.get("/projects/{project_id}/ndt/films")
 def list_ndt_films(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None, method: str | None = None, keyword: str | None = None):
-    scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
         for item in repo.state["ndt_films"]
-        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+        if ndt_film_visible_for_request(request, project_id, item)
     ]
     if status:
         items = [item for item in items if item["status"] == status]
@@ -15106,6 +14981,10 @@ def create_ndt_film(request: Request, project_id: str, body: dict[str, Any] = Bo
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        actor_role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        actor_member = active_project_member_for_request(request, project_id, actor_role)
         missing = missing_required_fields(body, ["filmNo", "weldNo", "method"])
         if missing:
             return fail(errors.NDT_FILM_REQUIRED, request, data={"fields": missing})
@@ -15117,6 +14996,8 @@ def create_ndt_film(request: Request, project_id: str, body: dict[str, Any] = Bo
             "filmNo": body.get("filmNo"),
             "weldNo": body.get("weldNo"),
             "method": body.get("method"),
+            "sourceOrgId": (actor_member or {}).get("orgId"),
+            "sourceOrgName": (actor_member or {}).get("orgName"),
             "status": "待提交",
             "actions": ["ndt:submit"],
         }
@@ -15132,9 +15013,8 @@ def ndt_film_detail(request: Request, project_id: str, film_id: str):
     film = repo.find_one("ndt_films", film_id)
     if not film or film.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    scope_error = scope_error_for_record(request, film, project_id)
-    if scope_error:
-        return scope_error
+    if not ndt_film_visible_for_request(request, project_id, film):
+        return fail(errors.FORBIDDEN, request, message="当前角色无权查看该无损检测底片。", http_status=403)
     return ok({"film": repo.clone(film)}, request)
 
 
@@ -15144,10 +15024,19 @@ def update_ndt_film(request: Request, project_id: str, film_id: str, body: dict[
         film = repo.find_one("ndt_films", film_id)
         if not film or film.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request)
+        if not ndt_film_visible_for_request(request, project_id, film):
+            return fail(errors.FORBIDDEN, request, message="当前角色无权修改该无损检测底片。", http_status=403)
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=sorted(record_node_ids(project_id, film)))
         if guard:
             return guard
-        film.update({key: value for key, value in body.items() if value is not None})
+        mutable_fields = {"filmNo", "weldNo", "method", *NDT_FILM_METADATA_FIELDS}
+        film.update(
+            {
+                key: value
+                for key, value in body.items()
+                if key in mutable_fields and value is not None
+            }
+        )
         return ok({"film": repo.clone(film), **repo.mutation_result("更新底片", "NdtFilm", film_id)}, request)
 
     return idempotent(
@@ -15166,6 +15055,10 @@ def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = B
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        actor_role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        actor_member = active_project_member_for_request(request, project_id, actor_role)
         if not rows:
             return fail(errors.NDT_FILM_REQUIRED, request, message="导入底片行不能为空。")
         failed = [
@@ -15185,6 +15078,8 @@ def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = B
                 "filmNo": row.get("filmNo"),
                 "weldNo": row.get("weldNo"),
                 "method": row.get("method"),
+                "sourceOrgId": (actor_member or {}).get("orgId"),
+                "sourceOrgName": (actor_member or {}).get("orgName"),
                 "status": "待提交",
                 "actions": ["ndt:submit"],
             }
@@ -15203,11 +15098,10 @@ def import_ndt_films(request: Request, project_id: str, body: dict[str, Any] = B
 
 @router.get("/projects/{project_id}/ndt/records")
 def list_ndt_records(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), filmId: str | None = None, reportId: str | None = None, sampleStatus: str | None = None, keyword: str | None = None):
-    scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
         for item in repo.state["ndt_records"]
-        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+        if ndt_record_visible_for_request(request, project_id, item)
     ]
     if filmId:
         items = [item for item in items if item.get("filmId") == filmId]
@@ -15227,6 +15121,10 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        actor_role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        actor_member = active_project_member_for_request(request, project_id, actor_role)
         rows = body.get("rows") or []
         if not rows:
             return fail(errors.NDT_RECORD_REQUIRED, request, message="导入检测记录行不能为空。")
@@ -15238,6 +15136,27 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
         ]
         if failed:
             return fail(errors.NDT_RECORD_REQUIRED, request, data={"failed": failed})
+        for index, row in enumerate(rows):
+            candidate = {
+                "id": f"NDT-REC-VALIDATE-{index + 1}",
+                "projectId": project_id,
+                "nodeId": node_ids[0] if node_ids else 40,
+                "sourceOrgId": (actor_member or {}).get("orgId"),
+                "sourceOrgName": (actor_member or {}).get("orgName"),
+                **{
+                    field: row.get(field)
+                    for field in NDT_RECORD_METADATA_FIELDS
+                    if row.get(field) is not None
+                },
+            }
+            if not ndt_record_visible_for_request(request, project_id, candidate):
+                return fail(
+                    errors.FORBIDDEN,
+                    request,
+                    message="当前角色无权关联所选无损检测报告或底片。",
+                    data={"row": index + 1},
+                    http_status=403,
+                )
         created = []
         for row in rows:
             record = {
@@ -15247,6 +15166,8 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
                 "recordNo": row.get("recordNo"),
                 "weldNo": row.get("weldNo"),
                 "method": row.get("method"),
+                "sourceOrgId": (actor_member or {}).get("orgId"),
+                "sourceOrgName": (actor_member or {}).get("orgName"),
                 "testDate": row.get("testDate"),
                 "evaluatorName": row.get("evaluatorName"),
                 "result": row.get("result") or "待复核",
@@ -15271,11 +15192,10 @@ def import_ndt_records(request: Request, project_id: str, body: dict[str, Any] =
 
 @router.get("/projects/{project_id}/ndt/reports")
 def list_ndt_reports(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None, method: str | None = None, keyword: str | None = None):
-    scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
         for item in repo.state["ndt_reports"]
-        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+        if ndt_report_visible_for_request(request, project_id, item)
     ]
     if status:
         items = [item for item in items if item["status"] == status]
@@ -15294,13 +15214,23 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=sorted({*node_ids, *atomic_node_ids}))
         if guard:
             return guard
+        if relation_error := document_access_policy.ndt_related_films_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, body.get("relatedFilmIds") or []):
+            return relation_error
         node_id = node_ids[0] if node_ids else 40
         files = body.get("files") or []
         validation_error = validate_upload_files(request, files, ndt=True)
         if validation_error:
             return validation_error
+        replace_error = validate_replace_targets(request, project_id, files)
+        if replace_error:
+            return replace_error
+        upload_role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        upload_member = active_project_member_for_request(request, project_id, upload_role or "ndt")
         project = repo.find_one("projects", project_id) or {}
-        source_org_name = project.get("ndtOrgName") or "无损检测机构"
+        source_org_id = (upload_member or {}).get("orgId")
+        source_org_name = (upload_member or {}).get("orgName") or project.get("ndtOrgName") or "无损检测机构"
         uploader_name = request_actor_name(request)
         # 不回显 Authorization（M-3）：调用方本来就持有自己的 token，把它原样写进
         # 响应体对调用方没有增益，却扩大泄漏面——响应体会进浏览器 devtools、前端日志、
@@ -15329,7 +15259,9 @@ def ndt_report_upload_session(request: Request, project_id: str, body: dict[str,
             require_signed_urls=parse_bool(body.get("requireSignedUrls"), default=True),
             local_upload_url_prefix=f"/api/projects/{project_id}/documents/upload-session",
             upload_headers=upload_headers,
+            source_org_id=source_org_id,
             source_org_name=source_org_name,
+            creator_user_id=request_user_id(request),
             uploader_name=uploader_name,
         )
         session = repo.find_one("upload_sessions", session_id)
@@ -15363,31 +15295,33 @@ def complete_ndt_report_upload_session(request: Request, project_id: str, sessio
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=[node_id])
         if guard:
             return guard
-        if not session or session.get("projectId") != project_id:
-            return fail(errors.NOT_FOUND, request)
-        _, completion_error = validate_upload_session_completion(session, body)
+        completion_error = upload_session_completion_error(request, project_id, session)
         if completion_error:
-            return fail(
-                errors.VALIDATION_ERROR,
-                request,
-                message=str(completion_error.pop("message")),
-                data=completion_error,
+            return completion_error
+        relation_error = document_access_policy.ndt_related_films_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, (session or {}).get("ndtReportContext", {}).get("relatedFilmIds") or [])
+        if relation_error:
+            return relation_error
+        stored_completion = (session or {}).get("completionResult")
+        if (session or {}).get("status") == "已完成" and isinstance(
+            stored_completion, dict
+        ):
+            outcome = {**repo.clone(stored_completion), "replayed": True}
+        else:
+            outcome = complete_upload_session_aggregate_transaction(
+                project_id, session_id, body
             )
-        files = repo.complete_upload_session(session_id)
-        dispatches = dispatch_completed_upload_files(files)
-        documents = create_ndt_atomic_drafts_for_completed_session(project_id, files)
-        reports = create_ndt_reports_for_completed_session(project_id, session, files)
-        request.state.scoped_flush_records = lambda: upload_session_state_records(session_id)
-        result = repo.mutation_result("完成无损检测报告上传会话", "UploadSession", session_id, next_status="排队中")
-        return ok(
-            {
-                **result,
-                "queuedTasks": dispatches,
-                "fileCount": len(files),
-                "documents": documents,
-                "reports": reports,
-            },
+        error_response = upload_session_transaction_error_response(request, outcome)
+        if error_response:
+            return error_response
+        return upload_session_workflow.completed_upload_response(
+            _UPLOAD_SESSION_SERVICES,
             request,
+            project_id=project_id,
+            session_id=session_id,
+            outcome=outcome,
+            dispatch_files=dispatch_completed_upload_files,
+            duplicate_projection=None,
+            reports_field="reports",
         )
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"sessionId": session_id, "body": body})
@@ -15398,14 +15332,12 @@ def ndt_report_detail(request: Request, project_id: str, report_id: str):
     report = repo.find_one("ndt_reports", report_id)
     if not report or report.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    scope_error = scope_error_for_record(request, report, project_id)
-    if scope_error:
-        return scope_error
-    scope = authorized_node_scope(request, project_id)
-    films = [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(report.get("relatedFilmIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)]
-    records = [repo.clone(item) for item in repo.state["ndt_records"] if item.get("reportId") == report_id and record_visible_for_scope(item, scope, project_id=project_id)]
+    if not ndt_report_visible_for_request(request, project_id, report):
+        return fail(errors.FORBIDDEN, request, message="当前角色无权查看该无损检测报告。", http_status=403)
+    films = [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(report.get("relatedFilmIds", [])) and ndt_film_visible_for_request(request, project_id, item)]
+    records = [repo.clone(item) for item in repo.state["ndt_records"] if item.get("reportId") == report_id and ndt_record_visible_for_request(request, project_id, item)]
     document = repo.find_one("documents", report.get("fileId"))
-    feedback = [repo.clone(item) for item in repo.state["ndt_feedback"] if record_visible_for_scope(item, scope, project_id=project_id)]
+    feedback = [repo.clone(item) for item in repo.state["ndt_feedback"] if report_id in set(item.get("relatedReportIds") or []) and ndt_feedback_visible_for_request(request, project_id, item)]
     return ok({"report": repo.clone(report), "films": films, "records": records, "document": repo.clone(document) if document else None, "feedback": feedback}, request)
 
 
@@ -15438,6 +15370,9 @@ def replace_ndt_atomic_material_bindings(
         document = repo.find_one("documents", document_id)
         if not document or document.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request, message="未找到待调整的无损检测文件。")
+        read_error = document_read_error(request, project_id, document)
+        if read_error:
+            return read_error
         if str(document.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY:
             return fail(errors.VALIDATION_ERROR, request, message="该文件不属于无损检测资料。")
         if not node_ids or any(node_id not in NDT_ATOMIC_NODE_IDS for node_id in node_ids):
@@ -15561,6 +15496,9 @@ def submit_ndt_atomic_material(
         document = repo.find_one("documents", document_id)
         if not document or document.get("projectId") != project_id:
             return fail(errors.NOT_FOUND, request, message="未找到待提交的无损检测文件。")
+        read_error = document_read_error(request, project_id, document)
+        if read_error:
+            return read_error
         if (
             str(document.get("materialCategory") or "").strip() != NDT_ATOMIC_MATERIAL_CATEGORY
             or str(document.get("materialTypeCode") or "").strip() in {"", "generic_review_material"}
@@ -15632,7 +15570,9 @@ def submit_ndt_atomic_material(
             else 40
         )
         todo_node_ids = node_ids or [todo_node_id]
-        rectification = pending_rectification_for_bindings(project_id, requested_binding_ids)
+        rectification, rectification_forbidden = pending_rectification_for_bindings(request, project_id, requested_binding_ids)
+        if rectification_forbidden:
+            return fail(errors.FORBIDDEN, request, message="当前角色无权关联该补正记录。", http_status=403)
         submitted_at = server_time()
         submission_id = f"NDT-MAT-SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{submission_id}"
@@ -15738,6 +15678,14 @@ def submit_ndt(
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        submission_role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        submission_scope = authorized_node_scope(request, project_id)
+
+        def local_scope_visible(item: dict[str, Any]) -> bool:
+            return record_visible_for_scope(item, submission_scope, project_id=project_id)
+
         node_id = node_ids[0] if node_ids else 40
         submission_id = f"NDT-SUB-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{submission_id}"
@@ -15752,7 +15700,11 @@ def submit_ndt(
             if report.get("projectId") == project_id
             and report.get("id") in submitted_report_ids
             and report.get("status") in {"草稿", "待提交", "需补正"}
-            and record_visible_for_request(request, report, project_id)
+            and (
+                ndt_report_visible_for_request(request, project_id, report)
+                if submission_role
+                else local_scope_visible(report)
+            )
         ]
         if len(submitable_reports) != len(submitted_report_ids):
             return fail(errors.NDT_REPORT_REQUIRED, request, message="未找到可提交的无损检测报告。")
@@ -15761,7 +15713,11 @@ def submit_ndt(
             for film in repo.state["ndt_films"]
             if film.get("projectId") == project_id
             and film.get("id") in submitted_film_ids
-            and record_visible_for_request(request, film, project_id)
+            and (
+                ndt_film_visible_for_request(request, project_id, film)
+                if submission_role
+                else local_scope_visible(film)
+            )
         ]
         if submitted_film_ids and len(submitable_films) != len(submitted_film_ids):
             return fail(errors.NDT_FILM_REQUIRED, request, message="未找到可提交的无损检测底片。")
@@ -15799,7 +15755,11 @@ def submit_ndt(
             for record in repo.state["ndt_records"]
             if record.get("projectId") == project_id
             and (record.get("reportId") in submitted_report_ids or record.get("filmId") in submitted_film_ids)
-            and record_visible_for_request(request, record, project_id)
+            and (
+                ndt_record_visible_for_request(request, project_id, record)
+                if submission_role
+                else local_scope_visible(record)
+            )
         ]
         submission = {
             "submissionId": submission_id,
@@ -15850,20 +15810,35 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
         guard = mutation_guard(request, project_id, x_role=x_role, node_ids=node_ids)
         if guard:
             return guard
+        actor_role, identity_error = effective_role_for_request(request, x_role)
+        if identity_error:
+            return identity_error
+        actor_member = active_project_member_for_request(request, project_id, actor_role)
         node_id = node_ids[0] if node_ids else 40
         rectification_id = body.get("rectificationId") or f"NDT-REC-{uuid4().hex[:8].upper()}"
         if not body.get("description") or (not body.get("rectificationId") and not body.get("reportIds") and not body.get("filmIds")):
             return fail(errors.NDT_RECTIFICATION_REQUIRED, request)
         feedback = repo.find_one("ndt_feedback", rectification_id)
         if feedback:
-            scope_error = scope_error_for_record(request, feedback, project_id)
-            if scope_error:
-                return scope_error
+            if not ndt_feedback_visible_for_request(request, project_id, feedback):
+                return fail(errors.FORBIDDEN, request, message="当前角色无权修改该无损检测反馈。", http_status=403)
             feedback["status"] = "已反馈"
             feedback["feedbackDescription"] = body.get("description")
             feedback["feedbackAt"] = server_time()
             feedback["actorName"] = request_actor_name(request)
         else:
+            report_ids = list(dict.fromkeys(str(item) for item in body.get("reportIds") or [] if item))
+            film_ids = list(dict.fromkeys(str(item) for item in body.get("filmIds") or [] if item))
+            reports = [repo.find_one("ndt_reports", report_id) for report_id in report_ids]
+            films = [repo.find_one("ndt_films", film_id) for film_id in film_ids]
+            if not all(
+                report and ndt_report_visible_for_request(request, project_id, report)
+                for report in reports
+            ) or not all(
+                film and ndt_film_visible_for_request(request, project_id, film)
+                for film in films
+            ):
+                return fail(errors.FORBIDDEN, request, message="当前角色无权关联所选无损检测资料。", http_status=403)
             feedback = {
                 "id": rectification_id,
                 "projectId": project_id,
@@ -15871,8 +15846,10 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
                 "title": "无损检测补正反馈",
                 "description": body.get("description") or "已补充无损检测资料。",
                 "status": "已反馈",
-                "relatedReportIds": body.get("reportIds") or [],
-                "relatedFilmIds": body.get("filmIds") or [],
+                "relatedReportIds": report_ids,
+                "relatedFilmIds": film_ids,
+                "sourceOrgId": (actor_member or {}).get("orgId"),
+                "sourceOrgName": (actor_member or {}).get("orgName"),
                 "actorName": request_actor_name(request),
                 "createdAt": server_time(),
             }
@@ -15886,11 +15863,10 @@ def ndt_rectification(request: Request, project_id: str, body: dict[str, Any] = 
 
 @router.get("/projects/{project_id}/ndt/inspection-feedback")
 def list_ndt_feedback(request: Request, project_id: str, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize"), status: str | None = None):
-    scope = authorized_node_scope(request, project_id)
     items = [
         repo.clone(item)
         for item in repo.state["ndt_feedback"]
-        if item["projectId"] == project_id and record_visible_for_scope(item, scope, project_id=project_id)
+        if ndt_feedback_visible_for_request(request, project_id, item)
     ]
     if status:
         items = [item for item in items if item["status"] == status]
@@ -15902,10 +15878,8 @@ def ndt_feedback_detail(request: Request, project_id: str, feedback_id: str):
     feedback = repo.find_one("ndt_feedback", feedback_id)
     if not feedback or feedback.get("projectId") != project_id:
         return fail(errors.NOT_FOUND, request)
-    scope_error = scope_error_for_record(request, feedback, project_id)
-    if scope_error:
-        return scope_error
-    scope = authorized_node_scope(request, project_id)
+    if not ndt_feedback_visible_for_request(request, project_id, feedback):
+        return fail(errors.FORBIDDEN, request, message="当前角色无权查看该无损检测反馈。", http_status=403)
     related_report_ids = set(feedback.get("relatedReportIds") or [])
     related_film_ids = set(feedback.get("relatedFilmIds") or [])
     node_id = int(feedback.get("nodeId") or 0)
@@ -15914,12 +15888,17 @@ def ndt_feedback_detail(request: Request, project_id: str, feedback_id: str):
         if node_id
         else []
     )
+    evidence_links = [
+        item
+        for item in evidence_links
+        if record_visible_for_request(request, item, project_id)
+    ]
     return ok(
         {
             "feedback": repo.clone(feedback),
-            "reports": [repo.clone(item) for item in repo.state["ndt_reports"] if item["id"] in set(feedback.get("relatedReportIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)],
-            "films": [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in set(feedback.get("relatedFilmIds", [])) and record_visible_for_scope(item, scope, project_id=project_id)],
-            "records": [repo.clone(item) for item in repo.state["ndt_records"] if record_visible_for_scope(item, scope, project_id=project_id) and (item.get("reportId") in related_report_ids or item.get("filmId") in related_film_ids)],
+            "reports": [repo.clone(item) for item in repo.state["ndt_reports"] if item["id"] in related_report_ids and ndt_report_visible_for_request(request, project_id, item)],
+            "films": [repo.clone(item) for item in repo.state["ndt_films"] if item["id"] in related_film_ids and ndt_film_visible_for_request(request, project_id, item)],
+            "records": [repo.clone(item) for item in repo.state["ndt_records"] if ndt_record_visible_for_request(request, project_id, item) and (item.get("reportId") in related_report_ids or item.get("filmId") in related_film_ids)],
             "evidenceLinks": evidence_links,
             "timeline": [{"title": "监检反馈", "actorName": feedback.get("actorName") or "系统", "status": feedback["status"], "createdAt": feedback["createdAt"], "comment": feedback["description"]}],
         },
@@ -16328,9 +16307,17 @@ def search(
                 node_scope = authorized_node_scope(request, node["projectId"])
                 if (not projectId or node["projectId"] == projectId) and record_visible_for_scope(node, node_scope, project_id=node["projectId"]):
                     append_result("node", node["nodeId"], f"节点 {node['nodeId']} {node['name']}", node["status"], f"/workbench/{role}?projectId={node['projectId']}&nodeId={node['nodeId']}", [node.get("groupName"), node.get("inspectionType")], status_value=node.get("status"), updated_at=node.get("updatedAt"), breadcrumb="项目 / 审核节点")
-            for doc in repo.state["documents"]:
-                node_scope = authorized_node_scope(request, doc["projectId"])
-                if (not projectId or doc["projectId"] == projectId) and document_visible_in_scope(doc, node_scope):
+            search_project_ids = [
+                str(project["id"])
+                for project in repo.state["projects"]
+                if not projectId or str(project.get("id") or "") == str(projectId)
+            ]
+            for doc in [
+                item
+                for scoped_project_id in search_project_ids
+                for item in visible_project_documents_for_request(request, scoped_project_id)
+            ]:
+                if not projectId or doc["projectId"] == projectId:
                     append_result("document", doc["id"], doc["fileName"], doc.get("sourceOrgName"), f"/workbench/{role}?projectId={doc['projectId']}&documentId={doc['id']}", [doc.get("currentOcrStatus")], status_value=doc.get("currentOcrStatus"), updated_at=doc.get("updatedAt"), breadcrumb="项目 / 资料")
             for report in repo.state["reports"]:
                 node_scope = authorized_node_scope(request, report["projectId"])

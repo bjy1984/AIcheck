@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from re import search
 from uuid import uuid4
 
 import pytest
@@ -22,6 +23,72 @@ os.environ.setdefault("AICHECK_OCR_PROVIDER_MODE", "local")
 os.environ.setdefault("AICHECK_OCR_DEFAULT_PROVIDER", "local")
 
 from libs.security.session import security_sessions
+
+
+def _normalized_postgres_host(value: object) -> str:
+    host = str(value or "localhost").strip().lower().strip("[]")
+    if host in {"localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"}:
+        return "loopback"
+    return host.rstrip(".")
+
+
+def _postgres_target(dsn: str) -> tuple[str, str, str]:
+    """Return a password-free identity for comparing application and test DSNs."""
+    from psycopg.conninfo import conninfo_to_dict
+
+    values = conninfo_to_dict(dsn)
+    return (
+        _normalized_postgres_host(values.get("host")),
+        str(values.get("port") or "5432"),
+        str(values.get("dbname") or values.get("database") or "").lower(),
+    )
+
+
+def _isolated_test_schema(dsn: str) -> str | None:
+    from psycopg.conninfo import conninfo_to_dict
+
+    options = str(conninfo_to_dict(dsn).get("options") or "")
+    matched = search(r"(?:^|\s)-c\s*search_path=([^\s]+)", options)
+    if not matched:
+        return None
+    schema = matched.group(1).split(",", 1)[0]
+    return schema if schema.startswith("aicheck_test_") else None
+
+
+def pytest_configure() -> None:
+    """Refuse a test URL that resolves to the live database without test schema isolation.
+
+    The check intentionally reports only a password-free target and never echoes either DSN.
+    A dedicated test database remains valid, and ``isolated_postgres_url`` still creates and
+    drops a unique schema for every fixture invocation.
+    """
+    test_dsn = str(os.getenv("AICHECK_TEST_POSTGRES_URL") or "").strip()
+    if not test_dsn:
+        return
+    try:
+        test_target = _postgres_target(test_dsn)
+    except Exception as exc:
+        raise pytest.UsageError(
+            "AICHECK_TEST_POSTGRES_URL is not a valid PostgreSQL connection string."
+        ) from exc
+
+    isolated_schema = _isolated_test_schema(test_dsn)
+    for variable in ("AICHECK_DATABASE_URL", "DATABASE_URL"):
+        live_dsn = str(os.getenv(variable) or "").strip()
+        if not live_dsn:
+            continue
+        try:
+            same_target = _postgres_target(live_dsn) == test_target
+        except Exception:
+            continue
+        if same_target and not isolated_schema:
+            host, port, database = test_target
+            raise pytest.UsageError(
+                "Unsafe PostgreSQL integration test configuration: "
+                f"AICHECK_TEST_POSTGRES_URL resolves to the live application target "
+                f"{host}:{port}/{database} without an aicheck_test_* search_path. "
+                "Use a dedicated test database or options='-c search_path=aicheck_test_<run>,public'."
+            )
 
 
 @pytest.fixture

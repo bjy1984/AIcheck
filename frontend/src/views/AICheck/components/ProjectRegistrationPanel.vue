@@ -250,8 +250,8 @@ const handleReview = async (item: RegistrationRequestItem, approved: boolean) =>
 
 .link-qr img {
   display: block;
-  margin: 0 auto 4px;
   padding: 6px;
+  margin: 0 auto 4px;
   background: #fff; /* 二维码必须白底：深色主题下透明底会扫不出来 */
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
