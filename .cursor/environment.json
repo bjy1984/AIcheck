@@ -11,5 +11,8 @@
       "command": "cd frontend && pnpm run dev:live:frontend-only"
     }
   ],
-  "ports": [4000, 8000]
+  "ports": [
+    { "name": "frontend", "port": 4000 },
+    { "name": "backend", "port": 8000 }
+  ]
 }
