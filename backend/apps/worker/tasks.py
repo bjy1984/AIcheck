@@ -61,12 +61,15 @@ from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
+    EQUATION_BLOCK_TYPES,
     OFFLINE_EMBEDDING_MODEL,
     STANDARD_INDEX_VERSION,
     active_embedding_target,
+    embedding_text_for_chunk,
     local_path_from_storage_key,
     noise_like_text,
     offline_hash_embeddings,
+    structure_fields_for_unit,
     units_from_local_file,
 )
 from libs.mineru_ocr import (
@@ -551,13 +554,19 @@ def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, A
                 "ocrEngine": fragment.get("ocrEngine") or fragment.get("sourceEngine") or engine_name or "ocr_service",
                 "ocrConfidence": confidence_value,
                 "sourceFragmentId": fragment.get("id") or fragment.get("fragmentId") or f"p{page_no}-f{fragment_index}",
+                **structure_fields_for_unit(fragment),
             }
+            block_type = str(fragment.get("blockType") or "").strip().lower()
+            if block_type in EQUATION_BLOCK_TYPES:
+                # 公式按字符数硬切会把 LaTeX 断成两半，整条留着。
+                fragments.append({"pageNo": page_no, "text": text, **metadata})
+                continue
             fragments.extend(split_text_fragments(text, page_no=page_no, metadata=metadata))
     return fragments
 
 
 def embedding_batches_for_chunks(chunks: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str, str, int, str | None]:
-    texts = [str(chunk.get("text") or "") for chunk in chunks]
+    texts = [embedding_text_for_chunk(chunk) for chunk in chunks]
     force_offline = env_bool("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", False)
     client = EmbeddingClient()
     if client.enabled and not force_offline:

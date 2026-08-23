@@ -1,0 +1,17 @@
+{
+  "knowledgeFileId": "KF-KB-FC8054EEB2",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-FC8054EEB2/GB_T 13927-2022+工业阀门·压力试验.pdf",
+  "artifact_files": [
+    "a41ab6e9-7705-4349-b59e-420fdbb2add9_content_list.json",
+    "a41ab6e9-7705-4349-b59e-420fdbb2add9_content_list_v2.json",
+    "a41ab6e9-7705-4349-b59e-420fdbb2add9_model.json",
+    "a41ab6e9-7705-4349-b59e-420fdbb2add9_origin.pdf",
+    "full.md",
+    "layout.json"
+  ],
+  "content_list_name": "a41ab6e9-7705-4349-b59e-420fdbb2add9_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:50:10.610214+00:00"
+}

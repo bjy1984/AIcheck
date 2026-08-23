@@ -1,0 +1,30 @@
+{
+  "knowledgeFileId": "KF-KB-D7D9BDDC01",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-D7D9BDDC01/NB_T 47013.9-2012 承压设备无损检测 第9部分 声发射检测.pdf",
+  "artifact_files": [
+    "a80c9508-493b-4960-a542-a0790604405e_content_list.json",
+    "a80c9508-493b-4960-a542-a0790604405e_content_list_v2.json",
+    "a80c9508-493b-4960-a542-a0790604405e_model.json",
+    "a80c9508-493b-4960-a542-a0790604405e_origin.pdf",
+    "full.md",
+    "images/0a2f03339d06e652aec05d847fd15ce40013c643c4a287bbb331c8e698f4d847.jpg",
+    "images/137b89d6e42a2c94b3b841ce40b83465931731af5277d1e9a87f322e78cc75b7.jpg",
+    "images/1e6caa6a571b06f9dbca47ce116086f94e86e83cdba9dd10e77da3e0bd6c62ac.jpg",
+    "images/20e4f81972102b264c2b365c84c325bc63e2ee5f1633262df92e00234f370c49.jpg",
+    "images/5f85ec84c2caf30c9bcb74ccd32fe92bf061ef4824ff5dc9188b17433a16f0e8.jpg",
+    "images/63359cf37a3bf084307a1e0f542a8ca1623ee2341de96c3f9b6523b94e3e795a.jpg",
+    "images/82e6c2c0c311d12488cae5f283a526f3205e16a25d04370ca9f227a26f3b8c61.jpg",
+    "images/ad5c41b9ea76e80175879f6eb15190377e7efa0a6b1a12c489961f2fb64b5ba4.jpg",
+    "images/c3524d93316d7943558f4cc2d92351a524032c6f6a93ccfaeb172c95c010ccf8.jpg",
+    "images/e0aa9e7f5ffd0e203f0c0affba5f059b5511bf78619d9ee28f6ec8dd837a1859.jpg",
+    "images/ec5a5c9168ad29b4d0ab64bc67f56d0e47daa82c8728b34e233b44241fe3fe5b.jpg",
+    "images/f7d83b8291d36e9d9ef285a18cb5e30a1ae9a11d59cb1a273ba79348d7d89dc7.jpg",
+    "images/fdcd6f2d363cdaa744686a25660c3937a7f86748a2e15d358d9c422684bc2777.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "a80c9508-493b-4960-a542-a0790604405e_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:48:25.054235+00:00"
+}

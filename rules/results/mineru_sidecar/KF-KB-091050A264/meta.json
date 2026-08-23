@@ -1,0 +1,31 @@
+{
+  "knowledgeFileId": "KF-KB-091050A264",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-091050A264/GBT+33378-2025阴极保护技术条件.pdf",
+  "artifact_files": [
+    "38bfd58c-3346-4e43-8fbd-362842446d5b_content_list.json",
+    "38bfd58c-3346-4e43-8fbd-362842446d5b_content_list_v2.json",
+    "38bfd58c-3346-4e43-8fbd-362842446d5b_model.json",
+    "38bfd58c-3346-4e43-8fbd-362842446d5b_origin.pdf",
+    "full.md",
+    "images/16d354e07a90f070986a7acf8cc3010aef39d4f3b69d0cd2917d715a317578f7.jpg",
+    "images/2380c5a36749e593b17d3a4b1fea1e51c4b88e00c820c102635ac3410da3efd2.jpg",
+    "images/33e4946866b250e508bee5e64e5e25f829f786568bd8df4363c0a4a9e9b6b4c7.jpg",
+    "images/34d839d36e4d8e9a033cee5042b4d11533c0ea5b5b91d8ee8dd5e77e6823c4e9.jpg",
+    "images/44c441ba2baf4fc0b707aa1b7327bfc78d4e0a95b2d34974666d4ecdf5c1cebc.jpg",
+    "images/50f0b00916842bcf3f0aa85f04493c94be2987b0ea83de0e8f671628f456101f.jpg",
+    "images/559ed86e66094628869af0beb58576901e55249fa6b3a5d8a878dff92d7f01d3.jpg",
+    "images/56a58455e701fa27b370670dfd7872f0c2359102865e08912e2859e7f47c743b.jpg",
+    "images/578c24b2fbb9d3e0dc94c69c2775a5bdb37ad118e5f2428f6495fea595ac2ddf.jpg",
+    "images/9508f26a3d8a8a35d546fa22840a591711ce4769df8aa004e1f844706383c032.jpg",
+    "images/ac39fc878fbf0deb32b35121e679d1ca3b5bcece421c01bd850230053fa38495.jpg",
+    "images/ba3b79056fbc1f641c672f8c4502e5666c48cf4d08ebe1757d73a88283252c4d.jpg",
+    "images/e199ead884e9be0dc4c6f04908ea050d62fd689b88549f348e4d1132f4dbff9b.jpg",
+    "images/e965f4a5a7390ead935a310c42b2bdc80aef9c31bed703e3442e2e173d29d287.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "38bfd58c-3346-4e43-8fbd-362842446d5b_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:40:59.760045+00:00"
+}

@@ -1,0 +1,17 @@
+{
+  "knowledgeFileId": "KF-KB-6BF14CB814",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-6BF14CB814/NB_T 47013.7-2012 承压设备无损检测 第7部分 目视检测.pdf",
+  "artifact_files": [
+    "7967d17e-d5f8-4344-b5c8-2acfd6062765_content_list.json",
+    "7967d17e-d5f8-4344-b5c8-2acfd6062765_content_list_v2.json",
+    "7967d17e-d5f8-4344-b5c8-2acfd6062765_model.json",
+    "7967d17e-d5f8-4344-b5c8-2acfd6062765_origin.pdf",
+    "full.md",
+    "layout.json"
+  ],
+  "content_list_name": "7967d17e-d5f8-4344-b5c8-2acfd6062765_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:44:39.091858+00:00"
+}

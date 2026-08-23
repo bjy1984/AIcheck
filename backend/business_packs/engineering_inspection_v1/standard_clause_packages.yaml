@@ -2576,8 +2576,8 @@ standardClausePackages:
     purpose: 非合金钢焊条牌号条件化验收限值
     applicability: covered_consumable_is_electrode
     verificationStatus: source_verified
-    knowledgeFileId: KF-KB-35C2CDA839
-    documentVersionId: KDV-35C2CDA839-V1
+    knowledgeFileId: KF-KB-7969D087E8
+    documentVersionId: KDV-7969D087E8-V1
     sourcePage: 8
     startPage: 8
     endPage: 24
@@ -2597,8 +2597,8 @@ standardClausePackages:
     purpose: 气体保护焊实心焊丝牌号条件化验收限值
     applicability: covered_consumable_is_solid_wire
     verificationStatus: source_verified
-    knowledgeFileId: KF-KB-47A96E73DA
-    documentVersionId: KDV-47A96E73DA-V1
+    knowledgeFileId: KF-KB-8F8C9E132E
+    documentVersionId: KDV-8F8C9E132E-V1
     sourcePage: 9
     startPage: 9
     endPage: 20

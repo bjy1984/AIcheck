@@ -1,0 +1,33 @@
+{
+  "knowledgeFileId": "KF-KB-8F8C9E132E",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-8F8C9E132E/GB∕T 8110-2020 熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝.pdf",
+  "artifact_files": [
+    "db053476-17ea-40c7-9688-6b0b53c12196_content_list.json",
+    "db053476-17ea-40c7-9688-6b0b53c12196_content_list_v2.json",
+    "db053476-17ea-40c7-9688-6b0b53c12196_model.json",
+    "db053476-17ea-40c7-9688-6b0b53c12196_origin.pdf",
+    "full.md",
+    "images/20f206997b3f54222cb902468783cd9fded19ecb08062b86964f2890cbe34f19.jpg",
+    "images/2ea1c63d820eddd0648cab09e2d8f936009897b292f74e2401d8220e20aff063.jpg",
+    "images/32f385a33af53adda2a9cb202f365276cffbcfd51c969169b5374ac477b8a1af.jpg",
+    "images/3c9a12783a19b7ccd1c2472cb5e091935b724c19cc73a05347c4464e33fff718.jpg",
+    "images/4f1ee3a19acb50deb545c221175eb31c96d57e66251c06dbe3693cea0e700395.jpg",
+    "images/5c1ee43fbc484baf6afd82ca1e0d8a808e532052e22c923f153fa2f23ab379bb.jpg",
+    "images/63aadb34e0b1ba5265a75879ea596bfa2d9601aa594f770fd2c0cec5a814380c.jpg",
+    "images/6febd0add0b5e69efd19612e5d6488143b76371d390a283b02e7f68fcedad1b3.jpg",
+    "images/8793047c0b46291ec1b827a225baa8914ea0ab3b3077c096771298b1d420c242.jpg",
+    "images/8ce553e4c14dd17f8c5663ce81e5b523ff13f8cb7e2596021fb57e38a2a2724f.jpg",
+    "images/aa3052d5f770e83ee5c72f9caf456fb8bd191f5e8f0b55fdd0ff6206358e4164.jpg",
+    "images/c68e7e9b4f0e3d1fa6dd26d08e859a30aa60f0d5582142745d618d4906631398.jpg",
+    "images/d0848b9841ef09da5c47fcd3fee3ba87d991601128ea4c39c528ff049f931bf9.jpg",
+    "images/d1ffcd1bdadf44da4ea00395717e7d3d946f3520aee8c29723fe74bf846a7be3.jpg",
+    "images/dc46dbaf784ea3f8fe9c8aa5dae7350902afd2d3dc2f83cb3f261fe5c9ccdabc.jpg",
+    "images/fa8703875fc3e5da43db67316d0bf486d3a2af9624dccaa4d5cae6f9b790c8c0.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "db053476-17ea-40c7-9688-6b0b53c12196_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:46:40.451473+00:00"
+}

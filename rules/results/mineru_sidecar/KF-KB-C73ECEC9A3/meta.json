@@ -1,0 +1,26 @@
+{
+  "knowledgeFileId": "KF-KB-C73ECEC9A3",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-C73ECEC9A3/NB_T 47013.5-2015 承压设备无损检测 第5部分 渗透检测.pdf",
+  "artifact_files": [
+    "7f403334-0e13-4b4c-8f20-a6f20c8cacbb_content_list.json",
+    "7f403334-0e13-4b4c-8f20-a6f20c8cacbb_content_list_v2.json",
+    "7f403334-0e13-4b4c-8f20-a6f20c8cacbb_model.json",
+    "7f403334-0e13-4b4c-8f20-a6f20c8cacbb_origin.pdf",
+    "full.md",
+    "images/1f67d35a241006b6f2c3414a27186449cd486d469b4065826d1462cb2eeccbfe.jpg",
+    "images/3eeb860a3cb40c1b37c35c3028ccb6126a9d0215c5c1d7aea982aa8e7f09b831.jpg",
+    "images/83b31474050985a34b74a3b3228f37263a2cec52de199751f83c9ed5918ae1dd.jpg",
+    "images/90f75649835f66fd31737befc37c830a85b6c6784ffe6c28636972dbca6a03de.jpg",
+    "images/a09e649c5a4ebd076e8d048984c77c373f0b43dfe68ce44cb59e49b2bb33ecba.jpg",
+    "images/b3ce7136d7bac20adf4df57a2d75aed173605c065d634caf8bd4f3d86cd263f1.jpg",
+    "images/b5005f57c0d5251ef89218182567bf7a0a9387d8fb7f363dfb059bc5e0f38b89.jpg",
+    "images/ca7fd1fc7ad1e9b807d4bad976f9f257ff96012e6ac63779ee2c6dec5c05eb60.jpg",
+    "images/efd444e3d45f1e06114a60d47f03000f9457f3d0bc4a335a39628cab8685a766.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "7f403334-0e13-4b4c-8f20-a6f20c8cacbb_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:47:39.125448+00:00"
+}

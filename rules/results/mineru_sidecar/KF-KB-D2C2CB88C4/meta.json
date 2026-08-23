@@ -1,0 +1,17 @@
+{
+  "knowledgeFileId": "KF-KB-D2C2CB88C4",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-D2C2CB88C4/特种设备检验人员考核规则.docx",
+  "artifact_files": [
+    "3fd47c83-9cab-45ad-91c8-b1ba4bd3ba2b_content_list.json",
+    "3fd47c83-9cab-45ad-91c8-b1ba4bd3ba2b_content_list_v2.json",
+    "3fd47c83-9cab-45ad-91c8-b1ba4bd3ba2b_model.json",
+    "3fd47c83-9cab-45ad-91c8-b1ba4bd3ba2b_origin.pdf",
+    "full.md",
+    "layout.json"
+  ],
+  "content_list_name": "3fd47c83-9cab-45ad-91c8-b1ba4bd3ba2b_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:48:17.435100+00:00"
+}

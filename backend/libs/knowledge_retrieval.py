@@ -451,10 +451,13 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
         scope["contextType"] = context_type
     if source_method and not scope.get("sourceMethod"):
         scope["sourceMethod"] = source_method
+    block_type = str(candidate.get("blockType") or metadata.get("blockType") or "").strip().lower()
     quality_flags = list(candidate.get("qualityFlags") or metadata.get("qualityFlags") or [])
     if noise_like_text(text) and "noise_like_watermark" not in quality_flags:
         quality_flags.append("noise_like_watermark")
-    for reason in metadata_interference_reasons(text, context_type=str(context_type or "")):
+    for reason in metadata_interference_reasons(
+        text, context_type=str(context_type or ""), block_type=block_type
+    ):
         if reason not in quality_flags:
             quality_flags.append(reason)
     evidence_usable = candidate.get("evidenceUsable")
@@ -462,7 +465,17 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
         evidence_usable = metadata.get("evidenceUsable")
     if evidence_usable is None:
         evidence_usable = "publisher_metadata" not in quality_flags and "web_url_metadata" not in quality_flags
+    # 白名单式构造：不显式列出来的字段一律丢掉。公式的 LaTeX、表格的 HTML
+    # 若不在这里带出去，工作台拿到的就只有一串反斜杠。
+    structure = {
+        key: candidate[key]
+        for key in ("latex", "tableHtml", "caption")
+        if str(candidate.get(key) or "").strip()
+    }
+    if block_type:
+        structure["blockType"] = block_type
     return {
+        **structure,
         "id": str(candidate.get("id") or clause_id),
         "clauseId": clause_id,
         "kbDocId": candidate.get("kbDocId") or candidate.get("sourceId") or "KS-STANDARD-RULES",
@@ -510,7 +523,11 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
         if isinstance(clause, dict):
             file = files_by_id.get(clause.get("fileId")) or {}
             context_type = clause.get("contextType") or file.get("contextType")
-            if quarantine_interference_reasons(clause.get("text") or clause.get("quotedText") or "", context_type=str(context_type or "")):
+            if quarantine_interference_reasons(
+                clause.get("text") or clause.get("quotedText") or "",
+                context_type=str(context_type or ""),
+                block_type=clause.get("blockType"),
+            ):
                 continue
             enriched_clause = {
                 **clause,
@@ -545,7 +562,13 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
         if not isinstance(chunk, dict):
             continue
         context_type = chunk.get("contextType") or (files_by_id.get(chunk.get("fileId")) or {}).get("contextType")
-        if quarantine_interference_reasons(chunk.get("text"), context_type=str(context_type or "")):
+        # 公式块的正文就是 LaTeX，按普通正文的纯符号规则会在检索入口被整条滤掉，
+        # 落库落得再全也检索不到。必须把块类型一起交给隔离判定。
+        if quarantine_interference_reasons(
+            chunk.get("text"),
+            context_type=str(context_type or ""),
+            block_type=chunk.get("blockType"),
+        ):
             continue
         file = files_by_id.get(chunk.get("fileId")) or {}
         source = sources_by_id.get(file.get("sourceId")) or {}
@@ -562,6 +585,10 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                     "kbVersion": source_versions.get(str(source_id)) or default_version,
                     "title": file.get("fileName") or chunk.get("id"),
                     "text": chunk.get("text"),
+                    "blockType": chunk.get("blockType"),
+                    "latex": chunk.get("latex"),
+                    "tableHtml": chunk.get("tableHtml"),
+                    "caption": chunk.get("caption"),
                     "pageNo": chunk.get("pageNo"),
                     "bbox": chunk.get("bbox"),
                     "fileId": chunk.get("fileId"),
@@ -960,6 +987,10 @@ def retrieve_knowledge_clauses(
                 "clauseNo": item.get("clauseNo"),
                 "title": item.get("title"),
                 "text": item.get("text"),
+                "blockType": item.get("blockType"),
+                "latex": item.get("latex"),
+                "tableHtml": item.get("tableHtml"),
+                "caption": item.get("caption"),
                 "pageNo": item.get("pageNo"),
                 "bbox": item.get("bbox"),
                 "score": item.get("score"),

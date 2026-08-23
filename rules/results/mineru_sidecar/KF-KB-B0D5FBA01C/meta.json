@@ -1,0 +1,19 @@
+{
+  "knowledgeFileId": "KF-KB-B0D5FBA01C",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-B0D5FBA01C/NB_T 47013.1-2015 承压设备无损检测 第1部分 通用要求.pdf",
+  "artifact_files": [
+    "74c06c62-23a5-4574-8be2-4674a131c20e_content_list.json",
+    "74c06c62-23a5-4574-8be2-4674a131c20e_content_list_v2.json",
+    "74c06c62-23a5-4574-8be2-4674a131c20e_model.json",
+    "74c06c62-23a5-4574-8be2-4674a131c20e_origin.pdf",
+    "full.md",
+    "images/4d107504f24e96e7e44df399ba9124c2f676da6f4ea3a52f4d5ff72afa8b16b3.jpg",
+    "images/e38b17599c1be8fd6e14e34f5659a8b1243508d069c516c6be036d8ee52a8218.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "74c06c62-23a5-4574-8be2-4674a131c20e_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:47:15.620867+00:00"
+}

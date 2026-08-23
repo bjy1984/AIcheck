@@ -1,0 +1,25 @@
+{
+  "knowledgeFileId": "KF-KB-B9AEEAD2BE",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-B9AEEAD2BE/GBT 26480-2011 阀门的检验和试验.pdf",
+  "artifact_files": [
+    "d339a9cb-be32-48f3-a480-ba5a9510230e_content_list.json",
+    "d339a9cb-be32-48f3-a480-ba5a9510230e_content_list_v2.json",
+    "d339a9cb-be32-48f3-a480-ba5a9510230e_model.json",
+    "d339a9cb-be32-48f3-a480-ba5a9510230e_origin.pdf",
+    "full.md",
+    "images/0aef0ae605cdddd8bd462d1eb3e6ff9a5ccd561386504c7d24ca37fe5943ae13.jpg",
+    "images/0e13eaa5cc1d14e5e6dc559a23ba806778fc1a26bc87800eeacfe49a6a469bc5.jpg",
+    "images/b3afb5989e15df76085521044f2cd7614080afe2fc42ec278a3deafe001d1e55.jpg",
+    "images/b80914d9da06c1f764dd2a166bba310902fcb41133050dba6a895c9ab6fb6f70.jpg",
+    "images/dd3711909a8403a36cf52f7e9a812b925f27e9363f5e94f540694abd834ccf23.jpg",
+    "images/eee4c516a01db9294b94efa2ad504dc2bc7053a94513568def4355b3a9b3a08e.jpg",
+    "images/ef18c03b00b7f35aa267aafdcded17ab09ec4beb1656cf804e843b4390e192be.jpg",
+    "images/f08fb42bb00413b581657001f5f743f8865c8b137343695ee892f873dd87eadb.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "d339a9cb-be32-48f3-a480-ba5a9510230e_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:47:20.204290+00:00"
+}

@@ -1,0 +1,28 @@
+{
+  "knowledgeFileId": "KF-KB-0C52DA5019",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-0C52DA5019/NB_T 47013.8-2012 承压设备无损检测 第8部分 泄漏检测（已被NB_T 47013.8-2025替代）.pdf",
+  "artifact_files": [
+    "93002f8e-392d-40e8-9c63-be09ca0c38df_content_list.json",
+    "93002f8e-392d-40e8-9c63-be09ca0c38df_content_list_v2.json",
+    "93002f8e-392d-40e8-9c63-be09ca0c38df_model.json",
+    "93002f8e-392d-40e8-9c63-be09ca0c38df_origin.pdf",
+    "full.md",
+    "images/0e3407b03d23f63dc6bb6d4026dc28aede41560427ba5e0d677927789f47c752.jpg",
+    "images/0e9ca923effd8822be8cadabe02b7204364b673caab18fc9fc2e32659f7cedf4.jpg",
+    "images/120975c202d1f2abe2d4691c4584ded2f333edfed01c45eed3702ce9f623c71c.jpg",
+    "images/34f27d87660d96f787a8cba783004477f6014e27348ff951e80929aba2805b92.jpg",
+    "images/37200cd3e64af650aa2b46cab626c41fde4cf0b626fa2a02ae00500798772a8e.jpg",
+    "images/67524bc25601f4c7933ed65241a2df3c431c96cda87d24d103edd4275d3e9b94.jpg",
+    "images/7c051211d1672a0c2eee37907a699d96d751d04ceb2c2ae1969f7e3acc02abbb.jpg",
+    "images/8f5b8e44219dff45402507285b1448d3f44d27adf692ae7e8bdba3d7265fd47d.jpg",
+    "images/96937b9264b3219304d2a3c3e3020a1480fab939addf26c504f034579a8f848e.jpg",
+    "images/c094c430ba7924ecbe0921a7bef54529b1d8115f4e534af0e06781273b7db287.jpg",
+    "images/e5c8dcbc43eaaabd4848ddb113ecb24e58a1cd5deb6a30e60a53bb53eda281ac.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "93002f8e-392d-40e8-9c63-be09ca0c38df_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:42:19.260042+00:00"
+}

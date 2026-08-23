@@ -1,0 +1,20 @@
+{
+  "knowledgeFileId": "KF-KB-57EB2C0B90",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-57EB2C0B90/SYT 4113.11—2023 管道防腐层性能试验方法 第11部分：漏点检测.pdf",
+  "artifact_files": [
+    "625e04e7-c133-4d5a-a7a0-23b5c97fd180_content_list.json",
+    "625e04e7-c133-4d5a-a7a0-23b5c97fd180_content_list_v2.json",
+    "625e04e7-c133-4d5a-a7a0-23b5c97fd180_model.json",
+    "625e04e7-c133-4d5a-a7a0-23b5c97fd180_origin.pdf",
+    "full.md",
+    "images/cc74529653a60a4faf4793d4f7cc1b2ffb073eb9b683b24ac3a3e2e148f1bf1b.jpg",
+    "images/cccf9b0e6a71b5574eaa57addf5925e933be310e98772eae48cbf233f44ddb1d.jpg",
+    "images/e01ac3539bc3450ed560375a3521f06d255bbceac9fe15edbaaa9644ed378dcd.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "625e04e7-c133-4d5a-a7a0-23b5c97fd180_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:44:28.893653+00:00"
+}

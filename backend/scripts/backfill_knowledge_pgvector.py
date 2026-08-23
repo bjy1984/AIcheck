@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+from pathlib import Path
 from typing import Any
 
 DEFAULT_SOURCE_ID = "KS-STANDARD-RULES"
@@ -12,6 +13,22 @@ DEFAULT_DIMENSIONS = 1024
 DEFAULT_EXPECTED_COUNT = 2134
 DEFAULT_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 DEFAULT_INDEX_VERSION = "knowledge-index-qwen3-0.6b@1024"
+BASELINE_SUMMARY_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "standards_mineru_baseline" / "summary.json"
+)
+
+
+def default_expected_count() -> int:
+    """优先读基线快照里的 expectedVectorCount，没有快照时退回历史常量。"""
+    try:
+        payload = json.loads(BASELINE_SUMMARY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return DEFAULT_EXPECTED_COUNT
+    value = payload.get("expectedVectorCount")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_EXPECTED_COUNT
 
 
 def canonical_digest(rows: list[tuple[str, dict[str, Any]]]) -> str:
@@ -299,7 +316,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-id", default=DEFAULT_SOURCE_ID)
     parser.add_argument("--tenant-id", default=os.getenv("AICHECK_TENANT_ID") or "TENANT-DEFAULT")
     parser.add_argument("--dimensions", type=int, default=DEFAULT_DIMENSIONS)
-    parser.add_argument("--expected-count", type=int, default=DEFAULT_EXPECTED_COUNT)
+    parser.add_argument("--expected-count", type=int, default=None)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--prune-stale", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -317,9 +334,10 @@ def main() -> int:
 
     with psycopg.connect(args.database_url, autocommit=False) as connection:
         source_rows = load_source_rows(connection, args.source_id, args.tenant_id)
-        if len(source_rows) != args.expected_count:
+        expected_count = args.expected_count if args.expected_count is not None else default_expected_count()
+        if len(source_rows) != expected_count:
             raise SystemExit(
-                f"Source vector gate failed: expected={args.expected_count}, actual={len(source_rows)}"
+                f"Source vector gate failed: expected={expected_count}, actual={len(source_rows)}"
             )
         prepared = [
             prepare_row(object_id, payload, dimensions=args.dimensions)

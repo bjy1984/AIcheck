@@ -1,0 +1,7407 @@
+[
+    {
+        "type": "text",
+        "text": "中华人民共和国能源行业标准",
+        "text_level": 1,
+        "bbox": [
+            112,
+            154,
+            878,
+            191
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            628,
+            220,
+            858,
+            239
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "承压设备无损检测 第 18 部分：阵列涡流检测",
+        "text_level": 1,
+        "bbox": [
+            257,
+            394,
+            734,
+            471
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Nondestructive testing of pressure equipments—Part 18: Eddy current array testing",
+        "text_level": 1,
+        "bbox": [
+            263,
+            498,
+            729,
+            538
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "2024-11-24 实施",
+        "bbox": [
+            710,
+            828,
+            882,
+            846
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "国家能源局发布",
+        "bbox": [
+            309,
+            891,
+            687,
+            915
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "ICS 77.040.20\nCCS H 26",
+        "bbox": [
+            112,
+            58,
+            240,
+            90
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "NB",
+        "bbox": [
+            645,
+            64,
+            826,
+            135
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "footer",
+        "text": "2024-05-24 发布",
+        "bbox": [
+            117,
+            828,
+            282,
+            845
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "footer",
+        "text": "标准化365正版图书查询系统\nZJKD\n网站查询:2019-08-20 18:00\n举报电话:010-88218820\n图书热线:010-88218820",
+        "bbox": [
+            115,
+            751,
+            263,
+            824
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "国家能源局",
+        "text_level": 1,
+        "bbox": [
+            263,
+            179,
+            697,
+            218
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "公告",
+        "bbox": [
+            347,
+            271,
+            615,
+            321
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "2024年第2号",
+        "bbox": [
+            396,
+            368,
+            564,
+            389
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "根据《中华人民共和国标准化法》《能源标准化管理办法》，国家能源局批准《直接串入式线路静止同步补偿装置》等335项能源行业标准（附件1）、《Specification for Reservoir Area Engineering Geological Investigation of Hydropower Projects》等20项能源行业标准外文版（附件2）、《水工混凝土结构设计规范》等4项能源行业标准修改通知单（附件3），现予以发布。",
+        "bbox": [
+            134,
+            459,
+            833,
+            648
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "附件：行业标准目录",
+        "bbox": [
+            179,
+            690,
+            401,
+            712
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "二〇二四年五月二十四日",
+        "bbox": [
+            487,
+            790,
+            752,
+            809
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "table",
+        "img_path": "images/d821f00ac4ff2d4e44d2e30132e83e7a094b9e8b4f2cc5a70f7b877b9fb39d50.jpg",
+        "table_caption": [
+            "行业标准目录"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>序号</td><td>标准编号</td><td>标准名称</td><td>代替标准</td><td>采标号</td><td>出版机构</td><td>批准日期</td><td>实施日期</td></tr><tr><td>1~19</td><td colspan=\"7\">(略)</td></tr><tr><td>20</td><td>NB/T 11497—2024</td><td>加氢站承压设备风险评价与检验</td><td></td><td></td><td>北京科学技术出版社</td><td>2024-05-24</td><td>2024-11-24</td></tr><tr><td>21</td><td>NB/T 11498—2024</td><td>加氢站承压设备监测技术要求</td><td></td><td></td><td>北京科学技术出版社</td><td>2024-05-24</td><td>2024-11-24</td></tr><tr><td>22</td><td>NB/T 11499—2024</td><td>石墨制无机有焰合成器</td><td></td><td></td><td>北京科学技术出版社</td><td>2024-05-24</td><td>2024-11-24</td></tr><tr><td>23~202</td><td colspan=\"7\">(略)</td></tr><tr><td>203</td><td>NB/T 47013.16—2024</td><td>承压设备无损检测 第16部分:红外热成像检测</td><td></td><td></td><td>北京科学技术出版社</td><td>2024-05-24</td><td>2024-11-24</td></tr><tr><td>204</td><td>NB/T 47013.18—2024</td><td>承压设备无损检测 第18部分:阵列涡流检测</td><td></td><td></td><td>北京科学技术出版社</td><td>2024-05-24</td><td>2024-11-24</td></tr><tr><td>205</td><td>NB/T 47045—2024</td><td>钎焊板式热交换器</td><td>NB/T 47045—2015</td><td></td><td>北京科学技术出版社</td><td>2024-05-24</td><td>2024-11-24</td></tr><tr><td>206~335</td><td colspan=\"7\">(略)</td></tr></table>",
+        "bbox": [
+            292,
+            114,
+            677,
+            882
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "page_number",
+        "text": "附件：",
+        "bbox": [
+            173,
+            849,
+            208,
+            897
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "目次",
+        "text_level": 2,
+        "bbox": [
+            426,
+            173,
+            536,
+            197
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "前言....III\n1 范围....1\n2 规范性引用文件....1\n3 术语和定义....1\n4 一般要求....4\n5 承压设备用材料及零部件的阵列涡流检测方法....13\n6 承压设备焊接接头阵列涡流检测的方法....15\n7 检测记录和报告....17\n附录 A（资料性） 阵列涡流探头的阵元、线圈激活模式和拓扑结构、分辨力....19\n附录 B（规范性） 阵列涡流检测仪性能指标要求....21\n附录 C（规范性） 阵列涡流探头性能指标要求....23\n附录 D（规范性） 标准试块....24\n附录 E（资料性） 阵列涡流 C 扫图（示例）....26\n附录 F（资料性） 裂纹深度评估方法....29",
+        "bbox": [
+            110,
+            230,
+            853,
+            498
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            689,
+            111,
+            852,
+            125
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "page_number",
+        "text": "I",
+        "bbox": [
+            845,
+            899,
+            855,
+            910
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "The Ground Truth image displays a single, solid horizontal line. According to Rule 2 (UNDERSCORE & LINE RULES), this is a stylistic or background line, not a placeholder underscore. Therefore, the OCR result must ignore it. The provided OCR content is \"\\_\\_\\_\\_\", which consists of four underscores. This is an incorrect interpretation of the line as a placeholder, violating the rule that stylistic lines must be ignored. The OCR has hallucinated text (underscores) where none should exist in the GT. This adheres to the strict requirement to ignore such lines. Hence, the OCR result is inconsistent with the Ground Truth.",
+        "bbox": [
+            0,
+            0,
+            994,
+            1000
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "前言",
+        "text_level": 2,
+        "bbox": [
+            426,
+            169,
+            541,
+            192
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "本文件按照 GB/T 1.1—2020《标准化工作导则 第 1 部分：标准化文件的结构和起草规则》的规定起草。",
+        "bbox": [
+            112,
+            226,
+            857,
+            262
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "NB/T 47013《承压设备无损检测》分为以下 20 个部分：",
+        "bbox": [
+            146,
+            264,
+            568,
+            282
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第1部分：通用要求；",
+        "bbox": [
+            146,
+            285,
+            354,
+            301
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第 2 部分：射线检测；",
+        "bbox": [
+            147,
+            304,
+            352,
+            321
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第3部分：超声检测；",
+        "bbox": [
+            147,
+            323,
+            352,
+            339
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第4部分：磁粉检测；",
+        "bbox": [
+            147,
+            342,
+            352,
+            359
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第5部分：渗透检测；",
+        "bbox": [
+            147,
+            361,
+            352,
+            378
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第6部分：涡流检测；",
+        "bbox": [
+            147,
+            380,
+            352,
+            397
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第 7 部分：目视检测；",
+        "bbox": [
+            147,
+            400,
+            352,
+            416
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第8部分：泄漏检测；",
+        "bbox": [
+            147,
+            419,
+            354,
+            435
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第9部分：声发射检测；",
+        "bbox": [
+            147,
+            438,
+            369,
+            454
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第 10 部分：衍射时差法超声检测；",
+        "bbox": [
+            149,
+            457,
+            447,
+            473
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第11部分：射线数字成像检测；",
+        "bbox": [
+            149,
+            477,
+            431,
+            492
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "——第 12 部分：漏磁检测；",
+        "bbox": [
+            149,
+            496,
+            363,
+            511
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "\\- 第 13 部分：脉冲涡流检测；",
+        "bbox": [
+            179,
+            515,
+            396,
+            530
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "-第14部分：射线计算机辅助成像检测；",
+        "bbox": [
+            179,
+            534,
+            480,
+            551
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "-第15部分：相控阵超声检测；",
+        "bbox": [
+            179,
+            554,
+            413,
+            570
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "-第16部分：红外热成像检测；",
+        "bbox": [
+            179,
+            573,
+            413,
+            589
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "-第17部分：磁记忆检测；",
+        "bbox": [
+            179,
+            592,
+            381,
+            609
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "\\- 第18部分：阵列涡流检测；",
+        "bbox": [
+            176,
+            611,
+            396,
+            628
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "-第19部分：电磁超声检测；",
+        "bbox": [
+            179,
+            630,
+            396,
+            647
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "\\- 第 20 部分：超声导波检测。",
+        "bbox": [
+            179,
+            649,
+            396,
+            666
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "本文件为 NB/T 47013 的第 18 部分。",
+        "bbox": [
+            147,
+            669,
+            423,
+            685
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "请注意本文件的某些内容可能涉及专利。本文件的发布机构不承担识别专利的责任。",
+        "bbox": [
+            147,
+            688,
+            783,
+            704
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "本文件由全国锅炉压力容器标准化技术委员会（SAC/TC 262）提出并归口。",
+        "bbox": [
+            147,
+            707,
+            721,
+            723
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "本文件起草单位：中国特种设备检测研究院、爱德森（厦门）电子有限公司、国家能源集团科学技术研究院有限公司、中国铁道科学研究院集团有限公司、中国矿业大学、森松（江苏）重工有限公司、宁波市特种设备检验研究院、成都市特种设备检验检测研究院、中石化工程质量监测有限公司、管网集团（徐州）管道检验检测有限公司、国核电站运行服务技术有限公司。",
+        "bbox": [
+            114,
+            726,
+            860,
+            801
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "本文件主要起草人：李运涛、胡斌 $^{1}$ 、林俊明、胡先龙、范孟豹、万本例、江雁山、黄永巍、王新光、黄焕东、苗丕渝、胡斌 $^{2}$ 、司刚强、刘太丽、王冬冬。",
+        "bbox": [
+            115,
+            802,
+            860,
+            838
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "注： $^{1}$ 中国特种设备检测研究院园区智能检测监测科创团队。",
+        "bbox": [
+            144,
+            842,
+            546,
+            857
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "$^{2}$ 中国特种设备检测研究院无损检测研究所。",
+        "bbox": [
+            173,
+            859,
+            472,
+            875
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            692,
+            114,
+            857,
+            128
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "page_number",
+        "text": "III",
+        "bbox": [
+            838,
+            902,
+            860,
+            913
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "承压设备无损检测",
+        "text_level": 1,
+        "bbox": [
+            374,
+            176,
+            589,
+            198
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "第 18 部分：阵列涡流检测",
+        "text_level": 1,
+        "bbox": [
+            329,
+            201,
+            633,
+            225
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "1 范围",
+        "text_level": 2,
+        "bbox": [
+            112,
+            261,
+            178,
+            276
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "1.1 本文件规定了承压设备采用阵列涡流检测的方法要求，按本文件相关技术要求进行的阵列涡流检测为可记录的涡流检测。",
+        "bbox": [
+            112,
+            286,
+            853,
+            321
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "1.2 本文件适用于承压设备生产和使用过程中金属制材料、零部件和焊接接头的表面开口缺陷的阵列涡流检测。被检工件可以带涂层或不带涂层；表面形状可以是平面或曲面。",
+        "bbox": [
+            112,
+            324,
+            853,
+            359
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "1.3 承压设备生产和使用过程中金属材料、零部件和焊接接头的近表面缺陷的阵列涡流检测，也可参照本文件执行。",
+        "bbox": [
+            112,
+            362,
+            855,
+            397
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "1.4 对于本文件未明确规定的承压设备用材料、零部件及其焊接接头的阵列涡流检测，经工艺验证能达到检测要求的，可参照本文件执行；与承压设备有关的支撑件和结构件阵列涡流检测也可参照本文件执行。",
+        "bbox": [
+            112,
+            401,
+            855,
+            456
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "2 规范性引用文件",
+        "text_level": 2,
+        "bbox": [
+            112,
+            466,
+            260,
+            480
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "下列文件中的内容通过文中的规范性引用而构成本文件必不可少的条款。其中，注日期的引用文件，仅该日期对应的版本适用于本文件；不注日期的引用文件，其最新版本（包括所有的修改单）适用于本文件。",
+        "bbox": [
+            112,
+            491,
+            858,
+            545
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "GB/T 12604.6 无损检测 术语 涡流检测",
+        "bbox": [
+            147,
+            549,
+            480,
+            565
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "GB/T 34362 无损检测 适形阵列涡流检测导则",
+        "bbox": [
+            147,
+            568,
+            517,
+            583
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "NB/T 47013.1 承压设备无损检测 第 1 部分：通用要求",
+        "bbox": [
+            147,
+            587,
+            581,
+            603
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "NB/T 47013.4 承压设备无损检测 第 4 部分：磁粉检测",
+        "bbox": [
+            147,
+            606,
+            581,
+            622
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "NB/T 47013.5 承压设备无损检测 第 5 部分：渗透检测",
+        "bbox": [
+            147,
+            625,
+            581,
+            641
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "NB/T 47013.6 承压设备无损检测 第 6 部分：涡流检测",
+        "bbox": [
+            147,
+            644,
+            581,
+            660
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "JB/T 11780 无损检测仪器 阵列涡流检测仪性能和检验",
+        "bbox": [
+            147,
+            663,
+            579,
+            680
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "JB/T 12726 无损检测仪器 试样 通用技术条件",
+        "bbox": [
+            147,
+            682,
+            531,
+            699
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "3 术语和定义",
+        "text_level": 2,
+        "bbox": [
+            115,
+            710,
+            228,
+            725
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "GB/T 12604.6、NB/T 47013.1 和 GB/T 34362 界定的以及下列术语和定义适用于本文件。",
+        "bbox": [
+            147,
+            736,
+            803,
+            751
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "3.1",
+        "bbox": [
+            115,
+            756,
+            147,
+            769
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "坐标定义 coordinate definition",
+        "bbox": [
+            147,
+            775,
+            386,
+            789
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "规定检测起始参考点 O 点以及 X、Y 和 Z 坐标的含义。对于焊接接头，其坐标含义如图 1 所示；对于材料或零部件，其坐标含义如图 2 所示。",
+        "bbox": [
+            114,
+            793,
+            857,
+            827
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            689,
+            114,
+            853,
+            127
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "page_number",
+        "text": "1",
+        "bbox": [
+            847,
+            901,
+            857,
+            912
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "image",
+        "img_path": "images/fd6b0c29f9bf01c0ff623c2399d6425840b001ed8bee392100c83c45b3f7cd7a.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            418,
+            138,
+            628,
+            252
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "注：",
+        "bbox": [
+            179,
+            260,
+            208,
+            274
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "O——设定的检测起始参考点；X——沿焊缝长度方向的坐标；",
+        "bbox": [
+            178,
+            277,
+            581,
+            290
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Y——沿焊缝宽度方向的坐标；Z——沿焊缝厚度方向的坐标。",
+        "bbox": [
+            179,
+            294,
+            579,
+            309
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "image",
+        "img_path": "images/221025a008779d552910fd7c099a100cf61e3eee5a1883bb1ec3b2031945e061.jpg",
+        "image_caption": [
+            "图 1 焊接接头的坐标定义"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            413,
+            362,
+            625,
+            480
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "注：",
+        "bbox": [
+            176,
+            485,
+            205,
+            500
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "O——设定的检测起始参考点；X——扫查面上扫查方向的坐标；",
+        "bbox": [
+            174,
+            503,
+            594,
+            517
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Y——扫查面上垂直于扫查方向的坐标；Z——沿工件厚度方向的坐标。",
+        "bbox": [
+            176,
+            519,
+            636,
+            534
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "图 2 材料或零部件的坐标定义",
+        "bbox": [
+            394,
+            543,
+            640,
+            559
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.2",
+        "text_level": 2,
+        "bbox": [
+            146,
+            572,
+            179,
+            586
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流检测 eddy current array testing",
+        "text_level": 2,
+        "bbox": [
+            178,
+            591,
+            490,
+            606
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "电子驱动探头内多个按一定规律并肩式或以其他走向排布的涡流线圈，能够一次性完成大面积扫查且能形成直观性 C 扫图的涡流检测技术。图 3 为并肩式排布涡流线圈。",
+        "bbox": [
+            144,
+            610,
+            890,
+            646
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "image",
+        "img_path": "images/990919ec0c1a9dd569f585b67bc45375abbe6208706410eaec5455a52887c1bd.jpg",
+        "image_caption": [
+            "图 3 并肩式排布涡流线圈"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            401,
+            648,
+            633,
+            695
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.3",
+        "text_level": 2,
+        "bbox": [
+            144,
+            726,
+            179,
+            741
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头 eddy current array probe",
+        "bbox": [
+            176,
+            745,
+            482,
+            761
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "由若干个涡流线圈规则排布形成的组合件。",
+        "bbox": [
+            179,
+            764,
+            502,
+            780
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.4",
+        "text_level": 2,
+        "bbox": [
+            144,
+            783,
+            179,
+            798
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "探头长度 probe length",
+        "bbox": [
+            176,
+            802,
+            357,
+            818
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头内传感线圈组在垂直于扫查方向上的尺寸，见图 4。",
+        "bbox": [
+            176,
+            821,
+            670,
+            837
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.5",
+        "text_level": 2,
+        "bbox": [
+            144,
+            840,
+            178,
+            853
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "探头宽度 probe width",
+        "bbox": [
+            176,
+            859,
+            354,
+            875
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头内传感线圈组在平行于扫查方向上的尺寸，见图 4。",
+        "bbox": [
+            176,
+            878,
+            670,
+            894
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            151,
+            111,
+            315,
+            125
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_number",
+        "text": "2",
+        "bbox": [
+            144,
+            897,
+            159,
+            910
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.6",
+        "text_level": 2,
+        "bbox": [
+            110,
+            140,
+            144,
+            154
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "覆盖宽度 coverage",
+        "text_level": 2,
+        "bbox": [
+            142,
+            157,
+            297,
+            174
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头扫查时，探头长度方向上能够有效检测覆盖的宽度，图 4 为绝对桥式阵列涡流探头扫查覆盖宽度示意图。",
+        "bbox": [
+            110,
+            176,
+            853,
+            212
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "注：扫查覆盖宽度与探头长度不一定相同。",
+        "bbox": [
+            139,
+            217,
+            421,
+            232
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "image",
+        "img_path": "images/f28a4a5016f8dafcc01593fce4219b8dc4e0e3e46fe0205dce1dadd05f08ed07.jpg",
+        "image_caption": [
+            "图 4 阵列涡流探头的长度、宽度和扫查覆盖宽度示意图"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            324,
+            254,
+            642,
+            467
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.7",
+        "text_level": 2,
+        "bbox": [
+            110,
+            505,
+            147,
+            520
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "阵元 array element",
+        "text_level": 2,
+        "bbox": [
+            144,
+            524,
+            302,
+            541
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头中，由 1 个或多个涡流线圈组成的、能够表征阵列涡流探头基本工作模式的、独立工作的最小单元。每个阵元都可视为 1 个单通道涡流探头，对应 1 个涡流通道，见附录 A。",
+        "bbox": [
+            110,
+            543,
+            853,
+            580
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "注：一个涡流线圈可以属于不同的阵元。",
+        "bbox": [
+            139,
+            583,
+            406,
+            598
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.8",
+        "text_level": 2,
+        "bbox": [
+            112,
+            602,
+            147,
+            616
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "传感元件 sensing element",
+        "text_level": 2,
+        "bbox": [
+            144,
+            621,
+            349,
+            637
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "阵元中，用于测量磁场强度或磁场强度变化率的测量器件，如感应线圈或固态器件。",
+        "bbox": [
+            144,
+            640,
+            779,
+            656
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.9",
+        "text_level": 2,
+        "bbox": [
+            112,
+            660,
+            147,
+            674
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "线圈激活模式 coil activation pattern",
+        "text_level": 2,
+        "bbox": [
+            144,
+            678,
+            425,
+            694
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头中,某个时隙同时激活1个或多个涡流线圈并创造至少1个涡流通道的基本方式。见附录A。",
+        "bbox": [
+            112,
+            698,
+            855,
+            733
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.10",
+        "text_level": 2,
+        "bbox": [
+            112,
+            736,
+            156,
+            751
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "阵列线圈拓扑结构 array coil topology",
+        "text_level": 2,
+        "bbox": [
+            144,
+            755,
+            436,
+            771
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "关于阵列涡流探头内线圈排布方式和相关线圈激活模式的描述。见附录 A。",
+        "bbox": [
+            144,
+            774,
+            710,
+            790
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.11",
+        "text_level": 2,
+        "bbox": [
+            112,
+            794,
+            154,
+            807
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "探头分辨力 probe resolving power",
+        "text_level": 2,
+        "bbox": [
+            144,
+            812,
+            411,
+            828
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头长度方向上，相邻涡流通道对应阵元的最小纵向距离，见附录 A。探头分辨力与线圈直径、线圈排数、探头工作模式等有关。",
+        "bbox": [
+            112,
+            831,
+            855,
+            866
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            689,
+            112,
+            853,
+            125
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "page_number",
+        "text": "3",
+        "bbox": [
+            843,
+            900,
+            855,
+            912
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.12",
+        "text_level": 2,
+        "bbox": [
+            147,
+            138,
+            191,
+            150
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "横向分辨力 transverse resolving power",
+        "bbox": [
+            181,
+            157,
+            478,
+            172
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "检测设备能够分辨探头长度方向的最小距离。横向分辨力与探头分辨力有关。",
+        "bbox": [
+            181,
+            176,
+            761,
+            192
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.13",
+        "text_level": 2,
+        "bbox": [
+            147,
+            195,
+            189,
+            207
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "纵向分辨力 longitudinal resolving power",
+        "bbox": [
+            181,
+            214,
+            490,
+            230
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "检测设备能够分辨扫查方向的最小距离。纵向分辨力与编码器分辨率有关。",
+        "bbox": [
+            181,
+            233,
+            744,
+            250
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.14",
+        "text_level": 2,
+        "bbox": [
+            147,
+            254,
+            189,
+            267
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "扫查面 scanning surface",
+        "text_level": 2,
+        "bbox": [
+            179,
+            273,
+            371,
+            288
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "放置阵列涡流探头并进行扫查的工件表面。",
+        "bbox": [
+            181,
+            290,
+            504,
+            307
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.15",
+        "text_level": 2,
+        "bbox": [
+            147,
+            312,
+            189,
+            324
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "通道标定 channel standardization",
+        "text_level": 2,
+        "bbox": [
+            179,
+            331,
+            440,
+            345
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "一种用于规定同一个阵列涡流探头内所有通道统一线圈灵敏度的数据处理方法。",
+        "bbox": [
+            179,
+            349,
+            778,
+            365
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.16",
+        "text_level": 2,
+        "bbox": [
+            147,
+            369,
+            188,
+            382
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "扫查轴 scanning axis",
+        "text_level": 2,
+        "bbox": [
+            179,
+            388,
+            347,
+            403
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流检测时，探头扫查方向的轴。",
+        "bbox": [
+            179,
+            407,
+            468,
+            423
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.17",
+        "text_level": 2,
+        "bbox": [
+            147,
+            427,
+            188,
+            440
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "变道轴 index axis",
+        "text_level": 2,
+        "bbox": [
+            179,
+            446,
+            322,
+            460
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流检测时，扫查面上垂直于扫查方向的轴。",
+        "bbox": [
+            179,
+            465,
+            554,
+            480
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.18",
+        "text_level": 2,
+        "bbox": [
+            146,
+            485,
+            188,
+            498
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "均匀表面 uniform surface",
+        "text_level": 2,
+        "bbox": [
+            179,
+            504,
+            383,
+            517
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "电磁特性、几何结构、表面状况比较均匀的表面。如原材料、零部件的表面。",
+        "bbox": [
+            178,
+            523,
+            759,
+            538
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "注：焊缝金属与母材材质相同或相近，余高磨平的对接接头表面也属于均匀表面。",
+        "bbox": [
+            174,
+            543,
+            707,
+            558
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.19",
+        "text_level": 2,
+        "bbox": [
+            144,
+            562,
+            186,
+            574
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "相关显示 relevant indication",
+        "text_level": 2,
+        "bbox": [
+            178,
+            580,
+            401,
+            595
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流检测时，因缺陷产生的 C 扫显示。一般也称为缺陷显示。",
+        "bbox": [
+            179,
+            599,
+            677,
+            615
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "3.20",
+        "text_level": 2,
+        "bbox": [
+            144,
+            619,
+            186,
+            633
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "非相关显示 irrelevant indication",
+        "bbox": [
+            176,
+            638,
+            428,
+            653
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流检测时，因结构变化、提离变化或材料电磁特性改变等而形成的 C 扫显示。",
+        "bbox": [
+            178,
+            657,
+            813,
+            673
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4 一般要求",
+        "text_level": 2,
+        "bbox": [
+            144,
+            682,
+            243,
+            698
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.1 检测人员",
+        "text_level": 2,
+        "bbox": [
+            144,
+            709,
+            263,
+            724
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.1.1 阵列涡流检测人员的要求应符合 NB/T 47013.1 的有关规定。",
+        "bbox": [
+            144,
+            729,
+            653,
+            744
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.1.2 阵列涡流检测人员应熟悉所使用的阵列涡流检测设备、器材。",
+        "bbox": [
+            144,
+            748,
+            665,
+            763
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.1.3 对于从事简单几何形状的原材料、零部件及对接接头阵列涡流检测的人员，应具有一定的金属材料、焊接、热处理及承压设备制造安装等方面的基本知识；对于从事其他检测对象的阵列涡流检测人员，还应掌握相关材料、结构、制造工艺等知识，并经过专项训练，具备所需的技术能力和相应的检测经验。",
+        "bbox": [
+            142,
+            766,
+            887,
+            839
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.2 检测设备和器材",
+        "text_level": 2,
+        "bbox": [
+            144,
+            843,
+            315,
+            857
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4.2.1 检测系统包括检测设备和器材；检测设备包括检测仪器以及与仪器相连接的探头、扫查装置、编码器和线缆等所有物件；器材是指实现检测功能所需要且不与仪器相连接的其他器件和材料，包括试块等。检测设备和器材性能应符合本文件要求，功能应满足所检测对象的工艺要求。",
+        "bbox": [
+            142,
+            859,
+            887,
+            895
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            147,
+            112,
+            312,
+            125
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "page_number",
+        "text": "4",
+        "bbox": [
+            144,
+            900,
+            157,
+            910
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            109,
+            137,
+            828,
+            153
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2 检测仪器和探头",
+        "text_level": 2,
+        "bbox": [
+            110,
+            157,
+            297,
+            171
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.1 检测仪器",
+        "text_level": 2,
+        "bbox": [
+            110,
+            176,
+            265,
+            191
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.1.1 检测仪器至少应具有多通道涡流发射、接收、放大、数据采集、记录和分析功能。",
+        "bbox": [
+            109,
+            194,
+            821,
+            210
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.1.2 检测仪器应符合其相应的产品标准规定，具有产品质量合格证明文件；合格证明文件中至少包括通道数量、频率范围、探头驱动、增益范围等主要参数。",
+        "bbox": [
+            110,
+            214,
+            852,
+            249
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.1.3 仪器的电气性能和功能应满足附录 B 的要求，并按照规格型号提供具有 ISO/IEC 17025 认可的第三方实验室出具的证明文件。",
+        "bbox": [
+            110,
+            252,
+            853,
+            287
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.1.4 检测仪器应能对基于通道多路转换系统或并行通道系统的阵列涡流探头信号进行管理；检测仪器的频率范围至少应包括 $1 \\, kHz \\sim 4 \\, MHz$ ，并具有相关软件。",
+        "bbox": [
+            110,
+            290,
+            853,
+            326
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.1.5 检测仪器和软件还应满足如下要求：",
+        "bbox": [
+            110,
+            328,
+            478,
+            344
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "a）能够对每个线圈通道数据响应进行单独调节（如缩放比例），实现阵列涡流探头信号响应的标定，以便阵列通道具有统一的响应和灵敏度（即通道标定）；",
+        "bbox": [
+            142,
+            347,
+            853,
+            383
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "b）能够以二维 C 扫形式显示数据，便于图像分析，数据还应以传统的相位-幅度图和带状图（或 B 扫图）的形式显示；",
+        "bbox": [
+            142,
+            385,
+            853,
+            421
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "c）能够调节编码器设置和显示分辨率（单位为毫米/采样点）；",
+        "bbox": [
+            142,
+            425,
+            618,
+            441
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "d）能够以可评定和可档案存储的格式记录阵列涡流检测数据。",
+        "bbox": [
+            144,
+            444,
+            621,
+            460
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.2 探头",
+        "text_level": 2,
+        "bbox": [
+            112,
+            464,
+            231,
+            479
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.2.1 探头应符合其相应的产品标准规定，具有产品质量合格证明文件，且合格证明文件中至少包括探头的型号及序列号、扫查覆盖宽度、探头分辨率（力）、工作模式、频率范围、阵列线圈拓扑结构、线圈直径、线圈数量、通道数量等主要参数。",
+        "bbox": [
+            110,
+            483,
+            853,
+            536
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.2 探头的性能指标应满足附录 C 的要求，并按照规格型号提供具有 ISO/IEC 17025 认可的第三方实验室出具的证明文件。",
+        "bbox": [
+            110,
+            540,
+            853,
+            574
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.2.3 探头的保护层（如耐磨胶带等）应具有良好的耐磨性和绝缘性，其厚度应不影响探头的检测灵敏度设置和模拟缺陷的检测，并在工艺规程规定的温度范围内稳定可靠。",
+        "bbox": [
+            110,
+            579,
+            853,
+            614
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.2.4 探头还应满足如下要求：",
+        "text_level": 2,
+        "bbox": [
+            112,
+            618,
+            393,
+            631
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "a）单道扫查时，探头的扫查覆盖宽度应超出检测区至少3.2 mm。",
+        "bbox": [
+            144,
+            637,
+            645,
+            650
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "b）探头的阵列传感器应具有统一灵敏度；为了达到统一的灵敏度级别，可能要求对个体传感元件进行重叠（典型情况如多排交错的单个传感元件）；对于探伤应用，探头在对比试块上同一缺陷多次扫查的幅度响应，应大于或等于最大幅度的60%。",
+        "bbox": [
+            142,
+            655,
+            855,
+            710
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "c）能够检出所有走向的体积型和线型表面开口缺陷。",
+        "bbox": [
+            144,
+            713,
+            554,
+            728
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "d）能够匹配检测区域的几何形状，以最大程度减小被检表面与个体传感元件之间的距离（即提离）。",
+        "bbox": [
+            144,
+            732,
+            853,
+            766
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.3 检测仪器和探头的组合性能要求",
+        "text_level": 2,
+        "bbox": [
+            112,
+            771,
+            438,
+            786
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.3.1 检测仪器和探头的组合性能包括增益准确度、通道一致性、横向分辨力、纵向分辨力等。",
+        "bbox": [
+            112,
+            790,
+            836,
+            805
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.3.2 增益准确度最大偏差不大于 1 dB。",
+        "bbox": [
+            112,
+            809,
+            465,
+            823
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.3.3 通道一致性的幅度线性最大幅度不大于 3%，相位幅度不大于 $5^{\\circ}$ 。",
+        "bbox": [
+            112,
+            828,
+            697,
+            842
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.3.4 横向分辨力不大于 2 mm，纵向分辨力不大于 2 mm。",
+        "bbox": [
+            112,
+            847,
+            601,
+            861
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.3.5 仪器和探头组合性能的测试方法按 JB/T 11780 的规定进行。",
+        "bbox": [
+            112,
+            866,
+            653,
+            881
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            689,
+            111,
+            853,
+            125
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "page_number",
+        "text": "5",
+        "bbox": [
+            843,
+            900,
+            855,
+            910
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.2.2.3.6 发生以下情况时，应测定仪器和探头的组合性能：",
+        "bbox": [
+            147,
+            138,
+            616,
+            152
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "a）新购置的阵列涡流仪器和（或）探头；",
+        "bbox": [
+            179,
+            157,
+            504,
+            171
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "b）仪器、探头和连接线缆在维修或更换主要部件后；",
+        "bbox": [
+            179,
+            176,
+            589,
+            191
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "c）检测人员有怀疑。",
+        "bbox": [
+            179,
+            195,
+            349,
+            209
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3 扫查装置和编码器",
+        "bbox": [
+            147,
+            214,
+            351,
+            229
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3.1 为实现机械扫查并确保探头运动轨迹与参考线保持一致，宜采用扫查装置。",
+        "bbox": [
+            147,
+            233,
+            786,
+            248
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3.2 扫查装置一般包括探头夹持部分、驱动部分、导向部分及位置传感器。",
+        "bbox": [
+            147,
+            252,
+            754,
+            267
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3.3 探头夹持部分应能调整和设置探头位置。",
+        "bbox": [
+            147,
+            271,
+            531,
+            286
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3.4 导向部分应能在扫查时使探头运动方向与设定方向保持一致。",
+        "bbox": [
+            147,
+            290,
+            685,
+            306
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3.5 驱动部分可以采用马达或人工驱动。",
+        "bbox": [
+            147,
+            311,
+            495,
+            325
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3.6 扫查装置中的位置传感器，其位置分辨力应符合本文件相关工艺内容所要求的功能。",
+        "bbox": [
+            147,
+            328,
+            855,
+            345
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.3.7 为了准确测量缺陷长度，应使用编码器；编码器分辨力数值应小于或等于 0.38 mm/采样点。",
+        "bbox": [
+            146,
+            349,
+            887,
+            365
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4 试块",
+        "bbox": [
+            147,
+            369,
+            248,
+            382
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.1 标准试块",
+        "bbox": [
+            146,
+            388,
+            299,
+            401
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.1.1 标准试块是指具有规定的化学成分、表面粗糙度、热处理及几何形状的材料块，用于评定和校准阵列涡流检测设备，即用于系统性能校准的试块。",
+        "bbox": [
+            144,
+            406,
+            887,
+            441
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.1.2 本文件采用的标准试块为通道一致性试块、横向分辨力试块、纵向分辨力试块，见附录 D。",
+        "bbox": [
+            144,
+            445,
+            885,
+            460
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.1.3 标准试块的技术要求应符合 JB/T 12726 的规定，制造商应提供产品质量合格证。",
+        "bbox": [
+            144,
+            464,
+            842,
+            480
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.2 对比试块",
+        "bbox": [
+            146,
+            484,
+            299,
+            498
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.2.1 对比试块主要用于确定阵列涡流检测设备的检测灵敏度、调节检测参数和保证检测结果准确性。",
+        "bbox": [
+            144,
+            503,
+            887,
+            536
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.2.2 对比试块的材料牌号、几何形状、焊接工艺、表面状态应与被检工件相同或相近。",
+        "bbox": [
+            144,
+            541,
+            855,
+            555
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.2.3 对比试块应具有规定的参考缺陷；参考缺陷通常包括表面刻槽和平底孔；参考缺陷的设置应考虑被检工件中可能存在的缺陷类型、大小、位置和走向；平底孔宜采用机加工方式制作，表面刻槽宜选用电火花加工方式制作；对比试块制作过程中，机加工应避免过度冷加工、过热和过大应力，以防止电磁特性变化过大。",
+        "bbox": [
+            144,
+            560,
+            887,
+            634
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.2.4 对比试块上所有参考缺陷的基于幅度数据的信号噪声比（以下简称“信噪比”）应大于或等于3。",
+        "bbox": [
+            144,
+            637,
+            887,
+            672
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.2.5 对比试块上人工缺陷的尺寸不应解释为阵列涡流检测设备可以检出缺陷的最小尺寸。",
+        "bbox": [
+            144,
+            676,
+            870,
+            691
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.3 模拟试块",
+        "bbox": [
+            144,
+            695,
+            297,
+            710
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.3.1 模拟试块是指含有模拟缺陷的试块，主要用于检测工艺验证。",
+        "bbox": [
+            144,
+            714,
+            700,
+            729
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.3.2 模拟试块的材料和电磁特性应与被检工件相同或相近，无影响检测的其他缺陷。",
+        "bbox": [
+            144,
+            733,
+            836,
+            748
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.3.3 模拟试块的外形结构、厚度和表面条件均应与被检工件相同或相近。",
+        "bbox": [
+            144,
+            752,
+            752,
+            766
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.3.4 对于焊接接头，其模拟缺陷应采用焊接方法制备或使用以往检测中发现的真实缺陷；",
+        "bbox": [
+            144,
+            771,
+            877,
+            786
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "对于非焊接接头被检工件，其模拟缺陷应具有真实缺陷的形态与类似电磁响应特点。",
+        "bbox": [
+            144,
+            790,
+            778,
+            804
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.4.3.5 模拟缺陷的类型、位置、尺寸和数量设置应考虑被检工件中可能存在的缺陷状态。",
+        "bbox": [
+            144,
+            809,
+            853,
+            824
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.5 检测设备的校准、核查、运行核查和检查",
+        "bbox": [
+            144,
+            828,
+            521,
+            843
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.1 一般要求",
+        "bbox": [
+            144,
+            847,
+            297,
+            861
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "校准、核查、运行核查和检查一般宜在标准试块和/或对比试块上进行，校准时应使探头的传感元件紧贴试块表面，以获得稳定的和最大的涡流信号；应将影响仪器校准、核查、运行核查的控制器（如滤波器等）均置于“关”的位置或处于最低水平上。",
+        "bbox": [
+            176,
+            866,
+            887,
+            881
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            147,
+            111,
+            312,
+            125
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_number",
+        "text": "6",
+        "bbox": [
+            146,
+            900,
+            157,
+            910
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            112,
+            140,
+            855,
+            176
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.2 校准或核查",
+        "text_level": 2,
+        "bbox": [
+            112,
+            179,
+            285,
+            194
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.2.1 校准分为仪器校准和设备校准。",
+        "bbox": [
+            112,
+            198,
+            445,
+            213
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.2.2 如果仪器损坏过和/或在仪器大修之后，应对阵列涡流仪器进行仪器校准；并在仪器上粘贴或绑系显示最近一次校准日期和校准期满日期的标签。",
+        "bbox": [
+            112,
+            217,
+            853,
+            252
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.2.3 每年对检测仪器和探头组合性能中的通道一致性、增益准确度、横向分辨力、纵向分辨力至少一次校准或核查并记录，测试要求应符合 4.2.2.3 的规定。",
+        "bbox": [
+            112,
+            256,
+            855,
+            290
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.2.4 设备校准",
+        "text_level": 2,
+        "bbox": [
+            112,
+            295,
+            285,
+            309
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "应按照工艺规程规定在对比试块上进行设备校准。检测前，应进行设备校准。检测结束后或检测系列结束后，应进行校准验证。在下列情况下，应采用对比试块进行设备校准验证：",
+        "bbox": [
+            112,
+            313,
+            855,
+            349
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "a）材料性能变化导致信号饱和；",
+        "bbox": [
+            146,
+            353,
+            401,
+            368
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "b）检测新工件时。",
+        "bbox": [
+            146,
+            372,
+            297,
+            387
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.3 运行核查",
+        "text_level": 2,
+        "bbox": [
+            115,
+            391,
+            268,
+            406
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "每隔 6 个月对仪器和探头组合性能中的通道一致性、横向分辨力和纵向分辨力进行至少一次运行核查并记录，测试要求应符合 4.2.2.3 的规定。",
+        "bbox": [
+            112,
+            410,
+            855,
+            445
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.4 检查",
+        "text_level": 2,
+        "bbox": [
+            115,
+            448,
+            233,
+            463
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.4.1 每次检测前应检查仪器设备器材外观、线缆连接和开机信号显示等情况是否正常。",
+        "bbox": [
+            112,
+            467,
+            823,
+            483
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2.5.4.2 每次检测前应对位置传感器进行检查和记录，检查方式是使带位置传感器的扫查装置至少移动 300 mm，将检测设备所显示的位移和实际位移进行比较，其误差应小于 1%。",
+        "bbox": [
+            112,
+            486,
+            855,
+            522
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.3 检测工艺",
+        "text_level": 2,
+        "bbox": [
+            115,
+            526,
+            233,
+            540
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.3.1 检测工艺文件",
+        "text_level": 2,
+        "bbox": [
+            115,
+            545,
+            285,
+            559
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.3.1.1 检测工艺文件包括工艺规程和操作指导书。",
+        "bbox": [
+            114,
+            564,
+            515,
+            579
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.3.1.2 工艺规程除符合 NB/T 47013.1 的规定外，还应规定表 1 所列相关因素的具体范围或要求。相关因素的变化超出规定时，应重新编制或修订工艺规程。",
+        "bbox": [
+            112,
+            583,
+            855,
+            618
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "table",
+        "img_path": "images/05ee6b303db57e0c317cc5355d8650369f3d4dc6128a31df7f575c065e623b5a.jpg",
+        "table_caption": [
+            "表 1 阵列涡流检测工艺规程涉及的相关因素"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>序号</td><td>相关因素</td></tr><tr><td>1</td><td>仪器(生产商、型号)</td></tr><tr><td>2</td><td>探头(生产商、型号)</td></tr><tr><td>3</td><td>阵列线圈拓扑结构</td></tr><tr><td>4</td><td>检测频率、探头驱动,增益设置</td></tr><tr><td>5</td><td>扫查方案(手动、自动或远程控制)、扫查覆盖宽度、扫查重叠、扫查方向</td></tr><tr><td>6</td><td>校准对比试块的同一性</td></tr><tr><td>7</td><td>沿着扫查轴的最小采样密度(采样点数/mm)</td></tr><tr><td>8</td><td>表面状况</td></tr><tr><td>9</td><td>数据采集期间最大扫查速度</td></tr><tr><td>10</td><td>人员资格要求</td></tr></table>",
+        "bbox": [
+            117,
+            644,
+            855,
+            878
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            690,
+            114,
+            853,
+            128
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "page_number",
+        "text": "7",
+        "bbox": [
+            845,
+            903,
+            858,
+            914
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.3.1.3 操作指导书应根据被检工件和工艺规程的要求编制。其内容除符合 NB/T 47013.1 的规定外，至少还应包括：",
+        "bbox": [
+            147,
+            137,
+            892,
+            169
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "a）检测技术要求：检测时机、检测比例、验收要求等。",
+        "bbox": [
+            179,
+            175,
+            608,
+            190
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "b）检测设备和器材：检测仪器、探头、扫查装置、试块名称和规格型号，设备性能检查的项目、时机和合格要求。",
+        "bbox": [
+            179,
+            194,
+            892,
+            229
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "c）检测工艺参数：包括扫查面及其准备要求、探头位置、扫查方式，以及检测设备设置和校准、补充扫查方法。",
+        "bbox": [
+            179,
+            233,
+            892,
+            267
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.1.4 操作指导书在首次应用前应该按 4.3.3 的要求进行工艺验证。",
+        "bbox": [
+            147,
+            271,
+            678,
+            287
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2 检测工艺技术要求",
+        "text_level": 2,
+        "bbox": [
+            147,
+            290,
+            352,
+            305
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.1 检测时机",
+        "text_level": 2,
+        "bbox": [
+            147,
+            309,
+            300,
+            324
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "检测时机应符合承压设备相关法规、规程、产品标准及有关技术文件的规定。",
+        "bbox": [
+            179,
+            328,
+            761,
+            345
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.2 对比试块选用的一般原则",
+        "text_level": 2,
+        "bbox": [
+            147,
+            349,
+            421,
+            363
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.2.1 应根据被检工件的材料牌号、几何形状、焊接工艺、表面状态等信息选择对比试块。",
+        "bbox": [
+            147,
+            368,
+            873,
+            384
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.2.2 对比试块的电磁特性应与被检工件的电磁特性相同或相近。",
+        "bbox": [
+            146,
+            387,
+            685,
+            403
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.2.3 对于带有涂层的被检工件，对比试块上的涂层厚度应是检测表面允许的最大涂层厚度。工艺验证时，可采用塑料垫片模拟非导电涂层。",
+        "bbox": [
+            146,
+            406,
+            890,
+            441
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.3 探头选用的一般原则",
+        "text_level": 2,
+        "bbox": [
+            147,
+            445,
+            386,
+            459
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.3.1 应依据被检工件的结构类型、规格尺寸、材质、扫查面状态、检测灵敏度要求、缺陷状况等信息选择探头。",
+        "bbox": [
+            144,
+            464,
+            889,
+            498
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.3.2 探头的选用应考虑不同走向的体积型和线型表面开口缺陷的检出。",
+        "bbox": [
+            144,
+            503,
+            737,
+            517
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.3.3 探头应匹配检测区域的几何形状，将被检表面和个体传感元件的距离（即提离）降到最低。",
+        "bbox": [
+            144,
+            522,
+            889,
+            555
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.3.4 对于均匀表面，宜采用对缺陷走向不敏感的探头。",
+        "bbox": [
+            144,
+            560,
+            615,
+            574
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4 检测工艺参数设置的一般原则",
+        "text_level": 2,
+        "bbox": [
+            144,
+            580,
+            453,
+            593
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.1 频率的设置",
+        "text_level": 2,
+        "bbox": [
+            144,
+            599,
+            334,
+            612
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "可使用单频阵列涡流检测技术或多频阵列涡流检测技术。选择频率时，应将提离信号、其他不希望出现的干扰信号与缺陷响应信号的相位差最大化。",
+        "bbox": [
+            144,
+            618,
+            887,
+            653
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.2 相位调节",
+        "text_level": 2,
+        "bbox": [
+            144,
+            657,
+            315,
+            671
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "相位调节应有利于缺陷响应信号与提离干扰信号的区分，通常将提离信号的相位调节为水平方向。涡流响应信号会随着检测频率的改变而变化，在改变检测频率的同时应重新调节提离信号的相位，使其处于水平方向。",
+        "bbox": [
+            144,
+            676,
+            887,
+            730
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "缺陷响应信号与提离信号之间应有尽可能大的相位差，必要时，可通过调节缺陷响应信号的垂直分量/水平分量比来增大缺陷响应信号与提离信号间的相位差。",
+        "bbox": [
+            144,
+            733,
+            887,
+            768
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.3 探头驱动和增益的调节",
+        "text_level": 2,
+        "bbox": [
+            144,
+            771,
+            416,
+            786
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "探头驱动和增益的设置应考虑所选仪器和探头的限定范围以及检测需求。",
+        "bbox": [
+            176,
+            790,
+            724,
+            805
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "调节探头驱动和增益，直到参考缺陷信噪比大于或等于3。",
+        "bbox": [
+            178,
+            809,
+            618,
+            824
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "探头驱动和增益的设置，不宜使提离的阻抗信号达到饱和状态（如图 5 所示）。",
+        "bbox": [
+            176,
+            828,
+            776,
+            844
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            149,
+            111,
+            314,
+            124
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "page_number",
+        "text": "8",
+        "bbox": [
+            146,
+            899,
+            157,
+            910
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "image",
+        "img_path": "images/145894dc9e40c723e28cff1c867abe375d48265aed21d20372dc3ae0741640bc.jpg",
+        "image_caption": [
+            "图 5 提离阻抗信号的饱和和不饱和状态示意图"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            334,
+            143,
+            631,
+            213
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.4 滤波设置",
+        "text_level": 2,
+        "bbox": [
+            110,
+            250,
+            282,
+            264
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "干扰信号影响检测灵敏度时，可使用滤波过滤干扰信号，保留缺陷信号。",
+        "bbox": [
+            144,
+            269,
+            692,
+            286
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.5 调色板设置",
+        "text_level": 2,
+        "bbox": [
+            112,
+            289,
+            300,
+            302
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "调色板种类的选择和调色板数值范围的调节, 应保证能将参考缺陷显示从非相关显示(如提离、几何形状变化等造成的非相关显示) 中识别出来。",
+        "bbox": [
+            110,
+            308,
+            853,
+            343
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.6 编码器分辨力设置",
+        "text_level": 2,
+        "bbox": [
+            110,
+            347,
+            352,
+            361
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "按编码器标识或校准结果设定分辨率数值，所选用编码器分辨力不应超过 0.38 mm/采样点。",
+        "bbox": [
+            144,
+            366,
+            831,
+            382
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.7 通道标定",
+        "text_level": 2,
+        "bbox": [
+            110,
+            385,
+            285,
+            400
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "如果所选的探头线圈拓扑结构具有不同的通道类型特征（例如，纵向灵敏度和横向灵敏度），应对每种通道类型进行通道标定。为了确保通道标定成功实施，应借助传统的阻抗图对每个阵列通道的缺陷响应进行评价。可采用对比试块上的长横槽实施通道标定操作。如果能够证明与机加工表面刻槽具有等价性能，可以采用其他参考点（如常见的提离或金属-空气过渡）。在通道标定后，应通过传统的阻抗平面图来检查每个检测通道的信号响应，以确保所有检测通道信号相位和幅度响应都一致。",
+        "bbox": [
+            109,
+            404,
+            855,
+            515
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.4.8 数据自动筛查系统",
+        "text_level": 2,
+        "bbox": [
+            110,
+            519,
+            352,
+            535
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "当采用数据自动筛查系统（例如报警框），每个系统应依据工艺规程进行能力验证。",
+        "bbox": [
+            144,
+            539,
+            776,
+            555
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.5 检测实施的一般原则",
+        "text_level": 2,
+        "bbox": [
+            110,
+            558,
+            352,
+            573
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.5.1 表面准备",
+        "text_level": 2,
+        "bbox": [
+            110,
+            577,
+            282,
+            592
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "探头移动区表面应比较均匀、清洁，不得有焊瘤、飞溅、毛刺等划伤探头表面的硬物，不应有影响阵列涡流检测的粉尘及其他污物。被检工件表面允许存在不影响检测的绝缘涂层或漆层。",
+        "bbox": [
+            109,
+            597,
+            852,
+            633
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.5.2 灵敏度设置",
+        "text_level": 2,
+        "bbox": [
+            110,
+            635,
+            299,
+            649
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "如果对比试样与被检工件之间存在着一定程度的电磁特性差异，需要对灵敏度进行必要的修正或补偿。",
+        "bbox": [
+            109,
+            654,
+            853,
+            688
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.5.3 扫查",
+        "text_level": 2,
+        "bbox": [
+            110,
+            692,
+            248,
+            707
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "扫查时，按压探头的力度应适中，确保探头的传感元件与被检表面接触，并且保证探头移动顺畅。当采用适形阵列探头时，施加到所有线圈的压力应始终保持一致。",
+        "bbox": [
+            109,
+            712,
+            853,
+            747
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "扫查的速度。扫查速度应保证对比试块上所有缺陷都能检出，所有缺陷的信噪比都应大于3。沿着扫查轴的样本密度应大于或等于2.0个采样点/mm。对于有涂层的表面，当采用工艺规程规定的最大扫查速度时，应对工艺规程进行验证，确保对比试块的最大涂层厚度部位的各个方向的缺陷均能检出。一般情况下，探头的工作频率越高，最大扫查速度就越大。",
+        "bbox": [
+            107,
+            751,
+            853,
+            823
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "扫查重叠。被检区域长度（扫查轴方向）较大时，宜采用分段扫查方式进行扫查；在扫查轴方向上相邻两段扫查区域重叠长度应大于或等于1个探头宽度。当被检区域宽度（变道轴方向）大于扫查覆盖宽度时，则采取分道扫查方式进行扫查；相邻两道在变道轴方向上的重叠宽度应大于或等于6.4 mm。如图6所示。",
+        "bbox": [
+            107,
+            827,
+            853,
+            862
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            690,
+            115,
+            855,
+            129
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "page_number",
+        "text": "9",
+        "bbox": [
+            838,
+            904,
+            852,
+            915
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            149,
+            138,
+            895,
+            173
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "注：探头长度重叠数值 6.4 mm 是依据探头体内线圈灵敏度长度。",
+        "bbox": [
+            178,
+            176,
+            601,
+            192
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "image",
+        "img_path": "images/c3fc9b3ac9565c70e73cd1d77e4be0a8ed3cb0d15a54d8421bb64a60655b35bc.jpg",
+        "image_caption": [
+            "图 6 多道、多段扫查的重叠"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            213,
+            201,
+            831,
+            406
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "磁导率波动。扫查时，如果沿着扫查轴方向的磁导率变化程度达到了基于相位-幅度图的阵列涡流数据信号的饱和状态，则检测人员应进行系统校准和验证，在探头所处的影响区内重新平衡仪器，并重新扫查该区域。如果局部磁导率畸变影响检测，则可采取饱和磁化方法或退磁方法使畸变处的磁导率均匀化，并重新扫查该区域。",
+        "bbox": [
+            149,
+            448,
+            895,
+            523
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.5.4 辅助扫查",
+        "text_level": 2,
+        "bbox": [
+            149,
+            526,
+            322,
+            541
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "没有使用编码器时，倘若性能验证表明手动单通道涡流技术（NB/T 47013.6）能够满足检测要求，则可补充手动单通道涡流检测技术（NB/T 47013.6）对缺陷位置进行确认。",
+        "bbox": [
+            147,
+            543,
+            894,
+            580
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.6 相关显示评定",
+        "text_level": 2,
+        "bbox": [
+            149,
+            584,
+            339,
+            599
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.6.1 C 扫显示的分类",
+        "text_level": 2,
+        "bbox": [
+            149,
+            603,
+            371,
+            618
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流 C 扫显示分为相关显示和非相关显示。",
+        "bbox": [
+            184,
+            622,
+            544,
+            637
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "非相关显示可能是由于探头与被检工件表面接触的不一致、被检工件几何特征造成的探头移动或被检工件材料性能的变化而产生的。",
+        "bbox": [
+            149,
+            640,
+            894,
+            676
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "如果显示的相位响应与对比试块上缺陷响应相当，并且不能识别为非相关显示，应评定为相关显示，并进行记录和报告。",
+        "bbox": [
+            149,
+            679,
+            894,
+            714
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "非相关显示不记录。",
+        "bbox": [
+            184,
+            719,
+            337,
+            733
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.6.2 相关显示的定位",
+        "text_level": 2,
+        "bbox": [
+            149,
+            738,
+            374,
+            752
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "可根据 C 扫显示的成像特征和通道编号，确定缺陷在 Y 轴方向的位置；根据 C 扫图显示的 X 轴方向的编码器读数，确定缺陷在 X 轴方向的位置。",
+        "bbox": [
+            149,
+            755,
+            897,
+            790
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.6.3 相关显示的定量",
+        "text_level": 2,
+        "bbox": [
+            149,
+            794,
+            374,
+            809
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "为了精确测量缺陷长度，应使用编码器。编码器分辨力的设定数值应小于或等于 0.38 mm/采样点。",
+        "bbox": [
+            181,
+            812,
+            895,
+            828
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "可借助检测软件的测量工具或坐标读数，对相关显示的长度或宽度进行测量。",
+        "bbox": [
+            184,
+            831,
+            768,
+            847
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "如果检测软件没有深度测量工具，可参考附录 F 评价缺陷的深度。",
+        "bbox": [
+            184,
+            851,
+            682,
+            866
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            151,
+            112,
+            315,
+            125
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "page_number",
+        "text": "10",
+        "bbox": [
+            154,
+            901,
+            173,
+            912
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.7 相关显示的验证检测",
+        "text_level": 2,
+        "bbox": [
+            112,
+            137,
+            352,
+            152
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "如果不能根据阵列涡流信号特征确定缺陷的性质，则可优先采用目视检测（NB/T 47013.7）进行验证检测。如果目视检测（NB/T 47013.7）仍无法对缺陷进行确定，则可采用磁粉检测（NB/T 47013.4）或渗透检测（NB/T 47013.5）进行验证检测；对于铁磁性金属工件，应优先采用磁粉检测（NB/T 47013.4）进行验证检测；对于非铁磁性金属工件，宜采用渗透检测方法（NB/T 47013.5）进行验证检测。",
+        "bbox": [
+            110,
+            157,
+            855,
+            252
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.8 检测系统的复核",
+        "text_level": 2,
+        "bbox": [
+            112,
+            256,
+            317,
+            271
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.8.1 复核时机",
+        "text_level": 2,
+        "bbox": [
+            112,
+            276,
+            284,
+            290
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "在如下情况下，应对检测系统进行复核：",
+        "bbox": [
+            144,
+            295,
+            452,
+            311
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "a）检测过程中仪器、探头、连接线缆更换；",
+        "bbox": [
+            144,
+            315,
+            484,
+            331
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "b）检测人员有怀疑；",
+        "bbox": [
+            144,
+            334,
+            314,
+            350
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "c）连续工作4个小时及以上；",
+        "bbox": [
+            144,
+            355,
+            381,
+            370
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "d）检测结束。",
+        "bbox": [
+            144,
+            375,
+            262,
+            390
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.3.2.8.2 复核内容与要求",
+        "text_level": 2,
+        "bbox": [
+            112,
+            395,
+            334,
+            409
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "复核内容主要包括灵敏度、位置传感器的偏离情况。复核与初始设置时所使用的对比试块及其他技术条件均应相同。复核的纠正措施应按表 2 的规定执行。",
+        "bbox": [
+            110,
+            415,
+            853,
+            451
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "table",
+        "img_path": "images/6f09a88b2d604a8be65af8ee8cd409ae44d47916b52be54a9992139b0cd7cadc.jpg",
+        "table_caption": [
+            "表 2 复核情况和纠正"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>类型</td><td>复核结果</td><td>纠正</td></tr><tr><td rowspan=\"2\">位移</td><td>偏差 $\\leqslant 5\\%$ </td><td>不需要采取措施</td></tr><tr><td>偏差 $>5\\%$ </td><td>应对上次设置以后所检测的位置进行修正</td></tr><tr><td rowspan=\"2\">灵敏度</td><td>参考缺陷的C扫相关显示清晰可辨</td><td>不需要采取措施</td></tr><tr><td>参考缺陷的C扫相关显示未出现或无法显示</td><td>应重新设置,并应重新对上次设置后所检测的区域进行重新扫查</td></tr></table>",
+        "bbox": [
+            114,
+            478,
+            852,
+            617
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.3.3 工艺验证",
+        "text_level": 2,
+        "bbox": [
+            112,
+            628,
+            248,
+            643
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.3.3.1 工艺验证可采用对比试块、模拟试块或直接在工件上进行。当采用涡流检测仿真的方式替代时，所采用的仿真计算应经技术验证和现场试验符合实际检测要求，同时提供相关的证明文件。",
+        "bbox": [
+            110,
+            648,
+            853,
+            684
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.3.3.2 工艺验证结果要求",
+        "text_level": 2,
+        "bbox": [
+            110,
+            687,
+            334,
+            701
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "a）试块上参考缺陷的 C 扫相关显示清晰可辨；",
+        "bbox": [
+            142,
+            707,
+            505,
+            723
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "b）测量的参考缺陷尺寸偏差值在允许范围之内。",
+        "bbox": [
+            142,
+            726,
+            519,
+            742
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.3.3.3 必要时，可委托具备能力的相关技术机构进行工艺验证并提供相应证明文件。",
+        "bbox": [
+            110,
+            747,
+            769,
+            763
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "4.4 阵列涡流检测的一般程序",
+        "text_level": 2,
+        "bbox": [
+            110,
+            766,
+            349,
+            781
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "a）被检工件信息、电磁特性和结构分析；",
+        "bbox": [
+            142,
+            787,
+            467,
+            802
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "b）试块选择或制作；",
+        "bbox": [
+            142,
+            805,
+            312,
+            820
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "c）检测设备的准备；",
+        "bbox": [
+            142,
+            825,
+            312,
+            840
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "d）工艺试验与验证；",
+        "bbox": [
+            144,
+            845,
+            312,
+            859
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "e）检测工艺文件选择或编制；",
+        "bbox": [
+            144,
+            863,
+            379,
+            878
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            690,
+            112,
+            855,
+            125
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "page_number",
+        "text": "11",
+        "bbox": [
+            833,
+            900,
+            852,
+            912
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "f）检测实施；",
+        "bbox": [
+            176,
+            138,
+            295,
+            152
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "g）检测数据评定、图像分析；",
+        "bbox": [
+            176,
+            156,
+            415,
+            173
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "h）记录和报告。",
+        "bbox": [
+            176,
+            176,
+            314,
+            191
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.5 环境与安全要求",
+        "text_level": 2,
+        "bbox": [
+            144,
+            195,
+            315,
+            210
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "检测场所、环境及安全防护应符合 NB/T 47013.1 的规定。",
+        "bbox": [
+            176,
+            214,
+            611,
+            230
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6 阵列涡流检测的干扰因素",
+        "text_level": 2,
+        "bbox": [
+            144,
+            233,
+            384,
+            249
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.1 母材特性差异",
+        "text_level": 2,
+        "bbox": [
+            144,
+            252,
+            315,
+            268
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "被检材料因微观结构差异等原因可能导致材料磁导率和电导率的局部差异，则可能产生噪声信号，限制了小缺陷的检出能力。",
+        "bbox": [
+            144,
+            271,
+            889,
+            308
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.2 母材材料厚度",
+        "text_level": 2,
+        "bbox": [
+            144,
+            311,
+            317,
+            326
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "如果工件材料厚度与检测灵敏度深度相当或者更小，则可能会影响检测结果。",
+        "bbox": [
+            176,
+            328,
+            761,
+            346
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.3 剩磁",
+        "text_level": 2,
+        "bbox": [
+            144,
+            350,
+            248,
+            365
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "磁性材料中的剩磁可能造成局部响应改变，影响检测结果。在某些情况下，为了获得有效的结果，有必要对工件进行退磁。",
+        "bbox": [
+            144,
+            368,
+            889,
+            404
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.4 残余应力",
+        "text_level": 2,
+        "bbox": [
+            144,
+            407,
+            282,
+            422
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "可磁化工件的方向性应力差异，可能会影响结果。为了检验检测结果，应对方向性灵敏度进行确定，可能要求制备性能试块进行仔细验证。",
+        "bbox": [
+            144,
+            425,
+            887,
+            461
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.5 扫查面的曲率",
+        "text_level": 2,
+        "bbox": [
+            144,
+            465,
+            317,
+            480
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "对于具有曲率的表面（如圆柱体表面或圆锥体表面），曲率半径可能会影响检测灵敏度。一般情况下，被检工件的曲率半径应大于传感器长度。可定制阵列涡流探头专门匹配表面曲率。",
+        "bbox": [
+            144,
+            483,
+            889,
+            519
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.6 横跨焊缝的特性差异",
+        "text_level": 2,
+        "bbox": [
+            144,
+            523,
+            368,
+            538
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "在焊缝结构中，焊缝金属、热影响区和母材的磁导率和电导率可能存在差异。考虑到阵列传感器是沿着焊缝轴线移动的，个体传感元件通常接触的材料性能相对平稳。然而，阵列传感器内的一个体传感元件到另一个体传感元件，可能存在很大的性能差异，检测设备应能够对这些局部性能差异进行补偿，以避免 C 扫图中的噪声和干扰信号。",
+        "bbox": [
+            144,
+            541,
+            890,
+            616
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.7 焊缝几何特征",
+        "text_level": 2,
+        "bbox": [
+            144,
+            618,
+            317,
+            634
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "焊缝中的几何特征（如凸起和凹坑），可引起非相关局部信号，有助于增加每个传感器感知的噪声电平。这些几何特征产生的响应信号相位与裂纹类缺陷差别很大，容易被识别。然而，几个大几何特征的存在，可能会降低探头的整体灵敏度。",
+        "bbox": [
+            144,
+            637,
+            890,
+            693
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.8 导电涂层",
+        "text_level": 2,
+        "bbox": [
+            144,
+            695,
+            282,
+            711
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "被检工件表面导电涂层的存在会影响检测结果。采用对比试样实施系统性能验证时，对比试样表面的涂层特性和厚度应与被检工件表面导电涂层的特性和厚度相同或相近。",
+        "bbox": [
+            144,
+            714,
+            889,
+            750
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.9 绝缘涂层",
+        "text_level": 2,
+        "bbox": [
+            144,
+            752,
+            282,
+            769
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "被捡工件表面的绝缘涂层，会影响检测结果。检测灵敏度通常会随着绝缘涂层厚度的增大而降低。采用对比试样实施设备验证时，对比试样表面的绝缘涂层厚度（或绝缘薄片总厚度）应与被检工件表面绝缘涂层厚度相同或相近。",
+        "bbox": [
+            144,
+            771,
+            890,
+            826
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.10 边缘效应",
+        "text_level": 2,
+        "bbox": [
+            144,
+            828,
+            290,
+            844
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "如果探头的阵列线圈距离工件边缘太近，可能会影响检测结果。应采用一定的措施对边缘效应进行纠正。",
+        "bbox": [
+            144,
+            846,
+            890,
+            883
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            144,
+            112,
+            310,
+            125
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "page_number",
+        "text": "12",
+        "bbox": [
+            147,
+            900,
+            168,
+            912
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "4.6.11 温度",
+        "text_level": 2,
+        "bbox": [
+            115,
+            140,
+            226,
+            154
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "涡流检测通常会受到被检工件温度差异的影响。",
+        "bbox": [
+            149,
+            159,
+            507,
+            174
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "4.6.12 阵列传感器表面和扫查面的清洁度",
+        "text_level": 2,
+        "bbox": [
+            115,
+            179,
+            450,
+            194
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "对于阻止阵列传感器与被检焊接接头表面之间亲密接触的异物或表面粗糙度，检测结果可能会比较敏感。如果异物不是导电的或可磁化的，或没有造成提离的突变，磁导率和/或电导率属性测量值不会受到明显影响。但这些异物、表面粗糙度、侵蚀疤和擦伤造成的提离，会直接影响工件非导电涂层厚度的测量。",
+        "bbox": [
+            115,
+            198,
+            860,
+            271
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "4.6.13 仪器稳定性",
+        "text_level": 2,
+        "bbox": [
+            115,
+            275,
+            278,
+            289
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "仪器中的漂移或噪声会导致测量的不精确性。只要响应基准值超过阈值范围，就应重新进行通道标定和系统性能验证。",
+        "bbox": [
+            115,
+            294,
+            858,
+            328
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "4.6.14 传感器响应模型",
+        "text_level": 2,
+        "bbox": [
+            115,
+            332,
+            312,
+            347
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "对于用于检测的传感器响应模型，如果传感器模型没有匹配传感器和激励频率，则对于特定应用的模型是不合适的。",
+        "bbox": [
+            115,
+            352,
+            858,
+            385
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "4.6.15 检测时探头的按压力",
+        "text_level": 2,
+        "bbox": [
+            115,
+            390,
+            346,
+            404
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "当把探头按压在被检面上时，施加到适形阵列探头的压力会影响读数。压力应足以保持每个个体传感元件都能与被检工件表面良好接触。由刚性体制成的、与被检表面轮廓匹配的阵列传感器，仅需很小的压力就能保持与表面的良好接触，但仍需确保每个传感元件之间的提离在整个检测过程保持一致。",
+        "bbox": [
+            114,
+            409,
+            858,
+            483
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5 承压设备用材料及零部件的阵列涡流检测方法",
+        "text_level": 2,
+        "bbox": [
+            115,
+            492,
+            478,
+            509
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.1 范围",
+        "text_level": 2,
+        "bbox": [
+            115,
+            517,
+            201,
+            533
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "本条适用于承压设备生产和使用过程中金属材料及零部件表面开口缺陷的阵列涡流检测。",
+        "bbox": [
+            147,
+            539,
+            816,
+            555
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.2 材料及零部件阵列涡流检测工艺",
+        "text_level": 2,
+        "bbox": [
+            115,
+            558,
+            406,
+            572
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.2.1 检测工艺文件",
+        "text_level": 2,
+        "bbox": [
+            115,
+            577,
+            285,
+            591
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "材料及零部件阵列涡流检测的工艺文件，应符合 4.3.1 的规定。",
+        "bbox": [
+            147,
+            597,
+            618,
+            612
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.2.2 材料及零部件阵列涡流的检测工艺技术要求",
+        "bbox": [
+            115,
+            616,
+            509,
+            630
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.1 材料及零部件阵列涡流检测工艺技术，应符合 4.3.2 的规定。",
+        "bbox": [
+            115,
+            635,
+            643,
+            650
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.2 检测时机",
+        "text_level": 2,
+        "bbox": [
+            115,
+            654,
+            268,
+            668
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "检测时机除符合 4.3.2.1 的规定外，还应符合以下规定：",
+        "bbox": [
+            147,
+            674,
+            563,
+            688
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "a）对于材料及零部件，应在外观检查合格后进行检测；",
+        "bbox": [
+            147,
+            693,
+            573,
+            707
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "b）对于需要热处理的材料及零部件，应在热处理后进行检测。",
+        "bbox": [
+            147,
+            713,
+            625,
+            728
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.3 材料及零部件检测用对比试块",
+        "text_level": 2,
+        "bbox": [
+            115,
+            731,
+            421,
+            745
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.3.1 材料及零部件检测用对比试块的示意图见图 7。",
+        "bbox": [
+            114,
+            750,
+            563,
+            766
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            695,
+            116,
+            860,
+            129
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "page_number",
+        "text": "13",
+        "bbox": [
+            838,
+            904,
+            855,
+            916
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "image",
+        "img_path": "images/d766248191e2676c49ea260919bd839a1d191240099477a6f5c3305b085f4d4b.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "注：W——扫查宽度。"
+        ],
+        "content": "",
+        "bbox": [
+            216,
+            159,
+            815,
+            302
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "图 7 材料及零部件检测用对比试块",
+        "bbox": [
+            373,
+            331,
+            655,
+            347
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.3.2 在纵向扫查方向的起始和结束端，对比试块的无缺陷区宽度应大于或等于 40 mm。",
+        "bbox": [
+            141,
+            359,
+            853,
+            376
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.3.3 金属对比试块的参考缺陷应至少包括 1 个平底孔和 3 个表面刻槽；各参考缺陷在同一纵向上的间距应大于或等于 15 mm。",
+        "bbox": [
+            141,
+            380,
+            885,
+            415
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.3.4 平底孔的直径和深度应分别小于或等于 1.60 mm 和 1.00 mm；尺寸公差为 $\\pm0.05$ mm。",
+        "bbox": [
+            141,
+            418,
+            848,
+            433
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.3.5 表面刻槽的走向应包括横向、纵向和斜向（例如： $45^{\\circ}$ ）；表面刻槽的长度、宽度和深度应分别小于或等于1.60 mm、0.25 mm和1.00 mm；尺寸公差为 $\\pm0.05$ mm。",
+        "bbox": [
+            142,
+            437,
+            885,
+            472
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.3.6 对比试块应有 1 个具有固定深度的长横槽，用于通道标定；长横槽的长度应至少比阵列涡流探头扫查覆盖宽度大 25 mm，长横槽的宽度和深度应分别小于或等于 0.25 mm 和 1.00 mm；尺寸公差为 ±0.05 mm；长横槽在同一纵向上距离相邻参考缺陷的间距应大于或等于 15 mm。",
+        "bbox": [
+            142,
+            475,
+            887,
+            530
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.2.4 探头的选用",
+        "bbox": [
+            142,
+            535,
+            315,
+            549
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "当材料或零部件表面为均匀表面时，宜采用对缺陷走向不敏感的探头；对于发射-接收式探头，应考虑到探头对缺陷走向的灵敏度差异；探头检测频率推荐采用1 kHz～1 MHz。",
+        "bbox": [
+            142,
+            553,
+            885,
+            587
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3 材料及零部件阵列涡流的检测实施",
+        "bbox": [
+            142,
+            592,
+            468,
+            606
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.1 材料及零部件阵列涡流检测实施，应符合 4.3.2.5 的要求。",
+        "bbox": [
+            142,
+            611,
+            653,
+            625
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.2 灵敏度的设置",
+        "bbox": [
+            144,
+            631,
+            331,
+            644
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.2.1 检测灵敏度设置，应符合 4.3.2.5.2 的规定。",
+        "bbox": [
+            142,
+            650,
+            563,
+            663
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.2.2 采用材料及零部件检测用对比试块，通过设置合适的工艺参数，确保 C 扫图中的参考缺陷的相关显示清晰可辨，且信噪比大于 3，并保证所有参考缺陷的涡流信号幅度大于或等于显示屏的 40%。",
+        "bbox": [
+            142,
+            667,
+            887,
+            723
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.3 扫查",
+        "bbox": [
+            144,
+            726,
+            263,
+            741
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.3.1 材料和零部件的扫查，应符合 4.3.2.5.3 的规定。",
+        "bbox": [
+            142,
+            745,
+            596,
+            760
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.3.2 应根据材料及零部件的结构特点和常见缺陷的走向，合理确定扫查方向和扫查方式。",
+        "bbox": [
+            142,
+            763,
+            872,
+            779
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.3.3 对于发射-接收式阵列涡流探头，可在条件允许的情况下改变扫查轴方向，以保证各种走向的缺陷能够被检出。",
+        "bbox": [
+            142,
+            782,
+            885,
+            818
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.3.4 补充扫查",
+        "bbox": [
+            144,
+            821,
+            299,
+            836
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "对于扫查的受限部位或检测盲区，倘若性能验证表明手动单通道涡流技术（NB/T 47013.6）能够满足检测要求，可采用将其作为补充扫查手段，对该部位进行检测。",
+        "bbox": [
+            144,
+            838,
+            887,
+            875
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            142,
+            112,
+            305,
+            125
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "header",
+        "text": "单位为毫米",
+        "bbox": [
+            806,
+            138,
+            885,
+            152
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "page_number",
+        "text": "14",
+        "bbox": [
+            147,
+            901,
+            166,
+            912
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "5.2.4 材料及零部件阵列涡流的相关显示评定",
+        "text_level": 2,
+        "bbox": [
+            119,
+            138,
+            482,
+            153
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "材料及零部件阵列涡流的相关显示评定，应符合 4.3.2.6 的规定。",
+        "bbox": [
+            152,
+            157,
+            640,
+            173
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "5.3 材料及零部件阵列涡流相关显示的验证检测",
+        "text_level": 2,
+        "bbox": [
+            119,
+            176,
+            500,
+            192
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "材料及零部件的阵列涡流相关显示的验证检测，应符合 4.3.2.7 的规定。",
+        "bbox": [
+            152,
+            195,
+            690,
+            212
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "5.4 材料及零部件阵列涡流检测结果的处理",
+        "bbox": [
+            121,
+            214,
+            465,
+            230
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "5.4.1 不允许任何裂纹。紧固件和轴类零件不允许任何横向相关显示。",
+        "bbox": [
+            119,
+            235,
+            660,
+            250
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "5.4.2 可根据与客户约定的验收要求（如参考缺陷的深度），依据相关显示的幅度、相位和 C 扫颜色等参数，对相关显示的可接受性进行判定。",
+        "bbox": [
+            119,
+            254,
+            865,
+            288
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "5.4.3 可根据相关显示的验证检测方法对缺陷进行相应的质量分级。",
+        "bbox": [
+            119,
+            292,
+            643,
+            309
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6 承压设备焊接接头阵列涡流检测的方法",
+        "text_level": 2,
+        "bbox": [
+            119,
+            318,
+            436,
+            334
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.1 范围",
+        "text_level": 2,
+        "bbox": [
+            121,
+            344,
+            208,
+            359
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "本条适用于承压设备生产和使用过程中金属焊接接头表面开口缺陷的阵列涡流检测。",
+        "bbox": [
+            152,
+            364,
+            788,
+            380
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.2 承压设备焊接接头阵列涡流的检测工艺",
+        "bbox": [
+            119,
+            383,
+            465,
+            397
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.2.1 承压设备焊接接头阵列涡流检测的工艺文件",
+        "text_level": 2,
+        "bbox": [
+            119,
+            403,
+            515,
+            416
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "焊接接头阵列涡流检测的工艺文件，应符合 4.3.1 的规定。",
+        "bbox": [
+            154,
+            421,
+            591,
+            437
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.2.2 焊接接头阵列涡流的检测工艺技术要求",
+        "bbox": [
+            119,
+            441,
+            480,
+            456
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.1 检测时机",
+        "bbox": [
+            121,
+            460,
+            275,
+            473
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "检测时机除符合 4.3.2.1 的规定外，还应符合以下要求：",
+        "bbox": [
+            152,
+            479,
+            569,
+            495
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "a）具有延迟裂纹倾向的材料应当至少在焊接24 h后进行检测；",
+        "bbox": [
+            152,
+            498,
+            636,
+            514
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "b）对于进行焊后热处理的铁磁性金属焊接接头，宜在热处理后进行。",
+        "bbox": [
+            152,
+            517,
+            684,
+            533
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2 焊接接头检测用对比试块",
+        "bbox": [
+            119,
+            536,
+            394,
+            552
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.1 本章对比试块应符合 4.2.4.2 的规定，焊接接头检测用对比试块见图 8。",
+        "bbox": [
+            119,
+            555,
+            747,
+            572
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "单位为毫米",
+        "bbox": [
+            784,
+            578,
+            863,
+            591
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "image",
+        "img_path": "images/b09af0a7906d0f6475be06450bc5ecfce509569ddb77ab09936ae100bb6818fd.jpg",
+        "image_caption": [
+            "图 8 焊接接头阵列涡流检测用对比试块示意图"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            129,
+            595,
+            862,
+            846
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            702,
+            114,
+            865,
+            127
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "page_number",
+        "text": "15",
+        "bbox": [
+            843,
+            903,
+            863,
+            914
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.2 在纵向扫查方向的起始端和结束端，对比试块的无缺陷区宽度应大于或等于 40 mm。",
+        "bbox": [
+            142,
+            138,
+            872,
+            153
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.3 对比试块的参考缺陷应至少包括 4 个平底孔和 12 个表面刻槽；各参考缺陷在同一纵向上的间距应大于或等于 15 mm。",
+        "bbox": [
+            142,
+            157,
+            885,
+            193
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.4 对比试块的表面刻槽的走向应包括横向、纵向和斜向（例如： $45^{\\circ}$ ）。",
+        "bbox": [
+            142,
+            197,
+            757,
+            212
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.5 对比试块的每种缺陷类型的位置应包括焊接接头的热影响区、焊冠、熔合线和母材。",
+        "bbox": [
+            142,
+            217,
+            870,
+            232
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.6 对比试块母材区应有 1 个具有固定深度的长横槽，用于通道标定；长横槽的长度应至少比阵列涡流扫查覆盖宽度大 25 mm，长横槽的宽度和深度应分别小于或等于 0.25 mm 和 1.00 mm；尺寸公差为 ±0.05 mm；长横槽在同一纵向上距离相邻参考缺陷的间距应大于或等于 15 mm。",
+        "bbox": [
+            142,
+            237,
+            885,
+            292
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.7 对于余高磨平的焊接接头，对比试块上平底孔的直径和深度应分别小于或等于 1.60 mm 和 1.00 mm；对比试块上表面刻槽的长度、宽度和深度应分别小于或等于 1.60 mm、0.25 mm 和 1.00 mm；尺寸公差为±0.05 mm。",
+        "bbox": [
+            142,
+            296,
+            885,
+            352
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.2.8 对于带有余高的焊接接头，对比试块上平底孔的直径和深度应分别小于或等于 3.20 mm 和 1.00 mm；对比试块上表面刻槽的长度、宽度和深度应分别小于或等于 4.80 mm、0.25 mm 和 1.00 mm；尺寸公差为±0.05 mm。",
+        "bbox": [
+            142,
+            356,
+            885,
+            410
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.3 探头的选用",
+        "bbox": [
+            142,
+            416,
+            312,
+            429
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.3.1 对于余高磨平的焊接接头，为了提高检测效率，可采用对缺陷走向不敏感的探头。",
+        "bbox": [
+            142,
+            435,
+            831,
+            450
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.3.2 对于带余高的焊接接头，为了提高检测信噪比，可采用发射接收式探头，但要考虑探头对缺陷走向的灵敏度差异。",
+        "bbox": [
+            142,
+            454,
+            885,
+            490
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.3.3 对于带有余高且表面粗糙的焊接接头，宜选择适形性强、耐磨性高的探头。",
+        "bbox": [
+            142,
+            495,
+            801,
+            509
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.2.3.4 探头检测频率推荐采用 1 kHz\\~1 MHz。",
+        "bbox": [
+            142,
+            515,
+            534,
+            529
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3 焊接接头阵列涡流检测的实施",
+        "bbox": [
+            142,
+            535,
+            433,
+            549
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.1 材料及零部件阵列涡流检测实施，应符合 4.3.2.5 的要求。",
+        "bbox": [
+            142,
+            554,
+            650,
+            568
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.2 灵敏度的设置",
+        "bbox": [
+            144,
+            574,
+            329,
+            587
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.2.1 检测灵敏度设置，应符合 4.3.2.5.2 的规定。",
+        "bbox": [
+            142,
+            593,
+            561,
+            608
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.2.2 采用焊接接头检测用对比试块，通过设置合适的工艺参数，确保 C 扫图中的参考缺陷的相关显示清晰可辨，且信噪比大于 3，并保证所有参考缺陷的涡流信号幅度大于或等于显示屏的 40%。",
+        "bbox": [
+            142,
+            612,
+            885,
+            669
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.3 扫查",
+        "bbox": [
+            144,
+            674,
+            262,
+            688
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.3.1 焊接接头的扫查，应符合 4.3.2.5.3 的规定。",
+        "bbox": [
+            142,
+            693,
+            561,
+            707
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.3.2 对于余高磨平的平板对接接头，采用发射-接收式阵列涡流探头时，可在条件允许的情况下改变扫查轴方向，以保证各种走向的缺陷能够被检出。",
+        "bbox": [
+            142,
+            712,
+            882,
+            748
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.3.3 对于带有余高的焊接接头，扫查方向宜与焊缝的长度方向（x坐标方向）一致，如图9所示。",
+        "bbox": [
+            142,
+            751,
+            885,
+            786
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            144,
+            112,
+            307,
+            125
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "page_number",
+        "text": "16",
+        "bbox": [
+            147,
+            900,
+            164,
+            910
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "image",
+        "img_path": "images/2cc74a4a2f9e47c0a59abd25a9ae72ecbaa4373fb798716539b8f7196abad4cd.jpg",
+        "image_caption": [
+            "图 9 焊缝检测的扫查方向"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            389,
+            144,
+            594,
+            331
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "6.2.3.4 补充扫查",
+        "text_level": 2,
+        "bbox": [
+            119,
+            368,
+            275,
+            384
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "采用对缺陷走向敏感的阵列涡流探头时，对于阵列涡流探头灵敏度差的方向，倘若性能验证表明手动单通道涡流技术（NB/T 47013.6）能够满足检测要求，则可采用手动单通道涡流检测技术（NB/T 47013.6）作为补充扫查，对该走向的缺陷进行检测。",
+        "bbox": [
+            119,
+            388,
+            865,
+            444
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "6.2.4 焊接接头阵列涡流的相关显示评定",
+        "bbox": [
+            119,
+            448,
+            447,
+            463
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "焊接接头阵列涡流的相关显示评定，应符合 4.3.2.6 的规定。",
+        "bbox": [
+            151,
+            467,
+            603,
+            483
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "6.3 焊接接头阵列涡流相关显示的验证检测",
+        "text_level": 2,
+        "bbox": [
+            119,
+            486,
+            463,
+            503
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "焊接接头阵列涡流相关显示的验证检测，应符合 4.3.2.7 的规定。",
+        "bbox": [
+            151,
+            507,
+            638,
+            524
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "6.4 焊接接头阵列涡流检测结果的处理",
+        "bbox": [
+            119,
+            527,
+            430,
+            542
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "6.4.1 不允许任何裂纹。",
+        "bbox": [
+            119,
+            547,
+            315,
+            562
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "6.4.2 可根据与客户约定的验收要求（例如：参考缺陷的深度），依据相关显示的幅度、相位和 C 扫颜色等参数，对相关显示的可接受性进行判定。",
+        "bbox": [
+            117,
+            567,
+            865,
+            603
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "6.4.3 可根据相关显示的验证检测方法对缺陷进行相应的质量分级。",
+        "bbox": [
+            117,
+            606,
+            643,
+            623
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "7 检测记录和报告",
+        "text_level": 2,
+        "bbox": [
+            117,
+            633,
+            268,
+            649
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "7.1 检测记录",
+        "text_level": 2,
+        "bbox": [
+            117,
+            659,
+            240,
+            675
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "7.1.1 应按照现场操作的实际情况详细记录检测过程的有关信息和数据。",
+        "bbox": [
+            117,
+            679,
+            677,
+            695
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "7.1.2 阵列涡流检测记录除符合 NB/T 47013.1 的规定外，还至少应包括以下内容：",
+        "bbox": [
+            117,
+            699,
+            749,
+            716
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "a）委托单位及委托编号。",
+        "bbox": [
+            149,
+            719,
+            357,
+            733
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "b）被检工件信息：名称、编号、材质、规格、设备类别、表面状况、工件表面温度、工作介质的名称和工作压力（如果有）、焊缝的材质和宽度（如果有）。",
+        "bbox": [
+            149,
+            739,
+            863,
+            775
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "c）检测设备和器材：检测仪器、探头、扫查装置（如果有）、试块的名称、规格型号和标识号。",
+        "bbox": [
+            149,
+            777,
+            840,
+            795
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "d）检测技术要求：执行标准、检测时机、检测比例、检测工艺参数、验收要求、检测灵敏度。",
+        "bbox": [
+            149,
+            798,
+            847,
+            814
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "e）检测结果：检测部位示意图、数据文件名及检测长度、缺陷记录（包括缺陷起始位置、长度）。",
+        "bbox": [
+            149,
+            817,
+            853,
+            851
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "f）检测人员和复核人员签字及日期。",
+        "bbox": [
+            149,
+            856,
+            442,
+            872
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            700,
+            115,
+            865,
+            129
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "page_number",
+        "text": "17",
+        "bbox": [
+            843,
+            903,
+            863,
+            915
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "7.2 检测报告",
+        "text_level": 2,
+        "bbox": [
+            144,
+            138,
+            263,
+            155
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "7.2.1 应依据检测记录出具检测报告。",
+        "bbox": [
+            144,
+            157,
+            442,
+            174
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "7.2.2 阵列涡流检测报告除符合 NB/T 47013.1 的规定外，还至少应包括以下内容：",
+        "bbox": [
+            144,
+            176,
+            771,
+            193
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "a）委托单位。",
+        "bbox": [
+            176,
+            197,
+            294,
+            212
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "b）被检工件信息：名称、编号、材质、规格、设备类别、表面状况、工件表面温度、工作介质的名称和压力（如果有）、焊缝的材质和宽度（如果有）。",
+        "bbox": [
+            174,
+            214,
+            885,
+            250
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "c）检测设备和器材：检测设备、探头、试块的名称和规格型号。",
+        "bbox": [
+            174,
+            254,
+            672,
+            270
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "d）检测技术要求：执行标准、检测时机、检测比例、检测工艺参数、验收要求、检测灵敏度。",
+        "bbox": [
+            174,
+            273,
+            870,
+            290
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "e）检测结果：检测部位示意图、缺陷记录。",
+        "bbox": [
+            174,
+            292,
+            517,
+            309
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "f）检测结论。",
+        "bbox": [
+            176,
+            312,
+            294,
+            328
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "g）报告的编制（级别）、审批人员（级别）的签署。",
+        "bbox": [
+            174,
+            330,
+            584,
+            347
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            144,
+            114,
+            309,
+            128
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "page_number",
+        "text": "18",
+        "bbox": [
+            144,
+            900,
+            164,
+            913
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "text",
+        "text": "附录A",
+        "text_level": 2,
+        "bbox": [
+            443,
+            176,
+            532,
+            192
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "(资料性)",
+        "bbox": [
+            448,
+            195,
+            527,
+            211
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头的阵元、线圈激活模式和拓扑结构、分辨力",
+        "bbox": [
+            275,
+            214,
+            699,
+            231
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "A.1 阵元按工作模式分为桥式和发射-接收式。桥式阵元的线圈是自发自收线圈；发射-接收式阵元中至少包括两个线圈，含有发射线圈和接收线圈。见图 A.1 和图 A.2。",
+        "bbox": [
+            112,
+            264,
+            860,
+            302
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/01872b4977fe11a048371c45b78bd8dba455899bb03e52d046fd56e9636fc110.jpg",
+        "image_caption": [
+            "图A.1 绝对桥式"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            243,
+            330,
+            396,
+            365
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/c4f69e8f7cdc4e88fcad82ee130f5e5b83ccb699ccd39b16d906b537eaca0584.jpg",
+        "image_caption": [
+            "图 A.2 绝对发射-接收式"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            521,
+            325,
+            717,
+            363
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "A.2 阵元的信号响应模式分为绝对式和差动式。绝对式阵元的信号来自一个传感（接收）线圈，而差动式的信号来自两个传感（接收）线圈的相减。",
+        "bbox": [
+            112,
+            408,
+            860,
+            444
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "A. 3 阵列涡流探头拓扑结构（示例），见图 A.3～图 A.6。",
+        "bbox": [
+            112,
+            453,
+            539,
+            470
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/e0d47123cbf65ee16a79a8ba15f70147d7dcd8aae3bc81c815609f10f4c63237.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            215,
+            500,
+            400,
+            534
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/02c207677a911672a23e28d85421aa65f4b7267639ca8a95e47ef71e8feb74c4.jpg",
+        "image_caption": [
+            "图 A.4 发射-接收式（一发一收）"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            552,
+            501,
+            737,
+            535
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/eb0f3664eb7932b8ef60da5a4262ce16705ad31b37c6ccbe4f563f8c7dd8c67f.jpg",
+        "image_caption": [
+            "图 A.3 绝对桥式（阻抗式）",
+            "图 A.5 发射-接收式（一发两收）"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            226,
+            597,
+            411,
+            631
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/f3ad22d6d75ba91537a6d760be62708e19d8aba86ab4281dcfc7adc1524bbc67.jpg",
+        "image_caption": [
+            "图 A.6 发射-接收式（双发双收）"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            539,
+            589,
+            726,
+            634
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "A.4 阵列涡流探头的拓扑结构、线圈激活模式和阵元的关系（示例），见图 A.7。",
+        "bbox": [
+            112,
+            682,
+            709,
+            699
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/e2ee6d69dac7aa69465a9f021c87ed2b7e49ec38bd25bbd968b5972f2099df0d.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "a）拓扑结构"
+        ],
+        "content": "",
+        "bbox": [
+            184,
+            729,
+            369,
+            775
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/40647b42e24995f6a1dccc8ae6a417f5b9b9f44072d6842ec7af038f4c5e6d95.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "b）线圈激活模式"
+        ],
+        "content": "",
+        "bbox": [
+            435,
+            729,
+            532,
+            775
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/5fffb3a26b1248b2ba775ff53ca9cd50de6afc684d037231e02517e91ea9ca0b.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            601,
+            730,
+            655,
+            775
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "image",
+        "img_path": "images/fc1eab94ec9469b7de33b6cf611f7fa89805705a4a4b505c518f8f95bd5106a0.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "c）阵元（2种）"
+        ],
+        "content": "",
+        "bbox": [
+            690,
+            731,
+            783,
+            752
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "图 A.7 阵列涡流探头的阵元、线圈激活模式和拓扑结构的关系",
+        "bbox": [
+            240,
+            804,
+            732,
+            821
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            695,
+            115,
+            860,
+            129
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "page_number",
+        "text": "19",
+        "bbox": [
+            838,
+            904,
+            858,
+            916
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "text",
+        "text": "A. 5 阵列涡流探头分辨力（示例），见图 A.8。",
+        "bbox": [
+            142,
+            138,
+            487,
+            153
+        ],
+        "page_idx": 25
+    },
+    {
+        "type": "image",
+        "img_path": "images/5515d668cac9c086430d53102e6a62c2b9fa6bd2d19b44bc089cc04719ae135b.jpg",
+        "image_caption": [
+            "a）绝对发射/接收式（2排）"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            201,
+            171,
+            359,
+            314
+        ],
+        "page_idx": 25
+    },
+    {
+        "type": "image",
+        "img_path": "images/39b04c8bb6c5996471eae9a842f565c8192489822f38f91d575af15fd2eea982.jpg",
+        "image_caption": [
+            "b）绝对桥式（2排）"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            435,
+            172,
+            541,
+            311
+        ],
+        "page_idx": 25
+    },
+    {
+        "type": "image",
+        "img_path": "images/973982c51b26728d152373e35eb7db800e5ee943416a92d7b6be589d051a63aa.jpg",
+        "image_caption": [
+            "c）绝对桥式（4排）",
+            "图 A.8 常见阵列涡流探头分辨力示意图"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            625,
+            173,
+            766,
+            309
+        ],
+        "page_idx": 25
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            144,
+            112,
+            309,
+            125
+        ],
+        "page_idx": 25
+    },
+    {
+        "type": "page_number",
+        "text": "20",
+        "bbox": [
+            147,
+            900,
+            166,
+            910
+        ],
+        "page_idx": 25
+    },
+    {
+        "type": "text",
+        "text": "附录B",
+        "text_level": 1,
+        "bbox": [
+            445,
+            176,
+            531,
+            193
+        ],
+        "page_idx": 26
+    },
+    {
+        "type": "text",
+        "text": "(规范性)",
+        "bbox": [
+            450,
+            197,
+            527,
+            212
+        ],
+        "page_idx": 26
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流检测仪性能指标要求",
+        "text_level": 2,
+        "bbox": [
+            376,
+            216,
+            600,
+            232
+        ],
+        "page_idx": 26
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流检测仪性能指标要求见表 B.1，电气性能测试方法参照 JB/T 11779 的规定。",
+        "bbox": [
+            149,
+            267,
+            781,
+            283
+        ],
+        "page_idx": 26
+    },
+    {
+        "type": "table",
+        "img_path": "images/949e7d5a1be25251c7779f664af8f76a4c9d22c34da5d9d31bddc4503636cfaf.jpg",
+        "table_caption": [
+            "表 B.1 阵列涡流检测仪性能指标要求"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td colspan=\"2\">项目</td><td>测试条件</td><td>指标要求</td></tr><tr><td rowspan=\"3\">1. 稳定性要求</td><td>1预热后的稳定性</td><td>仪器按出厂文件中规定的预热时间预热后,采用任意信号发生器或阵列涡流仪器一个物理通道激励一个幅值约100mV正弦波的仪器中心频率(中心频率在0.01MHz~5MHz范围内,以被检仪器中心频率为准),将信号输入被检仪器的一个有效的接收通道,调节仪器增益使屏幕上产生一个满屏高度80%的参考圆形信号。每隔10min观察该回波信号的幅度变化,连续测量3次</td><td>参考回波信号幅度的变化小于或等于满屏高度的3%</td></tr><tr><td>2相对温度变化的稳定性</td><td>仪器按出厂文件中规定的预热时间预热后,采用任意信号发生器或阵列涡流仪器一个物理通道激励一个幅值约100mV正弦波的仪器中心频率(中心频率在0.01MHz~5MHz范围内,以被检仪器中心频率为准),将信号输入至仪器一个有效的接收通道,调节增益使屏幕上产生一个满屏高度80%的参考圆形信号。将仪器放入恒温恒湿温度箱,在仪器工作温度-10°C~40°C范围内,每隔10°C变化观察该回波信号的幅度变化</td><td>参考回波信号幅度的变化小于或等于满屏高度的5%</td></tr><tr><td>3相对电压变化的稳定性</td><td>采用稳压电源给仪器供电,将稳压电源输出电压调到阵列涡流仪器正常工作电压的中间值,采用任意信号发生器或阵列涡流仪器一个物理通道激励一个幅值约100mV正弦波的仪器中心频率(中心频率在0.01MHz~5MHz范围内,以被检仪器中心频率为准),将信号输入至仪器一个有效接收通道,调节增益使屏幕上产生一个满屏高度的80%的参考圆形信号。在稳压电源输出电压降至仪器出厂文件中规定的低电压报警或低电压自动关机电压时,观察参考信号的幅度变化</td><td>参考信号幅度的变化小于或等于满屏高度的3%</td></tr><tr><td rowspan=\"4\">2.发射性能指标要求</td><td>4激励电压</td><td>采用示波器测量阵列涡流仪器某一通道的激励电压输出,阵列涡流仪发射端连接一个50Ω无感电阻,在阵列涡流仪所有的发射通道上重复测量激励电压</td><td>激励电压范围至少包含0V~5V;激励电压偏差小于或等于20%</td></tr><tr><td>5输出阻抗</td><td>在激励电压和激励频率(以上取中间值)以及仪器出厂文件中提供的最佳阻尼设定值条件下,在阵列涡流仪的发射输出端分别连接50Ω和75Ω无感电阻,采用示波器分别测量激励电压,通过计算得到有效输出阻抗,测试的通道不少于通道总数的10%</td><td>有效输出阻抗小于或等于50Ω;各通道实测值与标称值之间的偏差小于或等于标称值的20%</td></tr><tr><td>6激励频率</td><td>在阵列涡流仪检测频率范围内,等间隔设置10个检测频率,采用示波器或频谱分析仪对发射器输出频率进行测量,测量阵列涡流仪器每个通道的激励输出频率</td><td>频率偏差小于或等于2%</td></tr><tr><td>7相位角线性</td><td>在阵列涡流仪检测频率范围内,采用任意波形发生器选择阵列涡流仪器宽频带的频率,调节相位变化,测量仪器显示相位变化</td><td>小于或等于1°</td></tr><tr><td rowspan=\"7\">3.接收器性能指标要求</td><td>8增益准确度</td><td>采用任意波形发生器选择阵列涡流仪器宽频带的激励频率,在任意波形发生器和阵列涡流仪之间连接已校准的标准衰减器,利用最小增益值作为初始条件测得的每个分量输出值,等间隔10dB调整阵列涡流仪增益,测量增益偏差</td><td>接收放大器的增益调节范围应大于或等于40dB;在任意连续10dB范围内,衰减器累积误差小于或等于1dB;在任意连续1dB范围内,衰减器累积误差小于或等于0.3dB</td></tr><tr><td>9接收频带范围</td><td>采用任意波形发生器依次选择阵列涡流仪器每个频带的设定值,采用经过校准的外部衰减器,测量阵列涡流仪器放大器频率响应,仅测试一个发射通道</td><td>至少包含频率范围50Hz~5MHz</td></tr><tr><td>10通道间隔离度</td><td>采用任意波形发生器选择阵列涡流仪器宽频带的中心频率的信号,输入阵列涡流仪某一接收通道,调节增益使得屏幕上显示满幅80%圆形信号,测量相邻通道的信号幅度,计算幅度相差dB值</td><td>大于或等于50dB</td></tr><tr><td>11通道一致性</td><td>采用任意信号发生器激励一个阵列涡流仪器频带的有效工作频率(通常50kHz~500kHz范围内),采用经过校准的外部衰减器改变参考信号的幅度,测量阵列涡流仪屏幕上的信号幅度的变化,测量阵列涡流仪器各通道幅度的变化</td><td>所有通道最大偏差应小于0.5dB</td></tr><tr><td>12信噪比</td><td>采用任意波形发生器选择阵列涡流仪器宽频带的中心频率的信号,输入某一接收通道,调节至某一增益使得屏幕上显示满幅80%圆形信号。空载调节增益使得噪声同样显示屏幕的80%幅度,记录下此时的增益值,根据输入信号和两者增益之差计算出噪声电平值</td><td>小于1uV</td></tr><tr><td>13幅度线性</td><td>采用任意信号发生器激励一个阵列涡流仪器频带的有效工作频率(通常50kHz~500kHz范围内),不同检测通道输入相同幅度、频率、相位的信号,外部连接标准衰减器,相同增益的情况下,测量屏幕显示信号的幅度值</td><td>小于或等于3%</td></tr><tr><td>14相位线性</td><td>采用任意信号发生器激励一个阵列涡流仪器频带的有效工作频率(通常50kHz~500kHz范围内),不同检测通道输入相同幅度、频率、相位的信号,相同增益的情况下,测量屏幕显示信号的相位值</td><td>小于或等于1°</td></tr></table>",
+        "bbox": [
+            117,
+            309,
+            857,
+            819
+        ],
+        "page_idx": 26
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            697,
+            116,
+            860,
+            130
+        ],
+        "page_idx": 26
+    },
+    {
+        "type": "page_number",
+        "text": "21",
+        "bbox": [
+            838,
+            904,
+            857,
+            916
+        ],
+        "page_idx": 26
+    },
+    {
+        "type": "table",
+        "img_path": "",
+        "table_caption": [
+            ""
+        ],
+        "table_footnote": [],
+        "bbox": [
+            147,
+            157,
+            884,
+            821
+        ],
+        "page_idx": 27
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            144,
+            114,
+            309,
+            127
+        ],
+        "page_idx": 27
+    },
+    {
+        "type": "page_number",
+        "text": "22",
+        "bbox": [
+            147,
+            902,
+            166,
+            913
+        ],
+        "page_idx": 27
+    },
+    {
+        "type": "text",
+        "text": "附录 C",
+        "text_level": 1,
+        "bbox": [
+            448,
+            175,
+            534,
+            190
+        ],
+        "page_idx": 28
+    },
+    {
+        "type": "text",
+        "text": "(规范性)",
+        "bbox": [
+            453,
+            194,
+            529,
+            209
+        ],
+        "page_idx": 28
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头性能指标要求",
+        "bbox": [
+            389,
+            213,
+            594,
+            229
+        ],
+        "page_idx": 28
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流探头性能指标要求见表 C.1，测试方法参照 JB/T 11279 的规定。",
+        "bbox": [
+            154,
+            264,
+            697,
+            280
+        ],
+        "page_idx": 28
+    },
+    {
+        "type": "table",
+        "img_path": "images/6eee4b74f5b95fce5b98a4eae497ae874070b5842fc73c1d425f1069d6af3d5f.jpg",
+        "table_caption": [
+            "表 C.1 阵列涡流探头性能指标要求"
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>序号</td><td colspan=\"2\">性能</td><td>指标要求</td></tr><tr><td rowspan=\"2\">1</td><td rowspan=\"2\">基本性能要求</td><td>基本要求</td><td>探头的扫查覆盖宽度一般不小于20mm,应有多个线圈(一般不少于8个)组成</td></tr><tr><td>阻抗</td><td>实测各线圈阻抗模或静电容与标称值的偏差小于或等于标称值的20%;线圈间的电感最大偏差应小于或等于0.5uH(建议在标称频率下用实测探头间的偏差来表述);线圈间的电阻最大偏差应小于1Ω</td></tr><tr><td rowspan=\"3\">2</td><td rowspan=\"3\">综合性能要求</td><td>纵向分辨力</td><td>小于或等于3mm(区分与扫查方向垂直的两条裂纹的最小间距)</td></tr><tr><td>灵敏度</td><td>小于或等于0.2mm(检测到与扫查方向垂直的裂纹的最小深度)</td></tr><tr><td>阵元一致性</td><td>幅度偏差小于或等于2dB,相位偏差小于或等于1°</td></tr></table>",
+        "bbox": [
+            122,
+            308,
+            862,
+            480
+        ],
+        "page_idx": 28
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            700,
+            112,
+            865,
+            127
+        ],
+        "page_idx": 28
+    },
+    {
+        "type": "page_number",
+        "text": "23",
+        "bbox": [
+            845,
+            902,
+            863,
+            913
+        ],
+        "page_idx": 28
+    },
+    {
+        "type": "text",
+        "text": "附录 D",
+        "bbox": [
+            472,
+            173,
+            559,
+            188
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "(规范性)",
+        "bbox": [
+            475,
+            192,
+            554,
+            209
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "标准试块",
+        "bbox": [
+            475,
+            211,
+            552,
+            228
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "D.1 涡流检测标准试样",
+        "text_level": 2,
+        "bbox": [
+            144,
+            263,
+            329,
+            279
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "涡流检测标准试样包括通道一致性试块、纵向分辨力试块、横向分辨力试块。",
+        "bbox": [
+            174,
+            288,
+            752,
+            306
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "D.2 通道一致性试块",
+        "text_level": 2,
+        "bbox": [
+            144,
+            315,
+            312,
+            331
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "通道一致性试块的材料牌号为 2 系铝合金（淬火+固熔时效）；人工缺陷为线切割刻槽，人工缺陷的尺寸（长、宽、深）位置，见图 D.1。",
+        "bbox": [
+            142,
+            340,
+            885,
+            377
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "image",
+        "img_path": "images/acc0fbe6c37ae04fee9cadf4446212a628f5930058674cb1ec731e4420aab477.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            321,
+            404,
+            710,
+            492
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "image",
+        "img_path": "images/0d6cbba34a9f79677bf4e8ab053ad87c1597c1efef18fd5394e02b726fa5283e.jpg",
+        "image_caption": [
+            "图D.1 通道一致性标准试块"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            344,
+            522,
+            648,
+            719
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "D.3 纵向分辨力试块",
+        "text_level": 2,
+        "bbox": [
+            142,
+            766,
+            312,
+            783
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "text",
+        "text": "纵向分辨力试块的材料牌号为 2 系铝合金（淬火+固熔时效）；人工缺陷为线切割刻槽，人工缺陷的尺寸（长、宽、深）位置，见图 D.2。",
+        "bbox": [
+            141,
+            792,
+            884,
+            828
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            144,
+            112,
+            307,
+            125
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "page_number",
+        "text": "24",
+        "bbox": [
+            144,
+            899,
+            164,
+            910
+        ],
+        "page_idx": 29
+    },
+    {
+        "type": "image",
+        "img_path": "images/ce4f4edf877c359e051f81444672e1efd4e8e146c607bcae3923546d9230af69.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "注：10个槽深度相等，均为0.5 mm。"
+        ],
+        "content": "",
+        "bbox": [
+            164,
+            144,
+            811,
+            391
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "text",
+        "text": "图D.2 纵向分辨力试块",
+        "bbox": [
+            389,
+            418,
+            588,
+            434
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "text",
+        "text": "D.4 横向分辨力试块",
+        "text_level": 2,
+        "bbox": [
+            115,
+            442,
+            287,
+            459
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "text",
+        "text": "横向分辨力试块的材料牌号为 2 系铝合金（淬火+固熔时效）；人工缺陷为电火花加工刻槽，人工缺陷的尺寸（长、宽、深）位置，见图 D.3。",
+        "bbox": [
+            115,
+            469,
+            850,
+            505
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "image",
+        "img_path": "images/cc358801fd0cdef17ea1c21177380bfae963274f0d75c7e0b3a1ee54d51c7dc6.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "注：6个槽长度和深度分别为5 mm和0.5 mm。"
+        ],
+        "content": "",
+        "bbox": [
+            280,
+            514,
+            695,
+            825
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "text",
+        "text": "图 D.3 横向分辨力试块",
+        "bbox": [
+            386,
+            857,
+            584,
+            872
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            697,
+            115,
+            863,
+            129
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "page_number",
+        "text": "25",
+        "bbox": [
+            838,
+            903,
+            858,
+            915
+        ],
+        "page_idx": 30
+    },
+    {
+        "type": "text",
+        "text": "附录 E",
+        "bbox": [
+            477,
+            173,
+            563,
+            188
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "text",
+        "text": "(资料性)",
+        "bbox": [
+            480,
+            192,
+            559,
+            209
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "text",
+        "text": "阵列涡流C扫图（示例）",
+        "bbox": [
+            425,
+            211,
+            608,
+            229
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "text",
+        "text": "E.1 合格的阵列涡流 C 扫图（示例），见图 E.1。",
+        "bbox": [
+            147,
+            262,
+            510,
+            280
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "image",
+        "img_path": "images/d9550a727601bfb3479ce6fd9cd16a53d02e77e11a12ca791bc2fb527e857c83.jpg",
+        "image_caption": [
+            "图E.1 合格的阵列涡流C扫图"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            418,
+            302,
+            620,
+            434
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "text",
+        "text": "E. 2 不合格/有问题的阵列涡流 C 扫图（示例），见图 E.2～图 E.4。",
+        "bbox": [
+            147,
+            480,
+            640,
+            498
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "image",
+        "img_path": "images/6fcb9660227956e13d6510f1383935a9165e83c808e4ca2f915da8dcf63fcf9e.jpg",
+        "image_caption": [
+            "图E.2 未通道标定"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            418,
+            519,
+            618,
+            652
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "image",
+        "img_path": "images/7a96ebc6968481334e2b827c8790032539bc29bb4e5b317f3be2955f982f16c4.jpg",
+        "image_caption": [
+            "图 E.3 坏通道（第 15 个通道坏）"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            416,
+            700,
+            620,
+            828
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            149,
+            112,
+            314,
+            127
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "page_number",
+        "text": "26",
+        "bbox": [
+            149,
+            897,
+            169,
+            910
+        ],
+        "page_idx": 31
+    },
+    {
+        "type": "image",
+        "img_path": "images/d2db3241e29ede49710ca7e4b830f77b270542f528f4fff0cfb8da91015e7c58.jpg",
+        "image_caption": [
+            "图 E.4 扫查速度过快，数据连续丢失"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            381,
+            136,
+            581,
+            264
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "text",
+        "text": "E. 3 典型缺陷的阵列涡流 C 扫图（示例），见图 E.5～图 E.8。",
+        "bbox": [
+            109,
+            302,
+            564,
+            320
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "image",
+        "img_path": "images/8e4c02152a20676f6983c4eb54782093105d74d84e589510b41dc57040148593.jpg",
+        "image_caption": [
+            "a）渗透检测相关显示"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            260,
+            344,
+            413,
+            475
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "image",
+        "img_path": "images/ed8f6ed405cac05b89c0af6b073ef76f12ee11d25e347a9680c6637331144241.jpg",
+        "image_caption": [
+            "b）阵列涡流检测相关显示",
+            "图E.5 奥氏体不锈钢材料的点蚀"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            499,
+            345,
+            704,
+            476
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "image",
+        "img_path": "images/fdddea66a8e949b223eb297a8089492014a68239048ab57c9abfd09676aa02c8.jpg",
+        "image_caption": [
+            "a）缺陷照片"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            253,
+            539,
+            465,
+            669
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "image",
+        "img_path": "images/6550feda6a9e2cfc548644a5518246c6b44439132661c1198ea4117be7e0e27a.jpg",
+        "image_caption": [
+            "b）阵列涡流相关显示",
+            "图 E.6 奥氏体不锈钢材料的密集型点蚀"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            527,
+            540,
+            710,
+            669
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "image",
+        "img_path": "images/70bbf8c5b911608254031edf36a0d5a18a2a7dc355e0cd12cc6be29aaccf1aed.jpg",
+        "image_caption": [
+            "a）渗透检测相关显示"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            253,
+            726,
+            421,
+            856
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "image",
+        "img_path": "images/c386358567fd2924bfc4b3bf8b96f326a74ec5311c2db7b4fb50080679e52ca1.jpg",
+        "image_caption": [
+            "b）阵列涡流检测相关显示",
+            "图 E.7 奥氏体不锈钢材料的应力腐蚀开裂"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            507,
+            728,
+            710,
+            857
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            689,
+            115,
+            853,
+            129
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "page_number",
+        "text": "27",
+        "bbox": [
+            833,
+            904,
+            852,
+            916
+        ],
+        "page_idx": 32
+    },
+    {
+        "type": "image",
+        "img_path": "images/f00a44ebef23d5799d01a2f9c92263c84ec02e27045e8b97f95601eb94fca9be.jpg",
+        "image_caption": [
+            "a）渗透检测相关显示"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            211,
+            175,
+            500,
+            304
+        ],
+        "page_idx": 33
+    },
+    {
+        "type": "image",
+        "img_path": "images/3a69b5d6b506d8366bdba95589e8d676849690d443482a1c18a381ccda6db5e2.jpg",
+        "image_caption": [
+            "b）阵列涡流检测相关显示",
+            "图 E.8 奥氏体不锈钢对接接头热影响区的裂纹缺陷"
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            547,
+            175,
+            828,
+            304
+        ],
+        "page_idx": 33
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            149,
+            112,
+            312,
+            125
+        ],
+        "page_idx": 33
+    },
+    {
+        "type": "page_number",
+        "text": "28",
+        "bbox": [
+            149,
+            899,
+            169,
+            910
+        ],
+        "page_idx": 33
+    },
+    {
+        "type": "text",
+        "text": "附录F",
+        "text_level": 2,
+        "bbox": [
+            442,
+            176,
+            527,
+            192
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "(资料性)",
+        "text_level": 1,
+        "bbox": [
+            443,
+            195,
+            522,
+            211
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "裂纹深度评估方法",
+        "text_level": 1,
+        "bbox": [
+            413,
+            214,
+            554,
+            231
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.1 适用范围",
+        "text_level": 2,
+        "bbox": [
+            112,
+            267,
+            230,
+            282
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "本文件适用于金属材料或零部件表面开口裂纹的阵列涡流深度评估。",
+        "bbox": [
+            144,
+            292,
+            658,
+            308
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "焊接接头表面开口裂纹的阵列涡流深度评估也可参照本文件执行。",
+        "bbox": [
+            144,
+            311,
+            643,
+            327
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2 检测设备和器材",
+        "text_level": 2,
+        "bbox": [
+            112,
+            338,
+            280,
+            353
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.1 检测仪器应符合 4.2.2 的规定。",
+        "bbox": [
+            112,
+            364,
+            405,
+            378
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.2 探头应符合 4.2.3 的规定。",
+        "bbox": [
+            112,
+            383,
+            371,
+            397
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.3 裂纹深度评估对比试块",
+        "bbox": [
+            114,
+            403,
+            354,
+            416
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.3.1 裂纹深度评估对比试块主要用于评估表面开口裂纹的深度，可评价深度范围与探头、工作频率、探头驱动有关。",
+        "bbox": [
+            112,
+            421,
+            857,
+            456
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.3.2 裂纹深度评估对比试块的材料牌号、几何形状、表面状态应与被检工件相同或相近。",
+        "bbox": [
+            112,
+            460,
+            826,
+            475
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.3.3 在裂纹深度对比试块的纵向扫查方向的起始和结束端，无缺陷区宽度应大于或等于 40 mm；裂纹深度评估对比试块的参考缺陷为表面刻槽，见图 F.1。",
+        "bbox": [
+            112,
+            479,
+            850,
+            514
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "单位为毫米",
+        "bbox": [
+            776,
+            519,
+            857,
+            532
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "chart",
+        "img_path": "images/e244fbf8bc8038555874a7dedcfd690da2835fa12ace3c64e5f131782f23a4bf.jpg",
+        "content": "",
+        "chart_caption": [],
+        "chart_footnote": [
+            "注：W——扫查宽度。"
+        ],
+        "bbox": [
+            211,
+            535,
+            761,
+            707
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "图 F.1 裂纹深度评估对比试块的示意图",
+        "bbox": [
+            327,
+            733,
+            643,
+            749
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.3.4 裂纹深度对比试块应至少包括 3 种不同深度的刻槽；刻槽的长度应至少比阵列涡流扫查覆盖宽度大 25 mm，刻槽的深度应小于或等于涡流有效投入深度。各刻槽缺陷在同一纵向上的间距应大于或等于 15 mm；刻槽的宽度应小于或等于 0.30 mm，尺寸公差为±0.05 mm。",
+        "bbox": [
+            112,
+            760,
+            858,
+            813
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.3.5 表面刻槽宜选用线切割方式制作；对比试块制作过程中，机加工应避免过度冷加工、过热和过大应力，以防止电磁特性变化过大。",
+        "bbox": [
+            114,
+            817,
+            858,
+            851
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.2.4 深度评估对比试块上所有刻槽信号信噪比应大于或等于3。",
+        "bbox": [
+            115,
+            853,
+            618,
+            870
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            690,
+            114,
+            855,
+            128
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "page_number",
+        "text": "29",
+        "bbox": [
+            838,
+            903,
+            858,
+            914
+        ],
+        "page_idx": 34
+    },
+    {
+        "type": "text",
+        "text": "F.3 裂纹深度评估的工艺",
+        "text_level": 2,
+        "bbox": [
+            147,
+            138,
+            346,
+            153
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "F.3.1 扫查",
+        "text_level": 2,
+        "bbox": [
+            147,
+            163,
+            250,
+            179
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "采用与阵列涡流探伤相同的检测设备、相同的工艺参数，横向扫查裂纹深度评估对比试块，得到各刻槽的阵列涡流数据。",
+        "bbox": [
+            147,
+            184,
+            889,
+            218
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "F.3.2 制作刻槽深度-相位曲线和刻槽深度-幅度曲线",
+        "text_level": 2,
+        "bbox": [
+            147,
+            222,
+            559,
+            237
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "分析各刻槽的 C 扫相关显示，获得不同深度的刻槽 C 扫相关显示特征颜色；分析各刻槽的相位-幅度图，读取获得不同深度刻槽的相位和幅度，并制作刻槽深度-相位曲线和刻槽深度-幅度曲线。",
+        "bbox": [
+            147,
+            241,
+            887,
+            276
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "F.3.3 分析探伤阵列涡流数据",
+        "text_level": 2,
+        "bbox": [
+            147,
+            279,
+            388,
+            294
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "采用数据分析软件读取阵列涡流检测数据；通过相关显示的颜色差异，确定缺陷深度最大的位置，并读取该位置处的相位和幅度数值。",
+        "bbox": [
+            147,
+            299,
+            887,
+            333
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "F.3.4 裂纹深度评估",
+        "text_level": 2,
+        "bbox": [
+            147,
+            337,
+            317,
+            352
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "text",
+        "text": "将缺陷的相位和幅度数值与刻槽深度-相位曲线和刻槽深度-幅度曲线进行比对，对裂纹深度进行评估。对于非铁磁性金属制材料、零部件，优先采用刻槽深度-相位曲线对裂纹深度进行评估；对于铁磁性金属制材料、零部件，优先采用刻槽深度-幅度曲线对裂纹深度进行评估。",
+        "bbox": [
+            144,
+            356,
+            885,
+            410
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "header",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            147,
+            112,
+            310,
+            125
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "page_number",
+        "text": "30",
+        "bbox": [
+            146,
+            900,
+            164,
+            910
+        ],
+        "page_idx": 35
+    },
+    {
+        "type": "image",
+        "img_path": "images/eb2541ebbe618f38dec112e795bccf99681bf1c915c9a79c1b222d86b572c66b.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "标准实施反馈与服务"
+        ],
+        "content": "",
+        "bbox": [
+            438,
+            288,
+            584,
+            395
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "中华人民共和国能源行业标准 承压设备无损检测 第 18 部分：阵列涡流检测",
+        "text_level": 1,
+        "bbox": [
+            591,
+            667,
+            818,
+            716
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            623,
+            720,
+            786,
+            733
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "\\*",
+        "bbox": [
+            697,
+            739,
+            712,
+            749
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "北京科学技术出版社出版发行",
+        "bbox": [
+            606,
+            752,
+            801,
+            767
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "(北京西直门南大街16号 邮编：100035)",
+        "bbox": [
+            594,
+            769,
+            813,
+            781
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "新华书店经销",
+        "bbox": [
+            645,
+            783,
+            764,
+            798
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "河北泓景印刷有限公司印刷",
+        "bbox": [
+            613,
+            799,
+            796,
+            814
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "版权专有 不得翻印",
+        "bbox": [
+            638,
+            815,
+            771,
+            828
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "开本 880 × 1230 1/16 印张 2.25 字数 46 千字\n2024 年 10 月第 1 版 2024 年 10 月第 1 次印刷",
+        "bbox": [
+            554,
+            846,
+            853,
+            876
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "\\*",
+        "bbox": [
+            697,
+            883,
+            712,
+            893
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "text",
+        "text": "书号：155714·695 定价：48.00 元",
+        "bbox": [
+            591,
+            897,
+            818,
+            910
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "footer",
+        "text": "[NO TEXT]",
+        "bbox": [
+            131,
+            825,
+            294,
+            893
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "footer",
+        "text": "155714695",
+        "bbox": [
+            183,
+            894,
+            242,
+            904
+        ],
+        "page_idx": 36
+    },
+    {
+        "type": "aside_text",
+        "text": "NB/T 47013.18—2024",
+        "bbox": [
+            921,
+            93,
+            944,
+            244
+        ],
+        "page_idx": 36
+    }
+]

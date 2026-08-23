@@ -1,0 +1,19 @@
+{
+  "knowledgeFileId": "KF-KB-A4CDF420FE",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-A4CDF420FE/NB_T 47013.0-2015 承压设备无损检测 合集封面及目录.pdf",
+  "artifact_files": [
+    "93530e43-1ccf-40b9-bfcd-eb648ca16aac_content_list.json",
+    "93530e43-1ccf-40b9-bfcd-eb648ca16aac_content_list_v2.json",
+    "93530e43-1ccf-40b9-bfcd-eb648ca16aac_model.json",
+    "93530e43-1ccf-40b9-bfcd-eb648ca16aac_origin.pdf",
+    "full.md",
+    "images/6322d1a8d9b023180983255652fa9d58259ccdb7425bb7fa2ca1fd7f2533892d.jpg",
+    "images/c952af7b8681fce73d549e8c96e082818facdf5fc50e6b01e3cc1514a46c64ba.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "93530e43-1ccf-40b9-bfcd-eb648ca16aac_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:47:02.117597+00:00"
+}

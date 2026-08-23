@@ -27,6 +27,10 @@ WEB_URL_RE = re.compile(r"(https?://|www\.)", re.IGNORECASE)
 CHINESE_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
 SYMBOL_ASCII_ONLY_RE = re.compile(r"[\W\dA-Za-z\s\./:;_\-—+|`$]+")
 
+# 语义结构化块：检索里要当整体保留，不能按正文规则切碎或按短文本隔离。
+STRUCTURED_BLOCK_TYPES = frozenset({"equation", "interline_equation", "inline_equation", "table"})
+EQUATION_BLOCK_TYPES = frozenset({"equation", "interline_equation", "inline_equation"})
+
 TEXT_FILE_SUFFIXES = {".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".csv"}
 DOCX_SUFFIXES = {".docx"}
 PDF_SUFFIXES = {".pdf"}
@@ -65,6 +69,7 @@ def knowledge_interference_reasons(
     value: Any,
     *,
     context_type: str | None = None,
+    block_type: str | None = None,
 ) -> list[str]:
     text = str(value or "").strip()
     if not text:
@@ -76,6 +81,10 @@ def knowledge_interference_reasons(
         reasons.append("publisher_metadata")
     if WEB_URL_RE.search(text):
         reasons.append("web_url_metadata")
+    # 公式/表格块天生就是短的、满是 ASCII 符号的（`E = \frac{P D}{2 \delta}` 之类），
+    # 按普通正文的短文本/纯符号规则判会被整条隔离掉，标准里的计算式一条都留不下。
+    if str(block_type or "").strip().lower() in STRUCTURED_BLOCK_TYPES:
+        return reasons
     chinese_count = len(CHINESE_CHAR_RE.findall(text))
     if len(text) < 8 or (len(text) < 24 and chinese_count < 8):
         reasons.append("low_value_short")
@@ -88,8 +97,10 @@ def knowledge_interference_reasons(
     return reasons
 
 
-def quarantine_interference_reasons(value: Any, *, context_type: str | None = None) -> list[str]:
-    reasons = knowledge_interference_reasons(value, context_type=context_type)
+def quarantine_interference_reasons(
+    value: Any, *, context_type: str | None = None, block_type: str | None = None
+) -> list[str]:
+    reasons = knowledge_interference_reasons(value, context_type=context_type, block_type=block_type)
     return [
         reason
         for reason in reasons
@@ -97,15 +108,19 @@ def quarantine_interference_reasons(value: Any, *, context_type: str | None = No
     ]
 
 
-def metadata_interference_reasons(value: Any, *, context_type: str | None = None) -> list[str]:
-    reasons = knowledge_interference_reasons(value, context_type=context_type)
-    if quarantine_interference_reasons(value, context_type=context_type):
+def metadata_interference_reasons(
+    value: Any, *, context_type: str | None = None, block_type: str | None = None
+) -> list[str]:
+    reasons = knowledge_interference_reasons(value, context_type=context_type, block_type=block_type)
+    if quarantine_interference_reasons(value, context_type=context_type, block_type=block_type):
         return []
     return [reason for reason in reasons if reason in {"publisher_metadata", "web_url_metadata"}]
 
 
-def chunk_quality_fields(text: Any, *, context_type: str | None = None) -> dict[str, Any]:
-    metadata_reasons = metadata_interference_reasons(text, context_type=context_type)
+def chunk_quality_fields(
+    text: Any, *, context_type: str | None = None, block_type: str | None = None
+) -> dict[str, Any]:
+    metadata_reasons = metadata_interference_reasons(text, context_type=context_type, block_type=block_type)
     if not metadata_reasons:
         return {}
     return {
@@ -348,7 +363,7 @@ def units_from_fragments(file: dict[str, Any], fragments: list[dict[str, Any]]) 
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for fragment in fragments:
         text = str(fragment.get("text") or fragment.get("fieldValue") or "").strip()
-        if not text or quarantine_interference_reasons(text):
+        if not text or quarantine_interference_reasons(text, block_type=fragment.get("blockType")):
             continue
         page_no = int(fragment.get("pageNo") or 1)
         grouped[page_no].append(fragment)
@@ -394,6 +409,7 @@ def units_from_fragments(file: dict[str, Any], fragments: list[dict[str, Any]]) 
                         "qualityWarnings": [],
                     },
                     "sectionPath": section_path,
+                    **structure_fields_for_unit(fragment),
                     "source": "ocr_fragments",
                     "sourceMethod": source_method,
                     "ocrEngine": fragment.get("ocrEngine") or fragment.get("sourceEngine") or "ocr_service",
@@ -428,14 +444,60 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
     return pieces
 
 
+def structure_fields_for_unit(unit: dict[str, Any]) -> dict[str, Any]:
+    """把 MinerU 的块类型/LaTeX/表格结构原样带到分块上。
+
+    只在确实有结构信息时写字段，避免给纯正文分块塞一堆 None——那会让
+    「这条有没有结构」变得不可判断。
+    """
+    block_type = str(unit.get("blockType") or "").strip().lower()
+    fields: dict[str, Any] = {}
+    if block_type:
+        fields["blockType"] = block_type
+    latex = str(unit.get("latex") or "").strip()
+    if latex:
+        fields["latex"] = latex
+    table_html = str(unit.get("tableHtml") or "").strip()
+    if table_html:
+        fields["tableHtml"] = table_html
+    caption = str(unit.get("caption") or "").strip()
+    if caption:
+        fields["caption"] = caption
+    return fields
+
+
+def embedding_text_for_chunk(chunk: dict[str, Any]) -> str:
+    """构造送去向量化的文本。
+
+    公式块的 `text` 就是 LaTeX，直接嵌入等于让模型去理解一串反斜杠，检索基本
+    命不中。这里补上所在条款路径与「公式」字样，让它落在语义空间的正确位置。
+    """
+    text = str(chunk.get("text") or "").strip()
+    block_type = str(chunk.get("blockType") or "").strip().lower()
+    if block_type not in STRUCTURED_BLOCK_TYPES:
+        return text
+    prefix_parts = [str(item).strip() for item in (chunk.get("sectionPath") or [])[-2:] if str(item or "").strip()]
+    caption = str(chunk.get("caption") or "").strip()
+    if caption:
+        prefix_parts.append(caption)
+    label = "公式" if block_type in EQUATION_BLOCK_TYPES else "表格"
+    prefix = " / ".join(prefix_parts)
+    return f"{prefix}\n{label}：{text}".strip() if prefix else f"{label}：{text}"
+
+
 def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, index_version: str = STANDARD_INDEX_VERSION) -> list[dict[str, Any]]:
     chunks: list[dict[str, Any]] = []
     sequence = 1
     context_type = str(file.get("contextType") or "standard_reference")
     for unit in units:
         section_path = [str(item) for item in unit.get("sectionPath") or [] if str(item or "").strip()]
-        for piece in chunk_text(str(unit.get("text") or "")):
-            if quarantine_interference_reasons(piece, context_type=context_type):
+        structure = structure_fields_for_unit(unit)
+        block_type = structure.get("blockType")
+        unit_text = str(unit.get("text") or "")
+        # 公式必须整条留着：`\frac{...}{...}` 被句读规则从中间切开就再也渲染不回来了。
+        pieces = [unit_text.strip()] if block_type in EQUATION_BLOCK_TYPES else chunk_text(unit_text)
+        for piece in pieces:
+            if quarantine_interference_reasons(piece, context_type=context_type, block_type=block_type):
                 continue
             page_no = int(unit.get("pageNo") or 1)
             text = piece[:MAX_CHUNK_CHARS]
@@ -468,7 +530,8 @@ def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, 
                         "contextType": context_type,
                         "createdAt": None
                     ,
-                    **chunk_quality_fields(text, context_type=context_type),
+                    **structure,
+                    **chunk_quality_fields(text, context_type=context_type, block_type=block_type),
                 }
             )
             sequence += 1
@@ -596,7 +659,14 @@ def build_page_index_nodes_for_source(source: dict[str, Any], files: list[dict[s
 def clause_from_chunk(file: dict[str, Any], chunk: dict[str, Any], source_version: str) -> dict[str, Any]:
     context_type = str(chunk.get("contextType") or file.get("contextType") or "")
     source_method = str(chunk.get("sourceMethod") or "")
+    structure = {
+        key: chunk[key]
+        for key in ("blockType", "latex", "tableHtml", "caption")
+        if str(chunk.get(key) or "").strip()
+    }
+    block_type = str(structure.get("blockType") or "").strip().lower()
     return {
+        **structure,
         "id": f"KC-{chunk['id']}",
         "clauseId": chunk["id"],
         "kbDocId": file.get("sourceId") or "KS-STANDARD-RULES",
@@ -629,6 +699,11 @@ def clause_from_chunk(file: dict[str, Any], chunk: dict[str, Any], source_versio
             file.get("fileName"),
             file.get("sourceRelativePath"),
             source_method,
+            *(
+                [f"block_type:{block_type}"]
+                if block_type in STRUCTURED_BLOCK_TYPES
+                else []
+            ),
         ],
         "status": "effective",
         "documentVersionId": file.get("documentVersionId"),
@@ -748,7 +823,7 @@ def reject_if_dedicated_ingestion(file: dict[str, Any]) -> None:
 
     那条管线会先清掉派生索引、再用**通用切片器**重建。项目资料没问题
     （OCR 正文按长度切），标准库不行：它的分块由专用摄取路径生成、与条款
-    一一对齐（见 scripts/backfill_knowledge_pgvector.py，2134 分块对 2134 向量）。
+    一一对齐。
 
     0819 拿它给标准库换向量模型，结果 31 份标准的分块直接归零，另 29 份被切成
     完全不同的粒度（13594 个碎块），靠迁移前的备份才救回来。
@@ -756,8 +831,11 @@ def reject_if_dedicated_ingestion(file: dict[str, Any]) -> None:
     最难受的是**它不报错**：切片任务返回 succeeded，只是 chunkCount 为 0。
     所以这道拦截必须在入口，而且要在清空之前——先清后拒等于照样丢了分块。
 
-    正确做法：只换向量模型用 dispatch_embed（保留分块）；
-    要重建分块走 scripts/backfill_knowledge_pgvector.py。
+    正确做法：
+    - 只换向量模型用 dispatch_embed（保留分块）
+    - 只把 JSONB 向量回填到 pgvector 用 scripts/backfill_knowledge_pgvector.py
+    - 要重建分块走 scripts/reocr_standards_with_mineru.py（见
+      docs/标准规范MinerU重识别与语义结构化方案.md）
     """
     source_type = str(file.get("sourceType") or "")
     if source_type in DEDICATED_INGESTION_SOURCE_TYPES:
@@ -765,5 +843,6 @@ def reject_if_dedicated_ingestion(file: dict[str, Any]) -> None:
             "standard_library_uses_dedicated_ingestion: "
             f"{source_type} 类知识文件的分块由专用摄取路径生成，通用切片器重建不出来。"
             "只换向量模型请用 dispatch_embed（保留分块），"
-            "要重建分块请走 scripts/backfill_knowledge_pgvector.py。"
+            "只回填 pgvector 请走 scripts/backfill_knowledge_pgvector.py，"
+            "要重建分块请走 scripts/reocr_standards_with_mineru.py。"
         )

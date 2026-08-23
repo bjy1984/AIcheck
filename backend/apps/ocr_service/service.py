@@ -6351,7 +6351,19 @@ def license_scope_text_is_usable(text: str) -> bool:
     return any(term.lower() in raw.lower() for term in LICENSE_SCOPE_TERMS)
 
 
-LICENSE_SCOPE_TABLE_HEADERS = {"许可项目", "许可子项目", "许可参数", "备注"}
+LICENSE_SCOPE_TABLE_HEADERS = {"许可项目", "许可子项目", "子项目", "许可参数", "备注"}
+
+
+def _is_license_scope_column(key: Any) -> bool:
+    """这一列装的是不是许可项目。
+
+    列名不能写死成「许可项目 / 许可子项目」：同一种证，不同发证机关排版不同，
+    子项目列的表头实测出现过「子项目」（江苏 TS3832083-2026）。写死列名的后果不是报错，
+    而是**那一列整列读不到**——恰恰只有它带 GB2/GC2。
+
+    按后缀认「…项目」，「许可参数」「备注」自然排除在外。
+    """
+    return re.sub(r"\s+", "", str(key or "")).endswith("项目")
 
 
 def _table_scope_texts(table: dict[str, Any]) -> list[str]:
@@ -6370,6 +6382,9 @@ def _table_scope_texts(table: dict[str, Any]) -> list[str]:
     比照着想象写解析靠得住。**
 
     normalizedRows 最干净，优先用它；否则退回 cells；再退回 rows 是数组的形状。
+    但**只有真的取到可用值才算这一层成功**：曾经只要 normalizedRows 吐出任意非空字符串
+    就提前返回，于是「许可项目＝承压类特种设备安装、修理、改造」这种不含项目名的值
+    把后面的 cells 兜底挡掉了——而 cells 里的 GB2/GC2 本来是全的。
     """
     texts: list[str] = []
 
@@ -6378,17 +6393,21 @@ def _table_scope_texts(table: dict[str, Any]) -> list[str]:
         if text and text not in LICENSE_SCOPE_TABLE_HEADERS and text not in texts:
             texts.append(text)
 
+    def usable() -> bool:
+        return any(license_scope_text_is_usable(text) for text in texts)
+
     normalized = table.get("normalizedRows")
     if isinstance(normalized, list) and normalized:
         for row in normalized:
             if isinstance(row, dict):
-                # 只要项目/子项目两列，别把「许可参数=—」也串进去
-                for key in ("许可项目", "许可子项目"):
-                    push(row.get(key))
+                # 只要项目类列，别把「许可参数=—」也串进去
+                for key, value in row.items():
+                    if _is_license_scope_column(key):
+                        push(value)
             elif isinstance(row, list):
                 for value in row:
                     push(value)
-        if texts:
+        if usable():
             return texts
 
     cells = table.get("cells")
@@ -6396,7 +6415,7 @@ def _table_scope_texts(table: dict[str, Any]) -> list[str]:
         for cell in cells:
             if isinstance(cell, dict) and not cell.get("isHeader"):
                 push(cell.get("text"))
-        if texts:
+        if usable():
             return texts
 
     rows = table.get("rows")

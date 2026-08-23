@@ -72,6 +72,44 @@ SCOPE_TABLE = {
     ],
 }
 
+# 江苏 TS3832083-2026 的真实形状：子项目列表头是「子项目」，没有「许可」前缀；
+# 而「许可项目」列填的是「承压类特种设备安装、修理、改造」——一个不含任何项目名的类别词。
+# 这两件事叠在一起，恰好构成第二次失手的条件。
+SCOPE_TABLE_SHORT_HEADER = {
+    "bbox": [37.845, 180.688, 212.976, 265.696],
+    "pageNo": 1,
+    "rows": 3,
+    "columns": 4,
+    "normalizedRows": [
+        {
+            "许可项目": "承压类特种设备安装、修理、改造",
+            "子项目": "公用管道安装(GB2)",
+            "许可参数": "—",
+            "备注": "/",
+        },
+        {
+            "许可项目": "承压类特种设备安装、修理、改造",
+            "子项目": "工业管道安装(GC2)",
+            "许可参数": "—",
+            "备注": "/",
+        },
+    ],
+    "cells": [
+        {"row": 0, "col": 0, "text": "许可项目", "isHeader": True},
+        {"row": 0, "col": 1, "text": "子项目", "isHeader": True},
+        {"row": 0, "col": 2, "text": "许可参数", "isHeader": True},
+        {"row": 0, "col": 3, "text": "备注", "isHeader": True},
+        {"row": 1, "col": 0, "text": "承压类特种设备安装、修理、改造", "isHeader": False},
+        {"row": 1, "col": 1, "text": "公用管道安装(GB2)", "isHeader": False},
+        {"row": 1, "col": 2, "text": "—", "isHeader": False},
+        {"row": 1, "col": 3, "text": "/", "isHeader": False},
+        {"row": 2, "col": 0, "text": "承压类特种设备安装、修理、改造", "isHeader": False},
+        {"row": 2, "col": 1, "text": "工业管道安装(GC2)", "isHeader": False},
+        {"row": 2, "col": 2, "text": "—", "isHeader": False},
+        {"row": 2, "col": 3, "text": "/", "isHeader": False},
+    ],
+}
+
 # 另一种上游形状：行数组。两种都要认。
 SCOPE_TABLE_ROW_ARRAY = {
     "rows": [
@@ -148,6 +186,30 @@ def test_cells形状也能读():
     text = license_scope_from_tables({"tables": [table]})["text"]
     assert "工业管道安装(GC1、GC2)" in text
     assert "许可子项目" not in text, "表头被当成了范围"
+
+
+def test_子项目列名没有许可前缀时也能读():
+    """列名写死成「许可子项目」的话，这一整列读不到——而只有它带 GB2/GC2。"""
+    found = license_scope_from_tables({"tables": [SCOPE_TABLE_SHORT_HEADER]})
+    assert found, "「子项目」列被漏掉了"
+    text = found["text"]
+    assert "公用管道安装(GB2)" in text
+    assert "工业管道安装(GC2)" in text
+    assert "—" not in text, "许可参数被串进来了"
+    assert "备注" not in text
+
+
+def test_许可项目列不可用时不挡住cells兜底():
+    """normalizedRows 吐出「承压类特种设备安装、修理、改造」——非空，但不含任何项目名。
+
+    只要提前返回的条件是「有文字」而不是「有可用值」，这个类别词就会顶掉 cells 兜底，
+    界面上变成「有表格却抽不到」。
+    """
+    table = {k: v for k, v in SCOPE_TABLE_SHORT_HEADER.items() if k != "normalizedRows"}
+    table["normalizedRows"] = [{"许可项目": "承压类特种设备安装、修理、改造"}]
+    found = license_scope_from_tables({"tables": [table]})
+    assert found, "不可用的许可项目值把 cells 兜底挡掉了"
+    assert "GC2" in found["text"]
 
 
 def test_行数组形状也能读():

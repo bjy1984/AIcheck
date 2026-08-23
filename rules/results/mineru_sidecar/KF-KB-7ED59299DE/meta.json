@@ -1,0 +1,33 @@
+{
+  "knowledgeFileId": "KF-KB-7ED59299DE",
+  "source": "output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-7ED59299DE/GBT+20801.1-2025.pdf",
+  "status": "success",
+  "error": "",
+  "note": "mineru_split_under_200_pages",
+  "parts": [
+    {
+      "part": "part_001_180.pdf",
+      "startPage": 1,
+      "endPage": 180,
+      "pageOffset": 0,
+      "blocks": 3179,
+      "mdChars": 368562,
+      "zipBytes": 22214935,
+      "contentListName": "69b9e57e-7cf7-43ad-957a-34d235a91131_content_list.json",
+      "layoutName": "layout.json"
+    },
+    {
+      "part": "part_181_311.pdf",
+      "startPage": 181,
+      "endPage": 311,
+      "pageOffset": 180,
+      "blocks": 1864,
+      "mdChars": 246412,
+      "zipBytes": 16474693,
+      "contentListName": "04bc4e08-6679-4607-8bf7-86fae2e36382_content_list.json",
+      "layoutName": "layout.json"
+    }
+  ],
+  "blockCount": 5043,
+  "updatedAt": "2026-08-23T10:50:27.039743+00:00"
+}

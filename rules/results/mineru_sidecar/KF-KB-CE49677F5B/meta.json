@@ -1,0 +1,22 @@
+{
+  "knowledgeFileId": "KF-KB-CE49677F5B",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-CE49677F5B/TSG D7006-2020 压力管道监督检验规则.pdf",
+  "artifact_files": [
+    "db655159-aa8c-41e9-af61-16ca82fd903c_content_list.json",
+    "db655159-aa8c-41e9-af61-16ca82fd903c_content_list_v2.json",
+    "db655159-aa8c-41e9-af61-16ca82fd903c_model.json",
+    "db655159-aa8c-41e9-af61-16ca82fd903c_origin.pdf",
+    "full.md",
+    "images/0a3886660501ae75c5e7ba8a84cfb4d6b68d08bbe25c6ca07c0779740cc209aa.jpg",
+    "images/0dab9a3305b610ffec086a07780270e9684e685b916c197752a6afdcf7a8db8b.jpg",
+    "images/3d309c0abded5c15d7eae5eda595a34b4a2e1ae7e39855e2746c08efe2e2f4e7.jpg",
+    "images/9d02112f8e94d13f31e602f0f076f89fee279aee3dfe132d17c01bb58a67fc4b.jpg",
+    "images/ac77adda7e4ef583e030506460a2cf19bc75f2c6eab22f1ca9538c6803c8f452.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "db655159-aa8c-41e9-af61-16ca82fd903c_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:47:42.870706+00:00"
+}

@@ -1,0 +1,28 @@
+{
+  "knowledgeFileId": "KF-KB-A6A3DB4C53",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-A6A3DB4C53/GBT+3087-2022.pdf",
+  "artifact_files": [
+    "6f6c3f6b-0ce5-480b-9e03-fc14d00ed837_content_list.json",
+    "6f6c3f6b-0ce5-480b-9e03-fc14d00ed837_content_list_v2.json",
+    "6f6c3f6b-0ce5-480b-9e03-fc14d00ed837_model.json",
+    "6f6c3f6b-0ce5-480b-9e03-fc14d00ed837_origin.pdf",
+    "full.md",
+    "images/0b6422bd72088bea820e21d80a5874cd8d621ad557be0f85427ac2a5b71c8629.jpg",
+    "images/133868411e5d83834ed1e27f75d26bcf9d9f5df974590931203adf48f9a5af05.jpg",
+    "images/21695049d5f7bae70ec8e12a8bd0429f4f3fb4c8276adaef7bfb2f9065c4da8d.jpg",
+    "images/39edb8168d3529d45f0977b79f55787f036dc025561228daf8f91d057171cc5f.jpg",
+    "images/3e8b53ffcb65e91fe7bd9f4d31bafe7b06c77873902d0622240996e5110b016d.jpg",
+    "images/54083ecc9d867cb93c95845f400d5feb214b3c7c25ae64bc6e8ac05e7a1949b7.jpg",
+    "images/7bdd2d55cb8dd447c8f588c639439ed1915feff0c60acbb25080c2ae792b36cf.jpg",
+    "images/865bc082d1e075b58a886ce8359d2862d6aa15223869c010fffb5e15f626ad93.jpg",
+    "images/8babd40bc1e2eaef638a68ef4fe251bf7f2f0472ce4a3018d4e6dce60869ab3d.jpg",
+    "images/aca22a720b5857e71aa6574a969341152eb74e7f0a2e08a37ba45f3893a20903.jpg",
+    "images/ff2f2524d9679d4f8c6553d014ed02bc6b397171301a34e93b2991246c3cd3cb.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "6f6c3f6b-0ce5-480b-9e03-fc14d00ed837_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:47:05.886095+00:00"
+}

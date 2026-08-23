@@ -471,12 +471,15 @@ def build_mineru_result(
             )
             continue
         text = _content_text(raw_item)
+        latex = _content_latex(raw_item)
+        structure = {"latex": latex} if latex else {}
         layout_blocks.append(
             {
                 "blockId": f"MINERU-BLOCK-{identity}",
                 "blockType": block_type,
                 "text": text,
                 "readingOrder": len(layout_blocks) + 1,
+                **structure,
                 **common,
             }
         )
@@ -493,6 +496,7 @@ def build_mineru_result(
                 "blockType": block_type,
                 "readingOrder": reading_order,
                 "confidence": 0.0,
+                **structure,
                 **common,
             }
         )
@@ -665,6 +669,23 @@ def _load_json(data: bytes, *, expected_type: type[Any]) -> Any:
             "MinerU result contains invalid JSON.",
         )
     return value
+
+
+def _content_latex(item: Mapping[str, Any]) -> str:
+    """取公式的 LaTeX 源码。
+
+    MinerU 的 equation 块**不给** `latex` 字段，而是把 LaTeX 放进 `text`、
+    另用 `text_format: "latex"` 标注（实测 GB/T 33378、GB/T 20801.1 均如此）。
+    只认 `latex` 字段的话，公式的结构化信息一条都拿不到。
+    """
+    value = item.get("latex")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if str(item.get("text_format") or "").strip().lower() == "latex":
+        value = item.get("text")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 def _content_text(item: Mapping[str, Any]) -> str:

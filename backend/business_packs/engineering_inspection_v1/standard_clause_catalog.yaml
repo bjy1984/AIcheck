@@ -79,15 +79,15 @@ standardCatalog:
   name: 非合金钢及细晶粒钢焊条
   sourceFile: rules/standards/GBT 5117-2012 非合金钢及细晶粒钢焊条.pdf
   verificationMethod: source_pdf_text_and_visual_check
-  knowledgeFileId: KF-KB-35C2CDA839
-  documentVersionId: KDV-35C2CDA839-V1
+  knowledgeFileId: KF-KB-7969D087E8
+  documentVersionId: KDV-7969D087E8-V1
 - id: STD-GBT-8110-2020
   code: GB/T 8110—2020
   name: 熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝
   sourceFile: rules/standards/GB∕T 8110-2020 熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝.pdf
   verificationMethod: source_pdf_text_and_visual_check
-  knowledgeFileId: KF-KB-47A96E73DA
-  documentVersionId: KDV-47A96E73DA-V1
+  knowledgeFileId: KF-KB-8F8C9E132E
+  documentVersionId: KDV-8F8C9E132E-V1
 - id: STD-GB-50236-2011
   code: GB 50236—2011
   name: 现场设备、工业管道焊接工程施工规范

@@ -1,0 +1,19 @@
+{
+  "knowledgeFileId": "KF-KB-34A4321341",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-34A4321341/特种设备生产和充装单位许可规则（第1号修改单）.docx",
+  "artifact_files": [
+    "d09d5384-58ff-42ea-8488-2dd4966b0a6d_content_list.json",
+    "d09d5384-58ff-42ea-8488-2dd4966b0a6d_content_list_v2.json",
+    "d09d5384-58ff-42ea-8488-2dd4966b0a6d_model.json",
+    "d09d5384-58ff-42ea-8488-2dd4966b0a6d_origin.pdf",
+    "full.md",
+    "images/8f61972dac8f17dd138d5cf02635510f07f962bc44716e163afeecb208c76c4e.jpg",
+    "images/c55dc350bc1bbebe177b84b00a596fc617b3a5b376e05dfb97bc75ee0c01e41f.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "d09d5384-58ff-42ea-8488-2dd4966b0a6d_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:43:43.427142+00:00"
+}

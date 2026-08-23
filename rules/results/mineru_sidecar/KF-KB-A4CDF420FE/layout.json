@@ -1,0 +1,3216 @@
+{
+    "pdf_info": [
+        {
+            "preproc_blocks": [
+                {
+                    "bbox": [
+                        98,
+                        132,
+                        552,
+                        162
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                98,
+                                132,
+                                552,
+                                162
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        98,
+                                        132,
+                                        552,
+                                        162
+                                    ],
+                                    "type": "text",
+                                    "content": "中华人民共和国能源行业标准"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "level": 1
+                },
+                {
+                    "bbox": [
+                        360,
+                        175,
+                        545,
+                        191
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                360,
+                                175,
+                                545,
+                                191
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        360,
+                                        175,
+                                        545,
+                                        191
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.1~47013.6—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 3,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        359,
+                        192,
+                        545,
+                        208
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                359,
+                                192,
+                                545,
+                                208
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        359,
+                                        192,
+                                        545,
+                                        208
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.7~47013.9—2012"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 4,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        346,
+                        209,
+                        546,
+                        226
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                346,
+                                209,
+                                546,
+                                226
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        346,
+                                        209,
+                                        546,
+                                        226
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.10~47013.13—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 5,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        217,
+                        329,
+                        432,
+                        358
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                217,
+                                329,
+                                432,
+                                358
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        217,
+                                        329,
+                                        432,
+                                        358
+                                    ],
+                                    "type": "text",
+                                    "content": "承压设备无损检测"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 6,
+                    "level": 1
+                },
+                {
+                    "bbox": [
+                        193,
+                        380,
+                        456,
+                        397
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                193,
+                                380,
+                                456,
+                                397
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        193,
+                                        380,
+                                        456,
+                                        397
+                                    ],
+                                    "type": "text",
+                                    "content": "Nondestructive testing of pressure equipments"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 7,
+                    "level": 1
+                },
+                {
+                    "bbox": [
+                        97,
+                        670,
+                        206,
+                        686
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                97,
+                                670,
+                                206,
+                                686
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        97,
+                                        670,
+                                        206,
+                                        686
+                                    ],
+                                    "type": "text",
+                                    "content": "2015-04-02 发布"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 8,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        97,
+                        687,
+                        205,
+                        703
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                97,
+                                687,
+                                205,
+                                703
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        97,
+                                        687,
+                                        205,
+                                        703
+                                    ],
+                                    "type": "text",
+                                    "content": "2012-01-04 发布"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 9,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        442,
+                        671,
+                        551,
+                        687
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                442,
+                                671,
+                                551,
+                                687
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        442,
+                                        671,
+                                        551,
+                                        687
+                                    ],
+                                    "type": "text",
+                                    "content": "2015-09-01 实施"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 10,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        442,
+                        687,
+                        551,
+                        703
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                442,
+                                687,
+                                551,
+                                703
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        442,
+                                        687,
+                                        551,
+                                        703
+                                    ],
+                                    "type": "text",
+                                    "content": "2012-03-01 实施"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 11,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        225,
+                        740,
+                        424,
+                        761
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                225,
+                                740,
+                                424,
+                                761
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        225,
+                                        740,
+                                        424,
+                                        761
+                                    ],
+                                    "type": "text",
+                                    "content": "国家能源局 发布"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 13,
+                    "merge_prev": false
+                }
+            ],
+            "discarded_blocks": [
+                {
+                    "bbox": [
+                        98,
+                        52,
+                        176,
+                        79
+                    ],
+                    "type": "header",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                98,
+                                52,
+                                176,
+                                79
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        98,
+                                        52,
+                                        176,
+                                        79
+                                    ],
+                                    "type": "text",
+                                    "content": "ICS 77.040.20 J 26"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0
+                },
+                {
+                    "bbox": [
+                        414,
+                        59,
+                        521,
+                        116
+                    ],
+                    "type": "header",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                414,
+                                59,
+                                521,
+                                116
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        414,
+                                        59,
+                                        521,
+                                        116
+                                    ],
+                                    "type": "text",
+                                    "content": "NB"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 1
+                },
+                {
+                    "bbox": [
+                        96,
+                        714,
+                        147,
+                        775
+                    ],
+                    "type": "footer",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                96,
+                                714,
+                                147,
+                                775
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        96,
+                                        714,
+                                        147,
+                                        775
+                                    ],
+                                    "type": "text",
+                                    "content": "传播正版 仿冒必究\n电话费到400元/件，扫码\n网站登录：www.cic168.com\n新开速招 查找真快"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 12
+                }
+            ],
+            "page_size": [
+                595,
+                841
+            ],
+            "page_idx": 0,
+            "para_blocks": [
+                {
+                    "bbox": [
+                        98,
+                        132,
+                        552,
+                        162
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                98,
+                                132,
+                                552,
+                                162
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        98,
+                                        132,
+                                        552,
+                                        162
+                                    ],
+                                    "type": "text",
+                                    "content": "中华人民共和国能源行业标准"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "level": 1
+                },
+                {
+                    "bbox": [
+                        360,
+                        175,
+                        545,
+                        191
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                360,
+                                175,
+                                545,
+                                191
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        360,
+                                        175,
+                                        545,
+                                        191
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.1~47013.6—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 3,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        359,
+                        192,
+                        545,
+                        208
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                359,
+                                192,
+                                545,
+                                208
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        359,
+                                        192,
+                                        545,
+                                        208
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.7~47013.9—2012"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 4,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        346,
+                        209,
+                        546,
+                        226
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                346,
+                                209,
+                                546,
+                                226
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        346,
+                                        209,
+                                        546,
+                                        226
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.10~47013.13—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 5,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        217,
+                        329,
+                        432,
+                        358
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                217,
+                                329,
+                                432,
+                                358
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        217,
+                                        329,
+                                        432,
+                                        358
+                                    ],
+                                    "type": "text",
+                                    "content": "承压设备无损检测"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 6,
+                    "level": 1
+                },
+                {
+                    "bbox": [
+                        193,
+                        380,
+                        456,
+                        397
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                193,
+                                380,
+                                456,
+                                397
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        193,
+                                        380,
+                                        456,
+                                        397
+                                    ],
+                                    "type": "text",
+                                    "content": "Nondestructive testing of pressure equipments"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 7,
+                    "level": 1
+                },
+                {
+                    "bbox": [
+                        97,
+                        670,
+                        206,
+                        686
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                97,
+                                670,
+                                206,
+                                686
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        97,
+                                        670,
+                                        206,
+                                        686
+                                    ],
+                                    "type": "text",
+                                    "content": "2015-04-02 发布"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 8,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        97,
+                        687,
+                        205,
+                        703
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                97,
+                                687,
+                                205,
+                                703
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        97,
+                                        687,
+                                        205,
+                                        703
+                                    ],
+                                    "type": "text",
+                                    "content": "2012-01-04 发布"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 9,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        442,
+                        671,
+                        551,
+                        687
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                442,
+                                671,
+                                551,
+                                687
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        442,
+                                        671,
+                                        551,
+                                        687
+                                    ],
+                                    "type": "text",
+                                    "content": "2015-09-01 实施"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 10,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        442,
+                        687,
+                        551,
+                        703
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                442,
+                                687,
+                                551,
+                                703
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        442,
+                                        687,
+                                        551,
+                                        703
+                                    ],
+                                    "type": "text",
+                                    "content": "2012-03-01 实施"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 11,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        225,
+                        740,
+                        424,
+                        761
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                225,
+                                740,
+                                424,
+                                761
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        225,
+                                        740,
+                                        424,
+                                        761
+                                    ],
+                                    "type": "text",
+                                    "content": "国家能源局 发布"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 13,
+                    "merge_prev": false
+                }
+            ]
+        },
+        {
+            "preproc_blocks": [
+                {
+                    "bbox": [
+                        186,
+                        252,
+                        317,
+                        268
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                186,
+                                252,
+                                317,
+                                268
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        186,
+                                        252,
+                                        317,
+                                        268
+                                    ],
+                                    "type": "text",
+                                    "content": "图书在版编目（CIP）数据"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        166,
+                        280,
+                        436,
+                        327
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                166,
+                                280,
+                                436,
+                                327
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        166,
+                                        280,
+                                        436,
+                                        327
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T47013—2015承压设备无损检测 / 全国锅炉压力容器标准化技术委员会主编. ——北京：新华出版社，2015.7"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 1,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        188,
+                        330,
+                        320,
+                        345
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                188,
+                                330,
+                                320,
+                                345
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        188,
+                                        330,
+                                        320,
+                                        345
+                                    ],
+                                    "type": "text",
+                                    "content": "ISBN 978-7-5166-1840-0"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        167,
+                        357,
+                        436,
+                        390
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                167,
+                                357,
+                                436,
+                                390
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        167,
+                                        357,
+                                        436,
+                                        390
+                                    ],
+                                    "type": "text",
+                                    "content": "I．①N… Ⅱ．①全… Ⅲ．①压力容器—无损检验—标准 Ⅳ．①TH49-65"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 3,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        188,
+                        401,
+                        436,
+                        417
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                188,
+                                401,
+                                436,
+                                417
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        188,
+                                        401,
+                                        436,
+                                        417
+                                    ],
+                                    "type": "text",
+                                    "content": "中国版本图书馆 CIP 数据核字（2015）第 155779 号"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 4,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        235,
+                        476,
+                        360,
+                        490
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                235,
+                                476,
+                                360,
+                                490
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        235,
+                                        476,
+                                        360,
+                                        490
+                                    ],
+                                    "type": "text",
+                                    "content": "中华人民共和国"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 5,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        259,
+                        492,
+                        343,
+                        507
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                259,
+                                492,
+                                343,
+                                507
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        259,
+                                        492,
+                                        343,
+                                        507
+                                    ],
+                                    "type": "text",
+                                    "content": "能源行业标准"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 6,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        248,
+                        513,
+                        355,
+                        529
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                248,
+                                513,
+                                355,
+                                529
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        248,
+                                        513,
+                                        355,
+                                        529
+                                    ],
+                                    "type": "text",
+                                    "content": "承压设备无损检测"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 7,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        242,
+                        534,
+                        362,
+                        548
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                242,
+                                534,
+                                362,
+                                548
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        242,
+                                        534,
+                                        362,
+                                        548
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.1~47013.6—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 8,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        242,
+                        549,
+                        363,
+                        562
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                242,
+                                549,
+                                363,
+                                562
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        242,
+                                        549,
+                                        363,
+                                        562
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.7~47013.9—2012"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 9,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        238,
+                        562,
+                        365,
+                        576
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                238,
+                                562,
+                                365,
+                                576
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        238,
+                                        562,
+                                        365,
+                                        576
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.10~47013.13—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 10,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        296,
+                        579,
+                        307,
+                        589
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                296,
+                                579,
+                                307,
+                                589
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        296,
+                                        579,
+                                        307,
+                                        589
+                                    ],
+                                    "type": "text",
+                                    "content": "*"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 11,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        255,
+                        592,
+                        350,
+                        606
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                255,
+                                592,
+                                350,
+                                606
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        255,
+                                        592,
+                                        350,
+                                        606
+                                    ],
+                                    "type": "text",
+                                    "content": "新华出版社出版发行"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 12,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        230,
+                        607,
+                        371,
+                        620
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                230,
+                                607,
+                                371,
+                                620
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        230,
+                                        607,
+                                        371,
+                                        620
+                                    ],
+                                    "type": "text",
+                                    "content": "北京石景山区京原路8号（100043）"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 13,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        254,
+                        621,
+                        350,
+                        634
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                254,
+                                621,
+                                350,
+                                634
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        254,
+                                        621,
+                                        350,
+                                        634
+                                    ],
+                                    "type": "text",
+                                    "content": "新华书店经销"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 14,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        226,
+                        638,
+                        379,
+                        652
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                226,
+                                638,
+                                379,
+                                652
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        226,
+                                        638,
+                                        379,
+                                        652
+                                    ],
+                                    "type": "text",
+                                    "content": "北京市庆全新光印刷有限公司印刷"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 15,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        258,
+                        654,
+                        346,
+                        666
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                258,
+                                654,
+                                346,
+                                666
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        258,
+                                        654,
+                                        346,
+                                        666
+                                    ],
+                                    "type": "text",
+                                    "content": "版权专有 不得翻印"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 16,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        198,
+                        682,
+                        406,
+                        696
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                198,
+                                682,
+                                406,
+                                696
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        198,
+                                        682,
+                                        406,
+                                        696
+                                    ],
+                                    "type": "text",
+                                    "content": "开本 "
+                                },
+                                {
+                                    "bbox": [
+                                        198,
+                                        682,
+                                        406,
+                                        696
+                                    ],
+                                    "type": "inline_equation",
+                                    "content": "880 \\times 1230"
+                                },
+                                {
+                                    "bbox": [
+                                        198,
+                                        682,
+                                        406,
+                                        696
+                                    ],
+                                    "type": "text",
+                                    "content": " 1/16 印张29.5 字数400千字"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 17,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        214,
+                        698,
+                        390,
+                        712
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                214,
+                                698,
+                                390,
+                                712
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        214,
+                                        698,
+                                        390,
+                                        712
+                                    ],
+                                    "type": "text",
+                                    "content": "2015年7月第1版 2015年7月第1次印刷"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 18,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        297,
+                        717,
+                        307,
+                        726
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                297,
+                                717,
+                                307,
+                                726
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        297,
+                                        717,
+                                        307,
+                                        726
+                                    ],
+                                    "type": "text",
+                                    "content": "*"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 19,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        269,
+                        731,
+                        336,
+                        745
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                269,
+                                731,
+                                336,
+                                745
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        269,
+                                        731,
+                                        336,
+                                        745
+                                    ],
+                                    "type": "text",
+                                    "content": "定价：238.00元"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 20,
+                    "merge_prev": false
+                }
+            ],
+            "discarded_blocks": [],
+            "page_size": [
+                595,
+                841
+            ],
+            "page_idx": 1,
+            "para_blocks": [
+                {
+                    "bbox": [
+                        186,
+                        252,
+                        317,
+                        268
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                186,
+                                252,
+                                317,
+                                268
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        186,
+                                        252,
+                                        317,
+                                        268
+                                    ],
+                                    "type": "text",
+                                    "content": "图书在版编目（CIP）数据"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        166,
+                        280,
+                        436,
+                        327
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                166,
+                                280,
+                                436,
+                                327
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        166,
+                                        280,
+                                        436,
+                                        327
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T47013—2015承压设备无损检测 / 全国锅炉压力容器标准化技术委员会主编. ——北京：新华出版社，2015.7"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 1,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        188,
+                        330,
+                        320,
+                        345
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                188,
+                                330,
+                                320,
+                                345
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        188,
+                                        330,
+                                        320,
+                                        345
+                                    ],
+                                    "type": "text",
+                                    "content": "ISBN 978-7-5166-1840-0"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        167,
+                        357,
+                        436,
+                        390
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                167,
+                                357,
+                                436,
+                                390
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        167,
+                                        357,
+                                        436,
+                                        390
+                                    ],
+                                    "type": "text",
+                                    "content": "I．①N… Ⅱ．①全… Ⅲ．①压力容器—无损检验—标准 Ⅳ．①TH49-65"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 3,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        188,
+                        401,
+                        436,
+                        417
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                188,
+                                401,
+                                436,
+                                417
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        188,
+                                        401,
+                                        436,
+                                        417
+                                    ],
+                                    "type": "text",
+                                    "content": "中国版本图书馆 CIP 数据核字（2015）第 155779 号"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 4,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        235,
+                        476,
+                        360,
+                        490
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                235,
+                                476,
+                                360,
+                                490
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        235,
+                                        476,
+                                        360,
+                                        490
+                                    ],
+                                    "type": "text",
+                                    "content": "中华人民共和国"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 5,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        259,
+                        492,
+                        343,
+                        507
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                259,
+                                492,
+                                343,
+                                507
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        259,
+                                        492,
+                                        343,
+                                        507
+                                    ],
+                                    "type": "text",
+                                    "content": "能源行业标准"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 6,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        248,
+                        513,
+                        355,
+                        529
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                248,
+                                513,
+                                355,
+                                529
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        248,
+                                        513,
+                                        355,
+                                        529
+                                    ],
+                                    "type": "text",
+                                    "content": "承压设备无损检测"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 7,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        242,
+                        534,
+                        362,
+                        548
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                242,
+                                534,
+                                362,
+                                548
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        242,
+                                        534,
+                                        362,
+                                        548
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.1~47013.6—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 8,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        242,
+                        549,
+                        363,
+                        562
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                242,
+                                549,
+                                363,
+                                562
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        242,
+                                        549,
+                                        363,
+                                        562
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.7~47013.9—2012"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 9,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        238,
+                        562,
+                        365,
+                        576
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                238,
+                                562,
+                                365,
+                                576
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        238,
+                                        562,
+                                        365,
+                                        576
+                                    ],
+                                    "type": "text",
+                                    "content": "NB/T 47013.10~47013.13—2015"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 10,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        296,
+                        579,
+                        307,
+                        589
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                296,
+                                579,
+                                307,
+                                589
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        296,
+                                        579,
+                                        307,
+                                        589
+                                    ],
+                                    "type": "text",
+                                    "content": "*"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 11,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        255,
+                        592,
+                        350,
+                        606
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                255,
+                                592,
+                                350,
+                                606
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        255,
+                                        592,
+                                        350,
+                                        606
+                                    ],
+                                    "type": "text",
+                                    "content": "新华出版社出版发行"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 12,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        230,
+                        607,
+                        371,
+                        620
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                230,
+                                607,
+                                371,
+                                620
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        230,
+                                        607,
+                                        371,
+                                        620
+                                    ],
+                                    "type": "text",
+                                    "content": "北京石景山区京原路8号（100043）"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 13,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        254,
+                        621,
+                        350,
+                        634
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                254,
+                                621,
+                                350,
+                                634
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        254,
+                                        621,
+                                        350,
+                                        634
+                                    ],
+                                    "type": "text",
+                                    "content": "新华书店经销"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 14,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        226,
+                        638,
+                        379,
+                        652
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                226,
+                                638,
+                                379,
+                                652
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        226,
+                                        638,
+                                        379,
+                                        652
+                                    ],
+                                    "type": "text",
+                                    "content": "北京市庆全新光印刷有限公司印刷"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 15,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        258,
+                        654,
+                        346,
+                        666
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                258,
+                                654,
+                                346,
+                                666
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        258,
+                                        654,
+                                        346,
+                                        666
+                                    ],
+                                    "type": "text",
+                                    "content": "版权专有 不得翻印"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 16,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        198,
+                        682,
+                        406,
+                        696
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                198,
+                                682,
+                                406,
+                                696
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        198,
+                                        682,
+                                        406,
+                                        696
+                                    ],
+                                    "type": "text",
+                                    "content": "开本 "
+                                },
+                                {
+                                    "bbox": [
+                                        198,
+                                        682,
+                                        406,
+                                        696
+                                    ],
+                                    "type": "inline_equation",
+                                    "content": "880 \\times 1230"
+                                },
+                                {
+                                    "bbox": [
+                                        198,
+                                        682,
+                                        406,
+                                        696
+                                    ],
+                                    "type": "text",
+                                    "content": " 1/16 印张29.5 字数400千字"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 17,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        214,
+                        698,
+                        390,
+                        712
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                214,
+                                698,
+                                390,
+                                712
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        214,
+                                        698,
+                                        390,
+                                        712
+                                    ],
+                                    "type": "text",
+                                    "content": "2015年7月第1版 2015年7月第1次印刷"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 18,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        297,
+                        717,
+                        307,
+                        726
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                297,
+                                717,
+                                307,
+                                726
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        297,
+                                        717,
+                                        307,
+                                        726
+                                    ],
+                                    "type": "text",
+                                    "content": "*"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 19,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        269,
+                        731,
+                        336,
+                        745
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                269,
+                                731,
+                                336,
+                                745
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        269,
+                                        731,
+                                        336,
+                                        745
+                                    ],
+                                    "type": "text",
+                                    "content": "定价：238.00元"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 20,
+                    "merge_prev": false
+                }
+            ]
+        },
+        {
+            "preproc_blocks": [
+                {
+                    "bbox": [
+                        168,
+                        139,
+                        442,
+                        175
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                168,
+                                139,
+                                442,
+                                175
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        168,
+                                        139,
+                                        442,
+                                        175
+                                    ],
+                                    "type": "text",
+                                    "content": "国家能源局"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0,
+                    "level": 1
+                },
+                {
+                    "type": "image",
+                    "bbox": [
+                        219,
+                        224,
+                        390,
+                        269
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                219,
+                                224,
+                                390,
+                                269
+                            ],
+                            "type": "image_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        219,
+                                        224,
+                                        390,
+                                        269
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                219,
+                                                224,
+                                                390,
+                                                269
+                                            ],
+                                            "type": "image",
+                                            "image_path": "c952af7b8681fce73d549e8c96e082818facdf5fc50e6b01e3cc1514a46c64ba.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 1
+                        }
+                    ],
+                    "index": 1
+                },
+                {
+                    "bbox": [
+                        250,
+                        310,
+                        358,
+                        329
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                250,
+                                310,
+                                358,
+                                329
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        250,
+                                        310,
+                                        358,
+                                        329
+                                    ],
+                                    "type": "text",
+                                    "content": "2015年第3号"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        81,
+                        405,
+                        528,
+                        544
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                81,
+                                405,
+                                528,
+                                544
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        81,
+                                        405,
+                                        528,
+                                        544
+                                    ],
+                                    "type": "text",
+                                    "content": "依据《国家能源局关于印发〈能源领域行业标准化管理办法（试行）〉及实施细则的通知》（国能局科技〔2009〕52号）有关规定，经审查，国家能源局批准《压水堆核电厂用碳钢和低合金钢 第31部分：安全壳用15Mn锻件》等203项行业标准，其中能源标准（NB）106项和电力标准（DL）97项，现予以发布。"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 3,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        113,
+                        604,
+                        253,
+                        623
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                113,
+                                604,
+                                253,
+                                623
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        113,
+                                        604,
+                                        253,
+                                        623
+                                    ],
+                                    "type": "text",
+                                    "content": "附件：行业标准目录"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 4,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        354,
+                        693,
+                        493,
+                        712
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                354,
+                                693,
+                                493,
+                                712
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        354,
+                                        693,
+                                        493,
+                                        712
+                                    ],
+                                    "type": "text",
+                                    "content": "二〇一五年四月二日"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 5,
+                    "merge_prev": false
+                }
+            ],
+            "discarded_blocks": [],
+            "page_size": [
+                609,
+                841
+            ],
+            "page_idx": 2,
+            "para_blocks": [
+                {
+                    "bbox": [
+                        168,
+                        139,
+                        442,
+                        175
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                168,
+                                139,
+                                442,
+                                175
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        168,
+                                        139,
+                                        442,
+                                        175
+                                    ],
+                                    "type": "text",
+                                    "content": "国家能源局"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0,
+                    "level": 1
+                },
+                {
+                    "type": "image",
+                    "bbox": [
+                        219,
+                        224,
+                        390,
+                        269
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                219,
+                                224,
+                                390,
+                                269
+                            ],
+                            "type": "image_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        219,
+                                        224,
+                                        390,
+                                        269
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                219,
+                                                224,
+                                                390,
+                                                269
+                                            ],
+                                            "type": "image",
+                                            "image_path": "c952af7b8681fce73d549e8c96e082818facdf5fc50e6b01e3cc1514a46c64ba.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 1
+                        }
+                    ],
+                    "index": 1
+                },
+                {
+                    "bbox": [
+                        250,
+                        310,
+                        358,
+                        329
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                250,
+                                310,
+                                358,
+                                329
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        250,
+                                        310,
+                                        358,
+                                        329
+                                    ],
+                                    "type": "text",
+                                    "content": "2015年第3号"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        81,
+                        405,
+                        528,
+                        544
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                81,
+                                405,
+                                528,
+                                544
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        81,
+                                        405,
+                                        528,
+                                        544
+                                    ],
+                                    "type": "text",
+                                    "content": "依据《国家能源局关于印发〈能源领域行业标准化管理办法（试行）〉及实施细则的通知》（国能局科技〔2009〕52号）有关规定，经审查，国家能源局批准《压水堆核电厂用碳钢和低合金钢 第31部分：安全壳用15Mn锻件》等203项行业标准，其中能源标准（NB）106项和电力标准（DL）97项，现予以发布。"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 3,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        113,
+                        604,
+                        253,
+                        623
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                113,
+                                604,
+                                253,
+                                623
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        113,
+                                        604,
+                                        253,
+                                        623
+                                    ],
+                                    "type": "text",
+                                    "content": "附件：行业标准目录"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 4,
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        354,
+                        693,
+                        493,
+                        712
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                354,
+                                693,
+                                493,
+                                712
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        354,
+                                        693,
+                                        493,
+                                        712
+                                    ],
+                                    "type": "text",
+                                    "content": "二〇一五年四月二日"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 5,
+                    "merge_prev": false
+                }
+            ]
+        },
+        {
+            "preproc_blocks": [
+                {
+                    "type": "table",
+                    "bbox": [
+                        122,
+                        79,
+                        455,
+                        747
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                490,
+                                330,
+                                512,
+                                751
+                            ],
+                            "type": "table_caption",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        490,
+                                        330,
+                                        512,
+                                        751
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                490,
+                                                330,
+                                                512,
+                                                751
+                                            ],
+                                            "type": "text",
+                                            "content": "备注：NB/T 47013.7~47013.9 由国家能源局 2012 年第 1 号公告发布。"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 0
+                        },
+                        {
+                            "bbox": [
+                                98,
+                                369,
+                                119,
+                                459
+                            ],
+                            "type": "table_caption",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        98,
+                                        369,
+                                        119,
+                                        459
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                98,
+                                                369,
+                                                119,
+                                                459
+                                            ],
+                                            "type": "text",
+                                            "content": "行业标准目录"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 1
+                        },
+                        {
+                            "bbox": [
+                                122,
+                                79,
+                                455,
+                                747
+                            ],
+                            "type": "table_body",
+                            "angle": 270,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        122,
+                                        79,
+                                        455,
+                                        747
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                122,
+                                                79,
+                                                455,
+                                                747
+                                            ],
+                                            "type": "table",
+                                            "html": "<table><tr><td>序号</td><td>标准编号</td><td>标准名称</td><td>代替标准</td><td>采标号</td><td>批准日期</td><td>实施日期</td></tr><tr><td>1~84</td><td colspan=\"6\">(略)</td></tr><tr><td>85</td><td>NB/T 47013.1—2015</td><td>承压设备无损检测 第1部分:通用要求</td><td>JB/T 4730.1—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>86</td><td>NB/T 47013.2—2015</td><td>承压设备无损检测 第2部分:射线检测</td><td>JB/T 4730.2—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>87</td><td>NB/T 47013.3—2015</td><td>承压设备无损检测 第3部分:超声检测</td><td>JB/T 4730.3—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>88</td><td>NB/T 47013.4—2015</td><td>承压设备无损检测 第4部分:磁粉检测</td><td>JB/T 4730.4—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>89</td><td>NB/T 47013.5—2015</td><td>承压设备无损检测 第5部分:渗透检测</td><td>JB/T 4730.5—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>90</td><td>NB/T 47013.6—2015</td><td>承压设备无损检测 第6部分:涡流检测</td><td>JB/T 4730.6—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>91</td><td>NB/T 47013.10—2015</td><td>承压设备无损检测 第10部分:衍射时差法超声检测</td><td>NB/T 47013.10—2010(JB/T 4730.10)</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>92</td><td>NB/T 47013.11—2015</td><td>承压设备无损检测 第11部分:X射线数字成像检测</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>93</td><td>NB/T 47013.12—2015</td><td>承压设备无损检测 第12部分:漏磁检测</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>94</td><td>NB/T 47013.13—2015</td><td>承压设备无损检测 第13部分:脉冲涡流检测</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>95</td><td>NB/T 47045—2015</td><td>钎焊板式热交换器</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>96~203</td><td colspan=\"6\">(略)</td></tr></table>",
+                                            "image_path": "6322d1a8d9b023180983255652fa9d58259ccdb7425bb7fa2ca1fd7f2533892d.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 2
+                        }
+                    ],
+                    "index": 2
+                }
+            ],
+            "discarded_blocks": [
+                {
+                    "bbox": [
+                        69,
+                        722,
+                        92,
+                        766
+                    ],
+                    "type": "page_number",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                69,
+                                722,
+                                92,
+                                766
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        69,
+                                        722,
+                                        92,
+                                        766
+                                    ],
+                                    "type": "text",
+                                    "content": "附件："
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 3
+                }
+            ],
+            "page_size": [
+                595,
+                841
+            ],
+            "page_idx": 3,
+            "para_blocks": [
+                {
+                    "type": "table",
+                    "bbox": [
+                        122,
+                        79,
+                        455,
+                        747
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                490,
+                                330,
+                                512,
+                                751
+                            ],
+                            "type": "table_caption",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        490,
+                                        330,
+                                        512,
+                                        751
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                490,
+                                                330,
+                                                512,
+                                                751
+                                            ],
+                                            "type": "text",
+                                            "content": "备注：NB/T 47013.7~47013.9 由国家能源局 2012 年第 1 号公告发布。"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 0
+                        },
+                        {
+                            "bbox": [
+                                98,
+                                369,
+                                119,
+                                459
+                            ],
+                            "type": "table_caption",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        98,
+                                        369,
+                                        119,
+                                        459
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                98,
+                                                369,
+                                                119,
+                                                459
+                                            ],
+                                            "type": "text",
+                                            "content": "行业标准目录"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 1
+                        },
+                        {
+                            "bbox": [
+                                122,
+                                79,
+                                455,
+                                747
+                            ],
+                            "type": "table_body",
+                            "angle": 270,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        122,
+                                        79,
+                                        455,
+                                        747
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                122,
+                                                79,
+                                                455,
+                                                747
+                                            ],
+                                            "type": "table",
+                                            "html": "<table><tr><td>序号</td><td>标准编号</td><td>标准名称</td><td>代替标准</td><td>采标号</td><td>批准日期</td><td>实施日期</td></tr><tr><td>1~84</td><td colspan=\"6\">(略)</td></tr><tr><td>85</td><td>NB/T 47013.1—2015</td><td>承压设备无损检测 第1部分:通用要求</td><td>JB/T 4730.1—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>86</td><td>NB/T 47013.2—2015</td><td>承压设备无损检测 第2部分:射线检测</td><td>JB/T 4730.2—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>87</td><td>NB/T 47013.3—2015</td><td>承压设备无损检测 第3部分:超声检测</td><td>JB/T 4730.3—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>88</td><td>NB/T 47013.4—2015</td><td>承压设备无损检测 第4部分:磁粉检测</td><td>JB/T 4730.4—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>89</td><td>NB/T 47013.5—2015</td><td>承压设备无损检测 第5部分:渗透检测</td><td>JB/T 4730.5—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>90</td><td>NB/T 47013.6—2015</td><td>承压设备无损检测 第6部分:涡流检测</td><td>JB/T 4730.6—2005</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>91</td><td>NB/T 47013.10—2015</td><td>承压设备无损检测 第10部分:衍射时差法超声检测</td><td>NB/T 47013.10—2010(JB/T 4730.10)</td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>92</td><td>NB/T 47013.11—2015</td><td>承压设备无损检测 第11部分:X射线数字成像检测</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>93</td><td>NB/T 47013.12—2015</td><td>承压设备无损检测 第12部分:漏磁检测</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>94</td><td>NB/T 47013.13—2015</td><td>承压设备无损检测 第13部分:脉冲涡流检测</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>95</td><td>NB/T 47045—2015</td><td>钎焊板式热交换器</td><td></td><td></td><td>2015-04-02</td><td>2015-09-01</td></tr><tr><td>96~203</td><td colspan=\"6\">(略)</td></tr></table>",
+                                            "image_path": "6322d1a8d9b023180983255652fa9d58259ccdb7425bb7fa2ca1fd7f2533892d.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 2
+                        }
+                    ],
+                    "index": 2
+                }
+            ]
+        },
+        {
+            "preproc_blocks": [
+                {
+                    "bbox": [
+                        282,
+                        139,
+                        350,
+                        159
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                282,
+                                139,
+                                350,
+                                159
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        282,
+                                        139,
+                                        350,
+                                        159
+                                    ],
+                                    "type": "text",
+                                    "content": "目录"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0,
+                    "level": 2
+                },
+                {
+                    "bbox": [
+                        82,
+                        189,
+                        554,
+                        410
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                82,
+                                189,
+                                554,
+                                410
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        82,
+                                        189,
+                                        554,
+                                        410
+                                    ],
+                                    "type": "text",
+                                    "content": "承压设备无损检测 第1部分：通用要求……1  \n承压设备无损检测 第2部分：射线检测……19  \n承压设备无损检测 第3部分：超声检测……83  \n承压设备无损检测 第4部分：磁粉检测……203  \n承压设备无损检测 第5部分：渗透检测……227  \n承压设备无损检测 第6部分：涡流检测……243  \n承压设备无损检测 第7部分：目视检测……285  \n承压设备无损检测 第8部分：泄漏检测……293  \n承压设备无损检测 第9部分：声发射检测……335  \n承压设备无损检测 第10部分：衍射时差法超声检测……355  \n承压设备无损检测 第11部分：X射线数字成像检测……401  \n承压设备无损检测 第12部分：漏磁检测……429  \n承压设备无损检测 第13部分：脉冲涡流检测……453"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 1
+                }
+            ],
+            "discarded_blocks": [],
+            "page_size": [
+                609,
+                841
+            ],
+            "page_idx": 4,
+            "para_blocks": [
+                {
+                    "bbox": [
+                        282,
+                        139,
+                        350,
+                        159
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                282,
+                                139,
+                                350,
+                                159
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        282,
+                                        139,
+                                        350,
+                                        159
+                                    ],
+                                    "type": "text",
+                                    "content": "目录"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0,
+                    "level": 2
+                },
+                {
+                    "bbox": [
+                        82,
+                        189,
+                        554,
+                        410
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                82,
+                                189,
+                                554,
+                                410
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        82,
+                                        189,
+                                        554,
+                                        410
+                                    ],
+                                    "type": "text",
+                                    "content": "承压设备无损检测 第1部分：通用要求……1  \n承压设备无损检测 第2部分：射线检测……19  \n承压设备无损检测 第3部分：超声检测……83  \n承压设备无损检测 第4部分：磁粉检测……203  \n承压设备无损检测 第5部分：渗透检测……227  \n承压设备无损检测 第6部分：涡流检测……243  \n承压设备无损检测 第7部分：目视检测……285  \n承压设备无损检测 第8部分：泄漏检测……293  \n承压设备无损检测 第9部分：声发射检测……335  \n承压设备无损检测 第10部分：衍射时差法超声检测……355  \n承压设备无损检测 第11部分：X射线数字成像检测……401  \n承压设备无损检测 第12部分：漏磁检测……429  \n承压设备无损检测 第13部分：脉冲涡流检测……453"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 1
+                }
+            ]
+        },
+        {
+            "preproc_blocks": [],
+            "discarded_blocks": [],
+            "page_size": [
+                595,
+                841
+            ],
+            "page_idx": 5,
+            "para_blocks": []
+        }
+    ],
+    "_backend": "hybrid",
+    "_effort": "medium",
+    "_ocr_enable": true,
+    "_version_name": "3.4.4"
+}

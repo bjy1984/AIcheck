@@ -1,0 +1,26 @@
+{
+  "knowledgeFileId": "KF-KB-1E6CF02D04",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-1E6CF02D04/NBT47013.17-2024 承压设备无损检测 第17部分：磁记忆检测_可搜索.pdf",
+  "artifact_files": [
+    "859e7eb4-0dce-4c9e-980e-be0364c1f646_content_list.json",
+    "859e7eb4-0dce-4c9e-980e-be0364c1f646_content_list_v2.json",
+    "859e7eb4-0dce-4c9e-980e-be0364c1f646_model.json",
+    "859e7eb4-0dce-4c9e-980e-be0364c1f646_origin.pdf",
+    "full.md",
+    "images/1e20bc6b66f41eeb095055de0426c61c196f5e1877160c137108c274eca5cf52.jpg",
+    "images/4263a14fb2ef3abcf723cdb1f84e9bf3d9aef62af0ad065f8f9cee85a69d692e.jpg",
+    "images/528cc378f8d0cd8ede1f38c54ec0c0bf99dbc8c54fdd7797cbd946e9ed0f4bb6.jpg",
+    "images/63fa44870828344fb859452b2e0f49d56dc8d5343d1ba838762992f44b441927.jpg",
+    "images/a2a4ec4d7e8f8600fd8568cafb49d7dce117115c26fa573eb8fbe46ab641cf3e.jpg",
+    "images/af407a22964d3fab1321845221a1d926439f4a74ed4e4626e9e7565fb2cac72b.jpg",
+    "images/b553d24931150691f218a7d43bd0f969dac15cc47926076f020467c3e1578938.jpg",
+    "images/c067fafe5a3e06285a06f4841606b2004f558605bf40af305166bb29068a02ca.jpg",
+    "images/ec5a002f9759a055f1ad7785132a5adb0652da2211ab84316b7f97113c064f74.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "859e7eb4-0dce-4c9e-980e-be0364c1f646_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:43:30.424085+00:00"
+}

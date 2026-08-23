@@ -1,0 +1,27 @@
+{
+  "knowledgeFileId": "KF-KB-4980BDEFBA",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-4980BDEFBA/NBT47013.16-2024 承压设备无损检测 第16部分：红外热成像检测_可搜索.pdf",
+  "artifact_files": [
+    "30f780a1-d7b3-453b-bf18-46c1f33dfad4_content_list.json",
+    "30f780a1-d7b3-453b-bf18-46c1f33dfad4_content_list_v2.json",
+    "30f780a1-d7b3-453b-bf18-46c1f33dfad4_model.json",
+    "30f780a1-d7b3-453b-bf18-46c1f33dfad4_origin.pdf",
+    "full.md",
+    "images/33b44afded499e6b214e8c894fdd77642e8e88a4b4f767dac3de1866301fd465.jpg",
+    "images/4d909374108ef70c005e3a4df43cb8da02f8de0129da4c42968d6148353691a6.jpg",
+    "images/6cbe4918041eb475327137ded926334a5781fbc2b22d25383b229980f49c26b8.jpg",
+    "images/844af4431ab621289a729aa905ea9f3cb42376f0983d793aa4387981eded0ddd.jpg",
+    "images/90c80e68cf770541e109731b16fb9f70f66a68cba56bea28ec57eb1c34f3bb9a.jpg",
+    "images/9c3b8d0b17758a6b8165a2e1ed75bb779b48f6696466b39b701cf4241fff4943.jpg",
+    "images/9f5e2faa8a8d30f176540295df7ab44cc91117ab57ccb16e80b605b61dfa23e0.jpg",
+    "images/b60c1ed98ddd62f5ea5b03f199eb5b66c6972fc0393ee4d8fa7227af62000bb8.jpg",
+    "images/c8560d8c2db6195b234ad4072a1fc0717876351dc3699b31532d00262163f2e4.jpg",
+    "images/f2f3863292014d6c298d8d0cee85bd799ce6718ce1117c5f0a364b7541a24ff1.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "30f780a1-d7b3-453b-bf18-46c1f33dfad4_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:44:11.463475+00:00"
+}

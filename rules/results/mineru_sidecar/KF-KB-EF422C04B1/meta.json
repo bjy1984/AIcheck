@@ -1,0 +1,28 @@
+{
+  "knowledgeFileId": "KF-KB-EF422C04B1",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-EF422C04B1/GB∕T 12771-2019 流体输送用不锈钢焊接钢管.pdf",
+  "artifact_files": [
+    "8ad1f7c8-210b-470e-b9e1-5f27ea55a383_content_list.json",
+    "8ad1f7c8-210b-470e-b9e1-5f27ea55a383_content_list_v2.json",
+    "8ad1f7c8-210b-470e-b9e1-5f27ea55a383_model.json",
+    "8ad1f7c8-210b-470e-b9e1-5f27ea55a383_origin.pdf",
+    "full.md",
+    "images/11e68b428ae45b09b5c4a97fe9247a709d6cee390a0b05c7830e10f0a60f2e82.jpg",
+    "images/61186893a8c7cb2abc4779241990e5afb96670f5dbe9b7d0d08bb87988227ead.jpg",
+    "images/789a9685bd2853804c04057a8b396d680076af75d03ba00728f2cbf31f5db253.jpg",
+    "images/8c6db60dd59ee90c2b965ea73c57c95c291c3cf5202516bcdde5e78a0de5703d.jpg",
+    "images/a7a8478f3e986e4930760cdf3142a1fdd442e6cb271b0d789dad9e04bcfe57bb.jpg",
+    "images/c0c2204cec459927253a58b68ed66f10bb9baca740a9f7fc1869202defaff702.jpg",
+    "images/c74b5923bbc592f4a2203f0f8f94377ffdaa49f8678ebc6a42593a1b89f2aec6.jpg",
+    "images/cb7090b74a497616f4dc7f8dbfc7fd34b93e68c0696d7bd62cea751ad1038915.jpg",
+    "images/cef9b8d940e427a86d96700287e5aa5d5cd2900cdbe4ce993a627f11ff2e3bac.jpg",
+    "images/e12434aec271c77a09906340f4fed4e98148ea692ef7000fbbe732865c0215ed.jpg",
+    "images/eb7e32bf6ab0fd314fa42a77bc46ef4c550342037b25cc0fe97ab55e80353f50.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "8ad1f7c8-210b-470e-b9e1-5f27ea55a383_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:49:49.583258+00:00"
+}

@@ -1,0 +1,27 @@
+{
+  "knowledgeFileId": "KF-KB-3ACA8B691E",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-3ACA8B691E/NB_T 47013.13-2015 承压设备无损检测 第13部分 脉冲涡流检测.pdf",
+  "artifact_files": [
+    "016a2e4c-d2f0-4581-aac6-f156cd7dd11a_content_list.json",
+    "016a2e4c-d2f0-4581-aac6-f156cd7dd11a_content_list_v2.json",
+    "016a2e4c-d2f0-4581-aac6-f156cd7dd11a_model.json",
+    "016a2e4c-d2f0-4581-aac6-f156cd7dd11a_origin.pdf",
+    "full.md",
+    "images/08dd3cf55298242917421e8e3e661bc0f41bee5364fd2955b80f850384b95194.jpg",
+    "images/124f127b2742f0bfa17462884c7909ded06f716a71d1a2af9bc0a93c2dfc16db.jpg",
+    "images/190bec4d44f3abf1b0619e267d73377fd2da5dba735f7abddd79c437e85599a6.jpg",
+    "images/315d184c8417540da7dcecb014656334f2e379e15974a98d13ad133b14711461.jpg",
+    "images/957288aac0c624db81dd3da5f7532f2683616620370d18f2913306f99bef972a.jpg",
+    "images/98e2a189705547393843b8be0022870f708f46a4e6e8a587322f4eec4b2893b6.jpg",
+    "images/c2bc1033414b57160fd48f70ef4dc7dc5867b32e88334f7dbe8ac01ca22eca1c.jpg",
+    "images/ca909eee6aa18f4479e64f6ebfb6dac9dc31cfa1a5e2fad0d42e8bb41452e7be.jpg",
+    "images/d4a84c234dfb33a7e2921e9565da379d32c4964bd9b89885858e00f454287c2c.jpg",
+    "images/e2cb62eeb9c842605e45ccf6b20be09993ce335f60b4d73fe92152700788df60.jpg",
+    "layout.json"
+  ],
+  "content_list_name": "016a2e4c-d2f0-4581-aac6-f156cd7dd11a_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:43:51.563328+00:00"
+}

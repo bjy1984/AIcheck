@@ -1,0 +1,17 @@
+{
+  "knowledgeFileId": "KF-KB-BECBD1A8FE",
+  "source": "/Volumes/7up/github/knowledgetools/output/knowledge_uploads/KS-STANDARD-RULES/KF-KB-BECBD1A8FE/JB∕T 3223-2017 焊接材料质量管理规程.pdf",
+  "artifact_files": [
+    "fccddce1-2db3-48fe-a7a6-c934e1c77cd3_content_list.json",
+    "fccddce1-2db3-48fe-a7a6-c934e1c77cd3_content_list_v2.json",
+    "fccddce1-2db3-48fe-a7a6-c934e1c77cd3_model.json",
+    "fccddce1-2db3-48fe-a7a6-c934e1c77cd3_origin.pdf",
+    "full.md",
+    "layout.json"
+  ],
+  "content_list_name": "fccddce1-2db3-48fe-a7a6-c934e1c77cd3_content_list.json",
+  "layout_name": "layout.json",
+  "status": "success",
+  "error": "",
+  "updatedAt": "2026-08-23T08:47:31.008866+00:00"
+}

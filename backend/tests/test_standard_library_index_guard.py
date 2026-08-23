@@ -12,8 +12,9 @@ dispatch_knowledge_file_index_pipeline 会先清掉派生索引、再用**通用
 **它不报错**：切片任务返回 succeeded，只是 chunkCount 为 0。等发现时
 分块已经没了。所以护栏要挡在入口，而不是指望事后看出来。
 
-正确做法：只换模型用 dispatch_embed（保留分块）；重建分块走
-scripts/backfill_knowledge_pgvector.py。
+正确做法：只换模型用 dispatch_embed（保留分块）；只回填 pgvector 走
+scripts/backfill_knowledge_pgvector.py；重建分块走
+scripts/reocr_standards_with_mineru.py。
 """
 
 from __future__ import annotations
