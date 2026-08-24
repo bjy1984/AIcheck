@@ -352,6 +352,14 @@ PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py
 PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py --check
 ```
 
+The auditable 60-type document-classification knowledge is maintained separately in
+`config/material_classification_knowledge.json`. Validate its coverage, mapping alignment,
+confusion references, and source traceability before release:
+
+```bash
+.venv/bin/python scripts/validate_material_classification_knowledge.py
+```
+
 PostgreSQL persistence is enabled when `AICHECK_DATABASE_URL` is set. Versioned migrations create and upgrade the JSONB state tables (`aicheck_state`, `aicheck_singletons`, `idempotency_records`); strict production startup fails closed when the required migration has not been applied. Demo data is seeded only when explicitly enabled and the business database is empty. Mutating API calls persist scoped row changes back to PostgreSQL so concurrent requests do not replace unrelated collections. The index test suite verifies the JSONB state table, singleton table, idempotency primary key, and GIN payload index contract.
 
 Production uses the `pgvector/pgvector:pg16` image. Deployments based on `docker-compose.deploy.yml`
