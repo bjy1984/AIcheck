@@ -11,6 +11,7 @@ providers:
       default: default-chat
       compareFast: compare-fast
       visionReview: qwen-vision-review
+      documentClassifier: document-classifier
 
   official_api:
     baseUrlEnv: QWEN_API_BASE

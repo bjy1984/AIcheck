@@ -96,6 +96,12 @@ def test_repository_runtime_maps_document_classifier_to_qwen38_max() -> None:
     assert config["models"]["documentClassifier"] == "qwen3.8-max"
 
 
+def test_repository_server_runtime_has_document_classifier_alias() -> None:
+    config = qwen_runtime_config(CONFIG_PATH, env={"AICHECK_QWEN_CALL_MODE": "server"})
+
+    assert config["aliases"]["documentClassifier"] == "document-classifier"
+
+
 def test_document_classifier_alias_calls_qwen38_max(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("QWEN_API_KEY", "sk-qwen-test")
     seen = {}
