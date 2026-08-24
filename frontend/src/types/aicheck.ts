@@ -695,6 +695,9 @@ export type NdtSubmissionReadiness = {
   passed?: boolean
   reports?: NdtReportReadiness[]
   blockingReasons?: BusinessBlockingReason[]
+  advisoryReasons?: BusinessBlockingReason[]
+  readinessAdvisoryOnly?: boolean
+  operationBlocked?: boolean
   [key: string]: unknown
 }
 

@@ -52,13 +52,7 @@ const form = reactive({
   relatedFilmIds: [] as string[]
 })
 
-const rules: FormRules = {
-  reportNo: [{ required: true, message: '请填写报告编号', trigger: 'blur' }],
-  method: [{ required: true, message: '请选择检测方法', trigger: 'change' }],
-  standardCode: [{ required: true, message: '请填写执行标准', trigger: 'blur' }],
-  evaluatorName: [{ required: true, message: '请填写检测人员', trigger: 'blur' }],
-  conclusion: [{ required: true, message: '请填写检测结论和合格级别', trigger: 'blur' }]
-}
+const rules: FormRules = {}
 
 const fileLabel = computed(() =>
   selectedFile.value
@@ -100,14 +94,6 @@ const handleSubmit = async () => {
   if (!valid) return
   if (!selectedFile.value) {
     ElMessage.warning('请选择一份检测报告文件')
-    return
-  }
-  if (form.method === 'RT' && !form.detectionRatio.trim()) {
-    ElMessage.warning('RT 报告必须填写检测比例')
-    return
-  }
-  if (form.method === 'RT' && !form.relatedFilmIds.length) {
-    ElMessage.warning('RT 报告必须关联至少一个底片或影像编号')
     return
   }
   emit('submit', {

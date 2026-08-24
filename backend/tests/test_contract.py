@@ -10141,6 +10141,45 @@ def test_ndt_atomic_document_can_submit_without_business_rule_bindings() -> None
     )
 
 
+def test_ndt_submission_completeness_is_advisory_not_a_submit_gate() -> None:
+    document, version = repo.create_document(
+        "P-2026-HDCP-001",
+        "RT-INCOMPLETE-001.pdf",
+        "application/pdf",
+        source_org_name="华测检测有限公司",
+        uploader_name="无损检测人员",
+    )
+    report = {
+        "id": "NDT-RPT-INCOMPLETE-ADVISORY",
+        "projectId": "P-2026-HDCP-001",
+        "nodeId": 40,
+        "nodeIds": [40],
+        "status": "草稿",
+        "method": "RT",
+        "reportNo": "RT-INCOMPLETE-001",
+        "detectionRatio": "",
+        "conclusion": "",
+        "relatedFilmIds": [],
+        "fileId": document["id"],
+        "documentVersionId": version["id"],
+    }
+    repo.state["ndt_reports"].append(report)
+
+    submitted = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/ndt/submissions",
+            json={"nodeId": 40, "reportIds": [report["id"]], "filmIds": []},
+            headers={"X-Role": "ndt", "X-User-Id": "USER-NDT-001"},
+        )
+    )
+
+    assert submitted["ndtReadiness"]["passed"] is False
+    assert submitted["ndtReadiness"]["readinessAdvisoryOnly"] is True
+    assert submitted["ndtReadiness"]["operationBlocked"] is False
+    assert submitted["ndtReadiness"]["blockingReasons"]
+    assert report["status"] == "待审查"
+
+
 def test_upload_and_ndt_validation_errors_match_contract() -> None:
     project_id = "P-2026-HDCP-001"
     project = assert_ok(client.get(f"/projects/{project_id}"))["project"]

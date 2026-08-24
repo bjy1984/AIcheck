@@ -3121,9 +3121,12 @@ def ndt_submission_readiness(reports: list[dict[str, Any]], submitted_film_ids: 
         for reason in row.get("blockingReasons") or []
     ]
     return {
-        "schemaVersion": "ndt-submission-readiness-v1",
+        "schemaVersion": "ndt-submission-readiness-v2",
         "passed": not blocking_reasons,
+        "readinessAdvisoryOnly": True,
+        "operationBlocked": False,
         "reports": report_rows,
+        "advisoryReasons": blocking_reasons,
         "blockingReasons": blocking_reasons,
     }
 
@@ -15692,13 +15695,6 @@ def submit_ndt(
         if submitted_film_ids and len(submitable_films) != len(submitted_film_ids):
             return fail(errors.NDT_FILM_REQUIRED, request, message="未找到可提交的无损检测底片。")
         ndt_readiness = ndt_submission_readiness(submitable_reports, submitted_film_ids)
-        if not ndt_readiness.get("passed"):
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="无损检测资料未满足提交待审查条件。",
-                data={"ndtReadiness": ndt_readiness},
-            )
         for report in submitable_reports:
             report["status"] = "待审查"
             report["submittedAt"] = submitted_at
