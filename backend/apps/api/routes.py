@@ -29029,6 +29029,12 @@ def update_knowledge_config(request: Request, body: dict[str, Any] = Body(defaul
 PROMPT_TEMPLATE_STATUSES = {"draft", "production", "retired", "草稿", "已发布", "已停用"}
 
 
+def prompt_template_validation_error(record: dict[str, Any]) -> str | None:
+    from libs.document_auto_gold import classifier_prompt_validation_error
+
+    return classifier_prompt_validation_error(record)
+
+
 def normalize_prompt_template_record(raw: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
     now = server_time()
     template_id = str(raw.get("id") or (existing or {}).get("id") or f"PTPL-{uuid4().hex[:10].upper()}")
@@ -29093,6 +29099,8 @@ def create_prompt_template(
         record = normalize_prompt_template_record(body)
         if not record["systemPrompt"]:
             return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
+        if validation_error := prompt_template_validation_error(record):
+            return fail(errors.VALIDATION_ERROR, request, message=validation_error)
         repo.state.setdefault("prompt_templates", []).insert(0, record)
         audit_id = repo.add_audit("新增 Prompt 模板", "PromptTemplate", record["id"])
         return ok({"template": versioned_record("prompt-template", record), "auditLogId": audit_id}, request)
@@ -29126,6 +29134,8 @@ def update_prompt_template(
         normalized = normalize_prompt_template_record({**template, **body, "id": template_id}, existing=template)
         if not normalized["systemPrompt"]:
             return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
+        if validation_error := prompt_template_validation_error(normalized):
+            return fail(errors.VALIDATION_ERROR, request, message=validation_error)
         normalized["revision"] = int(template.get("revision") or 1)
         template.clear()
         template.update(normalized)
@@ -29150,6 +29160,8 @@ def publish_prompt_template(
             return fail(errors.NOT_FOUND, request)
         if not record_if_match_valid("prompt-template", template, if_match):
             return fail(errors.ETAG_CONFLICT, request)
+        if validation_error := prompt_template_validation_error(template):
+            return fail(errors.VALIDATION_ERROR, request, message=validation_error)
         template["status"] = "production"
         template["publishedAt"] = server_time()
         template["publishedReason"] = body.get("reason") or ""

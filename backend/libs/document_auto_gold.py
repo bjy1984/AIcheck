@@ -14,12 +14,40 @@ from libs.contracts.responses import server_time
 MATERIAL_REVIEW_POINTS = Path(__file__).resolve().parents[1] / "config" / "material_review_points.json"
 MAX_LABELS = 16
 MAX_EVIDENCE_PER_LABEL = 12
+CLASSIFIER_PROMPT_KEY = "document-material-classifier"
+CLASSIFIER_PROMPT_VARIABLES = {"categoryDefinitionsJson", "ocrMarkdown"}
+FORBIDDEN_CLASSIFIER_PROMPT_VARIABLES = {"fileName", "relativeDirectory", "filePath", "extension"}
 
 
 class AutoGoldValidationError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+def production_document_classifier_prompt(repo: Any, business_pack_id: str) -> dict[str, Any] | None:
+    matches = [
+        item
+        for item in repo.state.get("prompt_templates", [])
+        if isinstance(item, dict)
+        and item.get("promptKey") == CLASSIFIER_PROMPT_KEY
+        and item.get("businessPackId") == business_pack_id
+        and item.get("status") in {"production", "已发布"}
+    ]
+    return deepcopy(matches[0]) if len(matches) == 1 else None
+
+
+def classifier_prompt_validation_error(record: dict[str, Any]) -> str | None:
+    if str(record.get("promptKey") or "") != CLASSIFIER_PROMPT_KEY:
+        return None
+    variables = {str(value or "").strip() for value in record.get("variables") or [] if str(value or "").strip()}
+    forbidden = sorted(variables & FORBIDDEN_CLASSIFIER_PROMPT_VARIABLES)
+    if forbidden:
+        return "文件资料分类 Prompt 不得使用文件名或路径变量：" + "、".join(forbidden)
+    missing = sorted(CLASSIFIER_PROMPT_VARIABLES - variables)
+    if missing:
+        return "文件资料分类 Prompt 缺少必需变量：" + "、".join(missing)
+    return None
 
 
 def _walk_material_items(value: Any) -> list[dict[str, Any]]:

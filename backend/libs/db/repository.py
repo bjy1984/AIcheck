@@ -136,6 +136,8 @@ STATE_COLLECTIONS = {
     "document_ai_shadow_runs": "document_ai_shadow_runs",
     "document_audit_pipeline_comparison_runs": "document_audit_pipeline_comparison_runs",
     "model_call_attempts": "model_call_attempts",
+    "document_classification_runs": "document_classification_runs",
+    "document_gold_labels": "document_gold_labels",
     "ocr_corrections": "ocr_corrections",
     "ocr_eval_runs": "ocr_eval_runs",
     "ocr_annotation_tasks": "ocr_annotation_tasks",
@@ -305,6 +307,8 @@ class InMemoryRepository:
         self.state.setdefault("document_ai_shadow_runs", [])
         self.state.setdefault("document_audit_pipeline_comparison_runs", [])
         self.state.setdefault("model_call_attempts", [])
+        self.state.setdefault("document_classification_runs", [])
+        self.state.setdefault("document_gold_labels", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -472,6 +476,8 @@ class InMemoryRepository:
         self.state.setdefault("document_ai_shadow_runs", [])
         self.state.setdefault("document_audit_pipeline_comparison_runs", [])
         self.state.setdefault("model_call_attempts", [])
+        self.state.setdefault("document_classification_runs", [])
+        self.state.setdefault("document_gold_labels", [])
         self.state.setdefault("ocr_corrections", [])
         self.state.setdefault("ocr_eval_runs", [])
         self.state.setdefault("ocr_annotation_tasks", [])
@@ -3599,6 +3605,8 @@ class InMemoryRepository:
         loaded.setdefault("document_ai_shadow_runs", [])
         loaded.setdefault("document_audit_pipeline_comparison_runs", [])
         loaded.setdefault("model_call_attempts", [])
+        loaded.setdefault("document_classification_runs", [])
+        loaded.setdefault("document_gold_labels", [])
         loaded.setdefault("ocr_corrections", [])
         loaded.setdefault("ocr_eval_runs", [])
         loaded.setdefault("ocr_annotation_tasks", [])
@@ -6425,6 +6433,8 @@ OCR_WORKER_STATE_KEYS_FOR_SQLITE = {
     "ocr_stage_runs",
     "document_ai_shadow_runs",
     "document_audit_pipeline_comparison_runs",
+    "document_classification_runs",
+    "document_gold_labels",
     "users",
 }
 
