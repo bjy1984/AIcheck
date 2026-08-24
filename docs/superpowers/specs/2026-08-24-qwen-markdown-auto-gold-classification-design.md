@@ -2,14 +2,14 @@
 
 ## 1. 目标
 
-文件完成 MinerU OCR 后，只把 Markdown 正文和项目预设的具体资料类型定义发送给 Qwen3.8-Max。模型从 `material_review_points.json` 去重得到的60种 `materialTypeCode` 中选择零个或多个类型，通过本地 Schema、枚举和 Markdown 原文证据门禁后直接生成自动金标。
+文件完成 MinerU OCR 后，只把 Markdown 正文和项目预设的具体资料类型定义发送给 Qwen3.8-Max。模型从61种 `materialTypeCode` 中选择零个或多个类型：其中60种来自正式节点映射，`component_compliance_checklist` 是分类专用的大类候选类型。结果通过本地 Schema、枚举和 Markdown 原文证据门禁后直接生成自动金标。
 
 自动金标中的全部具体类型写回文档，并通过 164 条“资料类型—业务节点—证据项”映射重新执行节点打靶。16 个资料大类不再由模型直接判断，而是由具体类型在映射中的 `materialCategory` 自动派生。
 
 ## 2. 已确认决策
 
 1. 模型固定为 `qwen3.8-max`，使用独立 `documentClassifier` 角色。
-2. Qwen 输入只包含 MinerU Markdown 与60种具体资料类型定义。
+2. Qwen 输入只包含 MinerU Markdown 与61种具体资料类型定义。
 3. 不传文件名、目录名、扩展名、上传人或旧分类结果。
 4. 一份文件可以对应多个 `materialTypeCode`。
 5. 单次 Qwen 调用；不做人审、二次模型复核或多模型投票。
@@ -17,7 +17,7 @@
 7. 模型结果直接成为不可变、可版本替代的自动金标。
 8. Prompt 通过现有管理员“Prompt 模板管理”编辑、发布和审计。
 9. 自动金标后按全部具体类型查询 164 条映射，创建节点证据链接与绑定。
-10. `test/` 23份文件作为人工回归基准；资料包允许多类型，未被60类型覆盖的文件允许零类型。
+10. `test/` 23份文件作为人工回归基准；资料包允许多类型，无法确定具体类型但能确定大类时允许输出 `fallbackMaterialCategories`。
 
 ## 3. 分类本体
 
@@ -56,7 +56,7 @@
   -> 按 164 条映射创建节点链接和绑定
 ```
 
-运行 ID 由文档版本、OCR结果、Markdown哈希、Prompt哈希、60类型快照哈希和模型名共同生成，相同输入不重复调用。
+运行 ID 由文档版本、OCR结果、Markdown哈希、Prompt哈希、61类型快照哈希和模型名共同生成，相同输入不重复调用。
 
 ## 5. Prompt 模板
 
@@ -92,13 +92,13 @@ variables:
 }
 ```
 
-本地门禁要求：Schema严格通过；类型属于60类型快照且无重复；置信度在0到1；每个类型至少一条证据；证据可在原Markdown或仅去除空白后的Markdown中定位；文档与OCR版本未过期；无类型时给出原因。
+本地门禁要求：Schema严格通过；类型属于61类型快照且无重复；置信度在0到1；每个类型至少一条证据；证据可在原Markdown或HTML表格可见文本中定位并归一化为原文连续片段；文档与OCR版本未过期；无类型时给出原因，可选大类兜底。
 
 失败时保存运行和原始响应，但不生成金标，也不回退文件名分类。
 
 ## 7. 持久化与投影
 
-`document_classification_runs` 保存文档/版本/OCR ID、Markdown、60类型快照、完整Prompt、模型、Token、耗时、原始与结构化响应、校验和打靶结果。
+`document_classification_runs` 保存文档/版本/OCR ID、Markdown、61类型快照、完整Prompt、模型、Token、耗时、原始与结构化响应、校验和打靶结果。
 
 `document_gold_labels` 保存全部具体类型及证据、`primaryMaterialTypeCode`、派生 `materialCategoryLabels`、模型和版本链。新金标使旧active版本变为superseded，不删除历史。
 
@@ -136,7 +136,7 @@ classifiedAt
 1. OCR成功后自动派发一次Qwen分类；
 2. 实际模型为 `qwen3.8-max`；
 3. Qwen输入不含文件名、目录或扩展名；
-4. 输出为零个或多个60种具体资料类型；
+4. 输出为零个或多个61种具体资料类型，或在无具体类型时输出资料大类兜底；
 5. 16大类完全由具体类型映射派生；
 6. 每个accepted金标都有Markdown原文证据；
 7. 运行保存Prompt、模型、OCR、原始响应和版本链；

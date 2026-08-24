@@ -352,7 +352,7 @@ PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py
 PYTHONPATH=. .venv/bin/python scripts/generate_material_review_asset.py --check
 ```
 
-The auditable 60-type document-classification knowledge is maintained separately in
+The auditable 61-type document-classification knowledge is maintained separately in
 `config/material_classification_knowledge.json`. Validate its coverage, mapping alignment,
 confusion references, and source traceability before release:
 

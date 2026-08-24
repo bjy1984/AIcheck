@@ -813,3 +813,55 @@ def test_multi_material_type_gold_labels_match_and_bind_each_mapped_type() -> No
     assert score == 35
     assert score_reason == "标准资料类型一致"
     assert material_type_is_binding_compatible(point, document) is True
+
+
+def test_category_advisory_fallback_links_every_category_node_without_binding_or_status_change() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "元件核查记录.pdf",
+        "application/pdf",
+        material_category="材料验收与复验",
+    )
+    document.update(
+        {
+            "materialTypeCode": "component_compliance_checklist",
+            "materialTypeLabels": ["component_compliance_checklist"],
+            "materialCategory": "材料验收与复验",
+            "materialCategoryLabels": ["材料验收与复验"],
+            "classificationTargetingMode": "category_advisory",
+        }
+    )
+    apply_ocr(
+        document,
+        version,
+        document_type="component_compliance_checklist",
+        text="常用管道元件核查记录 元件名称 材质 标准 规格 炉批号 制造许可证编号 型式试验证书编号",
+        fields=[],
+    )
+    expected_node_ids = {
+        int(point["nodeId"])
+        for point in repo.state["admin_config"]["materialReviewPoints"]
+        if point.get("materialCategory") == "材料验收与复验"
+    }
+    statuses_before = {
+        node_id: repo.node(PROJECT_ID, node_id)["status"]
+        for node_id in expected_node_ids
+    }
+
+    targeting = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+
+    assert {int(link["nodeId"]) for link in targeting["createdLinks"]} == expected_node_ids
+    assert targeting["createdBindingCount"] == 0
+    assert all(link["categoryFallback"] is True for link in targeting["createdLinks"])
+    assert all(link["formalEvidenceEligible"] is False for link in targeting["createdLinks"])
+    assert all(link["manualStatus"] == "pending" for link in targeting["createdLinks"])
+    assert not any(
+        binding.get("documentVersionId") == version["id"]
+        for binding in repo.state["bindings"]
+    )
+    assert {
+        node_id: repo.node(PROJECT_ID, node_id)["status"]
+        for node_id in expected_node_ids
+    } == statuses_before

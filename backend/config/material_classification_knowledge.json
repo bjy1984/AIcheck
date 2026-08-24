@@ -111,6 +111,24 @@
       "sourceRefs": [{"document": "docs/工程监检资料映射表.md", "locator": "materialTypeCode=construction_organization_design"}]
     },
     {
+      "materialTypeCode": "component_compliance_checklist",
+      "materialTypeNames": ["压力管道元件合规核查记录"],
+      "materialCategories": ["材料验收与复验"],
+      "classificationDefinition": "按压力管道元件逐项登记材质、执行标准、规格、炉批号、制造单位以及制造许可证、型式试验、制造监检和产品质量证明编号的合规核查或索引记录。",
+      "documentPurpose": "汇总工程实际使用元件及其证明文件编号，为材料和证书原文核验提供索引；本记录不能替代被引用的许可证、证书或质量证明书。",
+      "titlePatterns": ["常用管道元件核查记录", "压力管道元件核查记录", "管道元件合规核查表"],
+      "requiredSignals": ["按压力管道元件逐行组织，并同时包含材质或标准、规格或炉批号、制造单位以及两种以上证书编号栏目"],
+      "supportingSignals": ["元件名称、材质、执行标准、规格、炉批号、厂家、制造许可证编号、型式试验证书编号、监督检验证书编号、产品质量证明书编号"],
+      "negativeSignals": ["由设计单位出具、主要列明设计选材和工程用量的设计材料表", "包含实际到货数量、外观标识检查、验收人员和验收结论的到货验收记录"],
+      "confusableWith": [
+        {"materialTypeCode": "drawing_material_list", "distinction": "设计材料表规定工程应使用什么材料；本记录核查实际元件及其许可证、型式试验和质量证明编号。"},
+        {"materialTypeCode": "acceptance_witness_record", "distinction": "到货验收记录证明实际接收和检查过程；本记录主要是元件与证明文件编号的合规索引。"}
+      ],
+      "targetingMode": "category_advisory",
+      "basisLevel": "business_defined",
+      "sourceRefs": [{"document": "业务人工定义", "locator": "压力管道元件合规核查记录，2026-08-24确认"}]
+    },
+    {
       "materialTypeCode": "construction_schedule",
       "materialTypeNames": ["施工计划工期文件"],
       "materialCategories": ["施工组织与方案"],

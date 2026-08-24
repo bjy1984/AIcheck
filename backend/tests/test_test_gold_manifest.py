@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from libs.document_auto_gold import category_definition_snapshot, material_type_definition_snapshot
+from libs.material_classification_knowledge import classification_type_definition_snapshot
 from scripts.test_gold_manifest import audit_test_gold_manifest, model_input_for_case
 
 
@@ -38,14 +39,14 @@ def test_manifest_has_valid_hashes_fine_labels_and_known_categories():
     }
     allowed_types = {
         item["materialTypeCode"]
-        for item in material_type_definition_snapshot()["materialTypes"]
+        for item in classification_type_definition_snapshot()["materialTypes"]
     }
 
     for case in payload["cases"]:
         assert case["sha256"].startswith("sha256:")
         assert len(case["sha256"]) == len("sha256:") + 64
         assert case["goldDocumentClass"]
-        assert case["expectedCategories"]
+        assert "expectedCategories" in case
         assert set(case["expectedCategories"]) <= allowed
         assert "expectedMaterialTypeCodes" in case
         assert set(case["expectedMaterialTypeCodes"]) <= allowed_types
@@ -79,8 +80,9 @@ def test_manifest_supports_multi_type_packages_and_explicit_zero_type_documents(
     assert cases["test-material-submission-package-001"]["expectedMaterialTypeCodes"] == [
         "acceptance_witness_record",
         "quality_certificate",
+        "welding_material_certificate",
         "manufacturing_license",
-        "factory_inspection_report",
+        "type_test_report",
     ]
     assert cases["test-inspection-contract-001"]["expectedMaterialTypeCodes"] == []
 

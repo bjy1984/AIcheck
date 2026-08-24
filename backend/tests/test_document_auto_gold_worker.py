@@ -192,7 +192,7 @@ def test_prepare_run_is_idempotent_and_contains_markdown_only_context(monkeypatc
     assert "MISLEADING_SECRET_NAME.pdf" not in serialized_context
     assert "fileName" not in serialized_context
     assert set(first["modelInput"]) == {"materialTypeDefinitionsJson", "ocrMarkdown"}
-    assert len(first["materialTypeDefinitionSnapshot"]["materialTypes"]) == 60
+    assert len(first["materialTypeDefinitionSnapshot"]["materialTypes"]) == 61
     assert first["classificationKnowledgeSchemaHash"].startswith("sha256:")
     assert "classificationDefinition" in serialized_context
     assert "sourceRefs" not in serialized_context

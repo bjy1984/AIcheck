@@ -9,9 +9,9 @@
       "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
       "sha256": "sha256:acc4b12009bdac4f2d68530652cd7229d0681e462860625807c2c7a95d026e4d",
       "goldFolderClass": "pipeline_directory",
-      "goldDocumentClass": "pipeline_summary",
-      "expectedMaterialTypeCodes": ["pipeline_summary"],
-      "expectedCategories": ["设计与施工组织", "设计基础资料"]
+      "goldDocumentClass": "document_directory",
+      "expectedMaterialTypeCodes": [],
+      "expectedCategories": []
     },
     {
       "caseId": "test-ndt-org-certificate-001",
@@ -145,8 +145,8 @@
       "sha256": "sha256:d7aaf4ca8798ce2066ced6e62d4ab8502ba7246949b8898f2f640b1986f84066",
       "goldFolderClass": "construction_plan",
       "goldDocumentClass": "construction_organization_design",
-      "expectedMaterialTypeCodes": ["construction_organization_design"],
-      "expectedCategories": ["施工组织与方案"]
+      "expectedMaterialTypeCodes": ["construction_organization_design", "construction_schedule", "drawing_review_record", "construction_license", "welder_certificate", "welder_roster"],
+      "expectedCategories": ["施工组织与方案", "设计变更与特殊标准", "资质证照", "焊接人员与焊接工艺"]
     },
     {
       "caseId": "test-drawing-review-001",
@@ -163,8 +163,8 @@
       "sha256": "sha256:ac750b9f7dad8d981dbb014548495e3cfb94f38ea3f7158c15f10aa7cfae1214",
       "goldFolderClass": "drawing_and_review",
       "goldDocumentClass": "design_document",
-      "expectedMaterialTypeCodes": ["design_document"],
-      "expectedCategories": ["设计基础资料"]
+      "expectedMaterialTypeCodes": ["design_document", "pipeline_summary", "drawing_material_list", "calculation_report"],
+      "expectedCategories": ["材料验收与复验", "设计与施工组织", "设计基础资料"]
     },
     {
       "caseId": "test-component-checklist-001",
@@ -172,7 +172,7 @@
       "sha256": "sha256:819f55157dbc26459f55f160760079832728fa1d3bd1de2542b1930c9cb330fc",
       "goldFolderClass": "material_acceptance_submission",
       "goldDocumentClass": "component_inspection_checklist",
-      "expectedMaterialTypeCodes": ["acceptance_witness_record"],
+      "expectedMaterialTypeCodes": ["component_compliance_checklist"],
       "expectedCategories": ["材料验收与复验"]
     },
     {
@@ -181,8 +181,8 @@
       "sha256": "sha256:910902ab43cb9775acf1fbd3271fd1e392dfda0a781d878505a9a732d5fd9f9c",
       "goldFolderClass": "material_acceptance_submission",
       "goldDocumentClass": "material_submission_package",
-      "expectedMaterialTypeCodes": ["acceptance_witness_record", "quality_certificate", "manufacturing_license", "factory_inspection_report"],
-      "expectedCategories": ["材料验收与复验"]
+      "expectedMaterialTypeCodes": ["acceptance_witness_record", "quality_certificate", "welding_material_certificate", "manufacturing_license", "type_test_report"],
+      "expectedCategories": ["材料验收与复验", "焊接材料与过程记录"]
     },
     {
       "caseId": "test-wps-pqr-001",
@@ -208,7 +208,7 @@
       "sha256": "sha256:4ded99b884867564227172403437697d3b8e1759543e64f5c6da35ba4a77e8bf",
       "goldFolderClass": "welder_qualification",
       "goldDocumentClass": "welder_roster",
-      "expectedMaterialTypeCodes": ["welder_roster"],
+      "expectedMaterialTypeCodes": ["welder_roster", "welder_certificate"],
       "expectedCategories": ["焊接人员与焊接工艺"]
     }
   ]

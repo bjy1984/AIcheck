@@ -4,6 +4,7 @@ from pathlib import Path
 
 from libs.document_auto_gold import material_type_definition_snapshot
 from libs.material_classification_knowledge import (
+    classification_type_definition_snapshot,
     classification_knowledge_snapshot,
     qwen_classification_knowledge_snapshot,
     validate_material_classification_knowledge,
@@ -15,15 +16,20 @@ KNOWLEDGE_PATH = BACKEND_ROOT / "config" / "material_classification_knowledge.js
 MAPPING_PATH = BACKEND_ROOT / "config" / "material_review_points.json"
 
 
-def test_knowledge_cards_cover_exactly_the_runtime_60_type_codes():
+def test_knowledge_cards_cover_60_mapped_types_plus_one_category_advisory_type():
     snapshot = classification_knowledge_snapshot(KNOWLEDGE_PATH)
     expected_codes = {
         item["materialTypeCode"]
         for item in material_type_definition_snapshot(MAPPING_PATH)["materialTypes"]
     }
 
-    assert len(snapshot["cards"]) == 60
-    assert {item["materialTypeCode"] for item in snapshot["cards"]} == expected_codes
+    card_codes = {item["materialTypeCode"] for item in snapshot["cards"]}
+    assert len(snapshot["cards"]) == 61
+    assert expected_codes < card_codes
+    assert card_codes - expected_codes == {"component_compliance_checklist"}
+    component = next(item for item in snapshot["cards"] if item["materialTypeCode"] == "component_compliance_checklist")
+    assert component["materialCategories"] == ["材料验收与复验"]
+    assert component["targetingMode"] == "category_advisory"
     assert snapshot["schemaHash"].startswith("sha256:")
 
 
@@ -115,7 +121,7 @@ def test_qwen_projection_keeps_classification_rules_but_excludes_audit_only_fiel
     projection = qwen_classification_knowledge_snapshot(KNOWLEDGE_PATH)
     serialized = str(projection)
 
-    assert len(projection["materialTypes"]) == 60
+    assert len(projection["materialTypes"]) == 61
     assert all(item.get("materialTypeCode") for item in projection["materialTypes"])
     assert all(item.get("classificationDefinition") for item in projection["materialTypes"])
     assert "sourceRefs" not in serialized
@@ -123,3 +129,13 @@ def test_qwen_projection_keeps_classification_rules_but_excludes_audit_only_fiel
     assert "basisLevel" not in serialized
     assert "materialCategories" not in serialized
     assert "documentPurpose" not in serialized
+
+
+def test_classification_type_snapshot_includes_advisory_type_without_adding_a_formal_mapping():
+    snapshot = classification_type_definition_snapshot(KNOWLEDGE_PATH, mapping_path=MAPPING_PATH)
+    by_code = {item["materialTypeCode"]: item for item in snapshot["materialTypes"]}
+
+    assert len(by_code) == 61
+    assert by_code["component_compliance_checklist"]["targetingMode"] == "category_advisory"
+    assert by_code["component_compliance_checklist"]["nodeIds"] == []
+    assert snapshot["mappingItemCount"] == 164

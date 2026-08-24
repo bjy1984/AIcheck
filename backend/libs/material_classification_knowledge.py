@@ -90,6 +90,9 @@ def validate_material_classification_knowledge(
                 add("REQUIRED_TEXT_MISSING", f"{code}.{field}")
         if card.get("basisLevel") not in {"standard_supported", "business_defined"}:
             add("INVALID_BASIS_LEVEL", code)
+        targeting_mode = str(card.get("targetingMode") or "exact")
+        if targeting_mode not in {"exact", "category_advisory"}:
+            add("INVALID_TARGETING_MODE", code)
         for field in REQUIRED_LIST_FIELDS:
             if not isinstance(card.get(field), list):
                 add("REQUIRED_LIST_MISSING", f"{code}.{field}")
@@ -121,8 +124,14 @@ def validate_material_classification_knowledge(
     if expected_type_codes is not None:
         for code in sorted(expected_type_codes - card_codes):
             add("MISSING_MATERIAL_TYPE", code)
+        cards_by_code = {
+            str(item.get("materialTypeCode") or ""): item
+            for item in cards
+            if isinstance(item, dict)
+        }
         for code in sorted(card_codes - expected_type_codes):
-            add("UNKNOWN_MATERIAL_TYPE", code)
+            if str((cards_by_code.get(code) or {}).get("targetingMode") or "") != "category_advisory":
+                add("UNKNOWN_MATERIAL_TYPE", code)
     return errors
 
 
@@ -171,3 +180,48 @@ def qwen_classification_knowledge_snapshot(
         "knowledgeSchemaHash": knowledge["schemaHash"],
         "materialTypes": cards,
     }
+
+
+def classification_type_definition_snapshot(
+    path: Path = DEFAULT_KNOWLEDGE_PATH,
+    *,
+    mapping_path: Path = DEFAULT_MAPPING_PATH,
+) -> dict[str, Any]:
+    knowledge = classification_knowledge_snapshot(path, mapping_path=mapping_path)
+    mapping_payload = json.loads(mapping_path.read_text(encoding="utf-8"))
+    mapping_by_code: dict[str, dict[str, set[Any]]] = {}
+    for item in mapping_payload.get("items") or []:
+        code = str(item.get("materialTypeCode") or "").strip()
+        if not code or item.get("enabled") is False:
+            continue
+        current = mapping_by_code.setdefault(code, {"nodeIds": set(), "evidenceItems": set()})
+        try:
+            node_id = int(item.get("nodeId") or 0)
+        except (TypeError, ValueError):
+            node_id = 0
+        if node_id > 0:
+            current["nodeIds"].add(node_id)
+        for evidence in item.get("evidenceItems") or []:
+            text = str(evidence or "").strip()
+            if text:
+                current["evidenceItems"].add(text)
+    material_types = []
+    for card in knowledge["cards"]:
+        mapped = mapping_by_code.get(card["materialTypeCode"]) or {"nodeIds": set(), "evidenceItems": set()}
+        material_types.append(
+            {
+                "materialTypeCode": card["materialTypeCode"],
+                "materialTypeNames": deepcopy(card["materialTypeNames"]),
+                "materialCategories": deepcopy(card["materialCategories"]),
+                "evidenceItems": sorted(mapped["evidenceItems"]),
+                "nodeIds": sorted(mapped["nodeIds"]),
+                "targetingMode": str(card.get("targetingMode") or "exact"),
+            }
+        )
+    snapshot = {
+        "schemaVersion": "document-classification-types@2",
+        "sourceVersion": knowledge["version"],
+        "mappingItemCount": int(mapping_payload.get("itemCount") or len(mapping_payload.get("items") or [])),
+        "materialTypes": material_types,
+    }
+    return {**snapshot, "schemaHash": _hash_payload(snapshot)}

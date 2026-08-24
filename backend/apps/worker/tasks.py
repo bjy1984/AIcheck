@@ -56,7 +56,6 @@ from libs.document_auto_gold import (
     apply_material_type_gold_projection,
     build_material_type_gold_label_record,
     material_type_classification_response_format,
-    material_type_definition_snapshot,
     production_document_classifier_prompt,
     render_classifier_messages,
     stable_json_hash,
@@ -85,7 +84,10 @@ from libs.knowledge_indexing import (
     units_from_local_file,
 )
 from libs.material_targeting import run_material_targeting
-from libs.material_classification_knowledge import qwen_classification_knowledge_snapshot
+from libs.material_classification_knowledge import (
+    classification_type_definition_snapshot,
+    qwen_classification_knowledge_snapshot,
+)
 from libs.mineru_ocr import (
     MinerUNormalizationError,
     MinerUNormalizedBundle,
@@ -356,7 +358,7 @@ def prepare_document_auto_gold_run(
     prompt = production_document_classifier_prompt(repository, business_pack_id)
     if not prompt:
         raise ValueError("AUTO_GOLD_PROMPT_UNAVAILABLE")
-    material_type_snapshot = material_type_definition_snapshot()
+    material_type_snapshot = classification_type_definition_snapshot()
     classification_knowledge = qwen_classification_knowledge_snapshot()
     material_type_definitions_json = json.dumps(
         classification_knowledge,
@@ -492,6 +494,14 @@ def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
         for item in material_type_snapshot.get("materialTypes") or []
         if item.get("materialTypeCode")
     ]
+    material_categories = sorted(
+        {
+            str(category)
+            for item in material_type_snapshot.get("materialTypes") or []
+            for category in item.get("materialCategories") or []
+            if str(category).strip()
+        }
+    )
     prompt = run.get("promptSnapshot") if isinstance(run.get("promptSnapshot"), dict) else {}
     model_input = run.get("modelInput") if isinstance(run.get("modelInput"), dict) else {}
     messages = render_classifier_messages(
@@ -534,7 +544,7 @@ def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
             messages,
             model="document-classifier",
             stream=False,
-            response_format=material_type_classification_response_format(material_type_codes),
+            response_format=material_type_classification_response_format(material_type_codes, material_categories),
             enable_thinking=False,
             max_tokens=2048,
             temperature=0,

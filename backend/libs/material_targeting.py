@@ -869,8 +869,17 @@ def score_review_point(
 ) -> dict[str, Any]:
     context = context or document_targeting_context(document, parse_result, extracted_fields)
     fulltext = str(context.get("fulltext") or "")
+    declared_categories = {
+        str(value).strip()
+        for value in [document.get("materialCategory"), *(document.get("materialCategoryLabels") or [])]
+        if str(value or "").strip()
+    }
+    category_fallback = bool(
+        document.get("classificationTargetingMode") == "category_advisory"
+        and str(point.get("materialCategory") or "").strip() in declared_categories
+    )
 
-    source_allowed, source_reason = point_source_is_allowed(point, document)
+    source_allowed, source_reason = (True, None) if category_fallback else point_source_is_allowed(point, document)
     if not source_allowed:
         return {
             "reviewPointId": point.get("id"),
@@ -889,7 +898,7 @@ def score_review_point(
             "excerpt": {"quotedText": "", "pageNo": 1, "bbox": None, "fieldName": None, "fieldId": None},
         }
 
-    context_allowed, context_reason = point_context_gate(point, fulltext)
+    context_allowed, context_reason = (True, None) if category_fallback else point_context_gate(point, fulltext)
     if not context_allowed:
         return {
             "reviewPointId": point.get("id"),
@@ -918,6 +927,22 @@ def score_review_point(
         parse_result,
         extracted_fields,
     )
+    if category_fallback and not evidence_facts:
+        fallback_excerpt = best_excerpt(parse_result, extracted_fields, [])
+        if str(fallback_excerpt.get("quotedText") or "").strip():
+            evidence_facts = [
+                {
+                    **fallback_excerpt,
+                    "targetCode": "category_advisory",
+                    "targetName": str(point.get("materialCategory") or "资料大类候选"),
+                    "sourceEvidenceItem": "资料大类候选",
+                    "sourceType": "category_classification",
+                    "sourceFragmentIds": [],
+                    "formalEvidenceEligible": False,
+                }
+            ]
+    if category_fallback:
+        evidence_facts = [{**item, "formalEvidenceEligible": False} for item in evidence_facts]
     matched_target_codes = {str(item.get("targetCode") or "") for item in evidence_facts if item.get("targetCode")}
     matched_evidence = list(
         dict.fromkeys(
@@ -954,14 +979,26 @@ def score_review_point(
     responsible_party_matches = str(point.get("responsibleParty") or "") == document_party(document)
     score = min(score, 100)
     confidence = round(score / 100, 4)
-    formal_facts = [item for item in evidence_facts if item.get("formalEvidenceEligible") is True]
+    formal_facts = (
+        []
+        if category_fallback
+        else [item for item in evidence_facts if item.get("formalEvidenceEligible") is True]
+    )
     deterministic_match = bool(
+        not category_fallback
+        and
         material_type_is_binding_compatible(point, document)
         and material_score > 0
         and evidence_facts
         and responsible_party_matches
     )
-    support_status = SUPPORTED_STATUS if deterministic_match else UNMATCHED_STATUS
+    support_status = (
+        SUPPORTED_STATUS
+        if deterministic_match
+        else PARTIAL_STATUS
+        if category_fallback and evidence_facts
+        else UNMATCHED_STATUS
+    )
     binding_eligible = bool(deterministic_match and formal_facts)
     excerpt = repo_safe_fact(formal_facts[0] if formal_facts else evidence_facts[0] if evidence_facts else {})
     return {
@@ -978,6 +1015,7 @@ def score_review_point(
         "formalEvidenceEligible": bool(formal_facts),
         "evidenceTier": "formal" if formal_facts else "advisory",
         "bindingEligible": binding_eligible,
+        "categoryFallback": category_fallback,
         "excerpt": excerpt,
     }
 
@@ -1054,6 +1092,7 @@ def node_evidence_link_from_match(
         for fact in match.get("evidenceFacts") or []
         if isinstance(fact, dict)
     ]
+    category_fallback = bool(match.get("categoryFallback"))
     return {
         "id": link_id,
         "projectId": project_id,
@@ -1086,10 +1125,14 @@ def node_evidence_link_from_match(
         "formalEvidenceFactCount": len([item for item in evidence_facts if item.get("formalEvidenceEligible") is True]),
         "formalEvidenceEligible": bool(match.get("formalEvidenceEligible")),
         "evidenceTier": match.get("evidenceTier") or "advisory",
-        "manualStatus": MANUAL_CONFIRMED,
-        "manualStatusLabel": MANUAL_STATUS_LABELS[MANUAL_CONFIRMED],
-        "confirmedByName": "系统自动打靶",
-        "confirmedAt": server_time(),
+        "categoryFallback": category_fallback,
+        "manualStatus": MANUAL_PENDING if category_fallback else MANUAL_CONFIRMED,
+        "manualStatusLabel": MANUAL_STATUS_LABELS[MANUAL_PENDING if category_fallback else MANUAL_CONFIRMED],
+        **(
+            {}
+            if category_fallback
+            else {"confirmedByName": "系统自动打靶", "confirmedAt": server_time()}
+        ),
         "source": "material_targeting",
         "createdAt": server_time(),
     }
@@ -1204,7 +1247,8 @@ def run_material_targeting(
             link.update(previous_manual_state[link["id"]])
         repo.state.setdefault("node_evidence_links", []).insert(0, link)
         created_links.append(link)
-        touched_nodes.add(int(point.get("nodeId") or 0))
+        if not candidate.get("categoryFallback"):
+            touched_nodes.add(int(point.get("nodeId") or 0))
         if auto_bind and candidate.get("bindingEligible") is True:
             binding = upsert_auto_binding(repo, project_id, point, document, str(version_id), candidate)
             if binding:

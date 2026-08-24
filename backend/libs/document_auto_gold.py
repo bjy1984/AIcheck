@@ -304,7 +304,10 @@ def classification_response_format(categories: list[str]) -> dict[str, Any]:
     }
 
 
-def material_type_classification_response_format(material_type_codes: list[str]) -> dict[str, Any]:
+def material_type_classification_response_format(
+    material_type_codes: list[str],
+    material_categories: list[str] | None = None,
+) -> dict[str, Any]:
     response_format = classification_response_format(material_type_codes)
     schema = response_format["json_schema"]["schema"]
     properties = schema["properties"]["labels"]["items"]["properties"]
@@ -313,6 +316,13 @@ def material_type_classification_response_format(material_type_codes: list[str])
     properties["contentEvidence"]["items"]["properties"]["quote"]["maxLength"] = 80
     required = schema["properties"]["labels"]["items"]["required"]
     required[required.index("category")] = "materialTypeCode"
+    if material_categories is not None:
+        schema["properties"]["fallbackMaterialCategories"] = {
+            "type": "array",
+            "maxItems": min(MAX_LABELS, len(material_categories)),
+            "items": {"type": "string", "enum": list(material_categories)},
+        }
+        schema["required"].append("fallbackMaterialCategories")
     response_format["json_schema"]["name"] = "document_material_type_classification"
     return response_format
 
@@ -429,6 +439,24 @@ def validate_material_type_classification_output(
         for item in material_type_snapshot.get("materialTypes") or []
         if item.get("materialTypeCode")
     }
+    allowed_categories = {
+        str(category)
+        for definition in definitions.values()
+        for category in definition.get("materialCategories") or []
+        if str(category).strip()
+    }
+    raw_fallback_categories = raw.get("fallbackMaterialCategories") if isinstance(raw, dict) else []
+    if raw_fallback_categories is None:
+        raw_fallback_categories = []
+    if not isinstance(raw_fallback_categories, list):
+        raise AutoGoldValidationError("INVALID_FALLBACK_CATEGORIES", "fallbackMaterialCategories must be an array")
+    fallback_categories: list[str] = []
+    for value in raw_fallback_categories:
+        category = str(value or "").strip()
+        if category not in allowed_categories:
+            raise AutoGoldValidationError("UNKNOWN_FALLBACK_CATEGORY", category)
+        if category not in fallback_categories:
+            fallback_categories.append(category)
     raw_labels = raw.get("labels") if isinstance(raw, dict) else None
     if not isinstance(raw_labels, list):
         raise AutoGoldValidationError("INVALID_LABELS", "labels must be an array")
@@ -489,12 +517,15 @@ def validate_material_type_classification_output(
             {
                 "materialTypeCode": code,
                 "materialCategories": material_categories,
+                "targetingMode": str(definition.get("targetingMode") or "exact"),
                 **item,
             }
         )
+    categories.update(fallback_categories)
     return {
         **validated,
         "labels": labels,
+        "fallbackMaterialCategories": sorted(fallback_categories),
         "materialCategoryLabels": sorted(categories),
     }
 
@@ -559,6 +590,13 @@ def build_material_type_gold_label_record(
         "labels": labels,
         "primaryMaterialTypeCode": primary,
         "materialCategoryLabels": deepcopy(validated.get("materialCategoryLabels") or []),
+        "fallbackMaterialCategories": deepcopy(validated.get("fallbackMaterialCategories") or []),
+        "classificationTargetingMode": (
+            "category_advisory"
+            if validated.get("fallbackMaterialCategories")
+            or any(item.get("targetingMode") == "category_advisory" for item in labels)
+            else "exact"
+        ),
         "source": "qwen_auto_gold",
         "model": model,
         "promptHash": prompt_hash,
@@ -587,6 +625,7 @@ def apply_material_type_gold_projection(repo: Any, gold: dict[str, Any]) -> dict
         "activeGoldLabelId": gold.get("id"),
         "classificationSource": "qwen_auto_gold",
         "classificationConfidence": confidence,
+        "classificationTargetingMode": str(gold.get("classificationTargetingMode") or "exact"),
         "classifiedAt": now,
         "updatedAt": now,
     }

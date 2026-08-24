@@ -27,9 +27,9 @@ def test_cli_accepts_the_complete_60_card_knowledge_file():
     assert result.returncode == 0, result.stderr
     output = json.loads(result.stdout)
     assert output["ok"] is True
-    assert output["cardCount"] == 60
+    assert output["cardCount"] == 61
     assert output["standardSupportedCount"] > 0
-    assert output["standardSupportedCount"] + output["businessDefinedCount"] == 60
+    assert output["standardSupportedCount"] + output["businessDefinedCount"] == 61
     assert output["errors"] == []
 
 

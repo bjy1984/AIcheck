@@ -230,6 +230,21 @@ def test_material_type_response_schema_uses_only_60_code_enum():
     assert evidence_schema["items"]["properties"]["quote"]["maxLength"] == 80
 
 
+def test_material_type_response_schema_allows_category_fallback_without_a_fake_type():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    codes = [item["materialTypeCode"] for item in snapshot["materialTypes"]]
+    categories = sorted(
+        {category for item in snapshot["materialTypes"] for category in item["materialCategories"]}
+    )
+
+    response_format = material_type_classification_response_format(codes, categories)
+    schema = response_format["json_schema"]["schema"]
+
+    assert schema["properties"]["fallbackMaterialCategories"]["items"]["enum"] == categories
+    assert "uniqueItems" not in schema["properties"]["fallbackMaterialCategories"]
+    assert "fallbackMaterialCategories" in schema["required"]
+
+
 def test_validate_material_types_accepts_multi_labels_and_derives_16_categories():
     snapshot = material_type_definition_snapshot(CONFIG)
     raw = {
@@ -424,3 +439,36 @@ def test_material_type_gold_projects_multi_types_and_primary_type_without_guessi
     assert document["materialTypeCode"] == "design_license"
     assert document["materialCategoryLabels"] == ["设计基础资料", "资质证照"]
     assert projection["status"] == "projected"
+
+
+def test_category_only_fallback_projects_advisory_targeting_without_inventing_a_type():
+    repository = InMemoryRepository()
+    document, version = repository.create_document("P-2026-HDCP-001", "unknown.bin", "application/octet-stream")
+    snapshot = material_type_definition_snapshot(CONFIG)
+    raw = {
+        "labels": [],
+        "fallbackMaterialCategories": ["材料验收与复验"],
+        "documentSummary": "材料核查资料",
+        "classificationComplete": True,
+        "unclassifiedReason": "可以确定为材料类，但没有对应具体类型。",
+    }
+
+    validated = validate_material_type_classification_output(raw, "材料核查资料", snapshot)
+    gold = build_material_type_gold_label_record(
+        document_id=document["id"],
+        document_version_id=version["id"],
+        ocr_parse_result_id="PARSE-1",
+        classification_run_id="RUN-1",
+        validated=validated,
+        model="qwen3.8-max",
+        prompt_hash="sha256:prompt",
+        markdown_sha256="sha256:markdown",
+        material_type_schema_hash="sha256:types",
+        gold_version=1,
+    )
+
+    apply_material_type_gold_projection(repository, gold)
+
+    assert document["materialTypeCode"] == "unclassified_material"
+    assert document["materialCategoryLabels"] == ["材料验收与复验"]
+    assert document["classificationTargetingMode"] == "category_advisory"

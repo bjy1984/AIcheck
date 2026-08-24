@@ -10,7 +10,8 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from libs.document_auto_gold import category_definition_snapshot, material_type_definition_snapshot
+from libs.document_auto_gold import category_definition_snapshot
+from libs.material_classification_knowledge import classification_type_definition_snapshot
 
 
 def sha256_file(path: Path) -> str:
@@ -54,7 +55,7 @@ def audit_test_gold_manifest(repo_root: Path, manifest_path: Path) -> dict[str, 
         item["category"] for item in category_definition_snapshot()["categories"]
     }
     allowed_material_types = {
-        item["materialTypeCode"] for item in material_type_definition_snapshot()["materialTypes"]
+        item["materialTypeCode"] for item in classification_type_definition_snapshot()["materialTypes"]
     }
     seen: set[str] = set()
     duplicate_paths: list[str] = []
