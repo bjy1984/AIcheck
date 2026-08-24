@@ -464,6 +464,36 @@ def test_ai_review_finding_requires_evidence_and_rule_refs() -> None:
     assert accepted["opinion"]["ruleRefs"]
 
 
+def test_accept_finding_allows_satisfied_opinion_when_readiness_is_incomplete(monkeypatch) -> None:
+    monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "false")
+    created = assert_ok(
+        client.post(
+            "/api/review/findings",
+            json={
+                "projectId": "P-2026-HDCP-001",
+                "nodeId": 24,
+                "source": "manual",
+                "findingType": "manual_review",
+                "title": "现有资料可供审查",
+                "description": "现有资料支持程度有限，仍缺部分佐证。",
+                "evidenceLinkIds": [],
+            },
+        )
+    )
+
+    accepted = assert_ok(
+        client.post(
+            f"/api/review/findings/{created['finding']['id']}/accept",
+            json={"result": "满足要求", "opinion": "监检人员结合现场情况确认满足要求。"},
+        )
+    )
+
+    assert accepted["opinion"]["evidenceLinkIds"] == []
+    assert accepted["opinion"]["evidenceValidation"]["passed"] is True
+    assert accepted["opinion"]["readinessSnapshot"]["readyForAiFormal"] is False
+    assert accepted["opinion"]["readinessSnapshot"]["readinessAdvisoryOnly"] is True
+
+
 def test_ai_run_feedback_records_structured_human_review() -> None:
     feedback = assert_ok(
         client.post(

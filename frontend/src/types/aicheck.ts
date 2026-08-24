@@ -1175,10 +1175,14 @@ export type NodeEvidenceReadiness = {
   progressPercent: number
   readyForAi: boolean
   readyForAiFormal?: boolean
+  readyForAiFormalIsRecommendation?: boolean
   readyForGapPrecheck?: boolean
   availableReviewModes?: Array<'formal' | 'gap_precheck'>
   recommendedAction?: 'run_formal_review' | 'run_gap_precheck' | 'configure_review_points' | string
   blockingReasons?: BusinessBlockingReason[]
+  advisoryReasons?: BusinessBlockingReason[]
+  readinessAdvisoryOnly?: boolean
+  operationBlocked?: boolean
   evidenceReviewComplete?: boolean
   requirements: NodeRequirementMatch[]
   missingRequirements: NodeRequirementMatch[]

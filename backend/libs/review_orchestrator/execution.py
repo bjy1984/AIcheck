@@ -2642,10 +2642,28 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
+            "File completeness is advisory only and must never prevent a review suggestion.",
+            "The opinion must separately state 现有资料支持程度、缺少的资料或证据、可能风险。",
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
             *grounding_block["requirements"],
         ],
+        "evidenceReadiness": {
+            "readinessAdvisoryOnly": True,
+            "requiredCount": int((review_run.get("evidenceReadiness") or {}).get("requiredCount") or 0),
+            "satisfiedCount": int((review_run.get("evidenceReadiness") or {}).get("satisfiedCount") or 0),
+            "missingCount": int((review_run.get("evidenceReadiness") or {}).get("missingCount") or 0),
+            "pendingCount": int((review_run.get("evidenceReadiness") or {}).get("pendingCount") or 0),
+            "missingRequirements": [
+                {
+                    "reviewContent": item.get("reviewContent"),
+                    "materialTypeName": item.get("materialTypeName"),
+                    "evidenceReviewStatus": item.get("evidenceReviewStatus"),
+                }
+                for item in ((review_run.get("evidenceReadiness") or {}).get("missingRequirements") or [])[:20]
+                if isinstance(item, dict)
+            ],
+        },
         "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),

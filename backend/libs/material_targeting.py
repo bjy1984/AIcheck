@@ -1488,7 +1488,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
             {
                 "code": "NO_REVIEW_POINTS",
                 "message": "当前节点未配置必传审查点，AI 复核将仅生成通用核验或人工确认建议。",
-                "severity": "blocker",
+                "severity": "warning",
                 "actionKey": "contact_fde",
                 "targetId": str(node_id),
             }
@@ -1499,7 +1499,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
                 "code": "PENDING_EVIDENCE_DECISION",
                 "message": "仍有候选证据未确认或不采用，AI 复核将把其作为待确认证据参考。",
                 "count": pending_count,
-                "severity": "blocker",
+                "severity": "warning",
                 "actionKey": "review_evidence",
                 "targetId": str(node_id),
             }
@@ -1508,9 +1508,9 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         blocking_reasons.append(
             {
                 "code": "MISSING_REQUIRED_EVIDENCE",
-                "message": "仍有必传审查点缺少已确认资料证据，不能形成满足要求类结论。",
+                "message": "仍有审查点缺少已确认资料证据，审查意见应说明现有支持程度、缺项和风险。",
                 "count": missing_count,
-                "severity": "blocker",
+                "severity": "warning",
                 "actionKey": "upload_missing_material",
                 "targetId": str(node_id),
             }
@@ -1519,18 +1519,16 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         blocking_reasons.append(
             {
                 "code": "CONFIRMED_EVIDENCE_NOT_LOCATABLE",
-                "message": "存在已确认但缺少页码、bbox 或引用原文的证据，不能用于正式结论。",
+                "message": "存在已确认但缺少页码、bbox 或引用原文的证据，审查意见应说明其不可定位风险。",
                 "count": unlocatable_confirmed_count,
-                "severity": "blocker",
+                "severity": "warning",
                 "actionKey": "review_ocr",
                 "targetId": str(node_id),
             }
         )
     ready_for_gap_precheck = bool(points)
     ready_for_ai_formal = ready_for_gap_precheck and pending_count == 0 and missing_count == 0
-    available_review_modes = ["gap_precheck"] if ready_for_gap_precheck else []
-    if ready_for_ai_formal:
-        available_review_modes.insert(0, "formal")
+    available_review_modes = ["formal", "gap_precheck"] if ready_for_gap_precheck else ["formal"]
     recommended_action = (
         "run_formal_review"
         if ready_for_ai_formal
@@ -1539,7 +1537,7 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         else "configure_review_points"
     )
     return {
-        "schemaVersion": "node-evidence-readiness-v1",
+        "schemaVersion": "node-evidence-readiness-v2",
         "hasReviewPoints": bool(points),
         "requiredCount": required_count,
         "satisfiedCount": satisfied_count,
@@ -1551,9 +1549,13 @@ def build_node_evidence_readiness(repo: Any, project_id: str, node_id: int) -> d
         "evidenceReviewComplete": bool(points) and pending_count == 0,
         "readyForAi": ready_for_ai_formal,
         "readyForAiFormal": ready_for_ai_formal,
+        "readyForAiFormalIsRecommendation": True,
         "readyForGapPrecheck": ready_for_gap_precheck,
+        "readinessAdvisoryOnly": True,
+        "operationBlocked": False,
         "availableReviewModes": available_review_modes,
         "recommendedAction": recommended_action,
+        "advisoryReasons": blocking_reasons,
         "blockingReasons": blocking_reasons,
         "requirements": rows,
         "missingRequirements": missing,

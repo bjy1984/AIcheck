@@ -6368,7 +6368,7 @@ def build_inspection_audit_workspace(
 
     evidence_issues = [
         _inspection_audit_issue(str(reason.get("code") or "EVIDENCE_ATTENTION"), str(reason.get("message") or "证据需要人工处理。"))
-        for reason in evidence_readiness.get("blockingReasons") or []
+        for reason in evidence_readiness.get("advisoryReasons") or evidence_readiness.get("blockingReasons") or []
     ]
     if not evidence_readiness.get("hasReviewPoints"):
         evidence_issues.append(_inspection_audit_issue("REVIEW_POINTS_MISSING", "当前节点未配置可核验的资料审查点。"))
@@ -6411,6 +6411,7 @@ def build_inspection_audit_workspace(
     invalid_legacy_opinion = bool(
         latest_opinion
         and latest_opinion.get("result") == "满足要求"
+        and (latest_opinion.get("readinessSnapshot") or {}).get("readinessAdvisoryOnly") is not True
         and (
             not latest_opinion.get("evidenceLinkIds")
             or (latest_opinion.get("evidenceValidation") or {}).get("passed") is not True
@@ -9224,7 +9225,7 @@ def ai_recheck(
         dispatch_readiness: dict[str, Any],
         rule: dict[str, Any],
     ) -> dict[str, Any]:
-        blocking_reasons = evidence_readiness.get("blockingReasons") or []
+        blocking_reasons = evidence_readiness.get("advisoryReasons") or evidence_readiness.get("blockingReasons") or []
         manual_items = [
             str(item.get("message") or item.get("code"))
             for item in blocking_reasons
@@ -9248,7 +9249,7 @@ def ai_recheck(
                 f"1. 读取项目节点：{node_name}。",
                 f"2. 对齐业务规则：{rule_label}，规则版本 {run.get('ruleVersion') or '-'}。",
                 f"3. 汇总资料证据：候选证据 {evidence_count} 条，输入文档版本 {len(run.get('inputDocumentVersionIds') or [])} 个。",
-                f"4. 检查资料就绪度：必传 {evidence_readiness.get('requiredCount', 0)} 项，满足 {evidence_readiness.get('satisfiedCount', 0)} 项，缺项 {missing_count} 项，待人工处理 {pending_count} 项。",
+                f"4. 检查资料支持程度：配置审查点 {evidence_readiness.get('requiredCount', 0)} 项，已有支持 {evidence_readiness.get('satisfiedCount', 0)} 项，尚缺 {missing_count} 项，待人工处理 {pending_count} 项。完整度仅供意见参考，不限制审查。",
                 "5. 当前调度器未启用，未调用外部模型；系统按证据就绪度、规则上下文和人工确认边界生成复核摘要。",
                 f"6. 建议结论：{conclusion}；原因：" + "；".join(manual_items[:5]),
             ]
@@ -9350,14 +9351,8 @@ def ai_recheck(
                 review_mode = "formal"
             elif evidence_readiness.get("readyForGapPrecheck"):
                 review_mode = "gap_precheck"
-        if review_mode == "formal" and not evidence_readiness.get("readyForAiFormal"):
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="资料证据未满足正式 AI 复核条件，请先处理阻断项或使用缺项预审。",
-                data={"evidenceReadiness": evidence_readiness, "requestedReviewMode": review_mode},
-                http_status=409,
-            )
+            else:
+                review_mode = "formal"
         binding_set = pack.get("atomicCheckToolBindingSet") or {}
         binding_lifecycle = str(binding_set.get("lifecycleStatus") or "draft").lower()
         node_rule_for_binding = next(
@@ -9385,24 +9380,6 @@ def ai_recheck(
                     "pilotRuleEnabled": pilot_rule_enabled,
                     "allowedReviewMode": "gap_precheck",
                 },
-                http_status=409,
-            )
-        if review_mode == "gap_precheck" and not (
-            evidence_readiness.get("readyForGapPrecheck") or audit_runtime["mode"] == "pure_llm"
-        ):
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="当前节点没有可执行缺项预审的审查点，请联系 FDE 完成规则配置。",
-                data={"evidenceReadiness": evidence_readiness, "requestedReviewMode": review_mode},
-                http_status=409,
-            )
-        if not review_mode:
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="当前节点没有可用的 AI 复核模式。",
-                data={"evidenceReadiness": evidence_readiness},
                 http_status=409,
             )
         advisory_only = review_mode == "gap_precheck" or audit_runtime["mode"] == "pure_llm"
@@ -13237,7 +13214,7 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
             project_id,
             node_id,
             body.get("evidenceLinkIds") or [],
-            require_non_empty=result == "满足要求",
+            require_non_empty=False,
         )
         if not evidence_validation["passed"]:
             return fail(
@@ -13245,13 +13222,6 @@ def save_review_opinion(request: Request, project_id: str, node_id: int, body: d
                 request,
                 message=evidence_validation["message"],
                 data={"evidenceValidation": evidence_validation, "evidenceReadiness": readiness},
-            )
-        if result == "满足要求" and not readiness.get("readyForAiFormal"):
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="仍有 pending 或 missing 资料证据，不能保存“满足要求”审查意见。",
-                data={"evidenceReadiness": readiness, "evidenceValidation": evidence_validation},
             )
         latest_ai_run = next(
             (
@@ -16720,20 +16690,13 @@ def accept_review_finding(
             project_id,
             node_id,
             body.get("evidenceLinkIds") or finding.get("evidenceLinkIds") or [],
-            require_non_empty=result == "满足要求",
+            require_non_empty=False,
         )
         if not evidence_validation["passed"]:
             return fail(
                 errors.VALIDATION_ERROR,
                 request,
                 message=evidence_validation["message"],
-                data={"evidenceValidation": evidence_validation, "evidenceReadiness": readiness},
-            )
-        if result == "满足要求" and not readiness.get("readyForAiFormal"):
-            return fail(
-                errors.CONFLICT,
-                request,
-                message="当前节点仍有待确认或缺失资料，不能通过采纳建议形成“满足要求”结论。",
                 data={"evidenceValidation": evidence_validation, "evidenceReadiness": readiness},
             )
         finding["status"] = "accepted"

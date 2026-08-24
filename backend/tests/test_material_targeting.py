@@ -632,10 +632,15 @@ def test_ai_recheck_allows_pending_evidence_decisions(monkeypatch) -> None:
     assert readiness["nodeEvidenceLinks"]
     assert readiness["readyForAi"] is False
     assert readiness["readyForAiFormal"] is False
+    assert readiness["readyForAiFormalIsRecommendation"] is True
     assert readiness["readyForGapPrecheck"] is True
-    assert readiness["availableReviewModes"] == ["gap_precheck"]
+    assert readiness["availableReviewModes"] == ["formal", "gap_precheck"]
+    assert readiness["readinessAdvisoryOnly"] is True
+    assert readiness["operationBlocked"] is False
     assert readiness["recommendedAction"] == "run_gap_precheck"
     assert {item["code"] for item in readiness["blockingReasons"]} >= {"PENDING_EVIDENCE_DECISION", "MISSING_REQUIRED_EVIDENCE"}
+    assert all(item["severity"] == "warning" for item in readiness["blockingReasons"])
+    assert readiness["advisoryReasons"] == readiness["blockingReasons"]
 
     monkeypatch.setattr(
         task_dispatcher,
@@ -659,6 +664,16 @@ def test_ai_recheck_allows_pending_evidence_decisions(monkeypatch) -> None:
     assert version["id"] in latest_run["inputDocumentVersionIds"]
     assert result["dispatch"]["taskId"].startswith("TEST-")
 
+    formal = assert_ok(
+        client.post(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck",
+            json={"reviewMode": "formal"},
+        )
+    )
+    assert formal["reviewMode"] == "formal"
+    assert formal["advisoryOnly"] is False
+    assert formal["latestRun"]["evidenceReadiness"]["readyForAiFormal"] is False
+
 
 def test_scan_import_expands_contractor_member_scope() -> None:
     from scripts.import_scan_test_scenario import CONTRACTOR_USER, ensure_role_member_scope
@@ -668,6 +683,30 @@ def test_scan_import_expands_contractor_member_scope() -> None:
     assert member["userId"] == "USER-CONTRACTOR-001"
     assert member["orgName"] == "粤海安装工程有限公司"
     assert {1, 2, 4, 16, 24, 25, 53}.issubset(set(member["nodeScope"]))
+
+
+def test_ai_recheck_without_configured_review_points_still_starts_formal_review(monkeypatch) -> None:
+    repo.state["admin_config"]["materialReviewPoints"] = [
+        point
+        for point in repo.state["admin_config"]["materialReviewPoints"]
+        if int(point.get("nodeId") or 0) != 1
+    ]
+    monkeypatch.setattr(
+        task_dispatcher,
+        "ai_recheck_dispatch_readiness",
+        lambda: {"ready": True, "mode": "test", "statusReason": "test_dispatch"},
+    )
+    monkeypatch.setattr(
+        task_dispatcher,
+        "dispatch_ai_recheck",
+        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+    )
+
+    result = assert_ok(client.post(f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck"))
+
+    assert result["reviewMode"] == "formal"
+    assert result["latestRun"]["evidenceReadiness"]["hasReviewPoints"] is False
+    assert result["latestRun"]["evidenceReadiness"]["readinessAdvisoryOnly"] is True
 
 
 def test_node_input_versions_fall_back_to_ready_unclassified_documents() -> None:

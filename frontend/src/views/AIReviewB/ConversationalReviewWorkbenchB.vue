@@ -255,7 +255,10 @@ const displayUser = computed(
 const suggestedQuestions = computed(() =>
   buildSuggestedQuestions(
     // 这个工作台手上没有七项审计明细，卡点信号在 evidenceReadiness 里
-    blockingReasonsAsItems(workspace.value?.evidenceReadiness?.blockingReasons),
+    blockingReasonsAsItems(
+      workspace.value?.evidenceReadiness?.advisoryReasons ||
+        workspace.value?.evidenceReadiness?.blockingReasons
+    ),
     businessBasis.value as never
   )
 )

@@ -24,7 +24,7 @@ const NODE_24_ITEMS = [
     status: 'needs_attention',
     metric: '0/4 已确认',
     summary: '仍有必传审查点缺少已确认资料证据，不能形成满足要求类结论。',
-    issues: [{ code: 'MISSING_REQUIRED_EVIDENCE', message: '仍有必传审查点缺少已确认资料证据。' }]
+    issues: [{ code: 'MISSING_REQUIRED_EVIDENCE', message: '仍有审查点缺少已确认资料证据。' }]
   },
   { key: 'ai_review', label: 'AI 复核', status: 'not_started' }
 ]
@@ -46,7 +46,7 @@ const NODE_24_BASIS = {
   assert.equal(questions[0].origin, 'blocker')
   assert.ok(questions[0].text.includes('OCR'))
   assert.equal(questions[1].origin, 'blocker')
-  assert.ok(questions[1].text.includes('必传资料'))
+  assert.ok(questions[1].text.includes('资料或证据'))
   // 未开始 / 已完成的项不该产生问题——那不是现在要处理的事
   assert.ok(!questions.some((q) => q.text.includes('AI 复核')))
 }
@@ -112,7 +112,7 @@ assert.equal(buildSuggestedQuestions(NODE_24_ITEMS, NODE_24_BASIS, 0).length, 1)
     { key: 'b', status: 'needs_attention', issues: [{ code: 'MATERIALS_MISSING' }] }
   ]
   const questions = buildSuggestedQuestions(dup, {})
-  const materials = questions.filter((q) => q.text === '还缺哪几项必传资料？')
+  const materials = questions.filter((q) => q.text === '当前还缺哪些资料？分别影响什么审查判断？')
   assert.equal(materials.length, 1)
 }
 
@@ -124,13 +124,13 @@ assert.ok(buildSuggestedQuestions([null as never, 3 as never], undefined).length
 // 推荐问题不该关心数据从哪来；在调用处写两套分支迟早会漏掉一边。
 {
   const reasons = [
-    { code: 'MISSING_REQUIRED_EVIDENCE', message: '仍有必传审查点缺少已确认资料证据。' },
+    { code: 'MISSING_REQUIRED_EVIDENCE', message: '仍有审查点缺少已确认资料证据。' },
     { code: 'MATERIALS_MISSING', message: '仍有 4 项必传资料未匹配。' }
   ]
   const questions = buildSuggestedQuestions(blockingReasonsAsItems(reasons), NODE_24_BASIS)
   assert.equal(questions[0].origin, 'blocker')
-  assert.ok(questions.some((q) => q.text.includes('必传资料的已确认证据')))
-  assert.ok(questions.some((q) => q.text === '还缺哪几项必传资料？'))
+  assert.ok(questions.some((q) => q.text.includes('资料或证据')))
+  assert.ok(questions.some((q) => q.text === '当前还缺哪些资料？分别影响什么审查判断？'))
 }
 
 // 没有卡点时退回规则问题，不给空

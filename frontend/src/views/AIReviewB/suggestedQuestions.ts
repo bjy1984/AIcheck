@@ -62,8 +62,8 @@ const ATTENTION_STATUSES = new Set([
 /** 按 issue code 定制的问法。认不出的 code 退回用 item 自己的 summary。 */
 const QUESTION_BY_ISSUE_CODE: Record<string, string> = {
   OCR_INCOMPLETE: '这个节点的 OCR 抽取不完整，是哪份资料、缺了什么？',
-  MISSING_REQUIRED_EVIDENCE: '还缺哪些必传资料的已确认证据？分别对应哪个审查点？',
-  MATERIALS_MISSING: '还缺哪几项必传资料？',
+  MISSING_REQUIRED_EVIDENCE: '还缺哪些资料或证据？分别对应哪个审查点和什么风险？',
+  MATERIALS_MISSING: '当前还缺哪些资料？分别影响什么审查判断？',
   RECTIFICATION_OPEN: '未关闭的补正事项是什么？对方回复了吗？',
   REPORT_EVIDENCE_INVALID: '报告的证据校验为什么没通过？',
   ARCHIVE_EXPORT_FAILED: '归档导出失败的原因是什么？',

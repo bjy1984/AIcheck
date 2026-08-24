@@ -6510,17 +6510,19 @@ def test_report_update_if_match_increments_revision() -> None:
     )
 
 
-def test_review_opinion_requires_current_node_confirmed_evidence() -> None:
-    evidence_ids = seed_confirmed_node_24_evidence()
-
-    no_evidence = assert_error(
+def test_review_opinion_allows_any_conclusion_without_complete_evidence_but_rejects_foreign_evidence() -> None:
+    no_evidence = assert_ok(
         client.post(
             "/projects/P-2026-HDCP-001/inspection/nodes/24/review-opinions",
             json={"result": "满足要求", "opinion": "无证据通过", "evidenceLinkIds": []},
-        ),
-        "VALIDATION_ERROR",
+        )
     )
-    assert no_evidence["data"]["evidenceValidation"]["requiresEvidenceSelection"] is True
+    assert no_evidence["opinion"]["evidenceValidation"]["passed"] is True
+    assert no_evidence["opinion"]["evidenceLinkIds"] == []
+    assert no_evidence["opinion"]["readinessSnapshot"]["readyForAiFormal"] is False
+    assert no_evidence["opinion"]["readinessSnapshot"]["readinessAdvisoryOnly"] is True
+
+    evidence_ids = seed_confirmed_node_24_evidence()
 
     cross_node = assert_error(
         client.post(
@@ -6745,7 +6747,7 @@ def test_inspection_attachment_can_be_uploaded_bound_and_submitted_to_current_no
     )
 
 
-def test_r69_requires_inspection_workflow_evidence_and_keeps_human_decision_gate() -> None:
+def test_r69_evidence_progress_is_advisory_and_does_not_gate_human_decision() -> None:
     project_id = "P-2026-HDCP-001"
     inspection_headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
     before = assert_ok(client.get(f"/projects/{project_id}/nodes/69/package", headers=inspection_headers))
@@ -6753,15 +6755,19 @@ def test_r69_requires_inspection_workflow_evidence_and_keeps_human_decision_gate
     assert before["node"]["requiredProgress"] == {"done": 0, "total": 1}
     assert before["node"]["requirementsSummary"]["missingCount"] == 1
 
-    blocked = assert_error(
+    saved_without_evidence = assert_ok(
         client.post(
             f"/projects/{project_id}/inspection/nodes/69/review-opinions",
-            json={"result": "满足要求", "opinion": "不得在无证据时保存", "evidenceLinkIds": []},
+            json={"result": "满足要求", "opinion": "结合现场检查确认，现有资料不足情况已在意见中说明。", "evidenceLinkIds": []},
             headers=inspection_headers,
-        ),
-        "VALIDATION_ERROR",
+        )
     )
-    assert blocked["data"]["evidenceValidation"]["requiresEvidenceSelection"] is True
+    assert saved_without_evidence["opinion"]["evidenceLinkIds"] == []
+    assert saved_without_evidence["opinion"]["readinessSnapshot"]["readyForAiFormal"] is False
+    assert saved_without_evidence["opinion"]["readinessSnapshot"]["readinessAdvisoryOnly"] is True
+    # 下面继续复用本用例原有的附件上传/绑定覆盖；人工结论已把节点置为已通过，
+    # 测试内恢复初始状态，避免状态机门禁掩盖文件绑定路径。
+    repo.node(project_id, 69)["status"] = "待提交"
 
     upload = assert_ok(
         client.post(
@@ -6825,7 +6831,7 @@ def test_r69_requires_inspection_workflow_evidence_and_keeps_human_decision_gate
     r69_binding = next(item for item in after["bindings"] if item["id"] == binding_id)
     assert r69_binding["requirementId"] == "REQ-69-01"
     assert r69_binding["bindingStatus"] == "已提交"
-    assert not after["reviewOpinions"]
+    assert any(item["id"] == saved_without_evidence["opinion"]["id"] for item in after["reviewOpinions"])
 
 
 def test_if_match_conflict_and_review_admin_guard() -> None:
@@ -11918,8 +11924,11 @@ def test_grounded_review_input_formats_table_and_blocks_weak_ocr_evidence() -> N
 def test_ai_recheck_downgrades_unsupported_litellm_claims(monkeypatch) -> None:
     from apps.worker import tasks
 
+    calls: list[list[dict]] = []
+
     class FakeLiteLLM:
-        def chat_sync(self, *args, **kwargs):
+        def chat_sync(self, messages, *args, **kwargs):
+            calls.append(messages)
             return {
                 "id": "chatcmpl-unsupported-claim",
                 "choices": [
@@ -11952,6 +11961,12 @@ def test_ai_recheck_downgrades_unsupported_litellm_claims(monkeypatch) -> None:
     assert "王建国" not in draft["description"]
     assert stored["suggestion"]["confidence"] <= 0.5
     assert stored["llmMetadata"]["groundingStatus"] == "insufficient_evidence"
+    assert calls
+    user_prompt = calls[0][1]["content"]
+    assert '"evidenceReadiness"' in user_prompt
+    assert "现有资料支持程度" in user_prompt
+    assert "缺少的资料或证据" in user_prompt
+    assert "可能风险" in user_prompt
 
 
 def test_offline_embed_and_compare_failures_do_not_leak_provider_details(monkeypatch) -> None:

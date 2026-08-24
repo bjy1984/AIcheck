@@ -709,7 +709,7 @@ const formatBlockingReason = (reason: {
   requirementName?: string
 }) => [reason.requirementName, reason.message || reason.code].filter(Boolean).join('：')
 const readinessBlockingReasons = computed(() => {
-  const reasons = (evidenceReadiness.value?.blockingReasons || [])
+  const reasons = (evidenceReadiness.value?.advisoryReasons || evidenceReadiness.value?.blockingReasons || [])
     .map(formatBlockingReason)
     .filter(Boolean)
   if (reasons.length) return reasons
@@ -717,7 +717,7 @@ const readinessBlockingReasons = computed(() => {
   const pendingCount = Number(evidenceReadiness.value?.pendingCount || 0)
   const missingCount = Number(evidenceReadiness.value?.missingCount || 0)
   if (pendingCount > 0) fallback.push(`仍有 ${pendingCount} 条候选证据待确认或不采用。`)
-  if (missingCount > 0) fallback.push(`仍有 ${missingCount} 项必传审查点缺少 confirmed 证据。`)
+  if (missingCount > 0) fallback.push(`仍有 ${missingCount} 项资料或证据尚未找到。`)
   if (!evidenceReadiness.value) fallback.push('等待节点资料证据 readiness 加载。')
   return fallback
 })
@@ -748,40 +748,30 @@ const aiRecheckDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
   if (isReadOnly.value) return '当前项目只读，不能发起 AI 复核。'
   if (!availableActions.value.includes('ai:recheck')) return '当前节点未开放 AI 复核动作。'
-  if (selectedAiReviewMode.value === 'formal') {
-    if (readyForAiFormal.value) return ''
-    return readinessBlockingReasons.value.join('；') || '资料证据未满足正式 AI 复核条件。'
-  }
-  if (readyForGapPrecheck.value) return ''
-  return readinessBlockingReasons.value.join('；') || '当前节点没有可执行缺项预审的审查点。'
+  return ''
 })
 const aiRecheckButtonLabel = computed(() =>
   selectedAiReviewMode.value === 'formal' ? '发起正式复核' : '运行缺项预审'
 )
-/** 正式复核为什么点不了——说清楚还差什么，而不是只把按钮灰掉。 */
+/** 完整度只用于组织审查意见，不再决定正式复核能否发起。 */
 const formalReviewBlockedReason = computed(() => {
-  if (availableAiReviewModes.value.includes('formal')) return ''
   const readiness = evidenceReadiness.value
   const missing = Number(readiness?.missingCount || 0)
   const pending = Number(readiness?.pendingCount || 0)
   const parts: string[] = []
-  if (missing) parts.push(`${missing} 项必传资料未提交`)
+  if (missing) parts.push(`${missing} 项资料或证据尚未找到`)
   if (pending) parts.push(`${pending} 条候选证据待确认`)
-  if (!parts.length) return '正式复核需要必传资料齐全且所有候选证据已确认。'
-  return `正式复核暂不可用：${parts.join('、')}。补齐后即可发起。`
+  if (!parts.length) return '资料完整度仅供审查参考，不限制发起正式复核。'
+  return `资料完整度仅供审查参考：${parts.join('、')}；不限制发起正式复核或保存人工结论。`
 })
 
 const aiReviewModeHint = computed(() => {
-  // 原来这句只描述**当前选中**的模式。而正式复核不可用时选中的必然是缺项预审，
-  // 于是用户看到的是「缺项预审只生成补充资料建议…」——为什么正式复核是灰的，
-  // 一个字都没有。用户实际反馈就是「是流程没推进到这一步还是 bug？」
-  const blocked = formalReviewBlockedReason.value
+  const readinessHint = formalReviewBlockedReason.value
   if (selectedAiReviewMode.value === 'gap_precheck') {
     const base = '缺项预审只生成补充资料建议，不改变节点正式审查状态。'
-    return blocked ? `${base} ${blocked}` : base
+    return `${base} ${readinessHint}`
   }
-  if (readyForAiFormal.value) return '正式复核完成后进入待人工确认，AI 不会自动通过节点。'
-  return blocked || '正式复核需要必传资料齐全且所有候选证据已确认。'
+  return `正式复核完成后进入待人工确认，AI 不会自动通过节点。${readinessHint}`
 })
 const reviewSaveDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
@@ -790,13 +780,6 @@ const reviewSaveDisabledReason = computed(() => {
   )
   if (selectedInvalid.length)
     return `证据引用不属于当前节点 confirmed 范围：${selectedInvalid.join('、')}`
-  if (reviewResult.value === '满足要求') {
-    if (!readyForAiFormal.value) {
-      return readinessBlockingReasons.value.join('；') || '资料证据未满足保存“满足要求”的条件。'
-    }
-    if (!selectedReviewEvidenceIds.value.length)
-      return '请选择至少一条 confirmed 证据后再保存“满足要求”。'
-  }
   return ''
 })
 const latestReviewOpinion = computed(() => reviewOpinions.value[0])

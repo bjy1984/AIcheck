@@ -4882,12 +4882,33 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
     rule = matching_rule_for_node(pack, node_id)
     prompt_template = production_prompt_template_for_run(run)
     prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=rule, prompt_template=prompt_template)
+    readiness = run.get("evidenceReadiness") if isinstance(run.get("evidenceReadiness"), dict) else {}
+    readiness_prompt = {
+        "readinessAdvisoryOnly": True,
+        "requiredCount": int(readiness.get("requiredCount") or 0),
+        "satisfiedCount": int(readiness.get("satisfiedCount") or 0),
+        "missingCount": int(readiness.get("missingCount") or 0),
+        "pendingCount": int(readiness.get("pendingCount") or 0),
+        "supportingDocumentCount": int(readiness.get("supportingDocumentCount") or 0),
+        "missingRequirements": [
+            {
+                "reviewContent": item.get("reviewContent"),
+                "materialTypeName": item.get("materialTypeName"),
+                "evidenceReviewStatus": item.get("evidenceReviewStatus"),
+            }
+            for item in (readiness.get("missingRequirements") or [])[:20]
+            if isinstance(item, dict)
+        ],
+        "advisoryReasons": deepcopy(readiness.get("advisoryReasons") or readiness.get("blockingReasons") or []),
+    }
     review_task_json = json.dumps(
         {
             "task": "Generate ReviewFindingDraftList JSON only.",
             "requirements": [
                 "Every finding must require human confirmation.",
                 "Do not infer names, dates, validity, project coverage, certificate authenticity, seal text, or table values that are not present in evidence.",
+                "File completeness is advisory only and must never prevent a review suggestion.",
+                "The opinion must separately state 现有资料支持程度、缺少的资料或证据、可能风险。",
                 *grounding_block["requirements"],
             ],
             "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
@@ -4900,6 +4921,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             "groundingStatus": grounding_input.get("groundingStatus"),
             "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
             "evidenceLinkIds": [item.get("id") for item in evidence_links],
+            "evidenceReadiness": readiness_prompt,
         },
         ensure_ascii=False,
     )
