@@ -38,3 +38,14 @@ const decl = sfc.slice(sfc.indexOf('const needsHeavySections'), start)
 for (const tab of ['business-rule', 'material-review-point', 'node-template']) {
   assert.ok(decl.includes(tab), `用到重数据的页签 ${tab} 要列进判据`)
 }
+
+// 文件分类提示词继续复用现有编辑抽屉，但必须明确只发送 MinerU Markdown，
+// 并隐藏分类任务不使用的 Planner / Critic 字段。
+assert.ok(sfc.includes("document-material-classifier"), '缺少文件分类 Prompt Key 的专用编辑状态')
+assert.ok(sfc.includes('仅将 MinerU Markdown 正文发送给 Qwen'), '缺少 Markdown-only 输入边界提示')
+assert.ok(
+  /promptTemplateForm\.promptKey !== 'document-material-classifier'/.test(sfc),
+  '文件分类模板必须隐藏不生效的 Planner / Critic 输入框'
+)
+assert.ok(sfc.includes('categoryDefinitionsJson'), '分类模板提示中缺少 categoryDefinitionsJson 变量')
+assert.ok(sfc.includes('ocrMarkdown'), '分类模板提示中缺少 ocrMarkdown 变量')

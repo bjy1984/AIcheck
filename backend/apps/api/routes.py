@@ -7326,6 +7326,28 @@ def document_detail(request: Request, project_id: str, document_id: str):
         download = original["download"]
     except ObjectStorageUnavailable as exc:
         storage_unavailable_reason = str(exc) or "对象存储不可用"
+    classification_runs = sorted(
+        [
+            repo.clone(item)
+            for item in repo.state.get("document_classification_runs", [])
+            if item.get("documentId") == document_id
+        ],
+        key=lambda item: str(item.get("createdAt") or ""),
+        reverse=True,
+    )
+    gold_label_history = sorted(
+        [
+            repo.clone(item)
+            for item in repo.state.get("document_gold_labels", [])
+            if item.get("documentId") == document_id
+        ],
+        key=lambda item: int(item.get("goldVersion") or 0),
+        reverse=True,
+    )
+    active_gold_label = next(
+        (item for item in gold_label_history if item.get("status") == "active"),
+        None,
+    )
     return ok(
         {
             "document": attach_document_ocr_readiness(repo, document),
@@ -7338,6 +7360,9 @@ def document_detail(request: Request, project_id: str, document_id: str):
             # 界面因此只能显示几个字段，而监检核对参数表靠的是表格、
             # 确认盖章靠的是印章——这些后端早就抽出来了，一直没露出来。
             "ocrStructured": build_ocr_structured_view(repo, document),
+            "classificationRuns": classification_runs,
+            "activeGoldLabel": active_gold_label,
+            "goldLabelHistory": gold_label_history,
             "preview": preview,
             "download": download,
             "storageUnavailable": storage_unavailable_reason is not None,

@@ -7569,6 +7569,45 @@ def test_prompt_template_management_api_and_audit_metadata() -> None:
     )
 
 
+def test_document_detail_exposes_auto_gold_classification_lineage() -> None:
+    document = repo.state["documents"][0]
+    project_id = str(document["projectId"])
+    version_id = str(document["currentVersionId"])
+    run = {
+        "id": "DCR-DETAIL-1",
+        "documentId": document["id"],
+        "documentVersionId": version_id,
+        "ocrParseResultId": "PARSE-DETAIL-1",
+        "status": "accepted",
+        "model": "qwen3.8-max",
+        "promptVersion": "2026.08",
+        "promptHash": "sha256:prompt",
+        "markdownSha256": "sha256:markdown",
+        "goldLabelId": "DGL-DETAIL-1",
+        "createdAt": "2026-08-24 10:00:00",
+    }
+    gold = {
+        "id": "DGL-DETAIL-1",
+        "documentId": document["id"],
+        "documentVersionId": version_id,
+        "classificationRunId": run["id"],
+        "labels": [{"category": "资质证照", "confidence": 0.98, "contentEvidence": []}],
+        "primaryCategory": "资质证照",
+        "source": "qwen_auto_gold",
+        "goldVersion": 1,
+        "status": "active",
+        "createdAt": "2026-08-24 10:00:01",
+    }
+    repo.state["document_classification_runs"].append(run)
+    repo.state["document_gold_labels"].append(gold)
+
+    detail = assert_ok(client.get(f"/projects/{project_id}/documents/{document['id']}"))
+
+    assert detail["classificationRuns"] == [run]
+    assert detail["activeGoldLabel"] == gold
+    assert detail["goldLabelHistory"] == [gold]
+
+
 def test_report_template_management_publish_and_report_generation_snapshot() -> None:
     templates = assert_ok(client.get("/admin/report-templates?pageSize=100"))
     assert templates["total"] >= 1
