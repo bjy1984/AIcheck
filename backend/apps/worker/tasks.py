@@ -151,6 +151,7 @@ from libs.review_grounding import (
     grounding_prompt_block,
     unsupported_claims,
 )
+from libs.review_readiness_advisory import review_readiness_prompt
 from libs.security.tenant import (
     current_tenant_id,
     reset_request_tenant_id,
@@ -4882,25 +4883,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
     rule = matching_rule_for_node(pack, node_id)
     prompt_template = production_prompt_template_for_run(run)
     prompt = build_ai_review_prompt(pack, node=node, fields=fields, rule=rule, prompt_template=prompt_template)
-    readiness = run.get("evidenceReadiness") if isinstance(run.get("evidenceReadiness"), dict) else {}
-    readiness_prompt = {
-        "readinessAdvisoryOnly": True,
-        "requiredCount": int(readiness.get("requiredCount") or 0),
-        "satisfiedCount": int(readiness.get("satisfiedCount") or 0),
-        "missingCount": int(readiness.get("missingCount") or 0),
-        "pendingCount": int(readiness.get("pendingCount") or 0),
-        "supportingDocumentCount": int(readiness.get("supportingDocumentCount") or 0),
-        "missingRequirements": [
-            {
-                "reviewContent": item.get("reviewContent"),
-                "materialTypeName": item.get("materialTypeName"),
-                "evidenceReviewStatus": item.get("evidenceReviewStatus"),
-            }
-            for item in (readiness.get("missingRequirements") or [])[:20]
-            if isinstance(item, dict)
-        ],
-        "advisoryReasons": deepcopy(readiness.get("advisoryReasons") or readiness.get("blockingReasons") or []),
-    }
+    readiness_prompt = review_readiness_prompt(run.get("evidenceReadiness"), include_reasons=True)
     review_task_json = json.dumps(
         {
             "task": "Generate ReviewFindingDraftList JSON only.",

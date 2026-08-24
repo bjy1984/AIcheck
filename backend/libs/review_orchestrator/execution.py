@@ -2621,9 +2621,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         rule=current_rule,
         prompt_template=prompt_template,
     )
-    # 只下发本节点规则用得上的工具。全量 111 个占 9740 tokens ≈ 41% 预算，
-    # 挂 0 份资料就已经吃掉近一半——节点 24 那次 REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED
-    # 就是这么来的。裁剪一律 fail-open：认不出就送全量，见 tool_scope 的说明。
+    # 只下发本节点工具；全量 111 个约占 9740 tokens，裁剪 fail-open，详见 tool_scope。
     scoped_tools, tool_scope_meta = scoped_runtime_tool_catalog(
         runtime_tool_catalog(), pack, review_run.get("nodeId")
     )
@@ -2631,7 +2629,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
         "auditInputMode": audit_runtime["mode"],
-        "auditRuntime": audit_runtime_public_config(mode=audit_runtime["mode"]),
+        "auditRuntime": {**audit_runtime_public_config(mode=audit_runtime["mode"]), "evidenceReadiness": compact_tool_output(review_run.get("evidenceReadiness") or {})},
         "availableRuntimeTools": scoped_tools,
         "runtimeToolResults": {
             key: compact_tool_output(value)
@@ -2641,29 +2639,11 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "requirements": [
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
-            "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
-            "File completeness is advisory only and must never prevent a review suggestion.",
-            "The opinion must separately state 现有资料支持程度、缺少的资料或证据、可能风险。",
+            "Use supplied evidenceRefs/ruleRefs/kbRefs only; completeness is advisory and the opinion must state 现有资料支持程度、缺少的资料或证据、可能风险。",
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
             *grounding_block["requirements"],
         ],
-        "evidenceReadiness": {
-            "readinessAdvisoryOnly": True,
-            "requiredCount": int((review_run.get("evidenceReadiness") or {}).get("requiredCount") or 0),
-            "satisfiedCount": int((review_run.get("evidenceReadiness") or {}).get("satisfiedCount") or 0),
-            "missingCount": int((review_run.get("evidenceReadiness") or {}).get("missingCount") or 0),
-            "pendingCount": int((review_run.get("evidenceReadiness") or {}).get("pendingCount") or 0),
-            "missingRequirements": [
-                {
-                    "reviewContent": item.get("reviewContent"),
-                    "materialTypeName": item.get("materialTypeName"),
-                    "evidenceReviewStatus": item.get("evidenceReviewStatus"),
-                }
-                for item in ((review_run.get("evidenceReadiness") or {}).get("missingRequirements") or [])[:20]
-                if isinstance(item, dict)
-            ],
-        },
         "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),
@@ -2675,13 +2655,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "ruleResults": compact_rule_results(context.get("ruleResults") or []),
         "fixedClausePackage": context.get("clausePackageSnapshot") or {},
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
-        # 检索到的条款正文与 ID。原先只给 traceId，不给条款本身——而输出 schema
-        # 要求模型产出 kbRefs: [{retrievalTraceId, clauseIds}]。它手里没有任何
-        # clauseId，这个要求根本无法满足：线上 3 条 finding 的 kbRefs 全是空的。
-        #
-        # retrieve_knowledge 这一步照常跑、照常写 retrieval_traces，产出却只存进
-        # context["knowledgeClauses"] 然后无人读取。实测把它清空，提示词只有
-        # traceId 那一处变化——等于整步白跑。
+        # 模型要生成 kbRefs，必须同时拿到 traceId 和检索出的 clauseIds/正文。
         "retrievedClauses": retrieved_clause_digest(context.get("knowledgeClauses")),
         "evidenceLinkIds": [item.get("id") for item in context.get("evidenceLinks") or []],
         "plannerPrompt": (prompt.get("template") or {}).get("plannerPrompt") or "",
