@@ -168,6 +168,7 @@ from libs.fde_console_views import (
     fde_vector_correction_summary,
 )
 from libs.field_confidence import field_confirm_confidence, is_low_confidence
+from libs.document_auto_gold import classifier_prompt_validation_error, document_classification_detail_view
 from libs.integrations import task_dispatcher
 from libs.integrations.embedding_client import EmbeddingClient
 from libs.integrations.errors import IntegrationServiceError
@@ -7317,8 +7318,7 @@ def document_detail(request: Request, project_id: str, document_id: str):
     # 是什么、挂在哪个节点」都拿不到——而这些信息完全不依赖对象存储。
     # 现在降级：元数据照常返回，签名地址置空并标注原因，由前端决定是否禁用
     # 预览/下载按钮。
-    preview: Any = None
-    download: Any = None
+    preview, download = None, None
     storage_unavailable_reason: str | None = None
     try:
         original = project_document_original_payload(request, project_id, document)
@@ -7326,28 +7326,6 @@ def document_detail(request: Request, project_id: str, document_id: str):
         download = original["download"]
     except ObjectStorageUnavailable as exc:
         storage_unavailable_reason = str(exc) or "对象存储不可用"
-    classification_runs = sorted(
-        [
-            repo.clone(item)
-            for item in repo.state.get("document_classification_runs", [])
-            if item.get("documentId") == document_id
-        ],
-        key=lambda item: str(item.get("createdAt") or ""),
-        reverse=True,
-    )
-    gold_label_history = sorted(
-        [
-            repo.clone(item)
-            for item in repo.state.get("document_gold_labels", [])
-            if item.get("documentId") == document_id
-        ],
-        key=lambda item: int(item.get("goldVersion") or 0),
-        reverse=True,
-    )
-    active_gold_label = next(
-        (item for item in gold_label_history if item.get("status") == "active"),
-        None,
-    )
     return ok(
         {
             "document": attach_document_ocr_readiness(repo, document),
@@ -7356,13 +7334,10 @@ def document_detail(request: Request, project_id: str, document_id: str):
             "bindings": [item for item in repo.bindings_for_project(document["projectId"]) if item["documentId"] == document_id],
             "extractedFields": repo.fields_for_versions(version_ids),
             "evidenceLinks": repo.evidence_for_versions(version_ids),
-            # OCR 抽出的表格、印章、正文结构。此前只下发 extractedFields，
-            # 界面因此只能显示几个字段，而监检核对参数表靠的是表格、
+            # OCR 抽出的表格、印章、正文结构；此前只下发字段，参数表和印章无法核对。
             # 确认盖章靠的是印章——这些后端早就抽出来了，一直没露出来。
             "ocrStructured": build_ocr_structured_view(repo, document),
-            "classificationRuns": classification_runs,
-            "activeGoldLabel": active_gold_label,
-            "goldLabelHistory": gold_label_history,
+            **document_classification_detail_view(repo, document_id),
             "preview": preview,
             "download": download,
             "storageUnavailable": storage_unavailable_reason is not None,
@@ -29054,12 +29029,6 @@ def update_knowledge_config(request: Request, body: dict[str, Any] = Body(defaul
 PROMPT_TEMPLATE_STATUSES = {"draft", "production", "retired", "草稿", "已发布", "已停用"}
 
 
-def prompt_template_validation_error(record: dict[str, Any]) -> str | None:
-    from libs.document_auto_gold import classifier_prompt_validation_error
-
-    return classifier_prompt_validation_error(record)
-
-
 def normalize_prompt_template_record(raw: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
     now = server_time()
     template_id = str(raw.get("id") or (existing or {}).get("id") or f"PTPL-{uuid4().hex[:10].upper()}")
@@ -29124,8 +29093,7 @@ def create_prompt_template(
         record = normalize_prompt_template_record(body)
         if not record["systemPrompt"]:
             return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
-        if validation_error := prompt_template_validation_error(record):
-            return fail(errors.VALIDATION_ERROR, request, message=validation_error)
+        if validation_error := classifier_prompt_validation_error(record): return fail(errors.VALIDATION_ERROR, request, message=validation_error)
         repo.state.setdefault("prompt_templates", []).insert(0, record)
         audit_id = repo.add_audit("新增 Prompt 模板", "PromptTemplate", record["id"])
         return ok({"template": versioned_record("prompt-template", record), "auditLogId": audit_id}, request)
@@ -29159,8 +29127,7 @@ def update_prompt_template(
         normalized = normalize_prompt_template_record({**template, **body, "id": template_id}, existing=template)
         if not normalized["systemPrompt"]:
             return fail(errors.VALIDATION_ERROR, request, message="请填写 System Prompt。")
-        if validation_error := prompt_template_validation_error(normalized):
-            return fail(errors.VALIDATION_ERROR, request, message=validation_error)
+        if validation_error := classifier_prompt_validation_error(normalized): return fail(errors.VALIDATION_ERROR, request, message=validation_error)
         normalized["revision"] = int(template.get("revision") or 1)
         template.clear()
         template.update(normalized)
@@ -29185,8 +29152,7 @@ def publish_prompt_template(
             return fail(errors.NOT_FOUND, request)
         if not record_if_match_valid("prompt-template", template, if_match):
             return fail(errors.ETAG_CONFLICT, request)
-        if validation_error := prompt_template_validation_error(template):
-            return fail(errors.VALIDATION_ERROR, request, message=validation_error)
+        if validation_error := classifier_prompt_validation_error(template): return fail(errors.VALIDATION_ERROR, request, message=validation_error)
         template["status"] = "production"
         template["publishedAt"] = server_time()
         template["publishedReason"] = body.get("reason") or ""

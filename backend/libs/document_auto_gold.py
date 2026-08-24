@@ -127,6 +127,35 @@ def apply_auto_gold_projection(repo: Any, gold: dict[str, Any]) -> dict[str, Any
     }
 
 
+def document_classification_detail_view(repo: Any, document_id: str) -> dict[str, Any]:
+    runs = sorted(
+        [
+            repo.clone(item)
+            for item in repo.state.get("document_classification_runs", [])
+            if item.get("documentId") == document_id
+        ],
+        key=lambda item: str(item.get("createdAt") or ""),
+        reverse=True,
+    )
+    history = sorted(
+        [
+            repo.clone(item)
+            for item in repo.state.get("document_gold_labels", [])
+            if item.get("documentId") == document_id
+        ],
+        key=lambda item: int(item.get("goldVersion") or 0),
+        reverse=True,
+    )
+    return {
+        "classificationRuns": runs,
+        "activeGoldLabel": next(
+            (item for item in history if item.get("status") == "active"),
+            None,
+        ),
+        "goldLabelHistory": history,
+    }
+
+
 def category_definition_snapshot(path: Path = MATERIAL_REVIEW_POINTS) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     grouped: dict[str, dict[str, set[str]]] = {}
