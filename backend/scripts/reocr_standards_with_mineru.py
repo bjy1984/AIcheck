@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,7 @@ SOURCE_ID = "KS-STANDARD-RULES"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from apps.ocr_service.engines import html_table_to_text  # noqa: E402
 from libs.db.repository import repo  # noqa: E402
 from libs.knowledge_indexing import (  # noqa: E402
     STANDARD_INDEX_VERSION,
@@ -91,12 +91,7 @@ def _page_no(item: dict[str, Any]) -> int:
 def _html_to_text(html: Any) -> str:
     if not isinstance(html, str) or not html.strip():
         return ""
-    # 单元格之间垫空格，否则 `<td>D≤27</td><td>1.20</td>` 会粘成 `D≤271.20`。
-    text = re.sub(r"</t[dh]>", " ", html)
-    text = re.sub(r"</tr>", "\n", text)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    return "\n".join(line.strip() for line in text.splitlines() if line.strip()).strip()
+    return html_table_to_text(html)
 
 
 def _caption(item: dict[str, Any]) -> str:
@@ -386,6 +381,69 @@ def persist(plan: dict[str, Any], file: dict[str, Any], database_url: str) -> No
         connection.commit()
 
 
+def persist_page_index(database_url: str, source_id: str = SOURCE_ID) -> dict[str, Any]:
+    """重建后补齐 page_index 节点。
+
+    路径 B 的 persist() 用直连 SQL 写分块，内存与 Postgres 一致，但
+    assert_persistence_baseline 的基线还是旧的——再走 flush_to_sync_postgres
+    会触发 ConcurrentPersistenceError。所以 page_index 也走直连 SQL。
+    """
+    try:
+        import psycopg
+        from psycopg.types.json import Jsonb
+    except ImportError as exc:
+        raise SystemExit(f"psycopg is required: {exc}") from exc
+
+    repo.sync_standard_page_index_for_source(source_id)
+    nodes = [
+        item
+        for item in repo.state.get("knowledge_page_index_nodes", [])
+        if item.get("kbDocId") == source_id
+    ]
+    # sync_standard_page_index_for_source 也会按当前 chunks 重写 clauses；
+    # 结构字段经 clause_from_chunk 带回来，需要一并落库。
+    clauses = [
+        item
+        for item in repo.state.get("knowledge_clauses", [])
+        if item.get("kbDocId") == source_id
+        or (item.get("scope") or {}).get("sourceId") == source_id
+    ]
+    tenant_id = "TENANT-DEFAULT"
+    for file in repo.state.get("knowledge_files", []):
+        if file.get("sourceId") == source_id and file.get("tenantId"):
+            tenant_id = str(file["tenantId"])
+            break
+
+    with psycopg.connect(database_url, autocommit=False) as connection:
+        connection.execute(
+            """
+            DELETE FROM aicheck_state
+            WHERE tenant_id=%s AND collection='knowledge_page_index_nodes'
+              AND payload->>'kbDocId'=%s
+            """,
+            (tenant_id, source_id),
+        )
+        for collection, docs in (
+            ("knowledge_page_index_nodes", nodes),
+            ("knowledge_clauses", clauses),
+        ):
+            for doc in docs:
+                object_id = str(doc.get("id") or doc.get("pageIndexNodeId") or "")
+                if not object_id:
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at)
+                    VALUES (%s, %s, %s, %s, now())
+                    ON CONFLICT (tenant_id, collection, object_id)
+                    DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+                    """,
+                    (tenant_id, collection, object_id, Jsonb(doc)),
+                )
+        connection.commit()
+    return {"pageIndexNodes": len(nodes), "clauses": len(clauses)}
+
+
 def main() -> int:
     args = parse_args()
     if args.dry_run:
@@ -420,9 +478,17 @@ def main() -> int:
                 plan["embedDispatch"] = task_dispatcher.dispatch_embed(file_id)
         results.append(plan)
 
+    # 路径 B 原先不写 page_index，Track 1/2 换了 CHK-* 之后节点上的
+    # linkedClauseIds 指向已不存在的分块——pageindex_tree_search 对标准库
+    # 等于白给。重建后必须把 page_index 与新分块对齐。
+    page_index_synced = None
+    if args.apply and any(item.get("status") == "applied" for item in results):
+        page_index_synced = persist_page_index(args.database_url)
+
     payload = {
         "mode": "apply" if args.apply else "dry-run",
         "processed": len(results),
+        "pageIndexSynced": page_index_synced,
         "results": results,
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2 if args.json else None))

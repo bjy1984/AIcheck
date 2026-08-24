@@ -87,8 +87,11 @@ def test_equation_chunk_keeps_latex_and_is_not_split():
     assert chunk["pageNo"] == 21
 
 
-def test_table_chunk_keeps_html_and_caption():
-    html = "<table><tr><td>钢管外径 D</td><td>通孔直径</td></tr><tr><td>D≤27</td><td>1.20</td></tr></table>"
+def test_table_chunk_keeps_html_caption_and_structured_rows():
+    html = (
+        "<table><tr><th>钢管外径 D</th><th>通孔直径</th></tr>"
+        "<tr><td>D≤27</td><td>1.20</td></tr></table>"
+    )
     units = [
         {
             "text": "表 2 对比试样通孔直径及验收等级\n钢管外径 D 通孔直径\nD≤27 1.20",
@@ -103,6 +106,33 @@ def test_table_chunk_keeps_html_and_caption():
     assert chunk["blockType"] == "table"
     assert chunk["tableHtml"] == html
     assert chunk["caption"].startswith("表 2")
+    # 渲染路径要的是结构化行，不是 html
+    assert chunk["tableColumns"] == ["钢管外径 D", "通孔直径"]
+    assert chunk["tableRows"] == [{"钢管外径 D": "D≤27", "通孔直径": "1.20"}]
+
+
+def test_retrieval_exposes_table_rows_not_html():
+    """接口不下发 tableHtml——与 OCR 详情页同一条 XSS 约定。"""
+    from libs.knowledge_retrieval import normalize_clause
+
+    html = (
+        "<table><tr><th>序号</th><th>相关因素</th></tr>"
+        "<tr><td>1</td><td>材质</td></tr></table>"
+    )
+    clause = normalize_clause(
+        {
+            "clauseId": "CHK-1",
+            "text": "表 1\n序号 相关因素\n1 材质",
+            "blockType": "table",
+            "tableHtml": html,
+            "caption": "表 1",
+        }
+    )
+    assert "tableHtml" not in clause
+    assert clause["blockType"] == "table"
+    assert clause["tableColumns"] == ["序号", "相关因素"]
+    assert clause["tableRows"] == [{"序号": "1", "相关因素": "材质"}]
+    assert clause["caption"] == "表 1"
 
 
 def test_plain_text_chunk_has_no_structure_fields():

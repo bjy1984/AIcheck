@@ -61,7 +61,7 @@ from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
-    EQUATION_BLOCK_TYPES,
+    STRUCTURED_BLOCK_TYPES,
     OFFLINE_EMBEDDING_MODEL,
     STANDARD_INDEX_VERSION,
     active_embedding_target,
@@ -557,8 +557,8 @@ def knowledge_slice_fragments_from_ocr(file: dict[str, Any]) -> list[dict[str, A
                 **structure_fields_for_unit(fragment),
             }
             block_type = str(fragment.get("blockType") or "").strip().lower()
-            if block_type in EQUATION_BLOCK_TYPES:
-                # 公式按字符数硬切会把 LaTeX 断成两半，整条留着。
+            if block_type in STRUCTURED_BLOCK_TYPES:
+                # 公式/表格按字符数硬切会把 LaTeX 或表格行断碎，整条留着。
                 fragments.append({"pageNo": page_no, "text": text, **metadata})
                 continue
             fragments.extend(split_text_fragments(text, page_no=page_no, metadata=metadata))

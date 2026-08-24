@@ -12,6 +12,7 @@ import type {
 } from '@/types/aicheck'
 import { formatConfidence } from '@/utils/confidence'
 import { getStatusTagType } from './status'
+import ClauseContent from '@/components/ClauseContent'
 
 const props = defineProps<{
   modelValue: string
@@ -108,7 +109,15 @@ const handleLocateById = (evidenceLinkId?: string) => {
               <ElTag size="small" effect="plain">{{ standard.clauseNo }}</ElTag>
             </div>
             <span>{{ standard.standardName }} · {{ standard.effectiveVersion }}</span>
-            <p>{{ standard.summary }}</p>
+            <ClauseContent
+              :text="standard.summary"
+              :block-type="standard.blockType"
+              :latex="standard.latex"
+              :caption="standard.caption"
+              :table-columns="standard.tableColumns"
+              :table-rows="standard.tableRows"
+              :table-header-reliable="standard.tableHeaderReliable"
+            />
             <ElButton
               link
               type="primary"

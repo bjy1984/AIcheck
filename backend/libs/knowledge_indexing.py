@@ -444,11 +444,61 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
     return pieces
 
 
+def table_view_fields_from_html(html: str) -> dict[str, Any]:
+    """HTML → 前端可画的结构化行。
+
+    与 OCR 详情页的约定一致：接口不下发引擎 html（XSS 面），只给列名和行。
+    `tableHtml` 仍然可以留在存储层做溯源，但渲染路径只认这里产出的字段。
+    """
+    from apps.ocr_service.engines import html_table_to_structure
+
+    structure = html_table_to_structure(str(html or ""))
+    normalized = [row for row in structure.get("normalizedRows") or [] if isinstance(row, dict)]
+    cells = [cell for cell in structure.get("cells") or [] if isinstance(cell, dict)]
+    if not normalized and not cells:
+        return {}
+
+    marked = any(cell.get("isHeader") is not None for cell in cells)
+    header: list[tuple[int, str]] = []
+    for cell in cells:
+        is_header = cell.get("isHeader") if marked else int(cell.get("row") or 0) == 0
+        if not is_header:
+            continue
+        text = str(cell.get("text") or "").strip()
+        if text:
+            header.append((int(cell.get("col") or 0), text))
+    ordered = [text for _, text in sorted(header, key=lambda pair: pair[0])]
+    if normalized:
+        keys = set(normalized[0].keys())
+        column_names = [name for name in ordered if name in keys]
+        column_names.extend(name for name in normalized[0].keys() if name not in column_names)
+    else:
+        column_names = ordered
+
+    column_count = int(structure.get("columns") or len(column_names) or 0)
+    if all(cell.get("isHeader") is None for cell in cells):
+        header_reliable = True
+    elif column_count <= 0:
+        header_reliable = False
+    else:
+        header_cols = {int(cell.get("col") or 0) for cell in cells if cell.get("isHeader")}
+        header_reliable = len(header_cols) * 2 >= column_count
+
+    return {
+        "tableColumns": column_names,
+        "tableRows": normalized,
+        "tableHeaderReliable": header_reliable,
+    }
+
+
 def structure_fields_for_unit(unit: dict[str, Any]) -> dict[str, Any]:
     """把 MinerU 的块类型/LaTeX/表格结构原样带到分块上。
 
     只在确实有结构信息时写字段，避免给纯正文分块塞一堆 None——那会让
     「这条有没有结构」变得不可判断。
+
+    表格：`tableHtml` 留在存储层做溯源；同时算出 `tableColumns` / `tableRows`
+    给渲染与检索接口用——接口层不下发 html。
     """
     block_type = str(unit.get("blockType") or "").strip().lower()
     fields: dict[str, Any] = {}
@@ -457,12 +507,22 @@ def structure_fields_for_unit(unit: dict[str, Any]) -> dict[str, Any]:
     latex = str(unit.get("latex") or "").strip()
     if latex:
         fields["latex"] = latex
-    table_html = str(unit.get("tableHtml") or "").strip()
-    if table_html:
-        fields["tableHtml"] = table_html
     caption = str(unit.get("caption") or "").strip()
     if caption:
         fields["caption"] = caption
+
+    existing_columns = unit.get("tableColumns")
+    existing_rows = unit.get("tableRows")
+    if isinstance(existing_columns, list) and isinstance(existing_rows, list) and existing_columns:
+        fields["tableColumns"] = [str(item) for item in existing_columns]
+        fields["tableRows"] = [dict(row) for row in existing_rows if isinstance(row, dict)]
+        if "tableHeaderReliable" in unit:
+            fields["tableHeaderReliable"] = bool(unit.get("tableHeaderReliable"))
+    table_html = str(unit.get("tableHtml") or "").strip()
+    if table_html:
+        fields["tableHtml"] = table_html
+        if "tableColumns" not in fields:
+            fields.update(table_view_fields_from_html(table_html))
     return fields
 
 
@@ -494,8 +554,9 @@ def build_chunks_for_file(file: dict[str, Any], units: list[dict[str, Any]], *, 
         structure = structure_fields_for_unit(unit)
         block_type = structure.get("blockType")
         unit_text = str(unit.get("text") or "")
-        # 公式必须整条留着：`\frac{...}{...}` 被句读规则从中间切开就再也渲染不回来了。
-        pieces = [unit_text.strip()] if block_type in EQUATION_BLOCK_TYPES else chunk_text(unit_text)
+        # 公式/表格必须整条留着：LaTeX 从中间切开再也渲染不回来；表格被句读
+        # 规则拆开后行与列也对不齐了。
+        pieces = [unit_text.strip()] if block_type in STRUCTURED_BLOCK_TYPES else chunk_text(unit_text)
         for piece in pieces:
             if quarantine_interference_reasons(piece, context_type=context_type, block_type=block_type):
                 continue
@@ -659,11 +720,7 @@ def build_page_index_nodes_for_source(source: dict[str, Any], files: list[dict[s
 def clause_from_chunk(file: dict[str, Any], chunk: dict[str, Any], source_version: str) -> dict[str, Any]:
     context_type = str(chunk.get("contextType") or file.get("contextType") or "")
     source_method = str(chunk.get("sourceMethod") or "")
-    structure = {
-        key: chunk[key]
-        for key in ("blockType", "latex", "tableHtml", "caption")
-        if str(chunk.get(key) or "").strip()
-    }
+    structure = structure_fields_for_unit(chunk)
     block_type = str(structure.get("blockType") or "").strip().lower()
     return {
         **structure,

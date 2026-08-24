@@ -12,7 +12,7 @@ from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-from apps.ocr_service.engines import html_table_to_structure
+from apps.ocr_service.engines import html_table_to_structure, html_table_to_text
 from apps.ocr_service.service import enrich_parse_result
 from libs.contracts.responses import server_time
 from libs.ocr.profiles import profile_for
@@ -431,6 +431,33 @@ def build_mineru_result(
                     **common,
                 }
             )
+            # 表格也要进 fragments：`tables` 数组只喂 OCR 详情页，知识分块整条链
+            # （knowledge_slice_fragments_from_ocr → build_chunks_for_file）只读
+            # fragments。少了这一条，普通上传的表格在知识库里彻底不存在——检索
+            # 不到、条款原文里也看不见。
+            caption = _table_caption(raw_item)
+            body = html_table_to_text(html)
+            footnote = _joined_caption(raw_item.get("table_footnote"))
+            table_text = "\n".join(
+                part for part in (caption, body, footnote) if part
+            ).strip()
+            if table_text:
+                reading_order += 1
+                candidate_id = f"MINERU-CAND-{identity}"
+                fragments.append(
+                    {
+                        "fragmentId": f"MINERU-FRAG-{identity}",
+                        "candidateId": candidate_id,
+                        "sourceCandidateIds": [candidate_id],
+                        "text": table_text,
+                        "blockType": "table",
+                        "tableHtml": html,
+                        "caption": caption,
+                        "readingOrder": reading_order,
+                        "confidence": 0.0,
+                        **common,
+                    }
+                )
             continue
         if item_type == "image" and str(
             raw_item.get("sub_type") or ""
@@ -685,6 +712,25 @@ def _content_latex(item: Mapping[str, Any]) -> str:
         value = item.get("text")
         if isinstance(value, str) and value.strip():
             return value.strip()
+    return ""
+
+
+def _joined_caption(value: Any) -> str:
+    candidates = value if isinstance(value, list) else [value]
+    parts = []
+    for candidate in candidates:
+        if isinstance(candidate, Mapping):
+            candidate = candidate.get("text")
+        if str(candidate or "").strip():
+            parts.append(str(candidate).strip())
+    return " ".join(parts)
+
+
+def _table_caption(item: Mapping[str, Any]) -> str:
+    for key in ("table_caption", "caption"):
+        joined = _joined_caption(item.get(key))
+        if joined:
+            return joined
     return ""
 
 

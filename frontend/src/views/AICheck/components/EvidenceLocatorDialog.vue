@@ -10,6 +10,7 @@ import type { DocumentDetailPayload, KnowledgeChunk } from '@/api/aicheck'
 import type { EvidenceLink, ExtractedField } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
+import ClauseContent from '@/components/ClauseContent'
 
 const props = defineProps<{
   modelValue: boolean
@@ -181,6 +182,15 @@ const clauseOcrText = computed(() =>
     .join('\n')
 )
 
+const hasStructuredClauseChunks = computed(() =>
+  clauseChunks.value.some(
+    (chunk) =>
+      Boolean(chunk.blockType) ||
+      Boolean(chunk.latex) ||
+      (Array.isArray(chunk.tableColumns) && chunk.tableColumns.length > 0)
+  )
+)
+
 const clauseOcrEmptyText = computed(() => {
   if (!knowledgeFileId.value) return '该条款没有关联规范库文件，取不到原文 OCR。'
   if (!props.evidence?.pageNo) return '该条款没有记录页码，无法定位到具体某页的 OCR 文本。'
@@ -345,7 +355,15 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="evidence.quotedText" class="clause-quote">
             <span>引用条款</span>
-            <p>{{ evidence.quotedText }}</p>
+            <ClauseContent
+              :text="evidence.quotedText"
+              :block-type="evidence.blockType"
+              :latex="evidence.latex"
+              :caption="evidence.caption"
+              :table-columns="evidence.tableColumns"
+              :table-rows="evidence.tableRows"
+              :table-header-reliable="evidence.tableHeaderReliable"
+            />
           </div>
           <div class="clause-ocr" v-loading="clauseOcrLoading">
             <span>本页 OCR 文本</span>
@@ -356,6 +374,19 @@ onBeforeUnmount(() => {
               :closable="false"
               show-icon
             />
+            <div v-else-if="hasStructuredClauseChunks" class="clause-ocr-chunks">
+              <ClauseContent
+                v-for="chunk in clauseChunks"
+                :key="chunk.id"
+                :text="chunk.text"
+                :block-type="chunk.blockType"
+                :latex="chunk.latex"
+                :caption="chunk.caption"
+                :table-columns="chunk.tableColumns"
+                :table-rows="chunk.tableRows"
+                :table-header-reliable="chunk.tableHeaderReliable"
+              />
+            </div>
             <pre v-else-if="clauseOcrText">{{ clauseOcrText }}</pre>
             <p v-else-if="!clauseOcrLoading" class="clause-ocr-empty">{{ clauseOcrEmptyText }}</p>
           </div>
@@ -445,7 +476,8 @@ onBeforeUnmount(() => {
   border-bottom: none;
 }
 
-.clause-ocr pre {
+.clause-ocr pre,
+.clause-ocr-chunks {
   max-height: 420px;
   overflow: auto;
   margin: 0;
@@ -459,6 +491,13 @@ onBeforeUnmount(() => {
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
+}
+
+.clause-ocr-chunks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  white-space: normal;
 }
 
 .clause-ocr-empty {

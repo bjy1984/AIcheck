@@ -88,6 +88,7 @@ import R12RegistryVerificationDialog from '@/views/AICheck/components/R12Registr
 import R19SemanticEvidenceDialog from '@/views/AICheck/components/R19SemanticEvidenceDialog.vue'
 import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
 import ReturnCorrectionDialog from '@/views/AIReviewB/components/ReturnCorrectionDialog.vue'
+import ClauseContent from '@/components/ClauseContent'
 import {
   resolveReviewSidebarLayout,
   resolveReviewWorkbenchContext
@@ -1767,7 +1768,27 @@ onBeforeUnmount(() => {
                       :key="String(basis.sourceLocatorId || basis.clauseId)"
                     >
                       <strong>{{ basisDisplayLabel(basis) }}</strong>
-                      <p>{{ basis.summary || basis.title || '项目节点适用标准条款' }}</p>
+                      <ClauseContent
+                        :text="String(basis.summary || basis.title || '项目节点适用标准条款')"
+                        :block-type="basis.blockType ? String(basis.blockType) : undefined"
+                        :latex="basis.latex ? String(basis.latex) : undefined"
+                        :caption="basis.caption ? String(basis.caption) : undefined"
+                        :table-columns="
+                          Array.isArray(basis.tableColumns)
+                            ? (basis.tableColumns as string[])
+                            : undefined
+                        "
+                        :table-rows="
+                          Array.isArray(basis.tableRows)
+                            ? (basis.tableRows as Array<Record<string, string>>)
+                            : undefined
+                        "
+                        :table-header-reliable="
+                          typeof basis.tableHeaderReliable === 'boolean'
+                            ? basis.tableHeaderReliable
+                            : undefined
+                        "
+                      />
                       <ElButton
                         v-if="basis.sourceLocatorId || basis.clauseId"
                         text
@@ -1805,9 +1826,17 @@ onBeforeUnmount(() => {
                           >第 {{ evidence.pageNo || '-' }} 页 ·
                           {{ evidence.manualStatusLabel || evidence.manualStatus || '候选' }}</small
                         >
-                        <p v-if="evidence.quotedText" class="evidence-quote">
-                          {{ evidence.quotedText }}
-                        </p>
+                        <ClauseContent
+                          v-if="evidence.quotedText"
+                          class="evidence-quote"
+                          :text="evidence.quotedText"
+                          :block-type="evidence.blockType"
+                          :latex="evidence.latex"
+                          :caption="evidence.caption"
+                          :table-columns="evidence.tableColumns"
+                          :table-rows="evidence.tableRows"
+                          :table-header-reliable="evidence.tableHeaderReliable"
+                        />
                         <ul v-if="visibleEvidenceFacts(evidence).length > 1" class="evidence-facts">
                           <li
                             v-for="fact in visibleEvidenceFacts(evidence).slice(1, 4)"

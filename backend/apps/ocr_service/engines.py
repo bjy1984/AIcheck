@@ -3050,6 +3050,30 @@ def html_table_to_structure(html: str) -> dict[str, Any]:
     }
 
 
+def html_table_to_text(html: str) -> str:
+    """表格 HTML 转可读纯文本，供分块正文与向量化使用。
+
+    走 `html_table_to_structure` 的单元格而不是正则剥标签：单元格之间必须垫开，
+    否则 `<td>D≤27</td><td>1.20</td>` 会粘成 `D≤271.20`，检索时变成一个假词。
+    """
+    structure = html_table_to_structure(html)
+    cells = structure.get("cells") or []
+    if not cells:
+        return ""
+    lines: list[str] = []
+    for row_no in sorted({int(cell.get("row") or 0) for cell in cells}):
+        row_cells = sorted(
+            (item for item in cells if int(item.get("row") or 0) == row_no),
+            key=lambda item: int(item.get("col") or 0),
+        )
+        line = " ".join(
+            text for text in (str(cell.get("text") or "").strip() for cell in row_cells) if text
+        )
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def normalized_rows_from_cells(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not cells:
         return []

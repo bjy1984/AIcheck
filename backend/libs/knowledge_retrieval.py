@@ -13,6 +13,7 @@ from libs.knowledge_indexing import (
     metadata_interference_reasons,
     noise_like_text,
     quarantine_interference_reasons,
+    table_view_fields_from_html,
 )
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -465,15 +466,26 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
         evidence_usable = metadata.get("evidenceUsable")
     if evidence_usable is None:
         evidence_usable = "publisher_metadata" not in quality_flags and "web_url_metadata" not in quality_flags
-    # 白名单式构造：不显式列出来的字段一律丢掉。公式的 LaTeX、表格的 HTML
-    # 若不在这里带出去，工作台拿到的就只有一串反斜杠。
-    structure = {
-        key: candidate[key]
-        for key in ("latex", "tableHtml", "caption")
-        if str(candidate.get(key) or "").strip()
-    }
+    # 白名单式构造：不显式列出来的字段一律丢掉。公式的 LaTeX、表格的结构化行
+    # 若不在这里带出去，工作台拿到的就只有一串反斜杠或展平文本。
+    # 刻意不下发 tableHtml——与 OCR 详情页同一条约定，避免开 XSS 面。
+    structure: dict[str, Any] = {}
     if block_type:
         structure["blockType"] = block_type
+    for key in ("latex", "caption"):
+        value = str(candidate.get(key) or "").strip()
+        if value:
+            structure[key] = value
+    columns = candidate.get("tableColumns")
+    rows = candidate.get("tableRows")
+    if isinstance(columns, list) and isinstance(rows, list) and columns:
+        structure["tableColumns"] = [str(item) for item in columns]
+        structure["tableRows"] = [dict(row) for row in rows if isinstance(row, dict)]
+        if "tableHeaderReliable" in candidate:
+            structure["tableHeaderReliable"] = bool(candidate.get("tableHeaderReliable"))
+    elif str(candidate.get("tableHtml") or "").strip():
+        # 存量数据还没跑 backfill 时，检索路径就地补算，避免前端等补数才能渲染。
+        structure.update(table_view_fields_from_html(str(candidate.get("tableHtml") or "")))
     return {
         **structure,
         "id": str(candidate.get("id") or clause_id),
@@ -588,6 +600,9 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                     "blockType": chunk.get("blockType"),
                     "latex": chunk.get("latex"),
                     "tableHtml": chunk.get("tableHtml"),
+                    "tableColumns": chunk.get("tableColumns"),
+                    "tableRows": chunk.get("tableRows"),
+                    "tableHeaderReliable": chunk.get("tableHeaderReliable"),
                     "caption": chunk.get("caption"),
                     "pageNo": chunk.get("pageNo"),
                     "bbox": chunk.get("bbox"),
@@ -989,8 +1004,10 @@ def retrieve_knowledge_clauses(
                 "text": item.get("text"),
                 "blockType": item.get("blockType"),
                 "latex": item.get("latex"),
-                "tableHtml": item.get("tableHtml"),
                 "caption": item.get("caption"),
+                "tableColumns": item.get("tableColumns"),
+                "tableRows": item.get("tableRows"),
+                "tableHeaderReliable": item.get("tableHeaderReliable"),
                 "pageNo": item.get("pageNo"),
                 "bbox": item.get("bbox"),
                 "score": item.get("score"),

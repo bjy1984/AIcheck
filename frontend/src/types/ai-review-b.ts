@@ -58,6 +58,13 @@ export type ReviewBBasisItem = {
   clauseNo?: string
   title?: string
   summary?: string
+  /** 用途文案之外：若条款本身是公式/表格，检索命中会带这些字段 */
+  blockType?: string
+  latex?: string
+  caption?: string
+  tableColumns?: string[]
+  tableRows?: Array<Record<string, string>>
+  tableHeaderReliable?: boolean
   previewUrl?: string
   previewAvailable?: boolean
   knowledgeFileId?: string

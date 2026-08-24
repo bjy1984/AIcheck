@@ -291,6 +291,64 @@ def test_missing_provider_confidence_uses_conservative_numeric_score() -> None:
     )
 
 
+def test_table_also_becomes_a_fragment_so_knowledge_slicing_can_see_it() -> None:
+    """表格必须同时进 `fragments`。
+
+    知识分块整条链只读 fragments，`tables` 数组只喂 OCR 详情页。表格不进
+    fragments 的话，普通上传的表格在知识库里等于不存在——检索不到，条款原文
+    里也看不见。
+    """
+    result = _normalize(
+        _zip_bytes(
+            content=[
+                {"type": "text", "text": "一、管线台账", "page_idx": 0},
+                {
+                    "type": "table",
+                    "table_caption": ["表 1 管线规格"],
+                    "table_body": (
+                        "<table><tr><th>管线号</th><th>规格</th></tr>"
+                        "<tr><td>PL001</td><td>DN100</td></tr></table>"
+                    ),
+                    "table_footnote": ["规格以设计图为准"],
+                    "bbox": [100, 300, 900, 700],
+                    "page_idx": 0,
+                },
+            ]
+        )
+    ).result
+
+    table_fragments = [
+        item for item in result["fragments"] if item.get("blockType") == "table"
+    ]
+    assert len(table_fragments) == 1
+    fragment = table_fragments[0]
+    assert fragment["tableHtml"].startswith("<table>")
+    assert fragment["caption"] == "表 1 管线规格"
+    # 单元格要垫开，否则 `PL001` 和 `DN100` 会粘成一个假词
+    assert "PL001 DN100" in fragment["text"]
+    assert "表 1 管线规格" in fragment["text"]
+    assert "规格以设计图为准" in fragment["text"]
+    # 结构化视图那份不能受影响，两边都要在
+    assert len(result["tables"]) == 1
+    assert result["tables"][0]["normalizedRows"] == [{"管线号": "PL001", "规格": "DN100"}]
+    # readingOrder 仍然是全局连续的，正文在前表格在后
+    assert [item["readingOrder"] for item in result["fragments"]] == [1, 2]
+
+
+def test_table_without_extractable_text_produces_no_fragment() -> None:
+    """空表格不该塞一条空 fragment 进去，那会变成一个没有正文的分块。"""
+    result = _normalize(
+        _zip_bytes(
+            content=[
+                {"type": "text", "text": "一、管线台账", "page_idx": 0},
+                {"type": "table", "table_body": "", "page_idx": 0},
+            ]
+        )
+    ).result
+
+    assert [item.get("blockType") for item in result["fragments"]] == ["text"]
+
+
 def test_maps_supported_content_types_in_stable_reading_order() -> None:
     content = [
         {

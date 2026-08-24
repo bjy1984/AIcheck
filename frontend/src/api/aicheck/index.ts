@@ -795,6 +795,12 @@ export type StandardReference = {
   sourceRelativePath?: string
   previewAvailable?: boolean
   previewUrl?: string
+  blockType?: string
+  latex?: string
+  caption?: string
+  tableColumns?: string[]
+  tableRows?: Array<Record<string, string>>
+  tableHeaderReliable?: boolean
 }
 
 export type DateComparisonItem = {
@@ -1032,6 +1038,12 @@ export type KnowledgeChunk = {
   pageNo?: number
   evidenceLinkId?: string
   tokenCount: number
+  blockType?: string
+  latex?: string
+  caption?: string
+  tableColumns?: string[]
+  tableRows?: Array<Record<string, string>>
+  tableHeaderReliable?: boolean
 }
 
 export type KnowledgeVectorSummary = {

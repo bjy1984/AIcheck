@@ -310,6 +310,12 @@ export type EvidenceLink = {
   sourceRelativePath?: string
   standardRef?: string
   clauseNo?: string
+  blockType?: string
+  latex?: string
+  caption?: string
+  tableColumns?: string[]
+  tableRows?: Array<Record<string, string>>
+  tableHeaderReliable?: boolean
   nodeId?: number
   reviewPointId?: string
   supportStatus?: string

@@ -27802,6 +27802,17 @@ def knowledge_file_chunks(
     if document_page is not None:
         chunks = [item for item in chunks if int(item.get("pageNo") or 0) == int(document_page)]
     chunks.sort(key=lambda item: (int(item.get("pageNo") or 0), int(item.get("chunkNo") or 0)))
+    # 与 OCR 详情页同一条约定：不下发引擎 html。结构化行不够时就地补算。
+    from libs.knowledge_indexing import table_view_fields_from_html
+
+    for chunk in chunks:
+        html = str(chunk.pop("tableHtml", "") or "").strip()
+        if (
+            str(chunk.get("blockType") or "").lower() == "table"
+            and html
+            and not (isinstance(chunk.get("tableColumns"), list) and chunk.get("tableColumns"))
+        ):
+            chunk.update(table_view_fields_from_html(html))
     return ok(page(chunks, page_no, page_size), request)
 
 
