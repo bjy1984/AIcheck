@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+from html.parser import HTMLParser
 from pathlib import Path
 
 LOGGER = logging.getLogger("aicheck.office_preview")
@@ -44,6 +46,46 @@ class OfficeConversionFailed(RuntimeError):
     """LibreOffice 在位，但这份文件转不出来。"""
 
 
+class _OfficeHtmlTextParser(HTMLParser):
+    BLOCK_TAGS = {"br", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "p", "tr"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.ignored_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() in {"script", "style"}:
+            self.ignored_depth += 1
+            return
+        if self.ignored_depth:
+            return
+        if tag.lower() in self.BLOCK_TAGS:
+            self.parts.append("\n")
+        elif tag.lower() in {"td", "th"}:
+            self.parts.append("\t")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style"} and self.ignored_depth:
+            self.ignored_depth -= 1
+            return
+        if self.ignored_depth:
+            return
+        if tag.lower() in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.ignored_depth:
+            self.parts.append(data)
+
+
+def office_html_to_text(value: str) -> str:
+    parser = _OfficeHtmlTextParser()
+    parser.feed(str(value or ""))
+    lines = [re.sub(r"[\t \u00a0]+", " ", line).strip() for line in "".join(parser.parts).splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
 def soffice_executable() -> str | None:
     for name in ("soffice", "libreoffice"):
         found = shutil.which(name)
@@ -56,22 +98,13 @@ def office_preview_available() -> bool:
     return soffice_executable() is not None
 
 
-def convert_office_to_pdf(data: bytes, file_name: str) -> bytes:
-    """把 Office 文件字节转成 PDF 字节。
-
-    每次转换用独立的临时 profile 目录：LibreOffice 的默认 profile 是单实例锁，
-    并发转换会互相阻塞甚至挂死。
-    """
+def _convert_office_bytes(data: bytes, file_name: str, target_format: str) -> bytes:
     executable = soffice_executable()
     if not executable:
-        raise OfficeConversionUnavailable(
-            "LibreOffice 未安装，无法生成 Office 预览。"
-        )
-
+        raise OfficeConversionUnavailable("LibreOffice 未安装，无法转换 Office 文件。")
     suffix = Path(str(file_name or "")).suffix.lower().lstrip(".")
     if suffix not in CONVERTIBLE_SUFFIXES:
-        raise OfficeConversionFailed(f"{suffix or '该'} 格式不支持转换为 PDF 预览。")
-
+        raise OfficeConversionFailed(f"{suffix or '该'} 格式不支持转换。")
     with tempfile.TemporaryDirectory(prefix="aicheck-office-") as workdir:
         root = Path(workdir)
         source = root / f"source.{suffix}"
@@ -79,11 +112,6 @@ def convert_office_to_pdf(data: bytes, file_name: str) -> bytes:
         outdir = root / "out"
         outdir.mkdir()
         profile = root / "profile"
-
-        # HOME 必须指到可写目录。容器里进程以 aicheck 用户跑、家目录是 /app，
-        # 而 /app 是 root 拥有的只读代码目录——LibreOffice 启动时写不了家目录就
-        # 直接退出，一个 PDF 都产不出来，且退出码仍是 0。
-        # 线上实测过：只给 -env:UserInstallation 不够，它另有一批启动期文件走 $HOME。
         env = {**os.environ, "HOME": str(root)}
         try:
             completed = subprocess.run(
@@ -94,7 +122,7 @@ def convert_office_to_pdf(data: bytes, file_name: str) -> bytes:
                     "--nolockcheck",
                     f"-env:UserInstallation=file://{profile}",
                     "--convert-to",
-                    "pdf",
+                    target_format,
                     "--outdir",
                     str(outdir),
                     str(source),
@@ -105,15 +133,24 @@ def convert_office_to_pdf(data: bytes, file_name: str) -> bytes:
                 env=env,
             )
         except subprocess.TimeoutExpired as exc:
-            raise OfficeConversionFailed(
-                f"Office 转换超时（{CONVERT_TIMEOUT_SECONDS} 秒）。"
-            ) from exc
-
-        produced = list(outdir.glob("*.pdf"))
+            raise OfficeConversionFailed(f"Office 转换超时（{CONVERT_TIMEOUT_SECONDS} 秒）。") from exc
+        produced = list(outdir.glob(f"*.{target_format}"))
         if not produced:
-            # LibreOffice 失败时经常仍以 0 退出，所以判据是「有没有产物」而不是退出码
             detail = (completed.stderr or completed.stdout or b"").decode("utf-8", "replace")
-            LOGGER.error("office_convert_failed: %s | %s", file_name, detail[:300])
-            raise OfficeConversionFailed("Office 转换未产出 PDF，请下载后查看原文。")
-
+            LOGGER.error("office_convert_failed: %s -> %s | %s", file_name, target_format, detail[:300])
+            raise OfficeConversionFailed(f"Office 转换未产出 {target_format.upper()}。")
         return produced[0].read_bytes()
+
+
+def convert_office_to_pdf(data: bytes, file_name: str) -> bytes:
+    """把 Office 文件字节转成 PDF 字节。
+
+    每次转换用独立的临时 profile 目录：LibreOffice 的默认 profile 是单实例锁，
+    并发转换会互相阻塞甚至挂死。
+    """
+    return _convert_office_bytes(data, file_name, "pdf")
+
+
+def extract_office_text(data: bytes, file_name: str) -> str:
+    html_bytes = _convert_office_bytes(data, file_name, "html")
+    return office_html_to_text(html_bytes.decode("utf-8", "replace"))

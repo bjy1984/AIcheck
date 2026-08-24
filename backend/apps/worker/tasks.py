@@ -100,6 +100,7 @@ from libs.seal_local_reader import (
 from libs.seal_vision import read_seal_texts
 from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.ocr.profiles import profile_for
+from libs.office_preview import CONVERTIBLE_SUFFIXES, convert_office_to_pdf, extract_office_text
 from libs.ocr_accuracy_pipeline import (
     SEAL_ENGINES,
     STRUCTURE_ENGINES,
@@ -1556,6 +1557,7 @@ def _store_mineru_artifacts(
 def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
     client = MinerUClient()
     source_temp_root: Path | None = None
+    office_temp_root: Path | None = None
     try:
         options = job.get("options")
         options = options if isinstance(options, dict) else {}
@@ -1619,6 +1621,17 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
                     "MINERU_SOURCE_MISSING",
                     "MinerU source file is unavailable.",
                 )
+            source_suffix = Path(str(job.get("fileName") or source_path.name)).suffix.lower().lstrip(".")
+            if source_suffix in CONVERTIBLE_SUFFIXES:
+                source_bytes = source_path.read_bytes()
+                office_text = extract_office_text(source_bytes, str(job.get("fileName") or source_path.name))
+                office_pdf = convert_office_to_pdf(source_bytes, str(job.get("fileName") or source_path.name))
+                office_temp_root = Path(tempfile.mkdtemp(prefix="aicheck-mineru-office-"))
+                converted_path = office_temp_root / "document.pdf"
+                converted_path.write_bytes(office_pdf)
+                source_path = converted_path
+                job["officeClassificationText"] = office_text
+                job["sourceConversion"] = "office_to_pdf"
 
             def submission_callback(
                 checkpoint: dict[str, str],
@@ -1712,8 +1725,19 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
             ),
             provider_task_id=str(job.get("providerTaskId") or ""),
         )
-        job["classificationMarkdown"] = bundle.markdown_text
-        job["classificationMarkdownSha256"] = bundle.markdown_sha256
+        office_text = str(job.get("officeClassificationText") or "").strip()
+        classification_parts = []
+        if office_text:
+            classification_parts.append("# Office 原生文本\n\n" + office_text)
+        if bundle.markdown_text:
+            classification_parts.append("# MinerU Markdown\n\n" + bundle.markdown_text)
+        classification_markdown = "\n\n".join(classification_parts) or bundle.markdown_text
+        job["classificationMarkdown"] = classification_markdown
+        job["classificationMarkdownSha256"] = (
+            "sha256:" + hashlib.sha256(classification_markdown.encode("utf-8")).hexdigest()
+            if classification_markdown is not None
+            else bundle.markdown_sha256
+        )
         # 印章读字。MinerU 只把印章框出来，不读上面的字——而监检确认「盖章了没有」
         # 靠的正是章上的单位名。裁图就在这份 zip 里，直接送视觉模型读，
         # 不重新渲染 PDF，也就不引入坐标换算这层新的出错机会。
@@ -1736,6 +1760,8 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
     finally:
         if source_temp_root is not None:
             shutil.rmtree(source_temp_root, ignore_errors=True)
+        if office_temp_root is not None:
+            shutil.rmtree(office_temp_root, ignore_errors=True)
 
 
 def _mineru_failure_code(job: dict[str, Any], exc: Exception) -> str:

@@ -660,6 +660,52 @@ def test_mineru_worker_reissues_batch_when_checkpoint_is_waiting_for_file(
     ]
 
 
+def test_mineru_worker_converts_office_to_pdf_and_keeps_native_text_for_classification(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.doc"
+    source.write_bytes(b"legacy-word")
+    job = {
+        "id": "OCRJOB-OFFICE-1",
+        "sourceType": "storage",
+        "storageKey": "minio://documents/source.doc",
+        "fileName": "source.doc",
+        "options": {},
+    }
+    uploaded: list[tuple[str, bytes]] = []
+
+    class FakeClient:
+        def submit_file(self, path, *, data_id, options, submission_callback):
+            uploaded.append((Path(path).suffix, Path(path).read_bytes()))
+            submission = {"kind": "batch", "providerTaskId": "BATCH-OFFICE"}
+            submission_callback({**submission, "uploadState": "allocated"})
+            submission_callback({**submission, "uploadState": "uploaded"})
+            return submission
+
+        def wait_for_result(self, submission, *, progress_callback):
+            return {"state": "done", "full_zip_url": "https://cdn.example/result.zip"}
+
+        def download_result(self, _url):
+            return b"zip"
+
+    monkeypatch.setattr(tasks, "MinerUClient", FakeClient)
+    monkeypatch.setattr(tasks, "mineru_source_path", lambda _job: (source, None))
+    monkeypatch.setattr(tasks, "convert_office_to_pdf", lambda data, _name: b"%PDF-converted:" + data)
+    monkeypatch.setattr(tasks, "extract_office_text", lambda data, _name: "施工组织设计\n施工进度计划")
+    monkeypatch.setattr(tasks, "_persist_mineru_job", lambda _job: None)
+    monkeypatch.setattr(tasks, "normalize_mineru_zip", lambda *_args, **_kwargs: _bundle(job["storageKey"]))
+    monkeypatch.setattr(tasks, "_store_mineru_artifacts", lambda *_args, **_kwargs: {})
+
+    result = tasks.run_mineru_job(job)
+
+    assert result["status"] == "success"
+    assert uploaded == [(".pdf", b"%PDF-converted:legacy-word")]
+    assert job["officeClassificationText"] == "施工组织设计\n施工进度计划"
+    assert "施工组织设计" in job["classificationMarkdown"]
+    assert "MinerU 测试文档" in job["classificationMarkdown"]
+
+
 def test_failed_pipeline_uses_only_explicit_blocking_reasons(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -25,6 +25,7 @@ from libs.office_preview import (
     CONVERTIBLE_SUFFIXES,
     OfficeConversionFailed,
     OfficeConversionUnavailable,
+    office_html_to_text,
 )
 
 client = TestClient(app)
@@ -147,6 +148,24 @@ def test_convertible_suffixes_cover_the_formats_seen_in_real_projects() -> None:
         assert suffix in CONVERTIBLE_SUFFIXES
     for suffix in ("pdf", "png", "zip", "exe"):
         assert suffix not in CONVERTIBLE_SUFFIXES
+
+
+def test_office_html_to_text_preserves_headings_and_table_cells_for_classification() -> None:
+    html = """
+    <html><head><style>p { font-size: 12pt; }</style></head><body>
+      <h1>施工组织设计</h1>
+      <table><tr><th>工程名称</th><td>储罐区压力管道</td></tr></table>
+      <p>施工进度计划</p>
+    </body></html>
+    """
+
+    text = office_html_to_text(html)
+
+    assert "施工组织设计" in text
+    assert "工程名称" in text
+    assert "储罐区压力管道" in text
+    assert "施工进度计划" in text
+    assert "font-size" not in text
 
 
 def test_conversion_module_raises_when_libreoffice_is_absent(monkeypatch) -> None:
