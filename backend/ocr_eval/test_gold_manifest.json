@@ -1,0 +1,192 @@
+{
+  "schemaVersion": "aicheck-document-classification-test-gold@1",
+  "name": "AIcheck test directory human gold labels",
+  "sourceRoot": "test",
+  "expectedFileCount": 23,
+  "cases": [
+    {
+      "caseId": "test-pipeline-summary-001",
+      "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+      "sha256": "sha256:acc4b12009bdac4f2d68530652cd7229d0681e462860625807c2c7a95d026e4d",
+      "goldFolderClass": "pipeline_directory",
+      "goldDocumentClass": "pipeline_summary",
+      "expectedCategories": ["设计与施工组织", "设计基础资料"]
+    },
+    {
+      "caseId": "test-ndt-org-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/1、机构资质证书/公司资质202407 - 副本.pdf",
+      "sha256": "sha256:f07cff6b86cc6ac64968dd6cf3fcca6ba28b2fbc834f1bf3ea060dce7ed3aa5b",
+      "goldFolderClass": "ndt_organization_qualification",
+      "goldDocumentClass": "ndt_org_certificate",
+      "expectedCategories": ["资质证照"]
+    },
+    {
+      "caseId": "test-ndt-person-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平(1).pdf",
+      "sha256": "sha256:04b979b20e0ac56c94a76cb7dd9fdd1131966e785452de2bd129db35b3f81cd0",
+      "goldFolderClass": "ndt_person_qualification",
+      "goldDocumentClass": "ndt_person_certificate",
+      "expectedCategories": ["无损检测资料"]
+    },
+    {
+      "caseId": "test-ndt-person-certificate-002",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平RT注册证.jpg",
+      "sha256": "sha256:d15f0b7b7f06db8e04bca20bcd11858621e46cf093b60bee1e111bbdac253257",
+      "goldFolderClass": "ndt_person_qualification",
+      "goldDocumentClass": "ndt_person_certificate",
+      "expectedCategories": ["无损检测资料"]
+    },
+    {
+      "caseId": "test-ndt-person-certificate-003",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰RT证.jpg",
+      "sha256": "sha256:938d649db8f8b206be4b89fc8748c4e45d00991cd3b47b575aedf659ac681815",
+      "goldFolderClass": "ndt_person_qualification",
+      "goldDocumentClass": "ndt_person_certificate",
+      "expectedCategories": ["无损检测资料"]
+    },
+    {
+      "caseId": "test-ndt-person-certificate-004",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰注册证.pdf",
+      "sha256": "sha256:cb6bd40b37b22e6d804ceafcf7e275641c924b5787820d2ef20ce3dc41af4ea1",
+      "goldFolderClass": "ndt_person_qualification",
+      "goldDocumentClass": "ndt_person_certificate",
+      "expectedCategories": ["无损检测资料"]
+    },
+    {
+      "caseId": "test-ndt-person-certificate-005",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬RT检测证.jpg",
+      "sha256": "sha256:67c43f56be94facf573b8693d742f43171b93ab077a6e3a70a8de543226ef02c",
+      "goldFolderClass": "ndt_person_qualification",
+      "goldDocumentClass": "ndt_person_certificate",
+      "expectedCategories": ["无损检测资料"]
+    },
+    {
+      "caseId": "test-ndt-person-certificate-006",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬执业注册证书(1).pdf",
+      "sha256": "sha256:6934b1904d02883e2745efede53e75562c017fcfcf372a8162cb27eda79dd930",
+      "goldFolderClass": "ndt_person_qualification",
+      "goldDocumentClass": "ndt_person_certificate",
+      "expectedCategories": ["无损检测资料"]
+    },
+    {
+      "caseId": "test-ndt-plan-001",
+      "relativePath": "10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+      "sha256": "sha256:32f711b7858546cfc90c8836b5d5578879cb46cbbbbb8cb2d52223f4d897441d",
+      "goldFolderClass": "ndt_plan",
+      "goldDocumentClass": "ndt_plan",
+      "expectedCategories": ["无损检测资料"]
+    },
+    {
+      "caseId": "test-design-license-001",
+      "relativePath": "1、设计、安装资质证书/广东政和设计院压力管道设计资质.png",
+      "sha256": "sha256:a0d4c86dfc0db30ce2f2af3912ef4720662e17e99c1b8c9007b5209ecdf96893",
+      "goldFolderClass": "design_installation_qualification",
+      "goldDocumentClass": "design_license",
+      "expectedCategories": ["资质证照"]
+    },
+    {
+      "caseId": "test-construction-license-001",
+      "relativePath": "1、设计、安装资质证书/江苏三江压力管道资质.jpg",
+      "sha256": "sha256:570331a096f889ec62caac4190472da9387cc7df395b541b349a10f5c3d2c867",
+      "goldFolderClass": "design_installation_qualification",
+      "goldDocumentClass": "construction_license",
+      "expectedCategories": ["资质证照"]
+    },
+    {
+      "caseId": "test-quality-manual-001",
+      "relativePath": "2、质量手册/质量手册.pdf",
+      "sha256": "sha256:60e80153e8ce0a3a80c969d88e7a16900f7b94f13361b3ebf8aa868618b937e2",
+      "goldFolderClass": "quality_manual",
+      "goldDocumentClass": "quality_system_document",
+      "expectedCategories": ["施工组织与方案"]
+    },
+    {
+      "caseId": "test-notice-receipt-001",
+      "relativePath": "3、告知书、回执单/告知回执.png",
+      "sha256": "sha256:8e297a47a21ed91ac284bd7a69c5440f9c385a18327b4cbf870e88941d9de3f2",
+      "goldFolderClass": "construction_notice",
+      "goldDocumentClass": "construction_notice_receipt",
+      "expectedCategories": ["监检现场补充证据"]
+    },
+    {
+      "caseId": "test-construction-notice-001",
+      "relativePath": "3、告知书、回执单/罐区告知书2026-4-27.png",
+      "sha256": "sha256:2cf8ba20f825de5c26c7d9fac624d029cd559b9d74af50a5e8034e3285554eec",
+      "goldFolderClass": "construction_notice",
+      "goldDocumentClass": "construction_notice",
+      "expectedCategories": ["监检现场补充证据"]
+    },
+    {
+      "caseId": "test-inspection-contract-001",
+      "relativePath": "4、监检合同/压力管道施工监检合同.pdf",
+      "sha256": "sha256:59fe689b5afd09e0cf1e9c706ad16b044edace057622010214cbf65ffa092f32",
+      "goldFolderClass": "inspection_contract",
+      "goldDocumentClass": "inspection_contract",
+      "expectedCategories": ["设计与施工组织"]
+    },
+    {
+      "caseId": "test-construction-plan-001",
+      "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+      "sha256": "sha256:d7aaf4ca8798ce2066ced6e62d4ab8502ba7246949b8898f2f640b1986f84066",
+      "goldFolderClass": "construction_plan",
+      "goldDocumentClass": "construction_organization_design",
+      "expectedCategories": ["施工组织与方案"]
+    },
+    {
+      "caseId": "test-drawing-review-001",
+      "relativePath": "6、会审记录、图纸/会审记录.png",
+      "sha256": "sha256:396f543688456b392246633ac049e4f4d664684ff80bc56a5cb530492a8201d0",
+      "goldFolderClass": "drawing_and_review",
+      "goldDocumentClass": "drawing_review_record",
+      "expectedCategories": ["设计变更与特殊标准"]
+    },
+    {
+      "caseId": "test-design-document-001",
+      "relativePath": "6、会审记录、图纸/地上甲类储罐区2（含泵区）施工图.pdf",
+      "sha256": "sha256:ac750b9f7dad8d981dbb014548495e3cfb94f38ea3f7158c15f10aa7cfae1214",
+      "goldFolderClass": "drawing_and_review",
+      "goldDocumentClass": "design_document",
+      "expectedCategories": ["设计基础资料"]
+    },
+    {
+      "caseId": "test-component-checklist-001",
+      "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+      "sha256": "sha256:819f55157dbc26459f55f160760079832728fa1d3bd1de2542b1930c9cb330fc",
+      "goldFolderClass": "material_acceptance_submission",
+      "goldDocumentClass": "component_inspection_checklist",
+      "expectedCategories": ["材料验收与复验"]
+    },
+    {
+      "caseId": "test-material-submission-package-001",
+      "relativePath": "7、管道元件及材料验收材料报审/管道元件及材料验收材料报审.pdf",
+      "sha256": "sha256:910902ab43cb9775acf1fbd3271fd1e392dfda0a781d878505a9a732d5fd9f9c",
+      "goldFolderClass": "material_acceptance_submission",
+      "goldDocumentClass": "material_submission_package",
+      "expectedCategories": ["材料验收与复验"]
+    },
+    {
+      "caseId": "test-wps-pqr-001",
+      "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+      "sha256": "sha256:98eae4fccde9b2ca518893c721a3e9b9436153f480ff09f8e1bdbde13d606397",
+      "goldFolderClass": "welding_procedure_qualification",
+      "goldDocumentClass": "wps_pqr",
+      "expectedCategories": ["焊接人员与焊接工艺"]
+    },
+    {
+      "caseId": "test-welder-social-security-001",
+      "relativePath": "9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+      "sha256": "sha256:d3dce470ce132d6ed15145e9f2db967c3896798572dadbb3a112ea1097f8b533",
+      "goldFolderClass": "welder_qualification",
+      "goldDocumentClass": "welder_social_security_evidence",
+      "expectedCategories": ["焊接人员与焊接工艺"]
+    },
+    {
+      "caseId": "test-welder-roster-001",
+      "relativePath": "9、焊工资质核查/焊工清单.docx",
+      "sha256": "sha256:4ded99b884867564227172403437697d3b8e1759543e64f5c6da35ba4a77e8bf",
+      "goldFolderClass": "welder_qualification",
+      "goldDocumentClass": "welder_roster",
+      "expectedCategories": ["焊接人员与焊接工艺"]
+    }
+  ]
+}
