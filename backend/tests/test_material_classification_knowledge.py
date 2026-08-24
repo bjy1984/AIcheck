@@ -5,6 +5,7 @@ from pathlib import Path
 from libs.document_auto_gold import material_type_definition_snapshot
 from libs.material_classification_knowledge import (
     classification_knowledge_snapshot,
+    qwen_classification_knowledge_snapshot,
     validate_material_classification_knowledge,
 )
 
@@ -108,3 +109,17 @@ def test_validator_requires_a_standard_reference_for_standard_supported_cards():
     )
 
     assert "STANDARD_SOURCE_REQUIRED" in {item["code"] for item in errors}
+
+
+def test_qwen_projection_keeps_classification_rules_but_excludes_audit_only_fields():
+    projection = qwen_classification_knowledge_snapshot(KNOWLEDGE_PATH)
+    serialized = str(projection)
+
+    assert len(projection["materialTypes"]) == 60
+    assert all(item.get("materialTypeCode") for item in projection["materialTypes"])
+    assert all(item.get("classificationDefinition") for item in projection["materialTypes"])
+    assert "sourceRefs" not in serialized
+    assert "negativeSignals" not in serialized
+    assert "basisLevel" not in serialized
+    assert "materialCategories" not in serialized
+    assert "documentPurpose" not in serialized

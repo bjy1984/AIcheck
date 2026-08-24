@@ -85,6 +85,7 @@ from libs.knowledge_indexing import (
     units_from_local_file,
 )
 from libs.material_targeting import run_material_targeting
+from libs.material_classification_knowledge import qwen_classification_knowledge_snapshot
 from libs.mineru_ocr import (
     MinerUNormalizationError,
     MinerUNormalizedBundle,
@@ -355,7 +356,13 @@ def prepare_document_auto_gold_run(
     if not prompt:
         raise ValueError("AUTO_GOLD_PROMPT_UNAVAILABLE")
     material_type_snapshot = material_type_definition_snapshot()
-    material_type_definitions_json = json.dumps(material_type_snapshot, ensure_ascii=False, sort_keys=True)
+    classification_knowledge = qwen_classification_knowledge_snapshot()
+    material_type_definitions_json = json.dumps(
+        classification_knowledge,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     model_input = {
         "materialTypeDefinitionsJson": material_type_definitions_json,
         "ocrMarkdown": markdown,
@@ -384,6 +391,7 @@ def prepare_document_auto_gold_run(
             "markdownSha256": markdown_sha256,
             "promptHash": prompt_hash,
             "materialTypeSchemaHash": material_type_snapshot["schemaHash"],
+            "classificationKnowledgeSchemaHash": classification_knowledge["knowledgeSchemaHash"],
             "model": model,
         }
     )
@@ -407,6 +415,7 @@ def prepare_document_auto_gold_run(
         "promptSnapshot": prompt_snapshot,
         "materialTypeDefinitionSnapshot": material_type_snapshot,
         "materialTypeSchemaHash": material_type_snapshot["schemaHash"],
+        "classificationKnowledgeSchemaHash": classification_knowledge["knowledgeSchemaHash"],
         "ocrMarkdown": markdown,
         "markdownSha256": markdown_sha256,
         "modelInput": model_input,
@@ -525,6 +534,9 @@ def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
             model="document-classifier",
             stream=False,
             response_format=material_type_classification_response_format(material_type_codes),
+            enable_thinking=False,
+            max_tokens=2048,
+            temperature=0,
         )
         raw_output = _parse_qwen_classification_response(response)
         validated = validate_material_type_classification_output(

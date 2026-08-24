@@ -144,3 +144,30 @@ def classification_knowledge_snapshot(
     snapshot = deepcopy(payload)
     snapshot["schemaHash"] = _hash_payload(payload)
     return snapshot
+
+
+def qwen_classification_knowledge_snapshot(
+    path: Path = DEFAULT_KNOWLEDGE_PATH,
+    *,
+    mapping_path: Path = DEFAULT_MAPPING_PATH,
+) -> dict[str, Any]:
+    knowledge = classification_knowledge_snapshot(path, mapping_path=mapping_path)
+    cards: list[dict[str, Any]] = []
+    for card in knowledge["cards"]:
+        projected = {
+            "materialTypeCode": card["materialTypeCode"],
+            "name": card["materialTypeNames"][0],
+            "classificationDefinition": card["classificationDefinition"],
+            "titlePatterns": deepcopy(card["titlePatterns"]),
+            "requiredSignals": deepcopy(card["requiredSignals"]),
+            "supportingSignals": deepcopy(card["supportingSignals"]),
+        }
+        if card.get("confusableWith"):
+            projected["confusableWith"] = deepcopy(card["confusableWith"])
+        cards.append(projected)
+    return {
+        "schemaVersion": "qwen-material-classification@1",
+        "sourceVersion": knowledge["version"],
+        "knowledgeSchemaHash": knowledge["schemaHash"],
+        "materialTypes": cards,
+    }

@@ -91,6 +91,36 @@ def test_existing_database_backfills_classifier_prompt_without_replacing_review_
     assert len([item for item in loaded["prompt_templates"] if item.get("promptKey") == "document-material-classifier"]) == 1
 
 
+def test_existing_untouched_seed_classifier_prompt_receives_runtime_safety_update():
+    repository = InMemoryRepository(seed=False)
+    loaded = fresh_state()
+    classifier = next(
+        item for item in loaded["prompt_templates"] if item.get("promptKey") == "document-material-classifier"
+    )
+    expected_system_prompt = classifier["systemPrompt"]
+    classifier["systemPrompt"] = "旧版分类提示词"
+    classifier["revision"] = 1
+
+    changed = repository.apply_seed_compatibility_defaults(loaded)
+
+    assert changed is True
+    assert classifier["systemPrompt"] == expected_system_prompt
+
+
+def test_existing_admin_edited_classifier_prompt_is_not_overwritten_by_seed_update():
+    repository = InMemoryRepository(seed=False)
+    loaded = fresh_state()
+    classifier = next(
+        item for item in loaded["prompt_templates"] if item.get("promptKey") == "document-material-classifier"
+    )
+    classifier["systemPrompt"] = "管理员自定义分类提示词"
+    classifier["revision"] = 2
+
+    repository.apply_seed_compatibility_defaults(loaded)
+
+    assert classifier["systemPrompt"] == "管理员自定义分类提示词"
+
+
 def test_production_prompt_resolver_fails_closed_on_ambiguity():
     prompt = production_document_classifier_prompt(repo, "engineering_inspection_v1")
     assert prompt is not None

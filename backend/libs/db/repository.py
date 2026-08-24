@@ -3816,6 +3816,14 @@ class InMemoryRepository:
         """Backfill fields added after an existing local database was initialized."""
         changed = False
         seeded = fresh_state()
+        classifier_seed = next(
+            (
+                self.clone(item)
+                for item in seeded.get("prompt_templates", [])
+                if item.get("promptKey") == "document-material-classifier"
+            ),
+            None,
+        )
         if not loaded.get("prompt_templates"):
             loaded["prompt_templates"] = seeded.get("prompt_templates", [])
             changed = True
@@ -3824,17 +3832,29 @@ class InMemoryRepository:
             for item in loaded.get("prompt_templates", [])
             if isinstance(item, dict)
         ):
-            classifier_seed = next(
-                (
-                    self.clone(item)
-                    for item in seeded.get("prompt_templates", [])
-                    if item.get("promptKey") == "document-material-classifier"
-                ),
-                None,
-            )
             if classifier_seed:
                 loaded["prompt_templates"].append(classifier_seed)
                 changed = True
+        elif classifier_seed:
+            for item in loaded.get("prompt_templates", []):
+                if (
+                    item.get("id") != classifier_seed.get("id")
+                    or int(item.get("revision") or 1) != 1
+                ):
+                    continue
+                for field in (
+                    "name",
+                    "version",
+                    "promptVersionId",
+                    "systemPrompt",
+                    "userPromptTemplate",
+                    "outputSchema",
+                    "variables",
+                ):
+                    seeded_value = self.clone(classifier_seed.get(field))
+                    if item.get(field) != seeded_value:
+                        item[field] = seeded_value
+                        changed = True
         if not loaded.get("report_templates"):
             loaded["report_templates"] = seeded.get("report_templates", [])
             changed = True

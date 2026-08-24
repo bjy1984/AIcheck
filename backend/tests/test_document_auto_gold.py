@@ -225,6 +225,9 @@ def test_material_type_response_schema_uses_only_60_code_enum():
 
     assert label_properties["materialTypeCode"]["enum"] == codes
     assert "category" not in label_properties
+    evidence_schema = label_properties["contentEvidence"]
+    assert evidence_schema["maxItems"] == 2
+    assert evidence_schema["items"]["properties"]["quote"]["maxLength"] == 80
 
 
 def test_validate_material_types_accepts_multi_labels_and_derives_16_categories():
@@ -288,6 +291,90 @@ def test_validate_material_types_merges_duplicate_type_evidence_from_model():
         "特种设备生产许可证",
         "压力管道设计",
     ]
+
+
+def test_validate_material_types_grounds_visible_text_across_mineru_html_cells():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    markdown = "<table><tr><td>图名DWG NAME</td><td>安装设计说明</td></tr></table>"
+    raw = {
+        "labels": [
+            {
+                "materialTypeCode": "design_document",
+                "confidence": 0.96,
+                "decisionSummary": "表格标题是安装设计说明。",
+                "contentEvidence": [
+                    {"quote": "图名DWG NAME 安装设计说明", "purpose": "设计文件标题"}
+                ],
+            }
+        ],
+        "documentSummary": "安装设计说明",
+        "classificationComplete": True,
+        "unclassifiedReason": None,
+    }
+
+    validated = validate_material_type_classification_output(raw, markdown, snapshot)
+
+    assert validated["labels"][0]["materialTypeCode"] == "design_document"
+
+
+def test_validate_material_types_canonicalizes_a_multi_cell_quote_to_an_exact_span():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    markdown = (
+        "<table><tr><td>图名DWG NAME</td><td>安装设计说明</td>"
+        "<td>设计分项</td><td>泵区</td><td>图号DWG NO.</td>"
+        "<td>HZ026Y-112-02-S001</td></tr></table>"
+    )
+    raw = {
+        "labels": [
+            {
+                "materialTypeCode": "design_document",
+                "confidence": 0.96,
+                "decisionSummary": "表格给出了设计文件标题和图号。",
+                "contentEvidence": [
+                    {
+                        "quote": "图名DWG NAME 安装设计说明 图号DWG NO. HZ026Y-112-02-S001",
+                        "purpose": "设计文件标题与图号",
+                    }
+                ],
+            }
+        ],
+        "documentSummary": "安装设计说明",
+        "classificationComplete": True,
+        "unclassifiedReason": None,
+    }
+
+    validated = validate_material_type_classification_output(raw, markdown, snapshot)
+    canonical_quote = validated["labels"][0]["contentEvidence"][0]["quote"]
+
+    assert canonical_quote in markdown
+    assert canonical_quote != raw["labels"][0]["contentEvidence"][0]["quote"]
+    assert len(canonical_quote) >= 6
+
+
+def test_validate_material_types_still_rejects_ellipsis_synthesized_from_distant_text():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    markdown = "产品名称:流体输送用不锈钢管\n产品质量证明书\n编号：20260213951"
+    raw = {
+        "labels": [
+            {
+                "materialTypeCode": "quality_certificate",
+                "confidence": 0.96,
+                "decisionSummary": "产品质量证明书。",
+                "contentEvidence": [
+                    {
+                        "quote": "产品名称:流体输送用不锈钢管...产品质量证明书 编号：20260213951",
+                        "purpose": "质量证明标题",
+                    }
+                ],
+            }
+        ],
+        "documentSummary": "产品质量证明书",
+        "classificationComplete": True,
+        "unclassifiedReason": None,
+    }
+
+    with pytest.raises(AutoGoldValidationError, match="UNGROUNDED_EVIDENCE"):
+        validate_material_type_classification_output(raw, markdown, snapshot)
 
 
 def test_material_type_gold_projects_multi_types_and_primary_type_without_guessing():

@@ -193,6 +193,11 @@ def test_prepare_run_is_idempotent_and_contains_markdown_only_context(monkeypatc
     assert "fileName" not in serialized_context
     assert set(first["modelInput"]) == {"materialTypeDefinitionsJson", "ocrMarkdown"}
     assert len(first["materialTypeDefinitionSnapshot"]["materialTypes"]) == 60
+    assert first["classificationKnowledgeSchemaHash"].startswith("sha256:")
+    assert "classificationDefinition" in serialized_context
+    assert "sourceRefs" not in serialized_context
+    assert "negativeSignals" not in serialized_context
+    assert "basisLevel" not in serialized_context
 
 
 def test_one_call_success_persists_auto_gold_and_projects_multiple_labels(monkeypatch: pytest.MonkeyPatch):
@@ -230,6 +235,9 @@ def test_one_call_success_persists_auto_gold_and_projects_multiple_labels(monkey
     call = client.calls[0]
     assert call["model"] == "document-classifier"
     assert call["stream"] is False
+    assert call["enable_thinking"] is False
+    assert call["max_tokens"] == 2048
+    assert call["temperature"] == 0
     assert call["response_format"]["type"] == "json_schema"
     assert "materialTypeCode" in json.dumps(call["response_format"])
     serialized_messages = json.dumps(call["messages"], ensure_ascii=False)
