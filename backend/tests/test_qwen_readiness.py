@@ -137,6 +137,17 @@ def test_模型名可按环境覆盖(monkeypatch: pytest.MonkeyPatch):
     assert model_names_with_env_overrides(base, {"AICHECK_LLM_MODEL_REVIEW": "  "})["review"] == "qwen3.7-plus"
 
 
+def test_文件分类模型名可按独立环境变量覆盖():
+    from libs.qwen_runtime import model_names_with_env_overrides
+
+    resolved = model_names_with_env_overrides(
+        {"documentClassifier": "qwen3.8-max"},
+        {"AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER": "qwen3.8-max-snapshot"},
+    )
+
+    assert resolved["documentClassifier"] == "qwen3.8-max-snapshot"
+
+
 def test_就绪检查与实际调用用同一份密钥解析(monkeypatch: pytest.MonkeyPatch):
     """两个来源必须给同一个答案。
 

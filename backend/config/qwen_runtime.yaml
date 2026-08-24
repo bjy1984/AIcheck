@@ -23,6 +23,7 @@ providers:
       visionReview: qwen3.7-plus
       coder: qwen3-coder-plus
       embeddingOptional: text-embedding-v4
+      documentClassifier: qwen3.8-max
 
 fallback:
   allowFallbackToServer: false

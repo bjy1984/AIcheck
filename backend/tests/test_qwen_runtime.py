@@ -83,6 +83,48 @@ def test_repository_runtime_maps_audit_and_vision_to_qwen37_plus() -> None:
     assert config["models"]["visionReview"] == "qwen3.7-plus"
 
 
+def test_repository_runtime_maps_document_classifier_to_qwen38_max() -> None:
+    config = qwen_runtime_config(
+        CONFIG_PATH,
+        env={
+            "AICHECK_QWEN_CALL_MODE": "official_api",
+            "QWEN_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "QWEN_API_KEY": "sk-test",
+        },
+    )
+
+    assert config["models"]["documentClassifier"] == "qwen3.8-max"
+
+
+def test_document_classifier_alias_calls_qwen38_max(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("QWEN_API_KEY", "sk-qwen-test")
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.read().decode("utf-8"))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    path = write_config(tmp_path)
+    config_text = path.read_text(encoding="utf-8").replace(
+        "      embeddingOptional: text-embedding-v4",
+        "      embeddingOptional: text-embedding-v4\n      documentClassifier: qwen3.8-max",
+    )
+    path.write_text(config_text, encoding="utf-8")
+    config = qwen_runtime_config(
+        path,
+        env={
+            "AICHECK_QWEN_CALL_MODE": "official_api",
+            "QWEN_API_BASE": "http://qwen/v1",
+            "QWEN_API_KEY": "sk-qwen-test",
+        },
+    )
+    client = QwenRuntimeClient(config=config, transport=httpx.MockTransport(handler))
+
+    client.chat_sync([{"role": "user", "content": "classify"}], model="document-classifier")
+
+    assert seen["body"]["model"] == "qwen3.8-max"
+
+
 def test_qwen_runtime_server_mode_uses_existing_aliases(tmp_path) -> None:
     config = qwen_runtime_config(write_config(tmp_path), env={"AICHECK_QWEN_CALL_MODE": "server"})
     server = FakeServerClient()

@@ -23,6 +23,7 @@ MODEL_ROLE_ALIASES = {
     "default-chat": "default",
     "compare-fast": "compareFast",
     "qwen-vision-review": "visionReview",
+    "document-classifier": "documentClassifier",
 }
 
 
@@ -39,6 +40,7 @@ MODEL_ROLE_ENV = {
     "visionReview": "AICHECK_LLM_MODEL_VISION",
     "coder": "AICHECK_LLM_MODEL_CODER",
     "embeddingOptional": "AICHECK_LLM_MODEL_EMBEDDING",
+    "documentClassifier": "AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER",
 }
 
 # 地址 host → 供应商显示名。认不出的主机名直接把 host 报出去，不编。
