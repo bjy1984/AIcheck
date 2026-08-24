@@ -353,7 +353,9 @@ def _canonical_grounded_span(quote: str, markdown: str) -> str | None:
         return None
     match = SequenceMatcher(None, quote, markdown).find_longest_match()
     span = markdown[match.b : match.b + match.size].strip()
-    if len(_whitespace_normalized(span)) < 6:
+    normalized_span = _whitespace_normalized(span)
+    normalized_quote = _whitespace_normalized(quote)
+    if len(normalized_span) < 6 or len(normalized_span) / max(len(normalized_quote), 1) < 0.7:
         return None
     return span if span in markdown else None
 
@@ -496,14 +498,18 @@ def validate_material_type_classification_output(
         existing["contentEvidence"] = evidence
     for label in merged_labels.values():
         canonical_evidence: list[Any] = []
+        invalid_evidence: list[Any] = []
         for item in label.get("contentEvidence") or []:
             if not isinstance(item, dict):
-                canonical_evidence.append(item)
+                invalid_evidence.append(item)
                 continue
             quote = str(item.get("quote") or "").strip()
             canonical = _canonical_grounded_span(quote, markdown)
-            canonical_evidence.append({**item, "quote": canonical or quote})
-        label["contentEvidence"] = canonical_evidence
+            if canonical:
+                canonical_evidence.append({**item, "quote": canonical})
+            else:
+                invalid_evidence.append(item)
+        label["contentEvidence"] = canonical_evidence or invalid_evidence
     translated["labels"] = list(merged_labels.values())
     validated = validate_classification_output(translated, markdown, sorted(definitions))
     labels: list[dict[str, Any]] = []

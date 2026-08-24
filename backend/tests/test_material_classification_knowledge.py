@@ -124,10 +124,10 @@ def test_qwen_projection_keeps_classification_rules_but_excludes_audit_only_fiel
     assert len(projection["materialTypes"]) == 61
     assert all(item.get("materialTypeCode") for item in projection["materialTypes"])
     assert all(item.get("classificationDefinition") for item in projection["materialTypes"])
+    assert all(item.get("materialCategories") for item in projection["materialTypes"])
     assert "sourceRefs" not in serialized
     assert "negativeSignals" not in serialized
     assert "basisLevel" not in serialized
-    assert "materialCategories" not in serialized
     assert "documentPurpose" not in serialized
 
 

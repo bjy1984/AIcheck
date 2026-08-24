@@ -166,6 +166,7 @@ def qwen_classification_knowledge_snapshot(
         projected = {
             "materialTypeCode": card["materialTypeCode"],
             "name": card["materialTypeNames"][0],
+            "materialCategories": deepcopy(card["materialCategories"]),
             "classificationDefinition": card["classificationDefinition"],
             "titlePatterns": deepcopy(card["titlePatterns"]),
             "requiredSignals": deepcopy(card["requiredSignals"]),

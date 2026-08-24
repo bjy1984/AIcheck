@@ -1058,6 +1058,8 @@ PROMPT_TEMPLATES = [
             "实际包含该资料。零标签时unclassifiedReason必须填写原因。不要输出思考过程。"
             "如果无法匹配任何具体类型、但能够确定所属资料大类，则labels保持空数组，并在"
             "fallbackMaterialCategories中选择一个或多个大类；连大类也不能确定时该数组为空。"
+            "文件目录、归档清单、流程指引、宣传材料、合同等项目管理文件，如果本身不提供任何"
+            "监检节点所需的技术或质量证据，不得仅凭工程领域词汇选择兜底大类。"
             "严格按照给定 JSON Schema 输出。"
         ),
         "userPromptTemplate": (

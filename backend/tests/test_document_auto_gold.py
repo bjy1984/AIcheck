@@ -332,7 +332,7 @@ def test_validate_material_types_grounds_visible_text_across_mineru_html_cells()
     assert validated["labels"][0]["materialTypeCode"] == "design_document"
 
 
-def test_validate_material_types_canonicalizes_a_multi_cell_quote_to_an_exact_span():
+def test_validate_material_types_drops_a_distant_multi_cell_quote_when_an_exact_anchor_exists():
     snapshot = material_type_definition_snapshot(CONFIG)
     markdown = (
         "<table><tr><td>图名DWG NAME</td><td>安装设计说明</td>"
@@ -347,6 +347,10 @@ def test_validate_material_types_canonicalizes_a_multi_cell_quote_to_an_exact_sp
                 "decisionSummary": "表格给出了设计文件标题和图号。",
                 "contentEvidence": [
                     {
+                        "quote": "安装设计说明",
+                        "purpose": "设计文件标题",
+                    },
+                    {
                         "quote": "图名DWG NAME 安装设计说明 图号DWG NO. HZ026Y-112-02-S001",
                         "purpose": "设计文件标题与图号",
                     }
@@ -359,11 +363,9 @@ def test_validate_material_types_canonicalizes_a_multi_cell_quote_to_an_exact_sp
     }
 
     validated = validate_material_type_classification_output(raw, markdown, snapshot)
-    canonical_quote = validated["labels"][0]["contentEvidence"][0]["quote"]
-
-    assert canonical_quote in markdown
-    assert canonical_quote != raw["labels"][0]["contentEvidence"][0]["quote"]
-    assert len(canonical_quote) >= 6
+    assert validated["labels"][0]["contentEvidence"] == [
+        {"quote": "安装设计说明", "purpose": "设计文件标题"}
+    ]
 
 
 def test_validate_material_types_still_rejects_ellipsis_synthesized_from_distant_text():
@@ -390,6 +392,34 @@ def test_validate_material_types_still_rejects_ellipsis_synthesized_from_distant
 
     with pytest.raises(AutoGoldValidationError, match="UNGROUNDED_EVIDENCE"):
         validate_material_type_classification_output(raw, markdown, snapshot)
+
+
+def test_validate_material_types_drops_one_bad_quote_when_the_label_has_grounded_evidence():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    markdown = "主要承压元件计算书\n公式：t=PD/(2(S\\Phi+PY))"
+    raw = {
+        "labels": [
+            {
+                "materialTypeCode": "calculation_report",
+                "confidence": 0.97,
+                "decisionSummary": "包含承压元件计算书。",
+                "contentEvidence": [
+                    {"quote": "主要承压元件计算书", "purpose": "文件标题"},
+                    {"quote": "t=PD/(2(SΦ+PY))", "purpose": "模型改写了公式符号"},
+                ],
+            }
+        ],
+        "fallbackMaterialCategories": [],
+        "documentSummary": "承压元件计算书",
+        "classificationComplete": True,
+        "unclassifiedReason": None,
+    }
+
+    validated = validate_material_type_classification_output(raw, markdown, snapshot)
+
+    assert validated["labels"][0]["contentEvidence"] == [
+        {"quote": "主要承压元件计算书", "purpose": "文件标题"}
+    ]
 
 
 def test_material_type_gold_projects_multi_types_and_primary_type_without_guessing():
