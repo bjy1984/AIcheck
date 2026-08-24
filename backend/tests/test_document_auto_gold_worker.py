@@ -135,6 +135,29 @@ def test_dispatch_document_classification_targets_existing_llm_queue(monkeypatch
     assert calls[0]["task_id"].startswith("aicheck-document-auto-gold-")
 
 
+def test_mineru_worker_loads_prompt_and_auto_gold_state_before_preparing_run(monkeypatch: pytest.MonkeyPatch):
+    repository = InMemoryRepository(seed=False)
+    loaded: list[set[str]] = []
+
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(
+        tasks,
+        "refresh_worker_state",
+        lambda selected: loaded.append(set(selected)),
+    )
+
+    result = tasks.mineru_ocr_extract.run("OCRJOB-MISSING")
+
+    assert result["status"] == "failed"
+    assert loaded
+    assert {
+        "prompt_templates",
+        "document_classification_runs",
+        "document_gold_labels",
+        "knowledge_files",
+    } <= loaded[0]
+
+
 def test_prepare_run_is_idempotent_and_contains_markdown_only_context(monkeypatch: pytest.MonkeyPatch):
     repository, document, version, parse_result = repository_with_ocr_result()
 

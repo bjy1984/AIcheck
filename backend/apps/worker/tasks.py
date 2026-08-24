@@ -1721,7 +1721,16 @@ def _execute_mineru_ocr_extract(
     retry_handler: Callable[[int, list[dict[str, Any]]], None] | None = None,
 ) -> dict[str, Any]:
     refresh_worker_state(
-        {"ocr_jobs", "ocr_parse_results", "documents", "versions"}
+        {
+            "ocr_jobs",
+            "ocr_parse_results",
+            "documents",
+            "versions",
+            "knowledge_files",
+            "prompt_templates",
+            "document_classification_runs",
+            "document_gold_labels",
+        }
     )
     job = repo.find_one("ocr_jobs", job_record_id)
     if not job:
