@@ -9,6 +9,9 @@ from libs.integrations import task_dispatcher
 from libs.material_targeting import (
     PARTIAL_STATUS,
     build_node_evidence_readiness,
+    material_type_is_binding_compatible,
+    material_type_matches_point,
+    point_source_is_allowed,
     targeting_input_versions_for_node,
 )
 
@@ -197,6 +200,61 @@ def test_ocr_targeting_creates_node_evidence_links_and_auto_binding() -> None:
     ]
     assert second["createdBindingCount"] >= 1
     assert len(auto_bindings) == 1
+
+
+def test_multi_type_auto_gold_creates_links_for_each_type_through_mapping_rows() -> None:
+    document, version = repo.create_document(
+        PROJECT_ID,
+        "分类输入名不参与判断.bin",
+        "application/octet-stream",
+    )
+    document.update(
+        {
+            "materialTypeCode": "design_license",
+            "materialTypeLabels": ["design_license", "design_document"],
+            "materialCategory": "资质证照",
+            "materialCategoryLabels": ["设计基础资料", "资质证照"],
+        }
+    )
+    apply_ocr(
+        document,
+        version,
+        document_type="qualification_certificate",
+        text=(
+            "中华人民共和国特种设备生产许可证 设计许可证机构名称 华东设计院 "
+            "许可范围 压力管道设计 GC1 有效期至 2029年08月11日 印章清晰 "
+            "施工图纸标题栏 设计印章单位名称 华东设计院 图号 DWG-001 项目名称 罐区管道 "
+            "设计说明 管道特性表 管道类别 GC1 设计压力 4.0MPa"
+        ),
+        fields=[
+            {"fieldName": "设计许可证机构名称", "fieldValue": "华东设计院", "pageNo": 1, "confidence": 0.96},
+            {"fieldName": "许可范围", "fieldValue": "压力管道设计 GC1", "pageNo": 1, "confidence": 0.95},
+            {"fieldName": "有效期至", "fieldValue": "2029年08月11日", "pageNo": 1, "confidence": 0.95},
+            {"fieldName": "设计印章单位名称", "fieldValue": "华东设计院", "pageNo": 1, "confidence": 0.94},
+            {"fieldName": "图号/项目名称", "fieldValue": "DWG-001 罐区管道", "pageNo": 1, "confidence": 0.93},
+            {"fieldName": "管道类别", "fieldValue": "GC1", "pageNo": 1, "confidence": 0.93},
+            {"fieldName": "设计压力/温度", "fieldValue": "4.0MPa / 80℃", "pageNo": 1, "confidence": 0.92},
+        ],
+    )
+
+    targeting = assert_ok(
+        client.post(f"/api/projects/{PROJECT_ID}/documents/{document['id']}/targeting/recompute")
+    )["run"]
+
+    linked_types = {item["materialTypeCode"] for item in targeting["createdLinks"]}
+    assert {"design_license", "design_document"} <= linked_types
+    bound_types = {
+        point_id
+        for binding in targeting["createdBindings"]
+        for point_id in binding.get("reviewPointIds") or []
+    }
+    expected_point_ids = {
+        str(point["id"])
+        for point in repo.state["admin_config"]["materialReviewPoints"]
+        if int(point.get("nodeId") or 0) == 1
+        and point.get("materialTypeCode") in {"design_license", "design_document"}
+    }
+    assert bound_types & expected_point_ids
 
 
 def test_auto_targeting_preserves_manual_binding_and_creates_separate_auto_binding() -> None:
@@ -732,3 +790,26 @@ def test_readiness_counts_consolidated_binding_for_each_review_point() -> None:
         assert rows[point_id]["supportStatus"] == PARTIAL_STATUS
         assert rows[point_id]["evidenceReviewStatus"] == "已挂载待定位"
         assert rows[point_id]["fulfilled"] is False
+
+
+def test_multi_material_type_gold_labels_match_and_bind_each_mapped_type() -> None:
+    document = {
+        "materialTypeCode": "design_license",
+        "materialTypeLabels": ["design_license", "design_document"],
+        "materialCategory": "资质证照",
+        "materialCategoryLabels": ["设计基础资料", "资质证照"],
+    }
+    point = {
+        "materialTypeCode": "design_document",
+        "materialTypeName": "设计文件",
+        "materialCategory": "设计基础资料",
+    }
+
+    allowed, reason = point_source_is_allowed(point, document)
+    score, score_reason = material_type_matches_point(point, document, "")
+
+    assert allowed is True
+    assert reason is None
+    assert score == 35
+    assert score_reason == "标准资料类型一致"
+    assert material_type_is_binding_compatible(point, document) is True

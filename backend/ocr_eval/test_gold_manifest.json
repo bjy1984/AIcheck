@@ -10,6 +10,7 @@
       "sha256": "sha256:acc4b12009bdac4f2d68530652cd7229d0681e462860625807c2c7a95d026e4d",
       "goldFolderClass": "pipeline_directory",
       "goldDocumentClass": "pipeline_summary",
+      "expectedMaterialTypeCodes": ["pipeline_summary"],
       "expectedCategories": ["设计与施工组织", "设计基础资料"]
     },
     {
@@ -18,6 +19,7 @@
       "sha256": "sha256:f07cff6b86cc6ac64968dd6cf3fcca6ba28b2fbc834f1bf3ea060dce7ed3aa5b",
       "goldFolderClass": "ndt_organization_qualification",
       "goldDocumentClass": "ndt_org_certificate",
+      "expectedMaterialTypeCodes": ["ndt_org_certificate"],
       "expectedCategories": ["资质证照"]
     },
     {
@@ -26,6 +28,7 @@
       "sha256": "sha256:04b979b20e0ac56c94a76cb7dd9fdd1131966e785452de2bd129db35b3f81cd0",
       "goldFolderClass": "ndt_person_qualification",
       "goldDocumentClass": "ndt_person_certificate",
+      "expectedMaterialTypeCodes": ["ndt_person_certificate"],
       "expectedCategories": ["无损检测资料"]
     },
     {
@@ -34,6 +37,7 @@
       "sha256": "sha256:d15f0b7b7f06db8e04bca20bcd11858621e46cf093b60bee1e111bbdac253257",
       "goldFolderClass": "ndt_person_qualification",
       "goldDocumentClass": "ndt_person_certificate",
+      "expectedMaterialTypeCodes": ["ndt_person_certificate"],
       "expectedCategories": ["无损检测资料"]
     },
     {
@@ -42,6 +46,7 @@
       "sha256": "sha256:938d649db8f8b206be4b89fc8748c4e45d00991cd3b47b575aedf659ac681815",
       "goldFolderClass": "ndt_person_qualification",
       "goldDocumentClass": "ndt_person_certificate",
+      "expectedMaterialTypeCodes": ["ndt_person_certificate"],
       "expectedCategories": ["无损检测资料"]
     },
     {
@@ -50,6 +55,7 @@
       "sha256": "sha256:cb6bd40b37b22e6d804ceafcf7e275641c924b5787820d2ef20ce3dc41af4ea1",
       "goldFolderClass": "ndt_person_qualification",
       "goldDocumentClass": "ndt_person_certificate",
+      "expectedMaterialTypeCodes": ["ndt_person_certificate"],
       "expectedCategories": ["无损检测资料"]
     },
     {
@@ -58,6 +64,7 @@
       "sha256": "sha256:67c43f56be94facf573b8693d742f43171b93ab077a6e3a70a8de543226ef02c",
       "goldFolderClass": "ndt_person_qualification",
       "goldDocumentClass": "ndt_person_certificate",
+      "expectedMaterialTypeCodes": ["ndt_person_certificate"],
       "expectedCategories": ["无损检测资料"]
     },
     {
@@ -66,6 +73,7 @@
       "sha256": "sha256:6934b1904d02883e2745efede53e75562c017fcfcf372a8162cb27eda79dd930",
       "goldFolderClass": "ndt_person_qualification",
       "goldDocumentClass": "ndt_person_certificate",
+      "expectedMaterialTypeCodes": ["ndt_person_certificate"],
       "expectedCategories": ["无损检测资料"]
     },
     {
@@ -74,6 +82,7 @@
       "sha256": "sha256:32f711b7858546cfc90c8836b5d5578879cb46cbbbbb8cb2d52223f4d897441d",
       "goldFolderClass": "ndt_plan",
       "goldDocumentClass": "ndt_plan",
+      "expectedMaterialTypeCodes": ["ndt_plan"],
       "expectedCategories": ["无损检测资料"]
     },
     {
@@ -82,6 +91,7 @@
       "sha256": "sha256:a0d4c86dfc0db30ce2f2af3912ef4720662e17e99c1b8c9007b5209ecdf96893",
       "goldFolderClass": "design_installation_qualification",
       "goldDocumentClass": "design_license",
+      "expectedMaterialTypeCodes": ["design_license"],
       "expectedCategories": ["资质证照"]
     },
     {
@@ -90,6 +100,7 @@
       "sha256": "sha256:570331a096f889ec62caac4190472da9387cc7df395b541b349a10f5c3d2c867",
       "goldFolderClass": "design_installation_qualification",
       "goldDocumentClass": "construction_license",
+      "expectedMaterialTypeCodes": ["construction_license"],
       "expectedCategories": ["资质证照"]
     },
     {
@@ -98,6 +109,7 @@
       "sha256": "sha256:60e80153e8ce0a3a80c969d88e7a16900f7b94f13361b3ebf8aa868618b937e2",
       "goldFolderClass": "quality_manual",
       "goldDocumentClass": "quality_system_document",
+      "expectedMaterialTypeCodes": ["quality_system_document"],
       "expectedCategories": ["施工组织与方案"]
     },
     {
@@ -106,6 +118,7 @@
       "sha256": "sha256:8e297a47a21ed91ac284bd7a69c5440f9c385a18327b4cbf870e88941d9de3f2",
       "goldFolderClass": "construction_notice",
       "goldDocumentClass": "construction_notice_receipt",
+      "expectedMaterialTypeCodes": [],
       "expectedCategories": ["监检现场补充证据"]
     },
     {
@@ -114,6 +127,7 @@
       "sha256": "sha256:2cf8ba20f825de5c26c7d9fac624d029cd559b9d74af50a5e8034e3285554eec",
       "goldFolderClass": "construction_notice",
       "goldDocumentClass": "construction_notice",
+      "expectedMaterialTypeCodes": [],
       "expectedCategories": ["监检现场补充证据"]
     },
     {
@@ -122,6 +136,7 @@
       "sha256": "sha256:59fe689b5afd09e0cf1e9c706ad16b044edace057622010214cbf65ffa092f32",
       "goldFolderClass": "inspection_contract",
       "goldDocumentClass": "inspection_contract",
+      "expectedMaterialTypeCodes": [],
       "expectedCategories": ["设计与施工组织"]
     },
     {
@@ -130,6 +145,7 @@
       "sha256": "sha256:d7aaf4ca8798ce2066ced6e62d4ab8502ba7246949b8898f2f640b1986f84066",
       "goldFolderClass": "construction_plan",
       "goldDocumentClass": "construction_organization_design",
+      "expectedMaterialTypeCodes": ["construction_organization_design"],
       "expectedCategories": ["施工组织与方案"]
     },
     {
@@ -138,6 +154,7 @@
       "sha256": "sha256:396f543688456b392246633ac049e4f4d664684ff80bc56a5cb530492a8201d0",
       "goldFolderClass": "drawing_and_review",
       "goldDocumentClass": "drawing_review_record",
+      "expectedMaterialTypeCodes": ["drawing_review_record"],
       "expectedCategories": ["设计变更与特殊标准"]
     },
     {
@@ -146,6 +163,7 @@
       "sha256": "sha256:ac750b9f7dad8d981dbb014548495e3cfb94f38ea3f7158c15f10aa7cfae1214",
       "goldFolderClass": "drawing_and_review",
       "goldDocumentClass": "design_document",
+      "expectedMaterialTypeCodes": ["design_document"],
       "expectedCategories": ["设计基础资料"]
     },
     {
@@ -154,6 +172,7 @@
       "sha256": "sha256:819f55157dbc26459f55f160760079832728fa1d3bd1de2542b1930c9cb330fc",
       "goldFolderClass": "material_acceptance_submission",
       "goldDocumentClass": "component_inspection_checklist",
+      "expectedMaterialTypeCodes": ["acceptance_witness_record"],
       "expectedCategories": ["材料验收与复验"]
     },
     {
@@ -162,6 +181,7 @@
       "sha256": "sha256:910902ab43cb9775acf1fbd3271fd1e392dfda0a781d878505a9a732d5fd9f9c",
       "goldFolderClass": "material_acceptance_submission",
       "goldDocumentClass": "material_submission_package",
+      "expectedMaterialTypeCodes": ["acceptance_witness_record", "quality_certificate", "manufacturing_license", "factory_inspection_report"],
       "expectedCategories": ["材料验收与复验"]
     },
     {
@@ -170,6 +190,7 @@
       "sha256": "sha256:98eae4fccde9b2ca518893c721a3e9b9436153f480ff09f8e1bdbde13d606397",
       "goldFolderClass": "welding_procedure_qualification",
       "goldDocumentClass": "wps_pqr",
+      "expectedMaterialTypeCodes": ["wps_pqr"],
       "expectedCategories": ["焊接人员与焊接工艺"]
     },
     {
@@ -178,6 +199,7 @@
       "sha256": "sha256:d3dce470ce132d6ed15145e9f2db967c3896798572dadbb3a112ea1097f8b533",
       "goldFolderClass": "welder_qualification",
       "goldDocumentClass": "welder_social_security_evidence",
+      "expectedMaterialTypeCodes": [],
       "expectedCategories": ["焊接人员与焊接工艺"]
     },
     {
@@ -186,6 +208,7 @@
       "sha256": "sha256:4ded99b884867564227172403437697d3b8e1759543e64f5c6da35ba4a77e8bf",
       "goldFolderClass": "welder_qualification",
       "goldDocumentClass": "welder_roster",
+      "expectedMaterialTypeCodes": ["welder_roster"],
       "expectedCategories": ["焊接人员与焊接工艺"]
     }
   ]

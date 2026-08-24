@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from libs.document_auto_gold import category_definition_snapshot
+from libs.document_auto_gold import category_definition_snapshot, material_type_definition_snapshot
 from scripts.test_gold_manifest import audit_test_gold_manifest, model_input_for_case
 
 
@@ -36,6 +36,10 @@ def test_manifest_has_valid_hashes_fine_labels_and_known_categories():
         item["category"]
         for item in category_definition_snapshot()["categories"]
     }
+    allowed_types = {
+        item["materialTypeCode"]
+        for item in material_type_definition_snapshot()["materialTypes"]
+    }
 
     for case in payload["cases"]:
         assert case["sha256"].startswith("sha256:")
@@ -43,6 +47,8 @@ def test_manifest_has_valid_hashes_fine_labels_and_known_categories():
         assert case["goldDocumentClass"]
         assert case["expectedCategories"]
         assert set(case["expectedCategories"]) <= allowed
+        assert "expectedMaterialTypeCodes" in case
+        assert set(case["expectedMaterialTypeCodes"]) <= allowed_types
 
 
 def test_mixed_folders_have_explicit_file_level_document_classes():
@@ -64,6 +70,19 @@ def test_audit_verifies_all_file_hashes():
     assert report["fileCount"] == 23
     assert report["hashMismatchCount"] == 0
     assert report["unknownCategoryCount"] == 0
+    assert report["unknownMaterialTypeCount"] == 0
+
+
+def test_manifest_supports_multi_type_packages_and_explicit_zero_type_documents():
+    cases = {item["caseId"]: item for item in load_manifest()["cases"]}
+
+    assert cases["test-material-submission-package-001"]["expectedMaterialTypeCodes"] == [
+        "acceptance_witness_record",
+        "quality_certificate",
+        "manufacturing_license",
+        "factory_inspection_report",
+    ]
+    assert cases["test-inspection-contract-001"]["expectedMaterialTypeCodes"] == []
 
 
 def test_model_input_contains_only_category_definitions_and_markdown():
@@ -72,11 +91,11 @@ def test_model_input_contains_only_category_definitions_and_markdown():
     model_input = model_input_for_case(
         case,
         markdown="# MinerU正文\n\n压力管道设计",
-        category_snapshot=category_definition_snapshot(),
+        material_type_snapshot=material_type_definition_snapshot(),
     )
     serialized = json.dumps(model_input, ensure_ascii=False)
 
-    assert set(model_input) == {"categoryDefinitionsJson", "ocrMarkdown"}
+    assert set(model_input) == {"materialTypeDefinitionsJson", "ocrMarkdown"}
     assert case["relativePath"] not in serialized
     assert case["goldDocumentClass"] not in serialized
     assert "fileName" not in serialized

@@ -282,6 +282,18 @@ STRICT_POINT_SOURCE_TYPES = {
 }
 
 
+def document_material_type_codes(document: dict[str, Any]) -> set[str]:
+    codes = {
+        str(value).strip()
+        for value in document.get("materialTypeLabels") or []
+        if str(value).strip()
+    }
+    primary = str(document.get("materialTypeCode") or "").strip()
+    if primary:
+        codes.add(primary)
+    return codes
+
+
 def valid_evidence_bbox(value: Any) -> bool:
     try:
         return bool(
@@ -297,7 +309,7 @@ def valid_evidence_bbox(value: Any) -> bool:
 def point_source_is_allowed(point: dict[str, Any], document: dict[str, Any]) -> tuple[bool, str | None]:
     expected = str(point.get("materialTypeCode") or "").strip()
     declared = str(document.get("materialTypeCode") or "").strip()
-    if expected in STRICT_POINT_SOURCE_TYPES and declared != expected:
+    if expected in STRICT_POINT_SOURCE_TYPES and expected not in document_material_type_codes(document):
         return False, f"资料来源类型不符合审查点：需要 {expected}，实际为 {declared or '未声明'}"
     return True, None
 
@@ -757,12 +769,18 @@ def material_type_matches_point(point: dict[str, Any], document: dict[str, Any],
     material_type_name = str(point.get("materialTypeName") or "")
     material_category = str(point.get("materialCategory") or "")
     declared_type = str(document.get("materialTypeCode") or "")
-    declared_category = str(document.get("materialCategory") or "")
+    declared_types = document_material_type_codes(document)
+    declared_category = " ".join(
+        [
+            str(document.get("materialCategory") or ""),
+            *(str(value) for value in document.get("materialCategoryLabels") or []),
+        ]
+    )
     material_keywords = keyword_variants(material_type_code) + keyword_variants(material_type_name)
-    if material_type_code and declared_type == material_type_code:
+    if material_type_code and material_type_code in declared_types:
         return 35, "标准资料类型一致"
     if material_type_code == "construction_schedule" and (
-        declared_type == "construction_organization_design"
+        "construction_organization_design" in declared_types
         or contains_any(normalized_text(declared_category), keyword_variants("施工组织与方案"))
         or contains_any(fulltext, keyword_variants("施工计划工期文件"))
     ):
@@ -784,9 +802,9 @@ def material_type_is_binding_compatible(point: dict[str, Any], document: dict[st
     """自动挂载只认最终类型或明确兼容关系；OCR中提到某类型只作诊断。"""
     expected = str(point.get("materialTypeCode") or "").strip()
     declared = str(document.get("materialTypeCode") or "").strip()
-    if expected and declared == expected:
+    if expected and expected in document_material_type_codes(document):
         return True
-    return expected == "construction_schedule" and declared == "construction_organization_design"
+    return expected == "construction_schedule" and "construction_organization_design" in document_material_type_codes(document)
 
 
 def best_excerpt(parse_result: dict[str, Any] | None, fields: list[dict[str, Any]], keywords: list[str]) -> dict[str, Any]:

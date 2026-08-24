@@ -53,15 +53,15 @@ from libs.document_audit_pipeline_comparison import (
 from libs.document_intelligence import process_document_classification_and_targeting
 from libs.document_auto_gold import (
     AutoGoldValidationError,
-    apply_auto_gold_projection,
-    build_gold_label_record,
-    category_definition_snapshot,
-    classification_response_format,
+    apply_material_type_gold_projection,
+    build_material_type_gold_label_record,
+    material_type_classification_response_format,
+    material_type_definition_snapshot,
     production_document_classifier_prompt,
     render_classifier_messages,
     stable_json_hash,
     supersede_gold_label_records,
-    validate_classification_output,
+    validate_material_type_classification_output,
 )
 from libs.integrations import task_dispatcher
 from libs.integrations.document_ai_client import DocumentAiClient
@@ -84,6 +84,7 @@ from libs.knowledge_indexing import (
     structure_fields_for_unit,
     units_from_local_file,
 )
+from libs.material_targeting import run_material_targeting
 from libs.mineru_ocr import (
     MinerUNormalizationError,
     MinerUNormalizedBundle,
@@ -353,10 +354,10 @@ def prepare_document_auto_gold_run(
     prompt = production_document_classifier_prompt(repository, business_pack_id)
     if not prompt:
         raise ValueError("AUTO_GOLD_PROMPT_UNAVAILABLE")
-    category_snapshot = category_definition_snapshot()
-    category_definitions_json = json.dumps(category_snapshot, ensure_ascii=False, sort_keys=True)
+    material_type_snapshot = material_type_definition_snapshot()
+    material_type_definitions_json = json.dumps(material_type_snapshot, ensure_ascii=False, sort_keys=True)
     model_input = {
-        "categoryDefinitionsJson": category_definitions_json,
+        "materialTypeDefinitionsJson": material_type_definitions_json,
         "ocrMarkdown": markdown,
     }
     prompt_snapshot = {
@@ -382,7 +383,7 @@ def prepare_document_auto_gold_run(
             "ocrParseResultId": ocr_parse_result_id,
             "markdownSha256": markdown_sha256,
             "promptHash": prompt_hash,
-            "categorySchemaHash": category_snapshot["schemaHash"],
+            "materialTypeSchemaHash": material_type_snapshot["schemaHash"],
             "model": model,
         }
     )
@@ -404,8 +405,8 @@ def prepare_document_auto_gold_run(
         "promptVersion": prompt.get("version"),
         "promptHash": prompt_hash,
         "promptSnapshot": prompt_snapshot,
-        "categoryDefinitionSnapshot": category_snapshot,
-        "categorySchemaHash": category_snapshot["schemaHash"],
+        "materialTypeDefinitionSnapshot": material_type_snapshot,
+        "materialTypeSchemaHash": material_type_snapshot["schemaHash"],
         "ocrMarkdown": markdown,
         "markdownSha256": markdown_sha256,
         "modelInput": model_input,
@@ -435,10 +436,16 @@ def _parse_qwen_classification_response(response: dict[str, Any]) -> dict[str, A
 def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
     refresh_worker_state(
         {
+            "projects",
+            "tree_nodes",
             "documents",
             "versions",
             "knowledge_files",
             "ocr_parse_results",
+            "extracted_fields",
+            "bindings",
+            "node_evidence_links",
+            "material_targeting_runs",
             "prompt_templates",
             "document_classification_runs",
             "document_gold_labels",
@@ -469,16 +476,17 @@ def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
         flush_state_records({"document_classification_runs": [run]})
         return {"classificationRunId": run_id, "status": "stale"}
 
-    categories = [
-        str(item.get("category") or "")
-        for item in (run.get("categoryDefinitionSnapshot") or {}).get("categories") or []
-        if item.get("category")
+    material_type_snapshot = run.get("materialTypeDefinitionSnapshot") or {}
+    material_type_codes = [
+        str(item.get("materialTypeCode") or "")
+        for item in material_type_snapshot.get("materialTypes") or []
+        if item.get("materialTypeCode")
     ]
     prompt = run.get("promptSnapshot") if isinstance(run.get("promptSnapshot"), dict) else {}
     model_input = run.get("modelInput") if isinstance(run.get("modelInput"), dict) else {}
     messages = render_classifier_messages(
         prompt,
-        category_definitions_json=str(model_input.get("categoryDefinitionsJson") or ""),
+        material_type_definitions_json=str(model_input.get("materialTypeDefinitionsJson") or ""),
         ocr_markdown=str(model_input.get("ocrMarkdown") or ""),
     )
     now = server_time()
@@ -516,13 +524,13 @@ def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
             messages,
             model="document-classifier",
             stream=False,
-            response_format=classification_response_format(categories),
+            response_format=material_type_classification_response_format(material_type_codes),
         )
         raw_output = _parse_qwen_classification_response(response)
-        validated = validate_classification_output(
+        validated = validate_material_type_classification_output(
             raw_output,
             str(run.get("ocrMarkdown") or ""),
-            categories,
+            material_type_snapshot,
         )
         existing_gold = [
             item
@@ -531,23 +539,30 @@ def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
         ]
         next_version = max((int(item.get("goldVersion") or 0) for item in existing_gold), default=0) + 1
         response_model = str(response.get("model") or run.get("model") or "qwen3.8-max")
-        gold = build_gold_label_record(
+        gold = build_material_type_gold_label_record(
             document_id=str(run.get("documentId") or ""),
             document_version_id=version_id,
             ocr_parse_result_id=parse_result_id,
             classification_run_id=run_id,
-            labels=validated["labels"],
+            validated=validated,
             model=response_model,
             prompt_hash=str(run.get("promptHash") or ""),
             markdown_sha256=str(run.get("markdownSha256") or ""),
-            category_schema_hash=str(run.get("categorySchemaHash") or ""),
+            material_type_schema_hash=str(run.get("materialTypeSchemaHash") or ""),
             gold_version=next_version,
         )
         repo.state["document_gold_labels"] = supersede_gold_label_records(
             repo.state.get("document_gold_labels", []),
             gold,
         )
-        projection = apply_auto_gold_projection(repo, gold)
+        projection = apply_material_type_gold_projection(repo, gold)
+        targeting = run_material_targeting(
+            repo,
+            str(run.get("projectId") or ""),
+            str(run.get("documentId") or ""),
+            version_id,
+            triggered_by="qwen_auto_gold",
+        )
         attempt.update(
             {
                 "status": "success",
@@ -569,23 +584,33 @@ def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
                 "structuredResponse": validated,
                 "validation": {"status": "accepted", "groundedLabelCount": len(validated["labels"])},
                 "goldLabelId": gold["id"],
+                "targeting": deepcopy(targeting),
                 "finishedAt": server_time(),
                 "updatedAt": server_time(),
             }
         )
-        records = {
-            "document_classification_runs": [run],
-            "document_gold_labels": repo.state["document_gold_labels"],
-            "model_call_attempts": [attempt],
-            "documents": [projection["document"]] if projection.get("document") else [],
-            "knowledge_files": [projection["knowledgeFile"]] if projection.get("knowledgeFile") else [],
-        }
+        records = ocr_result_state_records(str(run.get("documentId") or ""), version_id)
+        records.update(
+            {
+                "tree_nodes": [
+                    item
+                    for item in repo.state.get("tree_nodes", [])
+                    if str(item.get("projectId") or "") == str(run.get("projectId") or "")
+                ],
+                "document_classification_runs": [run],
+                "document_gold_labels": repo.state["document_gold_labels"],
+                "model_call_attempts": [attempt],
+                "documents": [projection["document"]] if projection.get("document") else [],
+                "knowledge_files": [projection["knowledgeFile"]] if projection.get("knowledgeFile") else [],
+            }
+        )
         flush_state_records(records)
         return {
             "classificationRunId": run_id,
             "status": "accepted",
             "goldLabelId": gold["id"],
             "labelCount": len(validated["labels"]),
+            "targeting": targeting,
         }
     except AutoGoldValidationError as exc:
         attempt.update(

@@ -15,7 +15,7 @@ MATERIAL_REVIEW_POINTS = Path(__file__).resolve().parents[1] / "config" / "mater
 MAX_LABELS = 16
 MAX_EVIDENCE_PER_LABEL = 12
 CLASSIFIER_PROMPT_KEY = "document-material-classifier"
-CLASSIFIER_PROMPT_VARIABLES = {"categoryDefinitionsJson", "ocrMarkdown"}
+CLASSIFIER_PROMPT_VARIABLES = {"materialTypeDefinitionsJson", "ocrMarkdown"}
 FORBIDDEN_CLASSIFIER_PROMPT_VARIABLES = {"fileName", "relativeDirectory", "filePath", "extension"}
 
 
@@ -86,12 +86,15 @@ def stable_json_hash(value: Any) -> str:
 def render_classifier_messages(
     prompt: dict[str, Any],
     *,
-    category_definitions_json: str,
+    category_definitions_json: str = "",
+    material_type_definitions_json: str = "",
     ocr_markdown: str,
 ) -> list[dict[str, str]]:
     user_template = str(prompt.get("userPromptTemplate") or "")
-    rendered_user = user_template.replace("{{categoryDefinitionsJson}}", category_definitions_json).replace(
-        "{{ocrMarkdown}}", ocr_markdown
+    rendered_user = (
+        user_template.replace("{{categoryDefinitionsJson}}", category_definitions_json)
+        .replace("{{materialTypeDefinitionsJson}}", material_type_definitions_json)
+        .replace("{{ocrMarkdown}}", ocr_markdown)
     )
     return [
         {"role": "system", "content": str(prompt.get("systemPrompt") or "")},
@@ -195,6 +198,60 @@ def category_definition_snapshot(path: Path = MATERIAL_REVIEW_POINTS) -> dict[st
     return {**snapshot, "schemaHash": _sha256_json(snapshot)}
 
 
+def material_type_definition_snapshot(path: Path = MATERIAL_REVIEW_POINTS) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    grouped: dict[str, dict[str, set[Any]]] = {}
+    for item in _walk_material_items(payload):
+        if item.get("enabled") is False:
+            continue
+        code = str(item.get("materialTypeCode") or "").strip()
+        if not code:
+            continue
+        group = grouped.setdefault(
+            code,
+            {
+                "materialTypeNames": set(),
+                "materialCategories": set(),
+                "evidenceItems": set(),
+                "nodeIds": set(),
+            },
+        )
+        for key, target in (
+            ("materialTypeName", "materialTypeNames"),
+            ("materialCategory", "materialCategories"),
+        ):
+            value = str(item.get(key) or "").strip()
+            if value:
+                group[target].add(value)
+        for evidence in item.get("evidenceItems") or []:
+            value = str(evidence or "").strip()
+            if value:
+                group["evidenceItems"].add(value)
+        try:
+            node_id = int(item.get("nodeId") or 0)
+        except (TypeError, ValueError):
+            node_id = 0
+        if node_id > 0:
+            group["nodeIds"].add(node_id)
+    material_types = [
+        {
+            "materialTypeCode": code,
+            "materialTypeNames": sorted(values["materialTypeNames"]),
+            "materialCategories": sorted(values["materialCategories"]),
+            "evidenceItems": sorted(values["evidenceItems"]),
+            "nodeIds": sorted(values["nodeIds"]),
+        }
+        for code, values in sorted(grouped.items())
+    ]
+    snapshot = {
+        "schemaVersion": "document-material-types@1",
+        "sourceVersion": str(payload.get("version") or ""),
+        "mappingItemCount": int(payload.get("itemCount") or len(_walk_material_items(payload))),
+        "materialTypes": material_types,
+    }
+    return {**snapshot, "schemaHash": _sha256_json(snapshot)}
+
+
 def classification_response_format(categories: list[str]) -> dict[str, Any]:
     evidence_schema = {
         "type": "object",
@@ -243,6 +300,17 @@ def classification_response_format(categories: list[str]) -> dict[str, Any]:
             },
         },
     }
+
+
+def material_type_classification_response_format(material_type_codes: list[str]) -> dict[str, Any]:
+    response_format = classification_response_format(material_type_codes)
+    schema = response_format["json_schema"]["schema"]
+    properties = schema["properties"]["labels"]["items"]["properties"]
+    properties["materialTypeCode"] = properties.pop("category")
+    required = schema["properties"]["labels"]["items"]["required"]
+    required[required.index("category")] = "materialTypeCode"
+    response_format["json_schema"]["name"] = "document_material_type_classification"
+    return response_format
 
 
 def _required_text(value: Any, *, code: str, field: str) -> str:
@@ -331,6 +399,76 @@ def validate_classification_output(
     }
 
 
+def validate_material_type_classification_output(
+    raw: dict[str, Any],
+    markdown: str,
+    material_type_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    definitions = {
+        str(item.get("materialTypeCode") or ""): item
+        for item in material_type_snapshot.get("materialTypes") or []
+        if item.get("materialTypeCode")
+    }
+    raw_labels = raw.get("labels") if isinstance(raw, dict) else None
+    if not isinstance(raw_labels, list):
+        raise AutoGoldValidationError("INVALID_LABELS", "labels must be an array")
+    translated = deepcopy(raw)
+    merged_labels: dict[str, dict[str, Any]] = {}
+    for raw_label in raw_labels:
+        if not isinstance(raw_label, dict):
+            raise AutoGoldValidationError("INVALID_LABEL", "label must be an object")
+        code = str(raw_label.get("materialTypeCode") or "").strip()
+        candidate = {**raw_label, "category": code}
+        existing = merged_labels.get(code)
+        if existing is None:
+            merged_labels[code] = candidate
+            continue
+        try:
+            candidate_confidence = float(candidate.get("confidence"))
+            existing_confidence = float(existing.get("confidence"))
+        except (TypeError, ValueError):
+            candidate_confidence = existing_confidence = 0.0
+        if candidate_confidence > existing_confidence:
+            existing["confidence"] = candidate.get("confidence")
+            existing["decisionSummary"] = candidate.get("decisionSummary")
+        evidence = list(existing.get("contentEvidence") or [])
+        evidence_keys = {
+            (str(item.get("quote") or ""), str(item.get("purpose") or ""))
+            for item in evidence
+            if isinstance(item, dict)
+        }
+        for item in candidate.get("contentEvidence") or []:
+            key = (
+                str(item.get("quote") or ""),
+                str(item.get("purpose") or ""),
+            ) if isinstance(item, dict) else None
+            if key not in evidence_keys:
+                evidence.append(item)
+                evidence_keys.add(key)
+        existing["contentEvidence"] = evidence
+    translated["labels"] = list(merged_labels.values())
+    validated = validate_classification_output(translated, markdown, sorted(definitions))
+    labels: list[dict[str, Any]] = []
+    categories: set[str] = set()
+    for item in validated["labels"]:
+        code = str(item.pop("category"))
+        definition = definitions[code]
+        material_categories = sorted(str(value) for value in definition.get("materialCategories") or [] if value)
+        categories.update(material_categories)
+        labels.append(
+            {
+                "materialTypeCode": code,
+                "materialCategories": material_categories,
+                **item,
+            }
+        )
+    return {
+        **validated,
+        "labels": labels,
+        "materialCategoryLabels": sorted(categories),
+    }
+
+
 def build_gold_label_record(
     *,
     document_id: str,
@@ -364,6 +502,69 @@ def build_gold_label_record(
         "createdAt": now,
         "updatedAt": now,
     }
+
+
+def build_material_type_gold_label_record(
+    *,
+    document_id: str,
+    document_version_id: str,
+    ocr_parse_result_id: str,
+    classification_run_id: str,
+    validated: dict[str, Any],
+    model: str,
+    prompt_hash: str,
+    markdown_sha256: str,
+    material_type_schema_hash: str,
+    gold_version: int,
+) -> dict[str, Any]:
+    labels = deepcopy(validated.get("labels") or [])
+    primary = max(labels, key=lambda item: float(item.get("confidence") or 0))["materialTypeCode"] if labels else None
+    now = server_time()
+    return {
+        "id": f"DGL-{uuid4().hex[:12].upper()}",
+        "documentId": document_id,
+        "documentVersionId": document_version_id,
+        "ocrParseResultId": ocr_parse_result_id,
+        "classificationRunId": classification_run_id,
+        "labels": labels,
+        "primaryMaterialTypeCode": primary,
+        "materialCategoryLabels": deepcopy(validated.get("materialCategoryLabels") or []),
+        "source": "qwen_auto_gold",
+        "model": model,
+        "promptHash": prompt_hash,
+        "markdownSha256": markdown_sha256,
+        "materialTypeSchemaHash": material_type_schema_hash,
+        "goldVersion": max(1, int(gold_version)),
+        "status": "active",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+
+
+def apply_material_type_gold_projection(repo: Any, gold: dict[str, Any]) -> dict[str, Any]:
+    document = repo.find_one("documents", str(gold.get("documentId") or ""))
+    if not document:
+        return {"status": "missing_document"}
+    labels = [item for item in gold.get("labels") or [] if isinstance(item, dict)]
+    type_codes = [str(item.get("materialTypeCode") or "") for item in labels if item.get("materialTypeCode")]
+    confidence = max((float(item.get("confidence") or 0) for item in labels), default=0.0)
+    now = server_time()
+    projection = {
+        "materialTypeLabels": type_codes,
+        "materialTypeCode": gold.get("primaryMaterialTypeCode") or "unclassified_material",
+        "materialCategoryLabels": deepcopy(gold.get("materialCategoryLabels") or []),
+        "materialCategory": (gold.get("materialCategoryLabels") or [None])[0],
+        "activeGoldLabelId": gold.get("id"),
+        "classificationSource": "qwen_auto_gold",
+        "classificationConfidence": confidence,
+        "classifiedAt": now,
+        "updatedAt": now,
+    }
+    document.update(deepcopy(projection))
+    knowledge_file = repo.knowledge_file_for_version(str(gold.get("documentVersionId") or ""))
+    if knowledge_file is not None:
+        knowledge_file.update(deepcopy(projection))
+    return {"status": "projected", "document": document, "knowledgeFile": knowledge_file}
 
 
 def supersede_gold_label_records(

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a single-call Qwen3.8-Max multi-label classifier that consumes only MinerU Markdown, writes versioned automatic gold labels, reuses the existing admin Prompt template manager, and verifies the contract against all 23 files under `test/`.
+**Goal:** Build a single-call Qwen3.8-Max classifier that selects zero or more of the 60 concrete `materialTypeCode` values from MinerU Markdown, derives the 16 categories, writes versioned automatic gold labels, targets nodes through the 164 mapping rows, and verifies the contract against all 23 files under `test/`.
 
-**Architecture:** MinerU persists a Markdown snapshot and hash on the OCR job, then dispatches an idempotent `classify_document_auto_gold` Celery task to the existing `llm.remote` queue. A focused classification service resolves the production Prompt template, calls the existing Qwen OpenAI-compatible client with a strict JSON Schema, grounds every `contentEvidence` quote in the Markdown, persists an immutable run and gold-label version, and projects the multi-label result onto the document and project knowledge file.
+**Architecture:** MinerU dispatches one `classify_document_auto_gold` task to `llm.remote`. The classifier resolves the production Prompt, sends only the 60-type snapshot and Markdown to Qwen, grounds every evidence quote, projects all type labels and derived categories, then invokes `run_material_targeting` so every matching mapping row can create node evidence and bindings.
 
 **Tech Stack:** Python 3.12, FastAPI, Celery/Redis, PostgreSQL JSONB repository, httpx OpenAI-compatible Chat Completions, Vue 3/Element Plus existing admin Prompt UI, pytest, Node frontend contract tests.
 
@@ -16,10 +16,14 @@
 - Qwen receives MinerU Markdown and category definitions only; filenames, directories, extensions, upload metadata, and frontend guesses are forbidden.
 - One Qwen call only: no human confirmation, second model call, or model voting.
 - Local schema, enum, freshness, and Markdown quote grounding checks are mandatory before auto-gold acceptance.
-- The authoritative category enum is the 16 `materialCategory` values in `backend/config/material_review_points.json`.
+- The authoritative model enum is the 60 unique `materialTypeCode` values in `backend/config/material_review_points.json`; the 16 categories are derived outputs.
 - All accepted auto-gold records are immutable versions; replacement supersedes rather than deletes old versions.
 - Existing admin `/admin/prompt-templates` CRUD/publish flow is reused.
-- Existing `materialTypeCode` is not guessed by this category classifier.
+- The highest-confidence model type becomes the legacy `materialTypeCode`; all selected types remain in `materialTypeLabels[]`.
+
+## Approved Amendment
+
+This amendment supersedes earlier task text that mentions direct 16-category model output. Prompt variables are `materialTypeDefinitionsJson` and `ocrMarkdown`; output labels use `materialTypeCode`; accepted gold immediately reruns the 164-row targeting map. The implementation and final tests must follow the design spec when older checklist snippets conflict.
 - Every production behavior is implemented test-first and each test must be observed failing for the intended reason.
 
 ---

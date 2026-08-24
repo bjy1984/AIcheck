@@ -6071,7 +6071,7 @@ onMounted(() => {
             show-icon
             :closable="false"
             title="文件分类仅将 MinerU Markdown 正文发送给 Qwen"
-            description="可用变量仅为 categoryDefinitionsJson 和 ocrMarkdown；文件名、目录名和扩展名不会进入分类 Prompt。"
+            description="可用变量仅为 materialTypeDefinitionsJson 和 ocrMarkdown；文件名、目录名和扩展名不会进入分类 Prompt。"
           />
           <div v-if="promptTemplateOperationError" class="local-error local-error--compact">
             <ElAlert

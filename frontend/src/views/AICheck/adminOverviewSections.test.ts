@@ -47,5 +47,5 @@ assert.ok(
   /promptTemplateForm\.promptKey !== 'document-material-classifier'/.test(sfc),
   '文件分类模板必须隐藏不生效的 Planner / Critic 输入框'
 )
-assert.ok(sfc.includes('categoryDefinitionsJson'), '分类模板提示中缺少 categoryDefinitionsJson 变量')
+assert.ok(sfc.includes('materialTypeDefinitionsJson'), '分类模板提示中缺少 materialTypeDefinitionsJson 变量')
 assert.ok(sfc.includes('ocrMarkdown'), '分类模板提示中缺少 ocrMarkdown 变量')

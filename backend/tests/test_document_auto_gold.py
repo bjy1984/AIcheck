@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from libs.db.repository import InMemoryRepository
 from libs.document_auto_gold import (
     AutoGoldValidationError,
     build_gold_label_record,
@@ -12,6 +13,11 @@ from libs.document_auto_gold import (
     classification_response_format,
     supersede_gold_label_records,
     validate_classification_output,
+    apply_material_type_gold_projection,
+    build_material_type_gold_label_record,
+    material_type_classification_response_format,
+    material_type_definition_snapshot,
+    validate_material_type_classification_output,
 )
 
 
@@ -197,3 +203,137 @@ def test_next_gold_version_supersedes_previous_without_mutating_it():
     assert records[1]["id"] == "DGL-OLD"
     assert records[1]["status"] == "superseded"
     assert records[1]["supersededByGoldLabelId"] == "DGL-NEW"
+
+
+def test_material_type_snapshot_contains_exactly_60_types_and_derived_categories():
+    snapshot = material_type_definition_snapshot(CONFIG)
+
+    assert len(snapshot["materialTypes"]) == 60
+    assert snapshot["mappingItemCount"] == 164
+    assert sum(len(item["nodeIds"]) for item in snapshot["materialTypes"]) == 163
+    by_code = {item["materialTypeCode"]: item for item in snapshot["materialTypes"]}
+    assert by_code["design_license"]["materialCategories"] == ["资质证照"]
+    assert by_code["pipeline_summary"]["materialCategories"] == ["设计与施工组织", "设计基础资料"]
+    assert snapshot["schemaHash"].startswith("sha256:")
+
+
+def test_material_type_response_schema_uses_only_60_code_enum():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    codes = [item["materialTypeCode"] for item in snapshot["materialTypes"]]
+    response_format = material_type_classification_response_format(codes)
+    label_properties = response_format["json_schema"]["schema"]["properties"]["labels"]["items"]["properties"]
+
+    assert label_properties["materialTypeCode"]["enum"] == codes
+    assert "category" not in label_properties
+
+
+def test_validate_material_types_accepts_multi_labels_and_derives_16_categories():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    raw = {
+        "labels": [
+            {
+                "materialTypeCode": "design_license",
+                "confidence": 0.98,
+                "decisionSummary": "正文是压力管道设计许可证。",
+                "contentEvidence": [{"quote": "特种设备生产许可证", "purpose": "许可证标题"}],
+            },
+            {
+                "materialTypeCode": "design_document",
+                "confidence": 0.76,
+                "decisionSummary": "正文包含压力管道设计内容。",
+                "contentEvidence": [{"quote": "压力管道设计", "purpose": "设计内容"}],
+            },
+        ],
+        "documentSummary": "压力管道设计资料",
+        "classificationComplete": True,
+        "unclassifiedReason": None,
+    }
+
+    validated = validate_material_type_classification_output(raw, MARKDOWN, snapshot)
+
+    assert [item["materialTypeCode"] for item in validated["labels"]] == ["design_license", "design_document"]
+    assert validated["labels"][0]["materialCategories"] == ["资质证照"]
+    assert validated["materialCategoryLabels"] == ["设计基础资料", "资质证照"]
+
+
+def test_validate_material_types_merges_duplicate_type_evidence_from_model():
+    snapshot = material_type_definition_snapshot(CONFIG)
+    raw = {
+        "labels": [
+            {
+                "materialTypeCode": "design_license",
+                "confidence": 0.91,
+                "decisionSummary": "标题表明这是许可证。",
+                "contentEvidence": [{"quote": "特种设备生产许可证", "purpose": "许可证标题"}],
+            },
+            {
+                "materialTypeCode": "design_license",
+                "confidence": 0.98,
+                "decisionSummary": "许可项目表明这是设计许可证。",
+                "contentEvidence": [{"quote": "压力管道设计", "purpose": "许可项目"}],
+            },
+        ],
+        "documentSummary": "压力管道设计许可证",
+        "classificationComplete": True,
+        "unclassifiedReason": None,
+    }
+
+    validated = validate_material_type_classification_output(raw, MARKDOWN, snapshot)
+
+    assert len(validated["labels"]) == 1
+    assert validated["labels"][0]["materialTypeCode"] == "design_license"
+    assert validated["labels"][0]["confidence"] == 0.98
+    assert validated["labels"][0]["decisionSummary"] == "许可项目表明这是设计许可证。"
+    assert [item["quote"] for item in validated["labels"][0]["contentEvidence"]] == [
+        "特种设备生产许可证",
+        "压力管道设计",
+    ]
+
+
+def test_material_type_gold_projects_multi_types_and_primary_type_without_guessing():
+    repository = InMemoryRepository()
+    document, version = repository.create_document("P-2026-HDCP-001", "任意文件.bin", "application/octet-stream")
+    snapshot = material_type_definition_snapshot(CONFIG)
+    validated = validate_material_type_classification_output(
+        {
+            "labels": [
+                {
+                    "materialTypeCode": "design_license",
+                    "confidence": 0.98,
+                    "decisionSummary": "许可证。",
+                    "contentEvidence": [{"quote": "特种设备生产许可证", "purpose": "标题"}],
+                },
+                {
+                    "materialTypeCode": "design_document",
+                    "confidence": 0.76,
+                    "decisionSummary": "设计内容。",
+                    "contentEvidence": [{"quote": "压力管道设计", "purpose": "正文"}],
+                },
+            ],
+            "documentSummary": "设计资料",
+            "classificationComplete": True,
+            "unclassifiedReason": None,
+        },
+        MARKDOWN,
+        snapshot,
+    )
+    gold = build_material_type_gold_label_record(
+        document_id=document["id"],
+        document_version_id=version["id"],
+        ocr_parse_result_id="PARSE-1",
+        classification_run_id="DCR-1",
+        validated=validated,
+        model="qwen3.8-max",
+        prompt_hash="sha256:prompt",
+        markdown_sha256="sha256:markdown",
+        material_type_schema_hash=snapshot["schemaHash"],
+        gold_version=1,
+    )
+
+    projection = apply_material_type_gold_projection(repository, gold)
+
+    assert gold["primaryMaterialTypeCode"] == "design_license"
+    assert document["materialTypeLabels"] == ["design_license", "design_document"]
+    assert document["materialTypeCode"] == "design_license"
+    assert document["materialCategoryLabels"] == ["设计基础资料", "资质证照"]
+    assert projection["status"] == "projected"

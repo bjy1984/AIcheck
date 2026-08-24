@@ -39,7 +39,7 @@ def accepted_output() -> dict:
     return {
         "labels": [
             {
-                "category": "资质证照",
+                "materialTypeCode": "design_license",
                 "confidence": 0.98,
                 "decisionSummary": "Markdown正文是特种设备生产许可证。",
                 "contentEvidence": [
@@ -50,7 +50,7 @@ def accepted_output() -> dict:
                 ],
             },
             {
-                "category": "设计基础资料",
+                "materialTypeCode": "design_document",
                 "confidence": 0.83,
                 "decisionSummary": "正文包含压力管道设计许可内容。",
                 "contentEvidence": [
@@ -135,6 +135,26 @@ def test_dispatch_document_classification_targets_existing_llm_queue(monkeypatch
     assert calls[0]["task_id"].startswith("aicheck-document-auto-gold-")
 
 
+def test_classifier_worker_refreshes_all_targeting_state(monkeypatch: pytest.MonkeyPatch):
+    repository = InMemoryRepository(seed=False)
+    loaded: list[set[str]] = []
+
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "refresh_worker_state", lambda selected: loaded.append(set(selected)))
+
+    result = tasks.classify_document_auto_gold.run("DCR-MISSING")
+
+    assert result["status"] == "missing"
+    assert {
+        "projects",
+        "tree_nodes",
+        "bindings",
+        "node_evidence_links",
+        "material_targeting_runs",
+        "extracted_fields",
+    } <= loaded[0]
+
+
 def test_mineru_worker_loads_prompt_and_auto_gold_state_before_preparing_run(monkeypatch: pytest.MonkeyPatch):
     repository = InMemoryRepository(seed=False)
     loaded: list[set[str]] = []
@@ -171,7 +191,8 @@ def test_prepare_run_is_idempotent_and_contains_markdown_only_context(monkeypatc
     serialized_context = json.dumps(first["modelInput"], ensure_ascii=False)
     assert "MISLEADING_SECRET_NAME.pdf" not in serialized_context
     assert "fileName" not in serialized_context
-    assert set(first["modelInput"]) == {"categoryDefinitionsJson", "ocrMarkdown"}
+    assert set(first["modelInput"]) == {"materialTypeDefinitionsJson", "ocrMarkdown"}
+    assert len(first["materialTypeDefinitionSnapshot"]["materialTypes"]) == 60
 
 
 def test_one_call_success_persists_auto_gold_and_projects_multiple_labels(monkeypatch: pytest.MonkeyPatch):
@@ -180,11 +201,27 @@ def test_one_call_success_persists_auto_gold_and_projects_multiple_labels(monkey
     initial_material_type = document["materialTypeCode"]
     client = FakeQwenClient(accepted_output())
     persisted: list[dict] = []
+    targeting_calls: list[dict] = []
 
     monkeypatch.setattr(tasks, "repo", repository)
     monkeypatch.setattr(tasks, "refresh_worker_state", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(tasks, "flush_state_records", lambda records, *_args, **_kwargs: persisted.append(records))
     monkeypatch.setattr(tasks, "qwen_runtime_client", lambda: client)
+    monkeypatch.setattr(
+        tasks,
+        "run_material_targeting",
+        lambda _repo, project_id, document_id, version_id, **kwargs: (
+            targeting_calls.append(
+                {
+                    "projectId": project_id,
+                    "documentId": document_id,
+                    "versionId": version_id,
+                    **kwargs,
+                }
+            )
+            or {"status": "completed", "createdBindingCount": 2, "createdLinkCount": 2}
+        ),
+    )
 
     result = tasks.classify_document_auto_gold.run(run["id"])
 
@@ -194,6 +231,7 @@ def test_one_call_success_persists_auto_gold_and_projects_multiple_labels(monkey
     assert call["model"] == "document-classifier"
     assert call["stream"] is False
     assert call["response_format"]["type"] == "json_schema"
+    assert "materialTypeCode" in json.dumps(call["response_format"])
     serialized_messages = json.dumps(call["messages"], ensure_ascii=False)
     assert MARKDOWN in call["messages"][1]["content"]
     assert "MISLEADING_SECRET_NAME.pdf" not in serialized_messages
@@ -204,14 +242,40 @@ def test_one_call_success_persists_auto_gold_and_projects_multiple_labels(monkey
     assert run["rawResponse"]["id"] == "QWEN-CLASSIFY-1"
     gold = repository.state["document_gold_labels"][0]
     assert gold["classificationRunId"] == run["id"]
-    assert [item["category"] for item in gold["labels"]] == ["资质证照", "设计基础资料"]
-    assert document["materialCategoryLabels"] == ["资质证照", "设计基础资料"]
-    assert document["materialCategory"] == "资质证照"
-    assert document["materialTypeCode"] == initial_material_type
+    assert [item["materialTypeCode"] for item in gold["labels"]] == ["design_license", "design_document"]
+    assert gold["primaryMaterialTypeCode"] == "design_license"
+    assert document["materialTypeLabels"] == ["design_license", "design_document"]
+    assert document["materialCategoryLabels"] == ["设计基础资料", "资质证照"]
+    assert document["materialCategory"] == "设计基础资料"
+    assert document["materialTypeCode"] == "design_license"
+    assert document["materialTypeCode"] != initial_material_type
     knowledge_file = repository.knowledge_file_for_version(version["id"])
     assert knowledge_file is not None
-    assert knowledge_file["materialCategoryLabels"] == ["资质证照", "设计基础资料"]
+    assert knowledge_file["materialCategoryLabels"] == ["设计基础资料", "资质证照"]
+    assert knowledge_file["materialTypeLabels"] == ["design_license", "design_document"]
+    assert targeting_calls == [
+        {
+            "projectId": document["projectId"],
+            "documentId": document["id"],
+            "versionId": version["id"],
+            "triggered_by": "qwen_auto_gold",
+        }
+    ]
+    assert result["targeting"]["createdBindingCount"] == 2
     assert persisted
+    assert {
+        "documents",
+        "versions",
+        "knowledge_files",
+        "ocr_parse_results",
+        "node_evidence_links",
+        "bindings",
+        "material_targeting_runs",
+        "tree_nodes",
+        "document_classification_runs",
+        "document_gold_labels",
+        "model_call_attempts",
+    } <= set(persisted[-1])
 
 
 def test_ungrounded_response_fails_without_gold(monkeypatch: pytest.MonkeyPatch):

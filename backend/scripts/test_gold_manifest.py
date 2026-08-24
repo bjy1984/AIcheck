@@ -10,7 +10,7 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from libs.document_auto_gold import category_definition_snapshot
+from libs.document_auto_gold import category_definition_snapshot, material_type_definition_snapshot
 
 
 def sha256_file(path: Path) -> str:
@@ -25,14 +25,14 @@ def model_input_for_case(
     case: dict[str, Any],
     *,
     markdown: str,
-    category_snapshot: dict[str, Any],
+    material_type_snapshot: dict[str, Any],
 ) -> dict[str, str]:
     # `case` is accepted so callers can keep corpus bookkeeping beside the
     # input builder. It is intentionally not read: paths and human gold labels
     # must never leak into the production model request.
     del case
     return {
-        "categoryDefinitionsJson": json.dumps(category_snapshot, ensure_ascii=False, sort_keys=True),
+        "materialTypeDefinitionsJson": json.dumps(material_type_snapshot, ensure_ascii=False, sort_keys=True),
         "ocrMarkdown": markdown,
     }
 
@@ -53,11 +53,15 @@ def audit_test_gold_manifest(repo_root: Path, manifest_path: Path) -> dict[str, 
     allowed_categories = {
         item["category"] for item in category_definition_snapshot()["categories"]
     }
+    allowed_material_types = {
+        item["materialTypeCode"] for item in material_type_definition_snapshot()["materialTypes"]
+    }
     seen: set[str] = set()
     duplicate_paths: list[str] = []
     missing_files: list[str] = []
     hash_mismatches: list[str] = []
     unknown_categories: list[dict[str, str]] = []
+    unknown_material_types: list[dict[str, str]] = []
     for case in cases:
         if not isinstance(case, dict):
             continue
@@ -73,6 +77,11 @@ def audit_test_gold_manifest(repo_root: Path, manifest_path: Path) -> dict[str, 
         for category in case.get("expectedCategories") or []:
             if str(category) not in allowed_categories:
                 unknown_categories.append({"relativePath": relative_path, "category": str(category)})
+        for material_type_code in case.get("expectedMaterialTypeCodes") or []:
+            if str(material_type_code) not in allowed_material_types:
+                unknown_material_types.append(
+                    {"relativePath": relative_path, "materialTypeCode": str(material_type_code)}
+                )
     extra_files = sorted(actual_paths - seen)
     missing_manifest_entries = sorted(seen - actual_paths)
     ok = not any(
@@ -81,6 +90,7 @@ def audit_test_gold_manifest(repo_root: Path, manifest_path: Path) -> dict[str, 
             missing_files,
             hash_mismatches,
             unknown_categories,
+            unknown_material_types,
             extra_files,
             missing_manifest_entries,
         ]
@@ -92,10 +102,12 @@ def audit_test_gold_manifest(repo_root: Path, manifest_path: Path) -> dict[str, 
         "expectedFileCount": expected_count,
         "hashMismatchCount": len(hash_mismatches),
         "unknownCategoryCount": len(unknown_categories),
+        "unknownMaterialTypeCount": len(unknown_material_types),
         "duplicatePaths": sorted(duplicate_paths),
         "missingFiles": sorted(missing_files),
         "hashMismatches": sorted(hash_mismatches),
         "unknownCategories": unknown_categories,
+        "unknownMaterialTypes": unknown_material_types,
         "extraFiles": extra_files,
         "missingManifestEntries": missing_manifest_entries,
     }

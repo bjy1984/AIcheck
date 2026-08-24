@@ -41,9 +41,9 @@ def classifier_payload(**overrides):
         "businessPackId": "engineering_inspection_v1",
         "agentId": "document_material_classifier",
         "systemPrompt": "只依据 MinerU Markdown 正文进行资料大类分类。",
-        "userPromptTemplate": "类别定义：{{categoryDefinitionsJson}}\n正文：{{ocrMarkdown}}",
+        "userPromptTemplate": "具体资料类型定义：{{materialTypeDefinitionsJson}}\n正文：{{ocrMarkdown}}",
         "outputSchema": {"type": "json_schema"},
-        "variables": ["categoryDefinitionsJson", "ocrMarkdown"],
+        "variables": ["materialTypeDefinitionsJson", "ocrMarkdown"],
     }
     payload.update(overrides)
     return payload
@@ -70,7 +70,7 @@ def test_seed_contains_exactly_one_production_document_classifier_prompt():
     assert len(prompts) == 1
     prompt = prompts[0]
     assert prompt["agentId"] == "document_material_classifier"
-    assert prompt["variables"] == ["categoryDefinitionsJson", "ocrMarkdown"]
+    assert prompt["variables"] == ["materialTypeDefinitionsJson", "ocrMarkdown"]
     assert prompt["outputSchema"]["type"] == "json_schema"
 
 
@@ -106,7 +106,7 @@ def test_admin_rejects_filename_or_path_variables_for_classifier_prompt():
     for forbidden in ("fileName", "relativeDirectory", "filePath", "extension"):
         response = client.post(
             "/admin/prompt-templates",
-            json=classifier_payload(variables=["categoryDefinitionsJson", "ocrMarkdown", forbidden]),
+            json=classifier_payload(variables=["materialTypeDefinitionsJson", "ocrMarkdown", forbidden]),
             headers={"Idempotency-Key": f"classifier-forbidden-{forbidden}"},
         )
         assert response_reason(response) == "VALIDATION_ERROR"
@@ -118,7 +118,7 @@ def test_admin_rejects_forbidden_placeholders_hidden_in_classifier_prompt_text()
             "/admin/prompt-templates",
             json=classifier_payload(
                 userPromptTemplate=(
-                    "类别：{{categoryDefinitionsJson}}\n正文：{{ocrMarkdown}}\n"
+                    "类型：{{materialTypeDefinitionsJson}}\n正文：{{ocrMarkdown}}\n"
                     f"禁止泄露：{{{{{forbidden}}}}}"
                 )
             ),
