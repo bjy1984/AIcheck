@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.main import app
 from libs.db.repository import InMemoryRepository, STATE_COLLECTIONS, repo
+from libs.db.seed import fresh_state
 from libs.document_auto_gold import production_document_classifier_prompt
 
 
@@ -71,6 +72,23 @@ def test_seed_contains_exactly_one_production_document_classifier_prompt():
     assert prompt["agentId"] == "document_material_classifier"
     assert prompt["variables"] == ["categoryDefinitionsJson", "ocrMarkdown"]
     assert prompt["outputSchema"]["type"] == "json_schema"
+
+
+def test_existing_database_backfills_classifier_prompt_without_replacing_review_prompts():
+    repository = InMemoryRepository(seed=False)
+    loaded = fresh_state()
+    loaded["prompt_templates"] = [
+        item
+        for item in loaded["prompt_templates"]
+        if item.get("promptKey") != "document-material-classifier"
+    ]
+    review_prompt_ids = [item["id"] for item in loaded["prompt_templates"]]
+
+    changed = repository.apply_seed_compatibility_defaults(loaded)
+
+    assert changed is True
+    assert [item["id"] for item in loaded["prompt_templates"] if item.get("promptKey") == "review_prompt"] == review_prompt_ids
+    assert len([item for item in loaded["prompt_templates"] if item.get("promptKey") == "document-material-classifier"]) == 1
 
 
 def test_production_prompt_resolver_fails_closed_on_ambiguity():

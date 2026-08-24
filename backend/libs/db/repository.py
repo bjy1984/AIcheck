@@ -3819,6 +3819,22 @@ class InMemoryRepository:
         if not loaded.get("prompt_templates"):
             loaded["prompt_templates"] = seeded.get("prompt_templates", [])
             changed = True
+        elif not any(
+            item.get("promptKey") == "document-material-classifier"
+            for item in loaded.get("prompt_templates", [])
+            if isinstance(item, dict)
+        ):
+            classifier_seed = next(
+                (
+                    self.clone(item)
+                    for item in seeded.get("prompt_templates", [])
+                    if item.get("promptKey") == "document-material-classifier"
+                ),
+                None,
+            )
+            if classifier_seed:
+                loaded["prompt_templates"].append(classifier_seed)
+                changed = True
         if not loaded.get("report_templates"):
             loaded["report_templates"] = seeded.get("report_templates", [])
             changed = True
