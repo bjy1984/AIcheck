@@ -56,6 +56,8 @@ class MinerUArtifact:
 class MinerUNormalizedBundle:
     result: dict[str, Any]
     artifacts: dict[str, MinerUArtifact]
+    markdown_text: str | None = None
+    markdown_sha256: str | None = None
 
 
 def normalize_mineru_zip(
@@ -76,6 +78,14 @@ def normalize_mineru_zip(
     )
     layout_name, layout_artifact_key = page_layout_artifact(members)
     markdown_name = primary_markdown_name(members)
+    markdown_bytes = members[markdown_name] if markdown_name else None
+    try:
+        markdown_text = markdown_bytes.decode("utf-8") if markdown_bytes is not None else None
+    except UnicodeDecodeError as exc:
+        raise MinerUNormalizationError(
+            "MINERU_MARKDOWN_INVALID",
+            "MinerU Markdown is not valid UTF-8.",
+        ) from exc
     content = _load_json(members[content_name], expected_type=list)
     layout = _load_json(members[layout_name], expected_type=dict)
     pages = mineru_pages(layout)
@@ -94,10 +104,19 @@ def normalize_mineru_zip(
         content_bytes=members[content_name],
         page_layout_bytes=members[layout_name],
         page_layout_artifact_key=layout_artifact_key,
-        markdown_bytes=members[markdown_name] if markdown_name else None,
+        markdown_bytes=markdown_bytes,
         result=result,
     )
-    return MinerUNormalizedBundle(result=result, artifacts=artifacts)
+    return MinerUNormalizedBundle(
+        result=result,
+        artifacts=artifacts,
+        markdown_text=markdown_text,
+        markdown_sha256=(
+            "sha256:" + hashlib.sha256(markdown_bytes).hexdigest()
+            if markdown_bytes is not None
+            else None
+        ),
+    )
 
 
 def validated_zip_members(zip_bytes: bytes) -> dict[str, bytes]:

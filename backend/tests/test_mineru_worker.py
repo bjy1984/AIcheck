@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -62,8 +63,11 @@ def _result(storage_key: str) -> dict[str, object]:
 
 def _bundle(storage_key: str) -> SimpleNamespace:
     data = b"artifact"
+    markdown = "# MinerU 测试文档\n\n合格"
     return SimpleNamespace(
         result=_result(storage_key),
+        markdown_text=markdown,
+        markdown_sha256="sha256:" + hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
         artifacts={
             "original_zip": MinerUArtifact(
                 name="mineru-result.zip",

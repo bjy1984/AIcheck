@@ -68,6 +68,54 @@ def _sha256_json(value: Any) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def stable_json_hash(value: Any) -> str:
+    return _sha256_json(value)
+
+
+def render_classifier_messages(
+    prompt: dict[str, Any],
+    *,
+    category_definitions_json: str,
+    ocr_markdown: str,
+) -> list[dict[str, str]]:
+    user_template = str(prompt.get("userPromptTemplate") or "")
+    rendered_user = user_template.replace("{{categoryDefinitionsJson}}", category_definitions_json).replace(
+        "{{ocrMarkdown}}", ocr_markdown
+    )
+    return [
+        {"role": "system", "content": str(prompt.get("systemPrompt") or "")},
+        {"role": "user", "content": rendered_user},
+    ]
+
+
+def apply_auto_gold_projection(repo: Any, gold: dict[str, Any]) -> dict[str, Any]:
+    document = repo.find_one("documents", str(gold.get("documentId") or ""))
+    if not document:
+        return {"status": "missing_document"}
+    labels = [item for item in gold.get("labels") or [] if isinstance(item, dict)]
+    categories = [str(item.get("category") or "") for item in labels if item.get("category")]
+    confidence = max((float(item.get("confidence") or 0) for item in labels), default=0.0)
+    now = server_time()
+    projection = {
+        "materialCategoryLabels": categories,
+        "materialCategory": gold.get("primaryCategory"),
+        "activeGoldLabelId": gold.get("id"),
+        "classificationSource": "qwen_auto_gold",
+        "classificationConfidence": confidence,
+        "classifiedAt": now,
+        "updatedAt": now,
+    }
+    document.update(deepcopy(projection))
+    knowledge_file = repo.knowledge_file_for_version(str(gold.get("documentVersionId") or ""))
+    if knowledge_file is not None:
+        knowledge_file.update(deepcopy(projection))
+    return {
+        "status": "projected",
+        "document": document,
+        "knowledgeFile": knowledge_file,
+    }
+
+
 def category_definition_snapshot(path: Path = MATERIAL_REVIEW_POINTS) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     grouped: dict[str, dict[str, set[str]]] = {}

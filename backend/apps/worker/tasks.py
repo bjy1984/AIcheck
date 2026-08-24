@@ -51,6 +51,18 @@ from libs.document_audit_pipeline_comparison import (
     schedule_pipeline_comparison,
 )
 from libs.document_intelligence import process_document_classification_and_targeting
+from libs.document_auto_gold import (
+    AutoGoldValidationError,
+    apply_auto_gold_projection,
+    build_gold_label_record,
+    category_definition_snapshot,
+    classification_response_format,
+    production_document_classifier_prompt,
+    render_classifier_messages,
+    stable_json_hash,
+    supersede_gold_label_records,
+    validate_classification_output,
+)
 from libs.integrations import task_dispatcher
 from libs.integrations.document_ai_client import DocumentAiClient
 from libs.integrations.embedding_client import EmbeddingClient
@@ -124,6 +136,7 @@ from libs.pipeline_lock import pipeline_task_lock
 from libs.qwen_runtime import (
     QwenRuntimeClient,
     build_qwen_runtime_client,
+    qwen_runtime_config,
     qwen_runtime_public_config,
 )
 from libs.raw_vault import raw_context_from_record
@@ -322,6 +335,302 @@ def schedule_document_ai_shadow(
 
 def qwen_runtime_client() -> QwenRuntimeClient:
     return build_qwen_runtime_client(LiteLLMClient)
+
+
+def prepare_document_auto_gold_run(
+    repository: Any,
+    *,
+    document_id: str,
+    document_version_id: str,
+    ocr_parse_result_id: str,
+    markdown: str,
+    markdown_sha256: str,
+) -> dict[str, Any]:
+    document = repository.find_one("documents", document_id)
+    if not document:
+        raise ValueError("AUTO_GOLD_DOCUMENT_MISSING")
+    business_pack_id = str(document.get("businessPackId") or "engineering_inspection_v1")
+    prompt = production_document_classifier_prompt(repository, business_pack_id)
+    if not prompt:
+        raise ValueError("AUTO_GOLD_PROMPT_UNAVAILABLE")
+    category_snapshot = category_definition_snapshot()
+    category_definitions_json = json.dumps(category_snapshot, ensure_ascii=False, sort_keys=True)
+    model_input = {
+        "categoryDefinitionsJson": category_definitions_json,
+        "ocrMarkdown": markdown,
+    }
+    prompt_snapshot = {
+        key: deepcopy(prompt.get(key))
+        for key in (
+            "id",
+            "name",
+            "promptKey",
+            "version",
+            "promptVersionId",
+            "systemPrompt",
+            "userPromptTemplate",
+            "outputSchema",
+            "variables",
+        )
+    }
+    prompt_hash = stable_json_hash(prompt_snapshot)
+    runtime = qwen_runtime_config()
+    model = str((runtime.get("models") or {}).get("documentClassifier") or "qwen3.8-max")
+    fingerprint = stable_json_hash(
+        {
+            "documentVersionId": document_version_id,
+            "ocrParseResultId": ocr_parse_result_id,
+            "markdownSha256": markdown_sha256,
+            "promptHash": prompt_hash,
+            "categorySchemaHash": category_snapshot["schemaHash"],
+            "model": model,
+        }
+    )
+    run_id = "DCR-" + fingerprint.split(":", 1)[-1][:12].upper()
+    existing = repository.find_one("document_classification_runs", run_id)
+    if existing:
+        return existing
+    now = server_time()
+    run = {
+        "id": run_id,
+        "documentId": document_id,
+        "documentVersionId": document_version_id,
+        "ocrParseResultId": ocr_parse_result_id,
+        "projectId": document.get("projectId"),
+        "businessPackId": business_pack_id,
+        "status": "queued",
+        "model": model,
+        "promptTemplateId": prompt.get("id"),
+        "promptVersion": prompt.get("version"),
+        "promptHash": prompt_hash,
+        "promptSnapshot": prompt_snapshot,
+        "categoryDefinitionSnapshot": category_snapshot,
+        "categorySchemaHash": category_snapshot["schemaHash"],
+        "ocrMarkdown": markdown,
+        "markdownSha256": markdown_sha256,
+        "modelInput": model_input,
+        "createdAt": now,
+        "updatedAt": now,
+        "attempts": 0,
+    }
+    repository.state.setdefault("document_classification_runs", []).insert(0, run)
+    return run
+
+
+def _parse_qwen_classification_response(response: dict[str, Any]) -> dict[str, Any]:
+    text = QwenRuntimeClient.first_message_text(response)
+    if not text:
+        raise AutoGoldValidationError("EMPTY_MODEL_RESPONSE", "Qwen returned no message content")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise AutoGoldValidationError("INVALID_MODEL_JSON", "Qwen returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise AutoGoldValidationError("INVALID_MODEL_JSON", "Qwen response must be an object")
+    return payload
+
+
+@celery_app.task(bind=True, max_retries=3)
+@pipeline_task_lock("document-auto-gold", lambda _self, run_id: str(run_id))
+def classify_document_auto_gold(self, run_id: str) -> dict[str, Any]:
+    refresh_worker_state(
+        {
+            "documents",
+            "versions",
+            "knowledge_files",
+            "ocr_parse_results",
+            "prompt_templates",
+            "document_classification_runs",
+            "document_gold_labels",
+            "model_call_attempts",
+        }
+    )
+    run = repo.find_one("document_classification_runs", run_id)
+    if not run:
+        return {"classificationRunId": run_id, "status": "missing"}
+    if run.get("status") == "accepted" and run.get("goldLabelId"):
+        return {
+            "classificationRunId": run_id,
+            "status": "accepted",
+            "goldLabelId": run.get("goldLabelId"),
+            "alreadyCompleted": True,
+        }
+    document = repo.find_one("documents", str(run.get("documentId") or ""))
+    version_id = str(run.get("documentVersionId") or "")
+    parse_result_id = str(run.get("ocrParseResultId") or "")
+    parse_result = repo.find_one("ocr_parse_results", parse_result_id, id_field="parseResultId")
+    if (
+        not document
+        or str(document.get("currentVersionId") or "") != version_id
+        or not parse_result
+        or str(parse_result.get("documentVersionId") or "") != version_id
+    ):
+        run.update({"status": "stale", "finishedAt": server_time(), "updatedAt": server_time()})
+        flush_state_records({"document_classification_runs": [run]})
+        return {"classificationRunId": run_id, "status": "stale"}
+
+    categories = [
+        str(item.get("category") or "")
+        for item in (run.get("categoryDefinitionSnapshot") or {}).get("categories") or []
+        if item.get("category")
+    ]
+    prompt = run.get("promptSnapshot") if isinstance(run.get("promptSnapshot"), dict) else {}
+    model_input = run.get("modelInput") if isinstance(run.get("modelInput"), dict) else {}
+    messages = render_classifier_messages(
+        prompt,
+        category_definitions_json=str(model_input.get("categoryDefinitionsJson") or ""),
+        ocr_markdown=str(model_input.get("ocrMarkdown") or ""),
+    )
+    now = server_time()
+    attempt = {
+        "id": f"MCALL-{uuid4().hex[:12].upper()}",
+        "classificationRunId": run_id,
+        "documentId": run.get("documentId"),
+        "documentVersionId": version_id,
+        "stage": "document_classification",
+        "callKind": "document_material_classification",
+        "provider": "Model Studio / DashScope",
+        "modelAlias": "document-classifier",
+        "model": run.get("model"),
+        "promptHash": run.get("promptHash"),
+        "markdownSha256": run.get("markdownSha256"),
+        "status": "running",
+        "createdAt": now,
+        "startedAt": now,
+        "updatedAt": now,
+    }
+    repo.state.setdefault("model_call_attempts", []).insert(0, attempt)
+    run.update(
+        {
+            "status": "running",
+            "attempts": int(run.get("attempts") or 0) + 1,
+            "modelCallAttemptId": attempt["id"],
+            "startedAt": run.get("startedAt") or now,
+            "updatedAt": now,
+        }
+    )
+    flush_state_records({"document_classification_runs": [run], "model_call_attempts": [attempt]})
+    started = time.monotonic()
+    try:
+        response = qwen_runtime_client().chat_sync(
+            messages,
+            model="document-classifier",
+            stream=False,
+            response_format=classification_response_format(categories),
+        )
+        raw_output = _parse_qwen_classification_response(response)
+        validated = validate_classification_output(
+            raw_output,
+            str(run.get("ocrMarkdown") or ""),
+            categories,
+        )
+        existing_gold = [
+            item
+            for item in repo.state.get("document_gold_labels", [])
+            if item.get("documentId") == run.get("documentId")
+        ]
+        next_version = max((int(item.get("goldVersion") or 0) for item in existing_gold), default=0) + 1
+        response_model = str(response.get("model") or run.get("model") or "qwen3.8-max")
+        gold = build_gold_label_record(
+            document_id=str(run.get("documentId") or ""),
+            document_version_id=version_id,
+            ocr_parse_result_id=parse_result_id,
+            classification_run_id=run_id,
+            labels=validated["labels"],
+            model=response_model,
+            prompt_hash=str(run.get("promptHash") or ""),
+            markdown_sha256=str(run.get("markdownSha256") or ""),
+            category_schema_hash=str(run.get("categorySchemaHash") or ""),
+            gold_version=next_version,
+        )
+        repo.state["document_gold_labels"] = supersede_gold_label_records(
+            repo.state.get("document_gold_labels", []),
+            gold,
+        )
+        projection = apply_auto_gold_projection(repo, gold)
+        attempt.update(
+            {
+                "status": "success",
+                "model": response_model,
+                "provider": response.get("provider") or attempt["provider"],
+                "providerRequestId": response.get("id"),
+                "usage": deepcopy(response.get("usage") or {}),
+                "rawResponse": deepcopy(response),
+                "elapsedMs": round((time.monotonic() - started) * 1000),
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        run.update(
+            {
+                "status": "accepted",
+                "model": response_model,
+                "rawResponse": deepcopy(response),
+                "structuredResponse": validated,
+                "validation": {"status": "accepted", "groundedLabelCount": len(validated["labels"])},
+                "goldLabelId": gold["id"],
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        records = {
+            "document_classification_runs": [run],
+            "document_gold_labels": repo.state["document_gold_labels"],
+            "model_call_attempts": [attempt],
+            "documents": [projection["document"]] if projection.get("document") else [],
+            "knowledge_files": [projection["knowledgeFile"]] if projection.get("knowledgeFile") else [],
+        }
+        flush_state_records(records)
+        return {
+            "classificationRunId": run_id,
+            "status": "accepted",
+            "goldLabelId": gold["id"],
+            "labelCount": len(validated["labels"]),
+        }
+    except AutoGoldValidationError as exc:
+        attempt.update(
+            {
+                "status": "invalid_output",
+                "failureReason": exc.code,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        run.update(
+            {
+                "status": "failed",
+                "failureReason": exc.code,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        flush_state_records({"document_classification_runs": [run], "model_call_attempts": [attempt]})
+        return {"classificationRunId": run_id, "status": "failed", "failureReason": exc.code}
+    except Exception as exc:
+        attempt.update(
+            {
+                "status": "failed",
+                "failureReason": exc.__class__.__name__,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        run.update(
+            {
+                "status": "failed",
+                "failureReason": exc.__class__.__name__,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        flush_state_records({"document_classification_runs": [run], "model_call_attempts": [attempt]})
+        if not bool(getattr(self.request, "called_directly", False)) and int(getattr(self.request, "retries", 0) or 0) < 3:
+            raise self.retry(exc=exc, countdown=(10, 30, 90)[int(getattr(self.request, "retries", 0) or 0)])
+        return {
+            "classificationRunId": run_id,
+            "status": "failed",
+            "failureReason": exc.__class__.__name__,
+        }
 
 
 def compare_document_version_ids(run: dict[str, Any]) -> set[str]:
@@ -1366,6 +1675,8 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
             ),
             provider_task_id=str(job.get("providerTaskId") or ""),
         )
+        job["classificationMarkdown"] = bundle.markdown_text
+        job["classificationMarkdownSha256"] = bundle.markdown_sha256
         # 印章读字。MinerU 只把印章框出来，不读上面的字——而监检确认「盖章了没有」
         # 靠的正是章上的单位名。裁图就在这份 zip 里，直接送视觉模型读，
         # 不重新渲染 PDF，也就不引入坐标换算这层新的出错机会。
@@ -1479,6 +1790,8 @@ def _execute_mineru_ocr_extract(
         )
         applied = None
         document_intelligence = None
+        document_classification = None
+        classification_dispatch = None
         if (
             bound_document is not None
             and bound_version is not None
@@ -1486,13 +1799,38 @@ def _execute_mineru_ocr_extract(
         ):
             applied = repo.apply_ocr_result(document_id, version_id, result)
             if applied.get("status") == "success" and bound_document.get("projectId"):
-                document_intelligence = process_document_classification_and_targeting(
-                    repo,
-                    str(bound_document["projectId"]),
-                    document_id,
-                    version_id,
-                    triggered_by="mineru_ocr",
-                )
+                markdown = str(job.get("classificationMarkdown") or "")
+                markdown_sha256 = str(job.get("classificationMarkdownSha256") or "")
+                if markdown and markdown_sha256 and result_record:
+                    document_classification = prepare_document_auto_gold_run(
+                        repo,
+                        document_id=document_id,
+                        document_version_id=version_id,
+                        ocr_parse_result_id=str(result_record.get("parseResultId") or ""),
+                        markdown=markdown,
+                        markdown_sha256=markdown_sha256,
+                    )
+                    flush_state_records(
+                        {"document_classification_runs": [document_classification]}
+                    )
+                    classification_dispatch = task_dispatcher.dispatch_document_classification(
+                        str(document_classification["id"])
+                    )
+                    document_classification["dispatch"] = deepcopy(classification_dispatch)
+                    document_classification["updatedAt"] = server_time()
+                    flush_state_records(
+                        {"document_classification_runs": [document_classification]}
+                    )
+                    document_intelligence = {
+                        "status": "qwen_auto_gold_queued",
+                        "classificationRunId": document_classification["id"],
+                    }
+                else:
+                    document_intelligence = {
+                        "status": "mineru_markdown_missing",
+                        "documentId": document_id,
+                        "documentVersionId": version_id,
+                    }
             flush_state_records(
                 ocr_result_state_records(document_id, version_id)
             )
@@ -1543,6 +1881,8 @@ def _execute_mineru_ocr_extract(
             ),
             "applied": applied,
             "documentIntelligence": document_intelligence,
+            "documentClassification": document_classification,
+            "classificationDispatch": classification_dispatch,
             "nextDispatch": next_dispatch,
             "artifactReferences": deepcopy(
                 job.get("artifactReferences") or {}

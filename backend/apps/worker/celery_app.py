@@ -35,6 +35,7 @@ celery_app.conf.update(
         "apps.worker.tasks.mineru_ocr_extract": {"queue": "ocr.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_official_extract": {"queue": "ocr.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_qwen_extract": {"queue": "llm.remote", "priority": broker_priority(9)},
+        "apps.worker.tasks.classify_document_auto_gold": {"queue": "llm.remote", "priority": broker_priority(9)},
         "apps.worker.tasks.ocr_pipeline_finalize": {"queue": "business.light", "priority": broker_priority(9)},
         "apps.worker.tasks.document_ai_shadow_extract": {"queue": "document-ai.shadow"},
         "apps.worker.tasks.document_audit_pipeline_comparison": {"queue": "audit-pipeline.compare"},

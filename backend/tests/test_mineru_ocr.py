@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import stat
 import zipfile
@@ -127,6 +128,16 @@ def test_normalizes_mineru_vlm_into_local_ocr_contract() -> None:
         "middle_json",
         "normalized_json",
     }
+
+
+def test_normalized_bundle_exposes_markdown_snapshot_and_hash_for_classification() -> None:
+    markdown = "# 资质证照\n\n中华人民共和国特种设备生产许可证"
+
+    bundle = _normalize(_zip_bytes(markdown=markdown))
+
+    assert bundle.markdown_text == markdown
+    assert bundle.markdown_sha256 == "sha256:" + hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    assert "markdown" not in bundle.result
 
 
 def test_normalizes_current_vlm_layout_json_without_middle_json() -> None:
@@ -617,6 +628,8 @@ def test_missing_markdown_is_non_blocking_diagnostic() -> None:
 
     assert bundle.result["status"] == "success"
     assert "markdown" not in bundle.artifacts
+    assert bundle.markdown_text is None
+    assert bundle.markdown_sha256 is None
     assert any(
         item["code"] == "mineru_markdown_missing"
         for item in bundle.result["diagnostics"]
