@@ -94,6 +94,21 @@ def test_admin_rejects_filename_or_path_variables_for_classifier_prompt():
         assert response_reason(response) == "VALIDATION_ERROR"
 
 
+def test_admin_rejects_forbidden_placeholders_hidden_in_classifier_prompt_text():
+    for forbidden in ("fileName", "relativeDirectory", "filePath", "extension"):
+        response = client.post(
+            "/admin/prompt-templates",
+            json=classifier_payload(
+                userPromptTemplate=(
+                    "类别：{{categoryDefinitionsJson}}\n正文：{{ocrMarkdown}}\n"
+                    f"禁止泄露：{{{{{forbidden}}}}}"
+                )
+            ),
+            headers={"Idempotency-Key": f"classifier-placeholder-{forbidden}"},
+        )
+        assert response_reason(response) == "VALIDATION_ERROR"
+
+
 def test_admin_can_create_edit_and_publish_classifier_prompt():
     created = response_data(
         client.post(

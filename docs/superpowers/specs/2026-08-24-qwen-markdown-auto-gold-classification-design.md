@@ -243,6 +243,8 @@ classifiedAt
 
 旧 `materialCategory` 投影为最高置信度标签；置信度相同时按类别定义快照顺序确定。旧 `materialTypeCode` 不由大类分类器猜测，保持原值或 `unclassified_material`。
 
+MinerU 现有的60种细资料类型识别与节点打靶链保持运行，用于兼容既有业务；Qwen自动金标只负责16个资料大类，且不接收现有细类型分类器使用的文件名上下文。
+
 ## 12. 失败与重试
 
 - Qwen 网络、限流或 5xx：Celery 最多重试 3 次，保留每次 `model_call_attempts`；

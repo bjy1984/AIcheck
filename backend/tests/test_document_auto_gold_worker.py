@@ -228,7 +228,7 @@ def test_stale_document_version_does_not_call_qwen_or_write_gold(monkeypatch: py
     assert repository.state["document_gold_labels"] == []
 
 
-def test_mineru_success_queues_auto_gold_instead_of_legacy_filename_classifier(monkeypatch: pytest.MonkeyPatch):
+def test_mineru_success_preserves_fine_type_targeting_and_queues_auto_gold(monkeypatch: pytest.MonkeyPatch):
     repository, document, version, _parse_result = repository_with_ocr_result()
     repository.state["ocr_parse_results"] = []
     document["currentOcrStatus"] = "排队中"
@@ -241,6 +241,7 @@ def test_mineru_success_queues_auto_gold_instead_of_legacy_filename_classifier(m
         provider="mineru",
     )
     dispatches: list[str] = []
+    fine_type_calls: list[str] = []
 
     def fake_mineru(current_job):
         current_job["classificationMarkdown"] = MARKDOWN
@@ -273,14 +274,19 @@ def test_mineru_success_queues_auto_gold_instead_of_legacy_filename_classifier(m
     monkeypatch.setattr(
         tasks,
         "process_document_classification_and_targeting",
-        lambda *_args, **_kwargs: pytest.fail("MinerU path must not call the legacy filename-aware classifier"),
+        lambda _repo, _project_id, current_document_id, _version_id, **_kwargs: (
+            fine_type_calls.append(current_document_id)
+            or {"status": "completed", "classification": {"materialTypeCode": "design_license"}}
+        ),
     )
 
     result = tasks.mineru_ocr_extract.run(job["id"])
 
     assert result["status"] == "success"
     assert len(dispatches) == 1
+    assert fine_type_calls == [document["id"]]
     run = repository.state["document_classification_runs"][0]
     assert dispatches[0] == run["id"]
     assert run["ocrMarkdown"] == MARKDOWN
     assert result["documentClassification"]["id"] == run["id"]
+    assert result["documentIntelligence"]["autoGoldClassification"]["classificationRunId"] == run["id"]

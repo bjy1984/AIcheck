@@ -1799,6 +1799,15 @@ def _execute_mineru_ocr_extract(
         ):
             applied = repo.apply_ocr_result(document_id, version_id, result)
             if applied.get("status") == "success" and bound_document.get("projectId"):
+                # Preserve the established fine-grained material type and node
+                # targeting contract. Qwen owns the new 16-category gold labels.
+                document_intelligence = process_document_classification_and_targeting(
+                    repo,
+                    str(bound_document["projectId"]),
+                    document_id,
+                    version_id,
+                    triggered_by="mineru_ocr",
+                )
                 markdown = str(job.get("classificationMarkdown") or "")
                 markdown_sha256 = str(job.get("classificationMarkdownSha256") or "")
                 if markdown and markdown_sha256 and result_record:
@@ -1822,14 +1831,20 @@ def _execute_mineru_ocr_extract(
                         {"document_classification_runs": [document_classification]}
                     )
                     document_intelligence = {
-                        "status": "qwen_auto_gold_queued",
-                        "classificationRunId": document_classification["id"],
+                        **(document_intelligence or {}),
+                        "autoGoldClassification": {
+                            "status": "queued",
+                            "classificationRunId": document_classification["id"],
+                        },
                     }
                 else:
                     document_intelligence = {
-                        "status": "mineru_markdown_missing",
-                        "documentId": document_id,
-                        "documentVersionId": version_id,
+                        **(document_intelligence or {}),
+                        "autoGoldClassification": {
+                            "status": "mineru_markdown_missing",
+                            "documentId": document_id,
+                            "documentVersionId": version_id,
+                        },
                     }
             flush_state_records(
                 ocr_result_state_records(document_id, version_id)

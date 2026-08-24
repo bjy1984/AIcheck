@@ -44,6 +44,17 @@ def classifier_prompt_validation_error(record: dict[str, Any]) -> str | None:
     forbidden = sorted(variables & FORBIDDEN_CLASSIFIER_PROMPT_VARIABLES)
     if forbidden:
         return "文件资料分类 Prompt 不得使用文件名或路径变量：" + "、".join(forbidden)
+    prompt_text = "\n".join(
+        str(record.get(key) or "")
+        for key in ("systemPrompt", "userPromptTemplate", "plannerPromptTemplate", "criticPromptTemplate")
+    )
+    forbidden_placeholders = sorted(
+        variable
+        for variable in FORBIDDEN_CLASSIFIER_PROMPT_VARIABLES
+        if "{{" + variable + "}}" in prompt_text
+    )
+    if forbidden_placeholders:
+        return "文件资料分类 Prompt 正文不得引用文件名或路径占位符：" + "、".join(forbidden_placeholders)
     missing = sorted(CLASSIFIER_PROMPT_VARIABLES - variables)
     if missing:
         return "文件资料分类 Prompt 缺少必需变量：" + "、".join(missing)
