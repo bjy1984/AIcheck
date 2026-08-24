@@ -4,7 +4,7 @@
 
 **Goal:** Build a single-call Qwen3.8-Max multi-label classifier that consumes only MinerU Markdown, writes versioned automatic gold labels, reuses the existing admin Prompt template manager, and verifies the contract against all 23 files under `test/`.
 
-**Architecture:** MinerU persists a Markdown snapshot and hash on the OCR job, then dispatches an idempotent `document.classify` Celery task. A focused classification service resolves the production Prompt template, calls the existing Qwen OpenAI-compatible client with a strict JSON Schema, grounds every `contentEvidence` quote in the Markdown, persists an immutable run and gold-label version, and projects the multi-label result onto the document and project knowledge file.
+**Architecture:** MinerU persists a Markdown snapshot and hash on the OCR job, then dispatches an idempotent `classify_document_auto_gold` Celery task to the existing `llm.remote` queue. A focused classification service resolves the production Prompt template, calls the existing Qwen OpenAI-compatible client with a strict JSON Schema, grounds every `contentEvidence` quote in the Markdown, persists an immutable run and gold-label version, and projects the multi-label result onto the document and project knowledge file.
 
 **Tech Stack:** Python 3.12, FastAPI, Celery/Redis, PostgreSQL JSONB repository, httpx OpenAI-compatible Chat Completions, Vue 3/Element Plus existing admin Prompt UI, pytest, Node frontend contract tests.
 
@@ -44,7 +44,7 @@
 - `backend/libs/db/repository.py`: register and initialize classification-run and gold-label collections.
 - `backend/libs/db/seed.py`: seed the production classifier Prompt template.
 - `backend/libs/mineru_ocr.py`: expose the decoded MinerU Markdown snapshot in `MinerUNormalizedBundle` without adding it to normalized OCR JSON.
-- `backend/apps/worker/celery_app.py`: route classification task to `document.classify`.
+- `backend/apps/worker/celery_app.py`: route classification task to the existing `llm.remote` queue.
 - `backend/libs/integrations/task_dispatcher.py`: deterministic classification dispatch.
 - `backend/apps/worker/tasks.py`: create/run/persist classification, hook MinerU completion, and flush new state collections.
 - `backend/libs/document_intelligence.py`: stop the legacy filename/OCR classifier on the MinerU auto-gold path and expose projection helpers.
@@ -286,7 +286,7 @@ git commit -m "feat: persist classifier prompts and auto-gold state"
 **Interfaces:**
 - Produces: `MinerUNormalizedBundle.markdown_text: str | None`
 - Produces: `dispatch_document_classification(run_id: str) -> dict[str, Any]`
-- Produces: Celery task route `apps.worker.tasks.classify_document_auto_gold -> document.classify`
+- Produces: Celery task route `apps.worker.tasks.classify_document_auto_gold -> llm.remote`
 
 - [ ] **Step 1: Write failing MinerU Markdown snapshot tests**
 
@@ -304,11 +304,11 @@ Add `markdown_text` and `markdown_sha256`, decoding UTF-8 strictly and raising `
 
 - [ ] **Step 4: Write failing deterministic dispatch tests**
 
-Verify Celery mode routes one deterministic task to `document.classify`; inline and disabled modes preserve existing dispatcher semantics.
+Verify Celery mode routes one deterministic task to `llm.remote`; inline and disabled modes preserve existing dispatcher semantics.
 
 - [ ] **Step 5: Implement route and dispatcher**
 
-Use task ID hash scope `document-auto-gold` with the classification run ID. Add queue to Celery route map without adding it to unrelated worker commands.
+Use task ID hash scope `document-auto-gold` with the classification run ID. Route to the already deployed `llm.remote` workers so no new worker topology is required.
 
 - [ ] **Step 6: Write failing MinerU completion hook test**
 

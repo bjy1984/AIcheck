@@ -59,7 +59,7 @@
   -> MinerU normalized result + full.md
   -> OCR 结果持久化成功
   -> dispatch_document_classification(documentId, versionId, parseResultId)
-  -> document.classify 队列
+  -> llm.remote 队列（任务名 classify_document_auto_gold）
   -> 解析当前 production Prompt 模板
   -> 构造 16 类定义快照 + OCR Markdown
   -> 单次 qwen3.8-max JSON Schema 调用
@@ -283,4 +283,3 @@ classifiedAt
 8. 管理员能通过现有 Prompt 模板页修改并发布分类 Prompt；
 9. `test/` 23 文件清单完整且回归门禁通过；
 10. 现有 Qwen、Prompt 模板、文档分类和 material targeting 测试不回归。
-
