@@ -6521,6 +6521,16 @@ def test_review_opinion_allows_any_conclusion_without_complete_evidence_but_reje
     assert no_evidence["opinion"]["evidenceLinkIds"] == []
     assert no_evidence["opinion"]["readinessSnapshot"]["readyForAiFormal"] is False
     assert no_evidence["opinion"]["readinessSnapshot"]["readinessAdvisoryOnly"] is True
+    report_without_evidence = assert_ok(
+        client.post(
+            "/projects/P-2026-HDCP-001/inspection/nodes/24/report-review",
+            json={"includeEvidence": True, "reportScope": "currentNode"},
+            headers={"Idempotency-Key": "report-with-advisory-readiness"},
+        )
+    )
+    assert report_without_evidence["report"]["sourceReviewOpinionId"] == no_evidence["opinion"]["id"]
+    assert report_without_evidence["report"]["evidenceScope"]["evidenceLinkIds"] == []
+    assert report_without_evidence["report"]["evidenceValidation"]["passed"] is True
 
     evidence_ids = seed_confirmed_node_24_evidence()
 

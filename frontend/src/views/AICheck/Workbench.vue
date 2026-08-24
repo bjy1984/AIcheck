@@ -787,14 +787,10 @@ const reportGenerateDisabledReason = computed(() => {
   if (role.value !== 'inspection') return ''
   const opinion = latestReviewOpinion.value
   if (!opinion) return '生成报告前必须先保存人工审查意见。'
-  if (!opinion.evidenceLinkIds?.length) return '人工审查意见缺少 confirmed 证据引用。'
   if (opinion.evidenceValidation?.passed !== true) {
     return (
       opinion.evidenceValidation?.message || '人工审查意见的证据引用未通过 confirmed-only 校验。'
     )
-  }
-  if (opinion.result === '满足要求' && opinion.readinessSnapshot?.readyForAiFormal !== true) {
-    return '人工审查意见缺少正式 readiness 快照，需重新校验证据后生成报告。'
   }
   return ''
 })

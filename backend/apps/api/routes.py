@@ -2756,7 +2756,7 @@ def report_evidence_validation(report: dict[str, Any]) -> dict[str, Any]:
     invalid = sorted(referenced_ids - evidence_ids)
     return {
         "schemaVersion": "report-evidence-validation-v1",
-        "passed": bool(evidence_rows) and not invalid,
+        "passed": not invalid,
         "evidenceCount": len(evidence_rows),
         "referencedEvidenceLinkIds": sorted(referenced_ids),
         "invalidEvidenceLinkIds": invalid,
@@ -13991,7 +13991,7 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
             project_id,
             node_id,
             latest_opinion.get("evidenceLinkIds") or [],
-            require_non_empty=True,
+            require_non_empty=False,
         )
         if not evidence_validation["passed"]:
             return fail(
@@ -14048,7 +14048,7 @@ def generate_report_review(request: Request, project_id: str, node_id: int, body
             },
             "evidenceValidation": {
                 "schemaVersion": "report-evidence-validation-v1",
-                "passed": bool(scoped_evidence) and len(scoped_evidence) == len(evidence_ids),
+                "passed": evidence_validation["passed"] and len(scoped_evidence) == len(evidence_ids),
                 "sourceValidation": evidence_validation,
                 "evidenceCount": len(scoped_evidence),
             },
