@@ -43,9 +43,6 @@ PURE_LLM_REVIEW_REQUIREMENTS = [
 ]
 
 LOW_CONFIDENCE_THRESHOLD = 0.85
-MAX_TABLE_MARKDOWN_CHARS = 6000
-MAX_TABLE_ROWS = 60
-MAX_TABLE_CELLS = 160
 
 CRITICAL_QUALITY_FLAG_HINTS = (
     "missing",
@@ -86,7 +83,7 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
         _fragment_evidence(fragment, result)
         for result in parse_results
         for fragment in _dict_items(result.get("fragments"))
-    ][:80]
+    ]
     evidence_links = [
         _evidence_link(item)
         for item in state.get("evidence_links", [])
@@ -128,13 +125,13 @@ def build_grounded_review_input(state: dict[str, Any], document_version_ids: set
         "documentVersionIds": sorted(version_ids),
         "groundingStatus": grounding_status,
         "blockingIssues": blocking_issues,
-        "fields": fields[:80],
-        "tables": tables[:20],
-        "seals": seals[:20],
+        "fields": fields,
+        "tables": tables,
+        "seals": seals,
         "fragments": fragments,
-        "evidenceLinks": evidence_links[:80],
+        "evidenceLinks": evidence_links,
         "quality": quality,
-        "evidenceTextCorpus": evidence_texts[:240],
+        "evidenceTextCorpus": evidence_texts,
         "summary": {
             "fieldCount": len(fields),
             "tableCount": len(tables),
@@ -528,8 +525,8 @@ def _table_evidence(table: dict[str, Any], result: dict[str, Any]) -> dict[str, 
         "rowCount": _safe_int(table.get("rowCount") or table.get("rows"), default=None),
         "columnCount": _safe_int(table.get("columnCount") or table.get("columns"), default=None),
         "contentMarkdown": content_markdown,
-        "normalizedRows": normalized_rows[:MAX_TABLE_ROWS],
-        "rows": normalized_rows[:MAX_TABLE_ROWS],
+        "normalizedRows": normalized_rows,
+        "rows": normalized_rows,
         "cellsSummary": cells_summary,
         "cells": cells_summary,
         "sourceEngine": table.get("sourceEngine"),
@@ -721,31 +718,31 @@ def _table_rows(table: dict[str, Any]) -> list[Any]:
 def _normalize_table_row(row: Any) -> Any:
     if isinstance(row, dict):
         return {
-            _truncate(str(key), 80): _truncate(_cell_value_text(value), 240)
+            str(key): _cell_value_text(value)
             for key, value in row.items()
             if _cell_value_text(value).strip()
         }
     if isinstance(row, list):
-        return [_truncate(_cell_value_text(value), 240) for value in row if _cell_value_text(value).strip()]
-    return _truncate(_cell_value_text(row), 240)
+        return [_cell_value_text(value) for value in row if _cell_value_text(value).strip()]
+    return _cell_value_text(row)
 
 
 def _table_markdown(table: dict[str, Any], cells: list[dict[str, Any]], normalized_rows: list[Any]) -> str | None:
     for key in ["contentMarkdown", "markdown"]:
         value = str(table.get(key) or "").strip()
         if value:
-            return _truncate(value, MAX_TABLE_MARKDOWN_CHARS)
+            return value
     value = str(table.get("content") or "").strip()
     if value:
-        return _truncate(value, MAX_TABLE_MARKDOWN_CHARS)
+        return value
     if normalized_rows:
         markdown = _markdown_from_rows(normalized_rows)
         if markdown:
-            return _truncate(markdown, MAX_TABLE_MARKDOWN_CHARS)
+            return markdown
     if cells:
         markdown = _markdown_from_cells(cells)
         if markdown:
-            return _truncate(markdown, MAX_TABLE_MARKDOWN_CHARS)
+            return markdown
     return None
 
 
@@ -762,13 +759,13 @@ def _markdown_from_rows(rows: list[Any]) -> str | None:
             return None
         body = [
             [_markdown_cell(str(row.get(header) or "")) for header in headers]
-            for row in rows[:MAX_TABLE_ROWS]
+            for row in rows
             if isinstance(row, dict)
         ]
         return _markdown_table(headers, body)
     body_rows = [
         row if isinstance(row, list) else [row]
-        for row in rows[:MAX_TABLE_ROWS]
+        for row in rows
     ]
     max_cols = max((len(row) for row in body_rows), default=0)
     if max_cols <= 0:
@@ -799,14 +796,14 @@ def _markdown_from_cells(cells: list[dict[str, Any]]) -> str | None:
     if not rows or not cols:
         return None
     grid: dict[tuple[int, int], str] = {}
-    for row, col, text in positioned[:MAX_TABLE_CELLS]:
+    for row, col, text in positioned:
         key = (row, col)
         grid[key] = f"{grid[key]} / {text}" if grid.get(key) else text
     first_row = rows[0]
     headers = [_markdown_cell(grid.get((first_row, col)) or f"列{index + 1}") for index, col in enumerate(cols)]
     body = [
         [_markdown_cell(grid.get((row, col)) or "") for col in cols]
-        for row in rows[1:MAX_TABLE_ROWS]
+        for row in rows[1:]
     ]
     if not body:
         body = [[_markdown_cell(grid.get((first_row, col)) or "") for col in cols]]
@@ -829,7 +826,7 @@ def _markdown_table(headers: list[str], body: list[list[str]]) -> str | None:
 
 def _table_cells_summary(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summary: list[dict[str, Any]] = []
-    for cell in cells[:MAX_TABLE_CELLS]:
+    for cell in cells:
         text = _cell_text(cell)
         if not text.strip():
             continue
@@ -837,7 +834,7 @@ def _table_cells_summary(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
             {
                 "rowIndex": _cell_index(cell, ["rowIndex", "row", "rowNo", "r"]),
                 "columnIndex": _cell_index(cell, ["columnIndex", "colIndex", "column", "col", "c"]),
-                "text": _truncate(text, 220),
+                "text": text,
                 "bbox": cell.get("bbox") or cell.get("polygon"),
                 "confidence": cell.get("confidence") or cell.get("score"),
                 "isHeader": bool(cell.get("isHeader") or cell.get("header")),
@@ -991,11 +988,6 @@ def _markdown_cell(value: Any) -> str:
     return str(value or "").replace("|", "\\|").replace("\n", " ").strip()
 
 
-def _truncate(value: str, limit: int) -> str:
-    text = str(value or "")
-    return text if len(text) <= limit else f"{text[:limit]}..."
-
-
 def _grounding_warnings(
     grounding_status: str,
     low_confidence: list[dict[str, Any]],
@@ -1028,7 +1020,7 @@ def _evidence_texts(*groups: list[dict[str, Any]]) -> list[str]:
                 value = item.get(key)
                 if value:
                     texts.append(str(value))
-    return [text[:1200] for text in texts if text.strip()]
+    return [text for text in texts if text.strip()]
 
 
 def _claim_tokens(text: str) -> list[str]:

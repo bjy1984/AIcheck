@@ -22,8 +22,11 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from libs.db.repository import repo
 from libs.review_orchestrator import execution as ex
 
 
@@ -32,9 +35,9 @@ def test_默认不限(monkeypatch):
     assert ex._review_max_input_tokens() == 0
 
 
-def test_显式正数才设闸(monkeypatch):
+def test_旧输入上限环境变量即使为正数也被忽略(monkeypatch):
     monkeypatch.setenv("AICHECK_REVIEW_MAX_INPUT_TOKENS", "60000")
-    assert ex._review_max_input_tokens() == 60000
+    assert ex._review_max_input_tokens() == 0
 
 
 def test_零和负数都表示不限(monkeypatch):
@@ -60,10 +63,93 @@ def test_不限时误调裁减要当场报错():
         )
 
 
-def test_判断处都带了不限分支():
-    """两处判断必须都看 input_cap > 0——**同一条规则写两处、只改一处**
-    是这个仓库反复出现的形态。"""
-    import inspect
+def test_legacy_positive_input_cap_never_drops_or_rejects_evidence(monkeypatch):
+    """旧环境变量即使仍有正值，也只能影响后续分片目标，不能裁资料或拒绝运行。"""
 
-    source = inspect.getsource(ex.generate_finding_drafts)
-    assert source.count("input_cap > 0") == 2, "裁减入口和最终判断都要认「不限」"
+    class FakeRuntime:
+        def chat_sync(self, messages, **kwargs):
+            assert messages == [{"role": "user", "content": "完整证据" * 1000}]
+            return {
+                "id": "RESP-NO-TRIM",
+                "model": "review-chat",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "findings": [
+                                        {
+                                            "findingType": "evidence_review",
+                                            "severity": "medium",
+                                            "title": "完整证据已送审",
+                                            "description": "需人工确认。",
+                                            "evidenceRefs": [],
+                                            "ruleRefs": [],
+                                            "kbRefs": [],
+                                            "confidence": 0.5,
+                                            "suggestedAction": "human_confirm",
+                                            "groundingStatus": "insufficient_evidence",
+                                            "unsupportedClaims": [],
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                    }
+                ],
+                "usage": {"input_tokens": 100000, "output_tokens": 100},
+            }
+
+    repo.reset()
+    monkeypatch.setattr(ex, "review_llm_execution_mode", lambda: "litellm")
+    monkeypatch.setattr(
+        ex,
+        "review_model_budget_policy",
+        lambda _run: {
+            "maxInputTokens": 1,
+            "maxOutputTokens": 1000,
+            "maxCostCny": 1000.0,
+            "maxAttempts": 1,
+        },
+    )
+    monkeypatch.setattr(
+        ex,
+        "build_review_messages",
+        lambda _run, _context: [{"role": "user", "content": "完整证据" * 1000}],
+    )
+    monkeypatch.setattr(ex, "estimate_messages_tokens", lambda _messages: 100000)
+    monkeypatch.setattr(ex, "model_cost_cny", lambda _usage: {"total": 0.0})
+    monkeypatch.setattr(ex, "qwen_runtime_public_config", lambda: {"provider": "test"})
+    monkeypatch.setattr(ex, "qwen_runtime_client", lambda: FakeRuntime())
+    monkeypatch.setattr(
+        ex,
+        "trim_review_input_to_budget",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("silent trim called")),
+    )
+    review_run = {
+        "reviewRunId": "RRUN-NO-TRIM",
+        "aiRunId": "AIRUN-NO-TRIM",
+        "projectId": "P-1",
+        "nodeId": 1,
+        "modelAlias": "review-chat",
+        "promptVersion": "p1",
+        "agentId": "agent",
+        "agentVersion": "1",
+    }
+    context = {
+        "promptShape": {"messagesHash": "sha256:prompt"},
+        "groundingInput": {
+            "groundingStatus": "insufficient_evidence",
+            "documentVersionIds": ["DV-1"],
+            "evidenceLinks": [],
+            "evidenceTextCorpus": ["完整证据"],
+        },
+        "auditRuntime": {"mode": "ocr_llm"},
+    }
+
+    drafts, metadata = ex.generate_finding_drafts(review_run, context)
+
+    assert drafts
+    assert metadata["llmCalled"] is True

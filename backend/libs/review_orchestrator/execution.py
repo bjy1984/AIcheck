@@ -2773,17 +2773,12 @@ def build_review_messages(review_run: dict[str, Any], context: dict[str, Any]) -
 
 
 def _review_max_input_tokens() -> int:
-    """输入 token 上限。0 或负数表示不限。
+    """输入证据不设本地 token 上限。
 
-    返回 0 时，调用方必须跳过整个上限判断——**不能把 0 当成「上限是 0」**，
-    那会让每次运行都超预算，从「偶尔失败」变成「永远失败」。
+    旧环境变量保留兼容读取权，但不再能启用裁剪或拒绝；模型上下文的物理限制
+    由 EvidenceShard 分片解决。
     """
-    raw = str(os.getenv("AICHECK_REVIEW_MAX_INPUT_TOKENS", "0")).strip()
-    try:
-        value = int(raw or 0)
-    except ValueError:
-        return 0
-    return value if value > 0 else 0
+    return 0
 
 
 def review_model_budget_policy(review_run: dict[str, Any]) -> dict[str, Any]:
@@ -2798,7 +2793,7 @@ def review_model_budget_policy(review_run: dict[str, Any]) -> dict[str, Any]:
     )
     configured = route.get("budgetPolicy") if isinstance(route.get("budgetPolicy"), dict) else {}
     return {
-        # 输入上限**默认不设**（0 = 不限）。
+        # 输入上限固定不设（0 = 不限）。
         #
         # 原值写死 24000，而生产模型的上下文远大于它——于是这道闸不是在保护模型，
         # 是在替模型拒绝请求：节点资料一多就 REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED，
@@ -2809,7 +2804,8 @@ def review_model_budget_policy(review_run: dict[str, Any]) -> dict[str, Any]:
         #   1. maxCostCny——花多少钱是业务决定，超了就停；
         #   2. 模型自己的上下文限制——超了它会明确报错，那是真实约束，
         #      比本地猜一个数诚实。
-        # 要重新设闸就显式给 AICHECK_REVIEW_MAX_INPUT_TOKENS 一个正数。
+        # 旧 AICHECK_REVIEW_MAX_INPUT_TOKENS 即使仍在部署环境中也不会恢复裁剪；
+        # 单次调用大小由 EvidenceShard 目标控制。
         "maxInputTokens": _review_max_input_tokens(),
         # 走 reasoning_budget 的统一口径，不再自己写死。原值 1600 对推理模型
         # 连推理都装不下：节点 2 实测 completion 1600 / reasoning 1600，
@@ -2918,18 +2914,6 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
     messages = build_review_messages(review_run, context)
     estimated_input_tokens = estimate_messages_tokens(messages)
 
-    # 超预算时先按整份资料裁减再重建，而不是整次失败。原先一超就报
-    # REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED，一份资料都没审——监检既拿不到任何
-    # AI 意见，也不知道差多少、该拆掉哪份。
-    #
-    # 裁减是有代价的，所以三条约束一起上（详见 evidence_budget 模块）：
-    # 只裁整份、裁过就降级为待人工确认、裁了什么写进提示词和界面。
-    input_cap = int(budget_policy.get("maxInputTokens") or 0)
-    if input_cap > 0 and estimated_input_tokens > input_cap:
-        messages, estimated_input_tokens = trim_review_input_to_budget(
-            review_run, context, budget_policy
-        )
-
     qwen_runtime = qwen_runtime_public_config()
     estimated_cost = model_cost_cny(
         {
@@ -2937,8 +2921,6 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
             "output_tokens": budget_policy["maxOutputTokens"],
         }
     )["total"]
-    if input_cap > 0 and estimated_input_tokens > input_cap:
-        raise IntegrationServiceError("QwenRuntime", "review.chat", reason="REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED")
     if estimated_cost > budget_policy["maxCostCny"]:
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="REVIEW_COST_BUDGET_EXCEEDED")
     logical_call_id = f"review:{review_run['reviewRunId']}:generate_findings"
