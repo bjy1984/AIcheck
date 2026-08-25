@@ -82,10 +82,6 @@ from libs.db.seed import (
     STANDARD_RULES_SOURCE_ID,
     STANDARD_RULES_VERSION,
 )
-from libs.review_evidence import (
-    build_review_evidence_package,
-    persist_review_evidence_package,
-)
 from libs.deepseek_runtime import deepseek_runtime_public_config
 from libs.embedding_models import embedding_registry_payload, embedding_runtime_config
 from libs.fde_certification import (
@@ -247,6 +243,7 @@ from libs.review_conversation_prompt import (
     REVIEW_CONVERSATION_LANGUAGE_REMINDER,
     REVIEW_CONVERSATION_SYSTEM_PROMPT,
 )
+from libs.review_evidence import attach_review_evidence_package_to_ai_run
 from libs.review_orchestrator import (
     apply_review_human_input_for_review_run,
     build_review_orchestration_scorecard,
@@ -9439,27 +9436,6 @@ def ai_recheck(
                 data={"projectId": project_id, "nodeId": node_id, "businessPackVersion": pack.get("version")},
                 http_status=409,
             )
-        prompt_version = f"node-{node_id}-v1"
-        rule_version = str(rule.get("version") or "ruleset-v1")
-        evidence_package = build_review_evidence_package(
-            repo.state,
-            project_id,
-            node_id,
-            rule_version=rule_version,
-            clause_package_version=str(
-                (clause_package_snapshot or {}).get("snapshotHash") or "none"
-            ),
-            prompt_version=prompt_version,
-            strategy_version="node-review-strategy-v1",
-        )
-        snapshot_document_versions = [
-            str(item.get("documentVersionId"))
-            for item in evidence_package["snapshot"].get("documentVersions") or []
-            if item.get("documentVersionId")
-        ]
-        if snapshot_document_versions:
-            input_document_version_ids = sorted(snapshot_document_versions)
-        persist_review_evidence_package(repo.state, evidence_package, ai_run_id=run_id)
         run = {
             "id": run_id,
             "projectId": project_id,
@@ -9489,21 +9465,10 @@ def ai_recheck(
             "auditRuntime": audit_runtime,
             "reviewMode": review_mode,
             "advisoryOnly": advisory_only,
-            "projectReviewRunId": body.get("projectReviewRunId"),
-            "triggerType": body.get("triggerType") or "manual_node",
-            "autoReviewPolicyRevision": body.get("autoReviewPolicyRevision"),
             "confidenceScale": "ratio",
-            "promptVersion": prompt_version,
-            "ruleVersion": rule_version,
+            "promptVersion": f"node-{node_id}-v1",
+            "ruleVersion": rule.get("version") or "ruleset-v1",
             "inputDocumentVersionIds": input_document_version_ids,
-            "evidenceSnapshotId": evidence_package["snapshot"]["evidenceSnapshotId"],
-            "evidenceSnapshotHash": evidence_package["snapshot"]["snapshotHash"],
-            "evidenceManifestId": evidence_package["manifest"]["evidenceManifestId"],
-            "evidenceManifestHash": evidence_package["manifest"]["manifestHash"],
-            "evidenceShardIds": [
-                item["evidenceShardId"] for item in evidence_package["shards"]
-            ],
-            "evidenceCoverage": evidence_package["coverage"],
             "evidenceReadiness": evidence_readiness,
             "status": "推理中",
             "startedAt": server_time(),
@@ -9526,6 +9491,7 @@ def ai_recheck(
             "evidenceLinks": node_evidence_links,
             "findingDrafts": [],
         }
+        attach_review_evidence_package_to_ai_run(repo.state, run, clause_package_snapshot=clause_package_snapshot, orchestration_metadata=body)
         dispatch_readiness = task_dispatcher.ai_recheck_dispatch_readiness()
         if not dispatch_readiness.get("ready"):
             if review_mode == "formal":

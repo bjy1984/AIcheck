@@ -2066,7 +2066,7 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
     from apps.worker.celery_app import celery_app
     from libs import auto_review as auto_review_module
     from libs import document_intelligence as document_intelligence_module
-    from libs.review_orchestrator import execution as review_execution_module
+    from libs.review_orchestrator import shard_execution as shard_execution_module
 
     required_routes = {
         ("GET", "/projects/{project_id}/inspection/auto-review-policy"),
@@ -2151,7 +2151,7 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
         ),
         "lossless_shard_execution": (
             source_for_callable(
-                getattr(review_execution_module, "generate_finding_drafts", None)
+                getattr(shard_execution_module, "generate_sharded_finding_drafts", None)
             ),
             [
                 "grounding_input_for_evidence_shard",

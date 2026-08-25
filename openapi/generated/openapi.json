@@ -18550,6 +18550,22 @@
               ],
               "title": "Idempotency-Key"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
           }
         ],
         "requestBody": {
@@ -19711,6 +19727,211 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/api/projects/{project_id}/inspection/auto-review-policy": {
+      "get": {
+        "operationId": "get_auto_review_policy_api_projects__project_id__inspection_auto_review_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Auto Review Policy"
+      },
+      "put": {
+        "operationId": "update_auto_review_policy_api_projects__project_id__inspection_auto_review_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Auto Review Policy"
+      }
+    },
+    "/api/projects/{project_id}/inspection/auto-review-status": {
+      "get": {
+        "operationId": "get_auto_review_status_api_projects__project_id__inspection_auto_review_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Auto Review Status"
+      }
+    },
+    "/api/projects/{project_id}/inspection/auto-review/run": {
+      "post": {
+        "operationId": "run_project_auto_review_api_projects__project_id__inspection_auto_review_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Project Auto Review"
       }
     },
     "/api/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction": {
@@ -21502,6 +21723,89 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/api/projects/{project_id}/inspection/project-review-runs": {
+      "get": {
+        "operationId": "list_project_review_runs_api_projects__project_id__inspection_project_review_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Project Review Runs"
+      }
+    },
+    "/api/projects/{project_id}/inspection/project-review-runs/{project_review_run_id}": {
+      "get": {
+        "operationId": "get_project_review_run_api_projects__project_id__inspection_project_review_runs__project_review_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_review_run_id",
+            "required": true,
+            "schema": {
+              "title": "Project Review Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Project Review Run"
       }
     },
     "/api/projects/{project_id}/inspection/submitted-documents": {
@@ -24595,7 +24899,6 @@
     },
     "/api/projects/{project_id}/registration-requests/{request_id}/review": {
       "post": {
-        "description": "通过或拒绝。通过时才真正创建账号。",
         "operationId": "review_registration_request_api_projects__project_id__registration_requests__request_id__review_post",
         "parameters": [
           {
@@ -26084,7 +26387,6 @@
     },
     "/api/registration-links/{token}/apply": {
       "post": {
-        "description": "提交注册申请。**不建用户**——批准的那一刻才建。\n\n先建用户再标 pending 的话，只要哪个查询忘了过滤 pending，人就登进来了，\n而且不会报错。没有账号，就没有「忘了过滤」的可能。",
         "operationId": "submit_registration_api_registration_links__token__apply_post",
         "parameters": [
           {
@@ -40496,6 +40798,22 @@
               ],
               "title": "Idempotency-Key"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Role"
+            }
           }
         ],
         "requestBody": {
@@ -41657,6 +41975,211 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/projects/{project_id}/inspection/auto-review-policy": {
+      "get": {
+        "operationId": "get_auto_review_policy_projects__project_id__inspection_auto_review_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Auto Review Policy"
+      },
+      "put": {
+        "operationId": "update_auto_review_policy_projects__project_id__inspection_auto_review_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Auto Review Policy"
+      }
+    },
+    "/projects/{project_id}/inspection/auto-review-status": {
+      "get": {
+        "operationId": "get_auto_review_status_projects__project_id__inspection_auto_review_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Auto Review Status"
+      }
+    },
+    "/projects/{project_id}/inspection/auto-review/run": {
+      "post": {
+        "operationId": "run_project_auto_review_projects__project_id__inspection_auto_review_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Project Auto Review"
       }
     },
     "/projects/{project_id}/inspection/nodes/{node_id}/actions/return-correction": {
@@ -43448,6 +43971,89 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/projects/{project_id}/inspection/project-review-runs": {
+      "get": {
+        "operationId": "list_project_review_runs_projects__project_id__inspection_project_review_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Project Review Runs"
+      }
+    },
+    "/projects/{project_id}/inspection/project-review-runs/{project_review_run_id}": {
+      "get": {
+        "operationId": "get_project_review_run_projects__project_id__inspection_project_review_runs__project_review_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_review_run_id",
+            "required": true,
+            "schema": {
+              "title": "Project Review Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Project Review Run"
       }
     },
     "/projects/{project_id}/inspection/submitted-documents": {
@@ -46541,7 +47147,6 @@
     },
     "/projects/{project_id}/registration-requests/{request_id}/review": {
       "post": {
-        "description": "通过或拒绝。通过时才真正创建账号。",
         "operationId": "review_registration_request_projects__project_id__registration_requests__request_id__review_post",
         "parameters": [
           {
@@ -48030,7 +48635,6 @@
     },
     "/registration-links/{token}/apply": {
       "post": {
-        "description": "提交注册申请。**不建用户**——批准的那一刻才建。\n\n先建用户再标 pending 的话，只要哪个查询忘了过滤 pending，人就登进来了，\n而且不会报错。没有账号，就没有「忘了过滤」的可能。",
         "operationId": "submit_registration_registration_links__token__apply_post",
         "parameters": [
           {

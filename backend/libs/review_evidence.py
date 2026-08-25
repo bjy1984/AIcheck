@@ -808,6 +808,55 @@ def persist_review_evidence_package(
         _upsert_state_record(state, "evidence_shards", shard)
 
 
+def attach_review_evidence_package_to_ai_run(
+    state: dict[str, Any],
+    ai_run: dict[str, Any],
+    *,
+    clause_package_snapshot: dict[str, Any] | None,
+    orchestration_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Freeze and attach the cumulative node evidence package to an AiRun."""
+
+    package = build_review_evidence_package(
+        state,
+        str(ai_run.get("projectId") or ""),
+        int(ai_run.get("nodeId") or 0),
+        rule_version=str(ai_run.get("ruleVersion") or "ruleset-v1"),
+        clause_package_version=str(
+            (clause_package_snapshot or {}).get("snapshotHash") or "none"
+        ),
+        prompt_version=str(ai_run.get("promptVersion") or "review_prompt@1.0.0"),
+        strategy_version="node-review-strategy-v1",
+    )
+    snapshot_versions = sorted(
+        str(item.get("documentVersionId"))
+        for item in package["snapshot"].get("documentVersions") or []
+        if item.get("documentVersionId")
+    )
+    metadata = orchestration_metadata or {}
+    ai_run.update(
+        {
+            "projectReviewRunId": metadata.get("projectReviewRunId"),
+            "triggerType": metadata.get("triggerType") or "manual_node",
+            "autoReviewPolicyRevision": metadata.get("autoReviewPolicyRevision"),
+            "inputDocumentVersionIds": snapshot_versions
+            or list(ai_run.get("inputDocumentVersionIds") or []),
+            "evidenceSnapshotId": package["snapshot"]["evidenceSnapshotId"],
+            "evidenceSnapshotHash": package["snapshot"]["snapshotHash"],
+            "evidenceManifestId": package["manifest"]["evidenceManifestId"],
+            "evidenceManifestHash": package["manifest"]["manifestHash"],
+            "evidenceShardIds": [
+                item["evidenceShardId"] for item in package["shards"]
+            ],
+            "evidenceCoverage": package["coverage"],
+        }
+    )
+    persist_review_evidence_package(
+        state, package, ai_run_id=str(ai_run.get("id") or "")
+    )
+    return package
+
+
 def bind_evidence_package_to_review_run(
     state: dict[str, Any], *, ai_run_id: str, review_run_id: str
 ) -> None:
@@ -815,3 +864,17 @@ def bind_evidence_package_to_review_run(
         for record in state.get(collection) or []:
             if str(record.get("aiRunId") or "") == str(ai_run_id):
                 record["reviewRunId"] = review_run_id
+
+
+def review_run_evidence_lineage(ai_run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "projectReviewRunId": ai_run.get("projectReviewRunId"),
+        "triggerType": ai_run.get("triggerType") or "manual_node",
+        "autoReviewPolicyRevision": ai_run.get("autoReviewPolicyRevision"),
+        "evidenceSnapshotId": ai_run.get("evidenceSnapshotId"),
+        "evidenceSnapshotHash": ai_run.get("evidenceSnapshotHash"),
+        "evidenceManifestId": ai_run.get("evidenceManifestId"),
+        "evidenceManifestHash": ai_run.get("evidenceManifestHash"),
+        "evidenceShardIds": deepcopy(ai_run.get("evidenceShardIds") or []),
+        "evidenceCoverage": deepcopy(ai_run.get("evidenceCoverage") or {}),
+    }

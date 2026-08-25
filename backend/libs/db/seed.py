@@ -2026,7 +2026,7 @@ PROJECT_MEMBERS = [
         "name": "李工",
         "orgName": "中石化安装有限公司",
         "role": "contractor",
-        "nodeScope": [16, 24, 25],
+        "nodeScope": [1, 16, 24, 25],
         "actions": ROLE_ACTIONS["contractor"],
         "status": "启用",
         "updatedAt": "2026-06-26 09:30:00",
@@ -2038,7 +2038,7 @@ PROJECT_MEMBERS = [
         "name": "李工",
         "orgName": "粤海安装工程有限公司",
         "role": "contractor",
-        "nodeScope": [16, 24, 25],
+        "nodeScope": [1, 16, 24, 25],
         "actions": ROLE_ACTIONS["contractor"],
         "status": "启用",
         "updatedAt": "2026-06-26 11:10:00",
@@ -2061,7 +2061,7 @@ TEST_PROJECT_ROLE_PROFILES = {
         "name": "李工",
         # Align with Scan 测试场景（P-2026-GDLNG-002）与 import_scan_test_scenario.CONTRACTOR_USER
         "orgName": "粤海安装工程有限公司",
-        "nodeScope": [16, 24, 25],
+        "nodeScope": [1, 16, 24, 25],
     },
     "ndt": {
         "userId": "USER-NDT-001",
