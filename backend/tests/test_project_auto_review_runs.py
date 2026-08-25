@@ -168,3 +168,30 @@ def test_finalize_parent_summarizes_child_terminal_states_without_business_decis
     assert result["failedNodeIds"] == [2]
     assert result["status"] == "partial"
     assert "businessConclusion" not in result
+
+
+def test_dispatch_parent_with_no_mounted_nodes_completes_immediately() -> None:
+    from libs.auto_review import create_project_review_run, dispatch_project_review_run
+
+    state = _node_state()
+    parent = create_project_review_run(
+        state,
+        tenant_id="TENANT-1",
+        project_id="P-1",
+        trigger_type="manual_full",
+        policy=_policy(),
+        node_ids=[],
+    )
+
+    result = dispatch_project_review_run(
+        state,
+        parent,
+        start_node_review=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("an empty project must not dispatch a node review")
+        ),
+    )
+
+    assert result["status"] == "completed"
+    assert result["expectedNodeIds"] == []
+    assert result["childReviewRunIds"] == []
+    assert result["finishedAt"]

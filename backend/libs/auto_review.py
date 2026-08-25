@@ -347,7 +347,10 @@ def dispatch_project_review_run(
         if review_run_id:
             project_run["childReviewRunIds"].append(review_run_id)
     project_run["failedNodeIds"] = sorted(set(failed_node_ids))
-    if failed_node_ids:
+    if not project_run.get("expectedNodeIds"):
+        project_run["status"] = "completed"
+        project_run["finishedAt"] = server_time()
+    elif failed_node_ids:
         project_run["status"] = "partial" if project_run["childAiRunIds"] else "failed"
     project_run["updatedAt"] = server_time()
     project_run["revision"] = int(project_run.get("revision") or 0) + 1
