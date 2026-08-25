@@ -6,6 +6,7 @@ import {
   ElBreadcrumb,
   ElBreadcrumbItem,
   ElButton,
+  ElCheckbox,
   ElCollapse,
   ElCollapseItem,
   ElDrawer,
@@ -26,6 +27,8 @@ import {
   ElSkeleton,
   ElTable,
   ElTableColumn,
+  ElTag,
+  ElTooltip,
   ElTreeV2
 } from 'element-plus'
 import {

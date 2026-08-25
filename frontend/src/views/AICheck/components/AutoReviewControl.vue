@@ -1,6 +1,19 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ElButton,
+  ElCheckbox,
+  ElDrawer,
+  ElForm,
+  ElFormItem,
+  ElInputNumber,
+  ElMessage,
+  ElMessageBox,
+  ElOption,
+  ElSelect,
+  ElSwitch,
+  ElTimeSelect
+} from 'element-plus'
 
 import {
   getProjectAutoReviewPolicyApi,
