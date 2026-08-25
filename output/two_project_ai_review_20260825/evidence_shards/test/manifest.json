@@ -62,7 +62,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -120,7 +122,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -183,7 +187,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -224,7 +230,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -278,7 +286,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -331,7 +341,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -384,7 +396,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -425,7 +439,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -492,7 +508,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -547,7 +565,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -603,7 +623,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -656,7 +678,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -707,7 +731,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -771,7 +797,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -833,7 +861,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -902,7 +932,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -955,7 +987,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1059,7 +1093,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1126,7 +1162,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1190,7 +1228,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1283,7 +1323,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1353,7 +1395,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1420,7 +1464,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1476,7 +1522,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1529,7 +1577,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1593,7 +1643,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1659,7 +1711,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1708,7 +1762,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1761,7 +1817,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1812,7 +1870,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1864,7 +1924,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1917,7 +1979,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -1969,7 +2033,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2022,7 +2088,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2100,7 +2168,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2165,7 +2235,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2218,7 +2290,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2271,7 +2345,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2337,7 +2413,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2391,7 +2469,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2444,7 +2524,9 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     },
     {
@@ -2498,10 +2580,13 @@
         "unexpectedArtifactIds": [],
         "incompleteArtifactIds": [],
         "duplicateArtifactIds": [],
-        "coveragePassed": true
+        "structuralCoveragePassed": true,
+        "processingCoveragePassed": false,
+        "coveragePassed": false
       }
     }
   ],
-  "packageHash": "sha256:c6c60a2d19281bd0629973f73ae4f7eb82bd631ce63ae88aa815f87458b33c47",
-  "coveragePassed": true
+  "packageHash": "sha256:7d2157ed428c0f6f6d2d8a351dbc1d37978491a8763155d1c788b367145fc9b0",
+  "packageCoveragePassed": true,
+  "coveragePassed": false
 }

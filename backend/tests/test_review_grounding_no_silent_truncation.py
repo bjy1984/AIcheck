@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+
 from libs.review_grounding import build_grounded_review_input
+from libs.review_orchestrator.execution import normalize_llm_findings
 
 
 def _grounding_state(
@@ -128,3 +131,53 @@ def test_grounding_evidence_text_corpus_does_not_truncate_long_source_text() -> 
     grounded = build_grounded_review_input(state, {"DV-FULL-1"})
 
     assert original in grounded["evidenceTextCorpus"]
+
+
+def test_model_output_keeps_every_shard_finding_and_full_diagnostic_text() -> None:
+    long_description = "逐项核查诊断" * 400
+    content = json.dumps(
+        {
+            "findings": [
+                {
+                    "findingType": f"finding_{index}",
+                    "severity": "medium",
+                    "title": f"第 {index} 条审查发现" + ("标题" * 80),
+                    "description": long_description + str(index),
+                    "evidenceRefs": [],
+                    "ruleRefs": [],
+                    "kbRefs": [],
+                    "confidence": 0.5,
+                    "suggestedAction": "human_confirm",
+                    "groundingStatus": "insufficient_evidence",
+                    "unsupportedClaims": [],
+                }
+                for index in range(15)
+            ]
+        },
+        ensure_ascii=False,
+    )
+    context = {
+        "groundingInput": {
+            "groundingStatus": "insufficient_evidence",
+            "documentVersionIds": ["DV-1"],
+            "evidenceLinks": [],
+            "evidenceTextCorpus": [long_description],
+        },
+        "auditRuntime": {"mode": "ocr_llm"},
+    }
+
+    drafts = normalize_llm_findings(
+        {
+            "reviewRunId": "RRUN-FULL-OUTPUT",
+            "projectId": "P-1",
+            "nodeId": 1,
+            "reviewMode": "gap_precheck",
+            "advisoryOnly": True,
+        },
+        context,
+        content,
+    )
+
+    assert len(drafts) == 15
+    assert drafts[-1]["modelTitle"].endswith("标题" * 80)
+    assert drafts[-1]["modelDescription"] == long_description + "14"

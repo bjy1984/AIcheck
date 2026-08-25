@@ -3116,8 +3116,8 @@ def _generate_finding_drafts_once(
         "usageNormalized": normalized_usage,
         "costNormalized": normalized_cost,
         "budget": repo.clone(attempt["budget"]),
-        "reasoningProcess": reasoning_process[:3000],
-        "resultText": content[:4000],
+        "reasoningProcess": reasoning_process,
+        "resultText": content,
         "auditInputMode": (context.get("auditRuntime") or audit_runtime_for_run(review_run))["mode"],
         "finishReason": finish_reason,
     }
@@ -3386,16 +3386,16 @@ def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], 
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_INVALID_ENVELOPE")
     if not raw_findings:
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_EMPTY_FINDINGS")
-    if any(not isinstance(item, dict) for item in raw_findings[:10]):
+    if any(not isinstance(item, dict) for item in raw_findings):
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_INVALID_FINDING")
     drafts = []
-    for item in raw_findings[:10]:
+    for item in raw_findings:
         draft = {**repo.clone(base)}
         draft["id"] = f"FND-DRAFT-{uuid4().hex[:8].upper()}"
         draft["findingType"] = str(item.get("findingType") or item.get("finding_type") or base["findingType"])
         draft["severity"] = str(item.get("severity") or base["severity"])
-        draft["title"] = str(item.get("title") or base["title"])[:120]
-        draft["description"] = str(item.get("description") or base["description"])[:1200]
+        draft["title"] = str(item.get("title") or base["title"])
+        draft["description"] = str(item.get("description") or base["description"])
         draft["evidenceRefs"] = repo.clone(item.get("evidenceRefs")) if isinstance(item.get("evidenceRefs"), list) else []
         draft["ruleRefs"] = repo.clone(item.get("ruleRefs")) if isinstance(item.get("ruleRefs"), list) else []
         draft["kbRefs"] = repo.clone(item.get("kbRefs")) if isinstance(item.get("kbRefs"), list) else []
