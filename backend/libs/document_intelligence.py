@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from libs.auto_review import enqueue_auto_review_evidence_event
 from libs.contracts.responses import server_time
 from libs.material_auto_classify import (
     UNCLASSIFIED_MATERIAL_CODE,
@@ -9,6 +10,7 @@ from libs.material_auto_classify import (
     unclassified_material_result,
 )
 from libs.material_targeting import latest_parse_result, run_material_targeting
+from libs.security.tenant import tenant_id_for_record
 
 
 CLASSIFICATION_FIELDS = (
@@ -153,6 +155,38 @@ def process_document_classification_and_targeting(
                 "createdBindingCount": 0,
                 "createdLinkCount": 0,
                 "error": exc.__class__.__name__,
+            }
+
+    created_links = [
+        row for row in targeting.get("createdLinks") or [] if isinstance(row, dict)
+    ]
+    created_node_ids = sorted(
+        {int(row.get("nodeId") or 0) for row in created_links if int(row.get("nodeId") or 0) > 0}
+    )
+    targeting["createdNodeIds"] = created_node_ids
+    if created_node_ids:
+        try:
+            mount_revision = max(
+                [int(row.get("revision") or 0) for row in created_links] or [0]
+            ) or 1
+            event, created = enqueue_auto_review_evidence_event(
+                repo.state,
+                tenant_id=tenant_id_for_record(document),
+                project_id=project_id,
+                document_version_id=document_version_id,
+                node_ids=created_node_ids,
+                mount_revision=mount_revision,
+            )
+            targeting["autoReviewDispatch"] = {
+                "status": "enqueued" if event and created else "already_enqueued" if event else "skipped",
+                "eventId": (event or {}).get("id"),
+            }
+            if event:
+                targeting["autoReviewEventId"] = event.get("id")
+        except Exception as exc:  # Automatic review must never roll back OCR/classification success.
+            targeting["autoReviewDispatch"] = {
+                "status": "not_enqueued",
+                "reason": exc.__class__.__name__,
             }
 
     return {

@@ -385,3 +385,61 @@ def finalize_project_review_run(
     project_run["updatedAt"] = server_time()
     project_run["revision"] = int(project_run.get("revision") or 0) + 1
     return project_run
+
+
+def enqueue_auto_review_evidence_event(
+    state: dict[str, Any],
+    *,
+    tenant_id: str,
+    project_id: str,
+    document_version_id: str,
+    node_ids: list[int],
+    mount_revision: int,
+) -> tuple[dict[str, Any] | None, bool]:
+    policy = next(
+        (
+            row
+            for row in state.get("auto_review_policies") or []
+            if isinstance(row, dict)
+            and str(row.get("tenantId") or "") == str(tenant_id)
+            and str(row.get("projectId") or "") == str(project_id)
+        ),
+        None,
+    )
+    if not policy or not policy_allows_trigger(policy, "ocr_mounted"):
+        return None, False
+    normalized_node_ids = sorted({int(node_id) for node_id in node_ids if int(node_id) > 0})
+    if not normalized_node_ids:
+        return None, False
+    event_id = _stable_id(
+        "AREVT",
+        {
+            "tenantId": str(tenant_id),
+            "projectId": str(project_id),
+            "documentVersionId": str(document_version_id),
+            "nodeIds": normalized_node_ids,
+            "mountRevision": int(mount_revision),
+        },
+    )
+    rows = state.setdefault("auto_review_outbox", [])
+    existing = next((row for row in rows if str(row.get("id") or "") == event_id), None)
+    if existing:
+        return existing, False
+    now = server_time()
+    event = {
+        "id": event_id,
+        "eventType": "node.evidence.mounted",
+        "tenantId": str(tenant_id),
+        "projectId": str(project_id),
+        "documentVersionId": str(document_version_id),
+        "nodeIds": normalized_node_ids,
+        "mountRevision": int(mount_revision),
+        "policyRevision": int(policy.get("revision") or 1),
+        "status": "pending",
+        "attemptCount": 0,
+        "availableAt": now,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    rows.append(event)
+    return event, True
