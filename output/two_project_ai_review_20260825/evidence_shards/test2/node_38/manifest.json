@@ -1,0 +1,50 @@
+{
+  "evidenceManifestId": "EMAN-73461A3B23E20A65",
+  "schemaVersion": "EvidenceManifest@1.0.0",
+  "evidenceSnapshotId": "ESNAP-29E61CFC2D608554",
+  "evidenceSnapshotHash": "sha256:29e61cfc2d608554ff70a7afac76264166d2056f2046d30e525585aa7e217ca3",
+  "projectId": "P-TEST-OCR-002",
+  "nodeId": 38,
+  "documents": [
+    {
+      "documentId": "DOC-OFFLINE-test2-005",
+      "documentVersionId": "DV-OFFLINE-test2-005-V1",
+      "mountLinkIds": [
+        "NEL-OFFLINE-test2-38-001"
+      ],
+      "mountRevision": 1,
+      "documentContentHash": "sha256:47f87c7967d37370660601800d4f9657c6511400cbb968632416eed23f90990d",
+      "ocrParseResultId": "OCR-OFFLINE-test2-005",
+      "ocrContentHash": "sha256:47f87c7967d37370660601800d4f9657c6511400cbb968632416eed23f90990d",
+      "artifactIds": [
+        "EART-A00739F00D28EED8"
+      ],
+      "artifactCount": 1
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "EART-A00739F00D28EED8",
+      "artifactType": "fragment",
+      "documentVersionId": "DV-OFFLINE-test2-005-V1",
+      "sourceId": "FRAGMENT-OFFLINE-test2-005",
+      "payload": {
+        "id": "FRAGMENT-OFFLINE-test2-005",
+        "pageNo": 1,
+        "text": "# MinerU Markdown\n\n# 中华人民共和国 特种设备检验检测人员证\n\n# Inspector and Tester Certificate of Special Equipment People's Republic of China (无损检测人员)\n\n姓名：储磊\n\n证书编号：612423199205085216\n\n初次取证日期：2023年11月\n\n经考核，批准项目和级别如下：\n\n<table><tr><td>项目</td><td>级别</td><td>代号</td><td>备注</td></tr><tr><td>射线胶片照相检测</td><td>II级</td><td>RT(II)</td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr></table>\n\n发证机关：陕西省市场监督管理局\n\n![](images/d9ffae3da6d8746cf9112d7189ce566ae826a2bbaff5d9fbb631f9b989fce179.jpg)\n\n发证日期：2023年11月28日\n\n有效期：2023年11月至2028年10月\n\n# 特种设备检验检测人员执业注册证\n\n## 一、注册人员信息\n\n姓名：储磊\n\n身份证号： 612423199205085216\n\n## 二、执业单位信息\n\n全称：广州声华科技股份有限公司\n\n地址：广东省广州市高新技术产业开发区科学城科研路3号自编A5栋501、502房\n\n邮编：510663\n\n电话：020-84054827\n\n## 三、执业单位授权\n\n兹聘用储磊代表我单位从事所持资格证书项目的检验检测工作，并签署相应检验报告。\n\n授权人：\n\n签署日期：\n\n## 四、所持资格证书项目\n\n![](images/45cd953210f472d0613a51ee91cf7ab561d0a7918f83c17b7433134219fdc666.jpg)\n\n项目 级别 有效期 项目 级别 有效期 项目 级别 有效期\nRT II 2028-10 UT II 2026-10\n\n## 五、注册单位声明\n\n1. 注册详细信息可自中国特种设备检验协会网站（www.casei.org.cn）查询，并以网站发布信息为准。\n\n2. 注册人员各项目的有效期以其所持资格证书为准。\n\n3. 本证书加盖中国特种设备检验协会印章并经执业单位授权方为有效。\n\n注册有效起始日期：2024-04-10\n\n初次注册日期：2018-05-10\n\n请扫描二维码，以确认证书有效性\n\n注册证书编号：CASEI2024018071\n\n发证机构：中国特种设备检验协会\n\n有效期限：2028-04-09\n\n# 中华人民共和国 特种设备检验检测人员证\n\n# Inspector and Tester Certificate of Special Equipment People's Republic of China\n\n(无损检测人员)\n\n姓名： 黄继军\n\n证书编号：612427199412023371\n\n初次取证日期：2025年03月\n\n经考核，批准项目和级别如下：\n\n<table><tr><td>项目</td><td>级别</td><td>代号</td><td>备注</td></tr><tr><td>射线胶片照相检测</td><td>II级</td><td>RT(II)</td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr></table>\n\n发证机关：陕西省\n\n![](images/79e51b0bad8e868565a12290b4ef2bd1accd79b49e782aff087dc4080c0aabc5.jpg)\n\n发证日期：2025年03月28日\n\n有效期：2025年03月至2030年02月\n\n# 特种设备检验检测人员执业注册证\n\n## 一、注册人员信息\n\n姓名：黄继军\n\n身份证号：612427199412023371\n\n## 二、执业单位信息\n\n全称：广州声华科技股份有限公司\n\n地址：广东省广州市高新技术产业开发区科学城科研路3号自编A5栋501、502房\n\n邮编：510663\n\n电话：020-84054827\n\n## 三、执业单位授权\n\n兹聘用黄继军代表我单位从事所持资格证书项目\n\n的检验检测工作，并签署相应检验报告。\n\n授权人：\n\n签署日期：\n\n![](images/1fa3f38e5ffd9b71666ac38d620b90c0881516fe5ac89d26e6d7834b70c6e421.jpg)\n\n## 四、所持资格证书项目\n\n项目 级别 有效期 项目 级别 有效期 项目 级别 有效期\n\n请扫描二维码，以确认证书有效性\n\nRT I 2028-06\n\n## 五、注册单位声明\n\n1. 注册详细信息可自中国特种设备检验协会网站（www.casei.org.cn）查询，并以网站发布信息为准。\n\n2. 注册人员各项目的有效期以其所持资格证书为准。\n\n3. 本证书加盖中国特种设备检验协会印章并经执业单位授权方为有效。\n\n注册有效起始日期：2024-04-10\n\n初次注册日期：2024-04-10\n\n注册证书编号：CASEI2024018072\n\n发证机构：中国特种设备检验协会\n\n有效期限：2028-04-09\n\n# 中华人民共和国 特种设备检验检测人员证\n\n# Inspector and Tester Certificate of Special Equipment People's Republic of China （无损检测人员）\n\n姓名： 任志国\n\n证书编号：612427198106272914\n\n初次取证日期：2018年11月\n\n## 经考核，批准项目和级别如下：\n\n<table><tr><td>项目</td><td>级别</td><td>代号</td><td>备注</td></tr><tr><td>射线胶片照相检测</td><td>II级</td><td>RT(II)</td><td>K</td></tr><tr><td></td><td></td><td></td><td></td></tr></table>\n\n发证机关：广东省市场监督管理局\n\n![](images/494a19a900b107fa7421707798e44e6660f92c7268e97ae9d49e65aa6a925ba0.jpg)\n\n发证日期：2022年08月09日\n\n有效期：2022年11月至2027年10月\n\n# 特种设备检验检测人员执业注册证\n\n## 一、注册人员信息\n\n姓名：任志国\n\n身份证号：612427198106272914\n\n## 二、执业单位信息\n\n全称：广州声华科技股份有限公司\n\n地址：广东省广州市高新技术产业开发区科学城科研路3号自编A5栋501、502房\n\n邮编：510663\n\n电话：020-84054827\n\n## 三、执业单位授权\n\n兹聘用任志国代表我单位从事所持资格证书项目\n\n的检验检测工作，并签署相应检验报告。\n\n授权人：\n\n签署日期：\n\n![](images/11e3ef30c64ae3236d2441c5986d179b804056ae4820557e9b31bab8c3a9b633.jpg)\n\n## 四、所持资格证书项目\n\n<table><tr><td>项目</td><td>级别</td><td>有效期</td><td>项目</td><td>级别</td><td>有效期</td><td>项目</td><td>级别</td><td>有效期</td></tr><tr><td>RT</td><td>II</td><td>2027-10</td><td>UT</td><td>II</td><td>2027-10</td><td></td><td></td><td></td></tr></table>\n\n## 五、注册单位声明\n\n请扫描二维码，以确认证书有效性\n\n1. 注册详细信息可自中国特种设备检验协会网站（www.casei.org.cn）查询，并以网站发布信息为准。\n\n2. 注册人员各项目的有效期以其所持资格证书为准。\n\n3. 本证书加盖中国特种设备检验协会印章并经执业单位授权方为有效。\n\n注册有效起始日期：2022-11-01\n\n初次注册日期：2019-03-15\n\n注册证书编号：CASEI2022068848\n\n发证机构：中国特种设备检验协会\n\n有效期限：2026-10-31",
+        "source": "full_mineru_markdown",
+        "confidence": 1.0
+      },
+      "contentHash": "sha256:a00739f00d28eed8f63a4e54e10eafd5a55f468cfd9786e6c710a398162187df"
+    }
+  ],
+  "counts": {
+    "fields": 0,
+    "tables": 0,
+    "seals": 0,
+    "fragments": 1,
+    "evidenceLinks": 0,
+    "total": 1
+  },
+  "manifestHash": "sha256:73461a3b23e20a65413c15176da6194f9757a28f111e7edd06f8bc10491ae466"
+}

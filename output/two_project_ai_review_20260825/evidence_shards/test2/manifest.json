@@ -1,0 +1,2389 @@
+{
+  "schemaVersion": "OfflineProjectEvidencePackage@1.0.0",
+  "projectCode": "test2",
+  "projectId": "P-TEST-OCR-002",
+  "projectName": "TEST项目二｜珠海新建化工区管道气站",
+  "includedNodeCount": 42,
+  "nodes": [
+    {
+      "nodeId": 1,
+      "nodeName": "设计单位许可资质",
+      "criteria": "TSG07-2019特种设备生产和充装单位许可规则 国家市场监督管理总局公 告 2021 年第41 号《市场监管总局关于特种设备行政许可有关事项的公告》 二者不一致的以后者为准",
+      "checkMethod": "核查设计许可证的机构名称是否与施工图纸标题栏和设计印章一致 核查设计许可证的范围根据设计文件中的施工说明、管道特性表，动力管道（GCD），在范围处一定要有GCD管道资质，GC2级别管道要有GC2或者GC1的资质，GC1级别管道要有GC1的资质 有效期：是否能覆盖住施工期间，因为施工期间也要有技术变更澄清事宜。 Agent思考方式：找到设计许可证的机构名称，找到施工图纸的标题栏内容，找到施工图纸的设计印章内容，比较三处的机构名称；找到设计许可证的范围，找到设计文件中的施工说明、管道特性表，动力管道（GCD）的施工范围，gcd管道资质要对应，对应的规则是：GC2级别管道要有GC2或者GC1的资质，GC1级别管道要有GC1的资质。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "design_license",
+          "materialTypeName": "设计单位许可证",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "设计许可证机构名称",
+            "许可范围",
+            "许可级别",
+            "有效期",
+            "印章"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "施工图纸标题栏设计单位名称",
+            "设计印章单位名称",
+            "图号/项目名称"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "设计说明中的施工范围/管道类别级别",
+            "管道特性表中的管道类别",
+            "级别",
+            "设计压力/温度"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-CCF4ACCB5DB6C65D",
+      "evidenceSnapshotHash": "sha256:ccf4accb5db6c65d5c560c4d0e981d313fd8c0a446f5b9d8bcb0626082106dfd",
+      "nodeManifestPath": "node_01/manifest.json",
+      "shardPaths": [
+        "node_01/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 3,
+        "processedArtifactCount": 3,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 2,
+      "nodeName": "施工单位许可资质",
+      "criteria": "TSG07-2019特种设备生产和充装单位许可规则 国家市场监督管理总局公 告 2021 年第41 号《市场监管总局关于特种设备行政许可有关事项的公告》 二者不一致的以后者为准",
+      "checkMethod": "核查安装许可证的范围、根据设计文件中的施工说明、管道特性表，动力管道（GCD），在范围处一定要有GCD管道资质或者A及锅炉安装资质，GC2级别管道要有GC2或者GC1或者GCD的资质，GC1级别管道要有GC1的资质 2、有效期：是否能覆盖住施工计划工期。如果不能覆盖，需要发联络单提醒。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "construction_license",
+          "materialTypeName": "施工单位安装许可证",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "机构名称",
+            "证书编号",
+            "许可范围",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "设计说明",
+            "管道特性表中的管道类别/级别和施工范围"
+          ]
+        },
+        {
+          "materialTypeCode": "construction_schedule",
+          "materialTypeName": "施工计划工期文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "开始日期",
+            "结束日期",
+            "项目范围"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-1E24917452EAED4B",
+      "evidenceSnapshotHash": "sha256:1e24917452eaed4b547be7cd83d2084f0f712ba97241f459227b9edb921dec65",
+      "nodeManifestPath": "node_02/manifest.json",
+      "shardPaths": [
+        "node_02/shard_001.json",
+        "node_02/shard_002.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 2,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 3,
+        "processedArtifactCount": 3,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 3,
+      "nodeName": "无损检测机构核准资质",
+      "criteria": "TSG Z7002-2022特种设备检测机构核准规则",
+      "checkMethod": "核查特种设备检验检测机构核准证，核查机构名称名称是否与检测方案的名称一致 核查核准项目代码所代表的检测项目是否满足设计文件要求的检测方法。 3、有效期：是否能覆盖住施工计划工期，如果不能覆盖，需要发联络单提醒",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "ndt_org_certificate",
+          "materialTypeName": "无损检测机构核准证",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "机构名称",
+            "证书编号",
+            "核准项目",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "ndt_plan",
+          "materialTypeName": "无损检测方案",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "方案编号",
+            "方法",
+            "比例",
+            "时机",
+            "批准人",
+            "标准编号"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "设计文件中的检测方法",
+            "检测比例",
+            "项目范围",
+            "用于核查无损检测核准项目覆盖性"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-5F5837399D26C50A",
+      "evidenceSnapshotHash": "sha256:5f5837399d26c50ae250ff2e1b010dc8b34345fc78298eb8f801e42e7ec316d4",
+      "nodeManifestPath": "node_03/manifest.json",
+      "shardPaths": [
+        "node_03/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 3,
+        "processedArtifactCount": 3,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 4,
+      "nodeName": "设计文件的批准程序",
+      "criteria": "TSG31-2025《工业管道安全技术规程》第3章",
+      "checkMethod": "是否齐全：基本要求，至少包括图纸目录、设计说明书、管道数据表、管道布置图、管道材料一览表以及直管强度计算书， 批准程序：管道数据表、管道材料等级表、设备布置图、管道布置图、强度计算书和管道应力计算书等主要设计图样或者文件，应当有设计、校核、审核三级签字。下列管道的材料等级表、应力计算书、设备布置图和管道布置图应当有设计、校核、审核、审定四级签字： (1)GC1 级管道； (2)设计压力大于或者等于16.7MPa，或者设计压力大于或者等于4.0MPa，并且设计温度大于或者等于570C的GCD级管道。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-B3CC4E60E2601217",
+      "evidenceSnapshotHash": "sha256:b3cc4e60e2601217739842a533a56e864efcc398df39745896b41cbe0a660dfa",
+      "nodeManifestPath": "node_04/manifest.json",
+      "shardPaths": [
+        "node_04/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 5,
+      "nodeName": "施工图审查手续",
+      "criteria": "审查施工单位出具的施工图审查见证材料",
+      "checkMethod": "审查施工单位出具的施工图审查见证材料",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        },
+        {
+          "materialTypeCode": "drawing_review_record",
+          "materialTypeName": "施工图审查手续",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "项目名称",
+            "图号",
+            "审查单位",
+            "审查日期",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-2EA8945488572C80",
+      "evidenceSnapshotHash": "sha256:2ea8945488572c801430f63a97a7cb47bdfd1f82423c87bda8ec89fec71de167",
+      "nodeManifestPath": "node_05/manifest.json",
+      "shardPaths": [
+        "node_05/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 6,
+      "nodeName": "强度计算书、管道应力分析计算书的审批手续",
+      "criteria": "TSG31-2025《工业管道安全技术规程》第3章",
+      "checkMethod": "审查强度计算书、管道应力分析计算书是否覆盖本项目对应管线或管段，计算书名称、管道编号、设计压力、设计温度、介质、材料、规格等设计条件应与设计文件一致。 强度计算书、管道应力分析计算书作为主要设计文件，应当有设计、校核、审核三级签字。对 GC1 级管道，或者设计压力大于等于 16.7MPa，或者 GCD 级管道设计压力大于等于 4.0MPa 且设计温度大于等于 570℃的，应当有设计、校核、审核、审定四级签字。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        },
+        {
+          "materialTypeCode": "calculation_report",
+          "materialTypeName": "强度计算书或应力分析报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "报告编号",
+            "适用管线号",
+            "设计条件",
+            "批准人",
+            "结论"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-EDD8224D69451372",
+      "evidenceSnapshotHash": "sha256:edd8224d694513721d1c97d304076a3b8c5abdfa5dbffbf82c38a6274e7bb38f",
+      "nodeManifestPath": "node_06/manifest.json",
+      "shardPaths": [
+        "node_06/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 7,
+      "nodeName": "设计变更的书面批准文件",
+      "criteria": "",
+      "checkMethod": "是否盖设计许可章，是否有相应人员三级或者四级签字",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        },
+        {
+          "materialTypeCode": "design_change_document",
+          "materialTypeName": "设计变更和书面批准文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "变更编号",
+            "原设计单位",
+            "批准范围",
+            "批准日期",
+            "印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-B1E9E6FC263CF9DF",
+      "evidenceSnapshotHash": "sha256:b1e9e6fc263cf9dff1e5bbe5590934c045eaf378d12bb7b4ac2b105269ecd179",
+      "nodeManifestPath": "node_07/manifest.json",
+      "shardPaths": [
+        "node_07/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 8,
+      "nodeName": "设计采用的安全技术规范以及相关标准、压力管道元件的材料标准的版本",
+      "criteria": "TSG31-2025《工业管道安全技术规程》第3章 GB/T8163-2018、GB/T3087-2022等",
+      "checkMethod": "所采用的标准是现行有效的",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-CB2DD0F8C7C94DCB",
+      "evidenceSnapshotHash": "sha256:cb2dd0f8c7c94dcbd3b2873e14f3676ccb2ba9f0e50a25fe00889630cfaae382",
+      "nodeManifestPath": "node_08/manifest.json",
+      "shardPaths": [
+        "node_08/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 9,
+      "nodeName": "设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求",
+      "criteria": "TSG31-2025《工业管道安全技术规程》第GB/T20801.1-2025 NB/T47014-2023 GB50235-2010 GB50184-2011 GB50236-2011 NB/T47013",
+      "checkMethod": "审查设计说明：是否对无损检测、防腐和耐压试验和泄露性试验规定了具体要求，其相应要求应符合安全技术和标准规定",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        },
+        {
+          "materialTypeCode": "leakage_test_report",
+          "materialTypeName": "泄漏试验记录或报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "报告编号",
+            "方法",
+            "介质",
+            "压力",
+            "保压时间",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "instrument_calibration_certificate",
+          "materialTypeName": "仪表检定或校准证书",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "仪表名称",
+            "仪表编号",
+            "精度",
+            "量程",
+            "检定/校准日期",
+            "有效期至"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-3CC72E41D3CED67A",
+      "evidenceSnapshotHash": "sha256:3cc72e41d3ced67add2169e590d706fdd61e9602d3436182bafd87d797fe8f0e",
+      "nodeManifestPath": "node_09/manifest.json",
+      "shardPaths": [
+        "node_09/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 11,
+      "nodeName": "施工组织设计",
+      "criteria": "TSG31-2025《工业管道安全技术规程》第GB/T20801.1-2025 NB/T47014-2023 GB50235-2010 GB50184-2011 GB50236-2011 NB/T47013 施工单位质量体系",
+      "checkMethod": "审查程序是否满足要求，应有编制、审核、审批人员签字，经建设单位批复后； 审查施工项目主要内容（如装置名称、管道规格、材质、长度等信息）是否与设计文件上内容一致。焊接、试验等内容是否满足施工标准要求。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "construction_organization_design",
+          "materialTypeName": "施工组织设计",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "编制人",
+            "审核人",
+            "批准人",
+            "建设单位批复",
+            "适用范围"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-FE3C6CC10C4FAAC0",
+      "evidenceSnapshotHash": "sha256:fe3c6cc10c4faac089a208a8f134f0a9b017d3ceb6dff8e8700b41f07989be9e",
+      "nodeManifestPath": "node_11/manifest.json",
+      "shardPaths": [
+        "node_11/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 12,
+      "nodeName": "压力管道元件及安全附件制造单位的许可资质",
+      "criteria": "全国特种设备公示信息查询平台；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三",
+      "checkMethod": "制造许可证，提取许可证号在查询平台核实，并与设计资料中特性表、材料表的信息进行核实对应，主要看能不能覆盖本次工程所用管道元件",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "manufacturing_license",
+          "materialTypeName": "制造单位许可证",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "制造单位",
+            "证书编号",
+            "许可范围",
+            "产品范围",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-67BE69B749042D80",
+      "evidenceSnapshotHash": "sha256:67be69b749042d801d36318e0ea339b7573a0b3225eb3cd60b355de396bcdb74",
+      "nodeManifestPath": "node_12/manifest.json",
+      "shardPaths": [
+        "node_12/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 4,
+        "processedArtifactCount": 4,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 13,
+      "nodeName": "需制造监检或有型式试验要求的压力管道元件的监检证书、型式试验报告",
+      "criteria": "全国特种设备公示信息查询平台；TSG D7006-2020中1.2.1制造监检；“市场监管总局关于特种设备行政许可有关的事项的公告 第41号令”注三、注四",
+      "checkMethod": "监检证书是否齐全；型式试验证书（报告）检查覆盖范围是否符合设计文件中材料表的管道元件",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "manufacturing_supervision_certificate",
+          "materialTypeName": "制造监督检验证书",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "证书编号",
+            "产品名称",
+            "制造单位",
+            "规格",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "type_test_report",
+          "materialTypeName": "型式试验证书或型式试验报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "报告编号",
+            "产品名称",
+            "规格范围",
+            "试验机构",
+            "结论",
+            "有效期至"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-853961A607E2A781",
+      "evidenceSnapshotHash": "sha256:853961a607e2a781852956bf7114f61adeb8e8f9956b2920c29c848415e9ba6d",
+      "nodeManifestPath": "node_13/manifest.json",
+      "shardPaths": [
+        "node_13/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 3,
+        "processedArtifactCount": 3,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 16,
+      "nodeName": "压力管道元件以及安全附件产品质量证明文件",
+      "criteria": "TSG D7006-2020附件D D2.4.1(5)；TSG 31-2025第2.2.1.4条；GB 50235-2010第4.1.1、4.1.2条；GB/T 20801.1-2025第7.2.1条；设计文件实际采用的产品标准。",
+      "checkMethod": "产品质量证明文件需要原件或复印件，其内容是否符合设计文件规定的材料验收标准及其提出的特殊要求，复印件应当加盖经营单位公章和经办负责人章；审查供货状态、成分、出厂检验项目是否符合对应标准",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "quality_certificate",
+          "materialTypeName": "产品质量证明书",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "制造单位",
+            "产品名称",
+            "规格",
+            "材质牌号",
+            "批号/炉号",
+            "证书编号",
+            "执行标准",
+            "交货状态",
+            "检验项目与结果",
+            "文件形式",
+            "制造厂质量检验章",
+            "复印件的经营单位公章与经办负责人章"
+          ]
+        },
+        {
+          "materialTypeCode": "drawing_material_list",
+          "materialTypeName": "设计材料表",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "产品名称",
+            "规格",
+            "材质牌号",
+            "执行标准",
+            "交货状态",
+            "验收标准及特殊要求"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-C577A483403AF827",
+      "evidenceSnapshotHash": "sha256:c577a483403af827b3797c91c23a2484aa0982344af9105e7c0c535f519c7653",
+      "nodeManifestPath": "node_16/manifest.json",
+      "shardPaths": [
+        "node_16/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 3,
+        "processedArtifactCount": 3,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 21,
+      "nodeName": "材料标志移植",
+      "criteria": "TSG D7006-2020附件D D2.4.2；GB/T20801.1-2025中7.3.2",
+      "checkMethod": "标志移植抽查记录",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "material_mark_transfer_record",
+          "materialTypeName": "材料标志移植记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "原标识",
+            "移植标识",
+            "批号",
+            "材质牌号",
+            "检查人员",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "quality_certificate",
+          "materialTypeName": "产品质量证明书",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "制造单位",
+            "材质牌号",
+            "批号",
+            "证书编号",
+            "盖章/印章"
+          ]
+        },
+        {
+          "materialTypeCode": "field_photo",
+          "materialTypeName": "现场照片、底片或实物核验证据",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "拍摄时间",
+            "位置",
+            "对象编号",
+            "说明"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-69C904A8DB23025C",
+      "evidenceSnapshotHash": "sha256:69c904a8db23025cf14bbe1816314a677c7ac5814fccd11722d762685c7c0af7",
+      "nodeManifestPath": "node_21/manifest.json",
+      "shardPaths": [
+        "node_21/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 23,
+      "nodeName": "阀门的施工资料和耐压试验记录（报告）",
+      "criteria": "试验方法程序与结果应符合设计文件和GB/T 13927-2022《工业阀门 压力试验》、GB/T 26480-2011《阀门的检验和试验》；数量要求：GB/T20801.1-2025中7.2.4",
+      "checkMethod": "阀门施工记录、耐压试验记录或报告（包含依据标准）",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "pressure_test_report",
+          "materialTypeName": "耐压试验记录或报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "报告编号",
+            "试验介质",
+            "试验压力",
+            "保压时间",
+            "压力表编号",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "pressure_test_plan",
+          "materialTypeName": "耐压试验方案",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "方案编号",
+            "试验介质",
+            "试验压力",
+            "保压时间",
+            "安全措施",
+            "审批记录"
+          ]
+        },
+        {
+          "materialTypeCode": "valve_test_report",
+          "materialTypeName": "阀门施工资料和耐压试验报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "阀门编号",
+            "型号",
+            "公称压力",
+            "试验压力",
+            "保压时间",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "valve_construction_record",
+          "materialTypeName": "阀门施工记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "记录编号",
+            "阀门编号",
+            "类型",
+            "DN",
+            "PN/Class",
+            "管道级别",
+            "检验批"
+          ]
+        },
+        {
+          "materialTypeCode": "quality_certificate",
+          "materialTypeName": "产品质量证明书",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "制造单位",
+            "材质牌号",
+            "批号",
+            "证书编号",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-F332C0BAD21F4FB5",
+      "evidenceSnapshotHash": "sha256:f332c0bad21f4fb5286ffb67e404d2681f7db0385e9c09a39d2c1e7c74d10ee7",
+      "nodeManifestPath": "node_23/manifest.json",
+      "shardPaths": [
+        "node_23/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 24,
+      "nodeName": "焊工资格证及持证合格项目",
+      "criteria": "标准规范： 《特种设备焊接操作人员考核细则》(TSG Z6002-2010) 。监检人员需现场核对人证是否相符，且作业内容（序号29）在证书允许范围内，例：某焊工所焊接的管线材质20钢，规格为89×4.5mm，焊接方法是氩弧焊，焊工证号是GTAW-FeII-6G-3/57-FefS-02/11/12，查TSG Z6002-2010，焊接方法氩弧焊代号GTAW，金属材料类别FeII能覆盖20；焊接位置6G，全位置焊，能覆盖；3/57代号可焊管线壁厚0-6mm，管径25-不限，能覆盖89×4.5mm，即通过。",
+      "checkMethod": "工作见证： 需提供焊工的有效资格证书原件或复印件，以及证书上明确标注的“合格项目”范围（如焊接方法、母材类别、位置等）。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "welder_certificate",
+          "materialTypeName": "焊工资格证",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "姓名",
+            "证书编号",
+            "持证合格项目",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "welder_roster",
+          "materialTypeName": "焊工名册",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "姓名",
+            "证书编号",
+            "作业范围"
+          ]
+        },
+        {
+          "materialTypeCode": "external_query_screenshot",
+          "materialTypeName": "外部查询截图",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "查询来源",
+            "查询时间"
+          ]
+        },
+        {
+          "materialTypeCode": "welding_record",
+          "materialTypeName": "焊接记录和焊缝标识资料",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "焊口编号",
+            "焊工证号",
+            "方法",
+            "母材",
+            "位置",
+            "外径",
+            "壁厚"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-99ED9E3132257393",
+      "evidenceSnapshotHash": "sha256:99ed9e31322573930b0ffefd852efdc1898c7cc4d1d904bfe22bd0dddfd31cf2",
+      "nodeManifestPath": "node_24/manifest.json",
+      "shardPaths": [
+        "node_24/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 25,
+      "nodeName": "焊接（粘接）工艺文件",
+      "criteria": "标准规范：管线汇总表、NB/T 47014-2023《承压设备焊接工艺评定》。重点核查WPS中的参数（电流、电压、速度、层间温度等）是否与PQR一致，且覆盖实际生产条件（与管线汇总表的管道壁厚对比，看焊评是否能覆盖所焊管线壁厚）。",
+      "checkMethod": "工作见证： 提供经审批生效的《焊接工艺评定报告》(PQR) 和对应的《焊接作业指导书》(WPS)。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "wps_pqr",
+          "materialTypeName": "焊接工艺评定报告和焊接作业指导书",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "PQR 编号",
+            "WPS 编号",
+            "焊接方法",
+            "材料组别",
+            "厚度范围",
+            "批准单位/人员"
+          ]
+        },
+        {
+          "materialTypeCode": "welding_record",
+          "materialTypeName": "焊接记录和焊缝标识资料",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "焊口编号",
+            "焊工编号",
+            "焊接方法",
+            "材料",
+            "规格",
+            "工艺参数",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "pipeline_summary",
+          "materialTypeName": "管线汇总表",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "管线号",
+            "材料牌号",
+            "外径",
+            "壁厚",
+            "设计参数"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-9B195B35E039A1B5",
+      "evidenceSnapshotHash": "sha256:9b195b35e039a1b5744d3645758b293522fad7a65bc2c5af1811f57e4cf31097",
+      "nodeManifestPath": "node_25/manifest.json",
+      "shardPaths": [
+        "node_25/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 26,
+      "nodeName": "焊接材料质量证明文件",
+      "criteria": "标准规范：设计说明、NB/T47018-2017，GB/T 5117（碳钢焊条）、GB/T 8110（气体保护焊用钢丝）等材料标准。监检时需确认材料牌号、规格符合设计要求，且在有效期内。",
+      "checkMethod": "工作见证： 焊条、焊丝、焊剂等材料的出厂质量证明书（MTC），需包含化学成分、力学性能等数据，并与实物批号对应。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "welding_material_certificate",
+          "materialTypeName": "焊接材料质量证明文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "材料名称",
+            "牌号",
+            "规格",
+            "批号",
+            "化学成分",
+            "力学性能"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-9F1541BCE2B688F6",
+      "evidenceSnapshotHash": "sha256:9f1541bce2b688f6208401ca883165315cfb396a0a79c0ac124e34b112ce922d",
+      "nodeManifestPath": "node_26/manifest.json",
+      "shardPaths": [
+        "node_26/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 29,
+      "nodeName": "施焊参数、施焊记录、焊缝标识",
+      "criteria": "标准规范：TSG Z6002-2010，与序号24和序号25联动比对，具体比对方式参考序号24。施工记录的要求：真实、可追溯，焊缝标识清晰，便于后续无损检测和返修定位。",
+      "checkMethod": "工作见证： 焊接施工记录（含电流、电压、焊接速度、层间温度等）、焊缝编号图或钢印标识。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "welding_record",
+          "materialTypeName": "焊接记录和焊缝标识资料",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "焊口编号",
+            "焊工编号",
+            "焊接方法",
+            "材料",
+            "规格",
+            "工艺参数",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "wps_pqr",
+          "materialTypeName": "焊接工艺评定报告和焊接作业指导书",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "PQR 编号",
+            "WPS 编号",
+            "焊接方法",
+            "材料组别",
+            "厚度范围",
+            "批准单位/人员"
+          ]
+        },
+        {
+          "materialTypeCode": "welder_certificate",
+          "materialTypeName": "焊工资格证",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "姓名",
+            "证书编号",
+            "持证合格项目",
+            "有效期至"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-94F461D82B4BA9E8",
+      "evidenceSnapshotHash": "sha256:94f461d82b4ba9e8b69252c07490a84257ff9f3c39df86a09ec380c3f6c9715e",
+      "nodeManifestPath": "node_29/manifest.json",
+      "shardPaths": [
+        "node_29/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 31,
+      "nodeName": "焊缝返修",
+      "criteria": "标准规范：设计说明、 GB/T20801.1-2025第7.4.11条、NB/T 47014-2023 。",
+      "checkMethod": "工作见证： 返修申请单、返修工艺、返修审手续（同一部位返修次数通常不得超过2次，超过需制定专项方案并经技术负责人批准）、返修后检测报告（如RT/UT）。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "weld_repair_record",
+          "materialTypeName": "焊缝返修记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "焊口编号",
+            "返修次数",
+            "返修工艺",
+            "审批记录",
+            "复检报告",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "ndt_report",
+          "materialTypeName": "无损检测报告",
+          "requiredType": "条件必传（发生返修时）",
+          "evidenceItems": [
+            "报告编号",
+            "方法",
+            "焊口编号",
+            "比例",
+            "结论",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-520DD1146078A6AA",
+      "evidenceSnapshotHash": "sha256:520dd1146078a6aac53f5f8a95f72d1efa78b6973139982365eac414c524a7e1",
+      "nodeManifestPath": "node_31/manifest.json",
+      "shardPaths": [
+        "node_31/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 32,
+      "nodeName": "焊接接头焊后热处理工艺文件",
+      "criteria": "标准规范：设计说明、 GB/T20801.1-2025第7.6.3条。工艺文件必须基于热处理评定报告编制。",
+      "checkMethod": "工作见证： 经审批的热处理工艺卡，明确升温速率、保温温度、保温时间、降温速率等参数。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "heat_treatment_procedure",
+          "materialTypeName": "焊后热处理工艺文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "工艺/程序编号",
+            "焊口编号",
+            "温度",
+            "保压时间",
+            "升温速率",
+            "降温速率"
+          ]
+        },
+        {
+          "materialTypeCode": "wps_pqr",
+          "materialTypeName": "焊接工艺评定报告和焊接作业指导书",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "PQR 编号",
+            "WPS 编号",
+            "焊接方法",
+            "材料组别",
+            "厚度范围",
+            "批准单位/人员"
+          ]
+        },
+        {
+          "materialTypeCode": "pipeline_summary",
+          "materialTypeName": "管线汇总表",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "焊口/管线号",
+            "材料组",
+            "控制厚度",
+            "强度",
+            "设计热处理要求"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-C4B05C0DAD7F8EF2",
+      "evidenceSnapshotHash": "sha256:c4b05c0dad7f8ef27bbb3e527073e66c70d41a7e378ba3b0a44998bbcf852c33",
+      "nodeManifestPath": "node_32/manifest.json",
+      "shardPaths": [
+        "node_32/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 33,
+      "nodeName": "热处理设备用测温记录仪表",
+      "criteria": "标准规范： ——。",
+      "checkMethod": "工作见证： 热电偶校准证书、温控仪校验报告、测温点布置图。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "instrument_calibration_certificate",
+          "materialTypeName": "仪表检定或校准证书",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "仪表名称",
+            "仪表编号",
+            "精度",
+            "量程",
+            "检定/校准日期",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "temperature_point_layout",
+          "materialTypeName": "热处理测温点布置图",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "图号",
+            "焊口编号",
+            "测温点数量及位置",
+            "批准人员"
+          ]
+        },
+        {
+          "materialTypeCode": "pipeline_summary",
+          "materialTypeName": "管线汇总表",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "管线号",
+            "材料组",
+            "控制厚度",
+            "焊口号",
+            "设计热处理要求"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-F60678B15778DCA3",
+      "evidenceSnapshotHash": "sha256:f60678b15778dca306b935849e1ee25edf8bbc385158000fc8304f86355ec602",
+      "nodeManifestPath": "node_33/manifest.json",
+      "shardPaths": [
+        "node_33/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 34,
+      "nodeName": "热处理记录、报告曲线、硬度检测报告",
+      "criteria": "标准规范：热处理曲线需完整无中断，硬度值应符合设计说明或GB/T20801.1-2025第7.6.6条要求，一般碳钢布氏硬度≤200HB、合金钢≤225HB。",
+      "checkMethod": "工作见证： 自动记录的温度-时间曲线图、热处理报告、硬度测试报告（布氏/洛氏/维氏）。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "heat_treatment_record",
+          "materialTypeName": "热处理记录、曲线和硬度检测报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "记录编号",
+            "焊口编号",
+            "曲线编号",
+            "保温温度",
+            "保压时间",
+            "硬度结果"
+          ]
+        },
+        {
+          "materialTypeCode": "instrument_calibration_certificate",
+          "materialTypeName": "仪表检定或校准证书",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "仪表名称",
+            "仪表编号",
+            "精度",
+            "量程",
+            "检定/校准日期",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "hardness_report",
+          "materialTypeName": "热处理硬度检测报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "报告编号",
+            "焊口编号",
+            "方法/标尺",
+            "焊缝与热影响区读数",
+            "抽检数量",
+            "换算标准"
+          ]
+        },
+        {
+          "materialTypeCode": "pipeline_summary",
+          "materialTypeName": "管线汇总表",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "焊口/管线号",
+            "材料组",
+            "控制厚度",
+            "母材硬度",
+            "设计硬度要求"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-C642917F7E91407A",
+      "evidenceSnapshotHash": "sha256:c642917f7e91407aadb096c4b37dc87045ebf17b30c484a68b48676623113043",
+      "nodeManifestPath": "node_34/manifest.json",
+      "shardPaths": [
+        "node_34/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 35,
+      "nodeName": "无损检测机构施工现场质量保证体系的实施",
+      "criteria": "标准规范：TSG Z7002-2022《特种设备检测机构核准规则》、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
+      "checkMethod": "工作见证：需提供无损检测单位质量保证手册、受控记录及报告表格、项目人员任命文件、检测仪器及其他必要设备的检定报告。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "ndt_org_certificate",
+          "materialTypeName": "无损检测机构核准证",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "机构名称",
+            "证书编号",
+            "核准项目",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "quality_system_document",
+          "materialTypeName": "质量保证体系文件和实施记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "机构名称",
+            "工艺/程序编号",
+            "人员",
+            "设备",
+            "实施记录"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-310E0FD03BC0337D",
+      "evidenceSnapshotHash": "sha256:310e0fd03bc0337dd3067a0d70f8bad02ea91f00997bac9044683710a6344873",
+      "nodeManifestPath": "node_35/manifest.json",
+      "shardPaths": [
+        "node_35/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 37,
+      "nodeName": "检测过程中发现问题的处理",
+      "criteria": "标准规范：无损检测单位质量保证手册中有关不合格品与不符合项控制程序文件、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
+      "checkMethod": "工作见证：需提供检测单位不合格品的控制处理措施程序、无损检测委托单、对不合格品开出的联络单或意见书、不合格品处理的反馈见证文件。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "quality_system_document",
+          "materialTypeName": "质量保证体系文件和实施记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "机构名称",
+            "工艺/程序编号",
+            "人员",
+            "设备",
+            "实施记录"
+          ]
+        },
+        {
+          "materialTypeCode": "ndt_report",
+          "materialTypeName": "无损检测报告",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "报告编号",
+            "方法",
+            "焊口编号",
+            "比例",
+            "结论",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-419D5F13BE94B81F",
+      "evidenceSnapshotHash": "sha256:419d5f13be94b81f2eab11a8677f5b9557aaa84fc1b883ea4135342c1442bffb",
+      "nodeManifestPath": "node_37/manifest.json",
+      "shardPaths": [
+        "node_37/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 38,
+      "nodeName": "无损检测人员资格证、执业注册证及持证合格项目",
+      "criteria": "标准规范：TSG Z8001-2019《特种设备无损检测人员考核规则》及第1号修改单、NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
+      "checkMethod": "工作见证：需提供无损检测人员明细表、无损检测人员资格证和执业注册证，必要时提供无损检测人员劳动合同证明文件。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "ndt_person_certificate",
+          "materialTypeName": "无损检测人员资格证和执业注册证",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "姓名",
+            "证书编号",
+            "持证合格项目",
+            "执业注册编号",
+            "有效期至"
+          ]
+        },
+        {
+          "materialTypeCode": "ndt_plan",
+          "materialTypeName": "无损检测方案",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "方案编号",
+            "方法",
+            "比例",
+            "时机",
+            "批准人",
+            "标准编号"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-29E61CFC2D608554",
+      "evidenceSnapshotHash": "sha256:29e61cfc2d608554ff70a7afac76264166d2056f2046d30e525585aa7e217ca3",
+      "nodeManifestPath": "node_38/manifest.json",
+      "shardPaths": [
+        "node_38/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 39,
+      "nodeName": "无损检测工艺文件",
+      "criteria": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
+      "checkMethod": "工作见证：需提供相关单项无损检测工艺文件、操作指导书。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "ndt_procedure",
+          "materialTypeName": "无损检测工艺文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "工艺/程序编号",
+            "方法",
+            "设备",
+            "灵敏度",
+            "验收等级",
+            "标准编号"
+          ]
+        },
+        {
+          "materialTypeCode": "ndt_plan",
+          "materialTypeName": "无损检测方案",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "方案编号",
+            "方法",
+            "比例",
+            "时机",
+            "批准人",
+            "标准编号"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-3CF19552284C4295",
+      "evidenceSnapshotHash": "sha256:3cf19552284c4295a2291d82cae36cec45feed701663677797edb2c6d8f8aa2e",
+      "nodeManifestPath": "node_39/manifest.json",
+      "shardPaths": [
+        "node_39/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 40,
+      "nodeName": "无损检测记录、报告",
+      "criteria": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.3-2023《承压设备无损检测 第3部分：超声检测》等。",
+      "checkMethod": "工作见证：需提供相关单项无损检测记录、报告。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "ndt_report",
+          "materialTypeName": "无损检测报告",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "报告编号",
+            "方法",
+            "焊口编号",
+            "比例",
+            "结论",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-7E02AAB394C8E0F8",
+      "evidenceSnapshotHash": "sha256:7e02aab394c8e0f82b4a63b46560c2a7ceb64ea0645f7dffcb206952452035e2",
+      "nodeManifestPath": "node_40/manifest.json",
+      "shardPaths": [
+        "node_40/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 41,
+      "nodeName": "射线检测底片抽查",
+      "criteria": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。",
+      "checkMethod": "工作见证：需提供相关所有射线检测底片。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "radiographic_film",
+          "materialTypeName": "射线检测底片",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "底片编号",
+            "焊口编号",
+            "像质",
+            "缺陷等级",
+            "报告编号"
+          ]
+        },
+        {
+          "materialTypeCode": "ndt_report",
+          "materialTypeName": "无损检测报告",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "报告编号",
+            "方法",
+            "焊口编号",
+            "比例",
+            "结论",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-28DB26D87EDC9E5E",
+      "evidenceSnapshotHash": "sha256:28db26d87edc9e5e356cb953b256569a321c131c70c1640e940bb4e442c9ca2e",
+      "nodeManifestPath": "node_41/manifest.json",
+      "shardPaths": [
+        "node_41/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 42,
+      "nodeName": "射线检测现场抽查",
+      "criteria": "标准规范：NB/T 47013.1-2015《承压设备无损检测 第1部分：通用要求》、NB/T 47013.2-2015《承压设备无损检测 第2部分：射线检测》、NB/T 47013.11-2023《承压设备无损检测 第11部分：射线数字成像检测》等。",
+      "checkMethod": "工作见证：需提供射线检测现场抽查的底片、记录和报告；委托无损检测单位进行的需提供委托检测合同、射线检测委托单。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "radiographic_film",
+          "materialTypeName": "射线检测底片",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "底片编号",
+            "焊口编号",
+            "像质",
+            "缺陷等级",
+            "报告编号"
+          ]
+        },
+        {
+          "materialTypeCode": "ndt_report",
+          "materialTypeName": "无损检测报告",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "报告编号",
+            "方法",
+            "焊口编号",
+            "比例",
+            "结论",
+            "盖章/印章"
+          ]
+        },
+        {
+          "materialTypeCode": "field_photo",
+          "materialTypeName": "现场照片、底片或实物核验证据",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "拍摄时间",
+            "位置",
+            "对象编号",
+            "说明"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-9A7F63512E7270CF",
+      "evidenceSnapshotHash": "sha256:9a7f63512e7270cfad691bef8b5e41134877316e4e2ee8ea08f4bb6b7abafed3",
+      "nodeManifestPath": "node_42/manifest.json",
+      "shardPaths": [
+        "node_42/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 43,
+      "nodeName": "防腐及保温材料质量证明文件",
+      "criteria": "标准规范：设计文件要求、TSG D7006-2020《压力管道监督检验规则》、TSG 0-2019《特种设备生产和充装单位许可规则》。",
+      "checkMethod": "工作见证：防腐漆或其他特殊防腐材料的质量证明文件；工厂化预制的防腐管道元件需提供出厂质量证明文件，必要时提供型式试验证书、压力管道元件制造许可、制造监督检验证书。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "anticorrosion_insulation_material_certificate",
+          "materialTypeName": "防腐及保温材料质量证明文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "材料名称",
+            "制造单位",
+            "批号",
+            "标准编号",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-AD9F106F62919C3B",
+      "evidenceSnapshotHash": "sha256:ad9f106f62919c3b441be418f7f4e55f1a337fb8283bac403cbf4d0e90d848a8",
+      "nodeManifestPath": "node_43/manifest.json",
+      "shardPaths": [
+        "node_43/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 46,
+      "nodeName": "牺牲阳极、外加电流阴极保护、杂散电流排流装置",
+      "criteria": "标准规范：设计文件要求和GB/T 21448-2017《埋地钢质管道阴极保护技术规范》、GB/T 33378-2025《阴极保护技术条件》等标准。",
+      "checkMethod": "工作见证：牺牲阳极、外加电流阴极保护、杂散电流排流装置施工记录和验收报告。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "cathodic_protection_record",
+          "materialTypeName": "阴极保护和杂散电流排流装置资料",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "装置名称",
+            "位置",
+            "安装记录",
+            "测试值",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "quality_certificate",
+          "materialTypeName": "产品质量证明书",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "制造单位",
+            "材质牌号",
+            "批号",
+            "证书编号",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-788BCBD35E16DE67",
+      "evidenceSnapshotHash": "sha256:788bcbd35e16de6743d7e86860d9e38375ee8e6f17f5c55d87eb38534083a68e",
+      "nodeManifestPath": "node_46/manifest.json",
+      "shardPaths": [
+        "node_46/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 47,
+      "nodeName": "静电接地",
+      "criteria": "标准规范：设计文件要求和TSG 31-2025《工业管道安全技术规程》、GB/T 20801.1-2025《压力管道规范 第1部分：工业管道》、GB 50235-2010《工业金属管道工程施工规范》等标准。",
+      "checkMethod": "工作见证：静电接地施工记录和验收报告。",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "grounding_test_record",
+          "materialTypeName": "静电接地施工和测试记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "位置",
+            "接地电阻",
+            "测试人",
+            "测试日期",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-B19108B32E1605B7",
+      "evidenceSnapshotHash": "sha256:b19108b32e1605b714d35cd5d2e25e949ca774759cd62db37a533599da94bee0",
+      "nodeManifestPath": "node_47/manifest.json",
+      "shardPaths": [
+        "node_47/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 50,
+      "nodeName": "套管防腐绝缘",
+      "criteria": "GB/T20801.1-2025第7部分 TSG31-2025第4部分 GB50235-2010第7部分 设计文件",
+      "checkMethod": "抽查套管防腐绝缘检查记录（如穿跨越段钢套管一般外部需要进行防腐，内部与管道绝缘隔离（有阴极保护时），以防止阴极保护电流的流失及可能造成的套管内管段电屏蔽腐蚀）",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "installation_record",
+          "materialTypeName": "管道安装和现场制作记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "管线号",
+            "焊口编号",
+            "位置",
+            "施工/工艺过程",
+            "检查结果",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        },
+        {
+          "materialTypeCode": "field_photo",
+          "materialTypeName": "现场照片、底片或实物核验证据",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "拍摄时间",
+            "位置",
+            "对象编号",
+            "说明"
+          ]
+        },
+        {
+          "materialTypeCode": "anticorrosion_insulation_record",
+          "materialTypeName": "防腐补口补伤和保温施工记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "管线号",
+            "位置",
+            "施工/工艺过程",
+            "检查项目",
+            "结果",
+            "结论"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-94241CA8B5E04B3E",
+      "evidenceSnapshotHash": "sha256:94241ca8b5e04b3e18aec07eb9c5f6532bce63cb5cfc95ce4d735e73c8acf9a1",
+      "nodeManifestPath": "node_50/manifest.json",
+      "shardPaths": [
+        "node_50/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 51,
+      "nodeName": "绝缘支撑",
+      "criteria": "GB/T20801.1-2025第7部分 TSG31-2025第4部分 GB50235-2010第7部分 设计文件",
+      "checkMethod": "抽查绝缘支撑检查记录（当设计文件要求管道与支撑绝缘时，应进行；一方面防止阴极保护电流的流失，另一方面防止管道与支撑间发生间隙腐蚀）",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "installation_record",
+          "materialTypeName": "管道安装和现场制作记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "管线号",
+            "焊口编号",
+            "位置",
+            "施工/工艺过程",
+            "检查结果",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        },
+        {
+          "materialTypeCode": "field_photo",
+          "materialTypeName": "现场照片、底片或实物核验证据",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "拍摄时间",
+            "位置",
+            "对象编号",
+            "说明"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-BD07B2E84894B2E3",
+      "evidenceSnapshotHash": "sha256:bd07b2e84894b2e3ba3f049b474b2003ccd8bae4db2f4c8bcc781b750334d9b5",
+      "nodeManifestPath": "node_51/manifest.json",
+      "shardPaths": [
+        "node_51/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 54,
+      "nodeName": "补偿装置",
+      "criteria": "GB/T20801.1-2025第6、7部分 TSG31-2025第3、4部分 GB50235-2010第7部分 设计文件及产品技术文件",
+      "checkMethod": "抽查管道补偿装置检查试验记录（按照设计文件的规定进行预拉伸或者预压缩）",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "installation_record",
+          "materialTypeName": "管道安装和现场制作记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "管线号",
+            "焊口编号",
+            "位置",
+            "施工/工艺过程",
+            "检查结果",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "quality_certificate",
+          "materialTypeName": "产品质量证明书",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "制造单位",
+            "材质牌号",
+            "批号",
+            "证书编号",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-2303E7A667A86389",
+      "evidenceSnapshotHash": "sha256:2303e7a667a86389d1ba7f30599ec45317db574a550b4d4e2b64eabe63b73982",
+      "nodeManifestPath": "node_54/manifest.json",
+      "shardPaths": [
+        "node_54/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 55,
+      "nodeName": "支撑件",
+      "criteria": "GB/T20801.1-2025第6、7部分 TSG31-2025第3、4部分 GB50235-2010第7部分 设计文件及产品技术文件",
+      "checkMethod": "抽查管道支撑件检查试验记录",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "installation_record",
+          "materialTypeName": "管道安装和现场制作记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "管线号",
+            "焊口编号",
+            "位置",
+            "施工/工艺过程",
+            "检查结果",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "quality_certificate",
+          "materialTypeName": "产品质量证明书",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "制造单位",
+            "材质牌号",
+            "批号",
+            "证书编号",
+            "盖章/印章"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-A59179B44E4BB949",
+      "evidenceSnapshotHash": "sha256:a59179b44e4bb949798b39b7553be330b29fbbb44e6ae848a5739bc1e662d097",
+      "nodeManifestPath": "node_55/manifest.json",
+      "shardPaths": [
+        "node_55/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 2,
+        "processedArtifactCount": 2,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 56,
+      "nodeName": "安全阀、爆破片和紧急切断阀的安装位置、规格和型号",
+      "criteria": "GB/T20801.1-2025第6、7、9部分 TSG31-2025第8部分 TSG92-2026 设计文件及产品技术文件",
+      "checkMethod": "审查安全附件的制造许可证、型式试验证书、产品质量证明书等，设计、制造是否符合技术规范的要求；现场实物抽查安装位置、规格、型号、铭牌等是否符合设计文件等的要求",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "safety_accessory_record",
+          "materialTypeName": "安全附件安装、校验或性能测试资料",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "附件编号",
+            "型号",
+            "规格",
+            "整定压力",
+            "测试结果",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "quality_certificate",
+          "materialTypeName": "产品质量证明书",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "制造单位",
+            "材质牌号",
+            "批号",
+            "证书编号",
+            "盖章/印章"
+          ]
+        },
+        {
+          "materialTypeCode": "type_test_report",
+          "materialTypeName": "型式试验证书或型式试验报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "报告编号",
+            "产品名称",
+            "规格范围",
+            "试验机构",
+            "结论",
+            "有效期至"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-8C9CA4C8167CFAA2",
+      "evidenceSnapshotHash": "sha256:8c9ca4c8167cfaa207c0c94dfca0be1471e090ea0580ecf20338a447dd701d97",
+      "nodeManifestPath": "node_56/manifest.json",
+      "shardPaths": [
+        "node_56/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 4,
+        "processedArtifactCount": 4,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 59,
+      "nodeName": "耐压试验方案",
+      "criteria": "GB/T20801.1-2025第8部分 TSG31-2025第3、4部分 GB50235-2010第8部分 设计文件 施工单位质量体系",
+      "checkMethod": "审查耐压试验方案（审批手续及签字，耐压试验的时机、试验介质、升压速度、试验用压力表和温度计的要求、试验采取的安全措施、合格标准等）",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "pressure_test_plan",
+          "materialTypeName": "耐压试验方案",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "方案编号",
+            "试验介质",
+            "试验压力",
+            "保压时间",
+            "安全措施",
+            "审批记录"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-AF8EB624DE731B8F",
+      "evidenceSnapshotHash": "sha256:af8eb624de731b8f272c8f04c5fa94634404c1151ae4d04426add7ab076ee45a",
+      "nodeManifestPath": "node_59/manifest.json",
+      "shardPaths": [
+        "node_59/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 63,
+      "nodeName": "管道系统的柔性(应力)分析",
+      "criteria": "GB/T20801.1-2025第6、8部分 TSG31-2025第4部分 GB50235-2010第8部分 设计文件",
+      "checkMethod": "检查由设计单位出具的管道系统柔性（应力）分析报告",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "calculation_report",
+          "materialTypeName": "强度计算书或应力分析报告",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "报告编号",
+            "适用管线号",
+            "设计条件",
+            "批准人",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-47CEC6B10E764F5E",
+      "evidenceSnapshotHash": "sha256:47cec6b10e764f5e82aa36af1745a6899f73c3120fe9c6592045904817c8c4bf",
+      "nodeManifestPath": "node_63/manifest.json",
+      "shardPaths": [
+        "node_63/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 65,
+      "nodeName": "无损检测报告和底片",
+      "criteria": "GB/T20801.1-2025第8部分 TSG31-2025第4部分 GB50235-2010第8部分 NB/T47013.2-2015 设计文件",
+      "checkMethod": "审查无损检测报告内容是否符合技术规范、相关标准及设计文件的要求；抽查不少于焊接接头总数50%的无损检测报告和底片",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "ndt_report",
+          "materialTypeName": "无损检测报告",
+          "requiredType": "必传",
+          "evidenceItems": [
+            "报告编号",
+            "方法",
+            "焊口编号",
+            "比例",
+            "结论",
+            "盖章/印章"
+          ]
+        },
+        {
+          "materialTypeCode": "radiographic_film",
+          "materialTypeName": "射线检测底片",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "底片编号",
+            "焊口编号",
+            "像质",
+            "缺陷等级",
+            "报告编号"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-CD918FFCE0603721",
+      "evidenceSnapshotHash": "sha256:cd918ffce0603721c7d3ddbb1e7c217c62fe8841c82ede5b48caf0157c7e2a8b",
+      "nodeManifestPath": "node_65/manifest.json",
+      "shardPaths": [
+        "node_65/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    },
+    {
+      "nodeId": 68,
+      "nodeName": "吹扫、清洗",
+      "criteria": "GB/T20801.1-2025第7部分 TSG31-2025第4部分 GB50235-2010第9部分 设计文件",
+      "checkMethod": "抽查吹扫、清洗记录及方案（吹扫和清洗的时机、吹扫和清洗的介质、吹扫压力、吹扫和清洗的顺序、安全事项和合格要求）",
+      "configuredRequirements": [
+        {
+          "materialTypeCode": "purge_cleaning_record",
+          "materialTypeName": "吹扫清洗方案和记录",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "管线号",
+            "介质",
+            "压力",
+            "流程/顺序",
+            "验收准则",
+            "结论"
+          ]
+        },
+        {
+          "materialTypeCode": "design_document",
+          "materialTypeName": "设计文件",
+          "requiredType": "条件必传",
+          "evidenceItems": [
+            "文件编号",
+            "标题",
+            "设计单位",
+            "管道类别/级别",
+            "设计压力",
+            "设计温度",
+            "标准版本"
+          ]
+        }
+      ],
+      "evidenceSnapshotId": "ESNAP-1EAFC22339A9EA34",
+      "evidenceSnapshotHash": "sha256:1eafc22339a9ea3444c84c21906dade7891b2775d10497b88b4c0bfd28010e65",
+      "nodeManifestPath": "node_68/manifest.json",
+      "shardPaths": [
+        "node_68/shard_001.json"
+      ],
+      "coverage": {
+        "expectedShardCount": 1,
+        "completedShardCount": 0,
+        "failedShardCount": 0,
+        "expectedArtifactCount": 1,
+        "processedArtifactCount": 1,
+        "missingArtifactIds": [],
+        "unexpectedArtifactIds": [],
+        "incompleteArtifactIds": [],
+        "duplicateArtifactIds": [],
+        "coveragePassed": true
+      }
+    }
+  ],
+  "packageHash": "sha256:97527f1a6dabffa603ec24412c88bf457973054ce431a6f87b9f0cda9ec8cbe7",
+  "coveragePassed": true
+}

@@ -1,0 +1,50 @@
+{
+  "evidenceManifestId": "EMAN-A5B993010D96791C",
+  "schemaVersion": "EvidenceManifest@1.0.0",
+  "evidenceSnapshotId": "ESNAP-99ED9E3132257393",
+  "evidenceSnapshotHash": "sha256:99ed9e31322573930b0ffefd852efdc1898c7cc4d1d904bfe22bd0dddfd31cf2",
+  "projectId": "P-TEST-OCR-002",
+  "nodeId": 24,
+  "documents": [
+    {
+      "documentId": "DOC-OFFLINE-test2-003",
+      "documentVersionId": "DV-OFFLINE-test2-003-V1",
+      "mountLinkIds": [
+        "NEL-OFFLINE-test2-24-001"
+      ],
+      "mountRevision": 1,
+      "documentContentHash": "sha256:c700db313b404f0a8c23dca57fe671019338203c7f5d246e25306725f954125f",
+      "ocrParseResultId": "OCR-OFFLINE-test2-003",
+      "ocrContentHash": "sha256:c700db313b404f0a8c23dca57fe671019338203c7f5d246e25306725f954125f",
+      "artifactIds": [
+        "EART-E1B9963C161D5B0B"
+      ],
+      "artifactCount": 1
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "EART-E1B9963C161D5B0B",
+      "artifactType": "fragment",
+      "documentVersionId": "DV-OFFLINE-test2-003-V1",
+      "sourceId": "FRAGMENT-OFFLINE-test2-003",
+      "payload": {
+        "id": "FRAGMENT-OFFLINE-test2-003",
+        "pageNo": 1,
+        "text": "# MinerU Markdown\n\n## 说明\n\n1. 本证件第一页持证人照片处应当加盖首次发证机关印章，否则无效。\n\n2. 有效期届满的1个月以前，持证人应申请办理复审。逾期未复审或复审不合格，作业项目到期失效。\n\n3. 证件编号指居民身份证号等身份证件号。\n\n![](images/0e5ba810a5f78cd508c346709dd00e333a516ccd64734940b144fa58ac831e0b.jpg)\n\n姓名 姜军\n\n证件编号 511621198504208836\n\n发证机关 南京江北新区管理委员会市场监督管理局\n\n![](images/ea63876555f558454785bdee9f3f1713ae95e6a20ffe6f292e57fa92c79e2c4b.jpg)\n\n![](images/cd08a5cf06ee9dcf8fe39ca92fb313e2d91ee731e7d536b73b43480aec205911.jpg)\n\n<table><tr><td rowspan=\"2\">项目代号</td><td rowspan=\"2\">有效期</td><td>发证机关(章)</td></tr><tr><td>批准日期</td></tr><tr><td>CTAF-Fe II-6G-3/57-FetS-02/11/12和SHAV-Fe II-6G(K)-9/57-Fet3J</td><td>自2025年10月至2029年09月</td><td>审批专用章(8)2025年10月27日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr></table>\n\n考试合格作业项目(取证)\n\n<table><tr><td rowspan=\"2\">项目代号</td><td rowspan=\"2\">有效期</td><td>发证机关(章)</td></tr><tr><td>批准日期</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr></table>",
+        "source": "full_mineru_markdown",
+        "confidence": 1.0
+      },
+      "contentHash": "sha256:e1b9963c161d5b0bbbd4d79642c46e4aec1b82cd0f870fee5690a31e2f24ec5b"
+    }
+  ],
+  "counts": {
+    "fields": 0,
+    "tables": 0,
+    "seals": 0,
+    "fragments": 1,
+    "evidenceLinks": 0,
+    "total": 1
+  },
+  "manifestHash": "sha256:a5b993010d96791cf21c47ae7473eb78ec495653bd6f600bb413110b2cb873cd"
+}

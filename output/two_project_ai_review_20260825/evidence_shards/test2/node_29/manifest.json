@@ -1,0 +1,79 @@
+{
+  "evidenceManifestId": "EMAN-F26BFD5CF18365C3",
+  "schemaVersion": "EvidenceManifest@1.0.0",
+  "evidenceSnapshotId": "ESNAP-94F461D82B4BA9E8",
+  "evidenceSnapshotHash": "sha256:94f461d82b4ba9e8b69252c07490a84257ff9f3c39df86a09ec380c3f6c9715e",
+  "projectId": "P-TEST-OCR-002",
+  "nodeId": 29,
+  "documents": [
+    {
+      "documentId": "DOC-OFFLINE-test2-003",
+      "documentVersionId": "DV-OFFLINE-test2-003-V1",
+      "mountLinkIds": [
+        "NEL-OFFLINE-test2-29-001"
+      ],
+      "mountRevision": 1,
+      "documentContentHash": "sha256:c700db313b404f0a8c23dca57fe671019338203c7f5d246e25306725f954125f",
+      "ocrParseResultId": "OCR-OFFLINE-test2-003",
+      "ocrContentHash": "sha256:c700db313b404f0a8c23dca57fe671019338203c7f5d246e25306725f954125f",
+      "artifactIds": [
+        "EART-E1B9963C161D5B0B"
+      ],
+      "artifactCount": 1
+    },
+    {
+      "documentId": "DOC-OFFLINE-test2-020",
+      "documentVersionId": "DV-OFFLINE-test2-020-V1",
+      "mountLinkIds": [
+        "NEL-OFFLINE-test2-29-002"
+      ],
+      "mountRevision": 1,
+      "documentContentHash": "sha256:65909c60b1b3e22b1be1fa71aeb4f73c21d500e55f1335bd55592eadfa28e13a",
+      "ocrParseResultId": "OCR-OFFLINE-test2-020",
+      "ocrContentHash": "sha256:65909c60b1b3e22b1be1fa71aeb4f73c21d500e55f1335bd55592eadfa28e13a",
+      "artifactIds": [
+        "EART-6675A93236A4B460"
+      ],
+      "artifactCount": 1
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "EART-E1B9963C161D5B0B",
+      "artifactType": "fragment",
+      "documentVersionId": "DV-OFFLINE-test2-003-V1",
+      "sourceId": "FRAGMENT-OFFLINE-test2-003",
+      "payload": {
+        "id": "FRAGMENT-OFFLINE-test2-003",
+        "pageNo": 1,
+        "text": "# MinerU Markdown\n\n## 说明\n\n1. 本证件第一页持证人照片处应当加盖首次发证机关印章，否则无效。\n\n2. 有效期届满的1个月以前，持证人应申请办理复审。逾期未复审或复审不合格，作业项目到期失效。\n\n3. 证件编号指居民身份证号等身份证件号。\n\n![](images/0e5ba810a5f78cd508c346709dd00e333a516ccd64734940b144fa58ac831e0b.jpg)\n\n姓名 姜军\n\n证件编号 511621198504208836\n\n发证机关 南京江北新区管理委员会市场监督管理局\n\n![](images/ea63876555f558454785bdee9f3f1713ae95e6a20ffe6f292e57fa92c79e2c4b.jpg)\n\n![](images/cd08a5cf06ee9dcf8fe39ca92fb313e2d91ee731e7d536b73b43480aec205911.jpg)\n\n<table><tr><td rowspan=\"2\">项目代号</td><td rowspan=\"2\">有效期</td><td>发证机关(章)</td></tr><tr><td>批准日期</td></tr><tr><td>CTAF-Fe II-6G-3/57-FetS-02/11/12和SHAV-Fe II-6G(K)-9/57-Fet3J</td><td>自2025年10月至2029年09月</td><td>审批专用章(8)2025年10月27日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr></table>\n\n考试合格作业项目(取证)\n\n<table><tr><td rowspan=\"2\">项目代号</td><td rowspan=\"2\">有效期</td><td>发证机关(章)</td></tr><tr><td>批准日期</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr><tr><td></td><td>自 年 月至 年 月</td><td>年 月 日</td></tr></table>",
+        "source": "full_mineru_markdown",
+        "confidence": 1.0
+      },
+      "contentHash": "sha256:e1b9963c161d5b0bbbd4d79642c46e4aec1b82cd0f870fee5690a31e2f24ec5b"
+    },
+    {
+      "artifactId": "EART-6675A93236A4B460",
+      "artifactType": "fragment",
+      "documentVersionId": "DV-OFFLINE-test2-020-V1",
+      "sourceId": "FRAGMENT-OFFLINE-test2-020",
+      "payload": {
+        "id": "FRAGMENT-OFFLINE-test2-020",
+        "pageNo": 1,
+        "text": "# MinerU Markdown\n\n## 焊接工艺卡 工程名称：珠海盈德化工区气站项目（华润化学）管道安装工程\n\n<table><tr><td colspan=\"5\">接头简图</td><td colspan=\"6\">焊接顺序</td><td colspan=\"4\">工艺卡编号</td><td colspan=\"4\">JH-HJGYK-01</td></tr><tr><td rowspan=\"3\" colspan=\"5\"><img src=\"images/40de21c08fb1b17b2a43c16db537768fd07d062f0fc0723c9a77bc1f6e6d2165.jpg\"/></td><td rowspan=\"3\" colspan=\"6\">1.将坡口表面及其边缘20mm范围内除油漆、油污、锈斑、熔渣、氧化皮等杂质清除干净。2.按接头简图组装点固焊,组对内壁错边量不大于壁厚10%。3.打底要防止根部烧穿,接头、层间要清理干净。4.盖面焊后清理干净并进行检查,清除各类表面焊接缺陷。</td><td colspan=\"4\">接头形式</td><td colspan=\"4\">见左图</td></tr><tr><td colspan=\"4\">焊接工艺评定报告编号</td><td colspan=\"4\">HP/P-2023-01</td></tr><tr><td colspan=\"4\">焊工持证项目</td><td colspan=\"4\">GTAW-Fe I (II,III)-6G-X/XFefs-02/11/13和SMAW-Fe I (II,III)-6G(K)-X/X-Fef3J</td></tr><tr><td>焊接位置</td><td colspan=\"4\">全位置(6G)</td><td colspan=\"6\">适用焊件规格:对接焊缝:管径DN&gt;80mm,5mm&lt;壁厚≤14mm角接焊缝:图1厚度不限,图2厚度≤14mm</td><td rowspan=\"5\">检验</td><td colspan=\"2\">序号</td><td colspan=\"3\">本公司</td><td>特检所</td><td>第三方或用户</td></tr><tr><td>施焊技术</td><td colspan=\"4\">GTAW+SMAW</td><td rowspan=\"2\">母材</td><td>20#</td><td rowspan=\"2\" colspan=\"2\">厚度(mm)</td><td colspan=\"2\">8</td><td colspan=\"2\">1</td><td colspan=\"2\">外观100%</td><td></td><td colspan=\"2\">按设计文件</td></tr><tr><td>预热温度</td><td colspan=\"4\">/</td><td>20#</td><td colspan=\"2\">8</td><td colspan=\"2\">2</td><td colspan=\"2\"></td><td></td><td colspan=\"2\"></td></tr><tr><td>层间温度</td><td colspan=\"4\">/</td><td rowspan=\"2\">焊缝金属</td><td>CHG-56R</td><td rowspan=\"2\" colspan=\"2\">厚度(mm)</td><td colspan=\"2\">8.6</td><td colspan=\"2\"></td><td colspan=\"2\"></td><td></td><td colspan=\"2\"></td></tr><tr><td>焊后热处理</td><td colspan=\"4\">/</td><td>CHE427R</td><td colspan=\"2\">8.6</td><td colspan=\"2\"></td><td colspan=\"2\"></td><td></td><td colspan=\"2\"></td></tr><tr><td>后热</td><td colspan=\"3\">/</td><td rowspan=\"2\">层/道</td><td rowspan=\"2\">焊接方法</td><td colspan=\"3\">填充材料</td><td colspan=\"4\">焊接电流</td><td rowspan=\"2\" colspan=\"3\">电弧电压(V)</td><td rowspan=\"2\" colspan=\"2\">焊接速度(cm/min)</td><td rowspan=\"2\">线能量(KJ/cm)</td></tr><tr><td>钨极直径</td><td colspan=\"3\">∅2.5</td><td colspan=\"2\">牌号</td><td>直径</td><td>极性</td><td colspan=\"3\">电流(A)</td></tr><tr><td>喷咀尺寸</td><td colspan=\"3\">∅8-12</td><td>1/1</td><td>GTAW</td><td colspan=\"2\">CHG-56R</td><td>∅2.5</td><td>直流正接</td><td colspan=\"3\">110-120</td><td colspan=\"3\">10-15</td><td colspan=\"2\">5-7</td><td></td></tr><tr><td>脉冲频率</td><td colspan=\"3\">/</td><td>2/2</td><td>SMAW</td><td colspan=\"2\">CHE427R</td><td>∅3.2</td><td>直流反接</td><td colspan=\"3\">120-130</td><td colspan=\"3\">25~30</td><td colspan=\"2\">5~7</td><td></td></tr><tr><td>脉冲比(%)</td><td colspan=\"3\"></td><td>3/3</td><td>SMAW</td><td colspan=\"2\">CHE427R</td><td>∅3.2</td><td>直流反接</td><td colspan=\"3\">120-130</td><td colspan=\"3\">25~30</td><td colspan=\"2\">5~7</td><td></td></tr><tr><td rowspan=\"2\">气体成分</td><td rowspan=\"2\">氩气</td><td rowspan=\"2\">气体流量</td><td>正面</td><td colspan=\"4\">99.99% Ar8-12L/min</td><td></td><td></td><td colspan=\"3\">编制</td><td colspan=\"3\">华导</td><td colspan=\"2\">日期</td><td>2026.5.28</td></tr><tr><td>背面</td><td colspan=\"4\">无</td><td></td><td></td><td colspan=\"3\">审核</td><td colspan=\"3\">丁文斌</td><td colspan=\"2\">日期</td><td>2026.5.28</td></tr></table>",
+        "source": "full_mineru_markdown",
+        "confidence": 1.0
+      },
+      "contentHash": "sha256:6675a93236a4b4600686b89c00503c9cc562638c2cbe2350d23f2f12416f40a8"
+    }
+  ],
+  "counts": {
+    "fields": 0,
+    "tables": 0,
+    "seals": 0,
+    "fragments": 2,
+    "evidenceLinks": 0,
+    "total": 2
+  },
+  "manifestHash": "sha256:f26bfd5cf18365c3f228e69255d0fe57bbd47109a1e4fd2e492af6614e5e4d23"
+}

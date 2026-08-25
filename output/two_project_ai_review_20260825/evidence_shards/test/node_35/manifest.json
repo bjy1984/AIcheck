@@ -1,0 +1,50 @@
+{
+  "evidenceManifestId": "EMAN-81D834EA0EDB096E",
+  "schemaVersion": "EvidenceManifest@1.0.0",
+  "evidenceSnapshotId": "ESNAP-52B0EBBEA6D531FB",
+  "evidenceSnapshotHash": "sha256:52b0ebbea6d531fbf3c59d2e1eebaac477bf6140008b715e6112a42e0bdfa39f",
+  "projectId": "P-TEST-OCR-001",
+  "nodeId": 35,
+  "documents": [
+    {
+      "documentId": "DOC-OFFLINE-test-ndt-org-certificate-001",
+      "documentVersionId": "DV-OFFLINE-test-ndt-org-certificate-001-V1",
+      "mountLinkIds": [
+        "NEL-OFFLINE-test-35-001"
+      ],
+      "mountRevision": 1,
+      "documentContentHash": "sha256:f6f0f120394bdce18d0ffa64c92fd666b76f79f188f4cab66c74cad5ad2bd45c",
+      "ocrParseResultId": "OCR-OFFLINE-test-ndt-org-certificate-001",
+      "ocrContentHash": "sha256:f6f0f120394bdce18d0ffa64c92fd666b76f79f188f4cab66c74cad5ad2bd45c",
+      "artifactIds": [
+        "EART-A460802D9628A670"
+      ],
+      "artifactCount": 1
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "EART-A460802D9628A670",
+      "artifactType": "fragment",
+      "documentVersionId": "DV-OFFLINE-test-ndt-org-certificate-001-V1",
+      "sourceId": "FRAGMENT-OFFLINE-test-ndt-org-certificate-001",
+      "payload": {
+        "id": "FRAGMENT-OFFLINE-test-ndt-org-certificate-001",
+        "pageNo": 1,
+        "text": "2024年06月07日登记机关\n\n![](images/c8451375c6b65ad41f2dd9ec93ef16aeb9b5583d0aa0fc066d698264da520ae6.jpg)\n\n住所 山东省山东省垦利区广兴路304号成立日期 2013 年 07 月 19 日\n\n注册资本 参仟贰佰万元整(副 本) 3-1\n\n![](images/2fdf4a3fd9e62cb7cc0c8efaf2b6d2132624135c7d170c1b0ddbbd1e0295550f.jpg)\n\n![](images/5c116d6ad29b8072341bfd590cfd42cccccb17f2cd08dda66f6232b79b190553.jpg)\n\n## 营业执照\n\n国家企业信用信息公示系统网址：\n\n项目：“三、安全技术服务”，具备控制技术研发、技术服务，技术开发、技术咨询、技术交流、技术转让、技术推广，海上风电相关系统研发、新材料技术研发、工程和技术研究和试验发展、石油天然气技术服务、计量技术服务，在检测计算机技术研究、民力发电技术服务、前置技术咨询服务、数字计算技术服务、信息咨询服务（不含许可类信息咨询服务）、人力资源服务（不含职业中介活动、劳务派遣服务）、劳务服务（不含劳务派遣）；安全咨询服务、人工智能基础软件开发、软件开发、业务培训（不含教育培训、职业技能培训等管制许可的培训）、工程管理服务、工程技术服务（开展专项审批、设计、规划除外）、工程造价咨询服务、发电技术服务、太阳能发电技术服务、标准化服务、生物设施技术服务、企业管理、社会经济咨询服务、企业管理咨询、人工智能应用软件开发、公共安全管理咨询服务、认证咨询、市场营销策划、智能技术服务、新材料技术推广服务；环境保护监测、公共环境工程试验检测服务。（微信法律须经批准的项目外，自营业执业到依法自主开展经营活动）\n\n经营范围 许可项目：特种设备检验检测、安全生产检验检测、水利工程质量检测、民用安全设备无损检验、船舶Ic检验服务；林业产品质量检验检测；农产品品质检验检测；安全生产检验检测。\n\n法定代表人 欧国奇类型有限责任公司(自然人投资或控股)\n\n名称 山东扬石工程检验检测有限公司\n\n91370521074406273L.\n\n统一社会信用代码\n\n![](images/489eef45dd4c661dea6717be246c22f9c1eb5ab03d1d1d065e7ebf38762b40e2.jpg)\n\n# 特种设备检验检测机构核准证\n\n# Inspection and Testing Institution Approval Certificate of Special Equipment People's Republic of China\n\n(无损检测机构)\n\n编号：TS7310417-2026\n\n机构名称：山东扬石工程检验检测有限公司\n\n机构地址：山东省东营市垦利区广兴路304号\n\n经审查，获准从事下列项目的特种设备检测工作：\n\n1、CG-常规检测；\n\n2、TOFD-衍射时差法超声检测；\n\n3、AE-声发射检测。\n\n![](images/edc9ba7d243752254713d6a08d48d7c72ab177175d8191ee9ff37a7fe2da9394.jpg)\n\n审批机关：国家市场监督管理总局\n\n有效期至：2026年12月10日\n\n发证机关：\n\n![](images/970d890c8536bfa65aabcf54633324a6ff1b9e6d438376c885c001bfe662bd9d.jpg)\n\n发证日期：2022年08月19日\n\n![](images/ce5457d06e409928cbb667bd9c9e0974c74c4333d6507e09a2c6336988438167.jpg)\n\n![](images/d302f57049e1413603f24814770b0606a726a93644d4591077ea085e56ceecb6.jpg)\n\n# 中国特种设备检验协会\n\n# 特种设备无损检测机构级别评定证书\n\n# Rating Certificate for Special Equipment Non-Destructive-Test Inspection Agency\n\n编号：CASEI-WS-065-2023\n\n山东扬石工程检验检测有限公司：\n\n依据《特种设备无损检测机构级别评定准则》评定，你单位被评定为 A 级机构。\n\n统一社会信用代码：91370521074406273L\n\n住所：山东省东营市垦利区广兴路304号\n\n办公地址：山东省东营市垦利区广兴路304号\n\n注：本证书在《特种设备检验检测机构核准证》有效期内方为有效。\n\n有效期：自2023年12月10日至2026年12月09日\n\n(公章)\n\n![](images/11f9afb5424ccef0dde4d4d6519e6759c3f0147739d35032e633e5a37e61f1c0.jpg)\n\n![](images/cdafb1b940768976f2b6df62f340cc942b78dc7c4913c9aa2a7fcc88236d68c1.jpg)\n\n# 辐射安全许可证\n\n根据《中华人民共和国放射性污染防治法》和《放射性同位素与射线装置安全和防护条例》等法律法规的规定，经审查准予在许可种类和范围内从事活动。\n\n单位名称：山东扬石工程检验检测有限公司\n\n统一社会信用代码：91370521074406273L\n\n地址：山东省东营市垦利区广兴路304号\n\n法定代表人：欧阳奇\n\n证书编号：鲁环辐证[05082]\n\n种类和范围：使用Ⅱ类放射源；使用Ⅱ类射线装置（具体范围详见副本）\n\n有效期至：2024年12月02日\n\n![](images/d71454cd8d39b0b01c0f1c28da99e427244dc43447e63c1ee0f4ace725a21988.jpg)\n\n发证机关：山东省生态环境厅\n\n发证日期：2023年12月29日\n\n![](images/4380da628e1f5dd292570b9851f9c5e549bcdb684975ef62548f5f221611ade1.jpg)\n\n中华人民共和国生态环境部监制\n\n![](images/0b933d32db83ab84b03314cce30c46b9bbf09765301b9a01a06d0312d40dd050.jpg)\n\n![](images/9d5a0ae0ccd908ba62ba64cc3c242f0f9977281924b08eb95c97791fa7edf6a0.jpg)\n\n![](images/4680e55b915cc633485912944859cad70b25d2366c66e142cb499181f0fcfab3.jpg)\n\n# 检验检测机构 资质认定证书\n\n副本\n\n证书编号221520112992\n\n名称：山东扬石工程检验检测有限公司\n\n山东省东营市垦利区广兴路304号(257500)地址：\n\n经审查，你机构已具备国家有关法律、行政法规规定的基本条件和能力，现予批准，可以向社会出具具有证明作用的数据和结果，特发此证。资质认定包括检验检测机构计量认证。\n\n![](images/ca4bd2f36bdbea6d6e8623d75be1beb28b89983f8c309da05d7101a73ee1354e.jpg)\n\n![](images/01819109c9a2dc67e006d41099d1f8c9c78ef247d5286dd0db7c51309de0828f.jpg)\n\n许可使用标志\n\n![](images/94e6040442d64f9268f8a95209cd5b7d2227e06b346809f0018a65512b168de9.jpg)\n\n发证日期:2022年09月01日\n\n有效期至：2028年08月31日\n\n发证机关:山东省市场监督管理局\n\n![](images/b4a75a35e1f168e0e1962202d3bc2bf453560c96d609d0ed3d39bc5c61b3626b.jpg)\n\n![](images/d65149a062857223d2501c448c0346f916439418ccc90129e683c90986904f14.jpg)\n\n# 质量管理体系认证证书\n\n注册号：0350524030085R3S\n\n兹证明\n山东扬石工程检验检测有限公司\n\n注册地址：山东省东营市垦利区广兴路304号统一社会信用代码：91370521074406273L\n\n管理体系符合\n\nQB/T 19001-2016 / ISO 9001:2015 标准\n\n证书覆盖的范围\n\n![](images/a4e5e4a4ac9a4fd767966e814744dbfb8706a0c1eac5d09cdf418d3968ee2acf.jpg)\n\n资质范围内的无损检测；计量器具检定及校准；安全阀校验\\*\\*\\*\n\n(涉及场所：山东省东营市垦利区广兴路304号)\n\n頒征日期：2024年3月20日\n\n![](images/ce3c63ae5eea8e3454a5ed5f771a2823856bc5f5894701f95cb8905143e6b2a5.jpg)\n\n有效期最长可至：2027年3月19日\n\n![](images/f64ba5af93af36b4e136e0bf2f44c0403334eef1de89e74f1e47cfe9bd62ec5d.jpg)\n\n中国认可\n国际互认\n管理体系\nMANAGEMENT SYSTEM\nCNAS COS-M\n\n![](images/2369fd48c8960944909797d098dd760d61b0056dc4f0873672700dd2888fb46a.jpg)\n\n![](images/1d2d3c5dc996c90cb52051cc11376cd74fe62b510e003213b489d4fae62079f6.jpg)\n\n![](images/ac67cef43d6c6ae78dcc500a119e252be4b285496c48dec70f8d764d9bea3577.jpg)\n\n注：在证书有效期内，获证组织须按规定接受年度监督审核。保持认证资格。通过扫描二维码可获知证书的有效状态。该证书信息还可在国家认证认可监督管理委员会官方网站（www.cnca.gov.cn）和兴辉认证中心有限公司官方网站（www.xqcc.com.cn）上查询。\n\n兴原认证中心有限公司\n\n北京市海淀区上地三街9号金隅嘉华大厦C座7层\nwww.xqcc.com.cn\n\n![](images/bf758ba4d5a0b6cb0c70e9b7ca38728df031083814e3e8b8b309f14458a5a12c.jpg)\n\n![](images/cf801d26b816dd3bc7462375d28217e178ea967d66b0681ef076f7894d2a15f1.jpg)\n\n![](images/8fa33cb5b5f8f9673333a8976500db80c1c360b1de7d88205e09546b8787051b.jpg)\n\n# 环境管理体系认证证书\n\n注册号：0350524E20048R3S\n\n兹证明\n\n山东扬石工程检验检测有限公司\n\n注册地址：山东省东营市垦利区广兴路304号  \n统一社会信用代码：91370521074406273L\n\n管理体系符合\n\nGB/T 24001-2016 / ISO 14001:2015 标准\n\n证书覆盖的范围\n\n资质范围内的无损检测；计量器具检定及校准；安全阀校验\\*\\*\\*\n\n(涉及场所：山东省东营市垦利区广兴嘉304号)\n\n颁证日期：2024年3月20日\n\n有效期最长可至：2027年3月19日\n\n![](images/19c3bb2205a095f351dbcd4fef7ba124a6c5afbad28acff18275acb34aa2c78c.jpg)\n\n![](images/cb8360df84a7f9c22b12336735fb5c78ffb34c9343bc39bcd2ba1ef9ddcd6454.jpg)\n\n中国认可\n国际互认\n管理体系\nMANAGEMENT SYSTEM\nCNAS C035-M\n\n![](images/8c534621579cd02c89086436f658952212b92ca75ba0066825e28443b7b33952.jpg)\n\n![](images/19e1bb680dffb0b48370a4b57285d1786638cb83acfc2caa8817c86836268d60.jpg)\n\n注：在证书有效期内，获证组织须按规定接受年度监督审核，保持认证资格。通过扫描二维码可获知证书的有效状态。该证书信息还可在国家认证认可监督管理委员会官方网站（www.cnca.gov.cn）和兴源认证中心有限公司官方网站（www.xqcc.com.cn）上查询。\n\n兴原认证中心有限公司\n\n北京市海淀区上地三街9号金朗嘉华大厦C座7层\nwww.xqzc.com.cn\n\n![](images/23949dac66af9f42fc4bc223db08f54245c5e6778ea1dabf6ad6624900fefa7c.jpg)\n\n![](images/3e45ca41008cd9c19536028bcce5a4b512d0ad259b68d3e222a8d72badcae8f7.jpg)\n\n![](images/a23bb6354fdd22550312e03596d6b53cf36cc8a0eceafb243aa9d772b5c33815.jpg)\n\n# 职业健康安全管理体系认证证书\n\n注册号：0350524830045R38\n\n兹证明\n\n山东扬石工程检验检测有限公司\n\n注册地址：山东省东营市垦利区广兴路304号\n\n统一社会信用代码：91370521074406273L\n\n管理体系符合\n\nGB/T 45001-2020 / ISO 45001:2018 标准\n\n证书覆盖的范围\n\n![](images/62432d1bea02f808ef78dfcf84956c7ac98c37e50f27ac672e9acf007a0ae305.jpg)\n\n资质范围内的无损检测；计量器具检定及校准；安全阀校验\\*\\*\\*\n\n(涉及场所：山东省东营市垦利区广兴路304号)\n\n頒征日期：2024年3月20日\n\n![](images/c527b96e21c28ed72ccef941eaa6294e62875d7494143c837e8de035f2e2d89a.jpg)\n\n有效期最长可至：2027年3月19日\n\n![](images/cbaeb3941fb8b9c06684d520684da0510b7e374ab686476d5a8c714f6b9b7c57.jpg)\n\n中国认可\n国际互认\n管理体系\nMANAGEMENT SYSTEM\nCHAS C035-M\n\n![](images/4242ae22f3c31e497afb6f01c945507c83bc9ebca9df05670788fdf0d2c2a746.jpg)\n\n![](images/d0a6be98f8b2d430d889c3ece936dbc41011b13f1fecec068a120812a880b28b.jpg)\n\n![](images/f7254121160e79c13a52463442ed1e51179672f9caa6bc97eab4c2738887b26d.jpg)\n\n注：在证书有效期内，获证组织须按规定接受年度监督审核，保持认证资格。通过扫描二维码可获知证书的有效状态。该证书信息还可在国家认证认可监督管理委员会官方网站（www.cnca.gov.cn）和兴原认证中心有限公司官方网站（www.xgcc.com.cn）上查询。\n\n兴原认证中心有限公司\n\n北京市海淀区土地三楼9号金隅嘉华大厦C座7层\nwww.xqcc.com.cn",
+        "source": "full_mineru_markdown",
+        "confidence": 1.0
+      },
+      "contentHash": "sha256:a460802d9628a670ac5dcaf9e6d71210d81c61031d2508a5ab00fbe3cad12d1e"
+    }
+  ],
+  "counts": {
+    "fields": 0,
+    "tables": 0,
+    "seals": 0,
+    "fragments": 1,
+    "evidenceLinks": 0,
+    "total": 1
+  },
+  "manifestHash": "sha256:81d834ea0edb096ea92693cbc54f4e75ed018778c9edbdc62bfb50da79f4e1e1"
+}
