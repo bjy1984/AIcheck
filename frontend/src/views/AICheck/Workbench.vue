@@ -211,6 +211,7 @@ type EvidenceConfirmationRow = {
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
+import AutoReviewControl from './components/AutoReviewControl.vue'
 import BatchRecheckPanel from './components/BatchRecheckPanel.vue'
 import NodeReviewTimeline from './components/NodeReviewTimeline.vue'
 import { useBatchRecheck } from './useBatchRecheck'
@@ -5247,6 +5248,11 @@ onBeforeUnmount(() => {
               完整工作台
             </button>
           </div>
+          <AutoReviewControl
+            v-if="role === 'inspection'"
+            :project-id="activeProjectId"
+            :disabled="!activeProjectId"
+          />
           <ElButton
             v-if="role === 'inspection' && canManageRegistration"
             class="top-action"
