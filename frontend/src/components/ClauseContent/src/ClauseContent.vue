@@ -27,7 +27,11 @@ const props = defineProps<{
 const equationHtml = ref('')
 const equationFailed = ref(false)
 
-const normalizedType = computed(() => String(props.blockType || '').trim().toLowerCase())
+const normalizedType = computed(() =>
+  String(props.blockType || '')
+    .trim()
+    .toLowerCase()
+)
 const isEquation = computed(() =>
   ['equation', 'interline_equation', 'inline_equation'].includes(normalizedType.value)
 )
@@ -42,7 +46,10 @@ const isTable = computed(
 const equationSource = computed(() => {
   const raw = String(props.latex || props.text || '').trim()
   // MinerU 常带 $$...$$ 外壳；KaTeX displayMode 时要剥掉
-  return raw.replace(/^\$\$\s*/u, '').replace(/\s*\$\$$/u, '').trim()
+  return raw
+    .replace(/^\$\$\s*/u, '')
+    .replace(/\s*\$\$$/u, '')
+    .trim()
 })
 
 const renderEquation = () => {
@@ -69,7 +76,11 @@ watch([isEquation, equationSource], renderEquation)
   <div class="clause-content">
     <div v-if="isEquation" class="clause-equation">
       <!-- KaTeX 自建 DOM，不是引擎 html；trust:false 禁掉 \href 等能造 URL 的命令 -->
-      <div v-if="equationHtml && !equationFailed" class="clause-equation-math" v-html="equationHtml" />
+      <div
+        v-if="equationHtml && !equationFailed"
+        class="clause-equation-math"
+        v-html="equationHtml"
+      />
       <pre v-else class="clause-equation-fallback">{{ latex || text }}</pre>
     </div>
     <StructuredTable
