@@ -4,9 +4,11 @@ import hashlib
 import json
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from libs.contracts.responses import server_time
+from libs.review_evidence import active_node_document_versions, build_evidence_snapshot
 
 
 TRIGGER_MODES = {"ocr_mounted", "daily_schedule"}
@@ -164,3 +166,222 @@ def upsert_auto_review_candidate(
     }
     rows.append(candidate)
     return candidate, True
+
+
+def active_mounted_node_ids(state: dict[str, Any], project_id: str) -> list[int]:
+    candidate_ids = sorted(
+        {
+            int(row.get("nodeId") or 0)
+            for row in state.get("node_evidence_links") or []
+            if isinstance(row, dict)
+            and str(row.get("projectId") or "") == str(project_id)
+            and str(row.get("manualStatus") or "").lower() != "rejected"
+            and int(row.get("nodeId") or 0) > 0
+        }
+    )
+    return [
+        node_id
+        for node_id in candidate_ids
+        if active_node_document_versions(state, project_id, node_id)
+    ]
+
+
+def current_node_snapshot(
+    state: dict[str, Any],
+    project_id: str,
+    node_id: int,
+    *,
+    rule_version: str = "auto-review-rule-v1",
+    clause_package_version: str = "auto-review-clauses-v1",
+    prompt_version: str = "project-auto-review-v1",
+    strategy_version: str = "node-review-strategy-v1",
+) -> dict[str, Any]:
+    return build_evidence_snapshot(
+        state,
+        project_id,
+        node_id,
+        rule_version=rule_version,
+        clause_package_version=clause_package_version,
+        prompt_version=prompt_version,
+        strategy_version=strategy_version,
+    )
+
+
+SUCCESSFUL_NODE_REVIEW_STATUSES = {
+    "waiting_human_review",
+    "accepted_by_human",
+    "edited_by_human",
+    "rejected_by_human",
+    "completed",
+    "完成",
+}
+
+
+def _latest_successful_snapshot_hash(
+    state: dict[str, Any], project_id: str, node_id: int
+) -> str | None:
+    rows = [
+        row
+        for collection in ("review_runs", "ai_runs")
+        for row in state.get(collection) or []
+        if isinstance(row, dict)
+        and str(row.get("projectId") or "") == str(project_id)
+        and int(row.get("nodeId") or 0) == int(node_id)
+        and str(row.get("status") or "") in SUCCESSFUL_NODE_REVIEW_STATUSES
+        and row.get("evidenceSnapshotHash")
+    ]
+    if not rows:
+        return None
+    rows.sort(
+        key=lambda row: str(
+            row.get("finishedAt") or row.get("updatedAt") or row.get("createdAt") or ""
+        ),
+        reverse=True,
+    )
+    return str(rows[0].get("evidenceSnapshotHash") or "") or None
+
+
+def dirty_nodes_for_project(
+    state: dict[str, Any],
+    project_id: str,
+    *,
+    node_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    selected_ids = sorted(
+        set(node_ids if node_ids is not None else active_mounted_node_ids(state, project_id))
+    )
+    dirty: list[dict[str, Any]] = []
+    for node_id in selected_ids:
+        snapshot = current_node_snapshot(state, project_id, int(node_id))
+        if not snapshot.get("documentVersions"):
+            continue
+        previous_hash = _latest_successful_snapshot_hash(state, project_id, int(node_id))
+        if previous_hash == snapshot["snapshotHash"]:
+            continue
+        dirty.append(
+            {
+                "nodeId": int(node_id),
+                "evidenceSnapshotId": snapshot["evidenceSnapshotId"],
+                "evidenceSnapshotHash": snapshot["snapshotHash"],
+                "previousEvidenceSnapshotHash": previous_hash,
+                "snapshot": snapshot,
+            }
+        )
+    return dirty
+
+
+def create_project_review_run(
+    state: dict[str, Any],
+    *,
+    tenant_id: str,
+    project_id: str,
+    trigger_type: str,
+    policy: dict[str, Any],
+    node_ids: list[int],
+) -> dict[str, Any]:
+    now = server_time()
+    project_run_id = f"PRRUN-{uuid4().hex[:12].upper()}"
+    record = {
+        "id": project_run_id,
+        "projectReviewRunId": project_run_id,
+        "tenantId": str(tenant_id),
+        "projectId": str(project_id),
+        "triggerType": str(trigger_type),
+        "policySnapshot": json.loads(json.dumps(policy, ensure_ascii=False, default=str)),
+        "autoReviewPolicyRevision": int(policy.get("revision") or 1),
+        "expectedNodeIds": sorted({int(node_id) for node_id in node_ids if int(node_id) > 0}),
+        "childAiRunIds": [],
+        "childReviewRunIds": [],
+        "completedNodeIds": [],
+        "failedNodeIds": [],
+        "status": "queued",
+        "createdAt": now,
+        "updatedAt": now,
+        "revision": 1,
+    }
+    state.setdefault("project_review_runs", []).insert(0, record)
+    return record
+
+
+def dispatch_project_review_run(
+    state: dict[str, Any],
+    project_run: dict[str, Any],
+    *,
+    start_node_review,
+) -> dict[str, Any]:
+    project_run["status"] = "running"
+    project_run["startedAt"] = project_run.get("startedAt") or server_time()
+    failed_node_ids: list[int] = []
+    for node_id in project_run.get("expectedNodeIds") or []:
+        metadata = {
+            "projectReviewRunId": project_run["projectReviewRunId"],
+            "triggerType": project_run.get("triggerType"),
+            "autoReviewPolicyRevision": project_run.get("autoReviewPolicyRevision"),
+            "reviewMode": AUTO_REVIEW_MODE,
+            "advisoryOnly": True,
+        }
+        try:
+            child = start_node_review(str(project_run["projectId"]), int(node_id), metadata)
+        except Exception as exc:
+            failed_node_ids.append(int(node_id))
+            project_run.setdefault("dispatchFailures", []).append(
+                {"nodeId": int(node_id), "errorType": exc.__class__.__name__}
+            )
+            continue
+        ai_run_id = str(child.get("aiRunId") or child.get("runId") or "")
+        review_run_id = str(child.get("reviewRunId") or "")
+        if ai_run_id:
+            project_run["childAiRunIds"].append(ai_run_id)
+        if review_run_id:
+            project_run["childReviewRunIds"].append(review_run_id)
+    project_run["failedNodeIds"] = sorted(set(failed_node_ids))
+    if failed_node_ids:
+        project_run["status"] = "partial" if project_run["childAiRunIds"] else "failed"
+    project_run["updatedAt"] = server_time()
+    project_run["revision"] = int(project_run.get("revision") or 0) + 1
+    return project_run
+
+
+def finalize_project_review_run(
+    state: dict[str, Any], project_run: dict[str, Any]
+) -> dict[str, Any]:
+    child_ids = {str(item) for item in project_run.get("childReviewRunIds") or [] if item}
+    child_rows = [
+        row
+        for row in state.get("review_runs") or []
+        if isinstance(row, dict)
+        and str(row.get("reviewRunId") or row.get("id") or "") in child_ids
+    ]
+    completed = sorted(
+        {
+            int(row.get("nodeId") or 0)
+            for row in child_rows
+            if str(row.get("status") or "") in SUCCESSFUL_NODE_REVIEW_STATUSES
+            and int(row.get("nodeId") or 0) > 0
+        }
+    )
+    failed = sorted(
+        set(int(item) for item in project_run.get("failedNodeIds") or [])
+        | {
+            int(row.get("nodeId") or 0)
+            for row in child_rows
+            if str(row.get("status") or "") in {"failed", "failed_to_start", "cancelled", "失败"}
+            and int(row.get("nodeId") or 0) > 0
+        }
+    )
+    expected = {int(item) for item in project_run.get("expectedNodeIds") or []}
+    pending = sorted(expected - set(completed) - set(failed))
+    project_run["completedNodeIds"] = completed
+    project_run["failedNodeIds"] = failed
+    project_run["pendingNodeIds"] = pending
+    if pending:
+        project_run["status"] = "running"
+    elif failed:
+        project_run["status"] = "partial" if completed else "failed"
+        project_run["finishedAt"] = server_time()
+    else:
+        project_run["status"] = "completed"
+        project_run["finishedAt"] = server_time()
+    project_run["updatedAt"] = server_time()
+    project_run["revision"] = int(project_run.get("revision") or 0) + 1
+    return project_run

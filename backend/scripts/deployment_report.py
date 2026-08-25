@@ -2071,9 +2071,13 @@ def lossless_evidence_coverage_check(
         for row in (manifests if manifests is not None else repo.state.get("evidence_manifests") or [])
         if isinstance(row, dict)
     ]
+    default_runs = [
+        *(repo.state.get("review_runs") or []),
+        *(repo.state.get("ai_runs") or []),
+    ]
     run_rows = [
         row
-        for row in (review_runs if review_runs is not None else repo.state.get("review_runs") or [])
+        for row in (review_runs if review_runs is not None else default_runs)
         if isinstance(row, dict)
     ]
     if coverages is None:

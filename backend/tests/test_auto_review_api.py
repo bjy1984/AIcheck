@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from apps.api.main import app
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
+from libs.integrations import task_dispatcher
 
 
 client = TestClient(app)
@@ -175,3 +176,69 @@ def test_status_reports_pending_candidates_and_project_runs() -> None:
 
     assert status["pendingNodeCount"] == 1
     assert status["runningProjectRunCount"] == 1
+
+
+def test_manual_full_review_creates_parent_and_node_child_runs(monkeypatch) -> None:
+    repo.state["node_evidence_links"] = []
+    document, version = repo.create_document(PROJECT_ID, "设计许可证.pdf", "application/pdf")
+    repo.apply_ocr_result(
+        document["id"],
+        version["id"],
+        {
+            "status": "success",
+            "artifactHash": "sha256:license",
+            "fields": [],
+            "tables": [],
+            "seals": [],
+            "fragments": [
+                {
+                    "id": "FRAG-LICENSE",
+                    "pageNo": 1,
+                    "text": "许可证编号TS1844171-2028，工业管道GC1覆盖GC2。",
+                    "bbox": [1, 2, 30, 40],
+                    "confidence": 0.99,
+                }
+            ],
+        },
+    )
+    repo.state["node_evidence_links"].append(
+        {
+            "id": "NEL-AUTO-MANUAL-1",
+            "projectId": PROJECT_ID,
+            "nodeId": 1,
+            "documentId": document["id"],
+            "documentVersionId": version["id"],
+            "materialTypeCode": "design_license",
+            "requiredType": "必传",
+            "supportStatus": "命中",
+            "matchedEvidenceItems": ["许可证编号"],
+            "manualStatus": "confirmed",
+            "revision": 1,
+        }
+    )
+    monkeypatch.setattr(
+        task_dispatcher,
+        "ai_recheck_dispatch_readiness",
+        lambda: {"ready": True, "mode": "test", "statusReason": "test_dispatch"},
+    )
+    monkeypatch.setattr(
+        task_dispatcher,
+        "dispatch_ai_recheck",
+        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+    )
+
+    result = _ok(
+        client.post(
+            f"/projects/{PROJECT_ID}/inspection/auto-review/run",
+            headers={**INSPECTION_HEADERS, "Idempotency-Key": "manual-full-once"},
+        )
+    )
+
+    parent = result["projectReviewRun"]
+    assert parent["triggerType"] == "manual_full"
+    assert parent["expectedNodeIds"] == [1]
+    assert len(parent["childAiRunIds"]) == 1
+    child = repo.find_one("ai_runs", parent["childAiRunIds"][0])
+    assert child["projectReviewRunId"] == parent["projectReviewRunId"]
+    assert child["reviewMode"] == "gap_precheck"
+    assert child["advisoryOnly"] is True

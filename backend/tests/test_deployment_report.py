@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.responses import JSONResponse
+from libs.db.repository import repo
 
 from scripts.deployment_report import (
     REQUIRED_STORAGE_BUCKETS,
@@ -120,6 +121,7 @@ _external_idempotent_delegate_for_contract_test.__module__ = "external.workflow"
 
 
 def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
+    repo.reset()
     report = DeploymentReportBuilder(report_args()).build()
 
     assert report["schemaVersion"] == "aicheck-deployment-report-v1"

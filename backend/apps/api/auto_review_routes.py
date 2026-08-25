@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
 
 from apps.api.routes import (
+    ai_recheck,
     effective_role_for_request,
     idempotent,
     mutation_guard,
     request_tenant_id,
     versioned_record,
 )
-from libs.auto_review import default_auto_review_policy, validate_auto_review_policy
+from libs.auto_review import (
+    active_mounted_node_ids,
+    create_project_review_run,
+    default_auto_review_policy,
+    dispatch_project_review_run,
+    validate_auto_review_policy,
+)
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
@@ -133,4 +141,74 @@ def get_auto_review_status(request: Request, project_id: str):
             "latestProjectRun": project_runs[0] if project_runs else None,
         },
         request,
+    )
+
+
+@auto_review_router.post("/projects/{project_id}/inspection/auto-review/run")
+def run_project_auto_review(
+    request: Request,
+    project_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    def produce():
+        error = _authorize(request, project_id, write=True)
+        if error:
+            return error
+        tenant_id = request_tenant_id(request)
+        policy = _policy_for_project(tenant_id, project_id)
+        node_ids = active_mounted_node_ids(repo.state, project_id)
+        parent = create_project_review_run(
+            repo.state,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            trigger_type="manual_full",
+            policy=policy,
+            node_ids=node_ids,
+        )
+
+        def start_node_review(target_project_id: str, node_id: int, metadata: dict) -> dict:
+            response = ai_recheck(
+                request,
+                target_project_id,
+                node_id,
+                {
+                    "reviewMode": "gap_precheck",
+                    "projectReviewRunId": metadata["projectReviewRunId"],
+                    "triggerType": metadata["triggerType"],
+                    "autoReviewPolicyRevision": metadata["autoReviewPolicyRevision"],
+                },
+                None,
+                request.headers.get("X-Role"),
+            )
+            if hasattr(response, "body"):
+                payload = json.loads(response.body)
+            else:
+                payload = response
+            if not isinstance(payload, dict) or int(payload.get("code") or 0) != 0:
+                raise RuntimeError(str((payload or {}).get("message") or "node review start failed"))
+            data = payload.get("data") or {}
+            latest_run = data.get("latestRun") or {}
+            return {
+                "aiRunId": latest_run.get("id") or data.get("runId"),
+                "reviewRunId": latest_run.get("reviewRunId") or (data.get("dispatch") or {}).get("reviewRunId"),
+                "status": latest_run.get("status"),
+            }
+
+        dispatch_project_review_run(
+            repo.state,
+            parent,
+            start_node_review=start_node_review,
+        )
+        audit_id = repo.add_audit(
+            "手动发起全工程自动审查",
+            "ProjectReviewRun",
+            str(parent["projectReviewRunId"]),
+        )
+        return ok({"projectReviewRun": parent, "auditLogId": audit_id}, request)
+
+    return idempotent(
+        request,
+        idempotency_key,
+        produce,
+        fingerprint_source={"projectId": project_id, "triggerType": "manual_full"},
     )

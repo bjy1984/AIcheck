@@ -157,7 +157,12 @@ def test_review_run_copies_and_flushes_the_persisted_evidence_package(monkeypatc
     ai_run = _assert_ok(
         client.post(
             f"/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck",
-            json={"reviewMode": "gap_precheck"},
+            json={
+                "reviewMode": "gap_precheck",
+                "projectReviewRunId": "PRRUN-PARENT-1",
+                "triggerType": "manual_full",
+                "autoReviewPolicyRevision": 3,
+            },
         )
     )["latestRun"]
 
@@ -167,6 +172,9 @@ def test_review_run_copies_and_flushes_the_persisted_evidence_package(monkeypatc
     assert review_run["evidenceSnapshotId"] == ai_run["evidenceSnapshotId"]
     assert review_run["evidenceManifestId"] == ai_run["evidenceManifestId"]
     assert review_run["evidenceShardIds"] == ai_run["evidenceShardIds"]
+    assert review_run["projectReviewRunId"] == "PRRUN-PARENT-1"
+    assert review_run["triggerType"] == "manual_full"
+    assert review_run["autoReviewPolicyRevision"] == 3
     assert records["evidence_snapshots"][0]["reviewRunId"] == review_run["reviewRunId"]
     assert records["evidence_manifests"][0]["reviewRunId"] == review_run["reviewRunId"]
     assert records["evidence_shards"]
