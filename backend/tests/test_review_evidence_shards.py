@@ -37,7 +37,9 @@ def test_sharding_changes_call_count_without_dropping_or_duplicating_artifacts()
     assert report["processedArtifactCount"] == 250
     assert report["missingArtifactIds"] == []
     assert report["duplicateArtifactIds"] == []
-    assert report["coveragePassed"] is True
+    assert report["structuralCoveragePassed"] is True
+    assert report["processingCoveragePassed"] is False
+    assert report["coveragePassed"] is False
 
 
 def test_oversized_table_is_split_by_rows_and_cells_without_loss() -> None:
@@ -83,7 +85,34 @@ def test_oversized_table_is_split_by_rows_and_cells_without_loss() -> None:
     assert len(segments) > 1
     assert reconstructed_rows == rows
     assert reconstructed_cells == cells
-    assert evidence_coverage_report(manifest, shards)["coveragePassed"] is True
+    report = evidence_coverage_report(manifest, shards)
+    assert report["structuralCoveragePassed"] is True
+    assert report["coveragePassed"] is False
+
+
+def test_processing_coverage_passes_only_after_every_shard_completes() -> None:
+    from libs.review_evidence import build_evidence_shards, evidence_coverage_report
+
+    manifest = _manifest([_artifact(index) for index in range(1, 8)])
+    shards = build_evidence_shards(manifest, max_shard_estimated_tokens=120)
+
+    pending = evidence_coverage_report(manifest, shards)
+    assert pending["structuralCoveragePassed"] is True
+    assert pending["processingCoveragePassed"] is False
+    assert pending["coveragePassed"] is False
+
+    for shard in shards:
+        shard["status"] = "completed"
+    completed = evidence_coverage_report(manifest, shards)
+    assert completed["completedShardCount"] == len(shards)
+    assert completed["processingCoveragePassed"] is True
+    assert completed["coveragePassed"] is True
+
+    shards[-1]["status"] = "failed"
+    failed = evidence_coverage_report(manifest, shards)
+    assert failed["failedShardCount"] == 1
+    assert failed["processingCoveragePassed"] is False
+    assert failed["coveragePassed"] is False
 
 
 def test_oversized_fragment_text_is_split_with_reconstructable_character_ranges() -> None:

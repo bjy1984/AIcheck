@@ -510,6 +510,139 @@ def build_evidence_shards(
     return shards
 
 
+_SHARD_ARTIFACT_COLLECTIONS = {
+    "field": "fields",
+    "table": "tables",
+    "seal": "seals",
+    "fragment": "fragments",
+    "evidenceLink": "evidenceLinks",
+}
+
+
+def _text_values(value: Any) -> list[str]:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return [normalized] if normalized else []
+    if isinstance(value, dict):
+        values: list[str] = []
+        for nested in value.values():
+            values.extend(_text_values(nested))
+        return values
+    if isinstance(value, list):
+        values = []
+        for nested in value:
+            values.extend(_text_values(nested))
+        return values
+    return []
+
+
+def _has_locatable_shard_evidence(item: dict[str, Any]) -> bool:
+    try:
+        page_no = int(item.get("pageNo") or item.get("page") or 0)
+    except (TypeError, ValueError):
+        page_no = 0
+    bbox = item.get("bbox")
+    return page_no > 0 and isinstance(bbox, list) and len(bbox) == 4
+
+
+def grounding_input_for_evidence_shard(shard: dict[str, Any]) -> dict[str, Any]:
+    """Project one immutable shard into the normal grounded-review contract.
+
+    The projection consumes only persisted ``payloadSlice`` values. It never
+    rereads a whole OCR result, so a physical model call cannot silently regain
+    sibling-shard content and exceed the partition boundary.
+    """
+
+    collections: dict[str, list[dict[str, Any]]] = {
+        collection: [] for collection in _SHARD_ARTIFACT_COLLECTIONS.values()
+    }
+    document_version_ids: set[str] = set()
+    segment_ids: list[str] = []
+    evidence_texts: list[str] = []
+    locatable_count = 0
+    for segment in shard.get("artifactSegments") or []:
+        if not isinstance(segment, dict):
+            continue
+        artifact_type = str(segment.get("artifactType") or "")
+        collection = _SHARD_ARTIFACT_COLLECTIONS.get(artifact_type)
+        if not collection:
+            continue
+        payload = (
+            deepcopy(segment.get("payloadSlice"))
+            if isinstance(segment.get("payloadSlice"), dict)
+            else {}
+        )
+        document_version_id = str(segment.get("documentVersionId") or "")
+        lineage = {
+            "artifactId": segment.get("artifactId"),
+            "artifactSegmentId": segment.get("artifactSegmentId"),
+            "documentVersionId": document_version_id or payload.get("documentVersionId"),
+            "sourceId": segment.get("sourceId"),
+            "segmentIndex": int(segment.get("segmentIndex") or 0),
+            "segmentCount": int(segment.get("segmentCount") or 1),
+            "segmentKind": segment.get("segmentKind") or "complete",
+        }
+        projected = {**payload, **lineage}
+        # Evidence-link IDs are part of the grounding contract. Preserve the
+        # OCR record's real ID and only fall back to its stable source ID.
+        if artifact_type == "evidenceLink" and not projected.get("id"):
+            projected["id"] = segment.get("sourceId")
+        collections[collection].append(projected)
+        if document_version_id:
+            document_version_ids.add(document_version_id)
+        if segment.get("artifactSegmentId"):
+            segment_ids.append(str(segment["artifactSegmentId"]))
+        evidence_texts.extend(_text_values(payload))
+        if _has_locatable_shard_evidence(projected):
+            locatable_count += 1
+
+    evidence_texts = list(dict.fromkeys(evidence_texts))
+    evidence_count = sum(len(rows) for rows in collections.values())
+    grounding_status = (
+        "grounded"
+        if evidence_texts and (locatable_count > 0 or bool(collections["evidenceLinks"]))
+        else "insufficient_evidence"
+    )
+    summary = {
+        "fieldCount": len(collections["fields"]),
+        "tableCount": len(collections["tables"]),
+        "sealCount": len(collections["seals"]),
+        "fragmentCount": len(collections["fragments"]),
+        "evidenceLinkCount": len(collections["evidenceLinks"]),
+        "artifactSegmentCount": evidence_count,
+        "groundingStatus": grounding_status,
+    }
+    blocking_issues = []
+    if grounding_status != "grounded":
+        blocking_issues.append(
+            {
+                "code": "SHARD_EVIDENCE_NOT_LOCATABLE",
+                "message": "The evidence shard has no locatable OCR evidence.",
+            }
+        )
+    return {
+        "schemaVersion": "EvidenceGroundedReviewInput@1.0.0",
+        "evidenceShardId": shard.get("evidenceShardId") or shard.get("id"),
+        "evidenceSnapshotId": shard.get("evidenceSnapshotId"),
+        "evidenceManifestId": shard.get("evidenceManifestId"),
+        "projectId": shard.get("projectId"),
+        "nodeId": shard.get("nodeId"),
+        "documentVersionIds": sorted(document_version_ids),
+        "artifactSegmentIds": segment_ids,
+        "groundingStatus": grounding_status,
+        "blockingIssues": blocking_issues,
+        **collections,
+        "quality": [],
+        "evidenceTextCorpus": evidence_texts,
+        "summary": summary,
+        "reviewWarnings": [
+            "当前证据分片缺少可定位的页码/bbox，模型输出必须降级为人工确认。"
+        ]
+        if blocking_issues
+        else [],
+    }
+
+
 def _duplicate_values(values: list[tuple[str, int]]) -> list[str]:
     seen: set[tuple[str, int]] = set()
     duplicates: set[str] = set()
@@ -567,20 +700,29 @@ def evidence_coverage_report(
         else:
             complete_ids.append(artifact_id)
 
-    coverage_passed = not any(
+    structural_coverage_passed = not any(
         [missing_ids, unexpected_ids, incomplete_ids, duplicate_ids]
     ) and len(complete_ids) == len(expected_ids)
+    completed_shard_count = sum(
+        str(row.get("status")) == "completed" for row in shards
+    )
+    failed_shard_count = sum(str(row.get("status")) == "failed" for row in shards)
+    processing_coverage_passed = bool(shards) and (
+        completed_shard_count == len(shards) and failed_shard_count == 0
+    )
     return {
         "expectedShardCount": len(shards),
-        "completedShardCount": sum(str(row.get("status")) == "completed" for row in shards),
-        "failedShardCount": sum(str(row.get("status")) == "failed" for row in shards),
+        "completedShardCount": completed_shard_count,
+        "failedShardCount": failed_shard_count,
         "expectedArtifactCount": len(expected_ids),
         "processedArtifactCount": len(complete_ids),
         "missingArtifactIds": missing_ids,
         "unexpectedArtifactIds": unexpected_ids,
         "incompleteArtifactIds": sorted(incomplete_ids),
         "duplicateArtifactIds": duplicate_ids,
-        "coveragePassed": coverage_passed,
+        "structuralCoveragePassed": structural_coverage_passed,
+        "processingCoveragePassed": processing_coverage_passed,
+        "coveragePassed": structural_coverage_passed and processing_coverage_passed,
     }
 
 

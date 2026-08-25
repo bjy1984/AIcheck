@@ -278,9 +278,10 @@ def export_project_review_package(
         "nodes": node_entries,
     }
     project_manifest["packageHash"] = _json_hash(project_manifest)
-    project_manifest["coveragePassed"] = all(
-        row["coverage"]["coveragePassed"] for row in node_entries
+    project_manifest["packageCoveragePassed"] = all(
+        row["coverage"]["structuralCoveragePassed"] for row in node_entries
     )
+    project_manifest["coveragePassed"] = False
     (package_root / "manifest.json").write_text(
         json.dumps(project_manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -295,6 +296,7 @@ def export_project_review_package(
         "projectCode": project_code,
         "projectId": metadata["projectId"],
         "includedNodeCount": len(node_entries),
+        "packageCoveragePassed": project_manifest["packageCoveragePassed"],
         "coveragePassed": project_manifest["coveragePassed"],
         "manifestPath": str(package_root / "manifest.json"),
     }

@@ -44,7 +44,8 @@ def test_exported_test_package_contains_complete_design_license_ocr(tmp_path: Pa
     assert "TS1844171-2028" in payload
     assert "工业管道(GC1)" in payload
     assert "GC1级覆盖GC2级" in payload
-    assert result["coveragePassed"] is True
+    assert result["packageCoveragePassed"] is True
+    assert result["coveragePassed"] is False
 
 
 def test_exported_packages_cover_every_linked_node_and_artifact(tmp_path: Path) -> None:
@@ -65,13 +66,19 @@ def test_exported_packages_cover_every_linked_node_and_artifact(tmp_path: Path) 
 
     assert test_result["includedNodeCount"] == 42
     assert test2_result["includedNodeCount"] == 42
-    assert test_result["coveragePassed"] is True
-    assert test2_result["coveragePassed"] is True
+    assert test_result["packageCoveragePassed"] is True
+    assert test2_result["packageCoveragePassed"] is True
+    assert test_result["coveragePassed"] is False
+    assert test2_result["coveragePassed"] is False
     for code, result in (("test", test_result), ("test2", test2_result)):
         manifest_path = tmp_path / "evidence_shards" / code / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert len(manifest["nodes"]) == result["includedNodeCount"]
-        assert all(node["coverage"]["coveragePassed"] for node in manifest["nodes"])
+        assert all(
+            node["coverage"]["structuralCoveragePassed"]
+            for node in manifest["nodes"]
+        )
+        assert not any(node["coverage"]["coveragePassed"] for node in manifest["nodes"])
         assert all(node["coverage"]["missingArtifactIds"] == [] for node in manifest["nodes"])
 
 

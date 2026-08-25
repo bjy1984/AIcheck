@@ -143,7 +143,9 @@ def test_later_upload_review_run_uses_all_current_node_documents(monkeypatch) ->
     assert second["inputDocumentVersionIds"] == sorted([license_version, drawing_version])
     assert second["evidenceManifestId"]
     assert second["evidenceShardIds"]
-    assert second["evidenceCoverage"]["coveragePassed"] is True
+    assert second["evidenceCoverage"]["structuralCoveragePassed"] is True
+    assert second["evidenceCoverage"]["processingCoveragePassed"] is False
+    assert second["evidenceCoverage"]["coveragePassed"] is False
 
 
 def test_review_run_copies_and_flushes_the_persisted_evidence_package(monkeypatch) -> None:
