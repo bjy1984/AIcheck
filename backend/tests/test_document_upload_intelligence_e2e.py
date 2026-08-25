@@ -267,8 +267,8 @@ def test_ordinary_upload_classifies_and_targets_expected_node(
 
 def test_classified_ordinary_upload_can_submit_automatic_binding(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "disabled")
-    file_name, material_type, node_id, headers, evidence = CASES[0]
-    document, version = _upload(file_name, headers, "e2e-submit")
+    file_name, material_type, node_id, upload_headers, evidence = CASES[0]
+    document, version = _upload(file_name, upload_headers, "e2e-submit")
     _apply_ocr_slice_and_vectorize(
         monkeypatch,
         document,
@@ -280,11 +280,22 @@ def test_classified_ordinary_upload_can_submit_automatic_binding(monkeypatch: py
         for item in repo.state["bindings"]
         if item.get("documentVersionId") == version["id"] and int(item.get("nodeId") or 0) == node_id
     )
+    member = next(
+        item
+        for item in repo.state["project_members"]
+        if item.get("projectId") == PROJECT_ID
+        and item.get("userId") == "USER-CONTRACTOR-001"
+        and item.get("role") == "contractor"
+    )
+    member["nodeScope"] = sorted(
+        set(member.get("nodeScope") or [])
+        | set(routes_module.document_node_ids(PROJECT_ID, document["id"]))
+    )
 
     submitted = _ok(
         client.post(
             f"/api/projects/{PROJECT_ID}/submissions",
-            headers={**headers, "Idempotency-Key": "e2e-auto-binding-submit", "If-Match": "*"},
+            headers={**upload_headers, "Idempotency-Key": "e2e-auto-binding-submit", "If-Match": "*"},
             json={"nodeIds": [node_id], "bindingIds": [binding["id"]], "batchName": "自动打靶提交"},
         ),
         "submit",
