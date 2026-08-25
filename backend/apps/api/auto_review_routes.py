@@ -15,6 +15,7 @@ from apps.api.routes import (
 )
 from libs.auto_review import (
     active_mounted_node_ids,
+    build_project_review_summary,
     create_project_review_run,
     default_auto_review_policy,
     dispatch_project_review_run,
@@ -139,6 +140,75 @@ def get_auto_review_status(request: Request, project_id: str):
             "runningProjectRunCount": sum(row.get("status") == "running" for row in project_runs),
             "failedProjectRunCount": sum(row.get("status") in {"failed", "partial"} for row in project_runs),
             "latestProjectRun": project_runs[0] if project_runs else None,
+        },
+        request,
+    )
+
+
+@auto_review_router.get(
+    "/projects/{project_id}/inspection/project-review-runs"
+)
+def list_project_review_runs(request: Request, project_id: str):
+    error = _authorize(request, project_id, write=False)
+    if error:
+        return error
+    tenant_id = request_tenant_id(request)
+    rows = [
+        row
+        for row in repo.state.get("project_review_runs") or []
+        if isinstance(row, dict)
+        and str(row.get("tenantId") or "") == tenant_id
+        and str(row.get("projectId") or "") == str(project_id)
+    ]
+    rows.sort(
+        key=lambda row: str(
+            row.get("createdAt") or row.get("startedAt") or row.get("id") or ""
+        ),
+        reverse=True,
+    )
+    return ok(
+        {
+            "projectReviewRuns": [
+                {
+                    **repo.clone(row),
+                    "summary": build_project_review_summary(repo.state, row),
+                }
+                for row in rows
+            ],
+            "total": len(rows),
+        },
+        request,
+    )
+
+
+@auto_review_router.get(
+    "/projects/{project_id}/inspection/project-review-runs/{project_review_run_id}"
+)
+def get_project_review_run(
+    request: Request, project_id: str, project_review_run_id: str
+):
+    error = _authorize(request, project_id, write=False)
+    if error:
+        return error
+    tenant_id = request_tenant_id(request)
+    project_run = next(
+        (
+            row
+            for row in repo.state.get("project_review_runs") or []
+            if isinstance(row, dict)
+            and str(row.get("tenantId") or "") == tenant_id
+            and str(row.get("projectId") or "") == str(project_id)
+            and str(row.get("projectReviewRunId") or row.get("id") or "")
+            == str(project_review_run_id)
+        ),
+        None,
+    )
+    if not project_run:
+        return fail(errors.NOT_FOUND, request)
+    return ok(
+        {
+            "projectReviewRun": repo.clone(project_run),
+            "summary": build_project_review_summary(repo.state, project_run),
         },
         request,
     )

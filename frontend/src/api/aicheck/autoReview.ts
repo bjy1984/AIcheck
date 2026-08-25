@@ -24,6 +24,45 @@ export type AutoReviewStatus = {
   latestProjectRun?: Record<string, unknown> | null
 }
 
+export type ProjectReviewNodeSummary = {
+  nodeId: number
+  reviewRunId: string
+  status: string
+  findingCount: number
+  highestSeverity?: 'low' | 'medium' | 'high' | 'critical' | null
+  evidenceSnapshotId?: string | null
+  evidenceManifestId?: string | null
+  sourceEvidenceShardIds: string[]
+  sourceModelAttemptIds: string[]
+  evidenceCoverage: Record<string, unknown>
+  failedEvidenceShardIds: string[]
+  errorCode?: string | null
+}
+
+export type ProjectReviewSummary = {
+  schemaVersion: 'ProjectReviewSummary@1.0.0'
+  projectReviewRunId: string
+  projectId: string
+  triggerType?: string
+  status: string
+  nodeSummaries: ProjectReviewNodeSummary[]
+  commonRisks: string[]
+  priorityReviewNodeIds: number[]
+  completion: {
+    expectedNodeCount: number
+    completedNodeCount: number
+    failedNodeCount: number
+    pendingNodeCount: number
+  }
+}
+
+export type ProjectReviewRun = Record<string, unknown> & {
+  projectReviewRunId: string
+  projectId: string
+  status: string
+  summary?: ProjectReviewSummary
+}
+
 export type AutoReviewPolicyInput = Pick<
   AutoReviewPolicy,
   'enabled' | 'triggerModes' | 'dailyTime' | 'timezone' | 'debounceSeconds'
@@ -69,6 +108,19 @@ export const createAutoReviewApi = (adapter: RequestAdapter, mutationHeaders: He
 
   getProjectAutoReviewStatusApi: (projectId: string): Promise<IResponse<AutoReviewStatus>> =>
     adapter.get({ url: `/api/projects/${projectId}/inspection/auto-review-status` }),
+
+  listProjectReviewRunsApi: (
+    projectId: string
+  ): Promise<IResponse<{ projectReviewRuns: ProjectReviewRun[]; total: number }>> =>
+    adapter.get({ url: `/api/projects/${projectId}/inspection/project-review-runs` }),
+
+  getProjectReviewRunApi: (
+    projectId: string,
+    projectReviewRunId: string
+  ): Promise<IResponse<{ projectReviewRun: ProjectReviewRun; summary: ProjectReviewSummary }>> =>
+    adapter.get({
+      url: `/api/projects/${projectId}/inspection/project-review-runs/${projectReviewRunId}`
+    }),
 
   runProjectAutoReviewApi: (
     projectId: string,

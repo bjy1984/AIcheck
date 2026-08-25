@@ -399,6 +399,157 @@ def finalize_project_review_run(
     return project_run
 
 
+_SEVERITY_RANK = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+
+def _highest_finding_severity(findings: list[dict[str, Any]]) -> str | None:
+    severities = [
+        str(row.get("severity") or "").lower()
+        for row in findings
+        if isinstance(row, dict)
+        and str(row.get("severity") or "").lower() in _SEVERITY_RANK
+    ]
+    return max(severities, key=lambda value: _SEVERITY_RANK[value]) if severities else None
+
+
+def build_project_review_summary(
+    state: dict[str, Any], project_run: dict[str, Any]
+) -> dict[str, Any]:
+    child_ids = [
+        str(item) for item in project_run.get("childReviewRunIds") or [] if item
+    ]
+    child_map = {
+        str(row.get("reviewRunId") or row.get("id") or ""): row
+        for row in state.get("review_runs") or []
+        if isinstance(row, dict)
+        and str(row.get("reviewRunId") or row.get("id") or "") in child_ids
+    }
+    node_summaries: list[dict[str, Any]] = []
+    completed_node_ids: list[int] = []
+    failed_node_ids = {
+        int(item) for item in project_run.get("failedNodeIds") or [] if int(item) > 0
+    }
+    common_risks: list[str] = []
+    priority_node_ids: set[int] = set()
+    for child_id in child_ids:
+        child = child_map.get(child_id)
+        if not child:
+            continue
+        node_id = int(child.get("nodeId") or 0)
+        status = str(child.get("status") or "")
+        findings = [
+            row
+            for row in child.get("findingDrafts") or []
+            if isinstance(row, dict)
+        ]
+        highest_severity = _highest_finding_severity(findings)
+        if status in SUCCESSFUL_NODE_REVIEW_STATUSES and node_id > 0:
+            completed_node_ids.append(node_id)
+        if status in {
+            "failed",
+            "failed_to_start",
+            "cancelled",
+            "review_incomplete",
+            "失败",
+        } and node_id > 0:
+            failed_node_ids.add(node_id)
+        source_model_attempt_ids = sorted(
+            {
+                str(attempt_id)
+                for finding in findings
+                for attempt_id in finding.get("sourceModelAttemptIds") or []
+                if attempt_id
+            }
+            | {
+                str(attempt_id)
+                for attempt_id in child.get("modelCallAttemptIds") or []
+                if attempt_id
+            }
+        )
+        for finding in findings:
+            severity = str(finding.get("severity") or "").lower()
+            title = str(finding.get("title") or "").strip()
+            if severity in {"high", "critical"} and title and title not in common_risks:
+                common_risks.append(title)
+        if node_id > 0 and (
+            highest_severity in {"high", "critical"}
+            or status
+            in {
+                "failed",
+                "failed_to_start",
+                "review_incomplete",
+                "失败",
+            }
+        ):
+            priority_node_ids.add(node_id)
+        node_summaries.append(
+            {
+                "nodeId": node_id,
+                "reviewRunId": child_id,
+                "status": status,
+                "findingCount": len(findings),
+                "highestSeverity": highest_severity,
+                "evidenceSnapshotId": child.get("evidenceSnapshotId"),
+                "evidenceSnapshotHash": child.get("evidenceSnapshotHash"),
+                "evidenceManifestId": child.get("evidenceManifestId"),
+                "sourceEvidenceShardIds": sorted(
+                    {
+                        str(item)
+                        for item in child.get("evidenceShardIds") or []
+                        if item
+                    }
+                    | {
+                        str(item)
+                        for finding in findings
+                        for item in finding.get("sourceEvidenceShardIds") or []
+                        if item
+                    }
+                ),
+                "sourceModelAttemptIds": source_model_attempt_ids,
+                "evidenceCoverage": json.loads(
+                    json.dumps(child.get("evidenceCoverage") or {}, default=str)
+                ),
+                "failedEvidenceShardIds": sorted(
+                    {
+                        str(item)
+                        for item in child.get("failedEvidenceShardIds") or []
+                        if item
+                    }
+                ),
+                "errorCode": child.get("errorCode"),
+            }
+        )
+
+    expected_node_ids = {
+        int(item) for item in project_run.get("expectedNodeIds") or [] if int(item) > 0
+    }
+    completed = set(completed_node_ids)
+    failed = failed_node_ids
+    pending = expected_node_ids - completed - failed
+    return {
+        "schemaVersion": "ProjectReviewSummary@1.0.0",
+        "projectReviewRunId": project_run.get("projectReviewRunId")
+        or project_run.get("id"),
+        "projectId": project_run.get("projectId"),
+        "triggerType": project_run.get("triggerType"),
+        "status": project_run.get("status"),
+        "nodeSummaries": node_summaries,
+        "commonRisks": common_risks,
+        "priorityReviewNodeIds": sorted(priority_node_ids),
+        "completion": {
+            "expectedNodeCount": len(expected_node_ids),
+            "completedNodeCount": len(completed),
+            "failedNodeCount": len(failed),
+            "pendingNodeCount": len(pending),
+        },
+    }
+
+
 def enqueue_auto_review_evidence_event(
     state: dict[str, Any],
     *,

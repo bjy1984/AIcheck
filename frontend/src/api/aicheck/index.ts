@@ -5,7 +5,10 @@ export type {
   AutoReviewPolicy,
   AutoReviewPolicyInput,
   AutoReviewStatus,
-  AutoReviewTriggerMode
+  AutoReviewTriggerMode,
+  ProjectReviewNodeSummary,
+  ProjectReviewRun,
+  ProjectReviewSummary
 } from './autoReview'
 import type {
   ActionCode,
@@ -4062,6 +4065,8 @@ export const {
   getProjectAutoReviewPolicyApi,
   updateProjectAutoReviewPolicyApi,
   getProjectAutoReviewStatusApi,
+  listProjectReviewRunsApi,
+  getProjectReviewRunApi,
   runProjectAutoReviewApi
 } = autoReviewApi
 
