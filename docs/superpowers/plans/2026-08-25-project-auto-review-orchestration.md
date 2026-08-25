@@ -31,7 +31,7 @@
 - Test: `backend/tests/test_auto_review_policy.py`
 
 **Interfaces:**
-- Produces `default_auto_review_policy(project_id, tenant_id)`, `validate_auto_review_policy(payload, existing)`, `auto_review_candidate_key(...)`, and `upsert_auto_review_candidate(state, ...)`.
+- Produces `default_auto_review_policy(project_id: str, tenant_id: str) -> dict[str, Any]`, `validate_auto_review_policy(payload: dict[str, Any], existing: dict[str, Any]) -> dict[str, Any]`, `auto_review_candidate_key(tenant_id: str, project_id: str, node_id: int, evidence_snapshot_hash: str, policy_revision: int) -> str`, and `upsert_auto_review_candidate(state: dict[str, Any], *, tenant_id: str, project_id: str, node_id: int, evidence_snapshot_hash: str, policy_revision: int, trigger_type: str) -> tuple[dict[str, Any], bool]`.
 
 - [ ] Write failing tests for project isolation, realtime/daily/both modes, HH:MM/timezone validation, revision increments, disabled policy behavior, and duplicate candidate keys.
 - [ ] Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_auto_review_policy.py` and verify RED.
@@ -76,7 +76,7 @@ def validate_auto_review_policy(payload, existing):
 - [ ] Register `auto_review_router` with and without `/api` prefix in `apps/api/main.py`.
 - [ ] Implement GET/PUT using existing `mutation_guard`, `idempotent`, project visibility, and `versioned_record` patterns; PUT persists one record per tenant/project.
 - [ ] Implement status counts from pending candidates and project runs.
-- [ ] Implement manual run by calling `create_project_review_run(..., trigger_type="manual_full")` for every node with active mounted evidence.
+- [ ] Implement manual run by calling `create_project_review_run(repo.state, tenant_id=request_tenant_id(request), project_id=project_id, trigger_type="manual_full", policy=policy, node_ids=active_mounted_node_ids(repo.state, project_id))`.
 - [ ] Run tests and verify GREEN.
 - [ ] Commit with `git commit -m "feat: expose project auto review controls"`.
 
