@@ -135,3 +135,45 @@ def test_celery_registers_auto_review_beat_and_business_light_routes() -> None:
     assert routes["apps.worker.tasks.auto_review_scan_due_projects"]["queue"] == "business.light"
     assert beat["auto-review-consume-evidence-events"]["schedule"] == 60.0
     assert beat["auto-review-scan-due-projects"]["schedule"] == 60.0
+
+
+def test_pending_candidates_start_one_parent_with_node_children() -> None:
+    from libs.auto_review import dispatch_pending_auto_review_candidates
+
+    state = _state_with_node()
+    state["auto_review_candidates"] = [
+        {
+            "id": "ARC-1",
+            "tenantId": "TENANT-1",
+            "projectId": "P-1",
+            "nodeId": 1,
+            "policyRevision": 2,
+            "status": "pending",
+        }
+    ]
+    calls: list[tuple[str, int, dict]] = []
+
+    def start_node(project_id: str, node_id: int, metadata: dict) -> dict:
+        calls.append((project_id, node_id, metadata))
+        return {"aiRunId": "AIRUN-1", "reviewRunId": "RRUN-1", "status": "queued"}
+
+    result = dispatch_pending_auto_review_candidates(
+        state,
+        start_node_review=start_node,
+    )
+
+    assert len(result["projectReviewRunIds"]) == 1
+    assert calls[0][0:2] == ("P-1", 1)
+    assert calls[0][2]["triggerType"] == "ocr_mounted"
+    assert state["auto_review_candidates"][0]["status"] == "dispatched"
+    assert state["auto_review_candidates"][0]["projectReviewRunId"] == result["projectReviewRunIds"][0]
+
+
+def test_celery_registers_pending_candidate_starter() -> None:
+    from apps.worker.celery_app import celery_app
+
+    routes = dict(celery_app.conf.task_routes)
+    beat = dict(celery_app.conf.beat_schedule)
+
+    assert routes["apps.worker.tasks.auto_review_start_pending_candidates"]["queue"] == "business.light"
+    assert beat["auto-review-start-pending-candidates"]["schedule"] == 60.0

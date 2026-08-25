@@ -551,3 +551,76 @@ def consume_auto_review_evidence_events(
         "skippedEventIds": skipped_event_ids,
         "createdCandidateIds": created_candidate_ids,
     }
+
+
+def dispatch_pending_auto_review_candidates(
+    state: dict[str, Any],
+    *,
+    start_node_review,
+    limit: int = 100,
+) -> dict[str, Any]:
+    pending = [
+        row
+        for row in state.get("auto_review_candidates") or []
+        if isinstance(row, dict) and str(row.get("status") or "") == "pending"
+    ][: max(1, min(int(limit), 500))]
+    groups: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
+    for candidate in pending:
+        key = (
+            str(candidate.get("tenantId") or ""),
+            str(candidate.get("projectId") or ""),
+            int(candidate.get("policyRevision") or 1),
+        )
+        groups.setdefault(key, []).append(candidate)
+
+    project_run_ids: list[str] = []
+    skipped_candidate_ids: list[str] = []
+    for (tenant_id, project_id, policy_revision), candidates in groups.items():
+        policy = next(
+            (
+                row
+                for row in state.get("auto_review_policies") or []
+                if isinstance(row, dict)
+                and str(row.get("tenantId") or "") == tenant_id
+                and str(row.get("projectId") or "") == project_id
+            ),
+            None,
+        )
+        if not policy or policy.get("enabled") is not True:
+            for candidate in candidates:
+                candidate["status"] = "skipped"
+                candidate["skipReason"] = "policy_disabled"
+                candidate["updatedAt"] = server_time()
+                skipped_candidate_ids.append(str(candidate.get("id") or ""))
+            continue
+        trigger_types = {
+            str(candidate.get("triggerType") or "ocr_mounted")
+            for candidate in candidates
+        }
+        trigger_type = next(iter(trigger_types)) if len(trigger_types) == 1 else "mixed"
+        parent = create_project_review_run(
+            state,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            trigger_type=trigger_type,
+            policy={**policy, "revision": policy_revision},
+            node_ids=[int(candidate.get("nodeId") or 0) for candidate in candidates],
+        )
+        dispatch_project_review_run(
+            state,
+            parent,
+            start_node_review=start_node_review,
+        )
+        failed_nodes = {int(item) for item in parent.get("failedNodeIds") or []}
+        for candidate in candidates:
+            candidate["projectReviewRunId"] = parent["projectReviewRunId"]
+            candidate["status"] = (
+                "failed" if int(candidate.get("nodeId") or 0) in failed_nodes else "dispatched"
+            )
+            candidate["dispatchedAt"] = server_time()
+            candidate["updatedAt"] = candidate["dispatchedAt"]
+        project_run_ids.append(str(parent["projectReviewRunId"]))
+    return {
+        "projectReviewRunIds": project_run_ids,
+        "skippedCandidateIds": skipped_candidate_ids,
+    }

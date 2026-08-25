@@ -21,6 +21,7 @@ from libs.aliyun_ocr import AliyunOcrError, AliyunOcrRetryableError
 from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
 from libs.auto_review import (
     consume_auto_review_evidence_events as consume_auto_review_events,
+    dispatch_pending_auto_review_candidates,
     scan_due_auto_review_policies as scan_due_auto_review_projects,
 )
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
@@ -4824,4 +4825,75 @@ def auto_review_scan_due_projects(self) -> dict[str, Any]:
             "auto_review_candidates",
         }
     )
+    return result
+
+
+def _start_auto_review_node(project_id: str, node_id: int, metadata: dict[str, Any]) -> dict[str, Any]:
+    from starlette.requests import Request
+
+    from apps.api.routes import ai_recheck
+
+    inspection_member = next(
+        (
+            row
+            for row in repo.state.get("project_members") or []
+            if str(row.get("projectId") or "") == str(project_id)
+            and str(row.get("role") or "") == "inspection"
+        ),
+        {},
+    )
+    user_id = str(inspection_member.get("userId") or "AUTO-REVIEW-SYSTEM")
+    headers = [
+        (b"x-role", b"inspection"),
+        (b"x-user-id", user_id.encode("utf-8")),
+        (b"x-action-code", b"ai:recheck"),
+    ]
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": f"/internal/projects/{project_id}/inspection/nodes/{node_id}/ai-recheck",
+            "raw_path": b"",
+            "query_string": b"",
+            "headers": headers,
+            "client": ("auto-review-worker", 0),
+            "server": ("auto-review-worker", 80),
+        }
+    )
+    request.state.operation_id = f"OP-AUTO-{uuid4().hex[:12].upper()}"
+    response = ai_recheck(
+        request,
+        project_id,
+        int(node_id),
+        {
+            "reviewMode": "gap_precheck",
+            "projectReviewRunId": metadata["projectReviewRunId"],
+            "triggerType": metadata["triggerType"],
+            "autoReviewPolicyRevision": metadata["autoReviewPolicyRevision"],
+        },
+        None,
+        "inspection",
+    )
+    payload = json.loads(response.body) if hasattr(response, "body") else response
+    if not isinstance(payload, dict) or int(payload.get("code") or 0) != 0:
+        raise RuntimeError(str((payload or {}).get("message") or "auto review node start failed"))
+    data = payload.get("data") or {}
+    latest = data.get("latestRun") or {}
+    return {
+        "aiRunId": latest.get("id") or data.get("runId"),
+        "reviewRunId": latest.get("reviewRunId") or (data.get("dispatch") or {}).get("reviewRunId"),
+        "status": latest.get("status"),
+    }
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def auto_review_start_pending_candidates(self) -> dict[str, Any]:
+    load_state()
+    result = dispatch_pending_auto_review_candidates(
+        repo.state,
+        start_node_review=_start_auto_review_node,
+    )
+    flush_state()
     return result
