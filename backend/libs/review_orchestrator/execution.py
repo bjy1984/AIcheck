@@ -46,7 +46,11 @@ from libs.review_grounding import (
     build_grounded_review_input,
     grounding_prompt_block,
 )
-from libs.review_evidence import bind_evidence_package_to_review_run
+from libs.review_evidence import (
+    bind_evidence_package_to_review_run,
+    evidence_coverage_report,
+    grounding_input_for_evidence_shard,
+)
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
@@ -98,6 +102,11 @@ from libs.review_orchestrator.rule_result_digest import (
     compact_rule_results,
     compact_tool_output,
 )
+from libs.review_orchestrator.shard_execution import (
+    EvidenceShardProcessingIncomplete,
+    aggregate_shard_findings,
+    review_run_evidence_package,
+)
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
@@ -126,6 +135,7 @@ REVIEW_STATE_COLLECTIONS = (
     "evidence_snapshots",
     "evidence_manifests",
     "evidence_shards",
+    "node_finding_aggregates",
     "review_step_runs",
     "review_graph_nodes",
     "review_tool_calls",
@@ -2113,6 +2123,39 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                 ai_run["stateTransition"] = repo.clone(transition)
         return {"reviewRunId": review_run_id, "status": review_run["status"]}
     except Exception as exc:
+        if isinstance(exc, EvidenceShardProcessingIncomplete):
+            review_run["status"] = "review_incomplete"
+            review_run["currentStep"] = "review_incomplete"
+            review_run["retryableFailure"] = True
+            review_run["errorCode"] = "EVIDENCE_SHARD_PROCESSING_INCOMPLETE"
+            review_run["errorMessage"] = str(exc)
+            review_run["failedEvidenceShardIds"] = repo.clone(
+                exc.failed_shard_ids
+            )
+            review_run["finishedAt"] = server_time()
+            bump_review_run_revision(review_run)
+            append_review_event(
+                review_run_id,
+                event_type="review_run.incomplete",
+                title="证据分片处理未完成",
+                status="review_incomplete",
+                details={
+                    "errorCode": "EVIDENCE_SHARD_PROCESSING_INCOMPLETE",
+                    "failedEvidenceShardIds": exc.failed_shard_ids,
+                    "retryable": True,
+                },
+            )
+            if ai_run:
+                ai_run["status"] = "审查未完成"
+                ai_run["errorCode"] = "EVIDENCE_SHARD_PROCESSING_INCOMPLETE"
+                ai_run["errorMessage"] = "部分证据分片处理失败，可仅重试未完成分片。"
+            return {
+                "reviewRunId": review_run_id,
+                "status": "review_incomplete",
+                "errorCode": "EVIDENCE_SHARD_PROCESSING_INCOMPLETE",
+                "failedEvidenceShardIds": exc.failed_shard_ids,
+                "retryable": True,
+            }
         retryable = review_failure_retryable(exc)
         # 只有 Temporal 编排下才有东西真的会来重试（apps/review_worker/activities.py
         # 是 retry_pending 的唯一消费方）。线上跑的是 inline 模式、根本没起
@@ -2898,7 +2941,12 @@ def document_version_labels(grounding_input: dict[str, Any]) -> dict[str, str]:
     return labels
 
 
-def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _generate_finding_drafts_once(
+    review_run: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    evidence_shard_id: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     mode = review_llm_execution_mode()
     if mode in {"deterministic", "disabled", "mock"}:
         prompt_shape = context.get("promptShape") or build_review_prompt_shape(review_run, context)
@@ -2927,6 +2975,8 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
     if estimated_cost > budget_policy["maxCostCny"]:
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="REVIEW_COST_BUDGET_EXCEEDED")
     logical_call_id = f"review:{review_run['reviewRunId']}:generate_findings"
+    if evidence_shard_id:
+        logical_call_id = f"{logical_call_id}:{evidence_shard_id}"
     previous_attempts = [
         item
         for item in repo.state.get("model_call_attempts", [])
@@ -2941,6 +2991,7 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
         "aiRunId": review_run.get("aiRunId"),
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),
+        "evidenceShardId": evidence_shard_id,
         "stage": "review_generate_findings",
         "callKind": "review_findings",
         "logicalCallId": logical_call_id,
@@ -3138,6 +3189,181 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
     flush_state_records({"model_call_attempts": [attempt]})
     review_run.setdefault("modelCallAttemptIds", []).append(attempt["id"])
     return drafts, llm_metadata
+
+
+def _replace_node_finding_aggregate(aggregate: dict[str, Any]) -> None:
+    rows = repo.state.setdefault("node_finding_aggregates", [])
+    rows[:] = [
+        row
+        for row in rows
+        if str(row.get("reviewRunId") or "")
+        != str(aggregate.get("reviewRunId") or "")
+    ]
+    rows.append(aggregate)
+
+
+def generate_finding_drafts(
+    review_run: dict[str, Any], context: dict[str, Any]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    manifest, shards = review_run_evidence_package(repo.state, review_run)
+    if not manifest or not shards:
+        return _generate_finding_drafts_once(review_run, context)
+
+    mode = review_llm_execution_mode()
+    shard_results: list[dict[str, Any]] = []
+    metadata_rows: list[dict[str, Any]] = []
+    if mode in {"deterministic", "disabled", "mock"}:
+        for shard in shards:
+            grounding_input = grounding_input_for_evidence_shard(shard)
+            shard.update(
+                {
+                    "status": "completed",
+                    "processingMode": mode,
+                    "processedInputHash": stable_hash_payload(grounding_input),
+                    "modelAttemptIds": [],
+                    "startedAt": shard.get("startedAt") or server_time(),
+                    "completedAt": server_time(),
+                    "updatedAt": server_time(),
+                }
+            )
+        drafts, metadata = _generate_finding_drafts_once(review_run, context)
+        shard_results.append(
+            {
+                "evidenceShardId": None,
+                "sourceEvidenceShardIds": [
+                    str(shard.get("evidenceShardId") or shard.get("id") or "")
+                    for shard in shards
+                ],
+                "modelAttemptIds": [],
+                "findingDrafts": drafts,
+            }
+        )
+    else:
+        failed_shard_ids: list[str] = []
+        for shard in shards:
+            shard_id = str(shard.get("evidenceShardId") or shard.get("id") or "")
+            if str(shard.get("status") or "") == "completed" and isinstance(
+                shard.get("findingDrafts"), list
+            ):
+                shard_results.append(
+                    {
+                        "evidenceShardId": shard_id,
+                        "modelAttemptIds": repo.clone(
+                            shard.get("modelAttemptIds") or []
+                        ),
+                        "findingDrafts": repo.clone(shard.get("findingDrafts") or []),
+                    }
+                )
+                continue
+            shard_context = repo.clone(context)
+            shard_context.pop("promptShape", None)
+            grounding_input = grounding_input_for_evidence_shard(shard)
+            grounding_input["reviewMode"] = review_run.get("reviewMode")
+            grounding_input["advisoryOnly"] = bool(review_run.get("advisoryOnly"))
+            shard_context["groundingInput"] = grounding_input
+            for key in ("fields", "tables", "seals", "fragments", "evidenceLinks"):
+                shard_context[key] = grounding_input.get(key) or []
+            prior_attempt_ids = set(review_run.get("modelCallAttemptIds") or [])
+            shard.update(
+                {
+                    "status": "running",
+                    "processingMode": mode,
+                    "processedInputHash": stable_hash_payload(grounding_input),
+                    "startedAt": shard.get("startedAt") or server_time(),
+                    "updatedAt": server_time(),
+                }
+            )
+            try:
+                drafts, metadata = _generate_finding_drafts_once(
+                    review_run,
+                    shard_context,
+                    evidence_shard_id=shard_id,
+                )
+            except Exception as exc:
+                attempt_ids = [
+                    str(row.get("id") or "")
+                    for row in repo.state.get("model_call_attempts") or []
+                    if isinstance(row, dict)
+                    and str(row.get("reviewRunId") or "")
+                    == str(review_run.get("reviewRunId") or "")
+                    and str(row.get("evidenceShardId") or "") == shard_id
+                ]
+                for attempt_id in attempt_ids:
+                    if attempt_id and attempt_id not in review_run.setdefault(
+                        "modelCallAttemptIds", []
+                    ):
+                        review_run["modelCallAttemptIds"].append(attempt_id)
+                failure_reason = (
+                    str(exc.reason)
+                    if isinstance(exc, IntegrationServiceError) and exc.reason
+                    else exc.__cause__.__class__.__name__
+                    if isinstance(exc, IntegrationServiceError)
+                    and exc.__cause__ is not None
+                    else exc.__class__.__name__
+                )
+                shard.update(
+                    {
+                        "status": "failed",
+                        "failureReason": failure_reason,
+                        "modelAttemptIds": attempt_ids,
+                        "failedAt": server_time(),
+                        "updatedAt": server_time(),
+                    }
+                )
+                failed_shard_ids.append(shard_id)
+                continue
+            attempt_ids = [
+                str(item)
+                for item in review_run.get("modelCallAttemptIds") or []
+                if str(item) not in prior_attempt_ids
+            ]
+            shard.update(
+                {
+                    "status": "completed",
+                    "modelAttemptIds": attempt_ids,
+                    "findingDrafts": repo.clone(drafts),
+                    "completedAt": server_time(),
+                    "updatedAt": server_time(),
+                }
+            )
+            shard_results.append(
+                {
+                    "evidenceShardId": shard_id,
+                    "modelAttemptIds": attempt_ids,
+                    "findingDrafts": drafts,
+                }
+            )
+            metadata_rows.append(metadata)
+
+    aggregate = aggregate_shard_findings(review_run, shard_results)
+    # Deterministic execution creates one node finding, but its lineage still
+    # spans every processed shard.
+    if mode in {"deterministic", "disabled", "mock"}:
+        aggregate["sourceEvidenceShardIds"] = sorted(
+            str(shard.get("evidenceShardId") or shard.get("id") or "")
+            for shard in shards
+        )
+        for finding in aggregate["findingDrafts"]:
+            finding["sourceEvidenceShardIds"] = repo.clone(
+                aggregate["sourceEvidenceShardIds"]
+            )
+    coverage = evidence_coverage_report(manifest, shards)
+    review_run["evidenceCoverage"] = coverage
+    review_run["nodeFindingAggregate"] = aggregate
+    _replace_node_finding_aggregate(aggregate)
+    combined_metadata = {
+        "llmExecution": mode,
+        "llmCalled": mode not in {"deterministic", "disabled", "mock"},
+        "processedShardCount": coverage["completedShardCount"],
+        "expectedShardCount": coverage["expectedShardCount"],
+        "coveragePassed": coverage["coveragePassed"],
+        "shardCalls": metadata_rows,
+        "sourceModelAttemptIds": aggregate["sourceModelAttemptIds"],
+    }
+    review_run["llmMetadata"] = repo.clone(combined_metadata)
+    if mode not in {"deterministic", "disabled", "mock"} and failed_shard_ids:
+        raise EvidenceShardProcessingIncomplete(failed_shard_ids)
+    return aggregate["findingDrafts"], combined_metadata
 
 
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:

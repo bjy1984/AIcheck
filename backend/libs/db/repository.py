@@ -98,6 +98,7 @@ STATE_COLLECTIONS = {
     "evidence_snapshots": "evidence_snapshots",
     "evidence_manifests": "evidence_manifests",
     "evidence_shards": "evidence_shards",
+    "node_finding_aggregates": "node_finding_aggregates",
     "auto_review_policies": "auto_review_policies",
     "auto_review_candidates": "auto_review_candidates",
     "project_review_runs": "project_review_runs",
@@ -305,6 +306,7 @@ class InMemoryRepository:
         self.state.setdefault("evidence_snapshots", [])
         self.state.setdefault("evidence_manifests", [])
         self.state.setdefault("evidence_shards", [])
+        self.state.setdefault("node_finding_aggregates", [])
         self.state.setdefault("auto_review_policies", [])
         self.state.setdefault("auto_review_candidates", [])
         self.state.setdefault("project_review_runs", [])
@@ -3613,6 +3615,7 @@ class InMemoryRepository:
         loaded.setdefault("evidence_snapshots", [])
         loaded.setdefault("evidence_manifests", [])
         loaded.setdefault("evidence_shards", [])
+        loaded.setdefault("node_finding_aggregates", [])
         loaded.setdefault("auto_review_policies", [])
         loaded.setdefault("auto_review_candidates", [])
         loaded.setdefault("project_review_runs", [])
@@ -6417,6 +6420,7 @@ def load_review_run_state(review_run_id: str) -> None:
             "evidence_snapshots",
             "evidence_manifests",
             "evidence_shards",
+            "node_finding_aggregates",
             "tree_nodes",
             "node_evidence_links",
             "documents",
