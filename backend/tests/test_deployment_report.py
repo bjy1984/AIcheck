@@ -16,6 +16,7 @@ from scripts.deployment_report import (
     DeploymentReportBuilder,
     backend_action_coverage_check,
     backend_mutation_idempotency_check,
+    auto_review_orchestration_contract_check,
     backup_recoverability_contract_section,
     called_function_names,
     export_artifact_contract_check,
@@ -386,6 +387,17 @@ def test_lossless_evidence_gate_passes_complete_manifests_and_runs() -> None:
 
     assert check["status"] == "pass"
     assert check["data"]["gateStatus"] == "passed"
+
+
+def test_auto_review_orchestration_contract_covers_routes_state_tasks_and_beat() -> None:
+    check = auto_review_orchestration_contract_check()
+
+    assert check["status"] == "pass"
+    assert check["data"]["routeFailures"] == []
+    assert check["data"]["collectionFailures"] == []
+    assert check["data"]["taskFailures"] == []
+    assert check["data"]["beatFailures"] == []
+    assert check["data"]["sourceFailures"] == []
 
 
 def test_backup_recoverability_report_is_integrity_checked(tmp_path: Path) -> None:

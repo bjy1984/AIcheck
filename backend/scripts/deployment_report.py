@@ -730,11 +730,13 @@ class DeploymentReportBuilder:
     def review_orchestration_contract_section(self) -> dict[str, Any]:
         check = review_orchestration_contract_check()
         coverage_check = lossless_evidence_coverage_check()
+        auto_review_check = auto_review_orchestration_contract_check()
         return {
             "name": "review-orchestration-contract",
             "ok": check["status"] == "pass"
-            and coverage_check["status"] in {"pass", "skip"},
-            "checks": [check, coverage_check],
+            and coverage_check["status"] in {"pass", "skip"}
+            and auto_review_check["status"] == "pass",
+            "checks": [check, coverage_check, auto_review_check],
         }
 
     def fde_governance_contract_section(self) -> dict[str, Any]:
@@ -2056,6 +2058,106 @@ def knowledge_rule_contract_check(
             "requiredRuleCheckFields": sorted(REQUIRED_RULE_CHECK_RESULT_FIELDS),
             "requiredRetrievalTraceFields": sorted(REQUIRED_RETRIEVAL_TRACE_FIELDS),
             "readinessScorecard": "build_knowledge_rule_scorecard" in readiness_source,
+        },
+    }
+
+
+def auto_review_orchestration_contract_check() -> dict[str, Any]:
+    from apps.worker.celery_app import celery_app
+    from libs import auto_review as auto_review_module
+    from libs import document_intelligence as document_intelligence_module
+
+    required_routes = {
+        ("GET", "/projects/{project_id}/inspection/auto-review-policy"),
+        ("PUT", "/projects/{project_id}/inspection/auto-review-policy"),
+        ("GET", "/projects/{project_id}/inspection/auto-review-status"),
+        ("POST", "/projects/{project_id}/inspection/auto-review/run"),
+    }
+    available_routes = {
+        (method, str(getattr(route, "path", "")))
+        for route in iter_effective_routes(app.routes)
+        for method in (getattr(route, "methods", set()) or set())
+    }
+    route_failures = [
+        {"method": method, "path": path}
+        for method, path in sorted(required_routes)
+        if (method, path) not in available_routes
+        and (method, f"/api{path}") not in available_routes
+    ]
+
+    required_collections = {
+        "auto_review_policies",
+        "auto_review_candidates",
+        "project_review_runs",
+        "auto_review_outbox",
+    }
+    collection_failures = sorted(
+        required_collections - set(STATE_COLLECTIONS.values())
+    )
+
+    routes = dict(celery_app.conf.task_routes)
+    required_tasks = {
+        "apps.worker.tasks.auto_review_consume_evidence_events": "business.light",
+        "apps.worker.tasks.auto_review_scan_due_projects": "business.light",
+        "apps.worker.tasks.auto_review_start_pending_candidates": "business.light",
+    }
+    task_failures = [
+        f"{task} missing or routed outside {queue}"
+        for task, queue in required_tasks.items()
+        if task not in routes or str((routes.get(task) or {}).get("queue")) != queue
+    ]
+    beat = dict(celery_app.conf.beat_schedule)
+    required_beat = {
+        "auto-review-consume-evidence-events",
+        "auto-review-scan-due-projects",
+        "auto-review-start-pending-candidates",
+    }
+    beat_failures = sorted(required_beat - set(beat))
+
+    source_failures: list[str] = []
+    source_contracts = {
+        "enqueue_auto_review_evidence_event": (
+            source_for_callable(
+                getattr(document_intelligence_module, "process_document_classification_and_targeting", None)
+            ),
+            ["enqueue_auto_review_evidence_event", "createdNodeIds", "not_enqueued"],
+        ),
+        "dirty_nodes_for_project": (
+            source_for_callable(getattr(auto_review_module, "dirty_nodes_for_project", None)),
+            ["current_node_snapshot", "evidenceSnapshotHash", "previousEvidenceSnapshotHash"],
+        ),
+        "dispatch_pending_auto_review_candidates": (
+            source_for_callable(
+                getattr(auto_review_module, "dispatch_pending_auto_review_candidates", None)
+            ),
+            ["create_project_review_run", "dispatch_project_review_run", "dispatched"],
+        ),
+        "dispatch_project_review_run": (
+            source_for_callable(getattr(auto_review_module, "dispatch_project_review_run", None)),
+            ["projectReviewRunId", "AUTO_REVIEW_MODE", "advisoryOnly", "nodeSnapshotHashes"],
+        ),
+    }
+    for label, (source, terms) in source_contracts.items():
+        missing = [term for term in terms if term not in source]
+        if missing:
+            source_failures.append(f"{label} missing source terms: {', '.join(missing)}")
+
+    failures = route_failures + collection_failures + task_failures + beat_failures + source_failures
+    status = "pass" if not failures else "fail"
+    return {
+        "name": "review.auto-review-orchestration",
+        "status": status,
+        "detail": (
+            "Project-scoped policy, OCR events, daily reconciliation, and parent/child dispatch are present."
+            if status == "pass"
+            else f"failures={len(failures)}"
+        ),
+        "data": {
+            "routeFailures": route_failures,
+            "collectionFailures": collection_failures,
+            "taskFailures": task_failures,
+            "beatFailures": beat_failures,
+            "sourceFailures": source_failures,
         },
     }
 

@@ -4884,6 +4884,7 @@ def _start_auto_review_node(project_id: str, node_id: int, metadata: dict[str, A
     return {
         "aiRunId": latest.get("id") or data.get("runId"),
         "reviewRunId": latest.get("reviewRunId") or (data.get("dispatch") or {}).get("reviewRunId"),
+        "evidenceSnapshotHash": latest.get("evidenceSnapshotHash"),
         "status": latest.get("status"),
     }
 

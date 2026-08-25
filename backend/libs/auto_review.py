@@ -292,6 +292,7 @@ def create_project_review_run(
         "expectedNodeIds": sorted({int(node_id) for node_id in node_ids if int(node_id) > 0}),
         "childAiRunIds": [],
         "childReviewRunIds": [],
+        "nodeSnapshotHashes": {},
         "completedNodeIds": [],
         "failedNodeIds": [],
         "status": "queued",
@@ -313,6 +314,14 @@ def dispatch_project_review_run(
     project_run["startedAt"] = project_run.get("startedAt") or server_time()
     failed_node_ids: list[int] = []
     for node_id in project_run.get("expectedNodeIds") or []:
+        snapshot = current_node_snapshot(
+            state,
+            str(project_run["projectId"]),
+            int(node_id),
+        )
+        project_run.setdefault("nodeSnapshotHashes", {})[str(int(node_id))] = snapshot[
+            "snapshotHash"
+        ]
         metadata = {
             "projectReviewRunId": project_run["projectReviewRunId"],
             "triggerType": project_run.get("triggerType"),
@@ -330,6 +339,9 @@ def dispatch_project_review_run(
             continue
         ai_run_id = str(child.get("aiRunId") or child.get("runId") or "")
         review_run_id = str(child.get("reviewRunId") or "")
+        child_snapshot_hash = str(child.get("evidenceSnapshotHash") or "")
+        if child_snapshot_hash:
+            project_run["nodeSnapshotHashes"][str(int(node_id))] = child_snapshot_hash
         if ai_run_id:
             project_run["childAiRunIds"].append(ai_run_id)
         if review_run_id:

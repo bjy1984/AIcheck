@@ -191,6 +191,7 @@ def run_project_auto_review(
             return {
                 "aiRunId": latest_run.get("id") or data.get("runId"),
                 "reviewRunId": latest_run.get("reviewRunId") or (data.get("dispatch") or {}).get("reviewRunId"),
+                "evidenceSnapshotHash": latest_run.get("evidenceSnapshotHash"),
                 "status": latest_run.get("status"),
             }
 
