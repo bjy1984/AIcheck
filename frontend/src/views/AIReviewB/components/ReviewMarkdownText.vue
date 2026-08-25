@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ReviewBReference } from '@/types/ai-review-b'
+import { normalizeMineruMarkdownForDisplay } from '@/utils/mineruMarkdownDisplay'
 
 type InlinePart = {
   type: 'text' | 'strong' | 'code'
@@ -154,7 +155,7 @@ const isBlockStart = (lines: string[], index: number) => {
 }
 
 const blocks = computed<MarkdownBlock[]>(() => {
-  const lines = props.content.replace(/\r/g, '').split('\n')
+  const lines = normalizeMineruMarkdownForDisplay(props.content).replace(/\r/g, '').split('\n')
   const result: MarkdownBlock[] = []
   let index = 0
 

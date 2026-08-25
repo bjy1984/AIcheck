@@ -1830,7 +1830,12 @@ onBeforeUnmount(() => {
                           {{ evidence.manualStatusLabel || evidence.manualStatus || '候选' }}</small
                         >
                         <ClauseContent
-                          v-if="evidence.quotedText"
+                          v-if="
+                            evidence.quotedText &&
+                            ['table', 'equation', 'interline_equation', 'inline_equation'].includes(
+                              String(evidence.blockType || '').toLowerCase()
+                            )
+                          "
                           class="evidence-quote"
                           :text="evidence.quotedText"
                           :block-type="evidence.blockType"
@@ -1839,6 +1844,11 @@ onBeforeUnmount(() => {
                           :table-columns="evidence.tableColumns"
                           :table-rows="evidence.tableRows"
                           :table-header-reliable="evidence.tableHeaderReliable"
+                        />
+                        <ReviewMarkdownText
+                          v-else-if="evidence.quotedText"
+                          class="evidence-quote"
+                          :content="evidence.quotedText"
                         />
                         <ul v-if="visibleEvidenceFacts(evidence).length > 1" class="evidence-facts">
                           <li

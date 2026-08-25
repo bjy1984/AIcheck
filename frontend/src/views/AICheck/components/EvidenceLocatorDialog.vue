@@ -11,6 +11,7 @@ import type { EvidenceLink, ExtractedField } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
 import ClauseContent from '@/components/ClauseContent'
+import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -396,7 +397,12 @@ onBeforeUnmount(() => {
           <div class="preview-title">提取信息</div>
           <div class="detail-row">
             <span>引用文本</span>
-            <strong>{{ evidence.quotedText || '-' }}</strong>
+            <ReviewMarkdownText
+              v-if="evidence.quotedText"
+              class="evidence-quoted-markdown"
+              :content="evidence.quotedText"
+            />
+            <strong v-else>-</strong>
           </div>
           <div class="detail-row">
             <span>OCR 字段</span>
@@ -577,6 +583,11 @@ onBeforeUnmount(() => {
 }
 
 .detail-row strong {
+  color: #1f2937;
+}
+
+.evidence-quoted-markdown {
+  min-width: 0;
   color: #1f2937;
 }
 
