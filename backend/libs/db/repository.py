@@ -1013,7 +1013,7 @@ class InMemoryRepository:
             return "pdf"
         if raw_type.startswith("image/") or suffix in {"png", "jpg", "jpeg", "webp", "bmp", "heic", "heif"}:
             return "image"
-        if suffix in {"xlsx", "docx"}:
+        if suffix in {"doc", "docx", "xls", "xlsx"}:
             return "office"
         return "unsupported"
 

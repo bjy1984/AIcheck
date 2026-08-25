@@ -82,7 +82,13 @@ def office_preview_cached(object_name: str) -> bool:
     """
     try:
         return bool(object_storage.object_metadata(OFFICE_PREVIEW_BUCKET, object_name))
-    except ObjectStorageUnavailable:
+    except ObjectStorageUnavailable as exc:
+        detail = str(exc).lower()
+        if any(
+            marker in detail
+            for marker in ("nosuchkey", "nosuchobject", "nosuchversion", "object does not exist")
+        ):
+            return False
         raise
     except Exception:  # noqa: BLE001 — 存储侧异常五花八门（网络、权限、S3Error），
         # 这里不关心是哪一种：查不动就当没有。多转一次只浪费几秒，
@@ -241,4 +247,3 @@ def document_office_preview(request: Request, project_id: str, document_id: str)
         },
         request,
     )
-

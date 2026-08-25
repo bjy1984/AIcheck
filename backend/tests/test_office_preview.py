@@ -150,6 +150,14 @@ def test_convertible_suffixes_cover_the_formats_seen_in_real_projects() -> None:
         assert suffix not in CONVERTIBLE_SUFFIXES
 
 
+@pytest.mark.parametrize("suffix", ["doc", "docx", "xls", "xlsx"])
+def test_document_preview_routes_convertible_office_suffixes_to_office(suffix: str) -> None:
+    """老版 .doc/.xls 也必须走 LibreOffice，不能在前端被提前判成 unsupported。"""
+    document = {"id": "DOC-OFFICE", "fileName": f"资料.{suffix}", "fileType": suffix}
+
+    assert repo.document_preview_type(document) == "office"
+
+
 def test_office_html_to_text_preserves_headings_and_table_cells_for_classification() -> None:
     html = """
     <html><head><style>p { font-size: 12pt; }</style></head><body>
@@ -222,6 +230,26 @@ def test_metadata_lookup_error_is_treated_as_cache_miss() -> None:
     class _Storage:
         def object_metadata(self, bucket: str, object_name: str) -> None:
             raise RuntimeError("网络抖动")
+
+    original = routes.object_storage
+    routes.object_storage = _Storage()
+    try:
+        assert routes.office_preview_cached("office-preview/DOC-X/abc.pdf") is False
+    finally:
+        routes.object_storage = original
+
+
+def test_missing_minio_cache_object_is_treated_as_cache_miss() -> None:
+    """首次预览还没有转换缓存时必须进入转换，不能把 NoSuchKey 当存储故障。"""
+    from apps.api import office_preview_routes as routes
+    from libs.integrations.storage import ObjectStorageUnavailable
+
+    class _Storage:
+        def object_metadata(self, bucket: str, object_name: str) -> None:
+            raise ObjectStorageUnavailable(
+                "对象存储文件确认失败：S3 operation failed; code: NoSuchKey, "
+                "message: Object does not exist"
+            )
 
     original = routes.object_storage
     routes.object_storage = _Storage()
