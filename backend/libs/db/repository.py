@@ -95,6 +95,9 @@ STATE_COLLECTIONS = {
     "bindings": "node_bindings",
     "evidence_links": "evidence_links",
     "node_evidence_links": "node_evidence_links",
+    "evidence_snapshots": "evidence_snapshots",
+    "evidence_manifests": "evidence_manifests",
+    "evidence_shards": "evidence_shards",
     "fact_corrections": "fact_corrections",
     "material_targeting_runs": "material_targeting_runs",
     "extracted_fields": "extracted_fields",
@@ -295,6 +298,9 @@ class InMemoryRepository:
         self.state.setdefault("knowledge_vector_corrections", [])
         self.state.setdefault("knowledge_chunk_quarantines", [])
         self.state.setdefault("node_evidence_links", [])
+        self.state.setdefault("evidence_snapshots", [])
+        self.state.setdefault("evidence_manifests", [])
+        self.state.setdefault("evidence_shards", [])
         self.state.setdefault("fact_corrections", [])
         self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
@@ -462,6 +468,9 @@ class InMemoryRepository:
         self.state.setdefault("knowledge_vector_corrections", [])
         self.state.setdefault("knowledge_chunk_quarantines", [])
         self.state.setdefault("node_evidence_links", [])
+        self.state.setdefault("evidence_snapshots", [])
+        self.state.setdefault("evidence_manifests", [])
+        self.state.setdefault("evidence_shards", [])
         self.state.setdefault("fact_corrections", [])
         self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
@@ -3589,6 +3598,9 @@ class InMemoryRepository:
         loaded.setdefault("knowledge_vector_corrections", [])
         loaded.setdefault("knowledge_chunk_quarantines", [])
         loaded.setdefault("node_evidence_links", [])
+        loaded.setdefault("evidence_snapshots", [])
+        loaded.setdefault("evidence_manifests", [])
+        loaded.setdefault("evidence_shards", [])
         loaded.setdefault("fact_corrections", [])
         loaded.setdefault("material_targeting_runs", [])
         loaded.setdefault("upload_sessions", [])
