@@ -2567,7 +2567,11 @@ def review_llm_execution_mode() -> str:
 
 
 def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
-    templates = [item for item in repo.state.get("prompt_templates", []) if isinstance(item, dict)]
+    templates = [
+        item
+        for item in repo.state.get("prompt_templates", [])
+        if isinstance(item, dict) and str(item.get("promptKey") or "") == "review_prompt"
+    ]
     if not templates:
         return None
     prompt_version = str(review_run.get("promptVersion") or "")
@@ -2593,7 +2597,7 @@ def select_prompt_template(review_run: dict[str, Any]) -> dict[str, Any] | None:
     )
     if exact:
         return repo.clone(exact)
-    return repo.clone(candidates[0] if candidates else templates[0])
+    return repo.clone(candidates[0]) if candidates else None
 
 
 def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
