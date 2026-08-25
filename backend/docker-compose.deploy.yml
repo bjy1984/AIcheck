@@ -181,7 +181,7 @@ services:
   # OCR 证据融合与产物收口：轻量但在链路末端，堵住会让整条流水线看起来卡住
   business-light-worker-service:
     <<: *deploy-worker-service
-    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q business.light
+    command: celery -A apps.worker.celery_app.celery_app worker -B --loglevel=INFO --concurrency=2 --prefetch-multiplier=1 -Q business.light --schedule=/tmp/auto-review-celerybeat-schedule
     environment:
       <<: *deploy-worker-environment
       AICHECK_MINERU_TIMEOUT_SECONDS: ${AICHECK_MINERU_TIMEOUT_SECONDS:-60}

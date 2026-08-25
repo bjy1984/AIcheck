@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -443,3 +443,111 @@ def enqueue_auto_review_evidence_event(
     }
     rows.append(event)
     return event, True
+
+
+def policy_due_for_daily_scan(policy: dict[str, Any], now: datetime) -> bool:
+    if not policy_allows_trigger(policy, "daily_schedule"):
+        return False
+    timezone = ZoneInfo(str(policy.get("timezone") or DEFAULT_TIMEZONE))
+    effective_now = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    local_now = effective_now.astimezone(timezone)
+    daily_time = datetime.strptime(
+        str(policy.get("dailyTime") or DEFAULT_DAILY_TIME), "%H:%M"
+    ).time()
+    if local_now.time().replace(tzinfo=None) < daily_time:
+        return False
+    return str(policy.get("lastDailyRunLocalDate") or "") != local_now.date().isoformat()
+
+
+def scan_due_auto_review_policies(
+    state: dict[str, Any], *, now: datetime
+) -> dict[str, Any]:
+    due_project_ids: list[str] = []
+    created_candidate_ids: list[str] = []
+    for policy in state.get("auto_review_policies") or []:
+        if not isinstance(policy, dict) or not policy_due_for_daily_scan(policy, now):
+            continue
+        project_id = str(policy.get("projectId") or "")
+        tenant_id = str(policy.get("tenantId") or "")
+        if not project_id or not tenant_id:
+            continue
+        due_project_ids.append(project_id)
+        for dirty in dirty_nodes_for_project(state, project_id):
+            candidate, created = upsert_auto_review_candidate(
+                state,
+                tenant_id=tenant_id,
+                project_id=project_id,
+                node_id=int(dirty["nodeId"]),
+                evidence_snapshot_hash=str(dirty["evidenceSnapshotHash"]),
+                policy_revision=int(policy.get("revision") or 1),
+                trigger_type="daily_schedule",
+            )
+            if created:
+                created_candidate_ids.append(str(candidate["id"]))
+        local_date = (now if now.tzinfo is not None else now.replace(tzinfo=UTC)).astimezone(
+            ZoneInfo(str(policy.get("timezone") or DEFAULT_TIMEZONE))
+        ).date().isoformat()
+        policy["lastDailyRunLocalDate"] = local_date
+        policy["lastDailyScanAt"] = now.isoformat()
+        policy["updatedAt"] = server_time()
+    return {
+        "dueProjectIds": sorted(set(due_project_ids)),
+        "createdCandidateIds": created_candidate_ids,
+    }
+
+
+def consume_auto_review_evidence_events(
+    state: dict[str, Any], *, now: datetime, limit: int = 100
+) -> dict[str, Any]:
+    completed_event_ids: list[str] = []
+    skipped_event_ids: list[str] = []
+    created_candidate_ids: list[str] = []
+    events = [
+        row
+        for row in state.get("auto_review_outbox") or []
+        if isinstance(row, dict) and str(row.get("status") or "") in {"pending", "retry_pending"}
+    ][: max(1, min(int(limit), 500))]
+    for event in events:
+        tenant_id = str(event.get("tenantId") or "")
+        project_id = str(event.get("projectId") or "")
+        policy = next(
+            (
+                row
+                for row in state.get("auto_review_policies") or []
+                if isinstance(row, dict)
+                and str(row.get("tenantId") or "") == tenant_id
+                and str(row.get("projectId") or "") == project_id
+            ),
+            None,
+        )
+        event["attemptCount"] = int(event.get("attemptCount") or 0) + 1
+        if not policy or not policy_allows_trigger(policy, "ocr_mounted"):
+            event["status"] = "skipped"
+            event["skipReason"] = "policy_disabled_or_trigger_not_configured"
+            event["updatedAt"] = server_time()
+            skipped_event_ids.append(str(event.get("id") or ""))
+            continue
+        for node_id in sorted({int(item) for item in event.get("nodeIds") or [] if int(item) > 0}):
+            snapshot = current_node_snapshot(state, project_id, node_id)
+            if not snapshot.get("documentVersions"):
+                continue
+            candidate, created = upsert_auto_review_candidate(
+                state,
+                tenant_id=tenant_id,
+                project_id=project_id,
+                node_id=node_id,
+                evidence_snapshot_hash=str(snapshot["snapshotHash"]),
+                policy_revision=int(policy.get("revision") or 1),
+                trigger_type="ocr_mounted",
+            )
+            if created:
+                created_candidate_ids.append(str(candidate["id"]))
+        event["status"] = "completed"
+        event["completedAt"] = now.isoformat()
+        event["updatedAt"] = server_time()
+        completed_event_ids.append(str(event.get("id") or ""))
+    return {
+        "completedEventIds": completed_event_ids,
+        "skippedEventIds": skipped_event_ids,
+        "createdCandidateIds": created_candidate_ids,
+    }

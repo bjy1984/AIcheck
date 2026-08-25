@@ -10,6 +10,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -18,6 +19,10 @@ from apps.ocr_service.service import ocr_service
 from apps.worker.celery_app import celery_app
 from libs.aliyun_ocr import AliyunOcrError, AliyunOcrRetryableError
 from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
+from libs.auto_review import (
+    consume_auto_review_evidence_events as consume_auto_review_events,
+    scan_due_auto_review_policies as scan_due_auto_review_projects,
+)
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.db.repository import (
@@ -4779,3 +4784,44 @@ def review_conversation_execute(
         execution_entry=entry,
     )
     return {"executionId": execution_id, "sessionId": session_id}
+
+
+AUTO_REVIEW_STATE_KEYS = {
+    "auto_review_policies",
+    "auto_review_candidates",
+    "auto_review_outbox",
+    "project_review_runs",
+    "documents",
+    "versions",
+    "node_evidence_links",
+    "ocr_parse_results",
+    "review_runs",
+    "ai_runs",
+}
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def auto_review_consume_evidence_events(self) -> dict[str, Any]:
+    load_state(AUTO_REVIEW_STATE_KEYS)
+    result = consume_auto_review_events(repo.state, now=datetime.now(UTC))
+    flush_state(
+        {
+            "auto_review_policies",
+            "auto_review_candidates",
+            "auto_review_outbox",
+        }
+    )
+    return result
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def auto_review_scan_due_projects(self) -> dict[str, Any]:
+    load_state(AUTO_REVIEW_STATE_KEYS)
+    result = scan_due_auto_review_projects(repo.state, now=datetime.now(UTC))
+    flush_state(
+        {
+            "auto_review_policies",
+            "auto_review_candidates",
+        }
+    )
+    return result

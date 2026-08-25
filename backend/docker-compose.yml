@@ -114,7 +114,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --concurrency=${AICHECK_BUSINESS_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1 -Q business.light,ocr.parse_document
+    command: celery -A apps.worker.celery_app.celery_app worker -B --loglevel=INFO --concurrency=${AICHECK_BUSINESS_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1 -Q business.light,ocr.parse_document --schedule=/tmp/auto-review-celerybeat-schedule
     restart: unless-stopped
     environment: &worker-environment
       AICHECK_STRICT_PRODUCTION: ${AICHECK_STRICT_PRODUCTION:-true}

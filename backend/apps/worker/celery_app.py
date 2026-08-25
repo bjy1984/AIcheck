@@ -42,6 +42,18 @@ celery_app.conf.update(
         "apps.worker.tasks.review_conversation_execute": {"queue": "llm.remote", "priority": broker_priority(8)},
         "apps.worker.tasks.llm_compare": {"queue": "llm.remote", "priority": broker_priority(5)},
         "apps.worker.tasks.export_package": {"queue": "business.light", "priority": broker_priority(3)},
+        "apps.worker.tasks.auto_review_consume_evidence_events": {"queue": "business.light", "priority": broker_priority(8)},
+        "apps.worker.tasks.auto_review_scan_due_projects": {"queue": "business.light", "priority": broker_priority(7)},
+    },
+    beat_schedule={
+        "auto-review-consume-evidence-events": {
+            "task": "apps.worker.tasks.auto_review_consume_evidence_events",
+            "schedule": 60.0,
+        },
+        "auto-review-scan-due-projects": {
+            "task": "apps.worker.tasks.auto_review_scan_due_projects",
+            "schedule": 60.0,
+        },
     },
     task_default_queue="business.light",
     task_default_priority=broker_priority(5),
