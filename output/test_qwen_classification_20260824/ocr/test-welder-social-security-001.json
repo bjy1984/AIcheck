@@ -1,0 +1,11 @@
+{
+  "caseId": "test-welder-social-security-001",
+  "relativePath": "9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+  "ocrInput": "test/9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+  "convertedFromOffice": false,
+  "status": "success",
+  "providerTaskId": "68f4f796-1346-4dd5-af33-702f2e83924c",
+  "markdownArtifact": "full.md",
+  "markdownChars": 774,
+  "elapsedSeconds": 4.07
+}

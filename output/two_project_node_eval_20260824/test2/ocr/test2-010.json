@@ -1,0 +1,14 @@
+{
+  "caseId": "test2-010",
+  "relativePath": "5.1盈德气体华润施工方案.pdf",
+  "sha256": "sha256:569154fed7b600af7591f9bad0735eb66895e78a0f7aa5c0392cf077d6d0de93",
+  "size": 940099,
+  "status": "success",
+  "errorType": "MinerUJobFailed",
+  "error": "MinerU parsing failed.",
+  "elapsedSeconds": 41.44,
+  "providerTaskId": "95e9dd6f-64f4-4bb1-bf79-0313d4931d47",
+  "mineruMarkdownChars": 34923,
+  "classificationMarkdownChars": 34923,
+  "retryNoCache": true
+}

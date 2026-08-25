@@ -1,0 +1,38 @@
+{
+  "caseId": "test-pipeline-summary-001",
+  "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "pipeline_summary"
+  ],
+  "predictedMaterialTypeCodes": [],
+  "semanticExactMatch": false,
+  "missingMaterialTypeCodes": [
+    "pipeline_summary"
+  ],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9950,
+  "outputTokens": 121,
+  "reasoningTokens": null,
+  "totalTokens": 10071,
+  "ocrMarkdownChars": 1374,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 3.39,
+  "structuredResponse": {
+    "labels": [],
+    "documentSummary": "输入内容为OCR识别的表格碎片，仅包含编号HRD--JSSJ-JGML-001及若干数字序号，缺失表头、项目名称及具体业务内容，无法识别为任何特定工程监检资料类型。",
+    "classificationComplete": true,
+    "unclassifiedReason": "Markdown内容严重残缺，仅有零散数字和编号片段，缺乏标题、文字描述或可识别的业务字段，无法匹配60种资料类型中的任何一种。",
+    "materialCategoryLabels": []
+  },
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "输入内容为OCR识别的表格碎片，仅包含编号HRD--JSSJ-JGML-001及若干数字序号，缺失表头、项目名称及具体业务内容，无法识别为任何特定工程监检资料类型。",
+    "classificationComplete": true,
+    "unclassifiedReason": "Markdown内容严重残缺，仅有零散数字和编号片段，缺乏标题、文字描述或可识别的业务字段，无法匹配60种资料类型中的任何一种。"
+  }
+}

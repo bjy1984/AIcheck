@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-004",
+  "relativePath": "11.1无损检测公司声华资质-2024.pdf",
+  "sha256": "sha256:b72f91e802bf3ab2ceb572080cbb045974bdac36300b9cb848942e9dd76ba019",
+  "size": 5198972,
+  "status": "success",
+  "providerTaskId": "388850f4-ae10-4144-ad05-2398be357b18",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 11126,
+  "classificationMarkdownChars": 11145,
+  "elapsedSeconds": 26.05
+}

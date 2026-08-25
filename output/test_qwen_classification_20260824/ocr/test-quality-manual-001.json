@@ -1,0 +1,11 @@
+{
+  "caseId": "test-quality-manual-001",
+  "relativePath": "2、质量手册/质量手册.pdf",
+  "ocrInput": "test/2、质量手册/质量手册.pdf",
+  "convertedFromOffice": false,
+  "status": "success",
+  "providerTaskId": "1eca2cbf-e3b4-4fe7-8367-0e85f7d3acd5",
+  "markdownArtifact": "full.md",
+  "markdownChars": 13162,
+  "elapsedSeconds": 22.52
+}

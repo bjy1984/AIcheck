@@ -1,0 +1,75 @@
+{
+  "caseId": "test-ndt-person-certificate-005",
+  "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬RT检测证.jpg",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9599,
+  "outputTokens": 234,
+  "reasoningTokens": null,
+  "totalTokens": 9833,
+  "ocrMarkdownChars": 458,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 5.18,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_person_certificate",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为特种设备检验检测人员证，明确标注无损检测人员，列出持证人姓名汪仲冬及RT高级(III)项目级别，符合无损检测人员资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备检验检测人员证",
+            "purpose": "证明证书类型为特种设备检验检测人员证"
+          },
+          {
+            "quote": "姓名： 汪仲冬",
+            "purpose": "确认持证主体为个人姓名"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为汪仲冬，批准项目为射线胶片照相检测RT高级(III)级，由国家市场监督管理总局颁发，有效期至2029年07月。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为特种设备检验检测人员证，明确标注无损检测人员，列出持证人姓名汪仲冬及RT高级(III)项目级别，符合无损检测人员资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备检验检测人员证",
+            "purpose": "证明证书类型为特种设备检验检测人员证"
+          },
+          {
+            "quote": "姓名： 汪仲冬",
+            "purpose": "确认持证主体为个人姓名"
+          }
+        ],
+        "materialTypeCode": "ndt_person_certificate"
+      }
+    ],
+    "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为汪仲冬，批准项目为射线胶片照相检测RT高级(III)级，由国家市场监督管理总局颁发，有效期至2029年07月。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

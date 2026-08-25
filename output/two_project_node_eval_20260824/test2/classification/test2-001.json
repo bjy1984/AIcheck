@@ -1,0 +1,25 @@
+{
+  "caseId": "test2-001",
+  "relativePath": "0压力管道安装监检流程指引.docx",
+  "sha256": "sha256:f34de938ca0d29940f87d277318a5a56433ad9ed7dc1a786021bfe71f5bd2beb",
+  "size": 19953,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [],
+  "predictedMaterialTypeCodes": [],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 12199,
+  "outputTokens": 133,
+  "totalTokens": 12332,
+  "elapsedSeconds": 3.53,
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "该文件为压力管道安装监检流程指引，包含施工前核查表和竣工资料核查清单，列明了各阶段需准备的见证资料名称及完成状态要求，属于项目管理类流程指引文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": "文件内容为监检流程指引和资料归档清单，仅罗列了各类证书、报告、记录的名称作为核查项，并未实际包含这些资料的具体技术内容或质量证据，因此不属于任何具体监检资料类型。",
+    "fallbackMaterialCategories": []
+  },
+  "fallbackRetest": true
+}

@@ -1,0 +1,16 @@
+{
+  "caseId": "test-ndt-person-certificate-004",
+  "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰注册证.pdf",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "errorType": "AutoGoldValidationError",
+  "error": "UNGROUNDED_EVIDENCE: MT II 2028-04",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 955,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 104.38
+}

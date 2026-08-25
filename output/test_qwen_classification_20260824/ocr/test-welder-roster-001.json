@@ -1,0 +1,11 @@
+{
+  "caseId": "test-welder-roster-001",
+  "relativePath": "9、焊工资质核查/焊工清单.docx",
+  "ocrInput": "output/test_qwen_classification_20260824/converted/焊工清单.pdf",
+  "convertedFromOffice": true,
+  "status": "success",
+  "providerTaskId": "3ecfa40c-2031-406e-9820-ad817c19c3c2",
+  "markdownArtifact": "full.md",
+  "markdownChars": 4817,
+  "elapsedSeconds": 10.44
+}

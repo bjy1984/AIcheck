@@ -1,0 +1,75 @@
+{
+  "caseId": "test-construction-license-001",
+  "relativePath": "1、设计、安装资质证书/江苏三江压力管道资质.jpg",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "construction_license"
+  ],
+  "predictedMaterialTypeCodes": [
+    "construction_license"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9635,
+  "outputTokens": 278,
+  "reasoningTokens": null,
+  "totalTokens": 9913,
+  "ocrMarkdownChars": 534,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 6.62,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "construction_license",
+        "materialCategories": [
+          "资质证照"
+        ],
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为“中华人民共和国特种设备生产许可证”，许可项目明确列出“承压类特种设备安装、修理、改造”及“公用管道安装(GB2)”、“工业管道安装(GC2)”，符合施工单位安装许可证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备生产许可证",
+            "purpose": "证明证书类型为特种设备生产许可证"
+          },
+          {
+            "quote": "<tr><td>承压类特种设备安装、修理、改造</td><td>工业管道安装(GC2)</td><td>—</td><td>/</td></tr>",
+            "purpose": "证明许可范围包含压力管道安装活动"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档为江苏三江机电工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目涵盖承压类特种设备安装、修理、改造，具体包括公用管道安装(GB2)和工业管道安装(GC2)，有效期至2026年12月25日。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "资质证照"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为“中华人民共和国特种设备生产许可证”，许可项目明确列出“承压类特种设备安装、修理、改造”及“公用管道安装(GB2)”、“工业管道安装(GC2)”，符合施工单位安装许可证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备生产许可证",
+            "purpose": "证明证书类型为特种设备生产许可证"
+          },
+          {
+            "quote": "<tr><td>承压类特种设备安装、修理、改造</td><td>工业管道安装(GC2)</td><td>—</td><td>/</td></tr>",
+            "purpose": "证明许可范围包含压力管道安装活动"
+          }
+        ],
+        "materialTypeCode": "construction_license"
+      }
+    ],
+    "documentSummary": "该文档为江苏三江机电工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目涵盖承压类特种设备安装、修理、改造，具体包括公用管道安装(GB2)和工业管道安装(GC2)，有效期至2026年12月25日。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

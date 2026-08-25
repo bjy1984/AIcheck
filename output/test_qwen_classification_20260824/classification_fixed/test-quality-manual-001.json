@@ -1,0 +1,75 @@
+{
+  "caseId": "test-quality-manual-001",
+  "relativePath": "2、质量手册/质量手册.pdf",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "quality_system_document"
+  ],
+  "predictedMaterialTypeCodes": [
+    "quality_system_document"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 16616,
+  "outputTokens": 363,
+  "reasoningTokens": null,
+  "totalTokens": 16979,
+  "ocrMarkdownChars": 13162,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 6.15,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "quality_system_document",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.98,
+        "decisionSummary": "文件标题为《特种设备质保手册》，内容包含质量方针、目标、组织机构、管理职责、程序文件及各项过程控制要求，并有编写、审核、批准签字，完全符合质量保证体系文件的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备质保手册",
+            "purpose": "文件标题明确标识为特种设备质保手册，属于质量体系核心文件。"
+          },
+          {
+            "quote": "本手册描述本公司的质量方针、目标以及建立的质量保证体系,就是质量保证体系纲领性文件",
+            "purpose": "正文明确阐述该手册是质量保证体系的纲领性文件，描述了方针、目标和体系内容。"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档为江苏三江机电工程有限公司编制的《特种设备质保手册》（文件编号JXSJ-TZSBZB-001），版本号为00，生效日期2015年01月01日。手册内容涵盖公司简介、颁布令、质保工程师任命书、术语与引用标准、质量方针与目标、管理职责、组织机构、各部门职责权限、管理评审、体系文件结构（手册、程序文件、作业文件、记录）、以及设计、材料、焊接、热处理、无损检测、检验试验、设备、不合格品、人员培训等全过程控制要求，并规定了执行特种设备许可制度的相关程序。文件经李红编写、周永恒审核、陈伟业批准。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件标题为《特种设备质保手册》，内容包含质量方针、目标、组织机构、管理职责、程序文件及各项过程控制要求，并有编写、审核、批准签字，完全符合质量保证体系文件的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备质保手册",
+            "purpose": "文件标题明确标识为特种设备质保手册，属于质量体系核心文件。"
+          },
+          {
+            "quote": "本手册描述本公司的质量方针、目标以及建立的质量保证体系,就是质量保证体系纲领性文件",
+            "purpose": "正文明确阐述该手册是质量保证体系的纲领性文件，描述了方针、目标和体系内容。"
+          }
+        ],
+        "materialTypeCode": "quality_system_document"
+      }
+    ],
+    "documentSummary": "该文档为江苏三江机电工程有限公司编制的《特种设备质保手册》（文件编号JXSJ-TZSBZB-001），版本号为00，生效日期2015年01月01日。手册内容涵盖公司简介、颁布令、质保工程师任命书、术语与引用标准、质量方针与目标、管理职责、组织机构、各部门职责权限、管理评审、体系文件结构（手册、程序文件、作业文件、记录）、以及设计、材料、焊接、热处理、无损检测、检验试验、设备、不合格品、人员培训等全过程控制要求，并规定了执行特种设备许可制度的相关程序。文件经李红编写、周永恒审核、陈伟业批准。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

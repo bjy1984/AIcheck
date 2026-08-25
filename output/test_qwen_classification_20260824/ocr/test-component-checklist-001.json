@@ -1,0 +1,11 @@
+{
+  "caseId": "test-component-checklist-001",
+  "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+  "ocrInput": "output/test_qwen_classification_20260824/converted/0常用管道元件核查记录-施工单位填写.pdf",
+  "convertedFromOffice": true,
+  "status": "success",
+  "providerTaskId": "05cf514b-a104-4e32-91d7-904f25656a0c",
+  "markdownArtifact": "full.md",
+  "markdownChars": 1182,
+  "elapsedSeconds": 7.16
+}

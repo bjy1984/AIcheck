@@ -1,0 +1,75 @@
+{
+  "caseId": "test-design-license-001",
+  "relativePath": "1、设计、安装资质证书/广东政和设计院压力管道设计资质.png",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "design_license"
+  ],
+  "predictedMaterialTypeCodes": [
+    "design_license"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9658,
+  "outputTokens": 255,
+  "reasoningTokens": null,
+  "totalTokens": 9913,
+  "ocrMarkdownChars": 559,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 4.71,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "design_license",
+        "materialCategories": [
+          "资质证照"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为特种设备生产许可证，许可项目明确列出“压力管道设计”及GB1、GB2、GC1级别，符合设计单位许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备生产许可证",
+            "purpose": "证明该文件为特种设备生产许可证"
+          },
+          {
+            "quote": "<tr><td>压力管道设计</td><td>公用管道(GB1,GB2)</td><td>燃气管道,热力管道</td><td></td></tr>",
+            "purpose": "证明许可项目包含压力管道设计及具体级别"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "广东政和工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目为压力管道设计（公用管道GB1/GB2、工业管道GC1），有效期至2028年1月17日。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "资质证照"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为特种设备生产许可证，许可项目明确列出“压力管道设计”及GB1、GB2、GC1级别，符合设计单位许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备生产许可证",
+            "purpose": "证明该文件为特种设备生产许可证"
+          },
+          {
+            "quote": "<tr><td>压力管道设计</td><td>公用管道(GB1,GB2)</td><td>燃气管道,热力管道</td><td></td></tr>",
+            "purpose": "证明许可项目包含压力管道设计及具体级别"
+          }
+        ],
+        "materialTypeCode": "design_license"
+      }
+    ],
+    "documentSummary": "广东政和工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目为压力管道设计（公用管道GB1/GB2、工业管道GC1），有效期至2028年1月17日。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

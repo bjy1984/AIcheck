@@ -1,0 +1,75 @@
+{
+  "caseId": "test-ndt-person-certificate-002",
+  "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平RT注册证.jpg",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9623,
+  "outputTokens": 291,
+  "reasoningTokens": null,
+  "totalTokens": 9914,
+  "ocrMarkdownChars": 498,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 6.29,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_person_certificate",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为“特种设备检验检测人员证”，明确标注“无损检测人员”，列出持证人姓名“李国平”及核准项目“射线胶片照相检测 RT(II) II级”，完全符合无损检测人员资格证和执业注册证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备检验检测人员证",
+            "purpose": "证明证书类型为特种设备检验检测人员证，属于无损检测人员资格证书的法定名称。"
+          },
+          {
+            "quote": "姓名： 李国平",
+            "purpose": "证明持证主体为个人姓名，满足该类型requiredSignals中持证主体为个人的要求。"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为李国平，证书编号362425198901081039，批准项目为射线胶片照相检测RT(II)级，发证机关为陕西省市场监督管理局，有效期至2028年04月。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为“特种设备检验检测人员证”，明确标注“无损检测人员”，列出持证人姓名“李国平”及核准项目“射线胶片照相检测 RT(II) II级”，完全符合无损检测人员资格证和执业注册证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备检验检测人员证",
+            "purpose": "证明证书类型为特种设备检验检测人员证，属于无损检测人员资格证书的法定名称。"
+          },
+          {
+            "quote": "姓名： 李国平",
+            "purpose": "证明持证主体为个人姓名，满足该类型requiredSignals中持证主体为个人的要求。"
+          }
+        ],
+        "materialTypeCode": "ndt_person_certificate"
+      }
+    ],
+    "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为李国平，证书编号362425198901081039，批准项目为射线胶片照相检测RT(II)级，发证机关为陕西省市场监督管理局，有效期至2028年04月。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

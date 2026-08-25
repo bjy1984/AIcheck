@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-003",
+  "relativePath": "10.姜军焊工证.pdf",
+  "sha256": "sha256:29716c6c9f5a3b3eb387896864f8b39670e23be7d4dc527e04838388fb35f6d9",
+  "size": 125340,
+  "status": "success",
+  "providerTaskId": "6238a9d0-b9d1-4c40-ad1a-d47b0d28fea8",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 1145,
+  "classificationMarkdownChars": 1164,
+  "elapsedSeconds": 16.26
+}

@@ -1,0 +1,16 @@
+{
+  "caseId": "test-construction-plan-001",
+  "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "construction_organization_design"
+  ],
+  "errorType": "IntegrationServiceError",
+  "error": "Qwen official API chat.completions failed: reason READTIMEOUT",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 25785,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 363.17
+}

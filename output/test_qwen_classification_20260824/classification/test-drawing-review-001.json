@@ -1,0 +1,16 @@
+{
+  "caseId": "test-drawing-review-001",
+  "relativePath": "6、会审记录、图纸/会审记录.png",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "drawing_review_record"
+  ],
+  "errorType": "AutoGoldValidationError",
+  "error": "UNGROUNDED_EVIDENCE: 设计单位  广东政和工程有限公司",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 992,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 106.28
+}

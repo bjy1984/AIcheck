@@ -1,0 +1,311 @@
+{
+  "fileCount": 20,
+  "successCount": 20,
+  "failedCount": 0,
+  "inputTokens": 321841,
+  "outputTokens": 6465,
+  "results": [
+    {
+      "caseId": "test2-001",
+      "relativePath": "0压力管道安装监检流程指引.docx",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-001.md",
+      "codes": [],
+      "cats": [],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 12199,
+      "outputTokens": 133
+    },
+    {
+      "caseId": "test2-002",
+      "relativePath": "1.设计单位荣贵公司企业品牌推广手册2025.03_5.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-002.md",
+      "codes": [
+        "design_license"
+      ],
+      "cats": [
+        "资质证照"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 10091,
+      "outputTokens": 264
+    },
+    {
+      "caseId": "test2-003",
+      "relativePath": "10.姜军焊工证.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-003.md",
+      "codes": [
+        "welder_certificate"
+      ],
+      "cats": [
+        "焊接人员与焊接工艺"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 10483,
+      "outputTokens": 259
+    },
+    {
+      "caseId": "test2-004",
+      "relativePath": "11.1无损检测公司声华资质-2024.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-004.md",
+      "codes": [
+        "ndt_org_certificate"
+      ],
+      "cats": [
+        "资质证照"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 16429,
+      "outputTokens": 278
+    },
+    {
+      "caseId": "test2-005",
+      "relativePath": "11.2检测人员资质.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-005.md",
+      "codes": [
+        "ndt_person_certificate"
+      ],
+      "cats": [
+        "无损检测资料"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 11861,
+      "outputTokens": 277
+    },
+    {
+      "caseId": "test2-006",
+      "relativePath": "2.广东金辉GC2管道安装质保手册2022.9.doc",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-006.md",
+      "codes": [
+        "quality_system_document"
+      ],
+      "cats": [
+        "无损检测资料"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 46818,
+      "outputTokens": 304
+    },
+    {
+      "caseId": "test2-007",
+      "relativePath": "3.1告知书.png",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-007.md",
+      "codes": [],
+      "cats": [
+        "资质证照"
+      ],
+      "fallback": [
+        "资质证照"
+      ],
+      "mode": "category_advisory",
+      "inputTokens": 10988,
+      "outputTokens": 134
+    },
+    {
+      "caseId": "test2-008",
+      "relativePath": "3.2回执.png",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-008.md",
+      "codes": [],
+      "cats": [],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 10801,
+      "outputTokens": 110
+    },
+    {
+      "caseId": "test2-009",
+      "relativePath": "4.压力管道施工监检合同.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-009.md",
+      "codes": [],
+      "cats": [],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 11396,
+      "outputTokens": 138
+    },
+    {
+      "caseId": "test2-010",
+      "relativePath": "5.1盈德气体华润施工方案.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-010.md",
+      "codes": [
+        "construction_organization_design"
+      ],
+      "cats": [
+        "施工组织与方案"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 29897,
+      "outputTokens": 296
+    },
+    {
+      "caseId": "test2-011",
+      "relativePath": "5.2检测方案-盈德气体化工管道.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-011.md",
+      "codes": [
+        "construction_organization_design",
+        "ndt_procedure"
+      ],
+      "cats": [
+        "施工组织与方案",
+        "无损检测资料"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 21653,
+      "outputTokens": 406
+    },
+    {
+      "caseId": "test2-012",
+      "relativePath": "6.1图纸会审记录.doc",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-012.md",
+      "codes": [
+        "drawing_review_record"
+      ],
+      "cats": [
+        "设计变更与特殊标准"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 10102,
+      "outputTokens": 271
+    },
+    {
+      "caseId": "test2-013",
+      "relativePath": "6.2盈德华润设计图纸.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-013.md",
+      "codes": [
+        "design_document",
+        "drawing_material_list",
+        "calculation_report",
+        "pipeline_summary"
+      ],
+      "cats": [
+        "材料验收与复验",
+        "设计与施工组织",
+        "设计基础资料"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 18528,
+      "outputTokens": 678
+    },
+    {
+      "caseId": "test2-014",
+      "relativePath": "8.1管子产品质量证明书.jpg",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-014.md",
+      "codes": [
+        "quality_certificate"
+      ],
+      "cats": [
+        "材料验收与复验"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 11317,
+      "outputTokens": 289
+    },
+    {
+      "caseId": "test2-015",
+      "relativePath": "8.2管子特种设备生产许可证及型式试验证书.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-015.md",
+      "codes": [
+        "manufacturing_license",
+        "type_test_report"
+      ],
+      "cats": [
+        "材料验收与复验"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 15227,
+      "outputTokens": 487
+    },
+    {
+      "caseId": "test2-016",
+      "relativePath": "8.3阀门型式试验报告.jpg",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-016.md",
+      "codes": [
+        "type_test_report"
+      ],
+      "cats": [
+        "材料验收与复验"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 10243,
+      "outputTokens": 352
+    },
+    {
+      "caseId": "test2-017",
+      "relativePath": "8.4阀门审查许可证-沪工.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-017.md",
+      "codes": [
+        "manufacturing_license"
+      ],
+      "cats": [
+        "材料验收与复验"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 10097,
+      "outputTokens": 247
+    },
+    {
+      "caseId": "test2-018",
+      "relativePath": "8.5管件生产许可证、产品证明和型式报告.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-018.md",
+      "codes": [
+        "quality_certificate",
+        "manufacturing_license",
+        "type_test_report"
+      ],
+      "cats": [
+        "材料验收与复验"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 18085,
+      "outputTokens": 553
+    },
+    {
+      "caseId": "test2-019",
+      "relativePath": "9.1金辉焊接工艺评定20.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-019.md",
+      "codes": [
+        "wps_pqr",
+        "ndt_report",
+        "welding_material_certificate"
+      ],
+      "cats": [
+        "无损检测资料",
+        "焊接人员与焊接工艺",
+        "焊接材料与过程记录"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 24356,
+      "outputTokens": 629
+    },
+    {
+      "caseId": "test2-020",
+      "relativePath": "9.2.焊接工艺卡.pdf",
+      "md": "/Volumes/7up/github/knowledgetools/output/two_project_node_eval_20260824/test2/ocr/test2-020.md",
+      "codes": [
+        "wps_pqr"
+      ],
+      "cats": [
+        "焊接人员与焊接工艺"
+      ],
+      "fallback": [],
+      "mode": "exact",
+      "inputTokens": 11270,
+      "outputTokens": 360
+    }
+  ]
+}

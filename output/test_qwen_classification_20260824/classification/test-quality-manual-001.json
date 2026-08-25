@@ -1,0 +1,152 @@
+{
+  "caseId": "test-quality-manual-001",
+  "relativePath": "2、质量手册/质量手册.pdf",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "quality_system_document"
+  ],
+  "predictedMaterialTypeCodes": [
+    "quality_system_document"
+  ],
+  "exactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 16597,
+  "outputTokens": 5101,
+  "totalTokens": 21698,
+  "ocrMarkdownChars": 13162,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 130.48,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "quality_system_document",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.98,
+        "decisionSummary": "文件为《特种设备质保手册》，目录与章节包含质量方针、质量目标、管理职责、质量保证体系组织、职责权限、管理评审、质量保证体系文件、程序文件、质量计划、文件与记录控制、质量改进与服务等质量体系内容，符合质量保证体系文件和实施记录。",
+        "contentEvidence": [
+          {
+            "quote": "特种设备质保手册",
+            "purpose": "title"
+          },
+          {
+            "quote": "005、质量方针、质量目标",
+            "purpose": "title"
+          },
+          {
+            "quote": "006 管理职责",
+            "purpose": "title"
+          },
+          {
+            "quote": "007 质量保证体系组织",
+            "purpose": "title"
+          },
+          {
+            "quote": "008 职责、权限",
+            "purpose": "title"
+          },
+          {
+            "quote": "009 管理评审",
+            "purpose": "title"
+          },
+          {
+            "quote": "010 质量保证体系文件",
+            "purpose": "title"
+          },
+          {
+            "quote": "012 程序文件",
+            "purpose": "title"
+          },
+          {
+            "quote": "014 质量计划(过程控制记录表卡、施工组织设计或者施工方案)",
+            "purpose": "title"
+          },
+          {
+            "quote": "015 文件与记录的控制",
+            "purpose": "title"
+          },
+          {
+            "quote": "026 质量改进与服务",
+            "purpose": "title"
+          },
+          {
+            "quote": "本手册描述本公司的质量方针、目标以及建立的质量保证体系,就是质量保证体系纲领性文件,就是评审的依据之一。",
+            "purpose": "title"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档为江苏三江机电工程有限公司特种设备质保手册，系统规定质量方针、质量目标、组织机构、职责权限、管理评审、体系文件、程序文件、质量计划、文件记录控制及各过程质量控制要求，整体属于质量保证体系文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件为《特种设备质保手册》，目录与章节包含质量方针、质量目标、管理职责、质量保证体系组织、职责权限、管理评审、质量保证体系文件、程序文件、质量计划、文件与记录控制、质量改进与服务等质量体系内容，符合质量保证体系文件和实施记录。",
+        "contentEvidence": [
+          {
+            "quote": "特种设备质保手册",
+            "purpose": "title"
+          },
+          {
+            "quote": "005、质量方针、质量目标",
+            "purpose": "title"
+          },
+          {
+            "quote": "006 管理职责",
+            "purpose": "title"
+          },
+          {
+            "quote": "007 质量保证体系组织",
+            "purpose": "title"
+          },
+          {
+            "quote": "008 职责、权限",
+            "purpose": "title"
+          },
+          {
+            "quote": "009 管理评审",
+            "purpose": "title"
+          },
+          {
+            "quote": "010 质量保证体系文件",
+            "purpose": "title"
+          },
+          {
+            "quote": "012 程序文件",
+            "purpose": "title"
+          },
+          {
+            "quote": "014 质量计划(过程控制记录表卡、施工组织设计或者施工方案)",
+            "purpose": "title"
+          },
+          {
+            "quote": "015 文件与记录的控制",
+            "purpose": "title"
+          },
+          {
+            "quote": "026 质量改进与服务",
+            "purpose": "title"
+          },
+          {
+            "quote": "本手册描述本公司的质量方针、目标以及建立的质量保证体系,就是质量保证体系纲领性文件,就是评审的依据之一。",
+            "purpose": "title"
+          }
+        ],
+        "materialTypeCode": "quality_system_document"
+      }
+    ],
+    "documentSummary": "该文档为江苏三江机电工程有限公司特种设备质保手册，系统规定质量方针、质量目标、组织机构、职责权限、管理评审、体系文件、程序文件、质量计划、文件记录控制及各过程质量控制要求，整体属于质量保证体系文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

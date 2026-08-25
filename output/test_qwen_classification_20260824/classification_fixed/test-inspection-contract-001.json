@@ -1,0 +1,34 @@
+{
+  "caseId": "test-inspection-contract-001",
+  "relativePath": "4、监检合同/压力管道施工监检合同.pdf",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [],
+  "predictedMaterialTypeCodes": [],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 10421,
+  "outputTokens": 155,
+  "reasoningTokens": null,
+  "totalTokens": 10576,
+  "ocrMarkdownChars": 1704,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 3.54,
+  "structuredResponse": {
+    "labels": [],
+    "documentSummary": "该文档为压力管道施工监检合同，记录了施工单位与特种设备检测研究院之间关于地上甲类储罐区压力管道安装工程的监督检验委托关系、双方责任、监检依据及工作内容等合同约定事项。",
+    "classificationComplete": true,
+    "unclassifiedReason": "输入文档属于“压力管道施工监检合同”，其核心内容为甲乙双方关于监督检验服务的商业委托与责任约定。给定的60种资料类型均针对具体的工程技术文件（如设计文件、施工记录、检测报告、证书证照等），不包含“监检合同”或“委托协议”这一类别，因此无法匹配任何预定义类型。",
+    "materialCategoryLabels": []
+  },
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "该文档为压力管道施工监检合同，记录了施工单位与特种设备检测研究院之间关于地上甲类储罐区压力管道安装工程的监督检验委托关系、双方责任、监检依据及工作内容等合同约定事项。",
+    "classificationComplete": true,
+    "unclassifiedReason": "输入文档属于“压力管道施工监检合同”，其核心内容为甲乙双方关于监督检验服务的商业委托与责任约定。给定的60种资料类型均针对具体的工程技术文件（如设计文件、施工记录、检测报告、证书证照等），不包含“监检合同”或“委托协议”这一类别，因此无法匹配任何预定义类型。"
+  }
+}

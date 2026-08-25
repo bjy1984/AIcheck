@@ -1,0 +1,111 @@
+{
+  "caseId": "test-material-submission-package-001",
+  "elapsedSeconds": 12.35,
+  "usage": {
+    "completion_tokens": 1111,
+    "prompt_tokens": 37639,
+    "prompt_tokens_details": {
+      "cached_tokens": 9216,
+      "text_tokens": 37639
+    },
+    "total_tokens": 38750
+  },
+  "rawLabels": [
+    "acceptance_witness_record",
+    "quality_certificate",
+    "welding_material_certificate",
+    "manufacturing_license",
+    "type_test_report"
+  ],
+  "raw": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含多份工程材料/构配件/设备报审表及对应的材料、构配件进场检验记录，记录了不锈钢无缝钢管、焊丝、管件、垫片、螺栓等材料的进场数量、外观检查结果及验收结论，符合到货验收见证资料定义。",
+        "contentEvidence": [
+          {
+            "quote": "我方于2026年04月08日进场的工程材料/构配件/设备 材料名称及数量:不锈钢无缝钢管(详见附件)",
+            "purpose": "证明材料进场验收语义及物项信息"
+          },
+          {
+            "quote": "检验结果:合格",
+            "purpose": "证明验收结论"
+          }
+        ],
+        "materialTypeCode": "acceptance_witness_record"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含福建宁德正上管业科技有限公司、河北圣天管件集团有限公司、沧州渤海电力管件有限公司出具的产品质量证明书，列明了产品规格、材质、化学成分、力学性能及执行标准，符合产品质量证明书定义。",
+        "contentEvidence": [
+          {
+            "quote": "产品质量证明书 PRODUCT QUALITY CERTIFICATE 编号：20260213951",
+            "purpose": "证明钢管产品质量证明书标题及编号"
+          },
+          {
+            "quote": "受压元件（锻件） 产品质量证明书（合格证）",
+            "purpose": "证明法兰锻件产品质量证明书标题"
+          }
+        ],
+        "materialTypeCode": "quality_certificate"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含天津市金桥焊材集团股份有限公司出具的不锈钢氩弧焊丝产品质量证明书，列明了焊丝牌号、批号、化学成分及熔敷金属力学性能，符合焊接材料质量证明文件定义。",
+        "contentEvidence": [
+          {
+            "quote": "Commodity品名 不锈钢氩弧焊丝 Trade Model牌号 JQ.TG304",
+            "purpose": "证明产品对象为焊接材料"
+          },
+          {
+            "quote": "Chemical Composition of Welding Wires焊丝化学成分(%)",
+            "purpose": "证明包含焊材化学成分质量证明内容"
+          }
+        ],
+        "materialTypeCode": "welding_material_certificate"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含福建宁德正上管业科技有限公司和河北圣天管件集团有限公司的特种设备生产许可证，许可项目明确为压力管道元件制造，符合制造单位许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "许可项目 压力管道元件制造 许可子项目 压力管道管子(无缝钢管)(A)",
+            "purpose": "证明许可项目指向压力管道元件制造"
+          },
+          {
+            "quote": "单位名称：河北圣天管件集团有限公司 许可项目 压力管道元件制造",
+            "purpose": "证明另一家制造单位的许可范围"
+          }
+        ],
+        "materialTypeCode": "manufacturing_license"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含多份特种设备型式试验证书，分别针对无缝钢管、非焊接管件和钢制锻造法兰，列明了覆盖的产品型号、规格范围及试验结论，符合型式试验证书或报告定义。",
+        "contentEvidence": [
+          {
+            "quote": "特种设备型式试验证书 (压力管道元件) 编号：TSX71101004320260043",
+            "purpose": "证明无缝钢管型式试验证书标题及编号"
+          },
+          {
+            "quote": "经型式试验，确认产品安全性能符合 TSG D7002-2023 的要求",
+            "purpose": "证明型式试验结论"
+          }
+        ],
+        "materialTypeCode": "type_test_report"
+      }
+    ],
+    "documentSummary": "该资料包为珠海海瑞德制药有限公司地上甲类储罐区2项目的工程材料进场报审及质量证明文件合集。内容涵盖不锈钢无缝钢管、不锈钢焊丝、不锈钢管件（弯头、法兰、异径管、三通）、聚四氟乙烯垫片及全螺纹螺栓等6批次材料的报审表、进场检验记录、产品质量证明书、制造单位特种设备生产许可证及型式试验证书。文件完整记录了材料进场验收过程、制造单位资质及产品质量追溯信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  },
+  "protocolStatus": "rejected",
+  "protocolError": "AutoGoldValidationError: UNGROUNDED_EVIDENCE: Commodity品名 不锈钢氩弧焊丝 Trade Model牌号 JQ.TG304",
+  "labels": [
+    "acceptance_witness_record",
+    "quality_certificate",
+    "welding_material_certificate",
+    "manufacturing_license",
+    "type_test_report"
+  ]
+}

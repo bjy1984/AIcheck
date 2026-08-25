@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "inspection-test-project-postgres-import@1",
+  "importedAt": "2026-08-25T03:30:14.707964",
+  "database": "aicheck/public/TENANT-DEFAULT",
+  "projectIds": [
+    "P-TEST-OCR-001",
+    "P-TEST-OCR-002"
+  ],
+  "projects": [
+    {
+      "id": "P-TEST-OCR-001",
+      "name": "TEST项目一｜珠海海瑞德制药压力管道安装",
+      "dataSource": "test_ocr_llm_frozen_import"
+    },
+    {
+      "id": "P-TEST-OCR-002",
+      "name": "TEST项目二｜珠海新建化工区管道气站",
+      "dataSource": "test_ocr_llm_frozen_import"
+    }
+  ],
+  "inspectionMemberCount": 2,
+  "inspectionUserCount": 1,
+  "sourceBusinessDataImmutable": true,
+  "sourceHashesVerified": true,
+  "sourceHashCount": 88,
+  "counts": {
+    "projects": 2,
+    "tree_nodes": 138,
+    "requirements": 334,
+    "documents": 43,
+    "versions": 43,
+    "bindings": 125,
+    "ocr_parse_results": 43,
+    "document_classification_runs": 43,
+    "material_targeting_runs": 43,
+    "submissions": 2,
+    "node_evidence_links": 125,
+    "ai_runs": 81,
+    "review_runs": 81,
+    "review_graph_nodes": 972,
+    "review_sessions": 81,
+    "review_messages": 81,
+    "review_session_events": 162,
+    "model_call_attempts": 81,
+    "audit_logs": 14,
+    "project_members": 2
+  },
+  "backup": {
+    "path": "/Volumes/7up/github/knowledgetools/output/platform_internal_ai_review_20260825/aicheck-before-test-import.dump",
+    "sha256": "72ba592298c4f2abc888b96258b79c67a6efa3773ea98755e2c0dd44859e08e9"
+  }
+}

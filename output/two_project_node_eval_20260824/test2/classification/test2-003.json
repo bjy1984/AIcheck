@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-003",
+  "relativePath": "10.姜军焊工证.pdf",
+  "sha256": "sha256:29716c6c9f5a3b3eb387896864f8b39670e23be7d4dc527e04838388fb35f6d9",
+  "size": 125340,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "welder_certificate",
+      "materialCategories": [
+        "焊接人员与焊接工艺"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.98,
+      "decisionSummary": "文件为个人持有的特种设备作业人员证，包含姓名、证件编号及焊接项目代号（CTAF-Fe II-6G等），符合焊工资格证定义。",
+      "contentEvidence": [
+        {
+          "quote": "姓名 姜军",
+          "purpose": "证明持证主体为个人姓名"
+        },
+        {
+          "quote": "CTAF-Fe II-6G-3/57-FetS-02/11/12和SHAV-Fe II-6G(K)-9/57-Fet3J",
+          "purpose": "证明列出了具体的焊接作业项目代号"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "welder_certificate"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "焊接人员与焊接工艺"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 10483,
+  "outputTokens": 259,
+  "totalTokens": 10742,
+  "elapsedSeconds": 4.65,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件为个人持有的特种设备作业人员证，包含姓名、证件编号及焊接项目代号（CTAF-Fe II-6G等），符合焊工资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "姓名 姜军",
+            "purpose": "证明持证主体为个人姓名"
+          },
+          {
+            "quote": "CTAF-Fe II-6G-3/57-FetS-02/11/12和SHAV-Fe II-6G(K)-9/57-Fet3J",
+            "purpose": "证明列出了具体的焊接作业项目代号"
+          }
+        ],
+        "materialTypeCode": "welder_certificate"
+      }
+    ],
+    "documentSummary": "该文件为姜军的特种设备作业人员证（焊工证），由南京江北新区管理委员会市场监督管理局颁发，记录了持证人身份信息及批准的焊接项目代号与有效期。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

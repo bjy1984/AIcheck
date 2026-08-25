@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-004",
+  "relativePath": "11.1无损检测公司声华资质-2024.pdf",
+  "sha256": "sha256:b72f91e802bf3ab2ceb572080cbb045974bdac36300b9cb848942e9dd76ba019",
+  "size": 5198972,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "ndt_org_certificate",
+      "materialCategories": [
+        "资质证照"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件包含广州声华科技股份有限公司的《特种设备检验检测机构核准证》，明确列出了无损检测核准项目代码及范围，符合无损检测机构核准证的定义。",
+      "contentEvidence": [
+        {
+          "quote": "中华人民共和国特种设备检验检测机构核准证",
+          "purpose": "证书标题，明确标识为特种设备检验检测机构核准证"
+        },
+        {
+          "quote": "核准项目代码",
+          "purpose": "列出具体核准的无损检测项目代码，证明机构具备相应检测资质"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_org_certificate"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "资质证照"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 16429,
+  "outputTokens": 278,
+  "totalTokens": 16707,
+  "elapsedSeconds": 4.92,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含广州声华科技股份有限公司的《特种设备检验检测机构核准证》，明确列出了无损检测核准项目代码及范围，符合无损检测机构核准证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "中华人民共和国特种设备检验检测机构核准证",
+            "purpose": "证书标题，明确标识为特种设备检验检测机构核准证"
+          },
+          {
+            "quote": "核准项目代码：PA、AE、CG、ECT、TOFD、FD2",
+            "purpose": "列出具体核准的无损检测项目代码，证明机构具备相应检测资质"
+          }
+        ],
+        "materialTypeCode": "ndt_org_certificate"
+      }
+    ],
+    "documentSummary": "该资料为广州声华科技股份有限公司的企业介绍及资质汇编文件。内容涵盖公司基本情况、业务范围、技术资源以及多项资质证书，包括营业执照、特种设备检验检测机构核准证（无损检测A级）、辐射安全许可证、CMA计量认证证书、CNAS实验室认可证书以及质量、环境、职业健康安全管理体系认证证书等。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

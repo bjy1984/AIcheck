@@ -1,0 +1,172 @@
+{
+  "caseId": "test2-013",
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件包含完整的图纸目录、设计说明书、材料表、管道数据表和布置图等，且由设计单位出具并带有设计、审核、校核签字及图号，符合设计文件定义。",
+        "contentEvidence": [
+          {
+            "quote": "图纸目录",
+            "purpose": "证明文件中包含图纸目录这一典型设计文件组成部分"
+          },
+          {
+            "quote": "设计说明",
+            "purpose": "证明文件中包含设计说明内容，属于设计文件核心组成"
+          }
+        ],
+        "materialTypeCode": "design_document"
+      },
+      {
+        "confidence": 0.97,
+        "decisionSummary": "文件中存在独立的材料表页面，按物项逐行列出管材、管件、阀门等名称、规格、材质标准和数量，符合设计材料表定义。",
+        "contentEvidence": [
+          {
+            "quote": "无缝钢管ø108*8",
+            "purpose": "证明材料表中列出了具体管材名称及规格"
+          },
+          {
+            "quote": "GB/T8163-2018",
+            "purpose": "证明材料表中列出了执行标准，与设计材料表要求一致"
+          }
+        ],
+        "materialTypeCode": "drawing_material_list"
+      },
+      {
+        "confidence": 0.96,
+        "decisionSummary": "文件中包含主要承压元件计算书，明确列出设计压力、许用应力、计算公式及壁厚校核结论，符合强度计算书定义。",
+        "contentEvidence": [
+          {
+            "quote": "主要承压元件计算书",
+            "purpose": "直接匹配强度计算书的标题模式"
+          },
+          {
+            "quote": "t=PD/(2(SΦ+PY))",
+            "purpose": "证明文件中包含具体的强度计算公式和过程"
+          }
+        ],
+        "materialTypeCode": "calculation_report"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含管道特性表（管道数据表），按管线号逐行汇总介质、设计参数、管径壁厚及管道级别等信息，符合管线汇总表定义。",
+        "contentEvidence": [
+          {
+            "quote": "管道特性表",
+            "purpose": "证明存在以管线号为索引的参数汇总表"
+          },
+          {
+            "quote": "NG-01",
+            "purpose": "证明表格按管线号组织，包含具体管线标识"
+          }
+        ],
+        "materialTypeCode": "pipeline_summary"
+      }
+    ],
+    "documentSummary": "该资料为珠海新建化工区管道气站项目管道工程的施工图设计文件包，包含图纸目录、工艺设计说明、材料表、主要承压元件计算书、管道特性表、管道平面布置图及轴测图等内容，由广东荣贵能源设备科技有限公司编制并完成校审。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  },
+  "usage": {
+    "completion_tokens": 678,
+    "prompt_tokens": 18528,
+    "prompt_tokens_details": {
+      "cached_tokens": 18432,
+      "text_tokens": 18528
+    },
+    "total_tokens": 19206
+  },
+  "elapsedSeconds": 10.43,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "design_document",
+      "materialCategories": [
+        "设计基础资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.98,
+      "decisionSummary": "文件包含完整的图纸目录、设计说明书、材料表、管道数据表和布置图等，且由设计单位出具并带有设计、审核、校核签字及图号，符合设计文件定义。",
+      "contentEvidence": [
+        {
+          "quote": "图纸目录",
+          "purpose": "证明文件中包含图纸目录这一典型设计文件组成部分"
+        },
+        {
+          "quote": "设计说明",
+          "purpose": "证明文件中包含设计说明内容，属于设计文件核心组成"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "drawing_material_list",
+      "materialCategories": [
+        "材料验收与复验",
+        "设计基础资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.97,
+      "decisionSummary": "文件中存在独立的材料表页面，按物项逐行列出管材、管件、阀门等名称、规格、材质标准和数量，符合设计材料表定义。",
+      "contentEvidence": [
+        {
+          "quote": "无缝钢管ø108*8",
+          "purpose": "证明材料表中列出了具体管材名称及规格"
+        },
+        {
+          "quote": "GB/T8163-2018",
+          "purpose": "证明材料表中列出了执行标准，与设计材料表要求一致"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "calculation_report",
+      "materialCategories": [
+        "设计基础资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.96,
+      "decisionSummary": "文件中包含主要承压元件计算书，明确列出设计压力、许用应力、计算公式及壁厚校核结论，符合强度计算书定义。",
+      "contentEvidence": [
+        {
+          "quote": "主要承压元件计算书",
+          "purpose": "直接匹配强度计算书的标题模式"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "pipeline_summary",
+      "materialCategories": [
+        "设计与施工组织",
+        "设计基础资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件中包含管道特性表（管道数据表），按管线号逐行汇总介质、设计参数、管径壁厚及管道级别等信息，符合管线汇总表定义。",
+      "contentEvidence": [
+        {
+          "quote": "管道特性表",
+          "purpose": "证明存在以管线号为索引的参数汇总表"
+        },
+        {
+          "quote": "NG-01",
+          "purpose": "证明表格按管线号组织，包含具体管线标识"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "design_document",
+    "drawing_material_list",
+    "calculation_report",
+    "pipeline_summary"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "材料验收与复验",
+    "设计与施工组织",
+    "设计基础资料"
+  ],
+  "classificationTargetingMode": "exact"
+}

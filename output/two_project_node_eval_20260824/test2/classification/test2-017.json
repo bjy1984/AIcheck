@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-017",
+  "relativePath": "8.4阀门审查许可证-沪工.pdf",
+  "sha256": "sha256:d45c1e1e49b17bfef7db6985e94833a32c82c78a53adecf3c1d220e5d2c82cd8",
+  "size": 354809,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "manufacturing_license",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件为特种设备生产许可证，许可项目明确为压力管道元件制造（阀门），符合制造单位许可证定义。",
+      "contentEvidence": [
+        {
+          "quote": "压力管道元件制造",
+          "purpose": "证明许可项目明确指向压力管道元件制造"
+        },
+        {
+          "quote": "单位名称：上海沪工阀门厂（集团）有限公司",
+          "purpose": "确认证书持证主体为制造单位"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "manufacturing_license"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "材料验收与复验"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 10097,
+  "outputTokens": 247,
+  "totalTokens": 10344,
+  "elapsedSeconds": 4.04,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件为特种设备生产许可证，许可项目明确为压力管道元件制造（阀门），符合制造单位许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "许可项目：压力管道元件制造",
+            "purpose": "证明许可项目明确指向压力管道元件制造"
+          },
+          {
+            "quote": "单位名称：上海沪工阀门厂（集团）有限公司",
+            "purpose": "确认证书持证主体为制造单位"
+          }
+        ],
+        "materialTypeCode": "manufacturing_license"
+      }
+    ],
+    "documentSummary": "该文件是上海市市场监督管理局向上海沪工阀门厂（集团）有限公司颁发的特种设备生产许可证，许可其从事压力管道阀门（金属阀门）A1、A2级制造活动，有效期至2028年。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

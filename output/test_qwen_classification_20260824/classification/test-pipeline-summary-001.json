@@ -1,0 +1,35 @@
+{
+  "caseId": "test-pipeline-summary-001",
+  "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "pipeline_summary"
+  ],
+  "predictedMaterialTypeCodes": [],
+  "exactMatch": false,
+  "missingMaterialTypeCodes": [
+    "pipeline_summary"
+  ],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9931,
+  "outputTokens": 730,
+  "totalTokens": 10661,
+  "ocrMarkdownChars": 1374,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 24.23,
+  "structuredResponse": {
+    "labels": [],
+    "documentSummary": "MinerU Markdown 仅包含一个 OCR 表格，可见编号 'HRD- -JSSJ-JGML-001'，其余大量单元格为空、'/'、数字或方框占位，无法识别任何与60种工程监检资料类型对应的标题、对象、检查/试验/证明内容或签章结论。",
+    "classificationComplete": true,
+    "unclassifiedReason": "表格内容严重缺失，仅有编号和数字，无材料对象、施工记录、检验参数、证书许可范围或任何可归入具体资料类型的必要语义信号。",
+    "materialCategoryLabels": []
+  },
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "MinerU Markdown 仅包含一个 OCR 表格，可见编号 'HRD- -JSSJ-JGML-001'，其余大量单元格为空、'/'、数字或方框占位，无法识别任何与60种工程监检资料类型对应的标题、对象、检查/试验/证明内容或签章结论。",
+    "classificationComplete": true,
+    "unclassifiedReason": "表格内容严重缺失，仅有编号和数字，无材料对象、施工记录、检验参数、证书许可范围或任何可归入具体资料类型的必要语义信号。"
+  }
+}

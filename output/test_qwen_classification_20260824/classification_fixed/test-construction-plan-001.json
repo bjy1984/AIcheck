@@ -1,0 +1,103 @@
+{
+  "caseId": "test-construction-plan-001",
+  "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+  "status": "success",
+  "protocolStatus": "rejected",
+  "protocolError": "AutoGoldValidationError: UNGROUNDED_EVIDENCE: |编号|内容/日期|开始时间|结束时间|天数|2026年五月|2026年六月|2026年七月|",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "construction_organization_design"
+  ],
+  "predictedMaterialTypeCodes": [
+    "construction_schedule",
+    "construction_license",
+    "welder_certificate",
+    "welder_roster"
+  ],
+  "semanticExactMatch": false,
+  "missingMaterialTypeCodes": [
+    "construction_organization_design"
+  ],
+  "extraMaterialTypeCodes": [
+    "construction_license",
+    "construction_schedule",
+    "welder_certificate",
+    "welder_roster"
+  ],
+  "inputTokens": 23580,
+  "outputTokens": 1037,
+  "reasoningTokens": null,
+  "totalTokens": 24617,
+  "ocrMarkdownChars": 25785,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 13.02,
+  "structuredResponse": null,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文档包含完整的施工进度计划横道图表格，列出了蒸汽管道安装、物料压力管道安装、水压试验等任务的具体开始和结束日期及天数，符合施工计划工期文件定义。",
+        "contentEvidence": [
+          {
+            "quote": "|编号|内容/日期|开始时间|结束时间|天数|2026年五月|2026年六月|2026年七月|",
+            "purpose": "证明存在以日期和工期为核心的进度计划表格结构"
+          },
+          {
+            "quote": "|1|DN80物料压力管道|5/8|5/20|13|",
+            "purpose": "证明具体任务与开始、结束日期及持续天数的对应关系"
+          }
+        ],
+        "materialTypeCode": "construction_schedule"
+      },
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文档包含《中华人民共和国特种设备生产许可证》，明确许可项目为承压类特种设备安装、修理、改造（工业管道安装GC2），且持证单位为施工单位江苏三江机电工程有限公司，符合施工单位安装许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 中华人民共和国 特种设备生产许可证",
+            "purpose": "证明证书类型为特种设备生产许可证"
+          },
+          {
+            "quote": "|承压类特种设备安装、修理、改造|工业管道安装(GC2)|—|/|",
+            "purpose": "证明许可范围明确指向压力管道安装活动"
+          }
+        ],
+        "materialTypeCode": "construction_license"
+      },
+      {
+        "confidence": 0.96,
+        "decisionSummary": "文档包含多份特种设备作业人员证页面，显示赵相军、席俊杰、李卫伍等人的姓名、证件编号及焊接作业项目代号（如SMAW-FeII、GTAW-FeIV等），符合焊工资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "姓名 赵相军",
+            "purpose": "证明持证主体为个人姓名"
+          },
+          {
+            "quote": "|CTAN-FeII-6C-3/57-FeFS-02/11/12和SMAY-FeII-6C(K)-5/57-FeFSJ|自 2024年 12月至 2028年 11月|",
+            "purpose": "证明列出了具体的焊接作业项目代号及有效期"
+          }
+        ],
+        "materialTypeCode": "welder_certificate"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文档末尾包含一份汇总表格，按序号列出多名焊工（A01-A03）的姓名、身份证号、证书编号及合格焊接项目代号和有效期，符合焊工名册定义。",
+        "contentEvidence": [
+          {
+            "quote": "|1||A01|3 421 301 971 03 286 116|SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12|2024-11|2028-10|",
+            "purpose": "证明表格集中列出了焊工姓名、证书信息及作业项目范围"
+          },
+          {
+            "quote": "|2||A02|4 105 211 986 09 1880 550|GTAW-Fe II-6G-5/57- Fefs-02/11/12SMAW-- Fe II-6G(K)-5/57- Fef3J|2024-12|2028-11|",
+            "purpose": "证明包含多名焊工信息，构成名册形式"
+          }
+        ],
+        "materialTypeCode": "welder_roster"
+      }
+    ],
+    "documentSummary": "该Markdown文档是一份压力管道安装工程资料包，主要包含：1. 施工进度计划横道图；2. 施工单位（江苏三江机电工程有限公司）的特种设备生产许可证（安装GC2）；3. 多名焊工的特种设备作业人员证（焊工资格证）；4. 项目持证焊工名册汇总表。此外还包含部分技术规范引用、设备材料清单及告知书回执等内容。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

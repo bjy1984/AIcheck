@@ -1,0 +1,75 @@
+{
+  "caseId": "test-wps-pqr-001",
+  "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "wps_pqr"
+  ],
+  "predictedMaterialTypeCodes": [
+    "wps_pqr"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 15341,
+  "outputTokens": 296,
+  "reasoningTokens": null,
+  "totalTokens": 15637,
+  "ocrMarkdownChars": 12321,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 4.56,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "wps_pqr",
+        "materialCategories": [
+          "焊接人员与焊接工艺"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文档包含预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR），明确列出了焊接方法、母材组别、厚度适用范围及力学试验结果，符合wps_pqr类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "预焊接工艺规程编号:HPY022日期:2024.09.25",
+            "purpose": "证明存在预焊接工艺规程（pWPS）及其编号和日期"
+          },
+          {
+            "quote": "焊接工艺评定报告(PQR)",
+            "purpose": "证明存在焊接工艺评定报告（PQR）标题"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该Markdown内容包含一份完整的焊接工艺文件包，主要由预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR）组成。文件中详细记录了单位名称、焊接方法（GTAW）、母材材质（S30408）、填充金属型号、预热及后热要求、电特性参数、焊接位置等技术指标，并包含了拉伸试验、弯曲试验等力学性能测试结果及合格结论，属于典型的焊接工艺评定与指导文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "焊接人员与焊接工艺"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文档包含预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR），明确列出了焊接方法、母材组别、厚度适用范围及力学试验结果，符合wps_pqr类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "预焊接工艺规程编号:HPY022日期:2024.09.25",
+            "purpose": "证明存在预焊接工艺规程（pWPS）及其编号和日期"
+          },
+          {
+            "quote": "焊接工艺评定报告(PQR)",
+            "purpose": "证明存在焊接工艺评定报告（PQR）标题"
+          }
+        ],
+        "materialTypeCode": "wps_pqr"
+      }
+    ],
+    "documentSummary": "该Markdown内容包含一份完整的焊接工艺文件包，主要由预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR）组成。文件中详细记录了单位名称、焊接方法（GTAW）、母材材质（S30408）、填充金属型号、预热及后热要求、电特性参数、焊接位置等技术指标，并包含了拉伸试验、弯曲试验等力学性能测试结果及合格结论，属于典型的焊接工艺评定与指导文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

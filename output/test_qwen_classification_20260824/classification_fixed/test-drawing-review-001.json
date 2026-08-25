@@ -1,0 +1,75 @@
+{
+  "caseId": "test-drawing-review-001",
+  "relativePath": "6、会审记录、图纸/会审记录.png",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "drawing_review_record"
+  ],
+  "predictedMaterialTypeCodes": [
+    "drawing_review_record"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9793,
+  "outputTokens": 307,
+  "reasoningTokens": null,
+  "totalTokens": 10100,
+  "ocrMarkdownChars": 992,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 5.14,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "drawing_review_record",
+        "materialCategories": [
+          "设计变更与特殊标准"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文档标题为“图纸会审记录”，内容包含具体图号HZ026Y-112-02-S301及设计、建设、施工三方签字确认的议定事项，符合施工图审查手续的定义。",
+        "contentEvidence": [
+          {
+            "quote": "图纸会审记录",
+            "purpose": "文件标题明确标识为图纸会审记录，属于施工图审查手续的典型标题模式。"
+          },
+          {
+            "quote": "HZ026Y-112-02-S301",
+            "purpose": "表格中列出了具体的施工图图号，证明该记录针对特定施工图纸进行审查。"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "本文档为珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）项目的图纸会审记录。记录了针对图号HZ026Y-112-02-S301的会审议定事项，包括材料供应质量检验责任、管道支架检查确认及问题协商机制等内容，并由设计单位、建设单位和施工单位相关人员于2026年04月28日签字确认。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "设计变更与特殊标准"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文档标题为“图纸会审记录”，内容包含具体图号HZ026Y-112-02-S301及设计、建设、施工三方签字确认的议定事项，符合施工图审查手续的定义。",
+        "contentEvidence": [
+          {
+            "quote": "图纸会审记录",
+            "purpose": "文件标题明确标识为图纸会审记录，属于施工图审查手续的典型标题模式。"
+          },
+          {
+            "quote": "HZ026Y-112-02-S301",
+            "purpose": "表格中列出了具体的施工图图号，证明该记录针对特定施工图纸进行审查。"
+          }
+        ],
+        "materialTypeCode": "drawing_review_record"
+      }
+    ],
+    "documentSummary": "本文档为珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）项目的图纸会审记录。记录了针对图号HZ026Y-112-02-S301的会审议定事项，包括材料供应质量检验责任、管道支架检查确认及问题协商机制等内容，并由设计单位、建设单位和施工单位相关人员于2026年04月28日签字确认。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

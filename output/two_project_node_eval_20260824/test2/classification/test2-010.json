@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-010",
+  "relativePath": "5.1盈德气体华润施工方案.pdf",
+  "sha256": "sha256:569154fed7b600af7591f9bad0735eb66895e78a0f7aa5c0392cf077d6d0de93",
+  "size": 940099,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "construction_organization_design",
+      "materialCategories": [
+        "施工组织与方案"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件标题为“管道安装施工方案”，内容包含工程概况、施工部署、组织机构、资源配置、进度管理、施工原则方案、质量控制及HSE管理等完整章节，且有编制、审核、批准签字，符合施工组织设计的定义。",
+      "contentEvidence": [
+        {
+          "quote": "# 珠海盈德化工区气站项目（华润化学） 管道安装施工方案",
+          "purpose": "证明文件标题为施工方案，属于施工组织设计类文件的典型命名"
+        },
+        {
+          "quote": "编制：许登伟 审核：姜军 批准：姜勇",
+          "purpose": "证明文件具有编制、审核、批准信息，满足施工组织设计的审批要求"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "construction_organization_design"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "施工组织与方案"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 29897,
+  "outputTokens": 296,
+  "totalTokens": 30193,
+  "elapsedSeconds": 6.35,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为“管道安装施工方案”，内容包含工程概况、施工部署、组织机构、资源配置、进度管理、施工原则方案、质量控制及HSE管理等完整章节，且有编制、审核、批准签字，符合施工组织设计的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 珠海盈德化工区气站项目（华润化学） 管道安装施工方案",
+            "purpose": "证明文件标题为施工方案，属于施工组织设计类文件的典型命名"
+          },
+          {
+            "quote": "编制：许登伟 审核：姜军 批准：姜勇",
+            "purpose": "证明文件具有编制、审核、批准信息，满足施工组织设计的审批要求"
+          }
+        ],
+        "materialTypeCode": "construction_organization_design"
+      }
+    ],
+    "documentSummary": "该文件是珠海盈德化工区气站项目（华润化学）的管道安装施工方案，涵盖了工程概况、施工部署、组织机构、资源配置、进度计划、施工工艺、质量控制措施、HSE管理及JSA分析等内容，并具备编制、审核、批准签署信息，属于典型的施工组织设计文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

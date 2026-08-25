@@ -1,0 +1,11 @@
+{
+  "caseId": "test-construction-plan-001",
+  "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+  "ocrInput": "output/test_qwen_classification_20260824/converted/珠海海瑞德泵区施工方案2026-04-30.pdf",
+  "convertedFromOffice": true,
+  "status": "success",
+  "providerTaskId": "e1519cf0-9763-422d-834b-0195151cac2e",
+  "markdownArtifact": "full.md",
+  "markdownChars": 25785,
+  "elapsedSeconds": 32.77
+}

@@ -1,0 +1,75 @@
+{
+  "caseId": "test-ndt-plan-001",
+  "relativePath": "10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_plan"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_plan"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 22367,
+  "outputTokens": 324,
+  "reasoningTokens": null,
+  "totalTokens": 22691,
+  "ocrMarkdownChars": 22262,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 6.76,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_plan",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为“无损检测施工方案”，内容包含编制依据、检测人员资质要求、射线及渗透检测方法选用、透照方式、像质计使用、检测时机等具体实施安排，并有编制、审核、批准签字，符合无损检测方案的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 无损检测施工方案",
+            "purpose": "文件标题明确标识为无损检测施工方案，对应ndt_plan的titlePatterns。"
+          },
+          {
+            "quote": "编制：韩尚昌 审核：汪仲冬 批准：欧阳石",
+            "purpose": "具有编制、审核、批准信息，满足ndt_plan关于审批信息的requiredSignals。"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档为山东扬石工程检验检测有限公司编制的无损检测施工方案，涵盖射线检测和渗透检测的编制依据、人员资质、透照方式、像质计使用、散射屏蔽、标记识别、现场操作、底片评定、返修复查、资料保存、质量管理、HSE管理、采购设备管理及文件控制等内容，并包含编制、审核、批准签署信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为“无损检测施工方案”，内容包含编制依据、检测人员资质要求、射线及渗透检测方法选用、透照方式、像质计使用、检测时机等具体实施安排，并有编制、审核、批准签字，符合无损检测方案的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 无损检测施工方案",
+            "purpose": "文件标题明确标识为无损检测施工方案，对应ndt_plan的titlePatterns。"
+          },
+          {
+            "quote": "编制：韩尚昌 审核：汪仲冬 批准：欧阳石",
+            "purpose": "具有编制、审核、批准信息，满足ndt_plan关于审批信息的requiredSignals。"
+          }
+        ],
+        "materialTypeCode": "ndt_plan"
+      }
+    ],
+    "documentSummary": "该文档为山东扬石工程检验检测有限公司编制的无损检测施工方案，涵盖射线检测和渗透检测的编制依据、人员资质、透照方式、像质计使用、散射屏蔽、标记识别、现场操作、底片评定、返修复查、资料保存、质量管理、HSE管理、采购设备管理及文件控制等内容，并包含编制、审核、批准签署信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-006",
+  "relativePath": "2.广东金辉GC2管道安装质保手册2022.9.doc",
+  "sha256": "sha256:432bdfe06759a74624358751c135756eaa8a904e65b6e60589e16066fc2e6e16",
+  "size": 687362,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "quality_system_document",
+      "materialCategories": [
+        "无损检测资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件标题明确为质量保证手册，内容包含质量方针、组织机构、体系要素及程序文件目录，符合质量体系文件定义。",
+      "contentEvidence": [
+        {
+          "quote": "GC2管道安装质量保证手册",
+          "purpose": "文件标题直接表明其为质量保证手册"
+        },
+        {
+          "quote": "公司建立文件化的质量保证体系，质量保证体系文件包括《质量保证手册》、程序性文件、作业文件及质量记录和质量计划等。",
+          "purpose": "正文明确阐述该文件属于质量保证体系文件中的手册层级"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "quality_system_document"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "无损检测资料"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 46818,
+  "outputTokens": 304,
+  "totalTokens": 47122,
+  "elapsedSeconds": 6.24,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题明确为质量保证手册，内容包含质量方针、组织机构、体系要素及程序文件目录，符合质量体系文件定义。",
+        "contentEvidence": [
+          {
+            "quote": "GC2管道安装质量保证手册",
+            "purpose": "文件标题直接表明其为质量保证手册"
+          },
+          {
+            "quote": "公司建立文件化的质量保证体系，质量保证体系文件包括《质量保证手册》、程序性文件、作业文件及质量记录和质量计划等。",
+            "purpose": "正文明确阐述该文件属于质量保证体系文件中的手册层级"
+          }
+        ],
+        "materialTypeCode": "quality_system_document"
+      }
+    ],
+    "documentSummary": "该资料是广东省金辉工业设备安装有限公司编制的《GC2管道安装质量保证手册》（第1版），编号JH/QM-1-2022。文件规定了公司压力管道安装质量保证体系的组织架构、职责权限、质量方针目标以及各质量控制要素（如材料、焊接、无损检测、热处理等）的管理要求，并附有程序文件、作业文件和记录表格目录，属于典型的质量保证体系纲领性文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

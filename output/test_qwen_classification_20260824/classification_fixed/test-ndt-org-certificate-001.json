@@ -1,0 +1,75 @@
+{
+  "caseId": "test-ndt-org-certificate-001",
+  "relativePath": "10、无损检测委托单位资质/1、机构资质证书/公司资质202407 - 副本.pdf",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_org_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_org_certificate"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 13892,
+  "outputTokens": 230,
+  "reasoningTokens": null,
+  "totalTokens": 14122,
+  "ocrMarkdownChars": 6801,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 5.44,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_org_certificate",
+        "materialCategories": [
+          "资质证照"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文档包含《特种设备检验检测机构核准证》，明确标注为无损检测机构，并列出了CG、TOFD、AE等核准检测项目，符合无损检测机构核准证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测机构核准证",
+            "purpose": "证书标题明确标识文件类型"
+          },
+          {
+            "quote": "(无损检测机构)",
+            "purpose": "括号内注明机构类别为无损检测机构"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该Markdown文档主要包含山东扬石工程检验检测有限公司的营业执照及多项资质证书扫描件识别内容，核心资料为特种设备检验检测机构核准证（无损检测机构），此外还包括资质认定证书、辐射安全许可证及质量/环境/职业健康安全管理体系认证证书等。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "资质证照"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文档包含《特种设备检验检测机构核准证》，明确标注为无损检测机构，并列出了CG、TOFD、AE等核准检测项目，符合无损检测机构核准证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测机构核准证",
+            "purpose": "证书标题明确标识文件类型"
+          },
+          {
+            "quote": "(无损检测机构)",
+            "purpose": "括号内注明机构类别为无损检测机构"
+          }
+        ],
+        "materialTypeCode": "ndt_org_certificate"
+      }
+    ],
+    "documentSummary": "该Markdown文档主要包含山东扬石工程检验检测有限公司的营业执照及多项资质证书扫描件识别内容，核心资料为特种设备检验检测机构核准证（无损检测机构），此外还包括资质认定证书、辐射安全许可证及质量/环境/职业健康安全管理体系认证证书等。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

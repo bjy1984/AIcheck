@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-013",
+  "relativePath": "6.2盈德华润设计图纸.pdf",
+  "sha256": "sha256:3057f9dadcbb7710b3a13c59f61c5ce8cedb2759fc68cc67b378c4928bde5d82",
+  "size": 27680880,
+  "status": "success",
+  "providerTaskId": "a4caf8da-380a-437c-885a-9ebe7f1a6b11",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 16846,
+  "classificationMarkdownChars": 16865,
+  "elapsedSeconds": 44.43
+}

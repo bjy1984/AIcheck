@@ -1,0 +1,5 @@
+## 特种设备业务办理资料接收回执
+
+<table><tr><td colspan="7">查询号: 1777269486797    回执号: 440404特W260202600294</td></tr><tr><td colspan="2">施工类别</td><td colspan="2">安装</td><td>申报人</td><td colspan="2">缪亚军</td></tr><tr><td colspan="2">建设单位</td><td colspan="2">珠海海瑞德制药有限公司</td><td>建设单位统一社会信用代码</td><td colspan="2">91440400MA533QKJ9C</td></tr><tr><td colspan="2">施工单位</td><td colspan="2">江苏三江机电工程有限公司</td><td>施工单位统一社会信用代码</td><td colspan="2">91321282608776640Y</td></tr><tr><td rowspan="4">设备情况</td><td>序号</td><td>设备种类</td><td>型号</td><td>出厂编号</td><td>单位内
+编号</td><td>设备使用地点</td></tr><tr><td>1</td><td>压力管道</td><td>Φ89*3.0
+205米</td><td></td><td></td><td>珠海市金湾区南水镇平湾一路236号;地上甲类储罐区2(含泵)</td></tr><tr><td>以下为空</td><td>以下为空</td><td>以下为空</td><td>以下为空</td><td>以下为空</td><td>以下为空</td></tr><tr><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td>办理承诺</td><td colspan="6">你单位该工程施工告知书,已送达我局,根据《特种设备安全监察条例》规定,该工程即可开始施工。若该告知书存在不符合有关规定的问题,我局将在2个工作日内向你单位书面说明原因和处理意见。</td></tr></table>

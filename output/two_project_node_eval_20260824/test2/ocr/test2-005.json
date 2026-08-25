@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-005",
+  "relativePath": "11.2检测人员资质.pdf",
+  "sha256": "sha256:8802b4d494b11993ff95adc1a2132c025dabe7f8e2d619baea2d149f137bbdcd",
+  "size": 5636393,
+  "status": "success",
+  "providerTaskId": "5b7f6052-a473-45a6-9448-26e2b049d4fc",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 3566,
+  "classificationMarkdownChars": 3585,
+  "elapsedSeconds": 26.37
+}

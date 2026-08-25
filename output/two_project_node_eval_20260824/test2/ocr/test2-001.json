@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-001",
+  "relativePath": "0压力管道安装监检流程指引.docx",
+  "sha256": "sha256:f34de938ca0d29940f87d277318a5a56433ad9ed7dc1a786021bfe71f5bd2beb",
+  "size": 19953,
+  "status": "success",
+  "providerTaskId": "104141ff-592d-44d9-a336-63907ed4db34",
+  "convertedFromOffice": true,
+  "officeTextChars": 1513,
+  "mineruMarkdownChars": 1958,
+  "classificationMarkdownChars": 3507,
+  "elapsedSeconds": 21.0
+}

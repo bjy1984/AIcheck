@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-005",
+  "relativePath": "11.2检测人员资质.pdf",
+  "sha256": "sha256:8802b4d494b11993ff95adc1a2132c025dabe7f8e2d619baea2d149f137bbdcd",
+  "size": 5636393,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "ndt_person_certificate",
+      "materialCategories": [
+        "无损检测资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.98,
+      "decisionSummary": "文件包含多份特种设备检验检测人员证及执业注册证，持证主体为个人姓名，明确列出RT、UT等无损检测方法及级别，符合无损检测人员资格证和执业注册证定义。",
+      "contentEvidence": [
+        {
+          "quote": "中华人民共和国 特种设备检验检测人员证",
+          "purpose": "证书标题明确标识为特种设备检验检测人员证"
+        },
+        {
+          "quote": "射线胶片照相检测 II级 RT(II)",
+          "purpose": "表格内容显示持证人员具备RT II级无损检测资格"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "无损检测资料"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 11861,
+  "outputTokens": 277,
+  "totalTokens": 12138,
+  "elapsedSeconds": 6.24,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件包含多份特种设备检验检测人员证及执业注册证，持证主体为个人姓名，明确列出RT、UT等无损检测方法及级别，符合无损检测人员资格证和执业注册证定义。",
+        "contentEvidence": [
+          {
+            "quote": "中华人民共和国 特种设备检验检测人员证",
+            "purpose": "证书标题明确标识为特种设备检验检测人员证"
+          },
+          {
+            "quote": "射线胶片照相检测 II级 RT(II)",
+            "purpose": "表格内容显示持证人员具备RT II级无损检测资格"
+          }
+        ],
+        "materialTypeCode": "ndt_person_certificate"
+      }
+    ],
+    "documentSummary": "资料包包含储磊、黄继军、任志国三人的特种设备检验检测人员证及执业注册证，记录了各人员的姓名、身份证号、证书编号、批准的无损检测项目（RT、UT）及级别、发证机关、有效期以及执业单位授权信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

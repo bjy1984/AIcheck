@@ -1,0 +1,242 @@
+{
+  "caseId": "test-construction-plan-001",
+  "labels": [
+    "construction_organization_design",
+    "construction_schedule",
+    "drawing_review_record",
+    "construction_license",
+    "welder_roster",
+    "welder_certificate"
+  ],
+  "protocolStatus": "accepted",
+  "elapsedSeconds": 12.22,
+  "usage": {
+    "completion_tokens": 1055,
+    "prompt_tokens": 35758,
+    "prompt_tokens_details": {
+      "cached_tokens": 34816,
+      "text_tokens": 35758
+    },
+    "total_tokens": 36813
+  },
+  "officeTextChars": 17988,
+  "combinedChars": 43809,
+  "raw": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件主体为物料压力管道安装施工方案，包含工程概况、编制依据、施工内容、组织机构及审批签字，符合施工组织设计定义。",
+        "contentEvidence": [
+          {
+            "quote": "物料压力管道安装 施 工 方 案 编制：吴亚东 审核：周永恒 批准：孔令坤",
+            "purpose": "证明该文件为经编审批的施工方案"
+          },
+          {
+            "quote": "劳动力组织及施工进度计划",
+            "purpose": "证明方案包含资源配置和进度安排等综合部署内容"
+          }
+        ],
+        "materialTypeCode": "construction_organization_design"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含独立的施工进度计划横道图表格，列出了各阶段任务的开始、结束日期和天数，符合施工计划工期文件定义。",
+        "contentEvidence": [
+          {
+            "quote": "DN80物料压力管道 5/8 5/20 13",
+            "purpose": "证明存在具体任务与起止日期的对应关系"
+          },
+          {
+            "quote": "物料压力管道水压试验 6/10 6/19 10",
+            "purpose": "证明存在具体任务与起止日期的对应关系"
+          }
+        ],
+        "materialTypeCode": "construction_schedule"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含图纸会审记录表格，记录了图号、主要问题及处理办法，并有设计、建设、施工单位人员签字，符合施工图审查手续定义。",
+        "contentEvidence": [
+          {
+            "quote": "图 纸 会 审 记 录 工程名称：珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）",
+            "purpose": "证明存在图纸会审记录标题及项目信息"
+          },
+          {
+            "quote": "HZ026Y-112-02-S301 议定事项: 1.施工方供应的材料应符合图纸设计要求",
+            "purpose": "证明记录了具体图号及审查意见"
+          }
+        ],
+        "materialTypeCode": "drawing_review_record"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含特种设备生产许可证，许可项目明确为承压类特种设备安装、修理、改造（工业管道安装GC2），符合施工单位安装许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "中华人民共和国 特种设备生产许可证 编号：TS3832083-2026",
+            "purpose": "证明证书名称及编号"
+          },
+          {
+            "quote": "承压类特种设备安装、修理、改造 工业管道安装(GC2)",
+            "purpose": "证明许可范围明确指向压力管道安装"
+          }
+        ],
+        "materialTypeCode": "construction_license"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含焊工名单预览表，集中列出了多名焊工的姓名、证号、合格项目及有效期，符合焊工名册定义。",
+        "contentEvidence": [
+          {
+            "quote": "焊 工 名 单 预 览 表 工程名称：珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）",
+            "purpose": "证明表格标题为焊工名单"
+          },
+          {
+            "quote": "李卫伍 A01 342130197103286116 SMAW-FeII-6FG-12/19-Fef3J",
+            "purpose": "证明表格包含焊工姓名、代号、证号及合格项目"
+          }
+        ],
+        "materialTypeCode": "welder_roster"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含赵相军、席俊杰、李卫伍等人的特种设备作业人员证页面，显示了个人姓名、证件编号及焊接作业项目代号，符合焊工资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "姓名 赵相军 证件编号 410521198609180550",
+            "purpose": "证明持证人为个人且列出证件编号"
+          },
+          {
+            "quote": "SMAN-FeII-SFG-12/19-Pef3J 自 2024 年11月至 2028 年10月",
+            "purpose": "证明列出了具体的焊接作业项目代号及有效期"
+          }
+        ],
+        "materialTypeCode": "welder_certificate"
+      }
+    ],
+    "documentSummary": "该资料包为珠海海瑞德制药有限公司地上甲类储罐区2物料压力管道安装工程的技术与管理文件集合。核心内容为经编审批的施工组织设计（施工方案），其中嵌入了施工进度计划横道图。附件资料包括特种设备安装许可证、图纸会审记录、焊工名册以及多名焊工的资格证书复印件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  },
+  "validated": {
+    "labels": [
+      {
+        "materialTypeCode": "construction_organization_design",
+        "materialCategories": [
+          "施工组织与方案"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件主体为物料压力管道安装施工方案，包含工程概况、编制依据、施工内容、组织机构及审批签字，符合施工组织设计定义。",
+        "contentEvidence": [
+          {
+            "quote": "物料压力管道安装 施 工 方 案 编制：吴亚东 审核：周永恒 批准：孔令坤",
+            "purpose": "证明该文件为经编审批的施工方案"
+          },
+          {
+            "quote": "劳动力组织及施工进度计划",
+            "purpose": "证明方案包含资源配置和进度安排等综合部署内容"
+          }
+        ]
+      },
+      {
+        "materialTypeCode": "construction_schedule",
+        "materialCategories": [
+          "施工组织与方案"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含独立的施工进度计划横道图表格，列出了各阶段任务的开始、结束日期和天数，符合施工计划工期文件定义。",
+        "contentEvidence": [
+          {
+            "quote": "DN80物料压力管道 5/8 5/20 13",
+            "purpose": "证明存在具体任务与起止日期的对应关系"
+          },
+          {
+            "quote": "物料压力管道水压试验 6/10 6/19 10",
+            "purpose": "证明存在具体任务与起止日期的对应关系"
+          }
+        ]
+      },
+      {
+        "materialTypeCode": "drawing_review_record",
+        "materialCategories": [
+          "设计变更与特殊标准"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含图纸会审记录表格，记录了图号、主要问题及处理办法，并有设计、建设、施工单位人员签字，符合施工图审查手续定义。",
+        "contentEvidence": [
+          {
+            "quote": "图 纸 会 审 记 录 工程名称：珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）",
+            "purpose": "证明存在图纸会审记录标题及项目信息"
+          },
+          {
+            "quote": "HZ026Y-112-02-S301 议定事项: 1.施工方供应的材料应符合图纸设计要求",
+            "purpose": "证明记录了具体图号及审查意见"
+          }
+        ]
+      },
+      {
+        "materialTypeCode": "construction_license",
+        "materialCategories": [
+          "资质证照"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含特种设备生产许可证，许可项目明确为承压类特种设备安装、修理、改造（工业管道安装GC2），符合施工单位安装许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "中华人民共和国 特种设备生产许可证",
+            "purpose": "证明证书名称及编号"
+          },
+          {
+            "quote": "承压类特种设备安装、修理、改造 工业管道安装(GC2)",
+            "purpose": "证明许可范围明确指向压力管道安装"
+          }
+        ]
+      },
+      {
+        "materialTypeCode": "welder_roster",
+        "materialCategories": [
+          "焊接人员与焊接工艺"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含焊工名单预览表，集中列出了多名焊工的姓名、证号、合格项目及有效期，符合焊工名册定义。",
+        "contentEvidence": [
+          {
+            "quote": "焊 工 名 单 预 览 表 工程名称：珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）",
+            "purpose": "证明表格标题为焊工名单"
+          },
+          {
+            "quote": "李卫伍 A01 342130197103286116 SMAW-FeII-6FG-12/19-Fef3J",
+            "purpose": "证明表格包含焊工姓名、代号、证号及合格项目"
+          }
+        ]
+      },
+      {
+        "materialTypeCode": "welder_certificate",
+        "materialCategories": [
+          "焊接人员与焊接工艺"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含赵相军、席俊杰、李卫伍等人的特种设备作业人员证页面，显示了个人姓名、证件编号及焊接作业项目代号，符合焊工资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "姓名 赵相军 证件编号 410521198609180550",
+            "purpose": "证明持证人为个人且列出证件编号"
+          },
+          {
+            "quote": "SMAN-FeII-SFG-12/19-Pef3J 自 2024 年11月至 2028 年10月",
+            "purpose": "证明列出了具体的焊接作业项目代号及有效期"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该资料包为珠海海瑞德制药有限公司地上甲类储罐区2物料压力管道安装工程的技术与管理文件集合。核心内容为经编审批的施工组织设计（施工方案），其中嵌入了施工进度计划横道图。附件资料包括特种设备安装许可证、图纸会审记录、焊工名册以及多名焊工的资格证书复印件。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "施工组织与方案",
+      "焊接人员与焊接工艺",
+      "设计变更与特殊标准",
+      "资质证照"
+    ]
+  }
+}

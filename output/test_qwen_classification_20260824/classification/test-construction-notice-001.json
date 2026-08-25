@@ -1,0 +1,14 @@
+{
+  "caseId": "test-construction-notice-001",
+  "relativePath": "3、告知书、回执单/罐区告知书2026-4-27.png",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [],
+  "errorType": "AutoGoldValidationError",
+  "error": "UNCLASSIFIED_REASON_REQUIRED: zero-label result requires a reason",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 1478,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 88.63
+}

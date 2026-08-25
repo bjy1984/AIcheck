@@ -1,0 +1,81 @@
+{
+  "caseId": "test-component-checklist-001",
+  "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "acceptance_witness_record"
+  ],
+  "predictedMaterialTypeCodes": [
+    "drawing_material_list"
+  ],
+  "semanticExactMatch": false,
+  "missingMaterialTypeCodes": [
+    "acceptance_witness_record"
+  ],
+  "extraMaterialTypeCodes": [
+    "drawing_material_list"
+  ],
+  "inputTokens": 10097,
+  "outputTokens": 254,
+  "reasoningTokens": null,
+  "totalTokens": 10351,
+  "ocrMarkdownChars": 1182,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 4.73,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "drawing_material_list",
+        "materialCategories": [
+          "材料验收与复验",
+          "设计基础资料"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "表格按行逐条列出管道组成件（管材、弯头、法兰、异径管、垫片、螺栓）的名称/材质、规格尺寸及执行标准，符合设计材料表的定义特征。",
+        "contentEvidence": [
+          {
+            "quote": "S30408GB/T14976-2025",
+            "purpose": "表明该行物项为不锈钢管，并列出执行标准，属于材料表典型列内容"
+          },
+          {
+            "quote": "DN80WN-1.6-RF",
+            "purpose": "表明该行物项为带颈对焊法兰及其规格参数，与同行材质、标准共同构成材料表条目"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "OCR识别出的表格包含7行数据，每行列出一种管道组成件或辅材的材质/牌号、执行标准、规格尺寸及部分编号信息，整体呈现为按物项逐行组织的材料清单格式。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "材料验收与复验",
+      "设计基础资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "表格按行逐条列出管道组成件（管材、弯头、法兰、异径管、垫片、螺栓）的名称/材质、规格尺寸及执行标准，符合设计材料表的定义特征。",
+        "contentEvidence": [
+          {
+            "quote": "S30408GB/T14976-2025",
+            "purpose": "表明该行物项为不锈钢管，并列出执行标准，属于材料表典型列内容"
+          },
+          {
+            "quote": "DN80WN-1.6-RF",
+            "purpose": "表明该行物项为带颈对焊法兰及其规格参数，与同行材质、标准共同构成材料表条目"
+          }
+        ],
+        "materialTypeCode": "drawing_material_list"
+      }
+    ],
+    "documentSummary": "OCR识别出的表格包含7行数据，每行列出一种管道组成件或辅材的材质/牌号、执行标准、规格尺寸及部分编号信息，整体呈现为按物项逐行组织的材料清单格式。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

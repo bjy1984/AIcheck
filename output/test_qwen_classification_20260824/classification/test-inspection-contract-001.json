@@ -1,0 +1,14 @@
+{
+  "caseId": "test-inspection-contract-001",
+  "relativePath": "4、监检合同/压力管道施工监检合同.pdf",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [],
+  "errorType": "AutoGoldValidationError",
+  "error": "UNCLASSIFIED_REASON_REQUIRED: zero-label result requires a reason",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 1704,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 29.47
+}

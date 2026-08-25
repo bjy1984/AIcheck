@@ -1,0 +1,11 @@
+{
+  "caseId": "test-wps-pqr-001",
+  "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+  "ocrInput": "test/8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+  "convertedFromOffice": false,
+  "status": "success",
+  "providerTaskId": "bb65eafb-1127-4c88-8200-c2750404e3a0",
+  "markdownArtifact": "full.md",
+  "markdownChars": 12321,
+  "elapsedSeconds": 4.49
+}

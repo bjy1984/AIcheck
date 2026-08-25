@@ -1,0 +1,75 @@
+{
+  "caseId": "test-construction-notice-001",
+  "relativePath": "3、告知书、回执单/罐区告知书2026-4-27.png",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [],
+  "predictedMaterialTypeCodes": [
+    "construction_license"
+  ],
+  "semanticExactMatch": false,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [
+    "construction_license"
+  ],
+  "inputTokens": 10137,
+  "outputTokens": 198,
+  "reasoningTokens": null,
+  "totalTokens": 10335,
+  "ocrMarkdownChars": 1478,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 4.47,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "construction_license",
+        "materialCategories": [
+          "资质证照"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文档为特种设备安装改造维修告知书，明确列出施工单位名称、施工类别（安装）、许可证编号及有效期，符合施工单位安装许可证类型的核心信号。",
+        "contentEvidence": [
+          {
+            "quote": "施工单位全称",
+            "purpose": "标识该文件主体为施工单位信息"
+          },
+          {
+            "quote": "施工类别",
+            "purpose": "确认许可项目涉及压力管道安装活动"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档是一份特种设备安装改造维修告知书回执，记录了江苏三江机电工程有限公司在珠海海瑞德制药有限公司进行GC2级流体输送用不锈钢管安装工程的告知信息，包含施工单位许可证编号、设备参数及施工日期等关键要素。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "资质证照"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文档为特种设备安装改造维修告知书，明确列出施工单位名称、施工类别（安装）、许可证编号及有效期，符合施工单位安装许可证类型的核心信号。",
+        "contentEvidence": [
+          {
+            "quote": "施工单位全称",
+            "purpose": "标识该文件主体为施工单位信息"
+          },
+          {
+            "quote": "施工类别",
+            "purpose": "确认许可项目涉及压力管道安装活动"
+          }
+        ],
+        "materialTypeCode": "construction_license"
+      }
+    ],
+    "documentSummary": "该文档是一份特种设备安装改造维修告知书回执，记录了江苏三江机电工程有限公司在珠海海瑞德制药有限公司进行GC2级流体输送用不锈钢管安装工程的告知信息，包含施工单位许可证编号、设备参数及施工日期等关键要素。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-019",
+  "relativePath": "9.1金辉焊接工艺评定20.pdf",
+  "sha256": "sha256:0f99c9fca3cfb19fed95e9c97f174c010135603d7762a01093b4384c7d2ea0a8",
+  "size": 6739399,
+  "status": "success",
+  "providerTaskId": "7b9a1660-cd02-42f3-868b-e646ac371083",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 30618,
+  "classificationMarkdownChars": 30637,
+  "elapsedSeconds": 53.93
+}

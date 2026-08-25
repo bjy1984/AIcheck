@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "inspection-test-project-import@1",
+  "generatedAt": "2026-08-25T03:30:14.538440",
+  "inspectionAccount": "inspection / USER-INSPECTION-001 / 张工",
+  "sourceBusinessDataImmutable": true,
+  "sourceHashesVerified": true,
+  "sourceHashCount": 88,
+  "projects": [
+    {
+      "project": "test",
+      "projectId": "P-TEST-OCR-001",
+      "name": "TEST项目一｜珠海海瑞德制药压力管道安装",
+      "fileCount": 23,
+      "formalBindingNodeCount": 39,
+      "reviewRunCount": 39,
+      "findingCount": 116
+    },
+    {
+      "project": "test2",
+      "projectId": "P-TEST-OCR-002",
+      "name": "TEST项目二｜珠海新建化工区管道气站",
+      "fileCount": 20,
+      "formalBindingNodeCount": 42,
+      "reviewRunCount": 42,
+      "findingCount": 121
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "caseId": "test-design-license-001",
+  "relativePath": "1、设计、安装资质证书/广东政和设计院压力管道设计资质.png",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "design_license"
+  ],
+  "errorType": "AutoGoldValidationError",
+  "error": "UNGROUNDED_EVIDENCE: 许可项目 压力管道设计",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 559,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 86.6
+}

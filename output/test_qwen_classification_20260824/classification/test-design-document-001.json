@@ -1,0 +1,16 @@
+{
+  "caseId": "test-design-document-001",
+  "relativePath": "6、会审记录、图纸/地上甲类储罐区2（含泵区）施工图.pdf",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "design_document"
+  ],
+  "errorType": "IntegrationServiceError",
+  "error": "Qwen official API chat.completions failed: reason READTIMEOUT",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 83825,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 363.16
+}

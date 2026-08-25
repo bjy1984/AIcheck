@@ -1,0 +1,496 @@
+{
+  "schemaVersion": "test-qwen-material-classification-final@2",
+  "model": "qwen3.8-max",
+  "fileCount": 23,
+  "apiSuccessCount": 23,
+  "protocolAcceptedCount": 23,
+  "originalGoldExactMatchCount": 17,
+  "suggestedGoldExactMatchCount": 22,
+  "inputTokens": 354238,
+  "outputTokens": 8266,
+  "totalTokens": 362504,
+  "results": [
+    {
+      "caseId": "test-pipeline-summary-001",
+      "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+      "originalGold": [
+        "pipeline_summary"
+      ],
+      "suggestedGold": [],
+      "suggestionChanged": true,
+      "predicted": [],
+      "originalExactMatch": false,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9950,
+      "outputTokens": 121,
+      "totalTokens": 10071,
+      "elapsedSeconds": 3.39
+    },
+    {
+      "caseId": "test-ndt-org-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/1、机构资质证书/公司资质202407 - 副本.pdf",
+      "originalGold": [
+        "ndt_org_certificate"
+      ],
+      "suggestedGold": [
+        "ndt_org_certificate"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_org_certificate"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 13892,
+      "outputTokens": 230,
+      "totalTokens": 14122,
+      "elapsedSeconds": 5.44
+    },
+    {
+      "caseId": "test-ndt-person-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平(1).pdf",
+      "originalGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestedGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_person_certificate"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9833,
+      "outputTokens": 248,
+      "totalTokens": 10081,
+      "elapsedSeconds": 5.68
+    },
+    {
+      "caseId": "test-ndt-person-certificate-002",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平RT注册证.jpg",
+      "originalGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestedGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_person_certificate"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9623,
+      "outputTokens": 291,
+      "totalTokens": 9914,
+      "elapsedSeconds": 6.29
+    },
+    {
+      "caseId": "test-ndt-person-certificate-003",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰RT证.jpg",
+      "originalGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestedGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_person_certificate"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9574,
+      "outputTokens": 325,
+      "totalTokens": 9899,
+      "elapsedSeconds": 6.86
+    },
+    {
+      "caseId": "test-ndt-person-certificate-004",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰注册证.pdf",
+      "originalGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestedGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_person_certificate"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9938,
+      "outputTokens": 241,
+      "totalTokens": 10179,
+      "elapsedSeconds": 5.17
+    },
+    {
+      "caseId": "test-ndt-person-certificate-005",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬RT检测证.jpg",
+      "originalGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestedGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_person_certificate"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9599,
+      "outputTokens": 234,
+      "totalTokens": 9833,
+      "elapsedSeconds": 5.18
+    },
+    {
+      "caseId": "test-ndt-person-certificate-006",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬执业注册证书(1).pdf",
+      "originalGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestedGold": [
+        "ndt_person_certificate"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_person_certificate"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 10002,
+      "outputTokens": 259,
+      "totalTokens": 10261,
+      "elapsedSeconds": 5.58
+    },
+    {
+      "caseId": "test-ndt-plan-001",
+      "relativePath": "10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+      "originalGold": [
+        "ndt_plan"
+      ],
+      "suggestedGold": [
+        "ndt_plan"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "ndt_plan"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 22367,
+      "outputTokens": 324,
+      "totalTokens": 22691,
+      "elapsedSeconds": 6.76
+    },
+    {
+      "caseId": "test-design-license-001",
+      "relativePath": "1、设计、安装资质证书/广东政和设计院压力管道设计资质.png",
+      "originalGold": [
+        "design_license"
+      ],
+      "suggestedGold": [
+        "design_license"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "design_license"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9658,
+      "outputTokens": 255,
+      "totalTokens": 9913,
+      "elapsedSeconds": 4.71
+    },
+    {
+      "caseId": "test-construction-license-001",
+      "relativePath": "1、设计、安装资质证书/江苏三江压力管道资质.jpg",
+      "originalGold": [
+        "construction_license"
+      ],
+      "suggestedGold": [
+        "construction_license"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "construction_license"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9635,
+      "outputTokens": 278,
+      "totalTokens": 9913,
+      "elapsedSeconds": 6.62
+    },
+    {
+      "caseId": "test-quality-manual-001",
+      "relativePath": "2、质量手册/质量手册.pdf",
+      "originalGold": [
+        "quality_system_document"
+      ],
+      "suggestedGold": [
+        "quality_system_document"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "quality_system_document"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 16616,
+      "outputTokens": 363,
+      "totalTokens": 16979,
+      "elapsedSeconds": 6.15
+    },
+    {
+      "caseId": "test-notice-receipt-001",
+      "relativePath": "3、告知书、回执单/告知回执.png",
+      "originalGold": [],
+      "suggestedGold": [],
+      "suggestionChanged": false,
+      "predicted": [],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9839,
+      "outputTokens": 119,
+      "totalTokens": 9958,
+      "elapsedSeconds": 2.66
+    },
+    {
+      "caseId": "test-construction-notice-001",
+      "relativePath": "3、告知书、回执单/罐区告知书2026-4-27.png",
+      "originalGold": [],
+      "suggestedGold": [],
+      "suggestionChanged": false,
+      "predicted": [],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 10279,
+      "outputTokens": 135,
+      "totalTokens": 10414,
+      "elapsedSeconds": 3.79
+    },
+    {
+      "caseId": "test-inspection-contract-001",
+      "relativePath": "4、监检合同/压力管道施工监检合同.pdf",
+      "originalGold": [],
+      "suggestedGold": [],
+      "suggestionChanged": false,
+      "predicted": [],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 10421,
+      "outputTokens": 155,
+      "totalTokens": 10576,
+      "elapsedSeconds": 3.54
+    },
+    {
+      "caseId": "test-construction-plan-001",
+      "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+      "originalGold": [
+        "construction_organization_design"
+      ],
+      "suggestedGold": [
+        "construction_organization_design",
+        "construction_schedule",
+        "drawing_review_record",
+        "construction_license",
+        "welder_certificate",
+        "welder_roster"
+      ],
+      "suggestionChanged": true,
+      "predicted": [
+        "construction_organization_design",
+        "construction_schedule",
+        "drawing_review_record",
+        "construction_license",
+        "welder_roster",
+        "welder_certificate"
+      ],
+      "originalExactMatch": false,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 35758,
+      "outputTokens": 1055,
+      "totalTokens": 36813,
+      "elapsedSeconds": 12.22
+    },
+    {
+      "caseId": "test-drawing-review-001",
+      "relativePath": "6、会审记录、图纸/会审记录.png",
+      "originalGold": [
+        "drawing_review_record"
+      ],
+      "suggestedGold": [
+        "drawing_review_record"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "drawing_review_record"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9793,
+      "outputTokens": 307,
+      "totalTokens": 10100,
+      "elapsedSeconds": 5.14
+    },
+    {
+      "caseId": "test-design-document-001",
+      "relativePath": "6、会审记录、图纸/地上甲类储罐区2（含泵区）施工图.pdf",
+      "originalGold": [
+        "design_document"
+      ],
+      "suggestedGold": [
+        "design_document",
+        "pipeline_summary",
+        "drawing_material_list",
+        "calculation_report"
+      ],
+      "suggestionChanged": true,
+      "predicted": [
+        "design_document",
+        "drawing_material_list",
+        "pipeline_summary",
+        "calculation_report"
+      ],
+      "originalExactMatch": false,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 52317,
+      "outputTokens": 851,
+      "totalTokens": 53168,
+      "elapsedSeconds": 11.24
+    },
+    {
+      "caseId": "test-component-checklist-001",
+      "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+      "originalGold": [
+        "acceptance_witness_record"
+      ],
+      "suggestedGold": [],
+      "suggestionChanged": true,
+      "predicted": [
+        "drawing_material_list"
+      ],
+      "originalExactMatch": false,
+      "suggestedExactMatch": false,
+      "protocolStatus": "accepted",
+      "inputTokens": 10097,
+      "outputTokens": 254,
+      "totalTokens": 10351,
+      "elapsedSeconds": 4.73
+    },
+    {
+      "caseId": "test-material-submission-package-001",
+      "relativePath": "7、管道元件及材料验收材料报审/管道元件及材料验收材料报审.pdf",
+      "originalGold": [
+        "acceptance_witness_record",
+        "quality_certificate",
+        "manufacturing_license",
+        "factory_inspection_report"
+      ],
+      "suggestedGold": [
+        "acceptance_witness_record",
+        "quality_certificate",
+        "welding_material_certificate",
+        "manufacturing_license",
+        "type_test_report"
+      ],
+      "suggestionChanged": true,
+      "predicted": [
+        "acceptance_witness_record",
+        "quality_certificate",
+        "welding_material_certificate",
+        "manufacturing_license",
+        "type_test_report"
+      ],
+      "originalExactMatch": false,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 37639,
+      "outputTokens": 1111,
+      "totalTokens": 38750,
+      "elapsedSeconds": 12.35
+    },
+    {
+      "caseId": "test-wps-pqr-001",
+      "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+      "originalGold": [
+        "wps_pqr"
+      ],
+      "suggestedGold": [
+        "wps_pqr"
+      ],
+      "suggestionChanged": false,
+      "predicted": [
+        "wps_pqr"
+      ],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 15341,
+      "outputTokens": 296,
+      "totalTokens": 15637,
+      "elapsedSeconds": 4.56
+    },
+    {
+      "caseId": "test-welder-social-security-001",
+      "relativePath": "9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+      "originalGold": [],
+      "suggestedGold": [],
+      "suggestionChanged": false,
+      "predicted": [],
+      "originalExactMatch": true,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 9761,
+      "outputTokens": 121,
+      "totalTokens": 9882,
+      "elapsedSeconds": 3.05
+    },
+    {
+      "caseId": "test-welder-roster-001",
+      "relativePath": "9、焊工资质核查/焊工清单.docx",
+      "originalGold": [
+        "welder_roster"
+      ],
+      "suggestedGold": [
+        "welder_roster",
+        "welder_certificate"
+      ],
+      "suggestionChanged": true,
+      "predicted": [
+        "welder_certificate",
+        "welder_roster"
+      ],
+      "originalExactMatch": false,
+      "suggestedExactMatch": true,
+      "protocolStatus": "accepted",
+      "inputTokens": 12306,
+      "outputTokens": 693,
+      "totalTokens": 12999,
+      "elapsedSeconds": 10.44
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "caseId": "test-design-document-001",
+  "relativePath": "6、会审记录、图纸/地上甲类储罐区2（含泵区）施工图.pdf",
+  "status": "success",
+  "protocolStatus": "rejected",
+  "protocolError": "AutoGoldValidationError: UNGROUNDED_EVIDENCE: 图名DWG NAME 安装设计说明",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "design_document"
+  ],
+  "predictedMaterialTypeCodes": [
+    "design_document",
+    "pipeline_summary",
+    "drawing_material_list",
+    "calculation_report"
+  ],
+  "semanticExactMatch": false,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [
+    "calculation_report",
+    "drawing_material_list",
+    "pipeline_summary"
+  ],
+  "inputTokens": 52175,
+  "outputTokens": 834,
+  "reasoningTokens": null,
+  "totalTokens": 53009,
+  "ocrMarkdownChars": 83825,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 11.14,
+  "structuredResponse": null,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含完整的施工图设计说明、管道材料设计说明、管道特性表、综合材料表及管道强度计算书等设计文件内容，符合设计文件类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "图名DWG NAME 安装设计说明",
+            "purpose": "证明存在设计说明类设计文件"
+          },
+          {
+            "quote": "图名DWG NAME 管道特性表",
+            "purpose": "证明存在管道特性表类设计文件"
+          }
+        ],
+        "materialTypeCode": "design_document"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含名为“管道特性表”的表格，按管段号逐行列出介质、设计参数、管径壁厚、检验要求等信息，符合管线汇总表定义。",
+        "contentEvidence": [
+          {
+            "quote": "管段号 外径x壁厚(mm) 管道等级 压力管道类别 介质 名称 相态 特性 起点 终点 温度°C 表压MPa 温度°C 表压MPa",
+            "purpose": "证明表格按管线组织并包含设计参数"
+          },
+          {
+            "quote": "A01-PL-02 Φ89x3.0 M1E GC2 甲醇 液态 可燃 LP7101 ST7101 常温 0.25 60 0.275",
+            "purpose": "证明具体管线行包含介质、压力、温度、管径等参数"
+          }
+        ],
+        "materialTypeCode": "pipeline_summary"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含名为“综合材料表”的表格，按物项逐行列出材料名称、规格、材质、标准和数量，符合设计材料表定义。",
+        "contentEvidence": [
+          {
+            "quote": "序号 材料名称及规格 材料/牌号 单位 数量 标准号/图号",
+            "purpose": "证明材料表表头包含物项、规格、材质和标准列"
+          },
+          {
+            "quote": "DN25 Φ32×2.5 S30408 米 6 GB/T 14976-2025",
+            "purpose": "证明具体行包含材料规格、材质和执行标准"
+          }
+        ],
+        "materialTypeCode": "drawing_material_list"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含名为“管道强度计算书”的表格，列出设计条件、计算公式、参数及壁厚校核结果，符合强度计算书定义。",
+        "contentEvidence": [
+          {
+            "quote": "图名DWG NAME 管道强度计算书",
+            "purpose": "证明文件标题明确为强度计算书"
+          },
+          {
+            "quote": "计算公式 t=pD/2(SΦ+pY) 计算壁厚 T=t+C+T#a",
+            "purpose": "证明包含强度计算公式和计算过程"
+          }
+        ],
+        "materialTypeCode": "calculation_report"
+      }
+    ],
+    "documentSummary": "该Markdown资料为珠海海瑞德制药有限公司增资扩产项目地上甲类储罐区2(含泵区)的施工图设计文件包，包含图纸目录、安装设计说明、管道材料设计说明、管道等级索引表、管道材料等级代号说明、管道分支表、管道壁厚表、管道平面图、管道轴测图材料表、管道特性表、综合材料表及管道强度计算书。内容涵盖设计依据、材料选用、管道参数汇总、材料清单及强度校核等完整设计要求。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

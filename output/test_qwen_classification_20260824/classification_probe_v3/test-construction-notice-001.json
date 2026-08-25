@@ -1,0 +1,22 @@
+{
+  "caseId": "test-construction-notice-001",
+  "elapsedSeconds": 3.79,
+  "usage": {
+    "completion_tokens": 135,
+    "prompt_tokens": 10279,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "text_tokens": 10279
+    },
+    "total_tokens": 10414
+  },
+  "rawLabels": [],
+  "raw": {
+    "labels": [],
+    "documentSummary": "该文件为特种设备安装改造维修告知书回执，记录了施工单位江苏三江机电工程有限公司在珠海海瑞德制药有限公司进行GC2级压力管道安装的告知信息，包含设备参数、施工类别、许可证编号及有效期等内容。",
+    "classificationComplete": true,
+    "unclassifiedReason": "当前60种资料类型中未包含“特种设备安装改造维修告知书”或“开工告知”相关类型；文件中虽提及施工单位许可证编号，但仅为告知书中的引用信息，并非许可证原件或复印件，不符合construction_license的定义要求。"
+  },
+  "protocolStatus": "accepted",
+  "labels": []
+}

@@ -1,0 +1,24 @@
+{
+  "project": "test2",
+  "batchNumber": 9,
+  "batchCount": 10,
+  "nodeIds": [
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63
+  ],
+  "attempt": 1,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "finishReason": "stop",
+  "elapsedSeconds": 28.82,
+  "usage": {
+    "inputTokens": 3080,
+    "outputTokens": 1895,
+    "totalTokens": 4975
+  }
+}

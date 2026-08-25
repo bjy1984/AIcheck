@@ -1,0 +1,111 @@
+{
+  "caseId": "test-welder-roster-001",
+  "relativePath": "9、焊工资质核查/焊工清单.docx",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "welder_roster"
+  ],
+  "predictedMaterialTypeCodes": [
+    "welder_certificate",
+    "welder_roster"
+  ],
+  "semanticExactMatch": false,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [
+    "welder_certificate"
+  ],
+  "inputTokens": 12306,
+  "outputTokens": 693,
+  "reasoningTokens": null,
+  "totalTokens": 12999,
+  "ocrMarkdownChars": 4817,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 10.44,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "welder_certificate",
+        "materialCategories": [
+          "焊接人员与焊接工艺"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "Markdown中包含多份特种设备作业人员证信息，明确列出持证人姓名、证件编号及焊接作业项目代号（如SMAW、GTAW等），符合焊工资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "姓名 赵相军",
+            "purpose": "证明持证主体为个人姓名"
+          },
+          {
+            "quote": "SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12",
+            "purpose": "证明列出了具体的焊接作业项目代号"
+          }
+        ]
+      },
+      {
+        "materialTypeCode": "welder_roster",
+        "materialCategories": [
+          "焊接人员与焊接工艺"
+        ],
+        "confidence": 0.98,
+        "decisionSummary": "Markdown开头表格按行集中列出了多名焊工（A01、A02、A03）的身份证号、焊接项目代号及有效期，符合焊工名册以表格汇总项目参焊人员的定义。",
+        "contentEvidence": [
+          {
+            "quote": "<tr><td>1</td><td></td><td>A01</td><td>342130197103286116</td><td>SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12</td><td>2024-11</td><td>2028-10</td></tr>",
+            "purpose": "证明表格包含焊工编号、证件号及合格项目范围"
+          },
+          {
+            "quote": "<tr><td>2</td><td></td><td>A02</td><td>41052119860918609180550</td><td>GTAW-Fe II-6G-5/57-Fefs-02/11/12SMAW-- Fe II-6G(K)-5/57-Fef3J</td><td>2024-12</td><td>2028-11</td></tr>",
+            "purpose": "证明表格包含多名焊工信息及其作业项目"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档包含一份焊工名册汇总表以及赵相军、席俊杰、李卫伍等多人的特种设备作业人员证（焊工证）扫描件OCR内容，记录了持证人的姓名、身份证号、发证机关、焊接作业项目代号及证书有效期等信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "焊接人员与焊接工艺"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "Markdown中包含多份特种设备作业人员证信息，明确列出持证人姓名、证件编号及焊接作业项目代号（如SMAW、GTAW等），符合焊工资格证定义。",
+        "contentEvidence": [
+          {
+            "quote": "姓名 赵相军",
+            "purpose": "证明持证主体为个人姓名"
+          },
+          {
+            "quote": "SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12",
+            "purpose": "证明列出了具体的焊接作业项目代号"
+          }
+        ],
+        "materialTypeCode": "welder_certificate"
+      },
+      {
+        "confidence": 0.98,
+        "decisionSummary": "Markdown开头表格按行集中列出了多名焊工（A01、A02、A03）的身份证号、焊接项目代号及有效期，符合焊工名册以表格汇总项目参焊人员的定义。",
+        "contentEvidence": [
+          {
+            "quote": "<tr><td>1</td><td></td><td>A01</td><td>342130197103286116</td><td>SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12</td><td>2024-11</td><td>2028-10</td></tr>",
+            "purpose": "证明表格包含焊工编号、证件号及合格项目范围"
+          },
+          {
+            "quote": "<tr><td>2</td><td></td><td>A02</td><td>41052119860918609180550</td><td>GTAW-Fe II-6G-5/57-Fefs-02/11/12SMAW-- Fe II-6G(K)-5/57-Fef3J</td><td>2024-12</td><td>2028-11</td></tr>",
+            "purpose": "证明表格包含多名焊工信息及其作业项目"
+          }
+        ],
+        "materialTypeCode": "welder_roster"
+      }
+    ],
+    "documentSummary": "该文档包含一份焊工名册汇总表以及赵相军、席俊杰、李卫伍等多人的特种设备作业人员证（焊工证）扫描件OCR内容，记录了持证人的姓名、身份证号、发证机关、焊接作业项目代号及证书有效期等信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

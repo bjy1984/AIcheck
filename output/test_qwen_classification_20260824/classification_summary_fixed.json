@@ -1,0 +1,1733 @@
+{
+  "schemaVersion": "test-qwen-material-classification-eval@2",
+  "model": "qwen3.8-max",
+  "thinkingEnabled": false,
+  "fileCount": 23,
+  "apiSuccessCount": 23,
+  "apiFailedCount": 0,
+  "protocolAcceptedCount": 20,
+  "protocolRejectedCount": 3,
+  "exactMatchCount": 16,
+  "exactMatchRate": 0.6957,
+  "microPrecision": 0.6,
+  "microRecall": 0.8182,
+  "inputTokens": 341634,
+  "outputTokens": 8394,
+  "reasoningTokens": 0,
+  "totalTokens": 350028,
+  "knowledgeCharsPerRequest": 26012,
+  "excludedKnowledgeFields": [
+    "sourceRefs",
+    "negativeSignals",
+    "basisLevel",
+    "materialCategories",
+    "documentPurpose"
+  ],
+  "results": [
+    {
+      "caseId": "test-pipeline-summary-001",
+      "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "pipeline_summary"
+      ],
+      "predictedMaterialTypeCodes": [],
+      "semanticExactMatch": false,
+      "missingMaterialTypeCodes": [
+        "pipeline_summary"
+      ],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9950,
+      "outputTokens": 121,
+      "reasoningTokens": null,
+      "totalTokens": 10071,
+      "ocrMarkdownChars": 1374,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 3.39,
+      "structuredResponse": {
+        "labels": [],
+        "documentSummary": "输入内容为OCR识别的表格碎片，仅包含编号HRD--JSSJ-JGML-001及若干数字序号，缺失表头、项目名称及具体业务内容，无法识别为任何特定工程监检资料类型。",
+        "classificationComplete": true,
+        "unclassifiedReason": "Markdown内容严重残缺，仅有零散数字和编号片段，缺乏标题、文字描述或可识别的业务字段，无法匹配60种资料类型中的任何一种。",
+        "materialCategoryLabels": []
+      },
+      "rawModelOutput": {
+        "labels": [],
+        "documentSummary": "输入内容为OCR识别的表格碎片，仅包含编号HRD--JSSJ-JGML-001及若干数字序号，缺失表头、项目名称及具体业务内容，无法识别为任何特定工程监检资料类型。",
+        "classificationComplete": true,
+        "unclassifiedReason": "Markdown内容严重残缺，仅有零散数字和编号片段，缺乏标题、文字描述或可识别的业务字段，无法匹配60种资料类型中的任何一种。"
+      }
+    },
+    {
+      "caseId": "test-ndt-org-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/1、机构资质证书/公司资质202407 - 副本.pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_org_certificate"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_org_certificate"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 13892,
+      "outputTokens": 230,
+      "reasoningTokens": null,
+      "totalTokens": 14122,
+      "ocrMarkdownChars": 6801,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 5.44,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_org_certificate",
+            "materialCategories": [
+              "资质证照"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "文档包含《特种设备检验检测机构核准证》，明确标注为无损检测机构，并列出了CG、TOFD、AE等核准检测项目，符合无损检测机构核准证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测机构核准证",
+                "purpose": "证书标题明确标识文件类型"
+              },
+              {
+                "quote": "(无损检测机构)",
+                "purpose": "括号内注明机构类别为无损检测机构"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该Markdown文档主要包含山东扬石工程检验检测有限公司的营业执照及多项资质证书扫描件识别内容，核心资料为特种设备检验检测机构核准证（无损检测机构），此外还包括资质认定证书、辐射安全许可证及质量/环境/职业健康安全管理体系认证证书等。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "资质证照"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档包含《特种设备检验检测机构核准证》，明确标注为无损检测机构，并列出了CG、TOFD、AE等核准检测项目，符合无损检测机构核准证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测机构核准证",
+                "purpose": "证书标题明确标识文件类型"
+              },
+              {
+                "quote": "(无损检测机构)",
+                "purpose": "括号内注明机构类别为无损检测机构"
+              }
+            ],
+            "materialTypeCode": "ndt_org_certificate"
+          }
+        ],
+        "documentSummary": "该Markdown文档主要包含山东扬石工程检验检测有限公司的营业执照及多项资质证书扫描件识别内容，核心资料为特种设备检验检测机构核准证（无损检测机构），此外还包括资质认定证书、辐射安全许可证及质量/环境/职业健康安全管理体系认证证书等。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-ndt-person-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平(1).pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9833,
+      "outputTokens": 248,
+      "reasoningTokens": null,
+      "totalTokens": 10081,
+      "ocrMarkdownChars": 764,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 5.68,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_person_certificate",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.98,
+            "decisionSummary": "文件标题为“特种设备检验检测人员执业注册证”，内容包含个人姓名及MT、RT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测人员执业注册证",
+                "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+              },
+              {
+                "quote": "姓名： 李国平",
+                "purpose": "持证主体为个人姓名，符合人员资格证书特征"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档是一份特种设备检验检测人员执业注册证，持证人为李国平，执业单位为山东扬石工程检验检测有限公司。证书列明了其持有的无损检测资格项目包括MT II级和RT II级，并记录了注册编号、有效期及发证机构为中国特种设备检验协会。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.98,
+            "decisionSummary": "文件标题为“特种设备检验检测人员执业注册证”，内容包含个人姓名及MT、RT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测人员执业注册证",
+                "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+              },
+              {
+                "quote": "姓名： 李国平",
+                "purpose": "持证主体为个人姓名，符合人员资格证书特征"
+              }
+            ],
+            "materialTypeCode": "ndt_person_certificate"
+          }
+        ],
+        "documentSummary": "该文档是一份特种设备检验检测人员执业注册证，持证人为李国平，执业单位为山东扬石工程检验检测有限公司。证书列明了其持有的无损检测资格项目包括MT II级和RT II级，并记录了注册编号、有效期及发证机构为中国特种设备检验协会。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-ndt-person-certificate-002",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平RT注册证.jpg",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9623,
+      "outputTokens": 291,
+      "reasoningTokens": null,
+      "totalTokens": 9914,
+      "ocrMarkdownChars": 498,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 6.29,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_person_certificate",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为“特种设备检验检测人员证”，明确标注“无损检测人员”，列出持证人姓名“李国平”及核准项目“射线胶片照相检测 RT(II) II级”，完全符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备检验检测人员证",
+                "purpose": "证明证书类型为特种设备检验检测人员证，属于无损检测人员资格证书的法定名称。"
+              },
+              {
+                "quote": "姓名： 李国平",
+                "purpose": "证明持证主体为个人姓名，满足该类型requiredSignals中持证主体为个人的要求。"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为李国平，证书编号362425198901081039，批准项目为射线胶片照相检测RT(II)级，发证机关为陕西省市场监督管理局，有效期至2028年04月。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为“特种设备检验检测人员证”，明确标注“无损检测人员”，列出持证人姓名“李国平”及核准项目“射线胶片照相检测 RT(II) II级”，完全符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备检验检测人员证",
+                "purpose": "证明证书类型为特种设备检验检测人员证，属于无损检测人员资格证书的法定名称。"
+              },
+              {
+                "quote": "姓名： 李国平",
+                "purpose": "证明持证主体为个人姓名，满足该类型requiredSignals中持证主体为个人的要求。"
+              }
+            ],
+            "materialTypeCode": "ndt_person_certificate"
+          }
+        ],
+        "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为李国平，证书编号362425198901081039，批准项目为射线胶片照相检测RT(II)级，发证机关为陕西省市场监督管理局，有效期至2028年04月。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-ndt-person-certificate-003",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰RT证.jpg",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9574,
+      "outputTokens": 325,
+      "reasoningTokens": null,
+      "totalTokens": 9899,
+      "ocrMarkdownChars": 358,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 6.86,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_person_certificate",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.99,
+            "decisionSummary": "文件标题明确为特种设备检验检测人员证（无损检测人员），内容包含持证人姓名、证书编号及射线胶片照相检测RT II级项目，完全符合无损检测人员资格证定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备检验检测人员证 (无损检测人员)",
+                "purpose": "证明该文件属于无损检测人员资格证书类别"
+              },
+              {
+                "quote": "<table><tr><td>项目</td><td>级别</td><td>代号</td><td>备注</td></tr><tr><td>射线胶片照相检测</td><td>II</td><td>RT</td><td>免考换证</td></tr></table>",
+                "purpose": "证明持证主体具备具体的无损检测方法（RT）和级别（II级）资格信息"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档是一份中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为段杰，证书编号371083198806212531，批准项目为射线胶片照相检测（RT）II级，由江苏省市场监督管理局于2021年发证，有效期至2027年1月。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.99,
+            "decisionSummary": "文件标题明确为特种设备检验检测人员证（无损检测人员），内容包含持证人姓名、证书编号及射线胶片照相检测RT II级项目，完全符合无损检测人员资格证定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备检验检测人员证 (无损检测人员)",
+                "purpose": "证明该文件属于无损检测人员资格证书类别"
+              },
+              {
+                "quote": "<table><tr><td>项目</td><td>级别</td><td>代号</td><td>备注</td></tr><tr><td>射线胶片照相检测</td><td>II</td><td>RT</td><td>免考换证</td></tr></table>",
+                "purpose": "证明持证主体具备具体的无损检测方法（RT）和级别（II级）资格信息"
+              }
+            ],
+            "materialTypeCode": "ndt_person_certificate"
+          }
+        ],
+        "documentSummary": "该文档是一份中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为段杰，证书编号371083198806212531，批准项目为射线胶片照相检测（RT）II级，由江苏省市场监督管理局于2021年发证，有效期至2027年1月。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-ndt-person-certificate-004",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰注册证.pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9938,
+      "outputTokens": 241,
+      "reasoningTokens": null,
+      "totalTokens": 10179,
+      "ocrMarkdownChars": 955,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 5.17,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_person_certificate",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为特种设备检验检测人员执业注册证，内容包含个人姓名及MT、PT、RT、UT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测人员执业注册证",
+                "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+              },
+              {
+                "quote": "姓名：段杰",
+                "purpose": "持证主体为个人姓名，符合人员资格证书要求"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档为特种设备检验检测人员执业注册证，记录了持证人段杰的个人信息、执业单位授权信息以及所持MT、PT、RT、UT等无损检测项目的资格级别和有效期，由中国特种设备检验协会颁发。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为特种设备检验检测人员执业注册证，内容包含个人姓名及MT、PT、RT、UT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测人员执业注册证",
+                "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+              },
+              {
+                "quote": "姓名：段杰",
+                "purpose": "持证主体为个人姓名，符合人员资格证书要求"
+              }
+            ],
+            "materialTypeCode": "ndt_person_certificate"
+          }
+        ],
+        "documentSummary": "该文档为特种设备检验检测人员执业注册证，记录了持证人段杰的个人信息、执业单位授权信息以及所持MT、PT、RT、UT等无损检测项目的资格级别和有效期，由中国特种设备检验协会颁发。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-ndt-person-certificate-005",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬RT检测证.jpg",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9599,
+      "outputTokens": 234,
+      "reasoningTokens": null,
+      "totalTokens": 9833,
+      "ocrMarkdownChars": 458,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 5.18,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_person_certificate",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为特种设备检验检测人员证，明确标注无损检测人员，列出持证人姓名汪仲冬及RT高级(III)项目级别，符合无损检测人员资格证定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备检验检测人员证",
+                "purpose": "证明证书类型为特种设备检验检测人员证"
+              },
+              {
+                "quote": "姓名： 汪仲冬",
+                "purpose": "确认持证主体为个人姓名"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为汪仲冬，批准项目为射线胶片照相检测RT高级(III)级，由国家市场监督管理总局颁发，有效期至2029年07月。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为特种设备检验检测人员证，明确标注无损检测人员，列出持证人姓名汪仲冬及RT高级(III)项目级别，符合无损检测人员资格证定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备检验检测人员证",
+                "purpose": "证明证书类型为特种设备检验检测人员证"
+              },
+              {
+                "quote": "姓名： 汪仲冬",
+                "purpose": "确认持证主体为个人姓名"
+              }
+            ],
+            "materialTypeCode": "ndt_person_certificate"
+          }
+        ],
+        "documentSummary": "该文件为中华人民共和国特种设备检验检测人员证（无损检测人员），持证人为汪仲冬，批准项目为射线胶片照相检测RT高级(III)级，由国家市场监督管理总局颁发，有效期至2029年07月。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-ndt-person-certificate-006",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬执业注册证书(1).pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_person_certificate"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 10002,
+      "outputTokens": 259,
+      "reasoningTokens": null,
+      "totalTokens": 10261,
+      "ocrMarkdownChars": 1068,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 5.58,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_person_certificate",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "文件标题为特种设备检验检测人员执业注册证，内容包含个人姓名及MT、RT、UT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测人员执业注册证",
+                "purpose": "文件标题明确标识为特种设备检验检测人员的执业注册证"
+              },
+              {
+                "quote": "姓名： 汪仲冬",
+                "purpose": "持证主体为个人姓名，符合人员资格证书要求"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档是一份特种设备检验检测人员执业注册证，持证人为汪仲冬，聘用单位为山东扬石工程检验检测有限公司。证书列明了持证人具备的无损检测资格项目及级别，包括MT-II、PA-II、PT-III、RT-III、TOFD-II、UT-II，并注明了各项目的有效期、注册证书编号、发证机构及有效期限。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文件标题为特种设备检验检测人员执业注册证，内容包含个人姓名及MT、RT、UT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备检验检测人员执业注册证",
+                "purpose": "文件标题明确标识为特种设备检验检测人员的执业注册证"
+              },
+              {
+                "quote": "姓名： 汪仲冬",
+                "purpose": "持证主体为个人姓名，符合人员资格证书要求"
+              }
+            ],
+            "materialTypeCode": "ndt_person_certificate"
+          }
+        ],
+        "documentSummary": "该文档是一份特种设备检验检测人员执业注册证，持证人为汪仲冬，聘用单位为山东扬石工程检验检测有限公司。证书列明了持证人具备的无损检测资格项目及级别，包括MT-II、PA-II、PT-III、RT-III、TOFD-II、UT-II，并注明了各项目的有效期、注册证书编号、发证机构及有效期限。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-ndt-plan-001",
+      "relativePath": "10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "ndt_plan"
+      ],
+      "predictedMaterialTypeCodes": [
+        "ndt_plan"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 22367,
+      "outputTokens": 324,
+      "reasoningTokens": null,
+      "totalTokens": 22691,
+      "ocrMarkdownChars": 22262,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 6.76,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "ndt_plan",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "文件标题为“无损检测施工方案”，内容包含编制依据、检测人员资质要求、射线及渗透检测方法选用、透照方式、像质计使用、检测时机等具体实施安排，并有编制、审核、批准签字，符合无损检测方案的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 无损检测施工方案",
+                "purpose": "文件标题明确标识为无损检测施工方案，对应ndt_plan的titlePatterns。"
+              },
+              {
+                "quote": "编制：韩尚昌 审核：汪仲冬 批准：欧阳石",
+                "purpose": "具有编制、审核、批准信息，满足ndt_plan关于审批信息的requiredSignals。"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档为山东扬石工程检验检测有限公司编制的无损检测施工方案，涵盖射线检测和渗透检测的编制依据、人员资质、透照方式、像质计使用、散射屏蔽、标记识别、现场操作、底片评定、返修复查、资料保存、质量管理、HSE管理、采购设备管理及文件控制等内容，并包含编制、审核、批准签署信息。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文件标题为“无损检测施工方案”，内容包含编制依据、检测人员资质要求、射线及渗透检测方法选用、透照方式、像质计使用、检测时机等具体实施安排，并有编制、审核、批准签字，符合无损检测方案的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 无损检测施工方案",
+                "purpose": "文件标题明确标识为无损检测施工方案，对应ndt_plan的titlePatterns。"
+              },
+              {
+                "quote": "编制：韩尚昌 审核：汪仲冬 批准：欧阳石",
+                "purpose": "具有编制、审核、批准信息，满足ndt_plan关于审批信息的requiredSignals。"
+              }
+            ],
+            "materialTypeCode": "ndt_plan"
+          }
+        ],
+        "documentSummary": "该文档为山东扬石工程检验检测有限公司编制的无损检测施工方案，涵盖射线检测和渗透检测的编制依据、人员资质、透照方式、像质计使用、散射屏蔽、标记识别、现场操作、底片评定、返修复查、资料保存、质量管理、HSE管理、采购设备管理及文件控制等内容，并包含编制、审核、批准签署信息。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-design-license-001",
+      "relativePath": "1、设计、安装资质证书/广东政和设计院压力管道设计资质.png",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "design_license"
+      ],
+      "predictedMaterialTypeCodes": [
+        "design_license"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9658,
+      "outputTokens": 255,
+      "reasoningTokens": null,
+      "totalTokens": 9913,
+      "ocrMarkdownChars": 559,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 4.71,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "design_license",
+            "materialCategories": [
+              "资质证照"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "文件标题为特种设备生产许可证，许可项目明确列出“压力管道设计”及GB1、GB2、GC1级别，符合设计单位许可证定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备生产许可证",
+                "purpose": "证明该文件为特种设备生产许可证"
+              },
+              {
+                "quote": "<tr><td>压力管道设计</td><td>公用管道(GB1,GB2)</td><td>燃气管道,热力管道</td><td></td></tr>",
+                "purpose": "证明许可项目包含压力管道设计及具体级别"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "广东政和工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目为压力管道设计（公用管道GB1/GB2、工业管道GC1），有效期至2028年1月17日。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "资质证照"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文件标题为特种设备生产许可证，许可项目明确列出“压力管道设计”及GB1、GB2、GC1级别，符合设计单位许可证定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备生产许可证",
+                "purpose": "证明该文件为特种设备生产许可证"
+              },
+              {
+                "quote": "<tr><td>压力管道设计</td><td>公用管道(GB1,GB2)</td><td>燃气管道,热力管道</td><td></td></tr>",
+                "purpose": "证明许可项目包含压力管道设计及具体级别"
+              }
+            ],
+            "materialTypeCode": "design_license"
+          }
+        ],
+        "documentSummary": "广东政和工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目为压力管道设计（公用管道GB1/GB2、工业管道GC1），有效期至2028年1月17日。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-construction-license-001",
+      "relativePath": "1、设计、安装资质证书/江苏三江压力管道资质.jpg",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "construction_license"
+      ],
+      "predictedMaterialTypeCodes": [
+        "construction_license"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9635,
+      "outputTokens": 278,
+      "reasoningTokens": null,
+      "totalTokens": 9913,
+      "ocrMarkdownChars": 534,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 6.62,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "construction_license",
+            "materialCategories": [
+              "资质证照"
+            ],
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为“中华人民共和国特种设备生产许可证”，许可项目明确列出“承压类特种设备安装、修理、改造”及“公用管道安装(GB2)”、“工业管道安装(GC2)”，符合施工单位安装许可证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备生产许可证",
+                "purpose": "证明证书类型为特种设备生产许可证"
+              },
+              {
+                "quote": "<tr><td>承压类特种设备安装、修理、改造</td><td>工业管道安装(GC2)</td><td>—</td><td>/</td></tr>",
+                "purpose": "证明许可范围包含压力管道安装活动"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档为江苏三江机电工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目涵盖承压类特种设备安装、修理、改造，具体包括公用管道安装(GB2)和工业管道安装(GC2)，有效期至2026年12月25日。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "资质证照"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.99,
+            "decisionSummary": "文件标题为“中华人民共和国特种设备生产许可证”，许可项目明确列出“承压类特种设备安装、修理、改造”及“公用管道安装(GB2)”、“工业管道安装(GC2)”，符合施工单位安装许可证的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备生产许可证",
+                "purpose": "证明证书类型为特种设备生产许可证"
+              },
+              {
+                "quote": "<tr><td>承压类特种设备安装、修理、改造</td><td>工业管道安装(GC2)</td><td>—</td><td>/</td></tr>",
+                "purpose": "证明许可范围包含压力管道安装活动"
+              }
+            ],
+            "materialTypeCode": "construction_license"
+          }
+        ],
+        "documentSummary": "该文档为江苏三江机电工程有限公司持有的中华人民共和国特种设备生产许可证，许可项目涵盖承压类特种设备安装、修理、改造，具体包括公用管道安装(GB2)和工业管道安装(GC2)，有效期至2026年12月25日。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-quality-manual-001",
+      "relativePath": "2、质量手册/质量手册.pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "quality_system_document"
+      ],
+      "predictedMaterialTypeCodes": [
+        "quality_system_document"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 16616,
+      "outputTokens": 363,
+      "reasoningTokens": null,
+      "totalTokens": 16979,
+      "ocrMarkdownChars": 13162,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 6.15,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "quality_system_document",
+            "materialCategories": [
+              "无损检测资料"
+            ],
+            "confidence": 0.98,
+            "decisionSummary": "文件标题为《特种设备质保手册》，内容包含质量方针、目标、组织机构、管理职责、程序文件及各项过程控制要求，并有编写、审核、批准签字，完全符合质量保证体系文件的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备质保手册",
+                "purpose": "文件标题明确标识为特种设备质保手册，属于质量体系核心文件。"
+              },
+              {
+                "quote": "本手册描述本公司的质量方针、目标以及建立的质量保证体系,就是质量保证体系纲领性文件",
+                "purpose": "正文明确阐述该手册是质量保证体系的纲领性文件，描述了方针、目标和体系内容。"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档为江苏三江机电工程有限公司编制的《特种设备质保手册》（文件编号JXSJ-TZSBZB-001），版本号为00，生效日期2015年01月01日。手册内容涵盖公司简介、颁布令、质保工程师任命书、术语与引用标准、质量方针与目标、管理职责、组织机构、各部门职责权限、管理评审、体系文件结构（手册、程序文件、作业文件、记录）、以及设计、材料、焊接、热处理、无损检测、检验试验、设备、不合格品、人员培训等全过程控制要求，并规定了执行特种设备许可制度的相关程序。文件经李红编写、周永恒审核、陈伟业批准。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "无损检测资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.98,
+            "decisionSummary": "文件标题为《特种设备质保手册》，内容包含质量方针、目标、组织机构、管理职责、程序文件及各项过程控制要求，并有编写、审核、批准签字，完全符合质量保证体系文件的定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 特种设备质保手册",
+                "purpose": "文件标题明确标识为特种设备质保手册，属于质量体系核心文件。"
+              },
+              {
+                "quote": "本手册描述本公司的质量方针、目标以及建立的质量保证体系,就是质量保证体系纲领性文件",
+                "purpose": "正文明确阐述该手册是质量保证体系的纲领性文件，描述了方针、目标和体系内容。"
+              }
+            ],
+            "materialTypeCode": "quality_system_document"
+          }
+        ],
+        "documentSummary": "该文档为江苏三江机电工程有限公司编制的《特种设备质保手册》（文件编号JXSJ-TZSBZB-001），版本号为00，生效日期2015年01月01日。手册内容涵盖公司简介、颁布令、质保工程师任命书、术语与引用标准、质量方针与目标、管理职责、组织机构、各部门职责权限、管理评审、体系文件结构（手册、程序文件、作业文件、记录）、以及设计、材料、焊接、热处理、无损检测、检验试验、设备、不合格品、人员培训等全过程控制要求，并规定了执行特种设备许可制度的相关程序。文件经李红编写、周永恒审核、陈伟业批准。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-notice-receipt-001",
+      "relativePath": "3、告知书、回执单/告知回执.png",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [],
+      "predictedMaterialTypeCodes": [],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9839,
+      "outputTokens": 119,
+      "reasoningTokens": null,
+      "totalTokens": 9958,
+      "ocrMarkdownChars": 961,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 2.66,
+      "structuredResponse": {
+        "labels": [],
+        "documentSummary": "该文件为特种设备业务办理资料接收回执，记录了压力管道安装工程的施工告知书接收情况，包含查询号、建设单位、施工单位及设备基本信息，属于行政受理凭证。",
+        "classificationComplete": true,
+        "unclassifiedReason": "给定60种资料类型中无对应‘施工告知回执’或‘行政受理凭证’的类型；该文件仅为监管部门接收施工告知书的回执，不属于施工组织设计、施工许可证、设计文件或任何施工/检验记录。",
+        "materialCategoryLabels": []
+      },
+      "rawModelOutput": {
+        "labels": [],
+        "documentSummary": "该文件为特种设备业务办理资料接收回执，记录了压力管道安装工程的施工告知书接收情况，包含查询号、建设单位、施工单位及设备基本信息，属于行政受理凭证。",
+        "classificationComplete": true,
+        "unclassifiedReason": "给定60种资料类型中无对应‘施工告知回执’或‘行政受理凭证’的类型；该文件仅为监管部门接收施工告知书的回执，不属于施工组织设计、施工许可证、设计文件或任何施工/检验记录。"
+      }
+    },
+    {
+      "caseId": "test-construction-notice-001",
+      "relativePath": "3、告知书、回执单/罐区告知书2026-4-27.png",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [],
+      "predictedMaterialTypeCodes": [
+        "construction_license"
+      ],
+      "semanticExactMatch": false,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [
+        "construction_license"
+      ],
+      "inputTokens": 10137,
+      "outputTokens": 198,
+      "reasoningTokens": null,
+      "totalTokens": 10335,
+      "ocrMarkdownChars": 1478,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 4.47,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "construction_license",
+            "materialCategories": [
+              "资质证照"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "文档为特种设备安装改造维修告知书，明确列出施工单位名称、施工类别（安装）、许可证编号及有效期，符合施工单位安装许可证类型的核心信号。",
+            "contentEvidence": [
+              {
+                "quote": "施工单位全称",
+                "purpose": "标识该文件主体为施工单位信息"
+              },
+              {
+                "quote": "施工类别",
+                "purpose": "确认许可项目涉及压力管道安装活动"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档是一份特种设备安装改造维修告知书回执，记录了江苏三江机电工程有限公司在珠海海瑞德制药有限公司进行GC2级流体输送用不锈钢管安装工程的告知信息，包含施工单位许可证编号、设备参数及施工日期等关键要素。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "资质证照"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档为特种设备安装改造维修告知书，明确列出施工单位名称、施工类别（安装）、许可证编号及有效期，符合施工单位安装许可证类型的核心信号。",
+            "contentEvidence": [
+              {
+                "quote": "施工单位全称",
+                "purpose": "标识该文件主体为施工单位信息"
+              },
+              {
+                "quote": "施工类别",
+                "purpose": "确认许可项目涉及压力管道安装活动"
+              }
+            ],
+            "materialTypeCode": "construction_license"
+          }
+        ],
+        "documentSummary": "该文档是一份特种设备安装改造维修告知书回执，记录了江苏三江机电工程有限公司在珠海海瑞德制药有限公司进行GC2级流体输送用不锈钢管安装工程的告知信息，包含施工单位许可证编号、设备参数及施工日期等关键要素。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-inspection-contract-001",
+      "relativePath": "4、监检合同/压力管道施工监检合同.pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [],
+      "predictedMaterialTypeCodes": [],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 10421,
+      "outputTokens": 155,
+      "reasoningTokens": null,
+      "totalTokens": 10576,
+      "ocrMarkdownChars": 1704,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 3.54,
+      "structuredResponse": {
+        "labels": [],
+        "documentSummary": "该文档为压力管道施工监检合同，记录了施工单位与特种设备检测研究院之间关于地上甲类储罐区压力管道安装工程的监督检验委托关系、双方责任、监检依据及工作内容等合同约定事项。",
+        "classificationComplete": true,
+        "unclassifiedReason": "输入文档属于“压力管道施工监检合同”，其核心内容为甲乙双方关于监督检验服务的商业委托与责任约定。给定的60种资料类型均针对具体的工程技术文件（如设计文件、施工记录、检测报告、证书证照等），不包含“监检合同”或“委托协议”这一类别，因此无法匹配任何预定义类型。",
+        "materialCategoryLabels": []
+      },
+      "rawModelOutput": {
+        "labels": [],
+        "documentSummary": "该文档为压力管道施工监检合同，记录了施工单位与特种设备检测研究院之间关于地上甲类储罐区压力管道安装工程的监督检验委托关系、双方责任、监检依据及工作内容等合同约定事项。",
+        "classificationComplete": true,
+        "unclassifiedReason": "输入文档属于“压力管道施工监检合同”，其核心内容为甲乙双方关于监督检验服务的商业委托与责任约定。给定的60种资料类型均针对具体的工程技术文件（如设计文件、施工记录、检测报告、证书证照等），不包含“监检合同”或“委托协议”这一类别，因此无法匹配任何预定义类型。"
+      }
+    },
+    {
+      "caseId": "test-construction-plan-001",
+      "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+      "status": "success",
+      "protocolStatus": "rejected",
+      "protocolError": "AutoGoldValidationError: UNGROUNDED_EVIDENCE: |编号|内容/日期|开始时间|结束时间|天数|2026年五月|2026年六月|2026年七月|",
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "construction_organization_design"
+      ],
+      "predictedMaterialTypeCodes": [
+        "construction_schedule",
+        "construction_license",
+        "welder_certificate",
+        "welder_roster"
+      ],
+      "semanticExactMatch": false,
+      "missingMaterialTypeCodes": [
+        "construction_organization_design"
+      ],
+      "extraMaterialTypeCodes": [
+        "construction_license",
+        "construction_schedule",
+        "welder_certificate",
+        "welder_roster"
+      ],
+      "inputTokens": 23580,
+      "outputTokens": 1037,
+      "reasoningTokens": null,
+      "totalTokens": 24617,
+      "ocrMarkdownChars": 25785,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 13.02,
+      "structuredResponse": null,
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档包含完整的施工进度计划横道图表格，列出了蒸汽管道安装、物料压力管道安装、水压试验等任务的具体开始和结束日期及天数，符合施工计划工期文件定义。",
+            "contentEvidence": [
+              {
+                "quote": "|编号|内容/日期|开始时间|结束时间|天数|2026年五月|2026年六月|2026年七月|",
+                "purpose": "证明存在以日期和工期为核心的进度计划表格结构"
+              },
+              {
+                "quote": "|1|DN80物料压力管道|5/8|5/20|13|",
+                "purpose": "证明具体任务与开始、结束日期及持续天数的对应关系"
+              }
+            ],
+            "materialTypeCode": "construction_schedule"
+          },
+          {
+            "confidence": 0.98,
+            "decisionSummary": "文档包含《中华人民共和国特种设备生产许可证》，明确许可项目为承压类特种设备安装、修理、改造（工业管道安装GC2），且持证单位为施工单位江苏三江机电工程有限公司，符合施工单位安装许可证定义。",
+            "contentEvidence": [
+              {
+                "quote": "# 中华人民共和国 特种设备生产许可证",
+                "purpose": "证明证书类型为特种设备生产许可证"
+              },
+              {
+                "quote": "|承压类特种设备安装、修理、改造|工业管道安装(GC2)|—|/|",
+                "purpose": "证明许可范围明确指向压力管道安装活动"
+              }
+            ],
+            "materialTypeCode": "construction_license"
+          },
+          {
+            "confidence": 0.96,
+            "decisionSummary": "文档包含多份特种设备作业人员证页面，显示赵相军、席俊杰、李卫伍等人的姓名、证件编号及焊接作业项目代号（如SMAW-FeII、GTAW-FeIV等），符合焊工资格证定义。",
+            "contentEvidence": [
+              {
+                "quote": "姓名 赵相军",
+                "purpose": "证明持证主体为个人姓名"
+              },
+              {
+                "quote": "|CTAN-FeII-6C-3/57-FeFS-02/11/12和SMAY-FeII-6C(K)-5/57-FeFSJ|自 2024年 12月至 2028年 11月|",
+                "purpose": "证明列出了具体的焊接作业项目代号及有效期"
+              }
+            ],
+            "materialTypeCode": "welder_certificate"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档末尾包含一份汇总表格，按序号列出多名焊工（A01-A03）的姓名、身份证号、证书编号及合格焊接项目代号和有效期，符合焊工名册定义。",
+            "contentEvidence": [
+              {
+                "quote": "|1||A01|3 421 301 971 03 286 116|SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12|2024-11|2028-10|",
+                "purpose": "证明表格集中列出了焊工姓名、证书信息及作业项目范围"
+              },
+              {
+                "quote": "|2||A02|4 105 211 986 09 1880 550|GTAW-Fe II-6G-5/57- Fefs-02/11/12SMAW-- Fe II-6G(K)-5/57- Fef3J|2024-12|2028-11|",
+                "purpose": "证明包含多名焊工信息，构成名册形式"
+              }
+            ],
+            "materialTypeCode": "welder_roster"
+          }
+        ],
+        "documentSummary": "该Markdown文档是一份压力管道安装工程资料包，主要包含：1. 施工进度计划横道图；2. 施工单位（江苏三江机电工程有限公司）的特种设备生产许可证（安装GC2）；3. 多名焊工的特种设备作业人员证（焊工资格证）；4. 项目持证焊工名册汇总表。此外还包含部分技术规范引用、设备材料清单及告知书回执等内容。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-drawing-review-001",
+      "relativePath": "6、会审记录、图纸/会审记录.png",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "drawing_review_record"
+      ],
+      "predictedMaterialTypeCodes": [
+        "drawing_review_record"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9793,
+      "outputTokens": 307,
+      "reasoningTokens": null,
+      "totalTokens": 10100,
+      "ocrMarkdownChars": 992,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 5.14,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "drawing_review_record",
+            "materialCategories": [
+              "设计变更与特殊标准"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "文档标题为“图纸会审记录”，内容包含具体图号HZ026Y-112-02-S301及设计、建设、施工三方签字确认的议定事项，符合施工图审查手续的定义。",
+            "contentEvidence": [
+              {
+                "quote": "图纸会审记录",
+                "purpose": "文件标题明确标识为图纸会审记录，属于施工图审查手续的典型标题模式。"
+              },
+              {
+                "quote": "HZ026Y-112-02-S301",
+                "purpose": "表格中列出了具体的施工图图号，证明该记录针对特定施工图纸进行审查。"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "本文档为珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）项目的图纸会审记录。记录了针对图号HZ026Y-112-02-S301的会审议定事项，包括材料供应质量检验责任、管道支架检查确认及问题协商机制等内容，并由设计单位、建设单位和施工单位相关人员于2026年04月28日签字确认。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "设计变更与特殊标准"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档标题为“图纸会审记录”，内容包含具体图号HZ026Y-112-02-S301及设计、建设、施工三方签字确认的议定事项，符合施工图审查手续的定义。",
+            "contentEvidence": [
+              {
+                "quote": "图纸会审记录",
+                "purpose": "文件标题明确标识为图纸会审记录，属于施工图审查手续的典型标题模式。"
+              },
+              {
+                "quote": "HZ026Y-112-02-S301",
+                "purpose": "表格中列出了具体的施工图图号，证明该记录针对特定施工图纸进行审查。"
+              }
+            ],
+            "materialTypeCode": "drawing_review_record"
+          }
+        ],
+        "documentSummary": "本文档为珠海海瑞德制药有限公司地上甲类储罐区2（含泵区）项目的图纸会审记录。记录了针对图号HZ026Y-112-02-S301的会审议定事项，包括材料供应质量检验责任、管道支架检查确认及问题协商机制等内容，并由设计单位、建设单位和施工单位相关人员于2026年04月28日签字确认。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-design-document-001",
+      "relativePath": "6、会审记录、图纸/地上甲类储罐区2（含泵区）施工图.pdf",
+      "status": "success",
+      "protocolStatus": "rejected",
+      "protocolError": "AutoGoldValidationError: UNGROUNDED_EVIDENCE: 图名DWG NAME 安装设计说明",
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "design_document"
+      ],
+      "predictedMaterialTypeCodes": [
+        "design_document",
+        "pipeline_summary",
+        "drawing_material_list",
+        "calculation_report"
+      ],
+      "semanticExactMatch": false,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [
+        "calculation_report",
+        "drawing_material_list",
+        "pipeline_summary"
+      ],
+      "inputTokens": 52175,
+      "outputTokens": 834,
+      "reasoningTokens": null,
+      "totalTokens": 53009,
+      "ocrMarkdownChars": 83825,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 11.14,
+      "structuredResponse": null,
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文件包含完整的施工图设计说明、管道材料设计说明、管道特性表、综合材料表及管道强度计算书等设计文件内容，符合设计文件类型定义。",
+            "contentEvidence": [
+              {
+                "quote": "图名DWG NAME 安装设计说明",
+                "purpose": "证明存在设计说明类设计文件"
+              },
+              {
+                "quote": "图名DWG NAME 管道特性表",
+                "purpose": "证明存在管道特性表类设计文件"
+              }
+            ],
+            "materialTypeCode": "design_document"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文件中包含名为“管道特性表”的表格，按管段号逐行列出介质、设计参数、管径壁厚、检验要求等信息，符合管线汇总表定义。",
+            "contentEvidence": [
+              {
+                "quote": "管段号 外径x壁厚(mm) 管道等级 压力管道类别 介质 名称 相态 特性 起点 终点 温度°C 表压MPa 温度°C 表压MPa",
+                "purpose": "证明表格按管线组织并包含设计参数"
+              },
+              {
+                "quote": "A01-PL-02 Φ89x3.0 M1E GC2 甲醇 液态 可燃 LP7101 ST7101 常温 0.25 60 0.275",
+                "purpose": "证明具体管线行包含介质、压力、温度、管径等参数"
+              }
+            ],
+            "materialTypeCode": "pipeline_summary"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文件中包含名为“综合材料表”的表格，按物项逐行列出材料名称、规格、材质、标准和数量，符合设计材料表定义。",
+            "contentEvidence": [
+              {
+                "quote": "序号 材料名称及规格 材料/牌号 单位 数量 标准号/图号",
+                "purpose": "证明材料表表头包含物项、规格、材质和标准列"
+              },
+              {
+                "quote": "DN25 Φ32×2.5 S30408 米 6 GB/T 14976-2025",
+                "purpose": "证明具体行包含材料规格、材质和执行标准"
+              }
+            ],
+            "materialTypeCode": "drawing_material_list"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文件中包含名为“管道强度计算书”的表格，列出设计条件、计算公式、参数及壁厚校核结果，符合强度计算书定义。",
+            "contentEvidence": [
+              {
+                "quote": "图名DWG NAME 管道强度计算书",
+                "purpose": "证明文件标题明确为强度计算书"
+              },
+              {
+                "quote": "计算公式 t=pD/2(SΦ+pY) 计算壁厚 T=t+C+T#a",
+                "purpose": "证明包含强度计算公式和计算过程"
+              }
+            ],
+            "materialTypeCode": "calculation_report"
+          }
+        ],
+        "documentSummary": "该Markdown资料为珠海海瑞德制药有限公司增资扩产项目地上甲类储罐区2(含泵区)的施工图设计文件包，包含图纸目录、安装设计说明、管道材料设计说明、管道等级索引表、管道材料等级代号说明、管道分支表、管道壁厚表、管道平面图、管道轴测图材料表、管道特性表、综合材料表及管道强度计算书。内容涵盖设计依据、材料选用、管道参数汇总、材料清单及强度校核等完整设计要求。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-component-checklist-001",
+      "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "acceptance_witness_record"
+      ],
+      "predictedMaterialTypeCodes": [
+        "drawing_material_list"
+      ],
+      "semanticExactMatch": false,
+      "missingMaterialTypeCodes": [
+        "acceptance_witness_record"
+      ],
+      "extraMaterialTypeCodes": [
+        "drawing_material_list"
+      ],
+      "inputTokens": 10097,
+      "outputTokens": 254,
+      "reasoningTokens": null,
+      "totalTokens": 10351,
+      "ocrMarkdownChars": 1182,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 4.73,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "drawing_material_list",
+            "materialCategories": [
+              "材料验收与复验",
+              "设计基础资料"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "表格按行逐条列出管道组成件（管材、弯头、法兰、异径管、垫片、螺栓）的名称/材质、规格尺寸及执行标准，符合设计材料表的定义特征。",
+            "contentEvidence": [
+              {
+                "quote": "S30408GB/T14976-2025",
+                "purpose": "表明该行物项为不锈钢管，并列出执行标准，属于材料表典型列内容"
+              },
+              {
+                "quote": "DN80WN-1.6-RF",
+                "purpose": "表明该行物项为带颈对焊法兰及其规格参数，与同行材质、标准共同构成材料表条目"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "OCR识别出的表格包含7行数据，每行列出一种管道组成件或辅材的材质/牌号、执行标准、规格尺寸及部分编号信息，整体呈现为按物项逐行组织的材料清单格式。",
+        "classificationComplete": true,
+        "unclassifiedReason": "",
+        "materialCategoryLabels": [
+          "材料验收与复验",
+          "设计基础资料"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "表格按行逐条列出管道组成件（管材、弯头、法兰、异径管、垫片、螺栓）的名称/材质、规格尺寸及执行标准，符合设计材料表的定义特征。",
+            "contentEvidence": [
+              {
+                "quote": "S30408GB/T14976-2025",
+                "purpose": "表明该行物项为不锈钢管，并列出执行标准，属于材料表典型列内容"
+              },
+              {
+                "quote": "DN80WN-1.6-RF",
+                "purpose": "表明该行物项为带颈对焊法兰及其规格参数，与同行材质、标准共同构成材料表条目"
+              }
+            ],
+            "materialTypeCode": "drawing_material_list"
+          }
+        ],
+        "documentSummary": "OCR识别出的表格包含7行数据，每行列出一种管道组成件或辅材的材质/牌号、执行标准、规格尺寸及部分编号信息，整体呈现为按物项逐行组织的材料清单格式。",
+        "classificationComplete": true,
+        "unclassifiedReason": ""
+      }
+    },
+    {
+      "caseId": "test-material-submission-package-001",
+      "relativePath": "7、管道元件及材料验收材料报审/管道元件及材料验收材料报审.pdf",
+      "status": "success",
+      "protocolStatus": "rejected",
+      "protocolError": "AutoGoldValidationError: UNGROUNDED_EVIDENCE: 产品名称:流体输送用不锈钢管...产品质量证明书 PRODUCT QUALITY CERTIFICATE 编号：20260213951",
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "acceptance_witness_record",
+        "quality_certificate",
+        "manufacturing_license",
+        "factory_inspection_report"
+      ],
+      "predictedMaterialTypeCodes": [
+        "acceptance_witness_record",
+        "quality_certificate",
+        "welding_material_certificate",
+        "manufacturing_license",
+        "type_test_report"
+      ],
+      "semanticExactMatch": false,
+      "missingMaterialTypeCodes": [
+        "factory_inspection_report"
+      ],
+      "extraMaterialTypeCodes": [
+        "type_test_report",
+        "welding_material_certificate"
+      ],
+      "inputTokens": 37497,
+      "outputTokens": 1211,
+      "reasoningTokens": null,
+      "totalTokens": 38708,
+      "ocrMarkdownChars": 54663,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 14.33,
+      "structuredResponse": null,
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档包含多份工程材料/构配件/设备报审表及进场检验记录，明确记录了不锈钢无缝钢管、焊丝、管件等材料进场时的数量、外观检查及验收结论，符合到货验收见证资料定义。",
+            "contentEvidence": [
+              {
+                "quote": "我方于2026年04月08日进场的工程材料/构配件/设备 材料名称及数量:不锈钢无缝钢管(详见附件)。现将质量证明文件及自检结果报上,拟用于下述部位:地上甲类储罐区2(含泵区)请予以审核。",
+                "purpose": "证明材料进场验收的语义和物项信息"
+              },
+              {
+                "quote": "检验结果:合格",
+                "purpose": "证明进场检验记录的验收结论"
+              }
+            ],
+            "materialTypeCode": "acceptance_witness_record"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档中包含福建宁德正上管业科技有限公司、河北圣天管件集团有限公司等制造单位出具的产品质量证明书，列明了产品规格、材质、化学成分、力学性能及执行标准，符合产品质量证明书定义。",
+            "contentEvidence": [
+              {
+                "quote": "产品名称:流体输送用不锈钢管...产品质量证明书 PRODUCT QUALITY CERTIFICATE 编号：20260213951",
+                "purpose": "证明钢管产品质量证明书的存在及内容"
+              },
+              {
+                "quote": "受压元件（锻件） 产品质量证明书（合格证）...锻件名称:法兰...制造标准:HG/T20592-2009",
+                "purpose": "证明法兰锻件产品质量证明书的存在及内容"
+              }
+            ],
+            "materialTypeCode": "quality_certificate"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档中包含天津市金桥焊材集团股份有限公司出具的不锈钢氩弧焊丝产品质量证明书，明确了焊材牌号、批号、化学成分及熔敷金属力学性能，符合焊接材料质量证明文件定义。",
+            "contentEvidence": [
+              {
+                "quote": "Commodity品名 不锈钢氩弧焊丝 Trade Model牌号 JQ.TG304 ... Batch No.批号 25055938",
+                "purpose": "证明焊接材料的具体对象及批次信息"
+              },
+              {
+                "quote": "Chemical Composition of Welding Wires焊丝化学成分(%) ... Mechanical Properties of Deposited Metal熔敷金属力学性能",
+                "purpose": "证明焊材质量证明文件包含化学成分和力学性能数据"
+              }
+            ],
+            "materialTypeCode": "welding_material_certificate"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档中包含福建宁德正上管业科技有限公司和河北圣天管件集团有限公司的特种设备生产许可证，许可项目明确为压力管道元件制造，符合制造单位许可证定义。",
+            "contentEvidence": [
+              {
+                "quote": "单位名称：福建宁德正上管业科技有限公司...许可项目 压力管道元件制造 许可子项目 压力管道管子(无缝钢管)(A)",
+                "purpose": "证明钢管制造单位的许可项目及范围"
+              },
+              {
+                "quote": "单位名称：河北圣天管件集团有限公司...许可项目 压力管道元件制造 许可子项目 压力管道管件(无缝管件(B1、B2)、有缝管件(B1、B2))",
+                "purpose": "证明管件制造单位的许可项目及范围"
+              }
+            ],
+            "materialTypeCode": "manufacturing_license"
+          },
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档中包含多份特种设备型式试验证书，分别针对无缝钢管、非焊接管件和钢制锻造法兰，列明了覆盖的产品型号、规格范围及试验结论，符合型式试验证书或报告定义。",
+            "contentEvidence": [
+              {
+                "quote": "特种设备型式试验证书 (压力管道元件) 编号：TSX71101004320260043 ... 经型式试验，确认产品安全性能符合 TSG D7002-2023 的要求。",
+                "purpose": "证明无缝钢管型式试验证书及其结论"
+              },
+              {
+                "quote": "特种设备型式试验证书（压力管道元件） 编号：TSX74101005320240266 ... 设备品种：钢制锻造法兰 ... 经型式试验，确认产品安全性能符合 TSG D7002-2023 的要求。",
+                "purpose": "证明法兰型式试验证书及其结论"
+              }
+            ],
+            "materialTypeCode": "type_test_report"
+          }
+        ],
+        "documentSummary": "该Markdown文档汇总了珠海海瑞德制药有限公司地上甲类储罐区2项目的多批次工程材料进场报审资料。内容涵盖不锈钢无缝钢管、不锈钢焊丝、不锈钢管件（弯头、法兰、异径管、三通）、聚四氟乙烯垫片及全螺纹螺栓等材料的进场验收记录、产品质量证明书、制造单位特种设备生产许可证以及型式试验证书。文档完整记录了材料从进场验收、质量证明文件核查到制造资质验证的全过程证据链。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-wps-pqr-001",
+      "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "wps_pqr"
+      ],
+      "predictedMaterialTypeCodes": [
+        "wps_pqr"
+      ],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 15341,
+      "outputTokens": 296,
+      "reasoningTokens": null,
+      "totalTokens": 15637,
+      "ocrMarkdownChars": 12321,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 4.56,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "wps_pqr",
+            "materialCategories": [
+              "焊接人员与焊接工艺"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "文档包含预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR），明确列出了焊接方法、母材组别、厚度适用范围及力学试验结果，符合wps_pqr类型定义。",
+            "contentEvidence": [
+              {
+                "quote": "预焊接工艺规程编号:HPY022日期:2024.09.25",
+                "purpose": "证明存在预焊接工艺规程（pWPS）及其编号和日期"
+              },
+              {
+                "quote": "焊接工艺评定报告(PQR)",
+                "purpose": "证明存在焊接工艺评定报告（PQR）标题"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该Markdown内容包含一份完整的焊接工艺文件包，主要由预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR）组成。文件中详细记录了单位名称、焊接方法（GTAW）、母材材质（S30408）、填充金属型号、预热及后热要求、电特性参数、焊接位置等技术指标，并包含了拉伸试验、弯曲试验等力学性能测试结果及合格结论，属于典型的焊接工艺评定与指导文件。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "焊接人员与焊接工艺"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "文档包含预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR），明确列出了焊接方法、母材组别、厚度适用范围及力学试验结果，符合wps_pqr类型定义。",
+            "contentEvidence": [
+              {
+                "quote": "预焊接工艺规程编号:HPY022日期:2024.09.25",
+                "purpose": "证明存在预焊接工艺规程（pWPS）及其编号和日期"
+              },
+              {
+                "quote": "焊接工艺评定报告(PQR)",
+                "purpose": "证明存在焊接工艺评定报告（PQR）标题"
+              }
+            ],
+            "materialTypeCode": "wps_pqr"
+          }
+        ],
+        "documentSummary": "该Markdown内容包含一份完整的焊接工艺文件包，主要由预焊接工艺规程（pWPS）和焊接工艺评定报告（PQR）组成。文件中详细记录了单位名称、焊接方法（GTAW）、母材材质（S30408）、填充金属型号、预热及后热要求、电特性参数、焊接位置等技术指标，并包含了拉伸试验、弯曲试验等力学性能测试结果及合格结论，属于典型的焊接工艺评定与指导文件。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    },
+    {
+      "caseId": "test-welder-social-security-001",
+      "relativePath": "9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [],
+      "predictedMaterialTypeCodes": [],
+      "semanticExactMatch": true,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [],
+      "inputTokens": 9761,
+      "outputTokens": 121,
+      "reasoningTokens": null,
+      "totalTokens": 9882,
+      "ocrMarkdownChars": 774,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 3.05,
+      "structuredResponse": {
+        "labels": [],
+        "documentSummary": "该文件为江苏省社会保险权益记录单（参保单位），记录了江苏三江机电工程有限公司的养老保险、工伤保险和失业保险参保缴费人数及职工李卫伍的缴费起止年月等信息，属于社保行政管理资料。",
+        "classificationComplete": true,
+        "unclassifiedReason": "输入内容为社会保险权益记录单，用于证明单位及职工的社保缴纳情况，不属于给定的60种工程监检资料类型（如设计、施工、检验、材料证明等）中的任何一种。",
+        "materialCategoryLabels": []
+      },
+      "rawModelOutput": {
+        "labels": [],
+        "documentSummary": "该文件为江苏省社会保险权益记录单（参保单位），记录了江苏三江机电工程有限公司的养老保险、工伤保险和失业保险参保缴费人数及职工李卫伍的缴费起止年月等信息，属于社保行政管理资料。",
+        "classificationComplete": true,
+        "unclassifiedReason": "输入内容为社会保险权益记录单，用于证明单位及职工的社保缴纳情况，不属于给定的60种工程监检资料类型（如设计、施工、检验、材料证明等）中的任何一种。"
+      }
+    },
+    {
+      "caseId": "test-welder-roster-001",
+      "relativePath": "9、焊工资质核查/焊工清单.docx",
+      "status": "success",
+      "protocolStatus": "accepted",
+      "protocolError": null,
+      "model": "qwen3.8-max",
+      "provider": "Model Studio / DashScope",
+      "expectedMaterialTypeCodes": [
+        "welder_roster"
+      ],
+      "predictedMaterialTypeCodes": [
+        "welder_certificate",
+        "welder_roster"
+      ],
+      "semanticExactMatch": false,
+      "missingMaterialTypeCodes": [],
+      "extraMaterialTypeCodes": [
+        "welder_certificate"
+      ],
+      "inputTokens": 12306,
+      "outputTokens": 693,
+      "reasoningTokens": null,
+      "totalTokens": 12999,
+      "ocrMarkdownChars": 4817,
+      "knowledgeChars": 26012,
+      "elapsedSeconds": 10.44,
+      "structuredResponse": {
+        "labels": [
+          {
+            "materialTypeCode": "welder_certificate",
+            "materialCategories": [
+              "焊接人员与焊接工艺"
+            ],
+            "confidence": 0.95,
+            "decisionSummary": "Markdown中包含多份特种设备作业人员证信息，明确列出持证人姓名、证件编号及焊接作业项目代号（如SMAW、GTAW等），符合焊工资格证定义。",
+            "contentEvidence": [
+              {
+                "quote": "姓名 赵相军",
+                "purpose": "证明持证主体为个人姓名"
+              },
+              {
+                "quote": "SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12",
+                "purpose": "证明列出了具体的焊接作业项目代号"
+              }
+            ]
+          },
+          {
+            "materialTypeCode": "welder_roster",
+            "materialCategories": [
+              "焊接人员与焊接工艺"
+            ],
+            "confidence": 0.98,
+            "decisionSummary": "Markdown开头表格按行集中列出了多名焊工（A01、A02、A03）的身份证号、焊接项目代号及有效期，符合焊工名册以表格汇总项目参焊人员的定义。",
+            "contentEvidence": [
+              {
+                "quote": "<tr><td>1</td><td></td><td>A01</td><td>342130197103286116</td><td>SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12</td><td>2024-11</td><td>2028-10</td></tr>",
+                "purpose": "证明表格包含焊工编号、证件号及合格项目范围"
+              },
+              {
+                "quote": "<tr><td>2</td><td></td><td>A02</td><td>41052119860918609180550</td><td>GTAW-Fe II-6G-5/57-Fefs-02/11/12SMAW-- Fe II-6G(K)-5/57-Fef3J</td><td>2024-12</td><td>2028-11</td></tr>",
+                "purpose": "证明表格包含多名焊工信息及其作业项目"
+              }
+            ]
+          }
+        ],
+        "documentSummary": "该文档包含一份焊工名册汇总表以及赵相军、席俊杰、李卫伍等多人的特种设备作业人员证（焊工证）扫描件OCR内容，记录了持证人的姓名、身份证号、发证机关、焊接作业项目代号及证书有效期等信息。",
+        "classificationComplete": true,
+        "unclassifiedReason": null,
+        "materialCategoryLabels": [
+          "焊接人员与焊接工艺"
+        ]
+      },
+      "rawModelOutput": {
+        "labels": [
+          {
+            "confidence": 0.95,
+            "decisionSummary": "Markdown中包含多份特种设备作业人员证信息，明确列出持证人姓名、证件编号及焊接作业项目代号（如SMAW、GTAW等），符合焊工资格证定义。",
+            "contentEvidence": [
+              {
+                "quote": "姓名 赵相军",
+                "purpose": "证明持证主体为个人姓名"
+              },
+              {
+                "quote": "SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12",
+                "purpose": "证明列出了具体的焊接作业项目代号"
+              }
+            ],
+            "materialTypeCode": "welder_certificate"
+          },
+          {
+            "confidence": 0.98,
+            "decisionSummary": "Markdown开头表格按行集中列出了多名焊工（A01、A02、A03）的身份证号、焊接项目代号及有效期，符合焊工名册以表格汇总项目参焊人员的定义。",
+            "contentEvidence": [
+              {
+                "quote": "<tr><td>1</td><td></td><td>A01</td><td>342130197103286116</td><td>SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/10/12GTAW-FeII-6FG-5/57-Fefs-02/11/12</td><td>2024-11</td><td>2028-10</td></tr>",
+                "purpose": "证明表格包含焊工编号、证件号及合格项目范围"
+              },
+              {
+                "quote": "<tr><td>2</td><td></td><td>A02</td><td>41052119860918609180550</td><td>GTAW-Fe II-6G-5/57-Fefs-02/11/12SMAW-- Fe II-6G(K)-5/57-Fef3J</td><td>2024-12</td><td>2028-11</td></tr>",
+                "purpose": "证明表格包含多名焊工信息及其作业项目"
+              }
+            ],
+            "materialTypeCode": "welder_roster"
+          }
+        ],
+        "documentSummary": "该文档包含一份焊工名册汇总表以及赵相军、席俊杰、李卫伍等多人的特种设备作业人员证（焊工证）扫描件OCR内容，记录了持证人的姓名、身份证号、发证机关、焊接作业项目代号及证书有效期等信息。",
+        "classificationComplete": true,
+        "unclassifiedReason": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-008",
+  "relativePath": "3.2回执.png",
+  "sha256": "sha256:bcd5000ba342b440a95cb4bf1eee5e3f13b953400cd495dad1e3306dd3f54de1",
+  "size": 74088,
+  "status": "success",
+  "providerTaskId": "ee482b83-cb0a-4529-a4f8-3dc8b3ba6d81",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 991,
+  "classificationMarkdownChars": 1010,
+  "elapsedSeconds": 19.36
+}

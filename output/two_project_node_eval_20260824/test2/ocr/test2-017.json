@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-017",
+  "relativePath": "8.4阀门审查许可证-沪工.pdf",
+  "sha256": "sha256:d45c1e1e49b17bfef7db6985e94833a32c82c78a53adecf3c1d220e5d2c82cd8",
+  "size": 354809,
+  "status": "success",
+  "providerTaskId": "7edaaa32-488f-4a43-bc61-96d840af4285",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 588,
+  "classificationMarkdownChars": 607,
+  "elapsedSeconds": 4.13
+}

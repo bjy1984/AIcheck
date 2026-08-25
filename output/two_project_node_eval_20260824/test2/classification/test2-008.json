@@ -1,0 +1,25 @@
+{
+  "caseId": "test2-008",
+  "relativePath": "3.2回执.png",
+  "sha256": "sha256:bcd5000ba342b440a95cb4bf1eee5e3f13b953400cd495dad1e3306dd3f54de1",
+  "size": 74088,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [],
+  "predictedMaterialTypeCodes": [],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 10801,
+  "outputTokens": 110,
+  "totalTokens": 10911,
+  "elapsedSeconds": 2.56,
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "该文件为特种设备业务办理资料接收回执，记录了压力管道安装工程的施工告知书送达及受理情况，属于行政办事流程文书。",
+    "classificationComplete": true,
+    "unclassifiedReason": "文件内容为特种设备安全监管部门出具的施工告知接收回执，仅证明行政受理手续完成，不包含61种具体资料类型定义中的技术、质量、资质或施工过程证据。",
+    "fallbackMaterialCategories": []
+  },
+  "fallbackRetest": true
+}

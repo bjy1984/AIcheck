@@ -1,0 +1,128 @@
+{
+  "caseId": "test-ndt-org-certificate-001",
+  "relativePath": "10、无损检测委托单位资质/1、机构资质证书/公司资质202407 - 副本.pdf",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_org_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_org_certificate"
+  ],
+  "exactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 13873,
+  "outputTokens": 3126,
+  "totalTokens": 16999,
+  "ocrMarkdownChars": 6801,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 80.21,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_org_certificate",
+        "materialCategories": [
+          "资质证照"
+        ],
+        "confidence": 0.8,
+        "decisionSummary": "该资料为“特种设备检验检测机构核准证（无损检测机构）”页面，载明机构名称、编号、获准从事常规检测、TOFD、AE等特种设备检测项目及有效期，符合无损检测机构核准证定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测机构核准证",
+            "purpose": "type_or_title_marker"
+          },
+          {
+            "quote": "(无损检测机构)",
+            "purpose": "object_marker"
+          },
+          {
+            "quote": "编号：TS7310417-2026",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "机构名称：山东扬石工程检验检测有限公司",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "经审查，获准从事下列项目的特种设备检测工作：",
+            "purpose": "conclusion_marker"
+          },
+          {
+            "quote": "1、CG-常规检测；",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "2、TOFD-衍射时差法超声检测；",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "3、AE-声发射检测。",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "有效期至：2026年12月10日",
+            "purpose": "conclusion_marker"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "文档包含山东扬石工程检验检测有限公司多类证照，其中特种设备检验检测机构核准证明确其无损检测资质；其他营业执照、辐射安全许可证、资质认定和管理体系认证不属于本60类中可归入的专门类型。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "资质证照"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.8,
+        "decisionSummary": "该资料为“特种设备检验检测机构核准证（无损检测机构）”页面，载明机构名称、编号、获准从事常规检测、TOFD、AE等特种设备检测项目及有效期，符合无损检测机构核准证定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测机构核准证",
+            "purpose": "type_or_title_marker"
+          },
+          {
+            "quote": "(无损检测机构)",
+            "purpose": "object_marker"
+          },
+          {
+            "quote": "编号：TS7310417-2026",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "机构名称：山东扬石工程检验检测有限公司",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "经审查，获准从事下列项目的特种设备检测工作：",
+            "purpose": "conclusion_marker"
+          },
+          {
+            "quote": "1、CG-常规检测；",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "2、TOFD-衍射时差法超声检测；",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "3、AE-声发射检测。",
+            "purpose": "field_or_param"
+          },
+          {
+            "quote": "有效期至：2026年12月10日",
+            "purpose": "conclusion_marker"
+          }
+        ],
+        "materialTypeCode": "ndt_org_certificate"
+      }
+    ],
+    "documentSummary": "文档包含山东扬石工程检验检测有限公司多类证照，其中特种设备检验检测机构核准证明确其无损检测资质；其他营业执照、辐射安全许可证、资质认定和管理体系认证不属于本60类中可归入的专门类型。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

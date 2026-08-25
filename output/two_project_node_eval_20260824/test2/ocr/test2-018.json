@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-018",
+  "relativePath": "8.5管件生产许可证、产品证明和型式报告.pdf",
+  "sha256": "sha256:d3924dce7cda63d555dc26199193588afbf754502ab84c9d0dbdeee24554b1a8",
+  "size": 4320428,
+  "status": "success",
+  "providerTaskId": "91c6dc5f-21d4-406f-b3a7-561d5973b4da",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 16335,
+  "classificationMarkdownChars": 16354,
+  "elapsedSeconds": 19.74
+}

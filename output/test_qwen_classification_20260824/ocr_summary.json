@@ -1,0 +1,230 @@
+{
+  "fileCount": 23,
+  "successCount": 23,
+  "failedCount": 0,
+  "results": [
+    {
+      "caseId": "test-pipeline-summary-001",
+      "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+      "ocrInput": "output/test_qwen_classification_20260824/converted/0、地上甲类储罐区2（含泵区）管道目录.pdf",
+      "convertedFromOffice": true,
+      "status": "success",
+      "providerTaskId": "14e0e87f-b3c4-4f09-b74f-5845917452f9",
+      "markdownArtifact": "full.md",
+      "markdownChars": 1374,
+      "elapsedSeconds": 10.08
+    },
+    {
+      "caseId": "test-ndt-org-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/1、机构资质证书/公司资质202407 - 副本.pdf",
+      "status": "success",
+      "providerTaskId": "5a3d33c4-19a9-44bf-829e-43a1245db265",
+      "markdownArtifact": "full.md",
+      "markdownChars": 6801,
+      "elapsedSeconds": 4.57
+    },
+    {
+      "caseId": "test-ndt-person-certificate-001",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平(1).pdf",
+      "status": "success",
+      "providerTaskId": "3a7765e3-f29f-4c6a-bf3c-8f8be167eb1c",
+      "markdownArtifact": "full.md",
+      "markdownChars": 764,
+      "elapsedSeconds": 4.22
+    },
+    {
+      "caseId": "test-ndt-person-certificate-002",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平RT注册证.jpg",
+      "status": "success",
+      "providerTaskId": "3c834145-8053-4e40-9134-1dec813967fc",
+      "markdownArtifact": "full.md",
+      "markdownChars": 498,
+      "elapsedSeconds": 3.95
+    },
+    {
+      "caseId": "test-ndt-person-certificate-003",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰RT证.jpg",
+      "status": "success",
+      "providerTaskId": "d06a9677-b7df-4531-a0e1-1d4450e84a46",
+      "markdownArtifact": "full.md",
+      "markdownChars": 358,
+      "elapsedSeconds": 3.9
+    },
+    {
+      "caseId": "test-ndt-person-certificate-004",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰注册证.pdf",
+      "status": "success",
+      "providerTaskId": "b502a314-7036-47c4-b433-8613877bed90",
+      "markdownArtifact": "full.md",
+      "markdownChars": 955,
+      "elapsedSeconds": 4.15
+    },
+    {
+      "caseId": "test-ndt-person-certificate-005",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬RT检测证.jpg",
+      "status": "success",
+      "providerTaskId": "40fbb857-affc-466f-824f-a1e409a96676",
+      "markdownArtifact": "full.md",
+      "markdownChars": 458,
+      "elapsedSeconds": 3.94
+    },
+    {
+      "caseId": "test-ndt-person-certificate-006",
+      "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬执业注册证书(1).pdf",
+      "status": "success",
+      "providerTaskId": "4877cbde-b882-4360-9546-d9858479e723",
+      "markdownArtifact": "full.md",
+      "markdownChars": 1068,
+      "elapsedSeconds": 4.33
+    },
+    {
+      "caseId": "test-ndt-plan-001",
+      "relativePath": "10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+      "status": "success",
+      "providerTaskId": "09a29495-590b-4f79-858a-18f4598fc2e1",
+      "markdownArtifact": "full.md",
+      "markdownChars": 22262,
+      "elapsedSeconds": 4.09
+    },
+    {
+      "caseId": "test-design-license-001",
+      "relativePath": "1、设计、安装资质证书/广东政和设计院压力管道设计资质.png",
+      "status": "success",
+      "providerTaskId": "b42d1d67-379a-4a55-96e8-00247dab9463",
+      "markdownArtifact": "full.md",
+      "markdownChars": 559,
+      "elapsedSeconds": 4.55
+    },
+    {
+      "caseId": "test-construction-license-001",
+      "relativePath": "1、设计、安装资质证书/江苏三江压力管道资质.jpg",
+      "status": "success",
+      "providerTaskId": "09be9eb8-e2f7-4384-91f0-52537b06248d",
+      "markdownArtifact": "full.md",
+      "markdownChars": 534,
+      "elapsedSeconds": 3.98
+    },
+    {
+      "caseId": "test-quality-manual-001",
+      "relativePath": "2、质量手册/质量手册.pdf",
+      "ocrInput": "test/2、质量手册/质量手册.pdf",
+      "convertedFromOffice": false,
+      "status": "success",
+      "providerTaskId": "1eca2cbf-e3b4-4fe7-8367-0e85f7d3acd5",
+      "markdownArtifact": "full.md",
+      "markdownChars": 13162,
+      "elapsedSeconds": 22.52
+    },
+    {
+      "caseId": "test-notice-receipt-001",
+      "relativePath": "3、告知书、回执单/告知回执.png",
+      "status": "success",
+      "providerTaskId": "85ebe02b-fa17-4119-b5c6-75873e428f56",
+      "markdownArtifact": "full.md",
+      "markdownChars": 961,
+      "elapsedSeconds": 3.92
+    },
+    {
+      "caseId": "test-construction-notice-001",
+      "relativePath": "3、告知书、回执单/罐区告知书2026-4-27.png",
+      "status": "success",
+      "providerTaskId": "cf3883ec-1b75-4de4-8a3d-4b133a34cff7",
+      "markdownArtifact": "full.md",
+      "markdownChars": 1478,
+      "elapsedSeconds": 4.21
+    },
+    {
+      "caseId": "test-inspection-contract-001",
+      "relativePath": "4、监检合同/压力管道施工监检合同.pdf",
+      "status": "success",
+      "providerTaskId": "053fd849-56ea-4550-a723-377f91a7f197",
+      "markdownArtifact": "full.md",
+      "markdownChars": 1704,
+      "elapsedSeconds": 4.07
+    },
+    {
+      "caseId": "test-construction-plan-001",
+      "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+      "ocrInput": "output/test_qwen_classification_20260824/converted/珠海海瑞德泵区施工方案2026-04-30.pdf",
+      "convertedFromOffice": true,
+      "status": "success",
+      "providerTaskId": "e1519cf0-9763-422d-834b-0195151cac2e",
+      "markdownArtifact": "full.md",
+      "markdownChars": 25785,
+      "elapsedSeconds": 32.77
+    },
+    {
+      "caseId": "test-drawing-review-001",
+      "relativePath": "6、会审记录、图纸/会审记录.png",
+      "status": "success",
+      "providerTaskId": "a2ffb021-7613-403d-9b0f-e53086307981",
+      "markdownArtifact": "full.md",
+      "markdownChars": 992,
+      "elapsedSeconds": 5.16
+    },
+    {
+      "caseId": "test-design-document-001",
+      "relativePath": "6、会审记录、图纸/地上甲类储罐区2（含泵区）施工图.pdf",
+      "status": "success",
+      "providerTaskId": "67de4a8b-c236-427f-be96-249d4a790e87",
+      "markdownArtifact": "full.md",
+      "markdownChars": 83825,
+      "elapsedSeconds": 6.06
+    },
+    {
+      "caseId": "test-component-checklist-001",
+      "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+      "ocrInput": "output/test_qwen_classification_20260824/converted/0常用管道元件核查记录-施工单位填写.pdf",
+      "convertedFromOffice": true,
+      "status": "success",
+      "providerTaskId": "05cf514b-a104-4e32-91d7-904f25656a0c",
+      "markdownArtifact": "full.md",
+      "markdownChars": 1182,
+      "elapsedSeconds": 7.16
+    },
+    {
+      "caseId": "test-material-submission-package-001",
+      "relativePath": "7、管道元件及材料验收材料报审/管道元件及材料验收材料报审.pdf",
+      "ocrInput": "test/7、管道元件及材料验收材料报审/管道元件及材料验收材料报审.pdf",
+      "convertedFromOffice": false,
+      "status": "success",
+      "providerTaskId": "599bf482-7d26-4a11-8dab-149eb9fdf182",
+      "markdownArtifact": "full.md",
+      "markdownChars": 54663,
+      "elapsedSeconds": 6.0
+    },
+    {
+      "caseId": "test-wps-pqr-001",
+      "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+      "ocrInput": "test/8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+      "convertedFromOffice": false,
+      "status": "success",
+      "providerTaskId": "bb65eafb-1127-4c88-8200-c2750404e3a0",
+      "markdownArtifact": "full.md",
+      "markdownChars": 12321,
+      "elapsedSeconds": 4.49
+    },
+    {
+      "caseId": "test-welder-social-security-001",
+      "relativePath": "9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+      "ocrInput": "test/9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+      "convertedFromOffice": false,
+      "status": "success",
+      "providerTaskId": "68f4f796-1346-4dd5-af33-702f2e83924c",
+      "markdownArtifact": "full.md",
+      "markdownChars": 774,
+      "elapsedSeconds": 4.07
+    },
+    {
+      "caseId": "test-welder-roster-001",
+      "relativePath": "9、焊工资质核查/焊工清单.docx",
+      "ocrInput": "output/test_qwen_classification_20260824/converted/焊工清单.pdf",
+      "convertedFromOffice": true,
+      "status": "success",
+      "providerTaskId": "3ecfa40c-2031-406e-9820-ad817c19c3c2",
+      "markdownArtifact": "full.md",
+      "markdownChars": 4817,
+      "elapsedSeconds": 10.44
+    }
+  ]
+}

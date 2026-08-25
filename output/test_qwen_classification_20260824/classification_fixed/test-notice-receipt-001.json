@@ -1,0 +1,34 @@
+{
+  "caseId": "test-notice-receipt-001",
+  "relativePath": "3、告知书、回执单/告知回执.png",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [],
+  "predictedMaterialTypeCodes": [],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9839,
+  "outputTokens": 119,
+  "reasoningTokens": null,
+  "totalTokens": 9958,
+  "ocrMarkdownChars": 961,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 2.66,
+  "structuredResponse": {
+    "labels": [],
+    "documentSummary": "该文件为特种设备业务办理资料接收回执，记录了压力管道安装工程的施工告知书接收情况，包含查询号、建设单位、施工单位及设备基本信息，属于行政受理凭证。",
+    "classificationComplete": true,
+    "unclassifiedReason": "给定60种资料类型中无对应‘施工告知回执’或‘行政受理凭证’的类型；该文件仅为监管部门接收施工告知书的回执，不属于施工组织设计、施工许可证、设计文件或任何施工/检验记录。",
+    "materialCategoryLabels": []
+  },
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "该文件为特种设备业务办理资料接收回执，记录了压力管道安装工程的施工告知书接收情况，包含查询号、建设单位、施工单位及设备基本信息，属于行政受理凭证。",
+    "classificationComplete": true,
+    "unclassifiedReason": "给定60种资料类型中无对应‘施工告知回执’或‘行政受理凭证’的类型；该文件仅为监管部门接收施工告知书的回执，不属于施工组织设计、施工许可证、设计文件或任何施工/检验记录。"
+  }
+}

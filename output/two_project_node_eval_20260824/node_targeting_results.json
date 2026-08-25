@@ -1,0 +1,1925 @@
+{
+  "schemaVersion": "two-project-node-targeting-eval@5",
+  "classificationTypeCount": 61,
+  "formalMappingRowCount": 164,
+  "projects": [
+    {
+      "project": "test",
+      "fileCount": 23,
+      "businessNodeCount": 69,
+      "documentReviewNodeCount": 68,
+      "expectedFromAvailableFilesNodeCount": 50,
+      "matchedAnyNodeCount": 42,
+      "formalEvidenceNodeCount": 39,
+      "categoryAdvisoryNodeCount": 15,
+      "autoBoundNodeCount": 39,
+      "all69CandidateCoverage": 0.6087,
+      "all69FormalCoverage": 0.5652,
+      "all69AutoBindingCoverage": 0.5652,
+      "availableFileNodeMatchRate": 0.9545,
+      "unexpectedMatchedNodeIds": [],
+      "unmatchedExpectedNodeIds": [
+        33,
+        34
+      ],
+      "matchedNodeIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        23,
+        24,
+        25,
+        26,
+        27,
+        29,
+        32,
+        35,
+        36,
+        38,
+        39,
+        43,
+        46,
+        47,
+        50,
+        51,
+        54,
+        55,
+        56,
+        59,
+        63,
+        68
+      ],
+      "formalNodeIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        16,
+        17,
+        19,
+        20,
+        21,
+        23,
+        24,
+        25,
+        26,
+        27,
+        29,
+        32,
+        35,
+        36,
+        38,
+        39,
+        43,
+        46,
+        47,
+        50,
+        51,
+        54,
+        55,
+        56,
+        59,
+        63,
+        68
+      ],
+      "advisoryNodeIds": [
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        23,
+        46,
+        54,
+        55,
+        56
+      ],
+      "boundNodeIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        16,
+        17,
+        19,
+        20,
+        21,
+        23,
+        24,
+        25,
+        26,
+        27,
+        29,
+        32,
+        35,
+        36,
+        38,
+        39,
+        43,
+        46,
+        47,
+        50,
+        51,
+        54,
+        55,
+        56,
+        59,
+        63,
+        68
+      ],
+      "files": [
+        {
+          "caseId": "test-pipeline-summary-001",
+          "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test-ndt-org-certificate-001",
+          "relativePath": "10、无损检测委托单位资质/1、机构资质证书/公司资质202407 - 副本.pdf",
+          "predictedMaterialTypeCodes": [
+            "ndt_org_certificate"
+          ],
+          "materialCategoryLabels": [
+            "资质证照"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            3,
+            35
+          ],
+          "matchedNodeIds": [
+            3,
+            35
+          ],
+          "formalNodeIds": [
+            3,
+            35
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            3,
+            35
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 2,
+          "createdBindingCount": 2
+        },
+        {
+          "caseId": "test-ndt-person-certificate-001",
+          "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平(1).pdf",
+          "predictedMaterialTypeCodes": [
+            "ndt_person_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            38
+          ],
+          "matchedNodeIds": [
+            38
+          ],
+          "formalNodeIds": [
+            38
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            38
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-ndt-person-certificate-002",
+          "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平RT注册证.jpg",
+          "predictedMaterialTypeCodes": [
+            "ndt_person_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            38
+          ],
+          "matchedNodeIds": [
+            38
+          ],
+          "formalNodeIds": [
+            38
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            38
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-ndt-person-certificate-003",
+          "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰RT证.jpg",
+          "predictedMaterialTypeCodes": [
+            "ndt_person_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            38
+          ],
+          "matchedNodeIds": [
+            38
+          ],
+          "formalNodeIds": [
+            38
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            38
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-ndt-person-certificate-004",
+          "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰注册证.pdf",
+          "predictedMaterialTypeCodes": [
+            "ndt_person_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            38
+          ],
+          "matchedNodeIds": [
+            38
+          ],
+          "formalNodeIds": [
+            38
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            38
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-ndt-person-certificate-005",
+          "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬RT检测证.jpg",
+          "predictedMaterialTypeCodes": [
+            "ndt_person_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            38
+          ],
+          "matchedNodeIds": [
+            38
+          ],
+          "formalNodeIds": [
+            38
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            38
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-ndt-person-certificate-006",
+          "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬执业注册证书(1).pdf",
+          "predictedMaterialTypeCodes": [
+            "ndt_person_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            38
+          ],
+          "matchedNodeIds": [
+            38
+          ],
+          "formalNodeIds": [
+            38
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            38
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-ndt-plan-001",
+          "relativePath": "10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+          "predictedMaterialTypeCodes": [
+            "ndt_plan"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            3,
+            36,
+            38,
+            39
+          ],
+          "matchedNodeIds": [
+            3,
+            36,
+            38,
+            39
+          ],
+          "formalNodeIds": [
+            3,
+            36,
+            38,
+            39
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            3,
+            36,
+            38,
+            39
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 4,
+          "createdBindingCount": 4
+        },
+        {
+          "caseId": "test-design-license-001",
+          "relativePath": "1、设计、安装资质证书/广东政和设计院压力管道设计资质.png",
+          "predictedMaterialTypeCodes": [
+            "design_license"
+          ],
+          "materialCategoryLabels": [
+            "资质证照"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            1
+          ],
+          "matchedNodeIds": [
+            1
+          ],
+          "formalNodeIds": [
+            1
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            1
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-construction-license-001",
+          "relativePath": "1、设计、安装资质证书/江苏三江压力管道资质.jpg",
+          "predictedMaterialTypeCodes": [
+            "construction_license"
+          ],
+          "materialCategoryLabels": [
+            "资质证照"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            2
+          ],
+          "matchedNodeIds": [
+            2
+          ],
+          "formalNodeIds": [
+            2
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            2
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-quality-manual-001",
+          "relativePath": "2、质量手册/质量手册.pdf",
+          "predictedMaterialTypeCodes": [
+            "quality_system_document"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test-notice-receipt-001",
+          "relativePath": "3、告知书、回执单/告知回执.png",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test-construction-notice-001",
+          "relativePath": "3、告知书、回执单/罐区告知书2026-4-27.png",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test-inspection-contract-001",
+          "relativePath": "4、监检合同/压力管道施工监检合同.pdf",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test-construction-plan-001",
+          "relativePath": "5、施工方案/珠海海瑞德泵区施工方案2026-04-30.doc",
+          "predictedMaterialTypeCodes": [
+            "construction_organization_design",
+            "construction_schedule",
+            "drawing_review_record",
+            "construction_license",
+            "welder_roster",
+            "welder_certificate"
+          ],
+          "materialCategoryLabels": [
+            "施工组织与方案",
+            "焊接人员与焊接工艺",
+            "设计变更与特殊标准",
+            "资质证照"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            2,
+            5,
+            11,
+            24,
+            29
+          ],
+          "matchedNodeIds": [
+            2,
+            5,
+            11,
+            24,
+            29
+          ],
+          "formalNodeIds": [
+            2,
+            5,
+            11,
+            24,
+            29
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            2,
+            5,
+            11,
+            24,
+            29
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 6,
+          "createdBindingCount": 5
+        },
+        {
+          "caseId": "test-drawing-review-001",
+          "relativePath": "6、会审记录、图纸/会审记录.png",
+          "predictedMaterialTypeCodes": [
+            "drawing_review_record"
+          ],
+          "materialCategoryLabels": [
+            "设计变更与特殊标准"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            5
+          ],
+          "matchedNodeIds": [
+            5
+          ],
+          "formalNodeIds": [
+            5
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            5
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test-design-document-001",
+          "relativePath": "6、会审记录、图纸/地上甲类储罐区2（含泵区）施工图.pdf",
+          "predictedMaterialTypeCodes": [
+            "design_document",
+            "drawing_material_list",
+            "pipeline_summary",
+            "calculation_report"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验",
+            "设计与施工组织",
+            "设计基础资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            19,
+            25,
+            26,
+            32,
+            33,
+            34,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "matchedNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            19,
+            25,
+            26,
+            32,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "formalNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            19,
+            25,
+            26,
+            32,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            19,
+            25,
+            26,
+            32,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "expectedNodeMatchRate": 0.92,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 26,
+          "createdBindingCount": 23
+        },
+        {
+          "caseId": "test-component-checklist-001",
+          "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+          "predictedMaterialTypeCodes": [
+            "component_compliance_checklist"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "category_advisory",
+          "expectedNodeIds": [
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "matchedNodeIds": [
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 27,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test-material-submission-package-001",
+          "relativePath": "7、管道元件及材料验收材料报审/管道元件及材料验收材料报审.pdf",
+          "predictedMaterialTypeCodes": [
+            "acceptance_witness_record",
+            "quality_certificate",
+            "welding_material_certificate",
+            "manufacturing_license",
+            "type_test_report"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验",
+            "焊接材料与过程记录"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            12,
+            13,
+            16,
+            17,
+            20,
+            21,
+            23,
+            26,
+            27,
+            46,
+            54,
+            55,
+            56
+          ],
+          "matchedNodeIds": [
+            12,
+            13,
+            16,
+            17,
+            20,
+            21,
+            23,
+            26,
+            27,
+            46,
+            54,
+            55,
+            56
+          ],
+          "formalNodeIds": [
+            12,
+            13,
+            16,
+            17,
+            20,
+            21,
+            23,
+            26,
+            27,
+            46,
+            54,
+            55,
+            56
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            12,
+            13,
+            16,
+            17,
+            20,
+            21,
+            23,
+            26,
+            27,
+            46,
+            54,
+            55,
+            56
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 14,
+          "createdBindingCount": 13
+        },
+        {
+          "caseId": "test-wps-pqr-001",
+          "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+          "predictedMaterialTypeCodes": [
+            "wps_pqr"
+          ],
+          "materialCategoryLabels": [
+            "焊接人员与焊接工艺"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "matchedNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "formalNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 3,
+          "createdBindingCount": 3
+        },
+        {
+          "caseId": "test-welder-social-security-001",
+          "relativePath": "9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test-welder-roster-001",
+          "relativePath": "9、焊工资质核查/焊工清单.docx",
+          "predictedMaterialTypeCodes": [
+            "welder_certificate",
+            "welder_roster"
+          ],
+          "materialCategoryLabels": [
+            "焊接人员与焊接工艺"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            24,
+            29
+          ],
+          "matchedNodeIds": [
+            24,
+            29
+          ],
+          "formalNodeIds": [
+            24,
+            29
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            24,
+            29
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 3,
+          "createdBindingCount": 2
+        }
+      ],
+      "expectedFromApplicableFilesNodeCount": 44
+    },
+    {
+      "project": "test2",
+      "fileCount": 20,
+      "businessNodeCount": 69,
+      "documentReviewNodeCount": 68,
+      "expectedFromAvailableFilesNodeCount": 52,
+      "matchedAnyNodeCount": 42,
+      "formalEvidenceNodeCount": 42,
+      "categoryAdvisoryNodeCount": 4,
+      "autoBoundNodeCount": 42,
+      "all69CandidateCoverage": 0.6087,
+      "all69FormalCoverage": 0.6087,
+      "all69AutoBindingCoverage": 0.6087,
+      "availableFileNodeMatchRate": 1.0,
+      "unexpectedMatchedNodeIds": [],
+      "unmatchedExpectedNodeIds": [],
+      "matchedNodeIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        16,
+        21,
+        23,
+        24,
+        25,
+        26,
+        29,
+        31,
+        32,
+        33,
+        34,
+        35,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        46,
+        47,
+        50,
+        51,
+        54,
+        55,
+        56,
+        59,
+        63,
+        65,
+        68
+      ],
+      "formalNodeIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        16,
+        21,
+        23,
+        24,
+        25,
+        26,
+        29,
+        31,
+        32,
+        33,
+        34,
+        35,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        46,
+        47,
+        50,
+        51,
+        54,
+        55,
+        56,
+        59,
+        63,
+        65,
+        68
+      ],
+      "advisoryNodeIds": [
+        1,
+        2,
+        3,
+        35
+      ],
+      "boundNodeIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        16,
+        21,
+        23,
+        24,
+        25,
+        26,
+        29,
+        31,
+        32,
+        33,
+        34,
+        35,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        46,
+        47,
+        50,
+        51,
+        54,
+        55,
+        56,
+        59,
+        63,
+        65,
+        68
+      ],
+      "files": [
+        {
+          "caseId": "test2-001",
+          "relativePath": "0压力管道安装监检流程指引.docx",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test2-002",
+          "relativePath": "1.设计单位荣贵公司企业品牌推广手册2025.03_5.pdf",
+          "predictedMaterialTypeCodes": [
+            "design_license"
+          ],
+          "materialCategoryLabels": [
+            "资质证照"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            1
+          ],
+          "matchedNodeIds": [
+            1
+          ],
+          "formalNodeIds": [
+            1
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            1
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test2-003",
+          "relativePath": "10.姜军焊工证.pdf",
+          "predictedMaterialTypeCodes": [
+            "welder_certificate"
+          ],
+          "materialCategoryLabels": [
+            "焊接人员与焊接工艺"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            24,
+            29
+          ],
+          "matchedNodeIds": [
+            24,
+            29
+          ],
+          "formalNodeIds": [
+            24,
+            29
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            24,
+            29
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 2,
+          "createdBindingCount": 2
+        },
+        {
+          "caseId": "test2-004",
+          "relativePath": "11.1无损检测公司声华资质-2024.pdf",
+          "predictedMaterialTypeCodes": [
+            "ndt_org_certificate"
+          ],
+          "materialCategoryLabels": [
+            "资质证照"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            3,
+            35
+          ],
+          "matchedNodeIds": [
+            3,
+            35
+          ],
+          "formalNodeIds": [
+            3,
+            35
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            3,
+            35
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 2,
+          "createdBindingCount": 2
+        },
+        {
+          "caseId": "test2-005",
+          "relativePath": "11.2检测人员资质.pdf",
+          "predictedMaterialTypeCodes": [
+            "ndt_person_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            38
+          ],
+          "matchedNodeIds": [
+            38
+          ],
+          "formalNodeIds": [
+            38
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            38
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test2-006",
+          "relativePath": "2.广东金辉GC2管道安装质保手册2022.9.doc",
+          "predictedMaterialTypeCodes": [
+            "quality_system_document"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test2-007",
+          "relativePath": "3.1告知书.png",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [
+            "资质证照"
+          ],
+          "fallbackMaterialCategories": [
+            "资质证照"
+          ],
+          "classificationTargetingMode": "category_advisory",
+          "expectedNodeIds": [
+            1,
+            2,
+            3,
+            35
+          ],
+          "matchedNodeIds": [
+            1,
+            2,
+            3,
+            35
+          ],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [
+            1,
+            2,
+            3,
+            35
+          ],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 4,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test2-008",
+          "relativePath": "3.2回执.png",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test2-009",
+          "relativePath": "4.压力管道施工监检合同.pdf",
+          "predictedMaterialTypeCodes": [],
+          "materialCategoryLabels": [],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [],
+          "matchedNodeIds": [],
+          "formalNodeIds": [],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [],
+          "expectedNodeMatchRate": 1,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 0,
+          "createdBindingCount": 0
+        },
+        {
+          "caseId": "test2-010",
+          "relativePath": "5.1盈德气体华润施工方案.pdf",
+          "predictedMaterialTypeCodes": [
+            "construction_organization_design"
+          ],
+          "materialCategoryLabels": [
+            "施工组织与方案"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            2,
+            11
+          ],
+          "matchedNodeIds": [
+            2
+          ],
+          "formalNodeIds": [
+            2
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            2
+          ],
+          "expectedNodeMatchRate": 0.5,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test2-011",
+          "relativePath": "5.2检测方案-盈德气体化工管道.pdf",
+          "predictedMaterialTypeCodes": [
+            "construction_organization_design",
+            "ndt_procedure"
+          ],
+          "materialCategoryLabels": [
+            "施工组织与方案",
+            "无损检测资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            39
+          ],
+          "matchedNodeIds": [
+            39
+          ],
+          "formalNodeIds": [
+            39
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            39
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test2-012",
+          "relativePath": "6.1图纸会审记录.doc",
+          "predictedMaterialTypeCodes": [
+            "drawing_review_record"
+          ],
+          "materialCategoryLabels": [
+            "设计变更与特殊标准"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            5
+          ],
+          "matchedNodeIds": [
+            5
+          ],
+          "formalNodeIds": [
+            5
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            5
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test2-013",
+          "relativePath": "6.2盈德华润设计图纸.pdf",
+          "predictedMaterialTypeCodes": [
+            "design_document",
+            "drawing_material_list",
+            "calculation_report",
+            "pipeline_summary"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验",
+            "设计与施工组织",
+            "设计基础资料"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            25,
+            26,
+            32,
+            33,
+            34,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "matchedNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            25,
+            26,
+            32,
+            33,
+            34,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "formalNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            25,
+            26,
+            32,
+            33,
+            34,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            11,
+            12,
+            16,
+            25,
+            26,
+            32,
+            33,
+            34,
+            43,
+            47,
+            50,
+            51,
+            59,
+            63,
+            68
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 27,
+          "createdBindingCount": 24
+        },
+        {
+          "caseId": "test2-014",
+          "relativePath": "8.1管子产品质量证明书.jpg",
+          "predictedMaterialTypeCodes": [
+            "quality_certificate"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "matchedNodeIds": [
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "formalNodeIds": [
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 7,
+          "createdBindingCount": 7
+        },
+        {
+          "caseId": "test2-015",
+          "relativePath": "8.2管子特种设备生产许可证及型式试验证书.pdf",
+          "predictedMaterialTypeCodes": [
+            "manufacturing_license",
+            "type_test_report"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            12,
+            13,
+            56
+          ],
+          "matchedNodeIds": [
+            12,
+            13,
+            56
+          ],
+          "formalNodeIds": [
+            12,
+            13,
+            56
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            12,
+            13,
+            56
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 3,
+          "createdBindingCount": 3
+        },
+        {
+          "caseId": "test2-016",
+          "relativePath": "8.3阀门型式试验报告.jpg",
+          "predictedMaterialTypeCodes": [
+            "type_test_report"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            13,
+            56
+          ],
+          "matchedNodeIds": [
+            13,
+            56
+          ],
+          "formalNodeIds": [
+            13,
+            56
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            13,
+            56
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 2,
+          "createdBindingCount": 2
+        },
+        {
+          "caseId": "test2-017",
+          "relativePath": "8.4阀门审查许可证-沪工.pdf",
+          "predictedMaterialTypeCodes": [
+            "manufacturing_license"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            12
+          ],
+          "matchedNodeIds": [
+            12
+          ],
+          "formalNodeIds": [
+            12
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            12
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 1,
+          "createdBindingCount": 1
+        },
+        {
+          "caseId": "test2-018",
+          "relativePath": "8.5管件生产许可证、产品证明和型式报告.pdf",
+          "predictedMaterialTypeCodes": [
+            "quality_certificate",
+            "manufacturing_license",
+            "type_test_report"
+          ],
+          "materialCategoryLabels": [
+            "材料验收与复验"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            12,
+            13,
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "matchedNodeIds": [
+            12,
+            13,
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "formalNodeIds": [
+            12,
+            13,
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            12,
+            13,
+            16,
+            21,
+            23,
+            46,
+            54,
+            55,
+            56
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 10,
+          "createdBindingCount": 9
+        },
+        {
+          "caseId": "test2-019",
+          "relativePath": "9.1金辉焊接工艺评定20.pdf",
+          "predictedMaterialTypeCodes": [
+            "wps_pqr",
+            "ndt_report",
+            "welding_material_certificate"
+          ],
+          "materialCategoryLabels": [
+            "无损检测资料",
+            "焊接人员与焊接工艺",
+            "焊接材料与过程记录"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            31,
+            37,
+            40,
+            41,
+            42,
+            65
+          ],
+          "matchedNodeIds": [
+            31,
+            37,
+            40,
+            41,
+            42,
+            65
+          ],
+          "formalNodeIds": [
+            31,
+            37,
+            40,
+            41,
+            42,
+            65
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            31,
+            37,
+            40,
+            41,
+            42,
+            65
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 6,
+          "createdBindingCount": 6
+        },
+        {
+          "caseId": "test2-020",
+          "relativePath": "9.2.焊接工艺卡.pdf",
+          "predictedMaterialTypeCodes": [
+            "wps_pqr"
+          ],
+          "materialCategoryLabels": [
+            "焊接人员与焊接工艺"
+          ],
+          "fallbackMaterialCategories": [],
+          "classificationTargetingMode": "exact",
+          "expectedNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "matchedNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "formalNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "advisoryNodeIds": [],
+          "boundNodeIds": [
+            25,
+            29,
+            32
+          ],
+          "expectedNodeMatchRate": 1.0,
+          "unexpectedNodeIds": [],
+          "createdLinkCount": 3,
+          "createdBindingCount": 3
+        }
+      ],
+      "expectedFromApplicableFilesNodeCount": 42
+    }
+  ]
+}

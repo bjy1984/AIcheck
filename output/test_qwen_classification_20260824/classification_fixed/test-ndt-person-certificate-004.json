@@ -1,0 +1,75 @@
+{
+  "caseId": "test-ndt-person-certificate-004",
+  "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/段杰注册证.pdf",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9938,
+  "outputTokens": 241,
+  "reasoningTokens": null,
+  "totalTokens": 10179,
+  "ocrMarkdownChars": 955,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 5.17,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_person_certificate",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为特种设备检验检测人员执业注册证，内容包含个人姓名及MT、PT、RT、UT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测人员执业注册证",
+            "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+          },
+          {
+            "quote": "姓名：段杰",
+            "purpose": "持证主体为个人姓名，符合人员资格证书要求"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档为特种设备检验检测人员执业注册证，记录了持证人段杰的个人信息、执业单位授权信息以及所持MT、PT、RT、UT等无损检测项目的资格级别和有效期，由中国特种设备检验协会颁发。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.99,
+        "decisionSummary": "文件标题为特种设备检验检测人员执业注册证，内容包含个人姓名及MT、PT、RT、UT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测人员执业注册证",
+            "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+          },
+          {
+            "quote": "姓名：段杰",
+            "purpose": "持证主体为个人姓名，符合人员资格证书要求"
+          }
+        ],
+        "materialTypeCode": "ndt_person_certificate"
+      }
+    ],
+    "documentSummary": "该文档为特种设备检验检测人员执业注册证，记录了持证人段杰的个人信息、执业单位授权信息以及所持MT、PT、RT、UT等无损检测项目的资格级别和有效期，由中国特种设备检验协会颁发。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

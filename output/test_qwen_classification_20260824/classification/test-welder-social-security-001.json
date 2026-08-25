@@ -1,0 +1,31 @@
+{
+  "caseId": "test-welder-social-security-001",
+  "relativePath": "9、焊工资质核查/李卫伍社保缴纳证明.pdf",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [],
+  "predictedMaterialTypeCodes": [],
+  "exactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9742,
+  "outputTokens": 1584,
+  "totalTokens": 11326,
+  "ocrMarkdownChars": 774,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 47.27,
+  "structuredResponse": {
+    "labels": [],
+    "documentSummary": "江苏省社会保险权益记录单（参保单位），记录江苏三江机电工程有限公司在靖江市的参保缴费信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": "文档为社会保险权益记录单，属于社保缴费证明，不在60类工程监检资料范围内。",
+    "materialCategoryLabels": []
+  },
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "江苏省社会保险权益记录单（参保单位），记录江苏三江机电工程有限公司在靖江市的参保缴费信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": "文档为社会保险权益记录单，属于社保缴费证明，不在60类工程监检资料范围内。"
+  }
+}

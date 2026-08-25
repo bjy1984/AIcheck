@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-016",
+  "relativePath": "8.3阀门型式试验报告.jpg",
+  "sha256": "sha256:40468e96256435fb8518bc3013459847ecdade7b03bff2507959ef8610f893c8",
+  "size": 89519,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "type_test_report",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.99,
+      "decisionSummary": "文件标题明确为特种设备型式试验证书，正文包含证书编号、制造单位、产品名称、覆盖规格范围及符合TSG D7002-2023的结论，完全匹配型式试验证书或报告的定义。",
+      "contentEvidence": [
+        {
+          "quote": "# 特种设备型式试验证书",
+          "purpose": "文件标题直接表明资料类型为特种设备型式试验证书"
+        },
+        {
+          "quote": "经型式试验，确认产品安全性能符合 TSG D7002-2023 的要求。本证覆盖以下产品：",
+          "purpose": "正文明确记载型式试验结论及产品覆盖范围，符合该类型必需信号"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "type_test_report"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "材料验收与复验"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 10243,
+  "outputTokens": 352,
+  "totalTokens": 10595,
+  "elapsedSeconds": 5.11,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.99,
+        "decisionSummary": "文件标题明确为特种设备型式试验证书，正文包含证书编号、制造单位、产品名称、覆盖规格范围及符合TSG D7002-2023的结论，完全匹配型式试验证书或报告的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备型式试验证书",
+            "purpose": "文件标题直接表明资料类型为特种设备型式试验证书"
+          },
+          {
+            "quote": "经型式试验，确认产品安全性能符合 TSG D7002-2023 的要求。本证覆盖以下产品：",
+            "purpose": "正文明确记载型式试验结论及产品覆盖范围，符合该类型必需信号"
+          }
+        ],
+        "materialTypeCode": "type_test_report"
+      }
+    ],
+    "documentSummary": "该文件为压力管道元件（金属阀门）的特种设备型式试验证书，由浙江省泵阀产品质量检验中心/国家阀门质量检验检测中心（浙江）颁发给上海沪工阀门厂（集团）有限公司，证书编号TSX73201004820250157，确认截止阀产品安全性能符合TSG D7002-2023要求，并列出覆盖的公称压力、尺寸及温度范围。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

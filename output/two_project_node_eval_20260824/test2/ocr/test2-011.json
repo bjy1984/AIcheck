@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-011",
+  "relativePath": "5.2检测方案-盈德气体化工管道.pdf",
+  "sha256": "sha256:3083c815329c39d40dd1e989151eb94b571c43e639e2bdd65be2d449e502ab0b",
+  "size": 743019,
+  "status": "success",
+  "providerTaskId": "7d584d4c-6a9e-402f-b4a1-15aa7de47fc7",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 19580,
+  "classificationMarkdownChars": 19599,
+  "elapsedSeconds": 22.51
+}

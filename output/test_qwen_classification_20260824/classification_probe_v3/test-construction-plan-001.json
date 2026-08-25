@@ -1,0 +1,93 @@
+{
+  "caseId": "test-construction-plan-001",
+  "elapsedSeconds": 12.59,
+  "usage": {
+    "completion_tokens": 814,
+    "prompt_tokens": 23722,
+    "prompt_tokens_details": {
+      "cached_tokens": 9216,
+      "text_tokens": 23722
+    },
+    "total_tokens": 24536
+  },
+  "rawLabels": [
+    "construction_schedule",
+    "construction_license",
+    "welder_certificate",
+    "welder_roster"
+  ],
+  "raw": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含完整的施工进度计划表，列出了蒸汽管道安装、物料压力管道阀组安装等任务及其对应的开始、结束日期和天数。",
+        "contentEvidence": [
+          {
+            "quote": "DN80物料压力管道 5/8 5/20 13",
+            "purpose": "证明文件中存在具体施工任务与开始、结束日期的对应关系"
+          },
+          {
+            "quote": "物料压力管道水压试验 6/10 6/19 10",
+            "purpose": "证明文件中包含不同施工阶段的工期安排"
+          }
+        ],
+        "materialTypeCode": "construction_schedule"
+      },
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件包含特种设备生产许可证，许可项目明确为承压类特种设备安装、修理、改造及工业管道安装(GC2)，符合施工单位安装许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "经审查，获准从事下列压力管道的安装：",
+            "purpose": "确认证书许可范围为压力管道安装活动"
+          },
+          {
+            "quote": "承压类特种设备安装、修理、改造 工业管道安装(GC2)",
+            "purpose": "确认许可子项目包含GC2级工业管道安装"
+          }
+        ],
+        "materialTypeCode": "construction_license"
+      },
+      {
+        "confidence": 0.96,
+        "decisionSummary": "文件包含多名焊工（赵相军、席俊杰、李卫伍）的特种设备作业人员证信息，列出了姓名、证件编号及考试合格作业项目代号。",
+        "contentEvidence": [
+          {
+            "quote": "姓名 赵相军 证件编号 410521198609180550",
+            "purpose": "证明文件中包含具体焊工的个人信息及证件标识"
+          },
+          {
+            "quote": "CTAN-FeII-6C-3/57-FeFS-02/11/12和SMAY-FeII-6C(K)-5/57-FeFSJ",
+            "purpose": "证明文件中列出了焊工具体的焊接作业项目代号"
+          }
+        ],
+        "materialTypeCode": "welder_certificate"
+      },
+      {
+        "confidence": 0.94,
+        "decisionSummary": "文件末尾包含焊工名册表格，集中列出了多名参焊人员的编号、身份证号、持证项目及有效期。",
+        "contentEvidence": [
+          {
+            "quote": "A01 3 421 301 971 03 286 116 SMAW-FeII-6FG-12/19-Fef3JTAW-FeIV-6G-12/19-Fefs-02/",
+            "purpose": "证明表格中包含焊工编号、身份信息及持证项目范围"
+          },
+          {
+            "quote": "A02 4 105 211 986 09 1880 550 GTAW-Fe II-6G-5/57- Fefs-02/11/12SMAW-- Fe II-6G(K",
+            "purpose": "证明表格以列表形式汇总了多名焊工的资格信息"
+          }
+        ],
+        "materialTypeCode": "welder_roster"
+      }
+    ],
+    "documentSummary": "该资料包主要包含压力管道工程施工相关的进度计划、单位资质及人员资格证明文件。具体包括一份详细的施工进度计划表（涵盖管道安装、试压、保温等阶段），江苏三江机电工程有限公司的特种设备生产许可证（许可GC2级工业管道安装），以及赵相军、席俊杰、李卫伍等多名焊工的特种设备作业人员证和一份汇总的焊工名册。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  },
+  "protocolStatus": "accepted",
+  "labels": [
+    "construction_schedule",
+    "construction_license",
+    "welder_certificate",
+    "welder_roster"
+  ]
+}

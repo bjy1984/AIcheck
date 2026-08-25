@@ -1,0 +1,100 @@
+{
+  "caseId": "test2-011",
+  "relativePath": "5.2检测方案-盈德气体化工管道.pdf",
+  "sha256": "sha256:3083c815329c39d40dd1e989151eb94b571c43e639e2bdd65be2d449e502ab0b",
+  "size": 743019,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "construction_organization_design",
+      "materialCategories": [
+        "施工组织与方案"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件标题为施工方案，内容包含工程概况、组织机构、资源配置、质量安全措施等综合部署，符合施工组织设计定义。",
+      "contentEvidence": [
+        {
+          "quote": "珠海盈德化工区气站项目（华润化学）管道安装工程施工方案",
+          "purpose": "证明文档性质为综合性施工方案"
+        },
+        {
+          "quote": "3. 施工总体部署",
+          "purpose": "证明包含施工总体部署章节"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "ndt_procedure",
+      "materialCategories": [
+        "无损检测资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.98,
+      "decisionSummary": "文件第4.1节明确为射线检测工艺规程，规定了设备、器材、透照方式、曝光量、暗室处理及底片评定等具体操作步骤和验收要求，属于无损检测工艺文件。",
+      "contentEvidence": [
+        {
+          "quote": "4.1 射线检测工艺规程",
+          "purpose": "证明文件包含无损检测工艺规程章节标题"
+        },
+        {
+          "quote": "本规程规定了本项目压力管道对接接头射线检测的工艺要求",
+          "purpose": "证明内容为规定检测工艺要求"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "construction_organization_design",
+    "ndt_procedure"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "施工组织与方案",
+    "无损检测资料"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 21653,
+  "outputTokens": 406,
+  "totalTokens": 22059,
+  "elapsedSeconds": 7.14,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为施工方案，内容包含工程概况、组织机构、资源配置、质量安全措施等综合部署，符合施工组织设计定义。",
+        "contentEvidence": [
+          {
+            "quote": "珠海盈德化工区气站项目（华润化学）管道安装工程施工方案",
+            "purpose": "证明文档性质为综合性施工方案"
+          },
+          {
+            "quote": "3. 施工总体部署",
+            "purpose": "证明包含施工总体部署章节"
+          }
+        ],
+        "materialTypeCode": "construction_organization_design"
+      },
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件第4.1节明确为射线检测工艺规程，规定了设备、器材、透照方式、曝光量、暗室处理及底片评定等具体操作步骤和验收要求，属于无损检测工艺文件。",
+        "contentEvidence": [
+          {
+            "quote": "4.1 射线检测工艺规程",
+            "purpose": "证明文件包含无损检测工艺规程章节标题"
+          },
+          {
+            "quote": "本规程规定了本项目压力管道对接接头射线检测的工艺要求",
+            "purpose": "证明内容为规定检测工艺要求"
+          }
+        ],
+        "materialTypeCode": "ndt_procedure"
+      }
+    ],
+    "documentSummary": "该文件是珠海盈德化工区气站项目管道安装工程的施工方案，由广州声华科技股份有限公司编制。内容涵盖工程概况、施工总体部署、射线检测工艺规程、材料设备管理、人员配置、质量与HSE管理体系、进度控制及竣工资料管理等。其中第4章详细规定了射线检测的工艺参数、操作流程及验收标准，附件包含作业安全风险分析表。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "fallbackMaterialCategories": []
+  }
+}

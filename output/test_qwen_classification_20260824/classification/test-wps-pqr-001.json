@@ -1,0 +1,16 @@
+{
+  "caseId": "test-wps-pqr-001",
+  "relativePath": "8、焊接工艺评定/不锈钢氩弧焊HP022-2024焊接工艺评定.pdf",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "wps_pqr"
+  ],
+  "errorType": "AutoGoldValidationError",
+  "error": "UNGROUNDED_EVIDENCE: 母材: 试件序号 1 2 材料 S30408 S30408 标准或规范 GB/T24511 GB/T24511 规格/mm 6 6 类别号 Fe-8 Fe-8 组别号 Fe-8-1 Fe-8-1",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 12321,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 136.44
+}

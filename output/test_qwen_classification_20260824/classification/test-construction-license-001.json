@@ -1,0 +1,128 @@
+{
+  "caseId": "test-construction-license-001",
+  "relativePath": "1、设计、安装资质证书/江苏三江压力管道资质.jpg",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "construction_license"
+  ],
+  "predictedMaterialTypeCodes": [
+    "construction_license"
+  ],
+  "exactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9616,
+  "outputTokens": 2558,
+  "totalTokens": 12174,
+  "ocrMarkdownChars": 534,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 66.94,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "construction_license",
+        "materialCategories": [
+          "资质证照"
+        ],
+        "confidence": 0.98,
+        "decisionSummary": "文件标题为《中华人民共和国 特种设备生产许可证》，正文明确载明单位名称“江苏三江机电工程有限公司”、证书编号“TS3832083-2026”，且许可范围为“获准从事下列压力管道的安装”，表格列明“承压类特种设备安装、修理、改造”“公用管道安装(GB2)”“工业管道安装(GC2)”，发证机关“江苏省市场监督管理局”、有效期至“2026年12月25日”。上述信号与施工单位安装许可证定义和关键特征一致，因此判定为 construction_license。",
+        "contentEvidence": [
+          {
+            "quote": "中华人民共和国 特种设备生产许可证",
+            "purpose": "标题表明该文件为特种设备生产许可证。"
+          },
+          {
+            "quote": "编号：TS3832083-2026",
+            "purpose": "记录证书编号，支撑许可证识别。"
+          },
+          {
+            "quote": "单位名称：江苏三江机电工程有限公司",
+            "purpose": "记录单位名称，表明持证施工单位主体。"
+          },
+          {
+            "quote": "经审查，获准从事下列压力管道的安装",
+            "purpose": "明确许可活动为压力管道安装，满足施工安装许可证核心要求。"
+          },
+          {
+            "quote": "承压类特种设备安装、修理、改造",
+            "purpose": "许可项目明确指向承压类特种设备安装、修理、改造。"
+          },
+          {
+            "quote": "公用管道安装(GB2)",
+            "purpose": "许可子项目为公用管道安装，进一步证明压力管道安装许可范围。"
+          },
+          {
+            "quote": "工业管道安装(GC2)",
+            "purpose": "许可子项目为工业管道安装，进一步证明压力管道安装许可范围。"
+          },
+          {
+            "quote": "发证机关：江苏省市场监督管理局",
+            "purpose": "记录发证机关，符合特种设备许可证文件特征。"
+          },
+          {
+            "quote": "有效期至：2026年12月25日",
+            "purpose": "记录有效期，符合许可证支撑信号。"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "文件为江苏三江机电工程有限公司取得的特种设备生产许可证，载明证书编号、单位名称、许可项目为承压类特种设备安装、修理、改造，子项目包括公用管道安装(GB2)和工业管道安装(GC2)，发证机关为江苏省市场监督管理局，有效期至2026年12月25日，符合压力管道安装施工单位许可证资料特征。",
+    "classificationComplete": true,
+    "unclassifiedReason": "",
+    "materialCategoryLabels": [
+      "资质证照"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件标题为《中华人民共和国 特种设备生产许可证》，正文明确载明单位名称“江苏三江机电工程有限公司”、证书编号“TS3832083-2026”，且许可范围为“获准从事下列压力管道的安装”，表格列明“承压类特种设备安装、修理、改造”“公用管道安装(GB2)”“工业管道安装(GC2)”，发证机关“江苏省市场监督管理局”、有效期至“2026年12月25日”。上述信号与施工单位安装许可证定义和关键特征一致，因此判定为 construction_license。",
+        "contentEvidence": [
+          {
+            "quote": "中华人民共和国 特种设备生产许可证",
+            "purpose": "标题表明该文件为特种设备生产许可证。"
+          },
+          {
+            "quote": "编号：TS3832083-2026",
+            "purpose": "记录证书编号，支撑许可证识别。"
+          },
+          {
+            "quote": "单位名称：江苏三江机电工程有限公司",
+            "purpose": "记录单位名称，表明持证施工单位主体。"
+          },
+          {
+            "quote": "经审查，获准从事下列压力管道的安装",
+            "purpose": "明确许可活动为压力管道安装，满足施工安装许可证核心要求。"
+          },
+          {
+            "quote": "承压类特种设备安装、修理、改造",
+            "purpose": "许可项目明确指向承压类特种设备安装、修理、改造。"
+          },
+          {
+            "quote": "公用管道安装(GB2)",
+            "purpose": "许可子项目为公用管道安装，进一步证明压力管道安装许可范围。"
+          },
+          {
+            "quote": "工业管道安装(GC2)",
+            "purpose": "许可子项目为工业管道安装，进一步证明压力管道安装许可范围。"
+          },
+          {
+            "quote": "发证机关：江苏省市场监督管理局",
+            "purpose": "记录发证机关，符合特种设备许可证文件特征。"
+          },
+          {
+            "quote": "有效期至：2026年12月25日",
+            "purpose": "记录有效期，符合许可证支撑信号。"
+          }
+        ],
+        "materialTypeCode": "construction_license"
+      }
+    ],
+    "documentSummary": "文件为江苏三江机电工程有限公司取得的特种设备生产许可证，载明证书编号、单位名称、许可项目为承压类特种设备安装、修理、改造，子项目包括公用管道安装(GB2)和工业管道安装(GC2)，发证机关为江苏省市场监督管理局，有效期至2026年12月25日，符合压力管道安装施工单位许可证资料特征。",
+    "classificationComplete": true,
+    "unclassifiedReason": ""
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "caseId": "test-notice-receipt-001",
+  "relativePath": "3、告知书、回执单/告知回执.png",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [],
+  "errorType": "AutoGoldValidationError",
+  "error": "UNCLASSIFIED_REASON_REQUIRED: zero-label result requires a reason",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 961,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 33.79
+}

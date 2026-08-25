@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-002",
+  "relativePath": "1.设计单位荣贵公司企业品牌推广手册2025.03_5.pdf",
+  "sha256": "sha256:946312731ca04c9560cecbe834f61e6a17a591404a7940b261631998f37a19d1",
+  "size": 301752,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "design_license",
+      "materialCategories": [
+        "资质证照"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件标题为特种设备生产许可证，许可项目表格明确列出“压力管道设计”及GB2、GC2级别，符合设计单位许可证定义。",
+      "contentEvidence": [
+        {
+          "quote": "许可项目</td><td>许可子项目</td><td>许可参数</td><td>备注</td></tr><tr><td>压力管道设计</td><td>公用管道(",
+          "purpose": "证明许可项目明确包含压力管道设计及其具体级别"
+        },
+        {
+          "quote": "中华人民共和国 特种设备生产许可证",
+          "purpose": "证明文件名称属于特种设备生产许可证范畴"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "design_license"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "资质证照"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 10091,
+  "outputTokens": 264,
+  "totalTokens": 10355,
+  "elapsedSeconds": 5.57,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为特种设备生产许可证，许可项目表格明确列出“压力管道设计”及GB2、GC2级别，符合设计单位许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "许可项目</td><td>许可子项目</td><td>许可参数</td><td>备注</td></tr><tr><td>压力管道设计</td><td>公用管道(",
+            "purpose": "证明许可项目明确包含压力管道设计及其具体级别"
+          },
+          {
+            "quote": "中华人民共和国 特种设备生产许可证",
+            "purpose": "证明文件名称属于特种设备生产许可证范畴"
+          }
+        ],
+        "materialTypeCode": "design_license"
+      }
+    ],
+    "documentSummary": "该文件是广东省市场监督管理局向广东荣贵能源设备科技有限公司颁发的特种设备生产许可证，许可项目明确为压力管道设计（公用管道GB2、工业管道GC2），有效期至2027年。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

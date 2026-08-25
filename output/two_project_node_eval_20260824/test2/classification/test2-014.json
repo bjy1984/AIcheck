@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-014",
+  "relativePath": "8.1管子产品质量证明书.jpg",
+  "sha256": "sha256:070260bf848c32f17556a119e82c87929ac069398c313c72beb5bbd825a3c72d",
+  "size": 938889,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "quality_certificate",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件为无缝钢管产品质量证明书，包含制造单位、证书编号、产品规格批号、化学成分、力学性能及质检章等质量证明核心要素。",
+      "contentEvidence": [
+        {
+          "quote": "输送流体用无缝钢管GB/T8163-2018",
+          "purpose": "明确产品名称及执行标准，符合产品质量证明书对物项和标准的标识要求"
+        },
+        {
+          "quote": "未加盖质量检验章无效",
+          "purpose": "表明文件性质为需盖章生效的质量证明文件"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "quality_certificate"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "材料验收与复验"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 11317,
+  "outputTokens": 289,
+  "totalTokens": 11606,
+  "elapsedSeconds": 4.55,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件为无缝钢管产品质量证明书，包含制造单位、证书编号、产品规格批号、化学成分、力学性能及质检章等质量证明核心要素。",
+        "contentEvidence": [
+          {
+            "quote": "输送流体用无缝钢管GB/T8163-2018",
+            "purpose": "明确产品名称及执行标准，符合产品质量证明书对物项和标准的标识要求"
+          },
+          {
+            "quote": "未加盖质量检验章无效",
+            "purpose": "表明文件性质为需盖章生效的质量证明文件"
+          }
+        ],
+        "materialTypeCode": "quality_certificate"
+      }
+    ],
+    "documentSummary": "该文件为佛山市佛润钢铁有限公司出具的输送流体用无缝钢管产品质量证明书（证书编号20260520001），记录了牌号20、炉号60411-0231的无缝钢管规格、数量、化学成分、力学性能及工艺试验结果，并附有签发人和质检章信息。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

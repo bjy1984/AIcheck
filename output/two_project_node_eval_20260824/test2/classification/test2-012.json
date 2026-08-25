@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-012",
+  "relativePath": "6.1图纸会审记录.doc",
+  "sha256": "sha256:1f556ae2fd7661d0cb6444c68326d544899452e96451487106f19aa260be2f66",
+  "size": 15360,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "drawing_review_record",
+      "materialCategories": [
+        "设计变更与特殊标准"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件标题明确为“图纸会审记录”，内容包含对设计资格、签署、技术条件及完整性的审查勾选结论，符合施工图审查手续的定义。",
+      "contentEvidence": [
+        {
+          "quote": "图纸会审记录",
+          "purpose": "匹配titlePatterns中的图纸会审记录，确认文件类型名称"
+        },
+        {
+          "quote": "1.设计资格在有效期内 ☑",
+          "purpose": "证明包含具体的审查意见或审查结论，满足requiredSignals"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "drawing_review_record"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "设计变更与特殊标准"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 10102,
+  "outputTokens": 271,
+  "totalTokens": 10373,
+  "elapsedSeconds": 4.92,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题明确为“图纸会审记录”，内容包含对设计资格、签署、技术条件及完整性的审查勾选结论，符合施工图审查手续的定义。",
+        "contentEvidence": [
+          {
+            "quote": "图纸会审记录",
+            "purpose": "匹配titlePatterns中的图纸会审记录，确认文件类型名称"
+          },
+          {
+            "quote": "1.设计资格在有效期内 ☑",
+            "purpose": "证明包含具体的审查意见或审查结论，满足requiredSignals"
+          }
+        ],
+        "materialTypeCode": "drawing_review_record"
+      }
+    ],
+    "documentSummary": "该文件为珠海盈德化工区气站项目管道安装工程的图纸会审记录，编号JH/QR-1-015。内容涵盖了对设计资格有效期、压力管道类别级别范围、设计批准印章、人员签署、标准规范引用、材料选用及图样资料完整性等方面的审查，各项审查结果均为合格（勾选）。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "caseId": "test-pipeline-summary-001",
+  "relativePath": "0、地上甲类储罐区2（含泵区）管道目录/0、地上甲类储罐区2（含泵区）管道目录.doc",
+  "ocrInput": "output/test_qwen_classification_20260824/converted/0、地上甲类储罐区2（含泵区）管道目录.pdf",
+  "convertedFromOffice": true,
+  "status": "success",
+  "providerTaskId": "14e0e87f-b3c4-4f09-b74f-5845917452f9",
+  "markdownArtifact": "full.md",
+  "markdownChars": 1374,
+  "elapsedSeconds": 10.08
+}

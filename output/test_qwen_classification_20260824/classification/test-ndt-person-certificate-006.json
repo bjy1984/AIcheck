@@ -1,0 +1,133 @@
+{
+  "caseId": "test-ndt-person-certificate-006",
+  "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/汪仲冬执业注册证书(1).pdf",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_person_certificate",
+    "external_query_screenshot"
+  ],
+  "exactMatch": false,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [
+    "external_query_screenshot"
+  ],
+  "inputTokens": 9983,
+  "outputTokens": 4021,
+  "totalTokens": 14004,
+  "ocrMarkdownChars": 1068,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 97.67,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_person_certificate",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为《特种设备检验检测人员执业注册证》，记录个人汪仲冬的注册信息、执业单位授权及所持资格证书项目，与无损检测人员资格证和执业注册证类型定义高度匹配。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测人员执业注册证",
+            "purpose": "文件标题明确为特种设备检验检测人员执业注册证，符合该类型的标题模式。"
+          },
+          {
+            "quote": "姓名： 汪仲冬",
+            "purpose": "持证主体为个人姓名，满足个人资格要求的核心特征。"
+          },
+          {
+            "quote": "四、所持资格证书项目",
+            "purpose": "表格中列出MT、RT、PT、UT等无损检测方法及级别和有效期，表明持证人员具备相应无损检测资格。"
+          },
+          {
+            "quote": "发证机构：中国特种设备检验协会",
+            "purpose": "表明发证机构为中国特种设备检验协会，属于特种设备领域人员资格证件。"
+          },
+          {
+            "quote": "注册有效起始日期：2023-07-14",
+            "purpose": "包含注册有效期起始时间，与注册证件相关字段一致。"
+          }
+        ]
+      },
+      {
+        "materialTypeCode": "external_query_screenshot",
+        "materialCategories": [
+          "外部核验资料"
+        ],
+        "confidence": 0.9,
+        "decisionSummary": "文件中包含“请扫描二维码，以确认证书有效性”以及提及中国特种设备检验协会网站查询注册信息，具有从政府或外部平台验证证书的外部查询属性，符合外部查询截图类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "1. 注册详细信息可自中国特种设备检验协会网站(www.casei.org.cn)查询,并以网站发布信息为准。",
+            "purpose": "明确提到可在外部机构网站查询注册详细信息，具有外部查询语义。"
+          },
+          {
+            "quote": "请扫描二维码，以确认证书有效性",
+            "purpose": "出现二维码验证证书有效性的描述，表明文件包含外部验证或查询结果属性。"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "这是一份特种设备检验检测人员执业注册证，持证人为汪仲冬，执业单位为山东扬石工程检验检测有限公司，证书记载了其注册信息、执业单位授权情况以及所持无损检测方法项目和级别，由中国特种设备检验协会颁发，用于证明其具备相应无损检测执业资格。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "外部核验资料",
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件标题为《特种设备检验检测人员执业注册证》，记录个人汪仲冬的注册信息、执业单位授权及所持资格证书项目，与无损检测人员资格证和执业注册证类型定义高度匹配。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测人员执业注册证",
+            "purpose": "文件标题明确为特种设备检验检测人员执业注册证，符合该类型的标题模式。"
+          },
+          {
+            "quote": "姓名： 汪仲冬",
+            "purpose": "持证主体为个人姓名，满足个人资格要求的核心特征。"
+          },
+          {
+            "quote": "四、所持资格证书项目",
+            "purpose": "表格中列出MT、RT、PT、UT等无损检测方法及级别和有效期，表明持证人员具备相应无损检测资格。"
+          },
+          {
+            "quote": "发证机构：中国特种设备检验协会",
+            "purpose": "表明发证机构为中国特种设备检验协会，属于特种设备领域人员资格证件。"
+          },
+          {
+            "quote": "注册有效起始日期：2023-07-14",
+            "purpose": "包含注册有效期起始时间，与注册证件相关字段一致。"
+          }
+        ],
+        "materialTypeCode": "ndt_person_certificate"
+      },
+      {
+        "confidence": 0.9,
+        "decisionSummary": "文件中包含“请扫描二维码，以确认证书有效性”以及提及中国特种设备检验协会网站查询注册信息，具有从政府或外部平台验证证书的外部查询属性，符合外部查询截图类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "1. 注册详细信息可自中国特种设备检验协会网站(www.casei.org.cn)查询,并以网站发布信息为准。",
+            "purpose": "明确提到可在外部机构网站查询注册详细信息，具有外部查询语义。"
+          },
+          {
+            "quote": "请扫描二维码，以确认证书有效性",
+            "purpose": "出现二维码验证证书有效性的描述，表明文件包含外部验证或查询结果属性。"
+          }
+        ],
+        "materialTypeCode": "external_query_screenshot"
+      }
+    ],
+    "documentSummary": "这是一份特种设备检验检测人员执业注册证，持证人为汪仲冬，执业单位为山东扬石工程检验检测有限公司，证书记载了其注册信息、执业单位授权情况以及所持无损检测方法项目和级别，由中国特种设备检验协会颁发，用于证明其具备相应无损检测执业资格。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

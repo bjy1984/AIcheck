@@ -1,0 +1,104 @@
+{
+  "caseId": "test-ndt-person-certificate-001",
+  "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平(1).pdf",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "exactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9814,
+  "outputTokens": 2942,
+  "totalTokens": 12756,
+  "ocrMarkdownChars": 764,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 73.45,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_person_certificate",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.99,
+        "decisionSummary": "文档为特种设备检验检测人员执业注册证，载明个人姓名、执业单位、注册证书编号、有效期，且列出MT、RT无损检测方法及级别，符合无损检测人员资格证和执业注册证的必需信号。",
+        "contentEvidence": [
+          {
+            "quote": "特种设备检验检测人员执业注册证",
+            "purpose": "标题直接表明文件类型为检验检测人员执业注册证"
+          },
+          {
+            "quote": "姓名： 李国平",
+            "purpose": "持证主体为个人姓名，满足持证主体信号"
+          },
+          {
+            "quote": "MT II 2028-05 RT II 2028-04",
+            "purpose": "列出无损检测方法MT、RT及级别，满足检测方法/级别信号"
+          },
+          {
+            "quote": "注册证书编号：CASEI2023052273",
+            "purpose": "提供执业注册证书编号"
+          },
+          {
+            "quote": "发证机构：中国特种设备检验协会",
+            "purpose": "发证机构信息支持人员资格/执业注册文件属性"
+          },
+          {
+            "quote": "有效期限：2027-06-05",
+            "purpose": "载明证书有效期限"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档为特种设备检验检测人员执业注册证，载明李国平的姓名、身份证号、执业单位山东扬石工程检验检测有限公司、注册证书编号、发证机构、有效期，并列出MT II、RT II等无损检测项目资格，属于无损检测人员资格证和执业注册证。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.99,
+        "decisionSummary": "文档为特种设备检验检测人员执业注册证，载明个人姓名、执业单位、注册证书编号、有效期，且列出MT、RT无损检测方法及级别，符合无损检测人员资格证和执业注册证的必需信号。",
+        "contentEvidence": [
+          {
+            "quote": "特种设备检验检测人员执业注册证",
+            "purpose": "标题直接表明文件类型为检验检测人员执业注册证"
+          },
+          {
+            "quote": "姓名： 李国平",
+            "purpose": "持证主体为个人姓名，满足持证主体信号"
+          },
+          {
+            "quote": "MT II 2028-05 RT II 2028-04",
+            "purpose": "列出无损检测方法MT、RT及级别，满足检测方法/级别信号"
+          },
+          {
+            "quote": "注册证书编号：CASEI2023052273",
+            "purpose": "提供执业注册证书编号"
+          },
+          {
+            "quote": "发证机构：中国特种设备检验协会",
+            "purpose": "发证机构信息支持人员资格/执业注册文件属性"
+          },
+          {
+            "quote": "有效期限：2027-06-05",
+            "purpose": "载明证书有效期限"
+          }
+        ],
+        "materialTypeCode": "ndt_person_certificate"
+      }
+    ],
+    "documentSummary": "该文档为特种设备检验检测人员执业注册证，载明李国平的姓名、身份证号、执业单位山东扬石工程检验检测有限公司、注册证书编号、发证机构、有效期，并列出MT II、RT II等无损检测项目资格，属于无损检测人员资格证和执业注册证。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

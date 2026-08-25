@@ -1,0 +1,31 @@
+{
+  "caseId": "test2-007",
+  "relativePath": "3.1告知书.png",
+  "sha256": "sha256:2f91f1e0852c7fa2df8592a29e06e5999d6373aaf477f11f0d29f0645d5608c6",
+  "size": 938546,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [],
+  "predictedMaterialTypeCodes": [],
+  "fallbackMaterialCategories": [
+    "资质证照"
+  ],
+  "materialCategoryLabels": [
+    "资质证照"
+  ],
+  "classificationTargetingMode": "category_advisory",
+  "inputTokens": 10988,
+  "outputTokens": 134,
+  "totalTokens": 11122,
+  "elapsedSeconds": 4.04,
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "该文件为特种设备安装改造维修告知书，记录了施工单位向监管部门告知压力管道安装施工的基本信息、许可证号及施工计划，属于行政告知手续文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": "当前61种具体资料类型中未包含“特种设备安装改造维修告知书”或“开工告知”类型；该文件虽涉及施工许可信息，但本身是行政告知文书而非许可证原件，不符合construction_license定义。",
+    "fallbackMaterialCategories": [
+      "资质证照"
+    ]
+  },
+  "fallbackRetest": true
+}

@@ -1,0 +1,152 @@
+{
+  "caseId": "test-component-checklist-001",
+  "relativePath": "7、管道元件及材料验收材料报审/0常用管道元件核查记录-施工单位填写.doc",
+  "status": "success",
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "acceptance_witness_record"
+  ],
+  "predictedMaterialTypeCodes": [
+    "acceptance_witness_record"
+  ],
+  "exactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 10078,
+  "outputTokens": 5200,
+  "totalTokens": 15278,
+  "ocrMarkdownChars": 1182,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 129.74,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "acceptance_witness_record",
+        "materialCategories": [
+          "材料验收与复验"
+        ],
+        "confidence": 0.9,
+        "decisionSummary": "表格逐行列出钢管、弯头、法兰、异径管、垫片、螺栓等管道组成件的材料/标准、规格，以及制造许可证号和监检证书编号，呈现到货或安装前物项证书核查清单特征，可归入到货验收见证资料。",
+        "contentEvidence": [
+          {
+            "quote": "S30408GB/T14976-2025",
+            "purpose": "物项及材质标准证据"
+          },
+          {
+            "quote": "TS2735332-2030",
+            "purpose": "制造许可证号证据"
+          },
+          {
+            "quote": "TSX71101004320260043",
+            "purpose": "制造监督检验证书编号证据"
+          },
+          {
+            "quote": "1.5D-90° $",
+            "purpose": "弯头等管道组成件规格证据"
+          },
+          {
+            "quote": "TS2713486-2026",
+            "purpose": "制造许可证号证据"
+          },
+          {
+            "quote": "DN80WN-1.6-RF",
+            "purpose": "法兰物项规格证据"
+          },
+          {
+            "quote": "ST202604130400002",
+            "purpose": "监检或证书编号证据"
+          },
+          {
+            "quote": "DN80*50*3.0",
+            "purpose": "异径管等物项规格证据"
+          },
+          {
+            "quote": "XBH241216-4",
+            "purpose": "批号或质量证明文件编号证据"
+          },
+          {
+            "quote": "PTFE",
+            "purpose": "垫片材料证据"
+          },
+          {
+            "quote": "DN80 PN16RF",
+            "purpose": "垫片规格证据"
+          },
+          {
+            "quote": "35CrMoA/30CrMo",
+            "purpose": "螺栓材料证据"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该表格未含标题，但逐行列出了不锈钢管、弯头、法兰、异径管、垫片、螺栓等管道组成件的材料/标准、规格，并配套TS/TSX证书编号及批号，整体表现为对物项质量证明、制造许可和监检证书编号的核查清单，符合到货验收见证资料中物项信息与证书核验的语义。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "材料验收与复验"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.9,
+        "decisionSummary": "表格逐行列出钢管、弯头、法兰、异径管、垫片、螺栓等管道组成件的材料/标准、规格，以及制造许可证号和监检证书编号，呈现到货或安装前物项证书核查清单特征，可归入到货验收见证资料。",
+        "contentEvidence": [
+          {
+            "quote": "S30408GB/T14976-2025",
+            "purpose": "物项及材质标准证据"
+          },
+          {
+            "quote": "TS2735332-2030",
+            "purpose": "制造许可证号证据"
+          },
+          {
+            "quote": "TSX71101004320260043",
+            "purpose": "制造监督检验证书编号证据"
+          },
+          {
+            "quote": "1.5D-90° $",
+            "purpose": "弯头等管道组成件规格证据"
+          },
+          {
+            "quote": "TS2713486-2026",
+            "purpose": "制造许可证号证据"
+          },
+          {
+            "quote": "DN80WN-1.6-RF",
+            "purpose": "法兰物项规格证据"
+          },
+          {
+            "quote": "ST202604130400002",
+            "purpose": "监检或证书编号证据"
+          },
+          {
+            "quote": "DN80*50*3.0",
+            "purpose": "异径管等物项规格证据"
+          },
+          {
+            "quote": "XBH241216-4",
+            "purpose": "批号或质量证明文件编号证据"
+          },
+          {
+            "quote": "PTFE",
+            "purpose": "垫片材料证据"
+          },
+          {
+            "quote": "DN80 PN16RF",
+            "purpose": "垫片规格证据"
+          },
+          {
+            "quote": "35CrMoA/30CrMo",
+            "purpose": "螺栓材料证据"
+          }
+        ],
+        "materialTypeCode": "acceptance_witness_record"
+      }
+    ],
+    "documentSummary": "该表格未含标题，但逐行列出了不锈钢管、弯头、法兰、异径管、垫片、螺栓等管道组成件的材料/标准、规格，并配套TS/TSX证书编号及批号，整体表现为对物项质量证明、制造许可和监检证书编号的核查清单，符合到货验收见证资料中物项信息与证书核验的语义。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

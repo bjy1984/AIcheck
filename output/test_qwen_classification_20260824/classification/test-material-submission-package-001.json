@@ -1,0 +1,19 @@
+{
+  "caseId": "test-material-submission-package-001",
+  "relativePath": "7、管道元件及材料验收材料报审/管道元件及材料验收材料报审.pdf",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "acceptance_witness_record",
+    "quality_certificate",
+    "manufacturing_license",
+    "factory_inspection_report"
+  ],
+  "errorType": "IntegrationServiceError",
+  "error": "Qwen official API chat.completions failed: reason READTIMEOUT",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 54663,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 363.15
+}

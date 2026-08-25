@@ -1,0 +1,134 @@
+{
+  "caseId": "test2-018",
+  "relativePath": "8.5管件生产许可证、产品证明和型式报告.pdf",
+  "sha256": "sha256:d3924dce7cda63d555dc26199193588afbf754502ab84c9d0dbdeee24554b1a8",
+  "size": 4320428,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "quality_certificate",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.98,
+      "decisionSummary": "文件包含多份受压元件（锻件）产品质量证明（合格证），列明制造单位、产品批号、执行标准、化学成分、力学性能及合格结论，符合产品质量证明书定义。",
+      "contentEvidence": [
+        {
+          "quote": "受压元件（锻件） 产品质量证明（合格证）",
+          "purpose": "标题明确标识为产品质量证明文件"
+        },
+        {
+          "quote": "检验结果:该批锻件按标准 HG/T20592-2009、NB/T47010-2017 制造合格",
+          "purpose": "包含质量检验结论和合格声明"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "manufacturing_license",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.97,
+      "decisionSummary": "文件包含中华人民共和国特种设备生产许可证，许可项目明确为压力管道元件制造，符合制造单位许可证定义。",
+      "contentEvidence": [
+        {
+          "quote": "压力管道元件制造",
+          "purpose": "许可范围明确指向压力管道元件制造"
+        },
+        {
+          "quote": "编号：TS2713486-2026",
+          "purpose": "证书编号标识制造许可证身份"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "type_test_report",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.96,
+      "decisionSummary": "文件包含多份特种设备型式试验证书，针对压力管道法兰和管件，列明覆盖规格范围和有效期，符合型式试验证书定义。",
+      "contentEvidence": [
+        {
+          "quote": "特种设备型式试验证书 (压力管道元件)",
+          "purpose": "标题明确标识为型式试验证书"
+        },
+        {
+          "quote": "经型式试验，确认产品安全性能符合 TSG D7002-2023 的要求",
+          "purpose": "包含型式试验结论和依据标准"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "quality_certificate",
+    "manufacturing_license",
+    "type_test_report"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "材料验收与复验"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 18085,
+  "outputTokens": 553,
+  "totalTokens": 18638,
+  "elapsedSeconds": 9.25,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件包含多份受压元件（锻件）产品质量证明（合格证），列明制造单位、产品批号、执行标准、化学成分、力学性能及合格结论，符合产品质量证明书定义。",
+        "contentEvidence": [
+          {
+            "quote": "受压元件（锻件） 产品质量证明（合格证）",
+            "purpose": "标题明确标识为产品质量证明文件"
+          },
+          {
+            "quote": "检验结果:该批锻件按标准 HG/T20592-2009、NB/T47010-2017 制造合格",
+            "purpose": "包含质量检验结论和合格声明"
+          }
+        ],
+        "materialTypeCode": "quality_certificate"
+      },
+      {
+        "confidence": 0.97,
+        "decisionSummary": "文件包含中华人民共和国特种设备生产许可证，许可项目明确为压力管道元件制造，符合制造单位许可证定义。",
+        "contentEvidence": [
+          {
+            "quote": "许可项目 压力管道元件制造",
+            "purpose": "许可范围明确指向压力管道元件制造"
+          },
+          {
+            "quote": "编号：TS2713486-2026",
+            "purpose": "证书编号标识制造许可证身份"
+          }
+        ],
+        "materialTypeCode": "manufacturing_license"
+      },
+      {
+        "confidence": 0.96,
+        "decisionSummary": "文件包含多份特种设备型式试验证书，针对压力管道法兰和管件，列明覆盖规格范围和有效期，符合型式试验证书定义。",
+        "contentEvidence": [
+          {
+            "quote": "特种设备型式试验证书 (压力管道元件)",
+            "purpose": "标题明确标识为型式试验证书"
+          },
+          {
+            "quote": "经型式试验，确认产品安全性能符合 TSG D7002-2023 的要求",
+            "purpose": "包含型式试验结论和依据标准"
+          }
+        ],
+        "materialTypeCode": "type_test_report"
+      }
+    ],
+    "documentSummary": "资料包包含河北圣天管件集团有限公司出具的受压元件（锻件）产品质量证明书、特种设备生产许可证（压力管道元件制造）以及多份压力管道法兰和管件的特种设备型式试验证书。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

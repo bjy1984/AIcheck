@@ -1,0 +1,16 @@
+{
+  "caseId": "test-ndt-plan-001",
+  "relativePath": "10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+  "status": "failed",
+  "expectedMaterialTypeCodes": [
+    "ndt_plan"
+  ],
+  "errorType": "IntegrationServiceError",
+  "error": "Qwen official API chat.completions failed: reason READTIMEOUT",
+  "inputTokens": null,
+  "outputTokens": null,
+  "totalTokens": null,
+  "ocrMarkdownChars": 22262,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 363.16
+}

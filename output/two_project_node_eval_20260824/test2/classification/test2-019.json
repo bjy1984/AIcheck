@@ -1,0 +1,136 @@
+{
+  "caseId": "test2-019",
+  "relativePath": "9.1金辉焊接工艺评定20.pdf",
+  "sha256": "sha256:0f99c9fca3cfb19fed95e9c97f174c010135603d7762a01093b4384c7d2ea0a8",
+  "size": 6739399,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "wps_pqr",
+      "materialCategories": [
+        "焊接人员与焊接工艺"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件包含完整的焊接工艺评定报告（PQR）及预焊接工艺规程（pWPS），符合wps_pqr类型定义。",
+      "contentEvidence": [
+        {
+          "quote": "# 焊接工艺评定报告",
+          "purpose": "证明文件中包含焊接工艺评定报告标题"
+        },
+        {
+          "quote": "预焊接工艺规程编号:pWPS-2023-01",
+          "purpose": "证明文件中包含预焊接工艺规程编号信息"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "ndt_report",
+      "materialCategories": [
+        "无损检测资料"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件包含针对焊接工艺评定试件的射线检测报告，记录了焊缝检测结果和评定级别，符合ndt_report类型定义。",
+      "contentEvidence": [
+        {
+          "quote": "# 射线检测报告书",
+          "purpose": "证明文件中包含无损检测报告标题"
+        },
+        {
+          "quote": "报告编号：2023SHZH-022RTBG-01",
+          "purpose": "证明报告中包含具体的检测报告编号"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "welding_material_certificate",
+      "materialCategories": [
+        "焊接材料与过程记录"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件包含焊丝和焊条的质量证明文件，列明了牌号、批号、化学成分及力学性能，符合welding_material_certificate类型定义。",
+      "contentEvidence": [
+        {
+          "quote": "碳钢低碳焊接",
+          "purpose": "证明文件中包含焊接材料（焊丝）的产品名称"
+        },
+        {
+          "quote": "WE HEREBY CERTIFY THAT THIS REPORT IS CORRECT",
+          "purpose": "证明文件中包含制造单位出具的质量声明"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "wps_pqr",
+    "ndt_report",
+    "welding_material_certificate"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "无损检测资料",
+    "焊接人员与焊接工艺",
+    "焊接材料与过程记录"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 24356,
+  "outputTokens": 629,
+  "totalTokens": 24985,
+  "elapsedSeconds": 9.65,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含完整的焊接工艺评定报告（PQR）及预焊接工艺规程（pWPS），符合wps_pqr类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 焊接工艺评定报告",
+            "purpose": "证明文件中包含焊接工艺评定报告标题"
+          },
+          {
+            "quote": "预焊接工艺规程编号:pWPS-2023-01",
+            "purpose": "证明文件中包含预焊接工艺规程编号信息"
+          }
+        ],
+        "materialTypeCode": "wps_pqr"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含针对焊接工艺评定试件的射线检测报告，记录了焊缝检测结果和评定级别，符合ndt_report类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 射线检测报告书",
+            "purpose": "证明文件中包含无损检测报告标题"
+          },
+          {
+            "quote": "报告编号：2023SHZH-022RTBG-01",
+            "purpose": "证明报告中包含具体的检测报告编号"
+          }
+        ],
+        "materialTypeCode": "ndt_report"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含焊丝和焊条的质量证明文件，列明了牌号、批号、化学成分及力学性能，符合welding_material_certificate类型定义。",
+        "contentEvidence": [
+          {
+            "quote": "Commodity品名:碳钢低碳焊接",
+            "purpose": "证明文件中包含焊接材料（焊丝）的产品名称"
+          },
+          {
+            "quote": "WE HEREBY CERTIFY THAT THIS REPORT IS CORRECT",
+            "purpose": "证明文件中包含制造单位出具的质量声明"
+          }
+        ],
+        "materialTypeCode": "welding_material_certificate"
+      }
+    ],
+    "documentSummary": "该资料包为广东省金辉工业设备安装有限公司的焊接工艺评定全套资料，主要包括：1. 焊接工艺评定报告（PQR）及预焊接工艺规程（pWPS），涵盖母材20#钢管对接焊缝的评定参数；2. 焊接工艺评定试件的射线检测报告；3. 评定试件的力学性能检测报告（拉伸、弯曲、冲击）；4. 所用焊接材料（ER50-6焊丝、E4315焊条）的产品质量证明书。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

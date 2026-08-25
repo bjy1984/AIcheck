@@ -1,0 +1,94 @@
+{
+  "caseId": "test-design-document-001",
+  "elapsedSeconds": 11.24,
+  "usage": {
+    "completion_tokens": 851,
+    "prompt_tokens": 52317,
+    "prompt_tokens_details": {
+      "cached_tokens": 9216,
+      "text_tokens": 52317
+    },
+    "total_tokens": 53168
+  },
+  "rawLabels": [
+    "design_document",
+    "drawing_material_list",
+    "pipeline_summary",
+    "calculation_report"
+  ],
+  "raw": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含完整的施工图设计说明、管道材料表、管道特性表及图纸目录，且明确标注设计单位和图号，符合设计文件定义。",
+        "contentEvidence": [
+          {
+            "quote": "广东政和工程有限公司GEM-HORSE ENGINEERING CO.,LTD(原广东政和石油化工建筑设计有限公司)",
+            "purpose": "证明设计单位身份"
+          },
+          {
+            "quote": "图名DWG NAME 安装设计说明 图号DWG NO. HZ026Y-112-02-S001",
+            "purpose": "证明文件为设计说明及对应图号"
+          }
+        ],
+        "materialTypeCode": "design_document"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含名为“综合材料表”的表格，按物项逐行列出名称、规格、材质和执行标准，符合设计材料表定义。",
+        "contentEvidence": [
+          {
+            "quote": "图名DWG NAME 综合材料表 图号DWG NO. HZ026Y-112-02-S311",
+            "purpose": "证明材料表标题及图号"
+          },
+          {
+            "quote": "不锈钢S30408无缝钢管M1E DN25 Φ32×2.5 S30408 米 6 GB/T 14976-2025",
+            "purpose": "证明材料表内容包含物项、规格、材质及标准"
+          }
+        ],
+        "materialTypeCode": "drawing_material_list"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含名为“管道特性表”的表格，以管段号为主键汇总介质、设计参数、管径壁厚及检验要求，符合管线汇总表定义。",
+        "contentEvidence": [
+          {
+            "quote": "图名DWG NAME 管道特性表 图号DWG NO. HZ026Y-112-02-S301",
+            "purpose": "证明管线汇总表标题及图号"
+          },
+          {
+            "quote": "A01-PL-02 Φ89x3.0 M1E GC2 甲醇 液态 可燃 LP7101 ST7101 常温 0.25 60 0.275",
+            "purpose": "证明表格按管线号组织并包含设计参数"
+          }
+        ],
+        "materialTypeCode": "pipeline_summary"
+      },
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件中包含名为“管道强度计算书”的表格，列出了计算公式、设计条件、许用应力及壁厚校核结果，符合强度计算书定义。",
+        "contentEvidence": [
+          {
+            "quote": "图名DWG NAME 管道强度计算书 图号DWG NO. HZ026Y-112-02-S501",
+            "purpose": "证明计算书标题及图号"
+          },
+          {
+            "quote": "计算公式 t=pD/2(SΦ+pY) 设计温度(°C) 60 管道材质 S30408",
+            "purpose": "证明包含计算公式和设计条件"
+          }
+        ],
+        "materialTypeCode": "calculation_report"
+      }
+    ],
+    "documentSummary": "该资料包为珠海海瑞德制药有限公司增资扩产项目地上甲类储罐区2(含泵区)的工艺专业施工图设计文件。内容涵盖图纸目录、安装设计说明、管道材料设计说明、管道等级索引表、管道材料等级代号说明、管道分支表、管道壁厚表、管道平面布置图、管道轴测图、管道特性表、综合材料表以及管道强度计算书。文件由广东政和工程有限公司编制，明确了管道设计参数、材料选用标准、强度校核结果及施工技术要求。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  },
+  "protocolStatus": "rejected",
+  "protocolError": "AutoGoldValidationError: UNGROUNDED_EVIDENCE: 图名DWG NAME 安装设计说明 图号DWG NO. HZ026Y-112-02-S001",
+  "labels": [
+    "design_document",
+    "drawing_material_list",
+    "pipeline_summary",
+    "calculation_report"
+  ]
+}

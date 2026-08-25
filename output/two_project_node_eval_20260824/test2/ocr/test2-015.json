@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-015",
+  "relativePath": "8.2管子特种设备生产许可证及型式试验证书.pdf",
+  "sha256": "sha256:5c2ac9b3f16fea6ac8ca757d8fa1412f01cdc36e067f672ce0bbb6f45b9ad9b4",
+  "size": 5339345,
+  "status": "success",
+  "providerTaskId": "7d474100-356d-4594-836a-df6cfbbafe20",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 9215,
+  "classificationMarkdownChars": 9234,
+  "elapsedSeconds": 23.59
+}

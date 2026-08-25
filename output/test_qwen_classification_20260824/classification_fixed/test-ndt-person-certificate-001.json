@@ -1,0 +1,75 @@
+{
+  "caseId": "test-ndt-person-certificate-001",
+  "relativePath": "10、无损检测委托单位资质/2、无损检测人员资质和执业注册证/李国平(1).pdf",
+  "status": "success",
+  "protocolStatus": "accepted",
+  "protocolError": null,
+  "model": "qwen3.8-max",
+  "provider": "Model Studio / DashScope",
+  "expectedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "predictedMaterialTypeCodes": [
+    "ndt_person_certificate"
+  ],
+  "semanticExactMatch": true,
+  "missingMaterialTypeCodes": [],
+  "extraMaterialTypeCodes": [],
+  "inputTokens": 9833,
+  "outputTokens": 248,
+  "reasoningTokens": null,
+  "totalTokens": 10081,
+  "ocrMarkdownChars": 764,
+  "knowledgeChars": 26012,
+  "elapsedSeconds": 5.68,
+  "structuredResponse": {
+    "labels": [
+      {
+        "materialTypeCode": "ndt_person_certificate",
+        "materialCategories": [
+          "无损检测资料"
+        ],
+        "confidence": 0.98,
+        "decisionSummary": "文件标题为“特种设备检验检测人员执业注册证”，内容包含个人姓名及MT、RT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测人员执业注册证",
+            "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+          },
+          {
+            "quote": "姓名： 李国平",
+            "purpose": "持证主体为个人姓名，符合人员资格证书特征"
+          }
+        ]
+      }
+    ],
+    "documentSummary": "该文档是一份特种设备检验检测人员执业注册证，持证人为李国平，执业单位为山东扬石工程检验检测有限公司。证书列明了其持有的无损检测资格项目包括MT II级和RT II级，并记录了注册编号、有效期及发证机构为中国特种设备检验协会。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "materialCategoryLabels": [
+      "无损检测资料"
+    ]
+  },
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件标题为“特种设备检验检测人员执业注册证”，内容包含个人姓名及MT、RT等无损检测方法和级别，符合无损检测人员资格证和执业注册证的定义。",
+        "contentEvidence": [
+          {
+            "quote": "# 特种设备检验检测人员执业注册证",
+            "purpose": "文件标题明确标识为无损检测人员的执业注册证"
+          },
+          {
+            "quote": "姓名： 李国平",
+            "purpose": "持证主体为个人姓名，符合人员资格证书特征"
+          }
+        ],
+        "materialTypeCode": "ndt_person_certificate"
+      }
+    ],
+    "documentSummary": "该文档是一份特种设备检验检测人员执业注册证，持证人为李国平，执业单位为山东扬石工程检验检测有限公司。证书列明了其持有的无损检测资格项目包括MT II级和RT II级，并记录了注册编号、有效期及发证机构为中国特种设备检验协会。",
+    "classificationComplete": true,
+    "unclassifiedReason": null
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "caseId": "test2-015",
+  "relativePath": "8.2管子特种设备生产许可证及型式试验证书.pdf",
+  "sha256": "sha256:5c2ac9b3f16fea6ac8ca757d8fa1412f01cdc36e067f672ce0bbb6f45b9ad9b4",
+  "size": 5339345,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "manufacturing_license",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.95,
+      "decisionSummary": "文件包含云南曲靖钢铁集团凤凰钢铁有限公司的特种设备生产许可证，许可项目明确为压力管道元件制造",
+      "contentEvidence": [
+        {
+          "quote": "压力管道元件制造",
+          "purpose": "证明许可证许可项目明确指向压力管道元件制造"
+        },
+        {
+          "quote": "单位名称：云南曲靖钢铁集团凤凰钢铁有限公司",
+          "purpose": "确认证书持证主体为制造单位"
+        }
+      ]
+    },
+    {
+      "materialTypeCode": "type_test_report",
+      "materialCategories": [
+        "材料验收与复验"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.98,
+      "decisionSummary": "文件包含多份特种设备型式试验证书，均针对压力管道管子（无缝钢管）并列出覆盖标准和规格范围",
+      "contentEvidence": [
+        {
+          "quote": "特种设备型式试验证书 (压力管道元件)",
+          "purpose": "证明文件标题明确标识为型式试验证书"
+        },
+        {
+          "quote": "经型式试验，确认产品安全性能符合 TSG D7002—2023《压力管道元件型式试验规则》的要求",
+          "purpose": "证明证书内容包含型式试验结论及依据标准"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "manufacturing_license",
+    "type_test_report"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "材料验收与复验"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 15227,
+  "outputTokens": 487,
+  "totalTokens": 15714,
+  "elapsedSeconds": 7.17,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.95,
+        "decisionSummary": "文件包含云南曲靖钢铁集团凤凰钢铁有限公司的特种设备生产许可证，许可项目明确为压力管道元件制造",
+        "contentEvidence": [
+          {
+            "quote": "许可项目：压力管道元件制造",
+            "purpose": "证明许可证许可项目明确指向压力管道元件制造"
+          },
+          {
+            "quote": "单位名称：云南曲靖钢铁集团凤凰钢铁有限公司",
+            "purpose": "确认证书持证主体为制造单位"
+          }
+        ],
+        "materialTypeCode": "manufacturing_license"
+      },
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件包含多份特种设备型式试验证书，均针对压力管道管子（无缝钢管）并列出覆盖标准和规格范围",
+        "contentEvidence": [
+          {
+            "quote": "特种设备型式试验证书 (压力管道元件)",
+            "purpose": "证明文件标题明确标识为型式试验证书"
+          },
+          {
+            "quote": "经型式试验，确认产品安全性能符合 TSG D7002—2023《压力管道元件型式试验规则》的要求",
+            "purpose": "证明证书内容包含型式试验结论及依据标准"
+          }
+        ],
+        "materialTypeCode": "type_test_report"
+      }
+    ],
+    "documentSummary": "该资料包包含云南曲靖钢铁集团凤凰钢铁有限公司的特种设备生产许可证（许可项目为压力管道元件制造）以及11份针对不同类型无缝钢管的特种设备型式试验证书，涵盖了GB/T 8163、GB/T 3087、ASME SA-53、ASME SA-106、GB/T 5310、GB/T 6479、GB/T 9711、GB/T 9948及GB/T 18248等多个产品标准。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "caseId": "test2-009",
+  "relativePath": "4.压力管道施工监检合同.pdf",
+  "sha256": "sha256:eb3bc34900d4c0582c4746a1a1944cbcfc74ef9801eee0e92b3e9309b94189c5",
+  "size": 420430,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [],
+  "predictedMaterialTypeCodes": [],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 11396,
+  "outputTokens": 138,
+  "totalTokens": 11534,
+  "elapsedSeconds": 2.97,
+  "rawModelOutput": {
+    "labels": [],
+    "documentSummary": "该文件为压力管道施工监检合同，约定了施工单位与检测院之间的监检依据、工作内容、双方责任及合同生效条款，属于项目管理类商务合同文件。",
+    "classificationComplete": true,
+    "unclassifiedReason": "文件内容为施工监检服务合同，仅约定监检工作范围、依据和双方管理责任，不包含任何具体监检节点所需的技术参数、质量证明、施工记录或检测报告等实质性证据，且61种具体资料类型中无对应合同类定义。",
+    "fallbackMaterialCategories": []
+  },
+  "fallbackRetest": true
+}

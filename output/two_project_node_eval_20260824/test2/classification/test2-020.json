@@ -1,0 +1,64 @@
+{
+  "caseId": "test2-020",
+  "relativePath": "9.2.焊接工艺卡.pdf",
+  "sha256": "sha256:10d90497a1a9f368fe03b3232c1ca8df213c93bd8ff062e281fe46cb74fa93e3",
+  "size": 483597,
+  "status": "success",
+  "protocolStatus": "accepted",
+  "labels": [
+    {
+      "materialTypeCode": "wps_pqr",
+      "materialCategories": [
+        "焊接人员与焊接工艺"
+      ],
+      "targetingMode": "exact",
+      "confidence": 0.98,
+      "decisionSummary": "文件标题明确为焊接工艺卡，内容包含WPS编号、关联PQR编号、母材焊材规格及详细焊接参数，符合焊接作业指导书定义。",
+      "contentEvidence": [
+        {
+          "quote": "# MinerU Markdown## 焊接工艺卡 工程名称：珠海盈德化工区气站项目（华润化学）管道安装工程",
+          "purpose": "证明该文件是焊接工艺卡（即焊接作业指导书WPS）。"
+        },
+        {
+          "quote": "焊接工艺评定报告编号HP/P-2023-01",
+          "purpose": "证明该工艺卡关联了具体的焊接工艺评定报告（PQR），属于WPS/PQR资料包。"
+        }
+      ]
+    }
+  ],
+  "predictedMaterialTypeCodes": [
+    "wps_pqr"
+  ],
+  "fallbackMaterialCategories": [],
+  "materialCategoryLabels": [
+    "焊接人员与焊接工艺"
+  ],
+  "classificationTargetingMode": "exact",
+  "inputTokens": 11270,
+  "outputTokens": 360,
+  "totalTokens": 11630,
+  "elapsedSeconds": 5.78,
+  "rawModelOutput": {
+    "labels": [
+      {
+        "confidence": 0.98,
+        "decisionSummary": "文件标题明确为焊接工艺卡，内容包含WPS编号、关联PQR编号、母材焊材规格及详细焊接参数，符合焊接作业指导书定义。",
+        "contentEvidence": [
+          {
+            "quote": "# MinerU Markdown## 焊接工艺卡 工程名称：珠海盈德化工区气站项目（华润化学）管道安装工程",
+            "purpose": "证明该文件是焊接工艺卡（即焊接作业指导书WPS）。"
+          },
+          {
+            "quote": "焊接工艺评定报告编号HP/P-2023-01",
+            "purpose": "证明该工艺卡关联了具体的焊接工艺评定报告（PQR），属于WPS/PQR资料包。"
+          }
+        ],
+        "materialTypeCode": "wps_pqr"
+      }
+    ],
+    "documentSummary": "该文件为珠海盈德化工区气站项目管道安装工程的焊接工艺卡（WPS），编号JH-HJGYK-01。文件规定了GTAW+SMAW全位置焊接的工艺参数，包括母材20#、焊材CHG-56R/CHE427R、电流电压范围、气体流量等，并关联了焊接工艺评定报告HP/P-2023-01，经编制审核批准生效。",
+    "classificationComplete": true,
+    "unclassifiedReason": null,
+    "fallbackMaterialCategories": []
+  }
+}

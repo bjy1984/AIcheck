@@ -1,0 +1,13 @@
+{
+  "caseId": "test2-009",
+  "relativePath": "4.压力管道施工监检合同.pdf",
+  "sha256": "sha256:eb3bc34900d4c0582c4746a1a1944cbcfc74ef9801eee0e92b3e9309b94189c5",
+  "size": 420430,
+  "status": "success",
+  "providerTaskId": "37e9d978-8802-4ce3-92d2-99b96f4e502c",
+  "convertedFromOffice": false,
+  "officeTextChars": 0,
+  "mineruMarkdownChars": 1715,
+  "classificationMarkdownChars": 1734,
+  "elapsedSeconds": 13.35
+}
