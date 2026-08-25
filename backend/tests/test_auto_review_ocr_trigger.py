@@ -167,3 +167,21 @@ def test_auto_review_event_failure_does_not_change_document_intelligence_success
 
     assert result["status"] == "completed"
     assert result["targeting"]["autoReviewDispatch"]["status"] == "not_enqueued"
+
+
+def test_ocr_persistence_scope_includes_auto_review_event_for_same_version() -> None:
+    from apps.worker.tasks import ocr_result_state_records
+
+    repo.state["auto_review_outbox"].append(
+        {
+            "id": "AREVT-PERSIST",
+            "projectId": "P-2026-HDCP-001",
+            "documentVersionId": "DV-PERSIST-1",
+            "nodeIds": [1],
+            "status": "pending",
+        }
+    )
+
+    records = ocr_result_state_records("DOC-PERSIST-1", "DV-PERSIST-1")
+
+    assert records["auto_review_outbox"] == [repo.state["auto_review_outbox"][0]]

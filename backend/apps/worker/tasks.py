@@ -216,6 +216,11 @@ def ocr_result_state_records(document_id: str, version_id: str) -> dict[str, lis
             if str(item.get("documentId") or "") == document_id
             and str(item.get("documentVersionId") or "") == version_id
         ],
+        "auto_review_outbox": [
+            item
+            for item in repo.state.get("auto_review_outbox", [])
+            if str(item.get("documentVersionId") or "") == version_id
+        ],
     }
 
 
