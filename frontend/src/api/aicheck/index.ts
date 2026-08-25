@@ -1,4 +1,12 @@
 import request from '@/axios'
+import { createAutoReviewApi } from './autoReview'
+export type {
+  AutoReviewMutationOptions,
+  AutoReviewPolicy,
+  AutoReviewPolicyInput,
+  AutoReviewStatus,
+  AutoReviewTriggerMode
+} from './autoReview'
 import type {
   ActionCode,
   AiReviewRun,
@@ -4048,6 +4056,14 @@ const requestHeaders = (options?: RequestHeaderOptions) => {
   if (options?.silentBusinessError) headers['X-Silent-Business-Error'] = 'true'
   return Object.keys(headers).length ? headers : undefined
 }
+
+const autoReviewApi = createAutoReviewApi(request, mutationHeaders)
+export const {
+  getProjectAutoReviewPolicyApi,
+  updateProjectAutoReviewPolicyApi,
+  getProjectAutoReviewStatusApi,
+  runProjectAutoReviewApi
+} = autoReviewApi
 
 export const getKnowledgeOverviewApi = (): Promise<IResponse<KnowledgeOverviewPayload>> => {
   return request.get({ url: '/api/knowledge/overview' })
