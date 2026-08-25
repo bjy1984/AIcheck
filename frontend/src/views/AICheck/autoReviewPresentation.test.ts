@@ -28,9 +28,7 @@ assert.equal(
   '自动审查：每天 02:00'
 )
 assert.equal(
-  autoReviewModeLabel(
-    policy({ enabled: true, triggerModes: ['ocr_mounted', 'daily_schedule'] })
-  ),
+  autoReviewModeLabel(policy({ enabled: true, triggerModes: ['ocr_mounted', 'daily_schedule'] })),
   '自动审查：实时 + 每天 02:00'
 )
 
