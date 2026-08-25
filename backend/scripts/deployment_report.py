@@ -30,6 +30,7 @@ from libs.db.repository import (
     STATE_COLLECTIONS,
     InMemoryRepository,
     build_export_artifact,
+    repo,
 )
 from libs.db.seed import PROJECT_ID, ROLE_ACTIONS
 from libs.integrations.litellm_client import LiteLLMClient
@@ -307,6 +308,9 @@ REQUIRED_REVIEW_GRAPH_STEP_KEYS = [
 ]
 REQUIRED_REVIEW_COLLECTIONS = {
     "review_runs",
+    "evidence_snapshots",
+    "evidence_manifests",
+    "evidence_shards",
     "review_step_runs",
     "review_graph_nodes",
     "review_tool_calls",
@@ -725,10 +729,12 @@ class DeploymentReportBuilder:
 
     def review_orchestration_contract_section(self) -> dict[str, Any]:
         check = review_orchestration_contract_check()
+        coverage_check = lossless_evidence_coverage_check()
         return {
             "name": "review-orchestration-contract",
-            "ok": check["status"] == "pass",
-            "checks": [check],
+            "ok": check["status"] == "pass"
+            and coverage_check["status"] in {"pass", "skip"},
+            "checks": [check, coverage_check],
         }
 
     def fde_governance_contract_section(self) -> dict[str, Any]:
@@ -2050,6 +2056,136 @@ def knowledge_rule_contract_check(
             "requiredRuleCheckFields": sorted(REQUIRED_RULE_CHECK_RESULT_FIELDS),
             "requiredRetrievalTraceFields": sorted(REQUIRED_RETRIEVAL_TRACE_FIELDS),
             "readinessScorecard": "build_knowledge_rule_scorecard" in readiness_source,
+        },
+    }
+
+
+def lossless_evidence_coverage_check(
+    *,
+    manifests: list[dict[str, Any]] | None = None,
+    coverages: list[dict[str, Any]] | None = None,
+    review_runs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    manifest_rows = [
+        row
+        for row in (manifests if manifests is not None else repo.state.get("evidence_manifests") or [])
+        if isinstance(row, dict)
+    ]
+    run_rows = [
+        row
+        for row in (review_runs if review_runs is not None else repo.state.get("review_runs") or [])
+        if isinstance(row, dict)
+    ]
+    if coverages is None:
+        coverage_rows = [
+            {
+                "evidenceManifestId": row.get("evidenceManifestId"),
+                **(row.get("evidenceCoverage") or {}),
+            }
+            for row in run_rows
+            if row.get("evidenceManifestId") and isinstance(row.get("evidenceCoverage"), dict)
+        ]
+    else:
+        coverage_rows = [row for row in coverages if isinstance(row, dict)]
+
+    if not manifest_rows:
+        return {
+            "name": "review.lossless-evidence-coverage",
+            "status": "skip",
+            "detail": "No persisted EvidenceManifest records are available yet.",
+            "data": {
+                "gateStatus": "not_applicable",
+                "manifestCount": 0,
+                "missingArtifactCount": 0,
+                "failures": [],
+            },
+        }
+
+    coverage_by_manifest: dict[str, list[dict[str, Any]]] = {}
+    for coverage in coverage_rows:
+        manifest_id = str(coverage.get("evidenceManifestId") or "")
+        if manifest_id:
+            coverage_by_manifest.setdefault(manifest_id, []).append(coverage)
+
+    failures: list[dict[str, Any]] = []
+    missing_artifact_count = 0
+    for manifest in manifest_rows:
+        manifest_id = str(
+            manifest.get("evidenceManifestId") or manifest.get("id") or ""
+        )
+        expected = int((manifest.get("counts") or {}).get("total") or 0)
+        candidates = coverage_by_manifest.get(manifest_id) or []
+        if not candidates:
+            failures.append(
+                {
+                    "evidenceManifestId": manifest_id,
+                    "code": "MISSING_COVERAGE_REPORT",
+                }
+            )
+            missing_artifact_count += expected
+            continue
+        coverage = candidates[-1]
+        missing_ids = [str(item) for item in coverage.get("missingArtifactIds") or []]
+        duplicate_ids = [str(item) for item in coverage.get("duplicateArtifactIds") or []]
+        incomplete_ids = [str(item) for item in coverage.get("incompleteArtifactIds") or []]
+        processed = int(coverage.get("processedArtifactCount") or 0)
+        missing_count = max(len(missing_ids), max(0, expected - processed))
+        missing_artifact_count += missing_count
+        if (
+            coverage.get("coveragePassed") is not True
+            or missing_count
+            or duplicate_ids
+            or incomplete_ids
+        ):
+            failures.append(
+                {
+                    "evidenceManifestId": manifest_id,
+                    "code": "INCOMPLETE_EVIDENCE_COVERAGE",
+                    "expectedArtifactCount": expected,
+                    "processedArtifactCount": processed,
+                    "missingArtifactIds": missing_ids,
+                    "duplicateArtifactIds": duplicate_ids,
+                    "incompleteArtifactIds": incomplete_ids,
+                }
+            )
+
+    terminal_statuses = {
+        "waiting_human_review",
+        "accepted_by_human",
+        "edited_by_human",
+        "rejected_by_human",
+        "completed",
+        "完成",
+    }
+    for run in run_rows:
+        if (
+            str(run.get("status") or "") in terminal_statuses
+            and run.get("evidenceManifestId")
+            and (run.get("evidenceCoverage") or {}).get("coveragePassed") is not True
+        ):
+            failures.append(
+                {
+                    "reviewRunId": run.get("reviewRunId") or run.get("id"),
+                    "evidenceManifestId": run.get("evidenceManifestId"),
+                    "code": "TERMINAL_REVIEW_WITH_INCOMPLETE_EVIDENCE",
+                }
+            )
+
+    status = "fail" if failures else "pass"
+    return {
+        "name": "review.lossless-evidence-coverage",
+        "status": status,
+        "detail": (
+            "Every EvidenceManifest has complete, unique artifact coverage."
+            if status == "pass"
+            else f"Lossless evidence coverage blocked: failures={len(failures)}."
+        ),
+        "data": {
+            "gateStatus": "blocked" if failures else "passed",
+            "manifestCount": len(manifest_rows),
+            "coverageReportCount": len(coverage_rows),
+            "missingArtifactCount": missing_artifact_count,
+            "failures": failures,
         },
     }
 

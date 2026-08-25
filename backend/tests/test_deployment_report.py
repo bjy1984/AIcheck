@@ -25,6 +25,7 @@ from scripts.deployment_report import (
     iter_effective_routes,
     knowledge_rule_contract_check,
     litellm_client_contract_check,
+    lossless_evidence_coverage_check,
     markdown_report,
     ocr_evaluation_contract_check,
     ocr_service_contract_check,
@@ -132,6 +133,10 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert sections["litellm-client-contract"]["ok"] is True
     assert sections["knowledge-rule-contract"]["ok"] is True
     assert sections["review-orchestration-contract"]["ok"] is True
+    assert any(
+        check["name"] == "review.lossless-evidence-coverage"
+        for check in sections["review-orchestration-contract"]["checks"]
+    )
     review_check = next(
         check
         for check in sections["review-orchestration-contract"]["checks"]
@@ -291,7 +296,7 @@ def test_deployment_report_static_sections_pass_and_live_is_skipped() -> None:
     assert helper_check["status"] == "pass"
     assert helper_check["data"]["missing"] == []
     assert report["summary"]["fail"] == 0
-    assert report["summary"]["skip"] == 1
+    assert report["summary"]["skip"] == 2
 
 
 def test_release_gate_requires_all_live_write_model_and_security_probes(tmp_path: Path) -> None:
@@ -321,6 +326,64 @@ def test_release_gate_requires_all_live_write_model_and_security_probes(tmp_path
     assert complete["checks"][1]["status"] == "pass"
     assert complete["checks"][2]["name"] == "release.ocr-98-gate"
     assert complete["checks"][2]["status"] == "pass"
+
+
+def test_lossless_evidence_gate_blocks_missing_artifacts() -> None:
+    check = lossless_evidence_coverage_check(
+        manifests=[
+            {
+                "evidenceManifestId": "EMAN-1",
+                "counts": {"total": 10},
+            }
+        ],
+        coverages=[
+            {
+                "evidenceManifestId": "EMAN-1",
+                "expectedArtifactCount": 10,
+                "processedArtifactCount": 9,
+                "missingArtifactIds": ["EART-10"],
+                "duplicateArtifactIds": [],
+                "coveragePassed": False,
+            }
+        ],
+        review_runs=[],
+    )
+
+    assert check["status"] == "fail"
+    assert check["data"]["gateStatus"] == "blocked"
+    assert check["data"]["missingArtifactCount"] == 1
+
+
+def test_lossless_evidence_gate_passes_complete_manifests_and_runs() -> None:
+    check = lossless_evidence_coverage_check(
+        manifests=[
+            {
+                "evidenceManifestId": "EMAN-1",
+                "counts": {"total": 10},
+            }
+        ],
+        coverages=[
+            {
+                "evidenceManifestId": "EMAN-1",
+                "expectedArtifactCount": 10,
+                "processedArtifactCount": 10,
+                "missingArtifactIds": [],
+                "duplicateArtifactIds": [],
+                "coveragePassed": True,
+            }
+        ],
+        review_runs=[
+            {
+                "reviewRunId": "RRUN-1",
+                "status": "waiting_human_review",
+                "evidenceManifestId": "EMAN-1",
+                "evidenceCoverage": {"coveragePassed": True},
+            }
+        ],
+    )
+
+    assert check["status"] == "pass"
+    assert check["data"]["gateStatus"] == "passed"
 
 
 def test_backup_recoverability_report_is_integrity_checked(tmp_path: Path) -> None:
