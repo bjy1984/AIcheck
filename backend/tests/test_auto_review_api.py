@@ -7,7 +7,6 @@ from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
 from libs.integrations import task_dispatcher
 
-
 client = TestClient(app)
 INSPECTION_HEADERS = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
 

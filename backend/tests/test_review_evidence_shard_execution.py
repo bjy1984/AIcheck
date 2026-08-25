@@ -6,8 +6,10 @@ import pytest
 
 from libs.db.repository import repo
 from libs.review_orchestrator import execution as ex
-from libs.review_orchestrator.shard_execution import EvidenceShardProcessingIncomplete
-from libs.review_orchestrator.shard_execution import aggregate_shard_findings
+from libs.review_orchestrator.shard_execution import (
+    EvidenceShardProcessingIncomplete,
+    aggregate_shard_findings,
+)
 
 
 def setup_function() -> None:

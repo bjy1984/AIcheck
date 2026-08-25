@@ -6,7 +6,6 @@ from apps.api.main import app
 from libs.db.repository import repo
 from libs.db.seed import PROJECT_ID
 
-
 client = TestClient(app)
 HEADERS = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
 

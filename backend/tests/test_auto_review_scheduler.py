@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from libs.db.repository import repo
 
 
 def _state_with_node() -> dict:

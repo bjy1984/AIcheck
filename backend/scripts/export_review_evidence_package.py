@@ -13,7 +13,6 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from libs.review_evidence import build_review_evidence_package
 
-
 PROJECTS = {
     "test": {
         "projectId": "P-TEST-OCR-001",

@@ -41,15 +41,15 @@ from libs.reasoning_budget import (
     review_reasoning_effort,
     truncation_caused_by_reasoning,
 )
-from libs.review_grounding import (
-    apply_grounding_guardrails,
-    build_grounded_review_input,
-    grounding_prompt_block,
-)
 from libs.review_evidence import (
     bind_evidence_package_to_review_run,
     evidence_coverage_report,
     grounding_input_for_evidence_shard,
+)
+from libs.review_grounding import (
+    apply_grounding_guardrails,
+    build_grounded_review_input,
+    grounding_prompt_block,
 )
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
 from libs.review_orchestrator.evidence_budget import (
@@ -102,12 +102,12 @@ from libs.review_orchestrator.rule_result_digest import (
     compact_rule_results,
     compact_tool_output,
 )
+from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.shard_execution import (
     EvidenceShardProcessingIncomplete,
     aggregate_shard_findings,
     review_run_evidence_package,
 )
-from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.security.tenant import current_tenant_id, tenant_id_for_record

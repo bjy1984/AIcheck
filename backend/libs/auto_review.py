@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from libs.contracts.responses import server_time
 from libs.review_evidence import active_node_document_versions, build_evidence_snapshot
 
-
 TRIGGER_MODES = {"ocr_mounted", "daily_schedule"}
 AUTO_REVIEW_MODE = "gap_precheck"
 DEFAULT_TIMEZONE = "Asia/Shanghai"

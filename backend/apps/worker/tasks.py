@@ -21,8 +21,12 @@ from libs.aliyun_ocr import AliyunOcrError, AliyunOcrRetryableError
 from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_config
 from libs.auto_review import (
     consume_auto_review_evidence_events as consume_auto_review_events,
+)
+from libs.auto_review import (
     dispatch_pending_auto_review_candidates,
     finalize_running_project_review_runs,
+)
+from libs.auto_review import (
     scan_due_auto_review_policies as scan_due_auto_review_projects,
 )
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
@@ -68,9 +72,9 @@ from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     EMBED_BATCH_SIZE,
-    STRUCTURED_BLOCK_TYPES,
     OFFLINE_EMBEDDING_MODEL,
     STANDARD_INDEX_VERSION,
+    STRUCTURED_BLOCK_TYPES,
     active_embedding_target,
     embedding_text_for_chunk,
     local_path_from_storage_key,
@@ -85,12 +89,6 @@ from libs.mineru_ocr import (
     normalize_mineru_zip,
     validated_zip_members,
 )
-from libs.seal_local_reader import (
-    merge_scanned_seals,
-    read_seal_texts_locally,
-    scan_document_seals_via_service,
-)
-from libs.seal_vision import read_seal_texts
 from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.ocr.profiles import profile_for
 from libs.ocr_accuracy_pipeline import (
@@ -140,6 +138,12 @@ from libs.review_grounding import (
     grounding_prompt_block,
     unsupported_claims,
 )
+from libs.seal_local_reader import (
+    merge_scanned_seals,
+    read_seal_texts_locally,
+    scan_document_seals_via_service,
+)
+from libs.seal_vision import read_seal_texts
 from libs.security.tenant import (
     current_tenant_id,
     reset_request_tenant_id,

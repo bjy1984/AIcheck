@@ -25,7 +25,6 @@ from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
 
-
 auto_review_router = APIRouter()
 
 
