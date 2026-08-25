@@ -45,6 +45,7 @@ celery_app.conf.update(
         "apps.worker.tasks.auto_review_consume_evidence_events": {"queue": "business.light", "priority": broker_priority(8)},
         "apps.worker.tasks.auto_review_scan_due_projects": {"queue": "business.light", "priority": broker_priority(7)},
         "apps.worker.tasks.auto_review_start_pending_candidates": {"queue": "business.light", "priority": broker_priority(8)},
+        "apps.worker.tasks.auto_review_finalize_project_runs": {"queue": "business.light", "priority": broker_priority(7)},
     },
     beat_schedule={
         "auto-review-consume-evidence-events": {
@@ -57,6 +58,10 @@ celery_app.conf.update(
         },
         "auto-review-start-pending-candidates": {
             "task": "apps.worker.tasks.auto_review_start_pending_candidates",
+            "schedule": 60.0,
+        },
+        "auto-review-finalize-project-runs": {
+            "task": "apps.worker.tasks.auto_review_finalize_project_runs",
             "schedule": 60.0,
         },
     },

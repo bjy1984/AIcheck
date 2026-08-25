@@ -130,6 +130,27 @@ def get_auto_review_status(request: Request, project_id: str):
         if str(row.get("tenantId") or "") == str(tenant_id)
         and str(row.get("projectId") or "") == str(project_id)
     ]
+    child_review_run_ids = {
+        str(item)
+        for project_run in project_runs
+        for item in project_run.get("childReviewRunIds") or []
+        if item
+    }
+    child_runs = [
+        row
+        for row in repo.state.get("review_runs") or []
+        if isinstance(row, dict)
+        and str(row.get("reviewRunId") or row.get("id") or "")
+        in child_review_run_ids
+        and str(row.get("projectId") or "") == str(project_id)
+        and str(row.get("tenantId") or tenant_id) == str(tenant_id)
+    ]
+    incomplete_runs = [
+        row
+        for row in child_runs
+        if str(row.get("status") or "") == "review_incomplete"
+    ]
+    latest_failure = incomplete_runs[0] if incomplete_runs else None
     return ok(
         {
             "policy": versioned_record("auto-review-policy", policy),
@@ -139,6 +160,38 @@ def get_auto_review_status(request: Request, project_id: str):
             ),
             "runningProjectRunCount": sum(row.get("status") == "running" for row in project_runs),
             "failedProjectRunCount": sum(row.get("status") in {"failed", "partial"} for row in project_runs),
+            "runningNodeReviewCount": sum(
+                str(row.get("status") or "") in {"queued", "running", "retry_pending"}
+                for row in child_runs
+            ),
+            "reviewIncompleteNodeCount": len(incomplete_runs),
+            "shardProgress": {
+                "expectedShardCount": sum(
+                    int((row.get("evidenceCoverage") or {}).get("expectedShardCount") or 0)
+                    for row in child_runs
+                ),
+                "completedShardCount": sum(
+                    int((row.get("evidenceCoverage") or {}).get("completedShardCount") or 0)
+                    for row in child_runs
+                ),
+                "failedShardCount": sum(
+                    int((row.get("evidenceCoverage") or {}).get("failedShardCount") or 0)
+                    for row in child_runs
+                ),
+            },
+            "latestFailure": (
+                {
+                    "reviewRunId": latest_failure.get("reviewRunId")
+                    or latest_failure.get("id"),
+                    "nodeId": latest_failure.get("nodeId"),
+                    "errorCode": latest_failure.get("errorCode"),
+                    "failedEvidenceShardIds": repo.clone(
+                        latest_failure.get("failedEvidenceShardIds") or []
+                    ),
+                }
+                if latest_failure
+                else None
+            ),
             "latestProjectRun": project_runs[0] if project_runs else None,
         },
         request,

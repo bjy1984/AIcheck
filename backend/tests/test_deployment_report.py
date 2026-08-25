@@ -398,6 +398,16 @@ def test_auto_review_orchestration_contract_covers_routes_state_tasks_and_beat()
     assert check["data"]["taskFailures"] == []
     assert check["data"]["beatFailures"] == []
     assert check["data"]["sourceFailures"] == []
+    assert (
+        "apps.worker.tasks.auto_review_finalize_project_runs"
+        in check["data"]["requiredTasks"]
+    )
+    assert (
+        "GET",
+        "/projects/{project_id}/inspection/project-review-runs/{project_review_run_id}",
+    ) in [tuple(row) for row in check["data"]["requiredRoutes"]]
+    assert "node_finding_aggregates" in check["data"]["requiredCollections"]
+    assert "project_review_summaries" in check["data"]["requiredCollections"]
 
 
 def test_backup_recoverability_report_is_integrity_checked(tmp_path: Path) -> None:

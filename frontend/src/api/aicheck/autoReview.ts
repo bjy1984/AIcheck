@@ -21,6 +21,19 @@ export type AutoReviewStatus = {
   pendingNodeCount: number
   runningProjectRunCount: number
   failedProjectRunCount: number
+  runningNodeReviewCount: number
+  reviewIncompleteNodeCount: number
+  shardProgress: {
+    expectedShardCount: number
+    completedShardCount: number
+    failedShardCount: number
+  }
+  latestFailure?: {
+    reviewRunId: string
+    nodeId: number
+    errorCode?: string | null
+    failedEvidenceShardIds: string[]
+  } | null
   latestProjectRun?: Record<string, unknown> | null
 }
 

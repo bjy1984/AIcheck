@@ -12,9 +12,16 @@ export const autoReviewModeLabel = (policy?: AutoReviewPolicy) => {
 
 export const autoReviewStatusSummary = (status?: AutoReviewStatus) => {
   if (!status) return '状态加载中'
+  const shardProgress = status.shardProgress || {
+    expectedShardCount: 0,
+    completedShardCount: 0,
+    failedShardCount: 0
+  }
   return [
     `待审节点 ${status.pendingNodeCount}`,
-    `执行中 ${status.runningProjectRunCount}`,
-    `失败 ${status.failedProjectRunCount}`
+    `节点执行中 ${status.runningNodeReviewCount || 0}`,
+    `分片 ${shardProgress.completedShardCount}/${shardProgress.expectedShardCount}`,
+    `未完成 ${status.reviewIncompleteNodeCount || 0}`,
+    `工程失败 ${status.failedProjectRunCount}`
   ].join(' · ')
 }

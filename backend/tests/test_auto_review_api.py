@@ -164,8 +164,35 @@ def test_status_reports_pending_candidates_and_project_runs() -> None:
             "tenantId": "TENANT-DEFAULT",
             "projectId": PROJECT_ID,
             "status": "running",
+            "childReviewRunIds": ["RRUN-AUTO-1", "RRUN-AUTO-2"],
         }
     )
+    repo.state["review_runs"] = [
+        {
+            "reviewRunId": "RRUN-AUTO-1",
+            "projectId": PROJECT_ID,
+            "nodeId": 1,
+            "status": "running",
+            "evidenceCoverage": {
+                "expectedShardCount": 3,
+                "completedShardCount": 2,
+                "failedShardCount": 0,
+            },
+        },
+        {
+            "reviewRunId": "RRUN-AUTO-2",
+            "projectId": PROJECT_ID,
+            "nodeId": 2,
+            "status": "review_incomplete",
+            "errorCode": "EVIDENCE_SHARD_PROCESSING_INCOMPLETE",
+            "failedEvidenceShardIds": ["ESHARD-4"],
+            "evidenceCoverage": {
+                "expectedShardCount": 2,
+                "completedShardCount": 1,
+                "failedShardCount": 1,
+            },
+        },
+    ]
 
     status = _ok(
         client.get(
@@ -176,6 +203,19 @@ def test_status_reports_pending_candidates_and_project_runs() -> None:
 
     assert status["pendingNodeCount"] == 1
     assert status["runningProjectRunCount"] == 1
+    assert status["runningNodeReviewCount"] == 1
+    assert status["reviewIncompleteNodeCount"] == 1
+    assert status["shardProgress"] == {
+        "expectedShardCount": 5,
+        "completedShardCount": 3,
+        "failedShardCount": 1,
+    }
+    assert status["latestFailure"] == {
+        "reviewRunId": "RRUN-AUTO-2",
+        "nodeId": 2,
+        "errorCode": "EVIDENCE_SHARD_PROCESSING_INCOMPLETE",
+        "failedEvidenceShardIds": ["ESHARD-4"],
+    }
 
 
 def test_manual_full_review_creates_parent_and_node_child_runs(monkeypatch) -> None:

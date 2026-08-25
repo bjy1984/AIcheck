@@ -377,7 +377,14 @@ def finalize_project_review_run(
         | {
             int(row.get("nodeId") or 0)
             for row in child_rows
-            if str(row.get("status") or "") in {"failed", "failed_to_start", "cancelled", "失败"}
+            if str(row.get("status") or "")
+            in {
+                "failed",
+                "failed_to_start",
+                "cancelled",
+                "review_incomplete",
+                "失败",
+            }
             and int(row.get("nodeId") or 0) > 0
         }
     )
@@ -547,6 +554,43 @@ def build_project_review_summary(
             "failedNodeCount": len(failed),
             "pendingNodeCount": len(pending),
         },
+    }
+
+
+def finalize_running_project_review_runs(state: dict[str, Any]) -> dict[str, Any]:
+    finalized_ids: list[str] = []
+    running_ids: list[str] = []
+    summaries = state.setdefault("project_review_summaries", [])
+    for project_run in state.get("project_review_runs") or []:
+        if not isinstance(project_run, dict):
+            continue
+        status = str(project_run.get("status") or "")
+        if status not in {"running", "partial"} or project_run.get("finishedAt"):
+            continue
+        finalize_project_review_run(state, project_run)
+        project_run_id = str(
+            project_run.get("projectReviewRunId") or project_run.get("id") or ""
+        )
+        if str(project_run.get("status") or "") == "running":
+            running_ids.append(project_run_id)
+            continue
+        summary = {
+            "id": f"PRSUM-{project_run_id.removeprefix('PRRUN-')}",
+            "tenantId": project_run.get("tenantId"),
+            **build_project_review_summary(state, project_run),
+            "createdAt": server_time(),
+        }
+        summaries[:] = [
+            row
+            for row in summaries
+            if str(row.get("projectReviewRunId") or "") != project_run_id
+        ]
+        summaries.append(summary)
+        project_run["projectReviewSummaryId"] = summary["id"]
+        finalized_ids.append(project_run_id)
+    return {
+        "finalizedProjectReviewRunIds": sorted(finalized_ids),
+        "runningProjectReviewRunIds": sorted(running_ids),
     }
 
 

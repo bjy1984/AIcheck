@@ -2066,12 +2066,18 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
     from apps.worker.celery_app import celery_app
     from libs import auto_review as auto_review_module
     from libs import document_intelligence as document_intelligence_module
+    from libs.review_orchestrator import execution as review_execution_module
 
     required_routes = {
         ("GET", "/projects/{project_id}/inspection/auto-review-policy"),
         ("PUT", "/projects/{project_id}/inspection/auto-review-policy"),
         ("GET", "/projects/{project_id}/inspection/auto-review-status"),
         ("POST", "/projects/{project_id}/inspection/auto-review/run"),
+        ("GET", "/projects/{project_id}/inspection/project-review-runs"),
+        (
+            "GET",
+            "/projects/{project_id}/inspection/project-review-runs/{project_review_run_id}",
+        ),
     }
     available_routes = {
         (method, str(getattr(route, "path", "")))
@@ -2090,6 +2096,11 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
         "auto_review_candidates",
         "project_review_runs",
         "auto_review_outbox",
+        "evidence_snapshots",
+        "evidence_manifests",
+        "evidence_shards",
+        "node_finding_aggregates",
+        "project_review_summaries",
     }
     collection_failures = sorted(
         required_collections - set(STATE_COLLECTIONS.values())
@@ -2100,6 +2111,7 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
         "apps.worker.tasks.auto_review_consume_evidence_events": "business.light",
         "apps.worker.tasks.auto_review_scan_due_projects": "business.light",
         "apps.worker.tasks.auto_review_start_pending_candidates": "business.light",
+        "apps.worker.tasks.auto_review_finalize_project_runs": "business.light",
     }
     task_failures = [
         f"{task} missing or routed outside {queue}"
@@ -2111,6 +2123,7 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
         "auto-review-consume-evidence-events",
         "auto-review-scan-due-projects",
         "auto-review-start-pending-candidates",
+        "auto-review-finalize-project-runs",
     }
     beat_failures = sorted(required_beat - set(beat))
 
@@ -2136,6 +2149,22 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
             source_for_callable(getattr(auto_review_module, "dispatch_project_review_run", None)),
             ["projectReviewRunId", "AUTO_REVIEW_MODE", "advisoryOnly", "nodeSnapshotHashes"],
         ),
+        "lossless_shard_execution": (
+            source_for_callable(
+                getattr(review_execution_module, "generate_finding_drafts", None)
+            ),
+            [
+                "grounding_input_for_evidence_shard",
+                "evidence_coverage_report",
+                "EvidenceShardProcessingIncomplete",
+            ],
+        ),
+        "finalize_running_project_review_runs": (
+            source_for_callable(
+                getattr(auto_review_module, "finalize_running_project_review_runs", None)
+            ),
+            ["build_project_review_summary", "project_review_summaries"],
+        ),
     }
     for label, (source, terms) in source_contracts.items():
         missing = [term for term in terms if term not in source]
@@ -2158,6 +2187,10 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
             "taskFailures": task_failures,
             "beatFailures": beat_failures,
             "sourceFailures": source_failures,
+            "requiredRoutes": [list(item) for item in sorted(required_routes)],
+            "requiredCollections": sorted(required_collections),
+            "requiredTasks": sorted(required_tasks),
+            "requiredBeatEntries": sorted(required_beat),
         },
     }
 
@@ -2446,7 +2479,13 @@ def review_orchestration_contract_check(
     )
     require_source_terms(
         "generate_finding_drafts",
-        source_for_callable(getattr(execution_module, "generate_finding_drafts", None)),
+        # Public wrapper owns EvidenceShard fan-out/aggregation; the one-call
+        # helper owns the provider contract. The deploy gate must inspect both
+        # halves or a correct extraction looks like the model call vanished.
+        source_for_callable(getattr(execution_module, "generate_finding_drafts", None))
+        + source_for_callable(
+            getattr(execution_module, "_generate_finding_drafts_once", None)
+        ),
         [
             "qwen_runtime_client().chat_sync",
             "review-chat",

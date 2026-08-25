@@ -177,3 +177,87 @@ def test_celery_registers_pending_candidate_starter() -> None:
 
     assert routes["apps.worker.tasks.auto_review_start_pending_candidates"]["queue"] == "business.light"
     assert beat["auto-review-start-pending-candidates"]["schedule"] == 60.0
+
+
+def test_finalizer_stores_terminal_summary_and_leaves_pending_parent_running() -> None:
+    from libs.auto_review import finalize_running_project_review_runs
+
+    state = {
+        "project_review_runs": [
+            {
+                "id": "PRRUN-TERMINAL",
+                "projectReviewRunId": "PRRUN-TERMINAL",
+                "tenantId": "TENANT-1",
+                "projectId": "P-1",
+                "expectedNodeIds": [1, 2],
+                "childReviewRunIds": ["RRUN-1", "RRUN-2"],
+                "failedNodeIds": [],
+                "status": "running",
+                "revision": 1,
+            },
+            {
+                "id": "PRRUN-PENDING",
+                "projectReviewRunId": "PRRUN-PENDING",
+                "tenantId": "TENANT-1",
+                "projectId": "P-1",
+                "expectedNodeIds": [3],
+                "childReviewRunIds": ["RRUN-3"],
+                "failedNodeIds": [],
+                "status": "running",
+                "revision": 1,
+            },
+        ],
+        "review_runs": [
+            {
+                "reviewRunId": "RRUN-1",
+                "nodeId": 1,
+                "status": "waiting_human_review",
+                "findingDrafts": [],
+            },
+            {
+                "reviewRunId": "RRUN-2",
+                "nodeId": 2,
+                "status": "review_incomplete",
+                "findingDrafts": [],
+                "failedEvidenceShardIds": ["ESHARD-2"],
+            },
+            {
+                "reviewRunId": "RRUN-3",
+                "nodeId": 3,
+                "status": "running",
+                "findingDrafts": [],
+            },
+        ],
+        "project_review_summaries": [],
+    }
+
+    first = finalize_running_project_review_runs(state)
+    terminal, pending = state["project_review_runs"]
+    terminal_revision = terminal["revision"]
+    second = finalize_running_project_review_runs(state)
+
+    assert first["finalizedProjectReviewRunIds"] == ["PRRUN-TERMINAL"]
+    assert first["runningProjectReviewRunIds"] == ["PRRUN-PENDING"]
+    assert terminal["status"] == "partial"
+    assert terminal["completedNodeIds"] == [1]
+    assert terminal["failedNodeIds"] == [2]
+    assert terminal["projectReviewSummaryId"]
+    assert state["project_review_summaries"][0]["completion"] == {
+        "expectedNodeCount": 2,
+        "completedNodeCount": 1,
+        "failedNodeCount": 1,
+        "pendingNodeCount": 0,
+    }
+    assert pending["status"] == "running"
+    assert second["finalizedProjectReviewRunIds"] == []
+    assert terminal["revision"] == terminal_revision
+
+
+def test_celery_registers_project_run_finalizer() -> None:
+    from apps.worker.celery_app import celery_app
+
+    routes = dict(celery_app.conf.task_routes)
+    beat = dict(celery_app.conf.beat_schedule)
+
+    assert routes["apps.worker.tasks.auto_review_finalize_project_runs"]["queue"] == "business.light"
+    assert beat["auto-review-finalize-project-runs"]["schedule"] == 60.0

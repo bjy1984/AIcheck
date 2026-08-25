@@ -22,6 +22,7 @@ from libs.audit_runtime import audit_runtime_for_run, audit_runtime_public_confi
 from libs.auto_review import (
     consume_auto_review_evidence_events as consume_auto_review_events,
     dispatch_pending_auto_review_candidates,
+    finalize_running_project_review_runs,
     scan_due_auto_review_policies as scan_due_auto_review_projects,
 )
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
@@ -4797,6 +4798,7 @@ AUTO_REVIEW_STATE_KEYS = {
     "auto_review_candidates",
     "auto_review_outbox",
     "project_review_runs",
+    "project_review_summaries",
     "documents",
     "versions",
     "node_evidence_links",
@@ -4902,4 +4904,22 @@ def auto_review_start_pending_candidates(self) -> dict[str, Any]:
         start_node_review=_start_auto_review_node,
     )
     flush_state()
+    return result
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 3},
+)
+def auto_review_finalize_project_runs(self) -> dict[str, Any]:
+    load_state(AUTO_REVIEW_STATE_KEYS)
+    result = finalize_running_project_review_runs(repo.state)
+    flush_state(
+        {
+            "project_review_runs",
+            "project_review_summaries",
+        }
+    )
     return result

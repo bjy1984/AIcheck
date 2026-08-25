@@ -102,6 +102,7 @@ STATE_COLLECTIONS = {
     "auto_review_policies": "auto_review_policies",
     "auto_review_candidates": "auto_review_candidates",
     "project_review_runs": "project_review_runs",
+    "project_review_summaries": "project_review_summaries",
     "auto_review_outbox": "auto_review_outbox",
     "fact_corrections": "fact_corrections",
     "material_targeting_runs": "material_targeting_runs",
@@ -310,6 +311,7 @@ class InMemoryRepository:
         self.state.setdefault("auto_review_policies", [])
         self.state.setdefault("auto_review_candidates", [])
         self.state.setdefault("project_review_runs", [])
+        self.state.setdefault("project_review_summaries", [])
         self.state.setdefault("auto_review_outbox", [])
         self.state.setdefault("fact_corrections", [])
         self.state.setdefault("material_targeting_runs", [])
@@ -3619,6 +3621,7 @@ class InMemoryRepository:
         loaded.setdefault("auto_review_policies", [])
         loaded.setdefault("auto_review_candidates", [])
         loaded.setdefault("project_review_runs", [])
+        loaded.setdefault("project_review_summaries", [])
         loaded.setdefault("auto_review_outbox", [])
         loaded.setdefault("fact_corrections", [])
         loaded.setdefault("material_targeting_runs", [])

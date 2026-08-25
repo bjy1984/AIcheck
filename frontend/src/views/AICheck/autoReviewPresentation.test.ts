@@ -36,7 +36,17 @@ const status = {
   policy: policy({ enabled: true }),
   pendingNodeCount: 3,
   runningProjectRunCount: 2,
-  failedProjectRunCount: 1
+  failedProjectRunCount: 1,
+  runningNodeReviewCount: 4,
+  reviewIncompleteNodeCount: 1,
+  shardProgress: {
+    expectedShardCount: 8,
+    completedShardCount: 5,
+    failedShardCount: 1
+  }
 } as AutoReviewStatus
-assert.equal(autoReviewStatusSummary(status), '待审节点 3 · 执行中 2 · 失败 1')
+assert.equal(
+  autoReviewStatusSummary(status),
+  '待审节点 3 · 节点执行中 4 · 分片 5/8 · 未完成 1 · 工程失败 1'
+)
 assert.equal(autoReviewStatusSummary(undefined), '状态加载中')
