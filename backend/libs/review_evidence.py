@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from typing import Any
 
 from libs.contracts.responses import server_time
@@ -160,5 +161,142 @@ def build_evidence_snapshot(
         **hash_payload,
         "documentVersionCount": len(document_versions),
         "snapshotHash": snapshot_hash,
+        "createdAt": server_time(),
+    }
+
+
+def _manifest_artifact(
+    artifact_type: str,
+    document_version_id: str,
+    source_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    core = {
+        "artifactType": artifact_type,
+        "documentVersionId": document_version_id,
+        "sourceId": source_id,
+        "payload": deepcopy(payload),
+    }
+    content_hash = _stable_hash(core)
+    return {
+        "artifactId": f"EART-{content_hash.removeprefix('sha256:')[:16].upper()}",
+        **core,
+        "contentHash": content_hash,
+    }
+
+
+def _artifacts_for_document(
+    state: dict[str, Any], document_version_id: str
+) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    fields = [
+        row
+        for row in _records(state, "extracted_fields")
+        if str(row.get("documentVersionId") or "") == document_version_id
+    ]
+    for index, field in enumerate(fields, start=1):
+        source_id = str(field.get("id") or f"field:{index}")
+        artifacts.append(
+            _manifest_artifact("field", document_version_id, source_id, field)
+        )
+
+    parse_result = _latest_parse_result(state, document_version_id) or {}
+    parse_result_id = str(parse_result.get("parseResultId") or parse_result.get("id") or "ocr")
+    parse_groups = (
+        ("table", "tables"),
+        ("seal", "seals"),
+        ("fragment", "fragments"),
+    )
+    for artifact_type, collection_name in parse_groups:
+        rows = [
+            row
+            for row in parse_result.get(collection_name) or []
+            if isinstance(row, dict)
+        ]
+        for index, row in enumerate(rows, start=1):
+            source_id = str(
+                row.get("id")
+                or row.get(f"{artifact_type}Id")
+                or f"{parse_result_id}:{artifact_type}:{index}"
+            )
+            artifacts.append(
+                _manifest_artifact(
+                    artifact_type,
+                    document_version_id,
+                    source_id,
+                    row,
+                )
+            )
+
+    evidence_links = [
+        row
+        for row in _records(state, "evidence_links")
+        if str(row.get("documentVersionId") or "") == document_version_id
+    ]
+    for index, link in enumerate(evidence_links, start=1):
+        source_id = str(link.get("id") or f"evidence-link:{index}")
+        artifacts.append(
+            _manifest_artifact(
+                "evidenceLink",
+                document_version_id,
+                source_id,
+                link,
+            )
+        )
+    return artifacts
+
+
+def _artifact_counts(artifacts: list[dict[str, Any]]) -> dict[str, int]:
+    type_to_key = {
+        "field": "fields",
+        "table": "tables",
+        "seal": "seals",
+        "fragment": "fragments",
+        "evidenceLink": "evidenceLinks",
+    }
+    counts = {key: 0 for key in type_to_key.values()}
+    for artifact in artifacts:
+        key = type_to_key[str(artifact["artifactType"])]
+        counts[key] += 1
+    counts["total"] = len(artifacts)
+    return counts
+
+
+def build_evidence_manifest(
+    state: dict[str, Any], snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    artifacts: list[dict[str, Any]] = []
+    documents: list[dict[str, Any]] = []
+    for snapshot_document in snapshot.get("documentVersions") or []:
+        if not isinstance(snapshot_document, dict):
+            continue
+        version_id = str(snapshot_document.get("documentVersionId") or "")
+        if not version_id:
+            continue
+        document_artifacts = _artifacts_for_document(state, version_id)
+        artifacts.extend(document_artifacts)
+        documents.append(
+            {
+                **deepcopy(snapshot_document),
+                "artifactIds": [row["artifactId"] for row in document_artifacts],
+                "artifactCount": len(document_artifacts),
+            }
+        )
+
+    core = {
+        "schemaVersion": "EvidenceManifest@1.0.0",
+        "evidenceSnapshotId": snapshot.get("evidenceSnapshotId"),
+        "evidenceSnapshotHash": snapshot.get("snapshotHash"),
+        "projectId": snapshot.get("projectId"),
+        "nodeId": snapshot.get("nodeId"),
+        "documents": documents,
+        "artifacts": artifacts,
+        "counts": _artifact_counts(artifacts),
+    }
+    manifest_hash = _stable_hash(core)
+    return {
+        "evidenceManifestId": f"EMAN-{manifest_hash.removeprefix('sha256:')[:16].upper()}",
+        **core,
+        "manifestHash": manifest_hash,
         "createdAt": server_time(),
     }
