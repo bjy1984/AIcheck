@@ -98,6 +98,10 @@ STATE_COLLECTIONS = {
     "evidence_snapshots": "evidence_snapshots",
     "evidence_manifests": "evidence_manifests",
     "evidence_shards": "evidence_shards",
+    "auto_review_policies": "auto_review_policies",
+    "auto_review_candidates": "auto_review_candidates",
+    "project_review_runs": "project_review_runs",
+    "auto_review_outbox": "auto_review_outbox",
     "fact_corrections": "fact_corrections",
     "material_targeting_runs": "material_targeting_runs",
     "extracted_fields": "extracted_fields",
@@ -301,6 +305,10 @@ class InMemoryRepository:
         self.state.setdefault("evidence_snapshots", [])
         self.state.setdefault("evidence_manifests", [])
         self.state.setdefault("evidence_shards", [])
+        self.state.setdefault("auto_review_policies", [])
+        self.state.setdefault("auto_review_candidates", [])
+        self.state.setdefault("project_review_runs", [])
+        self.state.setdefault("auto_review_outbox", [])
         self.state.setdefault("fact_corrections", [])
         self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
@@ -471,6 +479,10 @@ class InMemoryRepository:
         self.state.setdefault("evidence_snapshots", [])
         self.state.setdefault("evidence_manifests", [])
         self.state.setdefault("evidence_shards", [])
+        self.state.setdefault("auto_review_policies", [])
+        self.state.setdefault("auto_review_candidates", [])
+        self.state.setdefault("project_review_runs", [])
+        self.state.setdefault("auto_review_outbox", [])
         self.state.setdefault("fact_corrections", [])
         self.state.setdefault("material_targeting_runs", [])
         self.state.setdefault("upload_sessions", [])
@@ -3601,6 +3613,10 @@ class InMemoryRepository:
         loaded.setdefault("evidence_snapshots", [])
         loaded.setdefault("evidence_manifests", [])
         loaded.setdefault("evidence_shards", [])
+        loaded.setdefault("auto_review_policies", [])
+        loaded.setdefault("auto_review_candidates", [])
+        loaded.setdefault("project_review_runs", [])
+        loaded.setdefault("auto_review_outbox", [])
         loaded.setdefault("fact_corrections", [])
         loaded.setdefault("material_targeting_runs", [])
         loaded.setdefault("upload_sessions", [])
