@@ -46,6 +46,7 @@ from libs.review_grounding import (
     build_grounded_review_input,
     grounding_prompt_block,
 )
+from libs.review_evidence import bind_evidence_package_to_review_run
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
@@ -122,6 +123,9 @@ SUGGESTION_RESULT_LABELS = {
 
 REVIEW_STATE_COLLECTIONS = (
     "review_runs",
+    "evidence_snapshots",
+    "evidence_manifests",
+    "evidence_shards",
     "review_step_runs",
     "review_graph_nodes",
     "review_tool_calls",
@@ -462,6 +466,12 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
         "inputDocumentVersionIds": ai_run.get("inputDocumentVersionIds") or [],
+        "evidenceSnapshotId": ai_run.get("evidenceSnapshotId"),
+        "evidenceSnapshotHash": ai_run.get("evidenceSnapshotHash"),
+        "evidenceManifestId": ai_run.get("evidenceManifestId"),
+        "evidenceManifestHash": ai_run.get("evidenceManifestHash"),
+        "evidenceShardIds": repo.clone(ai_run.get("evidenceShardIds") or []),
+        "evidenceCoverage": repo.clone(ai_run.get("evidenceCoverage") or {}),
         "schemaVersion": ai_run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
         "runMode": ai_run.get("runType") or "production",
         "status": "queued",
@@ -499,6 +509,11 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "revision": 1,
     }
     repo.state["review_runs"].insert(0, record)
+    bind_evidence_package_to_review_run(
+        repo.state,
+        ai_run_id=str(ai_run.get("id") or ""),
+        review_run_id=review_run_id,
+    )
     frozen_clause_snapshot = freeze_review_run_clause_snapshot(
         repo.state,
         review_run_id=review_run_id,

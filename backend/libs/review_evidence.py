@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -581,3 +582,94 @@ def evidence_coverage_report(
         "duplicateArtifactIds": duplicate_ids,
         "coveragePassed": coverage_passed,
     }
+
+
+def review_shard_target_tokens() -> int:
+    raw = str(os.getenv("AICHECK_REVIEW_SHARD_TARGET_TOKENS", "12000")).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 12000
+    return value if value > 0 else 12000
+
+
+def build_review_evidence_package(
+    state: dict[str, Any],
+    project_id: str,
+    node_id: int,
+    *,
+    rule_version: str,
+    clause_package_version: str,
+    prompt_version: str,
+    strategy_version: str,
+    max_shard_estimated_tokens: int | None = None,
+) -> dict[str, Any]:
+    snapshot = build_evidence_snapshot(
+        state,
+        project_id,
+        node_id,
+        rule_version=rule_version,
+        clause_package_version=clause_package_version,
+        prompt_version=prompt_version,
+        strategy_version=strategy_version,
+    )
+    manifest = build_evidence_manifest(state, snapshot)
+    shards = build_evidence_shards(
+        manifest,
+        max_shard_estimated_tokens=(
+            int(max_shard_estimated_tokens)
+            if max_shard_estimated_tokens is not None
+            else review_shard_target_tokens()
+        ),
+    )
+    coverage = evidence_coverage_report(manifest, shards)
+    return {
+        "snapshot": snapshot,
+        "manifest": manifest,
+        "shards": shards,
+        "coverage": coverage,
+    }
+
+
+def _upsert_state_record(
+    state: dict[str, Any], collection: str, record: dict[str, Any]
+) -> None:
+    rows = state.setdefault(collection, [])
+    record_id = str(record.get("id") or record.get("evidenceSnapshotId") or record.get("evidenceManifestId") or record.get("evidenceShardId") or "")
+    for index, existing in enumerate(rows):
+        existing_id = str(
+            existing.get("id")
+            or existing.get("evidenceSnapshotId")
+            or existing.get("evidenceManifestId")
+            or existing.get("evidenceShardId")
+            or ""
+        )
+        if record_id and existing_id == record_id:
+            rows[index] = record
+            return
+    rows.append(record)
+
+
+def persist_review_evidence_package(
+    state: dict[str, Any], package: dict[str, Any], *, ai_run_id: str
+) -> None:
+    snapshot = {**deepcopy(package["snapshot"]), "id": package["snapshot"]["evidenceSnapshotId"], "aiRunId": ai_run_id}
+    manifest = {**deepcopy(package["manifest"]), "id": package["manifest"]["evidenceManifestId"], "aiRunId": ai_run_id}
+    _upsert_state_record(state, "evidence_snapshots", snapshot)
+    _upsert_state_record(state, "evidence_manifests", manifest)
+    for source_shard in package.get("shards") or []:
+        shard = {
+            **deepcopy(source_shard),
+            "id": source_shard["evidenceShardId"],
+            "aiRunId": ai_run_id,
+        }
+        _upsert_state_record(state, "evidence_shards", shard)
+
+
+def bind_evidence_package_to_review_run(
+    state: dict[str, Any], *, ai_run_id: str, review_run_id: str
+) -> None:
+    for collection in ("evidence_snapshots", "evidence_manifests", "evidence_shards"):
+        for record in state.get(collection) or []:
+            if str(record.get("aiRunId") or "") == str(ai_run_id):
+                record["reviewRunId"] = review_run_id
