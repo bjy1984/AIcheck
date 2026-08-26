@@ -30,6 +30,7 @@ def test_project_analysis_executes_exactly_one_large_model_call() -> None:
         prompt_version="project-monolithic-analysis@1.0.0",
         model_route=route,
     )
+    snapshot["request"] = preview["request"]
     state["project_analysis_snapshots"].append(snapshot)
     run = {
         "id": "PARUN-1",
@@ -92,6 +93,55 @@ def test_project_analysis_executes_exactly_one_large_model_call() -> None:
     assert attempt["promptHash"].startswith("sha256:")
     assert attempt["responseHash"].startswith("sha256:")
     assert attempt["usageNormalized"]["totalTokens"] == 1100
+
+
+def test_model_execution_uses_persisted_snapshot_request_after_live_ocr_changes() -> None:
+    from test_project_analysis_prompt import _route, _state
+
+    from libs.project_analysis.execution import execute_project_analysis_model
+    from libs.project_analysis.prompt import project_analysis_preview
+
+    state = _state()
+    state.update(
+        {
+            "project_analysis_snapshots": [],
+            "project_analysis_runs": [],
+            "project_analysis_events": [],
+            "model_call_attempts": [],
+        }
+    )
+    preview = project_analysis_preview(state, "P-1", model_route=_route())
+    snapshot = {**preview["snapshot"], "request": preview["request"]}
+    state["project_analysis_snapshots"].append(snapshot)
+    state["project_analysis_runs"].append(
+        {
+            "projectAnalysisRunId": "PARUN-FROZEN",
+            "projectAnalysisSnapshotId": snapshot["projectAnalysisSnapshotId"],
+            "tenantId": "TENANT-1",
+            "projectId": "P-1",
+            "phase": "queued",
+            "status": "queued",
+            "modelAlias": "project-review-large",
+            "reservedOutputTokens": 24000,
+            "revision": 1,
+        }
+    )
+    state["ocr_parse_results"][1]["fragments"][0]["text"] = "运行开始后的 OCR 变化"
+    calls: list[list[dict]] = []
+
+    class FakeClient:
+        def chat_sync(self, messages, **_kwargs):
+            calls.append(messages)
+            return {
+                "choices": [{"finish_reason": "stop", "message": {"content": "{}"}}],
+                "usage": {},
+            }
+
+    execute_project_analysis_model(state, "PARUN-FROZEN", client=FakeClient())
+
+    prompt = calls[0][1]["content"]
+    assert "许可证编号 | TS-001" in prompt
+    assert "运行开始后的 OCR 变化" not in prompt
 
 
 def test_completed_model_attempt_is_not_called_twice() -> None:

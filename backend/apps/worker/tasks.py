@@ -5007,7 +5007,9 @@ def project_analysis_validate_output(self, run_id: str) -> dict[str, Any]:
         for row in repo.state.get("project_analysis_snapshots") or []
         if row.get("projectAnalysisSnapshotId") == run.get("projectAnalysisSnapshotId")
     )
-    request = build_project_analysis_request(repo.state, snapshot)
+    request = deepcopy(snapshot.get("request")) or build_project_analysis_request(
+        repo.state, snapshot
+    )
     request_payload = json.loads(request["messages"][1]["content"])
     validated = validate_project_analysis_output(
         str(run.get("rawModelOutput") or ""),

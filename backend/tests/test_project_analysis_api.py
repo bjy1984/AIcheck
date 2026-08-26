@@ -121,3 +121,43 @@ def test_create_rejects_changed_snapshot_and_wrong_role() -> None:
     assert stale["code"] != 0
     assert stale["data"]["currentSnapshotHash"] == preview["snapshotHash"]
     assert forbidden["code"] != 0
+
+
+def test_preview_backfills_large_model_route_for_upgraded_persisted_state() -> None:
+    repo.state["model_route_versions"] = [
+        row
+        for row in repo.state["model_route_versions"]
+        if row.get("modelAlias") != "project-review-large"
+    ]
+
+    preview = _ok(
+        client.get(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/preview",
+            headers=HEADERS,
+        )
+    )["preview"]
+
+    assert preview["modelAlias"] == "project-review-large"
+    assert preview["maxContextTokens"] >= 131072
+
+
+def test_empty_project_analysis_scope_does_not_create_run() -> None:
+    repo.state["node_evidence_links"] = []
+    repo.state["bindings"] = []
+    preview = _ok(
+        client.get(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/preview",
+            headers=HEADERS,
+        )
+    )["preview"]
+
+    response = client.post(
+        f"/projects/{PROJECT_ID}/inspection/full-project-analysis/runs",
+        headers={**HEADERS, "Idempotency-Key": "empty-project-analysis"},
+        json={"snapshotHash": preview["snapshotHash"]},
+    ).json()
+
+    assert preview["includedNodeCount"] == 0
+    assert response["code"] != 0
+    assert response["message"] == "PROJECT_ANALYSIS_EMPTY_SCOPE"
+    assert repo.state.get("project_analysis_runs", []) == []

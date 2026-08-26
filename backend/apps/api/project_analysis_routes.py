@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
@@ -14,6 +16,7 @@ from apps.api.routes import (
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
+from libs.db.seed import MODEL_ROUTE_VERSIONS
 from libs.integrations import task_dispatcher
 from libs.project_analysis.domain import (
     create_project_analysis_run,
@@ -37,12 +40,21 @@ def _authorize(request: Request, project_id: str, *, write: bool) -> Any | None:
 
 
 def _model_route() -> dict[str, Any] | None:
-    return next(
+    active = next(
         (
             row
             for row in repo.state.get("model_route_versions") or []
-            if row.get("modelAlias") == "project-review-large"
-            and row.get("status") == "production"
+            if row.get("modelAlias") == "project-review-large" and row.get("status") == "production"
+        ),
+        None,
+    )
+    if active:
+        return active
+    return next(
+        (
+            repo.clone(row)
+            for row in MODEL_ROUTE_VERSIONS
+            if row.get("modelAlias") == "project-review-large" and row.get("status") == "production"
         ),
         None,
     )
@@ -56,16 +68,10 @@ def _preview(project_id: str) -> dict[str, Any]:
 
 
 def _public_preview(preview: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in preview.items()
-        if key not in {"request", "snapshot"}
-    }
+    return {key: value for key, value in preview.items() if key not in {"request", "snapshot"}}
 
 
-@project_analysis_router.get(
-    "/projects/{project_id}/inspection/full-project-analysis/preview"
-)
+@project_analysis_router.get("/projects/{project_id}/inspection/full-project-analysis/preview")
 def get_project_analysis_preview(request: Request, project_id: str):
     if error := _authorize(request, project_id, write=False):
         return error
@@ -76,9 +82,7 @@ def get_project_analysis_preview(request: Request, project_id: str):
     return ok({"preview": _public_preview(preview)}, request)
 
 
-@project_analysis_router.post(
-    "/projects/{project_id}/inspection/full-project-analysis/runs"
-)
+@project_analysis_router.post("/projects/{project_id}/inspection/full-project-analysis/runs")
 def create_project_analysis(
     request: Request,
     project_id: str,
@@ -98,6 +102,12 @@ def create_project_analysis(
                 request,
                 data={"currentSnapshotHash": preview["snapshotHash"]},
             )
+        if int(preview.get("includedNodeCount") or 0) == 0:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="PROJECT_ANALYSIS_EMPTY_SCOPE",
+            )
         if preview["contextLimitExceeded"]:
             return fail(
                 errors.VALIDATION_ERROR,
@@ -105,10 +115,34 @@ def create_project_analysis(
                 message="PROJECT_ANALYSIS_CONTEXT_LIMIT_EXCEEDED",
                 data=_public_preview(preview),
             )
-        snapshot = {**preview["snapshot"], "tenantId": request_tenant_id(request)}
+        frozen_request = repo.clone(preview["request"])
+        request_hash = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    frozen_request,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+        snapshot = {
+            **preview["snapshot"],
+            "tenantId": request_tenant_id(request),
+            "request": frozen_request,
+            "requestHash": request_hash,
+        }
         snapshots = repo.state.setdefault("project_analysis_snapshots", [])
-        if not any(row.get("snapshotHash") == snapshot["snapshotHash"] for row in snapshots):
+        existing_snapshot = next(
+            (row for row in snapshots if row.get("snapshotHash") == snapshot["snapshotHash"]),
+            None,
+        )
+        if existing_snapshot is None:
             snapshots.append(snapshot)
+        elif not existing_snapshot.get("request"):
+            existing_snapshot["request"] = frozen_request
+            existing_snapshot["requestHash"] = request_hash
         run = create_project_analysis_run(
             repo.state,
             tenant_id=request_tenant_id(request),
@@ -139,9 +173,7 @@ def create_project_analysis(
     )
 
 
-@project_analysis_router.get(
-    "/projects/{project_id}/inspection/full-project-analysis/runs"
-)
+@project_analysis_router.get("/projects/{project_id}/inspection/full-project-analysis/runs")
 def list_project_analysis_runs(request: Request, project_id: str):
     if error := _authorize(request, project_id, write=False):
         return error
@@ -152,12 +184,12 @@ def list_project_analysis_runs(request: Request, project_id: str):
         if row.get("tenantId") == tenant_id and row.get("projectId") == project_id
     ]
     rows.sort(key=lambda row: str(row.get("createdAt") or ""), reverse=True)
-    return ok({"items": [project_analysis_run_view(row) for row in rows], "total": len(rows)}, request)
+    return ok(
+        {"items": [project_analysis_run_view(row) for row in rows], "total": len(rows)}, request
+    )
 
 
-def _run_for_request(
-    request: Request, project_id: str, run_id: str
-) -> dict[str, Any] | None:
+def _run_for_request(request: Request, project_id: str, run_id: str) -> dict[str, Any] | None:
     return next(
         (
             row

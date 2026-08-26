@@ -117,6 +117,9 @@ onBeforeUnmount(stopPolling)
       <div v-if="preview?.contextLimitExceeded" class="analysis-error">
         当前工程超过模型上下文上限，请使用节点级自动审查。
       </div>
+      <div v-if="preview && preview.includedNodeCount === 0" class="analysis-error">
+        当前工程没有已挂接 OCR 资料，无法发起全量分析。
+      </div>
       <div v-if="progress" class="analysis-progress">
         <ElProgress
           :percentage="progress.mode === 'determinate' ? progress.percent : 0"
@@ -130,7 +133,7 @@ onBeforeUnmount(stopPolling)
         <ElButton
           type="primary"
           :loading="starting"
-          :disabled="!preview || preview.contextLimitExceeded"
+          :disabled="!preview || preview.contextLimitExceeded || preview.includedNodeCount === 0"
           @click="start"
         >
           开始全量分析

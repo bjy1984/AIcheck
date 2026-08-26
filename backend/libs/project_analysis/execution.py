@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from typing import Any
 from uuid import uuid4
 
@@ -19,15 +20,33 @@ def _stable_hash(value: Any) -> str:
 
 
 def execute_project_analysis_model(state: dict[str, Any], run_id: str, *, client) -> dict[str, Any]:
-    run = next((row for row in state.get("project_analysis_runs") or [] if row.get("projectAnalysisRunId") == run_id), None)
+    run = next(
+        (
+            row
+            for row in state.get("project_analysis_runs") or []
+            if row.get("projectAnalysisRunId") == run_id
+        ),
+        None,
+    )
     if not run:
         raise KeyError("PROJECT_ANALYSIS_RUN_NOT_FOUND")
     if run.get("modelAttemptId") and str(run.get("phase") or "") != "queued":
         return run
-    snapshot = next((row for row in state.get("project_analysis_snapshots") or [] if row.get("projectAnalysisSnapshotId") == run.get("projectAnalysisSnapshotId")), None)
+    snapshot = next(
+        (
+            row
+            for row in state.get("project_analysis_snapshots") or []
+            if row.get("projectAnalysisSnapshotId") == run.get("projectAnalysisSnapshotId")
+        ),
+        None,
+    )
     if not snapshot:
         raise KeyError("PROJECT_ANALYSIS_SNAPSHOT_NOT_FOUND")
-    request = build_project_analysis_request(state, snapshot, model_alias=str(run.get("modelAlias") or "project-review-large"))
+    request = deepcopy(snapshot.get("request")) or build_project_analysis_request(
+        state,
+        snapshot,
+        model_alias=str(run.get("modelAlias") or "project-review-large"),
+    )
     advance_project_analysis_phase(state, run, "model_running", heartbeat=True)
     attempt = {
         "id": f"MCALL-PROJECT-{uuid4().hex[:12].upper()}",
@@ -48,19 +67,70 @@ def execute_project_analysis_model(state: dict[str, Any], run_id: str, *, client
     }
     state.setdefault("model_call_attempts", []).insert(0, attempt)
     try:
-        response = client.chat_sync(request["messages"], model=str(request["model"]), temperature=float(request["temperature"]), response_format=request["response_format"], max_tokens=int(run.get("reservedOutputTokens") or 24000))
+        response = client.chat_sync(
+            request["messages"],
+            model=str(request["model"]),
+            temperature=float(request["temperature"]),
+            response_format=request["response_format"],
+            max_tokens=int(run.get("reservedOutputTokens") or 24000),
+        )
         choice = (response.get("choices") or [{}])[0]
-        if str(choice.get("finish_reason") or "").lower() in {"length", "max_tokens", "token_limit"}:
-            raise IntegrationServiceError("QwenRuntime", "project.analysis", reason="LLM_OUTPUT_TRUNCATED")
+        if str(choice.get("finish_reason") or "").lower() in {
+            "length",
+            "max_tokens",
+            "token_limit",
+        }:
+            raise IntegrationServiceError(
+                "QwenRuntime", "project.analysis", reason="LLM_OUTPUT_TRUNCATED"
+            )
         content = QwenRuntimeClient.first_message_text(response)
         if not content.strip():
-            raise IntegrationServiceError("QwenRuntime", "project.analysis", reason="LLM_OUTPUT_EMPTY")
+            raise IntegrationServiceError(
+                "QwenRuntime", "project.analysis", reason="LLM_OUTPUT_EMPTY"
+            )
     except Exception as exc:
-        attempt.update({"status": "failed", "failureReason": getattr(exc, "reason", None) or exc.__class__.__name__, "finishedAt": server_time(), "updatedAt": server_time()})
-        run.update({"phase": "failed", "status": "failed", "errorCode": attempt["failureReason"], "errorMessage": str(exc), "finishedAt": server_time(), "updatedAt": server_time()})
+        attempt.update(
+            {
+                "status": "failed",
+                "failureReason": getattr(exc, "reason", None) or exc.__class__.__name__,
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        run.update(
+            {
+                "phase": "failed",
+                "status": "failed",
+                "errorCode": attempt["failureReason"],
+                "errorMessage": str(exc),
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
         raise
     raw_usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
-    attempt.update({"status": "success", "providerRequestId": response.get("id"), "model": response.get("model") or request["model"], "responseHash": _stable_hash(response), "usage": raw_usage, "usageNormalized": normalize_model_usage(raw_usage), "costNormalized": model_cost_cny(raw_usage), "finishedAt": server_time(), "updatedAt": server_time()})
-    run.update({"modelAttemptId": attempt["id"], "promptHash": attempt["promptHash"], "responseHash": attempt["responseHash"], "rawModelOutput": content, "actualUsage": attempt["usageNormalized"], "actualCost": attempt["costNormalized"]})
+    attempt.update(
+        {
+            "status": "success",
+            "providerRequestId": response.get("id"),
+            "model": response.get("model") or request["model"],
+            "responseHash": _stable_hash(response),
+            "usage": raw_usage,
+            "usageNormalized": normalize_model_usage(raw_usage),
+            "costNormalized": model_cost_cny(raw_usage),
+            "finishedAt": server_time(),
+            "updatedAt": server_time(),
+        }
+    )
+    run.update(
+        {
+            "modelAttemptId": attempt["id"],
+            "promptHash": attempt["promptHash"],
+            "responseHash": attempt["responseHash"],
+            "rawModelOutput": content,
+            "actualUsage": attempt["usageNormalized"],
+            "actualCost": attempt["costNormalized"],
+        }
+    )
     advance_project_analysis_phase(state, run, "validating_output")
     return run

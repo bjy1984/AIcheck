@@ -9,6 +9,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 
+from libs.business_pack import load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.model_usage import estimate_messages_tokens
 from libs.review_evidence import active_node_document_versions
@@ -69,9 +70,7 @@ OUTPUT_SCHEMA = {
                             "quotedText": "verbatim string",
                         }
                     ],
-                    "ruleRefs": [
-                        {"source": "criteria|checkMethod", "text": "verbatim string"}
-                    ],
+                    "ruleRefs": [{"source": "criteria|checkMethod", "text": "verbatim string"}],
                     "kbRefs": [],
                     "groundingStatus": "grounded|insufficient_evidence",
                     "unsupportedClaims": ["string"],
@@ -105,9 +104,7 @@ class ProjectAnalysisContextLimitError(RuntimeError):
         self.estimated_tokens = int(estimated_tokens)
         self.max_context_tokens = int(max_context_tokens)
         self.reserved_output_tokens = int(reserved_output_tokens)
-        self.available_input_tokens = max(
-            0, self.max_context_tokens - self.reserved_output_tokens
-        )
+        self.available_input_tokens = max(0, self.max_context_tokens - self.reserved_output_tokens)
         super().__init__("PROJECT_ANALYSIS_CONTEXT_LIMIT_EXCEEDED")
 
 
@@ -135,10 +132,7 @@ def clean_project_ocr_text(source: str) -> str:
         character
         for character in text
         if character in "\n\t"
-        or (
-            unicodedata.category(character) not in {"Cc", "Cf"}
-            and character != "\ufffd"
-        )
+        or (unicodedata.category(character) not in {"Cc", "Cf"} and character != "\ufffd")
     )
     lines: list[str] = []
     for raw_line in text.splitlines():
@@ -149,7 +143,9 @@ def clean_project_ocr_text(source: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _records(state: dict[str, Any], primary: str, fallback: str | None = None) -> list[dict[str, Any]]:
+def _records(
+    state: dict[str, Any], primary: str, fallback: str | None = None
+) -> list[dict[str, Any]]:
     rows = state.get(primary)
     if not isinstance(rows, list) and fallback:
         rows = state.get(fallback)
@@ -180,9 +176,7 @@ def _full_ocr_text(parse_result: dict[str, Any]) -> str:
         value = parse_result.get(key)
         if isinstance(value, str) and value.strip():
             return value
-    fragments = [
-        row for row in parse_result.get("fragments") or [] if isinstance(row, dict)
-    ]
+    fragments = [row for row in parse_result.get("fragments") or [] if isinstance(row, dict)]
     fragments.sort(
         key=lambda row: (
             int(row.get("pageNo") or 0),
@@ -208,7 +202,9 @@ def _node_record(state: dict[str, Any], project_id: str, node_id: int) -> dict[s
     )
 
 
-def _node_requirements(state: dict[str, Any], project_id: str, node_id: int) -> list[dict[str, Any]]:
+def _node_requirements(
+    state: dict[str, Any], project_id: str, node_id: int
+) -> list[dict[str, Any]]:
     return [
         deepcopy(row)
         for row in _records(state, "requirements", "node_requirements")
@@ -217,11 +213,91 @@ def _node_requirements(state: dict[str, Any], project_id: str, node_id: int) -> 
     ]
 
 
+def _node_rule_text(
+    state: dict[str, Any], business_pack_id: str, node_id: int, node: dict[str, Any]
+) -> tuple[str, str]:
+    criteria = str(node.get("criteria") or node.get("standardText") or "")
+    check_method = str(node.get("checkMethod") or node.get("witnessText") or "")
+    if criteria and check_method:
+        return criteria, check_method
+    persisted = next(
+        (
+            row
+            for row in _records(state, "business_rule_versions", "rule_versions")
+            if str(row.get("businessPackId") or business_pack_id) == business_pack_id
+            and node_id in {int(value) for value in row.get("nodeIds") or []}
+            and str(row.get("status") or "").lower() in {"production", "published", "已发布"}
+        ),
+        {},
+    )
+    try:
+        packaged = matching_rule_for_node(load_business_pack(business_pack_id), node_id) or {}
+    except (FileNotFoundError, KeyError, ValueError):
+        packaged = {}
+    rule = persisted or packaged
+    return (
+        criteria or str(rule.get("criteria") or rule.get("standardText") or ""),
+        check_method or str(rule.get("checkMethod") or rule.get("witnessText") or ""),
+    )
+
+
 def _route_limits(model_route: dict[str, Any]) -> tuple[int, int]:
-    budget = model_route.get("budgetPolicy") if isinstance(model_route.get("budgetPolicy"), dict) else {}
+    budget = (
+        model_route.get("budgetPolicy") if isinstance(model_route.get("budgetPolicy"), dict) else {}
+    )
     maximum = int(model_route.get("maxContextTokens") or budget.get("maxContextTokens") or 0)
-    reserved = int(model_route.get("reservedOutputTokens") or budget.get("reservedOutputTokens") or 0)
+    reserved = int(
+        model_route.get("reservedOutputTokens") or budget.get("reservedOutputTokens") or 0
+    )
     return maximum, reserved
+
+
+def _active_project_node_documents(
+    state: dict[str, Any], project_id: str, node_id: int
+) -> list[dict[str, Any]]:
+    active = {
+        str(row.get("documentVersionId") or ""): deepcopy(row)
+        for row in active_node_document_versions(state, project_id, node_id)
+    }
+    has_project_evidence_links = any(
+        str(row.get("projectId") or "") == str(project_id)
+        and str(row.get("manualStatus") or "").lower() != "rejected"
+        for row in _records(state, "node_evidence_links")
+    )
+    if has_project_evidence_links:
+        return sorted(active.values(), key=lambda row: str(row.get("documentVersionId") or ""))
+    documents = {
+        str(row.get("id") or ""): row
+        for row in _records(state, "documents")
+        if str(row.get("projectId") or "") == str(project_id)
+    }
+    rejected_statuses = {"rejected", "驳回", "已撤回", "已作废", "已删除"}
+    for binding in _records(state, "bindings", "node_bindings"):
+        if (
+            str(binding.get("projectId") or "") != str(project_id)
+            or int(binding.get("nodeId") or 0) != int(node_id)
+            or str(binding.get("bindingStatus") or "").lower() in rejected_statuses
+        ):
+            continue
+        document_id = str(binding.get("documentId") or "")
+        version_id = str(binding.get("documentVersionId") or "")
+        document = documents.get(document_id) or {}
+        if (
+            not document_id
+            or not version_id
+            or str(document.get("currentVersionId") or "") != version_id
+        ):
+            continue
+        active.setdefault(
+            version_id,
+            {
+                "documentId": document_id,
+                "documentVersionId": version_id,
+                "mountLinkIds": [str(binding.get("id") or "")],
+                "mountRevision": int(binding.get("revision") or 0),
+            },
+        )
+    return sorted(active.values(), key=lambda row: str(row.get("documentVersionId") or ""))
 
 
 def build_project_analysis_snapshot(
@@ -232,23 +308,32 @@ def build_project_analysis_snapshot(
     prompt_version: str = PROMPT_VERSION,
     model_route: dict[str, Any],
 ) -> dict[str, Any]:
-    node_ids = sorted(
-        {
-            int(row.get("nodeId") or 0)
-            for row in _records(state, "node_evidence_links")
-            if str(row.get("projectId") or "") == str(project_id)
-            and str(row.get("manualStatus") or "").lower() != "rejected"
-            and int(row.get("nodeId") or 0) > 0
-        }
-    )
+    evidence_node_ids = {
+        int(row.get("nodeId") or 0)
+        for row in _records(state, "node_evidence_links")
+        if str(row.get("projectId") or "") == str(project_id)
+        and str(row.get("manualStatus") or "").lower() != "rejected"
+        and int(row.get("nodeId") or 0) > 0
+    }
+    legacy_node_ids = {
+        int(row.get("nodeId") or 0)
+        for row in _records(state, "bindings", "node_bindings")
+        if str(row.get("projectId") or "") == str(project_id)
+        and int(row.get("nodeId") or 0) > 0
+        and str(row.get("bindingStatus") or "").lower()
+        not in {"rejected", "驳回", "已撤回", "已作废", "已删除"}
+    }
+    node_ids = sorted(evidence_node_ids or legacy_node_ids)
     nodes: list[dict[str, Any]] = []
     document_versions: set[str] = set()
+    document_ocr_hashes: dict[str, dict[str, str]] = {}
     node_snapshot_hashes: dict[str, str] = {}
     for node_id in node_ids:
-        active = active_node_document_versions(state, project_id, node_id)
+        active = _active_project_node_documents(state, project_id, node_id)
         if not active:
             continue
         node = _node_record(state, project_id, node_id)
+        criteria, check_method = _node_rule_text(state, str(business_pack_id), node_id, node)
         file_refs = [
             {
                 "fileId": str(row.get("documentId") or ""),
@@ -260,13 +345,21 @@ def build_project_analysis_snapshot(
         node_payload = {
             "nodeId": node_id,
             "nodeName": node.get("name") or node.get("nodeName") or f"节点 {node_id}",
-            "criteria": node.get("criteria") or "",
-            "checkMethod": node.get("checkMethod") or "",
+            "criteria": criteria,
+            "checkMethod": check_method,
             "configuredRequirements": _node_requirements(state, project_id, node_id),
             "fileRefs": file_refs,
         }
         nodes.append(node_payload)
         node_snapshot_hashes[str(node_id)] = _stable_hash(node_payload)
+        for version_id in sorted({row["documentVersionId"] for row in file_refs}):
+            parse_result = _latest_parse_result(state, version_id)
+            source_text = _full_ocr_text(parse_result)
+            document_ocr_hashes[version_id] = {
+                "artifactHash": str(parse_result.get("artifactHash") or ""),
+                "sourceContentHash": _stable_hash(source_text),
+                "cleanedContentHash": _stable_hash(clean_project_ocr_text(source_text)),
+            }
     maximum, reserved = _route_limits(model_route)
     core = {
         "schemaVersion": "ProjectAnalysisSnapshot@1.0.0",
@@ -276,6 +369,7 @@ def build_project_analysis_snapshot(
         "nodes": nodes,
         "nodeSnapshotHashes": node_snapshot_hashes,
         "documentVersionIds": sorted(document_versions),
+        "documentOcrHashes": {key: document_ocr_hashes[key] for key in sorted(document_ocr_hashes)},
         "promptVersion": str(prompt_version),
         "modelAlias": str(model_route.get("modelAlias") or DEFAULT_MODEL_ALIAS),
         "modelRouteVersion": str(model_route.get("version") or model_route.get("id") or ""),
@@ -298,9 +392,7 @@ def build_project_analysis_request(
     *,
     model_alias: str = DEFAULT_MODEL_ALIAS,
 ) -> dict[str, Any]:
-    documents = {
-        str(row.get("id") or ""): row for row in _records(state, "documents")
-    }
+    documents = {str(row.get("id") or ""): row for row in _records(state, "documents")}
     file_corpus: dict[str, dict[str, Any]] = {}
     nodes = deepcopy(snapshot.get("nodes") or [])
     for node in nodes:
@@ -340,8 +432,12 @@ def build_project_analysis_request(
         ],
         "project": {
             "projectId": snapshot.get("projectId"),
-            "projectCode": project.get("projectCode") or project.get("code") or snapshot.get("projectId"),
-            "projectName": project.get("name") or project.get("projectName") or snapshot.get("projectId"),
+            "projectCode": project.get("projectCode")
+            or project.get("code")
+            or snapshot.get("projectId"),
+            "projectName": project.get("name")
+            or project.get("projectName")
+            or snapshot.get("projectId"),
             "includedNodeCount": len(nodes),
             "nodes": nodes,
             "fileCorpus": file_corpus,
@@ -390,9 +486,7 @@ def project_analysis_preview(
     maximum, reserved = _route_limits(model_route)
     available = max(0, maximum - reserved)
     payload = json.loads(request["messages"][1]["content"])
-    reference_count = sum(
-        len(node.get("fileRefs") or []) for node in payload["project"]["nodes"]
-    )
+    reference_count = sum(len(node.get("fileRefs") or []) for node in payload["project"]["nodes"])
     return {
         "projectId": str(project_id),
         "snapshot": snapshot,

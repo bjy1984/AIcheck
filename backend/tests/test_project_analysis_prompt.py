@@ -71,13 +71,21 @@ def _state() -> dict:
             {"id": "DV-SHARED-V1", "documentId": "DOC-SHARED", "contentHash": "sha256:old"},
             {"id": "DV-SHARED-V2", "documentId": "DOC-SHARED", "contentHash": "sha256:new"},
             {"id": "DV-SECOND-V1", "documentId": "DOC-SECOND", "contentHash": "sha256:second"},
-            {"id": "DV-REJECTED-V1", "documentId": "DOC-REJECTED", "contentHash": "sha256:rejected"},
+            {
+                "id": "DV-REJECTED-V1",
+                "documentId": "DOC-REJECTED",
+                "contentHash": "sha256:rejected",
+            },
         ],
         "document_versions": [
             {"id": "DV-SHARED-V1", "documentId": "DOC-SHARED", "contentHash": "sha256:old"},
             {"id": "DV-SHARED-V2", "documentId": "DOC-SHARED", "contentHash": "sha256:new"},
             {"id": "DV-SECOND-V1", "documentId": "DOC-SECOND", "contentHash": "sha256:second"},
-            {"id": "DV-REJECTED-V1", "documentId": "DOC-REJECTED", "contentHash": "sha256:rejected"},
+            {
+                "id": "DV-REJECTED-V1",
+                "documentId": "DOC-REJECTED",
+                "contentHash": "sha256:rejected",
+            },
         ],
         "node_evidence_links": [
             {
@@ -248,9 +256,7 @@ def test_large_project_model_route_is_explicit_and_has_no_small_model_fallback()
     from libs.qwen_runtime import MODEL_ROLE_ALIASES
 
     route = next(
-        row
-        for row in MODEL_ROUTE_VERSIONS
-        if row.get("modelAlias") == "project-review-large"
+        row for row in MODEL_ROUTE_VERSIONS if row.get("modelAlias") == "project-review-large"
     )
 
     assert MODEL_ROLE_ALIASES["project-review-large"] == "projectReview"
@@ -258,3 +264,60 @@ def test_large_project_model_route_is_explicit_and_has_no_small_model_fallback()
     assert route["maxContextTokens"] >= 131072
     assert route["reservedOutputTokens"] >= 24000
     assert route["fallbackAliases"] == []
+
+
+def test_snapshot_accepts_legacy_active_bindings_when_evidence_links_are_absent() -> None:
+    from libs.project_analysis.prompt import build_project_analysis_snapshot
+
+    state = _state()
+    state["node_evidence_links"] = []
+    state["bindings"] = [
+        {
+            "id": "BIND-LEGACY",
+            "projectId": "P-1",
+            "nodeId": 1,
+            "documentId": "DOC-SHARED",
+            "documentVersionId": "DV-SHARED-V2",
+            "bindingStatus": "已提交",
+        }
+    ]
+
+    snapshot = build_project_analysis_snapshot(
+        state,
+        "P-1",
+        model_route=_route(),
+    )
+
+    assert snapshot["nodeIds"] == [1]
+    assert snapshot["documentVersionIds"] == ["DV-SHARED-V2"]
+
+
+def test_snapshot_hash_changes_when_ocr_content_changes_for_same_document_version() -> None:
+    from libs.project_analysis.prompt import build_project_analysis_snapshot
+
+    state = _state()
+    first = build_project_analysis_snapshot(state, "P-1", model_route=_route())
+    shared = next(
+        row for row in state["ocr_parse_results"] if row["documentVersionId"] == "DV-SHARED-V2"
+    )
+    shared["fragments"][0]["text"] = "同一版本后来出现的不同 OCR 正文"
+    shared["artifactHash"] = "sha256:ocr-newer"
+
+    second = build_project_analysis_snapshot(state, "P-1", model_route=_route())
+
+    assert first["snapshotHash"] != second["snapshotHash"]
+    assert first["documentOcrHashes"] != second["documentOcrHashes"]
+
+
+def test_snapshot_falls_back_to_business_pack_rule_text() -> None:
+    from libs.project_analysis.prompt import build_project_analysis_snapshot
+
+    state = _state()
+    state["tree_nodes"][0]["criteria"] = ""
+    state["tree_nodes"][0]["checkMethod"] = ""
+
+    snapshot = build_project_analysis_snapshot(state, "P-1", model_route=_route())
+    node = next(row for row in snapshot["nodes"] if row["nodeId"] == 1)
+
+    assert node["criteria"]
+    assert node["checkMethod"]
