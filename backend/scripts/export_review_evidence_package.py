@@ -43,6 +43,79 @@ GENERIC_PROMPT = """# 单工程 AI 全审查编排 Prompt
 """
 
 
+MEGA_REVIEW_SYSTEM_PROMPT = """你是压力管道安装工程监督检验 AI 审查代理。
+
+你将收到一个工程中所有有挂接资料业务节点的审查规则、资料要求、节点—文件映射和完整 OCR 原文。请在同一次模型调用中完成全部节点审查，但必须保持各节点证据边界，禁止把仅挂接在其他节点的文件用于当前节点结论。
+
+强制要求：
+1. 只使用 user 消息中提供的 fullOcrText、节点规则和资料要求，不得补造文件内容、机构、人员、日期、编号、范围、等级、参数、印章或结论。
+2. criteria、checkMethod 和 configuredRequirements 是审查依据，不是已被证据证明的事实。
+3. 后上传资料与此前资料已经共同包含在当前节点 linkedFiles 中，必须整体判断。
+4. 每条 Finding 都必须保留 projectId、nodeId、findingType、severity、title、description、confidence、suggestedAction、evidenceRefs、ruleRefs、groundingStatus、unsupportedClaims 和 requiresHumanConfirmation。
+5. evidenceRefs 只能引用当前节点 linkedFiles 中真实存在的 fileId、documentVersionId、fileName 和 fullOcrText 原文；quotedText 必须逐字存在于对应 fullOcrText。
+6. 没有直接证据时 evidenceRefs 使用空数组，groundingStatus 必须为 insufficient_evidence，suggestedAction 必须为 human_confirm。
+7. 不得自动批准、退回、下发整改、关闭整改、归档或改变正式业务状态；所有结果都必须 requiresHumanConfirmation=true。
+8. 只输出一个符合 outputSchema 的合法 JSON 对象，不输出 Markdown 围栏、前言、解释或结尾。
+"""
+
+
+MEGA_REVIEW_OUTPUT_SCHEMA = {
+    "schemaVersion": "AIAllReviewResult@2.0.0",
+    "projectId": "string",
+    "projectCode": "string",
+    "projectName": "string",
+    "nodeReviews": [
+        {
+            "nodeId": "number",
+            "nodeName": "string",
+            "reviewResult": "supported|partially_supported|insufficient_evidence|conflict|mismatch",
+            "supportSummary": "string",
+            "missingEvidence": ["string"],
+            "conflicts": ["string"],
+            "risks": ["string"],
+            "recommendations": ["string"],
+            "findings": [
+                {
+                    "findingType": "stable_short_english_category",
+                    "severity": "low|medium|high|critical",
+                    "title": "string",
+                    "description": "string",
+                    "confidence": "0..1",
+                    "suggestedAction": "human_confirm|request_correction",
+                    "evidenceRefs": [
+                        {
+                            "fileId": "current_node_linked_file_id",
+                            "documentVersionId": "current_node_document_version_id",
+                            "fileName": "current_node_file_name",
+                            "pageNo": "number_or_null",
+                            "quotedText": "verbatim_text_from_fullOcrText",
+                        }
+                    ],
+                    "ruleRefs": [
+                        {"source": "criteria|checkMethod", "text": "verbatim_rule_text"}
+                    ],
+                    "kbRefs": [],
+                    "groundingStatus": "grounded|insufficient_evidence",
+                    "unsupportedClaims": ["string"],
+                    "requiresHumanConfirmation": True,
+                }
+            ],
+        }
+    ],
+    "projectSummary": {
+        "supportedNodeCount": "number",
+        "partialNodeCount": "number",
+        "insufficientNodeCount": "number",
+        "conflictNodeCount": "number",
+        "mismatchNodeCount": "number",
+        "humanReviewNodeCount": "number",
+        "priorityRisks": ["string"],
+        "priorityManualActions": ["string"],
+    },
+    "disclaimer": "以上内容仅作为监检审查提示，不替代最终人工结论。",
+}
+
+
 def _json_hash(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -91,6 +164,134 @@ def _file_names(repo_root: Path, project_code: str) -> dict[str, str]:
         str(row.get("caseId")): str(row.get("relativePath") or row.get("caseId"))
         for row in project.get("files") or []
         if row.get("caseId")
+    }
+
+
+def _linked_nodes_with_full_ocr(
+    repo_root: Path, project_code: str
+) -> list[dict[str, Any]]:
+    project = _project_input(repo_root, project_code)
+    file_names = _file_names(repo_root, project_code)
+    ocr_directory = repo_root / str(PROJECTS[project_code]["ocrDirectory"])
+    nodes: list[dict[str, Any]] = []
+    for source_node in project.get("nodes") or []:
+        source_files = source_node.get("linkedFiles")
+        if not isinstance(source_files, list) or not source_files:
+            continue
+        node = {
+            key: _without_volatile_times(value)
+            for key, value in source_node.items()
+            if key != "linkedFiles"
+        }
+        linked_files: list[dict[str, Any]] = []
+        for source_file in source_files:
+            file_id = str(source_file.get("fileId") or "")
+            ocr_path = ocr_directory / f"{file_id}.md"
+            if not ocr_path.exists():
+                raise FileNotFoundError(f"Full OCR markdown is missing: {ocr_path}")
+            linked_files.append(
+                {
+                    "fileId": file_id,
+                    "documentVersionId": f"DV-OFFLINE-{file_id}-V1",
+                    "fileName": file_names.get(file_id) or file_id,
+                    "materialTypeCodes": source_file.get("materialTypeCodes") or [],
+                    "tier": source_file.get("tier") or "advisory",
+                    "fullOcrText": ocr_path.read_text(encoding="utf-8"),
+                }
+            )
+        node["linkedFiles"] = linked_files
+        nodes.append(node)
+    return nodes
+
+
+def build_project_mega_request(
+    *, repo_root: Path, project_code: str
+) -> dict[str, Any]:
+    if project_code not in PROJECTS:
+        raise ValueError(f"Unsupported project code: {project_code}")
+    repo_root = Path(repo_root).resolve()
+    metadata = PROJECTS[project_code]
+    nodes = _linked_nodes_with_full_ocr(repo_root, project_code)
+    payload = {
+        "task": "Review every included business node in this project in one response.",
+        "requirements": [
+            "nodeReviews must contain exactly one result for every project.nodes item and no other node.",
+            "Use only files in the current node linkedFiles when grounding that node.",
+            "Read every linkedFiles.fullOcrText completely; do not use evidenceExcerpts or omit trailing content.",
+            "Preserve distinct findings and explicit conflicts; do not collapse minority findings.",
+            "Every finding requires human confirmation and cannot change formal business status.",
+        ],
+        "project": {
+            "projectCode": project_code,
+            "projectId": metadata["projectId"],
+            "projectName": metadata["projectName"],
+            "includedNodeCount": len(nodes),
+            "nodes": nodes,
+        },
+        "outputSchema": MEGA_REVIEW_OUTPUT_SCHEMA,
+    }
+    return {
+        "model": "review-chat",
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": MEGA_REVIEW_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            },
+        ],
+    }
+
+
+def export_project_mega_prompt(
+    *, repo_root: Path, project_code: str, output_root: Path
+) -> dict[str, Any]:
+    request = build_project_mega_request(
+        repo_root=repo_root,
+        project_code=project_code,
+    )
+    output_root = Path(output_root).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+    metadata = PROJECTS[project_code]
+    request_json = json.dumps(request, ensure_ascii=False, indent=2)
+    output_path = output_root / f"llm_mega_prompt_{project_code}.md"
+    output_path.write_text(
+        "\n".join(
+            [
+                f"# {project_code} 工程 AI 全审查 Prompt",
+                "",
+                f"工程：{metadata['projectName']}",
+                "",
+                f"工程 ID：{metadata['projectId']}",
+                "",
+                "## LLM 请求",
+                "",
+                "`````json",
+                request_json,
+                "`````",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(request["messages"][1]["content"])
+    unique_file_ids = {
+        file_row["fileId"]
+        for node in payload["project"]["nodes"]
+        for file_row in node["linkedFiles"]
+    }
+    return {
+        "projectCode": project_code,
+        "projectId": metadata["projectId"],
+        "includedNodeCount": payload["project"]["includedNodeCount"],
+        "uniqueFileCount": len(unique_file_ids),
+        "estimatedInputTokens": max(
+            1,
+            sum(len(message["content"]) for message in request["messages"]) // 4,
+        ),
+        "promptPath": str(output_path),
+        "request": request,
     }
 
 

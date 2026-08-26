@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
@@ -99,3 +99,61 @@ def test_entry_prompt_references_shards_instead_of_embedding_excerpt_summaries(
     assert "evidenceExcerpts" not in prompt
     assert "一次只处理一个业务节点的一个 EvidenceShard" in prompt
     assert "全部当前有效历史挂接资料" in prompt
+
+
+def test_mega_prompt_is_one_complete_llm_request_with_every_linked_ocr_file(
+    tmp_path: Path,
+) -> None:
+    from scripts.export_review_evidence_package import (
+        PROJECTS,
+        export_project_mega_prompt,
+    )
+
+    for project_code, expected_file_count, sentinel in (
+        ("test", 17, "TS1844171-2028"),
+        ("test2", 16, "有效期至：2027年01月06日"),
+    ):
+        result = export_project_mega_prompt(
+            repo_root=REPO_ROOT,
+            project_code=project_code,
+            output_root=tmp_path,
+        )
+        output_path = tmp_path / f"llm_mega_prompt_{project_code}.md"
+        document = output_path.read_text(encoding="utf-8")
+        request = result["request"]
+        payload = json.loads(request["messages"][1]["content"])
+
+        assert output_path.exists()
+        assert [message["role"] for message in request["messages"]] == [
+            "system",
+            "user",
+        ]
+        assert request["response_format"] == {"type": "json_object"}
+        assert payload["project"]["projectCode"] == project_code
+        assert payload["project"]["includedNodeCount"] == 42
+        assert len(payload["project"]["nodes"]) == 42
+        assert all(node["linkedFiles"] for node in payload["project"]["nodes"])
+        linked_files = {
+            file_row["fileId"]: file_row
+            for node in payload["project"]["nodes"]
+            for file_row in node["linkedFiles"]
+        }
+        assert len(linked_files) == expected_file_count
+        for file_id, file_row in linked_files.items():
+            source = (
+                REPO_ROOT
+                / str(PROJECTS[project_code]["ocrDirectory"])
+                / f"{file_id}.md"
+            ).read_text(encoding="utf-8")
+            assert hashlib.sha256(file_row["fullOcrText"].encode()).hexdigest() == (
+                hashlib.sha256(source.encode()).hexdigest()
+            )
+            assert "evidenceExcerpts" not in file_row
+        assert sentinel in document
+        assert "{{basePromptJson}}" not in document
+        assert "{{reviewTaskJson}}" not in document
+        assert "仅用于大上下文模型测试" not in document
+        assert "不改变生产自动审查的节点分片架构" not in document
+        assert result["includedNodeCount"] == 42
+        assert result["uniqueFileCount"] == expected_file_count
+        assert result["estimatedInputTokens"] > 0
