@@ -215,6 +215,7 @@ import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSumma
 import AuditStatusTag, { type AuditStatusTone } from './components/AuditStatusTag.vue'
 import AiReviewRunAlerts from './components/AiReviewRunAlerts.vue'
 import AutoReviewControl from './components/AutoReviewControl.vue'
+import ProjectAnalysisControl from './components/ProjectAnalysisControl.vue'
 import BatchRecheckPanel from './components/BatchRecheckPanel.vue'
 import NodeReviewTimeline from './components/NodeReviewTimeline.vue'
 import { useBatchRecheck } from './useBatchRecheck'
@@ -5253,6 +5254,11 @@ onBeforeUnmount(() => {
           </div>
           <AutoReviewControl
             v-if="role === 'inspection'"
+            :project-id="activeProjectId"
+            :disabled="!activeProjectId"
+          />
+          <ProjectAnalysisControl
+            v-if="role === 'inspection' || role === 'admin'"
             :project-id="activeProjectId"
             :disabled="!activeProjectId"
           />

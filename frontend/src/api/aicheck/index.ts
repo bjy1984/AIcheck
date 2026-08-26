@@ -1,5 +1,13 @@
 import request from '@/axios'
 import { createAutoReviewApi } from './autoReview'
+import { createProjectAnalysisApi } from './projectAnalysis'
+export type {
+  ProjectAnalysisMutationOptions,
+  ProjectAnalysisPhase,
+  ProjectAnalysisPreview,
+  ProjectAnalysisRun,
+  ProjectAnalysisStatus
+} from './projectAnalysis'
 export type {
   AutoReviewMutationOptions,
   AutoReviewPolicy,
@@ -4069,6 +4077,15 @@ export const {
   getProjectReviewRunApi,
   runProjectAutoReviewApi
 } = autoReviewApi
+
+const projectAnalysisApi = createProjectAnalysisApi(request, mutationHeaders)
+export const {
+  getProjectAnalysisPreviewApi,
+  createProjectAnalysisRunApi,
+  listProjectAnalysisRunsApi,
+  getProjectAnalysisRunApi,
+  getProjectAnalysisStatusApi
+} = projectAnalysisApi
 
 export const getKnowledgeOverviewApi = (): Promise<IResponse<KnowledgeOverviewPayload>> => {
   return request.get({ url: '/api/knowledge/overview' })
