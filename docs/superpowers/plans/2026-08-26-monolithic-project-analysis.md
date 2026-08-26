@@ -46,7 +46,7 @@
 - Produces `project_analysis_preview(state, project_id, *, model_route) -> dict[str, Any]`.
 - Produces `ProjectAnalysisContextLimitError(estimated_tokens, max_context_tokens, reserved_output_tokens)`.
 
-- [ ] **Step 1: Write failing Prompt contract tests**
+- [x] **Step 1: Write failing Prompt contract tests**
 
   Add fixtures with two nodes sharing one document and one node with a second document. Assert one `fileCorpus` entry per document version, all `fileRefs` resolve, shared OCR occurs once, active latest versions are used, rejected/unmounted evidence is excluded, and zero-evidence nodes are absent.
 
@@ -59,33 +59,33 @@
   assert "linkedFiles" not in request["messages"][1]["content"]
   ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_prompt.py`.
 
   Expected: import failure for `libs.project_analysis.prompt`.
 
-- [ ] **Step 3: Implement conservative OCR cleanup and stable snapshot hashing**
+- [x] **Step 3: Implement conservative OCR cleanup and stable snapshot hashing**
 
   Move the reusable HTML-to-text behavior behind `clean_project_ocr_text`: remove tags/image paths/control characters, decode entities, preserve row/cell order, and emit source/cleaned hashes. Build the snapshot from `active_node_document_versions`, current business-pack node rules, requirements, OCR hashes, mount revisions, Prompt version, and model-route version.
 
-- [ ] **Step 4: Implement one-request Prompt assembly**
+- [x] **Step 4: Implement one-request Prompt assembly**
 
   Emit exactly two messages. The system message requires direct lookup with `project.fileCorpus[fileId]`, exact quotedText/ruleRefs, node file-boundary enforcement, and human confirmation. The user message contains node rules, `fileRefs`, unique `fileCorpus`, and `AIAllReviewResult@2.0.0` output schema.
 
-- [ ] **Step 5: Write and verify the context-overflow RED test**
+- [x] **Step 5: Write and verify the context-overflow RED test**
 
   Configure a literal route with `maxContextTokens=100`, `reservedOutputTokens=20`, and a request estimated above 80 tokens. Assert preview reports the overflow and run preparation raises `ProjectAnalysisContextLimitError` before the injected model callable is invoked.
 
-- [ ] **Step 6: Add the `project-review-large` model route**
+- [x] **Step 6: Add the `project-review-large` model route**
 
   Add explicit aliases/config entries with no fallback to `review-chat`. Read `maxContextTokens` and `reservedOutputTokens` from the active model route. Estimate input through existing UTF-8 byte token estimation, which is conservative for Chinese, and return the estimate plus available input tokens.
 
-- [ ] **Step 7: Remove the legacy linkedFiles instruction**
+- [x] **Step 7: Remove the legacy linkedFiles instruction**
 
   Replace `Use only files in the current node linkedFiles when grounding that node.` with `Use only fileCorpus entries referenced by the current node.fileRefs.` in the reusable mega-Prompt generator and regenerate test/test2 artifacts.
 
-- [ ] **Step 8: Run Prompt/export tests and commit**
+- [x] **Step 8: Run Prompt/export tests and commit**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_prompt.py tests/test_export_review_evidence_package.py`.
 
@@ -107,7 +107,7 @@
 - Produces `recompute_project_analysis_summary(node_reviews: list[dict]) -> dict[str, Any]`.
 - Produces `persist_project_analysis_node_results(state, project_run, validated_output) -> list[dict[str, Any]]`.
 
-- [ ] **Step 1: Write failing validation tests from the observed test2 failure modes**
+- [x] **Step 1: Write failing validation tests from the observed test2 failure modes**
 
   Cover: out-of-node file refs, unresolved corpus IDs, file/version/name mismatch, non-verbatim quotedText, non-contiguous combined quotes, `configuredRequirements` rule source, ellipsis rule quotes, missing positive-claim evidence, incorrect project summary counts, false `requiresHumanConfirmation`, and confidence 1.0 on invalid grounding.
 
@@ -119,25 +119,25 @@
   assert "EVIDENCE_FILE_OUTSIDE_NODE" in {item["code"] for item in finding["validationFailures"]}
   ```
 
-- [ ] **Step 2: Run validation tests and verify RED**
+- [x] **Step 2: Run validation tests and verify RED**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_validation.py`.
 
   Expected: missing validator import.
 
-- [ ] **Step 3: Implement fail-closed validation**
+- [x] **Step 3: Implement fail-closed validation**
 
   Parse only a JSON object with matching schema/project IDs and exactly the snapshot node IDs. Validate every evidence and rule reference byte-for-byte against the request payload. Preserve diagnostics, downgrade invalid findings, force human confirmation, and recompute all summary counts from validated node reviews.
 
-- [ ] **Step 4: Write failing node persistence tests**
+- [x] **Step 4: Write failing node persistence tests**
 
   Assert one derived ReviewRun per snapshot node, one shared model-attempt ID, no second model call, node/project/run IDs on every FindingDraft, historical ReviewRuns retained, status `waiting_human_review`, and no `repo.set_node_status` call for advisory analysis.
 
-- [ ] **Step 5: Implement derived ReviewRun persistence**
+- [x] **Step 5: Implement derived ReviewRun persistence**
 
   Create terminal advisory ReviewRuns with `triggerType=manual_full_project_analysis`, `projectAnalysisRunId`, `sharedModelAttemptId`, immutable snapshot IDs, and validated findings. Persist idempotently per project-analysis-run/node.
 
-- [ ] **Step 6: Run result tests and commit**
+- [x] **Step 6: Run result tests and commit**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_validation.py tests/test_project_analysis_results.py`.
 
@@ -160,7 +160,7 @@
 - Produces `create_project_analysis_run`, `advance_project_analysis_phase`, `append_project_analysis_event`, `project_analysis_status_view`, and `project_analysis_run_view`.
 - Adds preview, create, list, detail, and lightweight status endpoints from the spec.
 
-- [ ] **Step 1: Write failing domain tests**
+- [x] **Step 1: Write failing domain tests**
 
   Assert legal phase order, exact counters, heartbeats, terminal immutability, idempotency key derived from tenant/project/snapshot/prompt/model-route, and no fake percentage during `model_running`.
 
@@ -171,23 +171,23 @@
   assert "percent" not in view
   ```
 
-- [ ] **Step 2: Run domain tests and verify RED**
+- [x] **Step 2: Run domain tests and verify RED**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_domain.py`.
 
-- [ ] **Step 3: Add state collections and phase domain**
+- [x] **Step 3: Add state collections and phase domain**
 
   Add repository mappings/defaults/load scopes for `project_analysis_snapshots`, `project_analysis_runs`, and `project_analysis_events`. Implement legal transitions: `preparing_snapshot -> building_prompt -> queued -> model_running -> validating_output -> persisting_results -> waiting_human_review`, plus `failed` and `partial_failure` branches.
 
-- [ ] **Step 4: Write failing API tests**
+- [x] **Step 4: Write failing API tests**
 
   Cover inspection/admin authorization, tenant/project isolation, Preview token limit data, ETag snapshot conflict, Idempotency-Key replay, list/detail ordering, lightweight status counters, audit log creation, zero-evidence project behavior, and disabled model route.
 
-- [ ] **Step 5: Implement and register APIs**
+- [x] **Step 5: Implement and register APIs**
 
   Reuse existing `_authorize`/mutation/idempotency conventions. POST accepts `snapshotHash`; rebuild Preview and reject if the hash changed. Create the run in `queued` only after context checks pass, persist it, audit it, and dispatch the prepare task.
 
-- [ ] **Step 6: Run API tests and commit**
+- [x] **Step 6: Run API tests and commit**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_domain.py tests/test_project_analysis_api.py`.
 
@@ -208,27 +208,27 @@
 - Celery tasks `project_analysis_prepare`, `project_analysis_execute_model`, `project_analysis_validate_output`, and `project_analysis_persist_results`.
 - Produces `execute_project_analysis_model(state, run_id, *, client) -> dict[str, Any]`.
 
-- [ ] **Step 1: Write the failing single-call execution test**
+- [x] **Step 1: Write the failing single-call execution test**
 
   Inject a complete fake Qwen client response and assert exactly one `chat_sync` call, alias `project-review-large`, JSON response format, one ModelAttempt, stored Prompt/output hashes, provider usage, heartbeat timestamps, and phase transition to `validating_output`.
 
-- [ ] **Step 2: Run execution tests and verify RED**
+- [x] **Step 2: Run execution tests and verify RED**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_execution.py`.
 
-- [ ] **Step 3: Implement the single model call**
+- [x] **Step 3: Implement the single model call**
 
   Load the immutable snapshot/request by ID, set `model_running`, persist a heartbeat before dispatch, call Qwen once, reject provider truncation, update normalized usage/cost, and store raw-vault context. Do not loop by node or shard.
 
-- [ ] **Step 4: Write failing phase-chain worker tests**
+- [x] **Step 4: Write failing phase-chain worker tests**
 
   Assert queue routing (`business.light`, `llm.remote`), each task consumes/persists only its phase, retries preserve completed phases, validation counts increment, persistence counts increment, and partial persistence retries only missing nodes.
 
-- [ ] **Step 5: Implement task chaining and failure records**
+- [x] **Step 5: Implement task chaining and failure records**
 
   Each successful task dispatches the next task with only `run_id`. Exceptions call `advance_project_analysis_phase(..., "failed")` with phase/errorCode; model failures never alter OCR or node business state.
 
-- [ ] **Step 6: Run worker tests and commit**
+- [x] **Step 6: Run worker tests and commit**
 
   Run `cd backend && ../.venv/bin/python -m pytest -q tests/test_project_analysis_execution.py tests/test_project_analysis_worker.py tests/test_celery_priority_contract.py`.
 
@@ -251,27 +251,27 @@
 - Typed API methods for preview, create, list, detail, and status.
 - `ProjectAnalysisControl` accepts `projectId` and emits `run-started`.
 
-- [ ] **Step 1: Write failing API and presentation tests**
+- [x] **Step 1: Write failing API and presentation tests**
 
   Assert exact URLs, POST headers, Preview rendering, determinate counter labels for preparation/validation/persistence, indeterminate model-running state, elapsed/heartbeat text, context-overflow copy, completed copy, and failed copy.
 
-- [ ] **Step 2: Run frontend unit tests and verify RED**
+- [x] **Step 2: Run frontend unit tests and verify RED**
 
   Run `cd frontend && pnpm test:unit`.
 
-- [ ] **Step 3: Implement typed API and pure presentation helpers**
+- [x] **Step 3: Implement typed API and pure presentation helpers**
 
   Define explicit `ProjectAnalysisPreview`, `ProjectAnalysisRun`, `ProjectAnalysisStatus`, phase union, counters, error detail, and model-limit fields. Keep label/progress computation outside Vue for deterministic tests.
 
-- [ ] **Step 4: Write failing Workbench integration test**
+- [x] **Step 4: Write failing Workbench integration test**
 
   Assert the inspection/admin-only “一键分析” button appears after AutoReviewControl, changes project scope on project switch, and does not replace the existing auto-review control.
 
-- [ ] **Step 5: Implement the drawer and polling**
+- [x] **Step 5: Implement the drawer and polling**
 
   Load Preview on open, require confirmation, POST with snapshot hash/idempotency, poll status every two seconds while non-terminal, show exact phase counts, use Element Plus indeterminate progress for `model_running`, restore active/latest run after drawer reopen, and stop polling on component disposal/project switch.
 
-- [ ] **Step 6: Run frontend verification and commit**
+- [x] **Step 6: Run frontend verification and commit**
 
   Run:
 
@@ -303,15 +303,15 @@
 **Interfaces:**
 - Deployment check `review.monolithic-project-analysis`.
 
-- [ ] **Step 1: Write failing deployment contract assertions**
+- [x] **Step 1: Write failing deployment contract assertions**
 
   Require all five routes, three collections, four Celery tasks, queue routing, `project-review-large`, one-call source terms, context-limit guard, validation source terms, and frontend control presence.
 
-- [ ] **Step 2: Implement deployment check and export OpenAPI**
+- [x] **Step 2: Implement deployment check and export OpenAPI**
 
   Add the contract check without source-text-only behavior where executable state can be inspected. Run `cd backend && ../.venv/bin/python -m scripts.openapi_route_coverage --export ../openapi/generated/openapi.json`.
 
-- [ ] **Step 3: Run complete backend/frontend regression**
+- [x] **Step 3: Run complete backend/frontend regression**
 
   Run:
 
@@ -324,15 +324,15 @@
   pnpm build:test
   ```
 
-- [ ] **Step 4: Perform Playwright CLI acceptance**
+- [x] **Step 4: Perform Playwright CLI acceptance**
 
   Start local backend/frontend, log in as inspection, verify button placement, Preview counts, run confirmation, each phase presentation, indeterminate model stage, completed/failed recovery, project switch isolation, and zero console errors. Close browser and stop local services.
 
-- [ ] **Step 5: Update design status and verify clean branch**
+- [x] **Step 5: Update design status and verify clean branch**
 
   Mark the design “已实现并验收”, record exact test/browser evidence, run `git diff --check`, and confirm `git status --porcelain -uall` is empty.
 
-- [ ] **Step 6: Merge locally to main and verify the merged result**
+- [x] **Step 6: Merge locally to main and verify the merged result**
 
   From the main checkout, preserve/resolve any untracked files before merge, run `git merge codex/auto-review`, rerun the focused project-analysis backend/frontend tests on `main`, and only then remove the worktree/feature branch if the worktree is clean.
 
