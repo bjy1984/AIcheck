@@ -36,6 +36,7 @@ from apps.api.routes import (
 )
 from apps.api.std_samr_routes import router as std_samr_router
 from apps.api.auto_review_routes import auto_review_router
+from apps.api.project_analysis_routes import project_analysis_router
 from libs.audit_context import (
     current_request_audit_context,
     reset_request_audit_context,
@@ -1400,6 +1401,8 @@ app.include_router(batch_review_router)
 app.include_router(batch_review_router, prefix="/api")
 app.include_router(auto_review_router)
 app.include_router(auto_review_router, prefix="/api")
+app.include_router(project_analysis_router)
+app.include_router(project_analysis_router, prefix="/api")
 app.include_router(org_delegation_router)
 app.include_router(org_delegation_router, prefix="/api")
 app.include_router(document_category_router)
