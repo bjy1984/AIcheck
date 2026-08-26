@@ -97,6 +97,7 @@ def test_preview_create_list_detail_and_status_are_project_scoped() -> None:
     assert listed["total"] == 1
     assert detail["projectId"] == PROJECT_ID
     assert status["phase"] == "preparing_snapshot"
+    assert created["dispatch"]["mode"] == "disabled"
     assert repo.state["audit_logs"][0]["objectType"] == "ProjectAnalysisRun"
 
 

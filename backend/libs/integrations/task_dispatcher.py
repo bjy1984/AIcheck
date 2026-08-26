@@ -14,6 +14,25 @@ def dispatch_mode() -> str:
     return os.getenv("AICHECK_TASK_DISPATCH", "disabled").strip().lower() or "disabled"
 
 
+def dispatch_project_analysis(run_id: str) -> dict[str, Any]:
+    mode = dispatch_mode()
+    if mode == "inline":
+        from apps.worker.tasks import project_analysis_prepare
+
+        return {"mode": mode, "taskId": None, "result": project_analysis_prepare.run(run_id)}
+    if mode == "celery":
+        from apps.worker.tasks import project_analysis_prepare
+
+        result = project_analysis_prepare.apply_async(
+            args=[run_id],
+            queue="business.light",
+            priority=broker_priority(8),
+            task_id=deterministic_task_id("project-analysis", run_id),
+        )
+        return {"mode": mode, "taskId": result.id, "queue": "business.light", "priority": 8}
+    return {"mode": mode, "taskId": None}
+
+
 def mineru_execution_mode() -> str:
     configured = os.getenv("AICHECK_MINERU_EXECUTION_MODE")
     return (configured.strip().lower() if configured else dispatch_mode()) or "disabled"

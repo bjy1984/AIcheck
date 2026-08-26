@@ -14,6 +14,7 @@ from apps.api.routes import (
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
+from libs.integrations import task_dispatcher
 from libs.project_analysis.domain import (
     create_project_analysis_run,
     project_analysis_run_view,
@@ -116,6 +117,10 @@ def create_project_analysis(
             preview=preview,
             actor_id=str(request_user_id(request) or "AUTO"),
         )
+        if not run.get("dispatch"):
+            run["dispatch"] = task_dispatcher.dispatch_project_analysis(
+                str(run["projectAnalysisRunId"])
+            )
         audit_id = repo.add_audit(
             "发起工程一键分析",
             "ProjectAnalysisRun",

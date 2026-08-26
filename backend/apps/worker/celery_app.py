@@ -46,6 +46,10 @@ celery_app.conf.update(
         "apps.worker.tasks.auto_review_scan_due_projects": {"queue": "business.light", "priority": broker_priority(7)},
         "apps.worker.tasks.auto_review_start_pending_candidates": {"queue": "business.light", "priority": broker_priority(8)},
         "apps.worker.tasks.auto_review_finalize_project_runs": {"queue": "business.light", "priority": broker_priority(7)},
+        "apps.worker.tasks.project_analysis_prepare": {"queue": "business.light", "priority": broker_priority(8)},
+        "apps.worker.tasks.project_analysis_execute_model": {"queue": "llm.remote", "priority": broker_priority(9)},
+        "apps.worker.tasks.project_analysis_validate_output": {"queue": "business.light", "priority": broker_priority(8)},
+        "apps.worker.tasks.project_analysis_persist_results": {"queue": "business.light", "priority": broker_priority(8)},
     },
     beat_schedule={
         "auto-review-consume-evidence-events": {

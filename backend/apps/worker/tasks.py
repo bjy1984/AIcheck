@@ -126,6 +126,13 @@ from libs.ocr_runtime import (
 )
 from libs.official_ocr_pipeline import official_ocr_extract, profile_result_complete
 from libs.pipeline_lock import pipeline_task_lock
+from libs.project_analysis import (
+    advance_project_analysis_phase,
+    execute_project_analysis_model,
+    persist_project_analysis_node_results,
+    validate_project_analysis_output,
+)
+from libs.project_analysis.prompt import build_project_analysis_request
 from libs.qwen_runtime import (
     QwenRuntimeClient,
     build_qwen_runtime_client,
@@ -4927,3 +4934,114 @@ def auto_review_finalize_project_runs(self) -> dict[str, Any]:
         }
     )
     return result
+
+
+def _project_analysis_run(run_id: str) -> dict[str, Any]:
+    run = next(
+        (
+            row
+            for row in repo.state.get("project_analysis_runs") or []
+            if row.get("projectAnalysisRunId") == run_id
+        ),
+        None,
+    )
+    if not run:
+        raise KeyError("PROJECT_ANALYSIS_RUN_NOT_FOUND")
+    return run
+
+
+def _dispatch_project_analysis_task(task_name: str, run_id: str) -> dict[str, Any]:
+    mode = task_dispatcher.dispatch_mode()
+    task = globals()[task_name]
+    if mode == "inline":
+        return {"mode": mode, "taskId": None, "result": task.run(run_id)}
+    if mode == "celery":
+        result = task.apply_async(args=[run_id])
+        return {"mode": mode, "taskId": result.id}
+    return {"mode": mode, "taskId": None}
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def project_analysis_prepare(self, run_id: str) -> dict[str, Any]:
+    load_state()
+    run = _project_analysis_run(run_id)
+    if run.get("phase") == "preparing_snapshot":
+        advance_project_analysis_phase(
+            repo.state,
+            run,
+            "building_prompt",
+            preparedNodeCount=int(run.get("includedNodeCount") or 0),
+        )
+    if run.get("phase") == "building_prompt":
+        advance_project_analysis_phase(
+            repo.state,
+            run,
+            "queued",
+            loadedFileCount=int(run.get("uniqueFileCount") or 0),
+        )
+    dispatch = _dispatch_project_analysis_task("project_analysis_execute_model", run_id)
+    run["queueTaskId"] = dispatch.get("taskId")
+    flush_state()
+    return run
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def project_analysis_execute_model(self, run_id: str) -> dict[str, Any]:
+    load_state()
+    run = execute_project_analysis_model(
+        repo.state,
+        run_id,
+        client=build_qwen_runtime_client(LiteLLMClient),
+    )
+    flush_state()
+    _dispatch_project_analysis_task("project_analysis_validate_output", run_id)
+    return run
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def project_analysis_validate_output(self, run_id: str) -> dict[str, Any]:
+    load_state()
+    run = _project_analysis_run(run_id)
+    snapshot = next(
+        row
+        for row in repo.state.get("project_analysis_snapshots") or []
+        if row.get("projectAnalysisSnapshotId") == run.get("projectAnalysisSnapshotId")
+    )
+    request = build_project_analysis_request(repo.state, snapshot)
+    request_payload = json.loads(request["messages"][1]["content"])
+    validated = validate_project_analysis_output(
+        str(run.get("rawModelOutput") or ""),
+        snapshot,
+        request_payload,
+    )
+    run["validatedOutput"] = validated
+    finding_count = int((validated.get("validation") or {}).get("findingCount") or 0)
+    advance_project_analysis_phase(
+        repo.state,
+        run,
+        "persisting_results",
+        totalFindingCount=finding_count,
+        validatedFindingCount=finding_count,
+    )
+    flush_state()
+    _dispatch_project_analysis_task("project_analysis_persist_results", run_id)
+    return run
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def project_analysis_persist_results(self, run_id: str) -> dict[str, Any]:
+    load_state()
+    run = _project_analysis_run(run_id)
+    persisted = persist_project_analysis_node_results(
+        repo.state,
+        run,
+        run.get("validatedOutput") or {},
+    )
+    advance_project_analysis_phase(
+        repo.state,
+        run,
+        "waiting_human_review",
+        persistedNodeCount=len(persisted),
+    )
+    flush_state()
+    return run
