@@ -28,6 +28,7 @@ from scripts.deployment_report import (
     knowledge_rule_contract_check,
     litellm_client_contract_check,
     lossless_evidence_coverage_check,
+    monolithic_project_analysis_contract_check,
     markdown_report,
     ocr_evaluation_contract_check,
     ocr_service_contract_check,
@@ -408,6 +409,17 @@ def test_auto_review_orchestration_contract_covers_routes_state_tasks_and_beat()
     ) in [tuple(row) for row in check["data"]["requiredRoutes"]]
     assert "node_finding_aggregates" in check["data"]["requiredCollections"]
     assert "project_review_summaries" in check["data"]["requiredCollections"]
+
+
+def test_monolithic_project_analysis_contract_covers_full_stack() -> None:
+    check = monolithic_project_analysis_contract_check()
+
+    assert check["status"] == "pass"
+    assert check["data"]["routeFailures"] == []
+    assert check["data"]["collectionFailures"] == []
+    assert check["data"]["taskFailures"] == []
+    assert check["data"]["sourceFailures"] == []
+    assert check["data"]["frontendControl"] is True
 
 
 def test_backup_recoverability_report_is_integrity_checked(tmp_path: Path) -> None:

@@ -46,6 +46,7 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/inspection/ai-recheck-batch$", "ai:recheck"),
     ("PUT", r"/projects/[^/]+/inspection/auto-review-policy$", "ai:recheck"),
     ("POST", r"/projects/[^/]+/inspection/auto-review/run$", "ai:recheck"),
+    ("POST", r"/projects/[^/]+/inspection/full-project-analysis/runs$", "ai:recheck"),
     # 组织内的邀请与权限下放。动作层只能按角色放行到「业务角色」这一档，
     # 真正的闸门在端点里：必须是本组织负责人，且目标同组织。
     ("POST", r"/org-units/[^/]+/members/[^/]+/role$", "org:delegate"),

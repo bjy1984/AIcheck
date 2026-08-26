@@ -731,12 +731,14 @@ class DeploymentReportBuilder:
         check = review_orchestration_contract_check()
         coverage_check = lossless_evidence_coverage_check()
         auto_review_check = auto_review_orchestration_contract_check()
+        project_analysis_check = monolithic_project_analysis_contract_check()
         return {
             "name": "review-orchestration-contract",
             "ok": check["status"] == "pass"
             and coverage_check["status"] in {"pass", "skip"}
-            and auto_review_check["status"] == "pass",
-            "checks": [check, coverage_check, auto_review_check],
+            and auto_review_check["status"] == "pass"
+            and project_analysis_check["status"] == "pass",
+            "checks": [check, coverage_check, auto_review_check, project_analysis_check],
         }
 
     def fde_governance_contract_section(self) -> dict[str, Any]:
@@ -2191,6 +2193,103 @@ def auto_review_orchestration_contract_check() -> dict[str, Any]:
             "requiredCollections": sorted(required_collections),
             "requiredTasks": sorted(required_tasks),
             "requiredBeatEntries": sorted(required_beat),
+        },
+    }
+
+
+def monolithic_project_analysis_contract_check() -> dict[str, Any]:
+    from apps.worker.celery_app import celery_app
+    from libs.project_analysis import execution, prompt, results, validation
+
+    required_routes = {
+        ("GET", "/projects/{project_id}/inspection/full-project-analysis/preview"),
+        ("POST", "/projects/{project_id}/inspection/full-project-analysis/runs"),
+        ("GET", "/projects/{project_id}/inspection/full-project-analysis/runs"),
+        ("GET", "/projects/{project_id}/inspection/full-project-analysis/runs/{run_id}"),
+        ("GET", "/projects/{project_id}/inspection/full-project-analysis/runs/{run_id}/status"),
+    }
+    available_routes = {
+        (method, str(getattr(route, "path", "")))
+        for route in iter_effective_routes(app.routes)
+        for method in (getattr(route, "methods", set()) or set())
+    }
+    route_failures = [
+        {"method": method, "path": path}
+        for method, path in sorted(required_routes)
+        if (method, path) not in available_routes
+        and (method, f"/api{path}") not in available_routes
+    ]
+    required_collections = {
+        "project_analysis_snapshots",
+        "project_analysis_runs",
+        "project_analysis_events",
+    }
+    collection_failures = sorted(required_collections - set(STATE_COLLECTIONS.values()))
+    required_tasks = {
+        "apps.worker.tasks.project_analysis_prepare": "business.light",
+        "apps.worker.tasks.project_analysis_execute_model": "llm.remote",
+        "apps.worker.tasks.project_analysis_validate_output": "business.light",
+        "apps.worker.tasks.project_analysis_persist_results": "business.light",
+    }
+    routes = dict(celery_app.conf.task_routes)
+    task_failures = [
+        f"{task} missing or routed outside {queue}"
+        for task, queue in required_tasks.items()
+        if task not in routes or str((routes.get(task) or {}).get("queue")) != queue
+    ]
+    source_contracts = {
+        "prompt": (
+            source_for_callable(prompt.build_project_analysis_request)
+            + source_for_callable(prompt.project_analysis_preview)
+            + source_for_callable(prompt.prepare_project_analysis_request),
+            ["fileCorpus", "fileRefs", "ProjectAnalysisContextLimitError"],
+        ),
+        "execution": (
+            source_for_callable(execution.execute_project_analysis_model),
+            ["chat_sync", "project-review-large", "model_call_attempts"],
+        ),
+        "validation": (
+            source_for_callable(validation.validate_project_analysis_output),
+            ["recompute_project_analysis_summary", "nodeReviews"],
+        ),
+        "results": (
+            source_for_callable(results.persist_project_analysis_node_results),
+            ["sharedModelAttemptId", "manual_full_project_analysis", "waiting_human_review"],
+        ),
+    }
+    source_failures: list[str] = []
+    for label, (source, terms) in source_contracts.items():
+        missing = [term for term in terms if term not in source]
+        if missing:
+            source_failures.append(f"{label} missing source terms: {', '.join(missing)}")
+    frontend_path = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "views"
+        / "AICheck"
+        / "components"
+        / "ProjectAnalysisControl.vue"
+    )
+    frontend_control = frontend_path.exists() and "一键分析" in frontend_path.read_text(
+        encoding="utf-8"
+    )
+    if not frontend_control:
+        source_failures.append("ProjectAnalysisControl frontend entry is missing")
+    failures = route_failures + collection_failures + task_failures + source_failures
+    status = "pass" if not failures else "fail"
+    return {
+        "name": "review.monolithic-project-analysis",
+        "status": status,
+        "detail": "Single-call project analysis contract is present."
+        if status == "pass"
+        else f"failures={len(failures)}",
+        "data": {
+            "routeFailures": route_failures,
+            "collectionFailures": collection_failures,
+            "taskFailures": task_failures,
+            "sourceFailures": source_failures,
+            "frontendControl": frontend_control,
         },
     }
 

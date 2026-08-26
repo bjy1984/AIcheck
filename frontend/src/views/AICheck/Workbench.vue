@@ -5257,11 +5257,8 @@ onBeforeUnmount(() => {
             :project-id="activeProjectId"
             :disabled="!activeProjectId"
           />
-          <ProjectAnalysisControl
-            v-if="role === 'inspection' || role === 'admin'"
-            :project-id="activeProjectId"
-            :disabled="!activeProjectId"
-          />
+          <!-- prettier-ignore -->
+          <ProjectAnalysisControl v-if="role === 'inspection' || role === 'admin'" :project-id="activeProjectId" :disabled="!activeProjectId" />
           <ElButton
             v-if="role === 'inspection' && canManageRegistration"
             class="top-action"
