@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
+import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -45,14 +48,14 @@ GENERIC_PROMPT = """# 单工程 AI 全审查编排 Prompt
 
 MEGA_REVIEW_SYSTEM_PROMPT = """你是压力管道安装工程监督检验 AI 审查代理。
 
-你将收到一个工程中所有有挂接资料业务节点的审查规则、资料要求、节点—文件映射和完整 OCR 原文。请在同一次模型调用中完成全部节点审查，但必须保持各节点证据边界，禁止把仅挂接在其他节点的文件用于当前节点结论。
+你将收到一个工程中所有有挂接资料业务节点的审查规则、资料要求、节点—文件引用，以及项目级唯一 OCR 文件语料库。请在同一次模型调用中完成全部节点审查，但必须保持各节点证据边界，禁止把仅由其他节点引用的文件用于当前节点结论。
 
 强制要求：
-1. 只使用 user 消息中提供的 fullOcrText、节点规则和资料要求，不得补造文件内容、机构、人员、日期、编号、范围、等级、参数、印章或结论。
+1. Resolve every node.fileRefs[].fileId against project.fileCorpus before reviewing that node. Only use the resolved fileCorpus.fullOcrText, node rules and material requirements; do not invent document content, organizations, people, dates, identifiers, scopes, grades, parameters, seals or conclusions.
 2. criteria、checkMethod 和 configuredRequirements 是审查依据，不是已被证据证明的事实。
-3. 后上传资料与此前资料已经共同包含在当前节点 linkedFiles 中，必须整体判断。
+3. 后上传资料与此前资料已经共同包含在当前节点 fileRefs 中，必须解析全部引用后整体判断。
 4. 每条 Finding 都必须保留 projectId、nodeId、findingType、severity、title、description、confidence、suggestedAction、evidenceRefs、ruleRefs、groundingStatus、unsupportedClaims 和 requiresHumanConfirmation。
-5. evidenceRefs 只能引用当前节点 linkedFiles 中真实存在的 fileId、documentVersionId、fileName 和 fullOcrText 原文；quotedText 必须逐字存在于对应 fullOcrText。
+5. evidenceRefs 只能引用当前节点 fileRefs 中真实存在并能在 project.fileCorpus 解析到的 fileId、documentVersionId、fileName；quotedText 必须逐字存在于解析后的 fullOcrText。
 6. 没有直接证据时 evidenceRefs 使用空数组，groundingStatus 必须为 insufficient_evidence，suggestedAction 必须为 human_confirm。
 7. 不得自动批准、退回、下发整改、关闭整改、归档或改变正式业务状态；所有结果都必须 requiresHumanConfirmation=true。
 8. 只输出一个符合 outputSchema 的合法 JSON 对象，不输出 Markdown 围栏、前言、解释或结尾。
@@ -169,11 +172,12 @@ def _file_names(repo_root: Path, project_code: str) -> dict[str, str]:
 
 def _linked_nodes_with_full_ocr(
     repo_root: Path, project_code: str
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     project = _project_input(repo_root, project_code)
     file_names = _file_names(repo_root, project_code)
     ocr_directory = repo_root / str(PROJECTS[project_code]["ocrDirectory"])
     nodes: list[dict[str, Any]] = []
+    file_corpus: dict[str, dict[str, Any]] = {}
     for source_node in project.get("nodes") or []:
         source_files = source_node.get("linkedFiles")
         if not isinstance(source_files, list) or not source_files:
@@ -183,25 +187,67 @@ def _linked_nodes_with_full_ocr(
             for key, value in source_node.items()
             if key != "linkedFiles"
         }
-        linked_files: list[dict[str, Any]] = []
+        file_refs: list[dict[str, Any]] = []
         for source_file in source_files:
             file_id = str(source_file.get("fileId") or "")
             ocr_path = ocr_directory / f"{file_id}.md"
             if not ocr_path.exists():
                 raise FileNotFoundError(f"Full OCR markdown is missing: {ocr_path}")
-            linked_files.append(
-                {
-                    "fileId": file_id,
-                    "documentVersionId": f"DV-OFFLINE-{file_id}-V1",
-                    "fileName": file_names.get(file_id) or file_id,
-                    "materialTypeCodes": source_file.get("materialTypeCodes") or [],
-                    "tier": source_file.get("tier") or "advisory",
-                    "fullOcrText": ocr_path.read_text(encoding="utf-8"),
+            source_text = ocr_path.read_text(encoding="utf-8")
+            cleaned_text = clean_ocr_text_for_mega_prompt(source_text)
+            metadata = {
+                "fileId": file_id,
+                "documentVersionId": f"DV-OFFLINE-{file_id}-V1",
+                "fileName": file_names.get(file_id) or file_id,
+                "materialTypeCodes": source_file.get("materialTypeCodes") or [],
+                "tier": source_file.get("tier") or "advisory",
+            }
+            file_refs.append(metadata)
+            if file_id not in file_corpus:
+                file_corpus[file_id] = {
+                    **metadata,
+                    "sourceContentHash": "sha256:"
+                    + hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+                    "cleanedContentHash": "sha256:"
+                    + hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest(),
+                    "fullOcrText": cleaned_text,
                 }
-            )
-        node["linkedFiles"] = linked_files
+        node["fileRefs"] = file_refs
         nodes.append(node)
-    return nodes
+    return nodes, file_corpus
+
+
+_HTML_TAG_PATTERN = re.compile(r"<[^>]*>")
+_HTML_IMAGE_PATTERN = re.compile(r"<img\b[^>]*?/?>", re.IGNORECASE)
+
+
+def clean_ocr_text_for_mega_prompt(source: str) -> str:
+    """Remove OCR markup overhead while retaining text and table row/cell order."""
+
+    text = unicodedata.normalize("NFC", str(source)).replace("\r\n", "\n").replace("\r", "\n")
+    text = _HTML_IMAGE_PATTERN.sub("", text)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</t[dh]\s*>", " | ", text, flags=re.IGNORECASE)
+    text = re.sub(r"</tr\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</table\s*>", "\n", text, flags=re.IGNORECASE)
+    text = _HTML_TAG_PATTERN.sub("", text)
+    text = html.unescape(text)
+    text = "".join(
+        character
+        for character in text
+        if character in "\n\t"
+        or (
+            unicodedata.category(character) not in {"Cc", "Cf"}
+            and character != "\ufffd"
+        )
+    )
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = re.sub(r"[ \t\u00a0\u3000]+", " ", raw_line).strip()
+        line = re.sub(r"(?:\s*\|\s*){2,}", " | ", line).strip(" |")
+        if line or (lines and lines[-1]):
+            lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def build_project_mega_request(
@@ -211,13 +257,14 @@ def build_project_mega_request(
         raise ValueError(f"Unsupported project code: {project_code}")
     repo_root = Path(repo_root).resolve()
     metadata = PROJECTS[project_code]
-    nodes = _linked_nodes_with_full_ocr(repo_root, project_code)
+    nodes, file_corpus = _linked_nodes_with_full_ocr(repo_root, project_code)
     payload = {
         "task": "Review every included business node in this project in one response.",
         "requirements": [
             "nodeReviews must contain exactly one result for every project.nodes item and no other node.",
             "Use only files in the current node linkedFiles when grounding that node.",
-            "Read every linkedFiles.fullOcrText completely; do not use evidenceExcerpts or omit trailing content.",
+            "Resolve every node.fileRefs[].fileId against project.fileCorpus before reviewing the node.",
+            "Read every resolved fileCorpus.fullOcrText completely; do not use evidenceExcerpts or omit trailing content.",
             "Preserve distinct findings and explicit conflicts; do not collapse minority findings.",
             "Every finding requires human confirmation and cannot change formal business status.",
         ],
@@ -227,6 +274,7 @@ def build_project_mega_request(
             "projectName": metadata["projectName"],
             "includedNodeCount": len(nodes),
             "nodes": nodes,
+            "fileCorpus": file_corpus,
         },
         "outputSchema": MEGA_REVIEW_OUTPUT_SCHEMA,
     }
@@ -277,15 +325,19 @@ def export_project_mega_prompt(
     )
     payload = json.loads(request["messages"][1]["content"])
     unique_file_ids = {
-        file_row["fileId"]
+        file_ref["fileId"]
         for node in payload["project"]["nodes"]
-        for file_row in node["linkedFiles"]
+        for file_ref in node["fileRefs"]
     }
+    file_reference_count = sum(
+        len(node["fileRefs"]) for node in payload["project"]["nodes"]
+    )
     return {
         "projectCode": project_code,
         "projectId": metadata["projectId"],
         "includedNodeCount": payload["project"]["includedNodeCount"],
         "uniqueFileCount": len(unique_file_ids),
+        "fileReferenceCount": file_reference_count,
         "estimatedInputTokens": max(
             1,
             sum(len(message["content"]) for message in request["messages"]) // 4,

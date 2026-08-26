@@ -101,7 +101,7 @@ def test_entry_prompt_references_shards_instead_of_embedding_excerpt_summaries(
     assert "全部当前有效历史挂接资料" in prompt
 
 
-def test_mega_prompt_is_one_complete_llm_request_with_every_linked_ocr_file(
+def test_mega_prompt_deduplicates_ocr_corpus_and_keeps_every_node_reference_resolvable(
     tmp_path: Path,
 ) -> None:
     from scripts.export_review_evidence_package import (
@@ -132,23 +132,36 @@ def test_mega_prompt_is_one_complete_llm_request_with_every_linked_ocr_file(
         assert payload["project"]["projectCode"] == project_code
         assert payload["project"]["includedNodeCount"] == 42
         assert len(payload["project"]["nodes"]) == 42
-        assert all(node["linkedFiles"] for node in payload["project"]["nodes"])
-        linked_files = {
-            file_row["fileId"]: file_row
+        assert all(node["fileRefs"] for node in payload["project"]["nodes"])
+        corpus = payload["project"]["fileCorpus"]
+        assert isinstance(corpus, dict)
+        references = [
+            file_ref
             for node in payload["project"]["nodes"]
-            for file_row in node["linkedFiles"]
-        }
-        assert len(linked_files) == expected_file_count
-        for file_id, file_row in linked_files.items():
+            for file_ref in node["fileRefs"]
+        ]
+        assert len(corpus) == expected_file_count
+        assert len(references) > len(corpus)
+        assert {file_ref["fileId"] for file_ref in references} == set(corpus)
+        assert request["messages"][1]["content"].count('"fullOcrText"') == len(corpus)
+        for file_id, file_row in corpus.items():
+            assert file_row["fileId"] == file_id
             source = (
                 REPO_ROOT
                 / str(PROJECTS[project_code]["ocrDirectory"])
                 / f"{file_id}.md"
             ).read_text(encoding="utf-8")
-            assert hashlib.sha256(file_row["fullOcrText"].encode()).hexdigest() == (
-                hashlib.sha256(source.encode()).hexdigest()
+            assert file_row["sourceContentHash"] == (
+                "sha256:" + hashlib.sha256(source.encode()).hexdigest()
             )
+            assert file_row["fullOcrText"]
+            assert "<table" not in file_row["fullOcrText"].lower()
+            assert "<td" not in file_row["fullOcrText"].lower()
+            assert "<img" not in file_row["fullOcrText"].lower()
             assert "evidenceExcerpts" not in file_row
+        assert "Resolve every node.fileRefs[].fileId against project.fileCorpus" in (
+            request["messages"][0]["content"]
+        )
         assert sentinel in document
         assert "{{basePromptJson}}" not in document
         assert "{{reviewTaskJson}}" not in document
@@ -156,4 +169,5 @@ def test_mega_prompt_is_one_complete_llm_request_with_every_linked_ocr_file(
         assert "不改变生产自动审查的节点分片架构" not in document
         assert result["includedNodeCount"] == 42
         assert result["uniqueFileCount"] == expected_file_count
+        assert result["fileReferenceCount"] == len(references)
         assert result["estimatedInputTokens"] > 0
