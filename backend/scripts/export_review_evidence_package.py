@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import html
 import json
-import re
 import sys
-import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +11,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from libs.project_analysis.prompt import clean_project_ocr_text
 from libs.review_evidence import build_review_evidence_package
 
 PROJECTS = {
@@ -194,7 +192,7 @@ def _linked_nodes_with_full_ocr(
             if not ocr_path.exists():
                 raise FileNotFoundError(f"Full OCR markdown is missing: {ocr_path}")
             source_text = ocr_path.read_text(encoding="utf-8")
-            cleaned_text = clean_ocr_text_for_mega_prompt(source_text)
+            cleaned_text = clean_project_ocr_text(source_text)
             metadata = {
                 "fileId": file_id,
                 "documentVersionId": f"DV-OFFLINE-{file_id}-V1",
@@ -217,39 +215,6 @@ def _linked_nodes_with_full_ocr(
     return nodes, file_corpus
 
 
-_HTML_TAG_PATTERN = re.compile(r"<[^>]*>")
-_HTML_IMAGE_PATTERN = re.compile(r"<img\b[^>]*?/?>", re.IGNORECASE)
-
-
-def clean_ocr_text_for_mega_prompt(source: str) -> str:
-    """Remove OCR markup overhead while retaining text and table row/cell order."""
-
-    text = unicodedata.normalize("NFC", str(source)).replace("\r\n", "\n").replace("\r", "\n")
-    text = _HTML_IMAGE_PATTERN.sub("", text)
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</t[dh]\s*>", " | ", text, flags=re.IGNORECASE)
-    text = re.sub(r"</tr\s*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</table\s*>", "\n", text, flags=re.IGNORECASE)
-    text = _HTML_TAG_PATTERN.sub("", text)
-    text = html.unescape(text)
-    text = "".join(
-        character
-        for character in text
-        if character in "\n\t"
-        or (
-            unicodedata.category(character) not in {"Cc", "Cf"}
-            and character != "\ufffd"
-        )
-    )
-    lines: list[str] = []
-    for raw_line in text.splitlines():
-        line = re.sub(r"[ \t\u00a0\u3000]+", " ", raw_line).strip()
-        line = re.sub(r"(?:\s*\|\s*){2,}", " | ", line).strip(" |")
-        if line or (lines and lines[-1]):
-            lines.append(line)
-    return "\n".join(lines).strip()
-
-
 def build_project_mega_request(
     *, repo_root: Path, project_code: str
 ) -> dict[str, Any]:
@@ -262,7 +227,7 @@ def build_project_mega_request(
         "task": "Review every included business node in this project in one response.",
         "requirements": [
             "nodeReviews must contain exactly one result for every project.nodes item and no other node.",
-            "Use only files in the current node linkedFiles when grounding that node.",
+            "Use only fileCorpus entries referenced by the current node.fileRefs.",
             "Resolve every node.fileRefs[].fileId against project.fileCorpus before reviewing the node.",
             "Read every resolved fileCorpus.fullOcrText completely; do not use evidenceExcerpts or omit trailing content.",
             "Preserve distinct findings and explicit conflicts; do not collapse minority findings.",

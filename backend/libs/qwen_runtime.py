@@ -20,6 +20,7 @@ CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "qwen_runtime.yam
 SUPPORTED_MODES = {"server", "official_api"}
 MODEL_ROLE_ALIASES = {
     "review-chat": "review",
+    "project-review-large": "projectReview",
     "default-chat": "default",
     "compare-fast": "compareFast",
     "qwen-vision-review": "visionReview",
@@ -34,6 +35,7 @@ GENERIC_API_KEY_ENV = "AICHECK_LLM_API_KEY"
 # 各角色用哪个模型，允许按环境覆盖——否则换供应商就得改配置文件再重新构建镜像。
 MODEL_ROLE_ENV = {
     "review": "AICHECK_LLM_MODEL_REVIEW",
+    "projectReview": "AICHECK_LLM_MODEL_PROJECT_REVIEW",
     "default": "AICHECK_LLM_MODEL_DEFAULT",
     "compareFast": "AICHECK_LLM_MODEL_COMPARE_FAST",
     "visionReview": "AICHECK_LLM_MODEL_VISION",

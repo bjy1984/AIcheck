@@ -1043,7 +1043,22 @@ MODEL_ROUTE_VERSIONS = [
         "status": "production",
         "fallbackAliases": ["default-chat"],
         "budgetPolicy": {"maxCostPerRun": 2.0, "maxLatencyMs": 30000},
-    }
+    },
+    {
+        "id": "MODELROUTE-project-review-large-202608",
+        "modelAlias": "project-review-large",
+        "version": "2026.08",
+        "status": "production",
+        "fallbackAliases": [],
+        "maxContextTokens": 131072,
+        "reservedOutputTokens": 24000,
+        "budgetPolicy": {
+            "maxContextTokens": 131072,
+            "reservedOutputTokens": 24000,
+            "maxCostPerRun": 20.0,
+            "maxLatencyMs": 600000,
+        },
+    },
 ]
 
 OCR_PROFILE_VERSIONS = [
