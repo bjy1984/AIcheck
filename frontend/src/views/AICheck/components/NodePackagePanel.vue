@@ -14,6 +14,7 @@ import {
 import type { NodePackagePayload } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
+import { submittedFileCountLabel } from '../workbenchRolePresentation'
 
 const props = defineProps<{
   packageData?: NodePackagePayload
@@ -37,11 +38,7 @@ const bindings = computed(() => props.packageData?.bindings || [])
 const projectFiles = computed(() => props.packageData?.projectFiles || [])
 const projectFileStatus = (file: NodePackagePayload['projectFiles'][number]) =>
   documentBindingSummary(file)
-const boundProgress = computed(() => {
-  const total = selectedNode.value?.requiredProgress.total || requirements.value.length || 0
-  const done = selectedNode.value?.requiredProgress.done || bindings.value.length
-  return total ? `${done}/${total}` : '-'
-})
+const submittedFiles = computed(() => submittedFileCountLabel(bindings.value.length))
 const alertType = computed(() => {
   if (props.issue?.type === 'error') return 'error'
   if (props.issue?.type === 'forbidden') return 'warning'
@@ -85,12 +82,11 @@ const alertType = computed(() => {
     </div>
 
     <template v-else-if="packageData">
-      <ElDescriptions :column="3" border class="node-descriptions">
+      <ElDescriptions :column="2" border class="node-descriptions">
         <ElDescriptionsItem label="检验类别">
           {{ selectedNode?.inspectionType || '-' }}
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="必传进度">{{ boundProgress }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="资料数">{{ bindings.length }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="已提交文件">{{ submittedFiles }}</ElDescriptionsItem>
       </ElDescriptions>
 
       <div class="section-title">资料要求</div>

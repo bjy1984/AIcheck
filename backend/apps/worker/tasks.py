@@ -4979,6 +4979,9 @@ def project_analysis_prepare(self, run_id: str) -> dict[str, Any]:
             "queued",
             loadedFileCount=int(run.get("uniqueFileCount") or 0),
         )
+    # 下一阶段由另一个 Celery 进程读取。必须先提交 queued 状态，否则任务可能先到达，
+    # 从数据库读到 preparing_snapshot，随后把正常运行误判成非法阶段跳转。
+    flush_state()
     dispatch = _dispatch_project_analysis_task("project_analysis_execute_model", run_id)
     run["queueTaskId"] = dispatch.get("taskId")
     flush_state()

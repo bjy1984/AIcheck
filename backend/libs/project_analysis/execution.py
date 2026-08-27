@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from copy import deepcopy
 from typing import Any
 from uuid import uuid4
@@ -12,6 +13,31 @@ from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.project_analysis.domain import advance_project_analysis_phase
 from libs.project_analysis.prompt import build_project_analysis_request
 from libs.qwen_runtime import QwenRuntimeClient
+
+
+def project_analysis_model_timeout_seconds() -> float:
+    try:
+        configured = float(os.getenv("AICHECK_PROJECT_ANALYSIS_MODEL_TIMEOUT_SECONDS", "600"))
+    except ValueError:
+        configured = 600.0
+    return max(60.0, min(configured, 3600.0))
+
+
+def project_analysis_max_output_tokens(run: dict[str, Any]) -> int:
+    reserved = max(1, int(run.get("reservedOutputTokens") or 24000))
+    try:
+        configured = int(os.getenv("AICHECK_PROJECT_ANALYSIS_MAX_OUTPUT_TOKENS", "48000"))
+    except ValueError:
+        configured = 48000
+    desired = max(reserved, min(configured, 65536))
+    max_context = int(run.get("maxContextTokens") or 0)
+    estimated_input = int(run.get("estimatedInputTokens") or 0)
+    available = max_context - estimated_input if max_context else reserved
+    return max(1, min(desired, max(available, reserved)))
+
+
+def _discard_stream_delta(_channel: str, _delta: str) -> None:
+    return None
 
 
 def _stable_hash(value: Any) -> str:
@@ -72,7 +98,9 @@ def execute_project_analysis_model(state: dict[str, Any], run_id: str, *, client
             model=str(request["model"]),
             temperature=float(request["temperature"]),
             response_format=request["response_format"],
-            max_tokens=int(run.get("reservedOutputTokens") or 24000),
+            max_tokens=project_analysis_max_output_tokens(run),
+            timeout=project_analysis_model_timeout_seconds(),
+            stream_handler=_discard_stream_delta,
         )
         choice = (response.get("choices") or [{}])[0]
         if str(choice.get("finish_reason") or "").lower() in {

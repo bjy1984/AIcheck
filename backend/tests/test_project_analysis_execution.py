@@ -3,7 +3,44 @@ from __future__ import annotations
 import json
 
 
-def test_project_analysis_executes_exactly_one_large_model_call() -> None:
+def test_prepare_persists_queued_phase_before_dispatching_model(monkeypatch) -> None:
+    from apps.worker import tasks
+
+    run = {
+        "projectAnalysisRunId": "PARUN-ORDER",
+        "phase": "preparing_snapshot",
+        "status": "preparing_snapshot",
+        "includedNodeCount": 2,
+        "uniqueFileCount": 1,
+    }
+    calls: list[str] = []
+
+    monkeypatch.setattr(tasks, "load_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tasks, "_project_analysis_run", lambda _run_id: run)
+
+    def advance(_state, current, phase, **updates):
+        current.update(updates)
+        current["phase"] = phase
+        current["status"] = phase
+        return current
+
+    monkeypatch.setattr(tasks, "advance_project_analysis_phase", advance)
+    monkeypatch.setattr(tasks, "flush_state", lambda *_args, **_kwargs: calls.append("flush"))
+
+    def dispatch(_task_name: str, _run_id: str) -> dict:
+        calls.append("dispatch")
+        return {"mode": "celery", "taskId": "TASK-MODEL"}
+
+    monkeypatch.setattr(tasks, "_dispatch_project_analysis_task", dispatch)
+
+    tasks.project_analysis_prepare.run("PARUN-ORDER")
+
+    assert calls[:2] == ["flush", "dispatch"]
+    assert run["phase"] == "queued"
+    assert run["queueTaskId"] == "TASK-MODEL"
+
+
+def test_project_analysis_executes_exactly_one_large_model_call(monkeypatch) -> None:
     from test_project_analysis_prompt import _route, _state
 
     from libs.project_analysis.execution import execute_project_analysis_model
@@ -44,15 +81,20 @@ def test_project_analysis_executes_exactly_one_large_model_call() -> None:
         "uniqueFileCount": 2,
         "fileReferenceCount": 3,
         "estimatedInputTokens": preview["estimatedInputTokens"],
+        "maxContextTokens": 131072,
+        "reservedOutputTokens": 24000,
         "modelAlias": "project-review-large",
         "revision": 1,
     }
     state["project_analysis_runs"].append(run)
     calls: list[dict] = []
+    monkeypatch.setenv("AICHECK_PROJECT_ANALYSIS_MODEL_TIMEOUT_SECONDS", "420")
+    monkeypatch.setenv("AICHECK_PROJECT_ANALYSIS_MAX_OUTPUT_TOKENS", "48000")
 
     class FakeClient:
         def chat_sync(self, messages, **kwargs):
             calls.append({"messages": messages, **kwargs})
+            kwargs["stream_handler"]("reasoning", "delta")
             return {
                 "id": "RESP-PROJECT-1",
                 "model": "qwen3.7-plus",
@@ -82,6 +124,9 @@ def test_project_analysis_executes_exactly_one_large_model_call() -> None:
 
     assert len(calls) == 1
     assert calls[0]["model"] == "project-review-large"
+    assert calls[0]["timeout"] == 420
+    assert callable(calls[0]["stream_handler"])
+    assert calls[0]["max_tokens"] == 48000
     assert calls[0]["response_format"] == {"type": "json_object"}
     assert result["phase"] == "validating_output"
     assert result["lastHeartbeatAt"]

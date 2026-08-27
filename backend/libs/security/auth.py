@@ -49,6 +49,8 @@ ROLE_DEFAULT_PATHS = {
     "test": "/workbench/inspection",
 }
 
+SHARED_TEST_PASSWORD = "anyuekeji.123"
+
 
 def strict_production() -> bool:
     return os.getenv("AICHECK_STRICT_PRODUCTION", "false").lower() == "true"
@@ -96,8 +98,8 @@ def user_record(
     return {
         "id": user_id,
         "username": username,
-        "password": username,
-        "passwordHash": f"plain:{username}",
+        "password": SHARED_TEST_PASSWORD,
+        "passwordHash": f"plain:{SHARED_TEST_PASSWORD}",
         "role": role,
         "roleId": role_id,
         "roleLabel": role_label,

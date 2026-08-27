@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
@@ -26,6 +27,7 @@ from libs.project_analysis.domain import (
 from libs.project_analysis.prompt import project_analysis_preview
 
 project_analysis_router = APIRouter()
+LOGGER = logging.getLogger(__name__)
 
 
 def _authorize(request: Request, project_id: str, *, write: bool) -> Any | None:
@@ -152,9 +154,29 @@ def create_project_analysis(
             actor_id=str(request_user_id(request) or "AUTO"),
         )
         if not run.get("dispatch"):
-            run["dispatch"] = task_dispatcher.dispatch_project_analysis(
-                str(run["projectAnalysisRunId"])
-            )
+            try:
+                run["dispatch"] = task_dispatcher.dispatch_project_analysis(
+                    str(run["projectAnalysisRunId"])
+                )
+            except Exception as exc:  # noqa: BLE001 - broker failure must become a retryable API result
+                run_id = str(run.get("projectAnalysisRunId") or "")
+                repo.state["project_analysis_runs"] = [
+                    row
+                    for row in repo.state.get("project_analysis_runs") or []
+                    if str(row.get("projectAnalysisRunId") or "") != run_id
+                ]
+                repo.state["project_analysis_events"] = [
+                    row
+                    for row in repo.state.get("project_analysis_events") or []
+                    if str(row.get("projectAnalysisRunId") or "") != run_id
+                ]
+                LOGGER.warning("project_analysis_dispatch_failed: %s", type(exc).__name__)
+                return fail(
+                    errors.AI_RUN_FAILED,
+                    request,
+                    message="全工程分析任务派发失败，请确认 Redis 和 Celery worker 可用后重试。",
+                    http_status=503,
+                )
         audit_id = repo.add_audit(
             "发起工程一键分析",
             "ProjectAnalysisRun",

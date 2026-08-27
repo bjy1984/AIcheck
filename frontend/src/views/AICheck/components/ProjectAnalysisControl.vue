@@ -11,7 +11,10 @@ import {
   type ProjectAnalysisRun,
   type ProjectAnalysisStatus
 } from '@/api/aicheck'
-import { projectAnalysisProgressView } from '../projectAnalysisPresentation'
+import {
+  projectAnalysisProgressView,
+  projectAnalysisRequestFailure
+} from '../projectAnalysisPresentation'
 
 const props = defineProps<{ projectId: string; disabled?: boolean }>()
 const drawerVisible = ref(false)
@@ -20,6 +23,7 @@ const starting = ref(false)
 const preview = ref<ProjectAnalysisPreview>()
 const activeRun = ref<ProjectAnalysisRun>()
 const status = ref<ProjectAnalysisStatus>()
+const failureMessage = ref('')
 let pollTimer: ReturnType<typeof setInterval> | undefined
 const terminalPhases = new Set(['waiting_human_review', 'failed', 'partial_failure'])
 const progress = computed(() =>
@@ -32,12 +36,19 @@ const stopPolling = () => {
 }
 const poll = async () => {
   if (!activeRun.value || !props.projectId) return
-  const response = await getProjectAnalysisStatusApi(
-    props.projectId,
-    activeRun.value.projectAnalysisRunId
-  )
-  status.value = response.data.status
-  if (terminalPhases.has(status.value.phase)) stopPolling()
+  try {
+    const response = await getProjectAnalysisStatusApi(
+      props.projectId,
+      activeRun.value.projectAnalysisRunId
+    )
+    status.value = response.data.status
+    failureMessage.value = ''
+    if (terminalPhases.has(status.value.phase)) stopPolling()
+  } catch (error) {
+    const failure = projectAnalysisRequestFailure(error)
+    failureMessage.value = failure.message
+    if (failure.terminal) stopPolling()
+  }
 }
 const startPolling = () => {
   stopPolling()
@@ -62,7 +73,12 @@ const load = async () => {
 }
 const open = async () => {
   drawerVisible.value = true
-  await load()
+  failureMessage.value = ''
+  try {
+    await load()
+  } catch (error) {
+    failureMessage.value = projectAnalysisRequestFailure(error).message
+  }
 }
 const start = async () => {
   if (!preview.value || preview.value.contextLimitExceeded) return
@@ -72,6 +88,7 @@ const start = async () => {
     { type: 'warning', confirmButtonText: '开始分析', cancelButtonText: '取消' }
   )
   starting.value = true
+  failureMessage.value = ''
   try {
     const response = await createProjectAnalysisRunApi(
       props.projectId,
@@ -82,6 +99,9 @@ const start = async () => {
     status.value = response.data.run
     startPolling()
     ElMessage.success('全工程分析已启动')
+  } catch (error) {
+    stopPolling()
+    failureMessage.value = projectAnalysisRequestFailure(error).message
   } finally {
     starting.value = false
   }
@@ -94,6 +114,7 @@ watch(
     preview.value = undefined
     activeRun.value = undefined
     status.value = undefined
+    failureMessage.value = ''
     drawerVisible.value = false
   }
 )
@@ -117,6 +138,7 @@ onBeforeUnmount(stopPolling)
       <div v-if="preview?.contextLimitExceeded" class="analysis-error">
         当前工程超过模型上下文上限，请使用节点级自动审查。
       </div>
+      <div v-if="failureMessage" class="analysis-error">{{ failureMessage }}</div>
       <div v-if="preview && preview.includedNodeCount === 0" class="analysis-error">
         当前工程没有已挂接 OCR 资料，无法发起全量分析。
       </div>

@@ -38,7 +38,7 @@ const passwordFor = (account) => {
   return (
     process.env[`AICHECK_UI_AUDIT_PASSWORD_${key}`] ||
     process.env[`AICHECK_BOOTSTRAP_PASSWORD_${key}`] ||
-    account
+    'anyuekeji.123'
   )
 }
 

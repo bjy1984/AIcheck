@@ -163,7 +163,7 @@ def test_fde_ocr_action_handoff_artifact_download_is_key_scoped() -> None:
 
 
 def test_fde_login_and_dynamic_routes() -> None:
-    login = assert_ok(client.post("/api/auth/login", json={"username": "fde", "password": "fde"}))
+    login = assert_ok(client.post("/api/auth/login", json={"username": "fde", "password": "anyuekeji.123"}))
     routes = assert_ok(client.get("/api/auth/routes?role=fde"))
 
     assert login["user"]["role"] == "fde"
@@ -1815,7 +1815,7 @@ def test_fde_cannot_execute_business_review_mutation() -> None:
 
 def test_fde_auth_required_uses_single_role(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
-    login = assert_ok(client.post("/api/auth/login", json={"username": "fde", "password": "fde"}))
+    login = assert_ok(client.post("/api/auth/login", json={"username": "fde", "password": "anyuekeji.123"}))
 
     dashboard = assert_ok(
         client.get("/api/fde/dashboard", headers={"Authorization": f"Bearer {login['token']}"})

@@ -99,6 +99,7 @@ import {
 } from '@/views/AIReviewB/finalConclusion'
 import type { ReturnCorrectionRequest } from '@/views/AIReviewB/returnCorrection'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
+import { createSessionWithAuthorizationRecovery } from '@/views/AIReviewB/reviewSessionRecovery'
 
 const props = withDefaults(
   defineProps<{
@@ -815,14 +816,27 @@ const stopLiveAgentTrace = () => {
 
 const ensureSession = async () => {
   if (workspace.value?.session || !activeProjectId.value || !activeNodeId.value) return
-  await createReviewBSessionApi(
-    activeProjectId.value,
-    activeNodeId.value,
-    {
-      currentTask: workspace.value?.businessBasis?.inspectionItem as string | undefined,
-      reviewRunId: String(route.query.reviewRunId || '') || undefined
-    },
-    { idempotencyKey: `review-session-${activeProjectId.value}-${activeNodeId.value}` }
+  const idempotencyKey = `review-session-${activeProjectId.value}-${activeNodeId.value}`
+  await createSessionWithAuthorizationRecovery(
+    (key, silent) =>
+      createReviewBSessionApi(
+        activeProjectId.value,
+        activeNodeId.value,
+        {
+          currentTask: workspace.value?.businessBasis?.inspectionItem as string | undefined,
+          reviewRunId: String(route.query.reviewRunId || '') || undefined
+        },
+        {
+          idempotencyKey: key,
+          silentBusinessError: silent,
+          silentHttpError: silent
+        }
+      ),
+    idempotencyKey,
+    () =>
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}`
   )
   workspace.value = await fetchWorkspace(String(route.query.reviewRunId || '') || undefined)
 }

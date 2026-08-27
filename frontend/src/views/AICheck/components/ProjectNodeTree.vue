@@ -4,6 +4,7 @@ import { ElCard, ElEmpty, ElTag, ElTree } from 'element-plus'
 import type { ProjectTreePayload } from '@/api/aicheck'
 import type { ProjectTreeNode } from '@/types/aicheck'
 import { getStatusTagType } from './status'
+import { projectSubmissionMeta, submittedNodeMeta } from '../workbenchRolePresentation'
 
 type ProjectTreeViewNode =
   | {
@@ -187,7 +188,9 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
           <span class="node-index">总</span>
           <span class="node-main">
             <span class="node-name">{{ data.label }}</span>
-            <span class="node-meta">节点 {{ data.nodeCount }} · 资料 {{ data.fileCount }}</span>
+            <span class="node-meta">
+              {{ projectSubmissionMeta(data.nodeCount, data.fileCount) }}
+            </span>
           </span>
           <ElTag type="primary" size="small" effect="plain">总览</ElTag>
         </span>
@@ -201,9 +204,7 @@ const handleNodeCollapse = (data: ProjectTreeViewNode) => {
           <span class="node-main">
             <span class="node-name">{{ data.node.name }}</span>
             <span class="node-meta">
-              {{ data.node.inspectionType }} 类 · {{ data.node.requiredProgress.done }}/{{
-                data.node.requiredProgress.total
-              }}
+              {{ submittedNodeMeta(data.node.inspectionType, data.node.fileCount) }}
             </span>
           </span>
           <ElTag :type="getStatusTagType(data.node.status)" size="small" effect="plain">

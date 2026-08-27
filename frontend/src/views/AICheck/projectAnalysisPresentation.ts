@@ -1,5 +1,19 @@
 import type { ProjectAnalysisStatus } from '@/api/aicheck/projectAnalysis'
 
+export const projectAnalysisRequestFailure = (error: unknown) => {
+  const reason = String(
+    (error as { response?: { data?: { data?: { reason?: string } } } })?.response?.data?.data
+      ?.reason || ''
+  )
+  return {
+    terminal: true,
+    message:
+      reason === 'NOT_FOUND'
+        ? '分析任务不存在或已失效，请重新发起。'
+        : '全工程分析状态刷新失败，请稍后重试。'
+  }
+}
+
 export const projectAnalysisProgressView = (status: ProjectAnalysisStatus) => {
   const base =
     status.progressMode === 'indeterminate'

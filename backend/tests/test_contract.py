@@ -526,8 +526,8 @@ def test_local_role_bootstrap_creates_login_accounts_without_postgres(monkeypatc
 
 def test_postgres_transaction_probe_endpoint_is_admin_only_when_auth_enabled(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
-    contractor = assert_ok(client.post("/api/auth/login", json={"username": "contractor", "password": "contractor"}))
-    admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "admin"}))
+    contractor = assert_ok(client.post("/api/auth/login", json={"username": "contractor", "password": "anyuekeji.123"}))
+    admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "anyuekeji.123"}))
 
     assert_error(
         client.get(
@@ -559,7 +559,7 @@ def test_postgres_transaction_probe_does_not_bool_check_database(monkeypatch) ->
     monkeypatch.setenv("AICHECK_REQUIRE_AUTH", "true")
     monkeypatch.setattr(app.state, "postgres", BoolRaisingDsn("postgresql://example"), raising=False)
     monkeypatch.setattr("apps.api.main.run_transaction_probe", fake_probe)
-    admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "admin"}))
+    admin = assert_ok(client.post("/api/auth/login", json={"username": "admin", "password": "anyuekeji.123"}))
 
     result = assert_ok(
         client.get(
@@ -5648,8 +5648,18 @@ def test_login_compatibility_paths() -> None:
     }
 
     for username, default_path in cases.items():
-        mock_user = assert_ok(client.post("/mock/user/login", json={"username": username, "password": username}))
-        real_login = assert_ok(client.post("/api/auth/login", json={"username": username, "password": username}))
+        mock_user = assert_ok(
+            client.post(
+                "/mock/user/login",
+                json={"username": username, "password": "anyuekeji.123"},
+            )
+        )
+        real_login = assert_ok(
+            client.post(
+                "/api/auth/login",
+                json={"username": username, "password": "anyuekeji.123"},
+            )
+        )
 
         assert mock_user["username"] == username
         assert mock_user["role"] == username
@@ -5698,7 +5708,7 @@ def test_auth_login_is_public_logout_requires_auth_and_security_events_are_scope
         lambda records, scopes: flush_calls.append((records, scopes)),
     )
 
-    login = assert_ok(client.post("/api/auth/login", json={"username": "ndt", "password": "ndt"}))
+    login = assert_ok(client.post("/api/auth/login", json={"username": "ndt", "password": "anyuekeji.123"}))
 
     assert_ok(client.post("/api/auth/logout", headers={"Authorization": f"Bearer {login['token']}"}))
     assert_error(client.post("/api/auth/logout"), "AUTH_REQUIRED")

@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict'
 
-import { workbenchRolePresentation } from './workbenchRolePresentation'
+import * as presentation from './workbenchRolePresentation'
+
+const {
+  projectSubmissionMeta,
+  submittedFileCountLabel,
+  submittedNodeMeta,
+  workbenchRolePresentation
+} = presentation as typeof presentation & {
+  projectSubmissionMeta?: (nodeCount: number, submittedFileCount: number) => string
+  submittedFileCountLabel?: (submittedFileCount: number) => string
+  submittedNodeMeta?: (inspectionType: string, submittedFileCount: number) => string
+}
+
+assert.equal(typeof submittedNodeMeta, 'function', '节点摘要必须提供只按已提交文件数展示的口径')
+assert.equal(submittedNodeMeta?.('C', 3), 'C 类 · 已提交 3 个文件')
+assert.equal(submittedFileCountLabel?.(3), '3 个文件')
+assert.equal(projectSubmissionMeta?.(69, 76), '节点 69 · 提交 76')
 
 assert.deepEqual(workbenchRolePresentation('contractor'), {
   showBreadcrumb: false,

@@ -5,6 +5,18 @@ export type WorkbenchRolePresentation = {
   intro: string
 }
 
+const normalizedSubmittedFileCount = (value: number) =>
+  Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+
+export const submittedFileCountLabel = (submittedFileCount: number) =>
+  `${normalizedSubmittedFileCount(submittedFileCount)} 个文件`
+
+export const submittedNodeMeta = (inspectionType: string, submittedFileCount: number) =>
+  `${inspectionType || '-'} 类 · 已提交 ${submittedFileCountLabel(submittedFileCount)}`
+
+export const projectSubmissionMeta = (nodeCount: number, submittedFileCount: number) =>
+  `节点 ${Math.max(0, Math.trunc(nodeCount || 0))} · 提交 ${normalizedSubmittedFileCount(submittedFileCount)}`
+
 export const workbenchRolePresentation = (role: RoleCode): WorkbenchRolePresentation =>
   role === 'contractor'
     ? {

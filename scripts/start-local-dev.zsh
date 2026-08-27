@@ -12,7 +12,10 @@ BACKEND_PORT="${AICHECK_DEV_BACKEND_PORT:-8000}"
 FRONTEND_PORT="${AICHECK_DEV_FRONTEND_PORT:-4000}"
 BACKEND_LOG="$LOG_DIR/backend.log"
 MINERU_WORKER_LOG="$LOG_DIR/mineru-worker.log"
+REDIS_LOG="$LOG_DIR/redis.log"
+CELERY_LOG="$LOG_DIR/celery.log"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
+CELERY_QUEUES="business.light,llm.remote"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
@@ -87,6 +90,47 @@ ensure_postgres() {
   return 1
 }
 
+redis_ready() {
+  redis-cli -u "${AICHECK_REDIS_URL:-redis://127.0.0.1:6379/0}" ping 2>/dev/null \
+    | grep -q '^PONG$'
+}
+
+start_redis() {
+  if redis_ready; then
+    log "Redis 已就绪。"
+    return 0
+  fi
+  if ! command -v redis-server >/dev/null 2>&1; then
+    log "错误：未找到 redis-server。"
+    return 1
+  fi
+  local redis_port
+  redis_port="$($BACKEND_DIR/.venv/bin/python - <<'PY'
+import os
+from urllib.parse import urlparse
+url = urlparse(os.getenv("AICHECK_REDIS_URL", "redis://127.0.0.1:6379/0"))
+if url.hostname not in {"127.0.0.1", "localhost", "::1"}:
+    raise SystemExit(1)
+print(url.port or 6379)
+PY
+)" || {
+    log "错误：配置的 Redis 不是本机地址，请先启动对应服务。"
+    return 1
+  }
+  (
+    nohup redis-server --bind 127.0.0.1 --port "$redis_port" --save "" --appendonly no \
+      > "$REDIS_LOG" 2>&1 &!
+    print $! > "$LOG_DIR/redis.pid"
+  )
+  local i
+  for i in {1..30}; do
+    redis_ready && { log "Redis 已就绪。"; return 0; }
+    sleep 0.25
+  done
+  log "错误：Redis 未就绪，请查看 $REDIS_LOG"
+  return 1
+}
+
 start_backend() {
   local pid="$(pid_on_port "$BACKEND_PORT")"
   if [[ -n "$pid" ]]; then
@@ -121,6 +165,35 @@ start_mineru_worker() {
   )
 }
 
+start_celery_worker() {
+  [[ "${AICHECK_TASK_DISPATCH:-disabled}" == "celery" ]] || return 0
+  if pid_is_running "$LOG_DIR/celery.pid"; then
+    log "Celery worker 已运行，PID: $(<"$LOG_DIR/celery.pid")"
+    return 0
+  fi
+  (
+    cd "$BACKEND_DIR" || exit 1
+    nohup .venv/bin/celery -A apps.worker.celery_app:celery_app worker \
+      --loglevel=INFO --queues="$CELERY_QUEUES" --concurrency=2 \
+      --hostname='aicheck-local@%h' > "$CELERY_LOG" 2>&1 &!
+    print $! > "$LOG_DIR/celery.pid"
+  )
+}
+
+wait_for_celery_worker() {
+  [[ "${AICHECK_TASK_DISPATCH:-disabled}" == "celery" ]] || return 0
+  local i
+  for i in {1..60}; do
+    if pid_is_running "$LOG_DIR/celery.pid" && grep -q 'ready\.' "$CELERY_LOG" 2>/dev/null; then
+      log "Celery worker 已就绪：$CELERY_QUEUES"
+      return 0
+    fi
+    sleep 0.5
+  done
+  log "Celery worker 未就绪，请查看 $CELERY_LOG"
+  return 1
+}
+
 wait_for_mineru_worker() {
   local i
   for i in {1..60}; do
@@ -153,6 +226,8 @@ start_frontend() {
 
 dry_run() {
   print "AICHECK_MINERU_EXECUTION_MODE=postgres"
+  print "Redis: ${AICHECK_REDIS_URL:-redis://127.0.0.1:6379/0}"
+  print "Celery queues: $CELERY_QUEUES"
   print "backend: .venv/bin/uvicorn apps.api.main:app --host 127.0.0.1 --port $BACKEND_PORT"
   print "backend healthz: $BACKEND_HEALTHZ_URL"
   print "backend log: $BACKEND_LOG ($LOG_DIR/backend.pid)"
@@ -179,8 +254,12 @@ main() {
   fi
   touch "$BACKEND_LOG" "$MINERU_WORKER_LOG" "$FRONTEND_LOG"
   ensure_postgres || return 1
+  start_redis || return 1
   start_backend
   require_backend_ready || return 1
+  touch "$CELERY_LOG" "$REDIS_LOG"
+  start_celery_worker
+  wait_for_celery_worker || return 1
   start_mineru_worker
   wait_for_mineru_worker || true
   start_frontend

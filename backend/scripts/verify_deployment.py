@@ -20,7 +20,7 @@ if __package__ in {None, ""}:
 
 from libs.db.seed import PROJECT_ID
 from libs.qwen_runtime import qwen_runtime_config
-from libs.security.auth import ROLE_DEFAULT_PATHS
+from libs.security.auth import ROLE_DEFAULT_PATHS, SHARED_TEST_PASSWORD
 
 DEFAULT_ROLES = ("admin", "inspection", "contractor", "ndt", "owner", "fde")
 REQUIRED_LITELLM_ALIASES = {"default-chat", "review-chat", "deepseek-reasoner", "embedding-default", "compare-fast"}
@@ -100,7 +100,7 @@ def role_login_password(role: str) -> str:
     return (
         os.getenv(f"AICHECK_VERIFY_PASSWORD_{normalized}")
         or os.getenv(f"AICHECK_BOOTSTRAP_PASSWORD_{normalized}")
-        or role
+        or SHARED_TEST_PASSWORD
     )
 
 

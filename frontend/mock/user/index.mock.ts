@@ -1,6 +1,7 @@
 import { SUCCESS_CODE } from '@/constants'
 
 const timeout = 1000
+const SHARED_TEST_PASSWORD = 'anyuekeji.123'
 
 const List: {
   id: string
@@ -17,7 +18,7 @@ const List: {
   {
     id: 'USER-INSPECTION-001',
     username: 'inspection',
-    password: 'inspection',
+    password: SHARED_TEST_PASSWORD,
     role: 'inspection',
     roleId: '2',
     roleLabel: '监检人员',
@@ -29,7 +30,7 @@ const List: {
   {
     id: 'USER-CONTRACTOR-001',
     username: 'contractor',
-    password: 'contractor',
+    password: SHARED_TEST_PASSWORD,
     role: 'contractor',
     roleId: '3',
     roleLabel: '施工方',
@@ -41,7 +42,7 @@ const List: {
   {
     id: 'USER-NDT-001',
     username: 'ndt',
-    password: 'ndt',
+    password: SHARED_TEST_PASSWORD,
     role: 'ndt',
     roleId: '4',
     roleLabel: '无损检测',
@@ -53,7 +54,7 @@ const List: {
   {
     id: 'USER-OWNER-001',
     username: 'owner',
-    password: 'owner',
+    password: SHARED_TEST_PASSWORD,
     role: 'owner',
     roleId: '5',
     roleLabel: '建设方',
@@ -65,7 +66,7 @@ const List: {
   {
     id: 'USER-ADMIN-001',
     username: 'admin',
-    password: 'admin',
+    password: SHARED_TEST_PASSWORD,
     role: 'admin',
     roleId: '1',
     roleLabel: '系统管理员',
@@ -77,7 +78,7 @@ const List: {
   {
     id: 'USER-FDE-001',
     username: 'fde',
-    password: 'fde',
+    password: SHARED_TEST_PASSWORD,
     role: 'fde',
     roleId: '6',
     roleLabel: 'FDE 工程师',
@@ -89,7 +90,7 @@ const List: {
   {
     id: 'USER-TEST-001',
     username: 'test',
-    password: 'test',
+    password: SHARED_TEST_PASSWORD,
     role: 'test',
     roleId: '2',
     roleLabel: '测试用户',

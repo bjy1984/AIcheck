@@ -864,7 +864,7 @@ def test_deployment_probe_pdf_contains_text_for_ocr() -> None:
 
 
 def test_role_login_password_uses_verify_or_bootstrap_env(monkeypatch) -> None:
-    assert role_login_password("inspection") == "inspection"
+    assert role_login_password("inspection") == "anyuekeji.123"
 
     monkeypatch.setenv("AICHECK_BOOTSTRAP_PASSWORD_INSPECTION", "Bootstrap!2026")
     assert role_login_password("inspection") == "Bootstrap!2026"

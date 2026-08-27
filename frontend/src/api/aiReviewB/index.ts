@@ -8,11 +8,12 @@ import type {
   ReviewBSession,
   ReviewBWorkspace
 } from '@/types/ai-review-b'
+import {
+  reviewSessionMutationHeaders,
+  type ReviewSessionMutationOptions
+} from '@/views/AIReviewB/reviewSessionRecovery'
 
-type MutationOptions = {
-  etag?: string
-  idempotencyKey?: string
-}
+type MutationOptions = ReviewSessionMutationOptions
 
 const createIdempotencyKey = (prefix: string) => {
   const random =
@@ -23,11 +24,7 @@ const createIdempotencyKey = (prefix: string) => {
 }
 
 const mutationHeaders = (prefix: string, options?: MutationOptions) => {
-  const headers: Record<string, string> = {
-    'Idempotency-Key': options?.idempotencyKey || createIdempotencyKey(prefix)
-  }
-  if (options?.etag) headers['If-Match'] = options.etag
-  return headers
+  return reviewSessionMutationHeaders(createIdempotencyKey(prefix), options)
 }
 
 export const getReviewBWorkspaceApi = (

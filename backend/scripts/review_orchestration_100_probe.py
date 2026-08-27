@@ -16,6 +16,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from libs.db.seed import PROJECT_ID
+from libs.security.auth import SHARED_TEST_PASSWORD
 
 HUMAN_REVIEW_STATUSES = {"waiting_human_review", "accepted_by_human", "edited_by_human", "rejected_by_human"}
 REQUIRED_SCORECARD_SECTIONS = {"workflow", "graph", "evidence", "governance"}
@@ -231,7 +232,7 @@ def role_password(role: str) -> str:
     return (
         os.getenv(f"AICHECK_VERIFY_PASSWORD_{normalized}")
         or os.getenv(f"AICHECK_BOOTSTRAP_PASSWORD_{normalized}")
-        or role
+        or SHARED_TEST_PASSWORD
     )
 
 

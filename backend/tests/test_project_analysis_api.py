@@ -161,3 +161,45 @@ def test_empty_project_analysis_scope_does_not_create_run() -> None:
     assert response["code"] != 0
     assert response["message"] == "PROJECT_ANALYSIS_EMPTY_SCOPE"
     assert repo.state.get("project_analysis_runs", []) == []
+
+
+def test_dispatch_failure_is_retryable_and_leaves_no_phantom_run(monkeypatch) -> None:
+    preview = _ok(
+        client.get(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/preview",
+            headers=HEADERS,
+        )
+    )["preview"]
+
+    def fail_dispatch(_run_id: str) -> dict:
+        raise RuntimeError("redis unavailable")
+
+    monkeypatch.setattr(
+        "apps.api.project_analysis_routes.task_dispatcher.dispatch_project_analysis",
+        fail_dispatch,
+    )
+    failed = client.post(
+        f"/projects/{PROJECT_ID}/inspection/full-project-analysis/runs",
+        headers={**HEADERS, "Idempotency-Key": "retryable-project-analysis"},
+        json={"snapshotHash": preview["snapshotHash"]},
+    )
+
+    assert failed.status_code == 503
+    assert failed.json()["data"]["reason"] == "AI_RUN_FAILED"
+    assert repo.state.get("project_analysis_runs", []) == []
+    assert repo.state.get("project_analysis_events", []) == []
+
+    monkeypatch.setattr(
+        "apps.api.project_analysis_routes.task_dispatcher.dispatch_project_analysis",
+        lambda _run_id: {"mode": "disabled", "taskId": None},
+    )
+    retried = _ok(
+        client.post(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/runs",
+            headers={**HEADERS, "Idempotency-Key": "retryable-project-analysis"},
+            json={"snapshotHash": preview["snapshotHash"]},
+        )
+    )["run"]
+
+    assert retried["phase"] == "preparing_snapshot"
+    assert retried["dispatch"]["mode"] == "disabled"

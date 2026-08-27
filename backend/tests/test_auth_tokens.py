@@ -40,7 +40,10 @@ def test_tokens_fail_closed_when_jwt_backend_is_unavailable(monkeypatch) -> None
 def test_login_fails_closed_when_jwt_backend_is_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(auth, "jwt", BrokenJose())
 
-    response = client.post("/api/auth/login", json={"username": "ndt", "password": "ndt"})
+    response = client.post(
+        "/api/auth/login",
+        json={"username": "ndt", "password": "anyuekeji.123"},
+    )
     payload = response.json()
 
     assert response.status_code == 503

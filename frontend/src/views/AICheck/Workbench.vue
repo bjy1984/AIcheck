@@ -20,7 +20,6 @@ import {
   ElMessageBox,
   ElOption,
   ElPagination,
-  ElProgress,
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
@@ -257,10 +256,11 @@ import { formatConfidence } from '@/utils/confidence'
 import { parseAiFindings } from '@/utils/aiFindings'
 import { removeProjectFileLocally, restoreProjectFileLocally } from './projectFileDeletion'
 import { resolveInspectionWorkspaceView } from './inspectionWorkspaceView'
+import { canLoadProjectNode, resolveLoadableProjectNodeId } from './projectNodeSelection'
 import { aggregateNodeStatus, nodeNeedsAttention } from './nodeAggregateStatus'
 import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
-import { workbenchRolePresentation } from './workbenchRolePresentation'
+import { submittedFileCountLabel, workbenchRolePresentation } from './workbenchRolePresentation'
 import { buildCorrectionUploadBindingPayload } from './contractorCorrectionUpload'
 
 type PreviewDrawerTarget = {
@@ -893,18 +893,6 @@ const getInspectionReviewProgress = (
   }
   return { label: '未提交', rank: 3 }
 }
-const getInspectionNodeMissingText = (
-  missingCount: number,
-  missingNames: string[],
-  hasRequirementDetails: boolean
-) => {
-  if (missingCount <= 0) return '资料已齐'
-  if (missingNames.length) {
-    const visibleNames = missingNames.slice(0, 2).join('、')
-    return `缺：${visibleNames}${missingNames.length > 2 ? `等 ${missingNames.length} 项` : ''}`
-  }
-  return hasRequirementDetails ? `缺 ${missingCount} 项资料` : '缺失资料项待明细配置'
-}
 const handleInspectionNodeTableSort = ({
   prop,
   order
@@ -949,30 +937,10 @@ const inspectionAttentionNodeCount = computed(
 
 const inspectionProjectNodeRows = computed(() => {
   const rows = projectTreeNodes.value.map((node) => {
-    const summary = node.requirementsSummary
-    const total = Number(summary?.requiredCount ?? node.requiredProgress?.total ?? 0)
-    const done = Number(summary?.satisfiedCount ?? node.requiredProgress?.done ?? 0)
-    const progress = Number(
-      summary?.progressPercent ?? (total ? Math.round((done / total) * 100) : 0)
-    )
-    const missingCount = Number(summary?.missingCount ?? Math.max(total - done, 0))
-    const missingNames = (summary?.missingRequirements || [])
-      .map((requirement) => requirement.name)
-      .filter(Boolean)
     const reviewProgress = getInspectionReviewProgress(node.status)
     return {
       node,
-      materialDone: done,
-      materialTotal: total,
-      materialPercent: progress,
-      missingCount,
-      missingText: total
-        ? getInspectionNodeMissingText(
-            missingCount,
-            missingNames,
-            Boolean(summary?.hasRequirementDetails)
-          )
-        : '无资料要求',
+      submittedFileCount: Number(node.fileCount || 0),
       reviewProgress: reviewProgress.label,
       reviewRank: reviewProgress.rank
     }
@@ -984,9 +952,7 @@ const inspectionProjectNodeRows = computed(() => {
       comparison = left.node.nodeId - right.node.nodeId
     } else if (sortKey === 'material') {
       comparison =
-        left.materialPercent - right.materialPercent ||
-        left.missingCount - right.missingCount ||
-        left.node.nodeId - right.node.nodeId
+        left.submittedFileCount - right.submittedFileCount || left.node.nodeId - right.node.nodeId
     } else {
       comparison = left.reviewRank - right.reviewRank || left.node.nodeId - right.node.nodeId
     }
@@ -2259,6 +2225,15 @@ const loadNodePackage = async (
   options: LoadNodePackageOptions = {}
 ) => {
   if (!activeProjectId.value) return
+  if (!canLoadProjectNode(nodeId, treeGroups.value)) {
+    if (!options.silent) {
+      nodePackage.value = undefined
+      standardReferences.value = []
+      dateComparisons.value = []
+      nodeIssue.value = undefined
+    }
+    return
+  }
   const requestKey = `${activeProjectId.value}#${nodeId}`
   if (inFlightNodePackage?.key === requestKey) {
     // 复用飞行中的那次；loading 态仍按本次调用的意图设置，
@@ -2595,10 +2570,16 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
     context.value = contextRes.data
     summary.value = summaryRes.data
     treeGroups.value = treeRes.data.groups
+    const requestedNodeId = options.preserveSelection
+      ? activeNodeId.value
+      : contextRes.data.currentNodeId
+    const loadableNodeId = resolveLoadableProjectNodeId(requestedNodeId, treeRes.data.groups)
     if (!options.preserveSelection) {
-      activeNodeId.value = contextRes.data.currentNodeId
+      activeNodeId.value = loadableNodeId || 0
       activeWorkbenchSection.value =
-        role.value === 'inspection' && activeInspectionWorkspaceView.value === 'ai'
+        loadableNodeId &&
+        role.value === 'inspection' &&
+        activeInspectionWorkspaceView.value === 'ai'
           ? 'node'
           : 'overview'
     }
@@ -2616,9 +2597,16 @@ const loadProjectBundle = async (options: LoadProjectBundleOptions = {}) => {
         loadInspectionSubmittedDocuments()
       ])
     }
-    await loadNodePackage(
-      options.preserveSelection ? activeNodeId.value : contextRes.data.currentNodeId
-    )
+    if (loadableNodeId) {
+      activeNodeId.value = loadableNodeId
+      await loadNodePackage(loadableNodeId)
+    } else {
+      activeNodeId.value = 0
+      nodePackage.value = undefined
+      standardReferences.value = []
+      dateComparisons.value = []
+      inspectionAuditWorkspace.value = undefined
+    }
     if (!pageIssue.value) {
       pageIssue.value = undefined
     }
@@ -4961,6 +4949,12 @@ watch(
           activeInspectionWorkspaceView.value === 'ai' ? 'node' : 'overview'
         return
       }
+      if (!canLoadProjectNode(targetNodeId, treeGroups.value)) {
+        activeNodeId.value = 0
+        activeWorkbenchSection.value = 'overview'
+        nodePackage.value = undefined
+        return
+      }
       activeWorkbenchSection.value = 'node'
       activeInspectionAuditItem.value = targetItem
       inspectionAuditItemByNode.value = {
@@ -5374,7 +5368,8 @@ onBeforeUnmount(() => {
             v-if="
               role === 'inspection' &&
               activeInspectionWorkspaceView === 'ai' &&
-              activeWorkbenchSection === 'node'
+              activeWorkbenchSection === 'node' &&
+              canLoadProjectNode(activeNodeId, treeGroups)
             "
             class="inspection-ai-review-region"
             aria-label="AI 审查"
@@ -5647,21 +5642,11 @@ onBeforeUnmount(() => {
                         </AuditStatusTag>
                       </template>
                     </ElTableColumn>
-                    <ElTableColumn prop="material" label="资料齐全度" width="250" sortable="custom">
+                    <ElTableColumn prop="material" label="已提交文件" width="170" sortable="custom">
                       <template #default="{ row }">
                         <div class="inspection-node-material">
-                          <strong>{{ row.materialDone }}/{{ row.materialTotal }}</strong>
-                          <span>{{ row.materialPercent }}%</span>
+                          <strong>{{ submittedFileCountLabel(row.submittedFileCount) }}</strong>
                         </div>
-                        <ElProgress
-                          class="inspection-node-material-progress"
-                          :percentage="row.materialPercent"
-                          :show-text="false"
-                          :stroke-width="7"
-                        />
-                        <small class="inspection-node-missing" :title="row.missingText">
-                          {{ row.missingText }}
-                        </small>
                       </template>
                     </ElTableColumn>
                     <!-- 原先这里平铺七个状态标签，一页 14 行 = 98 个标签、56 个可点元素，

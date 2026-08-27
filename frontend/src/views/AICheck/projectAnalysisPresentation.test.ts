@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict'
 
-import { projectAnalysisProgressView } from './projectAnalysisPresentation'
+import * as presentation from './projectAnalysisPresentation'
 import type { ProjectAnalysisStatus } from '@/api/aicheck/projectAnalysis'
+
+const { projectAnalysisProgressView, projectAnalysisRequestFailure } =
+  presentation as typeof presentation & {
+    projectAnalysisRequestFailure?: (error: unknown) => { terminal: boolean; message: string }
+  }
+
+assert.equal(typeof projectAnalysisRequestFailure, 'function')
+assert.deepEqual(
+  projectAnalysisRequestFailure?.({ response: { data: { data: { reason: 'NOT_FOUND' } } } }),
+  { terminal: true, message: '分析任务不存在或已失效，请重新发起。' }
+)
+assert.deepEqual(projectAnalysisRequestFailure?.(new Error('network')), {
+  terminal: true,
+  message: '全工程分析状态刷新失败，请稍后重试。'
+})
 
 const status = (values: Partial<ProjectAnalysisStatus>): ProjectAnalysisStatus =>
   ({

@@ -118,7 +118,7 @@ const passwordForAccount = (account: string) => {
   return (
     process.env[`AICHECK_E2E_PASSWORD_${normalized}`] ||
     process.env[`AICHECK_BOOTSTRAP_PASSWORD_${normalized}`] ||
-    account
+    'anyuekeji.123'
   )
 }
 
