@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   ElButton,
   ElDialog,
@@ -11,6 +11,7 @@ import {
   ElTabs,
   ElTag
 } from 'element-plus'
+import type { InputInstance } from 'element-plus'
 import type { MessageItem, SearchResult, TodoItem } from '@/types/aicheck'
 import { getStatusTagType } from './status'
 
@@ -62,14 +63,28 @@ const searchKeyword = computed({
 })
 
 const unreadCount = computed(() => props.messages.filter((item) => !item.read).length)
+const searchInputRef = ref<InputInstance>()
+
+const focusSearchInput = async () => {
+  if (tab.value !== 'search') return
+  await nextTick()
+  searchInputRef.value?.focus()
+}
 </script>
 
 <template>
-  <ElDialog v-model="visible" title="全局入口" width="min(920px, 94vw)" append-to-body>
+  <ElDialog
+    v-model="visible"
+    title="全局入口"
+    width="min(920px, 94vw)"
+    append-to-body
+    @opened="focusSearchInput"
+  >
     <ElTabs v-model="tab" class="quick-tabs">
       <ElTabPane label="搜索" name="search">
         <div class="search-bar">
           <ElInput
+            ref="searchInputRef"
             v-model="searchKeyword"
             clearable
             placeholder="输入项目、节点、资料、报告或规则关键词"
@@ -254,6 +269,7 @@ const unreadCount = computed(() => props.messages.filter((item) => !item.read).l
   color: #667085;
 }
 
+/* stylelint-disable-next-line order/order -- responsive overrides must follow base rules */
 @media (width <= 768px) {
   .search-bar,
   .message-toolbar {

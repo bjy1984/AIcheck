@@ -764,6 +764,48 @@ test.describe('AIcheck route smoke', () => {
     await expectNoPageOverflow(page)
   })
 
+  test('inspection opens a focused global search input from a compact icon trigger', async ({
+    page
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await loginTo(page, '/workbench/inspection')
+
+    const globalSearchTrigger = page.getByRole('button', { name: '打开全局搜索' })
+    await expect(globalSearchTrigger).toBeVisible()
+    await expect
+      .poll(() =>
+        globalSearchTrigger.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          return Math.abs(rect.width - 44) <= 1 && Math.abs(rect.height - 44) <= 1
+        })
+      )
+      .toBe(true)
+
+    const topActions = page.locator('.top-actions')
+    await expect
+      .poll(() =>
+        topActions.evaluate((element) => {
+          const viewportWidth = document.documentElement.clientWidth
+          const controls = Array.from(element.querySelectorAll('button')) as HTMLElement[]
+          return (
+            element.scrollWidth <= element.clientWidth &&
+            controls.every((control) => {
+              const rect = control.getBoundingClientRect()
+              return rect.left >= 0 && rect.right <= viewportWidth
+            })
+          )
+        })
+      )
+      .toBe(true)
+
+    await globalSearchTrigger.click()
+    const searchDialog = page.getByRole('dialog', { name: '全局入口' })
+    const searchInput = searchDialog.getByPlaceholder('输入项目、节点、资料、报告或规则关键词')
+    await expect(searchInput).toBeFocused()
+    await searchInput.fill('焊工资格')
+    await expect(searchInput).toHaveValue('焊工资格')
+  })
+
   test('login business errors stay visible instead of resolving undefined data', async ({
     page
   }) => {

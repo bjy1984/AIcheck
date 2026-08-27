@@ -38,6 +38,7 @@ import {
   FolderOpened,
   Guide,
   MagicStick,
+  Search,
   View
 } from '@element-plus/icons-vue'
 import {
@@ -1035,17 +1036,6 @@ const topbarStatus = computed(() => {
     currentProject.value?.status ||
     currentRoleConfig.value.title
   )
-})
-const globalSearchPlaceholder = computed(() => {
-  const placeholders: Record<RoleCode, string> = {
-    inspection: '⌕ 全局搜索（项目 / 文件 / 节点 / 焊工证书 / 标准条款）',
-    contractor: '⌕ 全局搜索（文件 / 节点名称 / 资料项 / 反馈意见 / 编号）',
-    ndt: '⌕ 全局搜索（项目 / 文件 / 资料类型 / 底片编号 / 检测报告）',
-    owner: '⌕ 全局搜索（项目 / 节点 / 资料状态 / 报告 / 归档资料）',
-    admin: '⌕ 搜索（项目 / 单位 / 用户 / 角色 / 流程 / 待办 / 节点）',
-    fde: '⌕ 搜索（AI Run / Agent / 评估集 / 发布单 / 业务类型）'
-  }
-  return placeholders[role.value]
 })
 const pageHeadline = computed(() => {
   const headlines: Record<RoleCode, string> = {
@@ -5208,8 +5198,13 @@ onBeforeUnmount(() => {
             {{ topbarStatus }}
           </div>
         </div>
-        <ElButton class="global-search" @click="handleOpenQuickAccess('search')">
-          {{ globalSearchPlaceholder }}
+        <ElButton
+          class="global-search"
+          aria-label="打开全局搜索"
+          title="全局搜索"
+          @click="handleOpenQuickAccess('search')"
+        >
+          <ElIcon><Search /></ElIcon>
         </ElButton>
         <div class="top-actions">
           <ElButton class="top-action" text @click="handleOpenQuickAccess('todos')">
@@ -7205,7 +7200,7 @@ onBeforeUnmount(() => {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
-  grid-template-columns: minmax(280px, 404px) minmax(260px, 1fr) minmax(260px, 520px);
+  grid-template-columns: minmax(280px, 404px) 44px minmax(0, 1fr);
   gap: 18px;
   align-items: center;
 }
@@ -7376,13 +7371,12 @@ onBeforeUnmount(() => {
   --el-button-active-text-color: #52647d;
 
   display: flex;
-  width: min(720px, 100%);
-  height: 40px;
-  padding: 0 16px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   margin: 0;
   font-weight: 600;
   color: var(--muted);
-  text-align: left;
   cursor: pointer;
   background: #fff;
   border: 1px solid #cbd8ea;
@@ -7393,13 +7387,18 @@ onBeforeUnmount(() => {
     border-color 0.18s ease,
     box-shadow 0.18s ease;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   justify-self: center;
 }
 
 .global-search :deep(span) {
-  justify-content: flex-start;
+  justify-content: center;
   width: 100%;
+}
+
+.global-search :deep(.el-icon) {
+  width: 20px;
+  font-size: 20px;
 }
 
 .global-search:hover,
