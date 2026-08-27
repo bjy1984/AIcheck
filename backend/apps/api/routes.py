@@ -221,6 +221,7 @@ from libs.ocr_expected_geometry import (
 )
 from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.ocr_structured_view import build_ocr_structured_view
+from libs.project_analysis.domain import project_analysis_status_view
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
 from libs.raw_vault import (
     capture_agent_turn,
@@ -6778,6 +6779,44 @@ def node_requirements(request: Request, project_id: str, node_id: int):
     return ok(project_requirements_for_node(project_id, node_id), request)
 
 
+def node_project_analysis_view(
+    project_id: str,
+    node_id: int,
+    *,
+    tenant_id: str,
+) -> dict[str, Any] | None:
+    snapshot_ids = {
+        str(item.get("projectAnalysisSnapshotId") or item.get("id") or "")
+        for item in repo.state.get("project_analysis_snapshots", [])
+        if str(item.get("projectId") or "") == project_id
+        and int(node_id) in {int(value) for value in item.get("nodeIds") or []}
+    }
+    runs = [
+        item
+        for item in repo.state.get("project_analysis_runs", [])
+        if str(item.get("projectId") or "") == project_id
+        and str(item.get("projectAnalysisSnapshotId") or "") in snapshot_ids
+        and tenant_id_for_record(item) == tenant_id
+    ]
+    latest_run = _inspection_latest_record(runs)
+    if not latest_run:
+        return None
+    project_analysis_run_id = str(latest_run.get("projectAnalysisRunId") or "")
+    node_review = _inspection_latest_record(
+        [
+            item
+            for item in repo.state.get("review_runs", [])
+            if str(item.get("projectAnalysisRunId") or "") == project_analysis_run_id
+            and int(item.get("nodeId") or 0) == int(node_id)
+            and tenant_id_for_record(item) == tenant_id
+        ]
+    )
+    return {
+        "run": project_analysis_status_view(latest_run),
+        "nodeReview": review_run_view(node_review) if node_review else None,
+    }
+
+
 @router.get("/projects/{project_id}/nodes/{node_id}/package")
 def node_package(request: Request, project_id: str, node_id: int):
     effective_project_id = project_id
@@ -6921,6 +6960,15 @@ def node_package(request: Request, project_id: str, node_id: int):
                 else [safe_ai_run_view(item) for item in node_ai_runs[:NODE_PACKAGE_AI_RUN_LIMIT]]
             ),
             "aiRunTotal": 0 if review_process_hidden else len(node_ai_runs),
+            "projectAnalysis": (
+                None
+                if review_process_hidden
+                else node_project_analysis_view(
+                    effective_project_id,
+                    node_id,
+                    tenant_id=tenant_id_for_record(project),
+                )
+            ),
             "actions": repo.clone(node.get("actions", [])),
         },
         request,

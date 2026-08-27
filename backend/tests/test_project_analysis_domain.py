@@ -84,3 +84,42 @@ def test_project_analysis_run_is_idempotent_for_same_snapshot_and_route() -> Non
 
     assert first is second
     assert len(state["project_analysis_runs"]) == 1
+
+
+def test_project_analysis_status_reconciles_stale_non_terminal_run_for_display() -> None:
+    from libs.project_analysis.domain import project_analysis_status_view
+
+    view = project_analysis_status_view(
+        {
+            "projectAnalysisRunId": "PARUN-STALLED",
+            "projectId": "P-1",
+            "phase": "validating_output",
+            "status": "validating_output",
+            "updatedAt": "2000-01-01 00:00:00",
+        }
+    )
+
+    assert view["phase"] == "failed"
+    assert view["status"] == "failed"
+    assert view["statusReconciledFrom"] == "validating_output"
+    assert view["errorCode"] == "PROJECT_ANALYSIS_RUN_STALLED"
+    assert "长时间没有进展" in view["errorMessage"]
+
+
+def test_project_analysis_status_uses_most_recent_activity_timestamp() -> None:
+    from libs.contracts.responses import server_time
+    from libs.project_analysis.domain import project_analysis_status_view
+
+    view = project_analysis_status_view(
+        {
+            "projectAnalysisRunId": "PARUN-RECENT",
+            "projectId": "P-1",
+            "phase": "validating_output",
+            "status": "validating_output",
+            "lastHeartbeatAt": "2000-01-01 00:00:00",
+            "updatedAt": server_time(),
+        }
+    )
+
+    assert view["phase"] == "validating_output"
+    assert view["status"] == "validating_output"

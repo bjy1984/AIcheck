@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
+from datetime import datetime, timedelta
 from typing import Any
 
-from libs.contracts.responses import server_time
+from libs.contracts.responses import SERVER_TZ, server_time
 
 PHASE_ORDER = (
     "preparing_snapshot",
@@ -17,6 +18,7 @@ PHASE_ORDER = (
     "waiting_human_review",
 )
 TERMINAL_PHASES = {"waiting_human_review", "failed", "partial_failure"}
+PROJECT_ANALYSIS_STALL_TIMEOUT = timedelta(minutes=30)
 
 
 class ProjectAnalysisPhaseError(RuntimeError):
@@ -176,10 +178,47 @@ def project_analysis_status_view(run: dict[str, Any]) -> dict[str, Any]:
         "lastHeartbeatAt": run.get("lastHeartbeatAt"),
         "errorCode": run.get("errorCode"),
         "errorMessage": run.get("errorMessage"),
+        "failedFromPhase": run.get("failedFromPhase"),
+        "statusReconciledFrom": run.get("statusReconciledFrom"),
         "createdAt": run.get("createdAt"),
         "updatedAt": run.get("updatedAt"),
         "finishedAt": run.get("finishedAt"),
     }
+    activity_times: list[datetime] = []
+    for value in (
+        run.get("lastHeartbeatAt"),
+        run.get("updatedAt"),
+        run.get("createdAt"),
+    ):
+        try:
+            activity_times.append(
+                datetime.strptime(str(value or ""), "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=SERVER_TZ
+                )
+            )
+        except ValueError:
+            continue
+    last_activity_at = max(activity_times, default=None)
+    if (
+        phase not in TERMINAL_PHASES
+        and last_activity_at is not None
+        and datetime.now(SERVER_TZ) - last_activity_at > PROJECT_ANALYSIS_STALL_TIMEOUT
+    ):
+        view.update(
+            {
+                "status": "failed",
+                "phase": "failed",
+                "statusReconciledFrom": phase,
+                "errorCode": "PROJECT_ANALYSIS_RUN_STALLED",
+                "errorMessage": (
+                    "本次工程 AI 分析长时间没有进展，"
+                    "未形成可展示结果；请重新发起分析。"
+                ),
+                "progressMode": "determinate",
+                "percent": 0,
+            }
+        )
+        return view
     if phase == "model_running":
         view["progressMode"] = "indeterminate"
     else:

@@ -101,6 +101,85 @@ def test_preview_create_list_detail_and_status_are_project_scoped() -> None:
     assert repo.state["audit_logs"][0]["objectType"] == "ProjectAnalysisRun"
 
 
+def test_node_package_exposes_project_analysis_status_and_validated_node_result() -> None:
+    from libs.project_analysis.results import persist_project_analysis_node_results
+
+    project_run = {
+        "projectAnalysisRunId": "PARUN-NODE-DISPLAY",
+        "projectAnalysisSnapshotId": "PASNAP-NODE-DISPLAY",
+        "tenantId": "TENANT-DEFAULT",
+        "projectId": PROJECT_ID,
+        "phase": "waiting_human_review",
+        "status": "waiting_human_review",
+        "includedNodeCount": 1,
+        "uniqueFileCount": 1,
+        "fileReferenceCount": 1,
+        "estimatedInputTokens": 80000,
+        "totalFindingCount": 1,
+        "validatedFindingCount": 1,
+        "persistedNodeCount": 1,
+        "modelAlias": "project-review-large",
+        "rawModelOutput": "must-not-be-exposed-in-node-package",
+        "createdAt": "2026-08-27 20:00:00",
+        "updatedAt": "2026-08-27 20:10:00",
+        "finishedAt": "2026-08-27 20:10:00",
+    }
+    repo.state["project_analysis_snapshots"] = [
+        {
+            "projectAnalysisSnapshotId": "PASNAP-NODE-DISPLAY",
+            "projectId": PROJECT_ID,
+            "nodeIds": [1],
+        }
+    ]
+    repo.state["project_analysis_runs"] = [project_run]
+    persist_project_analysis_node_results(
+        repo.state,
+        project_run,
+        {
+            "nodeReviews": [
+                {
+                    "nodeId": 1,
+                    "reviewResult": "partially_supported",
+                    "findings": [
+                        {
+                            "findingType": "license_scope",
+                            "severity": "high",
+                            "title": "许可范围需要人工确认",
+                            "description": "现有证据不足以确认许可范围完全覆盖。",
+                            "confidence": 0.72,
+                            "evidenceRefs": [],
+                            "ruleRefs": [],
+                            "requiresHumanConfirmation": True,
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    package = _ok(
+        client.get(
+            f"/projects/{PROJECT_ID}/nodes/1/package",
+            headers=HEADERS,
+        )
+    )
+
+    run_view = package["projectAnalysis"]["run"]
+    assert run_view["projectAnalysisRunId"] == "PARUN-NODE-DISPLAY"
+    assert run_view["projectId"] == PROJECT_ID
+    assert run_view["phase"] == "waiting_human_review"
+    assert run_view["estimatedInputTokens"] == 80000
+    assert run_view["validatedFindingCount"] == 1
+    assert run_view["persistedNodeCount"] == 1
+    assert run_view["progressMode"] == "determinate"
+    assert run_view["percent"] == 100
+    node_review = package["projectAnalysis"]["nodeReview"]
+    assert node_review["projectAnalysisRunId"] == "PARUN-NODE-DISPLAY"
+    assert node_review["reviewResult"] == "partially_supported"
+    assert node_review["findingDrafts"][0]["title"] == "许可范围需要人工确认"
+    assert "rawModelOutput" not in package["projectAnalysis"]["run"]
+
+
 def test_create_rejects_changed_snapshot_and_wrong_role() -> None:
     preview = _ok(
         client.get(

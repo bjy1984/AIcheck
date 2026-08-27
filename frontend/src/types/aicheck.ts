@@ -451,6 +451,8 @@ export type AiReviewRun = {
     manualConfirmItems: string[]
   }
   evidenceLinks: EvidenceLink[]
+  createdAt?: string
+  updatedAt?: string
   finishedAt?: string
 }
 
@@ -1035,6 +1037,47 @@ export type NodePackagePayload = {
   reviewOpinions: ReviewOpinion[]
   rectifications: RectificationItem[]
   aiRuns: AiReviewRun[]
+  projectAnalysis?: {
+    run: {
+      projectAnalysisRunId: string
+      projectId?: string
+      status?: string
+      phase: string
+      includedNodeCount?: number
+      uniqueFileCount?: number
+      fileReferenceCount?: number
+      estimatedInputTokens?: number
+      preparedNodeCount?: number
+      loadedFileCount?: number
+      totalFindingCount?: number
+      validatedFindingCount?: number
+      persistedNodeCount?: number
+      progressMode?: 'determinate' | 'indeterminate'
+      percent?: number
+      queueTaskId?: string | null
+      lastHeartbeatAt?: string | null
+      errorCode?: string | null
+      errorMessage?: string | null
+      failedFromPhase?: string | null
+      statusReconciledFrom?: string | null
+      createdAt?: string
+      updatedAt?: string
+      finishedAt?: string | null
+    }
+    nodeReview?: {
+      id?: string
+      reviewRunId?: string
+      projectAnalysisRunId?: string
+      triggerType?: string
+      reviewResult?: string
+      status?: string
+      currentStep?: string
+      findingDrafts?: Array<Record<string, unknown>>
+      createdAt?: string
+      updatedAt?: string
+      finishedAt?: string
+    } | null
+  } | null
   /* 自动审核状态（0817 第 3 条）。每个状态都带 reason——
      说不出理由的状态标签，和没有标签一样没用。 */
   autoReviewStatus?: {

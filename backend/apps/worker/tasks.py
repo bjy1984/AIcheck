@@ -127,6 +127,7 @@ from libs.ocr_runtime import (
 from libs.official_ocr_pipeline import official_ocr_extract, profile_result_complete
 from libs.pipeline_lock import pipeline_task_lock
 from libs.project_analysis import (
+    ProjectAnalysisOutputError,
     advance_project_analysis_phase,
     execute_project_analysis_model,
     persist_project_analysis_node_results,
@@ -5014,11 +5015,37 @@ def project_analysis_validate_output(self, run_id: str) -> dict[str, Any]:
         repo.state, snapshot
     )
     request_payload = json.loads(request["messages"][1]["content"])
-    validated = validate_project_analysis_output(
-        str(run.get("rawModelOutput") or ""),
-        snapshot,
-        request_payload,
-    )
+    try:
+        validated = validate_project_analysis_output(
+            str(run.get("rawModelOutput") or ""),
+            snapshot,
+            request_payload,
+        )
+    except ProjectAnalysisOutputError as exc:
+        error_code = str(exc) or "LLM_OUTPUT_INVALID"
+        error_messages = {
+            "LLM_OUTPUT_INVALID_JSON": "模型输出不是合法 JSON，未生成可供人工审查的结果。",
+            "LLM_OUTPUT_INVALID_ENVELOPE": "模型输出结构不完整，未生成可供人工审查的结果。",
+            "LLM_OUTPUT_SCHEMA_VERSION_MISMATCH": (
+                "模型输出版本不匹配，未生成可供人工审查的结果。"
+            ),
+            "PROJECT_ANALYSIS_NODE_SET_MISMATCH": (
+                "模型未返回全部目标节点，未生成可供人工审查的结果。"
+            ),
+        }
+        advance_project_analysis_phase(
+            repo.state,
+            run,
+            "failed",
+            failedFromPhase="validating_output",
+            errorCode=error_code,
+            errorMessage=error_messages.get(
+                error_code,
+                "模型输出未通过结构和证据校验，未生成可供人工审查的结果。",
+            ),
+        )
+        flush_state()
+        return run
     run["validatedOutput"] = validated
     finding_count = int((validated.get("validation") or {}).get("findingCount") or 0)
     advance_project_analysis_phase(

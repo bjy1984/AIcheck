@@ -238,6 +238,7 @@ import R19SemanticEvidenceDialog from './components/R19SemanticEvidenceDialog.vu
 import ReportArchivePanel from './components/ReportArchivePanel.vue'
 import ReportDetailDrawer from './components/ReportDetailDrawer.vue'
 import ReviewDecisionPanel from './components/ReviewDecisionPanel.vue'
+import WorkbenchAiReviewPanel from './components/WorkbenchAiReviewPanel.vue'
 import RoleContextPanel from './components/RoleContextPanel.vue'
 import SubmissionBatchDialog from './components/SubmissionBatchDialog.vue'
 import SubmissionDetailDrawer from './components/SubmissionDetailDrawer.vue'
@@ -262,6 +263,15 @@ import { type InspectionWorkspaceView } from './inspectionWorkspaceView'
 import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 import { submittedFileCountLabel, workbenchRolePresentation } from './workbenchRolePresentation'
 import { buildCorrectionUploadBindingPayload } from './contractorCorrectionUpload'
+import {
+  buildWorkbenchAiPresentation,
+  buildWorkbenchHumanAiContext,
+  inspectionReviewDirectoryItems,
+  inspectionReviewDirectoryItemsWithAiStatus,
+  projectAnalysisExecutionStepStatus,
+  selectWorkbenchAiPresentation,
+  type WorkbenchAiFinding
+} from './workbenchReviewPresentation'
 
 type PreviewDrawerTarget = {
   source: 'node' | 'file' | 'standard' | 'report' | 'archive'
@@ -341,7 +351,7 @@ const workbenchMainRef = ref<HTMLElement>()
 const workbenchPageTransitionPhase = ref<'idle' | 'leaving' | 'hidden' | 'entering'>('idle')
 let workbenchPageTransitionTimer: number | undefined
 let workbenchPageTransitionSequence = 0
-const activeInspectionAuditItem = ref<InspectionAuditItemKey>('submission')
+const activeInspectionAuditItem = ref<InspectionAuditItemKey>('ai_review')
 const inspectionAuditOverview = ref<InspectionAuditOverviewPayload>()
 const inspectionSubmittedDocuments = ref<InspectionSubmittedDocumentsPayload>()
 const inspectionAuditWorkspace = ref<InspectionAuditWorkspacePayload>()
@@ -349,9 +359,11 @@ const inspectionAuditLoading = ref(false)
 const inspectionAuditIssue = ref<WorkbenchStateIssue>()
 const inspectionAuditItemByNode = ref<Record<number, InspectionAuditItemKey>>({})
 const inspectionRouteSyncing = ref(false)
+const legacyInspectionAuditPanelsVisible = false
 const context = ref<WorkbenchContextPayload>()
 const summary = ref<WorkbenchSummaryPayload>()
 const projectRegistrationVisible = ref(false)
+const projectAnalysisControlRef = ref<{ open: () => Promise<void> }>()
 const projectRegistrationTarget = ref<Project>()
 const treeGroups = ref<ProjectTreePayload['groups']>([])
 const nodePackage = ref<NodePackagePayload>()
@@ -479,8 +491,8 @@ const inspectionAuditItemLabels: Record<InspectionAuditItemKey, string> = {
   report: '报告复核',
   archive: '签发归档'
 }
-const isInspectionAuditItemKey = (value: unknown): value is InspectionAuditItemKey =>
-  inspectionAuditItemKeys.includes(String(value || '') as InspectionAuditItemKey)
+const inspectionReviewItemKey = (value: unknown): InspectionAuditItemKey =>
+  String(value || '') === 'human_review' ? 'human_review' : 'ai_review'
 const emptyInspectionAuditItems = (): InspectionAuditItem[] =>
   inspectionAuditItemKeys.map((key) => ({
     key,
@@ -539,6 +551,15 @@ const inspectionAuditItems = computed<InspectionAuditItem[]>(() =>
     ? inspectionAuditWorkspace.value.items
     : emptyInspectionAuditItems()
 )
+const inspectionReviewAuditItemsBase = computed(() =>
+  inspectionReviewDirectoryItems(inspectionAuditItems.value)
+)
+const activeInspectionReviewAuditItem = computed<InspectionAuditItemKey>({
+  get: () => (activeInspectionAuditItem.value === 'human_review' ? 'human_review' : 'ai_review'),
+  set: (value) => {
+    activeInspectionAuditItem.value = value === 'human_review' ? 'human_review' : 'ai_review'
+  }
+})
 const activeInspectionAuditItemData = computed(() =>
   inspectionAuditItems.value.find((item) => item.key === activeInspectionAuditItem.value)
 )
@@ -688,6 +709,40 @@ const aiRecheckResultText = computed(() => {
 })
 /** 模型输出解析成的结论条目；空数组表示不是 findings JSON，按原文显示。 */
 const aiRecheckFindings = computed(() => parseAiFindings(aiRecheckResultText.value))
+const projectAnalysisPresentation = computed(() =>
+  buildWorkbenchAiPresentation(nodePackage.value?.projectAnalysis)
+)
+const nodeAiPresentationFindings = computed<WorkbenchAiFinding[]>(() =>
+  aiRecheckFindings.value.map((finding, index) => ({
+    id: `node-finding-${index + 1}`,
+    typeLabel: finding.typeLabel,
+    severity: finding.severity,
+    severityLabel: finding.severityLabel,
+    title: finding.title,
+    description: finding.description,
+    evidenceCount: finding.evidenceCount,
+    ruleCount: finding.ruleCount,
+    evidenceRefs: [],
+    ruleRefs: []
+  }))
+)
+const workbenchAiPresentation = computed(() =>
+  selectWorkbenchAiPresentation({
+    projectAnalysis: projectAnalysisPresentation.value,
+    projectAnalysisFinishedAt:
+      nodePackage.value?.projectAnalysis?.run.finishedAt ||
+      nodePackage.value?.projectAnalysis?.run.updatedAt,
+    nodeRun: aiRecheckDisplayRun.value,
+    nodeFindings: nodeAiPresentationFindings.value,
+    nodeOutputText: aiRecheckResultText.value
+  })
+)
+const inspectionReviewAuditItems = computed(() =>
+  inspectionReviewDirectoryItemsWithAiStatus(
+    inspectionReviewAuditItemsBase.value,
+    workbenchAiPresentation.value
+  )
+)
 
 const aiRecheckOutputMeta = computed(() => {
   const run = aiRecheckDisplayRun.value
@@ -1687,6 +1742,93 @@ const toolCatalogMap = computed(() => {
 
 const toolLabel = (toolId: string) => toolCatalogMap.value.get(toolId)?.name || toolId
 
+const projectAnalysisIsDisplayed = computed(
+  () => workbenchAiPresentation.value.sourceLabel === '全工程一键分析'
+)
+const workbenchAiExecutionSteps = computed(() => {
+  if (!projectAnalysisIsDisplayed.value) {
+    return aiExecutionSteps.value.map((step) => ({
+      ...step,
+      tools: step.tools.map(toolLabel)
+    }))
+  }
+  const run = nodePackage.value?.projectAnalysis?.run
+  const phase =
+    workbenchAiPresentation.value.statusLabel === 'AI 执行已中断'
+      ? 'failed'
+      : String(run?.phase || '')
+  const failedFromPhase = String(run?.failedFromPhase || run?.statusReconciledFrom || '')
+  const statusAt = (target: number) =>
+    projectAnalysisExecutionStepStatus(phase, target, failedFromPhase)
+  return [
+    {
+      title: '准备工程快照与 Prompt',
+      input: `${run?.includedNodeCount || 0} 个节点 / ${run?.uniqueFileCount || 0} 份唯一文件`,
+      feedback: `预计输入 ${Number(run?.estimatedInputTokens || 0).toLocaleString()} tokens`,
+      tools: ['工程快照', 'Prompt 组装'],
+      evidenceLinks: [],
+      status: statusAt(1)
+    },
+    {
+      title: '调用大上下文模型',
+      input: String(run?.projectAnalysisRunId || '等待运行'),
+      feedback:
+        phase === 'failed'
+          ? workbenchAiPresentation.value.errorMessage ||
+            run?.errorMessage ||
+            run?.errorCode ||
+            '模型调用失败'
+          : '全工程单次模型调用',
+      tools: ['Qwen 大模型'],
+      evidenceLinks: [],
+      status: statusAt(3)
+    },
+    {
+      title: '校验结构、节点和证据引用',
+      input: `${run?.totalFindingCount || 0} 条模型发现`,
+      feedback: `已通过校验 ${run?.validatedFindingCount || 0} 条`,
+      tools: ['JSON Schema', '证据引用校验'],
+      evidenceLinks: [],
+      status: statusAt(4)
+    },
+    {
+      title: '写入节点审查结果',
+      input: `${run?.includedNodeCount || 0} 个目标节点`,
+      feedback: `已写入 ${run?.persistedNodeCount || 0} 个节点`,
+      tools: ['ReviewRun'],
+      evidenceLinks: [],
+      status: statusAt(6)
+    }
+  ]
+})
+const workbenchAiExecutionSummary = computed(() => {
+  if (!projectAnalysisIsDisplayed.value) return aiExecutionSummary.value
+  const run = nodePackage.value?.projectAnalysis?.run
+  if (!run) return '暂无执行记录'
+  if (run.phase === 'failed')
+    return `执行失败 · ${run.errorMessage || run.errorCode || '未形成有效结果'}`
+  if (run.phase === 'waiting_human_review') {
+    return `分析完成 · ${run.persistedNodeCount || 0}/${run.includedNodeCount || 0} 个节点已写入`
+  }
+  return workbenchAiPresentation.value.statusLabel
+})
+const workbenchAiReasoningText = computed(() =>
+  projectAnalysisIsDisplayed.value ? '' : aiRecheckReasoningText.value
+)
+const workbenchAiDeepThinkText = computed(() =>
+  projectAnalysisIsDisplayed.value ? '' : aiRecheckDeepThinkText.value
+)
+const workbenchHumanAiContext = computed(() =>
+  buildWorkbenchHumanAiContext(workbenchAiPresentation.value)
+)
+const workbenchHumanReviewMeta = computed(() =>
+  projectAnalysisIsDisplayed.value
+    ? nodePackage.value?.projectAnalysis?.run.finishedAt ||
+      nodePackage.value?.projectAnalysis?.run.updatedAt ||
+      workbenchAiPresentation.value.statusLabel
+    : latestAiRun.value?.finishedAt || latestAiRun.value?.status || '等待审查'
+)
+
 const toolTooltip = (toolId: string) => {
   const tool = toolCatalogMap.value.get(toolId)
   if (!tool) return `工具编号 ${toolId}`
@@ -1777,6 +1919,7 @@ const evidenceLabel = (evidence: EvidenceLink) => {
 }
 const chineseOrder = ['一', '二', '三', '四', '五', '六']
 const reviewConclusionOverall = computed(() => {
+  if (projectAnalysisIsDisplayed.value) return workbenchHumanAiContext.value.overall
   // 同上：失败时 opinionDraft 还是那句排队占位，不能当结论用
   if (latestAiRun.value?.status === '失败') {
     return '本次 AI 审查执行失败，未产出结论。失败原因与处理方式见上方提示。'
@@ -1791,8 +1934,14 @@ const reviewConclusionOverall = computed(() => {
 })
 const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
   const summary = selectedNode.value?.requirementsSummary
-  const aiRunFailed = latestAiReviewDisplay.value.failed
-  const manualItems = aiRunFailed ? [] : latestAiRun.value?.suggestion.manualConfirmItems || []
+  const aiRunFailed = projectAnalysisIsDisplayed.value
+    ? workbenchAiPresentation.value.statusTone === 'red'
+    : latestAiReviewDisplay.value.failed
+  const manualItems = projectAnalysisIsDisplayed.value
+    ? workbenchHumanAiContext.value.manualConfirmItems
+    : aiRunFailed
+      ? []
+      : latestAiRun.value?.suggestion.manualConfirmItems || []
   const points = [
     {
       title: '资料齐全性',
@@ -1818,10 +1967,16 @@ const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
     },
     {
       title: '规则核验结论',
-      conclusion: latestAiRun.value ? latestAiReviewDisplay.value.conclusion : '待审查',
-      description: latestAiRun.value
-        ? `依据 ${businessBasis.value?.ruleId || latestAiRun.value.ruleVersion} 执行核验，运行状态为 ${latestAiRun.value.status}。`
-        : '尚未获取当前节点 AI Run。',
+      conclusion: projectAnalysisIsDisplayed.value
+        ? workbenchHumanAiContext.value.ruleConclusion
+        : latestAiRun.value
+          ? latestAiReviewDisplay.value.conclusion
+          : '待审查',
+      description: projectAnalysisIsDisplayed.value
+        ? workbenchHumanAiContext.value.ruleDescription
+        : latestAiRun.value
+          ? `依据 ${businessBasis.value?.ruleId || latestAiRun.value.ruleVersion} 执行核验，运行状态为 ${latestAiRun.value.status}。`
+          : '尚未获取当前节点 AI Run。',
       evidenceLinks: evidenceLinks.value.slice(0, 3)
     },
     {
@@ -2659,9 +2814,7 @@ const loadProjects = async () => {
     if (preserveRouteSelection) {
       activeNodeId.value = requestedNodeId
       activeWorkbenchSection.value = 'node'
-      activeInspectionAuditItem.value = isInspectionAuditItemKey(route.query.auditItem)
-        ? route.query.auditItem
-        : 'submission'
+      activeInspectionAuditItem.value = inspectionReviewItemKey(route.query.auditItem)
     }
     await loadProjectBundle({ preserveSelection: preserveRouteSelection })
     if (role.value === 'inspection' && route.query.openFileLibrary === '1') {
@@ -2857,10 +3010,10 @@ const handleProjectChange = async () => {
 
 const handleNodeSelect = async (node: ProjectTreeNode) => {
   mobileTreeOpen.value = false
-  const routeItem = isInspectionAuditItemKey(route.query.auditItem)
-    ? route.query.auditItem
-    : undefined
-  const nextAuditItem = inspectionAuditItemByNode.value[node.nodeId] || routeItem || 'submission'
+  const routeItem = inspectionReviewItemKey(route.query.auditItem)
+  const nextAuditItem = inspectionReviewItemKey(
+    inspectionAuditItemByNode.value[node.nodeId] || routeItem
+  )
   const switched = await runWorkbenchPageTransition(async () => {
     activeWorkbenchSection.value = 'node'
     activeNodeId.value = node.nodeId
@@ -2906,16 +3059,17 @@ const handleInspectionMatrixSelect = async (
   auditItem: InspectionAuditItemKey
 ) => {
   mobileTreeOpen.value = false
+  const targetAuditItem = inspectionReviewItemKey(auditItem)
   const switched = await runWorkbenchPageTransition(async () => {
-    activeInspectionAuditItem.value = auditItem
+    activeInspectionAuditItem.value = targetAuditItem
     inspectionAuditItemByNode.value = {
       ...inspectionAuditItemByNode.value,
-      [node.nodeId]: auditItem
+      [node.nodeId]: targetAuditItem
     }
     activeWorkbenchSection.value = 'node'
     activeNodeId.value = node.nodeId
     await Promise.all([
-      updateInspectionRoute({ nodeId: node.nodeId, auditItem }),
+      updateInspectionRoute({ nodeId: node.nodeId, auditItem: targetAuditItem }),
       loadNodePackage(node.nodeId)
     ])
   })
@@ -4101,6 +4255,14 @@ const handleAiRecheck = async () => {
   }
 }
 
+const handleWorkbenchAiRetry = async () => {
+  if (projectAnalysisIsDisplayed.value) {
+    await projectAnalysisControlRef.value?.open()
+    return
+  }
+  await handleAiRecheck()
+}
+
 const handleSaveReviewOpinion = async () => {
   if (!ensureWritableNode()) return
   if (reviewSaveDisabledReason.value) {
@@ -4931,7 +5093,7 @@ watch(
     if (!projectOptions.value.some((project) => project.id === targetProjectId)) return
     const parsedNodeId = Number(nodeIdQuery || 0)
     const targetNodeId = Number.isFinite(parsedNodeId) && parsedNodeId > 0 ? parsedNodeId : 0
-    const targetItem = isInspectionAuditItemKey(auditItemQuery) ? auditItemQuery : 'submission'
+    const targetItem = inspectionReviewItemKey(auditItemQuery)
     activeInspectionWorkspaceView.value = resolveInspectionWorkspaceView(viewQuery)
 
     inspectionRouteSyncing.value = true
@@ -5247,7 +5409,12 @@ onBeforeUnmount(() => {
             :disabled="!activeProjectId"
           />
           <!-- prettier-ignore -->
-          <ProjectAnalysisControl v-if="role === 'inspection' || role === 'admin'" :project-id="activeProjectId" :disabled="!activeProjectId" />
+          <ProjectAnalysisControl
+            v-if="role === 'inspection' || role === 'admin'"
+            ref="projectAnalysisControlRef"
+            :project-id="activeProjectId"
+            :disabled="!activeProjectId"
+          />
           <ElButton
             v-if="role === 'inspection' && canManageRegistration"
             class="top-action"
@@ -5504,8 +5671,9 @@ onBeforeUnmount(() => {
                 activeWorkbenchSection === 'node' &&
                 !inspectionNodeUnselected
               "
-              v-model="activeInspectionAuditItem"
-              :items="inspectionAuditItems"
+              v-model="activeInspectionReviewAuditItem"
+              :items="inspectionReviewAuditItems"
+              stacked
               :loading="inspectionAuditLoading"
               @select="handleInspectionAuditSelect"
             />
@@ -5846,8 +6014,96 @@ onBeforeUnmount(() => {
               @file-delete="handleDeleteProjectFile"
             />
 
+            <WorkbenchAiReviewPanel
+              v-if="
+                role === 'inspection' &&
+                activeWorkbenchSection === 'node' &&
+                !inspectionNodeUnselected
+              "
+              :presentation="workbenchAiPresentation"
+              :execution-summary="workbenchAiExecutionSummary"
+              :execution-steps="workbenchAiExecutionSteps"
+              :reasoning-text="workbenchAiReasoningText"
+              :deep-think-text="workbenchAiDeepThinkText"
+              :loading="actionLoading"
+              :retry-label="projectAnalysisIsDisplayed ? '查看一键分析状态' : '重新发起 AI 审查'"
+              @retry="handleWorkbenchAiRetry"
+              @open-file="handleOpenFileDetail"
+            >
+              <template #actions>
+                <div class="workbench-ai-actions">
+                  <div class="ai-review-mode-control">
+                    <ElRadioGroup v-model="selectedAiReviewMode" aria-label="AI 复核模式">
+                      <ElRadioButton
+                        value="formal"
+                        :disabled="!availableAiReviewModes.includes('formal')"
+                        :title="formalReviewBlockedReason || '按当前文件版本发起正式 AI 复核'"
+                      >
+                        正式复核
+                      </ElRadioButton>
+                      <ElRadioButton
+                        value="gap_precheck"
+                        :disabled="!availableAiReviewModes.includes('gap_precheck')"
+                      >
+                        缺项预审
+                      </ElRadioButton>
+                    </ElRadioGroup>
+                    <small>{{ aiReviewModeHint }}</small>
+                  </div>
+                  <div class="workbench-ai-action-buttons">
+                    <ElButton
+                      type="primary"
+                      :loading="actionLoading"
+                      :disabled="isReadOnly || Boolean(aiRecheckDisabledReason)"
+                      :title="aiRecheckDisabledReason || aiReviewModeHint"
+                      @click="handleAiRecheck"
+                    >
+                      {{ aiRecheckButtonLabel }}
+                    </ElButton>
+                    <BatchRecheckPanel
+                      :loading="batchRecheckLoading"
+                      :disabled="isReadOnly"
+                      :result="batchRecheckResult"
+                      @run="handleAiRecheckBatch"
+                    />
+                  </div>
+                </div>
+                <div v-if="activeHumanInputTask" class="ai-human-input-card">
+                  <div>
+                    <strong>
+                      {{
+                        isR19HumanInputTask
+                          ? 'AI 已暂停，等待 R19 关键事实确认'
+                          : 'AI 已暂停，等待官网人工核验'
+                      }}
+                    </strong>
+                    <span>提交人工核验后，AI 将从暂停位置继续执行。</span>
+                  </div>
+                  <ElButton type="warning" @click="humanInputDialogVisible = true">
+                    {{ isR19HumanInputTask ? '处理人工确认' : '处理人工核验' }}
+                  </ElButton>
+                </div>
+              </template>
+              <template #alerts>
+                <AiReviewRunAlerts
+                  :evidence-budget="aiEvidenceBudget"
+                  :failure="aiRunFailure"
+                  :failure-kind-label="aiFailureKindLabel"
+                  @retry="handleAiRecheck"
+                />
+                <ElAlert
+                  v-if="aiRecheckIsLocalFallback && !projectAnalysisIsDisplayed"
+                  type="warning"
+                  title="当前为本地降级摘要，未调用外部模型。"
+                  :closable="false"
+                  show-icon
+                />
+              </template>
+            </WorkbenchAiReviewPanel>
+
             <section
               v-if="
+                legacyInspectionAuditPanelsVisible &&
                 role === 'inspection' &&
                 activeWorkbenchSection === 'node' &&
                 !inspectionNodeUnselected &&
@@ -6387,6 +6643,7 @@ onBeforeUnmount(() => {
 
             <section
               v-if="
+                legacyInspectionAuditPanelsVisible &&
                 role === 'inspection' &&
                 activeWorkbenchSection === 'node' &&
                 !inspectionNodeUnselected &&
@@ -6514,122 +6771,113 @@ onBeforeUnmount(() => {
               v-if="
                 role === 'inspection' &&
                 activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected &&
-                activeInspectionAuditItem === 'human_review'
+                !inspectionNodeUnselected
               "
               id="inspection-audit-panel-human_review"
               role="tabpanel"
               aria-label="人工结论"
-              class="card conclusion-card"
+              class="workbench-human-review-section"
             >
-              <div class="card-head">
-                <h2>三、审查结论</h2>
-                <div class="sub">{{
-                  latestAiRun?.finishedAt || latestAiRun?.status || '等待审查'
-                }}</div>
-              </div>
-              <div class="card-body">
-                <div class="overall-conclusion">
-                  <span>总体意见</span>
-                  <p>{{ reviewConclusionOverall }}</p>
+              <article class="card conclusion-card">
+                <div class="card-head">
+                  <h2>二、人工审查</h2>
+                  <div class="sub">{{ workbenchHumanReviewMeta }}</div>
                 </div>
-                <div class="conclusion-points">
-                  <article
-                    v-for="point in reviewConclusionPoints"
-                    :key="point.title"
-                    class="conclusion-point"
-                  >
-                    <div class="conclusion-point-order">{{ point.order }}</div>
-                    <div>
-                      <div class="conclusion-point-head">
-                        <h3>{{ point.title }}</h3>
-                        <AuditStatusTag :tone="getPillClass(point.conclusion)" round>
-                          {{ point.conclusion }}
-                        </AuditStatusTag>
-                      </div>
-                      <p>{{ point.description }}</p>
-                      <div v-if="point.evidenceLinks.length" class="evidence-row">
-                        <button
-                          v-for="evidence in point.evidenceLinks"
-                          :key="evidence.id"
-                          class="evidence-link-button"
-                          type="button"
-                          @click="handleLocateEvidence(evidence)"
-                        >
-                          {{ evidenceLabel(evidence) }}
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                </div>
-              </div>
-            </section>
-
-            <section
-              v-if="
-                role === 'inspection' &&
-                activeWorkbenchSection === 'node' &&
-                !inspectionNodeUnselected &&
-                activeInspectionAuditItem === 'human_review'
-              "
-              id="inspection-node-manual-review"
-              class="manual-review-section"
-            >
-              <div class="card-head manual-review-head">
-                <h2>四、人工审查操作区</h2>
-                <div class="sub">人工结论、补正要求和审查意见提交</div>
-              </div>
-              <div class="manual-review-grid">
-                <section class="right-card action-card">
-                  <h3>办理操作</h3>
-                  <div class="body">
-                    <WorkbenchActionBar
-                      :role="role"
-                      :actions="availableActions"
-                      :loading="actionLoading"
-                      :read-only="isReadOnly"
-                      @upload="handleOpenUploadDrawer"
-                      @bind="handleOpenBindDialog"
-                      @save-draft="handleSaveDraft"
-                      @submit="handleOpenSubmissionDialog"
-                      @history="handleOpenSubmissionHistory"
-                      @rectify="handleOpenRectificationDialog"
-                    />
+                <div class="card-body">
+                  <div class="overall-conclusion">
+                    <span>总体意见</span>
+                    <p>{{ reviewConclusionOverall }}</p>
                   </div>
-                </section>
-                <ElAlert
-                  v-if="actionBlocker"
-                  class="operation-blocker-alert"
-                  type="warning"
-                  :title="actionBlocker.title"
-                  :description="actionBlocker.message"
-                  :closable="true"
-                  show-icon
-                  @close="actionBlocker = undefined"
-                >
-                  <ul v-if="actionBlocker.reasons.length" class="operation-blocker-list">
-                    <li v-for="reason in actionBlocker.reasons" :key="reason">{{ reason }}</li>
-                  </ul>
-                </ElAlert>
-                <ReviewDecisionPanel
-                  v-model:review-result="reviewResult"
-                  v-model:review-opinion="reviewOpinion"
-                  v-model:correction-reason="correctionReason"
-                  v-model:selected-evidence-ids="selectedReviewEvidenceIds"
-                  :role="role"
-                  :actions="availableActions"
-                  :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
-                  :evidence-count="evidenceLinks.length"
-                  :confirmed-evidence-links="confirmedEvidenceLinks"
-                  :save-disabled-reason="reviewSaveDisabledReason"
-                  :blocking-reasons="readinessBlockingReasons"
-                  :requires-evidence-selection="draftRequiresEvidenceSelection"
-                  :loading="actionLoading"
-                  @save-review="handleSaveReviewOpinion"
-                  @return-correction="handleReturnCorrection"
-                  @adopt-ai="handleAdoptAiSuggestion"
-                  @reject-ai="handleRejectAiSuggestion"
-                />
+                  <div class="conclusion-points">
+                    <article
+                      v-for="point in reviewConclusionPoints"
+                      :key="point.title"
+                      class="conclusion-point"
+                    >
+                      <div class="conclusion-point-order">{{ point.order }}</div>
+                      <div>
+                        <div class="conclusion-point-head">
+                          <h3>{{ point.title }}</h3>
+                          <AuditStatusTag :tone="getPillClass(point.conclusion)" round>
+                            {{ point.conclusion }}
+                          </AuditStatusTag>
+                        </div>
+                        <p>{{ point.description }}</p>
+                        <div v-if="point.evidenceLinks.length" class="evidence-row">
+                          <button
+                            v-for="evidence in point.evidenceLinks"
+                            :key="evidence.id"
+                            class="evidence-link-button"
+                            type="button"
+                            @click="handleLocateEvidence(evidence)"
+                          >
+                            {{ evidenceLabel(evidence) }}
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </article>
+
+              <div id="inspection-node-manual-review" class="manual-review-section">
+                <div class="card-head manual-review-head">
+                  <h2>人工审查操作</h2>
+                  <div class="sub">人工结论、补正要求和审查意见提交</div>
+                </div>
+                <div class="manual-review-grid">
+                  <section class="right-card action-card">
+                    <h3>办理操作</h3>
+                    <div class="body">
+                      <WorkbenchActionBar
+                        :role="role"
+                        :actions="availableActions"
+                        :loading="actionLoading"
+                        :read-only="isReadOnly"
+                        @upload="handleOpenUploadDrawer"
+                        @bind="handleOpenBindDialog"
+                        @save-draft="handleSaveDraft"
+                        @submit="handleOpenSubmissionDialog"
+                        @history="handleOpenSubmissionHistory"
+                        @rectify="handleOpenRectificationDialog"
+                      />
+                    </div>
+                  </section>
+                  <ElAlert
+                    v-if="actionBlocker"
+                    class="operation-blocker-alert"
+                    type="warning"
+                    :title="actionBlocker.title"
+                    :description="actionBlocker.message"
+                    :closable="true"
+                    show-icon
+                    @close="actionBlocker = undefined"
+                  >
+                    <ul v-if="actionBlocker.reasons.length" class="operation-blocker-list">
+                      <li v-for="reason in actionBlocker.reasons" :key="reason">{{ reason }}</li>
+                    </ul>
+                  </ElAlert>
+                  <ReviewDecisionPanel
+                    :show-ai-suggestion="false"
+                    v-model:review-result="reviewResult"
+                    v-model:review-opinion="reviewOpinion"
+                    v-model:correction-reason="correctionReason"
+                    v-model:selected-evidence-ids="selectedReviewEvidenceIds"
+                    :role="role"
+                    :actions="availableActions"
+                    :latest-ai-run="latestAiReviewDisplay.failed ? undefined : latestAiRun"
+                    :evidence-count="evidenceLinks.length"
+                    :confirmed-evidence-links="confirmedEvidenceLinks"
+                    :save-disabled-reason="reviewSaveDisabledReason"
+                    :blocking-reasons="readinessBlockingReasons"
+                    :requires-evidence-selection="draftRequiresEvidenceSelection"
+                    :loading="actionLoading"
+                    @save-review="handleSaveReviewOpinion"
+                    @return-correction="handleReturnCorrection"
+                    @adopt-ai="handleAdoptAiSuggestion"
+                    @reject-ai="handleRejectAiSuggestion"
+                  />
+                </div>
               </div>
             </section>
 
@@ -10332,6 +10580,30 @@ h3 {
 .ai-human-input-card span {
   font-size: 13px;
   color: #765827;
+}
+
+.workbench-ai-actions {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.workbench-ai-action-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.workbench-human-review-section {
+  display: grid;
+  gap: 16px;
+  scroll-margin-top: 190px;
+}
+
+.workbench-human-review-section .conclusion-card,
+.workbench-human-review-section .manual-review-section {
+  margin: 0;
 }
 </style>
 

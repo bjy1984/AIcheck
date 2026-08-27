@@ -80,6 +80,7 @@ const open = async () => {
     failureMessage.value = projectAnalysisRequestFailure(error).message
   }
 }
+defineExpose({ open })
 const start = async () => {
   if (!preview.value || preview.value.contextLimitExceeded) return
   await ElMessageBox.confirm(
@@ -169,6 +170,7 @@ onBeforeUnmount(stopPolling)
 .project-analysis-control {
   display: inline-flex;
 }
+
 .analysis-preview,
 .analysis-progress {
   display: grid;
@@ -177,9 +179,11 @@ onBeforeUnmount(stopPolling)
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
+
 .analysis-progress {
   margin-top: 16px;
 }
+
 .analysis-error {
   margin-top: 16px;
   color: var(--el-color-danger);

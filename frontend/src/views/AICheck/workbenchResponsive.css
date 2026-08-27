@@ -35,6 +35,16 @@
 }
 
 @media (width <= 900px) {
+  .workbench-ai-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workbench-ai-action-buttons {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .aicheck-static-viewport {
     height: 100vh;
     overflow-y: auto;

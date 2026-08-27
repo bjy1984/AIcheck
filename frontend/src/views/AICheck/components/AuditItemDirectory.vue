@@ -11,6 +11,7 @@ const props = defineProps<{
   items: InspectionAuditItem[]
   modelValue: InspectionAuditItemKey
   loading?: boolean
+  stacked?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -87,10 +88,14 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
     <div class="audit-item-directory__head">
       <div>
         <div class="audit-item-directory__heading">
-          <h2>审计项</h2>
+          <h2>{{ stacked ? '审查阶段' : '审计项' }}</h2>
           <span>{{ items.length }} 项</span>
         </div>
-        <p>选择一项查看详情，各项可独立处理。</p>
+        <p>{{
+          stacked
+            ? 'AI 信息在前、人工审查在后；选择标签可快速定位。'
+            : '选择一项查看详情，各项可独立处理。'
+        }}</p>
       </div>
       <span class="audit-item-directory__legend">
         <small>正在查看</small>
@@ -109,6 +114,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
         direction="horizontal"
         align-center
         class="audit-item-directory__steps"
+        :class="{ 'is-stacked': stacked }"
         role="tablist"
         aria-label="节点审计项"
       >
@@ -284,6 +290,10 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 .audit-item-directory__steps {
   min-width: 896px;
   padding: 2px 0;
+}
+
+.audit-item-directory__steps.is-stacked {
+  min-width: 0;
 }
 
 .audit-item-directory__item {

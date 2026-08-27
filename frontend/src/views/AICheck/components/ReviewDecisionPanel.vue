@@ -27,6 +27,7 @@ const props = defineProps<{
   role: RoleCode
   actions: ActionCode[]
   latestAiRun?: AiReviewRun
+  showAiSuggestion?: boolean
   reviewResult: ReviewOpinion['result']
   reviewOpinion: string
   correctionReason: string
@@ -102,7 +103,7 @@ const evidenceText = (evidence: EvidenceLink) =>
     </ElAlert>
 
     <ElAlert
-      v-if="latestAiRun"
+      v-if="latestAiRun && showAiSuggestion !== false"
       :closable="false"
       type="info"
       show-icon
@@ -111,7 +112,7 @@ const evidenceText = (evidence: EvidenceLink) =>
       :description="latestAiRun.suggestion.opinionDraft"
     />
 
-    <div v-if="latestAiRun" class="ai-actions">
+    <div v-if="latestAiRun && showAiSuggestion !== false" class="ai-actions">
       <ElButton
         :disabled="!canAdopt"
         :loading="loading"
