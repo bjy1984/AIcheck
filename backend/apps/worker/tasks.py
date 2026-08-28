@@ -4837,6 +4837,7 @@ AUTO_REVIEW_STATE_KEYS = {
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_consume_evidence_events")
 def auto_review_consume_evidence_events(self) -> dict[str, Any]:
     load_state(AUTO_REVIEW_STATE_KEYS)
     result = consume_auto_review_events(repo.state, now=datetime.now(UTC))
@@ -4855,6 +4856,7 @@ def auto_review_consume_evidence_events(self) -> dict[str, Any]:
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_scan_due_projects")
 def auto_review_scan_due_projects(self) -> dict[str, Any]:
     load_state(AUTO_REVIEW_STATE_KEYS)
     result = scan_due_auto_review_projects(repo.state, now=datetime.now(UTC))
@@ -4930,6 +4932,7 @@ def _start_auto_review_node(project_id: str, node_id: int, metadata: dict[str, A
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_start_pending_candidates")
 def auto_review_start_pending_candidates(self) -> dict[str, Any]:
     load_state()
     result = dispatch_pending_auto_review_candidates(
@@ -4946,6 +4949,7 @@ def auto_review_start_pending_candidates(self) -> dict[str, Any]:
     retry_backoff=True,
     retry_kwargs={"max_retries": 3},
 )
+@pipeline_task_lock("auto-review-periodic", lambda _self: "auto_review_finalize_project_runs")
 def auto_review_finalize_project_runs(self) -> dict[str, Any]:
     load_state(AUTO_REVIEW_STATE_KEYS)
     result = finalize_running_project_review_runs(repo.state)

@@ -58,3 +58,18 @@ def test_scoped_auto_review_tasks_never_flush_singletons() -> None:
     ):
         body = source.split(task_name, 1)[1][:1400]
         assert "selected_singleton_keys=set()" in body, task_name
+
+
+def test_periodic_tasks_are_mutexed_against_overlap() -> None:
+    """beat 60 秒一发、任务耗时可超 60 秒：实例互叠在 evidence_snapshots 上
+    撞成活锁（实测三实例互相 ConcurrentPersistenceError 重试，候选永远
+    pending）。四个周期任务必须有进程外互斥，拿不到锁就让位本轮。"""
+    source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
+    for task_name in (
+        "auto_review_consume_evidence_events",
+        "auto_review_scan_due_projects",
+        "auto_review_start_pending_candidates",
+        "auto_review_finalize_project_runs",
+    ):
+        head = source.split(f"def {task_name}", 1)[0][-400:]
+        assert 'pipeline_task_lock("auto-review-periodic"' in head, task_name
