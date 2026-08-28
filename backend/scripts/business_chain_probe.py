@@ -89,28 +89,33 @@ def check_office_preview_actually_serves_a_pdf(
     「能否签发 URL」，而签发是纯计算、从不校验存在）；以及 URL 指向服务器回环，
     浏览器取不到。两次都是所有状态码正常，只有真去取才发现是空的。
     """
-    office = next(
-        (
-            item
-            for item in documents
-            if str(item.get("fileName") or "").lower().endswith((".docx", ".doc", ".xlsx", ".xls"))
-        ),
-        None,
-    )
-    if not office:
+    candidates = [
+        item
+        for item in documents
+        if str(item.get("fileName") or "").lower().endswith((".docx", ".doc", ".xlsx", ".xls"))
+    ]
+    if not candidates:
         return "跳过（项目内没有 Office 资料）"
-    document_id = office.get("documentId") or office.get("id")
-    result = call_api(
-        base_url, f"/api/projects/{project_id}/documents/{document_id}/office-preview", token
-    )
-    if result.get("code") != 0:
+    office = None
+    result: dict[str, Any] = {}
+    skipped_no_storage: list[str] = []
+    # 无存储对象的资料换下一份再试：导入的数据集常有「记录在、对象不在」的行，
+    # 第一份就放弃会让整个探针因数据碰巧而红——红久了就没人看了。
+    for candidate in candidates[:8]:
+        document_id = candidate.get("documentId") or candidate.get("id")
+        result = call_api(
+            base_url, f"/api/projects/{project_id}/documents/{document_id}/office-preview", token
+        )
+        if result.get("code") == 0:
+            office = candidate
+            break
         message = str(result.get("message") or "")
         if "没有可用的存储对象" in message:
-            # 这份资料压根没落存储（种子数据里有这种），不是转换链路回归。
-            # 探针要分得清「环境本来就没有」和「功能坏了」，否则每次都红，
-            # 红久了就没人看了。
-            return f"跳过（{office.get('fileName')} 没有存储对象）"
+            skipped_no_storage.append(str(candidate.get("fileName")))
+            continue
         raise ProbeFailure(f"Office 预览接口失败：{message}")
+    if office is None:
+        return f"跳过（{len(skipped_no_storage)} 份 Office 资料都没有存储对象）"
     url = str(((result.get("data") or {}).get("url")) or "")
     if not url:
         raise ProbeFailure("Office 预览没有返回地址")
@@ -132,7 +137,7 @@ def check_table_column_order_is_not_alphabetical(
     第一列——监检对着这样的参数表核不了任何东西。
     """
     checked = 0
-    for item in documents[:12]:
+    for item in documents[:40]:
         document_id = item.get("documentId") or item.get("id")
         detail = (
             call_api(base_url, f"/api/projects/{project_id}/documents/{document_id}", token).get("data")
