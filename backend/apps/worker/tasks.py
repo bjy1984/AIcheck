@@ -129,6 +129,7 @@ from libs.pipeline_lock import pipeline_task_lock
 from libs.project_analysis import (
     ProjectAnalysisOutputError,
     advance_project_analysis_phase,
+    append_project_analysis_event,
     execute_project_analysis_model,
     persist_project_analysis_node_results,
     validate_project_analysis_output,
@@ -5089,6 +5090,36 @@ def _project_analysis_validate_output_inner(run_id: str) -> dict[str, Any]:
         )
     except ProjectAnalysisOutputError as exc:
         error_code = str(exc) or "LLM_OUTPUT_INVALID"
+        # 输出校验失败大多是采样非确定性（temperature 0.1 仍会偶发漏写
+        # schemaVersion——实测同一项目 R3/R4/R5 全过、R7 失败）。终态化之前
+        # 自动重掷一次：清掉上次输出、相位拨回 queued 重走模型调用。
+        # 只重掷一次——坏 prompt 无限重掷等于无限烧钱。
+        if int(run.get("modelRerollCount") or 0) < 1:
+            reroll_task_id = None
+            if task_dispatcher.dispatch_mode() == "celery":
+                reroll_task_id = task_dispatcher.deterministic_task_id(
+                    "project-analysis-execute-reroll", run_id
+                )
+            run.update(
+                {
+                    "modelRerollCount": int(run.get("modelRerollCount") or 0) + 1,
+                    "modelAttemptId": None,
+                    "rawModelOutput": None,
+                    "phase": "queued",
+                    "status": "queued",
+                    "queueTaskId": reroll_task_id,
+                    "updatedAt": server_time(),
+                    "revision": int(run.get("revision") or 0) + 1,
+                }
+            )
+            append_project_analysis_event(
+                repo.state, run, phase="queued", details={"rerollFrom": error_code}
+            )
+            flush_state()
+            _dispatch_project_analysis_task(
+                "project_analysis_execute_model", run_id, task_id=reroll_task_id
+            )
+            return run
         error_messages = {
             "LLM_OUTPUT_INVALID_JSON": "模型输出不是合法 JSON，未生成可供人工审查的结果。",
             "LLM_OUTPUT_INVALID_ENVELOPE": "模型输出结构不完整，未生成可供人工审查的结果。",

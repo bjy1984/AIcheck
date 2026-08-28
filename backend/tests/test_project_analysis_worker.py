@@ -47,6 +47,7 @@ def test_invalid_project_analysis_output_enters_failed_phase_instead_of_stalling
         "phase": "validating_output",
         "status": "validating_output",
         "rawModelOutput": '{"nodeReviews": [',
+        "modelRerollCount": 1,  # 已重掷过一次：本次失败必须落终态而不是再烧一次
         "revision": 1,
     }
     tasks.repo.state["project_analysis_runs"] = [run]
@@ -74,7 +75,7 @@ def test_invalid_project_analysis_output_enters_failed_phase_instead_of_stalling
     monkeypatch.setattr(
         tasks,
         "_dispatch_project_analysis_task",
-        lambda task_name, _run_id: dispatched.append(task_name),
+        lambda task_name, _run_id, task_id=None: dispatched.append(task_name),
     )
 
     result = tasks.project_analysis_validate_output.run("PARUN-INVALID")
@@ -180,3 +181,75 @@ def test_prepare_writes_deterministic_queue_task_id_before_dispatch(monkeypatch)
     assert result["queueTaskId"] == expected
     # 落库那一刻 queueTaskId 已是最终值；派发用同一个 id；之后没有第二次落库
     assert events == [("flush", expected), ("dispatch", expected)]
+
+
+def test_invalid_output_rerolls_model_once_before_failing(monkeypatch) -> None:
+    """输出校验失败先自动重掷一次模型调用，再失败才落终态。
+
+    实测：temperature 0.1 下同一项目 R3/R4/R5 全过、R7 漏写 schemaVersion——
+    采样非确定性偶发。直接终态化等于把一次免费重试转嫁给人工。
+    只重掷一次：坏 prompt 无限重掷等于无限烧钱。
+    """
+    from apps.worker import tasks
+
+    def run_row() -> dict:
+        return {
+            "projectAnalysisRunId": "PARUN-REROLL",
+            "projectAnalysisSnapshotId": "PASNAP-REROLL",
+            "projectId": "P-1",
+            "phase": "validating_output",
+            "status": "validating_output",
+            "modelAttemptId": "MCALL-1",
+            "rawModelOutput": '{"schemaVersion": "wrong@0"}',
+            "revision": 1,
+        }
+
+    run = run_row()
+    tasks.repo.state["project_analysis_runs"] = [run]
+    tasks.repo.state["project_analysis_events"] = []
+    tasks.repo.state["project_analysis_snapshots"] = [
+        {
+            "projectAnalysisSnapshotId": "PASNAP-REROLL",
+            "projectId": "P-1",
+            "nodes": [],
+            "request": {
+                "messages": [
+                    {"role": "system", "content": "system"},
+                    {
+                        "role": "user",
+                        "content": '{"project":{"projectId":"P-1","nodes":[],"fileCorpus":{}}}',
+                    },
+                ]
+            },
+        }
+    ]
+    dispatched: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(tasks, "load_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tasks, "flush_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        tasks,
+        "_dispatch_project_analysis_task",
+        lambda task_name, _run_id, task_id=None: dispatched.append((task_name, task_id)),
+    )
+
+    first = tasks.project_analysis_validate_output.run("PARUN-REROLL")
+
+    assert first["phase"] == "queued"
+    assert first["modelRerollCount"] == 1
+    assert first["modelAttemptId"] is None
+    assert first["rawModelOutput"] is None
+    assert dispatched and dispatched[0][0] == "project_analysis_execute_model"
+
+    # 重掷后再次校验失败：这次必须落终态，不能无限烧钱
+    run.update(
+        {
+            "phase": "validating_output",
+            "status": "validating_output",
+            "modelAttemptId": "MCALL-2",
+            "rawModelOutput": '{"schemaVersion": "wrong@0"}',
+        }
+    )
+    second = tasks.project_analysis_validate_output.run("PARUN-REROLL")
+    assert second["phase"] == "failed"
+    assert second["errorCode"] == "LLM_OUTPUT_SCHEMA_VERSION_MISMATCH"
+    assert len(dispatched) == 1  # 没有第二次重掷
