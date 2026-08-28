@@ -211,7 +211,11 @@ except Exception:
         --env-file /home/dev-bjy/aicheck-runtime.env aicheck-api:local \
         sh -c \"celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --prefetch-multiplier=1 \$*\" >/dev/null
     }
-    recreate_worker aicheck-worker-business --concurrency=2 -Q business.light,ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
+    # -B 内嵌 beat：compose 权威（docker-compose.deploy.yml）一直这么声明，
+    # 部署脚本此前把 -B 弄丢了——auto_review 的四个 60 秒周期任务
+    # （consume/scan/start/finalize）因此从不执行，「每上传自动分析」的事件
+    # 在 outbox 里永远无人消费（2026-08-29 审计实锤）。
+    recreate_worker aicheck-worker-business --concurrency=2 -B --schedule=/tmp/auto-review-celerybeat-schedule -Q business.light,ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     recreate_worker aicheck-worker-cpu-heavy --concurrency=1 -Q cpu.heavy
     recreate_worker aicheck-worker-llm --concurrency=1 -Q llm.remote
     recreate_worker aicheck-worker-ocr-remote --concurrency=1 -Q ocr.remote

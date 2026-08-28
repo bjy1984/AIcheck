@@ -1440,8 +1440,17 @@ def _execute_mineru_ocr_extract(
     *,
     retry_handler: Callable[[int, list[dict[str, Any]]], None] | None = None,
 ) -> dict[str, Any]:
+    # auto_review_policies/outbox 必须在刷新范围内：OCR 成功后的分类→打靶→
+    # enqueue 链条要读策略，读不到就静默跳过（实测「每上传自动分析」从未生效）。
     refresh_worker_state(
-        {"ocr_jobs", "ocr_parse_results", "documents", "versions"}
+        {
+            "ocr_jobs",
+            "ocr_parse_results",
+            "documents",
+            "versions",
+            "auto_review_policies",
+            "auto_review_outbox",
+        }
     )
     job = repo.find_one("ocr_jobs", job_record_id)
     if not job:

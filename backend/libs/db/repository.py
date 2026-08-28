@@ -5429,6 +5429,12 @@ class InMemoryRepository:
                     "requirements",
                     "knowledge_sources",
                     "users",
+                    # 自动审查策略与事件箱必须随 OCR 任务加载：分类→打靶之后的
+                    # enqueue 守卫读策略，读不到就**静默跳过**——实测「每上传
+                    # 自动分析」开关自上线起从未生效过（2026-08-29 审计）。
+                    # outbox 一并加载，enqueue 的按 id 去重才有比对对象。
+                    "auto_review_policies",
+                    "auto_review_outbox",
                 )
             ]
             scoped_collections = [
@@ -6457,6 +6463,8 @@ OCR_WORKER_STATE_KEYS_FOR_SQLITE = {
     "tree_nodes",
     "requirements",
     "knowledge_sources",
+    "auto_review_policies",
+    "auto_review_outbox",
     "documents",
     "versions",
     "bindings",
