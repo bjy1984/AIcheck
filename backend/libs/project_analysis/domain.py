@@ -91,13 +91,20 @@ def create_project_analysis_run(
         },
     )
     rows = state.setdefault("project_analysis_runs", [])
+    same_key_runs = [row for row in rows if row.get("idempotencyKey") == idempotency_key]
+    # failed 的历史运行留档但不复用：run id 由快照哈希决定，若失败也复用，
+    # 同一份资料的一键分析失败一次就永远无法重试（实测：模型名配错 400 之后，
+    # 再点按钮只会拿回同一个 failed run）。partial_failure/waiting_human_review
+    # 已产出可供人工审查的结果，维持复用。
     existing = next(
-        (row for row in rows if row.get("idempotencyKey") == idempotency_key),
+        (row for row in same_key_runs if str(row.get("phase") or "") != "failed"),
         None,
     )
     if existing:
         return existing
     run_id = idempotency_key.replace("PAKEY-", "PARUN-", 1)
+    if same_key_runs:
+        run_id = f"{run_id}-R{len(same_key_runs) + 1}"
     now = server_time()
     run = {
         "id": run_id,
