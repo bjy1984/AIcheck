@@ -162,6 +162,8 @@ from libs.fde_console_views import (
     fde_seal_text_is_readable,
     fde_source_pages_by_no,
     fde_standard_file_page_index_nodes,
+    fde_standard_file_page_index_nodes_indexed,
+    fde_standard_page_index_lookup,
     fde_status_code,
     fde_status_summary,
     fde_table_is_heuristic,
@@ -2544,10 +2546,12 @@ def versioned_project(project: dict[str, Any]) -> dict[str, Any]:
     源码）。后端也不从响应体读回——业务包按 businessPackId 从 YAML 加载。
     需要完整快照的场景走 /business-packs 专用端点。
     """
-    cloned = repo.clone(project)
+    # 先剔快照再深拷贝：原来是拷完 1.1 MB 快照再 pop 掉——37 个项目的列表
+    # 每次白拷 40 MB，实测 1.4 秒全花在这。浅拷顶层字典足以让 pop 不碰共享态。
+    slim = {key: value for key, value in project.items() if key != "businessPackSnapshot"}
+    cloned = repo.clone(slim)
     cloned["revision"] = project_revision(project)
     cloned["etag"] = project_etag(project)
-    cloned.pop("businessPackSnapshot", None)
     return cloned
 
 
@@ -19480,7 +19484,7 @@ def fde_standard_vector_row(
     *,
     chunks: list[dict[str, Any]],
     vectors: list[dict[str, Any]],
-    page_nodes: list[dict[str, Any]],
+    page_index_lookup: dict[str, Any],
     corrections: list[dict[str, Any]],
     latest_task: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -19488,7 +19492,8 @@ def fde_standard_vector_row(
     chunk_count = max(fde_as_int(file.get("chunkCount")), len(chunks))
     vector_count = max(fde_as_int(file.get("vectorCount")), len(vectors))
     vector_gap = max(0, chunk_count - vector_count)
-    page_index_nodes = fde_standard_file_page_index_nodes(file, page_nodes)
+    # 逐文件匹配用调用方建好的索引：全扫描版 60 文件 × 1.9 万节点实测 1.7 秒
+    page_index_nodes = fde_standard_file_page_index_nodes_indexed(file, page_index_lookup)
     page_index_count = len(page_index_nodes)
     correction_views = [fde_vector_correction_view(item) for item in corrections]
     blockers: list[str] = []
@@ -19611,12 +19616,13 @@ def fde_standards_vectorization_payload(
         for item in repo.state.get("knowledge_page_index_nodes", [])
         if str(item.get("kbDocId") or "") == STANDARD_RULES_SOURCE_ID
     ]
+    page_index_lookup = fde_standard_page_index_lookup(page_nodes)
     rows = [
         fde_standard_vector_row(
             file,
             chunks=chunks_by_file.get(str(file.get("id") or ""), []),
             vectors=vectors_by_file.get(str(file.get("id") or ""), []),
-            page_nodes=page_nodes,
+            page_index_lookup=page_index_lookup,
             corrections=corrections_by_file.get(str(file.get("id") or ""), []),
             latest_task=latest_task_by_file.get(str(file.get("id") or "")),
         )
@@ -20459,8 +20465,12 @@ def fde_project_audit_summary(project: dict[str, Any]) -> dict[str, Any]:
     version_ids = fde_project_version_ids(project_id, selected_node_id)
     documents = [fde_project_document_audit_view(item) for item in repo.project_documents(project_id)]
     submissions = [item for item in repo.state.get("submissions", []) if item.get("projectId") == project_id]
+    # 列表聚合只用 review_runs 的 id（检索命中率匹配）和 len()（指标计数），
+    # 响应体不含它们。此前每条 run 都构建完整图视图（graph_view_for_review_run
+    # 深拷贝百万级对象），37 个项目的列表页要 2.1 秒——纯浪费。
+    # 单项目工作台（fde_project_audit_workspace）保留完整视图，那里真的展示图摘要。
     review_runs = [
-        fde_project_review_run_audit_view(item)
+        item
         for item in repo.state.get("review_runs", [])
         if fde_record_matches_project(item, project_id, node_id=selected_node_id, version_ids=version_ids)
     ]

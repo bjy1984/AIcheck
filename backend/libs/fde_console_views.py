@@ -855,6 +855,70 @@ def fde_standard_file_page_index_nodes(file: dict[str, Any], page_nodes: list[di
         or (source_path and str(node.get("sourceRelativePath") or "") == source_path)
     ]
 
+def fde_standard_page_index_lookup(page_nodes: list[dict[str, Any]]) -> dict[str, Any]:
+    """为逐文件匹配一次性建索引。
+
+    fde_standard_file_page_index_nodes 对全量 page_nodes 做 3 遍线性扫描；
+    标准库列表页 60 个文件 × 1.9 万节点 = 456 万次取值，实测 1.7 秒。
+    节点带位置序号，匹配结果按原始顺序还原——两个实现必须同序同集。
+    """
+    by_node_id: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    by_source_path: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    by_parent: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    by_id: dict[str, tuple[int, dict[str, Any]]] = {}
+    for position, node in enumerate(page_nodes):
+        entry = (position, node)
+        node_id = str(node.get("nodeId") or "")
+        if node_id:
+            by_node_id.setdefault(node_id, []).append(entry)
+        source_path = str(node.get("sourceRelativePath") or "")
+        if source_path:
+            by_source_path.setdefault(source_path, []).append(entry)
+        parent_id = str(node.get("parentNodeId") or "")
+        if parent_id:
+            by_parent.setdefault(parent_id, []).append(entry)
+        own_id = str(node.get("id") or node.get("pageIndexNodeId") or "")
+        if own_id and own_id not in by_id:
+            by_id[own_id] = entry
+    return {
+        "byNodeId": by_node_id,
+        "bySourcePath": by_source_path,
+        "byParent": by_parent,
+        "byId": by_id,
+    }
+
+
+def fde_standard_file_page_index_nodes_indexed(
+    file: dict[str, Any], lookup: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """与 fde_standard_file_page_index_nodes 同判据同顺序的索引版。"""
+    file_id = str(file.get("id") or "")
+    source_path = str(file.get("sourceRelativePath") or "")
+    path_entries = lookup["bySourcePath"].get(source_path, []) if source_path else []
+    seed_entries = list(lookup["byNodeId"].get(file_id, [])) + [
+        entry for entry in path_entries if str(entry[1].get("parentNodeId") or "")
+    ]
+    file_node_ids = {
+        str(node.get("id") or node.get("pageIndexNodeId") or "")
+        for _, node in seed_entries
+    }
+    if not file_node_ids and source_path:
+        file_node_ids = {
+            str(node.get("id") or node.get("pageIndexNodeId") or "")
+            for _, node in path_entries
+        }
+    matched: dict[int, dict[str, Any]] = {}
+    for node_id in file_node_ids:
+        entry = lookup["byId"].get(node_id)
+        if entry is not None:
+            matched[entry[0]] = entry[1]
+        for position, child in lookup["byParent"].get(node_id, []):
+            matched[position] = child
+    for position, node in path_entries:
+        matched[position] = node
+    return [matched[position] for position in sorted(matched)]
+
+
 def fde_document_page_dimensions(local_path: Path, page_no: int = 1) -> tuple[float | None, float | None, int | None]:
     suffix = local_path.suffix.lower()
     if suffix == ".pdf":
