@@ -519,7 +519,34 @@ def finish(pid: str | None, keep: bool) -> int:
     print(f"\n共 {len(RESULTS)} 步，失败 {len(failed)} 步")
     for step, detail in failed:
         print(f"  ✗ {step}：{detail}")
+    _dump_probe_status(len(RESULTS), len(failed), [s for s, _ in failed])
     return 1 if failed else 0
+
+
+def _dump_probe_status(total: int, failed: int, failed_steps: list[str]) -> None:
+    """探针状态落到宿主机挂载目录（/app/output 跨部署持久，/tmp 会被重建抹掉），
+    供 health_watch 判「探针新鲜且全绿」——审计只在夜里跑一次，坏了没人看
+    日志的话等于没跑。写不进去只打日志，不能让状态文件问题掩盖审计本身的结论。"""
+    import json as _json
+    import os as _os
+
+    from libs.contracts.responses import server_time as _server_time
+
+    try:
+        _os.makedirs("/app/output/ops", exist_ok=True)
+        with open("/app/output/ops/last-write-probe.json", "w", encoding="utf-8") as handle:
+            _json.dump(
+                {
+                    "at": _server_time(),
+                    "total": total,
+                    "failed": failed,
+                    "failedSteps": failed_steps[:10],
+                },
+                handle,
+                ensure_ascii=False,
+            )
+    except OSError as exc:
+        print(f"（探针状态文件写入失败：{exc}）")
 
 
 if __name__ == "__main__":

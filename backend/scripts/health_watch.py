@@ -98,7 +98,45 @@ def check() -> tuple[list[str], list[str]]:
     else:
         facts.append("API /healthz 正常")
 
+    # 夜间探针（六角色写审计 + 一键分析可用性）必须**新鲜且全绿**。
+    # 探针只在夜里跑，坏了没人看日志等于没跑；状态文件在宿主机挂载目录，
+    # 跨部署持久，文件缺失本身就是异常（要么探针从没跑过，要么写不进去）。
+    for label, path in (
+        ("写审计探针", "/app/output/ops/last-write-probe.json"),
+        ("一键分析探针", "/app/output/ops/last-analysis-probe.json"),
+    ):
+        probe_alert = probe_status_alert(label, path, now)
+        if probe_alert:
+            alerts.append(probe_alert)
+        else:
+            facts.append(f"{label}：新鲜且全绿")
+
     return alerts, facts
+
+
+def probe_status_alert(label: str, path: str, now: datetime) -> str | None:
+    """探针状态文件的判定：缺失/过期(26h)/有失败步 → 告警文案，健康 → None。"""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            status = json.load(handle)
+    except FileNotFoundError:
+        return f"{label}状态文件缺失（{path}）——探针没跑过或写不进去"
+    except (OSError, ValueError) as exc:
+        return f"{label}状态文件读取失败：{exc.__class__.__name__}"
+    try:
+        ran_at = datetime.strptime(str(status.get("at") or ""), "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=now.tzinfo
+        )
+    except ValueError:
+        return f"{label}状态文件时间戳不合法：{status.get('at')!r}"
+    age_hours = (now - ran_at).total_seconds() / 3600
+    if age_hours > 26:
+        return f"{label}已 {age_hours:.0f} 小时未跑（判据：26 小时）——定时任务可能没了"
+    failed = int(status.get("failed") or 0)
+    if failed:
+        steps = "、".join(str(s) for s in (status.get("failedSteps") or [])[:3])
+        return f"{label}失败 {failed}/{status.get('total')} 步：{steps}"
+    return None
 
 
 def main() -> int:
