@@ -4840,12 +4840,16 @@ AUTO_REVIEW_STATE_KEYS = {
 def auto_review_consume_evidence_events(self) -> dict[str, Any]:
     load_state(AUTO_REVIEW_STATE_KEYS)
     result = consume_auto_review_events(repo.state, now=datetime.now(UTC))
+    # 单例必须显式排除：flush 默认带上全部单例，而 scoped load 没有加载
+    # admin_config——每轮都会试图用空内容覆写它，被并发守卫拦下后四个
+    # 周期任务互相撞成重试风暴（实测每轮 3-6 次 Concurrent singleton 重试）。
     flush_state(
         {
             "auto_review_policies",
             "auto_review_candidates",
             "auto_review_outbox",
-        }
+        },
+        selected_singleton_keys=set(),
     )
     return result
 
@@ -4858,7 +4862,8 @@ def auto_review_scan_due_projects(self) -> dict[str, Any]:
         {
             "auto_review_policies",
             "auto_review_candidates",
-        }
+        },
+        selected_singleton_keys=set(),  # scoped load 没载单例，flush 也不许碰
     )
     return result
 
@@ -4948,7 +4953,8 @@ def auto_review_finalize_project_runs(self) -> dict[str, Any]:
         {
             "project_review_runs",
             "project_review_summaries",
-        }
+        },
+        selected_singleton_keys=set(),  # scoped load 没载单例，flush 也不许碰
     )
     return result
 
