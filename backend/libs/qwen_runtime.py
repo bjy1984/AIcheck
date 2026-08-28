@@ -421,6 +421,11 @@ class QwenRuntimeClient:
                     f"{self.config.get('apiKeyEnv') or 'QWEN_API_KEY'}）"
                 )
             model = self._official_model_for(role_or_model)
+        # 供应商标签必须报实际打过的那家：备胎响应写主供应商的名字，
+        # 事后追溯「这条结论是谁生成的」时记录就在说谎（provider_label_for 的老教训）。
+        provider_label = (
+            _provider["label"] if _provider else self.config.get("provider")
+        )
         client_kwargs: dict[str, Any] = {"timeout": float(kwargs.pop("timeout", 60))}
         if self.transport is not None:
             client_kwargs["transport"] = self.transport
@@ -455,7 +460,7 @@ class QwenRuntimeClient:
                     reason=exc.__class__.__name__.upper(),
                 ) from exc
             payload.setdefault("model", model)
-            payload.setdefault("provider", self.config.get("provider"))
+            payload.setdefault("provider", provider_label)
             return payload
         try:
             with httpx.Client(**client_kwargs) as client:
@@ -496,7 +501,7 @@ class QwenRuntimeClient:
         if not isinstance(payload, dict):
             raise IntegrationServiceError("Qwen official API", "chat.completions", reason="INVALID_RESPONSE")
         payload.setdefault("model", model)
-        payload.setdefault("provider", self.config.get("provider"))
+        payload.setdefault("provider", provider_label)
         return payload
 
     def _official_model_for(self, role_or_model: str, models: dict[str, Any] | None = None) -> str:
