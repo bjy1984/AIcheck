@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
 import re
 import unicodedata
 from collections.abc import Callable
@@ -11,10 +12,75 @@ from typing import Any
 
 from libs.business_pack import load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
-from libs.model_usage import estimate_messages_tokens
+from libs.model_usage import estimate_messages_tokens, estimate_text_tokens
 from libs.review_evidence import active_node_document_versions
 
-PROMPT_VERSION = "project-monolithic-analysis@1.2.0"
+PROMPT_VERSION = "project-monolithic-analysis@1.3.0"
+
+# --- Token 预算校准（2026-08-28，第一阶段 prompt 长度优化）---
+#
+# estimate_text_tokens 是 utf8字节÷4 的启发式，对本功能的中文 OCR + JSON 载荷
+# **系统性偏低**（8 对生产实报校准：DeepSeek ×1.19–1.31，通义 DashScope ×1.51，
+# 同一 prompt 降级到备胎时贵 51%——分词器不同）。偏低的后果是「预检通过、
+# 供应商 400」，比预检拒绝更糟。
+#
+# 可用输入按「主/备两家中最紧的一家」取：备胎随时可能接住任何一次调用，
+# 只按主供应商算预算，主供应商故障瞬间大项目的降级调用必被备胎拒绝。
+PRIMARY_TOKEN_FACTOR_ENV = "AICHECK_PA_TOKEN_FACTOR_PRIMARY"
+FALLBACK_TOKEN_FACTOR_ENV = "AICHECK_PA_TOKEN_FACTOR_FALLBACK"
+FALLBACK_CONTEXT_TOKENS_ENV = "AICHECK_LLM_FALLBACK_MAX_CONTEXT_TOKENS"
+DEFAULT_PRIMARY_TOKEN_FACTOR = 1.35  # 实测上界 1.31 + 余量
+DEFAULT_FALLBACK_TOKEN_FACTOR = 1.60  # 实测 1.51 + 余量
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def dynamic_reserved_output_tokens(node_count: int) -> int:
+    """输出预留随节点数缩放。
+
+    实报口径（含 reasoning tokens）：20 节点 13,542、3 节点最高 4,679。
+    写死 24,000 的两头都错：小项目白锁 20% 输入空间，百节点项目又不够
+    （finish_reason=length → LLM_OUTPUT_TRUNCATED）。公式按实报 ×1.6 余量。
+    """
+    return max(8000, min(4000 + 900 * max(1, int(node_count)), 32768))
+
+
+def provider_token_budgets(max_context: int, reserved: int) -> list[dict[str, Any]]:
+    """各供应商的可用输入预算（以本估算器的原始口径计）。
+
+    availableRawTokens = (上下文 − 输出预留) ÷ 该家校准系数——预检拿原始估算
+    直接与它比较即可。备胎地址与密钥齐全才计入（与 fallback_provider 同规矩）。
+    """
+    budgets = [
+        {
+            "provider": "primary",
+            "contextTokens": int(max_context),
+            "tokenFactor": _float_env(PRIMARY_TOKEN_FACTOR_ENV, DEFAULT_PRIMARY_TOKEN_FACTOR),
+        }
+    ]
+    if os.getenv("AICHECK_LLM_FALLBACK_API_BASE") and os.getenv("AICHECK_LLM_FALLBACK_API_KEY"):
+        fallback_context = int(
+            os.getenv(FALLBACK_CONTEXT_TOKENS_ENV) or max_context
+        )
+        budgets.append(
+            {
+                "provider": "fallback",
+                "contextTokens": fallback_context,
+                "tokenFactor": _float_env(
+                    FALLBACK_TOKEN_FACTOR_ENV, DEFAULT_FALLBACK_TOKEN_FACTOR
+                ),
+            }
+        )
+    for budget in budgets:
+        budget["availableRawTokens"] = int(
+            max(0, budget["contextTokens"] - reserved) / budget["tokenFactor"]
+        )
+    return budgets
 DEFAULT_BUSINESS_PACK_ID = "engineering_inspection_v1"
 DEFAULT_MODEL_ALIAS = "project-review-large"
 
@@ -35,6 +101,8 @@ SYSTEM_PROMPT = """你是压力管道安装工程监督检验 AI 审查代理。
 6. 没有直接证据时使用 insufficient_evidence、human_confirm 和空 evidenceRefs。
 7. 所有 Finding 强制 requiresHumanConfirmation=true，不得改变正式业务状态。
 8. 只输出符合 outputSchema 的一个合法 JSON 对象。
+9. fileCorpus 条目带 identicalToFileId 时，表示该文件内容与所指文件逐字相同：
+   按所指文件的 fullOcrText 审查，evidenceRefs.fileId 仍写当前文件自己的 fileId。
 """
 
 
@@ -375,6 +443,7 @@ def build_project_analysis_request(
     model_alias: str = DEFAULT_MODEL_ALIAS,
 ) -> dict[str, Any]:
     file_corpus: dict[str, dict[str, Any]] = {}
+    content_primary_file: dict[str, str] = {}
     nodes = deepcopy(snapshot.get("nodes") or [])
     for node in nodes:
         for file_ref in node.get("fileRefs") or []:
@@ -383,13 +452,26 @@ def build_project_analysis_request(
             parse_result = _latest_parse_result(state, version_id)
             source_text = _full_ocr_text(parse_result)
             cleaned_text = clean_project_ocr_text(source_text)
-            if file_id not in file_corpus:
-                file_corpus[file_id] = {
-                    "fileId": file_id,
-                    "sourceContentHash": _stable_hash(source_text),
-                    "cleanedContentHash": _stable_hash(cleaned_text),
-                    "fullOcrText": cleaned_text,
-                }
+            if file_id in file_corpus:
+                continue
+            cleaned_hash = _stable_hash(cleaned_text)
+            entry: dict[str, Any] = {
+                "fileId": file_id,
+                "sourceContentHash": _stable_hash(source_text),
+                "cleanedContentHash": cleaned_hash,
+            }
+            # 内容级去重：同一份证书/报告以不同 fileId 挂多个节点时，全文只传
+            # 一次，重复条目用 identicalToFileId 指向正主——语料是 prompt 长度的
+            # 绝对主体，按 fileId 去重挡不住这种重复。空文本不参与（无意义且
+            # 会把所有无 OCR 文件串成别名链）。
+            primary_id = content_primary_file.get(cleaned_hash) if cleaned_text else None
+            if primary_id:
+                entry["identicalToFileId"] = primary_id
+            else:
+                entry["fullOcrText"] = cleaned_text
+                if cleaned_text:
+                    content_primary_file[cleaned_hash] = file_id
+            file_corpus[file_id] = entry
         node["fileRefs"] = [
             {"fileId": str(file_ref.get("fileId") or "")}
             for file_ref in node.get("fileRefs") or []
@@ -463,10 +545,33 @@ def project_analysis_preview(
     )
     request = build_project_analysis_request(state, snapshot)
     estimated = estimate_messages_tokens(request["messages"])
-    maximum, reserved = _route_limits(model_route)
-    available = max(0, maximum - reserved)
+    maximum, _route_reserved = _route_limits(model_route)
+    reserved = dynamic_reserved_output_tokens(len(snapshot["nodeIds"]))
+    budgets = provider_token_budgets(maximum, reserved)
+    limiting = min(budgets, key=lambda item: item["availableRawTokens"])
+    available = int(limiting["availableRawTokens"])
     payload = json.loads(request["messages"][1]["content"])
     reference_count = sum(len(node.get("fileRefs") or []) for node in payload["project"]["nodes"])
+    documents_by_id = {
+        str(row.get("id") or ""): row for row in _records(state, "documents")
+    }
+    top_corpus_files = sorted(
+        (
+            {
+                "fileId": file_id,
+                "fileName": str(
+                    (documents_by_id.get(file_id) or {}).get("fileName")
+                    or (documents_by_id.get(file_id) or {}).get("name")
+                    or file_id
+                ),
+                "estimatedTokens": estimate_text_tokens(str(entry.get("fullOcrText") or "")),
+            }
+            for file_id, entry in payload["project"]["fileCorpus"].items()
+            if entry.get("fullOcrText")
+        ),
+        key=lambda item: item["estimatedTokens"],
+        reverse=True,
+    )[:3]
     return {
         "projectId": str(project_id),
         "snapshot": snapshot,
@@ -480,6 +585,9 @@ def project_analysis_preview(
         "reservedOutputTokens": reserved,
         "availableInputTokens": available,
         "contextLimitExceeded": estimated > available,
+        "tokenBudgets": budgets,
+        "limitingProvider": limiting["provider"],
+        "topCorpusFiles": top_corpus_files,
         "modelAlias": model_route.get("modelAlias") or DEFAULT_MODEL_ALIAS,
         "modelRouteVersion": snapshot["modelRouteVersion"],
     }

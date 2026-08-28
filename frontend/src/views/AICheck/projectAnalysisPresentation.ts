@@ -40,7 +40,22 @@ export const projectAnalysisRequestFailure = (error: unknown) => {
       '项目资料总量超出模型可处理上限，请减少纳入分析的资料后重试。'
   }
   if (codeMessages[serverMessage]) {
-    return { terminal: true, message: codeMessages[serverMessage] }
+    let message = codeMessages[serverMessage]
+    /* 超限时后端附 topCorpusFiles（前三大文件及估算 token）：
+     * 「减少资料」不可执行，「拆掉这份 4 万 token 的报告」才可执行。 */
+    const topFiles = (
+      payload?.data as { topCorpusFiles?: { fileName?: string; estimatedTokens?: number }[] }
+    )?.topCorpusFiles
+    if (serverMessage === 'PROJECT_ANALYSIS_CONTEXT_LIMIT_EXCEEDED' && topFiles?.length) {
+      const detail = topFiles
+        .map(
+          (f) =>
+            `${f.fileName || '未知文件'}（约 ${((f.estimatedTokens || 0) / 1000).toFixed(1)}k tokens）`
+        )
+        .join('、')
+      message += `占用最大的资料：${detail}。`
+    }
+    return { terminal: true, message }
   }
   if (payload?.data?.currentSnapshotHash) {
     return {

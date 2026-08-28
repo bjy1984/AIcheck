@@ -303,7 +303,10 @@ def test_project_analysis_preview_blocks_context_overflow_without_model_call() -
         called = True
 
     assert preview["contextLimitExceeded"] is True
-    assert preview["availableInputTokens"] == 80
+    # 动态输出预留（下限 8000）远大于这个微型路由的 100 上下文：
+    # 校准后预算归零，拦截语义不变
+    assert preview["availableInputTokens"] == 0
+    assert preview["limitingProvider"] == "primary"
     assert preview["estimatedInputTokens"] > 80
     with pytest.raises(ProjectAnalysisContextLimitError) as error:
         prepare_project_analysis_request(
@@ -386,3 +389,96 @@ def test_snapshot_falls_back_to_business_pack_rule_text() -> None:
 
     assert node["criteria"]
     assert node["checkMethod"]
+
+
+def test_dynamic_reserved_output_scales_with_node_count() -> None:
+    """输出预留随节点数缩放：实报 20 节点 13,542、3 节点最高 4,679（含 reasoning）。
+    写死 24,000 小项目白锁输入空间、百节点项目又会截断。"""
+    from libs.project_analysis.prompt import dynamic_reserved_output_tokens
+
+    assert dynamic_reserved_output_tokens(1) == 8000   # 下限兜底
+    assert dynamic_reserved_output_tokens(3) == 8000   # 实报最高 4,679 → 1.7× 余量
+    assert dynamic_reserved_output_tokens(20) == 22000  # 实报 13,542 → 1.6× 余量
+    assert dynamic_reserved_output_tokens(200) == 32768  # 上限夹紧
+
+
+def test_budget_takes_min_across_providers(monkeypatch) -> None:
+    """可用输入按主/备两家最紧的一家取：备胎随时可能接住任何一次调用，
+    只按主供应商算预算，降级瞬间大项目必被备胎 400 拒绝。"""
+    from libs.project_analysis.prompt import provider_token_budgets
+
+    monkeypatch.delenv("AICHECK_LLM_FALLBACK_API_BASE", raising=False)
+    monkeypatch.delenv("AICHECK_LLM_FALLBACK_API_KEY", raising=False)
+    only_primary = provider_token_budgets(131072, 8000)
+    assert [b["provider"] for b in only_primary] == ["primary"]
+    assert only_primary[0]["availableRawTokens"] == int((131072 - 8000) / 1.35)
+
+    monkeypatch.setenv("AICHECK_LLM_FALLBACK_API_BASE", "https://dashscope.example/v1")
+    monkeypatch.setenv("AICHECK_LLM_FALLBACK_API_KEY", "sk-fb")
+    both = provider_token_budgets(131072, 8000)
+    assert [b["provider"] for b in both] == ["primary", "fallback"]
+    # 备胎分词器实测贵 51%（校准系数 1.60）→ 它是更紧的一家
+    assert both[1]["availableRawTokens"] < both[0]["availableRawTokens"]
+
+    monkeypatch.setenv("AICHECK_LLM_FALLBACK_MAX_CONTEXT_TOKENS", "65536")
+    smaller = provider_token_budgets(131072, 8000)
+    assert smaller[1]["availableRawTokens"] == int((65536 - 8000) / 1.60)
+
+
+def test_corpus_dedups_identical_content_and_validation_resolves_alias() -> None:
+    """同一份内容以不同 fileId 挂多节点时全文只传一次；
+    逐字校验对别名条目按正主文本判——去重不得打碎证据可追溯。"""
+    import json
+
+    from test_project_analysis_prompt import _route, _state
+
+    from libs.project_analysis.prompt import (
+        build_project_analysis_request,
+        build_project_analysis_snapshot,
+    )
+    from libs.project_analysis.validation import _corpus_full_text
+
+    state = _state()
+    # 给节点 2 挂一份内容与 DOC-SHARED（DV-SHARED-V2）逐字相同的新文件
+    state["documents"].append(
+        {"id": "DOC-DUP", "projectId": "P-1", "fileName": "同一份证书再传一次.pdf", "currentVersionId": "DV-DUP"}
+    )
+    for key in ("versions", "document_versions"):
+        state[key].append({"id": "DV-DUP", "documentId": "DOC-DUP", "contentHash": "sha256:dup"})
+    shared = next(
+        row for row in state["ocr_parse_results"] if row["documentVersionId"] == "DV-SHARED-V2"
+    )
+    state["ocr_parse_results"].append(
+        {**shared, "id": "OCR-DUP", "documentVersionId": "DV-DUP", "artifactHash": "sha256:ocr-dup"}
+    )
+    state["node_evidence_links"].append(
+        {
+            "id": "NEL-DUP",
+            "projectId": "P-1",
+            "nodeId": 2,
+            "documentId": "DOC-DUP",
+            "documentVersionId": "DV-DUP",
+            "manualStatus": "confirmed",
+            "revision": 1,
+        }
+    )
+    route = _route()
+    snapshot = build_project_analysis_snapshot(
+        state,
+        "P-1",
+        business_pack_id="engineering_inspection_v1",
+        prompt_version="project-monolithic-analysis@1.3.0",
+        model_route=route,
+    )
+    request = build_project_analysis_request(state, snapshot)
+    corpus = json.loads(request["messages"][1]["content"])["project"]["fileCorpus"]
+
+    dup = corpus["DOC-DUP"]
+    assert dup.get("identicalToFileId") == "DOC-SHARED"
+    assert "fullOcrText" not in dup
+    full_texts = [v for v in corpus.values() if v.get("fullOcrText")]
+    assert all(v.get("fileId") != "DOC-DUP" for v in full_texts)
+
+    # 校验端：别名条目的逐字判定按正主全文
+    assert _corpus_full_text(corpus, dup) == corpus["DOC-SHARED"]["fullOcrText"]
+    assert _corpus_full_text(corpus, corpus["DOC-SHARED"]) == corpus["DOC-SHARED"]["fullOcrText"]

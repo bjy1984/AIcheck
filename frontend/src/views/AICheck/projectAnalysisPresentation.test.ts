@@ -130,3 +130,25 @@ assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'failed' })), {
   label: 'AI分析失败'
 })
 assert.equal(projectAnalysisBannerState?.(), undefined)
+
+// 超限提示必须可执行：带前三大文件与 token 占用，而不是一句「减少资料」
+assert.deepEqual(
+  projectAnalysisRequestFailure?.({
+    response: {
+      data: {
+        message: 'PROJECT_ANALYSIS_CONTEXT_LIMIT_EXCEEDED',
+        data: {
+          topCorpusFiles: [
+            { fileName: 'RT检测报告R2.pdf', estimatedTokens: 41200 },
+            { fileName: '质量证明书.pdf', estimatedTokens: 12600 }
+          ]
+        }
+      }
+    }
+  }),
+  {
+    terminal: true,
+    message:
+      '项目资料总量超出模型可处理上限，请减少纳入分析的资料后重试。占用最大的资料：RT检测报告R2.pdf（约 41.2k tokens）、质量证明书.pdf（约 12.6k tokens）。'
+  }
+)

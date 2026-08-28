@@ -66,6 +66,19 @@ def recompute_project_analysis_summary(
     }
 
 
+def _corpus_full_text(corpus: dict[str, dict[str, Any]], source: dict[str, Any]) -> str:
+    """语料条目的全文；identicalToFileId 别名跟一跳到正主。
+
+    内容级去重后（同一份证书挂多节点只传一次全文），重复条目没有 fullOcrText，
+    逐字校验必须按正主文本判——否则去重会把合法引用全打成 NOT_VERBATIM。
+    只跟一跳：构建端保证别名永远指向携带全文的正主，不会成链。
+    """
+    alias = str(source.get("identicalToFileId") or "")
+    if alias and not source.get("fullOcrText"):
+        source = corpus.get(alias) or {}
+    return str(source.get("fullOcrText") or "")
+
+
 def _validate_evidence_ref(
     evidence_ref: dict[str, Any],
     *,
@@ -88,7 +101,7 @@ def _validate_evidence_ref(
     if not document_version_id or not file_name:
         failures.append({"code": "EVIDENCE_METADATA_MISSING", "fileId": file_id})
     quoted_text = str(evidence_ref.get("quotedText") or "")
-    if not quoted_text or quoted_text not in str(source.get("fullOcrText") or ""):
+    if not quoted_text or quoted_text not in _corpus_full_text(corpus, source):
         failures.append({"code": "EVIDENCE_QUOTE_NOT_VERBATIM", "fileId": file_id})
     normalized = {
         **deepcopy(evidence_ref),
