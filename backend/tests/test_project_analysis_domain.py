@@ -167,3 +167,74 @@ def test_failed_run_is_not_reused_so_same_snapshot_can_retry() -> None:
     retry["phase"] = "waiting_human_review"
     third = create_project_analysis_run(state, **kwargs)
     assert third is retry
+
+
+def test_reaper_fails_stalled_runs_but_spares_active_and_long_model_calls() -> None:
+    """收敛器把超时无进展的非终态运行落 failed（改库）；活跃运行和
+    在长超时保护内的 model_running 不碰。僵尸非终态 run 会被幂等复用，
+    不清掉的话该快照永远发不起新分析。"""
+    from datetime import datetime, timedelta
+
+    from libs.contracts.responses import SERVER_TZ
+    from libs.project_analysis.domain import reap_stalled_project_analysis_runs
+
+    now = datetime(2026, 8, 28, 12, 0, 0, tzinfo=SERVER_TZ)
+    stalled = {
+        "projectAnalysisRunId": "PARUN-DEAD",
+        "phase": "queued",
+        "status": "queued",
+        "updatedAt": "2026-08-28 11:00:00",
+        "revision": 1,
+    }
+    active = {
+        "projectAnalysisRunId": "PARUN-LIVE",
+        "phase": "validating_output",
+        "status": "validating_output",
+        "updatedAt": "2026-08-28 11:55:00",
+        "revision": 1,
+    }
+    long_model_call = {
+        "projectAnalysisRunId": "PARUN-SLOW-MODEL",
+        "phase": "model_running",
+        "status": "model_running",
+        "lastHeartbeatAt": "2026-08-28 11:10:00",  # 50 分钟前，但模型超时保护 60 分钟
+        "updatedAt": "2026-08-28 11:10:00",
+        "revision": 1,
+    }
+    terminal = {
+        "projectAnalysisRunId": "PARUN-DONE",
+        "phase": "waiting_human_review",
+        "status": "waiting_human_review",
+        "updatedAt": "2026-08-28 10:00:00",
+        "revision": 1,
+    }
+    state = {
+        "project_analysis_runs": [stalled, active, long_model_call, terminal],
+        "project_analysis_events": [],
+    }
+
+    reaped = reap_stalled_project_analysis_runs(
+        state,
+        now=now,
+        stall_timeout=timedelta(minutes=30),
+        model_running_timeout=timedelta(minutes=60),
+    )
+
+    assert [r["projectAnalysisRunId"] for r in reaped] == ["PARUN-DEAD"]
+    assert stalled["phase"] == "failed"
+    assert stalled["errorCode"] == "PROJECT_ANALYSIS_RUN_STALLED"
+    assert stalled["failedFromPhase"] == "queued"
+    assert active["phase"] == "validating_output"
+    assert long_model_call["phase"] == "model_running"
+    assert terminal["phase"] == "waiting_human_review"
+
+    # model_running 超过保护阈值后照样收敛
+    later = now + timedelta(minutes=25)
+    reaped_later = reap_stalled_project_analysis_runs(
+        state,
+        now=later,
+        stall_timeout=timedelta(minutes=30),
+        model_running_timeout=timedelta(minutes=60),
+    )
+    assert [r["projectAnalysisRunId"] for r in reaped_later] == ["PARUN-SLOW-MODEL"]
+    assert long_model_call["phase"] == "failed"

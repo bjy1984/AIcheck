@@ -191,21 +191,7 @@ def project_analysis_status_view(run: dict[str, Any]) -> dict[str, Any]:
         "updatedAt": run.get("updatedAt"),
         "finishedAt": run.get("finishedAt"),
     }
-    activity_times: list[datetime] = []
-    for value in (
-        run.get("lastHeartbeatAt"),
-        run.get("updatedAt"),
-        run.get("createdAt"),
-    ):
-        try:
-            activity_times.append(
-                datetime.strptime(str(value or ""), "%Y-%m-%d %H:%M:%S").replace(
-                    tzinfo=SERVER_TZ
-                )
-            )
-        except ValueError:
-            continue
-    last_activity_at = max(activity_times, default=None)
+    last_activity_at = project_analysis_last_activity_at(run)
     if (
         phase not in TERMINAL_PHASES
         and last_activity_at is not None
@@ -236,3 +222,65 @@ def project_analysis_status_view(run: dict[str, Any]) -> dict[str, Any]:
 
 def project_analysis_run_view(run: dict[str, Any]) -> dict[str, Any]:
     return deepcopy(run)
+
+
+def project_analysis_last_activity_at(run: dict[str, Any]) -> datetime | None:
+    activity_times: list[datetime] = []
+    for value in (
+        run.get("lastHeartbeatAt"),
+        run.get("updatedAt"),
+        run.get("createdAt"),
+    ):
+        try:
+            activity_times.append(
+                datetime.strptime(str(value or ""), "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=SERVER_TZ
+                )
+            )
+        except ValueError:
+            continue
+    return max(activity_times, default=None)
+
+
+def reap_stalled_project_analysis_runs(
+    state: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    stall_timeout: timedelta | None = None,
+    model_running_timeout: timedelta | None = None,
+) -> list[dict[str, Any]]:
+    """把超时无进展的非终态运行落 failed 终态（改库，不是改显示）。
+
+    status 视图的 STALLED 判定只骗显示不改库，而**非终态 run 会被幂等复用**：
+    worker 猝死留下的僵尸 run 让同一份资料永远发不起新分析。收敛器与视图
+    同口径（同阈值、同活动时间取法），把库也落掉，failed 不被复用，用户可重试。
+
+    model_running 单独给阈值：模型调用最长可配到 3600 秒且期间没有心跳，
+    统一 30 分钟阈值会误杀合法长调用——调用方应传入「模型超时 + 余量」。
+    """
+    reap_at = now or datetime.now(SERVER_TZ)
+    base_timeout = stall_timeout or PROJECT_ANALYSIS_STALL_TIMEOUT
+    reaped: list[dict[str, Any]] = []
+    for run in state.get("project_analysis_runs") or []:
+        phase = str(run.get("phase") or "")
+        if phase in TERMINAL_PHASES:
+            continue
+        timeout = base_timeout
+        if phase == "model_running" and model_running_timeout is not None:
+            timeout = max(base_timeout, model_running_timeout)
+        last_activity_at = project_analysis_last_activity_at(run)
+        if last_activity_at is not None and reap_at - last_activity_at <= timeout:
+            continue
+        advance_project_analysis_phase(
+            state,
+            run,
+            "failed",
+            failedFromPhase=phase,
+            errorCode="PROJECT_ANALYSIS_RUN_STALLED",
+            errorMessage=(
+                "本次工程 AI 分析长时间没有进展，已由巡检自动收敛；"
+                "请重新发起分析。"
+            ),
+        )
+        reaped.append(run)
+    return reaped
