@@ -133,6 +133,7 @@ from libs.project_analysis import (
     persist_project_analysis_node_results,
     validate_project_analysis_output,
 )
+from libs.project_analysis.domain import TERMINAL_PHASES as PROJECT_ANALYSIS_TERMINAL_PHASES
 from libs.project_analysis.prompt import build_project_analysis_request
 from libs.qwen_runtime import (
     QwenRuntimeClient,
@@ -4962,8 +4963,43 @@ def _dispatch_project_analysis_task(task_name: str, run_id: str) -> dict[str, An
     return {"mode": mode, "taskId": None}
 
 
+def _flush_project_analysis_failure(run_id: str, exc: Exception) -> None:
+    """重试耗尽后把失败终态落库。
+
+    执行库只在内存里把 run 标成 failed，异常会越过任务末尾的 flush_state()，
+    DB 里的 run 永远停在中间相位，前端无限转圈（实测：PROJECT_REVIEW 模型名
+    配错，三次 HTTP 400 后 run 卡在 queued）。
+    只允许在重试耗尽的最后一次调用：中途落库会让下一次重试从终态起步、被
+    相位校验挡住；而中途重试的内存污染无须处理——每次重试开头的 load_state()
+    是全量重载，会丢弃未落库的失败标记。
+    """
+    try:
+        run = _project_analysis_run(run_id)
+        if str(run.get("phase") or "") not in PROJECT_ANALYSIS_TERMINAL_PHASES:
+            advance_project_analysis_phase(
+                repo.state,
+                run,
+                "failed",
+                failedFromPhase=str(run.get("phase") or ""),
+                errorCode=getattr(exc, "reason", None) or exc.__class__.__name__,
+                errorMessage=str(exc),
+            )
+        flush_state()
+    except Exception:
+        logging.getLogger(__name__).exception("落库一键分析失败终态时再次失败 run=%s", run_id)
+
+
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def project_analysis_prepare(self, run_id: str) -> dict[str, Any]:
+    try:
+        return _project_analysis_prepare_inner(run_id)
+    except Exception as exc:
+        if int(self.request.retries or 0) >= 3:  # 与装饰器 max_retries 一致
+            _flush_project_analysis_failure(run_id, exc)
+        raise
+
+
+def _project_analysis_prepare_inner(run_id: str) -> dict[str, Any]:
     load_state()
     run = _project_analysis_run(run_id)
     if run.get("phase") == "preparing_snapshot":
@@ -4992,11 +5028,16 @@ def project_analysis_prepare(self, run_id: str) -> dict[str, Any]:
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
 def project_analysis_execute_model(self, run_id: str) -> dict[str, Any]:
     load_state()
-    run = execute_project_analysis_model(
-        repo.state,
-        run_id,
-        client=build_qwen_runtime_client(LiteLLMClient),
-    )
+    try:
+        run = execute_project_analysis_model(
+            repo.state,
+            run_id,
+            client=build_qwen_runtime_client(LiteLLMClient),
+        )
+    except Exception as exc:
+        if int(self.request.retries or 0) >= 2:  # 与装饰器 max_retries 一致
+            _flush_project_analysis_failure(run_id, exc)
+        raise
     flush_state()
     _dispatch_project_analysis_task("project_analysis_validate_output", run_id)
     return run
@@ -5004,6 +5045,15 @@ def project_analysis_execute_model(self, run_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
 def project_analysis_validate_output(self, run_id: str) -> dict[str, Any]:
+    try:
+        return _project_analysis_validate_output_inner(run_id)
+    except Exception as exc:
+        if int(self.request.retries or 0) >= 2:  # 与装饰器 max_retries 一致
+            _flush_project_analysis_failure(run_id, exc)
+        raise
+
+
+def _project_analysis_validate_output_inner(run_id: str) -> dict[str, Any]:
     load_state()
     run = _project_analysis_run(run_id)
     snapshot = next(
@@ -5062,6 +5112,15 @@ def project_analysis_validate_output(self, run_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def project_analysis_persist_results(self, run_id: str) -> dict[str, Any]:
+    try:
+        return _project_analysis_persist_results_inner(run_id)
+    except Exception as exc:
+        if int(self.request.retries or 0) >= 3:  # 与装饰器 max_retries 一致
+            _flush_project_analysis_failure(run_id, exc)
+        raise
+
+
+def _project_analysis_persist_results_inner(run_id: str) -> dict[str, Any]:
     load_state()
     run = _project_analysis_run(run_id)
     persisted = persist_project_analysis_node_results(
