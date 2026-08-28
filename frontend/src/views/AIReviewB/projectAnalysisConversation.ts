@@ -23,9 +23,15 @@ export const mergeProjectAnalysisResultsIntoConversation = (
   sessionId: string,
   nodeId: number
 ) => {
-  const realMessages = [...messages].sort(
-    (left, right) => Number(left.sequence || 0) - Number(right.sequence || 0)
-  )
+  /* 幂等：先剔除输入里已有的合成消息，再合并。
+   *
+   * 正常渲染路径是 computed（输入永远是原始会话消息），不会撞上；
+   * 但任何把合并结果回写 messages 的代码——乐观更新、快照回放——
+   * 都会让同一张分析卡片静默出现两次。实测：二次合并 2 条变 3 条。
+   * 合成消息有稳定 id（project-analysis:runId:nodeId），按类型剔除即可。 */
+  const realMessages = [...messages]
+    .filter((message) => message.messageType !== 'project_analysis_result')
+    .sort((left, right) => Number(left.sequence || 0) - Number(right.sequence || 0))
   const syntheticMessages = results
     .map((result) => projectAnalysisMessage(result, sessionId, nodeId))
     .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)))

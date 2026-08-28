@@ -141,3 +141,16 @@ assert.match(componentSource, /证据依据/)
 assert.match(componentSource, /规则依据/)
 assert.match(componentSource, /projectAnalysisEvidenceLink\(evidence\)/)
 assert.match(componentSource, /openEvidence\(projectAnalysisEvidenceLink\(evidence\)!\)/)
+
+/* 幂等：把合并输出再喂回去，不产生重复卡片。
+   正常渲染是 computed 不会触发，但乐观更新/快照回放一旦把合并结果
+   回写 messages，重复会静默出现——实测修复前 2 条变 3 条。 */
+{
+  const once = mergeProjectAnalysisResultsIntoConversation(messages, results, 'RSESSION-1', 1)
+  const twice = mergeProjectAnalysisResultsIntoConversation(once, results, 'RSESSION-1', 1)
+  assert.deepEqual(
+    twice.map((item) => item.id),
+    once.map((item) => item.id),
+    '二次合并产生了重复的分析卡片'
+  )
+}
