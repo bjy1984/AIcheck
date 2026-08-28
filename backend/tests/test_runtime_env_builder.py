@@ -46,6 +46,9 @@ def test_模型配置进得了生成结果(tmp_path: pathlib.Path):
     # 模型名必须显式写死：配置文件默认是 qwen3.7-plus，DeepSeek 不认
     assert env["AICHECK_LLM_MODEL_REVIEW"].startswith("deepseek-")
     assert env["AICHECK_LLM_MODEL_COMPARE_FAST"].startswith("deepseek-")
+    # 一键分析角色漏配的实测后果（2026-08-28）：回退 qwen3.7-plus 被 DeepSeek
+    # 400 拒绝，run 卡死。角色清单必须和 libs/qwen_runtime.MODEL_ROLE_ENV 对齐。
+    assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"].startswith("deepseek-")
 
 
 def test_模型密钥沿用凭证文件里的那一份(tmp_path: pathlib.Path):

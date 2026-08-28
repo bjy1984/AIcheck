@@ -84,6 +84,10 @@ runtime = {
     "AICHECK_LLM_MODEL_REVIEW": "deepseek-v4-pro",
     "AICHECK_LLM_MODEL_DEFAULT": "deepseek-v4-pro",
     "AICHECK_LLM_MODEL_COMPARE_FAST": "deepseek-v4-flash",
+    # 一键分析（full-project-analysis）的角色。漏配会回退 qwen3.7-plus 被
+    # DeepSeek 拒绝（HTTP 400），run 卡死——2026-08-28 实测。新增 LLM 角色时
+    # 这份清单必须同步补齐。
+    "AICHECK_LLM_MODEL_PROJECT_REVIEW": "deepseek-v4-pro",
     # 视觉单独走一家：DeepSeek 的 chat.completions 不接受图片，发 image_url
     # 直接 400（unknown variant `image_url`）。此前这一项也写着 deepseek-v4-pro，
     # 等于声明了一个不存在的能力——印章读字上线第一次实跑就栽在这里。
