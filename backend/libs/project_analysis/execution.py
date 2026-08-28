@@ -23,8 +23,14 @@ def project_analysis_model_timeout_seconds() -> float:
     return max(60.0, min(configured, 3600.0))
 
 
-def project_analysis_max_output_tokens(run: dict[str, Any]) -> int:
+def project_analysis_max_output_tokens(run: dict[str, Any], *, node_count: int = 0) -> int:
     reserved = max(1, int(run.get("reservedOutputTokens") or 24000))
+    if node_count > 0:
+        # 多批运行按当前批的节点数缩放（与 preview 的动态预留同一公式），
+        # 整工程的预留对单批来说过大，会白白压缩可用输入。
+        from libs.project_analysis.prompt import dynamic_reserved_output_tokens
+
+        reserved = min(reserved, dynamic_reserved_output_tokens(node_count))
     try:
         configured = int(os.getenv("AICHECK_PROJECT_ANALYSIS_MAX_OUTPUT_TOKENS", "48000"))
     except ValueError:
@@ -43,6 +49,35 @@ def _discard_stream_delta(_channel: str, _delta: str) -> None:
 def _stable_hash(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def project_analysis_current_batch_node_ids(run: dict[str, Any]) -> list[int] | None:
+    """当前批次的节点集；单批（或无批次方案的旧运行）返回 None 表示全量。"""
+    plan = run.get("batchPlan") or []
+    if int(run.get("batchCount") or 1) <= 1 or not plan:
+        return None
+    index = int(run.get("currentBatchIndex") or 0)
+    if index >= len(plan):
+        return None
+    return [int(node_id) for node_id in (plan[index].get("nodeIds") or [])]
+
+
+def project_analysis_batch_scoped_request(
+    run: dict[str, Any], request: dict[str, Any]
+) -> dict[str, Any]:
+    """多批运行把冻结请求切成当前批；单批用冻结请求原文（与分批前逐字节一致）。"""
+    node_ids = project_analysis_current_batch_node_ids(run)
+    if node_ids is None:
+        return request
+    from libs.project_analysis.prompt import build_batch_request
+
+    return build_batch_request(request, node_ids)
+
+
+def project_analysis_failure_phase(run: dict[str, Any]) -> str:
+    """失败终态的选择：已有批次产出（节点结果已落库）→ partial_failure，
+    否则 failed。两者都可重试（幂等不复用），重试只补未产出的节点。"""
+    return "partial_failure" if int(run.get("persistedNodeCount") or 0) > 0 else "failed"
 
 
 def execute_project_analysis_model(
@@ -79,6 +114,7 @@ def execute_project_analysis_model(
         snapshot,
         model_alias=str(run.get("modelAlias") or "project-review-large"),
     )
+    request = project_analysis_batch_scoped_request(run, request)
     if str(run.get("phase") or "") == "model_running":
         # 重试路径：model_running 已落库（见下方 on_model_running），相位校验
         # 不允许原地推进，补个心跳即可。
@@ -114,7 +150,10 @@ def execute_project_analysis_model(
             model=str(request["model"]),
             temperature=float(request["temperature"]),
             response_format=request["response_format"],
-            max_tokens=project_analysis_max_output_tokens(run),
+            # 多批运行按当前批的节点数给输出上限，而不是整个工程的
+            max_tokens=project_analysis_max_output_tokens(
+                run, node_count=len(project_analysis_current_batch_node_ids(run) or [])
+            ),
             timeout=project_analysis_model_timeout_seconds(),
             stream_handler=_discard_stream_delta,
         )
@@ -141,10 +180,11 @@ def execute_project_analysis_model(
                 "updatedAt": server_time(),
             }
         )
+        failure_phase = project_analysis_failure_phase(run)
         run.update(
             {
-                "phase": "failed",
-                "status": "failed",
+                "phase": failure_phase,
+                "status": failure_phase,
                 "errorCode": attempt["failureReason"],
                 "errorMessage": str(exc),
                 "finishedAt": server_time(),

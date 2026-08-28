@@ -520,6 +520,136 @@ def build_project_analysis_request(
     }
 
 
+BATCH_BUDGET_ENV = "AICHECK_PA_MAX_BATCH_INPUT_TOKENS"
+
+
+def _node_scaffold_tokens(node: dict[str, Any]) -> int:
+    return estimate_text_tokens(json.dumps(node, ensure_ascii=False, separators=(",", ":")))
+
+
+def _corpus_entry_tokens(entry: dict[str, Any]) -> int:
+    return estimate_text_tokens(
+        json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
+def _node_corpus_primaries(
+    node: dict[str, Any], corpus: dict[str, dict[str, Any]]
+) -> set[str]:
+    """节点实际要携带的语料条目键（别名跟到正主；别名条目本身也要带——
+    模型按 fileId 解析，规则 9 告诉它跟去正主读全文）。"""
+    keys: set[str] = set()
+    for file_ref in node.get("fileRefs") or []:
+        file_id = str(file_ref.get("fileId") or "")
+        entry = corpus.get(file_id)
+        if not entry:
+            continue
+        keys.add(file_id)
+        alias = str(entry.get("identicalToFileId") or "")
+        if alias and alias in corpus:
+            keys.add(alias)
+    return keys
+
+
+def plan_project_analysis_batches(
+    request_payload: dict[str, Any],
+    *,
+    batch_budget_tokens: int,
+) -> list[dict[str, Any]]:
+    """把节点集按共享文件亲和度装箱，每批不超预算。
+
+    第二阶段 prompt 长度优化的核心：上限从「项目 ≤ 单次上下文」变成
+    「无上限，成本线性」。装箱是确定性的（按文件集签名排序 + 首次适配）：
+    同一快照永远得到同一批次方案，批间幂等才有据可依。
+    引用同一份资料的节点尽量同批——语料是长度主体，跨批就要重复传。
+    单个节点连自己的语料都装不下预算时不装箱（由调用方判超限，
+    这是第三阶段检索式裁剪的触发条件）。
+    """
+    project = request_payload.get("project") or {}
+    corpus = project.get("fileCorpus") or {}
+    nodes = list(project.get("nodes") or [])
+    scaffold = estimate_text_tokens(
+        json.dumps(
+            {key: value for key, value in request_payload.items() if key != "project"},
+            ensure_ascii=False,
+        )
+    ) + 512  # system prompt + project 元数据的固定开销
+    # 亲和度：按语料键集合的规范签名排序，共享文件的节点相邻
+    def signature(node: dict[str, Any]) -> tuple:
+        return (
+            tuple(sorted(_node_corpus_primaries(node, corpus))),
+            int(node.get("nodeId") or 0),
+        )
+
+    batches: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for node in sorted(nodes, key=signature):
+        node_keys = _node_corpus_primaries(node, corpus)
+        node_tokens = _node_scaffold_tokens(node)
+        standalone_cost = (
+            scaffold
+            + node_tokens
+            + sum(_corpus_entry_tokens(corpus[key]) for key in node_keys)
+        )
+        if current is not None:
+            added_corpus = node_keys - current["corpusKeys"]
+            added_cost = node_tokens + sum(
+                _corpus_entry_tokens(corpus[key]) for key in added_corpus
+            )
+            if current["estimatedTokens"] + added_cost <= batch_budget_tokens:
+                current["nodeIds"].append(int(node.get("nodeId") or 0))
+                current["corpusKeys"] |= node_keys
+                current["estimatedTokens"] += added_cost
+                continue
+        current = {
+            "index": len(batches),
+            "nodeIds": [int(node.get("nodeId") or 0)],
+            "corpusKeys": set(node_keys),
+            "estimatedTokens": standalone_cost,
+            "oversized": standalone_cost > batch_budget_tokens,
+        }
+        batches.append(current)
+    for batch in batches:
+        batch["corpusKeys"] = sorted(batch["corpusKeys"])
+    return batches
+
+
+def build_batch_request(
+    request: dict[str, Any], node_ids: list[int]
+) -> dict[str, Any]:
+    """从冻结的全工程请求切出一个批次请求：只带批内节点与它们引用的语料
+    （别名的正主一并带上）。消息结构、模型参数与全量请求完全一致。"""
+    batch = deepcopy(request)
+    payload = json.loads(batch["messages"][1]["content"])
+    project = payload.get("project") or {}
+    wanted = {int(item) for item in node_ids}
+    corpus = project.get("fileCorpus") or {}
+    kept_nodes = [
+        node for node in project.get("nodes") or [] if int(node.get("nodeId") or 0) in wanted
+    ]
+    keys: set[str] = set()
+    for node in kept_nodes:
+        keys |= _node_corpus_primaries(node, corpus)
+    project["nodes"] = kept_nodes
+    project["includedNodeCount"] = len(kept_nodes)
+    project["fileCorpus"] = {key: corpus[key] for key in sorted(keys) if key in corpus}
+    payload["project"] = project
+    batch["messages"][1]["content"] = json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")
+    )
+    return batch
+
+
+def project_analysis_batch_budget(available_raw_tokens: int) -> int:
+    try:
+        configured = int(os.getenv(BATCH_BUDGET_ENV, "0"))
+    except ValueError:
+        configured = 0
+    if configured > 0:
+        return configured
+    return available_raw_tokens
+
+
 def project_analysis_preview(
     state: dict[str, Any],
     project_id: str,
@@ -572,6 +702,17 @@ def project_analysis_preview(
         key=lambda item: item["estimatedTokens"],
         reverse=True,
     )[:3]
+    # 分批装箱：超限语义从「整体超上下文」收窄为「存在连自己语料都装不下
+    # 一批的单节点」（那是第三阶段检索式裁剪的触发条件）。整体超限的项目
+    # 现在自动分批，不再拒绝。
+    batch_budget = project_analysis_batch_budget(available)
+    batch_plan = plan_project_analysis_batches(payload, batch_budget_tokens=batch_budget)
+    oversized_nodes = [
+        node_id
+        for batch in batch_plan
+        if batch.get("oversized")
+        for node_id in batch["nodeIds"]
+    ]
     return {
         "projectId": str(project_id),
         "snapshot": snapshot,
@@ -584,7 +725,18 @@ def project_analysis_preview(
         "maxContextTokens": maximum,
         "reservedOutputTokens": reserved,
         "availableInputTokens": available,
-        "contextLimitExceeded": estimated > available,
+        "contextLimitExceeded": bool(oversized_nodes),
+        "oversizedNodeIds": oversized_nodes,
+        "batchPlan": [
+            {
+                "index": batch["index"],
+                "nodeIds": batch["nodeIds"],
+                "estimatedTokens": batch["estimatedTokens"],
+            }
+            for batch in batch_plan
+        ],
+        "batchCount": len(batch_plan),
+        "batchBudgetTokens": batch_budget,
         "tokenBudgets": budgets,
         "limitingProvider": limiting["provider"],
         "topCorpusFiles": top_corpus_files,

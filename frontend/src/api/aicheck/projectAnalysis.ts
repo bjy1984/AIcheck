@@ -38,6 +38,8 @@ export type ProjectAnalysisStatus = {
   totalFindingCount: number
   validatedFindingCount: number
   persistedNodeCount: number
+  batchCount?: number
+  currentBatchIndex?: number
   progressMode: 'determinate' | 'indeterminate'
   percent?: number
   queueTaskId?: string | null

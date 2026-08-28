@@ -135,6 +135,11 @@ from libs.project_analysis import (
     validate_project_analysis_output,
 )
 from libs.project_analysis.domain import TERMINAL_PHASES as PROJECT_ANALYSIS_TERMINAL_PHASES
+from libs.project_analysis.execution import (
+    project_analysis_batch_scoped_request,
+    project_analysis_current_batch_node_ids,
+    project_analysis_failure_phase,
+)
 from libs.project_analysis.prompt import build_project_analysis_request
 from libs.qwen_runtime import (
     QwenRuntimeClient,
@@ -4982,7 +4987,7 @@ def _flush_project_analysis_failure(run_id: str, exc: Exception) -> None:
             advance_project_analysis_phase(
                 repo.state,
                 run,
-                "failed",
+                project_analysis_failure_phase(run),
                 failedFromPhase=str(run.get("phase") or ""),
                 errorCode=getattr(exc, "reason", None) or exc.__class__.__name__,
                 errorMessage=str(exc),
@@ -5002,10 +5007,67 @@ def project_analysis_prepare(self, run_id: str) -> dict[str, Any]:
         raise
 
 
+def _project_analysis_skip_persisted_nodes(run: dict[str, Any]) -> None:
+    """重试运行只补失败批：同一快照下已有节点结果的节点从批次方案里剔除。
+
+    同 snapshotHash = 同输入，历史 advisory 结果照样在工作台可见，重放模型
+    只是烧钱。剔空的批次删除并重排 index；被复用的结果 id 并入 derived。
+    """
+    snapshot_id = str(run.get("projectAnalysisSnapshotId") or "")
+    if not snapshot_id or not run.get("batchPlan"):
+        return
+    done: dict[int, str] = {}
+    for row in repo.state.get("review_runs") or []:
+        if str(row.get("projectAnalysisSnapshotId") or "") == snapshot_id:
+            done[int(row.get("nodeId") or 0)] = str(
+                row.get("reviewRunId") or row.get("id") or ""
+            )
+    if not done:
+        return
+    remaining: list[dict[str, Any]] = []
+    for batch in run.get("batchPlan") or []:
+        kept = [int(n) for n in batch.get("nodeIds") or [] if int(n) not in done]
+        if kept:
+            remaining.append({**batch, "index": len(remaining), "nodeIds": kept})
+    reused_ids = [run_id for _, run_id in sorted(done.items()) if run_id]
+    existing = [str(item) for item in run.get("derivedReviewRunIds") or []]
+    run["derivedReviewRunIds"] = existing + [
+        item for item in reused_ids if item not in existing
+    ]
+    run["persistedNodeCount"] = len(run["derivedReviewRunIds"])
+    run["reusedNodeIds"] = sorted(done)
+    run["batchPlan"] = remaining
+    run["batchCount"] = max(1, len(remaining))
+    run["currentBatchIndex"] = 0
+
+
 def _project_analysis_prepare_inner(run_id: str) -> dict[str, Any]:
     load_state()
     run = _project_analysis_run(run_id)
     if run.get("phase") == "preparing_snapshot":
+        _project_analysis_skip_persisted_nodes(run)
+        if run.get("reusedNodeIds") and not any(
+            batch.get("nodeIds") for batch in run.get("batchPlan") or []
+        ):
+            # 所有节点都已有同快照结果（罕见：上次失败发生在最后一批落地之后、
+            # 终态之前）。直接终态，事件留痕；相位校验不允许跳跃，走直写。
+            run.update(
+                {
+                    "phase": "waiting_human_review",
+                    "status": "waiting_human_review",
+                    "finishedAt": server_time(),
+                    "updatedAt": server_time(),
+                    "revision": int(run.get("revision") or 0) + 1,
+                }
+            )
+            append_project_analysis_event(
+                repo.state,
+                run,
+                phase="waiting_human_review",
+                details={"allNodesReused": True},
+            )
+            flush_state()
+            return run
         advance_project_analysis_phase(
             repo.state,
             run,
@@ -5081,12 +5143,16 @@ def _project_analysis_validate_output_inner(run_id: str) -> dict[str, Any]:
     request = deepcopy(snapshot.get("request")) or build_project_analysis_request(
         repo.state, snapshot
     )
+    # 多批运行：请求与期望节点集都按当前批切；单批与旧行为逐字节一致
+    batch_node_ids = project_analysis_current_batch_node_ids(run)
+    request = project_analysis_batch_scoped_request(run, request)
     request_payload = json.loads(request["messages"][1]["content"])
     try:
         validated = validate_project_analysis_output(
             str(run.get("rawModelOutput") or ""),
             snapshot,
             request_payload,
+            expected_node_ids=batch_node_ids,
         )
     except ProjectAnalysisOutputError as exc:
         error_code = str(exc) or "LLM_OUTPUT_INVALID"
@@ -5133,7 +5199,7 @@ def _project_analysis_validate_output_inner(run_id: str) -> dict[str, Any]:
         advance_project_analysis_phase(
             repo.state,
             run,
-            "failed",
+            project_analysis_failure_phase(run),
             failedFromPhase="validating_output",
             errorCode=error_code,
             errorMessage=error_messages.get(
@@ -5143,8 +5209,15 @@ def _project_analysis_validate_output_inner(run_id: str) -> dict[str, Any]:
         )
         flush_state()
         return run
-    run["validatedOutput"] = validated
-    finding_count = int((validated.get("validation") or {}).get("findingCount") or 0)
+    accumulated = run.get("validatedOutput") if isinstance(run.get("validatedOutput"), dict) else {}
+    merged_reviews = list(accumulated.get("nodeReviews") or []) + list(
+        validated.get("nodeReviews") or []
+    )
+    run["validatedOutput"] = {**validated, "nodeReviews": merged_reviews}
+    run["currentBatchValidated"] = validated
+    finding_count = sum(
+        len(review.get("findings") or []) for review in merged_reviews
+    )
     advance_project_analysis_phase(
         repo.state,
         run,
@@ -5170,16 +5243,54 @@ def project_analysis_persist_results(self, run_id: str) -> dict[str, Any]:
 def _project_analysis_persist_results_inner(run_id: str) -> dict[str, Any]:
     load_state()
     run = _project_analysis_run(run_id)
-    persisted = persist_project_analysis_node_results(
-        repo.state,
-        run,
-        run.get("validatedOutput") or {},
+    # 逐批落地当前批的校验结果（persist 内部按稳定 id 幂等 + 累积合并 derived）。
+    # 每批落完就持久：中途失败留下的是 partial_failure + 已产出节点可见，
+    # 重试运行只补剩下的批。
+    current_validated = (
+        run.get("currentBatchValidated")
+        if isinstance(run.get("currentBatchValidated"), dict)
+        else run.get("validatedOutput") or {}
     )
+    persist_project_analysis_node_results(repo.state, run, current_validated)
+    next_index = int(run.get("currentBatchIndex") or 0) + 1
+    if next_index < int(run.get("batchCount") or 1) and (run.get("batchPlan") or []):
+        # 还有批次：相位拨回 queued 走下一批（相位校验不允许回退，走直写 + 事件，
+        # 与重掷同一先例）；重掷计数按批清零，taskId 带批次序号保持确定性。
+        next_task_id = None
+        if task_dispatcher.dispatch_mode() == "celery":
+            next_task_id = task_dispatcher.deterministic_task_id(
+                f"project-analysis-execute-b{next_index}", run_id
+            )
+        run.update(
+            {
+                "currentBatchIndex": next_index,
+                "modelAttemptId": None,
+                "rawModelOutput": None,
+                "currentBatchValidated": None,
+                "modelRerollCount": 0,
+                "phase": "queued",
+                "status": "queued",
+                "queueTaskId": next_task_id,
+                "updatedAt": server_time(),
+                "revision": int(run.get("revision") or 0) + 1,
+            }
+        )
+        append_project_analysis_event(
+            repo.state,
+            run,
+            phase="queued",
+            details={"batchIndex": next_index, "batchCount": run.get("batchCount")},
+        )
+        flush_state()
+        _dispatch_project_analysis_task(
+            "project_analysis_execute_model", run_id, task_id=next_task_id
+        )
+        return run
     advance_project_analysis_phase(
         repo.state,
         run,
         "waiting_human_review",
-        persistedNodeCount=len(persisted),
+        persistedNodeCount=int(run.get("persistedNodeCount") or 0),
     )
     flush_state()
     return run

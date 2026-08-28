@@ -241,6 +241,8 @@ def validate_project_analysis_output(
     raw_text: str,
     snapshot: dict[str, Any],
     request_payload: dict[str, Any],
+    *,
+    expected_node_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     try:
         parsed = json.loads(str(raw_text))
@@ -255,7 +257,15 @@ def validate_project_analysis_output(
         actual_ids = [int(row.get("nodeId") or 0) for row in reviews]
     except (TypeError, ValueError) as exc:
         raise ProjectAnalysisOutputError("LLM_OUTPUT_INVALID_NODE_REVIEWS") from exc
-    expected_ids = [int(item) for item in snapshot.get("nodeIds") or []]
+    # 分批运行只要求模型返回当前批的节点集；未指定时按快照全量（单批/旧行为）
+    expected_ids = [
+        int(item)
+        for item in (
+            expected_node_ids
+            if expected_node_ids is not None
+            else snapshot.get("nodeIds") or []
+        )
+    ]
     if sorted(actual_ids) != sorted(expected_ids) or len(set(actual_ids)) != len(actual_ids):
         raise ProjectAnalysisOutputError("PROJECT_ANALYSIS_NODE_SET_MISMATCH")
     expected_nodes = {

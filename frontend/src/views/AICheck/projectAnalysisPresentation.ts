@@ -72,6 +72,13 @@ export const projectAnalysisRequestFailure = (error: unknown) => {
   }
 }
 
+/* 分批运行的进度后缀：「（第 2/4 批）」；单批不显示，与分批前文案一致 */
+const batchSuffix = (status: ProjectAnalysisStatus) => {
+  const total = Number(status.batchCount || 1)
+  if (total <= 1) return ''
+  return `（第 ${Number(status.currentBatchIndex || 0) + 1}/${total} 批）`
+}
+
 export const projectAnalysisProgressView = (status: ProjectAnalysisStatus) => {
   const base =
     status.progressMode === 'indeterminate'
@@ -80,8 +87,8 @@ export const projectAnalysisProgressView = (status: ProjectAnalysisStatus) => {
   const labels: Record<string, string> = {
     preparing_snapshot: `正在收集节点 ${status.preparedNodeCount}/${status.includedNodeCount}`,
     building_prompt: `正在拼接 OCR ${status.loadedFileCount}/${status.uniqueFileCount} · 预计 ${status.estimatedInputTokens.toLocaleString()} tokens`,
-    queued: '已进入大模型队列',
-    model_running: '大模型正在进行全工程分析',
+    queued: `已进入大模型队列${batchSuffix(status)}`,
+    model_running: `大模型正在进行全工程分析${batchSuffix(status)}`,
     validating_output: `正在校验分析结果 ${status.validatedFindingCount}/${status.totalFindingCount}`,
     persisting_results: `正在回挂节点结果 ${status.persistedNodeCount}/${status.includedNodeCount}`,
     waiting_human_review: '全工程分析完成，等待人工确认',

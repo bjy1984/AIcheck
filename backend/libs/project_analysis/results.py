@@ -89,7 +89,12 @@ def persist_project_analysis_node_results(
         }
         rows.append(record)
         persisted.append(record)
-    project_run["derivedReviewRunIds"] = [row["reviewRunId"] for row in persisted]
-    project_run["persistedNodeCount"] = len(persisted)
+    # 累积而不是覆盖：分批运行逐批落地，重试运行还会带上复用的历史结果
+    existing_ids = [str(item) for item in project_run.get("derivedReviewRunIds") or []]
+    merged_ids = existing_ids + [
+        row["reviewRunId"] for row in persisted if row["reviewRunId"] not in existing_ids
+    ]
+    project_run["derivedReviewRunIds"] = merged_ids
+    project_run["persistedNodeCount"] = len(merged_ids)
     project_run["updatedAt"] = server_time()
     return persisted

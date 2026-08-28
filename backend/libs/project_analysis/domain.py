@@ -92,12 +92,16 @@ def create_project_analysis_run(
     )
     rows = state.setdefault("project_analysis_runs", [])
     same_key_runs = [row for row in rows if row.get("idempotencyKey") == idempotency_key]
-    # failed 的历史运行留档但不复用：run id 由快照哈希决定，若失败也复用，
-    # 同一份资料的一键分析失败一次就永远无法重试（实测：模型名配错 400 之后，
-    # 再点按钮只会拿回同一个 failed run）。partial_failure/waiting_human_review
-    # 已产出可供人工审查的结果，维持复用。
+    # failed/partial_failure 的历史运行留档但不复用：run id 由快照哈希决定，
+    # 若失败也复用，同一份资料的一键分析失败一次就永远无法重试（实测：模型名
+    # 配错 400 之后，再点按钮只会拿回同一个 failed run）。partial_failure 在
+    # 分批语义下同样必须可重试——新运行会跳过已产出结果的节点，只补失败批。
     existing = next(
-        (row for row in same_key_runs if str(row.get("phase") or "") != "failed"),
+        (
+            row
+            for row in same_key_runs
+            if str(row.get("phase") or "") not in {"failed", "partial_failure"}
+        ),
         None,
     )
     if existing:
@@ -125,6 +129,9 @@ def create_project_analysis_run(
         "reservedOutputTokens": int(preview.get("reservedOutputTokens") or 0),
         "modelAlias": preview.get("modelAlias"),
         "modelRouteVersion": preview.get("modelRouteVersion"),
+        "batchPlan": deepcopy(preview.get("batchPlan") or []),
+        "batchCount": int(preview.get("batchCount") or 1),
+        "currentBatchIndex": 0,
         "preparedNodeCount": 0,
         "loadedFileCount": 0,
         "totalFindingCount": 0,
@@ -181,6 +188,8 @@ def project_analysis_status_view(run: dict[str, Any]) -> dict[str, Any]:
         "totalFindingCount": int(run.get("totalFindingCount") or 0),
         "validatedFindingCount": int(run.get("validatedFindingCount") or 0),
         "persistedNodeCount": int(run.get("persistedNodeCount") or 0),
+        "batchCount": int(run.get("batchCount") or 1),
+        "currentBatchIndex": int(run.get("currentBatchIndex") or 0),
         "queueTaskId": run.get("queueTaskId"),
         "lastHeartbeatAt": run.get("lastHeartbeatAt"),
         "errorCode": run.get("errorCode"),
@@ -280,7 +289,8 @@ def reap_stalled_project_analysis_runs(
         advance_project_analysis_phase(
             state,
             run,
-            "failed",
+            # 已有批次产出的僵尸收敛成 partial_failure：结果保留、重试只补余批
+            "partial_failure" if int(run.get("persistedNodeCount") or 0) > 0 else "failed",
             failedFromPhase=phase,
             errorCode="PROJECT_ANALYSIS_RUN_STALLED",
             errorMessage=(

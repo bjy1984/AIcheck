@@ -152,3 +152,21 @@ assert.deepEqual(
       '项目资料总量超出模型可处理上限，请减少纳入分析的资料后重试。占用最大的资料：RT检测报告R2.pdf（约 41.2k tokens）、质量证明书.pdf（约 12.6k tokens）。'
   }
 )
+
+// 分批运行的进度文案带批次；单批不带（与分批前一致）
+assert.equal(
+  projectAnalysisProgressView(
+    status({
+      phase: 'model_running',
+      batchCount: 4,
+      currentBatchIndex: 1,
+      progressMode: 'indeterminate'
+    })
+  ).label,
+  '大模型正在进行全工程分析（第 2/4 批）'
+)
+assert.equal(
+  projectAnalysisProgressView(status({ phase: 'model_running', progressMode: 'indeterminate' }))
+    .label,
+  '大模型正在进行全工程分析'
+)
