@@ -62,6 +62,26 @@ assert.match(
 )
 assert.doesNotMatch(aiPanelSourceFile, /执行过程|推理过程|deepThink|executionSteps/)
 assert.match(aiPanelSourceFile, /历史 AI 复核结果/)
+assert.match(
+  aiPanelSourceFile,
+  /class="ai-status-banner"[\s\S]*class="ai-status-banner__icon"[\s\S]*class="ai-status-banner__content"/,
+  '失败态应使用紧凑且分层明确的状态卡，避免整条红色警告占满内容区'
+)
+assert.match(
+  aiPanelSourceFile,
+  /:class="\['ai-current-result', `is-\$\{presentation\.statusTone\}`\]"/,
+  '本次复核主卡应按状态提供克制的视觉区分'
+)
+assert.match(
+  aiPanelSourceFile,
+  /class="ai-history-list ai-history-timeline"/,
+  '历史结果应使用轻量时间线层级，避免多个厚重边框卡片堆叠'
+)
+assert.match(
+  aiPanelSourceFile,
+  /@media \(width <= 720px\)[\s\S]*\.ai-panel-head[\s\S]*align-items: flex-start/,
+  'AI 审查面板在窄屏下应自动改为纵向信息布局'
+)
 
 const humanSectionStart = source.indexOf('id="inspection-audit-panel-human_review"')
 const humanSectionEnd = source.indexOf('<section v-if="role === \'owner\'"', humanSectionStart)
