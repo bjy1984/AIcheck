@@ -121,6 +121,7 @@ export type ReviewBWorkspace = {
   basisSnapshot: ReviewBBasisItem[]
   session: ReviewBSession | null
   activeReviewRun: ReviewBRun | null
+  projectAnalysisResults: ReviewBProjectAnalysisResult[]
   activeHumanInputTask: Record<string, unknown> | null
   latestHumanDecision: Record<string, unknown> | null
   contextSummary: {
@@ -132,6 +133,16 @@ export type ReviewBWorkspace = {
   }
   lastEventSequence: number
   updatedAt: string
+}
+
+export type ReviewBProjectAnalysisResult = {
+  reviewRunId: string
+  projectAnalysisRunId: string
+  status?: string
+  reviewResult?: string
+  findingDrafts: Array<Record<string, unknown>>
+  createdAt?: string
+  finishedAt?: string
 }
 
 export type ReviewBContentBlock =
@@ -154,6 +165,7 @@ export type ReviewBContentBlock =
       currentStep?: string
       findingCount?: number
     }
+  | { type: 'project_analysis_result'; result: ReviewBProjectAnalysisResult }
   | {
       type: 'action_suggestions'
       actions?: Array<{

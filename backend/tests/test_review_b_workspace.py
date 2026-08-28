@@ -85,6 +85,110 @@ def test_review_b_workspace_creates_and_recovers_node_session() -> None:
     assert after["contextSummary"]["currentTask"] == "核对设计单位许可证"
 
 
+def test_review_b_workspace_projects_node_results_from_full_project_analysis() -> None:
+    session = create_session()
+    repo.state["review_runs"].insert(
+        0,
+        {
+            "id": "RRUN-SESSION-PINNED",
+            "reviewRunId": "RRUN-SESSION-PINNED",
+            "projectId": PROJECT_ID,
+            "nodeId": NODE_ID,
+            "tenantId": "TENANT-DEFAULT",
+            "status": "running",
+            "revision": 1,
+        },
+    )
+    stored_session = repo.find_one("review_sessions", session["id"])
+    assert stored_session is not None
+    stored_session["activeReviewRunId"] = "RRUN-SESSION-PINNED"
+    repo.state["review_runs"].extend(
+        [
+            {
+                "id": "RRUN-PA-NODE-1",
+                "reviewRunId": "RRUN-PA-NODE-1",
+                "projectAnalysisRunId": "PARUN-1",
+                "triggerType": "manual_full_project_analysis",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "tenantId": "TENANT-DEFAULT",
+                "status": "waiting_human_review",
+                "reviewResult": "partially_supported",
+                "findingDrafts": [
+                    {
+                        "id": "FND-PA-1",
+                        "title": "许可范围需要人工确认",
+                        "description": "证据尚不足以确认许可范围完整覆盖。",
+                        "severity": "high",
+                        "evidenceRefs": [],
+                        "ruleRefs": [],
+                    }
+                ],
+                "createdAt": "2026-08-27 20:00:00",
+                "finishedAt": "2026-08-27 20:10:00",
+                "revision": 1,
+                "rawModelOutput": "must-not-be-exposed",
+            },
+            {
+                "id": "RRUN-PA-OTHER-NODE",
+                "reviewRunId": "RRUN-PA-OTHER-NODE",
+                "projectAnalysisRunId": "PARUN-1",
+                "triggerType": "manual_full_project_analysis",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID + 1,
+                "tenantId": "TENANT-DEFAULT",
+                "status": "waiting_human_review",
+                "findingDrafts": [],
+                "finishedAt": "2026-08-27 20:10:00",
+                "revision": 1,
+            },
+            {
+                "id": "RRUN-PA-FOREIGN-TENANT",
+                "reviewRunId": "RRUN-PA-FOREIGN-TENANT",
+                "projectAnalysisRunId": "PARUN-FOREIGN",
+                "triggerType": "manual_full_project_analysis",
+                "projectId": PROJECT_ID,
+                "nodeId": NODE_ID,
+                "tenantId": "TENANT-FOREIGN",
+                "status": "waiting_human_review",
+                "findingDrafts": [],
+                "finishedAt": "2026-08-27 21:00:00",
+                "revision": 1,
+            },
+        ]
+    )
+
+    workspace = assert_ok(
+        client.get(
+            f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/review-workspace",
+            headers=HEADERS,
+        )
+    )
+
+    assert workspace["activeReviewRun"]["reviewRunId"] == "RRUN-SESSION-PINNED"
+    assert workspace["projectAnalysisResults"] == [
+        {
+            "reviewRunId": "RRUN-PA-NODE-1",
+            "projectAnalysisRunId": "PARUN-1",
+            "status": "waiting_human_review",
+            "reviewResult": "partially_supported",
+            "findingDrafts": [
+                {
+                    "id": "FND-PA-1",
+                    "title": "许可范围需要人工确认",
+                    "description": "证据尚不足以确认许可范围完整覆盖。",
+                    "severity": "high",
+                    "evidenceRefs": [],
+                    "ruleRefs": [],
+                }
+            ],
+            "createdAt": "2026-08-27 20:00:00",
+            "finishedAt": "2026-08-27 20:10:00",
+        }
+    ]
+    assert "rawModelOutput" not in workspace["projectAnalysisResults"][0]
+
+
 @pytest.mark.parametrize(
     "run_status",
     [

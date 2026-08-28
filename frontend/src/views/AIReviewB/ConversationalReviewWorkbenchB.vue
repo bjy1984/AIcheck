@@ -70,6 +70,7 @@ import type {
   ReviewBContentBlock,
   ReviewBEvent,
   ReviewBMessage,
+  ReviewBProjectAnalysisResult,
   ReviewBReference,
   ReviewBWorkspace
 } from '@/types/ai-review-b'
@@ -100,6 +101,11 @@ import {
 import type { ReturnCorrectionRequest } from '@/views/AIReviewB/returnCorrection'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 import { createSessionWithAuthorizationRecovery } from '@/views/AIReviewB/reviewSessionRecovery'
+import {
+  mergeProjectAnalysisResultsIntoConversation,
+  projectAnalysisResultTagType,
+  resolveProjectAnalysisEvidenceLink
+} from './projectAnalysisConversation'
 
 const props = withDefaults(
   defineProps<{
@@ -166,6 +172,14 @@ const TIMELINE_BOTTOM_THRESHOLD = 80
 const allNodes = computed(() => treeGroups.value.flatMap((group) => group.nodes))
 const currentNode = computed(() => workspace.value?.node)
 const session = computed(() => workspace.value?.session)
+const conversationMessages = computed(() =>
+  mergeProjectAnalysisResultsIntoConversation(
+    messages.value,
+    workspace.value?.projectAnalysisResults || [],
+    session.value?.id || '',
+    activeNodeId.value
+  )
+)
 const activeRun = computed(() => workspace.value?.activeReviewRun)
 const activeRunId = computed(() =>
   String(activeRun.value?.reviewRunId || activeRun.value?.id || '')
@@ -1482,6 +1496,46 @@ const handleReturnCorrection = async (payload: ReturnCorrectionRequest) => {
 const blockItems = <T,>(block: ReviewBContentBlock): T[] =>
   Array.isArray((block as { items?: T[] }).items) ? ((block as { items?: T[] }).items as T[]) : []
 
+const projectAnalysisResultOf = (
+  block: ReviewBContentBlock
+): ReviewBProjectAnalysisResult | undefined =>
+  block.type === 'project_analysis_result'
+    ? (block as { result: ReviewBProjectAnalysisResult }).result
+    : undefined
+
+const PROJECT_ANALYSIS_RESULT_LABELS: Record<string, string> = {
+  supported: '证据支持',
+  partially_supported: '部分证据支持',
+  insufficient_evidence: '证据不足',
+  conflict: '证据冲突',
+  mismatch: '不一致'
+}
+
+const projectAnalysisResultLabel = (result?: ReviewBProjectAnalysisResult) =>
+  PROJECT_ANALYSIS_RESULT_LABELS[String(result?.reviewResult || '')] ||
+  String(result?.reviewResult || '待人工确认')
+
+const projectAnalysisFindingSeverity = (finding: Record<string, unknown>) => {
+  const severity = String(finding.severity || '')
+  if (severity === 'critical' || severity === 'high') return 'danger'
+  if (severity === 'medium') return 'warning'
+  return 'info'
+}
+
+const projectAnalysisEvidenceLink = (evidence: Record<string, unknown>) =>
+  resolveProjectAnalysisEvidenceLink(evidence, workspace.value?.evidenceLinks || [])
+
+const projectAnalysisEvidenceLabel = (evidence: Record<string, unknown>) =>
+  [
+    evidence.fileName || evidence.fileId || evidence.evidenceLinkId,
+    evidence.pageNo ? `第 ${evidence.pageNo} 页` : ''
+  ]
+    .filter(Boolean)
+    .join(' · ') || '证据依据'
+
+const projectAnalysisRuleLabel = (rule: Record<string, unknown>) =>
+  String(rule.text || rule.ruleCode || rule.source || '规则依据')
+
 const blockText = (block: ReviewBContentBlock) =>
   typeof (block as { text?: unknown }).text === 'string'
     ? String((block as { text: string }).text)
@@ -1724,7 +1778,7 @@ onBeforeUnmount(() => {
         <section ref="timelineRef" class="conversation-timeline">
           <ElSkeleton v-if="nodeLoading && !workspace" :rows="8" animated />
           <template v-else>
-            <article v-if="!messages.length" class="welcome-card">
+            <article v-if="!conversationMessages.length" class="welcome-card">
               <div>
                 <strong>AI 复核助手已就绪</strong>
                 <p>
@@ -1741,7 +1795,7 @@ onBeforeUnmount(() => {
             </article>
 
             <article
-              v-for="message in messages"
+              v-for="message in conversationMessages"
               :key="message.id"
               :class="['conversation-message', `is-${message.role}`]"
               :data-message-role="message.role"
@@ -1752,8 +1806,98 @@ onBeforeUnmount(() => {
                   v-for="(block, blockIndex) in message.contentBlocks"
                   :key="`${message.id}-${blockIndex}`"
                 >
+                  <section
+                    v-if="block.type === 'project_analysis_result'"
+                    class="content-card project-analysis-result-card"
+                  >
+                    <div class="project-analysis-result-head">
+                      <div>
+                        <ElTag type="primary" effect="plain" size="small">一键分析</ElTag>
+                        <strong>全工程分析 · 当前节点结果</strong>
+                      </div>
+                      <ElTag
+                        :type="
+                          projectAnalysisResultTagType(projectAnalysisResultOf(block)?.reviewResult)
+                        "
+                        effect="light"
+                      >
+                        {{ projectAnalysisResultLabel(projectAnalysisResultOf(block)) }}
+                      </ElTag>
+                    </div>
+                    <p class="project-analysis-result-meta">
+                      {{ projectAnalysisResultOf(block)?.finishedAt || '完成时间未记录' }}
+                      · ReviewRun {{ projectAnalysisResultOf(block)?.reviewRunId }}
+                    </p>
+                    <div
+                      v-if="projectAnalysisResultOf(block)?.findingDrafts.length"
+                      class="project-analysis-findings"
+                    >
+                      <article
+                        v-for="finding in projectAnalysisResultOf(block)?.findingDrafts || []"
+                        :key="String(finding.id || finding.title)"
+                      >
+                        <div>
+                          <ElTag
+                            v-if="finding.severity"
+                            :type="projectAnalysisFindingSeverity(finding)"
+                            size="small"
+                          >
+                            {{ finding.severity }}
+                          </ElTag>
+                          <strong>{{ finding.title || '审查发现' }}</strong>
+                        </div>
+                        <p>{{ finding.description || '该事项需要人工确认。' }}</p>
+                        <div
+                          v-if="Array.isArray(finding.evidenceRefs) && finding.evidenceRefs.length"
+                          class="project-analysis-support"
+                        >
+                          <strong>证据依据</strong>
+                          <div>
+                            <template
+                              v-for="(evidence, evidenceIndex) in finding.evidenceRefs"
+                              :key="
+                                String(evidence.evidenceLinkId || evidence.fileId || evidenceIndex)
+                              "
+                            >
+                              <button
+                                v-if="projectAnalysisEvidenceLink(evidence)"
+                                type="button"
+                                @click="openEvidence(projectAnalysisEvidenceLink(evidence)!)"
+                              >
+                                <span>{{ projectAnalysisEvidenceLabel(evidence) }}</span>
+                                <small v-if="evidence.quotedText">{{ evidence.quotedText }}</small>
+                              </button>
+                              <span v-else class="project-analysis-support-chip">
+                                <span>{{ projectAnalysisEvidenceLabel(evidence) }}</span>
+                                <small v-if="evidence.quotedText">{{ evidence.quotedText }}</small>
+                              </span>
+                            </template>
+                          </div>
+                        </div>
+                        <div
+                          v-if="Array.isArray(finding.ruleRefs) && finding.ruleRefs.length"
+                          class="project-analysis-support"
+                        >
+                          <strong>规则依据</strong>
+                          <div>
+                            <span
+                              v-for="(rule, ruleIndex) in finding.ruleRefs"
+                              :key="String(rule.ruleCode || rule.text || ruleIndex)"
+                              class="project-analysis-rule-chip"
+                            >
+                              {{ projectAnalysisRuleLabel(rule) }}
+                            </span>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+                    <p v-else class="project-analysis-empty-finding">
+                      本节点未生成独立 Finding，结果仍需人工确认。
+                    </p>
+                  </section>
+
                   <ReviewMarkdownText
-                    v-if="block.type === 'text'"
+                    v-else-if="block.type === 'text'"
                     :content="blockDisplayText(block)"
                     :references="blockReferences(block)"
                     @open-reference="openMessageReference"
@@ -2801,6 +2945,112 @@ onBeforeUnmount(() => {
   align-items: center;
   margin: 0 0 10px;
   font-size: 14px;
+}
+
+.project-analysis-result-card {
+  background: linear-gradient(135deg, #f5f9ff, #fff);
+  border-color: #cfe0f7;
+}
+
+.project-analysis-result-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-analysis-result-head > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.project-analysis-result-meta,
+.project-analysis-empty-finding {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--review-muted);
+}
+
+.project-analysis-findings {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.project-analysis-findings > article {
+  padding: 11px 12px;
+  background: #fff;
+  border: 1px solid #e0e9f5;
+  border-radius: 8px;
+}
+
+.project-analysis-findings > article > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.project-analysis-findings p {
+  margin: 7px 0 0;
+  line-height: 1.65;
+}
+
+.project-analysis-findings small {
+  display: block;
+  margin-top: 7px;
+  color: var(--review-muted);
+}
+
+.project-analysis-support {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.project-analysis-support > strong {
+  font-size: 12px;
+  color: #52647a;
+}
+
+.project-analysis-support > div {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.project-analysis-support button,
+.project-analysis-support-chip,
+.project-analysis-rule-chip {
+  display: grid;
+  max-width: 100%;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #35516f;
+  text-align: left;
+  background: #eef4fb;
+  border: 1px solid #d6e3f3;
+  border-radius: 7px;
+  gap: 2px;
+}
+
+.project-analysis-support button {
+  cursor: pointer;
+}
+
+.project-analysis-support button:hover {
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary-light-5);
+}
+
+.project-analysis-support small {
+  max-width: 560px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--review-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .basis-card > div {

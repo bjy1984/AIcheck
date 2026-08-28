@@ -9988,6 +9988,39 @@ def active_human_input_task_for_run(review_run: dict[str, Any] | None) -> dict[s
     )
 
 
+def project_analysis_results_for_review_workspace(
+    request: Request,
+    project_id: str,
+    node_id: int,
+) -> list[dict[str, Any]]:
+    rows = [
+        item
+        for item in repo.state.get("review_runs", [])
+        if str(item.get("triggerType") or "") == "manual_full_project_analysis"
+        and str(item.get("projectId") or "") == project_id
+        and int(item.get("nodeId") or 0) == int(node_id)
+        and tenant_id_for_record(item) == request_tenant_id(request)
+    ]
+    rows.sort(
+        key=lambda item: str(
+            item.get("finishedAt") or item.get("updatedAt") or item.get("createdAt") or ""
+        ),
+        reverse=True,
+    )
+    return [
+        {
+            "reviewRunId": item.get("reviewRunId") or item.get("id"),
+            "projectAnalysisRunId": item.get("projectAnalysisRunId"),
+            "status": item.get("status"),
+            "reviewResult": item.get("reviewResult"),
+            "findingDrafts": repo.clone(item.get("findingDrafts") or []),
+            "createdAt": item.get("createdAt"),
+            "finishedAt": item.get("finishedAt"),
+        }
+        for item in rows[:20]
+    ]
+
+
 def review_workspace_payload(
     request: Request,
     project_id: str,
@@ -10084,6 +10117,11 @@ def review_workspace_payload(
         "basisSnapshot": fixed_basis,
         "session": review_session_view(session) if session else None,
         "activeReviewRun": review_run_view(review_run) if review_run else None,
+        "projectAnalysisResults": project_analysis_results_for_review_workspace(
+            request,
+            project_id,
+            node_id,
+        ),
         "activeHumanInputTask": active_task,
         "latestHumanDecision": (
             repo.clone(review_opinions[0])
