@@ -73,3 +73,35 @@ def test_periodic_tasks_are_mutexed_against_overlap() -> None:
     ):
         head = source.split(f"def {task_name}", 1)[0][-400:]
         assert 'pipeline_task_lock("auto-review-periodic"' in head, task_name
+
+
+def test_evidence_change_invalidates_session_tool_memory(monkeypatch) -> None:
+    """新证据自动挂载后，会话工具记忆必须失效——否则监检人员第二次问
+    「核对资质」拿到的是缓存的旧核对结果，新证书根本不进视野。"""
+    from apps.api import routes
+    from apps.api.review_session_evidence import (
+        refresh_review_session_evidence_fingerprint,
+    )
+
+    routes.repo.state["node_evidence_links"] = [
+        {"id": "NEL-1", "projectId": "P-1", "nodeId": 24, "revision": 1, "manualStatus": "confirmed"}
+    ]
+    routes.repo.state["bindings"] = []
+    routes.repo.state["review_session_events"] = []
+    session = {"id": "RS-1", "projectId": "P-1", "nodeId": 24, "toolMemoryRevision": 0}
+
+    # 首次：只记指纹不失效（记忆本来是空的）
+    assert refresh_review_session_evidence_fingerprint(session) is False
+    assert session["toolMemoryRevision"] == 0
+    # 证据没变：不失效
+    assert refresh_review_session_evidence_fingerprint(session) is False
+    # 自动挂载新证书（不经过会话上下文端点）：必须失效
+    routes.repo.state["node_evidence_links"].append(
+        {"id": "NEL-2", "projectId": "P-1", "nodeId": 24, "revision": 1, "manualStatus": "pending"}
+    )
+    assert refresh_review_session_evidence_fingerprint(session) is True
+    assert session["toolMemoryRevision"] == 1
+    # 驳回一份（状态变化同样是证据变化）
+    routes.repo.state["node_evidence_links"][0]["manualStatus"] = "rejected"
+    assert refresh_review_session_evidence_fingerprint(session) is True
+    assert session["toolMemoryRevision"] == 2

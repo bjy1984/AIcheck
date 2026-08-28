@@ -34,6 +34,7 @@ from fastapi.responses import (
 
 from apps.api import document_access_policy, upload_session_workflow
 from apps.api.idempotency_scope import replay_authorization_digests
+from apps.api.review_session_evidence import refresh_review_session_evidence_fingerprint
 from apps.api.project_analysis_views import (
     node_project_analysis_view,
     project_analysis_results_for_review_workspace,
@@ -2553,11 +2554,6 @@ def versioned_project(project: dict[str, Any]) -> dict[str, Any]:
     cloned["revision"] = project_revision(project)
     cloned["etag"] = project_etag(project)
     return cloned
-
-
-def project_without_business_pack_snapshot(project: dict[str, Any]) -> dict[str, Any]:
-    """历史别名：versioned_project 现在本身就不带快照，这里保留以免破坏既有调用方。"""
-    return versioned_project(project)
 
 
 def report_etag(report: dict[str, Any]) -> str:
@@ -12136,6 +12132,8 @@ def create_review_session_message(
         now = server_time()
         # 进程重启后可能遗留 running 状态的执行记录：先收敛，避免会话被永久占用。
         recover_interrupted_agent_executions(session)
+        # 证据指纹变了（自动挂载/绑定增删）→ 工具记忆失效；见 review_session_evidence.py
+        refresh_review_session_evidence_fingerprint(session)
         context = review_assistant_request_context(request, session)
         review_run = context["review_run"]
         review_run_id = str((review_run or {}).get("reviewRunId") or (review_run or {}).get("id") or "") or None
@@ -27854,10 +27852,10 @@ def create_admin_project(request: Request, body: dict[str, Any] = Body(default_f
         audit_id = repo.add_audit("项目立项", "Project", project_id)
         detail_data = project_detail_payload(project_id)
         if detail_data:
-            detail_data["project"] = project_without_business_pack_snapshot(project)
+            detail_data["project"] = versioned_project(project)
         return ok(
             {
-                "project": project_without_business_pack_snapshot(project),
+                "project": versioned_project(project),
                 "detail": detail_data,
                 "businessPack": business_pack_summary(pack),
                 "auditLogId": audit_id,
