@@ -34,6 +34,10 @@ from fastapi.responses import (
 
 from apps.api import document_access_policy, upload_session_workflow
 from apps.api.idempotency_scope import replay_authorization_digests
+from apps.api.project_analysis_views import (
+    node_project_analysis_view,
+    project_analysis_results_for_review_workspace,
+)
 from apps.api.office_preview_routes import router as office_preview_router
 from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
 from apps.api.upload_session_workflow import (
@@ -3326,30 +3330,6 @@ def document_readable_for_role(document: dict[str, Any], role: str | None) -> bo
     )
 
 
-def document_is_submitted(document: dict[str, Any]) -> bool:
-    return document_access_policy.document_is_submitted(
-        _DOCUMENT_ACCESS_SERVICES,
-        document,
-    )
-
-
-def normalized_organization_name(value: Any) -> str:
-    return document_access_policy.normalized_organization_name(value)
-
-
-def document_visible_to_actor(
-    document: dict[str, Any],
-    role: str | None,
-    member: dict[str, Any] | None,
-) -> bool:
-    return document_access_policy.document_visible_to_actor(
-        _DOCUMENT_ACCESS_SERVICES,
-        document,
-        role,
-        member,
-    )
-
-
 def effective_document_actor_for_request(
     request: Request,
 ) -> tuple[str | None, JSONResponse | None]:
@@ -3474,17 +3454,6 @@ def _knowledge_file_node_ids(file: dict[str, Any]) -> set[int]:
     return document_access_policy.knowledge_file_node_ids(
         _DOCUMENT_ACCESS_SERVICES,
         file,
-    )
-
-
-def knowledge_file_visible_in_scope(
-    file: dict[str, Any],
-    scope: set[int] | None,
-) -> bool:
-    return document_access_policy.knowledge_file_visible_in_scope(
-        _DOCUMENT_ACCESS_SERVICES,
-        file,
-        scope,
     )
 
 
@@ -3801,11 +3770,11 @@ def find_org_unit(org_id: str | None = None, org_name: str | None = None) -> dic
     if org_id:
         matches = [org for org in admin_org_units() if org.get("id") == org_id]
     elif org_name:
-        normalized_name = normalized_organization_name(org_name)
+        normalized_name = document_access_policy.normalized_organization_name(org_name)
         matches = [
             org
             for org in admin_org_units()
-            if normalized_organization_name(org.get("name")) == normalized_name
+            if document_access_policy.normalized_organization_name(org.get("name")) == normalized_name
         ]
     else:
         return None
@@ -6779,44 +6748,6 @@ def node_requirements(request: Request, project_id: str, node_id: int):
     return ok(project_requirements_for_node(project_id, node_id), request)
 
 
-def node_project_analysis_view(
-    project_id: str,
-    node_id: int,
-    *,
-    tenant_id: str,
-) -> dict[str, Any] | None:
-    snapshot_ids = {
-        str(item.get("projectAnalysisSnapshotId") or item.get("id") or "")
-        for item in repo.state.get("project_analysis_snapshots", [])
-        if str(item.get("projectId") or "") == project_id
-        and int(node_id) in {int(value) for value in item.get("nodeIds") or []}
-    }
-    runs = [
-        item
-        for item in repo.state.get("project_analysis_runs", [])
-        if str(item.get("projectId") or "") == project_id
-        and str(item.get("projectAnalysisSnapshotId") or "") in snapshot_ids
-        and tenant_id_for_record(item) == tenant_id
-    ]
-    latest_run = _inspection_latest_record(runs)
-    if not latest_run:
-        return None
-    project_analysis_run_id = str(latest_run.get("projectAnalysisRunId") or "")
-    node_review = _inspection_latest_record(
-        [
-            item
-            for item in repo.state.get("review_runs", [])
-            if str(item.get("projectAnalysisRunId") or "") == project_analysis_run_id
-            and int(item.get("nodeId") or 0) == int(node_id)
-            and tenant_id_for_record(item) == tenant_id
-        ]
-    )
-    return {
-        "run": project_analysis_status_view(latest_run),
-        "nodeReview": review_run_view(node_review) if node_review else None,
-    }
-
-
 @router.get("/projects/{project_id}/nodes/{node_id}/package")
 def node_package(request: Request, project_id: str, node_id: int):
     effective_project_id = project_id
@@ -6967,6 +6898,7 @@ def node_package(request: Request, project_id: str, node_id: int):
                     effective_project_id,
                     node_id,
                     tenant_id=tenant_id_for_record(project),
+                    review_run_view=review_run_view,
                 )
             ),
             "actions": repo.clone(node.get("actions", [])),
@@ -9988,39 +9920,6 @@ def active_human_input_task_for_run(review_run: dict[str, Any] | None) -> dict[s
     )
 
 
-def project_analysis_results_for_review_workspace(
-    request: Request,
-    project_id: str,
-    node_id: int,
-) -> list[dict[str, Any]]:
-    rows = [
-        item
-        for item in repo.state.get("review_runs", [])
-        if str(item.get("triggerType") or "") == "manual_full_project_analysis"
-        and str(item.get("projectId") or "") == project_id
-        and int(item.get("nodeId") or 0) == int(node_id)
-        and tenant_id_for_record(item) == request_tenant_id(request)
-    ]
-    rows.sort(
-        key=lambda item: str(
-            item.get("finishedAt") or item.get("updatedAt") or item.get("createdAt") or ""
-        ),
-        reverse=True,
-    )
-    return [
-        {
-            "reviewRunId": item.get("reviewRunId") or item.get("id"),
-            "projectAnalysisRunId": item.get("projectAnalysisRunId"),
-            "status": item.get("status"),
-            "reviewResult": item.get("reviewResult"),
-            "findingDrafts": repo.clone(item.get("findingDrafts") or []),
-            "createdAt": item.get("createdAt"),
-            "finishedAt": item.get("finishedAt"),
-        }
-        for item in rows[:20]
-    ]
-
-
 def review_workspace_payload(
     request: Request,
     project_id: str,
@@ -10118,9 +10017,9 @@ def review_workspace_payload(
         "session": review_session_view(session) if session else None,
         "activeReviewRun": review_run_view(review_run) if review_run else None,
         "projectAnalysisResults": project_analysis_results_for_review_workspace(
-            request,
             project_id,
             node_id,
+            tenant_id=request_tenant_id(request),
         ),
         "activeHumanInputTask": active_task,
         "latestHumanDecision": (

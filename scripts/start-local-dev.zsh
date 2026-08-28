@@ -6,7 +6,9 @@ REPO_ROOT="${SCRIPT_DIR:h}"
 BACKEND_DIR="$REPO_ROOT/backend"
 FRONTEND_DIR="$REPO_ROOT/frontend"
 LOG_DIR="${AICHECK_DEV_LOG_DIR:-$REPO_ROOT/tmp/dev-server-logs}"
-ENV_FILE="$BACKEND_DIR/.env"
+# 可覆盖：测试用它指向密闭的空文件，避免被开发者本机 .env 里的
+# AICHECK_TASK_DISPATCH=celery 之类影响断言（0827 实测就是这么翻的）。
+ENV_FILE="${AICHECK_DEV_ENV_FILE:-$BACKEND_DIR/.env}"
 
 BACKEND_PORT="${AICHECK_DEV_BACKEND_PORT:-8000}"
 FRONTEND_PORT="${AICHECK_DEV_FRONTEND_PORT:-4000}"
@@ -226,8 +228,12 @@ start_frontend() {
 
 dry_run() {
   print "AICHECK_MINERU_EXECUTION_MODE=postgres"
-  print "Redis: ${AICHECK_REDIS_URL:-redis://127.0.0.1:6379/0}"
-  print "Celery queues: $CELERY_QUEUES"
+  # Redis/Celery 只在显式选择 celery 派发时才打印：本地默认是 postgres 直连模式，
+  # 不依赖这两样——测试据此断言 dry-run 输出里不出现它们（test_local_startup_script）。
+  if [[ "${AICHECK_TASK_DISPATCH:-disabled}" == "celery" ]]; then
+    print "Redis: ${AICHECK_REDIS_URL:-redis://127.0.0.1:6379/0}"
+    print "Celery queues: $CELERY_QUEUES"
+  fi
   print "backend: .venv/bin/uvicorn apps.api.main:app --host 127.0.0.1 --port $BACKEND_PORT"
   print "backend healthz: $BACKEND_HEALTHZ_URL"
   print "backend log: $BACKEND_LOG ($LOG_DIR/backend.pid)"
