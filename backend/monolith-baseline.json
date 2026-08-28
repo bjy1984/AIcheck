@@ -1,8 +1,8 @@
 {
   "backend/apps/api/routes.py": {
-    "directStateAccess": 331,
-    "directStateWrite": 118,
-    "lines": 28084
+    "directStateAccess": 292,
+    "directStateWrite": 100,
+    "lines": 26226
   },
   "backend/libs/review_orchestrator/execution.py": {
     "directStateAccess": 21,
@@ -13,6 +13,6 @@
     "lines": 27183
   },
   "frontend/src/views/AICheck/Workbench.vue": {
-    "lines": 9599
+    "lines": 9566
   }
 }

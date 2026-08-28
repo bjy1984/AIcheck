@@ -37,6 +37,8 @@ from apps.api.routes import (
 from apps.api.std_samr_routes import router as std_samr_router
 from apps.api.auto_review_routes import auto_review_router
 from apps.api.project_analysis_routes import project_analysis_router
+from apps.api.knowledge_admin_routes import knowledge_admin_router
+from apps.api.report_template_routes import report_template_router
 from libs.audit_context import (
     current_request_audit_context,
     reset_request_audit_context,
@@ -1393,6 +1395,10 @@ async def temporal_health_status() -> dict[str, object]:
 if compatibility_mocks_enabled():
     app.include_router(mock_router)
     app.include_router(mock_router, prefix="/api")
+app.include_router(knowledge_admin_router)
+app.include_router(knowledge_admin_router, prefix="/api")
+app.include_router(report_template_router)
+app.include_router(report_template_router, prefix="/api")
 app.include_router(router)
 app.include_router(router, prefix="/api")
 # 一键审查拆在独立模块：routes.py 的行数棘轮卡在上限，往里加会触发棘轮，

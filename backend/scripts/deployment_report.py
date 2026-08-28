@@ -1900,9 +1900,14 @@ def knowledge_rule_contract_check(
     api_routes_module = None
     if fastapi_app is None:
         from apps.api import routes as api_routes
+        from apps.api.knowledge_admin_routes import knowledge_admin_router
 
         api_routes_module = api_routes
         routes_to_check.extend(getattr(api_routes.router, "routes", []) or [])
+        # 本 FastAPI 版本的 include_router 是惰性 _IncludedRouter，app.routes
+        # 看不到子路由——知识库路由拆进独立模块后必须显式扫它，否则契约检查
+        # 会把「路由搬了家」误报成「路由没了」。
+        routes_to_check.extend(getattr(knowledge_admin_router, "routes", []) or [])
     if api_routes_module is None:
         from apps.api import routes as api_routes
 
@@ -1995,7 +2000,12 @@ def knowledge_rule_contract_check(
     ]:
         if term not in readiness_source:
             field_failures.append(f"knowledge readiness scorecard missing term: {term}")
-    overview_source = source_for_callable(getattr(api_routes_module, "knowledge_overview", None))
+    from apps.api import knowledge_admin_routes as knowledge_admin_module
+
+    overview_source = source_for_callable(
+        getattr(api_routes_module, "knowledge_overview", None)
+        or getattr(knowledge_admin_module, "knowledge_overview", None)
+    )
     for term in ["scorecard", "build_knowledge_rule_scorecard"]:
         if term not in overview_source:
             field_failures.append(f"knowledge overview missing scorecard term: {term}")
