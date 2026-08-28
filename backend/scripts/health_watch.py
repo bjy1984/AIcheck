@@ -98,6 +98,29 @@ def check() -> tuple[list[str], list[str]]:
     else:
         facts.append("API /healthz 正常")
 
+    # 当日 LLM 成本：按 model_call_attempts 的 costNormalized.total 汇总。
+    # 供应商故障引发的重试风暴或 prompt 膨胀都会先体现在这里；
+    # 超阈值只告警不熔断——审批型业务宁可花钱也不能静默停摆。
+    import os as _os
+
+    today = now.strftime("%Y-%m-%d")
+    attempts_today = [
+        item
+        for item in repo.state.get("model_call_attempts", [])
+        if isinstance(item, dict) and str(item.get("createdAt") or "").startswith(today)
+    ]
+    cost_today = sum(
+        float((item.get("costNormalized") or {}).get("total") or 0)
+        for item in attempts_today
+    )
+    cost_limit = float(_os.getenv("AICHECK_LLM_DAILY_COST_ALERT_CNY", "50"))
+    facts.append(f"当日 LLM 调用 {len(attempts_today)} 次，成本 ¥{cost_today:.2f}")
+    if cost_today > cost_limit:
+        alerts.append(
+            f"当日 LLM 成本 ¥{cost_today:.2f} 超过告警线 ¥{cost_limit:.0f}"
+            "（AICHECK_LLM_DAILY_COST_ALERT_CNY）——检查是否有重试风暴或 prompt 膨胀"
+        )
+
     # 夜间探针（六角色写审计 + 一键分析可用性）必须**新鲜且全绿**。
     # 探针只在夜里跑，坏了没人看日志等于没跑；状态文件在宿主机挂载目录，
     # 跨部署持久，文件缺失本身就是异常（要么探针从没跑过，要么写不进去）。

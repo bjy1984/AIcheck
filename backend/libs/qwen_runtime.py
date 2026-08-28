@@ -278,6 +278,21 @@ class QwenRuntimeClient:
         self.raw_capture = raw_capture if raw_capture is not None else raw_capture_from_environment()
 
     def chat_sync(self, messages: list[dict[str, Any]], model: str = "default-chat", **kwargs: Any) -> dict[str, Any]:
+        from libs.integrations import llm_circuit_breaker
+
+        # 断路器在唯一收口点上：熔断期内直接快速失败（LLM_CIRCUIT_OPEN），
+        # 上层既有失败路径（落 failed、可重试）自然接住；只计供应商级故障。
+        host = llm_circuit_breaker.breaker_host(self.config)
+        llm_circuit_breaker.ensure_closed(host)
+        try:
+            result = self._chat_sync_dispatch(messages, model=model, **kwargs)
+        except Exception as exc:
+            llm_circuit_breaker.record_failure(host, exc)
+            raise
+        llm_circuit_breaker.record_success(host)
+        return result
+
+    def _chat_sync_dispatch(self, messages: list[dict[str, Any]], model: str, **kwargs: Any) -> dict[str, Any]:
         if self.config["mode"] == "server":
             return self._server_chat_sync(messages, model=model, **kwargs)
         if self.config["mode"] == "official_api":
