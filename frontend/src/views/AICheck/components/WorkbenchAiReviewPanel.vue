@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { CircleCloseFilled } from '@element-plus/icons-vue'
-import { ElIcon, ElTag } from 'element-plus'
+import { ElIcon } from 'element-plus'
 
-import type { WorkbenchAiFinding, WorkbenchAiPresentation } from '../workbenchReviewPresentation'
+import {
+  workbenchFindingDisplay,
+  type WorkbenchAiPresentation
+} from '../workbenchReviewPresentation'
 import AuditStatusTag from './AuditStatusTag.vue'
 
-defineProps<{
+const props = defineProps<{
   presentation: WorkbenchAiPresentation
   history: WorkbenchAiPresentation[]
 }>()
@@ -14,11 +18,7 @@ const emit = defineEmits<{
   openFile: [fileId: string]
 }>()
 
-const severityType = (finding: WorkbenchAiFinding) => {
-  if (finding.severity === 'critical' || finding.severity === 'high') return 'danger'
-  if (finding.severity === 'medium') return 'warning'
-  return 'info'
-}
+const displayFindings = computed(() => props.presentation.findings.map(workbenchFindingDisplay))
 
 const evidenceLabel = (evidence: Record<string, unknown>) =>
   [evidence.fileName || evidence.fileId, evidence.pageNo ? `第 ${evidence.pageNo} 页` : '']
@@ -70,16 +70,7 @@ const ruleLabel = (rule: Record<string, unknown>) => String(rule.text || rule.so
         <p class="ai-result-summary">{{ presentation.summary }}</p>
 
         <div v-if="presentation.findings.length" class="ai-result-findings">
-          <article v-for="finding in presentation.findings" :key="finding.id">
-            <div class="ai-finding-head">
-              <ElTag size="small" effect="plain">{{ finding.typeLabel }}</ElTag>
-              <ElTag v-if="finding.severityLabel" size="small" :type="severityType(finding)">
-                严重度 {{ finding.severityLabel }}
-              </ElTag>
-              <span v-if="finding.confidence !== undefined">
-                置信度 {{ Math.round(finding.confidence * 100) }}%
-              </span>
-            </div>
+          <article v-for="finding in displayFindings" :key="finding.id">
             <h3>{{ finding.title || '审查发现' }}</h3>
             <p>{{ finding.description }}</p>
             <div v-if="finding.evidenceRefs.length" class="ai-reference-row">

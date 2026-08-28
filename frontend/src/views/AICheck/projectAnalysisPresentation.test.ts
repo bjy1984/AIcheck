@@ -7,6 +7,13 @@ const { projectAnalysisProgressView, projectAnalysisRequestFailure } =
   presentation as typeof presentation & {
     projectAnalysisRequestFailure?: (error: unknown) => { terminal: boolean; message: string }
   }
+const projectAnalysisBannerState = (
+  presentation as typeof presentation & {
+    projectAnalysisBannerState?: (
+      status?: ProjectAnalysisStatus
+    ) => { tone: 'running' | 'success' | 'failure'; label: string } | undefined
+  }
+).projectAnalysisBannerState
 
 assert.equal(typeof projectAnalysisRequestFailure, 'function')
 assert.deepEqual(
@@ -96,3 +103,30 @@ assert.deepEqual(
   ),
   { mode: 'determinate', percent: 100, label: '全工程分析完成，等待人工确认' }
 )
+
+assert.equal(typeof projectAnalysisBannerState, 'function')
+assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'queued' })), {
+  tone: 'running',
+  label: 'AI一键分析正在运行'
+})
+assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'model_running' })), {
+  tone: 'running',
+  label: 'AI一键分析正在运行'
+})
+assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'failed' }), true), {
+  tone: 'running',
+  label: 'AI一键分析正在运行'
+})
+assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'waiting_human_review' })), {
+  tone: 'success',
+  label: 'AI分析完成'
+})
+assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'partial_failure' })), {
+  tone: 'failure',
+  label: 'AI分析失败'
+})
+assert.deepEqual(projectAnalysisBannerState?.(status({ phase: 'failed' })), {
+  tone: 'failure',
+  label: 'AI分析失败'
+})
+assert.equal(projectAnalysisBannerState?.(), undefined)

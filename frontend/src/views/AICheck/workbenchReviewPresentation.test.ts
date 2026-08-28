@@ -9,6 +9,7 @@ import {
   inspectionReviewDirectoryItemsWithAiStatus,
   projectAnalysisExecutionStepStatus,
   selectWorkbenchAiPresentation,
+  workbenchFindingDisplay,
   workbenchReviewSectionOrder
 } from './workbenchReviewPresentation'
 
@@ -98,6 +99,15 @@ assert.deepEqual(completed.findings[0], {
   ruleRefs: [{ source: 'criteria', text: '规则原文' }]
 })
 assert.equal(completed.canRetry, false)
+assert.deepEqual(workbenchFindingDisplay(completed.findings[0]), {
+  id: 'FND-1',
+  title: '许可范围需要人工确认',
+  description: '现有证据不足以确认许可范围完全覆盖。',
+  evidenceCount: 1,
+  ruleCount: 1,
+  evidenceRefs: [{ fileId: 'DOC-1' }],
+  ruleRefs: [{ source: 'criteria', text: '规则原文' }]
+})
 assert.deepEqual(buildWorkbenchHumanAiContext(completed), {
   overall: '当前节点形成 1 条审查发现，所有结果均需人工确认。',
   ruleConclusion: '部分证据支持',

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
@@ -24,7 +25,9 @@ from libs.project_analysis.domain import (
     create_project_analysis_run,
     project_analysis_run_view,
     project_analysis_status_view,
+    reap_stalled_project_analysis_runs,
 )
+from libs.project_analysis.execution import project_analysis_model_timeout_seconds
 from libs.project_analysis.prompt import project_analysis_preview
 
 project_analysis_router = APIRouter()
@@ -92,9 +95,20 @@ def create_project_analysis(
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    if error := _authorize(request, project_id, write=True):
+        return error
+
+    reaped = reap_stalled_project_analysis_runs(
+        repo.state,
+        project_id=project_id,
+        model_running_timeout=timedelta(
+            seconds=project_analysis_model_timeout_seconds() + 300
+        ),
+    )
+    if reaped:
+        flush_state({"project_analysis_runs", "project_analysis_events"})
+
     def produce():
-        if error := _authorize(request, project_id, write=True):
-            return error
         try:
             preview = _preview(project_id)
         except ValueError as exc:

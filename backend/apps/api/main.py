@@ -65,6 +65,7 @@ from libs.db.repository import (
 )
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage
 from libs.integrations.task_dispatcher import mineru_execution_mode
+from libs.project_analysis.domain import project_analysis_status_view
 from libs.review_orchestrator.dispatcher import review_orchestration_mode
 from libs.runtime_database_scope import refresh_runtime_database_scope
 from libs.runtime_readiness import production_runtime_status
@@ -653,10 +654,46 @@ async def idempotency_replay_response(request: Request) -> JSONResponse | None:
         if cached.get("authorizationDigest") != request_authorization_digest(request, all_projects=True):
             return fail(errors.FORBIDDEN, request, message="当前授权上下文已变化，不能重放历史响应。", http_status=403)
         cached["authorizationDigest"] = request_authorization_digest(request)
+    if stale_project_analysis_replay(request, cached):
+        repo.state["idempotency"].pop(scope, None)
+        return None
     return JSONResponse(
         repo.clone(cached["response"]),
         status_code=int(cached.get("httpStatus") or 200),
         headers={"Idempotency-Replayed": "true"},
+    )
+
+
+def stale_project_analysis_replay(request: Request, cached: dict[str, Any]) -> bool:
+    if request.method != "POST":
+        return False
+    path_match = re.fullmatch(
+        r"/projects/([^/]+)/inspection/full-project-analysis/runs",
+        canonical_path(request.url.path),
+    )
+    if not path_match:
+        return False
+    cached_run = (((cached.get("response") or {}).get("data") or {}).get("run") or {})
+    run_id = str(cached_run.get("projectAnalysisRunId") or "")
+    if not run_id:
+        return False
+    project_id = path_match.group(1)
+    current = next(
+        (
+            row
+            for row in repo.state.get("project_analysis_runs") or []
+            if str(row.get("projectId") or "") == project_id
+            and str(row.get("projectAnalysisRunId") or "") == run_id
+        ),
+        None,
+    )
+    if current is None:
+        return False
+    if str(current.get("phase") or "") == "failed":
+        return True
+    return (
+        project_analysis_status_view(current).get("errorCode")
+        == "PROJECT_ANALYSIS_RUN_STALLED"
     )
 
 

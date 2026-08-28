@@ -14,7 +14,7 @@ from libs.contracts.responses import server_time
 from libs.model_usage import estimate_messages_tokens
 from libs.review_evidence import active_node_document_versions
 
-PROMPT_VERSION = "project-monolithic-analysis@1.0.0"
+PROMPT_VERSION = "project-monolithic-analysis@1.2.0"
 DEFAULT_BUSINESS_PACK_ID = "engineering_inspection_v1"
 DEFAULT_MODEL_ALIAS = "project-review-large"
 
@@ -39,57 +39,27 @@ SYSTEM_PROMPT = """你是压力管道安装工程监督检验 AI 审查代理。
 
 
 OUTPUT_SCHEMA = {
-    "schemaVersion": "AIAllReviewResult@2.0.0",
-    "projectId": "string",
-    "projectCode": "string",
-    "projectName": "string",
     "nodeReviews": [
         {
             "nodeId": "number",
-            "nodeName": "string",
             "reviewResult": "supported|partially_supported|insufficient_evidence|conflict|mismatch",
-            "supportSummary": "string",
-            "missingEvidence": ["string"],
-            "conflicts": ["string"],
-            "risks": ["string"],
-            "recommendations": ["string"],
             "findings": [
                 {
                     "findingType": "string",
                     "severity": "low|medium|high|critical",
                     "title": "string",
                     "description": "string",
-                    "confidence": "0..1",
-                    "suggestedAction": "human_confirm|request_correction",
                     "evidenceRefs": [
                         {
                             "fileId": "string",
-                            "documentVersionId": "string",
-                            "fileName": "string",
                             "pageNo": "number|null",
                             "quotedText": "verbatim string",
                         }
                     ],
-                    "ruleRefs": [{"source": "criteria|checkMethod", "text": "verbatim string"}],
-                    "kbRefs": [],
-                    "groundingStatus": "grounded|insufficient_evidence",
-                    "unsupportedClaims": ["string"],
-                    "requiresHumanConfirmation": True,
                 }
             ],
         }
     ],
-    "projectSummary": {
-        "supportedNodeCount": "number",
-        "partialNodeCount": "number",
-        "insufficientNodeCount": "number",
-        "conflictNodeCount": "number",
-        "mismatchNodeCount": "number",
-        "humanReviewNodeCount": "number",
-        "priorityRisks": ["string"],
-        "priorityManualActions": ["string"],
-    },
-    "disclaimer": "以上内容仅作为监检审查提示，不替代最终人工结论。",
 }
 
 
@@ -328,6 +298,8 @@ def build_project_analysis_snapshot(
     document_versions: set[str] = set()
     document_ocr_hashes: dict[str, dict[str, str]] = {}
     node_snapshot_hashes: dict[str, str] = {}
+    documents = {str(row.get("id") or ""): row for row in _records(state, "documents")}
+    evidence_metadata: dict[str, dict[str, str]] = {}
     for node_id in node_ids:
         active = _active_project_node_documents(state, project_id, node_id)
         if not active:
@@ -342,6 +314,12 @@ def build_project_analysis_snapshot(
             for row in active
         ]
         document_versions.update(row["documentVersionId"] for row in file_refs)
+        for file_ref in file_refs:
+            file_id = str(file_ref["fileId"])
+            evidence_metadata[file_id] = {
+                "documentVersionId": str(file_ref["documentVersionId"]),
+                "fileName": str((documents.get(file_id) or {}).get("fileName") or file_id),
+            }
         node_payload = {
             "nodeId": node_id,
             "nodeName": node.get("name") or node.get("nodeName") or f"节点 {node_id}",
@@ -381,6 +359,10 @@ def build_project_analysis_snapshot(
         "id": f"PASNAP-{snapshot_hash.removeprefix('sha256:')[:16].upper()}",
         "projectAnalysisSnapshotId": f"PASNAP-{snapshot_hash.removeprefix('sha256:')[:16].upper()}",
         **core,
+        # 展示/审计元数据只供服务端校验回填，不进入模型请求，也不参与快照哈希。
+        "evidenceMetadata": {
+            key: evidence_metadata[key] for key in sorted(evidence_metadata)
+        },
         "snapshotHash": snapshot_hash,
         "createdAt": server_time(),
     }
@@ -392,28 +374,26 @@ def build_project_analysis_request(
     *,
     model_alias: str = DEFAULT_MODEL_ALIAS,
 ) -> dict[str, Any]:
-    documents = {str(row.get("id") or ""): row for row in _records(state, "documents")}
     file_corpus: dict[str, dict[str, Any]] = {}
     nodes = deepcopy(snapshot.get("nodes") or [])
     for node in nodes:
         for file_ref in node.get("fileRefs") or []:
             file_id = str(file_ref.get("fileId") or "")
             version_id = str(file_ref.get("documentVersionId") or "")
-            document = documents.get(file_id) or {}
             parse_result = _latest_parse_result(state, version_id)
             source_text = _full_ocr_text(parse_result)
             cleaned_text = clean_project_ocr_text(source_text)
-            file_name = str(document.get("fileName") or file_id)
-            file_ref["fileName"] = file_name
             if file_id not in file_corpus:
                 file_corpus[file_id] = {
                     "fileId": file_id,
-                    "documentVersionId": version_id,
-                    "fileName": file_name,
                     "sourceContentHash": _stable_hash(source_text),
                     "cleanedContentHash": _stable_hash(cleaned_text),
                     "fullOcrText": cleaned_text,
                 }
+        node["fileRefs"] = [
+            {"fileId": str(file_ref.get("fileId") or "")}
+            for file_ref in node.get("fileRefs") or []
+        ]
     project = next(
         (
             row

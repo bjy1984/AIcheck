@@ -248,6 +248,8 @@ def reap_stalled_project_analysis_runs(
     now: datetime | None = None,
     stall_timeout: timedelta | None = None,
     model_running_timeout: timedelta | None = None,
+    project_id: str | None = None,
+    tenant_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """把超时无进展的非终态运行落 failed 终态（改库，不是改显示）。
 
@@ -262,6 +264,10 @@ def reap_stalled_project_analysis_runs(
     base_timeout = stall_timeout or PROJECT_ANALYSIS_STALL_TIMEOUT
     reaped: list[dict[str, Any]] = []
     for run in state.get("project_analysis_runs") or []:
+        if project_id is not None and str(run.get("projectId") or "") != project_id:
+            continue
+        if tenant_id is not None and str(run.get("tenantId") or "") != tenant_id:
+            continue
         phase = str(run.get("phase") or "")
         if phase in TERMINAL_PHASES:
             continue

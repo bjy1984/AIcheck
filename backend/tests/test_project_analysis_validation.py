@@ -204,6 +204,113 @@ def test_validator_downgrades_out_of_node_and_non_verbatim_evidence() -> None:
     }
 
 
+def test_validator_injects_server_owned_metadata_when_model_omits_or_hallucinates_it() -> None:
+    from libs.project_analysis.validation import validate_project_analysis_output
+
+    result = validate_project_analysis_output(
+        json.dumps(
+            {
+                "schemaVersion": "model-invented-version",
+                "projectId": "P-HALLUCINATED",
+                "projectCode": "wrong-code",
+                "projectName": "wrong-name",
+                "nodeReviews": [
+                    {"nodeId": 1, "reviewResult": "supported", "findings": []},
+                    {"nodeId": 2, "reviewResult": "supported", "findings": []},
+                ],
+                "projectSummary": {"supportedNodeCount": 999},
+                "disclaimer": "model supplied disclaimer",
+            },
+            ensure_ascii=False,
+        ),
+        _snapshot(),
+        _payload(),
+    )
+
+    assert result["schemaVersion"] == "AIAllReviewResult@2.0.0"
+    assert result["projectId"] == "P-1"
+    assert result["projectCode"] == "p1"
+    assert result["projectName"] == "工程一"
+    assert result["disclaimer"] == "以上内容仅作为监检审查提示，不替代最终人工结论。"
+    assert [row["nodeName"] for row in result["nodeReviews"]] == ["节点一", "节点二"]
+    assert result["projectSummary"]["humanReviewNodeCount"] == 2
+
+
+def test_validator_conservatively_normalizes_missing_core_finding_fields() -> None:
+    from libs.project_analysis.validation import validate_project_analysis_output
+
+    result = validate_project_analysis_output(
+        json.dumps(
+            {
+                "nodeReviews": [
+                    {
+                        "nodeId": 1,
+                        "reviewResult": "model-invented-result",
+                        "findings": [{"evidenceRefs": []}],
+                    },
+                    {"nodeId": 2, "reviewResult": "supported", "findings": []},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        _snapshot(),
+        _payload(),
+    )
+
+    review = result["nodeReviews"][0]
+    finding = review["findings"][0]
+    assert review["reviewResult"] == "insufficient_evidence"
+    assert finding["requiresHumanConfirmation"] is True
+    assert finding["groundingStatus"] == "insufficient_evidence"
+    assert {
+        "FINDING_TYPE_MISSING",
+        "FINDING_SEVERITY_INVALID",
+        "FINDING_TITLE_MISSING",
+        "FINDING_DESCRIPTION_MISSING",
+    }.issubset({row["code"] for row in finding["validationFailures"]})
+
+
+def test_validator_restores_file_name_and_version_without_model_returning_them() -> None:
+    from libs.project_analysis.validation import validate_project_analysis_output
+
+    result = validate_project_analysis_output(
+        json.dumps(
+            {
+                "nodeReviews": [
+                    {
+                        "nodeId": 1,
+                        "reviewResult": "supported",
+                        "findings": [
+                            _finding(
+                                evidenceRefs=[
+                                    {
+                                        "fileId": "DOC-1",
+                                        "pageNo": 1,
+                                        "quotedText": "许可证编号 TS-001",
+                                    }
+                                ]
+                            )
+                        ],
+                    },
+                    {"nodeId": 2, "reviewResult": "supported", "findings": []},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        _snapshot(),
+        _payload(),
+    )
+
+    evidence = result["nodeReviews"][0]["findings"][0]["evidenceRefs"][0]
+    assert evidence == {
+        "fileId": "DOC-1",
+        "documentVersionId": "DV-1",
+        "fileName": "一.pdf",
+        "pageNo": 1,
+        "quotedText": "许可证编号 TS-001",
+    }
+
+
 @pytest.mark.parametrize(
     "raw_text,error_code",
     [

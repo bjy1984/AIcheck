@@ -186,8 +186,8 @@ def test_prepare_writes_deterministic_queue_task_id_before_dispatch(monkeypatch)
 def test_invalid_output_rerolls_model_once_before_failing(monkeypatch) -> None:
     """输出校验失败先自动重掷一次模型调用，再失败才落终态。
 
-    实测：temperature 0.1 下同一项目 R3/R4/R5 全过、R7 漏写 schemaVersion——
-    采样非确定性偶发。直接终态化等于把一次免费重试转嫁给人工。
+    节点集合缺失说明模型没有完成整项任务，先自动重掷一次。
+    直接终态化等于把一次免费重试转嫁给人工。
     只重掷一次：坏 prompt 无限重掷等于无限烧钱。
     """
     from apps.worker import tasks
@@ -200,7 +200,7 @@ def test_invalid_output_rerolls_model_once_before_failing(monkeypatch) -> None:
             "phase": "validating_output",
             "status": "validating_output",
             "modelAttemptId": "MCALL-1",
-            "rawModelOutput": '{"schemaVersion": "wrong@0"}',
+            "rawModelOutput": '{"nodeReviews": [{"nodeId": 999}]}',
             "revision": 1,
         }
 
@@ -246,10 +246,10 @@ def test_invalid_output_rerolls_model_once_before_failing(monkeypatch) -> None:
             "phase": "validating_output",
             "status": "validating_output",
             "modelAttemptId": "MCALL-2",
-            "rawModelOutput": '{"schemaVersion": "wrong@0"}',
+            "rawModelOutput": '{"nodeReviews": [{"nodeId": 999}]}',
         }
     )
     second = tasks.project_analysis_validate_output.run("PARUN-REROLL")
     assert second["phase"] == "failed"
-    assert second["errorCode"] == "LLM_OUTPUT_SCHEMA_VERSION_MISMATCH"
+    assert second["errorCode"] == "PROJECT_ANALYSIS_NODE_SET_MISMATCH"
     assert len(dispatched) == 1  # 没有第二次重掷

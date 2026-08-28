@@ -221,6 +221,71 @@ def test_project_prompt_deduplicates_shared_ocr_and_resolves_every_file_ref() ->
     assert snapshot["snapshotHash"].startswith("sha256:")
 
 
+def test_project_prompt_only_requests_fields_the_model_must_own() -> None:
+    from libs.project_analysis.prompt import (
+        build_project_analysis_request,
+        build_project_analysis_snapshot,
+    )
+
+    state = _state()
+    snapshot = build_project_analysis_snapshot(
+        state,
+        "P-1",
+        business_pack_id="engineering_inspection_v1",
+        prompt_version="project-monolithic-analysis@1.0.0",
+        model_route=_route(),
+    )
+    request = build_project_analysis_request(state, snapshot)
+    schema = json.loads(request["messages"][1]["content"])["outputSchema"]
+
+    assert set(schema) == {"nodeReviews"}
+    node_schema = schema["nodeReviews"][0]
+    assert set(node_schema) == {"nodeId", "reviewResult", "findings"}
+    assert set(node_schema["findings"][0]) == {
+        "findingType",
+        "severity",
+        "title",
+        "description",
+        "evidenceRefs",
+    }
+    assert set(node_schema["findings"][0]["evidenceRefs"][0]) == {
+        "fileId",
+        "pageNo",
+        "quotedText",
+    }
+
+
+def test_project_prompt_excludes_file_names_and_version_metadata_from_model_context() -> None:
+    from libs.project_analysis.prompt import (
+        build_project_analysis_request,
+        build_project_analysis_snapshot,
+    )
+
+    state = _state()
+    snapshot = build_project_analysis_snapshot(
+        state,
+        "P-1",
+        business_pack_id="engineering_inspection_v1",
+        prompt_version="project-monolithic-analysis@1.0.0",
+        model_route=_route(),
+    )
+    request = build_project_analysis_request(state, snapshot)
+    content = request["messages"][1]["content"]
+    project = json.loads(content)["project"]
+
+    assert all(
+        set(file_ref) == {"fileId"}
+        for node in project["nodes"]
+        for file_ref in node["fileRefs"]
+    )
+    assert all(
+        "fileName" not in source and "documentVersionId" not in source
+        for source in project["fileCorpus"].values()
+    )
+    assert "共享许可证.pdf" not in content
+    assert "施工方案.pdf" not in content
+
+
 def test_project_analysis_preview_blocks_context_overflow_without_model_call() -> None:
     from libs.project_analysis.prompt import (
         ProjectAnalysisContextLimitError,

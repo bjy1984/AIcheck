@@ -293,6 +293,56 @@ def test_dispatch_failure_lands_failed_run_and_stays_retryable(monkeypatch) -> N
     assert len(repo.state.get("project_analysis_runs", [])) == 2
 
 
+def test_stalled_cached_run_is_invalidated_and_restarted_with_same_key(monkeypatch) -> None:
+    """同一快照的僵尸运行不能让固定 Idempotency-Key 永久回放旧响应。"""
+    monkeypatch.setattr(
+        "apps.api.project_analysis_routes.task_dispatcher.dispatch_project_analysis",
+        lambda _run_id: {"mode": "disabled", "taskId": None},
+    )
+    preview = _ok(
+        client.get(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/preview",
+            headers=HEADERS,
+        )
+    )["preview"]
+    headers = {**HEADERS, "Idempotency-Key": "stalled-project-analysis"}
+    first = _ok(
+        client.post(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/runs",
+            headers=headers,
+            json={"snapshotHash": preview["snapshotHash"]},
+        )
+    )["run"]
+    stalled = repo.state["project_analysis_runs"][0]
+    stalled.update(
+        {
+            "phase": "validating_output",
+            "status": "validating_output",
+            "createdAt": "2026-01-01 00:00:00",
+            "updatedAt": "2026-01-01 00:10:00",
+            "lastHeartbeatAt": "2026-01-01 00:05:00",
+        }
+    )
+
+    restarted = _ok(
+        client.post(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/runs",
+            headers=headers,
+            json={"snapshotHash": preview["snapshotHash"]},
+        )
+    )["run"]
+
+    runs = repo.state["project_analysis_runs"]
+    assert any(row["phase"] == "failed" for row in runs), runs
+    assert len(runs) == 2
+    assert restarted["projectAnalysisRunId"] != first["projectAnalysisRunId"]
+    assert restarted["projectAnalysisRunId"].endswith("-R2")
+    assert restarted["phase"] == "preparing_snapshot"
+    failed = next(row for row in runs if row["projectAnalysisRunId"] == first["projectAnalysisRunId"])
+    assert failed["phase"] == "failed"
+    assert failed["errorCode"] == "PROJECT_ANALYSIS_RUN_STALLED"
+
+
 def test_run_is_persisted_before_celery_dispatch(monkeypatch) -> None:
     """先落库再派发。worker 拿到任务比本请求结束后的中间件统一落库更快，
     首跳会 PROJECT_ANALYSIS_RUN_NOT_FOUND，白烧一次重试退避（实测约 17 秒）。"""

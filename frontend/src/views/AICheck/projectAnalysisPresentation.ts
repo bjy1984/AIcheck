@@ -1,5 +1,25 @@
 import type { ProjectAnalysisStatus } from '@/api/aicheck/projectAnalysis'
 
+export type ProjectAnalysisBannerState = {
+  tone: 'running' | 'success' | 'failure'
+  label: string
+}
+
+export const projectAnalysisBannerState = (
+  status?: ProjectAnalysisStatus,
+  starting = false
+): ProjectAnalysisBannerState | undefined => {
+  if (starting) return { tone: 'running', label: 'AI一键分析正在运行' }
+  if (!status) return undefined
+  if (status.phase === 'waiting_human_review') {
+    return { tone: 'success', label: 'AI分析完成' }
+  }
+  if (status.phase === 'failed' || status.phase === 'partial_failure') {
+    return { tone: 'failure', label: 'AI分析失败' }
+  }
+  return { tone: 'running', label: 'AI一键分析正在运行' }
+}
+
 export const projectAnalysisRequestFailure = (error: unknown) => {
   const payload = (
     error as {

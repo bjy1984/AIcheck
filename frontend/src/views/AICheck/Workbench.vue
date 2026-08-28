@@ -26,7 +26,6 @@ import {
   ElSkeleton,
   ElTable,
   ElTableColumn,
-  ElTag,
   ElTooltip,
   ElTreeV2
 } from 'element-plus'
@@ -168,6 +167,7 @@ import type {
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
 import { buildDocumentSubmissionPayload, documentBindingSummary } from '@/utils/acceptanceFlows'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
+import type { ProjectAnalysisBannerState } from './projectAnalysisPresentation'
 
 type InspectionNodeSortKey = 'review' | 'nodeId' | 'material'
 type SortDirection = 'asc' | 'desc'
@@ -262,6 +262,7 @@ import {
   inspectionReviewDirectoryItems,
   inspectionReviewDirectoryItemsWithAiStatus,
   selectWorkbenchAiPresentation,
+  workbenchFindingDisplay,
   type WorkbenchAiFinding
 } from './workbenchReviewPresentation'
 
@@ -334,6 +335,7 @@ const pageIssue = ref<WorkbenchStateIssue>()
 const nodeIssue = ref<WorkbenchStateIssue>()
 const projectOptions = ref<Project[]>([])
 const activeProjectId = ref('')
+const projectAnalysisBanner = ref<ProjectAnalysisBannerState>()
 const activeNodeId = ref(24)
 const activeWorkbenchSection = ref<'overview' | 'node'>('overview')
 const activeInspectionWorkspaceView = ref<InspectionWorkspaceView>(
@@ -716,6 +718,9 @@ const nodeAiPresentationFindings = computed<WorkbenchAiFinding[]>(() =>
     evidenceRefs: [],
     ruleRefs: []
   }))
+)
+const visibleNodeAiPresentationFindings = computed(() =>
+  nodeAiPresentationFindings.value.map(workbenchFindingDisplay)
 )
 const workbenchAiPresentation = computed(() =>
   selectWorkbenchAiPresentation({
@@ -5208,14 +5213,25 @@ onBeforeUnmount(() => {
             {{ topbarStatus }}
           </div>
         </div>
-        <ElButton
-          class="global-search"
-          aria-label="打开全局搜索"
-          title="全局搜索"
-          @click="handleOpenQuickAccess('search')"
-        >
-          <ElIcon><Search /></ElIcon>
-        </ElButton>
+        <div class="global-search-cluster">
+          <ElButton
+            class="global-search"
+            aria-label="打开全局搜索"
+            title="全局搜索"
+            @click="handleOpenQuickAccess('search')"
+          >
+            <ElIcon><Search /></ElIcon>
+          </ElButton>
+          <div
+            v-if="projectAnalysisBanner"
+            :class="['project-analysis-banner', `is-${projectAnalysisBanner.tone}`]"
+            role="status"
+            aria-live="polite"
+          >
+            <span class="project-analysis-banner-dot" aria-hidden="true"></span>
+            {{ projectAnalysisBanner.label }}
+          </div>
+        </div>
         <div class="top-actions">
           <ElButton class="top-action" text @click="handleOpenQuickAccess('todos')">
             待办消息<span v-if="quickAccessNotificationCount" class="notice-dot">
@@ -5267,6 +5283,7 @@ onBeforeUnmount(() => {
             v-if="role === 'inspection' || role === 'admin'"
             :project-id="activeProjectId"
             :disabled="!activeProjectId"
+            @state-change="projectAnalysisBanner = $event"
           />
           <ElButton
             v-if="role === 'inspection' && canManageRegistration"
@@ -5986,23 +6003,12 @@ onBeforeUnmount(() => {
                        原始 JSON，监检要在花括号和转义引号里找结论——
                        **那不是不好看，是让人读不到判定**。
                        解析不出来仍原样显示文本：模型偶尔回纯文字，硬套结构会吃掉内容。 -->
-                  <ul v-if="aiRecheckFindings.length" class="ai-finding-list">
-                    <li v-for="(finding, index) in aiRecheckFindings" :key="index">
-                      <div class="ai-finding-head">
-                        <ElTag size="small" effect="plain">{{ finding.typeLabel }}</ElTag>
-                        <ElTag
-                          v-if="finding.severityLabel"
-                          size="small"
-                          :type="
-                            finding.severity === 'high'
-                              ? 'danger'
-                              : finding.severity === 'medium'
-                                ? 'warning'
-                                : 'info'
-                          "
-                        >
-                          严重度 {{ finding.severityLabel }}
-                        </ElTag>
+                  <ul v-if="visibleNodeAiPresentationFindings.length" class="ai-finding-list">
+                    <li v-for="(finding, index) in visibleNodeAiPresentationFindings" :key="index">
+                      <div
+                        v-if="finding.evidenceCount || finding.ruleCount"
+                        class="ai-finding-head"
+                      >
                         <span v-if="finding.evidenceCount" class="ai-finding-meta">
                           证据 {{ finding.evidenceCount }} 条
                         </span>
@@ -7102,6 +7108,13 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+@keyframes project-analysis-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.78);
+  }
+}
+
 .aicheck-static-viewport {
   --bg: var(--aicheck-bg, #f4f7fb);
   --panel: var(--aicheck-surface, #fff);
@@ -7164,9 +7177,58 @@ onBeforeUnmount(() => {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
-  grid-template-columns: minmax(280px, 404px) 44px minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 404px) minmax(44px, max-content) minmax(0, 1fr);
   gap: 18px;
   align-items: center;
+}
+
+.global-search-cluster {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+}
+
+.project-analysis-banner {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  gap: 7px;
+  align-items: center;
+}
+
+.project-analysis-banner.is-running {
+  color: var(--blue-2);
+  background: var(--blue-soft);
+  border-color: #bcd4ff;
+}
+
+.project-analysis-banner.is-success {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: #bdebd1;
+}
+
+.project-analysis-banner.is-failure {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: #ffc5bd;
+}
+
+.project-analysis-banner-dot {
+  width: 7px;
+  height: 7px;
+  background: currentcolor;
+  border-radius: 50%;
+}
+
+.project-analysis-banner.is-running .project-analysis-banner-dot {
+  animation: project-analysis-pulse 1.4s ease-in-out infinite;
 }
 
 .skip-main {

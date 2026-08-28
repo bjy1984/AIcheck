@@ -25,6 +25,16 @@ export type WorkbenchAiFinding = {
   ruleRefs: Array<Record<string, unknown>>
 }
 
+export const workbenchFindingDisplay = (finding: WorkbenchAiFinding) => ({
+  id: finding.id,
+  title: finding.title,
+  description: finding.description,
+  evidenceCount: finding.evidenceCount,
+  ruleCount: finding.ruleCount,
+  evidenceRefs: finding.evidenceRefs,
+  ruleRefs: finding.ruleRefs
+})
+
 export type WorkbenchAiPresentation = {
   runId: string
   activityAt: string

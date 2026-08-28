@@ -12,11 +12,16 @@ import {
   type ProjectAnalysisStatus
 } from '@/api/aicheck'
 import {
+  projectAnalysisBannerState,
   projectAnalysisProgressView,
-  projectAnalysisRequestFailure
+  projectAnalysisRequestFailure,
+  type ProjectAnalysisBannerState
 } from '../projectAnalysisPresentation'
 
 const props = defineProps<{ projectId: string; disabled?: boolean }>()
+const emit = defineEmits<{
+  'state-change': [state: ProjectAnalysisBannerState | undefined]
+}>()
 const drawerVisible = ref(false)
 const loading = ref(false)
 const starting = ref(false)
@@ -29,6 +34,8 @@ const terminalPhases = new Set(['waiting_human_review', 'failed', 'partial_failu
 const progress = computed(() =>
   status.value ? projectAnalysisProgressView(status.value) : undefined
 )
+const bannerState = computed(() => projectAnalysisBannerState(status.value, starting.value))
+const isRunning = computed(() => bannerState.value?.tone === 'running')
 
 const stopPolling = () => {
   if (pollTimer) clearInterval(pollTimer)
@@ -81,7 +88,7 @@ const open = async () => {
   }
 }
 const start = async () => {
-  if (!preview.value || preview.value.contextLimitExceeded) return
+  if (!preview.value || preview.value.contextLimitExceeded || isRunning.value) return
   await ElMessageBox.confirm(
     `将把 ${preview.value.includedNodeCount} 个节点和 ${preview.value.uniqueFileCount} 份唯一 OCR 拼成一个请求，是否继续？`,
     '开始全工程一键分析',
@@ -107,16 +114,25 @@ const start = async () => {
   }
 }
 
+watch(bannerState, (value) => emit('state-change', value), { immediate: true })
+
 watch(
   () => props.projectId,
-  () => {
+  async (projectId) => {
     stopPolling()
     preview.value = undefined
     activeRun.value = undefined
     status.value = undefined
     failureMessage.value = ''
     drawerVisible.value = false
-  }
+    if (!projectId) return
+    try {
+      await load()
+    } catch {
+      // 后台预取失败不弹抽屉错误；用户打开抽屉时会再次加载并看到可操作提示。
+    }
+  },
+  { immediate: true }
 )
 onBeforeUnmount(stopPolling)
 </script>
@@ -155,7 +171,9 @@ onBeforeUnmount(stopPolling)
         <ElButton
           type="primary"
           :loading="starting"
-          :disabled="!preview || preview.contextLimitExceeded || preview.includedNodeCount === 0"
+          :disabled="
+            !preview || preview.contextLimitExceeded || preview.includedNodeCount === 0 || isRunning
+          "
           @click="start"
         >
           开始全量分析

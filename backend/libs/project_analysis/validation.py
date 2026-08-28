@@ -11,6 +11,18 @@ class ProjectAnalysisOutputError(RuntimeError):
         super().__init__(self.code)
 
 
+RESULT_SCHEMA_VERSION = "AIAllReviewResult@2.0.0"
+RESULT_DISCLAIMER = "以上内容仅作为监检审查提示，不替代最终人工结论。"
+REVIEW_RESULTS = {
+    "supported",
+    "partially_supported",
+    "insufficient_evidence",
+    "conflict",
+    "mismatch",
+}
+FINDING_SEVERITIES = {"low", "medium", "high", "critical"}
+
+
 def _bounded_confidence(value: Any) -> float:
     try:
         number = float(value)
@@ -59,6 +71,7 @@ def _validate_evidence_ref(
     *,
     allowed_file_ids: set[str],
     corpus: dict[str, dict[str, Any]],
+    evidence_metadata: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     failures: list[dict[str, Any]] = []
     file_id = str(evidence_ref.get("fileId") or "")
@@ -69,16 +82,21 @@ def _validate_evidence_ref(
     if not source:
         failures.append({"code": "EVIDENCE_FILE_NOT_IN_CORPUS", "fileId": file_id})
         return None, failures
-    if str(evidence_ref.get("documentVersionId") or "") != str(
-        source.get("documentVersionId") or ""
-    ):
-        failures.append({"code": "EVIDENCE_VERSION_MISMATCH", "fileId": file_id})
-    if str(evidence_ref.get("fileName") or "") != str(source.get("fileName") or ""):
-        failures.append({"code": "EVIDENCE_FILENAME_MISMATCH", "fileId": file_id})
+    metadata = evidence_metadata.get(file_id) or {}
+    document_version_id = str(metadata.get("documentVersionId") or "")
+    file_name = str(metadata.get("fileName") or "")
+    if not document_version_id or not file_name:
+        failures.append({"code": "EVIDENCE_METADATA_MISSING", "fileId": file_id})
     quoted_text = str(evidence_ref.get("quotedText") or "")
     if not quoted_text or quoted_text not in str(source.get("fullOcrText") or ""):
         failures.append({"code": "EVIDENCE_QUOTE_NOT_VERBATIM", "fileId": file_id})
-    return (deepcopy(evidence_ref) if not failures else None), failures
+    normalized = {
+        **deepcopy(evidence_ref),
+        "fileId": file_id,
+        "documentVersionId": document_version_id,
+        "fileName": file_name,
+    }
+    return (normalized if not failures else None), failures
 
 
 def _validate_rule_ref(
@@ -94,11 +112,33 @@ def _validate_rule_ref(
     return deepcopy(rule_ref), []
 
 
+def _project_evidence_metadata(
+    snapshot: dict[str, Any], request_payload: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    metadata = deepcopy(snapshot.get("evidenceMetadata") or {})
+    for node in snapshot.get("nodes") or []:
+        for file_ref in node.get("fileRefs") or []:
+            file_id = str(file_ref.get("fileId") or "")
+            if not file_id:
+                continue
+            current = metadata.setdefault(file_id, {})
+            current.setdefault("documentVersionId", file_ref.get("documentVersionId"))
+            current.setdefault("fileName", file_ref.get("fileName"))
+    for file_id, source in (
+        (request_payload.get("project") or {}).get("fileCorpus") or {}
+    ).items():
+        current = metadata.setdefault(str(file_id), {})
+        current.setdefault("documentVersionId", source.get("documentVersionId"))
+        current.setdefault("fileName", source.get("fileName"))
+    return metadata
+
+
 def _validated_finding(
     finding: dict[str, Any],
     *,
     expected_node: dict[str, Any],
     corpus: dict[str, dict[str, Any]],
+    evidence_metadata: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any], bool]:
     item = deepcopy(finding)
     allowed_file_ids = {
@@ -109,6 +149,30 @@ def _validated_finding(
     valid_evidence: list[dict[str, Any]] = []
     valid_rules: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    finding_type = str(item.get("findingType") or "").strip()
+    if not finding_type:
+        failures.append({"code": "FINDING_TYPE_MISSING"})
+        finding_type = "unspecified"
+    severity = str(item.get("severity") or "").strip().lower()
+    if severity not in FINDING_SEVERITIES:
+        failures.append({"code": "FINDING_SEVERITY_INVALID", "severity": severity})
+        severity = "medium"
+    title = str(item.get("title") or "").strip()
+    if not title:
+        failures.append({"code": "FINDING_TITLE_MISSING"})
+        title = "AI 审查发现待人工确认"
+    description = str(item.get("description") or "").strip()
+    if not description:
+        failures.append({"code": "FINDING_DESCRIPTION_MISSING"})
+        description = "模型未提供完整描述，请结合原始资料人工确认。"
+    item.update(
+        {
+            "findingType": finding_type,
+            "severity": severity,
+            "title": title,
+            "description": description,
+        }
+    )
     for evidence_ref in item.get("evidenceRefs") or []:
         if not isinstance(evidence_ref, dict):
             failures.append({"code": "EVIDENCE_REF_INVALID_TYPE"})
@@ -117,6 +181,7 @@ def _validated_finding(
             evidence_ref,
             allowed_file_ids=allowed_file_ids,
             corpus=corpus,
+            evidence_metadata=evidence_metadata,
         )
         failures.extend(diagnostics)
         if valid:
@@ -170,14 +235,13 @@ def validate_project_analysis_output(
         raise ProjectAnalysisOutputError("LLM_OUTPUT_INVALID_JSON") from exc
     if not isinstance(parsed, dict):
         raise ProjectAnalysisOutputError("LLM_OUTPUT_INVALID_ENVELOPE")
-    if parsed.get("schemaVersion") != "AIAllReviewResult@2.0.0":
-        raise ProjectAnalysisOutputError("LLM_OUTPUT_SCHEMA_VERSION_MISMATCH")
-    if str(parsed.get("projectId") or "") != str(snapshot.get("projectId") or ""):
-        raise ProjectAnalysisOutputError("PROJECT_ANALYSIS_PROJECT_MISMATCH")
     reviews = parsed.get("nodeReviews")
     if not isinstance(reviews, list) or any(not isinstance(row, dict) for row in reviews):
         raise ProjectAnalysisOutputError("LLM_OUTPUT_INVALID_NODE_REVIEWS")
-    actual_ids = [int(row.get("nodeId") or 0) for row in reviews]
+    try:
+        actual_ids = [int(row.get("nodeId") or 0) for row in reviews]
+    except (TypeError, ValueError) as exc:
+        raise ProjectAnalysisOutputError("LLM_OUTPUT_INVALID_NODE_REVIEWS") from exc
     expected_ids = [int(item) for item in snapshot.get("nodeIds") or []]
     if sorted(actual_ids) != sorted(expected_ids) or len(set(actual_ids)) != len(actual_ids):
         raise ProjectAnalysisOutputError("PROJECT_ANALYSIS_NODE_SET_MISMATCH")
@@ -187,6 +251,7 @@ def validate_project_analysis_output(
         if isinstance(row, dict)
     }
     corpus = (request_payload.get("project") or {}).get("fileCorpus") or {}
+    evidence_metadata = _project_evidence_metadata(snapshot, request_payload)
     validated_reviews: list[dict[str, Any]] = []
     for source_review in reviews:
         review = deepcopy(source_review)
@@ -202,19 +267,28 @@ def validate_project_analysis_output(
                 source_finding,
                 expected_node=expected_node,
                 corpus=corpus,
+                evidence_metadata=evidence_metadata,
             )
             findings.append(finding)
             invalid_count += int(invalid)
         review["findings"] = findings
-        if not findings or invalid_count == len(findings):
+        if str(review.get("reviewResult") or "") not in REVIEW_RESULTS:
+            review["reviewResult"] = "insufficient_evidence"
+        elif not findings or invalid_count == len(findings):
             review["reviewResult"] = "insufficient_evidence"
         elif invalid_count:
             review["reviewResult"] = "partially_supported"
         validated_reviews.append(review)
+    project = request_payload.get("project") or {}
     return {
         **deepcopy(parsed),
+        "schemaVersion": RESULT_SCHEMA_VERSION,
+        "projectId": snapshot.get("projectId"),
+        "projectCode": project.get("projectCode") or snapshot.get("projectId"),
+        "projectName": project.get("projectName") or snapshot.get("projectId"),
         "nodeReviews": validated_reviews,
         "projectSummary": recompute_project_analysis_summary(validated_reviews),
+        "disclaimer": RESULT_DISCLAIMER,
         "validation": {
             "nodeCount": len(validated_reviews),
             "findingCount": sum(len(row.get("findings") or []) for row in validated_reviews),
