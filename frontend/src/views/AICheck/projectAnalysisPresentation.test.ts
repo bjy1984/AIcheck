@@ -18,6 +18,36 @@ assert.deepEqual(projectAnalysisRequestFailure?.(new Error('network')), {
   message: '全工程分析状态刷新失败，请稍后重试。'
 })
 
+// 机器可读错误码必须译成人话——空范围这种错误照抄兜底文案会骗用户去「稍后重试」
+assert.deepEqual(
+  projectAnalysisRequestFailure?.({
+    response: { data: { message: 'PROJECT_ANALYSIS_EMPTY_SCOPE' } }
+  }),
+  {
+    terminal: true,
+    message:
+      '当前项目还没有可分析的节点资料：请先在节点上挂接有效资料（且未被驳回），再发起一键分析。'
+  }
+)
+assert.deepEqual(
+  projectAnalysisRequestFailure?.({
+    response: { data: { message: 'PROJECT_ANALYSIS_CONTEXT_LIMIT_EXCEEDED' } }
+  }),
+  {
+    terminal: true,
+    message: '项目资料总量超出模型可处理上限，请减少纳入分析的资料后重试。'
+  }
+)
+assert.deepEqual(
+  projectAnalysisRequestFailure?.({
+    response: { data: { data: { currentSnapshotHash: 'sha256:new' } } }
+  }),
+  {
+    terminal: true,
+    message: '项目资料在预览后发生了变化，请刷新预览确认范围后重新发起。'
+  }
+)
+
 const status = (values: Partial<ProjectAnalysisStatus>): ProjectAnalysisStatus =>
   ({
     projectAnalysisRunId: 'PARUN-1',

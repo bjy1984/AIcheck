@@ -5033,6 +5033,7 @@ def project_analysis_execute_model(self, run_id: str) -> dict[str, Any]:
             repo.state,
             run_id,
             client=build_qwen_runtime_client(LiteLLMClient),
+            on_model_running=flush_state,
         )
     except Exception as exc:
         if int(self.request.retries or 0) >= 2:  # 与装饰器 max_retries 一致

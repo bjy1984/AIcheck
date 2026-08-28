@@ -16,10 +16,11 @@ from apps.api.routes import (
 )
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
-from libs.db.repository import repo
+from libs.db.repository import flush_state, repo
 from libs.db.seed import MODEL_ROUTE_VERSIONS
 from libs.integrations import task_dispatcher
 from libs.project_analysis.domain import (
+    advance_project_analysis_phase,
     create_project_analysis_run,
     project_analysis_run_view,
     project_analysis_status_view,
@@ -154,22 +155,32 @@ def create_project_analysis(
             actor_id=str(request_user_id(request) or "AUTO"),
         )
         if not run.get("dispatch"):
+            # 先落库再派发：worker 拿到任务比本请求结束后的中间件统一落库更快，
+            # prepare 首跳会 PROJECT_ANALYSIS_RUN_NOT_FOUND，白烧一次重试退避
+            # （实测约 17 秒）。和 worker 侧 prepare→execute 的「先提交再派发」同理。
+            flush_state(
+                {
+                    "project_analysis_runs",
+                    "project_analysis_snapshots",
+                    "project_analysis_events",
+                }
+            )
             try:
                 run["dispatch"] = task_dispatcher.dispatch_project_analysis(
                     str(run["projectAnalysisRunId"])
                 )
             except Exception as exc:  # noqa: BLE001 - broker failure must become a retryable API result
-                run_id = str(run.get("projectAnalysisRunId") or "")
-                repo.state["project_analysis_runs"] = [
-                    row
-                    for row in repo.state.get("project_analysis_runs") or []
-                    if str(row.get("projectAnalysisRunId") or "") != run_id
-                ]
-                repo.state["project_analysis_events"] = [
-                    row
-                    for row in repo.state.get("project_analysis_events") or []
-                    if str(row.get("projectAnalysisRunId") or "") != run_id
-                ]
+                # run 已经落库，不能再从内存里删掉了事——那会留下一个永远
+                # preparing_snapshot 的 DB 孤儿。改为落 failed 终态；failed 运行
+                # 不会被幂等复用，broker 恢复后重试会创建新运行。
+                advance_project_analysis_phase(
+                    repo.state,
+                    run,
+                    "failed",
+                    errorCode="DISPATCH_FAILED",
+                    errorMessage="全工程分析任务派发失败：Redis/Celery 不可用。",
+                )
+                flush_state({"project_analysis_runs", "project_analysis_events"})
                 LOGGER.warning("project_analysis_dispatch_failed: %s", type(exc).__name__)
                 return fail(
                     errors.AI_RUN_FAILED,

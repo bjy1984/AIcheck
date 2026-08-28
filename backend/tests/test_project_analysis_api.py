@@ -242,7 +242,7 @@ def test_empty_project_analysis_scope_does_not_create_run() -> None:
     assert repo.state.get("project_analysis_runs", []) == []
 
 
-def test_dispatch_failure_is_retryable_and_leaves_no_phantom_run(monkeypatch) -> None:
+def test_dispatch_failure_lands_failed_run_and_stays_retryable(monkeypatch) -> None:
     preview = _ok(
         client.get(
             f"/projects/{PROJECT_ID}/inspection/full-project-analysis/preview",
@@ -265,8 +265,14 @@ def test_dispatch_failure_is_retryable_and_leaves_no_phantom_run(monkeypatch) ->
 
     assert failed.status_code == 503
     assert failed.json()["data"]["reason"] == "AI_RUN_FAILED"
-    assert repo.state.get("project_analysis_runs", []) == []
-    assert repo.state.get("project_analysis_events", []) == []
+    # run 在派发前已落库，失败后必须留档为 failed 终态——从内存里删掉了事
+    # 会在 DB 留下永远 preparing_snapshot 的孤儿（派发前落库是为了消掉
+    # worker 首跳 PROJECT_ANALYSIS_RUN_NOT_FOUND 的竞态）。
+    failed_runs = repo.state.get("project_analysis_runs", [])
+    assert len(failed_runs) == 1
+    assert failed_runs[0]["phase"] == "failed"
+    assert failed_runs[0]["errorCode"] == "DISPATCH_FAILED"
+    failed_run_id = str(failed_runs[0]["projectAnalysisRunId"])
 
     monkeypatch.setattr(
         "apps.api.project_analysis_routes.task_dispatcher.dispatch_project_analysis",
@@ -282,3 +288,35 @@ def test_dispatch_failure_is_retryable_and_leaves_no_phantom_run(monkeypatch) ->
 
     assert retried["phase"] == "preparing_snapshot"
     assert retried["dispatch"]["mode"] == "disabled"
+    # failed 运行不被幂等复用：重试是一次新运行，failed 历史留档
+    assert retried["projectAnalysisRunId"] != failed_run_id
+    assert len(repo.state.get("project_analysis_runs", [])) == 2
+
+
+def test_run_is_persisted_before_celery_dispatch(monkeypatch) -> None:
+    """先落库再派发。worker 拿到任务比本请求结束后的中间件统一落库更快，
+    首跳会 PROJECT_ANALYSIS_RUN_NOT_FOUND，白烧一次重试退避（实测约 17 秒）。"""
+    events: list[str] = []
+    monkeypatch.setattr(
+        "apps.api.project_analysis_routes.flush_state",
+        lambda *_args, **_kwargs: events.append("flush"),
+    )
+    monkeypatch.setattr(
+        "apps.api.project_analysis_routes.task_dispatcher.dispatch_project_analysis",
+        lambda _run_id: events.append("dispatch") or {"mode": "disabled", "taskId": None},
+    )
+    preview = _ok(
+        client.get(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/preview",
+            headers=HEADERS,
+        )
+    )["preview"]
+    _ok(
+        client.post(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/runs",
+            headers={**HEADERS, "Idempotency-Key": "persist-before-dispatch"},
+            json={"snapshotHash": preview["snapshotHash"]},
+        )
+    )
+
+    assert events == ["flush", "dispatch"]

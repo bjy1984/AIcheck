@@ -1,10 +1,33 @@
 import type { ProjectAnalysisStatus } from '@/api/aicheck/projectAnalysis'
 
 export const projectAnalysisRequestFailure = (error: unknown) => {
-  const reason = String(
-    (error as { response?: { data?: { data?: { reason?: string } } } })?.response?.data?.data
-      ?.reason || ''
-  )
+  const payload = (
+    error as {
+      response?: {
+        data?: { message?: string; data?: { reason?: string; currentSnapshotHash?: string } }
+      }
+    }
+  )?.response?.data
+  const reason = String(payload?.data?.reason || '')
+  const serverMessage = String(payload?.message || '')
+  /* 后端把机器可读错误码放在 message 字段里（PROJECT_ANALYSIS_*）。
+   * 不映射的话用户会看到裸错误码，或更糟——被兜底文案骗去「稍后重试」，
+   * 而空范围这种错误重试一万次也不会变。 */
+  const codeMessages: Record<string, string> = {
+    PROJECT_ANALYSIS_EMPTY_SCOPE:
+      '当前项目还没有可分析的节点资料：请先在节点上挂接有效资料（且未被驳回），再发起一键分析。',
+    PROJECT_ANALYSIS_CONTEXT_LIMIT_EXCEEDED:
+      '项目资料总量超出模型可处理上限，请减少纳入分析的资料后重试。'
+  }
+  if (codeMessages[serverMessage]) {
+    return { terminal: true, message: codeMessages[serverMessage] }
+  }
+  if (payload?.data?.currentSnapshotHash) {
+    return {
+      terminal: true,
+      message: '项目资料在预览后发生了变化，请刷新预览确认范围后重新发起。'
+    }
+  }
   return {
     terminal: true,
     message:

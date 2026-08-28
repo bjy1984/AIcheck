@@ -209,3 +209,92 @@ def test_completed_model_attempt_is_not_called_twice() -> None:
 
     result = execute_project_analysis_model(state, "PARUN-1", client=ExplodingClient())
     assert result["modelAttemptId"] == "MCALL-1"
+
+
+def test_model_running_phase_is_persisted_before_the_model_call(monkeypatch) -> None:
+    """model_running 必须在调用模型前落库。
+
+    实测：模型调用 220 秒，DB 全程停在 queued，前端分不清排队和执行。
+    同时覆盖重试路径：相位已是 model_running 时不再原地推进（相位校验
+    不允许 model_running → model_running），补心跳即可。
+    """
+    from test_project_analysis_prompt import _route, _state
+
+    from libs.project_analysis.execution import execute_project_analysis_model
+    from libs.project_analysis.prompt import (
+        build_project_analysis_snapshot,
+        project_analysis_preview,
+    )
+
+    state = _state()
+    state.update(
+        {
+            "project_analysis_snapshots": [],
+            "project_analysis_runs": [],
+            "project_analysis_events": [],
+            "model_call_attempts": [],
+        }
+    )
+    route = _route()
+    preview = project_analysis_preview(state, "P-1", model_route=route)
+    snapshot = build_project_analysis_snapshot(
+        state,
+        "P-1",
+        business_pack_id="engineering_inspection_v1",
+        prompt_version="project-monolithic-analysis@1.0.0",
+        model_route=route,
+    )
+    snapshot["request"] = preview["request"]
+    state["project_analysis_snapshots"].append(snapshot)
+    run = {
+        "id": "PARUN-VIS",
+        "projectAnalysisRunId": "PARUN-VIS",
+        "projectAnalysisSnapshotId": snapshot["projectAnalysisSnapshotId"],
+        "tenantId": "TENANT-1",
+        "projectId": "P-1",
+        "phase": "queued",
+        "status": "queued",
+        "estimatedInputTokens": preview["estimatedInputTokens"],
+        "maxContextTokens": 131072,
+        "reservedOutputTokens": 24000,
+        "modelAlias": "project-review-large",
+        "revision": 1,
+    }
+    state["project_analysis_runs"].append(run)
+    phase_seen_by_flush: list[str] = []
+
+    class FakeClient:
+        def chat_sync(self, messages, **kwargs):
+            # 断言在模型调用发生时，落库回调已经带着 model_running 执行过
+            assert phase_seen_by_flush == ["model_running"]
+            return {
+                "id": "RESP-VIS",
+                "model": "deepseek-v4-pro",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"nodeReviews": []}'},
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            }
+
+    execute_project_analysis_model(
+        state,
+        "PARUN-VIS",
+        client=FakeClient(),
+        on_model_running=lambda: phase_seen_by_flush.append(str(run["phase"])),
+    )
+    assert run["phase"] == "validating_output"
+
+    # 重试路径：DB 已是 model_running（上一跳落库后崩溃/超时），不得抛相位错误
+    run.update({"phase": "model_running", "status": "model_running", "modelAttemptId": None})
+    run.pop("rawModelOutput", None)
+    phase_seen_by_flush.clear()
+    execute_project_analysis_model(
+        state,
+        "PARUN-VIS",
+        client=FakeClient(),
+        on_model_running=lambda: phase_seen_by_flush.append(str(run["phase"])),
+    )
+    assert run["phase"] == "validating_output"

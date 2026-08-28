@@ -45,7 +45,13 @@ def _stable_hash(value: Any) -> str:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def execute_project_analysis_model(state: dict[str, Any], run_id: str, *, client) -> dict[str, Any]:
+def execute_project_analysis_model(
+    state: dict[str, Any],
+    run_id: str,
+    *,
+    client,
+    on_model_running=None,
+) -> dict[str, Any]:
     run = next(
         (
             row
@@ -73,7 +79,13 @@ def execute_project_analysis_model(state: dict[str, Any], run_id: str, *, client
         snapshot,
         model_alias=str(run.get("modelAlias") or "project-review-large"),
     )
-    advance_project_analysis_phase(state, run, "model_running", heartbeat=True)
+    if str(run.get("phase") or "") == "model_running":
+        # 重试路径：model_running 已落库（见下方 on_model_running），相位校验
+        # 不允许原地推进，补个心跳即可。
+        run["lastHeartbeatAt"] = server_time()
+        run["updatedAt"] = server_time()
+    else:
+        advance_project_analysis_phase(state, run, "model_running", heartbeat=True)
     attempt = {
         "id": f"MCALL-PROJECT-{uuid4().hex[:12].upper()}",
         "projectAnalysisRunId": run_id,
@@ -92,6 +104,10 @@ def execute_project_analysis_model(state: dict[str, Any], run_id: str, *, client
         "updatedAt": server_time(),
     }
     state.setdefault("model_call_attempts", []).insert(0, attempt)
+    if on_model_running is not None:
+        # 模型调用可能长达数分钟。不在这里落库的话，DB 全程停在 queued，
+        # 前端分不清「在排队」和「在执行」——2026-08-28 实测 220 秒里状态一直是 queued。
+        on_model_running()
     try:
         response = client.chat_sync(
             request["messages"],
