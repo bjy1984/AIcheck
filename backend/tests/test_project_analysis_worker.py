@@ -139,3 +139,44 @@ def test_exhausted_model_retries_flush_failed_state(monkeypatch) -> None:
     assert run["status"] == "failed"
     assert run["errorCode"] == "RuntimeError"
     assert flushed == ["flush"]
+
+
+def test_prepare_writes_deterministic_queue_task_id_before_dispatch(monkeypatch) -> None:
+    """celery 模式下 queueTaskId 必须在派发前落库。
+
+    原来是派发后回填再第二次落库：execute 首跳读到中间版本，落库撞
+    ConcurrentPersistenceError（实测必败，白烧一次重试）。taskId 改确定性
+    之后可以先写后发，run 行在派发后不再变化。
+    """
+    from apps.worker import tasks
+    from libs.integrations import task_dispatcher
+
+    run = {
+        "projectAnalysisRunId": "PARUN-QID",
+        "projectAnalysisSnapshotId": "PASNAP-QID",
+        "phase": "preparing_snapshot",
+        "includedNodeCount": 1,
+        "uniqueFileCount": 1,
+        "revision": 1,
+    }
+    tasks.repo.state["project_analysis_runs"] = [run]
+    tasks.repo.state["project_analysis_events"] = []
+    monkeypatch.setenv("AICHECK_TASK_DISPATCH", "celery")
+    events: list[tuple[str, object]] = []
+    monkeypatch.setattr(tasks, "load_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        tasks, "flush_state", lambda *_args, **_kwargs: events.append(("flush", run.get("queueTaskId")))
+    )
+
+    def fake_dispatch(task_name, run_id, *, task_id=None):
+        events.append(("dispatch", task_id))
+        return {"mode": "celery", "taskId": task_id}
+
+    monkeypatch.setattr(tasks, "_dispatch_project_analysis_task", fake_dispatch)
+
+    result = tasks.project_analysis_prepare.run("PARUN-QID")
+
+    expected = task_dispatcher.deterministic_task_id("project-analysis-execute", "PARUN-QID")
+    assert result["queueTaskId"] == expected
+    # 落库那一刻 queueTaskId 已是最终值；派发用同一个 id；之后没有第二次落库
+    assert events == [("flush", expected), ("dispatch", expected)]

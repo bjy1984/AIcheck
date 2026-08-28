@@ -27,9 +27,9 @@ def test_prepare_persists_queued_phase_before_dispatching_model(monkeypatch) -> 
     monkeypatch.setattr(tasks, "advance_project_analysis_phase", advance)
     monkeypatch.setattr(tasks, "flush_state", lambda *_args, **_kwargs: calls.append("flush"))
 
-    def dispatch(_task_name: str, _run_id: str) -> dict:
+    def dispatch(_task_name: str, _run_id: str, *, task_id: str | None = None) -> dict:
         calls.append("dispatch")
-        return {"mode": "celery", "taskId": "TASK-MODEL"}
+        return {"mode": "celery", "taskId": task_id or "TASK-MODEL"}
 
     monkeypatch.setattr(tasks, "_dispatch_project_analysis_task", dispatch)
 

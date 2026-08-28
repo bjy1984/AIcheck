@@ -4952,13 +4952,15 @@ def _project_analysis_run(run_id: str) -> dict[str, Any]:
     return run
 
 
-def _dispatch_project_analysis_task(task_name: str, run_id: str) -> dict[str, Any]:
+def _dispatch_project_analysis_task(
+    task_name: str, run_id: str, *, task_id: str | None = None
+) -> dict[str, Any]:
     mode = task_dispatcher.dispatch_mode()
     task = globals()[task_name]
     if mode == "inline":
         return {"mode": mode, "taskId": None, "result": task.run(run_id)}
     if mode == "celery":
-        result = task.apply_async(args=[run_id])
+        result = task.apply_async(args=[run_id], task_id=task_id)
         return {"mode": mode, "taskId": result.id}
     return {"mode": mode, "taskId": None}
 
@@ -5018,10 +5020,23 @@ def _project_analysis_prepare_inner(run_id: str) -> dict[str, Any]:
         )
     # 下一阶段由另一个 Celery 进程读取。必须先提交 queued 状态，否则任务可能先到达，
     # 从数据库读到 preparing_snapshot，随后把正常运行误判成非法阶段跳转。
+    # queueTaskId 用确定性 id 在派发前写进 run：原来是派发后回填再落库第二次，
+    # execute 首跳读到中间版本，落库撞 ConcurrentPersistenceError（实测必败重试）。
+    queue_task_id = None
+    if task_dispatcher.dispatch_mode() == "celery":
+        queue_task_id = task_dispatcher.deterministic_task_id(
+            "project-analysis-execute", run_id
+        )
+    run["queueTaskId"] = queue_task_id
     flush_state()
-    dispatch = _dispatch_project_analysis_task("project_analysis_execute_model", run_id)
-    run["queueTaskId"] = dispatch.get("taskId")
-    flush_state()
+    dispatch = _dispatch_project_analysis_task(
+        "project_analysis_execute_model", run_id, task_id=queue_task_id
+    )
+    if run.get("queueTaskId") != dispatch.get("taskId"):
+        # inline/disabled 模式的 taskId 只能在派发后知道；这两种模式没有跨进程
+        # 竞态，事后回填安全。
+        run["queueTaskId"] = dispatch.get("taskId")
+        flush_state()
     return run
 
 
