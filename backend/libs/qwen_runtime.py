@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from copy import deepcopy
 from pathlib import Path
@@ -17,6 +18,7 @@ from libs.integrations.raw_http_capture import (
 from libs.raw_vault import RawCapture, RawCaptureContext, raw_capture_from_environment
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "qwen_runtime.yaml"
+LOGGER = logging.getLogger(__name__)
 SUPPORTED_MODES = {"server", "official_api"}
 MODEL_ROLE_ALIASES = {
     "review-chat": "review",
@@ -87,6 +89,35 @@ def vision_override(role_or_model: str) -> tuple[str, str]:
     return (base, key) if base and key else ("", "")
 
 
+def fallback_provider(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """备用供应商（主供应商级故障/熔断时降级），未配置返回空 dict。
+
+    与 vision_override 同规矩：地址与密钥**两个都配齐才生效**——只配一半就
+    当没配，避免「地址是新的、密钥是旧的」这种拼出来的组合。
+    模型名用配置文件里 official_api 的默认值（那本来就是为通义写的），
+    可用 AICHECK_LLM_FALLBACK_MODEL_<ROLE> 单独覆盖。
+    """
+    base = str(os.getenv("AICHECK_LLM_FALLBACK_API_BASE") or "").rstrip("/")
+    key = str(os.getenv("AICHECK_LLM_FALLBACK_API_KEY") or "")
+    if not base or not key:
+        return {}
+    cfg = config or qwen_runtime_config()
+    yaml_models = deepcopy((cfg.get("yamlOfficialModels") or {}))
+    for role, env_name in MODEL_ROLE_ENV.items():
+        override = str(
+            os.getenv(env_name.replace("AICHECK_LLM_MODEL_", "AICHECK_LLM_FALLBACK_MODEL_"))
+            or ""
+        ).strip()
+        if override:
+            yaml_models[role] = override
+    return {
+        "baseUrl": base,
+        "apiKey": key,
+        "models": yaml_models,
+        "label": provider_label_for("official_api", base),
+    }
+
+
 def provider_label_for(mode: str, base_url: str) -> str:
     """供应商显示名。
 
@@ -151,6 +182,9 @@ def qwen_runtime_config(path: Path | None = None, env: dict[str, str] | None = N
     api_key = str(source.get(GENERIC_API_KEY_ENV) or source.get(api_key_env) or "")
     aliases = deepcopy(server_provider.get("aliases") or {})
     models = model_names_with_env_overrides(official_provider.get("models") or {}, source)
+    # yaml 原始模型名（不含 env 覆盖）：备用供应商用它——配置文件里的默认值
+    # 本来就是为通义写的，主供应商换到 DeepSeek 后它们正好是备胎的正确答案。
+    yaml_official_models = deepcopy(official_provider.get("models") or {})
     return {
         "schemaVersion": str(config.get("schemaVersion") or "aicheck-qwen-runtime@1"),
         "mode": configured_mode,
@@ -167,6 +201,7 @@ def qwen_runtime_config(path: Path | None = None, env: dict[str, str] | None = N
         "apiKeyConfigured": bool(api_key),
         "aliases": aliases,
         "models": models,
+        "yamlOfficialModels": yaml_official_models,
         "allowFallbackToServer": allow_fallback,
         "embeddingOptional": models.get("embeddingOptional"),
         "embeddingSwitchDefault": False,
@@ -283,13 +318,55 @@ class QwenRuntimeClient:
         # 断路器在唯一收口点上：熔断期内直接快速失败（LLM_CIRCUIT_OPEN），
         # 上层既有失败路径（落 failed、可重试）自然接住；只计供应商级故障。
         host = llm_circuit_breaker.breaker_host(self.config)
-        llm_circuit_breaker.ensure_closed(host)
         try:
+            llm_circuit_breaker.ensure_closed(host)
             result = self._chat_sync_dispatch(messages, model=model, **kwargs)
         except Exception as exc:
             llm_circuit_breaker.record_failure(host, exc)
-            raise
+            return self._failover_chat_sync(messages, model, exc, **kwargs)
         llm_circuit_breaker.record_success(host)
+        return result
+
+    def _failover_chat_sync(
+        self, messages: list[dict[str, Any]], model: str, primary_exc: Exception, **kwargs: Any
+    ) -> dict[str, Any]:
+        """主供应商级故障/熔断时降级到备用供应商；无备胎或非供应商故障则原样抛。
+
+        每次调用都先试主供应商（除非其熔断开着），所以主供应商恢复后
+        **自动切回**，无需人工操作——熔断冷却到期即回归主线。
+        """
+        from libs.integrations import llm_circuit_breaker
+
+        provider_fault = llm_circuit_breaker.is_provider_fault(primary_exc) or (
+            getattr(primary_exc, "reason", None) == "LLM_CIRCUIT_OPEN"
+        )
+        fallback = (
+            fallback_provider(self.config)
+            if provider_fault and self.config.get("mode") == "official_api"
+            else {}
+        )
+        if not fallback:
+            raise primary_exc
+        fallback_host = str(fallback["baseUrl"]).split("//", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+        llm_circuit_breaker.ensure_closed(fallback_host)  # 备胎也熔断 → 快速失败
+        LOGGER.warning(
+            "LLM 主供应商故障（%s），降级到备用供应商 %s（role=%s）",
+            primary_exc,
+            fallback["label"],
+            model,
+        )
+        try:
+            result = self._official_chat_sync(
+                messages, role_or_model=model, _provider=fallback, **kwargs
+            )
+        except Exception as fallback_exc:
+            llm_circuit_breaker.record_failure(fallback_host, fallback_exc)
+            raise
+        llm_circuit_breaker.record_success(fallback_host)
+        result["providerFailover"] = {
+            "from": str(self.config.get("provider") or ""),
+            "to": fallback["label"],
+        }
         return result
 
     def _chat_sync_dispatch(self, messages: list[dict[str, Any]], model: str, **kwargs: Any) -> dict[str, Any]:
@@ -316,22 +393,34 @@ class QwenRuntimeClient:
         )
         return client.chat_sync(messages, model=model, **kwargs)
 
-    def _official_chat_sync(self, messages: list[dict[str, Any]], role_or_model: str, **kwargs: Any) -> dict[str, Any]:
+    def _official_chat_sync(
+        self,
+        messages: list[dict[str, Any]],
+        role_or_model: str,
+        _provider: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         raw_context: RawCaptureContext | None = kwargs.pop("_raw_capture_context", None)
         stream_handler = kwargs.pop("stream_handler", None)
-        base_url = str(self.config.get("baseUrl") or "").rstrip("/")
-        api_key = official_api_key(self.config)
-        vision_base, vision_key = vision_override(role_or_model)
-        if vision_base and vision_key:
-            base_url, api_key = vision_base, vision_key
-        if not base_url:
-            raise RuntimeError("模型地址未配置（AICHECK_LLM_API_BASE 或 QWEN_API_BASE）")
-        if not api_key:
-            raise RuntimeError(
-                f"模型密钥未配置（{GENERIC_API_KEY_ENV} 或 "
-                f"{self.config.get('apiKeyEnv') or 'QWEN_API_KEY'}）"
-            )
-        model = self._official_model_for(role_or_model)
+        if _provider:
+            # 备用供应商：地址/密钥/模型名整组替换，不与主供应商的配置拼混
+            base_url = str(_provider["baseUrl"]).rstrip("/")
+            api_key = str(_provider["apiKey"])
+            model = self._official_model_for(role_or_model, models=_provider.get("models"))
+        else:
+            base_url = str(self.config.get("baseUrl") or "").rstrip("/")
+            api_key = official_api_key(self.config)
+            vision_base, vision_key = vision_override(role_or_model)
+            if vision_base and vision_key:
+                base_url, api_key = vision_base, vision_key
+            if not base_url:
+                raise RuntimeError("模型地址未配置（AICHECK_LLM_API_BASE 或 QWEN_API_BASE）")
+            if not api_key:
+                raise RuntimeError(
+                    f"模型密钥未配置（{GENERIC_API_KEY_ENV} 或 "
+                    f"{self.config.get('apiKeyEnv') or 'QWEN_API_KEY'}）"
+                )
+            model = self._official_model_for(role_or_model)
         client_kwargs: dict[str, Any] = {"timeout": float(kwargs.pop("timeout", 60))}
         if self.transport is not None:
             client_kwargs["transport"] = self.transport
@@ -410,9 +499,10 @@ class QwenRuntimeClient:
         payload.setdefault("provider", self.config.get("provider"))
         return payload
 
-    def _official_model_for(self, role_or_model: str) -> str:
+    def _official_model_for(self, role_or_model: str, models: dict[str, Any] | None = None) -> str:
         role = MODEL_ROLE_ALIASES.get(role_or_model, role_or_model)
-        models = self.config.get("models") if isinstance(self.config.get("models"), dict) else {}
+        if models is None:
+            models = self.config.get("models") if isinstance(self.config.get("models"), dict) else {}
         resolved = models.get(role) or models.get(role_or_model) or role_or_model
         if not resolved:
             raise RuntimeError(f"Qwen official API model is not configured for {role_or_model}")

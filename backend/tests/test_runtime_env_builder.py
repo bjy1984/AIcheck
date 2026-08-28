@@ -79,3 +79,21 @@ def test_部署脚本用的是仓库里的这份生成器():
     """否则改了仓库版本，线上跑的还是服务器上那份手改的副本。"""
     script = (BUILDER.parents[1] / "scripts" / "deploy_to_server.sh").read_text(encoding="utf-8")
     assert "cp deploy/build_runtime_env.py" in script
+
+
+def test_备用供应商随视觉密钥一起生成(tmp_path: pathlib.Path):
+    """有 DashScope 密钥就必须配出 LLM 备胎——两项都写（fallback_provider
+    要求地址密钥齐全才生效，只写一半等于没配）。"""
+    env = _build(
+        tmp_path,
+        {
+            "AICHECK_POSTGRES_PASSWORD": "pw",
+            "DEEPSEEK_API_KEY": "sk-deepseek",
+            "AICHECK_LLM_VISION_API_KEY": "sk-dashscope",
+        },
+    )
+    assert env["AICHECK_LLM_FALLBACK_API_BASE"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert env["AICHECK_LLM_FALLBACK_API_KEY"] == "sk-dashscope"
+
+    without_key = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "DEEPSEEK_API_KEY": "sk-d"})
+    assert "AICHECK_LLM_FALLBACK_API_BASE" not in without_key

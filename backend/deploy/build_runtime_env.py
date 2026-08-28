@@ -149,6 +149,11 @@ if secrets.get("DEEPSEEK_API_KEY"):
 # 报 401 而不是「没配置」——比缺配置更难查。
 if secrets.get("AICHECK_LLM_VISION_API_KEY"):
     runtime["AICHECK_EMBEDDING_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
+    # LLM 备用供应商（DeepSeek 供应商级故障/熔断时降级）也复用这把 DashScope
+    # 密钥：模型名走 qwen_runtime.yaml 里 official_api 的通义默认值。
+    # 地址与密钥两个都配齐才生效（fallback_provider 的规矩），所以放同一个 if 里。
+    runtime["AICHECK_LLM_FALLBACK_API_BASE"] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    runtime["AICHECK_LLM_FALLBACK_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
 
 TARGET.write_text("".join("%s=%s\n" % (k, v) for k, v in sorted(runtime.items())))
 TARGET.chmod(0o600)
