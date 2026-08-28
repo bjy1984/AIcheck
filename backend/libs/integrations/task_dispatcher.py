@@ -14,6 +14,24 @@ def dispatch_mode() -> str:
     return os.getenv("AICHECK_TASK_DISPATCH", "disabled").strip().lower() or "disabled"
 
 
+def project_analysis_dispatch_envelope(run_id: str) -> dict[str, Any]:
+    """celery 模式的派发信封（不发送）。
+
+    信封是确定性的：task_id 由 run_id 推出。调用方先把信封写进 run 并落库、
+    再真正 apply_async——否则 API 收尾的中间件会在 worker 已开始改这一行之后
+    再写一次旧内容，worker 侧落库撞 ConcurrentPersistenceError（实测首跳必败，
+    白烧一次重试）。inline/disabled 模式信封依赖执行结果，返回空让调用方走原路径。
+    """
+    if dispatch_mode() != "celery":
+        return {}
+    return {
+        "mode": "celery",
+        "taskId": deterministic_task_id("project-analysis", run_id),
+        "queue": "business.light",
+        "priority": 8,
+    }
+
+
 def dispatch_project_analysis(run_id: str) -> dict[str, Any]:
     mode = dispatch_mode()
     if mode == "inline":

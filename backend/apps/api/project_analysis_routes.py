@@ -158,6 +158,14 @@ def create_project_analysis(
             # 先落库再派发：worker 拿到任务比本请求结束后的中间件统一落库更快，
             # prepare 首跳会 PROJECT_ANALYSIS_RUN_NOT_FOUND，白烧一次重试退避
             # （实测约 17 秒）。和 worker 侧 prepare→execute 的「先提交再派发」同理。
+            # celery 的派发信封确定性可先算：连信封一起落库，本请求之后不再改
+            # run 行，收尾中间件就没有这一行的增量，worker 落库不会撞
+            # ConcurrentPersistenceError。
+            envelope = task_dispatcher.project_analysis_dispatch_envelope(
+                str(run["projectAnalysisRunId"])
+            )
+            if envelope:
+                run["dispatch"] = envelope
             flush_state(
                 {
                     "project_analysis_runs",
@@ -166,13 +174,16 @@ def create_project_analysis(
                 }
             )
             try:
-                run["dispatch"] = task_dispatcher.dispatch_project_analysis(
+                dispatched = task_dispatcher.dispatch_project_analysis(
                     str(run["projectAnalysisRunId"])
                 )
+                if not envelope:
+                    run["dispatch"] = dispatched
             except Exception as exc:  # noqa: BLE001 - broker failure must become a retryable API result
                 # run 已经落库，不能再从内存里删掉了事——那会留下一个永远
                 # preparing_snapshot 的 DB 孤儿。改为落 failed 终态；failed 运行
                 # 不会被幂等复用，broker 恢复后重试会创建新运行。
+                run["dispatch"] = None  # 信封已预写但任务从未发出去
                 advance_project_analysis_phase(
                     repo.state,
                     run,

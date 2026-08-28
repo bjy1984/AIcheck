@@ -320,3 +320,55 @@ def test_run_is_persisted_before_celery_dispatch(monkeypatch) -> None:
     )
 
     assert events == ["flush", "dispatch"]
+
+
+def test_celery_dispatch_envelope_is_deterministic_and_written_before_send(monkeypatch) -> None:
+    """celery 模式下派发信封先于发送写进 run 并落库。
+
+    否则 run 行在本请求里有两次写（落库后又补 dispatch 字段），收尾中间件
+    会在 worker 已开始改这一行之后再写旧内容，worker 落库首跳必撞
+    ConcurrentPersistenceError（实测），白烧一次重试。
+    """
+    from libs.integrations import task_dispatcher
+
+    monkeypatch.setenv("AICHECK_TASK_DISPATCH", "celery")
+    envelope = task_dispatcher.project_analysis_dispatch_envelope("PARUN-X")
+    assert envelope["mode"] == "celery"
+    assert envelope["taskId"] == task_dispatcher.deterministic_task_id(
+        "project-analysis", "PARUN-X"
+    )
+
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "apps.api.project_analysis_routes.task_dispatcher.dispatch_project_analysis",
+        lambda run_id: sent.append(run_id) or dict(envelope),
+    )
+    flush_snapshots: list[object] = []
+    monkeypatch.setattr(
+        "apps.api.project_analysis_routes.flush_state",
+        lambda *_args, **_kwargs: flush_snapshots.append(
+            (repo.state.get("project_analysis_runs") or [{}])[0].get("dispatch")
+        ),
+    )
+    preview = _ok(
+        client.get(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/preview",
+            headers=HEADERS,
+        )
+    )["preview"]
+    created = _ok(
+        client.post(
+            f"/projects/{PROJECT_ID}/inspection/full-project-analysis/runs",
+            headers={**HEADERS, "Idempotency-Key": "envelope-before-send"},
+            json={"snapshotHash": preview["snapshotHash"]},
+        )
+    )["run"]
+
+    assert sent  # 任务真的发出去了
+    # 落库那一刻 run 行已带最终信封——之后本请求不再改这一行
+    assert flush_snapshots and flush_snapshots[0] == envelope | {
+        "taskId": task_dispatcher.deterministic_task_id(
+            "project-analysis", str(created["projectAnalysisRunId"])
+        )
+    }
+    assert created["dispatch"] == flush_snapshots[0]
