@@ -26,6 +26,8 @@ export type WorkbenchAiFinding = {
 }
 
 export type WorkbenchAiPresentation = {
+  runId: string
+  activityAt: string
   sourceLabel: string
   statusLabel: string
   statusTone: 'blue' | 'green' | 'orange' | 'red' | 'gray'
@@ -159,6 +161,8 @@ export const buildWorkbenchAiPresentation = (
 ): WorkbenchAiPresentation => {
   if (!projectAnalysis) {
     return {
+      runId: '',
+      activityAt: '',
       sourceLabel: 'AI 审查',
       statusLabel: '尚未运行',
       statusTone: 'gray',
@@ -199,6 +203,8 @@ export const buildWorkbenchAiPresentation = (
         ? `当前节点形成 ${findings.length} 条审查发现，所有结果均需人工确认。`
         : '工程分析已结束，但当前节点没有通过校验的审查结果。'
   return {
+    runId: String(run.projectAnalysisRunId || ''),
+    activityAt: String(run.finishedAt || run.updatedAt || run.createdAt || ''),
     sourceLabel: '全工程一键分析',
     statusLabel,
     statusTone,
@@ -245,21 +251,57 @@ export const selectWorkbenchAiPresentation = ({
   }
   const failed = nodeRun.status === '失败'
   const running = nodeRun.status === '推理中'
+  const failureText = String(
+    nodeRun.failure?.reason || nodeRun.failure?.detail || 'AI 复核执行失败。'
+  )
   return {
+    runId: String(nodeRun.id || ''),
+    activityAt: nodeActivityAt,
     sourceLabel: '节点 AI 复核',
     statusLabel: failed ? 'AI 结果生成失败' : running ? 'AI 正在分析' : 'AI 已完成，等待人工确认',
     statusTone: failed ? 'red' : running ? 'blue' : 'green',
     resultLabel: failed ? '未产出结论' : String(nodeRun.suggestion?.result || '等待结果'),
-    summary:
-      (nodeFindings.length ? String(nodeRun.suggestion?.opinionDraft || '') : nodeOutputText) ||
-      String(nodeRun.suggestion?.opinionDraft || '') ||
-      (failed ? '本次 AI 复核未形成可供人工审查的结果。' : '当前节点暂无结果说明。'),
+    summary: failed
+      ? failureText
+      : (nodeFindings.length ? String(nodeRun.suggestion?.opinionDraft || '') : nodeOutputText) ||
+        String(nodeRun.suggestion?.opinionDraft || '') ||
+        '当前节点暂无结果说明。',
     meta: [nodeRun.model, nodeRun.finishedAt || nodeRun.id].filter(Boolean).join(' · '),
     findings: nodeFindings,
-    errorMessage: failed
-      ? String(nodeRun.failure?.reason || nodeRun.failure?.detail || 'AI 复核执行失败。')
-      : '',
+    errorMessage: failed ? failureText : '',
     canRetry: failed ? nodeRun.failure?.retryable !== false : false,
     running
   }
+}
+
+export const buildWorkbenchAiHistory = ({
+  current,
+  projectAnalysis,
+  nodeRuns
+}: {
+  current: WorkbenchAiPresentation
+  projectAnalysis: WorkbenchAiPresentation
+  nodeRuns: AiReviewRun[]
+}) => {
+  const candidates = [
+    ...(projectAnalysis.runId ? [projectAnalysis] : []),
+    ...nodeRuns.map((nodeRun) =>
+      selectWorkbenchAiPresentation({
+        projectAnalysis: buildWorkbenchAiPresentation(null),
+        nodeRun,
+        nodeFindings: [],
+        nodeOutputText: String(
+          nodeRun.llmResultText || nodeRun.suggestion?.opinionDraft || '暂无结果说明。'
+        )
+      })
+    )
+  ]
+  const unique = new Map<string, WorkbenchAiPresentation>()
+  for (const item of candidates) {
+    if (!item.runId || item.runId === current.runId) continue
+    unique.set(item.runId, item)
+  }
+  return [...unique.values()].sort((left, right) =>
+    String(right.activityAt).localeCompare(String(left.activityAt))
+  )
 }

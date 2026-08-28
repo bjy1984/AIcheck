@@ -80,7 +80,6 @@ const open = async () => {
     failureMessage.value = projectAnalysisRequestFailure(error).message
   }
 }
-defineExpose({ open })
 const start = async () => {
   if (!preview.value || preview.value.contextLimitExceeded) return
   await ElMessageBox.confirm(

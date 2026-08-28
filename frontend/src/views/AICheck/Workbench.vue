@@ -193,13 +193,6 @@ type AiExecutionDisplayStep = {
   evidenceLinks: EvidenceLink[]
   status: string
 }
-type ReviewConclusionPoint = {
-  order: string
-  title: string
-  conclusion: string
-  description: string
-  evidenceLinks: EvidenceLink[]
-}
 type EvidenceConfirmationRow = {
   id: string
   requirementId: string
@@ -264,11 +257,10 @@ import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 import { submittedFileCountLabel, workbenchRolePresentation } from './workbenchRolePresentation'
 import { buildCorrectionUploadBindingPayload } from './contractorCorrectionUpload'
 import {
+  buildWorkbenchAiHistory,
   buildWorkbenchAiPresentation,
-  buildWorkbenchHumanAiContext,
   inspectionReviewDirectoryItems,
   inspectionReviewDirectoryItemsWithAiStatus,
-  projectAnalysisExecutionStepStatus,
   selectWorkbenchAiPresentation,
   type WorkbenchAiFinding
 } from './workbenchReviewPresentation'
@@ -363,7 +355,6 @@ const legacyInspectionAuditPanelsVisible = false
 const context = ref<WorkbenchContextPayload>()
 const summary = ref<WorkbenchSummaryPayload>()
 const projectRegistrationVisible = ref(false)
-const projectAnalysisControlRef = ref<{ open: () => Promise<void> }>()
 const projectRegistrationTarget = ref<Project>()
 const treeGroups = ref<ProjectTreePayload['groups']>([])
 const nodePackage = ref<NodePackagePayload>()
@@ -735,6 +726,13 @@ const workbenchAiPresentation = computed(() =>
     nodeRun: aiRecheckDisplayRun.value,
     nodeFindings: nodeAiPresentationFindings.value,
     nodeOutputText: aiRecheckResultText.value
+  })
+)
+const workbenchAiHistory = computed(() =>
+  buildWorkbenchAiHistory({
+    current: workbenchAiPresentation.value,
+    projectAnalysis: projectAnalysisPresentation.value,
+    nodeRuns: nodePackage.value?.aiRuns || []
   })
 )
 const inspectionReviewAuditItems = computed(() =>
@@ -1745,82 +1743,6 @@ const toolLabel = (toolId: string) => toolCatalogMap.value.get(toolId)?.name || 
 const projectAnalysisIsDisplayed = computed(
   () => workbenchAiPresentation.value.sourceLabel === '全工程一键分析'
 )
-const workbenchAiExecutionSteps = computed(() => {
-  if (!projectAnalysisIsDisplayed.value) {
-    return aiExecutionSteps.value.map((step) => ({
-      ...step,
-      tools: step.tools.map(toolLabel)
-    }))
-  }
-  const run = nodePackage.value?.projectAnalysis?.run
-  const phase =
-    workbenchAiPresentation.value.statusLabel === 'AI 执行已中断'
-      ? 'failed'
-      : String(run?.phase || '')
-  const failedFromPhase = String(run?.failedFromPhase || run?.statusReconciledFrom || '')
-  const statusAt = (target: number) =>
-    projectAnalysisExecutionStepStatus(phase, target, failedFromPhase)
-  return [
-    {
-      title: '准备工程快照与 Prompt',
-      input: `${run?.includedNodeCount || 0} 个节点 / ${run?.uniqueFileCount || 0} 份唯一文件`,
-      feedback: `预计输入 ${Number(run?.estimatedInputTokens || 0).toLocaleString()} tokens`,
-      tools: ['工程快照', 'Prompt 组装'],
-      evidenceLinks: [],
-      status: statusAt(1)
-    },
-    {
-      title: '调用大上下文模型',
-      input: String(run?.projectAnalysisRunId || '等待运行'),
-      feedback:
-        phase === 'failed'
-          ? workbenchAiPresentation.value.errorMessage ||
-            run?.errorMessage ||
-            run?.errorCode ||
-            '模型调用失败'
-          : '全工程单次模型调用',
-      tools: ['Qwen 大模型'],
-      evidenceLinks: [],
-      status: statusAt(3)
-    },
-    {
-      title: '校验结构、节点和证据引用',
-      input: `${run?.totalFindingCount || 0} 条模型发现`,
-      feedback: `已通过校验 ${run?.validatedFindingCount || 0} 条`,
-      tools: ['JSON Schema', '证据引用校验'],
-      evidenceLinks: [],
-      status: statusAt(4)
-    },
-    {
-      title: '写入节点审查结果',
-      input: `${run?.includedNodeCount || 0} 个目标节点`,
-      feedback: `已写入 ${run?.persistedNodeCount || 0} 个节点`,
-      tools: ['ReviewRun'],
-      evidenceLinks: [],
-      status: statusAt(6)
-    }
-  ]
-})
-const workbenchAiExecutionSummary = computed(() => {
-  if (!projectAnalysisIsDisplayed.value) return aiExecutionSummary.value
-  const run = nodePackage.value?.projectAnalysis?.run
-  if (!run) return '暂无执行记录'
-  if (run.phase === 'failed')
-    return `执行失败 · ${run.errorMessage || run.errorCode || '未形成有效结果'}`
-  if (run.phase === 'waiting_human_review') {
-    return `分析完成 · ${run.persistedNodeCount || 0}/${run.includedNodeCount || 0} 个节点已写入`
-  }
-  return workbenchAiPresentation.value.statusLabel
-})
-const workbenchAiReasoningText = computed(() =>
-  projectAnalysisIsDisplayed.value ? '' : aiRecheckReasoningText.value
-)
-const workbenchAiDeepThinkText = computed(() =>
-  projectAnalysisIsDisplayed.value ? '' : aiRecheckDeepThinkText.value
-)
-const workbenchHumanAiContext = computed(() =>
-  buildWorkbenchHumanAiContext(workbenchAiPresentation.value)
-)
 const workbenchHumanReviewMeta = computed(() =>
   projectAnalysisIsDisplayed.value
     ? nodePackage.value?.projectAnalysis?.run.finishedAt ||
@@ -1917,9 +1839,8 @@ const evidenceLabel = (evidence: EvidenceLink) => {
   const title = evidence.fileName || evidence.fieldName || evidence.objectId
   return evidence.pageNo ? `${title} P${evidence.pageNo}` : title
 }
-const chineseOrder = ['一', '二', '三', '四', '五', '六']
 const reviewConclusionOverall = computed(() => {
-  if (projectAnalysisIsDisplayed.value) return workbenchHumanAiContext.value.overall
+  if (projectAnalysisIsDisplayed.value) return workbenchAiPresentation.value.summary
   // 同上：失败时 opinionDraft 还是那句排队占位，不能当结论用
   if (latestAiRun.value?.status === '失败') {
     return '本次 AI 审查执行失败，未产出结论。失败原因与处理方式见上方提示。'
@@ -1931,65 +1852,6 @@ const reviewConclusionOverall = computed(() => {
   }
   if (latestAiRun.value) return `当前节点 AI 审查结果为${latestAiRun.value.suggestion.result}。`
   return '当前节点尚未形成 AI 审查结论，需先完成资料匹配、OCR 字段抽取和规则核验。'
-})
-const reviewConclusionPoints = computed<ReviewConclusionPoint[]>(() => {
-  const summary = selectedNode.value?.requirementsSummary
-  const aiRunFailed = projectAnalysisIsDisplayed.value
-    ? workbenchAiPresentation.value.statusTone === 'red'
-    : latestAiReviewDisplay.value.failed
-  const manualItems = projectAnalysisIsDisplayed.value
-    ? workbenchHumanAiContext.value.manualConfirmItems
-    : aiRunFailed
-      ? []
-      : latestAiRun.value?.suggestion.manualConfirmItems || []
-  const points = [
-    {
-      title: '资料齐全性',
-      conclusion: summary?.missingCount ? '需补充' : summary ? '通过' : '待确认',
-      description: summary
-        ? `审查所需资料已匹配 ${summary.satisfiedCount}/${summary.requiredCount} 项，缺项 ${summary.missingCount} 项。`
-        : '当前节点尚未返回资料要求明细。',
-      evidenceLinks: evidenceLinks.value.slice(0, 2)
-    },
-    {
-      title: '字段与证据识别',
-      conclusion: extractedFields.value.some((field) =>
-        ['低置信度', '置信度未知'].includes(field.reviewStatus)
-      )
-        ? '需人工确认'
-        : extractedFields.value.length
-          ? '通过'
-          : '待识别',
-      description: extractedFields.value.length
-        ? `已抽取 ${extractedFields.value.length} 个结构化字段，低置信字段需人工复核。`
-        : '暂未返回结构化 OCR 字段，不能单独支撑自动结论。',
-      evidenceLinks: evidenceLinks.value.slice(0, 3)
-    },
-    {
-      title: '规则核验结论',
-      conclusion: projectAnalysisIsDisplayed.value
-        ? workbenchHumanAiContext.value.ruleConclusion
-        : latestAiRun.value
-          ? latestAiReviewDisplay.value.conclusion
-          : '待审查',
-      description: projectAnalysisIsDisplayed.value
-        ? workbenchHumanAiContext.value.ruleDescription
-        : latestAiRun.value
-          ? `依据 ${businessBasis.value?.ruleId || latestAiRun.value.ruleVersion} 执行核验，运行状态为 ${latestAiRun.value.status}。`
-          : '尚未获取当前节点 AI Run。',
-      evidenceLinks: evidenceLinks.value.slice(0, 3)
-    },
-    {
-      title: '人工确认事项',
-      conclusion: manualItems.length ? '需人工确认' : '无阻断项',
-      description: manualItems.length ? manualItems.join('；') : '当前 AI Run 未返回人工确认事项。',
-      evidenceLinks: []
-    }
-  ]
-  return points.map((point, index) => ({
-    ...point,
-    order: chineseOrder[index] || String(index + 1)
-  }))
 })
 const reviewChainSteps = computed(() => {
   const fieldNames = extractedFields.value.map((field) => field.fieldName).join('、')
@@ -4255,14 +4117,6 @@ const handleAiRecheck = async () => {
   }
 }
 
-const handleWorkbenchAiRetry = async () => {
-  if (projectAnalysisIsDisplayed.value) {
-    await projectAnalysisControlRef.value?.open()
-    return
-  }
-  await handleAiRecheck()
-}
-
 const handleSaveReviewOpinion = async () => {
   if (!ensureWritableNode()) return
   if (reviewSaveDisabledReason.value) {
@@ -5411,7 +5265,6 @@ onBeforeUnmount(() => {
           <!-- prettier-ignore -->
           <ProjectAnalysisControl
             v-if="role === 'inspection' || role === 'admin'"
-            ref="projectAnalysisControlRef"
             :project-id="activeProjectId"
             :disabled="!activeProjectId"
           />
@@ -6021,85 +5874,9 @@ onBeforeUnmount(() => {
                 !inspectionNodeUnselected
               "
               :presentation="workbenchAiPresentation"
-              :execution-summary="workbenchAiExecutionSummary"
-              :execution-steps="workbenchAiExecutionSteps"
-              :reasoning-text="workbenchAiReasoningText"
-              :deep-think-text="workbenchAiDeepThinkText"
-              :loading="actionLoading"
-              :retry-label="projectAnalysisIsDisplayed ? '查看一键分析状态' : '重新发起 AI 审查'"
-              @retry="handleWorkbenchAiRetry"
+              :history="workbenchAiHistory"
               @open-file="handleOpenFileDetail"
-            >
-              <template #actions>
-                <div class="workbench-ai-actions">
-                  <div class="ai-review-mode-control">
-                    <ElRadioGroup v-model="selectedAiReviewMode" aria-label="AI 复核模式">
-                      <ElRadioButton
-                        value="formal"
-                        :disabled="!availableAiReviewModes.includes('formal')"
-                        :title="formalReviewBlockedReason || '按当前文件版本发起正式 AI 复核'"
-                      >
-                        正式复核
-                      </ElRadioButton>
-                      <ElRadioButton
-                        value="gap_precheck"
-                        :disabled="!availableAiReviewModes.includes('gap_precheck')"
-                      >
-                        缺项预审
-                      </ElRadioButton>
-                    </ElRadioGroup>
-                    <small>{{ aiReviewModeHint }}</small>
-                  </div>
-                  <div class="workbench-ai-action-buttons">
-                    <ElButton
-                      type="primary"
-                      :loading="actionLoading"
-                      :disabled="isReadOnly || Boolean(aiRecheckDisabledReason)"
-                      :title="aiRecheckDisabledReason || aiReviewModeHint"
-                      @click="handleAiRecheck"
-                    >
-                      {{ aiRecheckButtonLabel }}
-                    </ElButton>
-                    <BatchRecheckPanel
-                      :loading="batchRecheckLoading"
-                      :disabled="isReadOnly"
-                      :result="batchRecheckResult"
-                      @run="handleAiRecheckBatch"
-                    />
-                  </div>
-                </div>
-                <div v-if="activeHumanInputTask" class="ai-human-input-card">
-                  <div>
-                    <strong>
-                      {{
-                        isR19HumanInputTask
-                          ? 'AI 已暂停，等待 R19 关键事实确认'
-                          : 'AI 已暂停，等待官网人工核验'
-                      }}
-                    </strong>
-                    <span>提交人工核验后，AI 将从暂停位置继续执行。</span>
-                  </div>
-                  <ElButton type="warning" @click="humanInputDialogVisible = true">
-                    {{ isR19HumanInputTask ? '处理人工确认' : '处理人工核验' }}
-                  </ElButton>
-                </div>
-              </template>
-              <template #alerts>
-                <AiReviewRunAlerts
-                  :evidence-budget="aiEvidenceBudget"
-                  :failure="aiRunFailure"
-                  :failure-kind-label="aiFailureKindLabel"
-                  @retry="handleAiRecheck"
-                />
-                <ElAlert
-                  v-if="aiRecheckIsLocalFallback && !projectAnalysisIsDisplayed"
-                  type="warning"
-                  title="当前为本地降级摘要，未调用外部模型。"
-                  :closable="false"
-                  show-icon
-                />
-              </template>
-            </WorkbenchAiReviewPanel>
+            />
 
             <section
               v-if="
@@ -6788,35 +6565,6 @@ onBeforeUnmount(() => {
                     <span>总体意见</span>
                     <p>{{ reviewConclusionOverall }}</p>
                   </div>
-                  <div class="conclusion-points">
-                    <article
-                      v-for="point in reviewConclusionPoints"
-                      :key="point.title"
-                      class="conclusion-point"
-                    >
-                      <div class="conclusion-point-order">{{ point.order }}</div>
-                      <div>
-                        <div class="conclusion-point-head">
-                          <h3>{{ point.title }}</h3>
-                          <AuditStatusTag :tone="getPillClass(point.conclusion)" round>
-                            {{ point.conclusion }}
-                          </AuditStatusTag>
-                        </div>
-                        <p>{{ point.description }}</p>
-                        <div v-if="point.evidenceLinks.length" class="evidence-row">
-                          <button
-                            v-for="evidence in point.evidenceLinks"
-                            :key="evidence.id"
-                            class="evidence-link-button"
-                            type="button"
-                            @click="handleLocateEvidence(evidence)"
-                          >
-                            {{ evidenceLabel(evidence) }}
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  </div>
                 </div>
               </article>
 
@@ -6826,23 +6574,6 @@ onBeforeUnmount(() => {
                   <div class="sub">人工结论、补正要求和审查意见提交</div>
                 </div>
                 <div class="manual-review-grid">
-                  <section class="right-card action-card">
-                    <h3>办理操作</h3>
-                    <div class="body">
-                      <WorkbenchActionBar
-                        :role="role"
-                        :actions="availableActions"
-                        :loading="actionLoading"
-                        :read-only="isReadOnly"
-                        @upload="handleOpenUploadDrawer"
-                        @bind="handleOpenBindDialog"
-                        @save-draft="handleSaveDraft"
-                        @submit="handleOpenSubmissionDialog"
-                        @history="handleOpenSubmissionHistory"
-                        @rectify="handleOpenRectificationDialog"
-                      />
-                    </div>
-                  </section>
                   <ElAlert
                     v-if="actionBlocker"
                     class="operation-blocker-alert"
@@ -10171,7 +9902,7 @@ h3 {
 
 .manual-review-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -10580,19 +10311,6 @@ h3 {
 .ai-human-input-card span {
   font-size: 13px;
   color: #765827;
-}
-
-.workbench-ai-actions {
-  display: flex;
-  gap: 16px;
-  align-items: flex-end;
-  justify-content: space-between;
-}
-
-.workbench-ai-action-buttons {
-  display: flex;
-  gap: 10px;
-  align-items: center;
 }
 
 .workbench-human-review-section {

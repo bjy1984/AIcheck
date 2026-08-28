@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import type { InspectionAuditItem } from '@/types/aicheck'
 import {
+  buildWorkbenchAiHistory,
   buildWorkbenchAiPresentation,
   buildWorkbenchHumanAiContext,
   inspectionReviewDirectoryItems,
@@ -79,6 +80,7 @@ const completed = buildWorkbenchAiPresentation({
 })
 
 assert.equal(completed.sourceLabel, '全工程一键分析')
+assert.equal(completed.runId, 'PARUN-1')
 assert.equal(completed.statusLabel, 'AI 已完成，等待人工确认')
 assert.equal(completed.resultLabel, '部分证据支持')
 assert.equal(completed.findings.length, 1)
@@ -181,6 +183,7 @@ const newestNodeRun = selectWorkbenchAiPresentation({
 })
 
 assert.equal(newestNodeRun.sourceLabel, '节点 AI 复核')
+assert.equal(newestNodeRun.runId, 'AIRUN-NEWER')
 assert.equal(newestNodeRun.resultLabel, '需补正')
 assert.equal(newestNodeRun.summary, '节点复核发现一项需要补正的问题。')
 
@@ -223,3 +226,48 @@ const structuredNodeRun = selectWorkbenchAiPresentation({
   nodeOutputText: '{"findings":[{"title":"许可范围需要人工确认"}]}'
 })
 assert.equal(structuredNodeRun.summary, '节点复核发现一项需要补正的问题。')
+
+const olderNodeRun = {
+  ...nodeRun,
+  id: 'AIRUN-OLDER',
+  finishedAt: '2026-08-26 09:00:00',
+  suggestion: {
+    ...nodeRun.suggestion,
+    result: '满足要求' as const,
+    opinionDraft: '历史复核认为满足要求。'
+  }
+}
+const history = buildWorkbenchAiHistory({
+  current: newestNodeRun,
+  projectAnalysis: completed,
+  nodeRuns: [nodeRun, olderNodeRun]
+})
+assert.deepEqual(
+  history.map((item) => [item.runId, item.resultLabel, item.summary]),
+  [
+    ['PARUN-1', '部分证据支持', '当前节点形成 1 条审查发现，所有结果均需人工确认。'],
+    ['AIRUN-OLDER', '满足要求', '历史复核认为满足要求。']
+  ],
+  '历史 AI 结果应排除当前运行并按时间倒序展示'
+)
+
+const failedHistory = buildWorkbenchAiHistory({
+  current: newestNodeRun,
+  projectAnalysis: buildWorkbenchAiPresentation(null),
+  nodeRuns: [
+    {
+      ...olderNodeRun,
+      id: 'AIRUN-FAILED-HISTORY',
+      status: '失败',
+      failure: {
+        kind: 'orchestration',
+        reason: '编排服务连接失败，本次审查没有开始执行。',
+        nextStep: '检查编排服务后重试。',
+        retryable: true,
+        detail: 'connection refused',
+        detailRecorded: true
+      }
+    }
+  ]
+})
+assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查没有开始执行。')
