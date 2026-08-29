@@ -417,6 +417,20 @@ class InMemoryRepository:
     def _pgvector_baseline_ids(self, value: set[str]) -> None:
         self._tenant_pgvector_baseline_ids[configured_tenant_id()] = value
 
+    def ensure_deferred_loaded(self, *state_keys: str, tenant_id: str | None = None) -> None:
+        """repo 内部版的按需补拉：写延迟集合前确保它已加载。
+
+        与 module 级 ensure_collections_loaded 同语义，但避免内部方法依赖模块
+        级函数（那会绕一圈拿全局 repo，测试里替身 repo 就漏掉了）。
+        """
+        pending = [
+            key
+            for key in state_keys
+            if key in STATE_COLLECTIONS and not self.collection_is_loaded(key, tenant_id)
+        ]
+        if pending:
+            self.load_collections_into_state(sorted(pending), tenant_id=tenant_id)
+
     def collection_is_loaded(self, state_key: str, tenant_id: str | None = None) -> bool:
         """这个集合在本进程里整表加载过吗？
 
@@ -3218,6 +3232,12 @@ class InMemoryRepository:
         source = self.find_one("knowledge_sources", source_id)
         if not source or source.get("sourceType") == "rule":
             return
+        # 这个方法「先删本 source 旧节点、再 extend 新节点」重建整表。
+        # knowledge_page_index_nodes 是延迟加载集合：内存为空时这次重建会**丢掉
+        # 库里其他 source 的全部节点**，随后 flush 撞 ConcurrentPersistenceError，
+        # 切片链整条断掉（2026-08-29 实测）。写之前必须先把它加载进来——
+        # 这里做防御性护栏，任何调用方忘了 ensure 都不会静默丢数据。
+        self.ensure_deferred_loaded("knowledge_page_index_nodes", "knowledge_clauses")
         source_files = [item for item in self.state.get("knowledge_files", []) if item.get("sourceId") == source_id]
         if not source_files:
             return

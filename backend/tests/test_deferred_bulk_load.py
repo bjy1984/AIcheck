@@ -117,3 +117,36 @@ def test_full_load_must_not_mark_deferred_collections_as_loaded() -> None:
     guard_region = source[source.index(marker) - 600 : source.index(marker) + 400]
     assert "deferred_now" in guard_region, "全量加载的水位线兜底必须排除延迟集合"
     assert "continue" in guard_region
+
+
+def test_slice_task_ensures_page_index_loaded_before_write() -> None:
+    """切片任务写 knowledge_page_index_nodes（PIN-ROOT-*），它是延迟集合。
+    内存为空时新写的 id 撞库里已有行 → flush ConcurrentPersistenceError，
+    整条切片链断掉（2026-08-29 生产实测：延迟加载上线后所有切片卡死）。
+    入口必须先 ensure_collections_loaded。"""
+    source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
+    slice_body = source.split("def slice_knowledge", 1)[1][:800]
+    assert "ensure_collections_loaded" in slice_body, "切片任务写页索引前必须加载它"
+    assert "knowledge_page_index_nodes" in slice_body
+
+
+def test_page_index_rebuild_has_defensive_load_guard() -> None:
+    """sync_standard_page_index_for_source「先删后 extend」重建整表——
+    内存为空时会丢掉库里其他 source 的全部节点。方法内必须有防御性护栏，
+    任何调用方忘了 ensure 都不静默丢数据。"""
+    source = (BACKEND_ROOT / "libs" / "db" / "repository.py").read_text(encoding="utf-8")
+    method = source.split("def sync_standard_page_index_for_source", 1)[1][:600]
+    assert "ensure_deferred_loaded" in method
+    assert "knowledge_page_index_nodes" in method
+
+
+def test_ensure_deferred_loaded_only_fills_missing(monkeypatch) -> None:
+    from libs.db import repository
+
+    repo = repository.InMemoryRepository()
+    calls = []
+    monkeypatch.setattr(repo, "collection_is_loaded", lambda key, tenant_id=None: key == "knowledge_vectors")
+    monkeypatch.setattr(repo, "load_collections_into_state", lambda keys, tenant_id=None: calls.append(keys))
+    repo.ensure_deferred_loaded("knowledge_vectors", "knowledge_page_index_nodes")
+    # vectors 已加载，只补 page_index
+    assert calls == [["knowledge_page_index_nodes"]]

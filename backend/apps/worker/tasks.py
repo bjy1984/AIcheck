@@ -33,6 +33,7 @@ from libs.business_pack import build_ai_review_prompt, load_business_pack, match
 from libs.contracts.responses import server_time
 from libs.db.repository import (
     STATE_COLLECTIONS,
+    ensure_collections_loaded,
     flush_state,
     flush_state_records,
     load_ocr_task_state,
@@ -4205,6 +4206,12 @@ def slice_knowledge(
     expect_parse_result_id: str | None = None,
 ) -> dict[str, Any]:
     refresh_worker_state()
+    # 切片会写 knowledge_page_index_nodes（PIN-ROOT-* 等）。它是延迟加载集合，
+    # 全量加载会跳过它——内存为空时新写的 id 撞上库里已有行，flush 直接
+    # ConcurrentPersistenceError，整个切片链断在这里（2026-08-29 实测：
+    # 延迟加载上线后所有切片任务卡死）。写之前必须先把它加载进来，
+    # 落库的基线才对得上。
+    ensure_collections_loaded("knowledge_page_index_nodes", "knowledge_chunks")
     if expect_parse_result_id and not parse_result_visible(file_id, expect_parse_result_id):
         # 派发方明确告诉了我们它刚写下哪条解析结果，而这里还看不见——
         # 那就是**还没可见**，不是「没有文字」。等一下再来。
