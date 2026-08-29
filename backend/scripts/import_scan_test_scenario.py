@@ -20,7 +20,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from libs.business_pack import business_pack_snapshot, load_business_pack
 from libs.business_pack.clause_store import bind_project_node_clause_packages
 from libs.contracts.responses import server_time
-from libs.db.repository import flush_state, load_state, repo, stable_doc_id
+from libs.db.repository import ensure_collections_loaded, flush_state, load_state, repo, stable_doc_id
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
     OFFLINE_VECTOR_DIMENSIONS,
@@ -1948,6 +1948,13 @@ def main() -> int:
         raise SystemExit(f"OCR JSON not found: {ocr_json}")
 
     load_state()
+
+
+    # 本脚本会重建 knowledge_vectors/page_index（按 fileId 剔除后重写）。
+
+    # 它们是延迟加载集合，load_state 会跳过——内存空时重建等于清库。
+
+    ensure_collections_loaded("knowledge_vectors", "knowledge_page_index_nodes")
     material_review_sync = sync_material_review_points_from_asset()
     mapping_errors = validate_file_mappings()
     if mapping_errors:

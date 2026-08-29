@@ -3200,6 +3200,10 @@ class InMemoryRepository:
         for chunk in chunks:
             chunk["createdAt"] = now
             chunk["updatedAt"] = now
+        # knowledge_vectors 是延迟加载集合：这里做「按 fileId 剔除后重建整表」，
+        # 内存为空时会**清掉库里其他文件的全部向量**，随后 flush 撞并发冲突。
+        # 写之前必须先加载（2026-08-29 切片链断裂的同款根因）。
+        self.ensure_deferred_loaded("knowledge_vectors")
         self.state["knowledge_chunks"] = [
             item for item in self.state.get("knowledge_chunks", []) if item.get("fileId") != file_id
         ]
@@ -3297,6 +3301,8 @@ class InMemoryRepository:
             embedding_model=embedding_model,
             index_version=index_version,
         )
+        # 同 apply_slice_result：延迟集合的重建式写入必须先加载
+        self.ensure_deferred_loaded("knowledge_vectors")
         self.state["knowledge_vectors"] = [
             item for item in self.state.get("knowledge_vectors", []) if item.get("fileId") != file_id
         ]
