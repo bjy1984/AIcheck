@@ -804,6 +804,168 @@ def list_knowledge_files(request: Request, keyword: str | None = None, projectId
     return ok(page(items, page_no, page_size), request)
 
 
+def standard_canonical_for_file(request: Request, file_id: str) -> dict[str, Any] | None:
+    """Return persisted canonical data only for a visible standard knowledge file.
+
+    This intentionally never builds a canonical record on a read path: rebuilding has
+    provenance and versioning consequences and belongs to the explicit migration flow.
+    Callers which need to surface scope errors should validate the file context first.
+    """
+    resolved_file_id = resolve_knowledge_file_id(file_id)
+    file = repo.find_one("knowledge_files", resolved_file_id)
+    if not file or file.get("sourceType") != "standard":
+        return None
+    if scope_error_for_record(request, file):
+        return None
+    return repo.find_one("standard_knowledge_records", resolved_file_id, id_field="knowledgeFileId")
+
+
+def canonical_relation_counts(record: dict[str, Any]) -> dict[str, int]:
+    return {
+        key: len(record.get(key) or [])
+        for key in ("normativeReferences", "replacementRelations", "businessRelations")
+    }
+
+
+def canonical_history_summary(record: dict[str, Any]) -> dict[str, Any]:
+    history = record.get("history") or []
+    return {
+        "sourceCount": len(history),
+        "sourceIds": [item.get("sourceId") for item in history if item.get("sourceId")],
+    }
+
+
+def compact_standard_canonical(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the bounded representation embedded in the legacy file-detail API."""
+    return {
+        key: repo.clone(record[key])
+        for key in (
+            "id",
+            "knowledgeFileId",
+            "documentId",
+            "documentVersionId",
+            "canonicalVersion",
+            "kbVersion",
+            "identity",
+            "version",
+            "metadata",
+            "completeness",
+            "sourceFingerprint",
+        )
+        if key in record
+    } | {
+        "relationCounts": canonical_relation_counts(record),
+        "historySummary": canonical_history_summary(record),
+    }
+
+
+def canonical_detail_summary(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **repo.clone(record.get("completeness") or {}),
+        "relationCounts": canonical_relation_counts(record),
+        "history": canonical_history_summary(record),
+    }
+
+
+def scoped_standard_canonical(
+    record: dict[str, Any],
+    *,
+    include_blocks: bool,
+    include_history: bool,
+    section: str | None,
+    page_no: int | None,
+) -> dict[str, Any]:
+    """Clone and filter response content without changing the persisted canonical record."""
+    scoped = repo.clone(record)
+    if not include_blocks:
+        scoped.pop("blocks", None)
+    if not include_history:
+        scoped.pop("history", None)
+
+    if section is None and page_no is None:
+        return scoped
+
+    content_keys = (
+        "sections",
+        "clauses",
+        "blocks",
+        "tables",
+        "equations",
+        "images",
+        "seals",
+        "normativeReferences",
+        "replacementRelations",
+        "businessRelations",
+    )
+    for key in content_keys:
+        items = scoped.get(key)
+        if not isinstance(items, list):
+            continue
+        filtered = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if page_no is not None and item.get("pageNo") != page_no:
+                continue
+            if section is not None:
+                section_values = {
+                    str(item.get("section") or ""),
+                    str(item.get("sectionId") or ""),
+                    str(item.get("id") or ""),
+                    str(item.get("title") or ""),
+                    str(item.get("clauseNo") or ""),
+                }
+                if section not in section_values:
+                    continue
+            filtered.append(item)
+        scoped[key] = filtered
+    return scoped
+
+
+@router.get("/knowledge/files/{file_id}/canonical")
+def knowledge_file_canonical(
+    request: Request,
+    file_id: str,
+    include_blocks: bool = Query(default=True, alias="includeBlocks"),
+    include_history: bool = Query(default=True, alias="includeHistory"),
+    section: str | None = None,
+    page_no: int | None = Query(default=None, alias="pageNo"),
+):
+    file, _, _, context_error = knowledge_file_original_context(request, file_id)
+    if context_error:
+        return context_error
+    record = standard_canonical_for_file(request, str(file["id"]))
+    if not record:
+        return fail(errors.NOT_FOUND, request, message="未找到标准规范规范化记录。")
+    return ok(
+        scoped_standard_canonical(
+            record,
+            include_blocks=include_blocks,
+            include_history=include_history,
+            section=section,
+            page_no=page_no,
+        ),
+        request,
+    )
+
+
+@router.get("/knowledge/files/{file_id}/canonical/sources/{source_id}")
+def knowledge_file_canonical_source(request: Request, file_id: str, source_id: str):
+    file, _, _, context_error = knowledge_file_original_context(request, file_id)
+    if context_error:
+        return context_error
+    record = standard_canonical_for_file(request, str(file["id"]))
+    if not record:
+        return fail(errors.NOT_FOUND, request, message="未找到标准规范规范化记录。")
+    source = next(
+        (item for item in record.get("history") or [] if item.get("sourceId") == source_id),
+        None,
+    )
+    if not source:
+        return fail(errors.NOT_FOUND, request, message="未找到规范化记录来源。")
+    return ok(repo.clone(source), request)
+
+
 @router.get("/knowledge/files/{file_id}")
 def knowledge_file_detail(request: Request, file_id: str):
     file, document, _, context_error = knowledge_file_original_context(request, file_id)
@@ -811,6 +973,17 @@ def knowledge_file_detail(request: Request, file_id: str):
         return context_error
     latest_task = next((item for item in repo.state["knowledge_tasks"] if item.get("targetId") == file_id), None)
     original = knowledge_file_original_payload(request, file_id, document)
+    canonical = standard_canonical_for_file(request, str(file["id"]))
+    canonical_payload = (
+        {
+            "canonical": compact_standard_canonical(canonical),
+            "canonicalSummary": canonical_detail_summary(canonical),
+            "activeParseResultId": canonical.get("activeParseResultId"),
+            "completeness": repo.clone(canonical.get("completeness") or {}),
+        }
+        if canonical
+        else {}
+    )
     versions = repo.versions_for_document(document["id"])
     version_ids = {item["id"] for item in versions}
     return ok(
@@ -835,6 +1008,7 @@ def knowledge_file_detail(request: Request, file_id: str):
                 "dimensions": 1024,
                 "updatedAt": file.get("updatedAt"),
             },
+            **canonical_payload,
             **original,
         },
         request,

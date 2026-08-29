@@ -353,6 +353,110 @@ export type OcrStructuredView = {
   totalBlockCount?: number
 }
 
+export type StandardCanonicalEvidence = {
+  sourceType: string
+  sourceId: string
+  parseResultId?: string
+  documentVersionId: string
+  pageNo?: number
+  bbox?: number[] | null
+  quotedText?: string
+  value?: unknown
+  confidence?: number
+  needsHumanVerification: boolean
+  authority: 'current' | 'legacy_only' | 'supporting'
+  contentHash: string
+}
+
+export type StandardCanonicalField = {
+  id: string
+  key: string
+  value: unknown
+  authority: 'current' | 'legacy_only'
+  selectedSourceId: string
+  sources: StandardCanonicalEvidence[]
+}
+
+export type StandardCanonicalContentItem = {
+  id: string
+  title?: string
+  text?: string
+  clauseNo?: string
+  pageNo?: number
+  bbox?: number[] | null
+  authority: 'current' | 'legacy_only'
+  sources: StandardCanonicalEvidence[]
+}
+
+export type StandardCanonicalRelation = StandardCanonicalContentItem & {
+  sourceStandardCode?: string
+  targetStandardCode?: string
+  nodeIds?: number[]
+}
+
+export type StandardCanonicalCompleteness = {
+  overall: 'complete' | 'partial'
+  missingCategories: string[]
+  [category: string]: unknown
+}
+
+export type StandardCanonicalHistory = {
+  sourceId: string
+  sourceType: string
+  createdAt?: string
+  fieldCount: number
+  blockCount: number
+  tableCount: number
+  sealCount: number
+}
+
+export type StandardKnowledgeRecord = {
+  id: string
+  knowledgeFileId: string
+  canonicalVersion: string
+  kbVersion?: string
+  sourceFingerprint?: string
+  identity: Record<string, StandardCanonicalField>
+  version: Record<string, StandardCanonicalField>
+  metadata: Record<string, StandardCanonicalField>
+  sections: StandardCanonicalContentItem[]
+  clauses: StandardCanonicalContentItem[]
+  blocks: OcrLayoutBlock[]
+  tables: OcrStructuredTable[]
+  equations: StandardCanonicalContentItem[]
+  images: StandardCanonicalContentItem[]
+  seals: OcrSealItem[]
+  normativeReferences: StandardCanonicalRelation[]
+  replacementRelations: StandardCanonicalRelation[]
+  businessRelations: StandardCanonicalRelation[]
+  completeness: StandardCanonicalCompleteness
+  provenance: StandardCanonicalEvidence[]
+  history: StandardCanonicalHistory[]
+}
+
+export type StandardKnowledgeRecordSummary = Pick<
+  StandardKnowledgeRecord,
+  | 'id'
+  | 'knowledgeFileId'
+  | 'canonicalVersion'
+  | 'kbVersion'
+  | 'sourceFingerprint'
+  | 'identity'
+  | 'version'
+  | 'metadata'
+  | 'completeness'
+> & {
+  documentId?: string
+  documentVersionId?: string
+  relationCounts: Record<'normativeReferences' | 'replacementRelations' | 'businessRelations', number>
+  historySummary: { sourceCount: number; sourceIds: string[] }
+}
+
+export type StandardKnowledgeCanonicalSummary = StandardCanonicalCompleteness & {
+  relationCounts: StandardKnowledgeRecordSummary['relationCounts']
+  history: StandardKnowledgeRecordSummary['historySummary']
+}
+
 export type DocumentDetailPayload = {
   document: DocumentAsset
   currentVersion?: DocumentVersion
@@ -1086,6 +1190,10 @@ export type KnowledgeFileDetailPayload = DocumentDetailPayload & {
   file: KnowledgeFile
   latestTask?: KnowledgeTask
   vectorSummary: KnowledgeVectorSummary
+  canonical?: StandardKnowledgeRecordSummary
+  canonicalSummary?: StandardKnowledgeCanonicalSummary
+  activeParseResultId?: string
+  completeness?: StandardCanonicalCompleteness
 }
 
 export type KnowledgePageIndexNode = {
@@ -4256,6 +4364,25 @@ export const getKnowledgeFileDetailApi = (
   options?: RequestHeaderOptions
 ): Promise<IResponse<KnowledgeFileDetailPayload>> => {
   return request.get({ url: `/api/knowledge/files/${fileId}`, headers: requestHeaders(options) })
+}
+
+export const getKnowledgeFileCanonicalApi = (
+  fileId: string,
+  params?: {
+    includeBlocks?: boolean
+    includeHistory?: boolean
+    section?: string
+    pageNo?: number
+  }
+): Promise<IResponse<StandardKnowledgeRecord>> => {
+  return request.get({ url: `/api/knowledge/files/${fileId}/canonical`, params })
+}
+
+export const getKnowledgeFileCanonicalSourceApi = (
+  fileId: string,
+  sourceId: string
+): Promise<IResponse<StandardCanonicalHistory>> => {
+  return request.get({ url: `/api/knowledge/files/${fileId}/canonical/sources/${sourceId}` })
 }
 
 export const updateKnowledgeFileApi = (

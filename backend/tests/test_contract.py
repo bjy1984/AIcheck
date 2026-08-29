@@ -10,6 +10,7 @@ from argparse import Namespace
 from copy import deepcopy
 from datetime import UTC
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -62,6 +63,125 @@ def assert_error(response, reason: str):
     assert "operationId" in payload
     assert "serverTime" in payload
     return payload
+
+
+def canonical_record_fixture(file_id: str = "KF-KB-TEST") -> dict[str, Any]:
+    return {
+        "id": f"SKR-{file_id}",
+        "knowledgeFileId": file_id,
+        "documentId": "KDOC-TEST",
+        "documentVersionId": "KDV-TEST-V1",
+        "canonicalVersion": "standard-knowledge-canonical@1",
+        "identity": {
+            "standardCode": {
+                "id": "SKI-FIELD-CODE",
+                "key": "standardCode",
+                "value": "NB/T 47013.10-2015",
+                "authority": "current",
+                "selectedSourceId": "PARSE-NEW",
+                "sources": [],
+            }
+        },
+        "version": {},
+        "metadata": {},
+        "sections": [],
+        "clauses": [],
+        "blocks": [],
+        "tables": [],
+        "equations": [],
+        "images": [],
+        "seals": [],
+        "normativeReferences": [],
+        "replacementRelations": [],
+        "businessRelations": [],
+        "evidence": [],
+        "provenance": [],
+        "completeness": {"overall": "complete", "missingCategories": []},
+        "history": [{"sourceId": "PARSE-OLD", "sourceType": "legacy_ocr", "authority": "legacy_only"}],
+        "activeParseResultId": "PARSE-NEW",
+        "sourceFingerprint": "sha256:test",
+    }
+
+
+def seed_standard_knowledge_file(file_id: str = "KF-KB-TEST") -> None:
+    repo.state["documents"].append(
+        {
+            "id": "KDOC-TEST",
+            "fileName": "canonical-standard.pdf",
+            "fileType": "application/pdf",
+            "currentVersionId": "KDV-TEST-V1",
+        }
+    )
+    repo.state["versions"].append(
+        {
+            "id": "KDV-TEST-V1",
+            "documentId": "KDOC-TEST",
+            "fileName": "canonical-standard.pdf",
+            "storageKey": "mock://canonical-standard.pdf",
+            "fileSize": 1,
+            "isCurrent": True,
+        }
+    )
+    repo.state["knowledge_files"].append(
+        {
+            "id": file_id,
+            "sourceType": "standard",
+            "documentId": "KDOC-TEST",
+            "documentVersionId": "KDV-TEST-V1",
+        }
+    )
+
+
+def seed_canonical_record(file_id: str = "KF-KB-TEST") -> None:
+    seed_standard_knowledge_file(file_id)
+    repo.state.setdefault("standard_knowledge_records", []).append(canonical_record_fixture(file_id))
+
+
+def test_standard_canonical_endpoint_returns_complete_record() -> None:
+    seed_canonical_record("KF-KB-TEST")
+
+    data = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical"))
+
+    assert data["knowledgeFileId"] == "KF-KB-TEST"
+    assert data["canonicalVersion"] == "standard-knowledge-canonical@1"
+    assert data["identity"]["standardCode"]["value"] == "NB/T 47013.10-2015"
+
+
+def test_file_detail_exposes_canonical_and_keeps_ocr_structured() -> None:
+    seed_canonical_record("KF-KB-TEST")
+
+    data = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST"))
+
+    assert data["canonical"]["knowledgeFileId"] == "KF-KB-TEST"
+    assert "blocks" not in data["canonical"]
+    assert data["canonicalSummary"]["overall"] == "complete"
+    assert data["activeParseResultId"] == "PARSE-NEW"
+    assert "ocrStructured" in data
+
+
+def test_canonical_source_endpoint_is_read_only_and_scoped() -> None:
+    seed_canonical_record("KF-KB-TEST")
+
+    source = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical/sources/PARSE-OLD"))
+
+    assert source["sourceId"] == "PARSE-OLD"
+    assert source["authority"] == "legacy_only"
+
+
+def test_canonical_endpoint_scopes_response_without_mutating_persisted_record() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    record["blocks"] = [
+        {"id": "BLOCK-PAGE-1", "pageNo": 1},
+        {"id": "BLOCK-PAGE-2", "pageNo": 2},
+    ]
+
+    compact = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical?includeBlocks=false"))
+    scoped = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical?pageNo=2"))
+
+    assert "blocks" not in compact
+    assert [item["id"] for item in scoped["blocks"]] == ["BLOCK-PAGE-2"]
+    assert [item["id"] for item in record["blocks"]] == ["BLOCK-PAGE-1", "BLOCK-PAGE-2"]
 
 
 def test_project_document_endpoints_use_detached_latest_read_view(monkeypatch) -> None:
