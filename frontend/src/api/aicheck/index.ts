@@ -379,6 +379,16 @@ export type StandardCanonicalField = {
   sources: StandardCanonicalEvidence[]
 }
 
+export type StandardCanonicalTableCell = {
+  row?: number
+  col?: number
+  text?: string
+  rowspan?: number
+  colspan?: number
+  isHeader?: boolean
+  confidence?: number
+}
+
 export type StandardCanonicalContentItem = {
   id: string
   authority: 'current' | 'legacy_only'
@@ -393,7 +403,7 @@ export type StandardCanonicalContentItem = {
   caption?: string
   columnNames?: string[]
   normalizedRows?: Record<string, unknown>[]
-  cells?: string[]
+  cells?: StandardCanonicalTableCell[]
   headerReliable?: boolean
   latex?: string
   locatorIds?: string[]

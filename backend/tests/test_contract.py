@@ -192,12 +192,14 @@ def test_canonical_endpoint_scopes_nested_evidence_and_provenance_by_page() -> N
         "sourceType": "legacy_ocr",
         "pageNo": 1,
         "quotedText": "page one full quoted text",
+        "contentHash": "page-one-block",
     }
     page_seven_evidence = {
         "sourceId": "PARSE-NEW",
         "sourceType": "new_mineru",
         "pageNo": 7,
         "quotedText": "page seven quoted text",
+        "contentHash": "page-seven-block",
     }
     record.update(
         {
@@ -226,12 +228,12 @@ def test_canonical_endpoint_scopes_nested_evidence_and_provenance_by_page() -> N
     detail = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST"))
 
     assert "blocks" not in scoped
-    assert [item["pageNo"] for item in scoped["evidence"]] == [7]
+    assert scoped["evidence"] == []
     assert scoped["provenance"][0]["rawTables"] == [{"pageNo": 7, "text": "page seven raw table"}]
     assert "page one full quoted text" not in str(scoped)
     assert "page one raw table" not in str(scoped)
     assert "quoted text" not in str(blocks_hidden["evidence"])
-    assert "raw table" not in str(blocks_hidden["provenance"])
+    assert "raw table" in str(blocks_hidden["provenance"])
     assert not {
         "sections",
         "clauses",
@@ -246,16 +248,65 @@ def test_canonical_endpoint_scopes_nested_evidence_and_provenance_by_page() -> N
     assert "rawTables" not in str(detail["canonical"])
 
 
-def test_canonical_endpoint_matches_normalized_section_path_membership() -> None:
+def test_canonical_endpoint_keeps_parent_section_path_sources_and_evidence() -> None:
     seed_canonical_record("KF-KB-TEST")
-    repo.state["standard_knowledge_records"][0]["blocks"] = [
-        {"id": "BLOCK-OTHER", "pageNo": 1, "sectionPath": ["General"]},
-        {"id": "BLOCK-TARGET", "pageNo": 7, "sectionPath": ["Chapter 1", " Scope "]},
+    target_source = {"sourceId": "SRC-TARGET", "quotedText": "target section evidence"}
+    record = repo.state["standard_knowledge_records"][0]
+    record["blocks"] = [
+        {"id": "BLOCK-OTHER", "pageNo": 1, "sectionPath": ["General"], "sources": []},
+        {
+            "id": "BLOCK-TARGET",
+            "pageNo": 7,
+            "sectionPath": ["Chapter 1", " Scope "],
+            "sources": [target_source],
+        },
     ]
+    record["evidence"] = [target_source]
 
-    data = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical?section=scope"))
+    data = assert_ok(
+        client.get("/api/knowledge/files/KF-KB-TEST/canonical?section=scope&pageNo=7")
+    )
 
     assert [item["id"] for item in data["blocks"]] == ["BLOCK-TARGET"]
+    assert data["blocks"][0]["sources"] == [target_source]
+    assert data["evidence"] == [target_source]
+
+
+def test_canonical_endpoint_hides_only_block_derived_data_when_blocks_are_omitted() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    block_evidence = {"sourceId": "BLOCK-SOURCE", "contentHash": "block-hash"}
+    table_evidence = {"sourceId": "TABLE-SOURCE", "contentHash": "table-hash"}
+    seal_evidence = {"sourceId": "SEAL-SOURCE", "contentHash": "seal-hash"}
+    record.update(
+        {
+            "blocks": [{"id": "BLOCK-1", "sources": [block_evidence]}],
+            "tables": [{"id": "TABLE-1", "sources": [table_evidence]}],
+            "seals": [{"id": "SEAL-1", "sources": [seal_evidence]}],
+            "evidence": [block_evidence, table_evidence, seal_evidence],
+            "provenance": [
+                {"sourceId": "BLOCK-SOURCE", "capabilities": ["fullText"]},
+                {
+                    "sourceId": "TABLE-SOURCE",
+                    "capabilities": ["table"],
+                    "rawTables": [{"pageNo": 7, "text": "retained raw table"}],
+                },
+                {
+                    "sourceId": "SEAL-SOURCE",
+                    "capabilities": ["seal"],
+                    "rawLocator": {"pageNo": 7, "bbox": [1, 2, 3, 4]},
+                },
+            ],
+        }
+    )
+
+    data = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical?includeBlocks=false"))
+
+    assert "blocks" not in data
+    assert [item["sourceId"] for item in data["evidence"]] == ["TABLE-SOURCE", "SEAL-SOURCE"]
+    assert [item["sourceId"] for item in data["provenance"]] == ["TABLE-SOURCE", "SEAL-SOURCE"]
+    assert data["provenance"][0]["rawTables"][0]["text"] == "retained raw table"
+    assert data["provenance"][1]["rawLocator"]["pageNo"] == 7
 
 
 def test_file_detail_derives_active_parse_result_id_from_canonical_history() -> None:
