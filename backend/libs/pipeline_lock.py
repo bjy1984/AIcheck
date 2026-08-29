@@ -39,6 +39,16 @@ def pipeline_lock(key: str) -> Iterator[bool]:
             import psycopg
 
             connection = psycopg.connect(database_url, autocommit=True)
+            # session 级 advisory lock 只在连接断开时释放。若持锁的 worker 进程
+            # 被强杀（今天频繁部署重建时就会发生），连接留在 PG 侧成孤儿，
+            # 锁永不释放——后续周期任务全部 duplicate_inflight，自动派发永久卡死
+            # 且无自愈（2026-08-29 实测：一把僵尸锁卡死自动审查派发 4 分钟+）。
+            # 给这条锁连接设服务端空闲超时：孤儿连接会被 PG 自动清理、锁随之释放。
+            # 60 秒足够任务体跑完（周期任务本身很快），又能兜住泄漏。
+            try:
+                connection.execute("SET idle_session_timeout = '60s'")
+            except Exception:
+                pass  # 老版本 PG（<14）不支持，退回原行为，不阻断获锁
             acquired = bool(connection.execute("SELECT pg_try_advisory_lock(%s)", (advisory_lock_id(key),)).fetchone()[0])
         except Exception as exc:
             if _strict_production():
