@@ -4343,6 +4343,25 @@ def embed_knowledge(
         flush_state()
         return {"fileId": file_id, "status": "success", "vectorCount": int((file or {}).get("vectorCount") or vector_count), "alreadyCompleted": True}
     if int(offset or 0) == 0:
+        # 新一轮从头开始（offset=0）会清掉该文件的既有批次。若此刻正有一条
+        # 续跑链在跑（任务运行中且断点未到末尾），清空会让两条链交织：
+        # 批次记录互相覆盖，最后汇总只剩最后一批，判「数量不匹配」而整份失败
+        # （2026-08-29 实测：库里出现 offset=0,8,16,32 而 24 缺失的空洞）。
+        # 让位给正在跑的那条链——它会自己跑到终点。
+        checkpoint = (task or {}).get("embeddingCheckpoint") or {}
+        in_flight = (
+            task is not None
+            and str(task.get("status") or "") == "运行中"
+            and int(checkpoint.get("nextOffset") or 0) > 0
+            and int(checkpoint.get("nextOffset") or 0) < int(checkpoint.get("totalChunks") or 0)
+        )
+        if in_flight:
+            return {
+                "fileId": file_id,
+                "status": "skipped_in_flight",
+                "nextOffset": int(checkpoint.get("nextOffset") or 0),
+                "totalChunks": int(checkpoint.get("totalChunks") or 0),
+            }
         repo.mark_task_running(task, "向量化 worker 开始处理。")
         repo.state["knowledge_embedding_batches"] = [
             item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") != file_id

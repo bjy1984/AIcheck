@@ -40,3 +40,18 @@ def test_embed_task_loads_batch_records_before_aggregating() -> None:
     body = source.split("def embed_knowledge", 1)[1][:1500]
     assert "ensure_collections_loaded" in body
     assert "knowledge_embedding_batches" in body
+
+
+def test_embed_skips_when_a_continuation_chain_is_in_flight() -> None:
+    """重复派发（offset=0）会清掉既有批次。若此刻正有续跑链在跑，
+    两条链交织：批次记录互相覆盖，汇总只剩最后一批，判「数量不匹配」
+    整份失败（2026-08-29 实测：库里出现 offset=0,8,16,32 而 24 缺失）。
+
+    新派发必须让位给正在跑的链——它会自己跑到终点。"""
+    source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
+    body = source.split("def embed_knowledge", 1)[1][:6000]
+    assert "skipped_in_flight" in body, "进行中的续跑链必须被识别并让位"
+    assert "in_flight" in body
+    # 判据要看断点进度，不能只看任务状态（状态可能停留在旧值）
+    assert "embeddingCheckpoint" in body
+    assert "nextOffset" in body
