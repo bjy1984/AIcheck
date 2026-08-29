@@ -30,6 +30,7 @@ from libs.standard_knowledge_canonical import (  # noqa: E402
 STANDARD_SOURCE_ID = "KS-STANDARD-RULES"
 CANONICAL_COLLECTION = "standard_knowledge_records"
 SOURCE_COLLECTIONS = (
+    "knowledge_sources",
     "knowledge_files",
     "documents",
     "document_versions",
@@ -43,6 +44,7 @@ SOURCE_COLLECTIONS = (
     "standard_clause_references",
     "standard_clause_locators",
     "rule_versions",
+    "business_packs",
 )
 _BUILDER_COLLECTIONS = {
     "knowledge_sources": "knowledge_sources",
@@ -69,6 +71,15 @@ def persist_canonical_record(
     record: dict[str, Any],
 ) -> Literal["inserted", "updated", "unchanged"]:
     """Lock and upsert only the derived record owned by ``tenant_id``."""
+    lock_scope = json.dumps(
+        [tenant_id, str(record["knowledgeFileId"])],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    connection.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (lock_scope,),
+    )
     row = connection.execute(
         """
         SELECT payload FROM aicheck_state
@@ -315,7 +326,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
-    return 0
+    return (
+        1
+        if int(report.get("failed") or 0) > 0 or report.get("sourceDigestUnchanged") is not True
+        else 0
+    )
 
 
 if __name__ == "__main__":

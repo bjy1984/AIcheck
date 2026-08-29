@@ -3,14 +3,21 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
 
+from scripts import rebuild_standard_knowledge_canonical as rebuild_script
+from scripts.rebuild_standard_knowledge_canonical import persist_canonical_record
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_COLLECTIONS = (
+    "knowledge_sources",
     "knowledge_files",
     "documents",
     "document_versions",
@@ -24,10 +31,11 @@ SOURCE_COLLECTIONS = (
     "standard_clause_references",
     "standard_clause_locators",
     "rule_versions",
+    "business_packs",
 )
 
 
-def run_rebuild(database_url: str, *args: str) -> dict[str, Any]:
+def run_rebuild_process(database_url: str, *args: str) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
         str(BACKEND_ROOT / "scripts/rebuild_standard_knowledge_canonical.py"),
@@ -36,13 +44,18 @@ def run_rebuild(database_url: str, *args: str) -> dict[str, Any]:
         "--json",
         *args,
     ]
-    completed = subprocess.run(
+    return subprocess.run(
         command,
         cwd=BACKEND_ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+
+
+def run_rebuild(database_url: str, *args: str) -> dict[str, Any]:
+    completed = run_rebuild_process(database_url, *args)
+    completed.check_returncode()
     return json.loads(completed.stdout)
 
 
@@ -102,7 +115,17 @@ def seed_standard_fixture(database_url: str, *, count: int) -> None:
 
 
 def canonical_postgres_fixture_records(*, count: int) -> list[tuple[str, str, dict[str, Any]]]:
-    records = []
+    records = [
+        (
+            "knowledge_sources",
+            "KS-STANDARD-RULES",
+            {
+                "id": "KS-STANDARD-RULES",
+                "version": "inspection_kb@fixture",
+                "tenantId": "TENANT-DEFAULT",
+            },
+        )
+    ]
     for index in range(1, count + 1):
         suffix = f"{index:03d}"
         file_id = f"KF-KB-{suffix}"
@@ -169,6 +192,28 @@ def canonical_postgres_fixture_records(*, count: int) -> list[tuple[str, str, di
                 ),
             ]
         )
+    records.append(
+        (
+            "business_packs",
+            "BP-CANONICAL-FIXTURE",
+            {
+                "id": "BP-CANONICAL-FIXTURE",
+                "version": "fixture-v1",
+                "standardCatalog": [
+                    {
+                        "id": f"CAT-{index:03d}",
+                        "knowledgeFileId": f"KF-KB-{index:03d}",
+                        "fileName": f"STD-{index:03d}.pdf",
+                        "code": f"STD-{index:03d}",
+                        "name": f"标准 {index:03d}",
+                        "lifecycleStatus": "current",
+                    }
+                    for index in range(1, count + 1)
+                ],
+                "tenantId": "TENANT-DEFAULT",
+            },
+        )
+    )
     return records
 
 
@@ -261,6 +306,47 @@ def canonical_record(database_url: str, file_id: str) -> dict[str, Any]:
         )
 
 
+def write_canonical_record(
+    database_url: str,
+    *,
+    object_id: str,
+    record: Any,
+) -> None:
+    with psycopg.connect(database_url, autocommit=False) as connection:
+        connection.execute(
+            """
+            INSERT INTO aicheck_state
+                (tenant_id, collection, object_id, payload, updated_at)
+            VALUES (%s, 'standard_knowledge_records', %s, %s, now())
+            ON CONFLICT (tenant_id, collection, object_id)
+            DO UPDATE SET payload=EXCLUDED.payload, updated_at=now()
+            """,
+            ("TENANT-DEFAULT", object_id, Jsonb(record)),
+        )
+        connection.commit()
+
+
+def write_state_record(
+    database_url: str,
+    *,
+    collection: str,
+    object_id: str,
+    payload: Any,
+) -> None:
+    with psycopg.connect(database_url, autocommit=False) as connection:
+        connection.execute(
+            """
+            INSERT INTO aicheck_state
+                (tenant_id, collection, object_id, payload, updated_at)
+            VALUES (%s, %s, %s, %s, now())
+            ON CONFLICT (tenant_id, collection, object_id)
+            DO UPDATE SET payload=EXCLUDED.payload, updated_at=now()
+            """,
+            ("TENANT-DEFAULT", collection, object_id, Jsonb(payload)),
+        )
+        connection.commit()
+
+
 def mark_context_only(database_url: str, *, file_id: str) -> None:
     with psycopg.connect(database_url, autocommit=False) as connection:
         payload = connection.execute(
@@ -318,6 +404,105 @@ def test_apply_is_idempotent_and_preserves_source_digests(isolated_postgres_url)
     assert second["sourceDigestUnchanged"] is True
 
 
+def test_concurrent_first_writes_serialize_to_inserted_then_unchanged(
+    isolated_postgres_url,
+):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    record = {
+        "id": "SKR-KF-KB-001",
+        "knowledgeFileId": "KF-KB-001",
+        "canonicalVersion": "standard-knowledge-canonical@1",
+        "sourceFingerprint": "sha256:concurrent",
+    }
+    first_written = Event()
+    release_first = Event()
+    second_started = Event()
+
+    def first_writer() -> str:
+        with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
+            connection.execute("SET application_name='canonical-first-writer'")
+            with connection.transaction():
+                action = persist_canonical_record(connection, "TENANT-DEFAULT", record)
+                first_written.set()
+                assert release_first.wait(timeout=5)
+                return action
+
+    def second_writer() -> str:
+        assert first_written.wait(timeout=5)
+        with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
+            connection.execute("SET application_name='canonical-second-writer'")
+            with connection.transaction():
+                second_started.set()
+                return persist_canonical_record(connection, "TENANT-DEFAULT", record)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(first_writer)
+        assert first_written.wait(timeout=5)
+        second = executor.submit(second_writer)
+        assert second_started.wait(timeout=5)
+        blocked = False
+        deadline = time.monotonic() + 5
+        with psycopg.connect(isolated_postgres_url, autocommit=True) as observer:
+            while time.monotonic() < deadline:
+                row = observer.execute(
+                    """
+                    SELECT wait_event_type FROM pg_stat_activity
+                    WHERE application_name='canonical-second-writer'
+                    """
+                ).fetchone()
+                if row and row[0] == "Lock":
+                    blocked = True
+                    break
+                time.sleep(0.02)
+        release_first.set()
+        actions = sorted([first.result(timeout=5), second.result(timeout=5)])
+
+    assert blocked is True
+    assert actions == ["inserted", "unchanged"]
+    assert count_collection(isolated_postgres_url, "standard_knowledge_records") == 1
+
+
+def test_source_digests_cover_every_builder_database_input(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+
+    report = run_rebuild(isolated_postgres_url, "--dry-run")
+
+    assert set(report["sourceDigestsBefore"]) == set(SOURCE_COLLECTIONS)
+    assert set(report["sourceDigestsAfter"]) == set(SOURCE_COLLECTIONS)
+
+
+def test_verifier_rejects_unmapped_business_pack_standard(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    write_state_record(
+        isolated_postgres_url,
+        collection="business_packs",
+        object_id="BP-ORPHAN-STANDARD",
+        payload={
+            "id": "BP-ORPHAN-STANDARD",
+            "standardCatalog": [
+                {
+                    "id": "STD-ORPHAN",
+                    "knowledgeFileId": "KF-KB-MISSING",
+                    "fileName": "missing.pdf",
+                }
+            ],
+        },
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["unmapped_sources"] is False
+    assert {
+        "collection": "business_packs",
+        "objectId": "BP-ORPHAN-STANDARD",
+        "knowledgeFileIds": ["KF-KB-MISSING"],
+        "reason": "standard catalog entry has no standard file mapping",
+    } in report["unmappedSourceDetails"]
+
+
 def test_failed_record_does_not_replace_previous_valid_record(isolated_postgres_url):
     seed_standard_fixture(isolated_postgres_url, count=1)
     seed_valid_canonical(
@@ -327,13 +512,15 @@ def test_failed_record_does_not_replace_previous_valid_record(isolated_postgres_
     )
     seed_broken_standard_source(isolated_postgres_url, file_id="KF-KB-001")
 
-    report = run_rebuild(
+    completed = run_rebuild_process(
         isolated_postgres_url,
         "--apply",
         "--file-id",
         "KF-KB-001",
     )
+    report = json.loads(completed.stdout)
 
+    assert completed.returncode == 1
     assert report["failed"] == 1
     assert report["written"] == 0
     assert canonical_record(isolated_postgres_url, "KF-KB-001")["sourceFingerprint"] == (
@@ -345,13 +532,32 @@ def test_one_failed_record_does_not_roll_back_successful_siblings(isolated_postg
     seed_standard_fixture(isolated_postgres_url, count=2)
     seed_broken_standard_source(isolated_postgres_url, file_id="KF-KB-002")
 
-    report = run_rebuild(isolated_postgres_url, "--apply")
+    completed = run_rebuild_process(isolated_postgres_url, "--apply")
+    report = json.loads(completed.stdout)
 
+    assert completed.returncode == 1
     assert report["processed"] == 2
     assert report["inserted"] == 1
     assert report["failed"] == 1
     assert count_collection(isolated_postgres_url, "standard_knowledge_records") == 1
     assert canonical_record(isolated_postgres_url, "KF-KB-001")["knowledgeFileId"] == ("KF-KB-001")
+
+
+def test_rebuild_main_fails_when_source_digest_changes(monkeypatch, capsys):
+    monkeypatch.setattr(
+        rebuild_script,
+        "rebuild",
+        lambda *args, **kwargs: {
+            "failed": 0,
+            "sourceDigestUnchanged": False,
+        },
+    )
+
+    exit_code = rebuild_script.main(["--database-url", "postgresql:///not-used", "--json"])
+    report = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert report["sourceDigestUnchanged"] is False
 
 
 def test_verifier_reports_coverage_matrix_and_all_fixture_gates(isolated_postgres_url):
@@ -440,6 +646,111 @@ def test_verifier_rejects_a_field_source_without_source_identity(isolated_postgr
     ]
 
 
+def test_verifier_rejects_bogus_new_mineru_source_id(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    record = canonical_record(isolated_postgres_url, "KF-KB-001")
+    record["provenance"][0]["sourceId"] = "PARSE-BOGUS"
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-001",
+        record=record,
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["missing_provenance"] is False
+    assert {
+        "knowledgeFileId": "KF-KB-001",
+        "path": "provenance[0].sourceId",
+        "reason": "unresolved_source_id",
+        "sourceType": "new_mineru",
+        "sourceId": "PARSE-BOGUS",
+    } in report["provenanceIssues"]
+
+
+def test_verifier_rejects_history_entry_without_source_identity(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    record = canonical_record(isolated_postgres_url, "KF-KB-001")
+    record["history"][0]["sourceId"] = ""
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-001",
+        record=record,
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["missing_provenance"] is False
+    assert {
+        "knowledgeFileId": "KF-KB-001",
+        "path": "history[0].sourceId",
+        "reason": "missing_source_identity",
+        "sourceType": "new_mineru",
+        "sourceId": "",
+    } in report["provenanceIssues"]
+
+
+def test_verifier_reports_string_provenance_as_structured_json_failure(
+    isolated_postgres_url,
+):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    record = canonical_record(isolated_postgres_url, "KF-KB-001")
+    record["provenance"] = "PARSE-001"
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-001",
+        record=record,
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+
+    assert completed.returncode == 1
+    assert "Traceback" not in completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["passed"] is False
+    assert report["assertions"]["missing_provenance"] is False
+    assert {
+        "knowledgeFileId": "KF-KB-001",
+        "path": "provenance",
+        "reason": "expected_list",
+    } in report["provenanceIssues"]
+
+
+def test_verifier_reports_non_object_canonical_as_structured_json_failure(
+    isolated_postgres_url,
+):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-001",
+        record="not-a-canonical-object",
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+
+    assert completed.returncode == 1
+    assert "Traceback" not in completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["passed"] is False
+    assert report["assertions"]["canonical_shape"] is False
+    assert report["canonicalShapeIssues"] == [
+        {
+            "objectId": "KF-KB-001",
+            "path": "$",
+            "reason": "expected_object",
+            "actualType": "str",
+        }
+    ]
+
+
 def test_verifier_enforces_the_59_record_production_baseline(isolated_postgres_url):
     seed_standard_fixture(isolated_postgres_url, count=59)
     mark_context_only(isolated_postgres_url, file_id="KF-KB-059")
@@ -456,6 +767,68 @@ def test_verifier_enforces_the_59_record_production_baseline(isolated_postgres_u
     assert report["expectedContextOnlyCount"] == 1
     assert report["contextOnlyCount"] == 1
     assert all(report["assertions"].values())
+
+
+def test_verifier_rejects_orphan_context_record_replacing_the_59th_standard(
+    isolated_postgres_url,
+):
+    seed_standard_fixture(isolated_postgres_url, count=58)
+    run_rebuild(isolated_postgres_url, "--apply")
+    orphan = canonical_record(isolated_postgres_url, "KF-KB-001")
+    orphan.update(
+        {
+            "id": "SKR-KF-KB-ORPHAN",
+            "knowledgeFileId": "KF-KB-ORPHAN",
+            "contextType": "context_only",
+        }
+    )
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-ORPHAN",
+        record=orphan,
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=59)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["canonical_identity"] is False
+    assert report["canonicalIdentity"]["extraObjectIds"] == ["KF-KB-ORPHAN"]
+    assert report["canonicalIdentity"]["missingObjectIds"] == []
+
+
+def test_verifier_rejects_object_id_and_payload_file_id_mismatch(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    record = canonical_record(isolated_postgres_url, "KF-KB-001")
+    with psycopg.connect(isolated_postgres_url, autocommit=False) as connection:
+        connection.execute(
+            """
+            DELETE FROM aicheck_state
+            WHERE tenant_id=%s
+              AND collection='standard_knowledge_records'
+              AND object_id=%s
+            """,
+            ("TENANT-DEFAULT", "KF-KB-001"),
+        )
+        connection.commit()
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-WRONG-OBJECT",
+        record=record,
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["canonical_identity"] is False
+    assert report["canonicalIdentity"]["objectPayloadMismatches"] == [
+        {
+            "objectId": "KF-KB-WRONG-OBJECT",
+            "knowledgeFileId": "KF-KB-001",
+        }
+    ]
 
 
 def test_configured_tenant_is_the_authoritative_write_boundary(
