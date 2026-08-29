@@ -22,6 +22,7 @@ import json
 import math
 import os
 import re
+from copy import deepcopy
 import shutil
 import subprocess
 import tempfile
@@ -1137,7 +1138,38 @@ def fde_seal_text_is_readable(seal: dict[str, Any]) -> bool:
         return False
     return confidence >= 0.65
 
+_OCR_DOCTOR_CACHE: dict[str, Any] = {"at": 0.0, "report": None}
+
+
+def _ocr_doctor_cache_ttl() -> float:
+    try:
+        return max(0.0, float(os.getenv("AICHECK_OCR_DOCTOR_CACHE_SECONDS", "30")))
+    except ValueError:
+        return 30.0
+
+
 def fde_ocr_runtime_doctor_report() -> dict[str, Any]:
+    """OCR 运行体检；短 TTL 缓存。
+
+    这是一次**同步的跨服务 HTTP 往返**（实测 495ms），占 /fde/ocr-quality
+    总耗时的 82%——而体检结果本就不是实时量，秒级陈旧完全可接受。
+    没有缓存时，FDE 控制台每次刷新、每个用户都会各打一次 OCR 服务。
+    失败结果不缓存：故障恢复后要立刻反映，不能被缓存粘住。
+    """
+    import time as _time
+
+    ttl = _ocr_doctor_cache_ttl()
+    cached = _OCR_DOCTOR_CACHE.get("report")
+    if cached is not None and (_time.time() - float(_OCR_DOCTOR_CACHE["at"])) < ttl:
+        return deepcopy(cached)
+    report = _fde_ocr_runtime_doctor_report_uncached()
+    if report.get("ok") is True:
+        _OCR_DOCTOR_CACHE["report"] = deepcopy(report)
+        _OCR_DOCTOR_CACHE["at"] = _time.time()
+    return report
+
+
+def _fde_ocr_runtime_doctor_report_uncached() -> dict[str, Any]:
     client = OcrClient()
     if not client.enabled:
         return {
