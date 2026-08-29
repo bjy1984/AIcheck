@@ -155,6 +155,32 @@ def test_old_evidence_link_for_replaced_standard_clause_is_not_reintroduced() ->
     assert "2014-01-01" not in texts
 
 
+def test_disabled_standard_evidence_link_cannot_bypass_file_or_source_policy() -> None:
+    for disable_source in (False, True):
+        state = retrieval_state_with_canonical_conflict()
+        state["evidence_links"] = [
+            {
+                "id": "EL-OLD-DISABLED",
+                "objectType": "knowledgeClause",
+                "objectId": "KC-OLD",
+                "quotedText": "发布日期 2014-01-01",
+            }
+        ]
+        if disable_source:
+            state["knowledge_files"][0]["sourceId"] = "KS-DISABLED"
+            state["knowledge_sources"] = [
+                {
+                    "id": "KS-DISABLED",
+                    "sourceType": "standard",
+                    "status": "disabled",
+                }
+            ]
+        else:
+            state["knowledge_files"][0]["indexEnabled"] = False
+
+        assert knowledge_clause_candidates(state) == []
+
+
 def test_empty_or_malformed_canonical_record_keeps_old_fallback_searchable() -> None:
     for clauses in ([], [{"text": "没有稳定标识的异常条款"}]):
         state = retrieval_state_with_canonical_conflict()
@@ -205,6 +231,34 @@ def test_project_file_candidates_remain_when_standard_candidates_are_replaced() 
 
     assert "发布日期 2015-04-02" in texts
     assert "项目设计压力 2.5 MPa" in texts
+
+
+def test_project_file_canonical_record_is_rejected_without_suppressing_chunk() -> None:
+    state = retrieval_state_with_canonical_conflict()
+    state["knowledge_files"] = [
+        {
+            "id": "KF-KB-TEST",
+            "sourceType": "project",
+            "sourceId": "KS-PROJECT-FILE",
+            "contextType": "project_material",
+            "documentVersionId": "KDV-TEST-V1",
+        }
+    ]
+    state["knowledge_clauses"] = []
+    state["knowledge_chunks"] = [
+        {
+            "id": "CHK-PROJECT-ONLY",
+            "fileId": "KF-KB-TEST",
+            "text": "项目文件厚度要求 12 mm",
+            "contextType": "project_material",
+        }
+    ]
+
+    candidates = knowledge_clause_candidates(state)
+
+    assert canonical_clause_candidates(state) == []
+    assert [item["clauseId"] for item in candidates] == ["CHK-PROJECT-ONLY"]
+    assert candidates[0]["text"] == "项目文件厚度要求 12 mm"
 
 
 def test_kb_version_filters_by_knowledge_source_version() -> None:
@@ -271,6 +325,57 @@ def test_canonical_projection_keeps_provenance_and_safe_structure() -> None:
         {"row": 0, "column": 0, "text": "项目"}
     ]
     assert "tableHtml" not in trace_table
+
+
+def test_structured_only_table_and_equation_build_safe_searchable_text() -> None:
+    state = retrieval_state_with_canonical_conflict()
+    record = state["standard_knowledge_records"][0]
+    record["clauses"] = []
+    record["tables"] = [
+        {
+            "id": "SKI-TABLE-STRUCTURED-ONLY",
+            "caption": "表 2 设计参数",
+            "columnNames": ["项目", "要求"],
+            "normalizedRows": [{"项目": "厚度", "要求": "12 mm"}],
+            "cells": [{"row": 0, "column": 0, "text": "厚度"}],
+            "authority": "current",
+            "sources": [{"sourceId": "TABLE-ONLY", "sourceType": "new_mineru"}],
+        }
+    ]
+    record["equations"] = [
+        {
+            "id": "SKI-EQUATION-STRUCTURED-ONLY",
+            "latex": r"p=\frac{F}{A}",
+            "authority": "current",
+            "sources": [{"sourceId": "EQ-ONLY", "sourceType": "new_mineru"}],
+        }
+    ]
+
+    candidates = canonical_clause_candidates(state)
+    by_id = {item["canonicalItemId"]: item for item in candidates}
+    table = by_id["SKI-TABLE-STRUCTURED-ONLY"]
+    equation = by_id["SKI-EQUATION-STRUCTURED-ONLY"]
+
+    assert "表 2 设计参数" in table["text"]
+    assert "12 mm" in table["text"]
+    assert table["tableRows"] == [{"项目": "厚度", "要求": "12 mm"}]
+    assert table["tableCells"] == [{"row": 0, "column": 0, "text": "厚度"}]
+    assert equation["text"] == r"p=\frac{F}{A}"
+    assert equation["latex"] == r"p=\frac{F}{A}"
+
+    table_trace = retrieve_knowledge_clauses(state, query="12 mm", top_k=2)["trace"]
+    selected_table = next(
+        item
+        for item in table_trace["selectedClauses"]
+        if item["canonicalItemId"] == "SKI-TABLE-STRUCTURED-ONLY"
+    )
+    assert selected_table["tableRows"] == [
+        {"项目": "厚度", "要求": "12 mm"}
+    ]
+    assert selected_table["tableCells"] == [
+        {"row": 0, "column": 0, "text": "厚度"}
+    ]
+    assert "tableHtml" not in selected_table
 
 
 def test_canonical_relations_are_projected_as_stable_retrieval_candidates() -> None:

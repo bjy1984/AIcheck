@@ -110,6 +110,7 @@ PAGEINDEX_QUERY_TERMS = (
     "引用",
     "条文之间",
 )
+DISABLED_KNOWLEDGE_STATUSES = {"disabled", "inactive", "deprecated", "retired", "停用"}
 
 
 def query_tokens(query: str) -> list[str]:
@@ -572,6 +573,55 @@ def canonical_relation_text(category: str, item: dict[str, Any]) -> str:
     return " ".join(str(part) for part in parts if str(part or "").strip())
 
 
+def canonical_item_searchable_text(category: str, item: dict[str, Any]) -> str:
+    item_text = str(item.get("text") or "").strip()
+    relation_text = canonical_relation_text(category, item)
+    if relation_text:
+        return " ".join(part for part in (relation_text, item_text) if part)
+    if category == "equations":
+        return item_text or str(item.get("latex") or "").strip()
+    if category == "tables":
+        safe_structure = [
+            item.get("caption"),
+            item.get("columnNames") or [],
+            item.get("normalizedRows") or [],
+            item.get("cells") or [],
+        ]
+        structured_text = json.dumps(
+            safe_structure,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        return " ".join(part for part in (item_text, structured_text) if part)
+    return item_text
+
+
+def knowledge_source_enabled(source: dict[str, Any]) -> bool:
+    return (
+        source.get("indexEnabled") is not False
+        and str(source.get("status") or "").lower() not in DISABLED_KNOWLEDGE_STATUSES
+        and source.get("sourceType") != "rule"
+    )
+
+
+def knowledge_file_enabled(file: dict[str, Any], source: dict[str, Any]) -> bool:
+    return (
+        file.get("indexEnabled") is not False
+        and str(file.get("status") or "").lower() not in DISABLED_KNOWLEDGE_STATUSES
+        and knowledge_source_enabled(source)
+    )
+
+
+def is_standard_knowledge_file(file: dict[str, Any]) -> bool:
+    return bool(file) and (
+        file.get("sourceType") == "standard"
+        or file.get("sourceId") == "KS-STANDARD-RULES"
+        or file.get("contextType") == "standard_reference"
+    )
+
+
 def candidate_identity_ids(candidate: dict[str, Any]) -> set[str]:
     return {
         str(value)
@@ -593,6 +643,11 @@ def canonical_clause_candidates(
         for item in state.get("knowledge_files", []) or []
         if isinstance(item, dict) and item.get("id")
     }
+    sources_by_id = {
+        str(item.get("id")): item
+        for item in state.get("knowledge_sources", []) or []
+        if isinstance(item, dict) and item.get("id")
+    }
     for record in state.get("standard_knowledge_records", []) or []:
         if (
             not isinstance(record, dict)
@@ -603,7 +658,8 @@ def canonical_clause_candidates(
         if kb_version and record.get("kbVersion") != kb_version:
             continue
         file = files_by_id.get(str(record.get("knowledgeFileId"))) or {}
-        if file.get("indexEnabled") is False:
+        source = sources_by_id.get(str(file.get("sourceId") or "")) or {}
+        if not is_standard_knowledge_file(file) or not knowledge_file_enabled(file, source):
             continue
         identity = record.get("identity") if isinstance(record.get("identity"), dict) else {}
         standard_code_field = identity.get("standardCode")
@@ -626,13 +682,7 @@ def canonical_clause_candidates(
                 if not isinstance(item, dict) or not item.get("id"):
                     continue
                 authority = str(item.get("authority") or "current")
-                relation_text = canonical_relation_text(category, item)
-                item_text = str(item.get("text") or "").strip()
-                text = (
-                    " ".join(part for part in (relation_text, item_text) if part)
-                    if relation_text
-                    else item_text
-                )
+                text = canonical_item_searchable_text(category, item)
                 if quarantine_interference_reasons(
                     text,
                     context_type=str(context_type or ""),
@@ -754,13 +804,19 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
         for item in state.get("knowledge_clauses", []) or []
         if isinstance(item, dict) and item.get("id") and item.get("fileId")
     }
+    clauses_by_id = {
+        str(item.get("id")): item
+        for item in state.get("knowledge_clauses", []) or []
+        if isinstance(item, dict) and item.get("id")
+    }
 
     for clause in state.get("knowledge_clauses", []) or []:
         if isinstance(clause, dict):
             if str(clause.get("fileId") or "") in canonical_file_ids:
                 continue
             file = files_by_id.get(clause.get("fileId")) or {}
-            if file.get("indexEnabled") is False:
+            source = sources_by_id.get(file.get("sourceId")) or {}
+            if not knowledge_file_enabled(file, source):
                 continue
             context_type = clause.get("contextType") or file.get("contextType")
             if quarantine_interference_reasons(
@@ -785,6 +841,23 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
         )
         if str(target_file_id or "") in canonical_file_ids:
             continue
+        target_clause = clauses_by_id.get(str(link.get("objectId") or "")) or {}
+        file = files_by_id.get(str(target_file_id or "")) or {}
+        source = sources_by_id.get(file.get("sourceId")) or {}
+        if file and not knowledge_file_enabled(file, source):
+            continue
+        context_type = (
+            link.get("contextType")
+            or target_clause.get("contextType")
+            or file.get("contextType")
+        )
+        block_type = link.get("blockType") or target_clause.get("blockType")
+        if quarantine_interference_reasons(
+            link.get("quotedText") or target_clause.get("text") or "",
+            context_type=str(context_type or ""),
+            block_type=block_type,
+        ):
+            continue
         candidates.append(
             normalize_clause(
                 {
@@ -796,6 +869,17 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                     "text": link.get("quotedText"),
                     "pageNo": link.get("pageNo"),
                     "bbox": link.get("bbox"),
+                    "fileId": target_file_id,
+                    "documentVersionId": link.get("documentVersionId")
+                    or target_clause.get("documentVersionId")
+                    or file.get("documentVersionId"),
+                    "sourceRelativePath": link.get("sourceRelativePath")
+                    or target_clause.get("sourceRelativePath")
+                    or file.get("sourceRelativePath"),
+                    "contextType": context_type,
+                    "sourceMethod": link.get("sourceMethod")
+                    or target_clause.get("sourceMethod")
+                    or file.get("sourceMethod"),
                     "sourceEvidenceLinkId": link.get("id"),
                     "tags": [link.get("fieldName")] if link.get("fieldName") else [],
                 },
@@ -819,7 +903,7 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
             continue
         file = files_by_id.get(chunk.get("fileId")) or {}
         source = sources_by_id.get(file.get("sourceId")) or {}
-        if file.get("indexEnabled") is False or source.get("sourceType") == "rule":
+        if not knowledge_file_enabled(file, source):
             continue
         # 项目资料是**被审查的对象**，不是审查依据。检索的所有消费者
         # （审查执行、节点标准依据、FDE 评测、健康探针）都在找规范条款——
