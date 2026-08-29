@@ -1032,15 +1032,24 @@ def canonical_field_source_ids(record: dict[str, Any]) -> set[str]:
 
 
 def scoped_canonical_provenance(
-    provenance: list[Any], *, page_no: int | None, section: str | None
+    provenance: list[Any],
+    *,
+    page_no: int | None,
+    section: str | None,
+    allowed_evidence_keys: set[tuple[str, str, str, str, str]] | None = None,
 ) -> list[Any]:
     scoped_provenance = []
     for source in provenance:
         if not isinstance(source, dict):
             continue
         if not canonical_item_matches_scope(
-            source, page_no=page_no, section=section, require_location=False
+            source,
+            page_no=page_no,
+            section=None if allowed_evidence_keys is not None else section,
+            require_location=False,
         ):
+            continue
+        if allowed_evidence_keys is not None and canonical_evidence_key(source) not in allowed_evidence_keys:
             continue
         scoped_source = repo.clone(source)
         raw_tables = scoped_source.get("rawTables")
@@ -1059,7 +1068,10 @@ def scoped_canonical_provenance(
         ):
             scoped_source.pop("rawLocator", None)
         if "quotedText" in scoped_source and not canonical_item_matches_scope(
-            scoped_source, page_no=page_no, section=section, require_location=True
+            scoped_source,
+            page_no=page_no,
+            section=None if allowed_evidence_keys is not None else section,
+            require_location=True,
         ):
             scoped_source.pop("quotedText", None)
         scoped_provenance.append(scoped_source)
@@ -1135,7 +1147,7 @@ def scoped_standard_canonical(
         "replacementRelations",
         "businessRelations",
     )
-    scoped_parent_source_ids: set[str] = set()
+    scoped_parent_evidence_keys: set[tuple[str, str, str, str, str]] = set()
     for key in content_keys:
         items = scoped.get(key)
         if not isinstance(items, list):
@@ -1153,9 +1165,11 @@ def scoped_standard_canonical(
                 scoped_item["sources"] = scoped_canonical_item_sources(
                     scoped_item["sources"], page_no=page_no
                 )
-                scoped_parent_source_ids.update(canonical_source_ids(scoped_item["sources"]))
-            if scoped_item.get("selectedSourceId"):
-                scoped_parent_source_ids.add(str(scoped_item["selectedSourceId"]))
+                scoped_parent_evidence_keys.update(
+                    canonical_evidence_key(source)
+                    for source in scoped_item["sources"]
+                    if isinstance(source, dict)
+                )
             filtered.append(scoped_item)
         scoped[key] = filtered
     for group_name in ("identity", "version", "metadata"):
@@ -1173,11 +1187,14 @@ def scoped_standard_canonical(
             repo.clone(item)
             for item in scoped.get("evidence") or []
             if isinstance(item, dict)
-            and str(item.get("sourceId") or "") in scoped_parent_source_ids
+            and canonical_evidence_key(item) in scoped_parent_evidence_keys
             and (page_no is None or item.get("pageNo") is None or item.get("pageNo") == page_no)
         ]
     scoped["provenance"] = scoped_canonical_provenance(
-        list(scoped.get("provenance") or []), page_no=page_no, section=section
+        list(scoped.get("provenance") or []),
+        page_no=page_no,
+        section=section,
+        allowed_evidence_keys=scoped_parent_evidence_keys if section is not None else None,
     )
     return scoped
 

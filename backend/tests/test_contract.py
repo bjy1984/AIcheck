@@ -272,6 +272,70 @@ def test_canonical_endpoint_keeps_parent_section_path_sources_and_evidence() -> 
     assert data["evidence"] == [target_source]
 
 
+def test_canonical_section_scope_matches_exact_parent_evidence_not_parse_source() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    matching_evidence = {
+        "sourceId": "PARSE-SHARED",
+        "pageNo": 7,
+        "quotedText": "scope evidence",
+        "contentHash": "scope-hash",
+    }
+    same_page_other_section = {
+        "sourceId": "PARSE-SHARED",
+        "pageNo": 7,
+        "quotedText": "other section evidence",
+        "contentHash": "other-section-hash",
+    }
+    other_page_other_section = {
+        "sourceId": "PARSE-SHARED",
+        "pageNo": 8,
+        "quotedText": "other page evidence",
+        "contentHash": "other-page-hash",
+    }
+    record = repo.state["standard_knowledge_records"][0]
+    record.update(
+        {
+            "blocks": [
+                {
+                    "id": "BLOCK-SCOPE",
+                    "pageNo": 7,
+                    "sectionPath": ["Scope"],
+                    "sources": [matching_evidence],
+                },
+                {
+                    "id": "BLOCK-OTHER-SAME-PAGE",
+                    "pageNo": 7,
+                    "sectionPath": ["Other"],
+                    "sources": [same_page_other_section],
+                },
+                {
+                    "id": "BLOCK-OTHER-PAGE",
+                    "pageNo": 8,
+                    "sectionPath": ["Other"],
+                    "sources": [other_page_other_section],
+                },
+            ],
+            "evidence": [matching_evidence, same_page_other_section, other_page_other_section],
+            "provenance": [
+                {**matching_evidence, "capabilities": ["fullText"]},
+                {**same_page_other_section, "capabilities": ["fullText"]},
+                {**other_page_other_section, "capabilities": ["fullText"]},
+            ],
+        }
+    )
+
+    section_scoped = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical?section=scope"))
+    page_scoped = assert_ok(
+        client.get("/api/knowledge/files/KF-KB-TEST/canonical?section=scope&pageNo=7")
+    )
+
+    assert section_scoped["blocks"][0]["sources"] == [matching_evidence]
+    assert section_scoped["evidence"] == [matching_evidence]
+    assert section_scoped["provenance"] == [{**matching_evidence, "capabilities": ["fullText"]}]
+    assert page_scoped["evidence"] == [matching_evidence]
+    assert page_scoped["provenance"] == [{**matching_evidence, "capabilities": ["fullText"]}]
+
+
 def test_canonical_endpoint_hides_only_block_derived_data_when_blocks_are_omitted() -> None:
     seed_canonical_record("KF-KB-TEST")
     record = repo.state["standard_knowledge_records"][0]
