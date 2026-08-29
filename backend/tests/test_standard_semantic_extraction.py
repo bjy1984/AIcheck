@@ -506,6 +506,18 @@ def test_scope_material_name_weak_markers_do_not_change_positive_polarity(phrase
     assert evidence["negationMatches"] is True
 
 
+def test_scope_multiple_material_name_weak_markers_remain_positive():
+    phrase = "非金属无缝钢管适用于高压管道"
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: phrase}),
+        FakeLiteLLMClient(
+            {"scope": {"value": phrase, "pageNo": 7, "quotedText": phrase}}
+        ),
+    )
+
+    assert extracted["scope"]["semanticEvidence"]["valuePolarity"] == "positive"
+
+
 def test_scope_material_name_weak_markers_preserve_mixed_multi_clause_polarity():
     phrase = "不锈钢适用于腐蚀环境，但无缝钢管不应被用于低压管道。"
     extracted = extract_standard_semantics(
@@ -598,6 +610,9 @@ def test_scope_accepts_matching_passive_modal_and_prohibition_negatives(
         "不准用于低碳钢材料",
         "不适合用于低碳钢材料",
         "不鼓励用于低碳钢材料",
+        "不准不锈钢用于高温环境",
+        "不准非金属用于高温环境",
+        "不适合无缝钢管用于高温环境",
     ],
 )
 def test_scope_rejects_unsupported_predicate_window_instead_of_guessing(phrase):

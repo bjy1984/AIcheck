@@ -267,24 +267,32 @@ def _scope_predicate_polarity(text: str, predicate_start: int) -> str:
         return "ambiguous"
 
     weak_matches = [
-        (prefix.rfind(marker), marker)
-        for marker in _SCOPE_WEAK_NEGATION_MARKERS
-        if marker in prefix
+        (index, character)
+        for index, character in enumerate(prefix)
+        if character in _SCOPE_WEAK_NEGATION_MARKERS
     ]
     if weak_matches:
-        marker_start, marker = max(weak_matches, key=lambda item: item[0])
+        marker_start, marker = weak_matches[-1]
         gap = prefix[marker_start + len(marker) :]
         if len(gap) <= _SCOPE_MAX_PREDICATE_GAP and _SCOPE_NEGATION_GAP_PATTERN.fullmatch(gap):
             return "negative"
         if len(gap) <= _SCOPE_MAX_PREDICATE_GAP and any(cue in gap for cue in _SCOPE_WEAK_MODAL_CUES):
             return "ambiguous"
-        # Bare weak markers also begin material names such as 不锈钢、无缝钢管、
-        # and 非合金钢. They carry polarity only when their entire suffix is an
-        # allowed, bounded path to the applicability predicate.
-        weak_subject = prefix[marker_start:]
-        if any(weak_subject.endswith(suffix) for suffix in _SCOPE_NONNEGATIVE_SUBJECT_SUFFIXES):
-            return "positive"
-        return "ambiguous"
+        # Every weak marker must belong to a known non-negating material noun.
+        # Looking only at the rightmost marker lets an earlier prohibition hide
+        # behind a later material name (for example 不准不锈钢用于...).
+        for position, _ in weak_matches:
+            next_position = next(
+                (candidate for candidate, _ in weak_matches if candidate > position),
+                len(prefix),
+            )
+            weak_subject = prefix[position:next_position]
+            if not any(
+                weak_subject.endswith(suffix)
+                for suffix in _SCOPE_NONNEGATIVE_SUBJECT_SUFFIXES
+            ):
+                return "ambiguous"
+        return "positive"
     return "positive"
 
 
