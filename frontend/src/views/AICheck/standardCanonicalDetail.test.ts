@@ -1,11 +1,22 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { StandardKnowledgeRecord } from '@/api/aicheck'
+import type { StandardCanonicalContentItem, StandardKnowledgeRecord } from '@/api/aicheck'
 import {
+  beginCanonicalSectionLoad,
+  canonicalAuthorityBadge,
+  canonicalCompletenessRows,
+  canonicalDetailFileKey,
+  canonicalItemLocateEvidence,
+  canonicalLocateKey,
   canonicalOverviewRows,
-  canonicalTabLoadRequest,
+  canonicalSectionPayload,
+  canonicalTabQuery,
   canonicalWarningMessages,
+  completeCanonicalSectionLoad,
+  createCanonicalDetailLoadState,
+  failCanonicalSectionLoad,
+  resetCanonicalDetailLoadState,
   visibleCanonicalSourceValues
 } from './components/standardCanonicalPresentation'
 
@@ -108,15 +119,122 @@ assert.deepEqual(visibleCanonicalSourceValues(record.identity.standardCode), [
   { value: 'NB/T 47013.10-2015', sourceType: 'new_mineru', selected: true },
   { value: 'NB/T 47013.10-2010', sourceType: 'legacy_ocr', selected: false }
 ])
-assert.equal(canonicalTabLoadRequest('overview'), undefined)
-assert.equal(canonicalTabLoadRequest('completeness'), undefined)
-for (const tab of ['structure', 'tables', 'relations']) {
-  assert.deepEqual(canonicalTabLoadRequest(tab), { includeBlocks: false, includeHistory: false })
-}
-assert.deepEqual(canonicalTabLoadRequest('history'), {
-  includeBlocks: false,
-  includeHistory: true
+assert.equal(canonicalTabQuery('overview'), undefined)
+assert.equal(canonicalTabQuery('completeness'), undefined)
+assert.deepEqual(canonicalTabQuery('structure'), {
+  section: 'structure',
+  arrays: ['sections', 'clauses', 'blocks'],
+  params: { includeBlocks: true, includeHistory: false }
 })
+assert.deepEqual(canonicalTabQuery('tables'), {
+  section: 'tables',
+  arrays: ['tables', 'equations', 'images', 'seals'],
+  params: { includeBlocks: false, includeHistory: false }
+})
+assert.deepEqual(canonicalTabQuery('relations'), {
+  section: 'relations',
+  arrays: ['normativeReferences', 'replacementRelations', 'businessRelations'],
+  params: { includeBlocks: false, includeHistory: false }
+})
+assert.deepEqual(canonicalTabQuery('history'), {
+  section: 'history',
+  arrays: ['history'],
+  params: { includeBlocks: false, includeHistory: true }
+})
+
+const conflictingLocationItem: StandardCanonicalContentItem = {
+  id: 'CLAUSE-CONFLICT',
+  authority: 'current',
+  selectedSourceId: 'SELECTED',
+  pageNo: 2,
+  bbox: [70, 80, 90, 100],
+  text: '冲突位置',
+  sources: [
+    { sourceId: 'SELECTED', sourceType: 'new_mineru', pageNo: 2 },
+    { sourceId: 'SUPPORTING', sourceType: 'legacy_ocr', pageNo: 7, bbox: [70, 80, 90, 100] }
+  ]
+}
+assert.deepEqual(canonicalItemLocateEvidence(conflictingLocationItem), {
+  sourceId: 'SELECTED',
+  sourceType: 'new_mineru',
+  pageNo: 2,
+  key: 'CLAUSE-CONFLICT',
+  quotedText: '冲突位置'
+})
+
+const promotedLocationItem: StandardCanonicalContentItem = {
+  ...conflictingLocationItem,
+  pageNo: 7
+}
+assert.deepEqual(canonicalItemLocateEvidence(promotedLocationItem), {
+  sourceId: 'SUPPORTING',
+  sourceType: 'legacy_ocr',
+  pageNo: 7,
+  bbox: [70, 80, 90, 100],
+  key: 'CLAUSE-CONFLICT',
+  quotedText: '冲突位置'
+})
+
+assert.equal(canonicalAuthorityBadge('legacy_only'), 'legacy_only')
+assert.equal(canonicalAuthorityBadge('current'), '')
+assert.notEqual(
+  canonicalLocateKey({ key: 'FIELD-CODE', sourceId: 'PARSE-NEW', pageNo: 1 }),
+  canonicalLocateKey({ key: 'FIELD-CODE', sourceId: 'PARSE-OLD', pageNo: 1 })
+)
+
+const completeness = {
+  overall: 'partial' as const,
+  missingCategories: ['identity'],
+  identity: { status: 'partial', missing: ['standardCode', 'standardNameZh'] }
+}
+assert.deepEqual(canonicalCompletenessRows(completeness)[0], {
+  key: 'identity',
+  label: '标准身份',
+  status: 'partial',
+  count: undefined,
+  located: undefined,
+  total: undefined,
+  missingFields: ['标准编号', '标准名称'],
+  reason: '标准编号或标准名称不完整；缺少字段：标准编号、标准名称'
+})
+
+const fileA = canonicalDetailFileKey('DOC-A', 'KF-A')
+let loadState = createCanonicalDetailLoadState(fileA)
+const structureStart = beginCanonicalSectionLoad(loadState, 'structure')
+loadState = structureStart.state
+assert.equal(loadState.sections.structure.loading, true)
+assert.equal(loadState.sections.history.loading, false)
+loadState = failCanonicalSectionLoad(loadState, structureStart.token, '章节失败')
+assert.equal(loadState.sections.structure.error, '章节失败')
+assert.equal(loadState.sections.history.error, '')
+
+const historyStart = beginCanonicalSectionLoad(loadState, 'history')
+loadState = historyStart.state
+assert.equal(loadState.sections.history.loading, true)
+assert.equal(loadState.sections.structure.loading, false)
+assert.equal(loadState.sections.structure.error, '章节失败')
+const fileBState = resetCanonicalDetailLoadState(loadState, canonicalDetailFileKey('DOC-B', 'KF-B'))
+assert.equal(fileBState.sections.structure.data, undefined)
+assert.equal(fileBState.sections.structure.error, '')
+assert.equal(fileBState.sections.history.loading, false)
+assert.equal(fileBState.generation, loadState.generation + 1)
+assert.deepEqual(
+  completeCanonicalSectionLoad(fileBState, historyStart.token, record),
+  fileBState,
+  '旧文件的迟到响应必须被 generation token 丢弃'
+)
+
+const tablePayload = canonicalSectionPayload(canonicalTabQuery('tables')!, {
+  ...record,
+  sections: [{ ...conflictingLocationItem, id: 'SECTION-HIDDEN' }],
+  clauses: [{ ...conflictingLocationItem, id: 'CLAUSE-HIDDEN' }],
+  blocks: [{ ...conflictingLocationItem, id: 'BLOCK-HIDDEN' }],
+  tables: [{ ...conflictingLocationItem, id: 'TABLE-VISIBLE' }]
+})
+assert.equal(tablePayload.tables.length, 1)
+assert.equal(tablePayload.sections.length, 0)
+assert.equal(tablePayload.clauses.length, 0)
+assert.equal(tablePayload.blocks, undefined)
 
 const component = readFileSync(
   fileURLToPath(new URL('./components/StandardCanonicalDetail.vue', import.meta.url)),
@@ -134,6 +252,18 @@ const overview = readFileSync(
 for (const tab of ['概览', '章节条款', '表格公式', '引用关系', '完整度', '来源历史']) {
   assert.match(component, new RegExp(`label="${tab}"`), `标准详情缺少“${tab}”页签`)
 }
+for (const tab of ['structure', 'tables', 'relations', 'history']) {
+  assert.match(
+    component,
+    new RegExp(`<ElTabPane[^>]*name="${tab}"[^>]*lazy`),
+    `${tab} 页签必须延迟实例化`
+  )
+  assert.match(
+    component,
+    new RegExp(`v-if="activeTab === '${tab}'"`),
+    `${tab} 页签隐藏时不得实例化大数组内容`
+  )
+}
 assert.match(component, /getKnowledgeFileCanonicalApi/, '全集必须通过 canonical API 获取')
 assert.match(component, /@tab-change="handleTabChange"/, '全集 API 必须由页签打开事件触发')
 assert.doesNotMatch(
@@ -143,6 +273,11 @@ assert.doesNotMatch(
 )
 assert.doesNotMatch(component, /v-html/, '标准表格和来源内容不得直接渲染来源 HTML')
 assert.doesNotMatch(component, /没有识别出证书编号、设计压力/, '标准详情不得显示项目资料告警')
+assert.match(
+  component,
+  /canonicalAuthorityBadge\(item\.authority\)/,
+  '结构化条目必须接入权威性徽标'
+)
 
 const canonicalStart = dialog.indexOf('<StandardCanonicalDetail')
 const projectFallback = dialog.indexOf('<template v-else>', canonicalStart)
@@ -150,6 +285,11 @@ const projectWarning = dialog.indexOf('没有识别出证书编号、设计压�
 assert.ok(canonicalStart >= 0, '公共文件详情必须接入标准 canonical 详情')
 assert.ok(projectFallback > canonicalStart, '项目资料 OCR 界面必须放在标准详情的 v-else 分支')
 assert.ok(projectWarning > projectFallback, '项目资料告警只能出现在非标准文档分支')
+assert.match(
+  dialog,
+  /props\.detail\?\.document\.id[\s\S]{0,300}standardCanonical\.value\?\.knowledgeFileId/,
+  '文件切换时必须同时按 documentId 和 knowledgeFileId 清理定位状态'
+)
 assert.match(
   overview,
   /const isStandardFile =[\s\S]{0,500}source\.sourceType === 'standard'[\s\S]{0,500}materialTypeCode: 'standard_reference'/,

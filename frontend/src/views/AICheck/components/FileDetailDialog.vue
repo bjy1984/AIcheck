@@ -28,6 +28,7 @@ import { formatConfidence } from '@/utils/confidence'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
 import StandardCanonicalDetail from './StandardCanonicalDetail.vue'
+import { canonicalLocateKey } from './standardCanonicalPresentation'
 
 const props = defineProps<{
   modelValue: boolean
@@ -560,9 +561,7 @@ const handleLocate = (item: LocatableItem) => {
 }
 
 const handleCanonicalLocate = (evidence: StandardCanonicalEvidence) => {
-  const key = `canonical:${String(
-    evidence.key || evidence.contentHash || evidence.sourceId || evidence.quotedText || 'evidence'
-  )}`
+  const key = canonicalLocateKey(evidence)
   if (activeLocateKey.value === key) {
     activeLocateKey.value = ''
     canonicalLocatable.value = undefined
@@ -593,6 +592,15 @@ watch(visible, (open) => {
     sideTab.value = 'fields'
   }
 })
+
+watch(
+  () => [props.detail?.document.id, standardCanonical.value?.knowledgeFileId] as const,
+  () => {
+    activeLocateKey.value = ''
+    canonicalLocatable.value = undefined
+    previewNaturalSize.value = null
+  }
+)
 </script>
 
 <template>
@@ -722,6 +730,7 @@ watch(visible, (open) => {
             <StandardCanonicalDetail
               v-if="standardCanonical"
               :record="standardCanonical"
+              :document-id="document?.id"
               @locate="handleCanonicalLocate"
             />
             <ElAlert

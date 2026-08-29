@@ -20,18 +20,27 @@ import {
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import ClauseContent from '@/components/ClauseContent/src/ClauseContent.vue'
 import {
-  CANONICAL_CATEGORY_LABELS,
   CANONICAL_FIELD_LABELS,
-  CANONICAL_WARNING_COPY,
+  beginCanonicalSectionLoad,
+  canonicalAuthorityBadge,
+  canonicalCompletenessRows,
+  canonicalDetailFileKey,
+  canonicalFieldLocateEvidence,
+  canonicalItemLocateEvidence,
   canonicalOverviewRows,
-  canonicalTabLoadRequest,
-  type CanonicalTabLoadRequest,
+  canonicalSectionPayload,
+  canonicalTabQuery,
   canonicalWarningMessages,
+  completeCanonicalSectionLoad,
+  createCanonicalDetailLoadState,
+  failCanonicalSectionLoad,
+  resetCanonicalDetailLoadState,
   visibleCanonicalSourceValues
 } from './standardCanonicalPresentation'
 
 const props = defineProps<{
   record: StandardKnowledgeRecord | StandardKnowledgeRecordSummary
+  documentId?: string
 }>()
 
 const emit = defineEmits<{
@@ -39,12 +48,19 @@ const emit = defineEmits<{
 }>()
 
 const activeTab = ref('overview')
-const loadedRecord = ref<StandardKnowledgeRecord>()
-const loadedHistory = ref(false)
-const loading = ref(false)
-const loadError = ref('')
 const sourcePanels = ref<string[]>([])
-let loadToken = 0
+const fileKey = computed(() =>
+  canonicalDetailFileKey(props.documentId, props.record.knowledgeFileId)
+)
+const loadState = ref(createCanonicalDetailLoadState(fileKey.value))
+const structureLoad = computed(() => loadState.value.sections.structure)
+const tablesLoad = computed(() => loadState.value.sections.tables)
+const relationsLoad = computed(() => loadState.value.sections.relations)
+const historyLoad = computed(() => loadState.value.sections.history)
+const structureRecord = computed(() => structureLoad.value.data)
+const tablesRecord = computed(() => tablesLoad.value.data)
+const relationsRecord = computed(() => relationsLoad.value.data)
+const historyRecord = computed(() => historyLoad.value.data)
 
 const overviewRows = computed(() => canonicalOverviewRows(props.record))
 const warnings = computed(() => canonicalWarningMessages(props.record))
@@ -58,31 +74,12 @@ const extraMetadataRows = computed(() =>
 )
 const allFields = computed(() =>
   Object.entries({
-    ...(loadedRecord.value || props.record).identity,
-    ...(loadedRecord.value || props.record).version,
-    ...(loadedRecord.value || props.record).metadata
+    ...(historyRecord.value || props.record).identity,
+    ...(historyRecord.value || props.record).version,
+    ...(historyRecord.value || props.record).metadata
   }).map(([key, field]) => ({ key, label: CANONICAL_FIELD_LABELS[key] || key, field }))
 )
-const completenessRows = computed(() =>
-  Object.entries(props.record.completeness)
-    .filter(([key]) => key !== 'overall' && key !== 'missingCategories')
-    .map(([key, detail]) => {
-      const data = detail && typeof detail === 'object' ? (detail as Record<string, unknown>) : {}
-      const status = String(data.status || 'missing')
-      return {
-        key,
-        label: CANONICAL_CATEGORY_LABELS[key] || key,
-        status,
-        count: typeof data.count === 'number' ? data.count : undefined,
-        located: typeof data.located === 'number' ? data.located : undefined,
-        total: typeof data.total === 'number' ? data.total : undefined,
-        reason:
-          status === 'missing' || status === 'partial'
-            ? CANONICAL_WARNING_COPY[key] || `“${CANONICAL_CATEGORY_LABELS[key] || key}”信息不完整`
-            : ''
-      }
-    })
-)
+const completenessRows = computed(() => canonicalCompletenessRows(props.record.completeness))
 
 const statusLabel = (status: string) => {
   const labels: Record<string, string> = {
@@ -118,33 +115,12 @@ const formatValue = (value: unknown) => {
   return JSON.stringify(value)
 }
 
-const selectedFieldEvidence = (field: StandardCanonicalField): StandardCanonicalEvidence => {
-  const selected = field.sources.find((source) => source.sourceId === field.selectedSourceId)
-  return {
-    ...selected,
-    key: field.id,
-    value: field.value,
-    quotedText: selected?.quotedText || String(field.value ?? '')
-  }
-}
-
-const selectedItemEvidence = (item: StandardCanonicalContentItem): StandardCanonicalEvidence => {
-  const selected = item.sources.find((source) => source.sourceId === item.selectedSourceId)
-  return {
-    ...selected,
-    key: item.id,
-    pageNo: selected?.pageNo ?? item.pageNo,
-    bbox: selected?.bbox ?? item.bbox,
-    quotedText: selected?.quotedText || item.text || item.caption || item.latex || item.title || ''
-  }
-}
-
 const locateField = (field?: StandardCanonicalField) => {
-  if (field) emit('locate', selectedFieldEvidence(field))
+  if (field) emit('locate', canonicalFieldLocateEvidence(field))
 }
 
 const locateItem = (item: StandardCanonicalContentItem) => {
-  emit('locate', selectedItemEvidence(item))
+  emit('locate', canonicalItemLocateEvidence(item))
 }
 
 const tableColumns = (item: StandardCanonicalContentItem) => {
@@ -153,51 +129,54 @@ const tableColumns = (item: StandardCanonicalContentItem) => {
   return firstRow ? Object.keys(firstRow) : []
 }
 
-const loadCanonical = async (request: CanonicalTabLoadRequest) => {
-  const includeHistory = request.includeHistory
-  if (loadedRecord.value && (!includeHistory || loadedHistory.value)) return
-  const token = ++loadToken
-  loading.value = true
-  loadError.value = ''
+const loadCanonical = async (tab: string) => {
+  const query = canonicalTabQuery(tab)
+  if (
+    !query ||
+    loadState.value.sections[query.section].data ||
+    loadState.value.sections[query.section].loading
+  )
+    return
+  const started = beginCanonicalSectionLoad(loadState.value, query.section)
+  loadState.value = started.state
   try {
     const response = await getKnowledgeFileCanonicalApi(props.record.knowledgeFileId, {
-      ...request
+      ...query.params
     })
-    if (token !== loadToken) return
     if (!response?.data) throw new Error('标准 canonical 全集接口未返回有效数据。')
-    loadedRecord.value = response.data
-    loadedHistory.value = includeHistory
+    loadState.value = completeCanonicalSectionLoad(
+      loadState.value,
+      started.token,
+      canonicalSectionPayload(query, response.data)
+    )
   } catch (error) {
-    if (token !== loadToken) return
-    loadError.value = getAicheckErrorMessage(error, '标准 canonical 全集加载失败，请稍后重试。')
-  } finally {
-    if (token === loadToken) loading.value = false
+    loadState.value = failCanonicalSectionLoad(
+      loadState.value,
+      started.token,
+      getAicheckErrorMessage(error, '标准 canonical 全集加载失败，请稍后重试。')
+    )
   }
 }
 
 const handleTabChange = (name: string | number) => {
-  const request = canonicalTabLoadRequest(String(name))
-  if (request) void loadCanonical(request)
+  void loadCanonical(String(name))
 }
 
 watch(
-  () => props.record.knowledgeFileId,
+  fileKey,
   () => {
-    loadToken += 1
+    loadState.value = resetCanonicalDetailLoadState(loadState.value, fileKey.value)
     activeTab.value = 'overview'
-    loadedRecord.value = undefined
-    loadedHistory.value = false
-    loading.value = false
-    loadError.value = ''
     sourcePanels.value = []
-  }
+  },
+  { flush: 'sync' }
 )
 </script>
 
 <template>
   <div class="canonical-detail">
     <ElTabs v-model="activeTab" class="canonical-tabs" @tab-change="handleTabChange">
-      <ElTabPane label="概览" name="overview">
+      <ElTabPane label="概览" name="overview" lazy>
         <div class="canonical-pane">
           <ElAlert
             v-if="warnings.length"
@@ -256,46 +235,98 @@ watch(
         </div>
       </ElTabPane>
 
-      <ElTabPane label="章节条款" name="structure">
-        <div v-loading="loading" class="canonical-pane">
+      <ElTabPane label="章节条款" name="structure" lazy>
+        <div
+          v-if="activeTab === 'structure'"
+          v-loading="structureLoad.loading"
+          class="canonical-pane"
+        >
           <ElAlert
-            v-if="loadError"
-            :title="loadError"
+            v-if="structureLoad.error"
+            :title="structureLoad.error"
             type="warning"
             :closable="false"
             class="canonical-alert"
           />
-          <template v-if="loadedRecord">
-            <div v-if="loadedRecord.sections.length" class="canonical-section">
-              <div class="canonical-section-title">章节 {{ loadedRecord.sections.length }}</div>
+          <template v-if="structureRecord">
+            <div v-if="structureRecord.sections.length" class="canonical-section">
+              <div class="canonical-section-title">章节 {{ structureRecord.sections.length }}</div>
               <button
-                v-for="item in loadedRecord.sections"
+                v-for="item in structureRecord.sections"
                 :key="item.id"
                 type="button"
                 class="content-card"
                 @click="locateItem(item)"
               >
-                <strong>{{ item.title || item.sectionPath?.join(' / ') || '未命名章节' }}</strong>
+                <span class="content-title">
+                  <strong>{{ item.title || item.sectionPath?.join(' / ') || '未命名章节' }}</strong>
+                  <ElTag
+                    v-if="canonicalAuthorityBadge(item.authority)"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    {{ canonicalAuthorityBadge(item.authority) }}
+                  </ElTag>
+                </span>
                 <span>{{ item.text }}</span>
                 <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
               </button>
             </div>
-            <div v-if="loadedRecord.clauses.length" class="canonical-section">
-              <div class="canonical-section-title">条款 {{ loadedRecord.clauses.length }}</div>
+            <div v-if="structureRecord.clauses.length" class="canonical-section">
+              <div class="canonical-section-title">条款 {{ structureRecord.clauses.length }}</div>
               <button
-                v-for="item in loadedRecord.clauses"
+                v-for="item in structureRecord.clauses"
                 :key="item.id"
                 type="button"
                 class="content-card"
                 @click="locateItem(item)"
               >
-                <strong>{{ item.clauseNo || item.title || '未编号条款' }}</strong>
+                <span class="content-title">
+                  <strong>{{ item.clauseNo || item.title || '未编号条款' }}</strong>
+                  <ElTag
+                    v-if="canonicalAuthorityBadge(item.authority)"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    {{ canonicalAuthorityBadge(item.authority) }}
+                  </ElTag>
+                </span>
+                <span>{{ item.text }}</span>
+                <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
+              </button>
+            </div>
+            <div v-if="structureRecord.blocks?.length" class="canonical-section">
+              <div class="canonical-section-title">正文 {{ structureRecord.blocks.length }} 段</div>
+              <button
+                v-for="item in structureRecord.blocks"
+                :key="item.id"
+                type="button"
+                class="content-card"
+                @click="locateItem(item)"
+              >
+                <span class="content-title">
+                  <strong>{{ item.title || item.sectionPath?.join(' / ') || '正文段落' }}</strong>
+                  <ElTag
+                    v-if="canonicalAuthorityBadge(item.authority)"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    {{ canonicalAuthorityBadge(item.authority) }}
+                  </ElTag>
+                </span>
                 <span>{{ item.text }}</span>
                 <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
               </button>
             </div>
             <ElEmpty
-              v-if="!loadedRecord.sections.length && !loadedRecord.clauses.length"
+              v-if="
+                !structureRecord.sections.length &&
+                !structureRecord.clauses.length &&
+                !structureRecord.blocks?.length
+              "
               :image-size="60"
               description="暂无章节条款"
             />
@@ -303,21 +334,31 @@ watch(
         </div>
       </ElTabPane>
 
-      <ElTabPane label="表格公式" name="tables">
-        <div v-loading="loading" class="canonical-pane">
+      <ElTabPane label="表格公式" name="tables" lazy>
+        <div v-if="activeTab === 'tables'" v-loading="tablesLoad.loading" class="canonical-pane">
           <ElAlert
-            v-if="loadError"
-            :title="loadError"
+            v-if="tablesLoad.error"
+            :title="tablesLoad.error"
             type="warning"
             :closable="false"
             class="canonical-alert"
           />
-          <template v-if="loadedRecord">
-            <div v-if="loadedRecord.tables.length" class="canonical-section">
-              <div class="canonical-section-title">表格 {{ loadedRecord.tables.length }}</div>
-              <div v-for="item in loadedRecord.tables" :key="item.id" class="table-card">
+          <template v-if="tablesRecord">
+            <div v-if="tablesRecord.tables.length" class="canonical-section">
+              <div class="canonical-section-title">表格 {{ tablesRecord.tables.length }}</div>
+              <div v-for="item in tablesRecord.tables" :key="item.id" class="table-card">
                 <button type="button" class="content-card table-meta" @click="locateItem(item)">
-                  <strong>{{ item.caption || item.title || '结构化表格' }}</strong>
+                  <span class="content-title">
+                    <strong>{{ item.caption || item.title || '结构化表格' }}</strong>
+                    <ElTag
+                      v-if="canonicalAuthorityBadge(item.authority)"
+                      size="small"
+                      type="warning"
+                      effect="plain"
+                    >
+                      {{ canonicalAuthorityBadge(item.authority) }}
+                    </ElTag>
+                  </span>
                   <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
                 </button>
                 <div v-if="item.normalizedRows?.length" class="canonical-table-scroll">
@@ -344,44 +385,62 @@ watch(
               </div>
             </div>
 
-            <div v-if="loadedRecord.equations.length" class="canonical-section">
-              <div class="canonical-section-title">公式 {{ loadedRecord.equations.length }}</div>
+            <div v-if="tablesRecord.equations.length" class="canonical-section">
+              <div class="canonical-section-title">公式 {{ tablesRecord.equations.length }}</div>
               <button
-                v-for="item in loadedRecord.equations"
+                v-for="item in tablesRecord.equations"
                 :key="item.id"
                 type="button"
                 class="content-card equation-card"
                 @click="locateItem(item)"
               >
+                <ElTag
+                  v-if="canonicalAuthorityBadge(item.authority)"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                >
+                  {{ canonicalAuthorityBadge(item.authority) }}
+                </ElTag>
                 <ClauseContent block-type="equation" :latex="item.latex" :text="item.text" />
                 <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
               </button>
             </div>
 
             <div
-              v-if="loadedRecord.images.length || loadedRecord.seals.length"
+              v-if="tablesRecord.images.length || tablesRecord.seals.length"
               class="canonical-section"
             >
               <div class="canonical-section-title">
-                图片 / 印章 {{ loadedRecord.images.length + loadedRecord.seals.length }}
+                图片 / 印章 {{ tablesRecord.images.length + tablesRecord.seals.length }}
               </div>
               <button
-                v-for="item in [...loadedRecord.images, ...loadedRecord.seals]"
+                v-for="item in [...tablesRecord.images, ...tablesRecord.seals]"
                 :key="item.id"
                 type="button"
                 class="content-card"
                 @click="locateItem(item)"
               >
-                <strong>{{ item.caption || item.title || item.text || '图像证据' }}</strong>
+                <span class="content-title">
+                  <strong>{{ item.caption || item.title || item.text || '图像证据' }}</strong>
+                  <ElTag
+                    v-if="canonicalAuthorityBadge(item.authority)"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    {{ canonicalAuthorityBadge(item.authority) }}
+                  </ElTag>
+                </span>
                 <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
               </button>
             </div>
             <ElEmpty
               v-if="
-                !loadedRecord.tables.length &&
-                !loadedRecord.equations.length &&
-                !loadedRecord.images.length &&
-                !loadedRecord.seals.length
+                !tablesRecord.tables.length &&
+                !tablesRecord.equations.length &&
+                !tablesRecord.images.length &&
+                !tablesRecord.seals.length
               "
               :image-size="60"
               description="暂无表格、公式或图像证据"
@@ -390,21 +449,25 @@ watch(
         </div>
       </ElTabPane>
 
-      <ElTabPane label="引用关系" name="relations">
-        <div v-loading="loading" class="canonical-pane">
+      <ElTabPane label="引用关系" name="relations" lazy>
+        <div
+          v-if="activeTab === 'relations'"
+          v-loading="relationsLoad.loading"
+          class="canonical-pane"
+        >
           <ElAlert
-            v-if="loadError"
-            :title="loadError"
+            v-if="relationsLoad.error"
+            :title="relationsLoad.error"
             type="warning"
             :closable="false"
             class="canonical-alert"
           />
-          <template v-if="loadedRecord">
+          <template v-if="relationsRecord">
             <div
               v-for="group in [
-                { label: '规范性引用', items: loadedRecord.normativeReferences },
-                { label: '替代关系', items: loadedRecord.replacementRelations },
-                { label: '业务关系', items: loadedRecord.businessRelations }
+                { label: '规范性引用', items: relationsRecord.normativeReferences },
+                { label: '替代关系', items: relationsRecord.replacementRelations },
+                { label: '业务关系', items: relationsRecord.businessRelations }
               ]"
               :key="group.label"
               class="canonical-section"
@@ -417,24 +480,34 @@ watch(
                 class="content-card"
                 @click="locateItem(item)"
               >
-                <strong>
-                  {{
-                    item.targetStandardCode ||
-                    item.targetClauseNo ||
-                    item.title ||
-                    item.purpose ||
-                    '关联条目'
-                  }}
-                </strong>
+                <span class="content-title">
+                  <strong>
+                    {{
+                      item.targetStandardCode ||
+                      item.targetClauseNo ||
+                      item.title ||
+                      item.purpose ||
+                      '关联条目'
+                    }}
+                  </strong>
+                  <ElTag
+                    v-if="canonicalAuthorityBadge(item.authority)"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    {{ canonicalAuthorityBadge(item.authority) }}
+                  </ElTag>
+                </span>
                 <span>{{ item.text }}</span>
                 <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
               </button>
             </div>
             <ElEmpty
               v-if="
-                !loadedRecord.normativeReferences.length &&
-                !loadedRecord.replacementRelations.length &&
-                !loadedRecord.businessRelations.length
+                !relationsRecord.normativeReferences.length &&
+                !relationsRecord.replacementRelations.length &&
+                !relationsRecord.businessRelations.length
               "
               :image-size="60"
               description="暂无引用或业务关系"
@@ -443,7 +516,7 @@ watch(
         </div>
       </ElTabPane>
 
-      <ElTabPane label="完整度" name="completeness">
+      <ElTabPane label="完整度" name="completeness" lazy>
         <div class="canonical-pane">
           <div class="completeness-summary">
             <span>总体完整度</span>
@@ -469,16 +542,16 @@ watch(
         </div>
       </ElTabPane>
 
-      <ElTabPane label="来源历史" name="history">
-        <div v-loading="loading" class="canonical-pane">
+      <ElTabPane label="来源历史" name="history" lazy>
+        <div v-if="activeTab === 'history'" v-loading="historyLoad.loading" class="canonical-pane">
           <ElAlert
-            v-if="loadError"
-            :title="loadError"
+            v-if="historyLoad.error"
+            :title="historyLoad.error"
             type="warning"
             :closable="false"
             class="canonical-alert"
           />
-          <template v-if="loadedRecord && loadedHistory">
+          <template v-if="historyRecord">
             <p class="history-note">
               主详情始终使用当前选中值；冲突旧值和原始识别结果仅在下方折叠项中追溯。
             </p>
@@ -513,7 +586,7 @@ watch(
               </ElCollapseItem>
               <ElCollapseItem name="parse-history" title="解析结果历史">
                 <div
-                  v-for="source in loadedRecord.history || []"
+                  v-for="source in historyRecord.history || []"
                   :key="source.sourceId"
                   class="history-source"
                 >
@@ -525,7 +598,7 @@ watch(
                   </small>
                 </div>
                 <ElEmpty
-                  v-if="!loadedRecord.history?.length"
+                  v-if="!historyRecord.history?.length"
                   :image-size="48"
                   description="暂无解析历史"
                 />
@@ -621,6 +694,14 @@ watch(
 .content-card span {
   line-height: 1.65;
   overflow-wrap: anywhere;
+}
+
+.content-title {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .content-card small,
