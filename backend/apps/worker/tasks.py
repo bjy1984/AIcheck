@@ -4291,6 +4291,11 @@ def embed_knowledge(
 ) -> dict[str, Any]:
     # Deployment contract marker: embedding_batches_for_chunks keeps offline_hash_embeddings / offline_hash fallback.
     refresh_worker_state()
+    # 分批续跑跨进程：最终汇总从内存读**全部**批次记录拼向量，而续跑任务
+    # 可能落在从未加载过这张表的 worker 进程上——那时只能看到自己刚写的那批，
+    # 汇总出 5/21 条就判「数量不匹配」而整份失败（2026-08-29 实测 17 份如此）。
+    # refresh_worker_state 只刷新已加载的集合，这里必须显式确保加载。
+    ensure_collections_loaded("knowledge_embedding_batches", "knowledge_chunks")
     chunks = sorted(
         [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id],
         key=lambda item: int(item.get("chunkNo") or 0),

@@ -28,3 +28,15 @@ def test_stale_detection_does_not_compare_index_version_strings() -> None:
     source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
     body = source.split("def embed_knowledge", 1)[1][:2000]
     assert "recorded_index" not in body
+
+
+def test_embed_task_loads_batch_records_before_aggregating() -> None:
+    """分批续跑跨进程：最终汇总从内存读**全部**批次记录拼向量，
+    而续跑任务可能落在从未加载过这张表的 worker 上——那时只能看到自己
+    刚写的那批，汇总出 5/21 条就判「数量不匹配」而整份失败
+    （2026-08-29 实测 17 份文件如此）。refresh_worker_state 只刷新
+    已加载的集合，必须显式确保加载。"""
+    source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
+    body = source.split("def embed_knowledge", 1)[1][:1500]
+    assert "ensure_collections_loaded" in body
+    assert "knowledge_embedding_batches" in body
