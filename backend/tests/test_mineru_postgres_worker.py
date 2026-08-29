@@ -65,14 +65,12 @@ def test_postgres_execution_requests_existing_retry_delays(
         )
 
     assert raised.value.countdown == countdown
-    assert raised.value.diagnostics == [
-        {
-            "code": "MINERU_TIMEOUT",
-            "level": "error",
-            "retryable": True,
-            "stage": "submit",
-        }
-    ]
+    # 本用例钉的是重试延迟，诊断只需确认关键字段（新增可归因字段不该让它红）
+    diagnostic = raised.value.diagnostics[0]
+    assert diagnostic["code"] == "MINERU_TIMEOUT"
+    assert diagnostic["level"] == "error"
+    assert diagnostic["retryable"] is True
+    assert diagnostic["stage"] == "submit"
     assert job["status"] == "queued"
     assert job["stage"] == "retrying"
 

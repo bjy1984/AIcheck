@@ -1134,6 +1134,15 @@ def mineru_source_path(
     storage_key = str(job.get("storageKey") or "")
     parsed = parse_storage_url(storage_key)
     suffix = Path(str(job.get("fileName") or "")).suffix
+    # local:// 是本地文件系统协议，绝不能进 MinIO 回退分支：
+    # 那会把整串 "local://output/..." 当成对象名去请求 S3，报 BadRequest，
+    # 最终归因成 MINERU_SUBMIT_FAILED——线上 6 份资料因此永远识别不了，
+    # 而诊断里只有一个阶段码，看不出任何原因（2026-08-29 审计实测）。
+    if storage_key.startswith("local://"):
+        local_path = local_path_from_storage_key(storage_key, WORKSPACE_ROOT)
+        if local_path and local_path.is_file():
+            return local_path, None
+        return None, None
     if not parsed:
         # 桶相对键的回退。parse_storage_url 只认 minio://bucket/key，而上传会话
         # 落库的是 `documents/项目/版本` 这种桶相对键，桶名另存一处。
@@ -1593,12 +1602,22 @@ def _execute_mineru_ocr_extract(
         code = _mineru_failure_code(job, exc)
         retryable = bool(getattr(exc, "retryable", False))
         failed_stage = str(job.get("stage") or "unknown")
+        # 失败原因必须可归因：只记阶段码的话，线上看到 MINERU_SUBMIT_FAILED
+        # 完全不知道为什么（2026-08-29 实测：6 份资料失败，诊断里除了阶段码
+        # 一无所有，靠重跑复现才发现是 local:// 键被当成 MinIO 对象名）。
+        #
+        # 但**异常消息不能直接入库**：它可能带 URL、路径、密钥
+        # （test_nonretryable_mineru_failure_is_persisted_without_secret 钉的就是这条）。
+        # 只记异常类型（类名是代码常量，不含运行时数据）与已消毒的错误码。
         diagnostics = [
             {
                 "code": code,
                 "level": "error",
                 "retryable": retryable,
                 "stage": failed_stage,
+                "exceptionType": exc.__class__.__name__,
+                "reason": safe_reason(getattr(exc, "code", None))
+                or safe_reason(getattr(exc, "reason", None)),
             }
         ]
         retry_index = int(getattr(self.request, "retries", 0) or 0)

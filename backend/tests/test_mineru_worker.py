@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import json
+
 import pytest
 
 from apps.worker import tasks
@@ -449,18 +451,21 @@ def test_nonretryable_mineru_failure_is_persisted_without_secret(
 
     output = tasks.mineru_ocr_extract.run(job["id"])
 
-    assert output == {
-        "jobId": job["id"],
-        "status": "failed",
-        "diagnostics": [
-            {
-                "code": "A0202",
-                "level": "error",
-                "retryable": False,
-                "stage": "submit",
-            }
-        ],
-    }
+    assert output["jobId"] == job["id"]
+    assert output["status"] == "failed"
+    diagnostic = output["diagnostics"][0]
+    assert diagnostic["code"] == "A0202"
+    assert diagnostic["level"] == "error"
+    assert diagnostic["retryable"] is False
+    assert diagnostic["stage"] == "submit"
+    # 可归因：光有阶段码查不出为什么失败（2026-08-29 线上 6 份资料就是这样，
+    # 只能靠重跑复现）。异常类型是代码常量，安全可记。
+    assert diagnostic["exceptionType"] == "MinerUProtocolError"
+    # 但**运行时数据一律不得入库**：URL、路径、密钥都可能出现在异常消息里。
+    # 这条断言比原来的精确相等更严——它检查的是内容而非结构。
+    serialized = json.dumps(output, ensure_ascii=False)
+    for leaked in ("files.example", "https://", "sk-", "MinerU rejected"):
+        assert leaked not in serialized, f"诊断泄漏了运行时数据: {leaked}"
     assert job["status"] == "failed"
     assert "sk-" not in str(job)
     assert job["diagnostics"][0]["stage"] == "submit"
