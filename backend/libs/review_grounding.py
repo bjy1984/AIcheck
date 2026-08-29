@@ -62,10 +62,23 @@ CANONICAL_IDENTITY_KEYS = (
     "canonicalVersion",
     "sourceFingerprint",
 )
+CANONICAL_VALUE_PATTERNS = {
+    "canonicalRecordId": re.compile(r"^SKR-[A-Za-z0-9][A-Za-z0-9._:-]*$"),
+    "canonicalItemId": re.compile(r"^SKI-[A-Za-z0-9][A-Za-z0-9._:-]*$"),
+    "canonicalVersion": re.compile(
+        r"^[A-Za-z0-9][-A-Za-z0-9._+]*(?:@[A-Za-z0-9][-A-Za-z0-9._+]*)?$"
+    ),
+    "sourceFingerprint": re.compile(r"^sha256:[0-9a-f]{64}$"),
+}
+
+
+def canonical_identity_value_valid(key: str, value: Any) -> bool:
+    pattern = CANONICAL_VALUE_PATTERNS.get(key)
+    return bool(pattern and isinstance(value, str) and pattern.fullmatch(value))
 
 
 def is_canonical_clause(clause: dict[str, Any]) -> bool:
-    return any(clause.get(key) for key in CANONICAL_IDENTITY_KEYS)
+    return any(clause.get(key) is not None for key in CANONICAL_IDENTITY_KEYS)
 
 
 def clause_formal_evidence_eligible(clause: dict[str, Any]) -> bool:
@@ -73,7 +86,10 @@ def clause_formal_evidence_eligible(clause: dict[str, Any]) -> bool:
         return clause.get("formalEvidenceEligible") is True
     return (
         clause.get("authority") == "current"
-        and all(clause.get(key) for key in CANONICAL_IDENTITY_KEYS)
+        and all(
+            canonical_identity_value_valid(key, clause.get(key))
+            for key in CANONICAL_IDENTITY_KEYS
+        )
         and clause.get("formalEvidenceEligible") is not False
     )
 
@@ -94,7 +110,13 @@ def canonical_grounding_metadata(clauses: list[dict[str, Any]]) -> dict[str, Any
     formal_ready = bool(current or noncanonical)
 
     def values(key: str) -> list[str]:
-        return sorted({str(item[key]) for item in canonical if item.get(key)})
+        return sorted(
+            {
+                item[key]
+                for item in canonical
+                if canonical_identity_value_valid(key, item.get(key))
+            }
+        )
 
     return {
         "canonicalRecordIds": values("canonicalRecordId"),
@@ -113,12 +135,12 @@ def merge_canonical_grounding_metadata(
     existing: dict[str, Any],
     canonical_metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    list_keys = (
-        "canonicalRecordIds",
-        "canonicalItemIds",
-        "canonicalVersions",
-        "canonicalSourceFingerprints",
-    )
+    list_keys = {
+        "canonicalRecordIds": "canonicalRecordId",
+        "canonicalItemIds": "canonicalItemId",
+        "canonicalVersions": "canonicalVersion",
+        "canonicalSourceFingerprints": "sourceFingerprint",
+    }
     existing_ready = (
         existing.get("formalEvidenceReady") is True
         if "formalEvidenceReady" in existing
@@ -145,15 +167,15 @@ def merge_canonical_grounding_metadata(
     return {
         **canonical_metadata,
         **{
-            key: sorted(
+            list_key: sorted(
                 {
-                    str(value)
+                    value
                     for source in (existing, canonical_metadata)
-                    for value in source.get(key) or []
-                    if value
+                    for value in source.get(list_key) or []
+                    if canonical_identity_value_valid(identity_key, value)
                 }
             )
-            for key in list_keys
+            for list_key, identity_key in list_keys.items()
         },
         "legacySupplementalCount": max(
             int(existing.get("legacySupplementalCount") or 0),

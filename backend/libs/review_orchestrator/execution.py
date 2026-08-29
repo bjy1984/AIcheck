@@ -3493,7 +3493,22 @@ def validate_review_references(
                 failures.append({"code": "KB_RETRIEVAL_TRACE_NOT_FOUND", "index": draft_index, "refIndex": ref_index, "retrievalTraceId": trace_id})
             trace_catalog = clauses_by_trace.get(str(trace_id), {}) if trace_id else {}
             allowed_clause_ids = set(trace_catalog)
-            for clause_id in ref.get("clauseIds") or []:
+            clause_ids = ref.get("clauseIds")
+            if formal_review and trace_id and (
+                not isinstance(clause_ids, list) or not clause_ids
+            ):
+                failures.append(
+                    {
+                        "code": "CANONICAL_CLAUSE_CITATION_REQUIRED",
+                        "index": draft_index,
+                        "refIndex": ref_index,
+                        "retrievalTraceId": trace_id,
+                    }
+                )
+                if not ref.get("kbVersion"):
+                    failures.append({"code": "KB_REF_MISSING_VERSION", "index": draft_index, "refIndex": ref_index})
+                continue
+            for clause_id in clause_ids or []:
                 if str(clause_id) not in allowed_clause_ids:
                     failures.append({"code": "KB_CLAUSE_NOT_IN_TRACE", "index": draft_index, "refIndex": ref_index, "clauseId": clause_id})
                     continue
