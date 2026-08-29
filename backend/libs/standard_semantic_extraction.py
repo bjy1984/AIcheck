@@ -62,6 +62,10 @@ _SCOPE_PREDICATE_STRIP_PATTERN = re.compile(
 )
 _SCOPE_PREDICATE_PATTERN = re.compile(r"适用于|适用|用于")
 _SCOPE_STRONG_NEGATION_MARKERS = (
+    "未被允许",
+    "不允许",
+    "不建议",
+    "不推荐",
     "不应当",
     "不应该",
     "不应",
@@ -73,6 +77,19 @@ _SCOPE_STRONG_NEGATION_MARKERS = (
     "不宜",
 )
 _SCOPE_WEAK_NEGATION_MARKERS = ("不", "未", "无", "非")
+_SCOPE_WEAK_MODAL_CUES = (
+    "应",
+    "允许",
+    "建议",
+    "推荐",
+    "被",
+    "经",
+    "批准",
+    "评估",
+    "许可",
+    "准许",
+    "同意",
+)
 _SCOPE_NEGATION_GAP_PATTERN = re.compile(
     r"(?:(?:被|再次|再|仍然|仍|直接|继续|予以|加以|擅自|随意|任意|一律|明确|"
     r"单独|重复|同时|仅|只))*"
@@ -251,6 +268,8 @@ def _scope_predicate_polarity(text: str, predicate_start: int) -> str:
         gap = prefix[marker_start + len(marker) :]
         if len(gap) <= _SCOPE_MAX_PREDICATE_GAP and _SCOPE_NEGATION_GAP_PATTERN.fullmatch(gap):
             return "negative"
+        if len(gap) <= _SCOPE_MAX_PREDICATE_GAP and any(cue in gap for cue in _SCOPE_WEAK_MODAL_CUES):
+            return "ambiguous"
         # Bare weak markers also begin material names such as 不锈钢、无缝钢管、
         # and 非合金钢. They carry polarity only when their entire suffix is an
         # allowed, bounded path to the applicability predicate.
