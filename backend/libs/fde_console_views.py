@@ -1163,7 +1163,11 @@ def fde_ocr_runtime_doctor_report() -> dict[str, Any]:
     if cached is not None and (_time.time() - float(_OCR_DOCTOR_CACHE["at"])) < ttl:
         return deepcopy(cached)
     report = _fde_ocr_runtime_doctor_report_uncached()
-    if report.get("ok") is True:
+    # 缓存判据是「体检**跑通了**」，不是「体检全绿」：生产稳态就是
+    # 36 项里 4 项 fail（可选依赖缺失），按 ok 缓存等于永远不命中——
+    # 那是把最常见的情况排除在优化之外（实测二次调用仍 524ms）。
+    # 只有拿不到报告（服务不可达/未配置）才不缓存，让故障恢复立刻反映。
+    if str(report.get("schemaVersion") or "").endswith("doctor-v1"):
         _OCR_DOCTOR_CACHE["report"] = deepcopy(report)
         _OCR_DOCTOR_CACHE["at"] = _time.time()
     return report
