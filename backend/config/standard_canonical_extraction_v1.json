@@ -24,6 +24,8 @@
   ],
   "evidenceRequired": [
     "standardCode",
+    "standardNameZh",
+    "standardNameEn",
     "publicationDate",
     "effectiveDate",
     "issuingAuthority",

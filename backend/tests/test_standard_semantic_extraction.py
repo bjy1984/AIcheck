@@ -16,6 +16,7 @@ from libs.standard_semantic_extraction import (
     canonical_page_digest,
     extract_deterministic_standard_metadata,
     extract_standard_semantics,
+    semantic_extraction_hashes,
 )
 from scripts import enrich_standard_knowledge_canonical as enrich_script
 from scripts import verify_standard_knowledge_canonical as verify_script
@@ -40,7 +41,11 @@ class FakeLiteLLMClient:
         return str(response["choices"][0]["message"]["content"])
 
 
-def semantic_record_fixture(*, pages: dict[int, str]) -> dict[str, Any]:
+def semantic_record_fixture(
+    *,
+    pages: dict[int, str],
+    page_contexts: dict[int, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     blocks = [
         {
             "id": f"B-{page_no}",
@@ -55,6 +60,7 @@ def semantic_record_fixture(*, pages: dict[int, str]) -> dict[str, Any]:
                     "documentVersionId": "KDV-TEST-V1",
                 }
             ],
+            **((page_contexts or {}).get(page_no) or {}),
         }
         for page_no, text in sorted(pages.items())
     ]
@@ -96,7 +102,8 @@ def test_deterministic_metadata_extracts_code_dates_authority_and_replacement():
                 "发布日期：2015-04-02；实施日期：2015-09-01；发布机构：国家能源局。"
                 "代替 NB/T 47013.10-2010。"
             )
-        }
+        },
+        page_contexts={1: {"blockType": "title", "sectionPath": ["封面"]}},
     )
 
     extracted = extract_deterministic_standard_metadata(record)
@@ -124,7 +131,8 @@ def test_deterministic_current_code_is_not_polluted_by_later_normative_codes():
             pages={
                 1: "NB/T 47013.10-2015 承压设备无损检测。",
                 7: "检测方法应符合NB/T 47013.3-2015。",
-            }
+            },
+            page_contexts={1: {"blockType": "title"}},
         )
     )
 
@@ -133,7 +141,8 @@ def test_deterministic_current_code_is_not_polluted_by_later_normative_codes():
 
 def test_deterministic_code_prefers_the_existing_canonical_identity_when_quoted():
     record = semantic_record_fixture(
-        pages={1: "依据NB/T 47013.3-2015制定 NB/T 47013.10-2015 承压设备无损检测。"}
+        pages={1: "依据NB/T 47013.3-2015制定 NB/T 47013.10-2015 承压设备无损检测。"},
+        page_contexts={1: {"blockType": "header"}},
     )
     record["identity"] = {"standardCode": {"value": "NB/T 47013.10-2015"}}
 
@@ -142,10 +151,49 @@ def test_deterministic_code_prefers_the_existing_canonical_identity_when_quoted(
     assert extracted["standardCode"][0]["value"] == "NB/T 47013.10-2015"
 
 
+def test_citation_only_body_does_not_infer_current_standard_code():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(pages={7: "规范性引用文件：GB/T 123-2020、GB/T 456-2021。"})
+    )
+
+    assert "standardCode" not in extracted
+
+
+def test_titled_body_scans_the_title_not_its_normative_reference_text_for_identity():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={7: "GB/T 123-2020、GB/T 456-2021。"},
+            page_contexts={7: {"title": "规范性引用文件"}},
+        )
+    )
+
+    assert "standardCode" not in extracted
+
+
+def test_labeled_standard_number_is_valid_identity_context():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(pages={3: "标准编号：GB/T 123-2020"})
+    )
+
+    assert extracted["standardCode"][0]["value"] == "GB/T 123-2020"
+
+
+def test_deterministic_standard_code_uses_canonical_display_form():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(pages={3: "标准编号：GBT 5117-2012"})
+    )
+
+    assert extracted["standardCode"][0]["value"] == "GB/T 5117-2012"
+
+
 def test_model_semantics_are_strict_json_and_evidence_grounded():
     client = FakeLiteLLMClient(
         {
-            "standardNameZh": "承压设备无损检测 第10部分：衍射时差法超声检测",
+            "standardNameZh": {
+                "value": "承压设备无损检测 第10部分：衍射时差法超声检测",
+                "pageNo": 1,
+                "quotedText": "承压设备无损检测 第10部分：衍射时差法超声检测",
+            },
             "scope": {
                 "value": "适用于低碳钢或低合金钢材料。",
                 "pageNo": 7,
@@ -171,9 +219,14 @@ def test_model_semantics_are_strict_json_and_evidence_grounded():
     )
     record = semantic_record_fixture(
         pages={
-            1: "本标准代替NB/T 47013.10-2010。",
+            1: (
+                "NB/T 47013.10-2015。"
+                "承压设备无损检测 第10部分：衍射时差法超声检测。"
+                "本标准代替NB/T 47013.10-2010。"
+            ),
             7: "适用于低碳钢或低合金钢材料，按NB/T 47013.3检测。",
-        }
+        },
+        page_contexts={1: {"blockType": "title"}},
     )
 
     extracted = extract_standard_semantics(record, client)
@@ -209,6 +262,105 @@ def test_model_quote_must_be_a_normalized_substring_of_selected_mineru_page():
     with pytest.raises(ValueError, match="not grounded on page 7"):
         extract_standard_semantics(
             semantic_record_fixture(pages={7: "真实的第七页标准正文"}), client
+        )
+
+
+def test_scope_value_rejects_unrelated_but_page_grounded_quote():
+    client = FakeLiteLLMClient(
+        {
+            "scope": {
+                "value": "适用于低碳钢全焊透对接接头。",
+                "pageNo": 7,
+                "quotedText": "本标准规定了术语和定义",
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: "本标准规定了术语和定义。"}),
+            client,
+        )
+
+
+def test_scope_value_does_not_treat_shared_boilerplate_as_substantive_grounding():
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: "本标准规定了术语和定义。"}),
+            FakeLiteLLMClient(
+                {
+                    "scope": {
+                        "value": "本标准规定了低碳钢材料要求。",
+                        "pageNo": 7,
+                        "quotedText": "本标准规定了术语和定义",
+                    }
+                }
+            ),
+        )
+
+
+def test_scope_value_accepts_substantive_partial_quote():
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: "适用于低碳钢或低合金钢材料。"}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": "适用于12mm至400mm低碳钢或低合金钢全焊透对接接头。",
+                    "pageNo": 7,
+                    "quotedText": "适用于低碳钢或低合金钢材料",
+                }
+            }
+        ),
+    )
+
+    assert extracted["scope"]["value"].startswith("适用于12mm至400mm")
+
+
+def test_standard_code_requires_exact_reference_boundary():
+    with pytest.raises(ValueError, match="standardCode is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={1: "标准编号：GB/T 1234-2020"}),
+            FakeLiteLLMClient(
+                {
+                    "standardCode": {
+                        "value": "GB/T 123",
+                        "pageNo": 1,
+                        "quotedText": "标准编号：GB/T 1234-2020",
+                    }
+                }
+            ),
+        )
+
+
+def test_relation_standard_code_requires_exact_reference_boundary():
+    with pytest.raises(
+        ValueError,
+        match=r"normativeReferences\[0\]: standardCode is not supported by quotedText",
+    ):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: "按GB/T 1234-2020检测"}),
+            FakeLiteLLMClient(
+                {
+                    "normativeReferences": [
+                        {
+                            "standardCode": "GB/T 123",
+                            "pageNo": 7,
+                            "quotedText": "按GB/T 1234-2020检测",
+                        }
+                    ]
+                }
+            ),
+        )
+
+
+def test_model_standard_name_requires_grounded_evidence():
+    with pytest.raises(
+        ValueError,
+        match="standardNameZh: pageNo and quotedText are required",
+    ):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={1: "承压设备无损检测"}),
+            FakeLiteLLMClient({"standardNameZh": "承压设备无损检测"}),
         )
 
 
@@ -346,6 +498,114 @@ def test_deterministic_value_wins_a_conflicting_grounded_model_value():
 
     assert extracted["publicationDate"]["value"] == "2015-04-02"
     assert extracted["publicationDate"]["extractionMethod"] == "deterministic"
+
+
+def test_replacement_relations_union_deterministic_and_distinct_model_relations():
+    record = semantic_record_fixture(
+        pages={
+            1: ("NB/T 47013.10-2015。本标准代替NB/T 47013.10-2010。"),
+            2: ("NB/T 47013.10-2025替代本标准。本标准修改GB/T 999-2022，并被GB/T 888-2024修改。"),
+        },
+        page_contexts={1: {"blockType": "title"}},
+    )
+    payload = {
+        "replacementRelations": [
+            {
+                "relation": "replaces",
+                "standardCode": "NB/T 47013.10-2010",
+                "pageNo": 1,
+                "quotedText": "本标准代替NB/T 47013.10-2010",
+            },
+            {
+                "relation": "replacedBy",
+                "standardCode": "NB/T 47013.10-2025",
+                "pageNo": 2,
+                "quotedText": "NB/T 47013.10-2025替代本标准",
+            },
+            {
+                "relation": "amends",
+                "standardCode": "GB/T 999-2022",
+                "pageNo": 2,
+                "quotedText": "本标准修改GB/T 999-2022",
+            },
+            {
+                "relation": "amendedBy",
+                "standardCode": "GB/T 888-2024",
+                "pageNo": 2,
+                "quotedText": "被GB/T 888-2024修改",
+            },
+        ]
+    }
+
+    extracted = extract_standard_semantics(record, FakeLiteLLMClient(payload))
+
+    assert {
+        (item["purpose"], item["targetStandardCode"]) for item in extracted["replacementRelations"]
+    } == {
+        ("replaces", "NB/T 47013.10-2010"),
+        ("replacedBy", "NB/T 47013.10-2025"),
+        ("amends", "GB/T 999-2022"),
+        ("amendedBy", "GB/T 888-2024"),
+    }
+    replaces = next(
+        item for item in extracted["replacementRelations"] if item["purpose"] == "replaces"
+    )
+    assert replaces["extractionMethod"] == "deterministic"
+
+
+def test_relations_use_standard_code_selected_in_same_extraction_and_keep_name():
+    record = semantic_record_fixture(
+        pages={
+            1: "NB/T 47013.10-2015 承压设备无损检测。",
+            7: "按NB/T 47013.3-2015《超声检测》检测。",
+        },
+        page_contexts={1: {"blockType": "title"}},
+    )
+    extracted = extract_standard_semantics(
+        record,
+        FakeLiteLLMClient(
+            {
+                "normativeReferences": [
+                    {
+                        "standardCode": "NB/T 47013.3-2015",
+                        "standardName": "超声检测",
+                        "pageNo": 7,
+                        "quotedText": "按NB/T 47013.3-2015《超声检测》检测",
+                    }
+                ]
+            }
+        ),
+    )
+
+    assert extracted["normativeReferences"][0]["sourceStandardCode"] == ("NB/T 47013.10-2015")
+    assert extracted["normativeReferences"][0]["targetStandardName"] == "超声检测"
+
+    merged = merge_canonical_semantic_candidates(
+        record,
+        extracted,
+        extracted_at="2026-08-29T14:00:00+00:00",
+    )
+
+    assert merged["normativeReferences"][0]["sourceStandardCode"] == ("NB/T 47013.10-2015")
+    assert merged["normativeReferences"][0]["targetStandardName"] == "超声检测"
+
+
+def test_relation_is_rejected_when_source_standard_code_remains_missing():
+    with pytest.raises(ValueError, match="relations require source standardCode"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: "按NB/T 47013.3-2015检测"}),
+            FakeLiteLLMClient(
+                {
+                    "normativeReferences": [
+                        {
+                            "standardCode": "NB/T 47013.3-2015",
+                            "pageNo": 7,
+                            "quotedText": "按NB/T 47013.3-2015检测",
+                        }
+                    ]
+                }
+            ),
+        )
 
 
 def test_page_digest_ignores_non_mineru_and_legacy_only_blocks():
@@ -719,6 +979,79 @@ def test_enrichment_updates_only_configured_tenant_canonical_and_skips_unchanged
     assert second_client.calls == []
 
 
+def test_semantic_refresh_selects_newest_candidate_before_hash_skip(
+    isolated_postgres_url,
+):
+    _seed_semantic_database(isolated_postgres_url)
+    record = _read_payload(isolated_postgres_url, "standard_knowledge_records", "KF-KB-TEST")
+    old_scope = _complete_field(
+        "scope",
+        "低碳钢",
+        source_type="new_mineru_semantic",
+    )
+    old_scope["sources"][0].update(
+        {
+            "pageNo": 7,
+            "quotedText": "低碳钢",
+            "createdAt": "2026-08-28T12:00:00+00:00",
+            "extractedAt": "2026-08-28T12:00:00+00:00",
+        }
+    )
+    record["metadata"]["scope"] = old_scope
+    hashes = semantic_extraction_hashes(
+        record, requested_fields=set(enrich_script.semantic_field_names())
+    )
+    record.update(
+        {
+            "semanticExtractionVersion": PROMPT_VERSION,
+            "semanticModelRoute": "review-chat",
+            "semanticPromptHash": hashes["promptHash"],
+            "semanticContentHash": hashes["contentHash"],
+        }
+    )
+    with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
+        connection.execute(
+            """
+            UPDATE aicheck_state SET payload=%s, updated_at=now()
+            WHERE tenant_id=%s
+              AND collection='standard_knowledge_records'
+              AND object_id=%s
+            """,
+            (Jsonb(record), "TENANT-DEFAULT", "KF-KB-TEST"),
+        )
+
+    first_client = FakeLiteLLMClient(_grounded_model_payload())
+    first = enrich_script.enrich(
+        isolated_postgres_url,
+        apply=True,
+        only_missing=False,
+        file_id="KF-KB-TEST",
+        client=first_client,
+    )
+
+    assert first["updated"] == 1
+    assert first["unchanged"] == 0
+    assert len(first_client.calls) == 1
+    refreshed = _read_payload(isolated_postgres_url, "standard_knowledge_records", "KF-KB-TEST")
+    assert refreshed["metadata"]["scope"]["value"] == "适用于低碳钢材料。"
+    scope_sources = refreshed["metadata"]["scope"]["sources"]
+    assert scope_sources[0]["createdAt"] > scope_sources[1]["createdAt"]
+    assert refreshed["semanticSelectedValuesHash"].startswith("sha256:")
+
+    second_client = FakeLiteLLMClient(_grounded_model_payload())
+    second = enrich_script.enrich(
+        isolated_postgres_url,
+        apply=True,
+        only_missing=False,
+        file_id="KF-KB-TEST",
+        client=second_client,
+    )
+
+    assert second["unchanged"] == 1
+    assert second["modelCalls"] == 0
+    assert second_client.calls == []
+
+
 def test_only_missing_restricts_prompt_to_partial_or_missing_categories(
     isolated_postgres_url,
 ):
@@ -830,6 +1163,74 @@ def test_one_failed_model_response_does_not_roll_back_enriched_sibling(
         for file_id in ("KF-KB-CONTEXT", "KF-KB-TEST")
     ]
     assert sum("semanticExtractionVersion" in item for item in stored) == 1
+
+
+def test_model_failure_report_never_contains_exception_message_or_document_text(
+    isolated_postgres_url,
+):
+    _seed_semantic_database(isolated_postgres_url)
+
+    class SecretFailureClient(FakeLiteLLMClient):
+        def chat_sync(self, messages, model="review-chat", **kwargs):
+            raise RuntimeError("SECRET=sk-live-token PAGE TEXT=适用于低碳钢材料 prompt body")
+
+    report = enrich_script.enrich(
+        isolated_postgres_url,
+        apply=True,
+        file_id="KF-KB-TEST",
+        client=SecretFailureClient({}),
+    )
+    rendered = json.dumps(report, ensure_ascii=False)
+
+    assert report["failed"] == 1
+    failed = report["records"][0]
+    assert failed == {
+        "knowledgeFileId": "KF-KB-TEST",
+        "action": "failed",
+        "errorCode": "SEMANTIC_ENRICHMENT_FAILED",
+        "errorType": "RuntimeError",
+    }
+    assert "sk-live-token" not in rendered
+    assert "适用于低碳钢材料" not in rendered
+    assert "prompt body" not in rendered
+
+
+def test_explicit_missing_file_id_emits_json_and_returns_nonzero(
+    isolated_postgres_url,
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    _seed_semantic_database(isolated_postgres_url)
+    monkeypatch.setenv("AICHECK_DATABASE_URL", "postgresql:///configured-production")
+    monkeypatch.delenv("LITELLM_API_KEY", raising=False)
+    output_path = tmp_path / "missing-target.json"
+
+    exit_code = enrich_script.main(
+        [
+            "--database-url",
+            isolated_postgres_url,
+            "--apply",
+            "--file-id",
+            "KF-KB-NOT-FOUND",
+            "--output",
+            str(output_path),
+        ]
+    )
+    stdout_report = json.loads(capsys.readouterr().out)
+    file_report = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert exit_code == 1
+    assert stdout_report == file_report
+    assert stdout_report["selected"] == 0
+    assert stdout_report["missing"] == 1
+    assert stdout_report["records"] == [
+        {
+            "knowledgeFileId": "KF-KB-NOT-FOUND",
+            "action": "missing",
+            "errorCode": "CANONICAL_TARGET_NOT_FOUND",
+        }
+    ]
 
 
 def test_verifier_resolves_semantic_candidates_to_their_mineru_parse_source():

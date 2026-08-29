@@ -23,6 +23,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from libs.integrations.litellm_client import LiteLLMClient  # noqa: E402
 from libs.security.tenant import configured_tenant_id  # noqa: E402
 from libs.standard_knowledge_canonical import (  # noqa: E402
+    canonical_semantic_selected_values_hash,
     merge_canonical_semantic_candidates,
 )
 from libs.standard_semantic_extraction import (  # noqa: E402
@@ -110,11 +111,14 @@ def semantic_fields_for_record(record: dict[str, Any], *, only_missing: bool) ->
 
 
 def _matching_extraction_hashes(record: dict[str, Any], hashes: dict[str, str]) -> bool:
+    selected_values_hash = str(record.get("semanticSelectedValuesHash") or "")
     return (
         record.get("semanticExtractionVersion") == PROMPT_VERSION
         and record.get("semanticModelRoute") == MODEL_ROUTE
         and record.get("semanticPromptHash") == hashes["promptHash"]
         and record.get("semanticContentHash") == hashes["contentHash"]
+        and bool(selected_values_hash)
+        and selected_values_hash == canonical_semantic_selected_values_hash(record)
     )
 
 
@@ -176,7 +180,7 @@ def enrich(
     client: LiteLLMClient | None = None,
 ) -> dict[str, Any]:
     tenant_id = configured_tenant_id()
-    model_client = client or LiteLLMClient()
+    model_client = client
     counts = {
         "planned": 0,
         "updated": 0,
@@ -196,6 +200,15 @@ def enrich(
             file_id=file_id,
         )
         processed = 0
+        if file_id and not selected:
+            counts["missing"] = 1
+            summaries.append(
+                {
+                    "knowledgeFileId": file_id,
+                    "action": "missing",
+                    "errorCode": "CANONICAL_TARGET_NOT_FOUND",
+                }
+            )
         for entry in selected:
             object_id = entry["objectId"]
             record = entry["record"]
@@ -228,6 +241,8 @@ def enrich(
                     )
                     continue
                 counts["modelCalls"] += 1
+                if model_client is None:
+                    model_client = LiteLLMClient()
                 semantics = extract_standard_semantics(
                     record,
                     model_client,
@@ -278,8 +293,8 @@ def enrich(
                     {
                         "knowledgeFileId": object_id,
                         "action": "failed",
+                        "errorCode": "SEMANTIC_ENRICHMENT_FAILED",
                         "errorType": type(exc).__name__,
-                        "error": str(exc),
                     }
                 )
     return {

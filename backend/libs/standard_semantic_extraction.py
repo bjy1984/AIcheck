@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from libs.integrations.litellm_client import LiteLLMClient
+from libs.knowledge_retrieval import (
+    canonical_standard_text,
+    display_standard_number,
+    standard_refs_from_text,
+)
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +51,18 @@ _NORMATIVE_KEYS = {
 _REPLACEMENT_KEYS = {"relation", "standardCode", "pageNo", "quotedText"}
 _EVIDENCE_VALUE_KEYS = {"value", "pageNo", "quotedText"}
 _REPLACEMENT_RELATIONS = {"replaces", "replacedBy", "amends", "amendedBy"}
+_IDENTITY_BLOCK_TYPES = {
+    "cover",
+    "cover_title",
+    "document_title",
+    "header",
+    "heading",
+    "page_header",
+    "title",
+}
+_IDENTITY_CONTEXT_MARKERS = ("封面", "标准标题", "document title", "cover", "header")
+_IDENTITY_LABEL_PATTERN = re.compile(r"(?:标准编号|标准号|标准代号)\s*[：:]?\s*")
+_SCOPE_BOILERPLATE = ("本标准", "标准规定", "规定了", "适用于", "适用", "用于")
 _PROMPT_INSTRUCTION = (
     "Extract only values explicitly supported by the supplied new MinerU pages. "
     "Return one strict JSON object with only requested fields. Omit unknown values. "
@@ -133,6 +150,14 @@ def _normalize_standard_code(value: str) -> str:
     normalized = _normalize_text(value).replace("—", "-").replace("－", "-")
     normalized = re.sub(r"\s*/\s*", "/", normalized)
     normalized = re.sub(r"\s*-\s*", "-", normalized)
+    references = standard_refs_from_text(canonical_standard_text(normalized))
+    if len(references) == 1:
+        reference = references[0]
+        return display_standard_number(
+            str(reference.get("prefix") or ""),
+            str(reference.get("number") or ""),
+            str(reference.get("year") or ""),
+        )
     return normalized
 
 
@@ -143,9 +168,61 @@ def _normalize_date(value: str) -> str:
     return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
 
 
+def _standard_ref_identity(value: str) -> tuple[str, str, str] | None:
+    references = standard_refs_from_text(canonical_standard_text(value))
+    if len(references) != 1:
+        return None
+    reference = references[0]
+    return (
+        str(reference.get("prefix") or ""),
+        str(reference.get("number") or ""),
+        str(reference.get("year") or ""),
+    )
+
+
+def _standard_code_is_supported(value: str, quoted_text: str) -> bool:
+    claimed = _standard_ref_identity(value)
+    if claimed is None:
+        return False
+    quoted = {
+        (
+            str(reference.get("prefix") or ""),
+            str(reference.get("number") or ""),
+            str(reference.get("year") or ""),
+        )
+        for reference in standard_refs_from_text(canonical_standard_text(quoted_text))
+    }
+    return claimed in quoted
+
+
+def _compact_semantic_text(value: str) -> str:
+    return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", _normalize_text(value)).lower()
+
+
+def _substantive_trigrams(value: str) -> set[str]:
+    compact = _compact_semantic_text(value)
+    for boilerplate in _SCOPE_BOILERPLATE:
+        compact = compact.replace(boilerplate, "")
+    return {compact[index : index + 3] for index in range(max(0, len(compact) - 2))}
+
+
+def _scope_is_supported(value: str, quoted_text: str) -> bool:
+    compact_value = _compact_semantic_text(value)
+    compact_quote = _compact_semantic_text(quoted_text)
+    if min(len(compact_value), len(compact_quote)) < 4:
+        return False
+    if compact_value in compact_quote or compact_quote in compact_value:
+        return True
+    value_tokens = _substantive_trigrams(value)
+    quote_tokens = _substantive_trigrams(quoted_text)
+    shared = value_tokens & quote_tokens
+    required = max(3, (min(len(value_tokens), len(quote_tokens)) + 2) // 3)
+    return len(shared) >= required
+
+
 def _exact_value_is_supported(key: str, value: str, quoted_text: str) -> bool:
     if key == "standardCode":
-        return _normalize_standard_code(value) in _normalize_standard_code(quoted_text)
+        return _standard_code_is_supported(value, quoted_text)
     if key in {"publicationDate", "effectiveDate"}:
         try:
             expected = _normalize_date(value)
@@ -155,9 +232,51 @@ def _exact_value_is_supported(key: str, value: str, quoted_text: str) -> bool:
             _normalize_date(matched.group(1)) == expected
             for matched in _DATE_TOKEN_PATTERN.finditer(quoted_text)
         )
-    if key == "issuingAuthority":
-        return _normalize_text(value) in _normalize_text(quoted_text)
+    if key in {"issuingAuthority", "standardNameZh", "standardNameEn"}:
+        compact_value = _compact_semantic_text(value)
+        compact_quote = _compact_semantic_text(quoted_text)
+        return bool(compact_value) and compact_value in compact_quote
+    if key == "scope":
+        return _scope_is_supported(value, quoted_text)
     return True
+
+
+def _identity_code_candidates(record: dict[str, Any]) -> list[tuple[int, str, str]]:
+    candidates: list[tuple[int, str, str]] = []
+    blocks = [item for item in record.get("blocks") or [] if isinstance(item, dict)]
+    blocks = sorted(
+        enumerate(blocks),
+        key=lambda pair: (_positive_page_no(pair[1].get("pageNo")) or 10**9, pair[0]),
+    )
+    for _, block in blocks:
+        if not _block_has_selected_mineru_source(block):
+            continue
+        page_no = _positive_page_no(block.get("pageNo"))
+        text = _normalize_text(block.get("text"))
+        if page_no is None or not text:
+            continue
+        spans: list[str] = []
+        for label in _IDENTITY_LABEL_PATTERN.finditer(text):
+            spans.append(text[label.end() : label.end() + 80])
+        title = _normalize_text(block.get("title"))
+        if title:
+            spans.append(title)
+        block_type = str(block.get("blockType") or block.get("type") or "").lower()
+        section_path = _normalize_text(block.get("sectionPath"))
+        contextual = block_type in _IDENTITY_BLOCK_TYPES or any(
+            marker in section_path.lower() for marker in _IDENTITY_CONTEXT_MARKERS
+        )
+        if contextual:
+            spans.append(text)
+        for span in spans:
+            for matched in _CODE_PATTERN.finditer(span):
+                prefix = span[max(0, matched.start() - 12) : matched.start()]
+                if re.search(r"(?:代替|替代)\s*$", prefix):
+                    continue
+                candidates.append(
+                    (page_no, matched.group(1), _normalize_standard_code(matched.group(1)))
+                )
+    return candidates
 
 
 def _candidate(
@@ -195,15 +314,8 @@ def extract_deterministic_standard_metadata(
 ) -> dict[str, list[dict[str, Any]]]:
     """Extract exact-format metadata directly from grounded new MinerU text."""
     result: dict[str, list[dict[str, Any]]] = {}
-    code_candidates: list[tuple[int, str, str]] = []
+    code_candidates = _identity_code_candidates(record)
     for page_no, page_text in canonical_page_digest(record).items():
-        for matched in _CODE_PATTERN.finditer(page_text):
-            prefix = page_text[max(0, matched.start() - 12) : matched.start()]
-            if re.search(r"(?:代替|替代)\s*$", prefix):
-                continue
-            code_candidates.append(
-                (page_no, matched.group(1), _normalize_standard_code(matched.group(1)))
-            )
         for key, pattern in _DATE_PATTERNS.items():
             matched = pattern.search(page_text)
             if matched:
@@ -420,12 +532,16 @@ def _validate_relations(key: str, value: Any, page_digest: dict[int, str]) -> No
         for optional_key in ("standardName", "clauseNo"):
             if optional_key in item and not isinstance(item[optional_key], str):
                 raise ValueError(f"{path}: {optional_key} must be a string")
+        if item.get("standardName") and not _exact_value_is_supported(
+            "standardNameZh",
+            str(item["standardName"]),
+            str(item.get("quotedText") or ""),
+        ):
+            raise ValueError(f"{path}: standardName is not supported by quotedText")
         if key == "replacementRelations" and item.get("relation") not in _REPLACEMENT_RELATIONS:
             raise ValueError(f"{path}: unsupported replacement relation")
         _, quoted_text = _grounded_evidence(path, item, page_digest)
-        if _normalize_standard_code(str(item["standardCode"])) not in _normalize_standard_code(
-            quoted_text
-        ):
+        if not _standard_code_is_supported(str(item["standardCode"]), quoted_text):
             raise ValueError(f"{path}: standardCode is not supported by quotedText")
 
 
@@ -480,7 +596,12 @@ def _model_field_candidate(record: dict[str, Any], key: str, value: Any) -> dict
     )
 
 
-def _normative_candidate(record: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+def _normative_candidate(
+    record: dict[str, Any],
+    item: dict[str, Any],
+    *,
+    source_standard_code: str,
+) -> dict[str, Any]:
     standard_code = _normalize_standard_code(str(item["standardCode"]))
     return {
         **_candidate(
@@ -490,17 +611,20 @@ def _normative_candidate(record: dict[str, Any], item: dict[str, Any]) -> dict[s
             quoted_text=str(item.get("quotedText") or ""),
             extraction_method="model",
         ),
-        "sourceStandardCode": str(
-            ((record.get("identity") or {}).get("standardCode") or {}).get("value") or ""
-        ),
+        "sourceStandardCode": source_standard_code,
         "targetStandardCode": standard_code,
+        "targetStandardName": str(item.get("standardName") or ""),
         "targetClauseNo": str(item.get("clauseNo") or ""),
         "text": str(item.get("quotedText") or ""),
     }
 
 
 def _replacement_candidate(
-    record: dict[str, Any], item: dict[str, Any], *, extraction_method: str
+    record: dict[str, Any],
+    item: dict[str, Any],
+    *,
+    extraction_method: str,
+    source_standard_code: str,
 ) -> dict[str, Any]:
     standard_code = _normalize_standard_code(str(item["standardCode"]))
     return {
@@ -511,13 +635,21 @@ def _replacement_candidate(
             quoted_text=str(item.get("quotedText") or ""),
             extraction_method=extraction_method,
         ),
-        "sourceStandardCode": str(
-            ((record.get("identity") or {}).get("standardCode") or {}).get("value") or ""
-        ),
+        "sourceStandardCode": source_standard_code,
         "targetStandardCode": standard_code,
         "purpose": str(item.get("relation") or "replaces"),
         "text": str(item.get("quotedText") or ""),
     }
+
+
+def _replacement_relation_identity(item: dict[str, Any]) -> tuple[str, Any]:
+    target_identity = _standard_ref_identity(str(item.get("targetStandardCode") or ""))
+    return (
+        str(item.get("purpose") or ""),
+        target_identity
+        if target_identity is not None
+        else canonical_standard_text(item.get("targetStandardCode")).replace(" ", ""),
+    )
 
 
 def merge_deterministic_and_model_semantics(
@@ -548,30 +680,65 @@ def merge_deterministic_and_model_semantics(
     if deterministic_replacements and "replacementRelations" in fields:
         result["replaces"] = deterministic_replacements[0]
 
+    selected_code = result.get("standardCode")
+    source_standard_code = str(
+        (selected_code or {}).get("value")
+        or ((record.get("identity") or {}).get("standardCode") or {}).get("value")
+        or ""
+    ).strip()
+    has_relations = (
+        bool(payload.get("normativeReferences"))
+        or bool(payload.get("replacementRelations"))
+        or bool(deterministic_replacements)
+    )
+    if has_relations and not source_standard_code:
+        raise ValueError("relations require source standardCode")
+
     if "normativeReferences" in fields:
         result["normativeReferences"] = [
-            _normative_candidate(record, item) for item in payload.get("normativeReferences") or []
+            _normative_candidate(
+                record,
+                item,
+                source_standard_code=source_standard_code,
+            )
+            for item in payload.get("normativeReferences") or []
         ]
     if "replacementRelations" in fields:
-        if deterministic_replacements:
-            result["replacementRelations"] = [
-                _replacement_candidate(
-                    record,
-                    {
-                        "standardCode": item["value"],
-                        "pageNo": item["pageNo"],
-                        "quotedText": item["quotedText"],
-                        "relation": "replaces",
-                    },
-                    extraction_method="deterministic",
-                )
-                for item in deterministic_replacements
-            ]
-        else:
-            result["replacementRelations"] = [
-                _replacement_candidate(record, item, extraction_method="model")
-                for item in payload.get("replacementRelations") or []
-            ]
+        deterministic_relation_candidates = [
+            _replacement_candidate(
+                record,
+                {
+                    "standardCode": item["value"],
+                    "pageNo": item["pageNo"],
+                    "quotedText": item["quotedText"],
+                    "relation": "replaces",
+                },
+                extraction_method="deterministic",
+                source_standard_code=source_standard_code,
+            )
+            for item in deterministic_replacements
+        ]
+        model_relation_candidates = [
+            _replacement_candidate(
+                record,
+                item,
+                extraction_method="model",
+                source_standard_code=source_standard_code,
+            )
+            for item in payload.get("replacementRelations") or []
+        ]
+        merged_relations = {
+            _replacement_relation_identity(item): item for item in model_relation_candidates
+        }
+        merged_relations.update(
+            {
+                _replacement_relation_identity(item): item
+                for item in deterministic_relation_candidates
+            }
+        )
+        result["replacementRelations"] = [
+            merged_relations[key] for key in sorted(merged_relations, key=str)
+        ]
     return result
 
 

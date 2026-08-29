@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from libs.knowledge_retrieval import canonical_standard_text, standard_refs_from_text
+
 
 CANONICAL_VERSION = "standard-knowledge-canonical@1"
 SOURCE_PRIORITY = {
@@ -239,6 +241,8 @@ def canonical_evidence(item: dict[str, Any], *, authority: str) -> dict[str, Any
         "quotedText": str(item.get("quotedText") or item.get("text") or item.get("value") or ""),
         "confidence": item.get("confidence"),
         "needsHumanVerification": bool(item.get("needsHumanVerification")),
+        "createdAt": item.get("createdAt"),
+        "extractedAt": item.get("extractedAt"),
         "authority": authority,
         "contentHash": normalized_content_hash(item),
     }
@@ -248,6 +252,8 @@ def canonical_public_content(kind: str, item: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "title",
         "text",
+        "blockType",
+        "type",
         "clauseNo",
         "sectionPath",
         "pageNo",
@@ -261,6 +267,7 @@ def canonical_public_content(kind: str, item: dict[str, Any]) -> dict[str, Any]:
         "sourceStandardCode",
         "sourceClauseNo",
         "targetStandardCode",
+        "targetStandardName",
         "targetClauseNo",
         "nodeIds",
         "materialTypes",
@@ -284,10 +291,21 @@ def structured_identity(kind: str, item: dict[str, Any]) -> str:
             str(item.get("targetClauseNo") or ""),
         ]
     elif kind == "replacement":
+        target_references = standard_refs_from_text(
+            canonical_standard_text(item.get("targetStandardCode"))
+        )
+        target_identity: Any = (
+            [
+                target_references[0].get("prefix"),
+                target_references[0].get("number"),
+                target_references[0].get("year"),
+            ]
+            if len(target_references) == 1
+            else canonical_standard_text(item.get("targetStandardCode")).replace(" ", "")
+        )
         identity = [
-            item.get("sourceStandardCode"),
-            item.get("targetStandardCode"),
             item.get("purpose"),
+            target_identity,
         ]
     else:
         identity = [
@@ -614,6 +632,40 @@ def _semantic_capabilities(semantics: dict[str, Any]) -> list[str]:
     return sorted(capabilities)
 
 
+def canonical_semantic_selected_values_hash(record: dict[str, Any]) -> str:
+    """Hash the canonical values whose winning candidate is semantic extraction."""
+    fields: dict[str, Any] = {}
+    for group_name in ("identity", "version", "metadata"):
+        group = record.get(group_name)
+        if not isinstance(group, dict):
+            continue
+        for key, value in group.items():
+            if not isinstance(value, dict):
+                continue
+            sources = value.get("sources") or []
+            if sources and sources[0].get("sourceType") == "new_mineru_semantic":
+                fields[f"{group_name}.{key}"] = copy.deepcopy(value.get("value"))
+    relations: dict[str, list[dict[str, Any]]] = {}
+    for group_name in ("normativeReferences", "replacementRelations"):
+        selected: list[dict[str, Any]] = []
+        for value in record.get(group_name) or []:
+            if not isinstance(value, dict):
+                continue
+            sources = value.get("sources") or []
+            if not sources or sources[0].get("sourceType") != "new_mineru_semantic":
+                continue
+            selected.append(canonical_public_content("reference", value))
+        relations[group_name] = selected
+    normalized = json.dumps(
+        {"fields": fields, "relations": relations},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def merge_canonical_semantic_candidates(
     record: dict[str, Any],
     semantics: dict[str, Any],
@@ -633,13 +685,16 @@ def merge_canonical_semantic_candidates(
             if not isinstance(semantic_value, dict):
                 continue
             existing = group.get(key) if isinstance(group.get(key), dict) else {}
+            stamped_semantic_value = {"key": key, **copy.deepcopy(semantic_value)}
+            stamped_semantic_value["createdAt"] = extracted_at
+            stamped_semantic_value["extractedAt"] = extracted_at
             candidates = [
                 *[
                     copy.deepcopy(item)
                     for item in existing.get("sources") or []
                     if isinstance(item, dict)
                 ],
-                {"key": key, **copy.deepcopy(semantic_value)},
+                stamped_semantic_value,
             ]
             selected = select_canonical_field(key, candidates)
             if selected is not None:
@@ -652,9 +707,17 @@ def merge_canonical_semantic_candidates(
         semantic_values = semantics.get(group_name)
         if semantic_values is None:
             continue
+        stamped_semantic_values = []
+        for item in semantic_values:
+            if not isinstance(item, dict):
+                continue
+            stamped = copy.deepcopy(item)
+            stamped["createdAt"] = extracted_at
+            stamped["extractedAt"] = extracted_at
+            stamped_semantic_values.append(stamped)
         candidates = [
             *_existing_structured_candidates(kind, list(enriched.get(group_name) or [])),
-            *[copy.deepcopy(item) for item in semantic_values if isinstance(item, dict)],
+            *stamped_semantic_values,
         ]
         enriched[group_name] = merge_structured_items(kind, candidates)
 
@@ -707,6 +770,7 @@ def merge_canonical_semantic_candidates(
     enriched["semanticModelRoute"] = str(semantics.get("modelRoute") or "")
     enriched["semanticPromptHash"] = str(semantics.get("promptHash") or "")
     enriched["semanticContentHash"] = str(semantics.get("contentHash") or "")
+    enriched["semanticSelectedValuesHash"] = canonical_semantic_selected_values_hash(enriched)
     enriched["evidence"] = _record_evidence(enriched)
     enriched["completeness"] = canonical_completeness(enriched)
     return enriched
