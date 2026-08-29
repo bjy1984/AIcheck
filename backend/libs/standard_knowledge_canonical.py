@@ -264,6 +264,7 @@ def canonical_public_content(kind: str, item: dict[str, Any]) -> dict[str, Any]:
         "nodeIds",
         "materialTypes",
         "purpose",
+        "locatorIds",
     }
     result = {key: copy.deepcopy(value) for key, value in item.items() if key in allowed}
     if "bbox" in result:
@@ -307,21 +308,39 @@ def select_structured_item(
     selected = ordered[0]
     authority = "legacy_only" if selected.get("sourceType") == "legacy_ocr" else "current"
     public_content = canonical_public_content(kind, selected)
-    if not public_content.get("pageNo"):
-        supporting_page = next((item.get("pageNo") for item in ordered if item.get("pageNo")), None)
-        if supporting_page:
-            public_content["pageNo"] = supporting_page
-    if not normalize_bbox(public_content.get("bbox")):
-        supporting_bbox = next(
+    selected_location = _canonical_location(selected)
+    if selected_location and selected_location["bbox"]:
+        location = selected_location
+    else:
+        location = next(
             (
-                normalize_bbox(item.get("bbox"))
+                candidate
                 for item in ordered
-                if normalize_bbox(item.get("bbox"))
+                if (candidate := _canonical_location(item)) and candidate["bbox"]
             ),
             None,
         )
-        if supporting_bbox:
-            public_content["bbox"] = supporting_bbox
+        if location is None:
+            location = next(
+                (
+                    candidate
+                    for item in ordered
+                    if (candidate := _canonical_location(item)) and candidate["locatorIds"]
+                ),
+                selected_location,
+            )
+        if location is None:
+            location = next(
+                (candidate for item in ordered if (candidate := _canonical_location(item))),
+                None,
+            )
+    if location:
+        public_content["pageNo"] = location["pageNo"]
+        public_content["bbox"] = location["bbox"]
+        if location["locatorIds"]:
+            public_content["locatorIds"] = location["locatorIds"]
+        else:
+            public_content.pop("locatorIds", None)
     return {
         **public_content,
         "id": identity,
@@ -331,6 +350,19 @@ def select_structured_item(
             canonical_evidence(item, authority="supporting" if item is not selected else authority)
             for item in ordered
         ],
+    }
+
+
+def _canonical_location(item: dict[str, Any]) -> dict[str, Any] | None:
+    page_no = item.get("pageNo")
+    if not page_no:
+        return None
+    locator_ids = [str(value) for value in item.get("locatorIds") or [] if str(value or "")]
+    return {
+        "pageNo": page_no,
+        "bbox": normalize_bbox(item.get("bbox")),
+        "locatorIds": locator_ids,
+        "sourceId": str(item.get("sourceId") or ""),
     }
 
 
@@ -825,27 +857,25 @@ def _canonical_structure_candidates(
         )
         clause_no = str(candidate.get("clauseNo") or "")
         locators = locators_by_clause.get(clause_no) or []
-        if locators:
-            located = next(
+        if locators and not (candidate.get("pageNo") and normalize_bbox(candidate.get("bbox"))):
+            locator = next(
                 (
-                    locator
-                    for locator in locators
-                    if normalize_bbox(locator.get("bbox"))
-                    and (locator.get("sourcePage") or locator.get("startPage"))
+                    item
+                    for item in locators
+                    if (item.get("sourcePage") or item.get("startPage"))
+                    and normalize_bbox(item.get("bbox"))
                 ),
                 None,
             )
-            locator = located or next(
-                (locator for locator in locators if normalize_bbox(locator.get("bbox"))),
-                locators[0],
-            )
-            candidate["pageNo"] = (
-                candidate.get("pageNo") or locator.get("sourcePage") or locator.get("startPage")
-            )
-            candidate["bbox"] = normalize_bbox(candidate.get("bbox")) or normalize_bbox(
-                locator.get("bbox")
-            )
-            candidate["locatorIds"] = [str(locator.get("id") or "") for locator in locators]
+            if locator is None:
+                locator = next(
+                    (item for item in locators if item.get("sourcePage") or item.get("startPage")),
+                    None,
+                )
+            if locator:
+                candidate["pageNo"] = locator.get("sourcePage") or locator.get("startPage")
+                candidate["bbox"] = normalize_bbox(locator.get("bbox"))
+                candidate["locatorIds"] = [str(locator.get("id") or "")]
         result["clauses"].append(candidate)
     if sources.get("clauses"):
         provenance.append(

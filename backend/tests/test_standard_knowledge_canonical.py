@@ -365,6 +365,51 @@ def test_clause_uses_valid_supporting_locator_and_preserves_every_locator(tmp_pa
     assert record["completeness"]["evidenceLocation"]["located"] > 0
 
 
+def test_clause_location_never_combines_selected_page_with_supporting_bbox(tmp_path):
+    state = canonical_source_fixture()
+    state["standard_clause_locators"] = [
+        {
+            "id": "SCL-PAGE-8",
+            "knowledgeFileId": "KF-KB-TEST",
+            "clauseNo": "1.1",
+            "sourcePage": 8,
+            "bbox": [10, 20, 300, 80],
+        }
+    ]
+
+    record = build_standard_knowledge_record(state, "KF-KB-TEST", tmp_path)
+
+    clause = next(item for item in record["clauses"] if item["clauseNo"] == "1.1")
+    assert clause["pageNo"] == 8
+    assert clause["bbox"] == [10.0, 20.0, 300.0, 80.0]
+    assert clause["locatorIds"] == ["SCL-PAGE-8"]
+
+
+def test_page_only_locator_survives_and_counts_as_located(tmp_path):
+    state = canonical_source_fixture()
+    state["standard_clause_locators"] = [
+        {
+            "id": "SCL-PAGE-ONLY",
+            "knowledgeFileId": "KF-KB-TEST",
+            "clauseNo": "1.1",
+            "sourcePage": 8,
+            "bbox": None,
+        }
+    ]
+
+    record = build_standard_knowledge_record(state, "KF-KB-TEST", tmp_path)
+
+    clause = next(item for item in record["clauses"] if item["clauseNo"] == "1.1")
+    assert clause["pageNo"] == 8
+    assert clause["bbox"] is None
+    assert clause["locatorIds"] == ["SCL-PAGE-ONLY"]
+    assert record["completeness"]["evidenceLocation"] == {
+        "status": "complete",
+        "located": 1,
+        "total": 1,
+    }
+
+
 def test_content_hash_normalizes_whitespace_before_json_encoding():
     assert normalized_content_hash({"text": "alpha\nbeta"}) == normalized_content_hash(
         {"text": "alpha beta"}
