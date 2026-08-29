@@ -3992,11 +3992,20 @@ class InMemoryRepository:
 
         输出统一 decode 成 str：基线是字符串，比对的是字符串。
         """
-        return orjson.dumps(
+        serialized = orjson.dumps(
             value,
             option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS,
             default=str,
         ).decode("utf-8")
+        # PostgreSQL 的 jsonb 不接受 NUL（报 UntranslatableCharacter，
+        # 整条写入失败）。NUL 混进载荷的来源是 OCR 文本与外部文件名，
+        # 我们无法在每个入口拦截，但落库前必须清掉——**丢一个不可见字符，
+        # 好过整条记录写不进去**。规范化在这里做，基线比对也用同一份结果，
+        # 两边口径才一致（否则每次都判成「改过」而反复重写）。
+        nul_escape = chr(92) + "u0000"
+        if nul_escape in serialized:
+            serialized = serialized.replace(nul_escape, "")
+        return serialized
 
     def capture_persistence_baseline(self) -> None:
         baseline: dict[tuple[str, str], str] = {}
