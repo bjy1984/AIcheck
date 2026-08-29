@@ -129,3 +129,19 @@ def test_session_execution_reaper_exists_and_matches_online_rule() -> None:
     assert '"interrupted"' in source
     # 占位消息必须一起终结，否则前端一直转圈
     assert '"review_messages"' in source
+
+
+def test_security_surface_probe_covers_attack_vectors_and_uses_envelope_codes() -> None:
+    """安全探针必须覆盖攻击者会试的动作，且按信封码判定。
+
+    本系统 HTTP 200 + body.code 表达业务错误——只看 HTTP 状态码会把
+    「已拦截」误判成「放行」（探针第一版就栽在这，差点报出两个不存在的高危）。
+    """
+    probe = (BACKEND_ROOT / "scripts" / "security_surface_probe.py").read_text(encoding="utf-8")
+    for vector in ("路径穿越", "上传类型白名单", "越权", "注入面", "幂等", "匿名访问", "伪造 token"):
+        assert vector in probe, vector
+    assert "def envelope_code" in probe and "def rejected" in probe
+    # 结果必须落状态文件，否则夜里跑完没人知道
+    assert "last-security-probe.json" in probe
+    watch = (BACKEND_ROOT / "scripts" / "health_watch.py").read_text(encoding="utf-8")
+    assert "last-security-probe.json" in watch, "health_watch 必须监视安全探针"

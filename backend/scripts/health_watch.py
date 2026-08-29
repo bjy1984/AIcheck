@@ -127,6 +127,7 @@ def check() -> tuple[list[str], list[str]]:
     for label, path in (
         ("写审计探针", "/app/output/ops/last-write-probe.json"),
         ("一键分析探针", "/app/output/ops/last-analysis-probe.json"),
+        ("安全攻击面探针", "/app/output/ops/last-security-probe.json"),
     ):
         probe_alert = probe_status_alert(label, path, now)
         if probe_alert:
