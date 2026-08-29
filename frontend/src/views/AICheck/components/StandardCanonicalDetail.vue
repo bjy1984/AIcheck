@@ -25,13 +25,14 @@ import {
   CANONICAL_FIELD_LABELS,
   beginCanonicalSectionLoad,
   canonicalAuthorityBadge,
-  canonicalBlockPage,
+  canonicalBlockWindow,
   canonicalCompletenessRows,
   canonicalDetailIdentity,
   canonicalFieldLocateEvidence,
   canonicalItemLocateEvidence,
-  canonicalNextBlockLimit,
+  canonicalNextBlockPage,
   canonicalOverviewRows,
+  canonicalPreviousBlockPage,
   canonicalSectionPayload,
   canonicalTabQuery,
   canonicalWarningMessages,
@@ -53,7 +54,7 @@ const emit = defineEmits<{
 
 const activeTab = ref('overview')
 const sourcePanels = ref<string[]>([])
-const blockVisibleLimit = ref(CANONICAL_BLOCK_BATCH_SIZE)
+const blockPageIndex = ref(0)
 const fileKey = computed(() => canonicalDetailIdentity(props.record, props.documentId))
 const loadState = ref(createCanonicalDetailLoadState(fileKey.value))
 const structureLoad = computed(() => loadState.value.sections.structure)
@@ -62,7 +63,11 @@ const relationsLoad = computed(() => loadState.value.sections.relations)
 const historyLoad = computed(() => loadState.value.sections.history)
 const structureRecord = computed(() => structureLoad.value.data)
 const blockPage = computed(() =>
-  canonicalBlockPage(structureRecord.value?.blocks || [], blockVisibleLimit.value)
+  canonicalBlockWindow(
+    structureRecord.value?.blocks || [],
+    blockPageIndex.value,
+    CANONICAL_BLOCK_BATCH_SIZE
+  )
 )
 const visibleBlocks = computed(() => blockPage.value.items)
 const tablesRecord = computed(() => tablesLoad.value.data)
@@ -137,7 +142,15 @@ const tableColumns = (item: StandardCanonicalContentItem) => {
 }
 
 const showMoreBlocks = () => {
-  blockVisibleLimit.value = canonicalNextBlockLimit(blockVisibleLimit.value, blockPage.value.total)
+  blockPageIndex.value = canonicalNextBlockPage(
+    blockPageIndex.value,
+    blockPage.value.total,
+    CANONICAL_BLOCK_BATCH_SIZE
+  )
+}
+
+const showPreviousBlocks = () => {
+  blockPageIndex.value = canonicalPreviousBlockPage(blockPageIndex.value)
 }
 
 const loadCanonical = async (tab: string) => {
@@ -178,7 +191,7 @@ watch(
   () => {
     loadState.value = resetCanonicalDetailLoadState(loadState.value, fileKey.value)
     activeTab.value = 'overview'
-    blockVisibleLimit.value = CANONICAL_BLOCK_BATCH_SIZE
+    blockPageIndex.value = 0
     sourcePanels.value = []
   },
   { flush: 'sync' }
@@ -332,9 +345,20 @@ watch(
                 <span>{{ item.text }}</span>
                 <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
               </button>
-              <ElButton v-if="blockPage.hasMore" plain size="small" @click="showMoreBlocks">
-                加载更多
-              </ElButton>
+              <div class="block-pagination">
+                <ElButton
+                  v-if="blockPage.hasPrevious"
+                  plain
+                  size="small"
+                  @click="showPreviousBlocks"
+                >
+                  上一页
+                </ElButton>
+                <span>第 {{ blockPage.pageNumber }} / {{ blockPage.pageCount }} 页</span>
+                <ElButton v-if="blockPage.hasNext" plain size="small" @click="showMoreBlocks">
+                  加载更多
+                </ElButton>
+              </div>
             </div>
             <ElEmpty
               v-if="
@@ -717,6 +741,15 @@ watch(
   gap: 8px;
   align-items: center;
   justify-content: space-between;
+}
+
+.block-pagination {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .content-card small,

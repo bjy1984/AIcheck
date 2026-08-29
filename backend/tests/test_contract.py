@@ -453,6 +453,78 @@ def test_canonical_content_group_preserves_include_compatibility() -> None:
     assert "history" not in history
 
 
+def test_canonical_structure_group_retains_clause_locator_provenance() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    clause_source = {
+        "sourceId": "PARSE-CLAUSE",
+        "sourceType": "new_mineru",
+        "contentHash": "clause-source-hash",
+        "pageNo": 5,
+        "quotedText": "4.2 检测要求",
+    }
+    locator_provenance = {
+        "sourceId": "LOCATOR-CLAUSE-4.2",
+        "sourceType": "clause_locator",
+        "contentHash": "locator-source-hash",
+        "pageNo": 5,
+        "quotedText": "第 4.2 条",
+    }
+    record["clauses"] = [
+        {
+            "id": "CLAUSE-4.2",
+            "clauseNo": "4.2",
+            "text": "检测要求",
+            "pageNo": 5,
+            "locatorIds": ["LOCATOR-CLAUSE-4.2"],
+            "sources": [clause_source],
+        }
+    ]
+    record["evidence"] = [clause_source]
+    record["provenance"] = [clause_source, locator_provenance]
+
+    data = assert_ok(
+        client.get(
+            "/api/knowledge/files/KF-KB-TEST/canonical?contentGroup=structure&section=4.2"
+        )
+    )
+
+    assert data["clauses"][0]["locatorIds"] == ["LOCATOR-CLAUSE-4.2"]
+    assert {item["sourceId"] for item in data["provenance"]} == {
+        "PARSE-CLAUSE",
+        "LOCATOR-CLAUSE-4.2",
+    }
+
+
+def test_canonical_history_group_keeps_block_only_history_source_provenance() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    sidecar_source = {
+        "sourceId": "VISUAL-SIDECAR-1",
+        "sourceType": "visual_extraction",
+        "contentHash": "visual-sidecar-hash",
+        "pageNo": 3,
+        "quotedText": "sidecar-only full text",
+    }
+    record["blocks"] = [{"id": "BLOCK-SIDECAR", "sources": [sidecar_source]}]
+    record["evidence"] = [sidecar_source]
+    record["provenance"] = [{**sidecar_source, "capabilities": ["fullText"]}]
+    record["history"] = [
+        {"sourceId": "VISUAL-SIDECAR-1", "sourceType": "visual_extraction"}
+    ]
+
+    data = assert_ok(
+        client.get(
+            "/api/knowledge/files/KF-KB-TEST/canonical"
+            "?contentGroup=history&includeBlocks=false"
+        )
+    )
+
+    assert "blocks" not in data
+    assert data["history"][0]["sourceId"] == "VISUAL-SIDECAR-1"
+    assert [item["sourceId"] for item in data["provenance"]] == ["VISUAL-SIDECAR-1"]
+
+
 def test_file_detail_derives_active_parse_result_id_from_canonical_history() -> None:
     seed_canonical_record("KF-KB-TEST")
     record = repo.state["standard_knowledge_records"][0]

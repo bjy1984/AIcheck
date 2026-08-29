@@ -1037,6 +1037,7 @@ def scoped_canonical_provenance(
     page_no: int | None,
     section: str | None,
     allowed_evidence_keys: set[tuple[str, str, str, str, str]] | None = None,
+    allowed_locator_ids: set[str] | None = None,
 ) -> list[Any]:
     scoped_provenance = []
     for source in provenance:
@@ -1049,7 +1050,11 @@ def scoped_canonical_provenance(
             require_location=False,
         ):
             continue
-        if allowed_evidence_keys is not None and canonical_evidence_key(source) not in allowed_evidence_keys:
+        if (
+            allowed_evidence_keys is not None
+            and canonical_evidence_key(source) not in allowed_evidence_keys
+            and str(source.get("sourceId") or "") not in (allowed_locator_ids or set())
+        ):
             continue
         scoped_source = repo.clone(source)
         raw_tables = scoped_source.get("rawTables")
@@ -1128,7 +1133,10 @@ def scoped_standard_canonical(
     """Clone and filter response content without changing the persisted canonical record."""
     scoped = repo.clone(record)
     if not include_blocks:
-        without_block_derived_canonical_data(scoped)
+        if content_group == "history":
+            scoped.pop("blocks", None)
+        else:
+            without_block_derived_canonical_data(scoped)
         scoped.pop("blocks", None)
     if not include_history:
         scoped.pop("history", None)
@@ -1149,6 +1157,7 @@ def scoped_standard_canonical(
         "businessRelations",
     )
     scoped_parent_evidence_keys: set[tuple[str, str, str, str, str]] = set()
+    scoped_parent_locator_ids: set[str] = set()
     for key in content_keys:
         items = scoped.get(key)
         if not isinstance(items, list):
@@ -1171,6 +1180,11 @@ def scoped_standard_canonical(
                     for source in scoped_item["sources"]
                     if isinstance(source, dict)
                 )
+            scoped_parent_locator_ids.update(
+                str(locator_id)
+                for locator_id in scoped_item.get("locatorIds") or []
+                if str(locator_id or "")
+            )
             filtered.append(scoped_item)
         scoped[key] = filtered
     for group_name in ("identity", "version", "metadata"):
@@ -1196,6 +1210,7 @@ def scoped_standard_canonical(
         page_no=page_no,
         section=section,
         allowed_evidence_keys=scoped_parent_evidence_keys if section is not None else None,
+        allowed_locator_ids=scoped_parent_locator_ids if section is not None else None,
     )
     return canonical_content_group_scope(scoped, content_group)
 
@@ -1245,6 +1260,14 @@ def canonical_content_group_scope(
     scoped.pop("history", None)
     retained_evidence_keys = canonical_content_evidence_keys(scoped, included_keys)
     retained_source_ids = canonical_content_source_ids(scoped, included_keys)
+    retained_locator_ids = {
+        str(locator_id)
+        for key in included_keys
+        for item in scoped.get(key) or []
+        if isinstance(item, dict)
+        for locator_id in item.get("locatorIds") or []
+        if str(locator_id or "")
+    }
     scoped["evidence"] = [
         item
         for item in scoped.get("evidence") or []
@@ -1257,7 +1280,11 @@ def canonical_content_group_scope(
         source_id = str(item.get("sourceId") or "")
         exact_item = canonical_evidence_key(item) in retained_evidence_keys
         source_summary = not item.get("contentHash") and not item.get("quotedText")
-        if not exact_item and not (source_summary and source_id in retained_source_ids):
+        if (
+            not exact_item
+            and source_id not in retained_locator_ids
+            and not (source_summary and source_id in retained_source_ids)
+        ):
             continue
         retained_item = repo.clone(item)
         if content_group != "tables":

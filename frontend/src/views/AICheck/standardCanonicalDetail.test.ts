@@ -5,14 +5,15 @@ import type { StandardCanonicalContentItem, StandardKnowledgeRecord } from '@/ap
 import {
   beginCanonicalSectionLoad,
   canonicalAuthorityBadge,
-  canonicalBlockPage,
+  canonicalBlockWindow,
   canonicalCompletenessRows,
   canonicalDetailIdentity,
   canonicalItemLocateEvidence,
   canonicalLocationAfterIdentityChange,
   canonicalLocateKey,
-  canonicalNextBlockLimit,
+  canonicalNextBlockPage,
   canonicalOverviewRows,
+  canonicalPreviousBlockPage,
   canonicalSectionPayload,
   canonicalTabQuery,
   canonicalWarningMessages,
@@ -189,6 +190,23 @@ assert.notEqual(
   canonicalLocateKey({ key: 'FIELD-CODE', pageNo: 1, value: '冲突旧值' }),
   '缺少 sourceId/contentHash 的冲突值仍必须产生不同定位 key'
 )
+const deterministicLocateEvidence = {
+  key: 'FIELD-CODE',
+  sourceId: '',
+  pageNo: 0,
+  bbox: null,
+  contentHash: '',
+  quotedText: '缺少来源元数据但值相同'
+}
+assert.equal(
+  canonicalLocateKey(deterministicLocateEvidence),
+  canonicalLocateKey({ ...deterministicLocateEvidence }),
+  '完整身份材料相同时定位 key 必须确定'
+)
+assert.notEqual(
+  canonicalLocateKey(deterministicLocateEvidence),
+  canonicalLocateKey({ ...deterministicLocateEvidence, quotedText: '缺少来源元数据但值不同' })
+)
 
 const completeness = {
   overall: 'partial' as const,
@@ -265,15 +283,38 @@ assert.equal(tablePayload.clauses.length, 0)
 assert.equal(tablePayload.blocks, undefined)
 
 const fiveThousandBlocks = Array.from({ length: 5000 }, (_, index) => ({ id: `BLOCK-${index}` }))
-const initialBlockPage = canonicalBlockPage(fiveThousandBlocks)
-assert.equal(initialBlockPage.items.length, 120)
-assert.equal(initialBlockPage.hasMore, true)
-assert.equal(canonicalNextBlockLimit(initialBlockPage.visibleCount, initialBlockPage.total), 240)
-assert.equal(canonicalNextBlockLimit(4920, 5000), 5000)
-assert.equal(canonicalNextBlockLimit(5000, 5000), 5000)
+const initialBlockWindow = canonicalBlockWindow(fiveThousandBlocks, 0)
+assert.deepEqual(
+  [initialBlockWindow.items[0].id, initialBlockWindow.items.at(-1)?.id],
+  ['BLOCK-0', 'BLOCK-119']
+)
+const nextBlockPage = canonicalNextBlockPage(initialBlockWindow.pageIndex, 5000)
+const nextBlockWindow = canonicalBlockWindow(fiveThousandBlocks, nextBlockPage)
+assert.deepEqual(
+  [nextBlockWindow.items[0].id, nextBlockWindow.items.at(-1)?.id],
+  ['BLOCK-120', 'BLOCK-239']
+)
+const lastBlockWindow = canonicalBlockWindow(fiveThousandBlocks, 999)
+assert.deepEqual(
+  [lastBlockWindow.pageIndex, lastBlockWindow.items[0].id, lastBlockWindow.items.at(-1)?.id],
+  [41, 'BLOCK-4920', 'BLOCK-4999']
+)
+assert.ok(
+  [initialBlockWindow, nextBlockWindow, lastBlockWindow].every(
+    (window) => window.items.length <= 120
+  ),
+  '任一正文窗口挂载节点不得超过 120'
+)
+assert.equal(canonicalNextBlockPage(lastBlockWindow.pageIndex, 5000), 41)
+assert.equal(canonicalPreviousBlockPage(0), 0)
+assert.equal(canonicalPreviousBlockPage(2), 1)
 
 const component = readFileSync(
   fileURLToPath(new URL('./components/StandardCanonicalDetail.vue', import.meta.url)),
+  'utf8'
+)
+const presentation = readFileSync(
+  fileURLToPath(new URL('./components/standardCanonicalPresentation.ts', import.meta.url)),
   'utf8'
 )
 const dialog = readFileSync(
@@ -309,6 +350,7 @@ assert.doesNotMatch(
   /v-for="item in structureRecord\.blocks"/,
   '不得一次实例化全部正文块'
 )
+assert.doesNotMatch(presentation, /shortStableHash/, '定位 key 不得使用 32 位摘要')
 assert.doesNotMatch(
   component,
   /onMounted\([^)]*getKnowledgeFileCanonicalApi/s,

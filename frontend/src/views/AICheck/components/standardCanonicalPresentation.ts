@@ -200,25 +200,16 @@ const canonicalValueText = (value: unknown) => {
   }
 }
 
-const shortStableHash = (value: string) => {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0')
-}
-
 export const canonicalLocateKey = (evidence: StandardCanonicalEvidence) => {
-  const material = JSON.stringify({
-    ownerKey: evidence.key ?? '',
-    sourceId: evidence.sourceId ?? '',
-    pageNo: evidence.pageNo ?? '',
-    bbox: normalizeBbox(evidence.bbox) ?? [],
-    contentHash: evidence.contentHash ?? '',
-    text: evidence.quotedText ?? canonicalValueText(evidence.value)
-  })
-  return `canonical:${encodeURIComponent(String(evidence.key ?? ''))}:${shortStableHash(material)}`
+  const identityTuple = [
+    evidence.key ?? '',
+    evidence.sourceId ?? '',
+    evidence.pageNo ?? '',
+    normalizeBbox(evidence.bbox) ?? [],
+    evidence.contentHash ?? '',
+    evidence.quotedText ?? canonicalValueText(evidence.value)
+  ]
+  return `canonical:${encodeURIComponent(JSON.stringify(identityTuple))}`
 }
 
 export type CanonicalSectionKey = 'structure' | 'tables' | 'relations' | 'history'
@@ -353,25 +344,47 @@ export const canonicalLocationAfterIdentityChange = <T>(
 
 export const CANONICAL_BLOCK_BATCH_SIZE = 120
 
-export const canonicalBlockPage = <T>(
+const canonicalBlockPageSize = (pageSize: number) =>
+  Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : CANONICAL_BLOCK_BATCH_SIZE
+
+export const canonicalBlockWindow = <T>(
   blocks: readonly T[],
-  requestedLimit = CANONICAL_BLOCK_BATCH_SIZE
+  requestedPageIndex = 0,
+  requestedPageSize = CANONICAL_BLOCK_BATCH_SIZE
 ) => {
   const total = blocks.length
-  const visibleCount = Math.min(total, Math.max(0, Math.floor(requestedLimit)))
+  const pageSize = canonicalBlockPageSize(requestedPageSize)
+  const pageCount = Math.ceil(total / pageSize)
+  const pageIndex = Math.min(
+    Math.max(0, Math.floor(requestedPageIndex)),
+    Math.max(0, pageCount - 1)
+  )
+  const start = pageIndex * pageSize
+  const items = blocks.slice(start, start + pageSize)
   return {
-    items: blocks.slice(0, visibleCount),
-    visibleCount,
+    items,
+    pageIndex,
+    pageNumber: pageCount ? pageIndex + 1 : 0,
+    pageCount,
+    pageSize,
     total,
-    hasMore: visibleCount < total
+    hasPrevious: pageIndex > 0,
+    hasNext: pageIndex + 1 < pageCount
   }
 }
 
-export const canonicalNextBlockLimit = (
-  currentLimit: number,
+export const canonicalNextBlockPage = (
+  currentPageIndex: number,
   total: number,
-  batchSize = CANONICAL_BLOCK_BATCH_SIZE
-) => Math.min(Math.max(0, total), Math.max(batchSize, currentLimit + batchSize))
+  pageSize = CANONICAL_BLOCK_BATCH_SIZE
+) =>
+  Math.min(
+    Math.max(0, Math.floor(currentPageIndex) + 1),
+    Math.max(0, Math.ceil(Math.max(0, total) / canonicalBlockPageSize(pageSize)) - 1)
+  )
+
+export const canonicalPreviousBlockPage = (currentPageIndex: number) =>
+  Math.max(0, Math.floor(currentPageIndex) - 1)
 
 export const createCanonicalDetailLoadState = (
   fileKey: string,
