@@ -150,3 +150,37 @@ def test_ensure_deferred_loaded_only_fills_missing(monkeypatch) -> None:
     repo.ensure_deferred_loaded("knowledge_vectors", "knowledge_page_index_nodes")
     # vectors 已加载，只补 page_index
     assert calls == [["knowledge_page_index_nodes"]]
+
+
+def test_deferred_not_loaded_reports_unloaded_collections() -> None:
+    """延迟加载最危险的失败模式不是报错，是静默返回空——调用方把
+    「没加载」当成「库里没有」。诊断方法要能让脚本主动自检
+    （2026-08-29 我自己的诊断脚本连续两次栽在这，一度误判成数据丢失）。"""
+    from libs.db.repository import InMemoryRepository, deferred_bulk_state_keys
+
+    repo = InMemoryRepository()
+    # 全新实例：所有延迟集合都未加载
+    assert set(repo.deferred_not_loaded()) == deferred_bulk_state_keys()
+
+    # 标记其一已加载后，它不再出现在清单里
+    from libs.db.repository import STATE_COLLECTIONS, _EPOCH_WATERMARK, configured_tenant_id
+
+    repo._collection_watermarks[
+        (configured_tenant_id(), STATE_COLLECTIONS["knowledge_vectors"])
+    ] = _EPOCH_WATERMARK
+    assert "knowledge_vectors" not in repo.deferred_not_loaded()
+    assert "knowledge_page_index_nodes" in repo.deferred_not_loaded()
+
+
+def test_backlog_tool_distinguishes_ocr_record_from_ocr_text() -> None:
+    """「有 OCR 记录」不等于「有文本」：扫描件识别出 0 字符时，
+    重跑切片必然再次 empty_text（2026-08-29 实测：连续两批 50 个派发
+    几乎零净进展，全在重跑同一批注定失败的文件）。
+    分流必须看实际文本量，不能只看有没有 parse 记录。"""
+    tool = (BACKEND_ROOT / "scripts" / "reprocess_index_backlog.py").read_text(encoding="utf-8")
+    assert "text_chars" in tool, "必须按实际文本量分流"
+    assert "text_chars >= 50" in tool
+    # 读延迟集合前必须加载，否则把「没加载」当成「库里没有」
+    assert "ensure_collections_loaded" in tool
+    # 哈希伪向量必须重做
+    assert "offline-hash-v1" in tool

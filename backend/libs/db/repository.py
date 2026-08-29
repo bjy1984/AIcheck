@@ -417,6 +417,20 @@ class InMemoryRepository:
     def _pgvector_baseline_ids(self, value: set[str]) -> None:
         self._tenant_pgvector_baseline_ids[configured_tenant_id()] = value
 
+    def deferred_not_loaded(self, tenant_id: str | None = None) -> list[str]:
+        """当前**未加载**的延迟集合清单——读它们会静默拿到空。
+
+        延迟加载最危险的失败模式不是报错，是安静地返回空列表：调用方把
+        「没加载」当成「库里没有」。审计脚本、运维脚本、探针在读这些集合前
+        应当用它自检（2026-08-29 我自己的诊断脚本连续两次栽在这，
+        一度误判成生产数据丢失）。
+        """
+        return sorted(
+            key
+            for key in deferred_bulk_state_keys()
+            if not self.collection_is_loaded(key, tenant_id)
+        )
+
     def ensure_deferred_loaded(self, *state_keys: str, tenant_id: str | None = None) -> None:
         """repo 内部版的按需补拉：写延迟集合前确保它已加载。
 
