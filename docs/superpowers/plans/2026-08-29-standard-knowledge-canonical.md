@@ -375,6 +375,7 @@ git commit -m "feat: collect canonical standard knowledge sources"
 - Consumes: `collect_standard_sources` from Task 2.
 - Produces: `build_standard_knowledge_record(state: dict[str, Any], file_id: str, repo_root: Path) -> dict[str, Any]`
 - Produces: `canonical_completeness(record: dict[str, Any]) -> dict[str, Any]`
+- Produces top-level `kbVersion` copied from the standard knowledge source version; `canonicalVersion` continues to identify the builder schema.
 - Produces canonical arrays: `sections`, `clauses`, `blocks`, `tables`, `equations`, `images`, `seals`, `normativeReferences`, `replacementRelations`, `businessRelations`, `evidence`, `provenance`, `history`.
 
 - [ ] **Step 1: Write merge and completeness tests**
@@ -889,6 +890,7 @@ def test_file_detail_exposes_canonical_and_keeps_ocr_structured():
     seed_canonical_record("KF-KB-TEST")
     data = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST"))
     assert data["canonical"]["knowledgeFileId"] == "KF-KB-TEST"
+    assert "blocks" not in data["canonical"]
     assert data["canonicalSummary"]["overall"] == "complete"
     assert data["activeParseResultId"] == "PARSE-NEW"
     assert "ocrStructured" in data
@@ -926,6 +928,8 @@ def standard_canonical_for_file(request: Request, file_id: str) -> dict[str, Any
 ```
 
 Return `NOT_FOUND` when canonical is absent; do not silently build inside GET. Add `includeBlocks`, `includeHistory`, `section` and `pageNo` filtering without mutating stored payload.
+
+The main file-detail response must keep `canonical` bounded to identity, version, metadata, relation counts, completeness, history summary, `canonicalVersion`, `kbVersion` and `sourceFingerprint`. It must omit full `blocks`, `clauses`, `tables`, `equations`, `images`, `seals` and provenance arrays. Those arrays are fetched from the dedicated canonical endpoint only when the corresponding UI section opens.
 
 - [ ] **Step 4: Add frontend types and API methods**
 
@@ -1044,6 +1048,7 @@ git commit -m "feat: expose canonical standard knowledge API"
 - Produces component props: `{ record: StandardKnowledgeRecord; onLocate: (evidence) => void }`
 - Produces tabs: `概览`, `章节条款`, `表格公式`, `引用关系`, `完整度`, `来源历史`.
 - Keeps the existing project-document field UI for non-standard documents.
+- Loads the bounded detail record first and calls `getKnowledgeFileCanonicalApi` lazily for `章节条款`, `表格公式`, `引用关系` and `来源历史` sections.
 
 - [ ] **Step 1: Write display-behavior tests**
 
@@ -1254,7 +1259,7 @@ Expected: canonical retrieval functions are missing or old conflicting text is p
 def canonical_clause_candidates(state: dict[str, Any], *, kb_version: str | None = None) -> list[dict[str, Any]]:
     candidates = []
     for record in state.get("standard_knowledge_records", []):
-        if kb_version and record.get("canonicalVersion") != kb_version:
+        if kb_version and record.get("kbVersion") != kb_version:
             continue
         for item in [*record.get("clauses", []), *record.get("tables", []), *record.get("equations", [])]:
             authority = str(item.get("authority") or "current")
@@ -1398,6 +1403,7 @@ git commit -m "feat: trace canonical standards in AI review"
 ### Task 9: 标准语义专项补齐
 
 **Files:**
+- Modify: `backend/libs/standard_knowledge_canonical.py`
 - Create: `backend/libs/standard_semantic_extraction.py`
 - Create: `backend/config/standard_canonical_extraction_v1.json`
 - Create: `backend/scripts/enrich_standard_knowledge_canonical.py`
@@ -1565,7 +1571,7 @@ Expected: all pass.
 - [ ] **Step 7: Commit Task 9**
 
 ```bash
-git add backend/libs/standard_semantic_extraction.py backend/config/standard_canonical_extraction_v1.json backend/scripts/enrich_standard_knowledge_canonical.py backend/tests/test_standard_semantic_extraction.py
+git add backend/libs/standard_knowledge_canonical.py backend/libs/standard_semantic_extraction.py backend/config/standard_canonical_extraction_v1.json backend/scripts/enrich_standard_knowledge_canonical.py backend/tests/test_standard_semantic_extraction.py
 git commit -m "feat: enrich canonical standard semantics"
 ```
 
