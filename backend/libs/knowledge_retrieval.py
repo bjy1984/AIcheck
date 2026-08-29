@@ -881,6 +881,24 @@ def page_index_tree_search(
     }
 
 
+def _ensure_retrieval_collections(state: dict[str, Any]) -> None:
+    """检索前确保延迟集合已加载。
+
+    只对进程共享的 repo.state 生效——测试常传入字面量 state（自带数据、
+    也不该触发数据库访问），拿 is 判断区分二者。
+    """
+    try:
+        from libs.db.repository import ensure_collections_loaded, repo
+    except Exception:  # noqa: BLE001 - 检索不能因为持久化层不可用而崩
+        return
+    if state is not repo.state:
+        return
+    try:
+        ensure_collections_loaded("knowledge_page_index_nodes")
+    except Exception:  # noqa: BLE001 - 加载失败退化为少召回，好过整条检索失败
+        return
+
+
 def retrieve_knowledge_clauses(
     state: dict[str, Any],
     *,
@@ -893,6 +911,10 @@ def retrieve_knowledge_clauses(
     query_type: str = "review_basis_search",
     dense_chunk_ids: list[str] | None = None,
 ) -> dict[str, Any]:
+    # knowledge_page_index_nodes 是延迟加载集合（占冷启动 293MB 的 25%）。
+    # 检索是核心路径且调用点分散，在入口兜底比逐个调用方注入更可靠：
+    # 漏加载的后果是**静默少召回**，不会报错——那种缺陷最难发现。
+    _ensure_retrieval_collections(state)
     tokens = query_tokens(query)
     router_signals = build_router_signals(query, tokens)
     selected_route = classify_retrieval_route(query, tokens)

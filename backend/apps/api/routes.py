@@ -80,6 +80,7 @@ from libs.db.repository import (
     load_state,
     postgres_persistence_configured,
     repo,
+    requires_collections,
 )
 from libs.db.seed import (
     ROLE_ACTIONS,
@@ -1527,87 +1528,6 @@ def knowledge_file_source_type(file: dict[str, Any] | None) -> str:
     return str(file.get("sourceType") or source.get("sourceType") or "")
 
 
-def remove_knowledge_file_records(file: dict[str, Any]) -> dict[str, int]:
-    file_id = str(file.get("id") or "")
-    document_id = str(file.get("documentId") or "")
-    version_ids = {
-        str(item.get("id"))
-        for item in repo.state.get("versions", [])
-        if document_id and item.get("documentId") == document_id and item.get("id")
-    }
-    if file.get("documentVersionId"):
-        version_ids.add(str(file["documentVersionId"]))
-    chunk_ids = {
-        str(item.get("id"))
-        for item in repo.state.get("knowledge_chunks", [])
-        if item.get("fileId") == file_id
-        or (document_id and item.get("documentId") == document_id)
-        or str(item.get("documentVersionId") or "") in version_ids
-    }
-
-    before = {
-        "files": len(repo.state.get("knowledge_files", [])),
-        "documents": len(repo.state.get("documents", [])),
-        "versions": len(repo.state.get("versions", [])),
-        "chunks": len(repo.state.get("knowledge_chunks", [])),
-        "vectors": len(repo.state.get("knowledge_vectors", [])),
-        "tasks": len(repo.state.get("knowledge_tasks", [])),
-        "evidenceLinks": len(repo.state.get("evidence_links", [])),
-    }
-    repo.state["knowledge_files"] = [
-        item for item in repo.state.get("knowledge_files", []) if item.get("id") != file_id
-    ]
-    repo.state["documents"] = [
-        item for item in repo.state.get("documents", []) if item.get("id") != document_id
-    ]
-    repo.state["versions"] = [
-        item
-        for item in repo.state.get("versions", [])
-        if not (document_id and item.get("documentId") == document_id) and str(item.get("id") or "") not in version_ids
-    ]
-    repo.state["knowledge_chunks"] = [
-        item
-        for item in repo.state.get("knowledge_chunks", [])
-        if item.get("fileId") != file_id
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-    ]
-    repo.state["knowledge_vectors"] = [
-        item
-        for item in repo.state.get("knowledge_vectors", [])
-        if item.get("fileId") != file_id
-        and str(item.get("chunkId") or "") not in chunk_ids
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-    ]
-    repo.state["knowledge_tasks"] = [
-        item
-        for item in repo.state.get("knowledge_tasks", [])
-        if item.get("targetId") != file_id
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-    ]
-    repo.state["evidence_links"] = [
-        item
-        for item in repo.state.get("evidence_links", [])
-        if item.get("fileId") != file_id
-        and item.get("knowledgeFileId") != file_id
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-        and str(item.get("chunkId") or item.get("knowledgeChunkId") or "") not in chunk_ids
-    ]
-    after = {
-        "files": len(repo.state.get("knowledge_files", [])),
-        "documents": len(repo.state.get("documents", [])),
-        "versions": len(repo.state.get("versions", [])),
-        "chunks": len(repo.state.get("knowledge_chunks", [])),
-        "vectors": len(repo.state.get("knowledge_vectors", [])),
-        "tasks": len(repo.state.get("knowledge_tasks", [])),
-        "evidenceLinks": len(repo.state.get("evidence_links", [])),
-    }
-    return {key: before[key] - after[key] for key in before}
-
-
 def knowledge_task_is_business_rule(task: dict[str, Any] | None) -> bool:
     if not task:
         return False
@@ -1809,6 +1729,7 @@ def create_imported_knowledge_records(
     return document, version, knowledge_file, task, {"storageKey": storage_key, "storageBucket": storage_bucket}
 
 
+@requires_collections("knowledge_vectors", "knowledge_page_index_nodes")
 def reset_knowledge_file_derived_index(file_id: str) -> None:
     repo.state["knowledge_chunks"] = [
         item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") != file_id
@@ -18737,6 +18658,7 @@ def fde_update_clause_from_chunk(chunk: dict[str, Any]) -> None:
         clause["updatedAt"] = server_time()
 
 
+@requires_collections("knowledge_vectors")
 def fde_update_vector_metadata_for_chunk(
     *,
     knowledge_file_id: str,
@@ -18768,6 +18690,7 @@ def fde_update_vector_metadata_for_chunk(
     return updated_count
 
 
+@requires_collections("knowledge_vectors")
 def fde_apply_vector_correction_record(correction: dict[str, Any], *, role: str, reason: str | None = None) -> dict[str, Any]:
     status = str(correction.get("status") or "pending_review")
     if status in {"rejected", "applied"}:
@@ -19558,6 +19481,7 @@ def fde_standard_vector_row(
     }
 
 
+@requires_collections("knowledge_vectors", "knowledge_page_index_nodes")
 def fde_standards_vectorization_payload(
     *,
     keyword: str | None = None,
@@ -19721,6 +19645,7 @@ def fde_standards_vectorization_payload(
     }
 
 
+@requires_collections("knowledge_vectors", "knowledge_page_index_nodes")
 def fde_standard_vector_file_detail(
     file_id: str,
     *,
@@ -20276,6 +20201,7 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
     }
 
 
+@requires_collections("knowledge_vectors")
 def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
     item = attach_document_ocr_readiness(repo, document)
     version_id = str(item.get("currentVersionId") or "")

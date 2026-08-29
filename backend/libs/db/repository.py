@@ -8,6 +8,7 @@ import json
 import orjson
 import logging
 import os
+from functools import wraps
 import re
 import sqlite3
 import threading
@@ -4886,6 +4887,62 @@ class InMemoryRepository:
         if highest is not None:
             self._collection_watermarks[(tenant_id, collection_name)] = highest
 
+    def load_collections_into_state(
+        self, state_keys: list[str], tenant_id: str | None = None
+    ) -> None:
+        """把指定集合的行**填进现有 state**，不重建其他集合。
+
+        延迟加载的补拉入口。与 load_state 的区别是致命的：后者用
+        _fresh_state_for_persistence_load 换掉整个 state，在请求中途调用会让
+        落库基线失配，下一次写入直接 409（本机制第一版实测如此）。
+
+        这里只做三件事：写入目标集合的行、登记持久化基线、记水位线——
+        水位线必须记，否则 collection_is_loaded 仍为假，每次访问都重拉。
+        空集合也要记：否则「库里就是没有」会被当成「还没加载」而反复查库。
+        """
+        if not state_keys:
+            return
+        with self._sync_postgres_lock:
+            effective_tenant_id = str(tenant_id or configured_tenant_id())
+            self.configure_sync_postgres()
+            if self.sync_postgres is None:
+                return
+            self.ensure_postgres_schema()
+            collections = [
+                STATE_COLLECTIONS[key] for key in state_keys if key in STATE_COLLECTIONS
+            ]
+            if not collections:
+                return
+            rows = self.sync_postgres.execute(
+                """
+                SELECT collection, object_id, payload, updated_at FROM aicheck_state
+                WHERE collection = ANY(%s) AND tenant_id = %s
+                ORDER BY collection, object_id
+                """,
+                (collections, effective_tenant_id),
+            ).fetchall()
+            grouped: dict[str, list[dict[str, Any]]] = {name: [] for name in collections}
+            watermarks: dict[str, Any] = {}
+            for collection_name, object_id, payload, updated_at in rows:
+                grouped.setdefault(collection_name, []).append(payload)
+                self._persistence_baseline[(collection_name, str(object_id))] = (
+                    self.canonical_persistence_payload(payload)
+                )
+                current = watermarks.get(collection_name)
+                if updated_at is not None and (current is None or updated_at > current):
+                    watermarks[collection_name] = updated_at
+            for state_key in state_keys:
+                collection_name = STATE_COLLECTIONS.get(state_key)
+                if not collection_name:
+                    continue
+                self.state[state_key] = grouped.get(collection_name, [])
+                apply_default_tenant(self.state.get(state_key), tenant_id=effective_tenant_id)
+                # 空集合用 _EPOCH_WATERMARK 占位：没有水位线就等于「没加载过」，
+                # 会让每次访问都重查库（这是既有增量刷新踩过的坑，同款处理）。
+                self._collection_watermarks[(effective_tenant_id, collection_name)] = (
+                    watermarks.get(collection_name) or _EPOCH_WATERMARK
+                )
+
     def load_from_sync_postgres(
         self, selected_state_keys: set[str] | None = None, tenant_id: str | None = None
     ) -> None:
@@ -4917,6 +4974,23 @@ class InMemoryRepository:
                     ORDER BY collection, object_id
                     """,
                     (selected_collections, effective_tenant_id),
+                ).fetchall()
+            elif deferred_bulk_collections():
+                # 全量加载跳过「重且不常驻」的集合：实测冷启动 19.5 秒 / 293 MB，
+                # 其中 knowledge_vectors(113MB) + knowledge_page_index_nodes(73MB)
+                # 占 63%，而它们的所有使用点都是「按 fileId 过滤」或「取 len」——
+                # 没有任何路径需要它们常驻内存。需要时由 ensure_collections_loaded
+                # 按需拉（collection_is_loaded 保证只拉一次）。
+                # 关键：跳过 ≠ 空集合。跳过的集合**不记水位线**，
+                # collection_is_loaded 为假，调用方能区分「没加载」和「库里没有」。
+                rows = self.sync_postgres.execute(
+                    """
+                    SELECT collection, object_id, payload, updated_at FROM aicheck_state
+                    WHERE tenant_id = %s
+                      AND collection <> ALL(%s)
+                    ORDER BY collection, object_id
+                    """,
+                    (configured_tenant_id(), sorted(deferred_bulk_collections())),
                 ).fetchall()
             else:
                 rows = self.sync_postgres.execute(
@@ -6402,6 +6476,69 @@ repo = InMemoryRepository()
 
 def postgres_persistence_configured() -> bool:
     return bool(repo.sync_postgres is not None or repo.postgres_dsn or os.getenv("AICHECK_DATABASE_URL") or os.getenv("DATABASE_URL"))
+
+
+DEFAULT_DEFERRED_BULK_STATE_KEYS = ("knowledge_vectors", "knowledge_page_index_nodes")
+
+
+def deferred_bulk_state_keys() -> set[str]:
+    """全量加载时延迟的集合（state key 口径）。
+
+    默认延迟检索侧的两个大表：实测它们占冷启动 293 MB 的 63%，而所有使用点
+    都是「按 fileId 过滤」或「取 len」——没有需要常驻的场景。
+    AICHECK_DEFERRED_BULK_STATE_KEYS 可覆盖；设为空串则关闭本机制（回到旧行为）。
+    """
+    raw = os.getenv("AICHECK_DEFERRED_BULK_STATE_KEYS")
+    if raw is None:
+        keys = set(DEFAULT_DEFERRED_BULK_STATE_KEYS)
+    else:
+        keys = {item.strip() for item in raw.split(",") if item.strip()}
+    return {key for key in keys if key in STATE_COLLECTIONS}
+
+
+def deferred_bulk_collections() -> set[str]:
+    """延迟集合的**表名**口径（SQL 用）。"""
+    return {STATE_COLLECTIONS[key] for key in deferred_bulk_state_keys()}
+
+
+def ensure_collections_loaded(*state_keys: str, tenant_id: str | None = None) -> None:
+    """确保这些集合已在本进程加载；未加载的按需补拉。
+
+    **只把目标集合的行填进现有 state，绝不重建整份状态**：
+    load_state 会用 _fresh_state_for_persistence_load 换掉整个 state，
+    在请求中途调用它会让落库基线失配，下一次写入直接 409
+    （ConcurrentPersistenceError——本机制第一版就是这么崩的）。
+
+    延迟加载的代价是调用方必须显式声明依赖。漏调用的后果是**读到空集合**
+    而不是报错——所以每个消费延迟集合的路径都要在读之前调这个，
+    并由 test_deferred_bulk_load 钉住。
+    """
+    pending = sorted(
+        key
+        for key in state_keys
+        if key in STATE_COLLECTIONS and not repo.collection_is_loaded(key, tenant_id)
+    )
+    if pending:
+        repo.load_collections_into_state(pending, tenant_id=tenant_id)
+
+
+def requires_collections(*state_keys: str):
+    """声明函数依赖哪些延迟加载集合；进入函数前补拉。
+
+    做成装饰器而不是函数体首行：这是**前置条件**，写在签名上一眼可见，
+    也不会在重构函数体时被误删。漏声明的后果是静默读到空集合（不报错），
+    所以宁可显眼。
+    """
+
+    def decorator(function):
+        @wraps(function)
+        def wrapped(*args: Any, **kwargs: Any):
+            ensure_collections_loaded(*state_keys)
+            return function(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
 
 
 def load_state(selected_state_keys: set[str] | None = None, tenant_id: str | None = None) -> None:
