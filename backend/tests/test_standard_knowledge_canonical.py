@@ -6,6 +6,7 @@ from libs.db.repository import STATE_COLLECTIONS, repo
 from libs.standard_knowledge_canonical import (
     build_standard_knowledge_record,
     collect_standard_sources,
+    normalized_content_hash,
     select_canonical_field,
 )
 
@@ -309,3 +310,77 @@ def test_completeness_names_specific_missing_categories(tmp_path):
     assert record["completeness"]["normativeReferences"]["status"] == "missing"
     assert record["completeness"]["overall"] == "partial"
     assert "normativeReferences" in record["completeness"]["missingCategories"]
+
+
+def test_business_rule_context_is_context_only_with_standard_structure_not_applicable(tmp_path):
+    state = canonical_source_fixture()
+    state["knowledge_files"][0]["contextType"] = "business_rule_context"
+    state["knowledge_files"][0]["fileName"] = "业务规则.md"
+
+    record = build_standard_knowledge_record(state, "KF-KB-TEST", tmp_path)
+
+    assert record["contextType"] == "context_only"
+    for category in (
+        "sections",
+        "clauses",
+        "tables",
+        "equations",
+        "images",
+        "seals",
+        "normativeReferences",
+        "replacementRelations",
+        "evidenceLocation",
+    ):
+        assert record["completeness"][category]["status"] == "not_applicable"
+        assert category not in record["completeness"]["missingCategories"]
+
+
+def test_clause_uses_valid_supporting_locator_and_preserves_every_locator(tmp_path):
+    state = canonical_source_fixture()
+    state["standard_clause_locators"] = [
+        {
+            "id": "SCL-INVALID",
+            "knowledgeFileId": "KF-KB-TEST",
+            "clauseNo": "1.1",
+            "sourcePage": 7,
+            "bbox": [10, 20, 10, 80],
+        },
+        {
+            "id": "SCL-VALID",
+            "knowledgeFileId": "KF-KB-TEST",
+            "clauseNo": "1.1",
+            "sourcePage": 7,
+            "bbox": [10, 20, 300, 80],
+        },
+    ]
+
+    record = build_standard_knowledge_record(state, "KF-KB-TEST", tmp_path)
+
+    clause = next(item for item in record["clauses"] if item["clauseNo"] == "1.1")
+    assert clause["pageNo"] == 7
+    assert clause["bbox"] == [10.0, 20.0, 300.0, 80.0]
+    assert {
+        item["sourceId"] for item in record["provenance"] if item["sourceType"] == "clause_locator"
+    } == {"SCL-INVALID", "SCL-VALID"}
+    assert record["completeness"]["evidenceLocation"]["located"] > 0
+
+
+def test_content_hash_normalizes_whitespace_before_json_encoding():
+    assert normalized_content_hash({"text": "alpha\nbeta"}) == normalized_content_hash(
+        {"text": "alpha beta"}
+    )
+
+
+def test_field_evidence_hashes_include_value_and_quoted_text(tmp_path):
+    record = build_standard_knowledge_record(canonical_source_fixture(), "KF-KB-TEST", tmp_path)
+    old_field_evidence = [
+        item
+        for item in record["evidence"]
+        if item["sourceId"] == "PARSE-OLD" and item["pageNo"] == 1
+    ]
+
+    assert {item["quotedText"] for item in old_field_evidence} == {
+        "2014-01-01",
+        "61188-2018",
+    }
+    assert len({item["contentHash"] for item in old_field_evidence}) == 2

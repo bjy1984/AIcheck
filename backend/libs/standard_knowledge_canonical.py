@@ -137,6 +137,17 @@ _METADATA_FIELDS = {
     "pageCount",
 }
 _CLAUSE_NUMBER = re.compile(r"^\s*([A-Z]?\d+(?:\.\d+)*)\s+")
+_CONTEXT_ONLY_CATEGORIES = (
+    "sections",
+    "clauses",
+    "tables",
+    "equations",
+    "images",
+    "seals",
+    "normativeReferences",
+    "replacementRelations",
+    "evidenceLocation",
+)
 
 
 def canonical_item_id(kind: str, identity: list[object]) -> str:
@@ -169,19 +180,33 @@ def select_canonical_field(key: str, candidates: list[dict[str, Any]]) -> dict[s
 
 
 def normalized_content_hash(item: dict[str, Any]) -> str:
-    content = (
-        item.get("normalizedRows")
-        or item.get("latex")
-        or item.get("text")
-        or item.get("caption")
-        or ""
+    content = next(
+        (item[key] for key in ("normalizedRows", "latex", "text", "caption") if item.get(key)),
+        None,
     )
-    normalized = re.sub(
-        r"\s+",
-        " ",
-        json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str),
-    ).strip()
+    if content is None and ("value" in item or "quotedText" in item):
+        content = {"value": item.get("value"), "quotedText": item.get("quotedText")}
+    normalized_content = _normalize_content_whitespace(content if content is not None else "")
+    normalized = json.dumps(
+        normalized_content,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _normalize_content_whitespace(value: Any) -> Any:
+    if isinstance(value, str):
+        return re.sub(r"\s+", " ", value).strip()
+    if isinstance(value, list):
+        return [_normalize_content_whitespace(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_content_whitespace(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_content_whitespace(item) for key, item in value.items()}
+    return value
 
 
 def normalize_bbox(value: Any) -> list[float] | None:
@@ -281,8 +306,24 @@ def select_structured_item(
     )
     selected = ordered[0]
     authority = "legacy_only" if selected.get("sourceType") == "legacy_ocr" else "current"
+    public_content = canonical_public_content(kind, selected)
+    if not public_content.get("pageNo"):
+        supporting_page = next((item.get("pageNo") for item in ordered if item.get("pageNo")), None)
+        if supporting_page:
+            public_content["pageNo"] = supporting_page
+    if not normalize_bbox(public_content.get("bbox")):
+        supporting_bbox = next(
+            (
+                normalize_bbox(item.get("bbox"))
+                for item in ordered
+                if normalize_bbox(item.get("bbox"))
+            ),
+            None,
+        )
+        if supporting_bbox:
+            public_content["bbox"] = supporting_bbox
     return {
-        **canonical_public_content(kind, selected),
+        **public_content,
         "id": identity,
         "authority": authority,
         "selectedSourceId": selected.get("sourceId"),
@@ -369,6 +410,15 @@ def canonical_completeness(record: dict[str, Any]) -> dict[str, Any]:
         "evidenceLocation": evidence_location_status(record),
         "history": list_status(list(record.get("history") or [])),
     }
+    if record.get("contextType") == "context_only":
+        for key in _CONTEXT_ONLY_CATEGORIES:
+            if key == "evidenceLocation":
+                categories[key] = {"status": "not_applicable", "located": 0, "total": 0}
+            else:
+                categories[key] = {
+                    "status": "not_applicable",
+                    "count": len(record.get(key) or []),
+                }
     missing = [key for key, item in categories.items() if item["status"] in {"missing", "partial"}]
     return {
         **categories,
@@ -450,6 +500,11 @@ def build_standard_knowledge_record(
         edition=edition,
     )
     kb_version = _standard_kb_version(state, sources["file"])
+    context_type = (
+        "context_only"
+        if sources["file"].get("contextType") == "business_rule_context"
+        else str(sources["file"].get("contextType") or "standard_reference")
+    )
     record: dict[str, Any] = {
         "id": f"SKR-{file_id}",
         "knowledgeFileId": file_id,
@@ -457,6 +512,7 @@ def build_standard_knowledge_record(
         "documentVersionId": sources["version"]["id"],
         "canonicalVersion": CANONICAL_VERSION,
         "kbVersion": kb_version,
+        "contextType": context_type,
         "identity": identity,
         "version": version,
         "metadata": metadata,
@@ -770,15 +826,41 @@ def _canonical_structure_candidates(
         clause_no = str(candidate.get("clauseNo") or "")
         locators = locators_by_clause.get(clause_no) or []
         if locators:
-            locator = locators[0]
+            located = next(
+                (
+                    locator
+                    for locator in locators
+                    if normalize_bbox(locator.get("bbox"))
+                    and (locator.get("sourcePage") or locator.get("startPage"))
+                ),
+                None,
+            )
+            locator = located or next(
+                (locator for locator in locators if normalize_bbox(locator.get("bbox"))),
+                locators[0],
+            )
             candidate["pageNo"] = (
                 candidate.get("pageNo") or locator.get("sourcePage") or locator.get("startPage")
             )
-            candidate["bbox"] = candidate.get("bbox") or locator.get("bbox")
+            candidate["bbox"] = normalize_bbox(candidate.get("bbox")) or normalize_bbox(
+                locator.get("bbox")
+            )
+            candidate["locatorIds"] = [str(locator.get("id") or "") for locator in locators]
         result["clauses"].append(candidate)
     if sources.get("clauses"):
         provenance.append(
             _provenance_summary("knowledge_clause", sources["clauses"], version_id, ["clause"])
+        )
+    for locator in sources.get("clauseLocators") or []:
+        provenance.append(
+            {
+                **_source_base("clause_locator", locator, version_id),
+                "capabilities": ["evidenceLocation"],
+                "clauseNo": locator.get("clauseNo"),
+                "pageNo": locator.get("sourcePage") or locator.get("startPage"),
+                "bbox": normalize_bbox(locator.get("bbox")),
+                "rawLocator": copy.deepcopy(locator),
+            }
         )
 
     for item in sources.get("pageIndexNodes") or []:
