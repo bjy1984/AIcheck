@@ -4312,7 +4312,28 @@ def embed_knowledge(
     if task and task.get("status") == "已取消":
         flush_state()
         return {"fileId": file_id, "status": "canceled", "vectorCount": 0}
-    if task and task.get("status") == "成功" and (file or {}).get("vectorStatus") == "已向量化":
+    # 幂等短路：已成功且已向量化就不重做——但**索引版本必须一致**。
+    # 只看「数量对得上」的话，换了 embedding 模型后旧索引永远更新不了：
+    # 线上 53 个文件带着 offline-hash-v1 的哈希伪向量（没有语义、检索近似随机），
+    # 每次重跑都被这里挡回来报 alreadyCompleted（2026-08-29 审计实测）。
+    # 哈希伪向量必须能被重做：它们没有语义、检索近似随机，而幂等短路
+    # 只看「数量对得上」的话永远挡回重跑（2026-08-29 线上 53 个文件如此）。
+    # 判据收窄到**明确的降级标记**，不比对 indexVersion 字符串——
+    # 那会把正常流程也判成过期（离线/在线目标版本本就不同）。
+    # 但当前若**就是**哈希模式（离线自测），哈希向量是预期结果，不该重做。
+    hash_mode_now = env_bool("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", False) or env_bool(
+        "AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK", False
+    )
+    stale_index = (
+        not hash_mode_now
+        and str((file or {}).get("embeddingModel") or "") == OFFLINE_EMBEDDING_MODEL
+    )
+    if (
+        task
+        and task.get("status") == "成功"
+        and (file or {}).get("vectorStatus") == "已向量化"
+        and not stale_index
+    ):
         task.pop("errorMessage", None)
         flush_state()
         return {"fileId": file_id, "status": "success", "vectorCount": int((file or {}).get("vectorCount") or vector_count), "alreadyCompleted": True}
