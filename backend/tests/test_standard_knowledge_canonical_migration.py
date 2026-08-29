@@ -503,6 +503,66 @@ def test_verifier_rejects_unmapped_business_pack_standard(isolated_postgres_url)
     } in report["unmappedSourceDetails"]
 
 
+def test_verifier_accepts_business_pack_summary_without_standard_catalog(
+    isolated_postgres_url,
+):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    write_state_record(
+        isolated_postgres_url,
+        collection="business_packs",
+        object_id="BP-SUMMARY",
+        payload={
+            "id": "BP-SUMMARY",
+            "name": "Summary fixture",
+            "version": "1.0.0",
+            "domainType": "pressure-pipeline",
+            "description": "",
+            "pipelineTypeCode": "GC",
+            "pipelineTypeName": "工业管道",
+            "commonGrades": "",
+            "scopeDescription": "",
+            "projectType": "工业管道",
+            "status": "published",
+            "snapshotHash": "sha256:fixture",
+            "roleCount": 1,
+            "nodeCount": 1,
+        },
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 0, completed.stderr
+    assert report["assertions"]["unmapped_sources"] is True
+
+
+def test_verifier_rejects_present_non_list_business_pack_catalog(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    write_state_record(
+        isolated_postgres_url,
+        collection="business_packs",
+        object_id="BP-MALFORMED-CATALOG",
+        payload={
+            "id": "BP-MALFORMED-CATALOG",
+            "standardCatalog": "not-a-list",
+        },
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["unmapped_sources"] is False
+    assert {
+        "collection": "business_packs",
+        "objectId": "BP-MALFORMED-CATALOG",
+        "reason": "standardCatalog is not a list",
+        "actualType": "str",
+    } in report["unmappedSourceDetails"]
+
+
 def test_failed_record_does_not_replace_previous_valid_record(isolated_postgres_url):
     seed_standard_fixture(isolated_postgres_url, count=1)
     seed_valid_canonical(
@@ -671,6 +731,31 @@ def test_verifier_rejects_bogus_new_mineru_source_id(isolated_postgres_url):
     } in report["provenanceIssues"]
 
 
+def test_verifier_rejects_parse_source_from_another_canonical_file(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=2)
+    run_rebuild(isolated_postgres_url, "--apply")
+    record = canonical_record(isolated_postgres_url, "KF-KB-001")
+    record["provenance"][0]["sourceId"] = "PARSE-002"
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-001",
+        record=record,
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=2)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["missing_provenance"] is False
+    assert {
+        "knowledgeFileId": "KF-KB-001",
+        "path": "provenance[0].sourceId",
+        "reason": "source_not_linked_to_canonical",
+        "sourceType": "new_mineru",
+        "sourceId": "PARSE-002",
+    } in report["provenanceIssues"]
+
+
 def test_verifier_rejects_history_entry_without_source_identity(isolated_postgres_url):
     seed_standard_fixture(isolated_postgres_url, count=1)
     run_rebuild(isolated_postgres_url, "--apply")
@@ -694,6 +779,34 @@ def test_verifier_rejects_history_entry_without_source_identity(isolated_postgre
         "sourceType": "new_mineru",
         "sourceId": "",
     } in report["provenanceIssues"]
+
+
+def test_verifier_rejects_empty_source_identity_lists(isolated_postgres_url):
+    seed_standard_fixture(isolated_postgres_url, count=1)
+    run_rebuild(isolated_postgres_url, "--apply")
+    record = canonical_record(isolated_postgres_url, "KF-KB-001")
+    record["provenance"][0]["sourceIds"] = []
+    record["history"][0]["sourceIds"] = []
+    record["identity"]["standardCode"]["sources"] = []
+    write_canonical_record(
+        isolated_postgres_url,
+        object_id="KF-KB-001",
+        record=record,
+    )
+
+    completed = run_verify(isolated_postgres_url, require_count=1)
+    report = json.loads(completed.stdout)
+
+    assert completed.returncode == 1
+    assert report["assertions"]["missing_provenance"] is False
+    issues = {
+        (item["path"], item["reason"])
+        for item in report["provenanceIssues"]
+        if item["knowledgeFileId"] == "KF-KB-001"
+    }
+    assert ("provenance[0].sourceIds", "missing_sources") in issues
+    assert ("history[0].sourceIds", "missing_sources") in issues
+    assert ("identity.standardCode.sources", "missing_sources") in issues
 
 
 def test_verifier_reports_string_provenance_as_structured_json_failure(

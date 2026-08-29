@@ -9,6 +9,7 @@ import os
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass, field as dataclass_field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,38 @@ _FIELD_GROUPS = ("identity", "version", "metadata")
 SourceRow = tuple[str, str, Any]
 
 
+@dataclass
+class SourceRegistry:
+    by_scope: dict[tuple[str, str, str], set[str]] = dataclass_field(
+        default_factory=lambda: defaultdict(set)
+    )
+    global_by_type: dict[str, set[str]] = dataclass_field(default_factory=lambda: defaultdict(set))
+
+    def add(
+        self,
+        file_id: str,
+        document_version_id: str,
+        source_type: str,
+        *values: Any,
+    ) -> None:
+        identities = {str(value) for value in values if str(value or "")}
+        self.by_scope[(file_id, document_version_id, source_type)].update(identities)
+        self.global_by_type[source_type].update(identities)
+
+    def resolution_issue(
+        self,
+        file_id: str,
+        document_version_id: str,
+        source_type: str,
+        source_id: str,
+    ) -> str | None:
+        if source_id not in self.global_by_type.get(source_type, set()):
+            return "unresolved_source_id"
+        if source_id not in self.by_scope.get((file_id, document_version_id, source_type), set()):
+            return "source_not_linked_to_canonical"
+        return None
+
+
 def _issue(
     path: str,
     reason: str,
@@ -55,19 +88,74 @@ def _issue(
     return {"path": path, "reason": reason, **details}
 
 
-def _source_registry(source_rows: list[SourceRow]) -> dict[str, set[str]]:
-    registry: dict[str, set[str]] = defaultdict(set)
+def _source_registry(source_rows: list[SourceRow]) -> SourceRegistry:
+    registry = SourceRegistry()
+    files = {
+        object_id: payload
+        for collection, object_id, payload in source_rows
+        if collection == "knowledge_files"
+        and isinstance(payload, dict)
+        and payload.get("sourceId") == STANDARD_SOURCE_ID
+    }
+    file_versions = {
+        file_id: str(payload.get("documentVersionId") or "") for file_id, payload in files.items()
+    }
+    document_to_file = {
+        str(payload.get("documentId")): file_id
+        for file_id, payload in files.items()
+        if payload.get("documentId")
+    }
+    version_to_file = {
+        version_id: file_id for file_id, version_id in file_versions.items() if version_id
+    }
+    path_to_file = {
+        str(payload.get("sourceRelativePath") or "").replace("\\", "/").lstrip("./"): file_id
+        for file_id, payload in files.items()
+        if payload.get("sourceRelativePath")
+    }
+    name_to_file = {
+        str(payload.get("fileName")): file_id
+        for file_id, payload in files.items()
+        if payload.get("fileName")
+    }
 
-    def add(source_type: str, *values: Any) -> None:
-        registry[source_type].update(str(value) for value in values if str(value or ""))
+    def linked_files(payload: dict[str, Any], *, object_id: str = "") -> set[str]:
+        scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
+        direct_values = {
+            str(payload.get("fileId") or ""),
+            str(payload.get("knowledgeFileId") or ""),
+            str(scope.get("fileId") or ""),
+        }
+        result = direct_values & set(files)
+        document_id = str(payload.get("documentId") or "")
+        version_id = str(payload.get("documentVersionId") or "")
+        normalized_path = (
+            str(payload.get("sourceRelativePath") or "").replace("\\", "/").lstrip("./")
+        )
+        if object_id in files:
+            result.add(object_id)
+        if object_id in version_to_file:
+            result.add(version_to_file[object_id])
+        if document_id in document_to_file:
+            result.add(document_to_file[document_id])
+        if version_id in version_to_file:
+            result.add(version_to_file[version_id])
+        if normalized_path in path_to_file:
+            result.add(path_to_file[normalized_path])
+        return result
+
+    def add_for_files(file_ids: set[str], source_type: str, *values: Any) -> None:
+        for file_id in file_ids:
+            registry.add(file_id, file_versions[file_id], source_type, *values)
 
     for collection, object_id, payload in source_rows:
         if not isinstance(payload, dict):
             continue
+        targets = linked_files(payload, object_id=object_id)
         if collection == "knowledge_files":
-            add("filename_inference", object_id, payload.get("id"))
+            add_for_files(targets, "filename_inference", object_id, payload.get("id"))
         elif collection == "document_versions":
-            add("standard_catalog", object_id, payload.get("id"))
+            add_for_files(targets, "standard_catalog", object_id, payload.get("id"))
         elif collection == "ocr_parse_results":
             source_type = (
                 "new_mineru"
@@ -75,29 +163,73 @@ def _source_registry(source_rows: list[SourceRow]) -> dict[str, set[str]]:
                 and payload["metadata"].get("sidecarImported")
                 else "legacy_ocr"
             )
-            add(source_type, object_id, payload.get("id"), payload.get("parseResultId"))
+            add_for_files(
+                targets,
+                source_type,
+                object_id,
+                payload.get("id"),
+                payload.get("parseResultId"),
+            )
         elif collection == "extracted_fields":
-            add("legacy_ocr", object_id, payload.get("id"))
+            add_for_files(targets, "legacy_ocr", object_id, payload.get("id"))
         elif collection == "knowledge_chunks":
-            add("knowledge_chunk", object_id, payload.get("id"))
+            add_for_files(targets, "knowledge_chunk", object_id, payload.get("id"))
         elif collection == "knowledge_clauses":
-            add("knowledge_clause", object_id, payload.get("id"))
+            add_for_files(targets, "knowledge_clause", object_id, payload.get("id"))
         elif collection == "knowledge_page_index_nodes":
-            add("page_index", object_id, payload.get("id"))
+            add_for_files(targets, "page_index", object_id, payload.get("id"))
         elif collection == "standard_document_versions":
-            add("standard_catalog", object_id, payload.get("id"), payload.get("standardRef"))
+            add_for_files(
+                targets,
+                "standard_catalog",
+                object_id,
+                payload.get("id"),
+                payload.get("standardRef"),
+            )
         elif collection == "standard_clause_references":
-            add("standard_reference", object_id, payload.get("id"))
+            add_for_files(targets, "standard_reference", object_id, payload.get("id"))
         elif collection == "standard_clause_locators":
-            add("clause_locator", object_id, payload.get("id"))
+            add_for_files(targets, "clause_locator", object_id, payload.get("id"))
         elif collection == "rule_versions":
-            for reference in payload.get("referencedStandards") or []:
-                if isinstance(reference, dict):
-                    add("business_rule", reference.get("id"), reference.get("sourceId"))
+            references = payload.get("referencedStandards")
+            for reference in references if isinstance(references, list) else []:
+                if not isinstance(reference, dict):
+                    continue
+                direct = str(reference.get("knowledgeFileId") or "")
+                file_name = str(reference.get("fileName") or "")
+                reference_targets = (
+                    {direct}
+                    if direct in files
+                    else {name_to_file[file_name]}
+                    if file_name in name_to_file
+                    else set()
+                )
+                add_for_files(
+                    reference_targets,
+                    "business_rule",
+                    reference.get("id"),
+                    reference.get("sourceId"),
+                )
         elif collection == "business_packs":
-            for item in payload.get("standardCatalog") or []:
-                if isinstance(item, dict):
-                    add("standard_catalog", item.get("id"), item.get("standardRef"))
+            catalog = payload.get("standardCatalog")
+            for item in catalog if isinstance(catalog, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                direct = str(item.get("knowledgeFileId") or "")
+                file_name = str(item.get("fileName") or "")
+                item_targets = (
+                    {direct}
+                    if direct in files
+                    else {name_to_file[file_name]}
+                    if file_name in name_to_file
+                    else set()
+                )
+                add_for_files(
+                    item_targets,
+                    "standard_catalog",
+                    item.get("id"),
+                    item.get("standardRef"),
+                )
 
     for directory, source_type, prefix in (
         (REPO_ROOT / "backend/data/visual_extractions", "visual_extraction", "VISUAL-"),
@@ -108,8 +240,14 @@ def _source_registry(source_rows: list[SourceRow]) -> dict[str, set[str]]:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            if isinstance(payload, dict):
-                add(source_type, payload.get("id") or f"{prefix}{path.stem}")
+            file_id = path.stem
+            if isinstance(payload, dict) and file_id in files:
+                registry.add(
+                    file_id,
+                    file_versions[file_id],
+                    source_type,
+                    payload.get("id") or f"{prefix}{file_id}",
+                )
     return registry
 
 
@@ -117,7 +255,9 @@ def _validate_source_entry(
     issues: list[dict[str, Any]],
     path: str,
     value: Any,
-    registry: dict[str, set[str]],
+    registry: SourceRegistry,
+    file_id: str,
+    document_version_id: str,
 ) -> None:
     if not isinstance(value, dict):
         issues.append(_issue(path, "expected_object", actualType=type(value).__name__))
@@ -156,6 +296,9 @@ def _validate_source_entry(
                 )
             )
             return
+        if not source_ids_value:
+            issues.append(_issue(f"{path}.sourceIds", "missing_sources"))
+            return
         effective_ids = [str(item or "") for item in source_ids_value]
         id_path = f"{path}.sourceIds"
     else:
@@ -172,22 +315,42 @@ def _validate_source_entry(
                     sourceId=effective_id,
                 )
             )
-        elif effective_id not in registry.get(source_type, set()):
+        else:
+            resolution_issue = registry.resolution_issue(
+                file_id,
+                document_version_id,
+                source_type,
+                effective_id,
+            )
+            if resolution_issue is None:
+                continue
             issues.append(
                 _issue(
                     current_path,
-                    "unresolved_source_id",
+                    resolution_issue,
                     sourceType=source_type,
                     sourceId=effective_id,
                 )
             )
+    claimed_version = str(value.get("documentVersionId") or "")
+    if claimed_version and claimed_version != document_version_id:
+        issues.append(
+            _issue(
+                f"{path}.documentVersionId",
+                "document_version_mismatch",
+                expectedDocumentVersionId=document_version_id,
+                actualDocumentVersionId=claimed_version,
+            )
+        )
 
 
 def _validate_sources_array(
     issues: list[dict[str, Any]],
     path: str,
     item: Any,
-    registry: dict[str, set[str]],
+    registry: SourceRegistry,
+    file_id: str,
+    document_version_id: str,
 ) -> None:
     if not isinstance(item, dict):
         issues.append(_issue(path, "expected_object", actualType=type(item).__name__))
@@ -199,7 +362,14 @@ def _validate_sources_array(
     if not sources:
         issues.append(_issue(f"{path}.sources", "missing_sources"))
     for index, source in enumerate(sources):
-        _validate_source_entry(issues, f"{path}.sources[{index}]", source, registry)
+        _validate_source_entry(
+            issues,
+            f"{path}.sources[{index}]",
+            source,
+            registry,
+            file_id,
+            document_version_id,
+        )
 
 
 def _rows(connection: psycopg.Connection[Any], tenant_id: str) -> list[SourceRow]:
@@ -217,10 +387,10 @@ def _rows(connection: psycopg.Connection[Any], tenant_id: str) -> list[SourceRow
     ]
 
 
-def _provenance_issues(
-    record: dict[str, Any], registry: dict[str, set[str]]
-) -> list[dict[str, Any]]:
+def _provenance_issues(record: dict[str, Any], registry: SourceRegistry) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
+    file_id = str(record.get("knowledgeFileId") or "")
+    document_version_id = str(record.get("documentVersionId") or "")
     if not str(record.get("sourceFingerprint") or ""):
         issues.append(_issue("sourceFingerprint", "missing_value"))
     for list_name in ("provenance", "history"):
@@ -231,7 +401,14 @@ def _provenance_issues(
         if list_name == "provenance" and not values:
             issues.append(_issue(list_name, "missing_sources"))
         for index, item in enumerate(values):
-            _validate_source_entry(issues, f"{list_name}[{index}]", item, registry)
+            _validate_source_entry(
+                issues,
+                f"{list_name}[{index}]",
+                item,
+                registry,
+                file_id,
+                document_version_id,
+            )
 
     for group_name in _FIELD_GROUPS:
         group = record.get(group_name)
@@ -239,20 +416,41 @@ def _provenance_issues(
             issues.append(_issue(group_name, "expected_object", actualType=type(group).__name__))
             continue
         for key, item in group.items():
-            _validate_sources_array(issues, f"{group_name}.{key}", item, registry)
+            _validate_sources_array(
+                issues,
+                f"{group_name}.{key}",
+                item,
+                registry,
+                file_id,
+                document_version_id,
+            )
     for group_name in _STRUCTURED_GROUPS:
         values = record.get(group_name)
         if not isinstance(values, list):
             issues.append(_issue(group_name, "expected_list", actualType=type(values).__name__))
             continue
         for index, item in enumerate(values):
-            _validate_sources_array(issues, f"{group_name}[{index}]", item, registry)
+            _validate_sources_array(
+                issues,
+                f"{group_name}[{index}]",
+                item,
+                registry,
+                file_id,
+                document_version_id,
+            )
     evidence = record.get("evidence")
     if not isinstance(evidence, list):
         issues.append(_issue("evidence", "expected_list", actualType=type(evidence).__name__))
     else:
         for index, item in enumerate(evidence):
-            _validate_source_entry(issues, f"evidence[{index}]", item, registry)
+            _validate_source_entry(
+                issues,
+                f"evidence[{index}]",
+                item,
+                registry,
+                file_id,
+                document_version_id,
+            )
     return issues
 
 
@@ -390,6 +588,8 @@ def _source_mapping(
                 continue
         elif collection == "business_packs":
             catalog = payload.get("standardCatalog")
+            if catalog is None:
+                continue
             if not isinstance(catalog, list):
                 unresolved.append(
                     {
