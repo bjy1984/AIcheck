@@ -16,15 +16,22 @@ import {
   ElTag
 } from 'element-plus'
 import { getDocumentOfficePreviewApi, getDocumentOriginalBlobApi } from '@/api/aicheck'
-import type { DocumentDetailPayload, OcrSealItem, OcrStructuredTable } from '@/api/aicheck'
+import type {
+  DocumentDetailPayload,
+  KnowledgeFileDetailPayload,
+  OcrSealItem,
+  OcrStructuredTable,
+  StandardCanonicalEvidence
+} from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { formatConfidence } from '@/utils/confidence'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
+import StandardCanonicalDetail from './StandardCanonicalDetail.vue'
 
 const props = defineProps<{
   modelValue: boolean
-  detail?: DocumentDetailPayload
+  detail?: DocumentDetailPayload | KnowledgeFileDetailPayload
   loading: boolean
 }>()
 
@@ -40,6 +47,11 @@ const visible = computed({
 })
 
 const document = computed(() => props.detail?.document)
+const isStandardDocument = computed(() => document.value?.materialTypeCode === 'standard_reference')
+const standardCanonical = computed(() => {
+  if (!isStandardDocument.value) return undefined
+  return (props.detail as KnowledgeFileDetailPayload | undefined)?.canonical
+})
 const currentVersion = computed(() => props.detail?.currentVersion)
 const ocrReadiness = computed(() => props.detail?.document?.ocrReadiness)
 const ocrReadinessLabel = computed(() => {
@@ -268,6 +280,7 @@ type LocatableItem = {
 
 const sideTab = ref('fields')
 const activeLocateKey = ref('')
+const canonicalLocatable = ref<LocatableItem>()
 const previewNaturalSize = ref<{ width: number; height: number } | null>(null)
 
 /** OCR 字段自身不带 bbox，坐标在它 evidenceLinkId 指向的证据链条目上。 */
@@ -499,11 +512,12 @@ const confidenceTone = (item: LocatableItem) => {
 const reviewStatusLabel = (item: LocatableItem) =>
   item.status && !CONFIDENCE_FLAG_STATUSES.includes(String(item.status)) ? item.status : ''
 
-const activeLocatable = computed(() =>
-  [...locatableItems.value, ...structuredLocatables.value].find(
+const activeLocatable = computed(() => {
+  if (canonicalLocatable.value?.key === activeLocateKey.value) return canonicalLocatable.value
+  return [...locatableItems.value, ...structuredLocatables.value].find(
     (item) => item.key === activeLocateKey.value
   )
-)
+})
 
 /** 结构化条目按 key 定位，不必构造完整 LocatableItem。 */
 const toggleLocateKey = (key: string) => {
@@ -545,6 +559,27 @@ const handleLocate = (item: LocatableItem) => {
   activeLocateKey.value = activeLocateKey.value === item.key ? '' : item.key
 }
 
+const handleCanonicalLocate = (evidence: StandardCanonicalEvidence) => {
+  const key = `canonical:${String(
+    evidence.key || evidence.contentHash || evidence.sourceId || evidence.quotedText || 'evidence'
+  )}`
+  if (activeLocateKey.value === key) {
+    activeLocateKey.value = ''
+    canonicalLocatable.value = undefined
+    return
+  }
+  canonicalLocatable.value = {
+    key,
+    label: String(evidence.key || evidence.sourceType || '标准证据'),
+    value: String(evidence.quotedText ?? evidence.value ?? ''),
+    pageNo: evidence.pageNo,
+    bbox: normalizeBbox(evidence.bbox || undefined),
+    confidence: evidence.confidence,
+    kind: 'evidence'
+  }
+  activeLocateKey.value = key
+}
+
 const handlePreviewImageLoad = (event: Event) => {
   const image = event.target as HTMLImageElement
   previewNaturalSize.value = { width: image.naturalWidth, height: image.naturalHeight }
@@ -553,6 +588,7 @@ const handlePreviewImageLoad = (event: Event) => {
 watch(visible, (open) => {
   if (!open) {
     activeLocateKey.value = ''
+    canonicalLocatable.value = undefined
     previewNaturalSize.value = null
     sideTab.value = 'fields'
   }
@@ -683,269 +719,51 @@ watch(visible, (open) => {
 
           <!-- 右侧不再放元数据摘要：核对字段才是主任务，元数据挪进「文件信息」页签 -->
           <div class="detail-side">
+            <StandardCanonicalDetail
+              v-if="standardCanonical"
+              :record="standardCanonical"
+              @locate="handleCanonicalLocate"
+            />
             <ElAlert
-              v-if="ocrReadiness && ocrReadiness.status !== 'ready'"
-              :title="`OCR ${ocrReadinessLabel}`"
-              :description="
-                ocrReadiness.blockingReasons?.[0]?.message || '当前文件暂不能作为可定位的正式证据。'
-              "
+              v-else-if="isStandardDocument"
+              title="暂无标准 canonical 详情"
+              description="当前标准规范尚未生成可追溯的 canonical 记录，请完成重建后再查看结构化详情。"
               type="warning"
               :closable="false"
               show-icon
               class="side-alert"
             />
-            <ElTabs v-model="sideTab" class="side-tabs">
-              <ElTabPane :label="structuredTabLabel" name="fields">
-                <div v-if="structuredIsEmpty" class="side-empty">
-                  <ElEmpty :image-size="60" description="暂无 OCR 结构化内容" />
-                </div>
-                <template v-else>
-                  <ElAlert
-                    v-if="!businessFieldItems.length"
-                    type="warning"
-                    :closable="false"
-                    show-icon
-                    title="未识别出业务字段"
-                    description="只切出了原文片段，没有识别出证书编号、设计压力这类可核对的字段。核对前需人工补录或重跑抽取。"
-                    class="side-alert"
-                  />
-                  <ul v-if="businessFieldItems.length" class="locate-list">
-                    <li
-                      v-for="item in businessFieldItems"
-                      :key="item.key"
-                      :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
-                    >
-                      <button
-                        type="button"
-                        class="locate-button"
-                        :aria-pressed="item.key === activeLocateKey"
-                        @click="handleLocate(item)"
-                      >
-                        <div class="locate-head">
-                          <span class="locate-label">{{ item.label }}</span>
-                          <ElTag
-                            v-if="item.kind === 'evidence'"
-                            size="small"
-                            effect="plain"
-                            type="warning"
-                          >
-                            证据引用
-                          </ElTag>
-                        </div>
-                        <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
-                        <div class="locate-meta">
-                          <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
-                          <span :class="confidenceTone(item)">{{ confidenceSummary(item) }}</span>
-                          <span v-if="reviewStatusLabel(item)">{{ reviewStatusLabel(item) }}</span>
-                          <span v-if="item.bbox" class="locate-badge">可定位</span>
-                        </div>
-                      </button>
-                    </li>
-                  </ul>
-
-                  <!-- 表格：监检核对参数表（焊丝牌号与母材是否匹配等）靠这个 -->
-                  <div v-if="ocrTables.length" class="ocr-section">
-                    <div class="ocr-section-head">
-                      <span class="ocr-section-title">表格 {{ ocrTables.length }} 张</span>
-                    </div>
-                    <div v-for="table in ocrTables" :key="table.tableId" class="ocr-table-card">
-                      <button
-                        type="button"
-                        :class="[
-                          'ocr-table-meta',
-                          'ocr-locate',
-                          { 'is-active': activeLocateKey === `table:${table.tableId}` }
-                        ]"
-                        :aria-pressed="activeLocateKey === `table:${table.tableId}`"
-                        @click="toggleLocateKey(`table:${table.tableId}`)"
-                      >
-                        <span v-if="table.pageNo">第 {{ table.pageNo }} 页</span>
-                        <span v-if="table.rows && table.columns">
-                          {{ table.rows }} 行 × {{ table.columns }} 列
-                        </span>
-                        <ElTag
-                          v-if="table.matchedRequired"
-                          size="small"
-                          type="success"
-                          effect="plain"
-                        >
-                          可作必备表格
-                        </ElTag>
-                        <ElTag
-                          v-else-if="table.candidateOnly"
-                          size="small"
-                          type="info"
-                          effect="plain"
-                        >
-                          候选
-                        </ElTag>
-                        <ElButton
-                          v-if="table.normalizedRows.length"
-                          class="ocr-table-zoom"
-                          text
-                          size="small"
-                          @click.stop="zoomedTable = table"
-                        >
-                          放大
-                        </ElButton>
-                      </button>
-                      <!-- 用 normalizedRows 自己画表，不渲染引擎产出的 html（XSS 面） -->
-                      <div v-if="table.normalizedRows.length" class="ocr-table-scroll">
-                        <table class="ocr-table">
-                          <thead v-if="table.headerReliable !== false">
-                            <tr>
-                              <th v-for="col in table.columnNames" :key="col">{{ col }}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr v-for="(row, index) in table.normalizedRows" :key="index">
-                              <td v-for="col in table.columnNames" :key="col">{{
-                                row[col] || ''
-                              }}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                      <div v-else-if="table.cells.length" class="ocr-table-cells">
-                        {{ table.cells.join(' | ') }}
-                      </div>
-                    </div>
+            <template v-else>
+              <ElAlert
+                v-if="ocrReadiness && ocrReadiness.status !== 'ready'"
+                :title="`OCR ${ocrReadinessLabel}`"
+                :description="
+                  ocrReadiness.blockingReasons?.[0]?.message ||
+                  '当前文件暂不能作为可定位的正式证据。'
+                "
+                type="warning"
+                :closable="false"
+                show-icon
+                class="side-alert"
+              />
+              <ElTabs v-model="sideTab" class="side-tabs">
+                <ElTabPane :label="structuredTabLabel" name="fields">
+                  <div v-if="structuredIsEmpty" class="side-empty">
+                    <ElEmpty :image-size="60" description="暂无 OCR 结构化内容" />
                   </div>
-
-                  <!-- 印章与签名：确认「盖没盖章」的直接依据 -->
-                  <div v-if="ocrSeals.length" class="ocr-section">
-                    <div class="ocr-section-head">
-                      <span class="ocr-section-title">印章 / 签名 {{ ocrSeals.length }} 处</span>
-                    </div>
-
-                    <ul v-if="recognizedSeals.length" class="ocr-seal-list">
-                      <li v-for="seal in recognizedSeals" :key="seal.id">
-                        <button
-                          type="button"
-                          :class="[
-                            'ocr-seal-item',
-                            'ocr-locate',
-                            { 'is-active': activeLocateKey === `seal:${seal.id}` }
-                          ]"
-                          :aria-pressed="activeLocateKey === `seal:${seal.id}`"
-                          @click="toggleLocateKey(`seal:${seal.id}`)"
-                        >
-                          <div class="ocr-seal-head">
-                            <ElTag
-                              size="small"
-                              :type="seal.canSatisfyRequired ? 'success' : 'info'"
-                              effect="plain"
-                            >
-                              {{ sealTypeLabel(seal.sealType) || sealKindLabel(seal.kind) }}
-                            </ElTag>
-                            <span v-if="seal.pageNo" class="ocr-seal-page"
-                              >第 {{ seal.pageNo }} 页</span
-                            >
-                          </div>
-                          <div class="ocr-seal-name">{{ sealDisplayName(seal) }}</div>
-                          <div class="ocr-seal-meta">
-                            <span v-if="evidenceLevelLabel(seal.evidenceLevel)">
-                              {{ evidenceLevelLabel(seal.evidenceLevel) }}
-                            </span>
-                            <span v-if="seal.confidence">{{
-                              confidenceDisplay(seal.confidence)
-                            }}</span>
-                            <span v-if="seal.canSatisfyRequired" class="ocr-seal-ok">
-                              可满足必盖章要求
-                            </span>
-                          </div>
-                        </button>
-                      </li>
-                    </ul>
-
-                    <!-- 视觉检出但文字未识别：是证据，只是要人工看图，不能混进上面 -->
-                    <div v-if="pendingSeals.length" class="ocr-pending">
-                      <div class="ocr-pending-head">
-                        待人工辨认 {{ pendingSeals.length }} 处 · 需对照原图确认
-                      </div>
-                      <div class="ocr-pending-pages">
-                        <button
-                          v-for="seal in pendingSeals"
-                          :key="seal.id"
-                          type="button"
-                          :class="[
-                            'ocr-pending-chip',
-                            { 'is-active': activeLocateKey === `seal:${seal.id}` }
-                          ]"
-                          :aria-pressed="activeLocateKey === `seal:${seal.id}`"
-                          :title="seal.recognitionNote || '检出印章但文字未识别'"
-                          @click="toggleLocateKey(`seal:${seal.id}`)"
-                        >
-                          第 {{ seal.pageNo || '?' }} 页
-                          <!-- 模型读到了字也要显示出来，但必须带上「未核对」。
-                               只显示页码等于把线索藏起来；只显示名字则会被直接采信——
-                               实测同一枚章在四页上被读出四个不同公司名。 -->
-                          <span v-if="seal.name" class="ocr-pending-read">
-                            模型读作「{{ seal.name }}」·未核对
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 正文结构：按阅读顺序，非正文块打类型角标 -->
-                  <div v-if="ocrBlocks.length" class="ocr-section">
-                    <button
-                      type="button"
-                      class="fragment-toggle"
-                      :aria-expanded="blocksExpanded"
-                      @click="blocksExpanded = !blocksExpanded"
-                    >
-                      <span>正文结构 {{ ocrBlocks.length }} 段</span>
-                      <span class="fragment-hint">
-                        {{
-                          ocrStructured?.truncated
-                            ? `共 ${ocrStructured.totalBlockCount} 段，仅显示前 ${ocrBlocks.length} 段`
-                            : '按阅读顺序，含页眉页脚'
-                        }}
-                      </span>
-                      <ElIcon :class="['fragment-chevron', { 'is-open': blocksExpanded }]">
-                        <ArrowDown />
-                      </ElIcon>
-                    </button>
-                    <div v-show="blocksExpanded" class="ocr-block-list">
-                      <button
-                        v-for="block in ocrBlocks"
-                        :key="block.blockId"
-                        type="button"
-                        :class="[
-                          'ocr-block',
-                          'ocr-locate',
-                          { 'is-active': activeLocateKey === `block:${block.blockId}` }
-                        ]"
-                        :aria-pressed="activeLocateKey === `block:${block.blockId}`"
-                        @click="toggleLocateKey(`block:${block.blockId}`)"
-                      >
-                        <span v-if="blockTypeLabel(block.blockType)" class="ocr-block-kind">
-                          {{ blockTypeLabel(block.blockType) }}
-                        </span>
-                        {{ block.text }}
-                        <span v-if="block.pageNo" class="ocr-block-page">P{{ block.pageNo }}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div v-if="fragmentItems.length && !ocrBlocks.length" class="fragment-block">
-                    <button
-                      type="button"
-                      class="fragment-toggle"
-                      :aria-expanded="fragmentsExpanded"
-                      @click="fragmentsExpanded = !fragmentsExpanded"
-                    >
-                      <span>原文片段 {{ fragmentItems.length }} 条</span>
-                      <span class="fragment-hint">未命名的正文切片，非业务字段</span>
-                      <ElIcon :class="['fragment-chevron', { 'is-open': fragmentsExpanded }]">
-                        <ArrowDown />
-                      </ElIcon>
-                    </button>
-                    <ul v-show="fragmentsExpanded" class="locate-list">
+                  <template v-else>
+                    <ElAlert
+                      v-if="!businessFieldItems.length"
+                      type="warning"
+                      :closable="false"
+                      show-icon
+                      title="未识别出业务字段"
+                      description="只切出了原文片段，没有识别出证书编号、设计压力这类可核对的字段。核对前需人工补录或重跑抽取。"
+                      class="side-alert"
+                    />
+                    <ul v-if="businessFieldItems.length" class="locate-list">
                       <li
-                        v-for="item in fragmentItems"
+                        v-for="item in businessFieldItems"
                         :key="item.key"
                         :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
                       >
@@ -955,82 +773,321 @@ watch(visible, (open) => {
                           :aria-pressed="item.key === activeLocateKey"
                           @click="handleLocate(item)"
                         >
+                          <div class="locate-head">
+                            <span class="locate-label">{{ item.label }}</span>
+                            <ElTag
+                              v-if="item.kind === 'evidence'"
+                              size="small"
+                              effect="plain"
+                              type="warning"
+                            >
+                              证据引用
+                            </ElTag>
+                          </div>
                           <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
                           <div class="locate-meta">
                             <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
+                            <span :class="confidenceTone(item)">{{ confidenceSummary(item) }}</span>
+                            <span v-if="reviewStatusLabel(item)">{{
+                              reviewStatusLabel(item)
+                            }}</span>
                             <span v-if="item.bbox" class="locate-badge">可定位</span>
                           </div>
                         </button>
                       </li>
                     </ul>
-                  </div>
-                </template>
-              </ElTabPane>
 
-              <ElTabPane label="文件信息" name="meta">
-                <ElDescriptions :column="1" border size="small">
-                  <ElDescriptionsItem label="文件状态">
-                    <ElTag
-                      :type="getStatusTagType(document.fileStatus)"
-                      size="small"
-                      effect="plain"
-                    >
-                      {{ document.fileStatus }}
-                    </ElTag>
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="OCR 状态">
-                    <ElTag
-                      :type="ocrReadiness?.status === 'ready' ? 'success' : 'warning'"
-                      size="small"
-                    >
-                      {{ ocrReadinessLabel }}
-                    </ElTag>
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="OCR 产物">
-                    {{ ocrReadiness?.fieldCount || 0 }} 字段 ·
-                    {{ ocrReadiness?.fragmentCount || 0 }} 片段 · bbox
-                    {{ Math.round((ocrReadiness?.bboxCoverage || 0) * 100) }}%
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="当前版本">
-                    {{ currentVersion?.versionNo || '-' }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="文件大小">{{ fileSizeText }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="绑定节点">{{ bindings.length }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="Parse Result">
-                    {{ ocrReadiness?.parseResultId || '-' }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </ElTabPane>
+                    <!-- 表格：监检核对参数表（焊丝牌号与母材是否匹配等）靠这个 -->
+                    <div v-if="ocrTables.length" class="ocr-section">
+                      <div class="ocr-section-head">
+                        <span class="ocr-section-title">表格 {{ ocrTables.length }} 张</span>
+                      </div>
+                      <div v-for="table in ocrTables" :key="table.tableId" class="ocr-table-card">
+                        <button
+                          type="button"
+                          :class="[
+                            'ocr-table-meta',
+                            'ocr-locate',
+                            { 'is-active': activeLocateKey === `table:${table.tableId}` }
+                          ]"
+                          :aria-pressed="activeLocateKey === `table:${table.tableId}`"
+                          @click="toggleLocateKey(`table:${table.tableId}`)"
+                        >
+                          <span v-if="table.pageNo">第 {{ table.pageNo }} 页</span>
+                          <span v-if="table.rows && table.columns">
+                            {{ table.rows }} 行 × {{ table.columns }} 列
+                          </span>
+                          <ElTag
+                            v-if="table.matchedRequired"
+                            size="small"
+                            type="success"
+                            effect="plain"
+                          >
+                            可作必备表格
+                          </ElTag>
+                          <ElTag
+                            v-else-if="table.candidateOnly"
+                            size="small"
+                            type="info"
+                            effect="plain"
+                          >
+                            候选
+                          </ElTag>
+                          <ElButton
+                            v-if="table.normalizedRows.length"
+                            class="ocr-table-zoom"
+                            text
+                            size="small"
+                            @click.stop="zoomedTable = table"
+                          >
+                            放大
+                          </ElButton>
+                        </button>
+                        <!-- 用 normalizedRows 自己画表，不渲染引擎产出的 html（XSS 面） -->
+                        <div v-if="table.normalizedRows.length" class="ocr-table-scroll">
+                          <table class="ocr-table">
+                            <thead v-if="table.headerReliable !== false">
+                              <tr>
+                                <th v-for="col in table.columnNames" :key="col">{{ col }}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(row, index) in table.normalizedRows" :key="index">
+                                <td v-for="col in table.columnNames" :key="col">{{
+                                  row[col] || ''
+                                }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        <div v-else-if="table.cells.length" class="ocr-table-cells">
+                          {{ table.cells.join(' | ') }}
+                        </div>
+                      </div>
+                    </div>
 
-              <ElTabPane :label="`历史版本 (${versions.length})`" name="versions">
-                <ElTable :data="versions" border size="small" max-height="100%">
-                  <ElTableColumn prop="versionNo" label="版本" width="70" />
-                  <!-- 每版各自的文件名。文档名保持不变（标识要稳），
+                    <!-- 印章与签名：确认「盖没盖章」的直接依据 -->
+                    <div v-if="ocrSeals.length" class="ocr-section">
+                      <div class="ocr-section-head">
+                        <span class="ocr-section-title">印章 / 签名 {{ ocrSeals.length }} 处</span>
+                      </div>
+
+                      <ul v-if="recognizedSeals.length" class="ocr-seal-list">
+                        <li v-for="seal in recognizedSeals" :key="seal.id">
+                          <button
+                            type="button"
+                            :class="[
+                              'ocr-seal-item',
+                              'ocr-locate',
+                              { 'is-active': activeLocateKey === `seal:${seal.id}` }
+                            ]"
+                            :aria-pressed="activeLocateKey === `seal:${seal.id}`"
+                            @click="toggleLocateKey(`seal:${seal.id}`)"
+                          >
+                            <div class="ocr-seal-head">
+                              <ElTag
+                                size="small"
+                                :type="seal.canSatisfyRequired ? 'success' : 'info'"
+                                effect="plain"
+                              >
+                                {{ sealTypeLabel(seal.sealType) || sealKindLabel(seal.kind) }}
+                              </ElTag>
+                              <span v-if="seal.pageNo" class="ocr-seal-page"
+                                >第 {{ seal.pageNo }} 页</span
+                              >
+                            </div>
+                            <div class="ocr-seal-name">{{ sealDisplayName(seal) }}</div>
+                            <div class="ocr-seal-meta">
+                              <span v-if="evidenceLevelLabel(seal.evidenceLevel)">
+                                {{ evidenceLevelLabel(seal.evidenceLevel) }}
+                              </span>
+                              <span v-if="seal.confidence">{{
+                                confidenceDisplay(seal.confidence)
+                              }}</span>
+                              <span v-if="seal.canSatisfyRequired" class="ocr-seal-ok">
+                                可满足必盖章要求
+                              </span>
+                            </div>
+                          </button>
+                        </li>
+                      </ul>
+
+                      <!-- 视觉检出但文字未识别：是证据，只是要人工看图，不能混进上面 -->
+                      <div v-if="pendingSeals.length" class="ocr-pending">
+                        <div class="ocr-pending-head">
+                          待人工辨认 {{ pendingSeals.length }} 处 · 需对照原图确认
+                        </div>
+                        <div class="ocr-pending-pages">
+                          <button
+                            v-for="seal in pendingSeals"
+                            :key="seal.id"
+                            type="button"
+                            :class="[
+                              'ocr-pending-chip',
+                              { 'is-active': activeLocateKey === `seal:${seal.id}` }
+                            ]"
+                            :aria-pressed="activeLocateKey === `seal:${seal.id}`"
+                            :title="seal.recognitionNote || '检出印章但文字未识别'"
+                            @click="toggleLocateKey(`seal:${seal.id}`)"
+                          >
+                            第 {{ seal.pageNo || '?' }} 页
+                            <!-- 模型读到了字也要显示出来，但必须带上「未核对」。
+                               只显示页码等于把线索藏起来；只显示名字则会被直接采信——
+                               实测同一枚章在四页上被读出四个不同公司名。 -->
+                            <span v-if="seal.name" class="ocr-pending-read">
+                              模型读作「{{ seal.name }}」·未核对
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 正文结构：按阅读顺序，非正文块打类型角标 -->
+                    <div v-if="ocrBlocks.length" class="ocr-section">
+                      <button
+                        type="button"
+                        class="fragment-toggle"
+                        :aria-expanded="blocksExpanded"
+                        @click="blocksExpanded = !blocksExpanded"
+                      >
+                        <span>正文结构 {{ ocrBlocks.length }} 段</span>
+                        <span class="fragment-hint">
+                          {{
+                            ocrStructured?.truncated
+                              ? `共 ${ocrStructured.totalBlockCount} 段，仅显示前 ${ocrBlocks.length} 段`
+                              : '按阅读顺序，含页眉页脚'
+                          }}
+                        </span>
+                        <ElIcon :class="['fragment-chevron', { 'is-open': blocksExpanded }]">
+                          <ArrowDown />
+                        </ElIcon>
+                      </button>
+                      <div v-show="blocksExpanded" class="ocr-block-list">
+                        <button
+                          v-for="block in ocrBlocks"
+                          :key="block.blockId"
+                          type="button"
+                          :class="[
+                            'ocr-block',
+                            'ocr-locate',
+                            { 'is-active': activeLocateKey === `block:${block.blockId}` }
+                          ]"
+                          :aria-pressed="activeLocateKey === `block:${block.blockId}`"
+                          @click="toggleLocateKey(`block:${block.blockId}`)"
+                        >
+                          <span v-if="blockTypeLabel(block.blockType)" class="ocr-block-kind">
+                            {{ blockTypeLabel(block.blockType) }}
+                          </span>
+                          {{ block.text }}
+                          <span v-if="block.pageNo" class="ocr-block-page"
+                            >P{{ block.pageNo }}</span
+                          >
+                        </button>
+                      </div>
+                    </div>
+
+                    <div v-if="fragmentItems.length && !ocrBlocks.length" class="fragment-block">
+                      <button
+                        type="button"
+                        class="fragment-toggle"
+                        :aria-expanded="fragmentsExpanded"
+                        @click="fragmentsExpanded = !fragmentsExpanded"
+                      >
+                        <span>原文片段 {{ fragmentItems.length }} 条</span>
+                        <span class="fragment-hint">未命名的正文切片，非业务字段</span>
+                        <ElIcon :class="['fragment-chevron', { 'is-open': fragmentsExpanded }]">
+                          <ArrowDown />
+                        </ElIcon>
+                      </button>
+                      <ul v-show="fragmentsExpanded" class="locate-list">
+                        <li
+                          v-for="item in fragmentItems"
+                          :key="item.key"
+                          :class="['locate-item', { 'is-active': item.key === activeLocateKey }]"
+                        >
+                          <button
+                            type="button"
+                            class="locate-button"
+                            :aria-pressed="item.key === activeLocateKey"
+                            @click="handleLocate(item)"
+                          >
+                            <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
+                            <div class="locate-meta">
+                              <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
+                              <span v-if="item.bbox" class="locate-badge">可定位</span>
+                            </div>
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
+                  </template>
+                </ElTabPane>
+
+                <ElTabPane label="文件信息" name="meta">
+                  <ElDescriptions :column="1" border size="small">
+                    <ElDescriptionsItem label="文件状态">
+                      <ElTag
+                        :type="getStatusTagType(document.fileStatus)"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ document.fileStatus }}
+                      </ElTag>
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="OCR 状态">
+                      <ElTag
+                        :type="ocrReadiness?.status === 'ready' ? 'success' : 'warning'"
+                        size="small"
+                      >
+                        {{ ocrReadinessLabel }}
+                      </ElTag>
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="OCR 产物">
+                      {{ ocrReadiness?.fieldCount || 0 }} 字段 ·
+                      {{ ocrReadiness?.fragmentCount || 0 }} 片段 · bbox
+                      {{ Math.round((ocrReadiness?.bboxCoverage || 0) * 100) }}%
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="当前版本">
+                      {{ currentVersion?.versionNo || '-' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="文件大小">{{ fileSizeText }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="绑定节点">{{ bindings.length }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="Parse Result">
+                      {{ ocrReadiness?.parseResultId || '-' }}
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                </ElTabPane>
+
+                <ElTabPane :label="`历史版本 (${versions.length})`" name="versions">
+                  <ElTable :data="versions" border size="small" max-height="100%">
+                    <ElTableColumn prop="versionNo" label="版本" width="70" />
+                    <!-- 每版各自的文件名。文档名保持不变（标识要稳），
                        但替换之后「这一版换进去的是哪个文件」必须看得见——
                        否则界面上还是原来那个名字，用户无从确认换对了没有。 -->
-                  <ElTableColumn label="文件" min-width="160" show-overflow-tooltip>
-                    <template #default="{ row }">
-                      {{ row.fileName || document.fileName }}
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn
-                    prop="uploaderName"
-                    label="上传人"
-                    width="90"
-                    show-overflow-tooltip
-                  />
-                  <ElTableColumn prop="uploadTime" label="上传时间" min-width="150" />
-                  <ElTableColumn label="当前" width="70">
-                    <template #default="{ row }">
-                      <ElTag v-if="row.isCurrent" type="success" size="small" effect="plain">
-                        当前
-                      </ElTag>
-                      <span v-else>-</span>
-                    </template>
-                  </ElTableColumn>
-                </ElTable>
-              </ElTabPane>
-            </ElTabs>
+                    <ElTableColumn label="文件" min-width="160" show-overflow-tooltip>
+                      <template #default="{ row }">
+                        {{ row.fileName || document.fileName }}
+                      </template>
+                    </ElTableColumn>
+                    <ElTableColumn
+                      prop="uploaderName"
+                      label="上传人"
+                      width="90"
+                      show-overflow-tooltip
+                    />
+                    <ElTableColumn prop="uploadTime" label="上传时间" min-width="150" />
+                    <ElTableColumn label="当前" width="70">
+                      <template #default="{ row }">
+                        <ElTag v-if="row.isCurrent" type="success" size="small" effect="plain">
+                          当前
+                        </ElTag>
+                        <span v-else>-</span>
+                      </template>
+                    </ElTableColumn>
+                  </ElTable>
+                </ElTabPane>
+              </ElTabs>
+            </template>
           </div>
         </div>
       </template>
