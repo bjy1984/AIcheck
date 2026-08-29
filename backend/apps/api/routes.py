@@ -9447,7 +9447,15 @@ def ai_recheck(
                 request,
             )
         repo.state["ai_runs"].insert(0, run)
-        dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
+        # 自动审查（每上传自动分析）的派发发生在持有 auto-review-periodic 锁的
+        # 周期任务里。inline 编排会在锁内同步跑完整审查（含 LLM），锁被长期占用
+        # → 后续 beat 全 duplicate_inflight → 自动派发永久卡死（2026-08-29 实测）。
+        # 自动路径强制异步：锁只保护「建 run+入队」，审查在 worker 里跑。
+        # 判据用 autoReviewPolicyRevision——只有自动审查会带它。
+        auto_review_dispatch = body.get("autoReviewPolicyRevision") is not None
+        dispatch = task_dispatcher.dispatch_ai_recheck(
+            project_id, node_id, run_id, force_async=auto_review_dispatch
+        )
         if dispatch.get("status") == "failed_to_start":
             run["status"] = "失败"
             run["errorCode"] = str(dispatch.get("errorCode") or "TASK_DISPATCH_UNAVAILABLE")

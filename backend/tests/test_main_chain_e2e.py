@@ -310,7 +310,7 @@ def test_main_chain_upload_review_return_rectify_pass(monkeypatch) -> None:
     monkeypatch.setattr(
         task_dispatcher,
         "dispatch_ai_recheck",
-        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+        lambda project_id, node_id, run_id, **_kwargs: {"mode": "test", "taskId": f"TEST-{run_id}"},
     )
     run = ok(
         client.post(

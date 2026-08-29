@@ -382,8 +382,20 @@ def ai_recheck_dispatch_readiness(
     return cached_review_dispatch_readiness(dependency_provider=dependency_provider)
 
 
-def dispatch_ai_recheck(project_id: str, node_id: int, run_id: str) -> dict[str, Any]:
+def dispatch_ai_recheck(
+    project_id: str, node_id: int, run_id: str, *, force_async: bool = False
+) -> dict[str, Any]:
     orchestration_mode = os.getenv("AICHECK_REVIEW_ORCHESTRATION", "legacy").strip().lower() or "legacy"
+    # 自动审查（每上传自动分析）走 force_async：它的派发发生在周期任务
+    # auto_review_start_pending_candidates 里，而那个任务持着 auto-review-periodic
+    # 锁。若在锁内同步跑完整 inline 审查（含 LLM，单节点几十秒、多节点串行），
+    # 锁被长期占用 → 后续每个 beat 周期全 duplicate_inflight → 自动派发永久卡死
+    # 且无自愈（2026-08-29 生产实测）。异步入队让锁快速释放，审查在 worker 里跑。
+    if force_async and dispatch_mode() == "celery":
+        from apps.worker.tasks import ai_recheck
+
+        result = ai_recheck.delay(project_id, node_id, run_id)
+        return {"mode": "celery", "taskId": result.id, "forcedAsync": True}
     if orchestration_mode in {"temporal", "inline"}:
         from libs.review_orchestrator import dispatch_review_run
 

@@ -263,7 +263,7 @@ def test_manual_full_review_creates_parent_and_node_child_runs(monkeypatch) -> N
     monkeypatch.setattr(
         task_dispatcher,
         "dispatch_ai_recheck",
-        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+        lambda project_id, node_id, run_id, **_kwargs: {"mode": "test", "taskId": f"TEST-{run_id}"},
     )
 
     result = _ok(
