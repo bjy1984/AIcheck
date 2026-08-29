@@ -581,12 +581,18 @@ def canonical_item_searchable_text(category: str, item: dict[str, Any]) -> str:
     if category == "equations":
         return item_text or str(item.get("latex") or "").strip()
     if category == "tables":
-        safe_structure = [
-            item.get("caption"),
-            item.get("columnNames") or [],
-            item.get("normalizedRows") or [],
-            item.get("cells") or [],
-        ]
+        safe_structure = {
+            key: value
+            for key, value in {
+                "caption": str(item.get("caption") or "").strip(),
+                "columnNames": item.get("columnNames") or [],
+                "normalizedRows": item.get("normalizedRows") or [],
+                "cells": item.get("cells") or [],
+            }.items()
+            if value
+        }
+        if not item_text and not safe_structure:
+            return ""
         structured_text = json.dumps(
             safe_structure,
             ensure_ascii=False,
@@ -615,9 +621,13 @@ def knowledge_file_enabled(file: dict[str, Any], source: dict[str, Any]) -> bool
 
 
 def is_standard_knowledge_file(file: dict[str, Any]) -> bool:
-    return bool(file) and (
-        file.get("sourceType") == "standard"
-        or file.get("sourceId") == "KS-STANDARD-RULES"
+    if not file:
+        return False
+    source_type = str(file.get("sourceType") or "").strip()
+    if source_type:
+        return source_type == "standard"
+    return (
+        file.get("sourceId") == "KS-STANDARD-RULES"
         or file.get("contextType") == "standard_reference"
     )
 
@@ -836,13 +846,24 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
     for link in state.get("evidence_links", []) or []:
         if not isinstance(link, dict) or link.get("objectType") != "knowledgeClause":
             continue
-        target_file_id = link.get("fileId") or clause_file_ids.get(
+        target_clause = clauses_by_id.get(str(link.get("objectId") or "")) or {}
+        clause_file_id = target_clause.get("fileId") or clause_file_ids.get(
             str(link.get("objectId") or "")
         )
+        if clause_file_id and link.get("fileId") and link.get("fileId") != clause_file_id:
+            continue
+        target_file_id = clause_file_id or link.get("fileId")
+        file = files_by_id.get(str(target_file_id or "")) or {}
+        identity_conflict = any(
+            link.get(key)
+            and (target_clause.get(key) or file.get(key))
+            and link.get(key) != (target_clause.get(key) or file.get(key))
+            for key in ("documentId", "documentVersionId")
+        )
+        if identity_conflict:
+            continue
         if str(target_file_id or "") in canonical_file_ids:
             continue
-        target_clause = clauses_by_id.get(str(link.get("objectId") or "")) or {}
-        file = files_by_id.get(str(target_file_id or "")) or {}
         source = sources_by_id.get(file.get("sourceId")) or {}
         if file and not knowledge_file_enabled(file, source):
             continue

@@ -181,6 +181,32 @@ def test_disabled_standard_evidence_link_cannot_bypass_file_or_source_policy() -
         assert knowledge_clause_candidates(state) == []
 
 
+def test_evidence_link_cannot_override_disabled_target_clause_file() -> None:
+    state = retrieval_state_with_canonical_conflict()
+    state["standard_knowledge_records"] = []
+    state["knowledge_files"][0]["indexEnabled"] = False
+    state["knowledge_files"].append(
+        {
+            "id": "KF-STALE-ENABLED",
+            "sourceType": "standard",
+            "indexEnabled": True,
+            "documentVersionId": "KDV-STALE-ENABLED",
+        }
+    )
+    state["evidence_links"] = [
+        {
+            "id": "EL-STALE-FILE",
+            "objectType": "knowledgeClause",
+            "objectId": "KC-OLD",
+            "fileId": "KF-STALE-ENABLED",
+            "documentVersionId": "KDV-STALE-ENABLED",
+            "quotedText": "发布日期 2014-01-01",
+        }
+    ]
+
+    assert knowledge_clause_candidates(state) == []
+
+
 def test_empty_or_malformed_canonical_record_keeps_old_fallback_searchable() -> None:
     for clauses in ([], [{"text": "没有稳定标识的异常条款"}]):
         state = retrieval_state_with_canonical_conflict()
@@ -259,6 +285,33 @@ def test_project_file_canonical_record_is_rejected_without_suppressing_chunk() -
     assert canonical_clause_candidates(state) == []
     assert [item["clauseId"] for item in candidates] == ["CHK-PROJECT-ONLY"]
     assert candidates[0]["text"] == "项目文件厚度要求 12 mm"
+
+
+def test_explicit_project_source_type_overrides_legacy_standard_hints() -> None:
+    state = retrieval_state_with_canonical_conflict()
+    state["knowledge_files"] = [
+        {
+            "id": "KF-KB-TEST",
+            "sourceType": "project-file",
+            "sourceId": "KS-STANDARD-RULES",
+            "contextType": "standard_reference",
+            "documentVersionId": "KDV-TEST-V1",
+        }
+    ]
+    state["knowledge_clauses"] = []
+    state["knowledge_chunks"] = [
+        {
+            "id": "CHK-EXPLICIT-PROJECT",
+            "fileId": "KF-KB-TEST",
+            "text": "项目文件设计温度 180 ℃",
+            "contextType": "project_material",
+        }
+    ]
+
+    candidates = knowledge_clause_candidates(state)
+
+    assert canonical_clause_candidates(state) == []
+    assert [item["clauseId"] for item in candidates] == ["CHK-EXPLICIT-PROJECT"]
 
 
 def test_kb_version_filters_by_knowledge_source_version() -> None:
@@ -376,6 +429,18 @@ def test_structured_only_table_and_equation_build_safe_searchable_text() -> None
         {"row": 0, "column": 0, "text": "厚度"}
     ]
     assert "tableHtml" not in selected_table
+
+
+def test_id_only_canonical_table_is_rejected_and_keeps_old_clause_fallback() -> None:
+    state = retrieval_state_with_canonical_conflict()
+    record = state["standard_knowledge_records"][0]
+    record["clauses"] = []
+    record["tables"] = [{"id": "SKI-TABLE-ID-ONLY", "authority": "current"}]
+
+    assert canonical_clause_candidates(state) == []
+    assert [
+        item["clauseId"] for item in knowledge_clause_candidates(state)
+    ] == ["KC-OLD"]
 
 
 def test_canonical_relations_are_projected_as_stable_retrieval_candidates() -> None:
