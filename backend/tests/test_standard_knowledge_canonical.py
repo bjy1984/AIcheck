@@ -259,6 +259,7 @@ def test_build_record_uses_new_values_and_keeps_old_only_information(tmp_path):
 
     assert record["kbVersion"] == "inspection_kb@test"
     assert record["canonicalVersion"] == "standard-knowledge-canonical@1"
+    assert record["activeParseResultId"] == "PARSE-NEW"
     assert record["identity"]["standardCode"]["value"] == "NB/T 47013.10-2015"
     assert record["version"]["publicationDate"]["value"] == "2015-04-02"
     assert record["version"]["publicationDate"]["selectedSourceId"] == "PARSE-NEW"

@@ -544,6 +544,8 @@ def build_standard_knowledge_record(
         "documentVersionId": sources["version"]["id"],
         "canonicalVersion": CANONICAL_VERSION,
         "kbVersion": kb_version,
+        "activeParseResultId": (sources.get("newParse") or {}).get("parseResultId")
+        or (sources.get("newParse") or {}).get("id"),
         "contextType": context_type,
         "identity": identity,
         "version": version,

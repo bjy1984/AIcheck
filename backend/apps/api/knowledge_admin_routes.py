@@ -867,6 +867,131 @@ def canonical_detail_summary(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def canonical_active_parse_result_id(record: dict[str, Any]) -> str | None:
+    active_parse_result_id = str(record.get("activeParseResultId") or "").strip()
+    if active_parse_result_id:
+        return active_parse_result_id
+    for source in [*(record.get("history") or []), *(record.get("provenance") or [])]:
+        if source.get("sourceType") != "new_mineru":
+            continue
+        parse_result_id = str(source.get("parseResultId") or source.get("sourceId") or "").strip()
+        if parse_result_id:
+            return parse_result_id
+    return None
+
+
+def canonical_source_authority(record: dict[str, Any], source: dict[str, Any]) -> str:
+    source_id = str(source.get("sourceId") or "")
+    if source_id and source_id == canonical_active_parse_result_id(record):
+        return "current"
+    for group_name in ("identity", "version", "metadata"):
+        for field in (record.get(group_name) or {}).values():
+            if field.get("selectedSourceId") == source_id:
+                return str(field.get("authority") or "current")
+    for group_name in (
+        "sections",
+        "clauses",
+        "blocks",
+        "tables",
+        "equations",
+        "images",
+        "seals",
+        "normativeReferences",
+        "replacementRelations",
+        "businessRelations",
+    ):
+        for item in record.get(group_name) or []:
+            if item.get("selectedSourceId") == source_id:
+                return str(item.get("authority") or "current")
+    if source.get("sourceType") == "legacy_ocr":
+        return "legacy_only"
+    return "supporting"
+
+
+def normalized_canonical_scope_value(value: Any) -> str:
+    return re.sub(r"[\s/_-]+", "", str(value or "")).casefold()
+
+
+def canonical_item_matches_scope(
+    item: dict[str, Any], *, page_no: int | None, section: str | None, require_location: bool
+) -> bool:
+    if page_no is not None:
+        item_page_no = item.get("pageNo")
+        if item_page_no is None:
+            if require_location:
+                return False
+        elif item_page_no != page_no:
+            return False
+    if section is None:
+        return True
+    normalized_section = normalized_canonical_scope_value(section)
+    section_path = item.get("sectionPath") or []
+    if not isinstance(section_path, list):
+        section_path = [section_path]
+    section_values = [
+        item.get("section"),
+        item.get("sectionId"),
+        item.get("id"),
+        item.get("title"),
+        item.get("clauseNo"),
+        *section_path,
+        "/".join(str(value) for value in section_path),
+    ]
+    return normalized_section in {
+        normalized_canonical_scope_value(value) for value in section_values if value is not None
+    }
+
+
+def scoped_canonical_sources(
+    sources: list[Any], *, page_no: int | None, section: str | None
+) -> list[Any]:
+    if page_no is None and section is None:
+        return repo.clone(sources)
+    return [
+        repo.clone(source)
+        for source in sources
+        if isinstance(source, dict)
+        and canonical_item_matches_scope(
+            source, page_no=page_no, section=section, require_location=True
+        )
+    ]
+
+
+def scoped_canonical_provenance(
+    provenance: list[Any], *, page_no: int | None, section: str | None
+) -> list[Any]:
+    scoped_provenance = []
+    for source in provenance:
+        if not isinstance(source, dict):
+            continue
+        if not canonical_item_matches_scope(
+            source, page_no=page_no, section=section, require_location=False
+        ):
+            continue
+        scoped_source = repo.clone(source)
+        raw_tables = scoped_source.get("rawTables")
+        if isinstance(raw_tables, list):
+            scoped_source["rawTables"] = [
+                repo.clone(table)
+                for table in raw_tables
+                if isinstance(table, dict)
+                and canonical_item_matches_scope(
+                    table, page_no=page_no, section=section, require_location=True
+                )
+            ]
+        raw_locator = scoped_source.get("rawLocator")
+        if isinstance(raw_locator, dict) and not canonical_item_matches_scope(
+            raw_locator, page_no=page_no, section=section, require_location=True
+        ):
+            scoped_source.pop("rawLocator", None)
+        if "quotedText" in scoped_source and not canonical_item_matches_scope(
+            scoped_source, page_no=page_no, section=section, require_location=True
+        ):
+            scoped_source.pop("quotedText", None)
+        scoped_provenance.append(scoped_source)
+    return scoped_provenance
+
+
 def scoped_standard_canonical(
     record: dict[str, Any],
     *,
@@ -879,6 +1004,13 @@ def scoped_standard_canonical(
     scoped = repo.clone(record)
     if not include_blocks:
         scoped.pop("blocks", None)
+        if section is None and page_no is None:
+            scoped["evidence"] = []
+            for source in scoped.get("provenance") or []:
+                if isinstance(source, dict):
+                    source.pop("rawTables", None)
+                    source.pop("rawLocator", None)
+                    source.pop("quotedText", None)
     if not include_history:
         scoped.pop("history", None)
 
@@ -905,20 +1037,29 @@ def scoped_standard_canonical(
         for item in items:
             if not isinstance(item, dict):
                 continue
-            if page_no is not None and item.get("pageNo") != page_no:
+            if not canonical_item_matches_scope(
+                item, page_no=page_no, section=section, require_location=True
+            ):
                 continue
-            if section is not None:
-                section_values = {
-                    str(item.get("section") or ""),
-                    str(item.get("sectionId") or ""),
-                    str(item.get("id") or ""),
-                    str(item.get("title") or ""),
-                    str(item.get("clauseNo") or ""),
-                }
-                if section not in section_values:
-                    continue
-            filtered.append(item)
+            scoped_item = repo.clone(item)
+            if isinstance(scoped_item.get("sources"), list):
+                scoped_item["sources"] = scoped_canonical_sources(
+                    scoped_item["sources"], page_no=page_no, section=section
+                )
+            filtered.append(scoped_item)
         scoped[key] = filtered
+    for group_name in ("identity", "version", "metadata"):
+        for field in (scoped.get(group_name) or {}).values():
+            if isinstance(field, dict) and isinstance(field.get("sources"), list):
+                field["sources"] = scoped_canonical_sources(
+                    field["sources"], page_no=page_no, section=section
+                )
+    scoped["evidence"] = scoped_canonical_sources(
+        list(scoped.get("evidence") or []), page_no=page_no, section=section
+    )
+    scoped["provenance"] = scoped_canonical_provenance(
+        list(scoped.get("provenance") or []), page_no=page_no, section=section
+    )
     return scoped
 
 
@@ -963,7 +1104,7 @@ def knowledge_file_canonical_source(request: Request, file_id: str, source_id: s
     )
     if not source:
         return fail(errors.NOT_FOUND, request, message="未找到规范化记录来源。")
-    return ok(repo.clone(source), request)
+    return ok({**repo.clone(source), "authority": canonical_source_authority(record, source)}, request)
 
 
 @router.get("/knowledge/files/{file_id}")
@@ -978,7 +1119,7 @@ def knowledge_file_detail(request: Request, file_id: str):
         {
             "canonical": compact_standard_canonical(canonical),
             "canonicalSummary": canonical_detail_summary(canonical),
-            "activeParseResultId": canonical.get("activeParseResultId"),
+            "activeParseResultId": canonical_active_parse_result_id(canonical),
             "completeness": repo.clone(canonical.get("completeness") or {}),
         }
         if canonical

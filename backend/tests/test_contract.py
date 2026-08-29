@@ -184,6 +184,109 @@ def test_canonical_endpoint_scopes_response_without_mutating_persisted_record() 
     assert [item["id"] for item in record["blocks"]] == ["BLOCK-PAGE-1", "BLOCK-PAGE-2"]
 
 
+def test_canonical_endpoint_scopes_nested_evidence_and_provenance_by_page() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    page_one_evidence = {
+        "sourceId": "PARSE-OLD",
+        "sourceType": "legacy_ocr",
+        "pageNo": 1,
+        "quotedText": "page one full quoted text",
+    }
+    page_seven_evidence = {
+        "sourceId": "PARSE-NEW",
+        "sourceType": "new_mineru",
+        "pageNo": 7,
+        "quotedText": "page seven quoted text",
+    }
+    record.update(
+        {
+            "blocks": [
+                {"id": "BLOCK-PAGE-1", "pageNo": 1, "sources": [page_one_evidence]},
+                {"id": "BLOCK-PAGE-7", "pageNo": 7, "sources": [page_seven_evidence]},
+            ],
+            "evidence": [page_one_evidence, page_seven_evidence],
+            "provenance": [
+                {
+                    "sourceId": "PARSE-MIXED",
+                    "sourceType": "new_mineru",
+                    "rawTables": [
+                        {"pageNo": 1, "text": "page one raw table"},
+                        {"pageNo": 7, "text": "page seven raw table"},
+                    ],
+                }
+            ],
+        }
+    )
+
+    scoped = assert_ok(
+        client.get("/api/knowledge/files/KF-KB-TEST/canonical?includeBlocks=false&pageNo=7")
+    )
+    blocks_hidden = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical?includeBlocks=false"))
+    detail = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST"))
+
+    assert "blocks" not in scoped
+    assert [item["pageNo"] for item in scoped["evidence"]] == [7]
+    assert scoped["provenance"][0]["rawTables"] == [{"pageNo": 7, "text": "page seven raw table"}]
+    assert "page one full quoted text" not in str(scoped)
+    assert "page one raw table" not in str(scoped)
+    assert "quoted text" not in str(blocks_hidden["evidence"])
+    assert "raw table" not in str(blocks_hidden["provenance"])
+    assert not {
+        "sections",
+        "clauses",
+        "blocks",
+        "tables",
+        "equations",
+        "images",
+        "seals",
+        "evidence",
+        "provenance",
+    }.intersection(detail["canonical"])
+    assert "rawTables" not in str(detail["canonical"])
+
+
+def test_canonical_endpoint_matches_normalized_section_path_membership() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    repo.state["standard_knowledge_records"][0]["blocks"] = [
+        {"id": "BLOCK-OTHER", "pageNo": 1, "sectionPath": ["General"]},
+        {"id": "BLOCK-TARGET", "pageNo": 7, "sectionPath": ["Chapter 1", " Scope "]},
+    ]
+
+    data = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical?section=scope"))
+
+    assert [item["id"] for item in data["blocks"]] == ["BLOCK-TARGET"]
+
+
+def test_file_detail_derives_active_parse_result_id_from_canonical_history() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    record.pop("activeParseResultId")
+    record["history"].append({"sourceId": "PARSE-NEW", "sourceType": "new_mineru"})
+
+    data = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST"))
+
+    assert data["activeParseResultId"] == "PARSE-NEW"
+
+
+def test_canonical_source_endpoint_derives_source_authority() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    record["history"] = [
+        {"sourceId": "PARSE-OLD", "sourceType": "legacy_ocr"},
+        {"sourceId": "PARSE-NEW", "sourceType": "new_mineru"},
+        {"sourceId": "VISUAL-1", "sourceType": "visual_extraction"},
+    ]
+
+    legacy = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical/sources/PARSE-OLD"))
+    current = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical/sources/PARSE-NEW"))
+    supporting = assert_ok(client.get("/api/knowledge/files/KF-KB-TEST/canonical/sources/VISUAL-1"))
+
+    assert legacy["authority"] == "legacy_only"
+    assert current["authority"] == "current"
+    assert supporting["authority"] == "supporting"
+
+
 def test_project_document_endpoints_use_detached_latest_read_view(monkeypatch) -> None:
     project_id = "P-2026-GDLNG-002"
     from libs.db.repository import InMemoryRepository
