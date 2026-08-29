@@ -56,13 +56,42 @@ CRITICAL_QUALITY_FLAG_HINTS = (
     "not_found",
 )
 
+CANONICAL_IDENTITY_KEYS = (
+    "canonicalRecordId",
+    "canonicalItemId",
+    "canonicalVersion",
+    "sourceFingerprint",
+)
+
+
+def is_canonical_clause(clause: dict[str, Any]) -> bool:
+    return any(clause.get(key) for key in CANONICAL_IDENTITY_KEYS)
+
+
+def clause_formal_evidence_eligible(clause: dict[str, Any]) -> bool:
+    if not is_canonical_clause(clause):
+        return clause.get("formalEvidenceEligible") is True
+    return (
+        clause.get("authority") == "current"
+        and all(clause.get(key) for key in CANONICAL_IDENTITY_KEYS)
+        and clause.get("formalEvidenceEligible") is not False
+    )
+
 
 def canonical_grounding_metadata(clauses: list[dict[str, Any]]) -> dict[str, Any]:
     canonical = [
-        item for item in clauses if isinstance(item, dict) and item.get("canonicalRecordId")
+        item for item in clauses if isinstance(item, dict) and is_canonical_clause(item)
     ]
     legacy = [item for item in canonical if item.get("authority") == "legacy_only"]
-    current = [item for item in canonical if item.get("authority") != "legacy_only"]
+    current = [item for item in canonical if clause_formal_evidence_eligible(item)]
+    noncanonical = [
+        item
+        for item in clauses
+        if isinstance(item, dict)
+        and not is_canonical_clause(item)
+        and clause_formal_evidence_eligible(item)
+    ]
+    formal_ready = bool(current or noncanonical)
 
     def values(key: str) -> list[str]:
         return sorted({str(item[key]) for item in canonical if item.get(key)})
@@ -73,8 +102,65 @@ def canonical_grounding_metadata(clauses: list[dict[str, Any]]) -> dict[str, Any
         "canonicalVersions": values("canonicalVersion"),
         "canonicalSourceFingerprints": values("sourceFingerprint"),
         "legacySupplementalCount": len(legacy),
-        "formalEvidenceReady": bool(current),
-        "blockingReasons": [] if current or not legacy else ["CANONICAL_LEGACY_ONLY_EVIDENCE"],
+        "formalEvidenceReady": formal_ready,
+        "blockingReasons": (
+            [] if formal_ready or not legacy else ["CANONICAL_LEGACY_ONLY_EVIDENCE"]
+        ),
+    }
+
+
+def merge_canonical_grounding_metadata(
+    existing: dict[str, Any],
+    canonical_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    list_keys = (
+        "canonicalRecordIds",
+        "canonicalItemIds",
+        "canonicalVersions",
+        "canonicalSourceFingerprints",
+    )
+    existing_ready = (
+        existing.get("formalEvidenceReady") is True
+        if "formalEvidenceReady" in existing
+        else existing.get("groundingStatus") == "grounded"
+    )
+    formal_ready = bool(
+        existing_ready or canonical_metadata.get("formalEvidenceReady")
+    )
+    existing_reasons = list(existing.get("blockingReasons") or [])
+    reasons = [
+        reason
+        for reason in existing_reasons
+        if (
+            reason.get("code") if isinstance(reason, dict) else reason
+        )
+        != "CANONICAL_LEGACY_ONLY_EVIDENCE"
+    ]
+    if (
+        not formal_ready
+        and "CANONICAL_LEGACY_ONLY_EVIDENCE"
+        in (canonical_metadata.get("blockingReasons") or [])
+    ):
+        reasons.append("CANONICAL_LEGACY_ONLY_EVIDENCE")
+    return {
+        **canonical_metadata,
+        **{
+            key: sorted(
+                {
+                    str(value)
+                    for source in (existing, canonical_metadata)
+                    for value in source.get(key) or []
+                    if value
+                }
+            )
+            for key in list_keys
+        },
+        "legacySupplementalCount": max(
+            int(existing.get("legacySupplementalCount") or 0),
+            int(canonical_metadata.get("legacySupplementalCount") or 0),
+        ),
+        "formalEvidenceReady": formal_ready,
+        "blockingReasons": reasons,
     }
 
 

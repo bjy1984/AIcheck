@@ -46,7 +46,10 @@ from libs.review_grounding import (
     apply_grounding_guardrails,
     build_grounded_review_input,
     canonical_grounding_metadata,
+    clause_formal_evidence_eligible,
     grounding_prompt_block,
+    is_canonical_clause,
+    merge_canonical_grounding_metadata,
 )
 from libs.review_orchestrator import shard_execution
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
@@ -2492,8 +2495,21 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context["retrievalTraces"] = [trace]
         context["knowledgeClauses"] = retrieval["clauses"]
         grounding_input = context.setdefault("groundingInput", {})
-        grounding_input.update(canonical_metadata)
-        grounding_input.setdefault("summary", {}).update(canonical_metadata)
+        grounding_summary = grounding_input.setdefault("summary", {})
+        existing_metadata = {
+            **grounding_summary,
+            **{
+                key: value
+                for key, value in grounding_input.items()
+                if key != "summary"
+            },
+        }
+        merged_metadata = merge_canonical_grounding_metadata(
+            existing_metadata,
+            canonical_metadata,
+        )
+        grounding_input.update(merged_metadata)
+        grounding_summary.update(merged_metadata)
         append_tool_call(
             review_run,
             node_key,
@@ -2547,6 +2563,10 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             context.get("findingDrafts") or [],
             context.get("ruleResults") or [],
             context.get("retrievalTraces") or [],
+            formal_review=(
+                str(review_run.get("reviewMode") or "formal") == "formal"
+                and not bool(review_run.get("advisoryOnly"))
+            ),
         )
         context.setdefault("validationResults", {})[node_key] = result
         return result
@@ -3424,21 +3444,27 @@ def validate_review_references(
     drafts: list[dict[str, Any]],
     rule_results: list[dict[str, Any]],
     retrieval_traces: list[dict[str, Any]],
+    *,
+    formal_review: bool = True,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     rule_codes = {str(item.get("ruleCode")) for item in rule_results if isinstance(item, dict) and item.get("ruleCode")}
     trace_ids = {str(item.get("retrievalTraceId") or item.get("id")) for item in retrieval_traces if isinstance(item, dict)}
-    clause_ids_by_trace = {
-        str(item.get("retrievalTraceId") or item.get("id")): {
-            str(clause.get("clauseId"))
-            for clause in item.get("selectedClauses") or []
-            if isinstance(clause, dict) and clause.get("clauseId")
-        }
-        for item in retrieval_traces
-        if isinstance(item, dict)
-    }
+    clauses_by_trace: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for trace in retrieval_traces:
+        if not isinstance(trace, dict):
+            continue
+        trace_id = str(trace.get("retrievalTraceId") or trace.get("id") or "")
+        if not trace_id:
+            continue
+        trace_catalog = clauses_by_trace.setdefault(trace_id, {})
+        for clause in trace.get("selectedClauses") or []:
+            if not isinstance(clause, dict) or not clause.get("clauseId"):
+                continue
+            trace_catalog.setdefault(str(clause["clauseId"]), []).append(clause)
     checked_refs = 0
+    canonical_citation_count = 0
     for draft_index, draft in enumerate(drafts):
         rule_refs = draft.get("ruleRefs") if isinstance(draft.get("ruleRefs"), list) else []
         kb_refs = draft.get("kbRefs") if isinstance(draft.get("kbRefs"), list) else []
@@ -3446,6 +3472,7 @@ def validate_review_references(
             failures.append({"code": "MISSING_RULE_REFS", "index": draft_index})
         if not kb_refs:
             warnings.append({"code": "MISSING_KB_REFS", "index": draft_index})
+        cited_clauses: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for ref_index, ref in enumerate(rule_refs):
             checked_refs += 1
             if not isinstance(ref, dict):
@@ -3464,18 +3491,54 @@ def validate_review_references(
             trace_id = ref.get("retrievalTraceId")
             if trace_id and str(trace_id) not in trace_ids:
                 failures.append({"code": "KB_RETRIEVAL_TRACE_NOT_FOUND", "index": draft_index, "refIndex": ref_index, "retrievalTraceId": trace_id})
-            allowed_clause_ids = clause_ids_by_trace.get(str(trace_id), set()) if trace_id else set()
+            trace_catalog = clauses_by_trace.get(str(trace_id), {}) if trace_id else {}
+            allowed_clause_ids = set(trace_catalog)
             for clause_id in ref.get("clauseIds") or []:
-                if allowed_clause_ids and str(clause_id) not in allowed_clause_ids:
+                if str(clause_id) not in allowed_clause_ids:
                     failures.append({"code": "KB_CLAUSE_NOT_IN_TRACE", "index": draft_index, "refIndex": ref_index, "clauseId": clause_id})
+                    continue
+                if str(clause_id) in trace_catalog:
+                    cited_clauses[(str(trace_id), str(clause_id))] = trace_catalog[
+                        str(clause_id)
+                    ]
             if not ref.get("kbVersion"):
                 failures.append({"code": "KB_REF_MISSING_VERSION", "index": draft_index, "refIndex": ref_index})
+        canonical_citations = {
+            key: variants
+            for key, variants in cited_clauses.items()
+            if any(is_canonical_clause(clause) for clause in variants)
+        }
+        canonical_citation_count += len(canonical_citations)
+        usable_citation_basis = any(
+            (
+                all(
+                    clause_formal_evidence_eligible(clause)
+                    for clause in variants
+                    if is_canonical_clause(clause)
+                )
+                if any(is_canonical_clause(clause) for clause in variants)
+                else any(clause_formal_evidence_eligible(clause) for clause in variants)
+            )
+            for variants in cited_clauses.values()
+        )
+        if formal_review and canonical_citations and not usable_citation_basis:
+            failures.append(
+                {
+                    "code": "CANONICAL_LEGACY_ONLY_EVIDENCE",
+                    "index": draft_index,
+                    "clauseIds": sorted({clause_id for _, clause_id in canonical_citations}),
+                }
+            )
     return validation_payload(
         passed=not failures,
         checked=checked_refs,
         failures=failures,
         warnings=warnings,
-        metrics={"ruleResultCount": len(rule_results), "retrievalTraceCount": len(retrieval_traces)},
+        metrics={
+            "ruleResultCount": len(rule_results),
+            "retrievalTraceCount": len(retrieval_traces),
+            "canonicalCitationCount": canonical_citation_count,
+        },
     )
 
 
@@ -4328,6 +4391,10 @@ def confirmed_findings_for_human_decision(
                 for item in repo.state.get("retrieval_traces", [])
                 if item.get("reviewRunId") == review_run.get("reviewRunId")
             ],
+            formal_review=(
+                str(review_run.get("reviewMode") or "formal") == "formal"
+                and not bool(review_run.get("advisoryOnly"))
+            ),
         )
         if not reference_validation.get("passed"):
             return [], {
