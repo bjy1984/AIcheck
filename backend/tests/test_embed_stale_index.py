@@ -55,3 +55,21 @@ def test_embed_skips_when_a_continuation_chain_is_in_flight() -> None:
     # 判据要看断点进度，不能只看任务状态（状态可能停留在旧值）
     assert "embeddingCheckpoint" in body
     assert "nextOffset" in body
+
+
+def test_aggregation_force_refreshes_batch_records() -> None:
+    """汇总前必须强制刷新批次记录。
+
+    前面的批次由其他 worker 进程写入并 flush 到库，本进程内存里那份
+    可能是加载时的旧快照。ensure_collections_loaded 只在「从未加载」时补拉，
+    集合已加载但内容陈旧时它什么都不做——于是汇总读到 0 条批次，
+    产出 0 个向量，判「数量不匹配」整份失败
+    （2026-08-29 实测：chunks=143 批次=0，向量数据其实完好）。
+    """
+    source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
+    body = source.split("def embed_knowledge", 1)[1][:8000]
+    assert "refresh_collections_incrementally" in body, "汇总前必须强制刷新批次记录"
+    # 刷新必须在读取 all_batches 之前
+    refresh_pos = body.index("refresh_collections_incrementally")
+    read_pos = body.index("all_batches = sorted")
+    assert refresh_pos < read_pos, "刷新必须先于读取"

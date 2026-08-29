@@ -4438,6 +4438,12 @@ def embed_knowledge(
                     "totalChunks": len(chunks),
                     "taskId": continuation.id,
                 }
+            # 汇总前必须**强制刷新**批次记录：前面的批次由其他 worker 进程写入
+            # 并 flush 到库，本进程内存里那份可能是加载时的旧快照。
+            # ensure_collections_loaded 只在「从未加载」时补拉，集合已加载但内容
+            # 陈旧时它什么都不做——于是 all_batches 为空，汇总出 0 条向量，
+            # 判「数量不匹配」整份失败（2026-08-29 实测：chunks=143 批次=0）。
+            repo.refresh_collections_incrementally({"knowledge_embedding_batches"})
             all_batches = sorted(
                 [item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") == file_id],
                 key=lambda item: int(item.get("offset") or 0),
