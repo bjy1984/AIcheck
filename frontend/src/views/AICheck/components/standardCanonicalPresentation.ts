@@ -3,7 +3,9 @@ import type {
   StandardCanonicalContentItem,
   StandardCanonicalEvidence,
   StandardCanonicalField,
+  StandardCanonicalContentGroup,
   StandardKnowledgeRecord,
+  StandardKnowledgeRecordScoped,
   StandardKnowledgeRecordSummary
 } from '@/api/aicheck'
 import { normalizeBbox } from '@/utils/bboxHighlight'
@@ -188,17 +190,36 @@ export const canonicalFieldLocateEvidence = (
 export const canonicalAuthorityBadge = (authority: StandardCanonicalContentItem['authority']) =>
   authority === 'legacy_only' ? 'legacy_only' : ''
 
-export const canonicalLocateKey = (evidence: StandardCanonicalEvidence) =>
-  [
-    'canonical',
-    evidence.key || 'item',
-    evidence.sourceId || 'source',
-    evidence.contentHash || evidence.parseResultId || 'evidence',
-    evidence.pageNo || 'page',
-    normalizeBbox(evidence.bbox)?.join(',') || 'bbox'
-  ]
-    .map((value) => encodeURIComponent(String(value)))
-    .join(':')
+const canonicalValueText = (value: unknown) => {
+  if (value === undefined) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+const shortStableHash = (value: string) => {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+export const canonicalLocateKey = (evidence: StandardCanonicalEvidence) => {
+  const material = JSON.stringify({
+    ownerKey: evidence.key ?? '',
+    sourceId: evidence.sourceId ?? '',
+    pageNo: evidence.pageNo ?? '',
+    bbox: normalizeBbox(evidence.bbox) ?? [],
+    contentHash: evidence.contentHash ?? '',
+    text: evidence.quotedText ?? canonicalValueText(evidence.value)
+  })
+  return `canonical:${encodeURIComponent(String(evidence.key ?? ''))}:${shortStableHash(material)}`
+}
 
 export type CanonicalSectionKey = 'structure' | 'tables' | 'relations' | 'history'
 export type CanonicalArrayKey =
@@ -218,6 +239,7 @@ export type CanonicalTabQuery = {
   section: CanonicalSectionKey
   arrays: CanonicalArrayKey[]
   params: {
+    contentGroup: StandardCanonicalContentGroup
     includeBlocks: boolean
     includeHistory: boolean
   }
@@ -227,22 +249,22 @@ const CANONICAL_TAB_QUERIES: Record<CanonicalSectionKey, CanonicalTabQuery> = {
   structure: {
     section: 'structure',
     arrays: ['sections', 'clauses', 'blocks'],
-    params: { includeBlocks: true, includeHistory: false }
+    params: { contentGroup: 'structure', includeBlocks: true, includeHistory: false }
   },
   tables: {
     section: 'tables',
     arrays: ['tables', 'equations', 'images', 'seals'],
-    params: { includeBlocks: false, includeHistory: false }
+    params: { contentGroup: 'tables', includeBlocks: false, includeHistory: false }
   },
   relations: {
     section: 'relations',
     arrays: ['normativeReferences', 'replacementRelations', 'businessRelations'],
-    params: { includeBlocks: false, includeHistory: false }
+    params: { contentGroup: 'relations', includeBlocks: false, includeHistory: false }
   },
   history: {
     section: 'history',
     arrays: ['history'],
-    params: { includeBlocks: false, includeHistory: true }
+    params: { contentGroup: 'history', includeBlocks: false, includeHistory: true }
   }
 }
 
@@ -251,7 +273,7 @@ export const canonicalTabQuery = (tab: string): CanonicalTabQuery | undefined =>
 
 export const canonicalSectionPayload = (
   query: CanonicalTabQuery,
-  record: StandardKnowledgeRecord
+  record: StandardKnowledgeRecordScoped
 ): StandardKnowledgeRecord => {
   const payload: StandardKnowledgeRecord = {
     ...record,
@@ -272,7 +294,7 @@ export const canonicalSectionPayload = (
   for (const key of query.arrays) {
     if (key === 'history') payload.history = record.history
     else if (key === 'blocks') payload.blocks = record.blocks
-    else Object.assign(payload, { [key]: record[key] })
+    else Object.assign(payload, { [key]: record[key] || [] })
   }
   return payload
 }
@@ -303,8 +325,53 @@ const emptyCanonicalSectionLoad = (): CanonicalSectionLoad => ({
   requestId: 0
 })
 
-export const canonicalDetailFileKey = (documentId?: string, knowledgeFileId?: string) =>
-  `${String(documentId || '')}:${String(knowledgeFileId || '')}`
+type CanonicalGenerationRecord = Pick<
+  StandardKnowledgeRecord | StandardKnowledgeRecordSummary,
+  'knowledgeFileId' | 'documentVersionId' | 'sourceFingerprint' | 'canonicalVersion' | 'kbVersion'
+> & { documentId?: string }
+
+export const canonicalDetailIdentity = (
+  record: CanonicalGenerationRecord,
+  fallbackDocumentId?: string
+) =>
+  [
+    record.documentId || fallbackDocumentId,
+    record.knowledgeFileId,
+    record.documentVersionId,
+    record.sourceFingerprint,
+    record.canonicalVersion,
+    record.kbVersion
+  ]
+    .map((value) => encodeURIComponent(String(value || '')))
+    .join(':')
+
+export const canonicalLocationAfterIdentityChange = <T>(
+  location: T | undefined,
+  previousIdentity: string,
+  nextIdentity: string
+): T | undefined => (previousIdentity === nextIdentity ? location : undefined)
+
+export const CANONICAL_BLOCK_BATCH_SIZE = 120
+
+export const canonicalBlockPage = <T>(
+  blocks: readonly T[],
+  requestedLimit = CANONICAL_BLOCK_BATCH_SIZE
+) => {
+  const total = blocks.length
+  const visibleCount = Math.min(total, Math.max(0, Math.floor(requestedLimit)))
+  return {
+    items: blocks.slice(0, visibleCount),
+    visibleCount,
+    total,
+    hasMore: visibleCount < total
+  }
+}
+
+export const canonicalNextBlockLimit = (
+  currentLimit: number,
+  total: number,
+  batchSize = CANONICAL_BLOCK_BATCH_SIZE
+) => Math.min(Math.max(0, total), Math.max(batchSize, currentLimit + batchSize))
 
 export const createCanonicalDetailLoadState = (
   fileKey: string,

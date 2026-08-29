@@ -14,7 +14,7 @@ import mimetypes
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Header, Query, Request
@@ -1123,6 +1123,7 @@ def scoped_standard_canonical(
     include_history: bool,
     section: str | None,
     page_no: int | None,
+    content_group: Literal["structure", "tables", "relations", "history"] | None = None,
 ) -> dict[str, Any]:
     """Clone and filter response content without changing the persisted canonical record."""
     scoped = repo.clone(record)
@@ -1133,7 +1134,7 @@ def scoped_standard_canonical(
         scoped.pop("history", None)
 
     if section is None and page_no is None:
-        return scoped
+        return canonical_content_group_scope(scoped, content_group)
 
     content_keys = (
         "sections",
@@ -1196,6 +1197,73 @@ def scoped_standard_canonical(
         section=section,
         allowed_evidence_keys=scoped_parent_evidence_keys if section is not None else None,
     )
+    return canonical_content_group_scope(scoped, content_group)
+
+
+CANONICAL_CONTENT_KEYS = (
+    "sections",
+    "clauses",
+    "blocks",
+    "tables",
+    "equations",
+    "images",
+    "seals",
+    "normativeReferences",
+    "replacementRelations",
+    "businessRelations",
+)
+CANONICAL_CONTENT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
+    "structure": ("sections", "clauses", "blocks"),
+    "tables": ("tables", "equations", "images", "seals"),
+    "relations": ("normativeReferences", "replacementRelations", "businessRelations"),
+    "history": (),
+}
+
+
+def canonical_content_group_scope(
+    scoped: dict[str, Any],
+    content_group: Literal["structure", "tables", "relations", "history"] | None,
+) -> dict[str, Any]:
+    """Keep one UI group and evidence originating from its retained canonical items."""
+    if content_group is None:
+        return scoped
+    included_keys = CANONICAL_CONTENT_GROUP_KEYS[content_group]
+    for key in CANONICAL_CONTENT_KEYS:
+        if key not in included_keys:
+            scoped.pop(key, None)
+
+    if content_group == "history":
+        scoped.pop("evidence", None)
+        history_source_ids = canonical_source_ids(list(scoped.get("history") or []))
+        scoped["provenance"] = [
+            item
+            for item in scoped.get("provenance") or []
+            if isinstance(item, dict) and str(item.get("sourceId") or "") in history_source_ids
+        ]
+        return scoped
+
+    scoped.pop("history", None)
+    retained_evidence_keys = canonical_content_evidence_keys(scoped, included_keys)
+    retained_source_ids = canonical_content_source_ids(scoped, included_keys)
+    scoped["evidence"] = [
+        item
+        for item in scoped.get("evidence") or []
+        if isinstance(item, dict) and canonical_evidence_key(item) in retained_evidence_keys
+    ]
+    retained_provenance = []
+    for item in scoped.get("provenance") or []:
+        if not isinstance(item, dict):
+            continue
+        source_id = str(item.get("sourceId") or "")
+        exact_item = canonical_evidence_key(item) in retained_evidence_keys
+        source_summary = not item.get("contentHash") and not item.get("quotedText")
+        if not exact_item and not (source_summary and source_id in retained_source_ids):
+            continue
+        retained_item = repo.clone(item)
+        if content_group != "tables":
+            retained_item.pop("rawTables", None)
+        retained_provenance.append(retained_item)
+    scoped["provenance"] = retained_provenance
     return scoped
 
 
@@ -1205,6 +1273,9 @@ def knowledge_file_canonical(
     file_id: str,
     include_blocks: bool = Query(default=True, alias="includeBlocks"),
     include_history: bool = Query(default=True, alias="includeHistory"),
+    content_group: Literal["structure", "tables", "relations", "history"] | None = Query(
+        default=None, alias="contentGroup"
+    ),
     section: str | None = None,
     page_no: int | None = Query(default=None, alias="pageNo"),
 ):
@@ -1221,6 +1292,7 @@ def knowledge_file_canonical(
             include_history=include_history,
             section=section,
             page_no=page_no,
+            content_group=content_group,
         ),
         request,
     )

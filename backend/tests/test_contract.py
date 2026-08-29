@@ -373,6 +373,86 @@ def test_canonical_endpoint_hides_only_block_derived_data_when_blocks_are_omitte
     assert data["provenance"][1]["rawLocator"]["pageNo"] == 7
 
 
+def test_canonical_endpoint_content_groups_exclude_unrelated_arrays_and_sources() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    content_groups = {
+        "structure": ("sections", "clauses", "blocks"),
+        "tables": ("tables", "equations", "images", "seals"),
+        "relations": (
+            "normativeReferences",
+            "replacementRelations",
+            "businessRelations",
+        ),
+    }
+    all_content_keys = tuple(key for keys in content_groups.values() for key in keys)
+    evidence_by_key = {
+        key: {
+            "sourceId": f"SOURCE-{key}",
+            "sourceType": "new_mineru",
+            "contentHash": f"hash-{key}",
+            "pageNo": 1,
+            "quotedText": key,
+        }
+        for key in all_content_keys
+    }
+    for key, evidence in evidence_by_key.items():
+        record[key] = [{"id": f"ITEM-{key}", "pageNo": 1, "sources": [evidence]}]
+    history_source = {"sourceId": "SOURCE-history", "sourceType": "legacy_ocr"}
+    record["history"] = [history_source]
+    record["evidence"] = list(evidence_by_key.values())
+    record["provenance"] = [
+        {**evidence, "capabilities": [key]} for key, evidence in evidence_by_key.items()
+    ] + [{**history_source, "capabilities": ["history"]}]
+
+    for content_group, included_keys in content_groups.items():
+        data = assert_ok(
+            client.get(
+                f"/api/knowledge/files/KF-KB-TEST/canonical?contentGroup={content_group}"
+            )
+        )
+
+        assert set(included_keys).issubset(data)
+        assert not (set(all_content_keys) - set(included_keys)).intersection(data)
+        assert "history" not in data
+        assert {item["sourceId"] for item in data["evidence"]} == {
+            f"SOURCE-{key}" for key in included_keys
+        }
+        assert {item["sourceId"] for item in data["provenance"]} == {
+            f"SOURCE-{key}" for key in included_keys
+        }
+
+    history = assert_ok(
+        client.get("/api/knowledge/files/KF-KB-TEST/canonical?contentGroup=history")
+    )
+    assert "history" in history
+    assert not set(all_content_keys).intersection(history)
+    assert "evidence" not in history
+    assert [item["sourceId"] for item in history["provenance"]] == ["SOURCE-history"]
+
+
+def test_canonical_content_group_preserves_include_compatibility() -> None:
+    seed_canonical_record("KF-KB-TEST")
+    record = repo.state["standard_knowledge_records"][0]
+    record["blocks"] = [{"id": "BLOCK-1", "sources": []}]
+
+    structure = assert_ok(
+        client.get(
+            "/api/knowledge/files/KF-KB-TEST/canonical"
+            "?contentGroup=structure&includeBlocks=false"
+        )
+    )
+    history = assert_ok(
+        client.get(
+            "/api/knowledge/files/KF-KB-TEST/canonical"
+            "?contentGroup=history&includeHistory=false"
+        )
+    )
+
+    assert "blocks" not in structure
+    assert "history" not in history
+
+
 def test_file_detail_derives_active_parse_result_id_from_canonical_history() -> None:
     seed_canonical_record("KF-KB-TEST")
     record = repo.state["standard_knowledge_records"][0]

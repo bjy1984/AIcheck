@@ -28,7 +28,11 @@ import { formatConfidence } from '@/utils/confidence'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
 import StandardCanonicalDetail from './StandardCanonicalDetail.vue'
-import { canonicalLocateKey } from './standardCanonicalPresentation'
+import {
+  canonicalDetailIdentity,
+  canonicalLocateKey,
+  canonicalLocationAfterIdentityChange
+} from './standardCanonicalPresentation'
 
 const props = defineProps<{
   modelValue: boolean
@@ -53,6 +57,11 @@ const standardCanonical = computed(() => {
   if (!isStandardDocument.value) return undefined
   return (props.detail as KnowledgeFileDetailPayload | undefined)?.canonical
 })
+const canonicalGenerationIdentity = computed(() =>
+  standardCanonical.value
+    ? canonicalDetailIdentity(standardCanonical.value, document.value?.id)
+    : `document:${encodeURIComponent(String(document.value?.id || ''))}`
+)
 const currentVersion = computed(() => props.detail?.currentVersion)
 const ocrReadiness = computed(() => props.detail?.document?.ocrReadiness)
 const ocrReadinessLabel = computed(() => {
@@ -594,12 +603,17 @@ watch(visible, (open) => {
 })
 
 watch(
-  () => [props.detail?.document.id, standardCanonical.value?.knowledgeFileId] as const,
-  () => {
+  canonicalGenerationIdentity,
+  (nextIdentity, previousIdentity) => {
+    canonicalLocatable.value = canonicalLocationAfterIdentityChange(
+      canonicalLocatable.value,
+      previousIdentity,
+      nextIdentity
+    )
     activeLocateKey.value = ''
-    canonicalLocatable.value = undefined
     previewNaturalSize.value = null
-  }
+  },
+  { flush: 'sync' }
 )
 </script>
 

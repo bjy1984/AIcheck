@@ -5,10 +5,13 @@ import type { StandardCanonicalContentItem, StandardKnowledgeRecord } from '@/ap
 import {
   beginCanonicalSectionLoad,
   canonicalAuthorityBadge,
+  canonicalBlockPage,
   canonicalCompletenessRows,
-  canonicalDetailFileKey,
+  canonicalDetailIdentity,
   canonicalItemLocateEvidence,
+  canonicalLocationAfterIdentityChange,
   canonicalLocateKey,
+  canonicalNextBlockLimit,
   canonicalOverviewRows,
   canonicalSectionPayload,
   canonicalTabQuery,
@@ -124,22 +127,22 @@ assert.equal(canonicalTabQuery('completeness'), undefined)
 assert.deepEqual(canonicalTabQuery('structure'), {
   section: 'structure',
   arrays: ['sections', 'clauses', 'blocks'],
-  params: { includeBlocks: true, includeHistory: false }
+  params: { contentGroup: 'structure', includeBlocks: true, includeHistory: false }
 })
 assert.deepEqual(canonicalTabQuery('tables'), {
   section: 'tables',
   arrays: ['tables', 'equations', 'images', 'seals'],
-  params: { includeBlocks: false, includeHistory: false }
+  params: { contentGroup: 'tables', includeBlocks: false, includeHistory: false }
 })
 assert.deepEqual(canonicalTabQuery('relations'), {
   section: 'relations',
   arrays: ['normativeReferences', 'replacementRelations', 'businessRelations'],
-  params: { includeBlocks: false, includeHistory: false }
+  params: { contentGroup: 'relations', includeBlocks: false, includeHistory: false }
 })
 assert.deepEqual(canonicalTabQuery('history'), {
   section: 'history',
   arrays: ['history'],
-  params: { includeBlocks: false, includeHistory: true }
+  params: { contentGroup: 'history', includeBlocks: false, includeHistory: true }
 })
 
 const conflictingLocationItem: StandardCanonicalContentItem = {
@@ -181,6 +184,11 @@ assert.notEqual(
   canonicalLocateKey({ key: 'FIELD-CODE', sourceId: 'PARSE-NEW', pageNo: 1 }),
   canonicalLocateKey({ key: 'FIELD-CODE', sourceId: 'PARSE-OLD', pageNo: 1 })
 )
+assert.notEqual(
+  canonicalLocateKey({ key: 'FIELD-CODE', pageNo: 1, quotedText: '新识别值' }),
+  canonicalLocateKey({ key: 'FIELD-CODE', pageNo: 1, value: '冲突旧值' }),
+  '缺少 sourceId/contentHash 的冲突值仍必须产生不同定位 key'
+)
 
 const completeness = {
   overall: 'partial' as const,
@@ -198,7 +206,27 @@ assert.deepEqual(canonicalCompletenessRows(completeness)[0], {
   reason: '标准编号或标准名称不完整；缺少字段：标准编号、标准名称'
 })
 
-const fileA = canonicalDetailFileKey('DOC-A', 'KF-A')
+const recordGenerationOne = {
+  ...record,
+  knowledgeFileId: 'KF-A',
+  documentId: 'DOC-A',
+  documentVersionId: 'DV-A',
+  sourceFingerprint: 'sha256:generation-one',
+  canonicalVersion: 'standard-knowledge-canonical@1',
+  kbVersion: 'kb-v1'
+}
+const recordGenerationTwo = {
+  ...recordGenerationOne,
+  sourceFingerprint: 'sha256:generation-two'
+}
+const fileA = canonicalDetailIdentity(recordGenerationOne, 'DOC-A')
+const regeneratedFileA = canonicalDetailIdentity(recordGenerationTwo, 'DOC-A')
+assert.notEqual(fileA, regeneratedFileA)
+assert.equal(
+  canonicalLocationAfterIdentityChange({ key: 'canonical:old-location' }, fileA, regeneratedFileA),
+  undefined,
+  '同文件 canonical fingerprint 变化时必须清空已选定位'
+)
 let loadState = createCanonicalDetailLoadState(fileA)
 const structureStart = beginCanonicalSectionLoad(loadState, 'structure')
 loadState = structureStart.state
@@ -213,7 +241,7 @@ loadState = historyStart.state
 assert.equal(loadState.sections.history.loading, true)
 assert.equal(loadState.sections.structure.loading, false)
 assert.equal(loadState.sections.structure.error, '章节失败')
-const fileBState = resetCanonicalDetailLoadState(loadState, canonicalDetailFileKey('DOC-B', 'KF-B'))
+const fileBState = resetCanonicalDetailLoadState(loadState, regeneratedFileA)
 assert.equal(fileBState.sections.structure.data, undefined)
 assert.equal(fileBState.sections.structure.error, '')
 assert.equal(fileBState.sections.history.loading, false)
@@ -235,6 +263,14 @@ assert.equal(tablePayload.tables.length, 1)
 assert.equal(tablePayload.sections.length, 0)
 assert.equal(tablePayload.clauses.length, 0)
 assert.equal(tablePayload.blocks, undefined)
+
+const fiveThousandBlocks = Array.from({ length: 5000 }, (_, index) => ({ id: `BLOCK-${index}` }))
+const initialBlockPage = canonicalBlockPage(fiveThousandBlocks)
+assert.equal(initialBlockPage.items.length, 120)
+assert.equal(initialBlockPage.hasMore, true)
+assert.equal(canonicalNextBlockLimit(initialBlockPage.visibleCount, initialBlockPage.total), 240)
+assert.equal(canonicalNextBlockLimit(4920, 5000), 5000)
+assert.equal(canonicalNextBlockLimit(5000, 5000), 5000)
 
 const component = readFileSync(
   fileURLToPath(new URL('./components/StandardCanonicalDetail.vue', import.meta.url)),
@@ -266,6 +302,13 @@ for (const tab of ['structure', 'tables', 'relations', 'history']) {
 }
 assert.match(component, /getKnowledgeFileCanonicalApi/, '全集必须通过 canonical API 获取')
 assert.match(component, /@tab-change="handleTabChange"/, '全集 API 必须由页签打开事件触发')
+assert.match(component, /v-for="item in visibleBlocks"/, '正文块必须只实例化当前渐进窗口')
+assert.match(component, />\s*加载更多\s*</, '正文块必须提供加载更多入口')
+assert.doesNotMatch(
+  component,
+  /v-for="item in structureRecord\.blocks"/,
+  '不得一次实例化全部正文块'
+)
 assert.doesNotMatch(
   component,
   /onMounted\([^)]*getKnowledgeFileCanonicalApi/s,
@@ -287,8 +330,8 @@ assert.ok(projectFallback > canonicalStart, '项目资料 OCR 界面必须放在
 assert.ok(projectWarning > projectFallback, '项目资料告警只能出现在非标准文档分支')
 assert.match(
   dialog,
-  /props\.detail\?\.document\.id[\s\S]{0,300}standardCanonical\.value\?\.knowledgeFileId/,
-  '文件切换时必须同时按 documentId 和 knowledgeFileId 清理定位状态'
+  /canonicalDetailIdentity\(standardCanonical\.value, document\.value\?\.id\)/,
+  '文件定位状态必须使用与分区缓存相同的 canonical generation identity'
 )
 assert.match(
   overview,

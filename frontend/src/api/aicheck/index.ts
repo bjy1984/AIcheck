@@ -448,6 +448,8 @@ export type StandardCanonicalSource = StandardCanonicalHistory & {
 export type StandardKnowledgeRecord = {
   id: string
   knowledgeFileId: string
+  documentId?: string
+  documentVersionId?: string
   canonicalVersion: string
   kbVersion?: string
   sourceFingerprint?: string
@@ -469,6 +471,27 @@ export type StandardKnowledgeRecord = {
   provenance: StandardCanonicalProvenance[]
   history?: StandardCanonicalHistory[]
 }
+
+export type StandardCanonicalContentGroup = 'structure' | 'tables' | 'relations' | 'history'
+type StandardCanonicalScopedArrayKey =
+  | 'sections'
+  | 'clauses'
+  | 'blocks'
+  | 'tables'
+  | 'equations'
+  | 'images'
+  | 'seals'
+  | 'normativeReferences'
+  | 'replacementRelations'
+  | 'businessRelations'
+  | 'evidence'
+  | 'provenance'
+  | 'history'
+export type StandardKnowledgeRecordScoped = Omit<
+  StandardKnowledgeRecord,
+  StandardCanonicalScopedArrayKey
+> &
+  Partial<Pick<StandardKnowledgeRecord, StandardCanonicalScopedArrayKey>>
 
 export type StandardKnowledgeRecordSummary = Pick<
   StandardKnowledgeRecord,
@@ -4413,10 +4436,11 @@ export const getKnowledgeFileCanonicalApi = (
   params?: {
     includeBlocks?: boolean
     includeHistory?: boolean
+    contentGroup?: StandardCanonicalContentGroup
     section?: string
     pageNo?: number
   }
-): Promise<IResponse<StandardKnowledgeRecord>> => {
+): Promise<IResponse<StandardKnowledgeRecordScoped>> => {
   return request.get({
     url: `/api/knowledge/files/${encodeURIComponent(fileId)}/canonical`,
     params

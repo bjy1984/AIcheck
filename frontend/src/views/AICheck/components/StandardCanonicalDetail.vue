@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   ElAlert,
+  ElButton,
   ElCollapse,
   ElCollapseItem,
   ElEmpty,
@@ -20,13 +21,16 @@ import {
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import ClauseContent from '@/components/ClauseContent/src/ClauseContent.vue'
 import {
+  CANONICAL_BLOCK_BATCH_SIZE,
   CANONICAL_FIELD_LABELS,
   beginCanonicalSectionLoad,
   canonicalAuthorityBadge,
+  canonicalBlockPage,
   canonicalCompletenessRows,
-  canonicalDetailFileKey,
+  canonicalDetailIdentity,
   canonicalFieldLocateEvidence,
   canonicalItemLocateEvidence,
+  canonicalNextBlockLimit,
   canonicalOverviewRows,
   canonicalSectionPayload,
   canonicalTabQuery,
@@ -49,15 +53,18 @@ const emit = defineEmits<{
 
 const activeTab = ref('overview')
 const sourcePanels = ref<string[]>([])
-const fileKey = computed(() =>
-  canonicalDetailFileKey(props.documentId, props.record.knowledgeFileId)
-)
+const blockVisibleLimit = ref(CANONICAL_BLOCK_BATCH_SIZE)
+const fileKey = computed(() => canonicalDetailIdentity(props.record, props.documentId))
 const loadState = ref(createCanonicalDetailLoadState(fileKey.value))
 const structureLoad = computed(() => loadState.value.sections.structure)
 const tablesLoad = computed(() => loadState.value.sections.tables)
 const relationsLoad = computed(() => loadState.value.sections.relations)
 const historyLoad = computed(() => loadState.value.sections.history)
 const structureRecord = computed(() => structureLoad.value.data)
+const blockPage = computed(() =>
+  canonicalBlockPage(structureRecord.value?.blocks || [], blockVisibleLimit.value)
+)
+const visibleBlocks = computed(() => blockPage.value.items)
 const tablesRecord = computed(() => tablesLoad.value.data)
 const relationsRecord = computed(() => relationsLoad.value.data)
 const historyRecord = computed(() => historyLoad.value.data)
@@ -129,6 +136,10 @@ const tableColumns = (item: StandardCanonicalContentItem) => {
   return firstRow ? Object.keys(firstRow) : []
 }
 
+const showMoreBlocks = () => {
+  blockVisibleLimit.value = canonicalNextBlockLimit(blockVisibleLimit.value, blockPage.value.total)
+}
+
 const loadCanonical = async (tab: string) => {
   const query = canonicalTabQuery(tab)
   if (
@@ -167,6 +178,7 @@ watch(
   () => {
     loadState.value = resetCanonicalDetailLoadState(loadState.value, fileKey.value)
     activeTab.value = 'overview'
+    blockVisibleLimit.value = CANONICAL_BLOCK_BATCH_SIZE
     sourcePanels.value = []
   },
   { flush: 'sync' }
@@ -298,9 +310,9 @@ watch(
               </button>
             </div>
             <div v-if="structureRecord.blocks?.length" class="canonical-section">
-              <div class="canonical-section-title">正文 {{ structureRecord.blocks.length }} 段</div>
+              <div class="canonical-section-title">正文 {{ blockPage.total }} 段</div>
               <button
-                v-for="item in structureRecord.blocks"
+                v-for="item in visibleBlocks"
                 :key="item.id"
                 type="button"
                 class="content-card"
@@ -320,6 +332,9 @@ watch(
                 <span>{{ item.text }}</span>
                 <small v-if="item.pageNo">第 {{ item.pageNo }} 页</small>
               </button>
+              <ElButton v-if="blockPage.hasMore" plain size="small" @click="showMoreBlocks">
+                加载更多
+              </ElButton>
             </div>
             <ElEmpty
               v-if="
