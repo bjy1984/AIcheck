@@ -479,9 +479,29 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
             structure[key] = value
     columns = candidate.get("tableColumns")
     rows = candidate.get("tableRows")
-    if isinstance(columns, list) and isinstance(rows, list) and columns:
-        structure["tableColumns"] = [str(item) for item in columns]
-        structure["tableRows"] = [dict(row) for row in rows if isinstance(row, dict)]
+    normalized_rows = (
+        [dict(row) for row in rows if isinstance(row, dict)]
+        if isinstance(rows, list)
+        else None
+    )
+    normalized_columns = (
+        [str(item) for item in columns] if isinstance(columns, list) else []
+    )
+    if not normalized_columns and normalized_rows:
+        seen_columns: set[str] = set()
+        for row in normalized_rows:
+            for key in row:
+                column = str(key)
+                if column not in seen_columns:
+                    seen_columns.add(column)
+                    normalized_columns.append(column)
+    has_table_structure = normalized_rows is not None and bool(
+        normalized_columns or normalized_rows
+    )
+    if has_table_structure:
+        structure["tableRows"] = normalized_rows
+        if normalized_columns:
+            structure["tableColumns"] = normalized_columns
         if "tableHeaderReliable" in candidate:
             structure["tableHeaderReliable"] = bool(candidate.get("tableHeaderReliable"))
     elif str(candidate.get("tableHtml") or "").strip():

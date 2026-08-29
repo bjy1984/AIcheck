@@ -431,6 +431,41 @@ def test_structured_only_table_and_equation_build_safe_searchable_text() -> None
     assert "tableHtml" not in selected_table
 
 
+def test_row_only_canonical_table_is_searchable_with_derived_trace_columns() -> None:
+    state = retrieval_state_with_canonical_conflict()
+    record = state["standard_knowledge_records"][0]
+    record["clauses"] = []
+    rows = [
+        {"项目": "设计压力", "要求": "2.5 MPa"},
+        {"要求": "A42", "备注": "阀门等级"},
+    ]
+    cells = [{"row": 1, "col": 2, "text": "阀门等级"}]
+    record["tables"] = [
+        {
+            "id": "SKI-TABLE-ROWS-ONLY",
+            "normalizedRows": rows,
+            "cells": cells,
+            "authority": "current",
+            "tableHtml": "<script>alert('unsafe')</script>",
+        }
+    ]
+
+    candidate = canonical_clause_candidates(state)[0]
+    result = retrieve_knowledge_clauses(state, query="阀门等级 A42", top_k=1)
+    selected = result["trace"]["selectedClauses"][0]
+
+    assert "阀门等级" in candidate["text"]
+    assert result["clauses"][0]["canonicalItemId"] == "SKI-TABLE-ROWS-ONLY"
+    assert candidate["tableColumns"] == ["项目", "要求", "备注"]
+    assert candidate["tableRows"] == rows
+    assert candidate["tableCells"] == cells
+    assert selected["tableColumns"] == ["项目", "要求", "备注"]
+    assert selected["tableRows"] == rows
+    assert selected["tableCells"] == cells
+    assert "tableHtml" not in candidate
+    assert "tableHtml" not in selected
+
+
 def test_id_only_canonical_table_is_rejected_and_keeps_old_clause_fallback() -> None:
     state = retrieval_state_with_canonical_conflict()
     record = state["standard_knowledge_records"][0]
