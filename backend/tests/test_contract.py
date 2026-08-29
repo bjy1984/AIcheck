@@ -11055,6 +11055,53 @@ def test_knowledge_file_chunks_do_not_fabricate_and_original_streams_local_file(
         target.unlink(missing_ok=True)
 
 
+def test_knowledge_file_detail_exposes_document_structured_ocr_view() -> None:
+    document, version = repo.create_document(
+        "P-2026-HDCP-001",
+        "structured-standard.pdf",
+        "application/pdf",
+    )
+    file_id = f"KF-{document['id']}"
+    repo.state["ocr_parse_results"].insert(
+        0,
+        {
+            "id": "PARSE-KNOWLEDGE-STRUCTURED",
+            "parseResultId": "PARSE-KNOWLEDGE-STRUCTURED",
+            "documentId": document["id"],
+            "documentVersionId": version["id"],
+            "status": "success",
+            "pages": [{"pageNo": 1}],
+            "layoutBlocks": [
+                {
+                    "blockId": "BLOCK-1",
+                    "blockType": "text",
+                    "text": "标准正文",
+                    "pageNo": 1,
+                    "readingOrder": 1,
+                }
+            ],
+            "tables": [
+                {
+                    "tableId": "TABLE-1",
+                    "pageNo": 1,
+                    "normalizedRows": [{"项目": "设计压力", "要求": "2.5 MPa"}],
+                }
+            ],
+            "seals": [{"sealId": "SEAL-1", "sealName": "标准发布章", "pageNo": 1}],
+        },
+    )
+
+    detail = assert_ok(client.get(f"/knowledge/files/{file_id}"))
+
+    assert detail["versions"][0]["id"] == version["id"]
+    assert detail["preview"]["url"].startswith(f"/api/knowledge/files/{file_id}/original")
+    assert detail["document"]["ocrReadiness"]["parseResultId"] == "PARSE-KNOWLEDGE-STRUCTURED"
+    assert detail["ocrStructured"]["available"] is True
+    assert detail["ocrStructured"]["layoutBlocks"][0]["text"] == "标准正文"
+    assert detail["ocrStructured"]["tables"][0]["normalizedRows"][0]["要求"] == "2.5 MPa"
+    assert detail["ocrStructured"]["seals"][0]["name"] == "标准发布章"
+
+
 def test_knowledge_file_reasoning_references_only_return_real_file_links() -> None:
     refs = assert_ok(client.get("/knowledge/files/KF-DOC-20260625-001/reasoning-references?page=1&pageSize=5"))
     assert refs["total"] == 1

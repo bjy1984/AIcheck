@@ -17,6 +17,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -280,3 +281,125 @@ def test_sidecar_drops_running_headers():
     fragments = module.fragments_from_content_list(items)
     assert len(fragments) == 1
     assert fragments[0]["text"] == "检测人员应经过培训并取得资格证书。"
+
+
+def test_sidecar_parse_result_preserves_displayable_structure(tmp_path):
+    """删除 sidecar→parse result 转换时必须失败：否则详情页会重新变空。"""
+    module = _reocr_module()
+    file_id = "KF-KB-STRUCTURED"
+    sidecar = tmp_path / file_id
+    sidecar.mkdir()
+    (sidecar / "content_list.json").write_text(
+        __import__("json").dumps(
+            [
+                {"type": "text", "text": "5 检测要求", "page_idx": 0, "bbox": [10, 20, 400, 80]},
+                {
+                    "type": "table",
+                    "table_caption": ["表 1 参数"],
+                    "table_body": (
+                        "<table><tr><th>项目</th><th>要求</th></tr>"
+                        "<tr><td>设计压力</td><td>2.5 MPa</td></tr></table>"
+                    ),
+                    "page_idx": 0,
+                    "bbox": [10, 100, 800, 500],
+                },
+                {
+                    "type": "image",
+                    "sub_type": "seal",
+                    "img_path": "images/seal.png",
+                    "page_idx": 0,
+                    "bbox": [700, 700, 900, 900],
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (sidecar / "layout.json").write_text(
+        __import__("json").dumps(
+            {"pdf_info": [{"page_idx": 0, "page_size": [1000, 1200]}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = module.build_sidecar_parse_result(
+        tmp_path,
+        {"id": file_id, "fileName": "标准.pdf"},
+        {"id": "KDOC-STRUCTURED", "currentVersionId": "KDV-STRUCTURED-V1"},
+        {"id": "KDV-STRUCTURED-V1", "storageKey": "local://rules/standards/标准.pdf"},
+    )
+
+    assert result["documentId"] == "KDOC-STRUCTURED"
+    assert result["documentVersionId"] == "KDV-STRUCTURED-V1"
+    assert result["parseResultId"] == "PARSE-STANDARD-STRUCTURED-V1"
+    assert result["layoutBlocks"][0]["text"] == "5 检测要求"
+    assert result["tables"][0]["normalizedRows"] == [{"项目": "设计压力", "要求": "2.5 MPa"}]
+    assert result["seals"][0]["pageNo"] == 1
+    assert result["metadata"]["sidecarSource"] == "rules/results/mineru_sidecar/KF-KB-STRUCTURED"
+
+
+def test_sidecar_parse_result_without_layout_keeps_structure(tmp_path):
+    """MinerU 少给 layout.json 时仍要展示正文/表格，而不是跳过整份标准。"""
+    module = _reocr_module()
+    file_id = "KF-KB-NO-LAYOUT"
+    sidecar = tmp_path / file_id
+    sidecar.mkdir()
+    (sidecar / "content_list.json").write_text(
+        __import__("json").dumps(
+            [
+                {"type": "text", "text": "第一页正文", "page_idx": 0},
+                {"type": "text", "text": "第三页正文", "page_idx": 2},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = module.build_sidecar_parse_result(
+        tmp_path,
+        {"id": file_id, "fileName": "无版面.json"},
+        {"id": "KDOC-NO-LAYOUT", "currentVersionId": "KDV-NO-LAYOUT-V1"},
+        {"id": "KDV-NO-LAYOUT-V1", "storageKey": "local://rules/standards/无版面.json"},
+    )
+
+    assert [page["pageNo"] for page in result["pages"]] == [1, 2, 3]
+    assert [block["text"] for block in result["layoutBlocks"]] == ["第一页正文", "第三页正文"]
+    assert "sidecar_layout_missing" in result["quality"]["reasons"]
+
+
+def test_parse_only_never_rebuilds_page_index():
+    module = _reocr_module()
+    applied = [{"fileId": "KF-1", "status": "applied"}]
+
+    assert module.should_sync_page_index(SimpleNamespace(apply=True, parse_only=True), applied) is False
+    assert module.should_sync_page_index(SimpleNamespace(apply=True, parse_only=False), applied) is True
+
+
+def test_ocr_status_merge_preserves_concurrent_fields():
+    module = _reocr_module()
+    current = {
+        "id": "KDOC-1",
+        "currentVersionId": "KDV-1",
+        "fileName": "并发更新后的名称.pdf",
+        "customField": "must survive",
+    }
+
+    merged = module.merge_ocr_status_payload(
+        current,
+        expected_id="KDOC-1",
+        status_field="currentOcrStatus",
+        now="2026-08-29 08:00:00",
+    )
+
+    assert merged["fileName"] == "并发更新后的名称.pdf"
+    assert merged["customField"] == "must survive"
+    assert merged["currentOcrStatus"] == "已识别"
+    assert merged["updatedAt"] == "2026-08-29 08:00:00"
+    with pytest.raises(ValueError, match="identity mismatch"):
+        module.merge_ocr_status_payload(
+            current,
+            expected_id="KDOC-OTHER",
+            status_field="currentOcrStatus",
+            now="2026-08-29 08:00:00",
+        )

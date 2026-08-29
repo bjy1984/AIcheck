@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from apps.api import routes as routes_module
 from libs.db.repository import ensure_collections_loaded, requires_collections
+from libs.ocr_structured_view import build_ocr_structured_view
 from apps.api.routes import (
     ALLOWED_KNOWLEDGE_UPLOAD_TYPES,
     DEFAULT_BUSINESS_PACK_ID,
@@ -35,6 +36,7 @@ from apps.api.routes import (
     STANDARD_RULES_VERSION,
     active_embedding_target,
     admin_user_snapshot,
+    attach_document_ocr_readiness,
     answer_draft_from_clauses,
     bounded_form_value,
     build_business_pack_knowledge_network,
@@ -809,11 +811,22 @@ def knowledge_file_detail(request: Request, file_id: str):
         return context_error
     latest_task = next((item for item in repo.state["knowledge_tasks"] if item.get("targetId") == file_id), None)
     original = knowledge_file_original_payload(request, file_id, document)
+    versions = repo.versions_for_document(document["id"])
+    version_ids = {item["id"] for item in versions}
     return ok(
         {
             "file": repo.clone(file),
-            "document": repo.clone(document) if document else None,
-            "currentVersion": repo.current_version(document["id"]) if document else None,
+            "document": attach_document_ocr_readiness(repo, document),
+            "currentVersion": repo.current_version(document["id"]),
+            "versions": versions,
+            "bindings": [
+                repo.clone(item)
+                for item in repo.state.get("bindings", [])
+                if item.get("documentId") == document["id"]
+            ],
+            "extractedFields": repo.fields_for_versions(version_ids),
+            "evidenceLinks": repo.evidence_for_versions(version_ids),
+            "ocrStructured": build_ocr_structured_view(repo, document),
             "latestTask": versioned_record("knowledge-task", latest_task) if latest_task else None,
             "vectorSummary": {
                 "vectorStatus": file.get("vectorStatus"),
@@ -1935,5 +1948,3 @@ def list_knowledge_page_index_nodes(
             reverse=True,
         )
     return ok(page(items, page_no, page_size), request)
-
-
