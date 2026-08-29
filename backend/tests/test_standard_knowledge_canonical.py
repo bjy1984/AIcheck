@@ -3,48 +3,156 @@ import json
 import pytest
 
 from libs.db.repository import STATE_COLLECTIONS, repo
-from libs.standard_knowledge_canonical import collect_standard_sources, select_canonical_field
+from libs.standard_knowledge_canonical import (
+    build_standard_knowledge_record,
+    collect_standard_sources,
+    select_canonical_field,
+)
 
 
 def canonical_source_fixture(*, without_references: bool = False) -> dict[str, object]:
     file = {
-        "id": "KF-KB-TEST", "sourceId": "KS-STANDARD-RULES", "sourceType": "standard",
-        "documentId": "KDOC-TEST", "documentVersionId": "KDV-TEST-V1",
-        "fileName": "NB_T 47013.10-2015.pdf", "sourceRelativePath": "rules/standards/NB_T 47013.10-2015.pdf",
+        "id": "KF-KB-TEST",
+        "sourceId": "KS-STANDARD-RULES",
+        "sourceType": "standard",
+        "documentId": "KDOC-TEST",
+        "documentVersionId": "KDV-TEST-V1",
+        "fileName": "NB_T 47013.10-2015.pdf",
+        "sourceRelativePath": "rules/standards/NB_T 47013.10-2015.pdf",
         "tenantId": "TENANT-DEFAULT",
     }
     state = {
+        "knowledge_sources": [{"id": "KS-STANDARD-RULES", "version": "inspection_kb@test"}],
         "knowledge_files": [file],
-        "documents": [{"id": "KDOC-TEST", "currentVersionId": "KDV-TEST-V1", "tenantId": "TENANT-DEFAULT"}],
-        "versions": [{"id": "KDV-TEST-V1", "documentId": "KDOC-TEST", "isCurrent": True, "tenantId": "TENANT-DEFAULT"}],
+        "documents": [
+            {"id": "KDOC-TEST", "currentVersionId": "KDV-TEST-V1", "tenantId": "TENANT-DEFAULT"}
+        ],
+        "versions": [
+            {
+                "id": "KDV-TEST-V1",
+                "documentId": "KDOC-TEST",
+                "isCurrent": True,
+                "tenantId": "TENANT-DEFAULT",
+            }
+        ],
         "ocr_parse_results": [
             {
-                "id": "PARSE-NEW", "parseResultId": "PARSE-NEW", "documentVersionId": "KDV-TEST-V1",
-                "createdAt": "2026-08-29 12:00:00", "metadata": {"sidecarImported": True},
+                "id": "PARSE-NEW",
+                "parseResultId": "PARSE-NEW",
+                "documentVersionId": "KDV-TEST-V1",
+                "createdAt": "2026-08-29 12:00:00",
+                "metadata": {"sidecarImported": True},
                 "fields": [{"fieldName": "发布日期", "fieldValue": "2015-04-02", "pageNo": 1}],
-                "layoutBlocks": [{"blockId": "B-NEW", "blockType": "text", "text": "1.1 范围正文", "pageNo": 7}],
-                "tables": [], "seals": [], "pages": [{"pageNo": 1}, {"pageNo": 7}],
+                "layoutBlocks": [
+                    {"blockId": "B-NEW", "blockType": "text", "text": "1.1 范围正文", "pageNo": 7}
+                ],
+                "tables": [],
+                "seals": [],
+                "pages": [{"pageNo": 1}, {"pageNo": 7}],
             },
             {
-                "id": "PARSE-OLD", "parseResultId": "PARSE-OLD", "documentVersionId": "KDV-TEST-V1",
-                "createdAt": "2026-07-01 12:00:00", "metadata": {},
+                "id": "PARSE-OLD",
+                "parseResultId": "PARSE-OLD",
+                "documentVersionId": "KDV-TEST-V1",
+                "createdAt": "2026-07-01 12:00:00",
+                "metadata": {},
                 "fields": [
                     {"fieldName": "发布日期", "fieldValue": "2014-01-01", "pageNo": 1},
                     {"fieldName": "备案号", "fieldValue": "61188-2018", "pageNo": 1},
                 ],
-                "layoutBlocks": [], "tables": [], "seals": [], "pages": [],
+                "layoutBlocks": [],
+                "tables": [],
+                "seals": [],
+                "pages": [],
             },
         ],
-        "extracted_fields": [{"id": "FIELD-OLD", "documentVersionId": "KDV-TEST-V1", "fieldName": "OCR文本", "fieldValue": "旧正文"}],
-        "evidence_links": [{"id": "EV-OLD", "documentVersionId": "KDV-TEST-V1", "fieldName": "OCR文本", "quotedText": "旧正文", "pageNo": 7}],
-        "knowledge_chunks": [{"id": "CHK-TEST", "fileId": "KF-KB-TEST", "text": "1.1 范围正文", "pageNo": 7}],
-        "knowledge_clauses": [{"id": "KC-TEST", "fileId": "KF-KB-TEST", "clauseNo": "1.1", "text": "1.1 范围正文", "pageNo": 7}],
-        "knowledge_page_index_nodes": [{"id": "PIN-TEST", "sourceRelativePath": file["sourceRelativePath"], "title": "1 范围", "startPage": 7, "endPage": 7}],
-        "standard_document_versions": [{"id": "SDV-TEST", "knowledgeFileId": "KF-KB-TEST", "standardRef": "STD-TEST", "code": "NB/T 47013.10-2015", "name": "衍射时差法超声检测"}],
-        "standard_clause_references": [] if without_references else [{"id": "SCR-TEST", "knowledgeFileId": "KF-KB-TEST", "standardRef": "STD-TEST", "clauseNo": "1.1", "sourcePage": 7}],
-        "standard_clause_locators": [] if without_references else [{"id": "SCL-TEST", "knowledgeFileId": "KF-KB-TEST", "standardRef": "STD-TEST", "clauseNo": "1.1", "sourcePage": 7, "bbox": [10, 20, 300, 80]}],
-        "rule_versions": [{"id": "RULE-1", "nodeIds": [40], "referencedStandards": [{"knowledgeFileId": "KF-KB-TEST", "standardRef": "STD-TEST", "clauseNo": "1.1"}]}],
-        "business_packs": [{"id": "engineering_inspection_v1", "standardCatalog": [{"id": "STD-TEST", "code": "NB/T 47013.10-2015", "name": "衍射时差法超声检测"}]}],
+        "extracted_fields": [
+            {
+                "id": "FIELD-OLD",
+                "documentVersionId": "KDV-TEST-V1",
+                "fieldName": "OCR文本",
+                "fieldValue": "旧正文",
+            }
+        ],
+        "evidence_links": [
+            {
+                "id": "EV-OLD",
+                "documentVersionId": "KDV-TEST-V1",
+                "fieldName": "OCR文本",
+                "quotedText": "旧正文",
+                "pageNo": 7,
+            }
+        ],
+        "knowledge_chunks": [
+            {"id": "CHK-TEST", "fileId": "KF-KB-TEST", "text": "1.1 范围正文", "pageNo": 7}
+        ],
+        "knowledge_clauses": [
+            {
+                "id": "KC-TEST",
+                "fileId": "KF-KB-TEST",
+                "clauseNo": "1.1",
+                "text": "1.1 范围正文",
+                "pageNo": 7,
+            }
+        ],
+        "knowledge_page_index_nodes": [
+            {
+                "id": "PIN-TEST",
+                "sourceRelativePath": file["sourceRelativePath"],
+                "title": "1 范围",
+                "startPage": 7,
+                "endPage": 7,
+            }
+        ],
+        "standard_document_versions": [
+            {
+                "id": "SDV-TEST",
+                "knowledgeFileId": "KF-KB-TEST",
+                "standardRef": "STD-TEST",
+                "code": "NB/T 47013.10-2015",
+                "name": "衍射时差法超声检测",
+            }
+        ],
+        "standard_clause_references": []
+        if without_references
+        else [
+            {
+                "id": "SCR-TEST",
+                "knowledgeFileId": "KF-KB-TEST",
+                "standardRef": "STD-TEST",
+                "clauseNo": "1.1",
+                "sourcePage": 7,
+            }
+        ],
+        "standard_clause_locators": []
+        if without_references
+        else [
+            {
+                "id": "SCL-TEST",
+                "knowledgeFileId": "KF-KB-TEST",
+                "standardRef": "STD-TEST",
+                "clauseNo": "1.1",
+                "sourcePage": 7,
+                "bbox": [10, 20, 300, 80],
+            }
+        ],
+        "rule_versions": [
+            {
+                "id": "RULE-1",
+                "nodeIds": [40],
+                "referencedStandards": [
+                    {"knowledgeFileId": "KF-KB-TEST", "standardRef": "STD-TEST", "clauseNo": "1.1"}
+                ],
+            }
+        ],
+        "business_packs": [
+            {
+                "id": "engineering_inspection_v1",
+                "standardCatalog": [
+                    {"id": "STD-TEST", "code": "NB/T 47013.10-2015", "name": "衍射时差法超声检测"}
+                ],
+            }
+        ],
     }
     return state
 
@@ -92,7 +200,9 @@ def test_collect_standard_sources_maps_every_supported_source(tmp_path):
     )
     sidecar_dir = tmp_path / "backend/data/rules_ocr_sidecars"
     sidecar_dir.mkdir(parents=True)
-    (sidecar_dir / "KF-KB-TEST.json").write_text(json.dumps({"fileId": "KF-KB-TEST"}), encoding="utf-8")
+    (sidecar_dir / "KF-KB-TEST.json").write_text(
+        json.dumps({"fileId": "KF-KB-TEST"}), encoding="utf-8"
+    )
 
     sources = collect_standard_sources(state, "KF-KB-TEST", tmp_path)
 
@@ -112,7 +222,15 @@ def test_collect_standard_sources_maps_every_supported_source(tmp_path):
     assert sources["clauseReferences"][0]["clauseNo"] == "1.1"
     assert sources["clauseLocators"][0]["clauseNo"] == "1.1"
     assert sources["catalogItems"] == []
-    assert sources["ruleReferences"] == [{"knowledgeFileId": "KF-KB-TEST", "standardRef": "STD-TEST", "clauseNo": "1.1", "ruleId": "RULE-1", "nodeIds": [40]}]
+    assert sources["ruleReferences"] == [
+        {
+            "knowledgeFileId": "KF-KB-TEST",
+            "standardRef": "STD-TEST",
+            "clauseNo": "1.1",
+            "ruleId": "RULE-1",
+            "nodeIds": [40],
+        }
+    ]
 
 
 def test_source_collection_does_not_mutate_input_state(tmp_path):
@@ -129,5 +247,65 @@ def test_collect_standard_sources_rejects_cross_document_version(tmp_path):
     state = canonical_source_fixture()
     state["versions"][0]["documentId"] = "KDOC-OTHER"
 
-    with pytest.raises(ValueError, match="standard document/version relationship invalid: KF-KB-TEST"):
+    with pytest.raises(
+        ValueError, match="standard document/version relationship invalid: KF-KB-TEST"
+    ):
         collect_standard_sources(state, "KF-KB-TEST", tmp_path)
+
+
+def test_build_record_uses_new_values_and_keeps_old_only_information(tmp_path):
+    record = build_standard_knowledge_record(canonical_source_fixture(), "KF-KB-TEST", tmp_path)
+
+    assert record["kbVersion"] == "inspection_kb@test"
+    assert record["canonicalVersion"] == "standard-knowledge-canonical@1"
+    assert record["identity"]["standardCode"]["value"] == "NB/T 47013.10-2015"
+    assert record["version"]["publicationDate"]["value"] == "2015-04-02"
+    assert record["version"]["publicationDate"]["selectedSourceId"] == "PARSE-NEW"
+    assert record["identity"]["filingNumber"]["value"] == "61188-2018"
+    assert record["identity"]["filingNumber"]["authority"] == "legacy_only"
+
+
+def test_kb_version_change_invalidates_source_fingerprint(tmp_path):
+    state = canonical_source_fixture()
+    first = build_standard_knowledge_record(state, "KF-KB-TEST", tmp_path)
+    state["knowledge_sources"][0]["version"] = "inspection_kb@next"
+
+    second = build_standard_knowledge_record(state, "KF-KB-TEST", tmp_path)
+
+    assert second["kbVersion"] == "inspection_kb@next"
+    assert second["sourceFingerprint"] != first["sourceFingerprint"]
+
+
+def test_structure_is_deduplicated_but_all_sources_are_retained(tmp_path):
+    visual_dir = tmp_path / "backend/data/visual_extractions"
+    visual_dir.mkdir(parents=True)
+    (visual_dir / "KF-KB-TEST.json").write_text(
+        json.dumps(
+            {
+                "fileId": "KF-KB-TEST",
+                "pages": [{"pageNo": 7, "text": "1.1 范围正文", "bbox": [10, 20, 300, 80]}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    record = build_standard_knowledge_record(canonical_source_fixture(), "KF-KB-TEST", tmp_path)
+
+    matching = [item for item in record["clauses"] if item["clauseNo"] == "1.1"]
+    assert len(matching) == 1
+    assert {source["sourceType"] for source in matching[0]["sources"]} == {
+        "new_mineru",
+        "knowledge_clause",
+        "visual_extraction",
+    }
+
+
+def test_completeness_names_specific_missing_categories(tmp_path):
+    record = build_standard_knowledge_record(
+        canonical_source_fixture(without_references=True), "KF-KB-TEST", tmp_path
+    )
+
+    assert record["completeness"]["normativeReferences"]["status"] == "missing"
+    assert record["completeness"]["overall"] == "partial"
+    assert "normativeReferences" in record["completeness"]["missingCategories"]
