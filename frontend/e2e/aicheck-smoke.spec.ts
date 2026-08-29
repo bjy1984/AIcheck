@@ -1035,6 +1035,15 @@ test.describe('AIcheck route smoke', () => {
     await expect(page.locator('.admin-page .page-subtitle')).toHaveCount(0)
   })
 
+  test('inspection node omits the redundant audit directory header', async ({ page }) => {
+    await loginTo(page, '/workbench/inspection')
+    await page.getByRole('tab', { name: '完整工作台', exact: true }).click()
+    await page.locator('.inspection-node-name-button').first().click()
+
+    await expect(page.getByRole('region', { name: '审计项目录' })).toBeVisible()
+    await expect(page.locator('.audit-item-directory__head')).toHaveCount(0)
+  })
+
   test('owner workbench keeps write actions unavailable', async ({ page }) => {
     await openRoute(page, routeCases.find((routeCase) => routeCase.path === '/workbench/owner')!)
 
@@ -1227,8 +1236,6 @@ test.describe('AIcheck route smoke', () => {
     const selectedItem = desktopAuditDirectory.locator('.audit-item-directory__item.is-selected')
     await expect(selectedItem).toHaveCount(1)
     await expect(selectedItem).toHaveAttribute('aria-selected', 'true')
-    await expect(page.locator('.audit-item-directory__legend')).toContainText('正在查看')
-
     const directoryTypography = await page.locator('.audit-item-directory').evaluate((element) => {
       const visibleText = Array.from(element.querySelectorAll<HTMLElement>('*')).filter((item) => {
         const rect = item.getBoundingClientRect()
@@ -1243,17 +1250,13 @@ test.describe('AIcheck route smoke', () => {
         minimum: Math.min(
           ...visibleText.map((item) => Number.parseFloat(getComputedStyle(item).fontSize))
         ),
-        heading: Number.parseFloat(
-          getComputedStyle(element.querySelector<HTMLElement>('.audit-item-directory__head h2')!)
-            .fontSize
-        ),
         item: Number.parseFloat(
           getComputedStyle(element.querySelector<HTMLElement>('.audit-stage-title strong')!)
             .fontSize
         )
       }
     })
-    expect(directoryTypography).toEqual({ minimum: 12, heading: 15, item: 13 })
+    expect(directoryTypography).toEqual({ minimum: 12, item: 13 })
 
     const tabHeights = await desktopAuditDirectory
       .getByRole('tab')

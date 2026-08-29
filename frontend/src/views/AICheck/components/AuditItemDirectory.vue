@@ -85,24 +85,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 <template>
   <div ref="directoryRef" class="audit-item-directory" :class="{ 'is-loading': loading }">
-    <div class="audit-item-directory__head">
-      <div>
-        <div class="audit-item-directory__heading">
-          <h2>{{ stacked ? '审查阶段' : '审计项' }}</h2>
-          <span>{{ items.length }} 项</span>
-        </div>
-        <p>{{
-          stacked
-            ? 'AI 信息在前、人工审查在后；选择标签可快速定位。'
-            : '选择一项查看详情，各项可独立处理。'
-        }}</p>
-      </div>
-      <span class="audit-item-directory__legend">
-        <small>正在查看</small>
-        <strong>{{ items[selectedIndex]?.label }}</strong>
-      </span>
-    </div>
-
     <div
       class="audit-item-directory__scroll"
       role="region"
@@ -187,84 +169,8 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   color: var(--aicheck-text, #26364e);
 }
 
-.audit-item-directory__head {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px 10px;
-  background: linear-gradient(
-    100deg,
-    var(--aicheck-surface, #fff) 0%,
-    var(--audit-directory-sky) 100%
-  );
-  border-radius: 12px 12px 0 0;
-}
-
-.audit-item-directory__head p,
 .audit-item-directory__summary p {
   margin: 0;
-}
-
-.audit-item-directory__heading {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.audit-item-directory__head h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22px;
-  color: var(--audit-directory-text);
-}
-
-.audit-item-directory__heading > span {
-  padding: 1px 7px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  color: var(--audit-directory-muted);
-  background: color-mix(in srgb, var(--aicheck-primary, #1f66d8) 6%, transparent);
-  border-radius: 999px;
-  font-variant-numeric: tabular-nums;
-}
-
-.audit-item-directory__head p {
-  margin-top: 2px;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 18px;
-  color: var(--audit-directory-muted);
-}
-
-.audit-item-directory__legend {
-  display: inline-flex;
-  flex: none;
-  min-height: 30px;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--audit-directory-muted);
-  background: color-mix(in srgb, var(--aicheck-primary, #1f66d8) 6%, var(--aicheck-surface, #fff));
-  border-radius: 999px;
-  align-items: center;
-  gap: 8px;
-}
-
-.audit-item-directory__legend small {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--audit-directory-muted);
-}
-
-.audit-item-directory__legend strong {
-  padding: 0;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  color: var(--aicheck-primary-strong, #174fa8);
 }
 
 .audit-item-directory__scroll {
@@ -597,18 +503,6 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 @media (width <= 900px) {
-  .audit-item-directory__head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px 14px 9px;
-  }
-
-  .audit-item-directory__legend {
-    align-self: stretch;
-    justify-content: space-between;
-  }
-
   .audit-item-directory__summary {
     grid-template-columns: minmax(0, 1fr) auto;
   }
