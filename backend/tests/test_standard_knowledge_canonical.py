@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from libs.db.repository import STATE_COLLECTIONS, repo
 from libs.standard_knowledge_canonical import collect_standard_sources, select_canonical_field
 
@@ -121,3 +123,11 @@ def test_source_collection_does_not_mutate_input_state(tmp_path):
 
     after = json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     assert after == before
+
+
+def test_collect_standard_sources_rejects_cross_document_version(tmp_path):
+    state = canonical_source_fixture()
+    state["versions"][0]["documentId"] = "KDOC-OTHER"
+
+    with pytest.raises(ValueError, match="standard document/version relationship invalid: KF-KB-TEST"):
+        collect_standard_sources(state, "KF-KB-TEST", tmp_path)

@@ -54,7 +54,12 @@ def collect_standard_sources(state: dict[str, Any], file_id: str, repo_root: Pat
         raise ValueError(f"not a standard knowledge file: {file_id}")
     document = _one(state.get("documents", []), id=file.get("documentId"))
     version = _one(state.get("versions", []), id=(document or {}).get("currentVersionId"))
-    if not document or not version or file.get("documentVersionId") != version.get("id"):
+    if (
+        not document
+        or not version
+        or version.get("documentId") != document.get("id")
+        or file.get("documentVersionId") != version.get("id")
+    ):
         raise ValueError(f"standard document/version relationship invalid: {file_id}")
     parses = [item for item in state.get("ocr_parse_results", []) if item.get("documentVersionId") == version["id"]]
     new_parse = max(

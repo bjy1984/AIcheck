@@ -65,3 +65,31 @@ relative path is not available; the requested absolute interpreter was used.
 No source fixtures or unrelated code were changed. The task only collects and
 normalizes source inputs; it does not yet construct or persist canonical
 records, which remains for subsequent tasks.
+
+## Fix Round 1: cross-document version validation
+
+Review found that a version ID selected from `document.currentVersionId` could
+belong to another document while still matching `file.documentVersionId`.
+`collect_standard_sources` now requires `version.documentId == document.id`
+before it reads or returns any source group.
+
+RED:
+
+```text
+test_collect_standard_sources_rejects_cross_document_version
+Failed: DID NOT RAISE ValueError
+```
+
+The test modifies only the fixture version's `documentId` to `KDOC-OTHER`,
+retaining its ID as the current document's version ID. Before the fix, the
+collector accepted this corrupt cross-document relationship.
+
+GREEN:
+
+```text
+pytest -q tests/test_standard_knowledge_canonical.py::test_collect_standard_sources_rejects_cross_document_version
+1 passed
+
+pytest -q tests/test_standard_knowledge_canonical.py -k 'collect_standard_sources or source_collection_does_not_mutate'
+3 passed, 2 deselected
+```
