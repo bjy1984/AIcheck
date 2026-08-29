@@ -280,6 +280,17 @@ def canonical_public_content(kind: str, item: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _normalized_standard_identity(value: Any) -> Any:
+    references = standard_refs_from_text(canonical_standard_text(value))
+    if len(references) == 1:
+        return [
+            references[0].get("prefix"),
+            references[0].get("number"),
+            references[0].get("year"),
+        ]
+    return canonical_standard_text(value).replace(" ", "")
+
+
 def structured_identity(kind: str, item: dict[str, Any]) -> str:
     if kind == "clause" and item.get("clauseNo"):
         identity = [item.get("standardCode"), item.get("edition"), item.get("clauseNo")]
@@ -291,21 +302,10 @@ def structured_identity(kind: str, item: dict[str, Any]) -> str:
             str(item.get("targetClauseNo") or ""),
         ]
     elif kind == "replacement":
-        target_references = standard_refs_from_text(
-            canonical_standard_text(item.get("targetStandardCode"))
-        )
-        target_identity: Any = (
-            [
-                target_references[0].get("prefix"),
-                target_references[0].get("number"),
-                target_references[0].get("year"),
-            ]
-            if len(target_references) == 1
-            else canonical_standard_text(item.get("targetStandardCode")).replace(" ", "")
-        )
         identity = [
+            _normalized_standard_identity(item.get("sourceStandardCode")),
             item.get("purpose"),
-            target_identity,
+            _normalized_standard_identity(item.get("targetStandardCode")),
         ]
     else:
         identity = [

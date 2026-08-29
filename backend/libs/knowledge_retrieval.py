@@ -19,13 +19,22 @@ from libs.knowledge_indexing import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 STANDARD_ALIAS_REGISTRY_PATH = BACKEND_ROOT / "config" / "standard_alias_registry.json"
 TOKEN_RE = re.compile(r"[A-Za-z0-9_.:-]+|[\u4e00-\u9fff]{1,4}")
-EXACT_CLAUSE_RE = re.compile(r"(?<![A-Za-z0-9_.:-])([A-Z]{2,}[-_][A-Z0-9_.:-]*\d[A-Z0-9_.:-]*|\d+(?:\.\d+){1,5})(?:\s*条)?", re.IGNORECASE)
+EXACT_CLAUSE_RE = re.compile(
+    r"(?<![A-Za-z0-9_.:-])([A-Z]{2,}[-_][A-Z0-9_.:-]*\d[A-Z0-9_.:-]*|\d+(?:\.\d+){1,5})(?:\s*条)?",
+    re.IGNORECASE,
+)
 STANDARD_NUMBER_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:GB|GB/T|GBT|NB/T|NB_T|NBT|JB/T|SY/T|TSG)\s*[A-Z0-9_.／/ -]*\d(?:[.-]\d+)*(?:[-—]\d{4})?",
     re.IGNORECASE,
 )
 STANDARD_REF_RE = re.compile(
-    r"(?<![A-Z0-9])(?P<prefix>GB/T|GBT|GB|NB/T|NB_T|NBT|JB/T|JBT|SY/T|SYT|TSG)\s*(?P<number>[A-Z]*\d+(?:\.\d+)*)\s*(?:[-—](?P<year>(?:19|20)\d{2}))?",
+    r"(?<![A-Z0-9])"
+    r"(?P<prefix>GB/T|GBT|GB|NB/T|NB_T|NBT|JB/T|JBT|SY/T|SYT|"
+    r"DL/T|DLT|HG/T|HGT|TSG|ISO|IEC|ASTM)\s*"
+    r"(?P<token>(?:[A-Z]{1,5}\s*)?\d+[A-Z]*(?:\.\d+)*"
+    r"(?:/[A-Z]{1,5}\d+[A-Z]*(?:\.\d+)*)?"
+    r"(?:-\d+[A-Z]?)*(?::\d{2,4}[A-Z]?)?)"
+    r"(?![A-Z0-9])",
     re.IGNORECASE,
 )
 OCR_STANDARD_CHAR_MAP = str.maketrans(
@@ -71,7 +80,12 @@ BUILTIN_STANDARD_ALIAS_RULES: tuple[dict[str, Any], ...] = (
     {
         "id": "gbt-8110-solid-welding-wire",
         "source": "builtin_fallback",
-        "phrases": ("气体保护电弧焊实心焊丝", "熔化极气体保护电弧焊", "熔化极气体保护焊丝", "实心焊丝"),
+        "phrases": (
+            "气体保护电弧焊实心焊丝",
+            "熔化极气体保护电弧焊",
+            "熔化极气体保护焊丝",
+            "实心焊丝",
+        ),
         "prefix": "GBT",
         "number": "8110",
         "year": "2020",
@@ -160,6 +174,10 @@ def normalize_standard_prefix(value: str) -> str:
         return "JBT"
     if prefix in {"SY/T", "SYT"}:
         return "SYT"
+    if prefix in {"DL/T", "DLT"}:
+        return "DLT"
+    if prefix in {"HG/T", "HGT"}:
+        return "HGT"
     return prefix
 
 
@@ -169,8 +187,11 @@ def display_standard_number(prefix: str, number: str, year: str = "") -> str:
         "NBT": "NB/T",
         "JBT": "JB/T",
         "SYT": "SY/T",
+        "DLT": "DL/T",
+        "HGT": "HG/T",
     }.get(prefix, prefix)
-    suffix = f"-{year}" if year else ""
+    separator = ":" if prefix in {"ISO", "IEC"} else "-"
+    suffix = f"{separator}{year}" if year else ""
     return f"{display_prefix} {number}{suffix}".strip()
 
 
@@ -187,7 +208,9 @@ def normalize_alias_rule(raw_rule: dict[str, Any]) -> dict[str, Any] | None:
         "source": str(raw_rule.get("source") or "manual").strip(),
         "phrases": phrases,
         "exclude": tuple(str(item) for item in raw_rule.get("exclude") or [] if str(item).strip()),
-        "requireAny": tuple(str(item) for item in raw_rule.get("requireAny") or [] if str(item).strip()),
+        "requireAny": tuple(
+            str(item) for item in raw_rule.get("requireAny") or [] if str(item).strip()
+        ),
         "prefix": prefix,
         "number": number,
         "year": year,
@@ -216,7 +239,11 @@ def load_standard_alias_rules(_cache_key: int) -> tuple[dict[str, Any], ...]:
         except (OSError, ValueError, TypeError):
             rules = []
     if not rules:
-        rules = [rule for rule in (normalize_alias_rule(item) for item in BUILTIN_STANDARD_ALIAS_RULES) if rule]
+        rules = [
+            rule
+            for rule in (normalize_alias_rule(item) for item in BUILTIN_STANDARD_ALIAS_RULES)
+            if rule
+        ]
     return tuple(rules)
 
 
@@ -230,13 +257,27 @@ def standard_refs_from_text(value: Any) -> list[dict[str, str]]:
     seen: set[tuple[str, str, str]] = set()
     for match in STANDARD_REF_RE.finditer(text):
         prefix = normalize_standard_prefix(match.group("prefix"))
-        number = str(match.group("number") or "").upper()
-        year = str(match.group("year") or "")
+        token = re.sub(r"\s+", "", str(match.group("token") or "").upper())
+        number = token
+        year = ""
+        colon_year = re.search(r":([0-9]{2,4}[A-Z]?)$", token)
+        if colon_year:
+            year = colon_year.group(1)
+            number = token[: colon_year.start()]
+        else:
+            dash_year = re.search(r"-([0-9]{2,4}[A-Z]?)$", token)
+            if dash_year and (
+                prefix == "ASTM" or re.fullmatch(r"(?:19|20)\d{2}", dash_year.group(1))
+            ):
+                year = dash_year.group(1)
+                number = token[: dash_year.start()]
         key = (prefix, number, year)
         if not number or key in seen:
             continue
         seen.add(key)
-        refs.append({"prefix": prefix, "number": number, "base": number.split(".", 1)[0], "year": year})
+        refs.append(
+            {"prefix": prefix, "number": number, "base": number.split(".", 1)[0], "year": year}
+        )
     return refs
 
 
@@ -254,7 +295,8 @@ def standard_alias_matches(query: str) -> list[dict[str, Any]]:
             (
                 str(item)
                 for item in rule.get("phrases") or []
-                if normalized_business_phrase(item) and normalized_business_phrase(item) in normalized_query
+                if normalized_business_phrase(item)
+                and normalized_business_phrase(item) in normalized_query
             ),
             "",
         )
@@ -268,7 +310,9 @@ def standard_alias_matches(query: str) -> list[dict[str, Any]]:
                 "prefix": str(rule["prefix"]),
                 "number": str(rule["number"]),
                 "year": str(rule["year"]),
-                "targetStandard": display_standard_number(str(rule["prefix"]), str(rule["number"]), str(rule["year"])),
+                "targetStandard": display_standard_number(
+                    str(rule["prefix"]), str(rule["number"]), str(rule["year"])
+                ),
                 "boost": float(rule.get("boost") or 0.0),
             }
         )
@@ -305,7 +349,11 @@ def standard_number_match_score(candidate: dict[str, Any], query: str) -> float:
                     best = max(best, 90.0 if query_ref["year"] == source_ref["year"] else 15.0)
                 else:
                     best = max(best, 70.0)
-            elif query_ref["base"] == source_ref["base"] and query_ref["year"] and query_ref["year"] == source_ref["year"]:
+            elif (
+                query_ref["base"] == source_ref["base"]
+                and query_ref["year"]
+                and query_ref["year"] == source_ref["year"]
+            ):
                 # A query for NB/T 47013-2015 should prefer the whole-volume file over split parts
                 # such as NB/T 47013.6-2015, but the shared base still makes it a weak candidate.
                 best = max(best, 12.0)
@@ -334,7 +382,12 @@ def standard_alias_candidate_matches(
                 continue
             if match["year"] and source_ref["year"] and match["year"] != source_ref["year"]:
                 continue
-            key = (str(match.get("aliasId") or ""), match["prefix"], match["number"], str(match.get("year") or ""))
+            key = (
+                str(match.get("aliasId") or ""),
+                match["prefix"],
+                match["number"],
+                str(match.get("year") or ""),
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -381,7 +434,11 @@ def source_title_overlap_score(candidate: dict[str, Any], query: str) -> float:
     )
     source_grams = chinese_ngrams(source_text)
     overlap = query_grams.intersection(source_grams)
-    meaningful = {gram for gram in overlap if gram not in {"标准", "依据", "引用", "验收", "相关", "要求", "如何", "什么"}}
+    meaningful = {
+        gram
+        for gram in overlap
+        if gram not in {"标准", "依据", "引用", "验收", "相关", "要求", "如何", "什么"}
+    }
     if len(meaningful) < 3:
         return 0.0
     return min(45.0, len(meaningful) * 2.2)
@@ -413,7 +470,9 @@ def build_router_signals(query: str, tokens: list[str]) -> dict[str, Any]:
         for match in STANDARD_NUMBER_RE.finditer(query or "")
         if not re.search(r"[-_][A-Z]\d+(?:\.\d+)+", match.group(0), re.IGNORECASE)
     ]
-    needs_pageindex = any(term in (query or "") for term in PAGEINDEX_QUERY_TERMS) or len(query or "") >= 80
+    needs_pageindex = (
+        any(term in (query or "") for term in PAGEINDEX_QUERY_TERMS) or len(query or "") >= 80
+    )
     return {
         "exactClauseRefs": exact_refs,
         "standardNumbers": standard_numbers,
@@ -441,13 +500,26 @@ def source_version_by_id(state: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspection_kb@1.0.0") -> dict[str, Any]:
-    clause_id = str(candidate.get("clauseId") or candidate.get("id") or candidate.get("objectId") or f"clause-{uuid4().hex[:8]}")
-    text = str(candidate.get("text") or candidate.get("quotedText") or candidate.get("description") or "")
+def normalize_clause(
+    candidate: dict[str, Any], *, default_version: str = "inspection_kb@1.0.0"
+) -> dict[str, Any]:
+    clause_id = str(
+        candidate.get("clauseId")
+        or candidate.get("id")
+        or candidate.get("objectId")
+        or f"clause-{uuid4().hex[:8]}"
+    )
+    text = str(
+        candidate.get("text") or candidate.get("quotedText") or candidate.get("description") or ""
+    )
     metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
     context_type = candidate.get("contextType") or metadata.get("contextType")
     source_method = candidate.get("sourceMethod") or metadata.get("sourceMethod")
-    ocr_confidence = candidate.get("ocrConfidence") if candidate.get("ocrConfidence") is not None else metadata.get("ocrConfidence")
+    ocr_confidence = (
+        candidate.get("ocrConfidence")
+        if candidate.get("ocrConfidence") is not None
+        else metadata.get("ocrConfidence")
+    )
     scope = dict(candidate.get("scope") or {})
     if context_type and not scope.get("contextType"):
         scope["contextType"] = context_type
@@ -466,7 +538,9 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
     if evidence_usable is None:
         evidence_usable = metadata.get("evidenceUsable")
     if evidence_usable is None:
-        evidence_usable = "publisher_metadata" not in quality_flags and "web_url_metadata" not in quality_flags
+        evidence_usable = (
+            "publisher_metadata" not in quality_flags and "web_url_metadata" not in quality_flags
+        )
     # 白名单式构造：不显式列出来的字段一律丢掉。公式的 LaTeX、表格的结构化行
     # 若不在这里带出去，工作台拿到的就只有一串反斜杠或展平文本。
     # 刻意不下发 tableHtml——与 OCR 详情页同一条约定，避免开 XSS 面。
@@ -480,13 +554,9 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
     columns = candidate.get("tableColumns")
     rows = candidate.get("tableRows")
     normalized_rows = (
-        [dict(row) for row in rows if isinstance(row, dict)]
-        if isinstance(rows, list)
-        else None
+        [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else None
     )
-    normalized_columns = (
-        [str(item) for item in columns] if isinstance(columns, list) else []
-    )
+    normalized_columns = [str(item) for item in columns] if isinstance(columns, list) else []
     if not normalized_columns and normalized_rows:
         seen_columns: set[str] = set()
         for row in normalized_rows:
@@ -535,8 +605,11 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
         "ocrConfidence": ocr_confidence,
         "qualityFlags": quality_flags,
         "evidenceUsable": bool(evidence_usable),
-        "evidenceStatusReason": candidate.get("evidenceStatusReason") or metadata.get("evidenceStatusReason"),
-        "retrievalWeightTier": candidate.get("retrievalWeightTier") or metadata.get("retrievalWeightTier") or "default",
+        "evidenceStatusReason": candidate.get("evidenceStatusReason")
+        or metadata.get("evidenceStatusReason"),
+        "retrievalWeightTier": candidate.get("retrievalWeightTier")
+        or metadata.get("retrievalWeightTier")
+        or "default",
         "canonicalRecordId": candidate.get("canonicalRecordId"),
         "canonicalItemId": candidate.get("canonicalItemId"),
         "canonicalVersion": candidate.get("canonicalVersion"),
@@ -740,8 +813,7 @@ def canonical_clause_candidates(
                     "projectId": file.get("projectId") or record.get("projectId"),
                     "nodeId": file.get("nodeId") or record.get("nodeId"),
                     "nodeIds": list(node_ids),
-                    "businessPackId": file.get("businessPackId")
-                    or record.get("businessPackId"),
+                    "businessPackId": file.get("businessPackId") or record.get("businessPackId"),
                     "materialTypes": list(material_types),
                     "contextType": context_type,
                     "sourceMethod": source_method,
@@ -783,9 +855,7 @@ def canonical_clause_candidates(
                     "authority": authority,
                     "sourceIds": list(dict.fromkeys(source_ids)),
                     "retrievalWeightTier": (
-                        "legacy_supplemental"
-                        if authority == "legacy_only"
-                        else "canonical_current"
+                        "legacy_supplemental" if authority == "legacy_only" else "canonical_current"
                     ),
                     "formalEvidenceEligible": authority != "legacy_only"
                     and (
@@ -804,21 +874,19 @@ def canonical_clause_candidates(
                 candidates.append(
                     normalize_clause(
                         candidate,
-                        default_version=str(
-                            record.get("kbVersion") or "inspection_kb@1.0.0"
-                        ),
+                        default_version=str(record.get("kbVersion") or "inspection_kb@1.0.0"),
                     )
                 )
     return candidates
 
 
-def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None = None) -> list[dict[str, Any]]:
+def knowledge_clause_candidates(
+    state: dict[str, Any], *, kb_version: str | None = None
+) -> list[dict[str, Any]]:
     source_versions = source_version_by_id(state)
     default_version = kb_version or next(iter(source_versions.values()), "inspection_kb@1.0.0")
     candidates = canonical_clause_candidates(state, kb_version=kb_version)
-    canonical_file_ids = {
-        str(item.get("fileId")) for item in candidates if item.get("fileId")
-    }
+    canonical_file_ids = {str(item.get("fileId")) for item in candidates if item.get("fileId")}
     files_by_id = {
         item.get("id"): item
         for item in state.get("knowledge_files", []) or []
@@ -857,7 +925,8 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                 continue
             enriched_clause = {
                 **clause,
-                "sourceRelativePath": clause.get("sourceRelativePath") or file.get("sourceRelativePath"),
+                "sourceRelativePath": clause.get("sourceRelativePath")
+                or file.get("sourceRelativePath"),
                 "contextType": context_type,
                 "sourceMethod": clause.get("sourceMethod") or file.get("sourceMethod"),
             }
@@ -888,9 +957,7 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
         if file and not knowledge_file_enabled(file, source):
             continue
         context_type = (
-            link.get("contextType")
-            or target_clause.get("contextType")
-            or file.get("contextType")
+            link.get("contextType") or target_clause.get("contextType") or file.get("contextType")
         )
         block_type = link.get("blockType") or target_clause.get("blockType")
         if quarantine_interference_reasons(
@@ -905,7 +972,9 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                     "id": f"KC-{link.get('objectId') or link.get('id')}",
                     "clauseId": link.get("objectId") or link.get("id"),
                     "kbDocId": link.get("kbDocId") or "KS-STANDARD-RULES",
-                    "kbVersion": link.get("kbVersion") or source_versions.get("KS-STANDARD-RULES") or default_version,
+                    "kbVersion": link.get("kbVersion")
+                    or source_versions.get("KS-STANDARD-RULES")
+                    or default_version,
                     "title": link.get("title") or link.get("objectId") or "知识条款",
                     "text": link.get("quotedText"),
                     "pageNo": link.get("pageNo"),
@@ -933,7 +1002,9 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
             continue
         if str(chunk.get("fileId") or "") in canonical_file_ids:
             continue
-        context_type = chunk.get("contextType") or (files_by_id.get(chunk.get("fileId")) or {}).get("contextType")
+        context_type = chunk.get("contextType") or (files_by_id.get(chunk.get("fileId")) or {}).get(
+            "contextType"
+        )
         # 公式块的正文就是 LaTeX，按普通正文的纯符号规则会在检索入口被整条滤掉，
         # 落库落得再全也检索不到。必须把块类型一起交给隔离判定。
         if quarantine_interference_reasons(
@@ -975,7 +1046,8 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
                     "bbox": chunk.get("bbox"),
                     "fileId": chunk.get("fileId"),
                     "documentVersionId": chunk.get("documentVersionId"),
-                    "sourceRelativePath": chunk.get("sourceRelativePath") or file.get("sourceRelativePath"),
+                    "sourceRelativePath": chunk.get("sourceRelativePath")
+                    or file.get("sourceRelativePath"),
                     "pageIndexNodeIds": chunk.get("pageIndexNodeIds") or [],
                     "contextType": context_type,
                     "sourceMethod": source_method,
@@ -1005,8 +1077,15 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
     return list(unique.values())
 
 
-def normalize_page_index_node(candidate: dict[str, Any], *, default_version: str = "inspection_kb@1.0.0") -> dict[str, Any]:
-    node_id = str(candidate.get("pageIndexNodeId") or candidate.get("id") or candidate.get("nodeId") or f"pin-{uuid4().hex[:8]}")
+def normalize_page_index_node(
+    candidate: dict[str, Any], *, default_version: str = "inspection_kb@1.0.0"
+) -> dict[str, Any]:
+    node_id = str(
+        candidate.get("pageIndexNodeId")
+        or candidate.get("id")
+        or candidate.get("nodeId")
+        or f"pin-{uuid4().hex[:8]}"
+    )
     return {
         "id": str(candidate.get("id") or node_id),
         "pageIndexNodeId": node_id,
@@ -1021,9 +1100,14 @@ def normalize_page_index_node(candidate: dict[str, Any], *, default_version: str
         "sectionPath": candidate.get("sectionPath") or [],
         "children": candidate.get("children") or [],
         "linkedClauseIds": candidate.get("linkedClauseIds") or [],
-        "businessPackId": candidate.get("businessPackId") or (candidate.get("metadata") or {}).get("businessPackId"),
-        "nodeTypes": candidate.get("nodeTypes") or (candidate.get("metadata") or {}).get("nodeTypes") or [],
-        "materialTypes": candidate.get("materialTypes") or (candidate.get("metadata") or {}).get("materialTypes") or [],
+        "businessPackId": candidate.get("businessPackId")
+        or (candidate.get("metadata") or {}).get("businessPackId"),
+        "nodeTypes": candidate.get("nodeTypes")
+        or (candidate.get("metadata") or {}).get("nodeTypes")
+        or [],
+        "materialTypes": candidate.get("materialTypes")
+        or (candidate.get("metadata") or {}).get("materialTypes")
+        or [],
         "tags": candidate.get("tags") or [],
         "status": candidate.get("status") or "effective",
         "qualityFlags": candidate.get("qualityFlags") or [],
@@ -1033,7 +1117,9 @@ def normalize_page_index_node(candidate: dict[str, Any], *, default_version: str
     }
 
 
-def page_index_node_candidates(state: dict[str, Any], *, kb_version: str | None = None) -> list[dict[str, Any]]:
+def page_index_node_candidates(
+    state: dict[str, Any], *, kb_version: str | None = None
+) -> list[dict[str, Any]]:
     source_versions = source_version_by_id(state)
     default_version = kb_version or next(iter(source_versions.values()), "inspection_kb@1.0.0")
     unique: dict[str, dict[str, Any]] = {}
@@ -1047,7 +1133,13 @@ def page_index_node_candidates(state: dict[str, Any], *, kb_version: str | None 
     return list(unique.values())
 
 
-def clause_score(clause: dict[str, Any], tokens: list[str], *, node_id: int | None = None, business_pack_id: str | None = None) -> float:
+def clause_score(
+    clause: dict[str, Any],
+    tokens: list[str],
+    *,
+    node_id: int | None = None,
+    business_pack_id: str | None = None,
+) -> float:
     haystack = " ".join(
         str(part or "")
         for part in [
@@ -1083,13 +1175,23 @@ def retrieval_quality_bias(clause: dict[str, Any], query: str) -> float:
     combined = f"{source_path} {title} {tags}"
     score = 0.0
     quality_flags = {str(item) for item in clause.get("qualityFlags") or []}
-    if clause.get("evidenceUsable") is False or "publisher_metadata" in quality_flags or "web_url_metadata" in quality_flags:
+    if (
+        clause.get("evidenceUsable") is False
+        or "publisher_metadata" in quality_flags
+        or "web_url_metadata" in quality_flags
+    ):
         score -= 28.0
     if str(clause.get("retrievalWeightTier") or "") == "metadata":
         score -= 12.0
-    if context_type in {"business_rule_context", "context_only"} or source_path.endswith("rules/业务规则.md") or "业务规则.md" in source_path:
+    if (
+        context_type in {"business_rule_context", "context_only"}
+        or source_path.endswith("rules/业务规则.md")
+        or "业务规则.md" in source_path
+    ):
         score -= 40.0
-    elif context_type == "visual_extracted_reference" or "visual" in source_method or "视觉" in tags:
+    elif (
+        context_type == "visual_extracted_reference" or "visual" in source_method or "视觉" in tags
+    ):
         score -= 12.0
     elif context_type == "standard_reference":
         score += 4.0
@@ -1179,7 +1281,11 @@ def page_index_node_score(
     if node_id is not None and str(node_id) in node_types:
         score += 1.0
     quality_flags = {str(item) for item in node.get("qualityFlags") or []}
-    if node.get("evidenceUsable") is False or "publisher_metadata" in quality_flags or "web_url_metadata" in quality_flags:
+    if (
+        node.get("evidenceUsable") is False
+        or "publisher_metadata" in quality_flags
+        or "web_url_metadata" in quality_flags
+    ):
         score -= 4.0
     return score
 
@@ -1196,11 +1302,16 @@ def page_index_tree_search(
     nodes = page_index_node_candidates(state, kb_version=kb_version)
     scored: list[dict[str, Any]] = []
     for node in nodes:
-        score = page_index_node_score(node, tokens, node_id=node_id, business_pack_id=business_pack_id)
+        score = page_index_node_score(
+            node, tokens, node_id=node_id, business_pack_id=business_pack_id
+        )
         if score <= 0 and tokens:
             continue
         scored.append({**node, "score": round(score or 0.1, 4)})
-    scored.sort(key=lambda item: (float(item.get("score") or 0), len(item.get("linkedClauseIds") or [])), reverse=True)
+    scored.sort(
+        key=lambda item: (float(item.get("score") or 0), len(item.get("linkedClauseIds") or [])),
+        reverse=True,
+    )
     selected_nodes = scored[: max(1, int(top_k or 5))]
     linked_clause_ids: list[str] = []
     for node in selected_nodes:
@@ -1299,23 +1410,26 @@ def retrieve_knowledge_clauses(
             top_k=top_k,
         )
         if selected_route == "pageindex_tree_search"
-        else {"candidateNodeCount": len(page_index_node_candidates(state, kb_version=kb_version)), "selectedNodes": [], "linkedClauseIds": [], "treeSearchPath": []}
+        else {
+            "candidateNodeCount": len(page_index_node_candidates(state, kb_version=kb_version)),
+            "selectedNodes": [],
+            "linkedClauseIds": [],
+            "treeSearchPath": [],
+        }
     )
-    page_index_clause_ids = {
-        str(item) for item in page_index_result.get("linkedClauseIds") or []
-    }
+    page_index_clause_ids = {str(item) for item in page_index_result.get("linkedClauseIds") or []}
     page_index_node_ids_by_identity: dict[str, list[str]] = {}
     for node in page_index_result.get("selectedNodes") or []:
         node_ref = str(node.get("pageIndexNodeId") or "")
         for clause_id in node.get("linkedClauseIds") or []:
             if clause_id and node_ref:
-                page_index_node_ids_by_identity.setdefault(str(clause_id), []).append(
-                    node_ref
-                )
+                page_index_node_ids_by_identity.setdefault(str(clause_id), []).append(node_ref)
     scored: list[dict[str, Any]] = []
     for clause in candidates:
         identity_ids = candidate_identity_ids(clause)
-        base_score = clause_score(clause, tokens, node_id=node_id, business_pack_id=business_pack_id)
+        base_score = clause_score(
+            clause, tokens, node_id=node_id, business_pack_id=business_pack_id
+        )
         route_score = 0.0
         retrieval_mode = "hybrid_bm25_dense_local"
         if selected_route == "exact_clause_lookup":
@@ -1334,20 +1448,25 @@ def retrieve_knowledge_clauses(
         if identity_ids.intersection(dense_ids):
             score += 35.0
             retrieval_mode = "hybrid_dense_local"
-        alias_matches = standard_alias_candidate_matches(clause, query, query_matches=query_alias_matches)
+        alias_matches = standard_alias_candidate_matches(
+            clause, query, query_matches=query_alias_matches
+        )
         score += standard_number_match_score(clause, query)
         score += max((float(match.get("boost") or 0.0) for match in alias_matches), default=0.0)
         score += source_title_overlap_score(clause, query)
         score += retrieval_quality_bias(clause, query)
-        if (
-            score > 0
-            and str(clause.get("retrievalWeightTier") or "")
-            == "legacy_supplemental"
-        ):
+        if score > 0 and str(clause.get("retrievalWeightTier") or "") == "legacy_supplemental":
             score = max(0.0001, score * 0.5)
         if score <= 0 and tokens:
             continue
-        scored.append({**clause, "score": round(score or 0.1, 4), "retrievalMode": retrieval_mode, "aliasMatches": alias_matches})
+        scored.append(
+            {
+                **clause,
+                "score": round(score or 0.1, 4),
+                "retrievalMode": retrieval_mode,
+                "aliasMatches": alias_matches,
+            }
+        )
     scored.sort(
         key=lambda item: (
             item.get("retrievalMode") == "exact_clause_lookup",
@@ -1366,15 +1485,12 @@ def retrieve_knowledge_clauses(
                 if candidate.get("evidenceUsable") is not False
                 and candidate.get("retrievalWeightTier") != "metadata"
                 and candidate.get("authority") != "legacy_only"
-                and candidate.get("contextType")
-                not in {"business_rule_context", "context_only"}
+                and candidate.get("contextType") not in {"business_rule_context", "context_only"}
             ),
             None,
         )
         if fallback:
-            selected = [
-                {**fallback, "score": 0.1, "retrievalMode": "clause_fallback"}
-            ]
+            selected = [{**fallback, "score": 0.1, "retrievalMode": "clause_fallback"}]
     trace_id = f"RTR-{uuid4().hex[:8].upper()}"
     trace = {
         "id": trace_id,
@@ -1396,10 +1512,24 @@ def retrieve_knowledge_clauses(
             "effectiveAt": server_time(),
         },
         "retrievers": [
-            {"type": "exact_clause_lookup", "enabled": selected_route == "exact_clause_lookup", "clauseRefs": exact_refs},
-            {"type": "standard_alias_registry", "enabled": bool(query_alias_matches), "matchCount": len(query_alias_matches), "matches": query_alias_matches[:5]},
+            {
+                "type": "exact_clause_lookup",
+                "enabled": selected_route == "exact_clause_lookup",
+                "clauseRefs": exact_refs,
+            },
+            {
+                "type": "standard_alias_registry",
+                "enabled": bool(query_alias_matches),
+                "matchCount": len(query_alias_matches),
+                "matches": query_alias_matches[:5],
+            },
             {"type": "clause_index", "topK": min(top_k, 5), "candidateCount": len(candidates)},
-            {"type": "hybrid_bm25_dense", "topK": top_k, "implementation": "offline_hash_pgvector_or_json", "denseHitCount": len(dense_ids)},
+            {
+                "type": "hybrid_bm25_dense",
+                "topK": top_k,
+                "implementation": "offline_hash_pgvector_or_json",
+                "denseHitCount": len(dense_ids),
+            },
             {
                 "type": "pageindex_tree",
                 "enabled": selected_route == "pageindex_tree_search",
@@ -1462,7 +1592,8 @@ def retrieve_knowledge_clauses(
             }
             for item in selected
         ],
-        "kbVersion": kb_version or (selected[0].get("kbVersion") if selected else "inspection_kb@1.0.0"),
+        "kbVersion": kb_version
+        or (selected[0].get("kbVersion") if selected else "inspection_kb@1.0.0"),
         "createdAt": server_time(),
     }
     return {"trace": trace, "clauses": selected}

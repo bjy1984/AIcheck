@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 from libs.standard_knowledge_canonical import (
     merge_canonical_semantic_candidates,
     select_canonical_field,
+    structured_identity,
 )
 from libs.standard_semantic_extraction import (
     PROMPT_VERSION,
@@ -125,6 +126,18 @@ def test_replacement_target_is_not_inferred_as_the_current_standard_code():
     assert extracted["replaces"][0]["value"] == "NB/T 47013.10-2010"
 
 
+def test_typographic_replacement_target_on_cover_is_not_current_standard_code():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={1: "本标准代替HG／T 20570—2019。"},
+            page_contexts={1: {"blockType": "title"}},
+        )
+    )
+
+    assert "standardCode" not in extracted
+    assert extracted["replaces"][0]["value"] == "HG/T 20570-2019"
+
+
 def test_deterministic_current_code_is_not_polluted_by_later_normative_codes():
     extracted = extract_deterministic_standard_metadata(
         semantic_record_fixture(
@@ -170,6 +183,45 @@ def test_titled_body_scans_the_title_not_its_normative_reference_text_for_identi
     assert "standardCode" not in extracted
 
 
+@pytest.mark.parametrize("block_type", ["title", "header"])
+def test_late_title_or_header_block_is_not_verified_identity_context(block_type):
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={7: "规范性引用文件 GB/T 123-2020"},
+            page_contexts={
+                7: {
+                    "blockType": block_type,
+                    "sectionPath": ["规范性引用文件"],
+                }
+            },
+        )
+    )
+
+    assert "standardCode" not in extracted
+
+
+def test_section_path_must_end_with_exact_front_matter_marker():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={7: "附录说明 GB/T 123-2020"},
+            page_contexts={7: {"sectionPath": ["附录", "封面要求"]}},
+        )
+    )
+
+    assert "standardCode" not in extracted
+
+
+def test_section_path_ending_front_matter_marker_is_verified_identity_context():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={7: "GB/T 123-2020 标准文本"},
+            page_contexts={7: {"sectionPath": ["文档", "国家标准封面"]}},
+        )
+    )
+
+    assert extracted["standardCode"][0]["value"] == "GB/T 123-2020"
+
+
 def test_labeled_standard_number_is_valid_identity_context():
     extracted = extract_deterministic_standard_metadata(
         semantic_record_fixture(pages={3: "标准编号：GB/T 123-2020"})
@@ -178,12 +230,28 @@ def test_labeled_standard_number_is_valid_identity_context():
     assert extracted["standardCode"][0]["value"] == "GB/T 123-2020"
 
 
+def test_identity_label_requires_the_code_immediately_after_the_label():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(pages={7: "标准编号：待确认；规范性引用 GB/T 123-2020"})
+    )
+
+    assert "standardCode" not in extracted
+
+
 def test_deterministic_standard_code_uses_canonical_display_form():
     extracted = extract_deterministic_standard_metadata(
         semantic_record_fixture(pages={3: "标准编号：GBT 5117-2012"})
     )
 
     assert extracted["standardCode"][0]["value"] == "GB/T 5117-2012"
+
+
+def test_labeled_astm_designation_is_valid_identity_context():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(pages={3: "标准编号：ASTM A106/A106M-19"})
+    )
+
+    assert extracted["standardCode"][0]["value"] == "ASTM A106/A106M-19"
 
 
 def test_model_semantics_are_strict_json_and_evidence_grounded():
@@ -299,6 +367,74 @@ def test_scope_value_does_not_treat_shared_boilerplate_as_substantive_grounding(
         )
 
 
+@pytest.mark.parametrize(
+    ("value", "quoted_text"),
+    [
+        ("适用于低碳钢材料。", "不适用于低碳钢材料"),
+        ("适用于低碳钢材料。", "不适用低碳钢材料"),
+        ("不适用于低碳钢材料。", "适用于低碳钢材料"),
+    ],
+)
+def test_scope_value_rejects_contradictory_applicability_polarity(
+    value,
+    quoted_text,
+):
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: quoted_text}),
+            FakeLiteLLMClient(
+                {
+                    "scope": {
+                        "value": value,
+                        "pageNo": 7,
+                        "quotedText": quoted_text,
+                    }
+                }
+            ),
+        )
+
+
+def test_scope_value_accepts_aligned_negative_applicability_polarity():
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: "本标准不适用低碳钢材料。"}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": "不适用于低碳钢材料。",
+                    "pageNo": 7,
+                    "quotedText": "本标准不适用低碳钢材料",
+                }
+            }
+        ),
+    )
+
+    assert extracted["scope"]["value"] == "不适用于低碳钢材料。"
+    assert extracted["scope"]["semanticEvidence"] == {
+        "valuePolarity": "negative",
+        "quotePolarity": "negative",
+        "negationMatches": True,
+        "sharedSubstantiveTokens": ["低碳钢", "碳钢材", "钢材料"],
+    }
+
+
+def test_scope_semantic_evidence_keeps_shared_token_summary_compact():
+    scope = "适用于ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghij材料。"
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: scope}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": scope,
+                    "pageNo": 7,
+                    "quotedText": scope.rstrip("。"),
+                }
+            }
+        ),
+    )
+
+    assert len(extracted["scope"]["semanticEvidence"]["sharedSubstantiveTokens"]) <= 32
+
+
 def test_scope_value_accepts_substantive_partial_quote():
     extracted = extract_standard_semantics(
         semantic_record_fixture(pages={7: "适用于低碳钢或低合金钢材料。"}),
@@ -351,6 +487,84 @@ def test_relation_standard_code_requires_exact_reference_boundary():
                 }
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("quoted_code", "expected"),
+    [
+        ("GB 50236-2011", "GB 50236-2011"),
+        ("GB/T 123-2020", "GB/T 123-2020"),
+        ("NB/T 47013.3-2015", "NB/T 47013.3-2015"),
+        ("JB/T 3223-2017", "JB/T 3223-2017"),
+        ("SY/T 4113.11-2023", "SY/T 4113.11-2023"),
+        ("TSG D7006-2020", "TSG D7006-2020"),
+        ("DL/T 123.4-2020", "DL/T 123.4-2020"),
+        ("HG／T 20570—2019", "HG/T 20570-2019"),
+        ("ISO 9001:2015", "ISO 9001:2015"),
+        ("IEC 60079-1:2014", "IEC 60079-1:2014"),
+        ("ASTM A106/A106M-19", "ASTM A106/A106M-19"),
+    ],
+)
+def test_broad_standard_families_validate_with_exact_boundaries(
+    quoted_code,
+    expected,
+):
+    record = semantic_record_fixture(pages={7: f"按{quoted_code}执行"})
+    record["identity"] = {"standardCode": {"value": "GB/T 5000-2020"}}
+
+    extracted = extract_standard_semantics(
+        record,
+        FakeLiteLLMClient(
+            {
+                "normativeReferences": [
+                    {
+                        "standardCode": quoted_code,
+                        "pageNo": 7,
+                        "quotedText": f"按{quoted_code}执行",
+                    }
+                ]
+            }
+        ),
+    )
+
+    assert extracted["normativeReferences"][0]["targetStandardCode"] == expected
+
+
+def test_malformed_reference_item_is_rejected_without_dropping_valid_relations_or_fields():
+    record = semantic_record_fixture(
+        pages={7: ("适用于低碳钢材料。按DL/T 123.4-2020执行。来源误写XYZ/T 12-2020。")}
+    )
+    record["identity"] = {"standardCode": {"value": "GB/T 5000-2020"}}
+
+    extracted = extract_standard_semantics(
+        record,
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": "适用于低碳钢材料。",
+                    "pageNo": 7,
+                    "quotedText": "适用于低碳钢材料",
+                },
+                "normativeReferences": [
+                    {
+                        "standardCode": "DL/T 123.4-2020",
+                        "pageNo": 7,
+                        "quotedText": "按DL/T 123.4-2020执行",
+                    },
+                    {
+                        "standardCode": "XYZ/T 12-2020",
+                        "pageNo": 7,
+                        "quotedText": "来源误写XYZ/T 12-2020",
+                    },
+                ],
+            }
+        ),
+    )
+
+    assert extracted["scope"]["value"] == "适用于低碳钢材料。"
+    assert [item["targetStandardCode"] for item in extracted["normativeReferences"]] == [
+        "DL/T 123.4-2020"
+    ]
 
 
 def test_model_standard_name_requires_grounded_evidence():
@@ -551,6 +765,48 @@ def test_replacement_relations_union_deterministic_and_distinct_model_relations(
         item for item in extracted["replacementRelations"] if item["purpose"] == "replaces"
     )
     assert replaces["extractionMethod"] == "deterministic"
+
+
+def test_replacement_identity_separates_sources_for_the_same_relation_and_target():
+    first = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": "GB/T 1000-2020",
+            "purpose": "replaces",
+            "targetStandardCode": "HG/T 20570-2019",
+        },
+    )
+    second = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": "GB/T 2000-2020",
+            "purpose": "replaces",
+            "targetStandardCode": "HG/T 20570-2019",
+        },
+    )
+
+    assert first != second
+
+
+def test_replacement_identity_deduplicates_typographic_variants_within_same_source():
+    deterministic = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": "GB／T 1000—2020",
+            "purpose": "replaces",
+            "targetStandardCode": "HG／T 20570—2019",
+        },
+    )
+    model = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": "GBT 1000-2020",
+            "purpose": "replaces",
+            "targetStandardCode": "HGT 20570-2019",
+        },
+    )
+
+    assert deterministic == model
 
 
 def test_relations_use_standard_code_selected_in_same_extraction_and_keep_name():

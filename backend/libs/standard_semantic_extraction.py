@@ -23,12 +23,6 @@ PROMPT_VERSION = "standard-canonical-extraction-v1"
 MODEL_ROUTE = "review-chat"
 SOURCE_TYPE = "new_mineru_semantic"
 
-_CODE_PATTERN = re.compile(
-    r"(?<![A-Z0-9])"
-    r"([A-Z]{1,5}(?:\s*/\s*[A-Z])?(?:\s+[A-Z])?\s*"
-    r"\d+(?:\.\d+)*\s*[-—－]\s*\d{4})"
-    r"(?!\d)"
-)
 _DATE_VALUE = r"(\d{4}(?:[-./年])\d{1,2}(?:[-./月])\d{1,2}日?)"
 _DATE_TOKEN_PATTERN = re.compile(_DATE_VALUE)
 _DATE_PATTERNS = {
@@ -38,7 +32,7 @@ _DATE_PATTERNS = {
 _AUTHORITY_PATTERN = re.compile(
     r"(?:发布机构|发布部门|批准部门|批准发布部门)\s*[：:]?\s*([^。；;\n]{2,80})"
 )
-_REPLACEMENT_PATTERN = re.compile(rf"(?:代替|替代)\s*{_CODE_PATTERN.pattern}")
+_REPLACEMENT_LABEL_PATTERN = re.compile(r"(?:代替|替代)\s*")
 _LIST_FIELDS = {"draftingOrganizations", "draftingPeople", "keywords"}
 _RELATION_FIELDS = {"normativeReferences", "replacementRelations"}
 _NORMATIVE_KEYS = {
@@ -56,13 +50,22 @@ _IDENTITY_BLOCK_TYPES = {
     "cover_title",
     "document_title",
     "header",
-    "heading",
     "page_header",
     "title",
 }
-_IDENTITY_CONTEXT_MARKERS = ("封面", "标准标题", "document title", "cover", "header")
+_IDENTITY_SECTION_TAILS = {"封面", "首页", "标准名称"}
 _IDENTITY_LABEL_PATTERN = re.compile(r"(?:标准编号|标准号|标准代号)\s*[：:]?\s*")
 _SCOPE_BOILERPLATE = ("本标准", "标准规定", "规定了", "适用于", "适用", "用于")
+_SCOPE_NEGATIVE_PREDICATES = (
+    "不适用于",
+    "不适用",
+    "不得用于",
+    "不宜用于",
+    "不能用于",
+    "禁止用于",
+    "不用于",
+)
+_SCOPE_POSITIVE_PREDICATES = ("适用于", "适用", "可用于", "用于")
 _PROMPT_INSTRUCTION = (
     "Extract only values explicitly supported by the supplied new MinerU pages. "
     "Return one strict JSON object with only requested fields. Omit unknown values. "
@@ -201,12 +204,46 @@ def _compact_semantic_text(value: str) -> str:
 
 def _substantive_trigrams(value: str) -> set[str]:
     compact = _compact_semantic_text(value)
+    for predicate in (*_SCOPE_NEGATIVE_PREDICATES, *_SCOPE_POSITIVE_PREDICATES):
+        compact = compact.replace(predicate, "")
     for boilerplate in _SCOPE_BOILERPLATE:
         compact = compact.replace(boilerplate, "")
     return {compact[index : index + 3] for index in range(max(0, len(compact) - 2))}
 
 
+def _scope_polarity(value: str) -> str:
+    compact = _compact_semantic_text(value)
+    negative = any(predicate in compact for predicate in _SCOPE_NEGATIVE_PREDICATES)
+    residual = compact
+    for predicate in _SCOPE_NEGATIVE_PREDICATES:
+        residual = residual.replace(predicate, "")
+    positive = any(predicate in residual for predicate in _SCOPE_POSITIVE_PREDICATES)
+    if negative and positive:
+        return "mixed"
+    if negative:
+        return "negative"
+    if positive:
+        return "positive"
+    return "neutral"
+
+
+def _scope_evidence_signature(value: str, quoted_text: str) -> dict[str, Any]:
+    value_polarity = _scope_polarity(value)
+    quote_polarity = _scope_polarity(quoted_text)
+    return {
+        "valuePolarity": value_polarity,
+        "quotePolarity": quote_polarity,
+        "negationMatches": value_polarity == quote_polarity and value_polarity != "mixed",
+        "sharedSubstantiveTokens": sorted(
+            _substantive_trigrams(value) & _substantive_trigrams(quoted_text)
+        )[:32],
+    }
+
+
 def _scope_is_supported(value: str, quoted_text: str) -> bool:
+    evidence = _scope_evidence_signature(value, quoted_text)
+    if not evidence["negationMatches"]:
+        return False
     compact_value = _compact_semantic_text(value)
     compact_quote = _compact_semantic_text(quoted_text)
     if min(len(compact_value), len(compact_quote)) < 4:
@@ -255,27 +292,40 @@ def _identity_code_candidates(record: dict[str, Any]) -> list[tuple[int, str, st
         text = _normalize_text(block.get("text"))
         if page_no is None or not text:
             continue
-        spans: list[str] = []
+        spans: list[tuple[str, bool]] = []
         for label in _IDENTITY_LABEL_PATTERN.finditer(text):
-            spans.append(text[label.end() : label.end() + 80])
+            spans.append((text[label.end() : label.end() + 80], True))
         title = _normalize_text(block.get("title"))
-        if title:
-            spans.append(title)
         block_type = str(block.get("blockType") or block.get("type") or "").lower()
-        section_path = _normalize_text(block.get("sectionPath"))
-        contextual = block_type in _IDENTITY_BLOCK_TYPES or any(
-            marker in section_path.lower() for marker in _IDENTITY_CONTEXT_MARKERS
+        raw_section_path = block.get("sectionPath")
+        if isinstance(raw_section_path, (list, tuple)):
+            section_tail = _normalize_text(raw_section_path[-1] if raw_section_path else "")
+        else:
+            normalized_path = _normalize_text(raw_section_path)
+            section_tail = re.split(r"[/|>]", normalized_path)[-1].strip()
+        contextual = (page_no <= 2 and block_type in _IDENTITY_BLOCK_TYPES) or (
+            any(section_tail.endswith(tail) for tail in _IDENTITY_SECTION_TAILS)
         )
         if contextual:
-            spans.append(text)
-        for span in spans:
-            for matched in _CODE_PATTERN.finditer(span):
-                prefix = span[max(0, matched.start() - 12) : matched.start()]
-                if re.search(r"(?:代替|替代)\s*$", prefix):
-                    continue
-                candidates.append(
-                    (page_no, matched.group(1), _normalize_standard_code(matched.group(1)))
+            if title:
+                spans.append((title, False))
+            spans.append((text, False))
+        for span, require_prefix in spans:
+            for reference in standard_refs_from_text(span):
+                value = display_standard_number(
+                    str(reference.get("prefix") or ""),
+                    str(reference.get("number") or ""),
+                    str(reference.get("year") or ""),
                 )
+                compact_span = _compact_semantic_text(span)
+                compact_value = _compact_semantic_text(value)
+                if require_prefix and not compact_span.startswith(compact_value):
+                    continue
+                if any(
+                    f"{relation}{compact_value}" in compact_span for relation in ("代替", "替代")
+                ):
+                    continue
+                candidates.append((page_no, span, value))
     return candidates
 
 
@@ -344,18 +394,30 @@ def extract_deterministic_standard_metadata(
                     extraction_method="deterministic",
                 ),
             )
-        for matched in _REPLACEMENT_PATTERN.finditer(page_text):
-            code_matches = list(_CODE_PATTERN.finditer(matched.group(0)))
-            if not code_matches:
+        for matched in _REPLACEMENT_LABEL_PATTERN.finditer(page_text):
+            target_text = page_text[matched.end() : matched.end() + 80]
+            relation_text = page_text[matched.start() : matched.end() + 80]
+            references = standard_refs_from_text(target_text)
+            if not references:
+                continue
+            reference = references[0]
+            target_code = display_standard_number(
+                str(reference.get("prefix") or ""),
+                str(reference.get("number") or ""),
+                str(reference.get("year") or ""),
+            )
+            if not _compact_semantic_text(target_text).startswith(
+                _compact_semantic_text(target_code)
+            ):
                 continue
             _append_unique(
                 result,
                 "replaces",
                 _candidate(
                     record,
-                    value=_normalize_standard_code(code_matches[-1].group(1)),
+                    value=target_code,
                     page_no=page_no,
-                    quoted_text=matched.group(0),
+                    quoted_text=relation_text,
                     extraction_method="deterministic",
                 ),
             )
@@ -511,12 +573,13 @@ def _validate_scalar(
         raise ValueError(f"{key}: value must be a non-empty string")
 
 
-def _validate_relations(key: str, value: Any, page_digest: dict[int, str]) -> None:
+def _validate_relations(key: str, value: Any, page_digest: dict[int, str]) -> list[dict[str, Any]]:
     if value is None:
-        return
+        return []
     if not isinstance(value, list):
         raise ValueError(f"{key}: value must be a list")
     allowed_keys = _NORMATIVE_KEYS if key == "normativeReferences" else _REPLACEMENT_KEYS
+    accepted: list[dict[str, Any]] = []
     for index, item in enumerate(value):
         path = f"{key}[{index}]"
         if not isinstance(item, dict):
@@ -529,6 +592,8 @@ def _validate_relations(key: str, value: Any, page_digest: dict[int, str]) -> No
             or not str(item.get("standardCode")).strip()
         ):
             raise ValueError(f"{path}: standardCode must be a non-empty string")
+        if _standard_ref_identity(str(item["standardCode"])) is None:
+            continue
         for optional_key in ("standardName", "clauseNo"):
             if optional_key in item and not isinstance(item[optional_key], str):
                 raise ValueError(f"{path}: {optional_key} must be a string")
@@ -543,6 +608,8 @@ def _validate_relations(key: str, value: Any, page_digest: dict[int, str]) -> No
         _, quoted_text = _grounded_evidence(path, item, page_digest)
         if not _standard_code_is_supported(str(item["standardCode"]), quoted_text):
             raise ValueError(f"{path}: standardCode is not supported by quotedText")
+        accepted.append(item)
+    return accepted
 
 
 def validate_standard_semantics(
@@ -563,9 +630,10 @@ def validate_standard_semantics(
         if unexpected:
             raise ValueError(f"model returned unrequested semantic fields: {sorted(unexpected)}")
     evidence_required = set(schema["evidenceRequired"])
+    validated = dict(payload)
     for key, value in payload.items():
         if key in _RELATION_FIELDS:
-            _validate_relations(key, value, page_digest)
+            validated[key] = _validate_relations(key, value, page_digest)
         else:
             _validate_scalar(
                 key,
@@ -573,7 +641,7 @@ def validate_standard_semantics(
                 evidence_required=key in evidence_required,
                 page_digest=page_digest,
             )
-    return payload
+    return validated
 
 
 def _model_field_candidate(record: dict[str, Any], key: str, value: Any) -> dict[str, Any] | None:
@@ -587,13 +655,19 @@ def _model_field_candidate(record: dict[str, Any], key: str, value: Any) -> dict
         scalar_value = value
         page_no = None
         quoted_text = ""
-    return _candidate(
+    candidate = _candidate(
         record,
         value=scalar_value,
         page_no=page_no,
         quoted_text=quoted_text,
         extraction_method="model",
     )
+    if key == "scope":
+        candidate["semanticEvidence"] = _scope_evidence_signature(
+            str(scalar_value or ""),
+            quoted_text,
+        )
+    return candidate
 
 
 def _normative_candidate(
@@ -774,7 +848,7 @@ def extract_standard_semantics(
         payload = json.loads(client.first_message_text(response))
     except (TypeError, json.JSONDecodeError) as exc:
         raise ValueError("model response must be a strict JSON object") from exc
-    validate_standard_semantics(
+    payload = validate_standard_semantics(
         payload,
         page_digest,
         requested_fields=requested_fields,
