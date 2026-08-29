@@ -23,6 +23,109 @@ sys.path.insert(0, "/app/scripts")
 from libs.contracts.responses import server_time  # noqa: E402
 
 
+def _auto_review_chain_checks() -> list[tuple[str, bool, str]]:
+    """自动审查链（每上传自动分析）的活体检查。
+
+    这条链 2026-08-29 之前**自上线从未生效过**，四处断裂互相掩护：策略读不到、
+    没有 beat、周期任务活锁、scoped flush 覆写单例。修通后必须有人站岗——
+    没有探针的话，同类回归只能靠人撞见（上次撞见花了三个月）。
+
+    只读状态，不上传、不烧 LLM。beat 停摆没有直接可读的心跳字段，
+    用**积压**间接判断（这也正是用户会感受到的形态）：
+    - outbox 无积压：pending 事件超 15 分钟未消费 → beat 或 consume 任务死了
+    - 候选无卡死：pending 候选超 15 分钟未派发 → start 任务死了或活锁
+    - 无僵尸会话执行：心跳停摆超 30 分钟 → 会话收敛器没跑
+    """
+    import time as _time
+    from datetime import datetime
+
+    from libs.contracts.responses import SERVER_TZ
+    from libs.db.repository import load_state, repo
+
+    load_state()
+    now = datetime.now(SERVER_TZ)
+    checks: list[tuple[str, bool, str]] = []
+
+    def _age_minutes(value: object) -> float | None:
+        try:
+            parsed = datetime.strptime(str(value or "")[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+        return (now - parsed.replace(tzinfo=SERVER_TZ)).total_seconds() / 60
+
+    policies = [
+        row
+        for row in repo.state.get("auto_review_policies", [])
+        if isinstance(row, dict) and row.get("enabled") is True
+    ]
+    checks.append(
+        (
+            "自动审查策略可读（链路守卫的输入）",
+            True,  # 读得到即可：全关是合法业务状态，不是故障
+            f"启用中的项目 {len(policies)} 个",
+        )
+    )
+
+    # 只有开着策略的部署才需要检查积压：全关时链路本就不该动。
+    stale_events = []
+    for row in repo.state.get("auto_review_outbox", []):
+        if not isinstance(row, dict) or str(row.get("status") or "") != "pending":
+            continue
+        age = _age_minutes(row.get("createdAt"))
+        if age is not None and age > 15:
+            stale_events.append((row.get("id"), age))
+    checks.append(
+        (
+            "outbox 无积压（beat 在消费事件）",
+            not stale_events,
+            f"超 15 分钟未消费 {len(stale_events)} 条"
+            + (f"，最旧 {max(a for _, a in stale_events):.0f} 分钟" if stale_events else ""),
+        )
+    )
+
+    stale_candidates = []
+    for row in repo.state.get("auto_review_candidates", []):
+        if not isinstance(row, dict) or str(row.get("status") or "") != "pending":
+            continue
+        age = _age_minutes(row.get("availableAt") or row.get("createdAt"))
+        if age is not None and age > 15:
+            stale_candidates.append((row.get("id"), age))
+    checks.append(
+        (
+            "候选无卡死（周期任务在派发）",
+            not stale_candidates,
+            f"超 15 分钟未派发 {len(stale_candidates)} 个"
+            + (
+                f"，最旧 {max(a for _, a in stale_candidates):.0f} 分钟"
+                if stale_candidates
+                else ""
+            ),
+        )
+    )
+
+    # 会话 Agent 执行僵尸：与 reconcile_stalled_agent_executions 同口径。
+    zombie = []
+    for row in repo.state.get("agent_executions", []):
+        if not isinstance(row, dict) or str(row.get("status") or "") != "running":
+            continue
+        epoch = row.get("heartbeatEpoch") or row.get("startedEpoch")
+        try:
+            idle = _time.time() - float(epoch)
+        except (TypeError, ValueError):
+            idle = 10_000.0
+        if idle > 1800:
+            zombie.append((row.get("id"), idle / 60))
+    checks.append(
+        (
+            "无僵尸会话执行（收敛器在跑）",
+            not zombie,
+            f"心跳停摆超 30 分钟 {len(zombie)} 个"
+            + (f"，最旧 {max(m for _, m in zombie):.0f} 分钟" if zombie else ""),
+        )
+    )
+    return checks
+
+
 def main() -> int:
     from write_ops_audit import api
 
@@ -86,6 +189,8 @@ def main() -> int:
                     ws_ok = ws.get("code") == 0 and bool(results)
                     detail = f"node={probe_node} 结果 {len(results)} 条"
                 checks.append(("工作台载荷含分析结果", ws_ok, detail))
+
+    checks.extend(_auto_review_chain_checks())
 
     failed = [(step, detail) for step, ok, detail in checks if not ok]
     for step, ok, detail in checks:

@@ -105,3 +105,27 @@ def test_evidence_change_invalidates_session_tool_memory(monkeypatch) -> None:
     routes.repo.state["node_evidence_links"][0]["manualStatus"] = "rejected"
     assert refresh_review_session_evidence_fingerprint(session) is True
     assert session["toolMemoryRevision"] == 2
+
+
+def test_analysis_probe_watches_the_auto_review_chain() -> None:
+    """修通的链条必须有人站岗：上次「上线即死」靠人撞见花了三个月。
+    探针按积压判活（beat 无直接心跳字段），三项检查缺一不可。"""
+    probe = (BACKEND_ROOT / "scripts" / "analysis_probe.py").read_text(encoding="utf-8")
+    assert "_auto_review_chain_checks" in probe
+    for signal in ("outbox 无积压", "候选无卡死", "无僵尸会话执行"):
+        assert signal in probe, signal
+    # 必须真的接进主流程，而不是只定义不调用
+    assert "checks.extend(_auto_review_chain_checks())" in probe
+
+
+def test_session_execution_reaper_exists_and_matches_online_rule() -> None:
+    """会话侧僵尸执行此前只在「用户下一次发消息」时收敛——而槽被占死后
+    正是发不出下一条消息，自愈永远不触发。独立巡检脚本必须存在，
+    且判据与在线路径同源（同一个心跳阈值常量）。"""
+    reaper = BACKEND_ROOT / "scripts" / "reconcile_stalled_agent_executions.py"
+    assert reaper.exists()
+    source = reaper.read_text(encoding="utf-8")
+    assert "REVIEW_SESSION_HEARTBEAT_STALE_SECONDS" in source
+    assert '"interrupted"' in source
+    # 占位消息必须一起终结，否则前端一直转圈
+    assert '"review_messages"' in source
