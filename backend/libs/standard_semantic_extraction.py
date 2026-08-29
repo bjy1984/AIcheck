@@ -251,7 +251,9 @@ def _scope_predicate_polarity(text: str, predicate_start: int) -> str:
         gap = prefix[marker_start + len(marker) :]
         if len(gap) <= _SCOPE_MAX_PREDICATE_GAP and _SCOPE_NEGATION_GAP_PATTERN.fullmatch(gap):
             return "negative"
-        return "ambiguous"
+        # Bare weak markers also begin material names such as 不锈钢、无缝钢管、
+        # and 非合金钢. They carry polarity only when their entire suffix is an
+        # allowed, bounded path to the applicability predicate.
     return "positive"
 
 

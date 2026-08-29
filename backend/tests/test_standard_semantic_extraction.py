@@ -478,6 +478,55 @@ def test_scope_value_accepts_aligned_negative_applicability_polarity():
     }
 
 
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "不锈钢适用于腐蚀环境",
+        "无缝钢管适用于高压管道",
+        "非合金钢适用于焊接结构",
+    ],
+)
+def test_scope_material_name_weak_markers_do_not_change_positive_polarity(phrase):
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: phrase}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": phrase,
+                    "pageNo": 7,
+                    "quotedText": phrase,
+                }
+            }
+        ),
+    )
+
+    evidence = extracted["scope"]["semanticEvidence"]
+    assert evidence["valuePolarity"] == "positive"
+    assert evidence["quotePolarity"] == "positive"
+    assert evidence["negationMatches"] is True
+
+
+def test_scope_material_name_weak_markers_preserve_mixed_multi_clause_polarity():
+    phrase = "不锈钢适用于腐蚀环境，但无缝钢管不应被用于低压管道。"
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: phrase}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": phrase,
+                    "pageNo": 7,
+                    "quotedText": phrase,
+                }
+            }
+        ),
+    )
+
+    evidence = extracted["scope"]["semanticEvidence"]
+    assert evidence["valuePolarity"] == "mixed"
+    assert evidence["quotePolarity"] == "mixed"
+    assert evidence["negationMatches"] is True
+
+
 _SCOPE_NEGATIVE_PREDICATES = [
     "不应被用于",
     "不应当被用于",
