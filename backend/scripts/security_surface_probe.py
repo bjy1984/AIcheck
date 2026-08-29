@@ -68,6 +68,30 @@ def raw_call(path: str, role: str, method: str = "GET", body: bytes | None = Non
         return 0, f"{exc.__class__.__name__}: {exc}"
 
 
+# upload-session 会创建持久文档记录，即使从不 PUT 文件字节。
+# 探针必须登记并在末尾删除，否则每次巡检都留下一批「文档在、无 OCR 源」的
+# 僵尸——它们的 OCR 任务永久排队，看起来像产品的上传链路坏了
+# （2026-08-29 审计实锤：22 个探针污染文档 + 22 个僵尸任务）。
+_created_docs: list[str] = []
+
+
+def probe_upload_session(files: list[dict]) -> dict:
+    resp = api(
+        f"/api/projects/{PID}/documents/upload-session", "contractor", {"files": files}
+    )
+    if resp.get("code") == 0:
+        for entry in (resp.get("data") or {}).get("uploadUrls") or []:
+            doc_id = entry.get("documentId")
+            if doc_id:
+                _created_docs.append(str(doc_id))
+    return resp
+
+
+def cleanup_created_docs() -> None:
+    for doc_id in _created_docs:
+        api(f"/api/projects/{PID}/documents/{doc_id}", "admin", method="DELETE")
+
+
 # ---- 1. 路径穿越：上传会话的 fileName / relativePath ----
 traversal_names = [
     "../../../etc/passwd",
@@ -77,9 +101,8 @@ traversal_names = [
 ]
 escaped = []
 for name in traversal_names:
-    resp = api(
-        f"/api/projects/{PID}/documents/upload-session", "contractor",
-        {"files": [{"fileName": name, "fileSize": 1024, "fileType": "pdf"}]},
+    resp = probe_upload_session(
+        [{"fileName": name, "fileSize": 1024, "fileType": "pdf"}]
     )
     # 判据看**落盘路径**（storageKey / url），不看回显的 fileName——
     # 回显原样是正常的（前端要展示用户输入），真正危险的是写到哪。
@@ -97,10 +120,7 @@ bad_types = [("evil.sh", "application/x-sh"), ("evil.exe", "application/octet-st
              ("evil.html", "text/html"), ("evil.pdf.exe", "application/octet-stream")]
 accepted = []
 for name, ctype in bad_types:
-    resp = api(
-        f"/api/projects/{PID}/documents/upload-session", "contractor",
-        {"files": [{"fileName": name, "fileSize": 1024, "fileType": ctype}]},
-    )
+    resp = probe_upload_session([{"fileName": name, "fileSize": 1024, "fileType": ctype}])
     if resp.get("code") == 0:
         accepted.append(name)
 record("上传类型白名单：可执行/脚本被拒", not accepted, f"被接受的危险类型：{accepted}" if accepted else "4 种全部拒绝")
@@ -135,9 +155,15 @@ key = "PENTEST-REPLAY-1"
 first = api(f"/api/projects/{PID}/documents/upload-session", "contractor",
             {"files": [{"fileName": "replay-a.pdf", "fileSize": 100, "fileType": "pdf"}]},
             extra_headers={"Idempotency-Key": key})
+for _e in (first.get("data") or {}).get("uploadUrls") or []:
+    if _e.get("documentId"):
+        _created_docs.append(str(_e["documentId"]))
 second = api(f"/api/projects/{PID}/documents/upload-session", "contractor",
              {"files": [{"fileName": "replay-b.pdf", "fileSize": 999, "fileType": "pdf"}]},
              extra_headers={"Idempotency-Key": key})
+for _e in (second.get("data") or {}).get("uploadUrls") or []:
+    if _e.get("documentId"):
+        _created_docs.append(str(_e["documentId"]))
 # 判据：同 key 不同 body 必须冲突（40009 之类），不得静默返回首次结果或执行第二次
 conflict = second.get("code") != 0
 record("幂等：同 key 不同 body 被拒", conflict, f"first={first.get('code')} second={second.get('code')} msg={str(second.get('message'))[:60]}")
@@ -170,6 +196,8 @@ forged_status, forged_body = unauthenticated({
 })
 record("伪造 token 被拒", rejected(forged_status, forged_body),
        f"HTTP {forged_status} code={envelope_code(forged_body)}")
+
+cleanup_created_docs()  # 删除本次探测创建的所有文档，不留僵尸
 
 failed = [(s, d) for s, ok_, d in RESULTS if not ok_]
 print(f"\n共 {len(RESULTS)} 项，失败 {len(failed)}")
