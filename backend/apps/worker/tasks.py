@@ -1431,6 +1431,26 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
             shutil.rmtree(source_temp_root, ignore_errors=True)
 
 
+def dispatch_slice_for_knowledge_file(
+    knowledge_file: dict[str, Any],
+    expect_parse_result_id: str | None = None,
+) -> dict[str, Any]:
+    """OCR 成功后的切片派发，带项目资料拦截。
+
+    dispatcher 层已有 project_file_indexing_blocker，但 worker 的三处派发点
+    直接引用 dispatch_slice——测试替身可以整个换掉它（连拦截一起换）。
+    在调用方先判断一次，让「项目资料不索引」在两层都成立。
+    """
+    source = repo.find_one("knowledge_sources", knowledge_file.get("sourceId"))
+    if str((source or {}).get("sourceType") or "") in {"project-file", "project_file"} and not env_bool(
+        "AICHECK_PROJECT_FILE_INDEXING", False
+    ):
+        return {"status": "not_dispatched", "statusReason": "project_file_indexing_disabled"}
+    return task_dispatcher.dispatch_slice(
+        str(knowledge_file["id"]), expect_parse_result_id=expect_parse_result_id
+    )
+
+
 def _mineru_failure_code(job: dict[str, Any], exc: Exception) -> str:
     if isinstance(exc, (MinerUError, MinerUNormalizationError)):
         return str(exc.code)
@@ -1570,8 +1590,8 @@ def _execute_mineru_ocr_extract(
             knowledge_file = repo.knowledge_file_for_version(version_id)
             if knowledge_file:
                 try:
-                    next_dispatch = task_dispatcher.dispatch_slice(
-                        str(knowledge_file["id"]),
+                    next_dispatch = dispatch_slice_for_knowledge_file(
+                        knowledge_file,
                         expect_parse_result_id=str(
                             (result_record or {}).get("parseResultId")
                             or result.get("parseResultId")
@@ -2325,7 +2345,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 "statusReason": f"shadow_setup_{exc.__class__.__name__.lower()}",
             }
         if knowledge_file:
-            next_dispatch = task_dispatcher.dispatch_slice(knowledge_file["id"])
+            next_dispatch = dispatch_slice_for_knowledge_file(knowledge_file)
     persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
     return {
         **result,
@@ -3730,7 +3750,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
         targeting = (document_intelligence or {}).get("targeting")
         knowledge_file = repo.knowledge_file_for_version(str(run.get("documentVersionId") or ""))
         if applied.get("status") == "success" and knowledge_file:
-            run["nextDispatch"] = task_dispatcher.dispatch_slice(str(knowledge_file["id"]))
+            run["nextDispatch"] = dispatch_slice_for_knowledge_file(knowledge_file)
     repo.mark_ocr_pipeline_stage(run, "finalize", "success")
     final_status = "completed" if not blockers else "partial"
     formal_ready = bool(run.get("mode") == "active" and formal_profile_allowed and not blockers)
@@ -4438,11 +4458,15 @@ def embed_knowledge(
                     "totalChunks": len(chunks),
                     "taskId": continuation.id,
                 }
-            # 汇总前必须**强制刷新**批次记录：前面的批次由其他 worker 进程写入
-            # 并 flush 到库，本进程内存里那份可能是加载时的旧快照。
-            # ensure_collections_loaded 只在「从未加载」时补拉，集合已加载但内容
-            # 陈旧时它什么都不做——于是 all_batches 为空，汇总出 0 条向量，
-            # 判「数量不匹配」整份失败（2026-08-29 实测：chunks=143 批次=0）。
+            # 汇总要看到**所有**批次：前面的批次由其他 worker 进程写入并 flush 到库，
+            # 本进程内存里那份可能是旧快照（ensure_collections_loaded 只在
+            # 「从未加载」时补拉，已加载但陈旧时什么都不做）。
+            #
+            # 顺序不能反：**先 flush 自己刚算的这批，再拉别人的**。
+            # 反过来做的话，增量刷新会用库里的版本覆盖内存中尚未落库的最后一批,
+            # 把刚算好的向量冲掉——实测同一文件两次运行 vectorCount 从 32 变 0，
+            # 而那次真的花了 47 秒调用了 embedding API。
+            flush_state({"knowledge_embedding_batches", "knowledge_tasks"})
             repo.refresh_collections_incrementally({"knowledge_embedding_batches"})
             all_batches = sorted(
                 [item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") == file_id],

@@ -586,6 +586,13 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
         source = sources_by_id.get(file.get("sourceId")) or {}
         if file.get("indexEnabled") is False or source.get("sourceType") == "rule":
             continue
+        # 项目资料是**被审查的对象**，不是审查依据。检索的所有消费者
+        # （审查执行、节点标准依据、FDE 评测、健康探针）都在找规范条款——
+        # 混入施工方自己上传的资料，等于用被审对象当审查依据。
+        # 且这些分块 contextType 为空时会被默认成 standard_reference 加权，
+        # 污染更重（2026-08-29 审计：向量库 53% 是项目文件，消费者为零）。
+        if source.get("sourceType") == "project-file":
+            continue
         source_id = file.get("sourceId") or "KS-PROJECT-FILE"
         source_method = chunk.get("sourceMethod") or file.get("sourceMethod")
         candidates.append(

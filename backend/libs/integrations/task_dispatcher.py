@@ -71,6 +71,35 @@ def cpu_heavy_dispatch_blocker(mode: str) -> dict[str, Any] | None:
     }
 
 
+def project_file_indexing_blocker(file_id: str) -> dict[str, Any] | None:
+    """项目资料不做切片/向量化——它们是被审查的对象，不是检索语料。
+
+    检索的所有消费者（审查执行、节点标准依据、FDE 评测、健康探针）都在找
+    规范条款；项目资料混入等于用被审对象当审查依据（2026-08-29 审计：
+    向量库 53% 是项目文件、消费者为零，且哈希伪向量全部来自这批）。
+    同时它们是 cpu.heavy 积压的大头（单份图纸上千分块），白烧 embedding 配额。
+
+    收口在派发层：OCR 后自动派发、手动重试、运维重跑所有入口一次覆盖。
+    如未来要做「项目资料语义搜索」，设 AICHECK_PROJECT_FILE_INDEXING=true
+    并同步给检索加 source 过滤后再开。
+    """
+    if str(os.getenv("AICHECK_PROJECT_FILE_INDEXING") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    from libs.db.repository import repo
+
+    knowledge_file = repo.find_one("knowledge_files", file_id)
+    if not knowledge_file:
+        return None
+    source = repo.find_one("knowledge_sources", knowledge_file.get("sourceId"))
+    if str((source or {}).get("sourceType") or "") in {"project-file", "project_file"}:
+        return {
+            "mode": dispatch_mode(),
+            "taskId": None,
+            "statusReason": "project_file_indexing_disabled",
+        }
+    return None
+
+
 def deterministic_task_id(scope: str, value: str) -> str:
     digest = hashlib.sha256(f"{scope}:{value}".encode()).hexdigest()[:24]
     return f"aicheck-{scope}-{digest}"
@@ -128,6 +157,8 @@ def dispatch_slice(file_id: str, expect_parse_result_id: str | None = None) -> d
     试过用「文档状态是已识别」当判据，**同样失败**：文档状态和解析结果是
     同一次提交写的，一个看不见另一个也看不见。所以要传具体 id，不靠推断。
     """
+    if blocked := project_file_indexing_blocker(file_id):
+        return blocked
     mode = dispatch_mode()
     if mode == "inline":
         from apps.worker.tasks import slice_knowledge
@@ -148,6 +179,8 @@ def dispatch_slice(file_id: str, expect_parse_result_id: str | None = None) -> d
 
 
 def dispatch_embed(file_id: str) -> dict[str, Any]:
+    if blocked := project_file_indexing_blocker(file_id):
+        return blocked
     mode = dispatch_mode()
     if mode == "inline":
         from apps.worker.tasks import embed_knowledge

@@ -38,7 +38,18 @@ ONLY = os.environ.get("ONLY", "")  # slice / embed / 空=全部
 load_state()
 ensure_collections_loaded("knowledge_vectors")
 
-kfs = [f for f in repo.state.get("knowledge_files", []) if isinstance(f, dict)]
+# 项目资料（project-file）不再切片/向量化：它们是被审对象，不是检索语料
+# （检索已隔离、派发层已拦截）。这里只统计标准库侧的积压。
+_project_sources = {
+    str(s.get("id"))
+    for s in repo.state.get("knowledge_sources", [])
+    if isinstance(s, dict) and str(s.get("sourceType") or "") in {"project-file", "project_file"}
+}
+kfs = [
+    f
+    for f in repo.state.get("knowledge_files", [])
+    if isinstance(f, dict) and str(f.get("sourceId") or "") not in _project_sources
+]
 parse_by_version = {}
 for p in repo.state.get("ocr_parse_results", []):
     if isinstance(p, dict):

@@ -230,13 +230,16 @@ def test_postgres_execution_indexes_usable_review_incomplete_result(
     assert version["sliceStatus"] == "待切片"
     assert version["vectorStatus"] == "待向量化"
     assert document["materialTypeCode"] == "material_substitution_approval"
-    assert classification_seen_by_slice == ["material_substitution_approval"]
+    # 2026-08-29 架构调整：项目资料不再切片/向量化（被审对象，不是检索语料）。
+    # OCR 后不得派发切片、不得建 slice/vector 任务；分类结果照常写在文档上
+    # （上面的 materialTypeCode 断言）——自动审查链依赖它，与索引无关。
+    assert classification_seen_by_slice == [], "项目资料不得再派发切片"
     downstream = [
         item
         for item in repository.state["knowledge_tasks"]
         if item.get("documentVersionId") == version["id"]
     ]
-    assert {item.get("taskType") for item in downstream} >= {"slice", "vector"}
+    assert not {item.get("taskType") for item in downstream} & {"slice", "vector"}
     stages = {
         item["stage"]: item
         for item in repository.ocr_pipeline_stages(str(job.get("pipelineRunId") or ""))

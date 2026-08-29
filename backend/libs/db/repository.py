@@ -3130,7 +3130,10 @@ class InMemoryRepository:
             )
         if knowledge_file:
             source = self.find_one("knowledge_sources", knowledge_file.get("sourceId"))
-            if (source or {}).get("sourceType") != "rule":
+            # 项目资料不建切片/向量化任务：派发层会拦（project_file_indexing_blocker），
+            # 但任务记录若照建就会永远停在「排队中」——探针按积压告警、用户看着像卡死。
+            # 不该发生的事，任务清单里就不该出现。
+            if (source or {}).get("sourceType") not in {"rule", "project-file", "project_file"}:
                 self.upsert_knowledge_task(
                     task_type="slice",
                     target_id=knowledge_file["id"],

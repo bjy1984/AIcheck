@@ -10812,7 +10812,7 @@ def test_project_delete_removes_empty_project_and_archives_project_with_business
     assert archived["project"]["status"] == "已归档"
 
 
-def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) -> None:
+def test_upload_complete_inline_ocr_writes_fields_without_indexing_tasks(monkeypatch) -> None:
     from apps.worker import tasks
     from libs.knowledge_indexing import OFFLINE_EMBEDDING_MODEL, OFFLINE_VECTOR_DIMENSIONS
 
@@ -10865,24 +10865,16 @@ def test_upload_complete_inline_ocr_writes_fields_and_slice_task(monkeypatch) ->
     assert any(field["fieldValue"] == "TS6J-2026-0001" for field in fields)
 
     knowledge_file_id = f"KF-{created['documentId']}"
-    slice_task = next(
-        item for item in repo.state["knowledge_tasks"] if item["taskType"] == "slice" and item["targetId"] == knowledge_file_id
-    )
-    assert slice_task["status"] == "成功"
-
-    chunks = assert_ok(client.get(f"/knowledge/files/{knowledge_file_id}/chunks"))
-    assert chunks["total"] == 1
-    assert chunks["items"][0]["text"].startswith("证书编号")
-    vector_task = next(
-        item for item in repo.state["knowledge_tasks"] if item["taskType"] == "vector" and item["targetId"] == knowledge_file_id
-    )
-    assert vector_task["status"] == "成功"
-    vectors = assert_ok(client.get(f"/knowledge/files/{knowledge_file_id}/vectors"))
-    assert vectors["storedVectorCount"] == 1
-    vector = next(item for item in repo.state["knowledge_vectors"] if item.get("fileId") == knowledge_file_id)
-    assert vector["embeddingModel"] == OFFLINE_EMBEDDING_MODEL
-    assert vector["dimensions"] == OFFLINE_VECTOR_DIMENSIONS
-    assert len(vector["embedding"]) == OFFLINE_VECTOR_DIMENSIONS
+    # 2026-08-29 架构调整：项目资料是被审对象、不是检索语料，
+    # 上传后只做 OCR——不建切片/向量化任务、不产生分块与向量
+    # （见 task_dispatcher.project_file_indexing_blocker 与
+    # test_project_file_indexing_policy）。
+    assert not [
+        item
+        for item in repo.state["knowledge_tasks"]
+        if item["taskType"] in {"slice", "vector"} and item["targetId"] == knowledge_file_id
+    ], "项目资料不得再建切片/向量化任务"
+    assert not [item for item in repo.state["knowledge_vectors"] if item.get("fileId") == knowledge_file_id]
 
 
 def test_document_preview_and_download_use_current_version_signed_get(monkeypatch) -> None:
@@ -12097,6 +12089,26 @@ def test_completed_slice_and_embed_workers_are_idempotent(monkeypatch) -> None:
     doc, version = repo.create_document("P-2026-HDCP-001", "slice-embed-idempotent.pdf", "application/pdf")
     tasks.parse_document.run(doc["id"], version["id"], version["storageKey"], doc["fileName"])
     file_id = f"KF-{doc['id']}"
+
+    # 本用例钉的是 worker 幂等性（标准库仍依赖切片/向量化）。项目资料
+    # 已不建索引任务（2026-08-29 架构调整），把文件挂到标准库 source 上
+    # 保住测试意图。
+    knowledge_file = repo.find_one("knowledge_files", file_id)
+    assert knowledge_file is not None
+    standard_source = next(
+        (item for item in repo.state["knowledge_sources"] if str(item.get("sourceType") or "") == "standard"),
+        None,
+    )
+    assert standard_source is not None, "测试语料里必须有标准库 source"
+    knowledge_file["sourceId"] = standard_source["id"]
+    repo.upsert_knowledge_task(
+        task_type="slice", target_id=file_id, target_name=doc["fileName"],
+        document_id=doc["id"], version_id=version["id"],
+    )
+    repo.upsert_knowledge_task(
+        task_type="vector", target_id=file_id, target_name=doc["fileName"],
+        document_id=doc["id"], version_id=version["id"],
+    )
 
     first_slice = tasks.slice_knowledge.run(file_id)
     slice_task = next(item for item in repo.state["knowledge_tasks"] if item["taskType"] == "slice" and item["targetId"] == file_id)

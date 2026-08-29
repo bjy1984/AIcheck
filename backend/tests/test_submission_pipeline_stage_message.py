@@ -50,28 +50,18 @@ def test_三段都就绪时不拦(_doc):
     assert document_upload_pipeline_complete(document) is True
 
 
-def test_卡在切片时指名切片(_doc):
-    """线上真实形态：OCR 已识别、切片没排上队。
-
-    原文案说「上传处理尚未成功」，让人去查上传——那里根本没有问题。
-    """
+def test_切片向量化不再阻塞报审(_doc):
+    """报审只看 OCR。项目资料是被审对象、不是检索语料，已不再切片/向量化
+    （2026-08-29 架构调整，见 task_dispatcher.project_file_indexing_blocker）——
+    这两段状态无论是什么都不得挡报审，否则施工方被一个无意义的环节卡死。"""
     document, knowledge_file = _doc
     knowledge_file["sliceStatus"] = "待切片"
     knowledge_file["vectorStatus"] = "待向量化"
-    stage = document_upload_pipeline_stage(document)
-    assert stage["stage"] == "slice"
-    assert stage["stageLabel"] == "切片"
-    message = pipeline_incomplete_message([{"documentId": document["id"], **stage}])
-    assert "切片" in message
-    assert "上传" not in message, "又把锅甩给上传了"
+    assert document_upload_pipeline_stage(document) is None
 
-
-def test_卡在向量化时指名向量化(_doc):
-    document, knowledge_file = _doc
-    knowledge_file["vectorStatus"] = "待向量化"
-    stage = document_upload_pipeline_stage(document)
-    assert stage["stage"] == "vector"
-    assert "向量化" in pipeline_incomplete_message([{"documentId": document["id"], **stage}])
+    knowledge_file["sliceStatus"] = "切片失败"
+    knowledge_file["vectorStatus"] = "向量化失败"
+    assert document_upload_pipeline_stage(document) is None
 
 
 def test_ocr_未完成时才说识别(_doc):
@@ -99,34 +89,21 @@ def test_失败和进行中要说得不一样(_doc):
     assert waiting != failed
 
 
-def test_全部被判为噪声时要说清原因() -> None:
-    """「切片失败」不够——用户会反复重传同一份文件。
-
-    0819 线上实测：一份纯英文资料的文本整份被 symbol_ascii_only 隔离
-    （规则本身没错：中文语料里纯 ASCII 片段多是页眉页脚页码）。
-    资料传上来了、文字也认出来了，只是内容被当成干扰整份丢掉——
-    这种情况重试一百次也不会变，必须直说原因。
-    """
+def test_ocr_完成后一律就绪() -> None:
+    """OCR 是报审的唯一前置。切片失败（含全部被判噪声）不再挡报审——
+    那两段只服务标准库检索，与项目资料的报审无关。"""
     from apps.api.submission_pipeline import pipeline_stage_of
 
-    stage = pipeline_stage_of(
-        {"currentOcrStatus": "已识别"},
-        {},
-        {"sliceStatus": "切片失败", "sliceStatusReason": "all_chunks_quarantined"},
-    )
-    assert stage is not None
-    assert stage["stage"] == "slice"
-    assert "噪声" in str(stage.get("reason") or ""), "没有把隔离原因带出来"
+    for slice_status, reason in (
+        ("切片失败", "all_chunks_quarantined"),
+        ("切片中", ""),
+        ("未切片", ""),
+    ):
+        stage = pipeline_stage_of(
+            {"currentOcrStatus": "已识别"},
+            {},
+            {"sliceStatus": slice_status, "sliceStatusReason": reason, "vectorStatus": "未向量化"},
+        )
+        assert stage is None, f"slice={slice_status} 不该挡报审"
 
-    message = pipeline_incomplete_message([stage])
-    assert "噪声" in message, f"提示里没说原因：{message}"
-    assert "重试" not in message, f"还在让用户重试一件重试也没用的事：{message}"
 
-
-def test_切片确实在进行中时仍然说等待() -> None:
-    """别把「还在跑」也说成失败——那会让人以为要去处理什么。"""
-    from apps.api.submission_pipeline import pipeline_stage_of
-
-    stage = pipeline_stage_of({"currentOcrStatus": "已识别"}, {}, {"sliceStatus": "切片中"})
-    message = pipeline_incomplete_message([stage])
-    assert "还在进行中" in message, message

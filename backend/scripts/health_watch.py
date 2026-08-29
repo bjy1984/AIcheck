@@ -49,7 +49,18 @@ def check() -> tuple[list[str], list[str]]:
     alerts: list[str] = []
     facts: list[str] = []
 
-    kfs = [item for item in repo.state.get("knowledge_files", []) if isinstance(item, dict)]
+    # 项目资料不再做切片/向量化（被审对象，不是检索语料）——索引健康
+    # 只对标准库有意义，把项目文件算进来会永远告警。
+    project_sources = {
+        str(s.get("id"))
+        for s in repo.state.get("knowledge_sources", [])
+        if isinstance(s, dict) and str(s.get("sourceType") or "") in {"project-file", "project_file"}
+    }
+    kfs = [
+        item
+        for item in repo.state.get("knowledge_files", [])
+        if isinstance(item, dict) and str(item.get("sourceId") or "") not in project_sources
+    ]
     pending = [k for k in kfs if str(k.get("vectorStatus")) in {"待向量化", "向量化中"}]
     failed = [k for k in kfs if str(k.get("vectorStatus")) == "向量化失败"]
     # 只看向量化状态会漏掉一大半积压：卡在切片前的文件 vectorStatus 还是「未向量化」，

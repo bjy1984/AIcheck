@@ -69,7 +69,10 @@ def test_aggregation_force_refreshes_batch_records() -> None:
     source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
     body = source.split("def embed_knowledge", 1)[1][:8000]
     assert "refresh_collections_incrementally" in body, "汇总前必须强制刷新批次记录"
-    # 刷新必须在读取 all_batches 之前
+    # 顺序契约：先 flush 自己刚算的批次，再增量刷新拉其他进程的，最后读取。
+    # 反过来的话增量刷新会用库里的版本覆盖内存中尚未落库的最后一批，
+    # 把刚算好的向量冲掉（实测同一文件两次运行 vectorCount 从 32 变 0）。
     refresh_pos = body.index("refresh_collections_incrementally")
     read_pos = body.index("all_batches = sorted")
-    assert refresh_pos < read_pos, "刷新必须先于读取"
+    flush_pos = body.rindex("flush_state({\"knowledge_embedding_batches\"", 0, refresh_pos)
+    assert flush_pos < refresh_pos < read_pos, "顺序必须是 flush → refresh → 读取"
