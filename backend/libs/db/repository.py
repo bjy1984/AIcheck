@@ -183,6 +183,7 @@ STATE_COLLECTIONS = {
     "knowledge_files": "knowledge_files",
     "knowledge_tasks": "knowledge_tasks",
     "knowledge_chunks": "knowledge_chunks",
+    "standard_knowledge_records": "standard_knowledge_records",
     "knowledge_vectors": "knowledge_vectors",
     "knowledge_embedding_batches": "knowledge_embedding_batches",
     "knowledge_clauses": "knowledge_clauses",

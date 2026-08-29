@@ -2502,6 +2502,7 @@ def fresh_state() -> dict[str, Any]:
         "knowledge_files": [*standard_knowledge_files, *knowledge_files],
         "knowledge_tasks": [*standard_knowledge_tasks, *deepcopy(KNOWLEDGE_TASKS)],
         "knowledge_chunks": [],
+        "standard_knowledge_records": [],
         "knowledge_vectors": [],
         "knowledge_clauses": deepcopy(STANDARD_KNOWLEDGE_SEED["clauses"]),
         "knowledge_page_index_nodes": deepcopy(STANDARD_KNOWLEDGE_SEED["pageIndexNodes"]),
