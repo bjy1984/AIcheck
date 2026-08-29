@@ -513,13 +513,84 @@ def normalize_clause(candidate: dict[str, Any], *, default_version: str = "inspe
         "evidenceUsable": bool(evidence_usable),
         "evidenceStatusReason": candidate.get("evidenceStatusReason") or metadata.get("evidenceStatusReason"),
         "retrievalWeightTier": candidate.get("retrievalWeightTier") or metadata.get("retrievalWeightTier") or "default",
+        "canonicalRecordId": candidate.get("canonicalRecordId"),
+        "canonicalItemId": candidate.get("canonicalItemId"),
+        "canonicalVersion": candidate.get("canonicalVersion"),
+        "sourceFingerprint": candidate.get("sourceFingerprint"),
+        "authority": candidate.get("authority"),
+        "sourceIds": list(candidate.get("sourceIds") or []),
+        "formalEvidenceEligible": candidate.get("formalEvidenceEligible"),
     }
+
+
+def canonical_clause_candidates(
+    state: dict[str, Any], *, kb_version: str | None = None
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for record in state.get("standard_knowledge_records", []) or []:
+        if not isinstance(record, dict):
+            continue
+        if kb_version and record.get("kbVersion") != kb_version:
+            continue
+        for category, block_type in (
+            ("clauses", None),
+            ("tables", "table"),
+            ("equations", "equation"),
+        ):
+            for item in record.get(category, []) or []:
+                if not isinstance(item, dict):
+                    continue
+                authority = str(item.get("authority") or "current")
+                source_ids = [
+                    str(source.get("sourceId"))
+                    for source in item.get("sources", []) or []
+                    if isinstance(source, dict) and source.get("sourceId")
+                ]
+                candidate = {
+                    **item,
+                    "fileId": record.get("knowledgeFileId"),
+                    "documentVersionId": record.get("documentVersionId"),
+                    "kbVersion": record.get("kbVersion"),
+                    "canonicalRecordId": record.get("id"),
+                    "canonicalItemId": item.get("id"),
+                    "canonicalVersion": record.get("canonicalVersion"),
+                    "sourceFingerprint": record.get("sourceFingerprint"),
+                    "authority": authority,
+                    "sourceIds": list(dict.fromkeys(source_ids)),
+                    "retrievalWeightTier": (
+                        "legacy_supplemental"
+                        if authority == "legacy_only"
+                        else "canonical_current"
+                    ),
+                    "formalEvidenceEligible": authority != "legacy_only"
+                    and bool(item.get("pageNo") or item.get("locatorIds")),
+                }
+                if block_type:
+                    candidate["blockType"] = block_type
+                if category == "tables":
+                    candidate["tableColumns"] = item.get("columnNames") or []
+                    candidate["tableRows"] = item.get("normalizedRows") or []
+                    candidate["tableHeaderReliable"] = bool(item.get("headerReliable"))
+                candidates.append(
+                    normalize_clause(
+                        candidate,
+                        default_version=str(
+                            record.get("kbVersion") or "inspection_kb@1.0.0"
+                        ),
+                    )
+                )
+    return candidates
 
 
 def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None = None) -> list[dict[str, Any]]:
     source_versions = source_version_by_id(state)
     default_version = kb_version or next(iter(source_versions.values()), "inspection_kb@1.0.0")
-    candidates: list[dict[str, Any]] = []
+    candidates = canonical_clause_candidates(state, kb_version=kb_version)
+    canonical_file_ids = {
+        str(item.get("knowledgeFileId"))
+        for item in state.get("standard_knowledge_records", []) or []
+        if isinstance(item, dict) and item.get("knowledgeFileId")
+    }
     files_by_id = {
         item.get("id"): item
         for item in state.get("knowledge_files", []) or []
@@ -533,6 +604,8 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
 
     for clause in state.get("knowledge_clauses", []) or []:
         if isinstance(clause, dict):
+            if str(clause.get("fileId") or "") in canonical_file_ids:
+                continue
             file = files_by_id.get(clause.get("fileId")) or {}
             context_type = clause.get("contextType") or file.get("contextType")
             if quarantine_interference_reasons(
@@ -572,6 +645,8 @@ def knowledge_clause_candidates(state: dict[str, Any], *, kb_version: str | None
 
     for chunk in state.get("knowledge_chunks", []) or []:
         if not isinstance(chunk, dict):
+            continue
+        if str(chunk.get("fileId") or "") in canonical_file_ids:
             continue
         context_type = chunk.get("contextType") or (files_by_id.get(chunk.get("fileId")) or {}).get("contextType")
         # 公式块的正文就是 LaTeX，按普通正文的纯符号规则会在检索入口被整条滤掉，
@@ -727,6 +802,8 @@ def retrieval_quality_bias(clause: dict[str, Any], query: str) -> float:
         score -= 28.0
     if str(clause.get("retrievalWeightTier") or "") == "metadata":
         score -= 12.0
+    if str(clause.get("retrievalWeightTier") or "") == "legacy_supplemental":
+        score -= 2.0
     if context_type == "business_rule_context" or source_path.endswith("rules/业务规则.md") or "业务规则.md" in source_path:
         score -= 40.0
     elif context_type == "visual_extracted_reference" or "visual" in source_method or "视觉" in tags:
