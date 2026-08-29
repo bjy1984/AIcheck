@@ -57,6 +57,27 @@ CRITICAL_QUALITY_FLAG_HINTS = (
 )
 
 
+def canonical_grounding_metadata(clauses: list[dict[str, Any]]) -> dict[str, Any]:
+    canonical = [
+        item for item in clauses if isinstance(item, dict) and item.get("canonicalRecordId")
+    ]
+    legacy = [item for item in canonical if item.get("authority") == "legacy_only"]
+    current = [item for item in canonical if item.get("authority") != "legacy_only"]
+
+    def values(key: str) -> list[str]:
+        return sorted({str(item[key]) for item in canonical if item.get(key)})
+
+    return {
+        "canonicalRecordIds": values("canonicalRecordId"),
+        "canonicalItemIds": values("canonicalItemId"),
+        "canonicalVersions": values("canonicalVersion"),
+        "canonicalSourceFingerprints": values("sourceFingerprint"),
+        "legacySupplementalCount": len(legacy),
+        "formalEvidenceReady": bool(current),
+        "blockingReasons": [] if current or not legacy else ["CANONICAL_LEGACY_ONLY_EVIDENCE"],
+    }
+
+
 def build_grounded_review_input(state: dict[str, Any], document_version_ids: set[str] | list[str] | tuple[str, ...]) -> dict[str, Any]:
     version_ids = {str(item) for item in document_version_ids if item}
     source_groups = [state.get("extracted_fields", []), state.get("ocr_parse_results", []), state.get("evidence_links", [])]

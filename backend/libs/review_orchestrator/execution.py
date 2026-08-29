@@ -45,6 +45,7 @@ from libs.review_evidence import bind_evidence_package_to_review_run, review_run
 from libs.review_grounding import (
     apply_grounding_guardrails,
     build_grounded_review_input,
+    canonical_grounding_metadata,
     grounding_prompt_block,
 )
 from libs.review_orchestrator import shard_execution
@@ -2483,11 +2484,27 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             top_k=5,
         )
         trace = retrieval["trace"]
+        canonical_metadata = canonical_grounding_metadata(
+            trace.get("selectedClauses") or []
+        )
+        trace.update(canonical_metadata)
         repo.state["retrieval_traces"].append(trace)
         context["retrievalTraces"] = [trace]
         context["knowledgeClauses"] = retrieval["clauses"]
-        append_tool_call(review_run, node_key, "search_knowledge_base", {"retrievalTraceId": trace["retrievalTraceId"]})
-        return {"retrievalTraceId": trace["retrievalTraceId"], "selectedClauses": len(trace.get("selectedClauses") or [])}
+        grounding_input = context.setdefault("groundingInput", {})
+        grounding_input.update(canonical_metadata)
+        grounding_input.setdefault("summary", {}).update(canonical_metadata)
+        append_tool_call(
+            review_run,
+            node_key,
+            "search_knowledge_base",
+            {"retrievalTraceId": trace["retrievalTraceId"]},
+        )
+        return {
+            "retrievalTraceId": trace["retrievalTraceId"],
+            "selectedClauses": len(trace.get("selectedClauses") or []),
+            **canonical_metadata,
+        }
     if node_key == "build_prompt":
         prompt_shape = build_review_prompt_shape(review_run, context)
         context["promptShape"] = prompt_shape
@@ -3698,6 +3715,7 @@ def review_run_timeline(review_run_id: str) -> list[dict[str, Any]]:
 def compact_retrieval_trace(trace: dict[str, Any]) -> dict[str, Any]:
     selected_clauses = trace.get("selectedClauses") or []
     page_index_tree = trace.get("pageIndexTree") or {}
+    canonical_metadata = canonical_grounding_metadata(selected_clauses)
     return {
         "retrievalTraceId": trace.get("retrievalTraceId") or trace.get("id"),
         "queryType": trace.get("queryType"),
@@ -3711,6 +3729,7 @@ def compact_retrieval_trace(trace: dict[str, Any]) -> dict[str, Any]:
         ],
         "pageIndexNodeCount": len(page_index_tree.get("selectedNodes") or []),
         "pageIndexLinkedClauseIds": page_index_tree.get("linkedClauseIds") or [],
+        **canonical_metadata,
     }
 
 
@@ -3819,6 +3838,49 @@ def _compact_tool_call(call: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _canonical_metadata_from_retrieval_traces(
+    retrieval_traces: list[dict[str, Any]],
+) -> dict[str, Any]:
+    list_keys = (
+        "canonicalRecordIds",
+        "canonicalItemIds",
+        "canonicalVersions",
+        "canonicalSourceFingerprints",
+    )
+    metadata: dict[str, Any] = {
+        key: sorted(
+            {
+                str(value)
+                for trace in retrieval_traces
+                if isinstance(trace, dict)
+                for value in trace.get(key) or []
+                if value
+            }
+        )
+        for key in list_keys
+    }
+    legacy_count = sum(
+        int(trace.get("legacySupplementalCount") or 0)
+        for trace in retrieval_traces
+        if isinstance(trace, dict)
+    )
+    formal_ready = any(
+        trace.get("formalEvidenceReady") is True
+        for trace in retrieval_traces
+        if isinstance(trace, dict)
+    )
+    metadata.update(
+        {
+            "legacySupplementalCount": legacy_count,
+            "formalEvidenceReady": formal_ready,
+            "blockingReasons": (
+                [] if formal_ready or not legacy_count else ["CANONICAL_LEGACY_ONLY_EVIDENCE"]
+            ),
+        }
+    )
+    return metadata
+
+
 def _summarize_node_decision(
     review_run: dict[str, Any],
     node: dict[str, Any],
@@ -3849,6 +3911,7 @@ def _summarize_node_decision(
         "inputHash": review_run.get("inputHash"),
         "documentVersionIds": review_run.get("inputDocumentVersionIds") or [],
         "ocrResultVersions": review_run.get("ocrResultVersions") or [],
+        **_canonical_metadata_from_retrieval_traces(retrieval_traces),
     }
     output_summary = {
         "outputHash": node.get("outputHash") or details.get("outputHash"),
