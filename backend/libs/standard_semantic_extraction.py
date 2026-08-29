@@ -56,10 +56,28 @@ _IDENTITY_EXCLUSION_MARKERS = ("规范性引用文件", "引用标准", "参考�
 _POSITIVE_IDENTITY_PATTERN = re.compile(r"中华人民共和国[^。；;\n]{0,30}标准")
 _IDENTITY_LABEL_PATTERN = re.compile(r"(?:标准编号|标准号|标准代号)\s*[：:]?\s*")
 _SCOPE_BOILERPLATE = ("本标准", "标准规定", "规定了", "适用于", "适用", "用于")
-_SCOPE_PREDICATE_PATTERN = re.compile(
+_SCOPE_PREDICATE_STRIP_PATTERN = re.compile(
     r"(?P<negation>不(?:应该|应当|应|得|可)?|未|无|禁止|不能|不宜)?"
     r"(?P<predicate>适用(?:于)?|用于)"
 )
+_SCOPE_PREDICATE_PATTERN = re.compile(r"适用于|适用|用于")
+_SCOPE_STRONG_NEGATION_MARKERS = (
+    "不应当",
+    "不应该",
+    "不应",
+    "不得",
+    "严禁",
+    "禁止",
+    "不可",
+    "不能",
+    "不宜",
+)
+_SCOPE_WEAK_NEGATION_MARKERS = ("不", "未", "无", "非")
+_SCOPE_NEGATION_GAP_PATTERN = re.compile(
+    r"(?:(?:被|再次|再|仍然|仍|直接|继续|予以|加以|擅自|随意|任意|一律|明确|"
+    r"单独|重复|同时|仅|只))*"
+)
+_SCOPE_MAX_PREDICATE_GAP = 8
 _SCOPE_SUBJECT_STOP_PATTERN = re.compile(r"[，,。；;\n]|但(?:是)?|并且|以及|且")
 _PROMPT_INSTRUCTION = (
     "Extract only values explicitly supported by the supplied new MinerU pages. "
@@ -199,10 +217,42 @@ def _compact_semantic_text(value: str) -> str:
 
 def _substantive_trigrams(value: str) -> set[str]:
     compact = _compact_semantic_text(value)
-    compact = _SCOPE_PREDICATE_PATTERN.sub("", compact)
+    compact = _SCOPE_PREDICATE_STRIP_PATTERN.sub("", compact)
     for boilerplate in _SCOPE_BOILERPLATE:
         compact = compact.replace(boilerplate, "")
     return {compact[index : index + 3] for index in range(max(0, len(compact) - 2))}
+
+
+def _scope_predicate_polarity(text: str, predicate_start: int) -> str:
+    clause_start = 0
+    for boundary in _SCOPE_SUBJECT_STOP_PATTERN.finditer(text, 0, predicate_start):
+        clause_start = boundary.end()
+    prefix = _compact_semantic_text(text[clause_start:predicate_start])
+
+    strong_matches = [
+        (prefix.rfind(marker), marker)
+        for marker in _SCOPE_STRONG_NEGATION_MARKERS
+        if marker in prefix
+    ]
+    if strong_matches:
+        marker_start, marker = max(strong_matches, key=lambda item: item[0])
+        gap = prefix[marker_start + len(marker) :]
+        if len(gap) <= _SCOPE_MAX_PREDICATE_GAP and _SCOPE_NEGATION_GAP_PATTERN.fullmatch(gap):
+            return "negative"
+        return "ambiguous"
+
+    weak_matches = [
+        (prefix.rfind(marker), marker)
+        for marker in _SCOPE_WEAK_NEGATION_MARKERS
+        if marker in prefix
+    ]
+    if weak_matches:
+        marker_start, marker = max(weak_matches, key=lambda item: item[0])
+        gap = prefix[marker_start + len(marker) :]
+        if len(gap) <= _SCOPE_MAX_PREDICATE_GAP and _SCOPE_NEGATION_GAP_PATTERN.fullmatch(gap):
+            return "negative"
+        return "ambiguous"
+    return "positive"
 
 
 def _scope_predicates(value: str) -> list[dict[str, str]]:
@@ -214,7 +264,7 @@ def _scope_predicates(value: str) -> list[dict[str, str]]:
         subject = tail[: stop.start() if stop else len(tail)]
         predicates.append(
             {
-                "polarity": "negative" if matched.group("negation") else "positive",
+                "polarity": _scope_predicate_polarity(text, matched.start()),
                 "subject": _compact_semantic_text(subject),
             }
         )
@@ -223,6 +273,8 @@ def _scope_predicates(value: str) -> list[dict[str, str]]:
 
 def _aggregate_scope_polarity(predicates: list[dict[str, str]]) -> str:
     polarities = {item["polarity"] for item in predicates}
+    if "ambiguous" in polarities:
+        return "ambiguous"
     if len(polarities) > 1:
         return "mixed"
     if polarities:
@@ -291,8 +343,11 @@ def _scope_evidence_signature(value: str, quoted_text: str) -> dict[str, Any]:
         negation_matches = True
     else:
         negation_matches = (
-            not exact_contradiction
-            and bool(shared_predicates)
+            not any(
+                item["polarity"] == "ambiguous" for item in [*value_predicates, *quote_predicates]
+            )
+            and not exact_contradiction
+            and len(shared_predicates) == len(value_predicates)
             and all(
                 value_item["polarity"] == quote_item["polarity"]
                 for value_item, quote_item in shared_predicates

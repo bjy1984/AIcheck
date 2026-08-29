@@ -478,6 +478,146 @@ def test_scope_value_accepts_aligned_negative_applicability_polarity():
     }
 
 
+_SCOPE_NEGATIVE_PREDICATES = [
+    "不应被用于",
+    "不应当被用于",
+    "不得被用于",
+    "严禁用于",
+    "禁止用于",
+    "不可用于",
+    "不能用于",
+    "不适用于",
+    "不应被直接用于",
+    "禁止被再次用于",
+]
+
+
+@pytest.mark.parametrize("negative_predicate", _SCOPE_NEGATIVE_PREDICATES)
+def test_scope_positive_value_rejects_passive_modal_and_prohibition_negative_quotes(
+    negative_predicate,
+):
+    quoted_text = f"{negative_predicate}低碳钢材料"
+
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: quoted_text}),
+            FakeLiteLLMClient(
+                {
+                    "scope": {
+                        "value": "适用于低碳钢材料。",
+                        "pageNo": 7,
+                        "quotedText": quoted_text,
+                    }
+                }
+            ),
+        )
+
+
+@pytest.mark.parametrize("negative_predicate", _SCOPE_NEGATIVE_PREDICATES)
+def test_scope_accepts_matching_passive_modal_and_prohibition_negatives(
+    negative_predicate,
+):
+    phrase = f"{negative_predicate}低碳钢材料"
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: phrase}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": phrase,
+                    "pageNo": 7,
+                    "quotedText": phrase,
+                }
+            }
+        ),
+    )
+
+    evidence = extracted["scope"]["semanticEvidence"]
+    assert evidence["valuePolarity"] == "negative"
+    assert evidence["quotePolarity"] == "negative"
+    assert evidence["negationMatches"] is True
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "不应在未经专门风险评估和书面批准的情况下被用于低碳钢材料",
+        "禁止经审批用于低碳钢材料",
+    ],
+)
+def test_scope_rejects_unsupported_predicate_window_instead_of_guessing(phrase):
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: phrase}),
+            FakeLiteLLMClient(
+                {
+                    "scope": {
+                        "value": phrase,
+                        "pageNo": 7,
+                        "quotedText": phrase,
+                    }
+                }
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "quoted_text"),
+    [
+        (
+            "适用于低碳钢，不适用于铸铁。",
+            "本标准适用于低碳钢，但不适用于铸铁",
+        ),
+        (
+            "适用于低碳钢，禁止用于铸铁。",
+            "本标准适用于低碳钢，但不得被用于铸铁",
+        ),
+    ],
+)
+def test_scope_accepts_only_when_every_value_applicability_clause_is_grounded(
+    value,
+    quoted_text,
+):
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: quoted_text}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": value,
+                    "pageNo": 7,
+                    "quotedText": quoted_text,
+                }
+            }
+        ),
+    )
+
+    assert extracted["scope"]["semanticEvidence"]["negationMatches"] is True
+
+
+@pytest.mark.parametrize(
+    "quoted_text",
+    [
+        "本标准适用于低碳钢",
+        "本标准不适用于铸铁",
+    ],
+)
+def test_scope_rejects_when_quote_grounds_only_one_of_multiple_value_clauses(
+    quoted_text,
+):
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: quoted_text}),
+            FakeLiteLLMClient(
+                {
+                    "scope": {
+                        "value": "适用于低碳钢，不适用于铸铁。",
+                        "pageNo": 7,
+                        "quotedText": quoted_text,
+                    }
+                }
+            ),
+        )
+
+
 @pytest.mark.parametrize(
     "negative_predicate",
     ["不应适用于", "不应当适用于", "不得适用于", "不适用"],
