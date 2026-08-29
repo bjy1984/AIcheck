@@ -170,6 +170,14 @@ def _source_registry(source_rows: list[SourceRow]) -> SourceRegistry:
                 payload.get("id"),
                 payload.get("parseResultId"),
             )
+            if source_type == "new_mineru":
+                add_for_files(
+                    targets,
+                    "new_mineru_semantic",
+                    object_id,
+                    payload.get("id"),
+                    payload.get("parseResultId"),
+                )
         elif collection == "extracted_fields":
             add_for_files(targets, "legacy_ocr", object_id, payload.get("id"))
         elif collection == "knowledge_chunks":

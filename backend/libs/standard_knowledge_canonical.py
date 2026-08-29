@@ -13,6 +13,7 @@ from typing import Any
 
 CANONICAL_VERSION = "standard-knowledge-canonical@1"
 SOURCE_PRIORITY = {
+    "new_mineru_semantic": 550,
     "new_mineru": 500,
     "visual_extraction": 400,
     "standard_catalog": 300,
@@ -277,10 +278,16 @@ def structured_identity(kind: str, item: dict[str, Any]) -> str:
         identity = [item.get("standardCode"), item.get("edition"), item.get("clauseNo")]
     elif kind == "reference":
         identity = [
+            str(item.get("sourceStandardCode") or ""),
+            str(item.get("sourceClauseNo") or ""),
+            str(item.get("targetStandardCode") or ""),
+            str(item.get("targetClauseNo") or ""),
+        ]
+    elif kind == "replacement":
+        identity = [
             item.get("sourceStandardCode"),
-            item.get("sourceClauseNo"),
             item.get("targetStandardCode"),
-            item.get("targetClauseNo"),
+            item.get("purpose"),
         ]
     else:
         identity = [
@@ -573,6 +580,136 @@ def build_standard_knowledge_record(
     record["evidence"] = _record_evidence(record)
     record["completeness"] = canonical_completeness(record)
     return record
+
+
+def _existing_structured_candidates(
+    kind: str, values: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        public_content = canonical_public_content(kind, value)
+        for source in value.get("sources") or []:
+            if not isinstance(source, dict):
+                continue
+            candidate = {**copy.deepcopy(public_content), **copy.deepcopy(source)}
+            candidate.setdefault("text", str(source.get("quotedText") or ""))
+            candidates.append(candidate)
+    return candidates
+
+
+def _semantic_capabilities(semantics: dict[str, Any]) -> list[str]:
+    capabilities: set[str] = set()
+    if any(key in semantics for key in _IDENTITY_FIELDS):
+        capabilities.add("identity")
+    if any(key in semantics for key in _VERSION_FIELDS):
+        capabilities.add("version")
+    if any(key in semantics for key in _METADATA_FIELDS):
+        capabilities.add("metadata")
+    if "normativeReferences" in semantics:
+        capabilities.add("reference")
+    if "replacementRelations" in semantics:
+        capabilities.add("replacement")
+    return sorted(capabilities)
+
+
+def merge_canonical_semantic_candidates(
+    record: dict[str, Any],
+    semantics: dict[str, Any],
+    *,
+    extracted_at: str,
+) -> dict[str, Any]:
+    """Merge grounded semantic candidates through the canonical selectors."""
+    enriched = copy.deepcopy(record)
+    for group_name, keys in (
+        ("identity", _IDENTITY_FIELDS),
+        ("version", _VERSION_FIELDS),
+        ("metadata", _METADATA_FIELDS),
+    ):
+        group = enriched.setdefault(group_name, {})
+        for key in keys:
+            semantic_value = semantics.get(key)
+            if not isinstance(semantic_value, dict):
+                continue
+            existing = group.get(key) if isinstance(group.get(key), dict) else {}
+            candidates = [
+                *[
+                    copy.deepcopy(item)
+                    for item in existing.get("sources") or []
+                    if isinstance(item, dict)
+                ],
+                {"key": key, **copy.deepcopy(semantic_value)},
+            ]
+            selected = select_canonical_field(key, candidates)
+            if selected is not None:
+                group[key] = selected
+
+    for group_name, kind in (
+        ("normativeReferences", "reference"),
+        ("replacementRelations", "replacement"),
+    ):
+        semantic_values = semantics.get(group_name)
+        if semantic_values is None:
+            continue
+        candidates = [
+            *_existing_structured_candidates(kind, list(enriched.get(group_name) or [])),
+            *[copy.deepcopy(item) for item in semantic_values if isinstance(item, dict)],
+        ]
+        enriched[group_name] = merge_structured_items(kind, candidates)
+
+    semantic_source_id = next(
+        (
+            str(value.get("sourceId") or "")
+            for key, value in semantics.items()
+            if key not in {"normativeReferences", "replacementRelations"}
+            and isinstance(value, dict)
+            and str(value.get("sourceId") or "")
+        ),
+        str(record.get("activeParseResultId") or ""),
+    )
+    semantic_summary = {
+        "sourceType": "new_mineru_semantic",
+        "sourceId": semantic_source_id,
+        "parseResultId": semantic_source_id,
+        "documentVersionId": str(record.get("documentVersionId") or ""),
+        "createdAt": extracted_at,
+        "capabilities": _semantic_capabilities(semantics),
+        "semanticExtractionVersion": str(semantics.get("promptVersion") or ""),
+        "modelRoute": str(semantics.get("modelRoute") or ""),
+        "promptHash": str(semantics.get("promptHash") or ""),
+        "contentHash": str(semantics.get("contentHash") or ""),
+    }
+    enriched["provenance"] = [
+        *[
+            copy.deepcopy(item)
+            for item in record.get("provenance") or []
+            if isinstance(item, dict) and item.get("sourceType") != "new_mineru_semantic"
+        ],
+        semantic_summary,
+    ]
+    enriched["history"] = [
+        *[copy.deepcopy(item) for item in record.get("history") or []],
+        {
+            **semantic_summary,
+            "fieldCount": sum(
+                1
+                for key, value in semantics.items()
+                if key not in {"normativeReferences", "replacementRelations"}
+                and isinstance(value, dict)
+            ),
+            "referenceCount": len(semantics.get("normativeReferences") or []),
+            "replacementCount": len(semantics.get("replacementRelations") or []),
+        },
+    ]
+    enriched["semanticExtractionVersion"] = str(semantics.get("promptVersion") or "")
+    enriched["semanticExtractedAt"] = extracted_at
+    enriched["semanticModelRoute"] = str(semantics.get("modelRoute") or "")
+    enriched["semanticPromptHash"] = str(semantics.get("promptHash") or "")
+    enriched["semanticContentHash"] = str(semantics.get("contentHash") or "")
+    enriched["evidence"] = _record_evidence(enriched)
+    enriched["completeness"] = canonical_completeness(enriched)
+    return enriched
 
 
 def _canonical_field_candidates(sources: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
