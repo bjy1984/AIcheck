@@ -56,7 +56,7 @@ import {
   getBusinessPackApi,
   getKnowledgeConfigApi,
   getKnowledgeFileDetailApi,
-  getKnowledgeFileVectorApi,
+  getDocumentOriginalBlobApi,
   getKnowledgeRuleVersionDiffApi,
   getLlmCompareRunApi,
   getReasoningLogDetailApi,
@@ -64,8 +64,6 @@ import {
   importKnowledgeFilesApi,
   importRulesStandardsApi,
   listKnowledgeAuditLogsApi,
-  listKnowledgeFileChunksApi,
-  listKnowledgeFileReasoningReferencesApi,
   listKnowledgePageIndexNodesApi,
   listKnowledgeProjectFilesApi,
   listKnowledgeRuleVersionsApi,
@@ -91,14 +89,12 @@ import {
 import type {
   BusinessPackDetail,
   KnowledgeAuditLog,
-  KnowledgeChunk,
   KnowledgeConfig,
   KnowledgeFile,
   KnowledgeFileDetailPayload,
   KnowledgeFileSavePayload,
   KnowledgeOverviewPayload,
   KnowledgePageIndexNode,
-  KnowledgeReasoningReference,
   KnowledgeRetrievalTestPayload,
   KnowledgeRuleVersion,
   KnowledgeRuleVersionDiffPayload,
@@ -118,6 +114,7 @@ import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import AuditSummaryGrid, { type AuditSummaryCard } from './components/AuditSummaryGrid.vue'
 import StaticPageShell from './components/StaticPageShell.vue'
 import WorkbenchStateBanner from './components/WorkbenchStateBanner.vue'
+import FileDetailDialog from './components/FileDetailDialog.vue'
 
 const emptyOverview = (): KnowledgeOverviewPayload => ({
   metrics: [],
@@ -381,9 +378,7 @@ const operationIssues = reactive<Record<OperationIssueKey, SectionIssue | undefi
 
 const fileDrawerVisible = ref(false)
 const fileDetailLoading = ref(false)
-const fileDetail = ref<KnowledgeFileDetailPayload | null>(null)
-const fileChunks = ref<KnowledgeChunk[]>([])
-const fileReferences = ref<KnowledgeReasoningReference[]>([])
+const fileDetail = ref<KnowledgeFileDetailPayload>()
 
 /* 菜单来自 adminMenuTree —— 知识库是后台的一个分组，不是另一棵树。
  * 原先这里自带一份，进到知识库后 admin 的三个分组全部消失，人回不去。 */
@@ -2430,19 +2425,6 @@ const handleReindexSource = async (row: KnowledgeOverviewPayload['libraries'][nu
   }
 }
 
-const loadKnowledgeFileDetailBundle = async (row: KnowledgeFile) => {
-  const [detailRes, chunksRes, vectorRes, refRes] = await Promise.all([
-    getKnowledgeFileDetailApi(row.id, { silentBusinessError: true }),
-    listKnowledgeFileChunksApi(row.id, { pageSize: 12 }, { silentBusinessError: true }),
-    getKnowledgeFileVectorApi(row.id, { silentBusinessError: true }),
-    listKnowledgeFileReasoningReferencesApi(row.id, { pageSize: 10 }, { silentBusinessError: true })
-  ])
-  if (!detailRes || !chunksRes || !vectorRes || !refRes) {
-    throw new Error('文件知识详情接口未返回有效数据。')
-  }
-  return { detailRes, chunksRes, vectorRes, refRes }
-}
-
 const findFreshStandardFile = async (row: KnowledgeFile) => {
   const keyword = row.sourceRelativePath || row.originalFileName || row.fileName
   if (!keyword) return undefined
@@ -2478,43 +2460,56 @@ const findFreshStandardFile = async (row: KnowledgeFile) => {
 const handleOpenFile = async (row: KnowledgeFile) => {
   fileDrawerVisible.value = true
   fileDetailLoading.value = true
-  fileDetail.value = null
-  fileChunks.value = []
-  fileReferences.value = []
+  fileDetail.value = undefined
   clearOperationIssue('fileDetail')
   try {
     let target = row
-    let bundle
+    let detailRes
     try {
-      bundle = await loadKnowledgeFileDetailBundle(target)
+      detailRes = assertApiResponse(
+        await getKnowledgeFileDetailApi(target.id, { silentBusinessError: true }),
+        '文件知识详情接口未返回有效数据。'
+      )
     } catch (error) {
       const fresh = await findFreshStandardFile(row)
       if (!fresh || fresh.id === row.id) throw error
       target = fresh
-      bundle = await loadKnowledgeFileDetailBundle(target)
+      detailRes = assertApiResponse(
+        await getKnowledgeFileDetailApi(target.id, { silentBusinessError: true }),
+        '文件知识详情接口未返回有效数据。'
+      )
       ElMessage.info('列表数据已刷新，已打开最新标准规范详情')
     }
-    const { detailRes, chunksRes, vectorRes, refRes } = bundle
-    fileDetail.value = {
-      ...detailRes.data,
-      vectorSummary: vectorRes.data
-    }
-    fileChunks.value = chunksRes.data?.items || []
-    fileReferences.value = refRes.data?.items || []
+    fileDetail.value = detailRes.data
   } catch (error) {
-    setOperationIssue('fileDetail', buildOperationFailureMessage('文件知识详情加载'), error)
+    const issueTitle = buildOperationFailureMessage('文件知识详情加载')
+    setOperationIssue('fileDetail', issueTitle, error)
+    fileDrawerVisible.value = false
+    ElMessage.error(getAicheckErrorMessage(error, issueTitle))
   } finally {
     fileDetailLoading.value = false
   }
 }
 
-const openKnowledgeFileOriginal = (mode: 'preview' | 'download') => {
-  const target = mode === 'preview' ? fileDetail.value?.preview : fileDetail.value?.download
-  if (!target?.url) {
-    ElMessage.warning('原文地址尚未生成')
-    return
+const handlePreviewKnowledgeFile = () => {
+  ElMessage.info('原文已在文件详情左侧打开')
+}
+
+const handleDownloadKnowledgeFile = async (url: string) => {
+  try {
+    const response = await getDocumentOriginalBlobApi(url)
+    const objectUrl = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download =
+      fileDetail.value?.document.fileName || fileDetail.value?.file.fileName || '原文'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(objectUrl)
+  } catch (error) {
+    ElMessage.error(getAicheckErrorMessage(error, '原文下载失败，请稍后重试。'))
   }
-  window.open(target.url, '_blank', 'noopener,noreferrer')
 }
 
 const handleReindexFile = async (row: KnowledgeFile) => {
@@ -5021,115 +5016,13 @@ onMounted(() => {
         </div>
       </ElDrawer>
 
-      <ElDrawer v-model="fileDrawerVisible" title="文件知识详情" size="58%">
-        <div v-loading="fileDetailLoading" class="drawer-content">
-          <div v-if="operationIssues.fileDetail" class="section-error local-operation-error">
-            <div>
-              <strong>{{ operationIssues.fileDetail.title }}</strong>
-              <span>{{ operationIssues.fileDetail.message }}</span>
-            </div>
-          </div>
-          <ElEmpty v-if="!fileDetail && !operationIssues.fileDetail" description="暂无文件详情" />
-          <template v-if="fileDetail">
-            <ElDescriptions :column="2" border>
-              <ElDescriptionsItem label="文件">{{ fileDetail.file.fileName }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="项目">{{
-                fileDetail.file.projectName || '-'
-              }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="节点">
-                {{ fileDetail.file.nodeId || '-' }} {{ fileDetail.file.nodeName || '' }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="版本">
-                {{ fileDetail.currentVersion?.versionNo || '-' }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="OCR">
-                <ElTag :type="statusType(fileDetail.file.ocrStatus)" effect="light">
-                  {{ fileDetail.file.ocrStatus }}
-                </ElTag>
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="向量">
-                <ElTag :type="statusType(fileDetail.vectorSummary.vectorStatus)" effect="light">
-                  {{ fileDetail.vectorSummary.vectorStatus }}
-                </ElTag>
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="索引版本">
-                {{ fileDetail.vectorSummary.indexVersion }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="维度">
-                {{ fileDetail.vectorSummary.dimensions }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="来源路径">
-                {{
-                  fileDetail.file.sourceRelativePath || fileDetail.file.contextDescription || '-'
-                }}
-              </ElDescriptionsItem>
-            </ElDescriptions>
-
-            <div class="file-original-panel">
-              <div>
-                <strong>文档原文</strong>
-                <span>
-                  {{
-                    fileDetail.preview?.contentType || fileDetail.document?.fileType || '原始文件'
-                  }}
-                  <template v-if="fileDetail.download?.expiresAt">
-                    · 有效期至 {{ fileDetail.download.expiresAt }}
-                  </template>
-                </span>
-              </div>
-              <ElSpace>
-                <ElButton
-                  type="primary"
-                  plain
-                  :disabled="!fileDetail.preview?.url"
-                  @click="openKnowledgeFileOriginal('preview')"
-                >
-                  查看原文
-                </ElButton>
-                <ElButton
-                  :disabled="!fileDetail.download?.url"
-                  @click="openKnowledgeFileOriginal('download')"
-                >
-                  下载原文
-                </ElButton>
-              </ElSpace>
-            </div>
-
-            <ElDivider content-position="left">切片</ElDivider>
-            <ElAlert
-              v-if="!fileChunks.length"
-              class="chunk-empty-alert"
-              title="尚未生成真实切片"
-              description="当前文件没有可审计的切片明细，系统不会展示示例切片。请先完成 OCR/切片任务或重建索引。"
-              type="warning"
-              show-icon
-              :closable="false"
-            />
-            <ElTable :data="fileChunks" border height="260" empty-text="暂无真实切片">
-              <ElTableColumn prop="chunkNo" label="#" width="70" />
-              <ElTableColumn prop="pageNo" label="页码" width="80" />
-              <ElTableColumn prop="text" label="文本" min-width="360" show-overflow-tooltip />
-              <ElTableColumn prop="tokenCount" label="Token" width="90" />
-              <ElTableColumn prop="evidenceLinkId" label="证据" width="130" />
-            </ElTable>
-
-            <ElDivider content-position="left">推理引用</ElDivider>
-            <ElTable :data="fileReferences" border height="220" empty-text="暂无真实推理引用">
-              <ElTableColumn prop="runId" label="Run ID" width="180" />
-              <ElTableColumn prop="nodeId" label="节点" width="70" />
-              <ElTableColumn prop="subject" label="主题" min-width="180" show-overflow-tooltip />
-              <ElTableColumn prop="model" label="模型" width="100" />
-              <ElTableColumn
-                prop="quotedText"
-                label="引用文本"
-                min-width="260"
-                show-overflow-tooltip
-              />
-              <ElTableColumn prop="createdAt" label="时间" width="170" />
-            </ElTable>
-          </template>
-        </div>
-      </ElDrawer>
+      <FileDetailDialog
+        v-model="fileDrawerVisible"
+        :detail="fileDetail"
+        :loading="fileDetailLoading"
+        @preview="handlePreviewKnowledgeFile"
+        @download="handleDownloadKnowledgeFile"
+      />
 
       <ElDrawer v-model="reasoningDrawerVisible" title="推理链路详情" size="52%">
         <div v-loading="reasoningDetailLoading" class="drawer-content">

@@ -111,6 +111,9 @@ const previewFrameUrl = computed(() => {
 const officePreviewLoading = ref(false)
 const officePreviewError = ref('')
 const previewIsOffice = computed(() => preview.value?.previewType === 'office')
+const officePreviewSupported = computed(
+  () => previewIsOffice.value && Boolean(props.detail?.document?.projectId)
+)
 
 /* Office 预览转成 PDF 后，走与普通 PDF 预览同一条渲染路径。
  * 原先这里是 ONLYOFFICE Document Server 的脚本注入与编辑器实例，随后端改用
@@ -125,6 +128,7 @@ const revokeOfficeObjectUrl = () => {
 }
 
 const mountOfficePreview = async () => {
+  if (!officePreviewSupported.value) return
   const projectId = props.detail?.document?.projectId
   const documentId = props.detail?.document?.id
   if (!projectId || !documentId) return
@@ -222,7 +226,7 @@ watch(
   ([open]) => {
     if (open) {
       void loadPreviewOriginal()
-      if (previewIsOffice.value) void mountOfficePreview()
+      if (officePreviewSupported.value) void mountOfficePreview()
     } else {
       revokePreviewObjectUrl()
       previewOriginalError.value = ''
@@ -605,7 +609,15 @@ watch(visible, (open) => {
             >
               <!-- Office：交给 ONLYOFFICE 只读渲染 -->
               <template v-if="previewIsOffice">
-                <div class="preview-frame-host" v-loading="officePreviewLoading">
+                <ElAlert
+                  v-if="!officePreviewSupported"
+                  title="标准库 Office 原文暂不支持在线预览"
+                  description="当前标准文件没有项目预览上下文，请使用右上角“下载”查看原文。"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                />
+                <div v-else class="preview-frame-host" v-loading="officePreviewLoading">
                   <ElAlert
                     v-if="officePreviewError"
                     title="Office 在线预览不可用"

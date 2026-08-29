@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -33,6 +34,12 @@ from libs.knowledge_indexing import (  # noqa: E402
     clause_from_chunk,
 )
 from libs.contracts.responses import server_time  # noqa: E402
+from libs.mineru_ocr import (  # noqa: E402
+    MinerUNormalizationError,
+    build_mineru_result,
+    mineru_pages,
+)
+from libs.security.tenant import configured_tenant_id  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +53,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--embed", action="store_true", help="重建后 dispatch_embed")
+    parser.add_argument(
+        "--parse-only",
+        action="store_true",
+        help="只把 sidecar 写入 ocr_parse_results，不改写切片、条款和向量",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args()
@@ -269,6 +281,247 @@ def discover_targets(sidecar_dir: Path, file_ids: list[str]) -> list[str]:
     )
 
 
+def _fallback_pages(content: list[Any]) -> list[dict[str, Any]]:
+    page_indexes = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        try:
+            page_indexes.append(max(0, int(item.get("page_idx") or 0)))
+        except (TypeError, ValueError):
+            page_indexes.append(0)
+    page_count = max(page_indexes, default=0) + 1
+    return [
+        {
+            "pageNo": page_no,
+            "width": None,
+            "height": None,
+            "coordinateSystem": None,
+            "sourceCoordinateSystem": "mineru_normalized_1000",
+        }
+        for page_no in range(1, page_count + 1)
+    ]
+
+
+def build_sidecar_parse_result(
+    sidecar_dir: Path,
+    file: dict[str, Any],
+    document: dict[str, Any],
+    version: dict[str, Any],
+) -> dict[str, Any]:
+    """把落盘 MinerU sidecar 转成详情页可直接消费的正式 OCR 结果。"""
+    file_id = str(file["id"])
+    directory = sidecar_dir / file_id
+    content_path = directory / "content_list.json"
+    if not content_path.is_file():
+        raise ValueError(f"content_list.json missing for {file_id}")
+    content = json.loads(content_path.read_text(encoding="utf-8"))
+    if not isinstance(content, list) or not content:
+        raise ValueError(f"content_list.json is empty for {file_id}")
+
+    layout_path = directory / "layout.json"
+    layout_missing = not layout_path.is_file()
+    if layout_missing:
+        pages = _fallback_pages(content)
+    else:
+        layout = json.loads(layout_path.read_text(encoding="utf-8"))
+        if not isinstance(layout, dict):
+            raise ValueError(f"layout.json is invalid for {file_id}")
+        pages = mineru_pages(layout)
+
+    result = build_mineru_result(
+        content,
+        pages=pages,
+        storage_key=str(version.get("storageKey") or ""),
+        file_name=str(file.get("fileName") or document.get("fileName") or file_id),
+        profile_id="generic_document_v1",
+        document_type="standard_reference",
+        provider_task_id=f"standard-sidecar:{file_id}",
+        markdown_present=(directory / "full.md").is_file(),
+    )
+    version_id = str(version["id"])
+    parse_result_id = f"PARSE-STANDARD-{version_id.removeprefix('KDV-')}"
+    sidecar_hash = hashlib.sha256(
+        content_path.read_bytes() + (layout_path.read_bytes() if layout_path.is_file() else b"")
+    ).hexdigest()
+    now = server_time()
+    result.update(
+        {
+            "id": parse_result_id,
+            "parseResultId": parse_result_id,
+            "documentId": str(document["id"]),
+            "documentVersionId": version_id,
+            "tenantId": configured_tenant_id(),
+            "finishedAt": now,
+            "createdAt": now,
+        }
+    )
+    result.setdefault("metadata", {}).update(
+        {
+            "sidecarSource": f"rules/results/mineru_sidecar/{file_id}",
+            "sidecarImported": True,
+            "sidecarContentHash": sidecar_hash,
+            "layoutFallback": layout_missing,
+        }
+    )
+    if layout_missing:
+        quality = result.setdefault("quality", {})
+        quality["reasons"] = list(
+            dict.fromkeys([*(quality.get("reasons") or []), "sidecar_layout_missing"])
+        )
+    return result
+
+
+def merge_ocr_status_payload(
+    current: dict[str, Any],
+    *,
+    expected_id: str,
+    status_field: str,
+    now: str,
+) -> dict[str, Any]:
+    if str(current.get("id") or "") != str(expected_id):
+        raise ValueError(f"identity mismatch: expected {expected_id}")
+    return {**current, status_field: "已识别", "updatedAt": now}
+
+
+def should_sync_page_index(args: argparse.Namespace, results: list[dict[str, Any]]) -> bool:
+    return bool(
+        args.apply
+        and not args.parse_only
+        and any(item.get("status") == "applied" for item in results)
+    )
+
+
+def persist_parse_result(
+    parse_result: dict[str, Any],
+    file: dict[str, Any],
+    document: dict[str, Any],
+    version: dict[str, Any],
+    database_url: str,
+) -> None:
+    try:
+        import psycopg
+        from psycopg.types.json import Jsonb
+    except ImportError as exc:
+        raise SystemExit(f"psycopg is required: {exc}") from exc
+
+    now = server_time()
+    tenant_id = configured_tenant_id()
+    for record_name, record in (("file", file), ("document", document), ("version", version)):
+        payload_tenant = str(record.get("tenantId") or tenant_id)
+        if payload_tenant != tenant_id:
+            raise ValueError(f"tenant mismatch for {record_name}: {payload_tenant}")
+
+    with psycopg.connect(database_url, autocommit=False) as connection:
+        locked: dict[str, dict[str, Any]] = {}
+        for collection, object_id in (
+            ("documents", str(document["id"])),
+            ("document_versions", str(version["id"])),
+            ("knowledge_files", str(file["id"])),
+        ):
+            row = connection.execute(
+                """
+                SELECT payload FROM aicheck_state
+                WHERE tenant_id=%s AND collection=%s AND object_id=%s
+                FOR UPDATE
+                """,
+                (tenant_id, collection, object_id),
+            ).fetchone()
+            if not row or not isinstance(row[0], dict):
+                raise ValueError(f"missing locked record: {collection}/{object_id}")
+            locked[collection] = dict(row[0])
+
+        locked_document = locked["documents"]
+        locked_version = locked["document_versions"]
+        locked_file = locked["knowledge_files"]
+        if str(locked_document.get("currentVersionId") or "") != str(version["id"]):
+            raise ValueError("current version changed during sidecar import")
+        if str(locked_version.get("documentId") or "") != str(document["id"]):
+            raise ValueError("version/document relationship mismatch")
+        if (
+            str(locked_file.get("documentId") or "") != str(document["id"])
+            or str(locked_file.get("documentVersionId") or "") != str(version["id"])
+        ):
+            raise ValueError("knowledge file relationship mismatch")
+
+        merged_records = (
+            (
+                "documents",
+                merge_ocr_status_payload(
+                    locked_document,
+                    expected_id=str(document["id"]),
+                    status_field="currentOcrStatus",
+                    now=now,
+                ),
+            ),
+            (
+                "document_versions",
+                merge_ocr_status_payload(
+                    locked_version,
+                    expected_id=str(version["id"]),
+                    status_field="ocrStatus",
+                    now=now,
+                ),
+            ),
+            (
+                "knowledge_files",
+                merge_ocr_status_payload(
+                    locked_file,
+                    expected_id=str(file["id"]),
+                    status_field="ocrStatus",
+                    now=now,
+                ),
+            ),
+        )
+        for collection, merged in merged_records:
+            connection.execute(
+                """
+                UPDATE aicheck_state SET payload=%s, updated_at=now()
+                WHERE tenant_id=%s AND collection=%s AND object_id=%s
+                """,
+                (Jsonb(merged), tenant_id, collection, str(merged["id"])),
+            )
+
+        parse_result["tenantId"] = tenant_id
+        existing_parse = connection.execute(
+            """
+            SELECT payload FROM aicheck_state
+            WHERE tenant_id=%s AND collection='ocr_parse_results' AND object_id=%s
+            FOR UPDATE
+            """,
+            (tenant_id, str(parse_result["id"])),
+        ).fetchone()
+        if existing_parse and isinstance(existing_parse[0], dict):
+            previous = dict(existing_parse[0])
+            if (
+                (previous.get("metadata") or {}).get("sidecarContentHash")
+                == (parse_result.get("metadata") or {}).get("sidecarContentHash")
+            ):
+                parse_result["createdAt"] = previous.get("createdAt") or parse_result["createdAt"]
+                parse_result["finishedAt"] = previous.get("finishedAt") or parse_result["finishedAt"]
+        connection.execute(
+            """
+            INSERT INTO aicheck_state (tenant_id, collection, object_id, payload, updated_at)
+            VALUES (%s, 'ocr_parse_results', %s, %s, now())
+            ON CONFLICT (tenant_id, collection, object_id)
+            DO UPDATE SET payload=EXCLUDED.payload, updated_at=now()
+            """,
+            (tenant_id, str(parse_result["id"]), Jsonb(parse_result)),
+        )
+        connection.commit()
+
+    document.update(merge_ocr_status_payload(document, expected_id=str(document["id"]), status_field="currentOcrStatus", now=now))
+    version.update(merge_ocr_status_payload(version, expected_id=str(version["id"]), status_field="ocrStatus", now=now))
+    file.update(merge_ocr_status_payload(file, expected_id=str(file["id"]), status_field="ocrStatus", now=now))
+
+    existing = [
+        item
+        for item in repo.state.get("ocr_parse_results", [])
+        if str(item.get("id") or item.get("parseResultId") or "") != parse_result["id"]
+    ]
+    repo.state["ocr_parse_results"] = [parse_result, *existing]
+
+
 def rebuild_file(file: dict[str, Any], fragments: list[dict[str, Any]]) -> dict[str, Any]:
     file_id = str(file["id"])
     old_chunk_ids = [
@@ -464,12 +717,44 @@ def main() -> int:
         if not file or file.get("sourceType") != "standard":
             results.append({"fileId": file_id, "status": "skipped", "reason": "not_a_standard_knowledge_file"})
             continue
+        document = repo.find_one("documents", file.get("documentId"))
+        version_id = str((document or {}).get("currentVersionId") or "")
+        version = repo.find_one("versions", version_id) if version_id else None
+        if not document or not version:
+            results.append({"fileId": file_id, "status": "skipped", "reason": "document_or_version_missing"})
+            continue
+        if args.parse_only:
+            try:
+                parse_result = build_sidecar_parse_result(args.sidecar_dir, file, document, version)
+            except (OSError, ValueError, json.JSONDecodeError, MinerUNormalizationError) as exc:
+                results.append({"fileId": file_id, "status": "skipped", "reason": f"parse_result:{exc}"})
+                continue
+            if args.apply:
+                persist_parse_result(parse_result, file, document, version, args.database_url)
+            results.append(
+                {
+                    "fileId": file_id,
+                    "status": "applied" if args.apply else "planned",
+                    "parseResultId": parse_result["parseResultId"],
+                    "layoutBlocks": len(parse_result.get("layoutBlocks") or []),
+                    "tables": len(parse_result.get("tables") or []),
+                    "seals": len(parse_result.get("seals") or []),
+                    "pages": len(parse_result.get("pages") or []),
+                }
+            )
+            continue
         fragments, source_kind = load_fragments(args.sidecar_dir, file_id)
         if not fragments:
             results.append({"fileId": file_id, "status": "skipped", "reason": f"no_fragments:{source_kind}"})
             continue
         plan = rebuild_file(file, fragments)
-        plan.update({"status": "planned" if not args.apply else "applied", "fragmentSource": source_kind, "fragmentCount": len(fragments)})
+        plan.update(
+            {
+                "status": "planned" if not args.apply else "applied",
+                "fragmentSource": source_kind,
+                "fragmentCount": len(fragments),
+            }
+        )
         if args.apply:
             persist(plan, file, args.database_url)
             if args.embed:
@@ -482,7 +767,7 @@ def main() -> int:
     # linkedClauseIds 指向已不存在的分块——pageindex_tree_search 对标准库
     # 等于白给。重建后必须把 page_index 与新分块对齐。
     page_index_synced = None
-    if args.apply and any(item.get("status") == "applied" for item in results):
+    if should_sync_page_index(args, results):
         page_index_synced = persist_page_index(args.database_url)
 
     payload = {

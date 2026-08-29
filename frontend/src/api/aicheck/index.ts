@@ -1082,14 +1082,10 @@ export type KnowledgeReasoningReference = {
   createdAt: string
 }
 
-export type KnowledgeFileDetailPayload = {
+export type KnowledgeFileDetailPayload = DocumentDetailPayload & {
   file: KnowledgeFile
-  document?: DocumentAsset
-  currentVersion?: DocumentVersion
   latestTask?: KnowledgeTask
   vectorSummary: KnowledgeVectorSummary
-  preview?: DocumentPreviewPayload
-  download?: SignedUrlPayload
 }
 
 export type KnowledgePageIndexNode = {

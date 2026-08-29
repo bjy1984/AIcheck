@@ -1675,8 +1675,9 @@ def local_storage_path(storage_key: str | None) -> Path | None:
 def knowledge_file_original_payload(request: Request, file_id: str, document: dict[str, Any]) -> dict[str, Any]:
     preview = repo.document_preview(document)
     download = repo.document_download(document)
-    inline_url = str(request.url_for("knowledge_file_original", file_id=file_id)) + "?disposition=inline"
-    attachment_url = str(request.url_for("knowledge_file_original", file_id=file_id)) + "?disposition=attachment"
+    original_url = f"/api/knowledge/files/{quote(file_id, safe='')}/original"
+    inline_url = f"{original_url}?disposition=inline"
+    attachment_url = f"{original_url}?disposition=attachment"
     return {
         "preview": {
             **preview,
