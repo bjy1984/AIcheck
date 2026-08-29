@@ -162,6 +162,54 @@ def test_grounding_merge_does_not_reintroduce_malformed_provenance() -> None:
     assert merged["canonicalSourceFingerprints"] == [VALID_SOURCE_FINGERPRINT]
 
 
+@pytest.mark.parametrize(
+    ("metadata_key", "value"),
+    [
+        (metadata_key, value)
+        for metadata_key in (
+            "canonicalRecordIds",
+            "canonicalItemIds",
+            "canonicalVersions",
+            "canonicalSourceFingerprints",
+        )
+        for value in (123, {"bad": "value"}, None, "   ", "plain-string")
+    ],
+)
+def test_grounding_merge_treats_scalar_provenance_as_empty(
+    metadata_key: str,
+    value: Any,
+) -> None:
+    merged = merge_canonical_grounding_metadata(
+        {metadata_key: value},
+        canonical_grounding_metadata([]),
+    )
+
+    assert merged[metadata_key] == []
+
+
+def test_grounding_merge_preserves_supported_collections_with_sorted_deduplication() -> None:
+    merged = merge_canonical_grounding_metadata(
+        {
+            "canonicalRecordIds": ("SKR-Z", "SKR-A", "SKR-Z"),
+            "canonicalItemIds": {"SKI-Z", "SKI-A"},
+            "canonicalVersions": ["canonical@2", "canonical@1", "canonical@2"],
+            "canonicalSourceFingerprints": (
+                f"sha256:{'b' * 64}",
+                VALID_SOURCE_FINGERPRINT,
+            ),
+        },
+        canonical_grounding_metadata([]),
+    )
+
+    assert merged["canonicalRecordIds"] == ["SKR-A", "SKR-Z"]
+    assert merged["canonicalItemIds"] == ["SKI-A", "SKI-Z"]
+    assert merged["canonicalVersions"] == ["canonical@1", "canonical@2"]
+    assert merged["canonicalSourceFingerprints"] == [
+        VALID_SOURCE_FINGERPRINT,
+        f"sha256:{'b' * 64}",
+    ]
+
+
 def test_legacy_canonical_with_usable_noncanonical_evidence_is_formally_ready() -> None:
     grounded = canonical_grounding_metadata(
         [
@@ -438,6 +486,64 @@ def test_retrieve_step_preserves_existing_noncanonical_formal_readiness(
     assert context["groundingInput"]["formalEvidenceReady"] is True
     assert context["groundingInput"]["blockingReasons"] == [
         "EXISTING_NONCANONICAL_WARNING"
+    ]
+
+
+@pytest.mark.parametrize(
+    "scalar_provenance",
+    [123, {"bad": "value"}, None, "   ", "plain-string"],
+)
+def test_retrieve_step_ignores_scalar_existing_provenance(
+    monkeypatch: Any,
+    scalar_provenance: Any,
+) -> None:
+    clauses = canonical_review_fixture()
+    monkeypatch.setattr(
+        execution,
+        "retrieve_knowledge_clauses",
+        lambda *args, **kwargs: {
+            "clauses": clauses,
+            "trace": {
+                "id": "RTR-CANONICAL",
+                "retrievalTraceId": "RTR-CANONICAL",
+                "selectedClauses": [
+                    {**clauses[0], "clauseId": "CLAUSE-CURRENT"}
+                ],
+            },
+        },
+    )
+    context: dict[str, Any] = {
+        "node": {"name": "标准审查"},
+        "groundingInput": {
+            "summary": {
+                "canonicalRecordIds": scalar_provenance,
+                "canonicalItemIds": scalar_provenance,
+                "canonicalVersions": scalar_provenance,
+                "canonicalSourceFingerprints": scalar_provenance,
+            }
+        },
+    }
+
+    run_step(
+        {
+            "reviewRunId": "RRUN-CANONICAL",
+            "businessPackId": "engineering_inspection_v1",
+            "nodeId": 24,
+            "kbVersion": "inspection_kb@1.0.0",
+        },
+        "retrieve_knowledge",
+        context,
+    )
+
+    assert context["groundingInput"]["canonicalRecordIds"] == [
+        "SKR-KF-KB-TEST"
+    ]
+    assert context["groundingInput"]["canonicalItemIds"] == ["SKI-CLAUSE-ABC"]
+    assert context["groundingInput"]["canonicalVersions"] == [
+        "standard-knowledge-canonical@1"
+    ]
+    assert context["groundingInput"]["canonicalSourceFingerprints"] == [
+        VALID_SOURCE_FINGERPRINT
     ]
 
 

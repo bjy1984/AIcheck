@@ -77,6 +77,12 @@ def canonical_identity_value_valid(key: str, value: Any) -> bool:
     return bool(pattern and isinstance(value, str) and pattern.fullmatch(value))
 
 
+def _canonical_provenance_collection(
+    value: Any,
+) -> list[Any] | tuple[Any, ...] | set[Any]:
+    return value if isinstance(value, (list, tuple, set)) else []
+
+
 def is_canonical_clause(clause: dict[str, Any]) -> bool:
     return any(clause.get(key) is not None for key in CANONICAL_IDENTITY_KEYS)
 
@@ -171,7 +177,9 @@ def merge_canonical_grounding_metadata(
                 {
                     value
                     for source in (existing, canonical_metadata)
-                    for value in source.get(list_key) or []
+                    for value in _canonical_provenance_collection(
+                        source.get(list_key)
+                    )
                     if canonical_identity_value_valid(identity_key, value)
                 }
             )
