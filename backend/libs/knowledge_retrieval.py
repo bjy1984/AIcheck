@@ -29,11 +29,11 @@ STANDARD_NUMBER_RE = re.compile(
 )
 STANDARD_REF_RE = re.compile(
     r"(?<![A-Z0-9])"
-    r"(?P<prefix>GB/T|GBT|GB|NB/T|NB_T|NBT|JB/T|JBT|SY/T|SYT|"
+    r"(?P<prefix>ISO/IEC|ISOIEC|GB/T|GBT|GB|NB/T|NB_T|NBT|JB/T|JBT|SY/T|SYT|"
     r"DL/T|DLT|HG/T|HGT|TSG|ISO|IEC|ASTM)\s*"
-    r"(?P<token>(?:[A-Z]{1,5}\s*)?\d+[A-Z]*(?:\.\d+)*"
-    r"(?:/[A-Z]{1,5}\d+[A-Z]*(?:\.\d+)*)?"
-    r"(?:-\d+[A-Z]?)*(?::\d{2,4}[A-Z]?)?)"
+    r"(?P<token>(?=[A-Z0-9./:-]*\d)[A-Z0-9]+"
+    r"(?:\s*/\s*[A-Z0-9]+)*(?:\s*\.\s*\d+[A-Z]*)*"
+    r"(?:\s*[-:]\s*[A-Z0-9]+)*)"
     r"(?![A-Z0-9])",
     re.IGNORECASE,
 )
@@ -178,6 +178,8 @@ def normalize_standard_prefix(value: str) -> str:
         return "DLT"
     if prefix in {"HG/T", "HGT"}:
         return "HGT"
+    if prefix in {"ISO/IEC", "ISOIEC"}:
+        return "ISO/IEC"
     return prefix
 
 
@@ -190,7 +192,7 @@ def display_standard_number(prefix: str, number: str, year: str = "") -> str:
         "DLT": "DL/T",
         "HGT": "HG/T",
     }.get(prefix, prefix)
-    separator = ":" if prefix in {"ISO", "IEC"} else "-"
+    separator = ":" if prefix in {"ISO", "IEC", "ISO/IEC"} else "-"
     suffix = f"{separator}{year}" if year else ""
     return f"{display_prefix} {number}{suffix}".strip()
 
@@ -265,10 +267,12 @@ def standard_refs_from_text(value: Any) -> list[dict[str, str]]:
             year = colon_year.group(1)
             number = token[: colon_year.start()]
         else:
-            dash_year = re.search(r"-([0-9]{2,4}[A-Z]?)$", token)
-            if dash_year and (
-                prefix == "ASTM" or re.fullmatch(r"(?:19|20)\d{2}", dash_year.group(1))
-            ):
+            dash_year = (
+                re.search(r"-((?:19|20)\d{2}|\d{2}(?:R\d{2})?[A-Z]?)$", token)
+                if prefix == "ASTM"
+                else re.search(r"-((?:19|20)\d{2})$", token)
+            )
+            if dash_year:
                 year = dash_year.group(1)
                 number = token[: dash_year.start()]
         key = (prefix, number, year)

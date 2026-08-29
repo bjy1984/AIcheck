@@ -47,25 +47,20 @@ _EVIDENCE_VALUE_KEYS = {"value", "pageNo", "quotedText"}
 _REPLACEMENT_RELATIONS = {"replaces", "replacedBy", "amends", "amendedBy"}
 _IDENTITY_BLOCK_TYPES = {
     "cover",
-    "cover_title",
     "document_title",
-    "header",
     "page_header",
-    "title",
 }
-_IDENTITY_SECTION_TAILS = {"封面", "首页", "标准名称"}
+_GENERIC_IDENTITY_BLOCK_TYPES = {"title", "header"}
+_IDENTITY_CONTEXT_TITLES = {"封面", "标准封面", "首页标准题名"}
+_IDENTITY_EXCLUSION_MARKERS = ("规范性引用文件", "引用标准", "参考文献", "目录", "术语")
+_POSITIVE_IDENTITY_PATTERN = re.compile(r"中华人民共和国[^。；;\n]{0,30}标准")
 _IDENTITY_LABEL_PATTERN = re.compile(r"(?:标准编号|标准号|标准代号)\s*[：:]?\s*")
 _SCOPE_BOILERPLATE = ("本标准", "标准规定", "规定了", "适用于", "适用", "用于")
-_SCOPE_NEGATIVE_PREDICATES = (
-    "不适用于",
-    "不适用",
-    "不得用于",
-    "不宜用于",
-    "不能用于",
-    "禁止用于",
-    "不用于",
+_SCOPE_PREDICATE_PATTERN = re.compile(
+    r"(?P<negation>不(?:应该|应当|应|得|可)?|未|无|禁止|不能|不宜)?"
+    r"(?P<predicate>适用(?:于)?|用于)"
 )
-_SCOPE_POSITIVE_PREDICATES = ("适用于", "适用", "可用于", "用于")
+_SCOPE_SUBJECT_STOP_PATTERN = re.compile(r"[，,。；;\n]|但(?:是)?|并且|以及|且")
 _PROMPT_INSTRUCTION = (
     "Extract only values explicitly supported by the supplied new MinerU pages. "
     "Return one strict JSON object with only requested fields. Omit unknown values. "
@@ -204,36 +199,109 @@ def _compact_semantic_text(value: str) -> str:
 
 def _substantive_trigrams(value: str) -> set[str]:
     compact = _compact_semantic_text(value)
-    for predicate in (*_SCOPE_NEGATIVE_PREDICATES, *_SCOPE_POSITIVE_PREDICATES):
-        compact = compact.replace(predicate, "")
+    compact = _SCOPE_PREDICATE_PATTERN.sub("", compact)
     for boilerplate in _SCOPE_BOILERPLATE:
         compact = compact.replace(boilerplate, "")
     return {compact[index : index + 3] for index in range(max(0, len(compact) - 2))}
 
 
-def _scope_polarity(value: str) -> str:
-    compact = _compact_semantic_text(value)
-    negative = any(predicate in compact for predicate in _SCOPE_NEGATIVE_PREDICATES)
-    residual = compact
-    for predicate in _SCOPE_NEGATIVE_PREDICATES:
-        residual = residual.replace(predicate, "")
-    positive = any(predicate in residual for predicate in _SCOPE_POSITIVE_PREDICATES)
-    if negative and positive:
+def _scope_predicates(value: str) -> list[dict[str, str]]:
+    text = _normalize_text(value)
+    predicates: list[dict[str, str]] = []
+    for matched in _SCOPE_PREDICATE_PATTERN.finditer(text):
+        tail = text[matched.end() :]
+        stop = _SCOPE_SUBJECT_STOP_PATTERN.search(tail)
+        subject = tail[: stop.start() if stop else len(tail)]
+        predicates.append(
+            {
+                "polarity": "negative" if matched.group("negation") else "positive",
+                "subject": _compact_semantic_text(subject),
+            }
+        )
+    return predicates
+
+
+def _aggregate_scope_polarity(predicates: list[dict[str, str]]) -> str:
+    polarities = {item["polarity"] for item in predicates}
+    if len(polarities) > 1:
         return "mixed"
-    if negative:
-        return "negative"
-    if positive:
-        return "positive"
+    if polarities:
+        return next(iter(polarities))
     return "neutral"
 
 
+def _scope_subject_similarity(left: str, right: str) -> float:
+    if not left or not right:
+        return 0.0
+    if left == right:
+        return 2.0
+    if left in right or right in left:
+        return 1.0
+    left_tokens = {left[index : index + 3] for index in range(max(0, len(left) - 2))}
+    right_tokens = {right[index : index + 3] for index in range(max(0, len(right) - 2))}
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / min(len(left_tokens), len(right_tokens))
+
+
+def _shared_scope_predicates(
+    value_predicates: list[dict[str, str]],
+    quote_predicates: list[dict[str, str]],
+) -> list[tuple[dict[str, str], dict[str, str]]]:
+    candidates = sorted(
+        (
+            (
+                _scope_subject_similarity(value_item["subject"], quote_item["subject"]),
+                value_index,
+                quote_index,
+            )
+            for value_index, value_item in enumerate(value_predicates)
+            for quote_index, quote_item in enumerate(quote_predicates)
+        ),
+        reverse=True,
+    )
+    matched_values: set[int] = set()
+    matched_quotes: set[int] = set()
+    result: list[tuple[dict[str, str], dict[str, str]]] = []
+    for score, value_index, quote_index in candidates:
+        if score < 0.5:
+            break
+        if value_index in matched_values or quote_index in matched_quotes:
+            continue
+        matched_values.add(value_index)
+        matched_quotes.add(quote_index)
+        result.append((value_predicates[value_index], quote_predicates[quote_index]))
+    return result
+
+
 def _scope_evidence_signature(value: str, quoted_text: str) -> dict[str, Any]:
-    value_polarity = _scope_polarity(value)
-    quote_polarity = _scope_polarity(quoted_text)
+    value_predicates = _scope_predicates(value)
+    quote_predicates = _scope_predicates(quoted_text)
+    value_polarity = _aggregate_scope_polarity(value_predicates)
+    quote_polarity = _aggregate_scope_polarity(quote_predicates)
+    shared_predicates = _shared_scope_predicates(value_predicates, quote_predicates)
+    exact_contradiction = any(
+        value_item["subject"]
+        and value_item["subject"] == quote_item["subject"]
+        and value_item["polarity"] != quote_item["polarity"]
+        for value_item in value_predicates
+        for quote_item in quote_predicates
+    )
+    if not value_predicates and not quote_predicates:
+        negation_matches = True
+    else:
+        negation_matches = (
+            not exact_contradiction
+            and bool(shared_predicates)
+            and all(
+                value_item["polarity"] == quote_item["polarity"]
+                for value_item, quote_item in shared_predicates
+            )
+        )
     return {
         "valuePolarity": value_polarity,
         "quotePolarity": quote_polarity,
-        "negationMatches": value_polarity == quote_polarity and value_polarity != "mixed",
+        "negationMatches": negation_matches,
         "sharedSubstantiveTokens": sorted(
             _substantive_trigrams(value) & _substantive_trigrams(quoted_text)
         )[:32],
@@ -244,6 +312,8 @@ def _scope_is_supported(value: str, quoted_text: str) -> bool:
     evidence = _scope_evidence_signature(value, quoted_text)
     if not evidence["negationMatches"]:
         return False
+    if _scope_predicates(value) and _scope_predicates(quoted_text):
+        return True
     compact_value = _compact_semantic_text(value)
     compact_quote = _compact_semantic_text(quoted_text)
     if min(len(compact_value), len(compact_quote)) < 4:
@@ -303,9 +373,20 @@ def _identity_code_candidates(record: dict[str, Any]) -> list[tuple[int, str, st
         else:
             normalized_path = _normalize_text(raw_section_path)
             section_tail = re.split(r"[/|>]", normalized_path)[-1].strip()
-        contextual = (page_no <= 2 and block_type in _IDENTITY_BLOCK_TYPES) or (
-            any(section_tail.endswith(tail) for tail in _IDENTITY_SECTION_TAILS)
+        context_text = " ".join((title, section_tail, text))
+        excluded = any(marker in context_text for marker in _IDENTITY_EXCLUSION_MARKERS)
+        named_front_matter = any(
+            value.endswith(marker)
+            for value in (title, section_tail)
+            if value
+            for marker in _IDENTITY_CONTEXT_TITLES
         )
+        generic_identity = (
+            block_type in _GENERIC_IDENTITY_BLOCK_TYPES
+            and not excluded
+            and bool(_POSITIVE_IDENTITY_PATTERN.search(text))
+        )
+        contextual = block_type in _IDENTITY_BLOCK_TYPES or named_front_matter or generic_identity
         if contextual:
             if title:
                 spans.append((title, False))

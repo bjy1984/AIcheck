@@ -130,7 +130,7 @@ def test_typographic_replacement_target_on_cover_is_not_current_standard_code():
     extracted = extract_deterministic_standard_metadata(
         semantic_record_fixture(
             pages={1: "本标准代替HG／T 20570—2019。"},
-            page_contexts={1: {"blockType": "title"}},
+            page_contexts={1: {"blockType": "document_title"}},
         )
     )
 
@@ -145,7 +145,7 @@ def test_deterministic_current_code_is_not_polluted_by_later_normative_codes():
                 1: "NB/T 47013.10-2015 承压设备无损检测。",
                 7: "检测方法应符合NB/T 47013.3-2015。",
             },
-            page_contexts={1: {"blockType": "title"}},
+            page_contexts={1: {"blockType": "document_title"}},
         )
     )
 
@@ -155,7 +155,7 @@ def test_deterministic_current_code_is_not_polluted_by_later_normative_codes():
 def test_deterministic_code_prefers_the_existing_canonical_identity_when_quoted():
     record = semantic_record_fixture(
         pages={1: "依据NB/T 47013.3-2015制定 NB/T 47013.10-2015 承压设备无损检测。"},
-        page_contexts={1: {"blockType": "header"}},
+        page_contexts={1: {"blockType": "document_title"}},
     )
     record["identity"] = {"standardCode": {"value": "NB/T 47013.10-2015"}}
 
@@ -198,6 +198,63 @@ def test_late_title_or_header_block_is_not_verified_identity_context(block_type)
     )
 
     assert "standardCode" not in extracted
+
+
+@pytest.mark.parametrize(
+    "section_title",
+    ["规范性引用文件", "引用标准", "参考文献", "目录", "术语和定义"],
+)
+def test_page_one_generic_title_excludes_non_identity_sections(section_title):
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={1: f"{section_title} GB/T 123-2020"},
+            page_contexts={
+                1: {
+                    "blockType": "title",
+                    "title": section_title,
+                    "sectionPath": [section_title],
+                }
+            },
+        )
+    )
+
+    assert "standardCode" not in extracted
+
+
+def test_generic_title_requires_positive_identity_marker():
+    without_marker = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={1: "GB/T 123-2020 技术要求"},
+            page_contexts={1: {"blockType": "title", "title": "技术要求"}},
+        )
+    )
+    with_marker = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={1: "中华人民共和国国家标准 GB/T 123-2020 技术要求"},
+            page_contexts={1: {"blockType": "title", "title": "国家标准"}},
+        )
+    )
+
+    assert "standardCode" not in without_marker
+    assert with_marker["standardCode"][0]["value"] == "GB/T 123-2020"
+
+
+def test_explicit_cover_or_front_title_context_allows_unlabeled_identity():
+    cover = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={4: "GB/T 123-2020 技术要求"},
+            page_contexts={4: {"blockType": "cover"}},
+        )
+    )
+    named_cover = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={4: "GB/T 456-2021 技术要求"},
+            page_contexts={4: {"title": "标准封面"}},
+        )
+    )
+
+    assert cover["standardCode"][0]["value"] == "GB/T 123-2020"
+    assert named_cover["standardCode"][0]["value"] == "GB/T 456-2021"
 
 
 def test_section_path_must_end_with_exact_front_matter_marker():
@@ -294,7 +351,7 @@ def test_model_semantics_are_strict_json_and_evidence_grounded():
             ),
             7: "适用于低碳钢或低合金钢材料，按NB/T 47013.3检测。",
         },
-        page_contexts={1: {"blockType": "title"}},
+        page_contexts={1: {"blockType": "document_title"}},
     )
 
     extracted = extract_standard_semantics(record, client)
@@ -372,7 +429,11 @@ def test_scope_value_does_not_treat_shared_boilerplate_as_substantive_grounding(
     [
         ("适用于低碳钢材料。", "不适用于低碳钢材料"),
         ("适用于低碳钢材料。", "不适用低碳钢材料"),
+        ("适用于低碳钢材料。", "不应适用于低碳钢材料"),
+        ("适用于低碳钢材料。", "不应当适用于低碳钢材料"),
+        ("适用于低碳钢材料。", "不得适用于低碳钢材料"),
         ("不适用于低碳钢材料。", "适用于低碳钢材料"),
+        ("不应当适用于低碳钢材料。", "适用于低碳钢材料"),
     ],
 )
 def test_scope_value_rejects_contradictory_applicability_polarity(
@@ -415,6 +476,96 @@ def test_scope_value_accepts_aligned_negative_applicability_polarity():
         "negationMatches": True,
         "sharedSubstantiveTokens": ["低碳钢", "碳钢材", "钢材料"],
     }
+
+
+@pytest.mark.parametrize(
+    "negative_predicate",
+    ["不应适用于", "不应当适用于", "不得适用于", "不适用"],
+)
+def test_scope_value_accepts_matching_modal_negation(negative_predicate):
+    phrase = f"{negative_predicate}低碳钢材料"
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: phrase}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": phrase,
+                    "pageNo": 7,
+                    "quotedText": phrase,
+                }
+            }
+        ),
+    )
+
+    assert extracted["scope"]["semanticEvidence"]["valuePolarity"] == "negative"
+    assert extracted["scope"]["semanticEvidence"]["quotePolarity"] == "negative"
+    assert extracted["scope"]["semanticEvidence"]["negationMatches"] is True
+
+
+def test_scope_polarity_compares_each_shared_subject():
+    aligned = extract_standard_semantics(
+        semantic_record_fixture(pages={7: "本标准适用于低碳钢，但不适用铸铁。"}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": "适用于低碳钢，不应适用于铸铁。",
+                    "pageNo": 7,
+                    "quotedText": "本标准适用于低碳钢，但不适用铸铁",
+                }
+            }
+        ),
+    )
+
+    assert aligned["scope"]["semanticEvidence"]["valuePolarity"] == "mixed"
+    assert aligned["scope"]["semanticEvidence"]["quotePolarity"] == "mixed"
+    assert aligned["scope"]["semanticEvidence"]["negationMatches"] is True
+
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: "本标准不适用于低碳钢，但适用于铸铁。"}),
+            FakeLiteLLMClient(
+                {
+                    "scope": {
+                        "value": "适用于低碳钢，不应适用于铸铁。",
+                        "pageNo": 7,
+                        "quotedText": "本标准不适用于低碳钢，但适用于铸铁",
+                    }
+                }
+            ),
+        )
+
+
+def test_scope_polarity_pairs_overlapping_subjects_one_to_one():
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={7: "本标准适用于低碳钢，但不适用于低碳钢管。"}),
+        FakeLiteLLMClient(
+            {
+                "scope": {
+                    "value": "适用于低碳钢，不应当适用于低碳钢管。",
+                    "pageNo": 7,
+                    "quotedText": "本标准适用于低碳钢，但不适用于低碳钢管",
+                }
+            }
+        ),
+    )
+
+    assert extracted["scope"]["semanticEvidence"]["negationMatches"] is True
+
+
+def test_scope_polarity_rejects_conflicting_predicates_for_same_subject():
+    with pytest.raises(ValueError, match="scope is not supported by quotedText"):
+        extract_standard_semantics(
+            semantic_record_fixture(pages={7: "本标准不适用于低碳钢，但适用于低碳钢。"}),
+            FakeLiteLLMClient(
+                {
+                    "scope": {
+                        "value": "适用于低碳钢。",
+                        "pageNo": 7,
+                        "quotedText": "本标准不适用于低碳钢，但适用于低碳钢",
+                    }
+                }
+            ),
+        )
 
 
 def test_scope_semantic_evidence_keeps_shared_token_summary_compact():
@@ -501,8 +652,11 @@ def test_relation_standard_code_requires_exact_reference_boundary():
         ("DL/T 123.4-2020", "DL/T 123.4-2020"),
         ("HG／T 20570—2019", "HG/T 20570-2019"),
         ("ISO 9001:2015", "ISO 9001:2015"),
+        ("ISO/IEC 17025:2017", "ISO/IEC 17025:2017"),
         ("IEC 60079-1:2014", "IEC 60079-1:2014"),
         ("ASTM A106/A106M-19", "ASTM A106/A106M-19"),
+        ("ASTM E1066-95R06", "ASTM E1066-95R06"),
+        ("ASTM E-317", "ASTM E-317"),
     ],
 )
 def test_broad_standard_families_validate_with_exact_boundaries(
@@ -565,6 +719,77 @@ def test_malformed_reference_item_is_rejected_without_dropping_valid_relations_o
     assert [item["targetStandardCode"] for item in extracted["normativeReferences"]] == [
         "DL/T 123.4-2020"
     ]
+
+
+def test_astm_revision_does_not_ground_unrevised_designation():
+    with pytest.raises(
+        ValueError,
+        match=r"normativeReferences\[0\]: standardCode is not supported by quotedText",
+    ):
+        record = semantic_record_fixture(pages={7: "按ASTM E1066-95R06执行"})
+        record["identity"] = {"standardCode": {"value": "GB/T 5000-2020"}}
+        extract_standard_semantics(
+            record,
+            FakeLiteLLMClient(
+                {
+                    "normativeReferences": [
+                        {
+                            "standardCode": "ASTM E1066",
+                            "pageNo": 7,
+                            "quotedText": "按ASTM E1066-95R06执行",
+                        }
+                    ]
+                }
+            ),
+        )
+
+
+def test_replacement_identity_preserves_astm_revision_and_combined_iso_iec_family():
+    source = "DL/T 1000-2020"
+    astm_revision = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": source,
+            "purpose": "replaces",
+            "targetStandardCode": "ASTM E1066-95R06",
+        },
+    )
+    astm_base = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": source,
+            "purpose": "replaces",
+            "targetStandardCode": "ASTM E1066",
+        },
+    )
+    astm_typographic = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": "DL／T 1000—2020",
+            "purpose": "replaces",
+            "targetStandardCode": "ASTM E1066—95R06",
+        },
+    )
+    combined = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": source,
+            "purpose": "replaces",
+            "targetStandardCode": "ISO/IEC 17025:2017",
+        },
+    )
+    iec_only = structured_identity(
+        "replacement",
+        {
+            "sourceStandardCode": source,
+            "purpose": "replaces",
+            "targetStandardCode": "IEC 17025:2017",
+        },
+    )
+
+    assert astm_revision != astm_base
+    assert astm_revision == astm_typographic
+    assert combined != iec_only
 
 
 def test_model_standard_name_requires_grounded_evidence():
@@ -720,7 +945,7 @@ def test_replacement_relations_union_deterministic_and_distinct_model_relations(
             1: ("NB/T 47013.10-2015。本标准代替NB/T 47013.10-2010。"),
             2: ("NB/T 47013.10-2025替代本标准。本标准修改GB/T 999-2022，并被GB/T 888-2024修改。"),
         },
-        page_contexts={1: {"blockType": "title"}},
+        page_contexts={1: {"blockType": "document_title"}},
     )
     payload = {
         "replacementRelations": [
@@ -815,7 +1040,7 @@ def test_relations_use_standard_code_selected_in_same_extraction_and_keep_name()
             1: "NB/T 47013.10-2015 承压设备无损检测。",
             7: "按NB/T 47013.3-2015《超声检测》检测。",
         },
-        page_contexts={1: {"blockType": "title"}},
+        page_contexts={1: {"blockType": "document_title"}},
     )
     extracted = extract_standard_semantics(
         record,
