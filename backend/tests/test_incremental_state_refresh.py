@@ -215,10 +215,21 @@ def test_整表加载后空集合也要算加载过() -> None:
 
     repository.load_from_sync_postgres()
 
-    from libs.db.repository import STATE_COLLECTIONS
+    from libs.db.repository import STATE_COLLECTIONS, deferred_bulk_state_keys
 
-    missing = [key for key in STATE_COLLECTIONS if not repository.collection_is_loaded(key)]
+    # 延迟加载的集合是例外：它们这次根本没查库，标成「已加载」会让按需补拉
+    # 直接跳过，内存永远空——那是静默的数据缺失，比慢严重得多。
+    # 两条不变量各自成立：非延迟集合必须有水位线（本用例），
+    # 延迟集合必须没有（test_deferred_bulk_load）。
+    deferred = deferred_bulk_state_keys()
+    missing = [
+        key
+        for key in STATE_COLLECTIONS
+        if key not in deferred and not repository.collection_is_loaded(key)
+    ]
     assert not missing, f"这些集合没有水位线，增量刷新会一直退回整表：{missing[:5]}"
+    still_loaded = [key for key in deferred if repository.collection_is_loaded(key)]
+    assert not still_loaded, f"延迟集合不该被标记已加载：{still_loaded}"
 
 
 def test_整表加载后立刻建立探针基线() -> None:

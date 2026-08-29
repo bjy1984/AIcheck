@@ -5075,7 +5075,13 @@ class InMemoryRepository:
             # 永远返回 False，于是 refresh_worker_state 每次都判定「还没加载过」
             # 而整份重来。线上实测——worker 每个任务白付 38 秒，改了增量也没用，
             # 因为根本走不到增量那条路。
+            # 但**延迟加载的集合不算**：它们这次根本没查库，标成已加载会让
+            # ensure_collections_loaded 直接跳过补拉，内存永远是空的——
+            # 那不是性能问题，是静默的数据缺失（本机制上线前实测如此）。
+            deferred_now = deferred_bulk_collections() if selected_state_keys is None else set()
             for collection_name in STATE_COLLECTIONS.values():
+                if str(collection_name) in deferred_now:
+                    continue
                 self._collection_watermarks.setdefault(
                     (effective_tenant_id, str(collection_name)), _EPOCH_WATERMARK
                 )

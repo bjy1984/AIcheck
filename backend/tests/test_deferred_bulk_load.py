@@ -100,3 +100,20 @@ def test_every_consumer_declares_its_dependency() -> None:
     retrieval = (BACKEND_ROOT / "libs" / "knowledge_retrieval.py").read_text(encoding="utf-8")
     assert "_ensure_retrieval_collections" in retrieval
     assert "state is not repo.state" in retrieval  # 字面量 state 不触发库访问
+
+
+def test_full_load_must_not_mark_deferred_collections_as_loaded() -> None:
+    """全量加载后「所有集合标记已加载」的兜底逻辑必须排除延迟集合。
+
+    上线前实测踩到：延迟集合被标成 collection_is_loaded=True →
+    ensure_collections_loaded 直接跳过补拉 → 内存永远 0 行。
+    那不是性能问题，是**静默的数据缺失**：调用方拿到空列表当成「库里没有」。
+
+    这条用源码钉不变量（真实加载要连库，单测环境没有）。
+    """
+    source = (BACKEND_ROOT / "libs" / "db" / "repository.py").read_text(encoding="utf-8")
+    marker = "for collection_name in STATE_COLLECTIONS.values():"
+    assert marker in source
+    guard_region = source[source.index(marker) - 600 : source.index(marker) + 400]
+    assert "deferred_now" in guard_region, "全量加载的水位线兜底必须排除延迟集合"
+    assert "continue" in guard_region
