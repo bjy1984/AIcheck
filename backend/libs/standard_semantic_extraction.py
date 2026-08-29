@@ -77,6 +77,14 @@ _SCOPE_STRONG_NEGATION_MARKERS = (
     "不宜",
 )
 _SCOPE_WEAK_NEGATION_MARKERS = ("不", "未", "无", "非")
+_SCOPE_NONNEGATIVE_SUBJECT_SUFFIXES = (
+    "不锈钢",
+    "无缝钢管",
+    "非合金钢",
+    "无损检测",
+    "无氧铜",
+    "非金属",
+)
 _SCOPE_WEAK_MODAL_CUES = (
     "应",
     "允许",
@@ -273,6 +281,10 @@ def _scope_predicate_polarity(text: str, predicate_start: int) -> str:
         # Bare weak markers also begin material names such as 不锈钢、无缝钢管、
         # and 非合金钢. They carry polarity only when their entire suffix is an
         # allowed, bounded path to the applicability predicate.
+        weak_subject = prefix[marker_start:]
+        if any(weak_subject.endswith(suffix) for suffix in _SCOPE_NONNEGATIVE_SUBJECT_SUFFIXES):
+            return "positive"
+        return "ambiguous"
     return "positive"
 
 

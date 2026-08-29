@@ -595,6 +595,9 @@ def test_scope_accepts_matching_passive_modal_and_prohibition_negatives(
     [
         "不应在未经专门风险评估和书面批准的情况下被用于低碳钢材料",
         "禁止经审批用于低碳钢材料",
+        "不准用于低碳钢材料",
+        "不适合用于低碳钢材料",
+        "不鼓励用于低碳钢材料",
     ],
 )
 def test_scope_rejects_unsupported_predicate_window_instead_of_guessing(phrase):
