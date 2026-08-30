@@ -88,3 +88,31 @@ def test_ops_tools_scope_to_standard_library() -> None:
     for rel in ("scripts/reprocess_index_backlog.py", "scripts/health_watch.py"):
         source = (BACKEND_ROOT / rel).read_text(encoding="utf-8")
         assert "project-file" in source, f"{rel} 必须把项目资料排除在索引口径外"
+
+
+def test_stuck_reconciler_ignores_project_files() -> None:
+    """收敛器只该管标准库。
+
+    项目资料不做切片/向量化，它们身上的「待切片/待向量化」是架构调整前的
+    历史残留。不排除的后果不是派错任务（派发层会拦），而是**每小时报一次
+    「卡住 52 份」**——运维以为有积压，真正该关注的标准库积压淹没在噪音里
+    （2026-08-30 实测：52 份项目资料 / 0 份标准库）。
+    """
+    source = (BACKEND_ROOT / "scripts" / "reconcile_stuck_index_tasks.py").read_text(encoding="utf-8")
+    assert "project_sources" in source
+    assert 'sourceType") or "") in {"project-file", "project_file"}' in source
+    scan = source.split("for file in repo.state.get", 1)[1][:400]
+    assert "project_sources" in scan, "扫描时必须跳过项目资料"
+
+
+def test_project_file_requeue_script_refuses_by_default() -> None:
+    """专给项目资料补切片的脚本，使命已结束——要明确拒绝，不能静默空转。
+
+    它的判据就是 projectId 且非 standard，实测会捡起全部 211 份项目资料、
+    0 份标准库。静默跑一趟只会报出一个吓人的假积压。
+    """
+    source = (BACKEND_ROOT / "scripts" / "requeue_index_backlog.py").read_text(encoding="utf-8")
+    assert "AICHECK_PROJECT_FILE_INDEXING" in source, "要靠开关放行，不是硬删"
+    assert "raise SystemExit(0)" in source, "默认必须提前退出"
+    guard = source.split("AICHECK_PROJECT_FILE_INDEXING", 1)[1][:400]
+    assert "reprocess_index_backlog" in guard, "要指路到正确的工具"

@@ -220,7 +220,17 @@ def dispatch_ocr_pipeline_official(run_id: str) -> dict[str, Any]:
     )
 
 
-def dispatch_mineru_ocr(job_record_id: str) -> dict[str, Any]:
+def dispatch_mineru_ocr(job_record_id: str, *, retry: bool = False) -> dict[str, Any]:
+    """派发 MinerU OCR。
+
+    retry=True 时用**全新 task_id**，不走确定性 id。
+
+    确定性 id（tenant:job_id）保证同一个 job 不会被重复投递——这在正常流程里
+    是对的，但它让「重派」这件事根本做不成：celery 结果后端里已有该 id 的终态，
+    再次 apply_async 会被当成重复投递直接丢弃，而且**静默**。
+    2026-08-30 实测：手工重派 17 个卡住的 job，只有 6 个真的被接收，
+    其余 11 个凭空消失——运维以为派出去了，实际什么也没发生。
+    """
     mode = mineru_execution_mode()
     tenant_id = current_tenant_id()
     if mode == "postgres":
@@ -239,15 +249,17 @@ def dispatch_mineru_ocr(job_record_id: str) -> dict[str, Any]:
     if mode == "celery":
         from apps.worker.tasks import mineru_ocr_extract
 
-        result = mineru_ocr_extract.apply_async(
-            args=[job_record_id, tenant_id],
-            queue="ocr.remote",
-            priority=broker_priority(9),
-            task_id=deterministic_task_id(
+        apply_kwargs: dict[str, Any] = {
+            "args": [job_record_id, tenant_id],
+            "queue": "ocr.remote",
+            "priority": broker_priority(9),
+        }
+        if not retry:
+            apply_kwargs["task_id"] = deterministic_task_id(
                 "mineru-ocr",
                 f"{tenant_id}:{job_record_id}",
-            ),
-        )
+            )
+        result = mineru_ocr_extract.apply_async(**apply_kwargs)
         return {
             "mode": mode,
             "taskId": result.id,

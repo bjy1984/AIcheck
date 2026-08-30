@@ -12,7 +12,11 @@
 ## 判据
 
 只捡「处于中间态、且长时间没有进展」的：
+- **只看标准库**：项目资料不做切片/向量化，它们身上的「待切片」是历史残留；
 - 状态是 待切片/切片中/待向量化/向量化中；
+- **OCR 停在「排队中」而 ocr_job 仍是 queued**（2026-08-30 补：这一段此前
+  完全没人管。测试项目3 批量传 41 份，35 份因为增量刷新漏行永久卡在这里，
+  没有任何收敛器会捡起来）；
 - updatedAt 超过阈值（默认 30 分钟）没动。
 
 正在正常处理中的不碰——重复派发会让同一份资料被切两遍。
@@ -43,9 +47,23 @@ def main() -> int:
     cutoff = (datetime.now(UTC) - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
 
     load_state()
+    # 项目资料（施工方上传的审计材料）**不做切片/向量化**——它们是被审查的对象，
+    # 不是检索语料（2026-08-29 架构调整）。它们身上残留的「待切片/待向量化」
+    # 是那次调整之前留下的历史状态，不代表任何待办。
+    #
+    # 不排除的后果不是派错任务（派发层会拦），而是**每小时报一次「卡住 52 份」**：
+    # 运维以为有积压，真正该关注的标准库积压反而淹没在噪音里。
+    project_sources = {
+        str(source.get("id"))
+        for source in repo.state.get("knowledge_sources", [])
+        if isinstance(source, dict)
+        and str(source.get("sourceType") or "") in {"project-file", "project_file"}
+    }
     stuck = []
     for file in repo.state.get("knowledge_files", []):
         if not isinstance(file, dict):
+            continue
+        if str(file.get("sourceId") or "") in project_sources:
             continue
         slice_status = str(file.get("sliceStatus") or "")
         vector_status = str(file.get("vectorStatus") or "")
@@ -82,7 +100,61 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"  ✗ {file_id}: {exc.__class__.__name__} {exc}")
     print(f"\n已重新排队 {ok}/{len(stuck)} 份")
+
+    reconcile_stuck_ocr_jobs(minutes, apply=True)
     return 0
+
+
+def reconcile_stuck_ocr_jobs(minutes: int, *, apply: bool) -> int:
+    """OCR 停在「排队中」、job 仍是 queued 且长时间没动的，重新派发。
+
+    这一段此前没有任何收敛器。2026-08-30 测试项目3 批量传 41 份，35 份因为
+    增量刷新漏行（worker 读不到刚建的 job）永久卡在「排队中」——修好漏行之后，
+    存量仍需要有人捡起来，否则就得靠人手工发现。
+
+    **必须用 retry=True**：确定性 task_id 会让重派被 celery 当成重复投递
+    静默丢弃（实测派 17 个只有 6 个真的被接收）。
+    """
+    from libs.contracts.responses import SERVER_TZ
+
+    now = datetime.now(SERVER_TZ)
+    threshold = now - timedelta(minutes=minutes)
+    jobs_by_version: dict[str, list[dict]] = {}
+    for job in repo.state.get("ocr_jobs", []):
+        if isinstance(job, dict):
+            jobs_by_version.setdefault(str(job.get("documentVersionId") or ""), []).append(job)
+
+    stuck: list[tuple[str, str]] = []
+    for document in repo.state.get("documents", []):
+        if not isinstance(document, dict):
+            continue
+        if str(document.get("currentOcrStatus") or "") != "排队中":
+            continue
+        jobs = jobs_by_version.get(str(document.get("currentVersionId") or "")) or []
+        if not jobs or str(jobs[-1].get("status") or "") != "queued":
+            continue
+        try:
+            moved = datetime.fromisoformat(str(document.get("updatedAt") or "")[:19])
+        except ValueError:
+            continue
+        if moved.replace(tzinfo=SERVER_TZ) > threshold:
+            continue  # 还在动，别碰
+        stuck.append((str(jobs[-1]["id"]), str(document.get("fileName") or "")[:30]))
+
+    print(f"\nOCR 卡在「排队中」超过 {minutes} 分钟的：{len(stuck)} 份")
+    for job_id, name in stuck[:10]:
+        print(f"  {job_id}  {name}")
+    if not apply or not stuck:
+        return 0
+    ok = 0
+    for job_id, _name in stuck:
+        try:
+            if task_dispatcher.dispatch_mineru_ocr(job_id, retry=True).get("taskId"):
+                ok += 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ {job_id}: {exc.__class__.__name__} {exc}")
+    print(f"已重新派发 OCR {ok}/{len(stuck)} 份")
+    return ok
 
 
 if __name__ == "__main__":

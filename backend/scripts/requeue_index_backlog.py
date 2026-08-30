@@ -13,6 +13,7 @@ MinerU 路径的 OCR 成功后从不派发切片（见 tasks.py 里 dispatch_sli
 只捞「OCR 已成功但切片没完成」的，默认 dry-run —— 带 --apply 才真派。
 先看清单再动手：这个脚本会重置派生索引并重新排队，不该误伤正在切片中的。
 """
+import os
 import sys
 sys.path.insert(0, "/app")
 
@@ -20,6 +21,26 @@ from libs.db.repository import load_state, repo, flush_state
 from apps.api.routes import dispatch_knowledge_file_index_pipeline
 
 load_state()
+
+# 这个脚本专给**项目资料**补切片（判据就是 projectId 且非 standard）。
+# 2026-08-29 起项目资料不再做切片/向量化——它们是被审查的对象，不是检索语料。
+# 于是这个脚本的使命结束了：再跑只会把 211 份不该索引的资料派进管线，
+# 被 project_file_indexing_blocker 一一拦下，白跑一趟还报出一个吓人的积压数。
+#
+# 不删除是因为开关还在：真要做项目资料语义搜索时，打开它这个脚本仍然有用。
+if str(os.getenv("AICHECK_PROJECT_FILE_INDEXING") or "").strip().lower() not in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}:
+    print(
+        "项目资料已不做切片/向量化（2026-08-29 架构调整），本脚本无事可做。\n"
+        "标准库的积压请用 scripts/reprocess_index_backlog.py；\n"
+        "确要为项目资料建索引，先设 AICHECK_PROJECT_FILE_INDEXING=true。"
+    )
+    raise SystemExit(0)
+
 OCR_OK = {"已识别", "人工修正", "抽取不完整"}
 targets = [
     f for f in repo.state.get("knowledge_files", [])
