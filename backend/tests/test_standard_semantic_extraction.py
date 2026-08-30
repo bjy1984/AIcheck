@@ -1393,21 +1393,31 @@ def test_relations_use_standard_code_selected_in_same_extraction_and_keep_name()
 
 
 def test_relation_is_rejected_when_source_standard_code_remains_missing():
-    with pytest.raises(ValueError, match="relations require source standardCode"):
-        extract_standard_semantics(
-            semantic_record_fixture(pages={7: "按NB/T 47013.3-2015检测"}),
-            FakeLiteLLMClient(
-                {
-                    "normativeReferences": [
-                        {
-                            "standardCode": "NB/T 47013.3-2015",
-                            "pageNo": 7,
-                            "quotedText": "按NB/T 47013.3-2015检测",
-                        }
-                    ]
-                }
-            ),
-        )
+    """源标准 code 缺失时，关系数据必须进不来。
+
+    793f807 起改为**优雅降级**而不是抛错：丢掉 replaces / normativeReferences
+    直接返回，不再中断整份提取。保护意图不变——不知道这份文档自己是哪个标准，
+    它的引用关系就没有源头，是悬空数据，绝不能入库。
+
+    这里钉的是「坏数据进不来」，不是「必须抛某个异常」：实现换了方式，
+    保护不能跟着丢。
+    """
+    result = extract_standard_semantics(
+        semantic_record_fixture(pages={7: "按NB/T 47013.3-2015检测"}),
+        FakeLiteLLMClient(
+            {
+                "normativeReferences": [
+                    {
+                        "standardCode": "NB/T 47013.3-2015",
+                        "pageNo": 7,
+                        "quotedText": "按NB/T 47013.3-2015检测",
+                    }
+                ]
+            }
+        ),
+    )
+    assert not result.get("normativeReferences"), "源标准未知时不得接受引用关系"
+    assert "replaces" not in result, "源标准未知时不得接受替代关系"
 
 
 def test_page_digest_ignores_non_mineru_and_legacy_only_blocks():
