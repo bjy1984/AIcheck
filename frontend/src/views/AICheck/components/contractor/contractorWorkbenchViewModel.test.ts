@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { DocumentAsset, NodeFileBinding, RectificationItem } from '@/types/aicheck'
 import {
   buildContractorWorkbenchModel,
+  contractorStatusFilterOptions,
   resolveContractorSummaryTarget,
   sortContractorFeedback
 } from './contractorWorkbenchViewModel'
@@ -92,6 +93,12 @@ const rectifications: RectificationItem[] = [
 ]
 
 const model = buildContractorWorkbenchModel({ projectFiles: files, rectifications })
+
+assert.deepEqual(
+  contractorStatusFilterOptions,
+  ['全部', '待提交', '审核中', '需补正', '已通过', '已作废'],
+  '上传资料列表不能展示“未关联”分类及其数量'
+)
 
 assert.deepEqual(
   model.summaryCards.map(({ key, count }) => ({ key, count })),

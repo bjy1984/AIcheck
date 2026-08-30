@@ -42,8 +42,10 @@ import { documentBusinessStatus, type DocumentBusinessStatus } from '@/utils/doc
 import { canRetryDocumentUpload, canSubmitDocumentUpload } from '@/utils/documentUploadActions'
 import {
   buildContractorWorkbenchModel,
+  contractorStatusFilterOptions,
   resolveContractorSummaryTarget,
   sortContractorFeedback,
+  type ContractorStatusFilter,
   type ContractorStatusCardKey
 } from './contractor/contractorWorkbenchViewModel'
 import {
@@ -59,7 +61,7 @@ type ReviewChainStep = {
   result: string
 }
 
-type ContractorFileStatus = '全部' | '未关联' | '待提交' | '审核中' | '需补正' | '已通过' | '已作废'
+type ContractorFileStatus = ContractorStatusFilter | '未关联'
 type ContractorSortKey = 'updatedDesc' | 'updatedAsc' | 'status' | 'version'
 type ElementTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
 type ContractorFileRow = {
@@ -190,7 +192,7 @@ const clearContractorNodeFilter = () => {
 
 defineExpose({ focusContractorNode })
 
-const contractorStatusFilter = ref<ContractorFileStatus>('全部')
+const contractorStatusFilter = ref<ContractorStatusFilter>('全部')
 type ContractorProcessingFilter = '全部' | '上传中' | '失败'
 const contractorProcessingFilter = ref<ContractorProcessingFilter>('全部')
 const contractorUsageFilter = ref('全部用途')
@@ -212,16 +214,6 @@ const handleContractorSummarySelect = async (key: ContractorStatusCardKey) => {
   await nextTick()
   document.querySelector(target.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
-
-const contractorStatusOptions: ContractorFileStatus[] = [
-  '全部',
-  '未关联',
-  '待提交',
-  '审核中',
-  '需补正',
-  '已通过',
-  '已作废'
-]
 
 const currentNodeLabel = computed(() => {
   if (!props.node) return '未选择节点'
@@ -449,14 +441,14 @@ const contractorFeedbackRows = computed(() => {
   return []
 })
 
-const contractorStatusCounts = computed<Record<ContractorFileStatus, number>>(() => {
-  const counts = contractorStatusOptions.reduce(
+const contractorStatusCounts = computed<Record<ContractorStatusFilter, number>>(() => {
+  const counts = contractorStatusFilterOptions.reduce(
     (result, status) => ({ ...result, [status]: 0 }),
-    {} as Record<ContractorFileStatus, number>
+    {} as Record<ContractorStatusFilter, number>
   )
   contractorFileRows.value.forEach((file) => {
-    counts[file.status] += 1
     counts.全部 += 1
+    if (file.status !== '未关联') counts[file.status] += 1
   })
   return counts
 })
@@ -756,7 +748,7 @@ const getPillClass = (value?: string): AuditStatusTone => {
               @change="resetContractorFilePage"
             >
               <ElRadioButton
-                v-for="status in contractorStatusOptions"
+                v-for="status in contractorStatusFilterOptions"
                 :key="status"
                 :value="status"
               >

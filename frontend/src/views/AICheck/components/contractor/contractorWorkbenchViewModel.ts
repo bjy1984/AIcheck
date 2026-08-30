@@ -4,6 +4,15 @@ import { documentBusinessStatus } from '@/utils/documentPipelineStatus'
 
 export type ContractorPrimaryTab = '全部' | '待提交' | '审核中' | '需补正' | '已通过'
 export type ContractorStatusCardKey = 'feedback' | 'pending' | 'reviewing'
+export const contractorStatusFilterOptions = [
+  '全部',
+  '待提交',
+  '审核中',
+  '需补正',
+  '已通过',
+  '已作废'
+] as const
+export type ContractorStatusFilter = (typeof contractorStatusFilterOptions)[number]
 
 export type ContractorWorkbenchFile = {
   documentId: string
