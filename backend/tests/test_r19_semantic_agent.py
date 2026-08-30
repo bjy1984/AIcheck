@@ -190,7 +190,10 @@ def test_r19_agent_submits_evidence_bound_atomic_judgments_and_preserves_reasoni
             return response
 
     monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
-    monkeypatch.setattr("libs.review_orchestrator.execution.qwen_runtime_client", lambda: FakeClient())
+    # 规划器住在 rule_planners（execution.py 拆分时搬出去的），
+    # patch 必须打在它实际解析的那个模块上——patch execution 的同名
+    # re-export 不会影响 rule_planners 里的绑定。
+    monkeypatch.setattr("libs.review_orchestrator.rule_planners.qwen_runtime_client", lambda: FakeClient())
 
     trace = plan_r19_semantic_review(run, context)
 
