@@ -224,7 +224,11 @@ except Exception:
     recreate_worker aicheck-worker-business --concurrency=2 -B --schedule=/tmp/auto-review-celerybeat-schedule -Q business.light,ocr.parse_document,ocr.recognize_seals,knowledge.slice,knowledge.embed,inspection.ai_recheck,llm.compare,export.package
     recreate_worker aicheck-worker-cpu-heavy --concurrency=1 -Q cpu.heavy
     recreate_worker aicheck-worker-llm --concurrency=1 -Q llm.remote
-    recreate_worker aicheck-worker-ocr-remote --concurrency=1 -Q ocr.remote
+    # 并发 3：MinerU 是云端 API，本机只等 HTTP，不吃 CPU/内存。
+    # 并发 1 时批量上传是纯串行——41 份按中位 16 秒也要 11 分钟，混几份大扫描件
+    # （实测最慢 656 秒）就是半小时以上，用户看到的就是「卡住」。
+    # 不调更高是因为 MinerU 侧有速率限制，3 个在途足够填满等待时间。
+    recreate_worker aicheck-worker-ocr-remote --concurrency=3 -Q ocr.remote
     sleep 5
     for c in aicheck-worker-business aicheck-worker-cpu-heavy aicheck-worker-llm aicheck-worker-ocr-remote; do
       state=\$(docker inspect \$c --format '{{.State.Status}}' 2>/dev/null || echo missing)
