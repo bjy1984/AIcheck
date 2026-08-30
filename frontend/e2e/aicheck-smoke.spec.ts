@@ -653,6 +653,89 @@ const openInspectionNodeAuditItem = async (
 }
 
 test.describe('AIcheck route smoke', () => {
+  test('auto-review policy ignores a stale response after switching projects', async ({ page }) => {
+    let releaseStaleResponse: (() => void) | undefined
+    const staleResponseGate = new Promise<void>((resolve) => {
+      releaseStaleResponse = resolve
+    })
+
+    await page.route(
+      /\/api\/projects\/[^/]+\/inspection\/auto-review-(policy|status)/,
+      async (route) => {
+        const url = route.request().url()
+        const projectId = url.match(/projects\/([^/]+)/)?.[1] || ''
+        const enabled = projectId === 'P-2026-HDCP-001'
+        if (enabled) await staleResponseGate
+        const policy = {
+          id: `ARP-${projectId}`,
+          tenantId: 'TENANT-DEFAULT',
+          projectId,
+          enabled,
+          triggerModes: ['ocr_mounted'],
+          dailyTime: '02:00',
+          timezone: 'Asia/Shanghai',
+          reviewMode: 'gap_precheck',
+          debounceSeconds: 300,
+          revision: 1,
+          createdAt: '2026-08-30 12:00:00',
+          updatedAt: '2026-08-30 12:00:00',
+          etag: `W/"auto-review-policy-${projectId}-r1"`
+        }
+        const data = url.endsWith('/auto-review-policy')
+          ? { policy }
+          : {
+              policy,
+              pendingNodeCount: 0,
+              runningProjectRunCount: 0,
+              failedProjectRunCount: 0,
+              runningNodeReviewCount: 0,
+              reviewIncompleteNodeCount: 0,
+              shardProgress: {
+                expectedShardCount: 0,
+                completedShardCount: 0,
+                failedShardCount: 0
+              },
+              latestFailure: null,
+              latestProjectRun: null
+            }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            message: 'success',
+            data,
+            operationId: `RACE-${projectId}`,
+            serverTime: '2026-08-30 12:00:00'
+          })
+        })
+      }
+    )
+
+    await loginTo(page, '/workbench/inspection')
+    const projectSelect = page.locator('.project-select')
+    const autoReviewButton = page.locator('.auto-review-control-button')
+    await expect(projectSelect).toContainText('广东 LNG 支线改造工程')
+    await expect(autoReviewButton).toContainText('自动审查：已关闭')
+
+    const chooseProjectWithoutWaitingForRequests = async (name: string) => {
+      await projectSelect.click()
+      await page
+        .locator('.el-select-dropdown:visible .el-select-dropdown__item')
+        .filter({ hasText: name })
+        .click()
+      await expect(projectSelect).toContainText(name)
+    }
+
+    await chooseProjectWithoutWaitingForRequests('华东成品油管道改造工程')
+    await chooseProjectWithoutWaitingForRequests('广东 LNG 支线改造工程')
+    await expect(autoReviewButton).toContainText('自动审查：已关闭')
+
+    releaseStaleResponse?.()
+    await page.waitForTimeout(200)
+    await expect(autoReviewButton).toContainText('自动审查：已关闭')
+  })
+
   test('role accounts land on their default panel without redirect', async ({ browser }) => {
     test.setTimeout(90_000)
     const cases = [

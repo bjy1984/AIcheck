@@ -40,6 +40,7 @@ const drawerVisible = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const running = ref(false)
+let loadGeneration = 0
 const policy = ref<AutoReviewPolicy>()
 const status = ref<AutoReviewStatus>()
 const form = reactive({
@@ -68,18 +69,24 @@ const syncForm = (value: AutoReviewPolicy) => {
 }
 
 const load = async () => {
-  if (!props.projectId) return
+  const generation = ++loadGeneration
+  const requestProjectId = props.projectId
+  if (!requestProjectId) {
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     const [policyResponse, statusResponse] = await Promise.all([
-      getProjectAutoReviewPolicyApi(props.projectId),
-      getProjectAutoReviewStatusApi(props.projectId)
+      getProjectAutoReviewPolicyApi(requestProjectId),
+      getProjectAutoReviewStatusApi(requestProjectId)
     ])
+    if (generation !== loadGeneration || requestProjectId !== props.projectId) return
     policy.value = policyResponse.data.policy
     status.value = statusResponse.data
     syncForm(policy.value)
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
