@@ -587,7 +587,7 @@ def test_ai_recheck_allows_pending_evidence_decisions(monkeypatch) -> None:
     monkeypatch.setattr(
         task_dispatcher,
         "dispatch_ai_recheck",
-        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+        lambda project_id, node_id, run_id, **_kwargs: {"mode": "test", "taskId": f"TEST-{run_id}"},
     )
 
     result = assert_ok(client.post(f"/api/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck"))
@@ -612,7 +612,7 @@ def test_scan_import_expands_contractor_member_scope() -> None:
     assert {1, 2, 4, 16, 24, 25, 53}.issubset(set(member["nodeScope"]))
 
 
-def test_node_input_versions_fall_back_to_ready_unclassified_documents() -> None:
+def test_node_input_versions_fall_back_to_ocr_done_unclassified_documents() -> None:
     repo.state["bindings"] = []
     repo.state["node_evidence_links"] = []
     ready_document, ready_version = repo.create_document(
@@ -655,7 +655,11 @@ def test_node_input_versions_fall_back_to_ready_unclassified_documents() -> None
             }
         )
 
-    assert targeting_input_versions_for_node(repo, PROJECT_ID, 1) == [ready_version["id"]]
+    # 2026-08-29 架构调整：分析读的是 OCR 证据，切片/向量化状态不再是门槛
+    # （项目资料已不做索引）。两份 OCR 完成的资料都应进入输入清单。
+    assert targeting_input_versions_for_node(repo, PROJECT_ID, 1) == sorted(
+        [ready_version["id"], blocked_version["id"]]
+    )
 
 
 def test_domestic_manufacturing_license_does_not_auto_bind_overseas_node() -> None:

@@ -207,7 +207,13 @@ except Exception:
     recreate_worker() {
       name=\$1; shift
       docker rm -f \$name >/dev/null 2>&1 || true
+      # output/rules 必须和 API 挂一样的卷：worker 要读用户上传的 local:// 原件
+      # （OCR/切片都从这里取源文件）。此前只有 API 挂了，worker 容器里 /app/output
+      # 根本不存在——worker 读不到任何本地上传件，且 WORKSPACE_ROOT 回落成 /，
+      # 于是 13 份实际在库的资料被判成「源文件已丢失」（2026-08-29 审计实锤）。
       docker run -d --name \$name --network aicheck-net --restart unless-stopped \
+        -v $SERVER_DATA_ROOT/files/output:/app/output \
+        -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
         --env-file /home/dev-bjy/aicheck-runtime.env aicheck-api:local \
         sh -c \"celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --prefetch-multiplier=1 \$*\" >/dev/null
     }

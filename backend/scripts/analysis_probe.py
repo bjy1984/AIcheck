@@ -103,6 +103,24 @@ def _auto_review_chain_checks() -> list[tuple[str, bool, str]]:
         )
     )
 
+    # 哈希伪向量：与真语义向量同表同维，只有 embeddingModel 能区分。
+    # 它们没有语义，检索命中近似随机——这是**静默的质量塌方**，
+    # 界面上一切正常（2026-08-29 审计：全库 48% 向量是哈希的）。
+    from libs.db.repository import ensure_collections_loaded
+
+    ensure_collections_loaded("knowledge_vectors")
+    vectors = [v for v in repo.state.get("knowledge_vectors", []) if isinstance(v, dict)]
+    hash_vectors = [v for v in vectors if str(v.get("embeddingModel") or "") == "offline-hash-v1"]
+    hash_ratio = (len(hash_vectors) / len(vectors)) if vectors else 0.0
+    checks.append(
+        (
+            "无哈希伪向量污染检索",
+            hash_ratio < 0.05,  # 判据：5%（重跑过程中允许残留，长期应归零）
+            f"{len(hash_vectors)}/{len(vectors)} = {hash_ratio:.0%}"
+            + ("（哈希向量没有语义，检索近似随机）" if hash_ratio >= 0.05 else ""),
+        )
+    )
+
     # 会话 Agent 执行僵尸：与 reconcile_stalled_agent_executions 同口径。
     zombie = []
     for row in repo.state.get("agent_executions", []):

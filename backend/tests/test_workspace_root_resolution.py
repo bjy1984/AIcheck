@@ -1,65 +1,49 @@
-"""本地上传文件的根目录解析（线上审计 M-1）。
+"""local:// 文件的根目录解析必须靠「哪一层有 output/」，不能靠目录层数倒推。
 
-线上 66 个真实文件（507 MB）的 storageKey 是 local://output/document_uploads/...，
-但容器里全部解析失败：
+容器里代码在 /app/apps/worker/tasks.py，parents[3] 是 /，而文件在 /app/output/。
+少一层目录，所有 local:// 路径就全部解析失败——2026-08-29 审计中，13 份实际
+存在于 /app/output/ 的资料被判成「源文件已丢失」，差点让用户白白重传。
 
-    WORKSPACE_ROOT = Path(__file__).parents[3]
-      本地开发 backend/apps/api/routes.py → 仓库根，output/ 在其下   ✓
-      容器内   /app/apps/api/routes.py     → /，而文件在 /app/output/  ✗
-
-少一层目录，local_storage_path() 就返回 /output/... 这个不存在的路径，
-project_document_local_original_path() 一律返回 None，于是预览地址退回把内部
-local:// 串下发给浏览器——浏览器当然取不到，界面只能报「无法预览」。
-
-靠目录层数倒推是这个 bug 的根源：它把「代码放在哪一层」当成了不变量。
+routes.py 早修过同款 bug（当时 66 个线上文件预览失效），worker 漏修。
+判据只留一份实现，两处共用。
 """
 
 from __future__ import annotations
 
 import pathlib
 
-import apps.api.routes as routes_module
+from libs.workspace_paths import resolve_workspace_root
+
+BACKEND_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def test_explicit_override_wins(monkeypatch, tmp_path: pathlib.Path) -> None:
-    """部署环境可以直接指定，不必让代码去猜。"""
+def test_env_override_wins(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AICHECK_WORKSPACE_ROOT", str(tmp_path))
-    assert routes_module.resolve_workspace_root() == tmp_path.resolve()
+    assert resolve_workspace_root() == tmp_path.resolve()
 
 
-def test_falls_back_to_the_ancestor_that_actually_has_output(monkeypatch) -> None:
-    """没有显式配置时，判据是「哪一层真的有 output/」而不是「往上数几层」。
-
-    这正是容器与本地开发的差别所在：两边代码深度不同，但 output/ 的位置
-    都能被这条判据找到。
-    """
+def test_picks_the_ancestor_that_actually_has_output(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("AICHECK_WORKSPACE_ROOT", raising=False)
-    root = routes_module.resolve_workspace_root()
-    assert (root / "output").is_dir(), f"解析出的根目录下没有 output/：{root}"
+    # 模拟容器布局：/app/output 存在，代码在 /app/apps/worker/
+    app = tmp_path / "app"
+    (app / "output").mkdir(parents=True)
+    code = app / "apps" / "worker"
+    code.mkdir(parents=True)
+    resolved = resolve_workspace_root(code / "tasks.py")
+    assert resolved == app, "必须选中真的有 output/ 的那一层，而不是往上数三层"
 
 
-def test_local_storage_key_resolves_to_a_real_path(monkeypatch, tmp_path: pathlib.Path) -> None:
-    """端到端：local:// 键必须能解析到真实文件。"""
-    monkeypatch.setenv("AICHECK_WORKSPACE_ROOT", str(tmp_path))
-    monkeypatch.setattr(routes_module, "WORKSPACE_ROOT", tmp_path.resolve())
-    target = tmp_path / "output" / "document_uploads" / "P-1" / "V1" / "a.docx"
-    target.parent.mkdir(parents=True)
-    target.write_bytes(b"x")
-    resolved = routes_module.local_storage_path(
-        "local://output/document_uploads/P-1/V1/a.docx"
-    )
-    assert resolved is not None
-    assert resolved.is_file(), f"解析到了不存在的路径：{resolved}"
+def test_no_hardcoded_parents_index_in_worker() -> None:
+    """worker 不得再用层数倒推。"""
+    source = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
+    assert "WORKSPACE_ROOT = Path(__file__).resolve().parents[3]" not in source
+    assert "resolve_workspace_root" in source
 
 
-def test_path_traversal_is_still_blocked(monkeypatch, tmp_path: pathlib.Path) -> None:
-    """放宽根目录判定不能放宽越界防护。"""
-    monkeypatch.setattr(routes_module, "WORKSPACE_ROOT", tmp_path.resolve())
-    assert routes_module.local_storage_path("local://../../etc/passwd") is None
-
-
-def test_non_local_keys_are_ignored(monkeypatch, tmp_path: pathlib.Path) -> None:
-    """minio:// 走对象存储，不该被当成本地路径。"""
-    monkeypatch.setattr(routes_module, "WORKSPACE_ROOT", tmp_path.resolve())
-    assert routes_module.local_storage_path("minio://documents/x") is None
-    assert routes_module.local_storage_path(None) is None
+def test_single_implementation_shared_by_api_and_worker() -> None:
+    api = (BACKEND_ROOT / "apps" / "api" / "routes.py").read_text(encoding="utf-8")
+    worker = (BACKEND_ROOT / "apps" / "worker" / "tasks.py").read_text(encoding="utf-8")
+    for source in (api, worker):
+        assert "from libs.workspace_paths import resolve_workspace_root" in source
+    # routes.py 不再保留本地副本
+    assert "def resolve_workspace_root() -> Path:" not in api

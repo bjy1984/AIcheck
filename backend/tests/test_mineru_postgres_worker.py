@@ -65,14 +65,12 @@ def test_postgres_execution_requests_existing_retry_delays(
         )
 
     assert raised.value.countdown == countdown
-    assert raised.value.diagnostics == [
-        {
-            "code": "MINERU_TIMEOUT",
-            "level": "error",
-            "retryable": True,
-            "stage": "submit",
-        }
-    ]
+    # 本用例钉的是重试延迟，诊断只需确认关键字段（新增可归因字段不该让它红）
+    diagnostic = raised.value.diagnostics[0]
+    assert diagnostic["code"] == "MINERU_TIMEOUT"
+    assert diagnostic["level"] == "error"
+    assert diagnostic["retryable"] is True
+    assert diagnostic["stage"] == "submit"
     assert job["status"] == "queued"
     assert job["stage"] == "retrying"
 
@@ -232,13 +230,16 @@ def test_postgres_execution_indexes_usable_review_incomplete_result(
     assert version["sliceStatus"] == "待切片"
     assert version["vectorStatus"] == "待向量化"
     assert document["materialTypeCode"] == "material_substitution_approval"
-    assert classification_seen_by_slice == ["material_substitution_approval"]
+    # 2026-08-29 架构调整：项目资料不再切片/向量化（被审对象，不是检索语料）。
+    # OCR 后不得派发切片、不得建 slice/vector 任务；分类结果照常写在文档上
+    # （上面的 materialTypeCode 断言）——自动审查链依赖它，与索引无关。
+    assert classification_seen_by_slice == [], "项目资料不得再派发切片"
     downstream = [
         item
         for item in repository.state["knowledge_tasks"]
         if item.get("documentVersionId") == version["id"]
     ]
-    assert {item.get("taskType") for item in downstream} >= {"slice", "vector"}
+    assert not {item.get("taskType") for item in downstream} & {"slice", "vector"}
     stages = {
         item["stage"]: item
         for item in repository.ocr_pipeline_stages(str(job.get("pipelineRunId") or ""))

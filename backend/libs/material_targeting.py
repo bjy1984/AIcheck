@@ -1533,10 +1533,9 @@ def unclassified_input_versions_for_project(repo: Any, project_id: str) -> list[
             continue
         if str(knowledge_file.get("materialTypeCode") or "") != "unclassified_material":
             continue
-        if str(knowledge_file.get("sliceStatus") or "") != "已切片":
-            continue
-        if str(knowledge_file.get("vectorStatus") or "") != "已向量化":
-            continue
+        # 分析读的是 OCR 证据，不是分块/向量——项目资料已不再切片/向量化
+        # （见 task_dispatcher.project_file_indexing_blocker），这两道门只会
+        # 把资料永远挡在分析输入之外。
         ready.append(version_id)
     return sorted(set(ready))
 

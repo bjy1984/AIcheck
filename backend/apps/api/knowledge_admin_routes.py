@@ -21,6 +21,7 @@ from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from apps.api import routes as routes_module
+from libs.db.repository import ensure_collections_loaded, requires_collections
 from libs.ocr_structured_view import build_ocr_structured_view
 from apps.api.routes import (
     ALLOWED_KNOWLEDGE_UPLOAD_TYPES,
@@ -72,7 +73,6 @@ from apps.api.routes import (
     parse_multipart_uploads,
     record_if_match_valid,
     record_visible_for_request,
-    remove_knowledge_file_records,
     repo,
     request_user_id,
     resolve_knowledge_file_id,
@@ -95,8 +95,91 @@ knowledge_admin_router = APIRouter()
 router = knowledge_admin_router  # 迁移块内的装饰器沿用 @router，别名保持 diff 最小
 
 
+@requires_collections("knowledge_vectors", "knowledge_page_index_nodes")
+def remove_knowledge_file_records(file: dict[str, Any]) -> dict[str, int]:
+    file_id = str(file.get("id") or "")
+    document_id = str(file.get("documentId") or "")
+    version_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("versions", [])
+        if document_id and item.get("documentId") == document_id and item.get("id")
+    }
+    if file.get("documentVersionId"):
+        version_ids.add(str(file["documentVersionId"]))
+    chunk_ids = {
+        str(item.get("id"))
+        for item in repo.state.get("knowledge_chunks", [])
+        if item.get("fileId") == file_id
+        or (document_id and item.get("documentId") == document_id)
+        or str(item.get("documentVersionId") or "") in version_ids
+    }
+
+    before = {
+        "files": len(repo.state.get("knowledge_files", [])),
+        "documents": len(repo.state.get("documents", [])),
+        "versions": len(repo.state.get("versions", [])),
+        "chunks": len(repo.state.get("knowledge_chunks", [])),
+        "vectors": len(repo.state.get("knowledge_vectors", [])),
+        "tasks": len(repo.state.get("knowledge_tasks", [])),
+        "evidenceLinks": len(repo.state.get("evidence_links", [])),
+    }
+    repo.state["knowledge_files"] = [
+        item for item in repo.state.get("knowledge_files", []) if item.get("id") != file_id
+    ]
+    repo.state["documents"] = [
+        item for item in repo.state.get("documents", []) if item.get("id") != document_id
+    ]
+    repo.state["versions"] = [
+        item
+        for item in repo.state.get("versions", [])
+        if not (document_id and item.get("documentId") == document_id) and str(item.get("id") or "") not in version_ids
+    ]
+    repo.state["knowledge_chunks"] = [
+        item
+        for item in repo.state.get("knowledge_chunks", [])
+        if item.get("fileId") != file_id
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+    ]
+    repo.state["knowledge_vectors"] = [
+        item
+        for item in repo.state.get("knowledge_vectors", [])
+        if item.get("fileId") != file_id
+        and str(item.get("chunkId") or "") not in chunk_ids
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+    ]
+    repo.state["knowledge_tasks"] = [
+        item
+        for item in repo.state.get("knowledge_tasks", [])
+        if item.get("targetId") != file_id
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+    ]
+    repo.state["evidence_links"] = [
+        item
+        for item in repo.state.get("evidence_links", [])
+        if item.get("fileId") != file_id
+        and item.get("knowledgeFileId") != file_id
+        and not (document_id and item.get("documentId") == document_id)
+        and str(item.get("documentVersionId") or "") not in version_ids
+        and str(item.get("chunkId") or item.get("knowledgeChunkId") or "") not in chunk_ids
+    ]
+    after = {
+        "files": len(repo.state.get("knowledge_files", [])),
+        "documents": len(repo.state.get("documents", [])),
+        "versions": len(repo.state.get("versions", [])),
+        "chunks": len(repo.state.get("knowledge_chunks", [])),
+        "vectors": len(repo.state.get("knowledge_vectors", [])),
+        "tasks": len(repo.state.get("knowledge_tasks", [])),
+        "evidenceLinks": len(repo.state.get("evidence_links", [])),
+    }
+    return {key: before[key] - after[key] for key in before}
+
+
 @router.get("/knowledge/overview")
 def knowledge_overview(request: Request):
+    ensure_collections_loaded("knowledge_vectors", "knowledge_page_index_nodes")
     sources = repo.state["knowledge_sources"]
     files = repo.state["knowledge_files"]
     tasks = repo.state["knowledge_tasks"]
@@ -894,6 +977,7 @@ async def replace_knowledge_file_version(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    ensure_collections_loaded("knowledge_vectors")
     fields, uploads, parse_error = await parse_multipart_uploads(request)
     if parse_error:
         return parse_error
@@ -1247,6 +1331,7 @@ def reference_text_from_match(match: dict[str, Any]) -> str:
 
 @router.get("/knowledge/files/{file_id}/vectors")
 def knowledge_file_vectors(request: Request, file_id: str):
+    ensure_collections_loaded("knowledge_vectors")
     file_id = resolve_knowledge_file_id(file_id)
     file = repo.find_one("knowledge_files", file_id)
     if not file:
@@ -1845,6 +1930,7 @@ def list_knowledge_page_index_nodes(
     page_no: int = Query(default=1, alias="page"),
     page_size: int = Query(default=20, alias="pageSize"),
 ):
+    ensure_collections_loaded("knowledge_page_index_nodes")
     items = [repo.clone(item) for item in repo.state.get("knowledge_page_index_nodes", [])]
     if kbDocId:
         items = [item for item in items if item.get("kbDocId") == kbDocId]

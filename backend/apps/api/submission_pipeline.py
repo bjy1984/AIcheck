@@ -44,20 +44,13 @@ def pipeline_stage_of(
     vector_status = str(knowledge_file.get("vectorStatus") or version.get("vectorStatus") or "")
     if ocr_status not in OCR_DONE_STATUSES:
         return {"stage": "ocr", "stageLabel": "文字识别", "status": ocr_status or "未开始"}
-    if slice_status != "已切片":
-        stage: dict[str, Any] = {
-            "stage": "slice",
-            "stageLabel": "切片",
-            "status": slice_status or "未开始",
-        }
-        # 「全部被判为噪声」是最需要说清楚的一种失败：资料本身传上来了、
-        # 文字也认出来了，只是内容被当成页眉页脚一类的干扰整份丢掉。
-        # 不说明原因的话，用户只会反复重传同一份文件。
-        if str(knowledge_file.get("sliceStatusReason") or "") == "all_chunks_quarantined":
-            stage["reason"] = "抽出的文本全部被判为噪声（页眉页脚、纯符号或纯英文），没有可索引内容"
-        return stage
-    if vector_status != "已向量化":
-        return {"stage": "vector", "stageLabel": "向量化", "status": vector_status or "未开始"}
+    # 报审只要求 OCR 完成。切片/向量化曾是前置，但审查读的是 OCR 证据——
+    # 项目资料的向量在整个系统里消费者为零（检索只查规范条款），
+    # 拿它当报审门槛只会让施工方被一个无意义的环节卡住
+    # （2026-08-29 审计：积压的 67 份「未切片」全被这道门挡在报审外）。
+    # 项目资料已不再切片/向量化（见 task_dispatcher.project_file_indexing_blocker），
+    # slice_status / vector_status 对报审不再有含义。
+    _ = (slice_status, vector_status)
     return None
 
 

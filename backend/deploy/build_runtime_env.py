@@ -133,6 +133,12 @@ runtime = {
     "AICHECK_EMBEDDING_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "AICHECK_EMBEDDING_MODEL_ID": "text-embedding-v4",
     "AICHECK_EMBEDDING_SERVED_MODEL_NAME": "text-embedding-v4",
+    # 断点批大小取满 EMBED_BATCH_SIZE（32）：默认 8 是为「避免长任务阻塞」，
+    # 但 cpu.heavy 并发为 1，多条续跑链竞争时每链每轮只前进 8 个分块、
+    # 却要等其他所有链各跑一轮——233 分块的文件要 30 轮×链数（2026-08-29 实测
+    # 39 条链集体停在 offset=24）。批大小 32 不增加 API 调用次数（一次调用
+    # 本就发 32 段），只把断点开销降到 1/4。
+    "AICHECK_EMBEDDING_CHECKPOINT_BATCH_SIZE": "32",
 }
 # 凭证覆盖固定配置：口令、密钥以文件为准
 runtime.update({k: v for k, v in secrets.items() if not k.startswith("AICHECK_BOOTSTRAP_PASSWORD_")})

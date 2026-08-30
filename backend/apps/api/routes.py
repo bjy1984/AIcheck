@@ -80,6 +80,7 @@ from libs.db.repository import (
     load_state,
     postgres_persistence_configured,
     repo,
+    requires_collections,
 )
 from libs.db.seed import (
     ROLE_ACTIONS,
@@ -189,6 +190,7 @@ from libs.knowledge_indexing import (
     reject_if_dedicated_ingestion,
 )
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
+from libs.workspace_paths import resolve_workspace_root
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.material_targeting import (
     build_node_evidence_readiness,
@@ -348,30 +350,7 @@ _UPLOAD_SESSION_SERVICES = _DOCUMENT_ACCESS_SERVICES
 
 router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
-def resolve_workspace_root() -> Path:
-    """本地上传文件（local:// 存储键）的根目录。
-
-    原实现是 Path(__file__).parents[3]，靠目录层数倒推——本地开发下
-    backend/apps/api/routes.py 往上三层正好是仓库根，output/ 在其下；
-    但容器里代码在 /app/apps/api/routes.py，往上三层是 **/**，而文件在
-    /app/output/。少一层目录，66 个线上文件的路径就全部解析失败：
-    local_storage_path() 返回 /output/... 这个不存在的路径，于是
-    project_document_local_original_path() 一律返回 None，预览地址退回内部
-    local:// 串下发给浏览器——浏览器当然取不到。
-
-    改为显式判据：优先环境变量，其次「哪一层真的有 output/」，最后才回落。
-    """
-    override = os.getenv("AICHECK_WORKSPACE_ROOT", "").strip()
-    if override:
-        return Path(override).resolve()
-    here = Path(__file__).resolve()
-    for candidate in here.parents:
-        if (candidate / "output").is_dir():
-            return candidate
-    return here.parents[3]
-
-
-WORKSPACE_ROOT = resolve_workspace_root()
+WORKSPACE_ROOT = resolve_workspace_root(Path(__file__))
 RULES_STANDARDS_ROOT = WORKSPACE_ROOT / "rules" / "standards"
 RULES_BUSINESS_RULES_PATH = WORKSPACE_ROOT / "rules" / "业务规则.md"
 STANDARD_LIBRARY_SOURCE_NAME = "标准规范库（业务规则引用标准）"
@@ -1527,87 +1506,6 @@ def knowledge_file_source_type(file: dict[str, Any] | None) -> str:
     return str(file.get("sourceType") or source.get("sourceType") or "")
 
 
-def remove_knowledge_file_records(file: dict[str, Any]) -> dict[str, int]:
-    file_id = str(file.get("id") or "")
-    document_id = str(file.get("documentId") or "")
-    version_ids = {
-        str(item.get("id"))
-        for item in repo.state.get("versions", [])
-        if document_id and item.get("documentId") == document_id and item.get("id")
-    }
-    if file.get("documentVersionId"):
-        version_ids.add(str(file["documentVersionId"]))
-    chunk_ids = {
-        str(item.get("id"))
-        for item in repo.state.get("knowledge_chunks", [])
-        if item.get("fileId") == file_id
-        or (document_id and item.get("documentId") == document_id)
-        or str(item.get("documentVersionId") or "") in version_ids
-    }
-
-    before = {
-        "files": len(repo.state.get("knowledge_files", [])),
-        "documents": len(repo.state.get("documents", [])),
-        "versions": len(repo.state.get("versions", [])),
-        "chunks": len(repo.state.get("knowledge_chunks", [])),
-        "vectors": len(repo.state.get("knowledge_vectors", [])),
-        "tasks": len(repo.state.get("knowledge_tasks", [])),
-        "evidenceLinks": len(repo.state.get("evidence_links", [])),
-    }
-    repo.state["knowledge_files"] = [
-        item for item in repo.state.get("knowledge_files", []) if item.get("id") != file_id
-    ]
-    repo.state["documents"] = [
-        item for item in repo.state.get("documents", []) if item.get("id") != document_id
-    ]
-    repo.state["versions"] = [
-        item
-        for item in repo.state.get("versions", [])
-        if not (document_id and item.get("documentId") == document_id) and str(item.get("id") or "") not in version_ids
-    ]
-    repo.state["knowledge_chunks"] = [
-        item
-        for item in repo.state.get("knowledge_chunks", [])
-        if item.get("fileId") != file_id
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-    ]
-    repo.state["knowledge_vectors"] = [
-        item
-        for item in repo.state.get("knowledge_vectors", [])
-        if item.get("fileId") != file_id
-        and str(item.get("chunkId") or "") not in chunk_ids
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-    ]
-    repo.state["knowledge_tasks"] = [
-        item
-        for item in repo.state.get("knowledge_tasks", [])
-        if item.get("targetId") != file_id
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-    ]
-    repo.state["evidence_links"] = [
-        item
-        for item in repo.state.get("evidence_links", [])
-        if item.get("fileId") != file_id
-        and item.get("knowledgeFileId") != file_id
-        and not (document_id and item.get("documentId") == document_id)
-        and str(item.get("documentVersionId") or "") not in version_ids
-        and str(item.get("chunkId") or item.get("knowledgeChunkId") or "") not in chunk_ids
-    ]
-    after = {
-        "files": len(repo.state.get("knowledge_files", [])),
-        "documents": len(repo.state.get("documents", [])),
-        "versions": len(repo.state.get("versions", [])),
-        "chunks": len(repo.state.get("knowledge_chunks", [])),
-        "vectors": len(repo.state.get("knowledge_vectors", [])),
-        "tasks": len(repo.state.get("knowledge_tasks", [])),
-        "evidenceLinks": len(repo.state.get("evidence_links", [])),
-    }
-    return {key: before[key] - after[key] for key in before}
-
-
 def knowledge_task_is_business_rule(task: dict[str, Any] | None) -> bool:
     if not task:
         return False
@@ -1810,6 +1708,7 @@ def create_imported_knowledge_records(
     return document, version, knowledge_file, task, {"storageKey": storage_key, "storageBucket": storage_bucket}
 
 
+@requires_collections("knowledge_vectors", "knowledge_page_index_nodes")
 def reset_knowledge_file_derived_index(file_id: str) -> None:
     repo.state["knowledge_chunks"] = [
         item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") != file_id
@@ -9527,7 +9426,15 @@ def ai_recheck(
                 request,
             )
         repo.state["ai_runs"].insert(0, run)
-        dispatch = task_dispatcher.dispatch_ai_recheck(project_id, node_id, run_id)
+        # 自动审查（每上传自动分析）的派发发生在持有 auto-review-periodic 锁的
+        # 周期任务里。inline 编排会在锁内同步跑完整审查（含 LLM），锁被长期占用
+        # → 后续 beat 全 duplicate_inflight → 自动派发永久卡死（2026-08-29 实测）。
+        # 自动路径强制异步：锁只保护「建 run+入队」，审查在 worker 里跑。
+        # 判据用 autoReviewPolicyRevision——只有自动审查会带它。
+        auto_review_dispatch = body.get("autoReviewPolicyRevision") is not None
+        dispatch = task_dispatcher.dispatch_ai_recheck(
+            project_id, node_id, run_id, force_async=auto_review_dispatch
+        )
         if dispatch.get("status") == "failed_to_start":
             run["status"] = "失败"
             run["errorCode"] = str(dispatch.get("errorCode") or "TASK_DISPATCH_UNAVAILABLE")
@@ -18738,6 +18645,7 @@ def fde_update_clause_from_chunk(chunk: dict[str, Any]) -> None:
         clause["updatedAt"] = server_time()
 
 
+@requires_collections("knowledge_vectors")
 def fde_update_vector_metadata_for_chunk(
     *,
     knowledge_file_id: str,
@@ -18769,6 +18677,7 @@ def fde_update_vector_metadata_for_chunk(
     return updated_count
 
 
+@requires_collections("knowledge_vectors")
 def fde_apply_vector_correction_record(correction: dict[str, Any], *, role: str, reason: str | None = None) -> dict[str, Any]:
     status = str(correction.get("status") or "pending_review")
     if status in {"rejected", "applied"}:
@@ -19559,6 +19468,7 @@ def fde_standard_vector_row(
     }
 
 
+@requires_collections("knowledge_vectors", "knowledge_page_index_nodes")
 def fde_standards_vectorization_payload(
     *,
     keyword: str | None = None,
@@ -19722,6 +19632,7 @@ def fde_standards_vectorization_payload(
     }
 
 
+@requires_collections("knowledge_vectors", "knowledge_page_index_nodes")
 def fde_standard_vector_file_detail(
     file_id: str,
     *,
@@ -20277,6 +20188,7 @@ def fde_project_technology_stack(vector_quality: dict[str, Any] | None = None) -
     }
 
 
+@requires_collections("knowledge_vectors")
 def fde_project_document_audit_view(document: dict[str, Any]) -> dict[str, Any]:
     item = attach_document_ocr_readiness(repo, document)
     version_id = str(item.get("currentVersionId") or "")

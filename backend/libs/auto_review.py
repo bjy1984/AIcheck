@@ -366,30 +366,40 @@ def finalize_project_review_run(
         if isinstance(row, dict)
         and str(row.get("reviewRunId") or row.get("id") or "") in child_ids
     ]
-    completed = sorted(
-        {
-            int(row.get("nodeId") or 0)
-            for row in child_rows
-            if str(row.get("status") or "") in SUCCESSFUL_NODE_REVIEW_STATUSES
-            and int(row.get("nodeId") or 0) > 0
-        }
-    )
-    failed = sorted(
-        set(int(item) for item in project_run.get("failedNodeIds") or [])
-        | {
-            int(row.get("nodeId") or 0)
-            for row in child_rows
-            if str(row.get("status") or "")
-            in {
-                "failed",
-                "failed_to_start",
-                "cancelled",
-                "review_incomplete",
-                "失败",
-            }
-            and int(row.get("nodeId") or 0) > 0
-        }
-    )
+    completed_nodes = {
+        int(row.get("nodeId") or 0)
+        for row in child_rows
+        if str(row.get("status") or "") in SUCCESSFUL_NODE_REVIEW_STATUSES
+        and int(row.get("nodeId") or 0) > 0
+    }
+    # 异步派发（自动审查 force_async）时，审查在 worker 里跑完只更新 ai_run，
+    # 不一定回填 review_run（reviewRunId 可能为 None）——那时 childReviewRunIds
+    # 是空的，只看 review_runs 会让 PRR 永远 running、finalize 永不收口
+    # （2026-08-29 实测：两个子 AI 运行都「完成」，PRR 却卡在 running）。
+    # 回退用 childAiRunIds 从 ai_runs 判定节点完成。
+    ai_child_ids = {str(item) for item in project_run.get("childAiRunIds") or [] if item}
+    for row in state.get("ai_runs") or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("id") or "") not in ai_child_ids:
+            continue
+        node_id = int(row.get("nodeId") or 0)
+        if node_id > 0 and str(row.get("status") or "") in SUCCESSFUL_NODE_REVIEW_STATUSES:
+            completed_nodes.add(node_id)
+    completed = sorted(completed_nodes)
+    _FAILED_STATUSES = {"failed", "failed_to_start", "cancelled", "review_incomplete", "失败"}
+    failed_nodes = set(int(item) for item in project_run.get("failedNodeIds") or [])
+    for row in child_rows:
+        if str(row.get("status") or "") in _FAILED_STATUSES and int(row.get("nodeId") or 0) > 0:
+            failed_nodes.add(int(row.get("nodeId") or 0))
+    for row in state.get("ai_runs") or []:
+        if not isinstance(row, dict) or str(row.get("id") or "") not in ai_child_ids:
+            continue
+        node_id = int(row.get("nodeId") or 0)
+        if node_id > 0 and str(row.get("status") or "") in _FAILED_STATUSES:
+            failed_nodes.add(node_id)
+    # 成功优先：一个节点若既在成功集又在失败集（重试后成功），算完成
+    failed = sorted(failed_nodes - completed_nodes)
     expected = {int(item) for item in project_run.get("expectedNodeIds") or []}
     pending = sorted(expected - set(completed) - set(failed))
     project_run["completedNodeIds"] = completed

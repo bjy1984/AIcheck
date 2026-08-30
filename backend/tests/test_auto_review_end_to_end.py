@@ -98,7 +98,7 @@ def test_realtime_auto_review_rechecks_cumulative_node_evidence(monkeypatch) -> 
     monkeypatch.setattr(
         task_dispatcher,
         "dispatch_ai_recheck",
-        lambda project_id, node_id, run_id: {"mode": "test", "taskId": f"TEST-{run_id}"},
+        lambda project_id, node_id, run_id, **_kwargs: {"mode": "test", "taskId": f"TEST-{run_id}"},
     )
 
     license_version = _mount(

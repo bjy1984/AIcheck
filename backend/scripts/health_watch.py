@@ -49,10 +49,40 @@ def check() -> tuple[list[str], list[str]]:
     alerts: list[str] = []
     facts: list[str] = []
 
-    kfs = [item for item in repo.state.get("knowledge_files", []) if isinstance(item, dict)]
+    # 项目资料不再做切片/向量化（被审对象，不是检索语料）——索引健康
+    # 只对标准库有意义，把项目文件算进来会永远告警。
+    project_sources = {
+        str(s.get("id"))
+        for s in repo.state.get("knowledge_sources", [])
+        if isinstance(s, dict) and str(s.get("sourceType") or "") in {"project-file", "project_file"}
+    }
+    kfs = [
+        item
+        for item in repo.state.get("knowledge_files", [])
+        if isinstance(item, dict) and str(item.get("sourceId") or "") not in project_sources
+    ]
     pending = [k for k in kfs if str(k.get("vectorStatus")) in {"待向量化", "向量化中"}]
     failed = [k for k in kfs if str(k.get("vectorStatus")) == "向量化失败"]
-    facts.append(f"知识文件 {len(kfs)}：待处理 {len(pending)}、失败 {len(failed)}")
+    # 只看向量化状态会漏掉一大半积压：卡在切片前的文件 vectorStatus 还是「未向量化」，
+    # 巡检从来看不见它们（2026-08-29 审计：67 份未切片文件对巡检完全隐形）。
+    # 索引未完成 = 切片或向量化任一没到终点，这才是用户感受到的「传了没用」。
+    incomplete = [
+        k
+        for k in kfs
+        if not (
+            str(k.get("sliceStatus") or "") == "已切片"
+            and str(k.get("vectorStatus") or "") == "已向量化"
+            and int(k.get("vectorCount") or 0) > 0
+        )
+    ]
+    facts.append(
+        f"知识文件 {len(kfs)}：索引未完成 {len(incomplete)}（其中待向量化 {len(pending)}、失败 {len(failed)}）"
+    )
+    if kfs and len(incomplete) / len(kfs) > 0.40:
+        alerts.append(
+            f"索引未完成率 {len(incomplete)}/{len(kfs)} = {len(incomplete) / len(kfs):.0%}"
+            "（判据：40%）——大量资料传了但检索用不上，报审会被卡住"
+        )
 
     # 积压本身不是问题，**长时间不动**才是。用最近更新时间判断有没有进展。
     if pending:

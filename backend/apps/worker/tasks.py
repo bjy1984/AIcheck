@@ -31,8 +31,10 @@ from libs.auto_review import (
 )
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
+from libs.workspace_paths import resolve_workspace_root
 from libs.db.repository import (
     STATE_COLLECTIONS,
+    ensure_collections_loaded,
     flush_state,
     flush_state_records,
     load_ocr_task_state,
@@ -165,7 +167,10 @@ from libs.security.tenant import (
     set_request_tenant_id,
 )
 
-WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+# 不能用 parents[3] 倒推：容器里代码在 /app/apps/worker/，往上三层是 /，
+# 而文件在 /app/output/——13 份实际存在的资料因此被判成「源文件已丢失」
+# （2026-08-29 审计）。routes.py 早就修过同款 bug，这里漏了。判据只留一份实现。
+WORKSPACE_ROOT = resolve_workspace_root(Path(__file__))
 
 
 def ocr_result_state_records(document_id: str, version_id: str) -> dict[str, list[dict[str, Any]]]:
@@ -454,6 +459,16 @@ def refresh_worker_state(selected_state_keys: set[str] | None = None) -> None:
     }
     if pending:
         load_state(selected_state_keys if selected_state_keys else None)
+        return
+    if selected_state_keys:
+        # 调用方点名要哪些集合，就**确定地**刷那些。
+        #
+        # 原先这里一律走 refresh_stale_state_from_postgres——它靠两级探针
+        # 自己猜「哪些集合变了」，点名的范围被丢掉。探针有秒级时间窗，
+        # 派发方刚 flush 的行可能正好落在窗外：ocr-remote worker 因此
+        # 读不到 business worker 刚建的 ocr_job，直接报 MINERU_JOB_NOT_FOUND
+        # ——而那条记录在库里好好地躺着（2026-08-29 实测 2 份资料如此）。
+        repo.refresh_collections_incrementally(set(selected_state_keys))
         return
     # force 跳过那 1 秒节流：worker 刚被派发，要的是此刻最新的数据
     repo.refresh_stale_state_from_postgres(force=True)
@@ -1133,6 +1148,15 @@ def mineru_source_path(
     storage_key = str(job.get("storageKey") or "")
     parsed = parse_storage_url(storage_key)
     suffix = Path(str(job.get("fileName") or "")).suffix
+    # local:// 是本地文件系统协议，绝不能进 MinIO 回退分支：
+    # 那会把整串 "local://output/..." 当成对象名去请求 S3，报 BadRequest，
+    # 最终归因成 MINERU_SUBMIT_FAILED——线上 6 份资料因此永远识别不了，
+    # 而诊断里只有一个阶段码，看不出任何原因（2026-08-29 审计实测）。
+    if storage_key.startswith("local://"):
+        local_path = local_path_from_storage_key(storage_key, WORKSPACE_ROOT)
+        if local_path and local_path.is_file():
+            return local_path, None
+        return None, None
     if not parsed:
         # 桶相对键的回退。parse_storage_url 只认 minio://bucket/key，而上传会话
         # 落库的是 `documents/项目/版本` 这种桶相对键，桶名另存一处。
@@ -1421,6 +1445,26 @@ def run_mineru_job(job: dict[str, Any]) -> dict[str, Any]:
             shutil.rmtree(source_temp_root, ignore_errors=True)
 
 
+def dispatch_slice_for_knowledge_file(
+    knowledge_file: dict[str, Any],
+    expect_parse_result_id: str | None = None,
+) -> dict[str, Any]:
+    """OCR 成功后的切片派发，带项目资料拦截。
+
+    dispatcher 层已有 project_file_indexing_blocker，但 worker 的三处派发点
+    直接引用 dispatch_slice——测试替身可以整个换掉它（连拦截一起换）。
+    在调用方先判断一次，让「项目资料不索引」在两层都成立。
+    """
+    source = repo.find_one("knowledge_sources", knowledge_file.get("sourceId"))
+    if str((source or {}).get("sourceType") or "") in {"project-file", "project_file"} and not env_bool(
+        "AICHECK_PROJECT_FILE_INDEXING", False
+    ):
+        return {"status": "not_dispatched", "statusReason": "project_file_indexing_disabled"}
+    return task_dispatcher.dispatch_slice(
+        str(knowledge_file["id"]), expect_parse_result_id=expect_parse_result_id
+    )
+
+
 def _mineru_failure_code(job: dict[str, Any], exc: Exception) -> str:
     if isinstance(exc, (MinerUError, MinerUNormalizationError)):
         return str(exc.code)
@@ -1560,8 +1604,8 @@ def _execute_mineru_ocr_extract(
             knowledge_file = repo.knowledge_file_for_version(version_id)
             if knowledge_file:
                 try:
-                    next_dispatch = task_dispatcher.dispatch_slice(
-                        str(knowledge_file["id"]),
+                    next_dispatch = dispatch_slice_for_knowledge_file(
+                        knowledge_file,
                         expect_parse_result_id=str(
                             (result_record or {}).get("parseResultId")
                             or result.get("parseResultId")
@@ -1592,12 +1636,22 @@ def _execute_mineru_ocr_extract(
         code = _mineru_failure_code(job, exc)
         retryable = bool(getattr(exc, "retryable", False))
         failed_stage = str(job.get("stage") or "unknown")
+        # 失败原因必须可归因：只记阶段码的话，线上看到 MINERU_SUBMIT_FAILED
+        # 完全不知道为什么（2026-08-29 实测：6 份资料失败，诊断里除了阶段码
+        # 一无所有，靠重跑复现才发现是 local:// 键被当成 MinIO 对象名）。
+        #
+        # 但**异常消息不能直接入库**：它可能带 URL、路径、密钥
+        # （test_nonretryable_mineru_failure_is_persisted_without_secret 钉的就是这条）。
+        # 只记异常类型（类名是代码常量，不含运行时数据）与已消毒的错误码。
         diagnostics = [
             {
                 "code": code,
                 "level": "error",
                 "retryable": retryable,
                 "stage": failed_stage,
+                "exceptionType": exc.__class__.__name__,
+                "reason": safe_reason(getattr(exc, "code", None))
+                or safe_reason(getattr(exc, "reason", None)),
             }
         ]
         retry_index = int(getattr(self.request, "retries", 0) or 0)
@@ -2305,7 +2359,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 "statusReason": f"shadow_setup_{exc.__class__.__name__.lower()}",
             }
         if knowledge_file:
-            next_dispatch = task_dispatcher.dispatch_slice(knowledge_file["id"])
+            next_dispatch = dispatch_slice_for_knowledge_file(knowledge_file)
     persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
     return {
         **result,
@@ -3710,7 +3764,7 @@ def _ocr_pipeline_finalize_impl(run_id: str) -> dict[str, Any]:
         targeting = (document_intelligence or {}).get("targeting")
         knowledge_file = repo.knowledge_file_for_version(str(run.get("documentVersionId") or ""))
         if applied.get("status") == "success" and knowledge_file:
-            run["nextDispatch"] = task_dispatcher.dispatch_slice(str(knowledge_file["id"]))
+            run["nextDispatch"] = dispatch_slice_for_knowledge_file(knowledge_file)
     repo.mark_ocr_pipeline_stage(run, "finalize", "success")
     final_status = "completed" if not blockers else "partial"
     formal_ready = bool(run.get("mode") == "active" and formal_profile_allowed and not blockers)
@@ -4205,6 +4259,12 @@ def slice_knowledge(
     expect_parse_result_id: str | None = None,
 ) -> dict[str, Any]:
     refresh_worker_state()
+    # 切片会写 knowledge_page_index_nodes（PIN-ROOT-* 等）。它是延迟加载集合，
+    # 全量加载会跳过它——内存为空时新写的 id 撞上库里已有行，flush 直接
+    # ConcurrentPersistenceError，整个切片链断在这里（2026-08-29 实测：
+    # 延迟加载上线后所有切片任务卡死）。写之前必须先把它加载进来，
+    # 落库的基线才对得上。
+    ensure_collections_loaded("knowledge_page_index_nodes", "knowledge_chunks")
     if expect_parse_result_id and not parse_result_visible(file_id, expect_parse_result_id):
         # 派发方明确告诉了我们它刚写下哪条解析结果，而这里还看不见——
         # 那就是**还没可见**，不是「没有文字」。等一下再来。
@@ -4265,6 +4325,11 @@ def embed_knowledge(
 ) -> dict[str, Any]:
     # Deployment contract marker: embedding_batches_for_chunks keeps offline_hash_embeddings / offline_hash fallback.
     refresh_worker_state()
+    # 分批续跑跨进程：最终汇总从内存读**全部**批次记录拼向量，而续跑任务
+    # 可能落在从未加载过这张表的 worker 进程上——那时只能看到自己刚写的那批，
+    # 汇总出 5/21 条就判「数量不匹配」而整份失败（2026-08-29 实测 17 份如此）。
+    # refresh_worker_state 只刷新已加载的集合，这里必须显式确保加载。
+    ensure_collections_loaded("knowledge_embedding_batches", "knowledge_chunks")
     chunks = sorted(
         [item for item in repo.state.get("knowledge_chunks", []) if item.get("fileId") == file_id],
         key=lambda item: int(item.get("chunkNo") or 0),
@@ -4286,11 +4351,51 @@ def embed_knowledge(
     if task and task.get("status") == "已取消":
         flush_state()
         return {"fileId": file_id, "status": "canceled", "vectorCount": 0}
-    if task and task.get("status") == "成功" and (file or {}).get("vectorStatus") == "已向量化":
+    # 幂等短路：已成功且已向量化就不重做——但**索引版本必须一致**。
+    # 只看「数量对得上」的话，换了 embedding 模型后旧索引永远更新不了：
+    # 线上 53 个文件带着 offline-hash-v1 的哈希伪向量（没有语义、检索近似随机），
+    # 每次重跑都被这里挡回来报 alreadyCompleted（2026-08-29 审计实测）。
+    # 哈希伪向量必须能被重做：它们没有语义、检索近似随机，而幂等短路
+    # 只看「数量对得上」的话永远挡回重跑（2026-08-29 线上 53 个文件如此）。
+    # 判据收窄到**明确的降级标记**，不比对 indexVersion 字符串——
+    # 那会把正常流程也判成过期（离线/在线目标版本本就不同）。
+    # 但当前若**就是**哈希模式（离线自测），哈希向量是预期结果，不该重做。
+    hash_mode_now = env_bool("AICHECK_EMBEDDING_FORCE_OFFLINE_HASH", False) or env_bool(
+        "AICHECK_EMBEDDING_ALLOW_HASH_FALLBACK", False
+    )
+    stale_index = (
+        not hash_mode_now
+        and str((file or {}).get("embeddingModel") or "") == OFFLINE_EMBEDDING_MODEL
+    )
+    if (
+        task
+        and task.get("status") == "成功"
+        and (file or {}).get("vectorStatus") == "已向量化"
+        and not stale_index
+    ):
         task.pop("errorMessage", None)
         flush_state()
         return {"fileId": file_id, "status": "success", "vectorCount": int((file or {}).get("vectorCount") or vector_count), "alreadyCompleted": True}
     if int(offset or 0) == 0:
+        # 新一轮从头开始（offset=0）会清掉该文件的既有批次。若此刻正有一条
+        # 续跑链在跑（任务运行中且断点未到末尾），清空会让两条链交织：
+        # 批次记录互相覆盖，最后汇总只剩最后一批，判「数量不匹配」而整份失败
+        # （2026-08-29 实测：库里出现 offset=0,8,16,32 而 24 缺失的空洞）。
+        # 让位给正在跑的那条链——它会自己跑到终点。
+        checkpoint = (task or {}).get("embeddingCheckpoint") or {}
+        in_flight = (
+            task is not None
+            and str(task.get("status") or "") == "运行中"
+            and int(checkpoint.get("nextOffset") or 0) > 0
+            and int(checkpoint.get("nextOffset") or 0) < int(checkpoint.get("totalChunks") or 0)
+        )
+        if in_flight:
+            return {
+                "fileId": file_id,
+                "status": "skipped_in_flight",
+                "nextOffset": int(checkpoint.get("nextOffset") or 0),
+                "totalChunks": int(checkpoint.get("totalChunks") or 0),
+            }
         repo.mark_task_running(task, "向量化 worker 开始处理。")
         repo.state["knowledge_embedding_batches"] = [
             item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") != file_id
@@ -4367,6 +4472,16 @@ def embed_knowledge(
                     "totalChunks": len(chunks),
                     "taskId": continuation.id,
                 }
+            # 汇总要看到**所有**批次：前面的批次由其他 worker 进程写入并 flush 到库，
+            # 本进程内存里那份可能是旧快照（ensure_collections_loaded 只在
+            # 「从未加载」时补拉，已加载但陈旧时什么都不做）。
+            #
+            # 顺序不能反：**先 flush 自己刚算的这批，再拉别人的**。
+            # 反过来做的话，增量刷新会用库里的版本覆盖内存中尚未落库的最后一批,
+            # 把刚算好的向量冲掉——实测同一文件两次运行 vectorCount 从 32 变 0，
+            # 而那次真的花了 47 秒调用了 embedding API。
+            flush_state({"knowledge_embedding_batches", "knowledge_tasks"})
+            repo.refresh_collections_incrementally({"knowledge_embedding_batches"})
             all_batches = sorted(
                 [item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") == file_id],
                 key=lambda item: int(item.get("offset") or 0),

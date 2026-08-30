@@ -11,7 +11,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from libs.contracts.responses import server_time
-from libs.db.repository import flush_state, load_state, repo
+from libs.db.repository import ensure_collections_loaded, flush_state, load_state, repo
 from libs.knowledge_indexing import (
     OFFLINE_VECTOR_DIMENSIONS,
     chunk_quality_fields,
@@ -299,6 +299,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     load_state()
+    # 本脚本会重建 knowledge_vectors/page_index（按 fileId 剔除后重写）。
+    # 它们是延迟加载集合，load_state 会跳过——内存空时重建等于清库。
+    ensure_collections_loaded("knowledge_vectors", "knowledge_page_index_nodes")
     plan = build_plan(str(args.source_id), set(args.file_id) if args.file_id else None)
     if args.dry_run:
         result = {
