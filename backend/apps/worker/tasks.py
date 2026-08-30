@@ -460,6 +460,16 @@ def refresh_worker_state(selected_state_keys: set[str] | None = None) -> None:
     if pending:
         load_state(selected_state_keys if selected_state_keys else None)
         return
+    if selected_state_keys:
+        # 调用方点名要哪些集合，就**确定地**刷那些。
+        #
+        # 原先这里一律走 refresh_stale_state_from_postgres——它靠两级探针
+        # 自己猜「哪些集合变了」，点名的范围被丢掉。探针有秒级时间窗，
+        # 派发方刚 flush 的行可能正好落在窗外：ocr-remote worker 因此
+        # 读不到 business worker 刚建的 ocr_job，直接报 MINERU_JOB_NOT_FOUND
+        # ——而那条记录在库里好好地躺着（2026-08-29 实测 2 份资料如此）。
+        repo.refresh_collections_incrementally(set(selected_state_keys))
+        return
     # force 跳过那 1 秒节流：worker 刚被派发，要的是此刻最新的数据
     repo.refresh_stale_state_from_postgres(force=True)
 

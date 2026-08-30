@@ -167,6 +167,10 @@ def test_没加载过的集合不能只走增量() -> None:
     repository = InMemoryRepository()
     calls: list[object] = []
     repository.refresh_stale_state_from_postgres = lambda **_kwargs: calls.append("增量")  # type: ignore[method-assign]
+    # 点名了集合时走的是这条（确定刷新点名范围），没点名才落到上面那条探针路径。
+    # 2026-08-29 拆开：探针会把调用方点名的范围丢掉，ocr-remote 因此读不到
+    # business worker 刚建的 ocr_job，报 MINERU_JOB_NOT_FOUND。
+    repository.refresh_collections_incrementally = lambda *_a, **_k: calls.append("增量")  # type: ignore[method-assign]
 
     original_repo = tasks.repo
     original_load = tasks.load_state
