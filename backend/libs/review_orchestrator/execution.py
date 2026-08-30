@@ -45,7 +45,11 @@ from libs.review_evidence import bind_evidence_package_to_review_run, review_run
 from libs.review_grounding import (
     apply_grounding_guardrails,
     build_grounded_review_input,
+    canonical_grounding_metadata,
+    clause_formal_evidence_eligible,
     grounding_prompt_block,
+    is_canonical_clause,
+    merge_canonical_grounding_metadata,
 )
 from libs.review_orchestrator import shard_execution
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
@@ -2483,11 +2487,40 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             top_k=5,
         )
         trace = retrieval["trace"]
+        canonical_metadata = canonical_grounding_metadata(
+            trace.get("selectedClauses") or []
+        )
+        trace.update(canonical_metadata)
         repo.state["retrieval_traces"].append(trace)
         context["retrievalTraces"] = [trace]
         context["knowledgeClauses"] = retrieval["clauses"]
-        append_tool_call(review_run, node_key, "search_knowledge_base", {"retrievalTraceId": trace["retrievalTraceId"]})
-        return {"retrievalTraceId": trace["retrievalTraceId"], "selectedClauses": len(trace.get("selectedClauses") or [])}
+        grounding_input = context.setdefault("groundingInput", {})
+        grounding_summary = grounding_input.setdefault("summary", {})
+        existing_metadata = {
+            **grounding_summary,
+            **{
+                key: value
+                for key, value in grounding_input.items()
+                if key != "summary"
+            },
+        }
+        merged_metadata = merge_canonical_grounding_metadata(
+            existing_metadata,
+            canonical_metadata,
+        )
+        grounding_input.update(merged_metadata)
+        grounding_summary.update(merged_metadata)
+        append_tool_call(
+            review_run,
+            node_key,
+            "search_knowledge_base",
+            {"retrievalTraceId": trace["retrievalTraceId"]},
+        )
+        return {
+            "retrievalTraceId": trace["retrievalTraceId"],
+            "selectedClauses": len(trace.get("selectedClauses") or []),
+            **canonical_metadata,
+        }
     if node_key == "build_prompt":
         prompt_shape = build_review_prompt_shape(review_run, context)
         context["promptShape"] = prompt_shape
@@ -2530,6 +2563,10 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             context.get("findingDrafts") or [],
             context.get("ruleResults") or [],
             context.get("retrievalTraces") or [],
+            formal_review=(
+                str(review_run.get("reviewMode") or "formal") == "formal"
+                and not bool(review_run.get("advisoryOnly"))
+            ),
         )
         context.setdefault("validationResults", {})[node_key] = result
         return result
@@ -3407,21 +3444,27 @@ def validate_review_references(
     drafts: list[dict[str, Any]],
     rule_results: list[dict[str, Any]],
     retrieval_traces: list[dict[str, Any]],
+    *,
+    formal_review: bool = True,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     rule_codes = {str(item.get("ruleCode")) for item in rule_results if isinstance(item, dict) and item.get("ruleCode")}
     trace_ids = {str(item.get("retrievalTraceId") or item.get("id")) for item in retrieval_traces if isinstance(item, dict)}
-    clause_ids_by_trace = {
-        str(item.get("retrievalTraceId") or item.get("id")): {
-            str(clause.get("clauseId"))
-            for clause in item.get("selectedClauses") or []
-            if isinstance(clause, dict) and clause.get("clauseId")
-        }
-        for item in retrieval_traces
-        if isinstance(item, dict)
-    }
+    clauses_by_trace: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for trace in retrieval_traces:
+        if not isinstance(trace, dict):
+            continue
+        trace_id = str(trace.get("retrievalTraceId") or trace.get("id") or "")
+        if not trace_id:
+            continue
+        trace_catalog = clauses_by_trace.setdefault(trace_id, {})
+        for clause in trace.get("selectedClauses") or []:
+            if not isinstance(clause, dict) or not clause.get("clauseId"):
+                continue
+            trace_catalog.setdefault(str(clause["clauseId"]), []).append(clause)
     checked_refs = 0
+    canonical_citation_count = 0
     for draft_index, draft in enumerate(drafts):
         rule_refs = draft.get("ruleRefs") if isinstance(draft.get("ruleRefs"), list) else []
         kb_refs = draft.get("kbRefs") if isinstance(draft.get("kbRefs"), list) else []
@@ -3429,6 +3472,7 @@ def validate_review_references(
             failures.append({"code": "MISSING_RULE_REFS", "index": draft_index})
         if not kb_refs:
             warnings.append({"code": "MISSING_KB_REFS", "index": draft_index})
+        cited_clauses: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for ref_index, ref in enumerate(rule_refs):
             checked_refs += 1
             if not isinstance(ref, dict):
@@ -3447,18 +3491,69 @@ def validate_review_references(
             trace_id = ref.get("retrievalTraceId")
             if trace_id and str(trace_id) not in trace_ids:
                 failures.append({"code": "KB_RETRIEVAL_TRACE_NOT_FOUND", "index": draft_index, "refIndex": ref_index, "retrievalTraceId": trace_id})
-            allowed_clause_ids = clause_ids_by_trace.get(str(trace_id), set()) if trace_id else set()
-            for clause_id in ref.get("clauseIds") or []:
-                if allowed_clause_ids and str(clause_id) not in allowed_clause_ids:
+            trace_catalog = clauses_by_trace.get(str(trace_id), {}) if trace_id else {}
+            allowed_clause_ids = set(trace_catalog)
+            clause_ids = ref.get("clauseIds")
+            if formal_review and trace_id and (
+                not isinstance(clause_ids, list) or not clause_ids
+            ):
+                failures.append(
+                    {
+                        "code": "CANONICAL_CLAUSE_CITATION_REQUIRED",
+                        "index": draft_index,
+                        "refIndex": ref_index,
+                        "retrievalTraceId": trace_id,
+                    }
+                )
+                if not ref.get("kbVersion"):
+                    failures.append({"code": "KB_REF_MISSING_VERSION", "index": draft_index, "refIndex": ref_index})
+                continue
+            for clause_id in clause_ids or []:
+                if str(clause_id) not in allowed_clause_ids:
                     failures.append({"code": "KB_CLAUSE_NOT_IN_TRACE", "index": draft_index, "refIndex": ref_index, "clauseId": clause_id})
+                    continue
+                if str(clause_id) in trace_catalog:
+                    cited_clauses[(str(trace_id), str(clause_id))] = trace_catalog[
+                        str(clause_id)
+                    ]
             if not ref.get("kbVersion"):
                 failures.append({"code": "KB_REF_MISSING_VERSION", "index": draft_index, "refIndex": ref_index})
+        canonical_citations = {
+            key: variants
+            for key, variants in cited_clauses.items()
+            if any(is_canonical_clause(clause) for clause in variants)
+        }
+        canonical_citation_count += len(canonical_citations)
+        usable_citation_basis = any(
+            (
+                all(
+                    clause_formal_evidence_eligible(clause)
+                    for clause in variants
+                    if is_canonical_clause(clause)
+                )
+                if any(is_canonical_clause(clause) for clause in variants)
+                else any(clause_formal_evidence_eligible(clause) for clause in variants)
+            )
+            for variants in cited_clauses.values()
+        )
+        if formal_review and canonical_citations and not usable_citation_basis:
+            failures.append(
+                {
+                    "code": "CANONICAL_LEGACY_ONLY_EVIDENCE",
+                    "index": draft_index,
+                    "clauseIds": sorted({clause_id for _, clause_id in canonical_citations}),
+                }
+            )
     return validation_payload(
         passed=not failures,
         checked=checked_refs,
         failures=failures,
         warnings=warnings,
-        metrics={"ruleResultCount": len(rule_results), "retrievalTraceCount": len(retrieval_traces)},
+        metrics={
+            "ruleResultCount": len(rule_results),
+            "retrievalTraceCount": len(retrieval_traces),
+            "canonicalCitationCount": canonical_citation_count,
+        },
     )
 
 
@@ -3698,6 +3793,7 @@ def review_run_timeline(review_run_id: str) -> list[dict[str, Any]]:
 def compact_retrieval_trace(trace: dict[str, Any]) -> dict[str, Any]:
     selected_clauses = trace.get("selectedClauses") or []
     page_index_tree = trace.get("pageIndexTree") or {}
+    canonical_metadata = canonical_grounding_metadata(selected_clauses)
     return {
         "retrievalTraceId": trace.get("retrievalTraceId") or trace.get("id"),
         "queryType": trace.get("queryType"),
@@ -3711,6 +3807,7 @@ def compact_retrieval_trace(trace: dict[str, Any]) -> dict[str, Any]:
         ],
         "pageIndexNodeCount": len(page_index_tree.get("selectedNodes") or []),
         "pageIndexLinkedClauseIds": page_index_tree.get("linkedClauseIds") or [],
+        **canonical_metadata,
     }
 
 
@@ -3819,6 +3916,49 @@ def _compact_tool_call(call: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _canonical_metadata_from_retrieval_traces(
+    retrieval_traces: list[dict[str, Any]],
+) -> dict[str, Any]:
+    list_keys = (
+        "canonicalRecordIds",
+        "canonicalItemIds",
+        "canonicalVersions",
+        "canonicalSourceFingerprints",
+    )
+    metadata: dict[str, Any] = {
+        key: sorted(
+            {
+                str(value)
+                for trace in retrieval_traces
+                if isinstance(trace, dict)
+                for value in trace.get(key) or []
+                if value
+            }
+        )
+        for key in list_keys
+    }
+    legacy_count = sum(
+        int(trace.get("legacySupplementalCount") or 0)
+        for trace in retrieval_traces
+        if isinstance(trace, dict)
+    )
+    formal_ready = any(
+        trace.get("formalEvidenceReady") is True
+        for trace in retrieval_traces
+        if isinstance(trace, dict)
+    )
+    metadata.update(
+        {
+            "legacySupplementalCount": legacy_count,
+            "formalEvidenceReady": formal_ready,
+            "blockingReasons": (
+                [] if formal_ready or not legacy_count else ["CANONICAL_LEGACY_ONLY_EVIDENCE"]
+            ),
+        }
+    )
+    return metadata
+
+
 def _summarize_node_decision(
     review_run: dict[str, Any],
     node: dict[str, Any],
@@ -3849,6 +3989,7 @@ def _summarize_node_decision(
         "inputHash": review_run.get("inputHash"),
         "documentVersionIds": review_run.get("inputDocumentVersionIds") or [],
         "ocrResultVersions": review_run.get("ocrResultVersions") or [],
+        **_canonical_metadata_from_retrieval_traces(retrieval_traces),
     }
     output_summary = {
         "outputHash": node.get("outputHash") or details.get("outputHash"),
@@ -4265,6 +4406,10 @@ def confirmed_findings_for_human_decision(
                 for item in repo.state.get("retrieval_traces", [])
                 if item.get("reviewRunId") == review_run.get("reviewRunId")
             ],
+            formal_review=(
+                str(review_run.get("reviewMode") or "formal") == "formal"
+                and not bool(review_run.get("advisoryOnly"))
+            ),
         )
         if not reference_validation.get("passed"):
             return [], {

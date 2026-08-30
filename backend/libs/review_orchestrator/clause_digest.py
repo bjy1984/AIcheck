@@ -18,6 +18,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from libs.review_grounding import (
+    canonical_identity_value_valid,
+    clause_formal_evidence_eligible,
+)
+
 # 单次送进提示词的条款数上限。检索 top_k 是 5，这里留一点余量。
 MAX_RETRIEVED_CLAUSES = 8
 
@@ -40,12 +45,21 @@ def retrieved_clause_digest(clauses: Any) -> list[dict[str, Any]]:
         text = str(item.get("text") or "").strip()
         if not clause_id or not text:
             continue
-        digest.append(
-            {
-                "clauseId": clause_id,
-                "text": text[:MAX_CLAUSE_TEXT_CHARS],
-                "truncated": len(text) > MAX_CLAUSE_TEXT_CHARS,
-                "source": str(item.get("sourceTitle") or item.get("standardCode") or ""),
-            }
-        )
+        entry = {
+            "clauseId": clause_id,
+            "text": text[:MAX_CLAUSE_TEXT_CHARS],
+            "truncated": len(text) > MAX_CLAUSE_TEXT_CHARS,
+            "source": str(item.get("sourceTitle") or item.get("standardCode") or ""),
+            "authority": item.get("authority"),
+            "formalEvidenceEligible": clause_formal_evidence_eligible(item),
+        }
+        for key in (
+            "canonicalRecordId",
+            "canonicalItemId",
+            "canonicalVersion",
+            "sourceFingerprint",
+        ):
+            if canonical_identity_value_valid(key, item.get(key)):
+                entry[key] = item[key]
+        digest.append(entry)
     return digest[:MAX_RETRIEVED_CLAUSES]

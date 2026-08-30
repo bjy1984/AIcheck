@@ -56,6 +56,143 @@ CRITICAL_QUALITY_FLAG_HINTS = (
     "not_found",
 )
 
+CANONICAL_IDENTITY_KEYS = (
+    "canonicalRecordId",
+    "canonicalItemId",
+    "canonicalVersion",
+    "sourceFingerprint",
+)
+CANONICAL_VALUE_PATTERNS = {
+    "canonicalRecordId": re.compile(r"^SKR-[A-Za-z0-9][A-Za-z0-9._:-]*$"),
+    "canonicalItemId": re.compile(r"^SKI-[A-Za-z0-9][A-Za-z0-9._:-]*$"),
+    "canonicalVersion": re.compile(
+        r"^[A-Za-z0-9][-A-Za-z0-9._+]*(?:@[A-Za-z0-9][-A-Za-z0-9._+]*)?$"
+    ),
+    "sourceFingerprint": re.compile(r"^sha256:[0-9a-f]{64}$"),
+}
+
+
+def canonical_identity_value_valid(key: str, value: Any) -> bool:
+    pattern = CANONICAL_VALUE_PATTERNS.get(key)
+    return bool(pattern and isinstance(value, str) and pattern.fullmatch(value))
+
+
+def _canonical_provenance_collection(
+    value: Any,
+) -> list[Any] | tuple[Any, ...] | set[Any]:
+    return value if isinstance(value, (list, tuple, set)) else []
+
+
+def is_canonical_clause(clause: dict[str, Any]) -> bool:
+    return any(clause.get(key) is not None for key in CANONICAL_IDENTITY_KEYS)
+
+
+def clause_formal_evidence_eligible(clause: dict[str, Any]) -> bool:
+    if not is_canonical_clause(clause):
+        return clause.get("formalEvidenceEligible") is True
+    return (
+        clause.get("authority") == "current"
+        and all(
+            canonical_identity_value_valid(key, clause.get(key))
+            for key in CANONICAL_IDENTITY_KEYS
+        )
+        and clause.get("formalEvidenceEligible") is not False
+    )
+
+
+def canonical_grounding_metadata(clauses: list[dict[str, Any]]) -> dict[str, Any]:
+    canonical = [
+        item for item in clauses if isinstance(item, dict) and is_canonical_clause(item)
+    ]
+    legacy = [item for item in canonical if item.get("authority") == "legacy_only"]
+    current = [item for item in canonical if clause_formal_evidence_eligible(item)]
+    noncanonical = [
+        item
+        for item in clauses
+        if isinstance(item, dict)
+        and not is_canonical_clause(item)
+        and clause_formal_evidence_eligible(item)
+    ]
+    formal_ready = bool(current or noncanonical)
+
+    def values(key: str) -> list[str]:
+        return sorted(
+            {
+                item[key]
+                for item in canonical
+                if canonical_identity_value_valid(key, item.get(key))
+            }
+        )
+
+    return {
+        "canonicalRecordIds": values("canonicalRecordId"),
+        "canonicalItemIds": values("canonicalItemId"),
+        "canonicalVersions": values("canonicalVersion"),
+        "canonicalSourceFingerprints": values("sourceFingerprint"),
+        "legacySupplementalCount": len(legacy),
+        "formalEvidenceReady": formal_ready,
+        "blockingReasons": (
+            [] if formal_ready or not legacy else ["CANONICAL_LEGACY_ONLY_EVIDENCE"]
+        ),
+    }
+
+
+def merge_canonical_grounding_metadata(
+    existing: dict[str, Any],
+    canonical_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    list_keys = {
+        "canonicalRecordIds": "canonicalRecordId",
+        "canonicalItemIds": "canonicalItemId",
+        "canonicalVersions": "canonicalVersion",
+        "canonicalSourceFingerprints": "sourceFingerprint",
+    }
+    existing_ready = (
+        existing.get("formalEvidenceReady") is True
+        if "formalEvidenceReady" in existing
+        else existing.get("groundingStatus") == "grounded"
+    )
+    formal_ready = bool(
+        existing_ready or canonical_metadata.get("formalEvidenceReady")
+    )
+    existing_reasons = list(existing.get("blockingReasons") or [])
+    reasons = [
+        reason
+        for reason in existing_reasons
+        if (
+            reason.get("code") if isinstance(reason, dict) else reason
+        )
+        != "CANONICAL_LEGACY_ONLY_EVIDENCE"
+    ]
+    if (
+        not formal_ready
+        and "CANONICAL_LEGACY_ONLY_EVIDENCE"
+        in (canonical_metadata.get("blockingReasons") or [])
+    ):
+        reasons.append("CANONICAL_LEGACY_ONLY_EVIDENCE")
+    return {
+        **canonical_metadata,
+        **{
+            list_key: sorted(
+                {
+                    value
+                    for source in (existing, canonical_metadata)
+                    for value in _canonical_provenance_collection(
+                        source.get(list_key)
+                    )
+                    if canonical_identity_value_valid(identity_key, value)
+                }
+            )
+            for list_key, identity_key in list_keys.items()
+        },
+        "legacySupplementalCount": max(
+            int(existing.get("legacySupplementalCount") or 0),
+            int(canonical_metadata.get("legacySupplementalCount") or 0),
+        ),
+        "formalEvidenceReady": formal_ready,
+        "blockingReasons": reasons,
+    }
+
 
 def build_grounded_review_input(state: dict[str, Any], document_version_ids: set[str] | list[str] | tuple[str, ...]) -> dict[str, Any]:
     version_ids = {str(item) for item in document_version_ids if item}

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "standard-canonical-extraction-v1",
+  "required": [
+    "standardCode",
+    "standardNameZh",
+    "standardNameEn",
+    "publicationDate",
+    "effectiveDate",
+    "issuingAuthority",
+    "proposingOrganization",
+    "administeringOrganization",
+    "draftingOrganizations",
+    "draftingPeople",
+    "scope",
+    "purpose",
+    "applicability",
+    "keywords",
+    "abstract",
+    "foreword",
+    "introduction",
+    "termsAndDefinitionsSummary",
+    "normativeReferences",
+    "replacementRelations"
+  ],
+  "evidenceRequired": [
+    "standardCode",
+    "standardNameZh",
+    "standardNameEn",
+    "publicationDate",
+    "effectiveDate",
+    "issuingAuthority",
+    "scope",
+    "normativeReferences",
+    "replacementRelations"
+  ]
+}

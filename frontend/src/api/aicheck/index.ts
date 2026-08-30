@@ -353,6 +353,174 @@ export type OcrStructuredView = {
   totalBlockCount?: number
 }
 
+export type StandardCanonicalEvidence = {
+  sourceType?: string
+  sourceId?: string
+  parseResultId?: string
+  documentVersionId?: string
+  key?: string
+  pageNo?: number
+  bbox?: number[] | null
+  quotedText?: string
+  value?: unknown
+  confidence?: number
+  createdAt?: string
+  needsHumanVerification?: boolean
+  authority?: 'current' | 'legacy_only' | 'supporting'
+  contentHash?: string
+}
+
+export type StandardCanonicalField = {
+  id: string
+  key: string
+  value: unknown
+  authority: 'current' | 'legacy_only'
+  selectedSourceId: string
+  sources: StandardCanonicalEvidence[]
+}
+
+export type StandardCanonicalTableCell = {
+  row?: number
+  col?: number
+  text?: string
+  rowspan?: number
+  colspan?: number
+  isHeader?: boolean
+  confidence?: number
+}
+
+export type StandardCanonicalContentItem = {
+  id: string
+  authority: 'current' | 'legacy_only'
+  selectedSourceId: string
+  sources: StandardCanonicalEvidence[]
+  title?: string
+  text?: string
+  clauseNo?: string
+  sectionPath?: string[]
+  pageNo?: number
+  bbox?: number[] | null
+  caption?: string
+  columnNames?: string[]
+  normalizedRows?: Record<string, unknown>[]
+  cells?: StandardCanonicalTableCell[]
+  headerReliable?: boolean
+  latex?: string
+  locatorIds?: string[]
+  sourceClauseNo?: string
+  targetClauseNo?: string
+  materialTypes?: string[]
+  purpose?: string
+}
+
+export type StandardCanonicalRelation = StandardCanonicalContentItem & {
+  sourceStandardCode?: string
+  targetStandardCode?: string
+  nodeIds?: number[]
+}
+
+export type StandardCanonicalCompleteness = {
+  overall: 'complete' | 'partial'
+  missingCategories: string[]
+  [category: string]: unknown
+}
+
+export type StandardCanonicalHistory = {
+  sourceId: string
+  sourceType: string
+  createdAt?: string
+  fieldCount?: number
+  blockCount?: number
+  tableCount?: number
+  sealCount?: number
+}
+
+export type StandardCanonicalProvenance = StandardCanonicalEvidence & {
+  capabilities?: string[]
+  rawTables?: Record<string, unknown>[]
+  rawLocator?: Record<string, unknown>
+}
+
+export type StandardCanonicalSource = StandardCanonicalHistory & {
+  authority: 'current' | 'legacy_only' | 'supporting'
+}
+
+export type StandardKnowledgeRecord = {
+  id: string
+  knowledgeFileId: string
+  documentId?: string
+  documentVersionId?: string
+  canonicalVersion: string
+  kbVersion?: string
+  contextType?: string
+  sourceFingerprint?: string
+  identity: Record<string, StandardCanonicalField>
+  version: Record<string, StandardCanonicalField>
+  metadata: Record<string, StandardCanonicalField>
+  sections: StandardCanonicalContentItem[]
+  clauses: StandardCanonicalContentItem[]
+  blocks?: StandardCanonicalContentItem[]
+  tables: StandardCanonicalContentItem[]
+  equations: StandardCanonicalContentItem[]
+  images: StandardCanonicalContentItem[]
+  seals: StandardCanonicalContentItem[]
+  normativeReferences: StandardCanonicalRelation[]
+  replacementRelations: StandardCanonicalRelation[]
+  businessRelations: StandardCanonicalRelation[]
+  completeness: StandardCanonicalCompleteness
+  evidence: StandardCanonicalEvidence[]
+  provenance: StandardCanonicalProvenance[]
+  history?: StandardCanonicalHistory[]
+}
+
+export type StandardCanonicalContentGroup = 'structure' | 'tables' | 'relations' | 'history'
+type StandardCanonicalScopedArrayKey =
+  | 'sections'
+  | 'clauses'
+  | 'blocks'
+  | 'tables'
+  | 'equations'
+  | 'images'
+  | 'seals'
+  | 'normativeReferences'
+  | 'replacementRelations'
+  | 'businessRelations'
+  | 'evidence'
+  | 'provenance'
+  | 'history'
+export type StandardKnowledgeRecordScoped = Omit<
+  StandardKnowledgeRecord,
+  StandardCanonicalScopedArrayKey
+> &
+  Partial<Pick<StandardKnowledgeRecord, StandardCanonicalScopedArrayKey>>
+
+export type StandardKnowledgeRecordSummary = Pick<
+  StandardKnowledgeRecord,
+  | 'id'
+  | 'knowledgeFileId'
+  | 'canonicalVersion'
+  | 'kbVersion'
+  | 'contextType'
+  | 'sourceFingerprint'
+  | 'identity'
+  | 'version'
+  | 'metadata'
+  | 'completeness'
+> & {
+  documentId?: string
+  documentVersionId?: string
+  relationCounts: Record<
+    'normativeReferences' | 'replacementRelations' | 'businessRelations',
+    number
+  >
+  historySummary: { sourceCount: number; sourceIds: string[] }
+}
+
+export type StandardKnowledgeCanonicalSummary = StandardCanonicalCompleteness & {
+  relationCounts: StandardKnowledgeRecordSummary['relationCounts']
+  history: StandardKnowledgeRecordSummary['historySummary']
+}
+
 export type DocumentDetailPayload = {
   document: DocumentAsset
   currentVersion?: DocumentVersion
@@ -1086,6 +1254,10 @@ export type KnowledgeFileDetailPayload = DocumentDetailPayload & {
   file: KnowledgeFile
   latestTask?: KnowledgeTask
   vectorSummary: KnowledgeVectorSummary
+  canonical?: StandardKnowledgeRecordSummary
+  canonicalSummary?: StandardKnowledgeCanonicalSummary
+  activeParseResultId?: string
+  completeness?: StandardCanonicalCompleteness
 }
 
 export type KnowledgePageIndexNode = {
@@ -4255,7 +4427,35 @@ export const getKnowledgeFileDetailApi = (
   fileId: string,
   options?: RequestHeaderOptions
 ): Promise<IResponse<KnowledgeFileDetailPayload>> => {
-  return request.get({ url: `/api/knowledge/files/${fileId}`, headers: requestHeaders(options) })
+  return request.get({
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}`,
+    headers: requestHeaders(options)
+  })
+}
+
+export const getKnowledgeFileCanonicalApi = (
+  fileId: string,
+  params?: {
+    includeBlocks?: boolean
+    includeHistory?: boolean
+    contentGroup?: StandardCanonicalContentGroup
+    section?: string
+    pageNo?: number
+  }
+): Promise<IResponse<StandardKnowledgeRecordScoped>> => {
+  return request.get({
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}/canonical`,
+    params
+  })
+}
+
+export const getKnowledgeFileCanonicalSourceApi = (
+  fileId: string,
+  sourceId: string
+): Promise<IResponse<StandardCanonicalSource>> => {
+  return request.get({
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}/canonical/sources/${encodeURIComponent(sourceId)}`
+  })
 }
 
 export const updateKnowledgeFileApi = (
@@ -4264,7 +4464,7 @@ export const updateKnowledgeFileApi = (
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ file: KnowledgeFile; auditLogId: string; changed: unknown[] }>> => {
   return request.put({
-    url: `/api/knowledge/files/${fileId}`,
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}`,
     data: payload,
     headers: mutationHeaders(options)
   })
@@ -4296,7 +4496,7 @@ export const replaceKnowledgeFileVersionApi = (
     formData.append('contextDescription', payload.contextDescription)
   }
   return request.post({
-    url: `/api/knowledge/files/${fileId}/replace`,
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}/replace`,
     data: formData,
     headers: mutationHeaders(options)
   })
@@ -4315,7 +4515,7 @@ export const deleteKnowledgeFileApi = (
   }>
 > => {
   return request.delete({
-    url: `/api/knowledge/files/${fileId}`,
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}`,
     data: payload || {},
     headers: mutationHeaders(options)
   })
@@ -4329,7 +4529,7 @@ export const listKnowledgeFileChunksApi = (
   options?: RequestHeaderOptions
 ): Promise<IResponse<PagePayload<KnowledgeChunk>>> => {
   return request.get({
-    url: `/api/knowledge/files/${fileId}/chunks`,
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}/chunks`,
     params,
     headers: requestHeaders(options)
   })
@@ -4340,7 +4540,7 @@ export const getKnowledgeFileVectorApi = (
   options?: RequestHeaderOptions
 ): Promise<IResponse<KnowledgeVectorSummary>> => {
   return request.get({
-    url: `/api/knowledge/files/${fileId}/vectors`,
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}/vectors`,
     headers: requestHeaders(options)
   })
 }
@@ -4351,7 +4551,7 @@ export const listKnowledgeFileReasoningReferencesApi = (
   options?: RequestHeaderOptions
 ): Promise<IResponse<PagePayload<KnowledgeReasoningReference>>> => {
   return request.get({
-    url: `/api/knowledge/files/${fileId}/reasoning-references`,
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}/reasoning-references`,
     params,
     headers: requestHeaders(options)
   })
@@ -4396,7 +4596,7 @@ export const reindexKnowledgeFileApi = (
   options?: MutationHeaderOptions
 ): Promise<IResponse<{ task: KnowledgeTask }>> => {
   return request.post({
-    url: `/api/knowledge/files/${fileId}/reindex`,
+    url: `/api/knowledge/files/${encodeURIComponent(fileId)}/reindex`,
     data: payload || {},
     headers: mutationHeaders(options)
   })

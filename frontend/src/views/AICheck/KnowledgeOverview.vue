@@ -2480,7 +2480,24 @@ const handleOpenFile = async (row: KnowledgeFile) => {
       )
       ElMessage.info('列表数据已刷新，已打开最新标准规范详情')
     }
-    fileDetail.value = detailRes.data
+    const openedDetail = detailRes.data
+    // 旧详情记录可能没有 materialTypeCode；知识源类型仍能可靠区分标准库文件。
+    // 保留这个标准模式标记，避免 canonical 缺失时误落入项目资料字段提示。
+    const isStandardFile =
+      Boolean(openedDetail.canonical) ||
+      standardFiles.value.some((file) => file.id === target.id) ||
+      sources.value.some(
+        (source) => source.id === target.sourceId && source.sourceType === 'standard'
+      )
+    fileDetail.value = isStandardFile
+      ? {
+          ...openedDetail,
+          document: {
+            ...openedDetail.document,
+            materialTypeCode: 'standard_reference'
+          }
+        }
+      : openedDetail
   } catch (error) {
     const issueTitle = buildOperationFailureMessage('文件知识详情加载')
     setOperationIssue('fileDetail', issueTitle, error)

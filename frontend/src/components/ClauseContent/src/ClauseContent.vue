@@ -13,6 +13,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import StructuredTable from './StructuredTable.vue'
+import { normalizedEquationSource } from './equationPresentation'
 
 const props = defineProps<{
   text?: string
@@ -45,11 +46,7 @@ const isTable = computed(
 
 const equationSource = computed(() => {
   const raw = String(props.latex || props.text || '').trim()
-  // MinerU 常带 $$...$$ 外壳；KaTeX displayMode 时要剥掉
-  return raw
-    .replace(/^\$\$\s*/u, '')
-    .replace(/\s*\$\$$/u, '')
-    .trim()
+  return normalizedEquationSource(raw)
 })
 
 const renderEquation = () => {
@@ -109,6 +106,23 @@ watch([isEquation, equationSource], renderEquation)
 .clause-equation-math {
   overflow-x: auto;
   padding: 4px 0;
+}
+
+.clause-equation {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.clause-equation-math :deep(.katex-mathml) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .clause-equation-fallback {
