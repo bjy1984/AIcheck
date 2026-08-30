@@ -43,3 +43,20 @@ def test_recovery_respects_pinned_objects() -> None:
     """钉住的对象（本进程未落库的在途写入）不能被库里的旧值覆盖。"""
     recovery = MERGE.split("missing_ids", 1)[1]
     assert "object_is_pinned" in recovery
+
+
+def test_reconciliation_is_unconditional_not_gated_on_row_count() -> None:
+    """对账不能被「行数相等」的快速通道挡掉。
+
+    第一版修复把补拉放在 `len(merged) != len(live_ids) or appended` 分支里，
+    它假设「行数相同 = 内容相同」。可是「少了一行被水位线跳过的、同时多了一行
+    已被别人删除的」行数恰好相等——既不删也不补，那条被跳过的行就和修复前一样
+    永久隐身。行数是弱证据，id 集合才是。
+    """
+    assert "if len(merged) != len(live_ids) or appended:" not in MERGE, (
+        "对账被行数快速通道挡住了：行数相等但内容不同时会漏检"
+    )
+    # present 的计算必须在无条件路径上
+    before_missing = MERGE.split("missing_ids", 1)[0]
+    assert "present.add(object_id)" in before_missing
+    assert "for index, item in enumerate(merged):" in before_missing

@@ -4925,54 +4925,58 @@ class InMemoryRepository:
                 highest = updated_at
 
         merged = [*appended, *current] if appended else current
-        if len(merged) != len(live_ids) or appended:
-            kept: list[dict[str, Any]] = []
-            present: set[str] = set()
-            for index, item in enumerate(merged):
-                object_id = self.persistence_object_id(collection_name, item, index)
-                if object_id in live_ids or self.object_is_pinned(collection_name, object_id):
-                    kept.append(item)
-                    present.add(object_id)
-                else:
-                    self._persistence_baseline.pop((collection_name, object_id), None)
-            merged = kept
+        # 对账必须**无条件**做：早先这里有个 `len(merged) != len(live_ids)` 的
+        # 快速通道，它假设「行数相同 = 内容相同」。可是「少了一行被水位线跳过的、
+        # 同时多了一行已被别人删除的」行数恰好相等——于是既不删也不补，
+        # 那条被跳过的行就和修复前一样永久隐身。行数是弱证据，id 集合才是。
+        kept: list[dict[str, Any]] = []
+        present: set[str] = set()
+        for index, item in enumerate(merged):
+            object_id = self.persistence_object_id(collection_name, item, index)
+            if object_id in live_ids or self.object_is_pinned(collection_name, object_id):
+                kept.append(item)
+                present.add(object_id)
+            else:
+                self._persistence_baseline.pop((collection_name, object_id), None)
+        merged = kept
 
-            # 库里有、内存没有的行要**补回来**。
-            #
-            # 增量刷新按 `updated_at > 水位线` 拉行，而一行的 updated_at 是写入
-            # 时刻、它对别的连接可见却要等提交——批量写入时事务较长，一行完全
-            # 可能「时间戳早于水位线、可见却晚于上次刷新」。那种行会被永久跳过：
-            # 上面这段只删不补，水位线又单调前进，于是它**再也进不了内存**。
-            #
-            # 线上实测（2026-08-30 测试项目3）：批量传 41 份，35 份的 ocr_job
-            # 就这样对 worker 永久隐身，任务一律 MINERU_JOB_NOT_FOUND 立即失败，
-            # 文档永远停在「排队中」——重新派发也没用，因为水位线早已越过它们。
-            missing_ids = sorted(live_ids - present)
-            if missing_ids:
-                recovered = self.sync_postgres.execute(
-                    """
-                    SELECT object_id, payload, updated_at FROM aicheck_state
-                    WHERE tenant_id = %s AND collection = %s AND object_id = ANY(%s)
-                    """,
-                    (tenant_id, collection_name, missing_ids),
-                ).fetchall()
-                for object_id, payload, updated_at in recovered:
-                    key = str(object_id)
-                    if self.object_is_pinned(collection_name, key):
-                        continue
-                    document = json.loads(json.dumps(payload))
-                    merged.append(document)
-                    self._persistence_baseline[(collection_name, key)] = (
-                        self.canonical_persistence_payload(payload)
-                    )
-                    if highest is None or (updated_at is not None and updated_at > highest):
-                        highest = updated_at
-                if recovered:
-                    LOGGER.info(
-                        "incremental_refresh_recovered_missing_rows: %s %d",
-                        collection_name,
-                        len(recovered),
-                    )
+
+        # 库里有、内存没有的行要**补回来**。
+        #
+        # 增量刷新按 `updated_at > 水位线` 拉行，而一行的 updated_at 是写入
+        # 时刻、它对别的连接可见却要等提交——批量写入时事务较长，一行完全
+        # 可能「时间戳早于水位线、可见却晚于上次刷新」。那种行会被永久跳过：
+        # 上面这段只删不补，水位线又单调前进，于是它**再也进不了内存**。
+        #
+        # 线上实测（2026-08-30 测试项目3）：批量传 41 份，35 份的 ocr_job
+        # 就这样对 worker 永久隐身，任务一律 MINERU_JOB_NOT_FOUND 立即失败，
+        # 文档永远停在「排队中」——重新派发也没用，因为水位线早已越过它们。
+        missing_ids = sorted(live_ids - present)
+        if missing_ids:
+            recovered = self.sync_postgres.execute(
+                """
+                SELECT object_id, payload, updated_at FROM aicheck_state
+                WHERE tenant_id = %s AND collection = %s AND object_id = ANY(%s)
+                """,
+                (tenant_id, collection_name, missing_ids),
+            ).fetchall()
+            for object_id, payload, updated_at in recovered:
+                key = str(object_id)
+                if self.object_is_pinned(collection_name, key):
+                    continue
+                document = json.loads(json.dumps(payload))
+                merged.append(document)
+                self._persistence_baseline[(collection_name, key)] = (
+                    self.canonical_persistence_payload(payload)
+                )
+                if highest is None or (updated_at is not None and updated_at > highest):
+                    highest = updated_at
+            if recovered:
+                LOGGER.info(
+                    "incremental_refresh_recovered_missing_rows: %s %d",
+                    collection_name,
+                    len(recovered),
+                )
 
         self.state[state_key] = merged
         apply_default_tenant(self.state.get(state_key), tenant_id=tenant_id)
