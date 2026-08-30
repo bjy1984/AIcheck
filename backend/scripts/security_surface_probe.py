@@ -88,8 +88,30 @@ def probe_upload_session(files: list[dict]) -> dict:
 
 
 def cleanup_created_docs() -> None:
+    """删除本次探测创建的文档。
+
+    **不能用 admin**：删除要 file:withdraw 权限，admin 没有（实测 403
+    「角色 admin 无权执行 file:withdraw」）。上传者是 contractor，用它删。
+    2026-08-29 实测：第一版用 admin，清理静默失败——探针每天多留 5 份僵尸，
+    积到 25 份，看起来像上传链路坏了。清不掉要出声，不能装作清了。
+    """
+    failures = []
     for doc_id in _created_docs:
-        api(f"/api/projects/{PID}/documents/{doc_id}", "admin", method="DELETE")
+        removed = False
+        for role in ("contractor", "owner", "ndt"):
+            resp = api(f"/api/projects/{PID}/documents/{doc_id}", role, method="DELETE")
+            if resp.get("code") == 0 or (resp.get("data") or {}).get("deleted"):
+                removed = True
+                break
+        if not removed:
+            failures.append(doc_id)
+    if failures:
+        # 记成一条检查项：清理失败必须可见，否则僵尸会安静地累积
+        record(
+            "探针自清理（不留僵尸文档）",
+            False,
+            f"{len(failures)}/{len(_created_docs)} 份删不掉：{failures[:3]}",
+        )
 
 
 # ---- 1. 路径穿越：上传会话的 fileName / relativePath ----
@@ -170,7 +192,15 @@ record("幂等：同 key 不同 body 被拒", conflict, f"first={first.get('code
 
 # ---- 6. 大载荷：超大 JSON 不得打垮进程 ----
 huge = json.dumps({"files": [{"fileName": "x.pdf", "fileSize": 1, "fileType": "pdf", "pad": "A" * 2_000_000}]}).encode()
-status, _ = raw_call(f"/api/projects/{PID}/documents/upload-session", "contractor", "POST", huge)
+status, huge_body = raw_call(f"/api/projects/{PID}/documents/upload-session", "contractor", "POST", huge)
+# 这条走 raw_call（要看真实 HTTP 码），但它**同样会建文档**——
+# 漏登记的话每天多留一份 x.pdf 僵尸（2026-08-29 实测积了 5 份）。
+try:
+    for _e in ((json.loads(huge_body).get("data") or {}).get("uploadUrls") or []):
+        if _e.get("documentId"):
+            _created_docs.append(str(_e["documentId"]))
+except (ValueError, TypeError, AttributeError):
+    pass
 record("大载荷：2MB 请求被拒或安全处理", status in {400, 413, 422, 200} and status != 0, f"HTTP {status}")
 
 # ---- 7. 无 token / 伪造 token ----
