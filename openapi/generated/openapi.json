@@ -2495,10 +2495,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Report Templates",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Report Templates"
       },
       "post": {
         "operationId": "create_report_template_admin_report_templates_post",
@@ -2551,10 +2548,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Create Report Template"
       }
     },
     "/admin/report-templates/{template_id}": {
@@ -2623,10 +2617,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Delete Report Template"
       },
       "get": {
         "operationId": "get_report_template_admin_report_templates__template_id__get",
@@ -2661,10 +2652,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Get Report Template"
       },
       "patch": {
         "operationId": "update_report_template_admin_report_templates__template_id__patch",
@@ -2742,10 +2730,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Report Template"
       },
       "put": {
         "operationId": "update_report_template_admin_report_templates__template_id__put",
@@ -2823,10 +2808,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Report Template"
       }
     },
     "/admin/report-templates/{template_id}/publish": {
@@ -2906,10 +2888,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Publish Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Publish Report Template"
       }
     },
     "/admin/users": {
@@ -5468,10 +5447,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Report Templates",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Report Templates"
       },
       "post": {
         "operationId": "create_report_template_api_admin_report_templates_post",
@@ -5524,10 +5500,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Create Report Template"
       }
     },
     "/api/admin/report-templates/{template_id}": {
@@ -5596,10 +5569,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Delete Report Template"
       },
       "get": {
         "operationId": "get_report_template_api_admin_report_templates__template_id__get",
@@ -5634,10 +5604,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Get Report Template"
       },
       "patch": {
         "operationId": "update_report_template_api_admin_report_templates__template_id__patch",
@@ -5715,10 +5682,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Report Template"
       },
       "put": {
         "operationId": "update_report_template_api_admin_report_templates__template_id__put",
@@ -5796,10 +5760,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Report Template"
       }
     },
     "/api/admin/report-templates/{template_id}/publish": {
@@ -5879,10 +5840,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Publish Report Template",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Publish Report Template"
       }
     },
     "/api/admin/users": {
@@ -7188,10 +7146,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Import Business Rules",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Import Business Rules"
       }
     },
     "/api/cnse/organizations/search": {
@@ -13784,10 +13739,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Clauses",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Clauses"
       }
     },
     "/api/knowledge/config": {
@@ -13994,10 +13946,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Import Knowledge Files",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Import Knowledge Files"
       }
     },
     "/api/knowledge/files/{file_id}": {
@@ -14077,10 +14026,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Knowledge File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Delete Knowledge File"
       },
       "get": {
         "operationId": "knowledge_file_detail_api_knowledge_files__file_id__get",
@@ -14115,10 +14061,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Detail",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Detail"
       },
       "patch": {
         "operationId": "update_knowledge_file_api_knowledge_files__file_id__patch",
@@ -14196,10 +14139,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge File"
       },
       "put": {
         "operationId": "update_knowledge_file_api_knowledge_files__file_id__put",
@@ -14277,10 +14217,164 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge File"
+      }
+    },
+    "/api/knowledge/files/{file_id}/canonical": {
+      "get": {
+        "operationId": "knowledge_file_canonical_api_knowledge_files__file_id__canonical_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeBlocks",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Includeblocks",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeHistory",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Includehistory",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contentGroup",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "structure",
+                    "tables",
+                    "relations",
+                    "history"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contentgroup"
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageNo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pageno"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Knowledge File Canonical"
+      }
+    },
+    "/api/knowledge/files/{file_id}/canonical/sources/{source_id}": {
+      "get": {
+        "operationId": "knowledge_file_canonical_source_api_knowledge_files__file_id__canonical_sources__source_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Knowledge File Canonical Source"
       }
     },
     "/api/knowledge/files/{file_id}/chunks": {
@@ -14354,10 +14448,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Chunks",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Chunks"
       }
     },
     "/api/knowledge/files/{file_id}/original": {
@@ -14404,10 +14495,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Original",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Original"
       }
     },
     "/api/knowledge/files/{file_id}/reasoning-references": {
@@ -14464,10 +14552,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Reasoning Refs",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Reasoning Refs"
       }
     },
     "/api/knowledge/files/{file_id}/reindex": {
@@ -14531,10 +14616,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Reindex File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Reindex File"
       }
     },
     "/api/knowledge/files/{file_id}/replace": {
@@ -14603,10 +14685,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Replace Knowledge File Version",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Replace Knowledge File Version"
       }
     },
     "/api/knowledge/files/{file_id}/vectors": {
@@ -14643,10 +14722,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Vectors",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Vectors"
       }
     },
     "/api/knowledge/network": {
@@ -14694,10 +14770,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge Network",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Network"
       }
     },
     "/api/knowledge/overview": {
@@ -14713,10 +14786,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Knowledge Overview",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Overview"
       }
     },
     "/api/knowledge/page-index-nodes": {
@@ -14812,10 +14882,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Page Index Nodes",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Page Index Nodes"
       }
     },
     "/api/knowledge/project-files": {
@@ -14943,10 +15010,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Files",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Files"
       }
     },
     "/api/knowledge/reindex": {
@@ -15001,10 +15065,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Batch Reindex",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Batch Reindex"
       }
     },
     "/api/knowledge/reindex-preview": {
@@ -15041,10 +15102,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Preview Batch Reindex",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Preview Batch Reindex"
       }
     },
     "/api/knowledge/retrieval-test": {
@@ -15081,10 +15139,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Retrieval Test",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Retrieval Test"
       }
     },
     "/api/knowledge/sources": {
@@ -15180,10 +15235,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Sources",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Sources"
       },
       "post": {
         "operationId": "create_knowledge_source_api_knowledge_sources_post",
@@ -15236,10 +15288,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Create Knowledge Source"
       }
     },
     "/api/knowledge/sources/{source_id}": {
@@ -15276,10 +15325,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Get Knowledge Source"
       },
       "patch": {
         "operationId": "update_knowledge_source_api_knowledge_sources__source_id__patch",
@@ -15357,10 +15403,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge Source"
       },
       "put": {
         "operationId": "update_knowledge_source_api_knowledge_sources__source_id__put",
@@ -15438,10 +15481,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge Source"
       }
     },
     "/api/knowledge/sources/{source_id}/disable": {
@@ -15510,10 +15550,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Disable Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Disable Knowledge Source"
       }
     },
     "/api/knowledge/sources/{source_id}/enable": {
@@ -15582,10 +15619,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Enable Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Enable Knowledge Source"
       }
     },
     "/api/knowledge/standards/import-from-rules": {
@@ -15640,10 +15674,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Import Standards From Rules Folder",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Import Standards From Rules Folder"
       }
     },
     "/api/knowledge/tasks": {
@@ -15723,10 +15754,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Tasks",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Tasks"
       }
     },
     "/api/knowledge/tasks/{task_id}": {
@@ -15763,10 +15791,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge Task Detail",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Task Detail"
       }
     },
     "/api/knowledge/tasks/{task_id}/cancel": {
@@ -15846,10 +15871,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Cancel Knowledge Task",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Cancel Knowledge Task"
       }
     },
     "/api/knowledge/tasks/{task_id}/logs": {
@@ -15886,10 +15908,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge Task Logs",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Task Logs"
       }
     },
     "/api/knowledge/tasks/{task_id}/retry": {
@@ -15969,10 +15988,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Retry Knowledge Task",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Retry Knowledge Task"
       }
     },
     "/api/llm/compare": {
@@ -29664,10 +29680,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Import Business Rules",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Import Business Rules"
       }
     },
     "/cnse/organizations/search": {
@@ -36260,10 +36273,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Clauses",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Clauses"
       }
     },
     "/knowledge/config": {
@@ -36470,10 +36480,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Import Knowledge Files",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Import Knowledge Files"
       }
     },
     "/knowledge/files/{file_id}": {
@@ -36553,10 +36560,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Knowledge File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Delete Knowledge File"
       },
       "get": {
         "operationId": "knowledge_file_detail_knowledge_files__file_id__get",
@@ -36591,10 +36595,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Detail",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Detail"
       },
       "patch": {
         "operationId": "update_knowledge_file_knowledge_files__file_id__patch",
@@ -36672,10 +36673,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge File"
       },
       "put": {
         "operationId": "update_knowledge_file_knowledge_files__file_id__put",
@@ -36753,10 +36751,164 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge File"
+      }
+    },
+    "/knowledge/files/{file_id}/canonical": {
+      "get": {
+        "operationId": "knowledge_file_canonical_knowledge_files__file_id__canonical_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeBlocks",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Includeblocks",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeHistory",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Includehistory",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contentGroup",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "structure",
+                    "tables",
+                    "relations",
+                    "history"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contentgroup"
+            }
+          },
+          {
+            "in": "query",
+            "name": "section",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageNo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pageno"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Knowledge File Canonical"
+      }
+    },
+    "/knowledge/files/{file_id}/canonical/sources/{source_id}": {
+      "get": {
+        "operationId": "knowledge_file_canonical_source_knowledge_files__file_id__canonical_sources__source_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Knowledge File Canonical Source"
       }
     },
     "/knowledge/files/{file_id}/chunks": {
@@ -36830,10 +36982,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Chunks",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Chunks"
       }
     },
     "/knowledge/files/{file_id}/original": {
@@ -36880,10 +37029,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Original",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Original"
       }
     },
     "/knowledge/files/{file_id}/reasoning-references": {
@@ -36940,10 +37086,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Reasoning Refs",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Reasoning Refs"
       }
     },
     "/knowledge/files/{file_id}/reindex": {
@@ -37007,10 +37150,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Reindex File",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Reindex File"
       }
     },
     "/knowledge/files/{file_id}/replace": {
@@ -37079,10 +37219,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Replace Knowledge File Version",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Replace Knowledge File Version"
       }
     },
     "/knowledge/files/{file_id}/vectors": {
@@ -37119,10 +37256,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge File Vectors",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge File Vectors"
       }
     },
     "/knowledge/network": {
@@ -37170,10 +37304,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge Network",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Network"
       }
     },
     "/knowledge/overview": {
@@ -37189,10 +37320,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Knowledge Overview",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Overview"
       }
     },
     "/knowledge/page-index-nodes": {
@@ -37288,10 +37416,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Page Index Nodes",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Page Index Nodes"
       }
     },
     "/knowledge/project-files": {
@@ -37419,10 +37544,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Files",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Files"
       }
     },
     "/knowledge/reindex": {
@@ -37477,10 +37599,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Batch Reindex",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Batch Reindex"
       }
     },
     "/knowledge/reindex-preview": {
@@ -37517,10 +37636,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Preview Batch Reindex",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Preview Batch Reindex"
       }
     },
     "/knowledge/retrieval-test": {
@@ -37557,10 +37673,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Retrieval Test",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Retrieval Test"
       }
     },
     "/knowledge/sources": {
@@ -37656,10 +37769,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Sources",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Sources"
       },
       "post": {
         "operationId": "create_knowledge_source_knowledge_sources_post",
@@ -37712,10 +37822,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Create Knowledge Source"
       }
     },
     "/knowledge/sources/{source_id}": {
@@ -37752,10 +37859,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Get Knowledge Source"
       },
       "patch": {
         "operationId": "update_knowledge_source_knowledge_sources__source_id__patch",
@@ -37833,10 +37937,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge Source"
       },
       "put": {
         "operationId": "update_knowledge_source_knowledge_sources__source_id__put",
@@ -37914,10 +38015,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Update Knowledge Source"
       }
     },
     "/knowledge/sources/{source_id}/disable": {
@@ -37986,10 +38084,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Disable Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Disable Knowledge Source"
       }
     },
     "/knowledge/sources/{source_id}/enable": {
@@ -38058,10 +38153,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Enable Knowledge Source",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Enable Knowledge Source"
       }
     },
     "/knowledge/standards/import-from-rules": {
@@ -38116,10 +38208,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Import Standards From Rules Folder",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Import Standards From Rules Folder"
       }
     },
     "/knowledge/tasks": {
@@ -38199,10 +38288,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Knowledge Tasks",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "List Knowledge Tasks"
       }
     },
     "/knowledge/tasks/{task_id}": {
@@ -38239,10 +38325,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge Task Detail",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Task Detail"
       }
     },
     "/knowledge/tasks/{task_id}/cancel": {
@@ -38322,10 +38405,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Cancel Knowledge Task",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Cancel Knowledge Task"
       }
     },
     "/knowledge/tasks/{task_id}/logs": {
@@ -38362,10 +38442,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Knowledge Task Logs",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Knowledge Task Logs"
       }
     },
     "/knowledge/tasks/{task_id}/retry": {
@@ -38445,10 +38522,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Retry Knowledge Task",
-        "tags": [
-          "AIcheck API"
-        ]
+        "summary": "Retry Knowledge Task"
       }
     },
     "/llm/compare": {
