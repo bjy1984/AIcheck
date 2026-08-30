@@ -5665,7 +5665,7 @@ def workbench_context(request: Request, project_id: str, role: str = Query(defau
         if item.get("projectId") == project_id and record_visible_for_scope(item, scope, project_id=project_id)
     ]
     current_node_id = repo.role_current_node_id(project, resolved_role)
-    role_project = repo.project_for_role(project, resolved_role)
+    role_project = versioned_project(repo.project_for_role(project, resolved_role))
     return ok(
         {
             "project": role_project,

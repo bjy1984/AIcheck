@@ -234,6 +234,20 @@ def test_workbench_context_exposes_authoritative_registration_capability(
     assert body["data"]["canManageRegistration"] is expected
 
 
+def test_workbench_context_project_includes_etag_for_guarded_mutations():
+    """施工方从 context 取当前项目；没有 etag 就无法提交 If-Match。"""
+    response = client.get(
+        f"/api/projects/{PROJECT_A}/workbench/context?role=contractor",
+        headers=_headers("plain-a"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["code"] == 0, body
+    assert body["data"]["project"]["revision"] == 1
+    assert body["data"]["project"]["etag"] == f'W/"project-{PROJECT_A}-r1"'
+
+
 def test_别的项目的负责人不能给本项目发链接():
     """「甲项目的负责人能给乙项目发链接」是这条流程最可能出的越权。"""
     assert _make_link(project_id=PROJECT_B, username="lead-a")["code"] != 0
