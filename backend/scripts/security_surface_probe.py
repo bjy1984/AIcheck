@@ -97,14 +97,19 @@ def cleanup_created_docs() -> None:
     """
     failures = []
     for doc_id in _created_docs:
-        removed = False
-        for role in ("contractor", "owner", "ndt"):
-            resp = api(f"/api/projects/{PID}/documents/{doc_id}", role, method="DELETE")
-            if resp.get("code") == 0 or (resp.get("data") or {}).get("deleted"):
-                removed = True
-                break
-        if not removed:
-            failures.append(doc_id)
+        # 只有 contractor 有 file:withdraw（实测 owner/ndt/admin 一律 403），
+        # 而它正是这些文档的上传者。多角色轮询没有意义，只会多打三次请求。
+        resp = api(f"/api/projects/{PID}/documents/{doc_id}", "contractor", method="DELETE")
+        # 不能写 `resp.get("code") or -1`：成功码就是 0，而 0 是 falsy，
+        # `0 or -1` 得到 -1——删成功会被判成失败（2026-08-29 自己踩了一次）。
+        raw_code = resp.get("code")
+        code = int(raw_code) if raw_code is not None else -1
+        reason = str((resp.get("data") or {}).get("reason") or "")
+        # 「已经不存在」也算清理干净：幂等重放用例的第二次请求被正确拒绝、
+        # 压根没建文档，但 ID 已被登记——把 NOT_FOUND(40404) 当失败是误报。
+        if code == 0 or (resp.get("data") or {}).get("deleted") or reason == "NOT_FOUND":
+            continue
+        failures.append(f"{doc_id}(code={code} {reason or resp.get('message')})")
     if failures:
         # 记成一条检查项：清理失败必须可见，否则僵尸会安静地累积
         record(
