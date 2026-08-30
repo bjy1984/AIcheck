@@ -50,9 +50,11 @@ assert.equal(
   documentPipelineStatus({ currentOcrStatus: '识别失败', sliceStatus: '', vectorStatus: '' }),
   '识别失败'
 )
+// 切片失败不再算「识别失败」：2026-08-29 起项目资料不做切片/向量化，
+// 那两步的历史状态与用户无关，报出来他也处理不了、还挡着提交。
 assert.equal(
   documentPipelineStatus({ currentOcrStatus: '已识别', sliceStatus: '切片失败' }),
-  '识别失败'
+  '上传成功'
 )
 
 // 「重新上传」按钮只在真的上传失败时出现——识别失败点它没有意义

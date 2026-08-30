@@ -21,11 +21,19 @@ export type DocumentUploadStatus = '上传中' | '上传成功' | '识别失败'
 
 export type DocumentBusinessStatus = DocumentUploadStatus
 
+/**
+ * 上传成功 = 本体落盘 + OCR 完成。**不看切片/向量化**。
+ *
+ * 2026-08-29 架构调整：项目资料是被审查的对象、不是检索语料，后端已不再对它们
+ * 做切片和向量化（见 task_dispatcher.project_file_indexing_blocker）。
+ * 判据里留着那两条的后果是它们**永远不满足**——所有资料永远显示「上传中」、
+ * canSubmitDocument 永远 false，用户传上去了却提交不了。
+ *
+ * 与后端 submission_pipeline.pipeline_stage_of 同口径：报审只要求 OCR 完成。
+ */
 export const isDocumentUploadSuccessful = (file: DocumentPipelineState): boolean =>
   file.bodyUploaded !== false &&
-  ['已识别', '人工修正', '抽取不完整'].includes(String(file.currentOcrStatus || '')) &&
-  String(file.sliceStatus || '') === '已切片' &&
-  String(file.vectorStatus || '') === '已向量化'
+  ['已识别', '人工修正', '抽取不完整'].includes(String(file.currentOcrStatus || ''))
 
 /**
  * 提交方（施工方 / 无损检测机构）看到的处理状态。
@@ -45,12 +53,12 @@ export const canSubmitDocument = (file: DocumentPipelineState): boolean =>
 
 export const documentPipelineStatus = (file: DocumentPipelineState): DocumentUploadStatus => {
   const ocrStatus = String(file.currentOcrStatus || '')
-  const sliceStatus = String(file.sliceStatus || '')
-  const vectorStatus = String(file.vectorStatus || '')
   // 只有本体没落盘才叫「上传失败」——那种情况重传确实有用。
   if (file.bodyUploaded === false) return '失败重新上传'
   // 本体在、识别链路挂了：重传解决不了，得重新识别或人工修正。
-  if ([ocrStatus, sliceStatus, vectorStatus].some((status) => status.includes('失败'))) {
+  // 只看 OCR：切片/向量化对项目资料已不再执行，历史遗留的「切片失败」
+  // 「向量化失败」不该再让用户看到一个他无法处理、也不影响提交的错误。
+  if (ocrStatus.includes('失败')) {
     return '识别失败'
   }
   if (isDocumentUploadSuccessful(file)) return '上传成功'
