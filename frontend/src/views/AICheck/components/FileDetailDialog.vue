@@ -291,6 +291,7 @@ type LocatableItem = {
 const sideTab = ref('fields')
 const activeLocateKey = ref('')
 const canonicalLocatable = ref<LocatableItem>()
+const previewNavigationRevision = ref(0)
 const previewNaturalSize = ref<{ width: number; height: number } | null>(null)
 
 /** OCR 字段自身不带 bbox，坐标在它 evidenceLinkId 指向的证据链条目上。 */
@@ -549,6 +550,10 @@ const previewSrcWithPage = computed(() => {
   if (!page) return base
   return `${base.split('#')[0]}#page=${page}`
 })
+const previewFrameKey = computed(
+  () =>
+    `${previewFrameUrl.value}|${activeLocatable.value?.pageNo || 0}|${previewNavigationRevision.value}`
+)
 
 const locateHint = computed(() => {
   const item = activeLocatable.value
@@ -571,11 +576,6 @@ const handleLocate = (item: LocatableItem) => {
 
 const handleCanonicalLocate = (evidence: StandardCanonicalEvidence) => {
   const key = canonicalLocateKey(evidence)
-  if (activeLocateKey.value === key) {
-    activeLocateKey.value = ''
-    canonicalLocatable.value = undefined
-    return
-  }
   canonicalLocatable.value = {
     key,
     label: String(evidence.key || evidence.sourceType || '标准证据'),
@@ -586,6 +586,7 @@ const handleCanonicalLocate = (evidence: StandardCanonicalEvidence) => {
     kind: 'evidence'
   }
   activeLocateKey.value = key
+  previewNavigationRevision.value += 1
 }
 
 const handlePreviewImageLoad = (event: Event) => {
@@ -597,6 +598,7 @@ watch(visible, (open) => {
   if (!open) {
     activeLocateKey.value = ''
     canonicalLocatable.value = undefined
+    previewNavigationRevision.value = 0
     previewNaturalSize.value = null
     sideTab.value = 'fields'
   }
@@ -722,6 +724,7 @@ watch(
                   <!-- PDF：浏览器内置阅读器，只能靠 #page= 跳页 -->
                   <iframe
                     v-else
+                    :key="previewFrameKey"
                     class="preview-frame"
                     :src="previewSrcWithPage"
                     :title="document.fileName"

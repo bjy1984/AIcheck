@@ -267,6 +267,21 @@ def test_build_record_uses_new_values_and_keeps_old_only_information(tmp_path):
     assert record["identity"]["filingNumber"]["authority"] == "legacy_only"
 
 
+def test_business_rule_relations_use_rule_id_as_provenance_identity(tmp_path):
+    record = build_standard_knowledge_record(
+        canonical_source_fixture(),
+        "KF-KB-TEST",
+        tmp_path,
+    )
+
+    assert record["businessRelations"][0]["selectedSourceId"] == "RULE-1"
+    assert record["businessRelations"][0]["sources"][0]["sourceId"] == "RULE-1"
+    provenance = next(
+        item for item in record["provenance"] if item["sourceType"] == "business_rule"
+    )
+    assert provenance["sourceIds"] == ["RULE-1"]
+
+
 def test_kb_version_change_invalidates_source_fingerprint(tmp_path):
     state = canonical_source_fixture()
     first = build_standard_knowledge_record(state, "KF-KB-TEST", tmp_path)

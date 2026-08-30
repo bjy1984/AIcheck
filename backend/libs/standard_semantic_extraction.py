@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import unicodedata
 from pathlib import Path
@@ -22,6 +23,7 @@ SCHEMA_PATH = BACKEND_ROOT / "config/standard_canonical_extraction_v1.json"
 PROMPT_VERSION = "standard-canonical-extraction-v1"
 MODEL_ROUTE = "review-chat"
 SOURCE_TYPE = "new_mineru_semantic"
+MODEL_VALIDATION_ATTEMPTS = 3
 
 _DATE_VALUE = r"(\d{4}(?:[-./年])\d{1,2}(?:[-./月])\d{1,2}日?)"
 _DATE_TOKEN_PATTERN = re.compile(_DATE_VALUE)
@@ -29,9 +31,14 @@ _DATE_PATTERNS = {
     "publicationDate": re.compile(rf"发布日期\s*[：:]?\s*{_DATE_VALUE}"),
     "effectiveDate": re.compile(rf"实施日期\s*[：:]?\s*{_DATE_VALUE}"),
 }
+_DATE_TRAILING_PATTERNS = {
+    "publicationDate": re.compile(rf"{_DATE_VALUE}\s*发布"),
+    "effectiveDate": re.compile(rf"{_DATE_VALUE}\s*实施"),
+}
 _AUTHORITY_PATTERN = re.compile(
     r"(?:发布机构|发布部门|批准部门|批准发布部门)\s*[：:]?\s*([^。；;\n]{2,80})"
 )
+_AUTHORITY_TRAILING_PATTERN = re.compile(r"([\u4e00-\u9fff]{2,20}(?:局|部|委员会))\s*发布")
 _REPLACEMENT_LABEL_PATTERN = re.compile(r"(?:代替|替代)\s*")
 _LIST_FIELDS = {"draftingOrganizations", "draftingPeople", "keywords"}
 _RELATION_FIELDS = {"normativeReferences", "replacementRelations"}
@@ -544,7 +551,7 @@ def extract_deterministic_standard_metadata(
     code_candidates = _identity_code_candidates(record)
     for page_no, page_text in canonical_page_digest(record).items():
         for key, pattern in _DATE_PATTERNS.items():
-            matched = pattern.search(page_text)
+            matched = pattern.search(page_text) or _DATE_TRAILING_PATTERNS[key].search(page_text)
             if matched:
                 _append_unique(
                     result,
@@ -557,7 +564,7 @@ def extract_deterministic_standard_metadata(
                         extraction_method="deterministic",
                     ),
                 )
-        authority = _AUTHORITY_PATTERN.search(page_text)
+        authority = _AUTHORITY_PATTERN.search(page_text) or _AUTHORITY_TRAILING_PATTERN.search(page_text)
         if authority:
             value = authority.group(1).strip(" ,，")
             _append_unique(
@@ -943,7 +950,8 @@ def merge_deterministic_and_model_semantics(
         or bool(deterministic_replacements)
     )
     if has_relations and not source_standard_code:
-        raise ValueError("relations require source standardCode")
+        result.pop("replaces", None)
+        return result
 
     if "normativeReferences" in fields:
         result["normativeReferences"] = [
@@ -1010,26 +1018,63 @@ def extract_standard_semantics(
             if key in requested_fields
             or (key == "replaces" and "replacementRelations" in requested_fields)
         }
-    response = client.chat_sync(
-        standard_extraction_messages(
-            record,
-            deterministic,
-            requested_fields=requested_fields,
-        ),
-        model=MODEL_ROUTE,
-        response_format={"type": "json_object"},
-        temperature=0,
-        max_tokens=8192,
-    )
-    try:
-        payload = json.loads(client.first_message_text(response))
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("model response must be a strict JSON object") from exc
-    payload = validate_standard_semantics(
-        payload,
-        page_digest,
+    messages = standard_extraction_messages(
+        record,
+        deterministic,
         requested_fields=requested_fields,
     )
+    payload: dict[str, Any] | None = None
+    for attempt in range(MODEL_VALIDATION_ATTEMPTS):
+        response = client.chat_sync(
+            messages,
+            model=MODEL_ROUTE,
+            response_format={"type": "json_object"},
+            temperature=0,
+            enable_thinking=False,
+            max_tokens=8192,
+            timeout=max(30.0, float(os.getenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "180"))),
+        )
+        response_text = client.first_message_text(response)
+        try:
+            decoded = json.loads(response_text)
+        except (TypeError, json.JSONDecodeError):
+            validation_error = ValueError("model response must be a strict JSON object")
+        else:
+            try:
+                payload = validate_standard_semantics(
+                    decoded,
+                    page_digest,
+                    requested_fields=requested_fields,
+                )
+            except ValueError as exc:
+                validation_error = exc
+            else:
+                break
+        if attempt + 1 == MODEL_VALIDATION_ATTEMPTS:
+            raise validation_error
+        if attempt + 2 == MODEL_VALIDATION_ATTEMPTS:
+            retry_instruction = (
+                "The previous response still failed strict validation: "
+                f"{validation_error}. Return exactly {{}} and nothing else so every uncertain "
+                "value is omitted."
+            )
+            messages = [
+                {"role": "system", "content": _PROMPT_INSTRUCTION},
+                {"role": "user", "content": retry_instruction},
+            ]
+        else:
+            retry_instruction = (
+                "The previous response failed strict validation: "
+                f"{validation_error}. Return a corrected strict JSON object. "
+                "Do not add unrequested fields or placeholder evidence; omit unknown values."
+            )
+            messages = [
+                *messages,
+                {"role": "assistant", "content": response_text},
+                {"role": "user", "content": retry_instruction},
+            ]
+    if payload is None:  # pragma: no cover - loop either validates or raises
+        raise ValueError("model response must be a strict JSON object")
     return merge_deterministic_and_model_semantics(
         record,
         deterministic,

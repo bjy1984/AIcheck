@@ -1246,7 +1246,7 @@ def _source_base(
 ) -> dict[str, Any]:
     return {
         "sourceType": source_type,
-        "sourceId": str(item.get("id") or item.get("sourceId") or ""),
+        "sourceId": _source_identity(item),
         "parseResultId": item.get("parseResultId"),
         "documentVersionId": document_version_id,
         "createdAt": item.get("createdAt"),
@@ -1255,13 +1255,17 @@ def _source_base(
     }
 
 
+def _source_identity(item: dict[str, Any]) -> str:
+    return str(item.get("id") or item.get("sourceId") or item.get("ruleId") or "")
+
+
 def _provenance_summary(
     source_type: str,
     items: list[dict[str, Any]],
     document_version_id: str,
     capabilities: list[str],
 ) -> dict[str, Any]:
-    source_ids = [str(item.get("id") or item.get("sourceId") or "") for item in items]
+    source_ids = [_source_identity(item) for item in items]
     return {
         "sourceType": source_type,
         "sourceId": source_ids[0] if len(source_ids) == 1 else f"{source_type}:{len(items)}",

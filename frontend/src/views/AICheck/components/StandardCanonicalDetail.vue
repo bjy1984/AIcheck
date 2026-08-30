@@ -204,6 +204,15 @@ watch(
       <ElTabPane label="概览" name="overview" lazy>
         <div class="canonical-pane">
           <ElAlert
+            v-if="props.record.contextType === 'context_only'"
+            title="上下文资料（context_only）"
+            description="该文件提供业务规则上下文，不作为标准规范正式证据。"
+            type="info"
+            :closable="false"
+            show-icon
+            class="canonical-alert"
+          />
+          <ElAlert
             v-if="warnings.length"
             title="标准信息需要补全"
             :description="warnings.join('；')"

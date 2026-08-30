@@ -846,6 +846,7 @@ def compact_standard_canonical(record: dict[str, Any]) -> dict[str, Any]:
             "documentVersionId",
             "canonicalVersion",
             "kbVersion",
+            "contextType",
             "identity",
             "version",
             "metadata",

@@ -215,6 +215,9 @@ def _source_registry(source_rows: list[SourceRow]) -> SourceRegistry:
                 add_for_files(
                     reference_targets,
                     "business_rule",
+                    object_id,
+                    payload.get("id"),
+                    payload.get("ruleId"),
                     reference.get("id"),
                     reference.get("sourceId"),
                 )

@@ -17,6 +17,7 @@ from libs.standard_semantic_extraction import (
     canonical_page_digest,
     extract_deterministic_standard_metadata,
     extract_standard_semantics,
+    merge_deterministic_and_model_semantics,
     semantic_extraction_hashes,
 )
 from scripts import enrich_standard_knowledge_canonical as enrich_script
@@ -117,6 +118,19 @@ def test_deterministic_metadata_extracts_code_dates_authority_and_replacement():
     assert all(item["sourceId"] == "PARSE-NEW" for values in extracted.values() for item in values)
 
 
+def test_deterministic_metadata_extracts_date_first_publication_table():
+    extracted = extract_deterministic_standard_metadata(
+        semantic_record_fixture(
+            pages={1: "2015-04-02 发布 2015-09-01 实施 国家能源局发布"},
+            page_contexts={1: {"blockType": "document_title"}},
+        )
+    )
+
+    assert extracted["publicationDate"][0]["value"] == "2015-04-02"
+    assert extracted["effectiveDate"][0]["value"] == "2015-09-01"
+    assert extracted["issuingAuthority"][0]["value"] == "国家能源局"
+
+
 def test_replacement_target_is_not_inferred_as_the_current_standard_code():
     extracted = extract_deterministic_standard_metadata(
         semantic_record_fixture(pages={1: "本标准代替 NB/T 47013.10-2010。"})
@@ -124,6 +138,20 @@ def test_replacement_target_is_not_inferred_as_the_current_standard_code():
 
     assert "standardCode" not in extracted
     assert extracted["replaces"][0]["value"] == "NB/T 47013.10-2010"
+
+
+def test_replacement_semantics_without_current_identity_are_omitted_fail_closed():
+    record = semantic_record_fixture(pages={1: "本标准代替 NB/T 47013.10-2010。"})
+    deterministic = extract_deterministic_standard_metadata(record)
+
+    merged = merge_deterministic_and_model_semantics(
+        record,
+        deterministic,
+        {},
+        requested_fields={"standardCode", "replacementRelations"},
+    )
+
+    assert "replacementRelations" not in merged
 
 
 def test_typographic_replacement_target_on_cover_is_not_current_standard_code():
@@ -311,7 +339,8 @@ def test_labeled_astm_designation_is_valid_identity_context():
     assert extracted["standardCode"][0]["value"] == "ASTM A106/A106M-19"
 
 
-def test_model_semantics_are_strict_json_and_evidence_grounded():
+def test_model_semantics_are_strict_json_and_evidence_grounded(monkeypatch):
+    monkeypatch.setenv("AICHECK_QWEN_REVIEW_TIMEOUT_SECONDS", "240")
     client = FakeLiteLLMClient(
         {
             "standardNameZh": {
@@ -364,6 +393,8 @@ def test_model_semantics_are_strict_json_and_evidence_grounded():
     assert client.calls[0]["model"] == "review-chat"
     assert client.calls[0]["response_format"] == {"type": "json_object"}
     assert client.calls[0]["temperature"] == 0
+    assert client.calls[0]["enable_thinking"] is False
+    assert client.calls[0]["timeout"] == 240
 
 
 def test_ungrounded_model_item_without_evidence_is_rejected():
@@ -371,6 +402,85 @@ def test_ungrounded_model_item_without_evidence_is_rejected():
 
     with pytest.raises(ValueError, match="pageNo and quotedText are required"):
         extract_standard_semantics(semantic_record_fixture(pages={1: "标准正文"}), client)
+
+
+def test_model_semantics_retries_strict_validation_failure_with_feedback():
+    class SequenceClient(FakeLiteLLMClient):
+        def __init__(self):
+            super().__init__({})
+            self.responses = [
+                {
+                    "abstract": {
+                        "value": "标准摘要",
+                        "pageNo": 0,
+                        "quotedText": "",
+                    }
+                },
+                {"abstract": "标准摘要"},
+            ]
+
+        def chat_sync(self, messages, model="review-chat", **kwargs):
+            self.content = self.responses.pop(0)
+            return super().chat_sync(messages, model=model, **kwargs)
+
+    client = SequenceClient()
+
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={1: "标准正文"}),
+        client,
+        requested_fields={"abstract"},
+    )
+
+    assert extracted["abstract"]["value"] == "标准摘要"
+    assert len(client.calls) == 2
+    assert client.calls[1]["messages"][-2] == {
+        "role": "assistant",
+        "content": json.dumps(
+            {
+                "abstract": {
+                    "value": "标准摘要",
+                    "pageNo": 0,
+                    "quotedText": "",
+                }
+            },
+            ensure_ascii=False,
+        ),
+    }
+    assert "abstract: pageNo must be a positive integer" in (
+        client.calls[1]["messages"][-1]["content"]
+    )
+
+
+def test_model_semantics_final_retry_requests_safe_empty_object():
+    class SafeFallbackClient(FakeLiteLLMClient):
+        def chat_sync(self, messages, model="review-chat", **kwargs):
+            self.content = (
+                {}
+                if "Return exactly {}" in messages[-1]["content"]
+                else {
+                    "normativeReferences": [
+                        {
+                            "value": "GB/T 123-2020",
+                            "pageNo": 1,
+                            "quotedText": "GB/T 123-2020",
+                        }
+                    ]
+                }
+            )
+            return super().chat_sync(messages, model=model, **kwargs)
+
+    client = SafeFallbackClient({})
+
+    extracted = extract_standard_semantics(
+        semantic_record_fixture(pages={1: "标准正文"}),
+        client,
+        requested_fields={"normativeReferences"},
+    )
+
+    assert extracted["normativeReferences"] == []
+    assert len(client.calls) == 3
+    assert len(client.calls[2]["messages"]) == 2
+    assert "Return exactly {}" in client.calls[2]["messages"][-1]["content"]
 
 
 def test_model_quote_must_be_a_normalized_substring_of_selected_mineru_page():
@@ -1624,6 +1734,37 @@ def _grounded_model_payload() -> dict[str, Any]:
     }
 
 
+def test_enrichment_default_client_uses_configured_qwen_runtime(
+    isolated_postgres_url,
+    monkeypatch,
+):
+    _seed_semantic_database(isolated_postgres_url)
+    runtime_client = FakeLiteLLMClient(_grounded_model_payload())
+    built_with: list[object] = []
+
+    def fake_runtime_builder(client_cls):
+        built_with.append(client_cls)
+        return runtime_client
+
+    monkeypatch.setattr(
+        enrich_script,
+        "build_qwen_runtime_client",
+        fake_runtime_builder,
+        raising=False,
+    )
+
+    report = enrich_script.enrich(
+        isolated_postgres_url,
+        apply=False,
+        only_missing=True,
+    )
+
+    assert built_with == [enrich_script.LiteLLMClient]
+    assert report["planned"] == 1
+    assert report["failed"] == 0
+    assert runtime_client.calls[0]["model"] == "review-chat"
+
+
 def test_enrichment_updates_only_configured_tenant_canonical_and_skips_unchanged_hash(
     isolated_postgres_url,
 ):
@@ -1667,6 +1808,34 @@ def test_enrichment_updates_only_configured_tenant_canonical_and_skips_unchanged
     )
 
     assert second["unchanged"] == 1
+    assert second["modelCalls"] == 0
+    assert second_client.calls == []
+
+
+def test_only_missing_hash_skip_survives_completeness_changes(
+    isolated_postgres_url,
+):
+    _seed_semantic_database(isolated_postgres_url)
+
+    first = enrich_script.enrich(
+        isolated_postgres_url,
+        apply=True,
+        only_missing=True,
+        file_id="KF-KB-TEST",
+        client=FakeLiteLLMClient(_grounded_model_payload()),
+    )
+    second_client = FakeLiteLLMClient(_grounded_model_payload())
+    second = enrich_script.enrich(
+        isolated_postgres_url,
+        apply=True,
+        only_missing=True,
+        file_id="KF-KB-TEST",
+        client=second_client,
+    )
+
+    assert first["updated"] == 1
+    assert second["unchanged"] == 1
+    assert second["notMissing"] == 0
     assert second["modelCalls"] == 0
     assert second_client.calls == []
 
@@ -1744,7 +1913,7 @@ def test_semantic_refresh_selects_newest_candidate_before_hash_skip(
     assert second_client.calls == []
 
 
-def test_only_missing_restricts_prompt_to_partial_or_missing_categories(
+def test_only_missing_requests_each_absent_semantic_field_even_when_category_is_complete(
     isolated_postgres_url,
 ):
     _seed_semantic_database(isolated_postgres_url)
@@ -1764,8 +1933,9 @@ def test_only_missing_restricts_prompt_to_partial_or_missing_categories(
     assert "scope" in request["requestedFields"]
     assert "normativeReferences" in request["requestedFields"]
     assert "standardCode" not in request["requestedFields"]
-    assert "publicationDate" not in request["requestedFields"]
-    assert "replacementRelations" not in request["requestedFields"]
+    assert "standardNameEn" in request["requestedFields"]
+    assert "publicationDate" in request["requestedFields"]
+    assert "replacementRelations" in request["requestedFields"]
     assert "semanticExtractionVersion" not in _read_payload(
         isolated_postgres_url, "standard_knowledge_records", "KF-KB-TEST"
     )

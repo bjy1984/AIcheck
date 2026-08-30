@@ -452,6 +452,7 @@ export type StandardKnowledgeRecord = {
   documentVersionId?: string
   canonicalVersion: string
   kbVersion?: string
+  contextType?: string
   sourceFingerprint?: string
   identity: Record<string, StandardCanonicalField>
   version: Record<string, StandardCanonicalField>
@@ -499,6 +500,7 @@ export type StandardKnowledgeRecordSummary = Pick<
   | 'knowledgeFileId'
   | 'canonicalVersion'
   | 'kbVersion'
+  | 'contextType'
   | 'sourceFingerprint'
   | 'identity'
   | 'version'

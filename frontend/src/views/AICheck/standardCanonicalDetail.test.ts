@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { normalizedEquationSource } from '../../components/ClauseContent/src/equationPresentation'
 import { fileURLToPath } from 'node:url'
 import type { StandardCanonicalContentItem, StandardKnowledgeRecord } from '@/api/aicheck'
 import {
@@ -321,6 +322,10 @@ const dialog = readFileSync(
   fileURLToPath(new URL('./components/FileDetailDialog.vue', import.meta.url)),
   'utf8'
 )
+const clauseContent = readFileSync(
+  fileURLToPath(new URL('../../components/ClauseContent/src/ClauseContent.vue', import.meta.url)),
+  'utf8'
+)
 const overview = readFileSync(
   fileURLToPath(new URL('./KnowledgeOverview.vue', import.meta.url)),
   'utf8'
@@ -342,6 +347,21 @@ for (const tab of ['structure', 'tables', 'relations', 'history']) {
   )
 }
 assert.match(component, /getKnowledgeFileCanonicalApi/, '全集必须通过 canonical API 获取')
+assert.match(component, /context_only/, '上下文资料必须显式展示 context_only 状态')
+assert.match(dialog, /previewNavigationRevision\.value \+= 1/, '重复公式定位必须递增 PDF 导航修订')
+assert.match(dialog, /:key="previewFrameKey"/, 'PDF iframe 必须绑定定位重挂载 identity')
+assert.match(dialog, /#page=\$\{page\}/, 'PDF 定位 URL 必须包含目标页锚点')
+assert.match(clauseContent, /\.katex-mathml/, 'KaTeX MathML 层必须视觉裁剪')
+assert.doesNotMatch(
+  clauseContent,
+  /\.katex-html[\s\S]*?display:\s*block/,
+  '不得覆盖 KaTeX HTML 层原生布局，否则公式编号会压住正文'
+)
+assert.equal(
+  normalizedEquationSource('$$ T_{x}=t_{h}g\\tag{……( B.2} $$'),
+  'T_{x}=t_{h}g',
+  'MinerU 尾部装饰性 tag 必须与公式主体分离，避免 KaTeX 编号覆盖正文'
+)
 assert.match(component, /@tab-change="handleTabChange"/, '全集 API 必须由页签打开事件触发')
 assert.match(component, /v-for="item in visibleBlocks"/, '正文块必须只实例化当前渐进窗口')
 assert.match(component, />\s*加载更多\s*</, '正文块必须提供加载更多入口')

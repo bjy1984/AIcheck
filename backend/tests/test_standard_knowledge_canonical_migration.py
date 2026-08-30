@@ -13,6 +13,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from scripts import rebuild_standard_knowledge_canonical as rebuild_script
+from scripts import verify_standard_knowledge_canonical as verify_script
 from scripts.rebuild_standard_knowledge_canonical import persist_canonical_record
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +34,41 @@ SOURCE_COLLECTIONS = (
     "rule_versions",
     "business_packs",
 )
+
+
+def test_verifier_registry_resolves_parent_rule_version_identity():
+    rows = [
+        (
+            "knowledge_files",
+            "KF-KB-001",
+            {
+                "id": "KF-KB-001",
+                "sourceId": "KS-STANDARD-RULES",
+                "documentId": "KDOC-001",
+                "documentVersionId": "KDV-001-V1",
+                "fileName": "STD-001.pdf",
+            },
+        ),
+        (
+            "rule_versions",
+            "RULE-001",
+            {
+                "id": "RULE-001",
+                "referencedStandards": [
+                    {"knowledgeFileId": "KF-KB-001", "standardRef": "STD-001"}
+                ],
+            },
+        ),
+    ]
+
+    registry = verify_script._source_registry(rows)
+
+    assert registry.resolution_issue(
+        "KF-KB-001",
+        "KDV-001-V1",
+        "business_rule",
+        "RULE-001",
+    ) is None
 
 
 def run_rebuild_process(database_url: str, *args: str) -> subprocess.CompletedProcess[str]:

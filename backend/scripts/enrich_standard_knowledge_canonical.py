@@ -21,6 +21,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from libs.integrations.litellm_client import LiteLLMClient  # noqa: E402
+from libs.qwen_runtime import build_qwen_runtime_client  # noqa: E402
 from libs.security.tenant import configured_tenant_id  # noqa: E402
 from libs.standard_knowledge_canonical import (  # noqa: E402
     canonical_semantic_selected_values_hash,
@@ -97,16 +98,19 @@ def _load_canonical_records(
 def semantic_fields_for_record(record: dict[str, Any], *, only_missing: bool) -> set[str]:
     if not only_missing:
         return set(semantic_field_names())
-    completeness = record.get("completeness")
-    if not isinstance(completeness, dict):
-        return set(semantic_field_names())
-    named_missing = {str(value) for value in completeness.get("missingCategories") or []}
     requested: set[str] = set()
     for category, fields in _SEMANTIC_CATEGORY_FIELDS.items():
-        detail = completeness.get(category)
-        status = str(detail.get("status") or "") if isinstance(detail, dict) else ""
-        if status in {"partial", "missing"} or category in named_missing:
-            requested.update(fields)
+        if category in {"normativeReferences", "replacementRelations"}:
+            if not record.get(category):
+                requested.update(fields)
+            continue
+        group = record.get(category)
+        group = group if isinstance(group, dict) else {}
+        for field_name in fields:
+            field = group.get(field_name)
+            value = field.get("value") if isinstance(field, dict) else None
+            if value in (None, "", []):
+                requested.add(field_name)
     return requested
 
 
@@ -115,7 +119,7 @@ def _matching_extraction_hashes(record: dict[str, Any], hashes: dict[str, str]) 
     return (
         record.get("semanticExtractionVersion") == PROMPT_VERSION
         and record.get("semanticModelRoute") == MODEL_ROUTE
-        and record.get("semanticPromptHash") == hashes["promptHash"]
+        and bool(record.get("semanticPromptHash"))
         and record.get("semanticContentHash") == hashes["contentHash"]
         and bool(selected_values_hash)
         and selected_values_hash == canonical_semantic_selected_values_hash(record)
@@ -221,10 +225,6 @@ def enrich(
                 record,
                 only_missing=only_missing,
             )
-            if not requested_fields:
-                counts["notMissing"] += 1
-                summaries.append({"knowledgeFileId": object_id, "action": "not_missing"})
-                continue
             try:
                 hashes = semantic_extraction_hashes(
                     record,
@@ -236,13 +236,18 @@ def enrich(
                         {
                             "knowledgeFileId": object_id,
                             "action": "unchanged",
-                            **hashes,
+                            "promptHash": record.get("semanticPromptHash"),
+                            "contentHash": hashes["contentHash"],
                         }
                     )
                     continue
+                if not requested_fields:
+                    counts["notMissing"] += 1
+                    summaries.append({"knowledgeFileId": object_id, "action": "not_missing"})
+                    continue
                 counts["modelCalls"] += 1
                 if model_client is None:
-                    model_client = LiteLLMClient()
+                    model_client = build_qwen_runtime_client(LiteLLMClient)
                 semantics = extract_standard_semantics(
                     record,
                     model_client,
