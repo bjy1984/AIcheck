@@ -4851,6 +4851,7 @@ class InMemoryRepository:
             if self.sync_postgres is None:
                 return
             full_reload_keys: set[str] = set()
+            safe_watermark = self._safe_incremental_watermark()
             for state_key in sorted(state_keys):
                 collection_name = STATE_COLLECTIONS.get(state_key)
                 if not collection_name:
@@ -4884,10 +4885,36 @@ class InMemoryRepository:
                     changed,
                     live_ids,
                     tenant_id=effective_tenant_id,
+                    safe_watermark=safe_watermark,
                 )
             if full_reload_keys:
                 # 锁是可重入的（RLock），整表加载会自己再取一次
                 self.load_from_sync_postgres(full_reload_keys, tenant_id=tenant_id)
+
+    def _safe_incremental_watermark(self) -> Any:
+        """增量刷新可以安全推进到的时刻 = 最老活跃事务的开始时刻。
+
+        比它更晚的写入都可能还没提交；把水位线停在这里，那些事务提交后
+        它们的行仍在 `updated_at > 水位线` 的范围内，不会被跳过。
+
+        查不到就返回 None，调用方退回旧行为（max(updated_at)）——探针失败
+        不该让刷新整个停摆，对账兜底仍然在。
+        """
+        try:
+            row = self.sync_postgres.execute(
+                """
+                SELECT LEAST(
+                    COALESCE(min(xact_start) FILTER (WHERE state <> 'idle'), now()),
+                    now()
+                )
+                FROM pg_stat_activity
+                WHERE datname = current_database()
+                """
+            ).fetchone()
+        except Exception as exc:  # noqa: BLE001 - 拿不到就退回旧行为
+            LOGGER.debug("safe_watermark_unavailable: %s", exc)
+            return None
+        return row[0] if row else None
 
     def _merge_incremental_collection(
         self,
@@ -4897,6 +4924,7 @@ class InMemoryRepository:
         live_ids: set[str],
         *,
         tenant_id: str,
+        safe_watermark: Any = None,
     ) -> None:
         """把变化行并进内存列表，并删掉库里已经不存在的记录。
 
@@ -4980,7 +5008,21 @@ class InMemoryRepository:
 
         self.state[state_key] = merged
         apply_default_tenant(self.state.get(state_key), tenant_id=tenant_id)
-        if highest is not None:
+        # 水位线**不能**取 max(updated_at)。
+        #
+        # updated_at 写的是 now()，而 PostgreSQL 的 now() 返回**事务开始时刻**——
+        # 事务提交必然晚于它。取 max 会让水位线越过那些「已开始、尚未提交」的
+        # 事务写的行：它们提交后 updated_at 已在水位线之下，增量永远拉不到。
+        #
+        # 安全水位线取「最老活跃事务的开始时刻」：任何将来提交的事务，其行的
+        # updated_at >= 该事务的 xact_start >= 安全水位线，下次增量必定拉得到。
+        # 代价是长事务会让水位线停在原地、多拉一些已见过的行——那只是浪费带宽，
+        # 而漏行是永久隐身。
+        if safe_watermark is not None:
+            previous = self._collection_watermarks.get((tenant_id, collection_name))
+            if previous is None or safe_watermark > previous:
+                self._collection_watermarks[(tenant_id, collection_name)] = safe_watermark
+        elif highest is not None:
             self._collection_watermarks[(tenant_id, collection_name)] = highest
 
     def load_collections_into_state(

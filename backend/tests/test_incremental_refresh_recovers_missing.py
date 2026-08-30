@@ -60,3 +60,30 @@ def test_reconciliation_is_unconditional_not_gated_on_row_count() -> None:
     before_missing = MERGE.split("missing_ids", 1)[0]
     assert "present.add(object_id)" in before_missing
     assert "for index, item in enumerate(merged):" in before_missing
+
+
+def test_watermark_never_outruns_uncommitted_transactions() -> None:
+    """水位线不能取 max(updated_at)——那会越过未提交事务写的行。
+
+    updated_at 写的是 now()，而 PostgreSQL 的 now() 返回**事务开始时刻**，
+    提交必然晚于它。取 max 会让水位线越过「已开始、尚未提交」的事务写的行：
+    它们提交后 updated_at 已在水位线之下，增量永远拉不到——那才是
+    2026-08-30 测试项目3 里 35 份文档永久隐身的源头。
+
+    安全水位线取「最老活跃事务的开始时刻」：任何将来提交的事务，其行的
+    updated_at >= 该事务的 xact_start >= 安全水位线，下次增量必定拉得到。
+    """
+    assert "_safe_incremental_watermark" in REPO_SRC, "必须有安全水位线的计算"
+    impl = REPO_SRC.split("def _safe_incremental_watermark", 1)[1].split("\n    def ", 1)[0]
+    assert "min(xact_start)" in impl, "安全水位线 = 最老活跃事务的开始时刻"
+    assert "pg_stat_activity" in impl
+    assert "state <> 'idle'" in impl, "空闲连接不算活跃事务，否则水位线永远不前进"
+
+    # 合并时优先用安全水位线，拿不到才退回 max(updated_at)
+    assert "if safe_watermark is not None:" in MERGE
+    assert "elif highest is not None:" in MERGE, "探针失败要退回旧行为，不能让刷新停摆"
+
+
+def test_watermark_advances_monotonically() -> None:
+    """安全水位线只能前进不能后退，否则每次都重拉全部历史。"""
+    assert "if previous is None or safe_watermark > previous:" in MERGE
