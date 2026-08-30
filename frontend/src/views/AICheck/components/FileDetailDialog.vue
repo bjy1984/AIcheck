@@ -24,7 +24,6 @@ import type {
   StandardCanonicalEvidence
 } from '@/api/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
-import { formatConfidence } from '@/utils/confidence'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
 import StandardCanonicalDetail from './StandardCanonicalDetail.vue'
@@ -69,12 +68,44 @@ const ocrReadinessLabel = computed(() => {
     not_started: '待处理',
     queued: '排队中',
     processing: '处理中',
-    ready: '证据就绪',
-    incomplete: '抽取不完整',
+    ready: '已完成',
+    incomplete: '已完成',
     inconsistent: '状态异常',
     failed: '处理失败'
   }
   return labels[String(ocrReadiness.value?.status || '')] || '等待产物校验'
+})
+const ocrReadinessAlert = computed(() => {
+  const readiness = ocrReadiness.value
+  if (!readiness) return undefined
+  const status = String(readiness.status || '')
+  const firstReason = readiness.blockingReasons?.[0]
+  if (status === 'incomplete') {
+    const specificReason = readiness.blockingReasons?.find(
+      (reason) => reason.fieldName || reason.requirementName
+    )
+    if (!specificReason) return undefined
+    const missingName = specificReason.fieldName || specificReason.requirementName
+    return {
+      title: '未识别到必要内容',
+      description:
+        specificReason.message || (missingName ? `未识别到${missingName}。` : '请补充缺失内容。')
+    }
+  }
+  if (!['not_started', 'queued', 'processing', 'inconsistent', 'failed'].includes(status)) {
+    return undefined
+  }
+  const fallbackDescriptions: Record<string, string> = {
+    not_started: '文件尚未开始识别。',
+    queued: '文件已进入识别队列。',
+    processing: '正在识别文件内容。',
+    inconsistent: 'OCR 状态异常，请重新识别。',
+    failed: 'OCR 处理失败，请重新识别。'
+  }
+  return {
+    title: `OCR ${ocrReadinessLabel.value}`,
+    description: firstReason?.message || fallbackDescriptions[status]
+  }
 })
 const bindings = computed(() => props.detail?.bindings || [])
 const extractedFields = computed(() => props.detail?.extractedFields || [])
@@ -263,10 +294,6 @@ onBeforeUnmount(() => {
   revokeOfficeObjectUrl()
 })
 
-const confidenceText = (confidence?: number) => {
-  return formatConfidence(confidence)
-}
-
 /* ---------------- 证据定位（X-1 / X-2） ----------------
  * 监检的核心动作是「看着原文核对字段」。原先字段表在预览下方，两者无法同屏对照；
  * 而后端为可定位性付了完整代价（bbox 必填、bboxCoverage 就绪度指标），前端却没画。
@@ -283,8 +310,6 @@ type LocatableItem = {
   value: string
   pageNo?: number
   bbox?: number[]
-  confidence?: number
-  status?: string
   kind: 'field' | 'evidence'
 }
 
@@ -313,8 +338,6 @@ const locatableItems = computed<LocatableItem[]>(() => [
     bbox: field.evidenceLinkId
       ? bboxByEvidenceId.value.get(String(field.evidenceLinkId))
       : undefined,
-    confidence: field.confidence,
-    status: field.reviewStatus,
     kind: 'field' as const
   })),
   ...evidenceLinks.value.map((link, index) => ({
@@ -323,7 +346,6 @@ const locatableItems = computed<LocatableItem[]>(() => [
     value: String(link.quotedText ?? ''),
     pageNo: link.pageNo,
     bbox: normalizeBbox(link.bbox as number[] | undefined),
-    confidence: link.confidence,
     kind: 'evidence' as const
   }))
 ])
@@ -452,11 +474,6 @@ const fragmentItems = computed(() =>
 )
 const fragmentsExpanded = ref(false)
 
-/** 置信度 0 与「没给置信度」含义完全不同：前者是「判定为不可信」，
- *  后者是「管线没产出这个指标」。显示成 0% 会让监检误以为是前者。 */
-const confidenceDisplay = (confidence?: number) =>
-  typeof confidence === 'number' && confidence > 0 ? confidenceText(confidence) : '未提供置信度'
-
 /** 表格/印章/正文块同样带页码与 bbox，纳入定位池后点一下就能跳到原文那页。 */
 const structuredLocatables = computed<LocatableItem[]>(() => [
   ...ocrTables.value.map((table) => ({
@@ -465,7 +482,6 @@ const structuredLocatables = computed<LocatableItem[]>(() => [
     value: table.columnNames.join(' / '),
     pageNo: table.pageNo,
     bbox: table.bbox || undefined,
-    confidence: table.confidence,
     kind: 'field' as const
   })),
   ...ocrSeals.value.map((seal) => ({
@@ -474,7 +490,6 @@ const structuredLocatables = computed<LocatableItem[]>(() => [
     value: seal.name,
     pageNo: seal.pageNo,
     bbox: seal.bbox || undefined,
-    confidence: seal.confidence,
     kind: 'evidence' as const
   })),
   ...ocrBlocks.value.map((block) => ({
@@ -486,42 +501,6 @@ const structuredLocatables = computed<LocatableItem[]>(() => [
     kind: 'field' as const
   }))
 ])
-
-/* 置信度与复核状态合成一条陈述。
- *
- * 之前卡片并排显示「未提供置信度」和「低置信度」——自相矛盾：没有数值，
- * 凭什么判低？查库发现 reviewStatus='低置信度' 的 189 条里有 97 条压根没有
- * 置信度数值。这两件事对监检的处置完全不同：
- *   有数值且偏低 —— 引擎认出来了但不太确定，核对字面值即可；
- *   根本没数值   —— 管线没产出这个指标，可信度未知，得回原文重核。
- * 合并成一句话说清楚，比并排两个矛盾标签强。 */
-const LOW_CONFIDENCE_STATUS = '低置信度'
-/* 后端现在会区分二者：引擎给了低分是「低置信度」，引擎压根不报分数是
- * 「置信度未知」（MinerU 的 VLM 通道逐片不给分）。这里两者同属一族，
- * 都要走下面这套合成陈述，否则「置信度未知」会既进复核状态标签、
- * 又在旁边显示「未提供置信度」——又变回两个标签说同一件事。 */
-const UNKNOWN_CONFIDENCE_STATUS = '置信度未知'
-const CONFIDENCE_FLAG_STATUSES = [LOW_CONFIDENCE_STATUS, UNKNOWN_CONFIDENCE_STATUS]
-
-const confidenceSummary = (item: LocatableItem) => {
-  const hasValue = typeof item.confidence === 'number' && item.confidence > 0
-  const isLow = item.status === LOW_CONFIDENCE_STATUS
-  if (hasValue)
-    return isLow ? `低置信度 ${confidenceText(item.confidence)}` : confidenceText(item.confidence)
-  if (isLow || item.status === UNKNOWN_CONFIDENCE_STATUS) return '置信度未知 · 需回原文核对'
-  return '未提供置信度'
-}
-
-/** 置信度未知比「低」更需要提醒——低还有个数，未知是完全不知道。 */
-const confidenceTone = (item: LocatableItem) => {
-  const hasValue = typeof item.confidence === 'number' && item.confidence > 0
-  if (!CONFIDENCE_FLAG_STATUSES.includes(String(item.status))) return ''
-  return hasValue && item.status === LOW_CONFIDENCE_STATUS ? 'is-low' : 'is-unknown'
-}
-
-/** 复核状态标签：低置信度已并入置信度那句，不再重复。 */
-const reviewStatusLabel = (item: LocatableItem) =>
-  item.status && !CONFIDENCE_FLAG_STATUSES.includes(String(item.status)) ? item.status : ''
 
 const activeLocatable = computed(() => {
   if (canonicalLocatable.value?.key === activeLocateKey.value) return canonicalLocatable.value
@@ -582,7 +561,6 @@ const handleCanonicalLocate = (evidence: StandardCanonicalEvidence) => {
     value: String(evidence.quotedText ?? evidence.value ?? ''),
     pageNo: evidence.pageNo,
     bbox: normalizeBbox(evidence.bbox || undefined),
-    confidence: evidence.confidence,
     kind: 'evidence'
   }
   activeLocateKey.value = key
@@ -761,12 +739,9 @@ watch(
             />
             <template v-else>
               <ElAlert
-                v-if="ocrReadiness && ocrReadiness.status !== 'ready'"
-                :title="`OCR ${ocrReadinessLabel}`"
-                :description="
-                  ocrReadiness.blockingReasons?.[0]?.message ||
-                  '当前文件暂不能作为可定位的正式证据。'
-                "
+                v-if="ocrReadinessAlert"
+                :title="ocrReadinessAlert.title"
+                :description="ocrReadinessAlert.description"
                 type="warning"
                 :closable="false"
                 show-icon
@@ -813,11 +788,6 @@ watch(
                           <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
                           <div class="locate-meta">
                             <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
-                            <span :class="confidenceTone(item)">{{ confidenceSummary(item) }}</span>
-                            <span v-if="reviewStatusLabel(item)">{{
-                              reviewStatusLabel(item)
-                            }}</span>
-                            <span v-if="item.bbox" class="locate-badge">可定位</span>
                           </div>
                         </button>
                       </li>
@@ -927,9 +897,6 @@ watch(
                               <span v-if="evidenceLevelLabel(seal.evidenceLevel)">
                                 {{ evidenceLevelLabel(seal.evidenceLevel) }}
                               </span>
-                              <span v-if="seal.confidence">{{
-                                confidenceDisplay(seal.confidence)
-                              }}</span>
                               <span v-if="seal.canSatisfyRequired" class="ocr-seal-ok">
                                 可满足必盖章要求
                               </span>
@@ -1040,7 +1007,6 @@ watch(
                             <div class="locate-value">{{ item.value || '（未识别到内容）' }}</div>
                             <div class="locate-meta">
                               <span v-if="item.pageNo">第 {{ item.pageNo }} 页</span>
-                              <span v-if="item.bbox" class="locate-badge">可定位</span>
                             </div>
                           </button>
                         </li>
@@ -1062,25 +1028,33 @@ watch(
                     </ElDescriptionsItem>
                     <ElDescriptionsItem label="OCR 状态">
                       <ElTag
-                        :type="ocrReadiness?.status === 'ready' ? 'success' : 'warning'"
+                        :type="
+                          ['ready', 'incomplete'].includes(String(ocrReadiness?.status || ''))
+                            ? 'success'
+                            : 'warning'
+                        "
                         size="small"
                       >
                         {{ ocrReadinessLabel }}
                       </ElTag>
                     </ElDescriptionsItem>
-                    <ElDescriptionsItem label="OCR 产物">
-                      {{ ocrReadiness?.fieldCount || 0 }} 字段 ·
-                      {{ ocrReadiness?.fragmentCount || 0 }} 片段 · bbox
-                      {{ Math.round((ocrReadiness?.bboxCoverage || 0) * 100) }}%
-                    </ElDescriptionsItem>
                     <ElDescriptionsItem label="当前版本">
                       {{ currentVersion?.versionNo || '-' }}
                     </ElDescriptionsItem>
-                    <ElDescriptionsItem label="文件大小">{{ fileSizeText }}</ElDescriptionsItem>
-                    <ElDescriptionsItem label="绑定节点">{{ bindings.length }}</ElDescriptionsItem>
-                    <ElDescriptionsItem label="Parse Result">
-                      {{ ocrReadiness?.parseResultId || '-' }}
+                    <ElDescriptionsItem label="文件类型">
+                      {{ document.fileType || '-' }}
                     </ElDescriptionsItem>
+                    <ElDescriptionsItem label="文件大小">{{ fileSizeText }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="上传人">
+                      {{ currentVersion?.uploaderName || document.uploaderName || '-' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="上传时间">
+                      {{ currentVersion?.uploadTime || document.updatedAt || '-' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="来源单位">
+                      {{ document.sourceOrgName || '-' }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="绑定节点">{{ bindings.length }}</ElDescriptionsItem>
                   </ElDescriptions>
                 </ElTabPane>
 
@@ -1577,15 +1551,6 @@ watch(
   border-color: #d97706;
 }
 
-/* 置信度未知比「低」更该刺眼：低还有个数，未知是完全不知道 */
-.locate-meta .is-low {
-  color: #d97706;
-}
-
-.locate-meta .is-unknown {
-  color: #dc2626;
-}
-
 .ocr-seal-head {
   display: flex;
   gap: 6px;
@@ -1748,13 +1713,6 @@ watch(
   color: #64748b;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.locate-badge {
-  padding: 0 6px;
-  color: #b45309;
-  background: #fef3c7;
-  border-radius: 4px;
 }
 
 /* 定位提示条：说清这次定位到了哪里、能不能画框 */
