@@ -190,6 +190,7 @@ from libs.knowledge_indexing import (
     reject_if_dedicated_ingestion,
 )
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
+from libs.workspace_paths import resolve_workspace_root
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
 from libs.material_targeting import (
     build_node_evidence_readiness,
@@ -349,30 +350,7 @@ _UPLOAD_SESSION_SERVICES = _DOCUMENT_ACCESS_SERVICES
 
 router = APIRouter(tags=["AIcheck API"])
 mock_router = APIRouter(tags=["Compatibility Mock"])
-def resolve_workspace_root() -> Path:
-    """本地上传文件（local:// 存储键）的根目录。
-
-    原实现是 Path(__file__).parents[3]，靠目录层数倒推——本地开发下
-    backend/apps/api/routes.py 往上三层正好是仓库根，output/ 在其下；
-    但容器里代码在 /app/apps/api/routes.py，往上三层是 **/**，而文件在
-    /app/output/。少一层目录，66 个线上文件的路径就全部解析失败：
-    local_storage_path() 返回 /output/... 这个不存在的路径，于是
-    project_document_local_original_path() 一律返回 None，预览地址退回内部
-    local:// 串下发给浏览器——浏览器当然取不到。
-
-    改为显式判据：优先环境变量，其次「哪一层真的有 output/」，最后才回落。
-    """
-    override = os.getenv("AICHECK_WORKSPACE_ROOT", "").strip()
-    if override:
-        return Path(override).resolve()
-    here = Path(__file__).resolve()
-    for candidate in here.parents:
-        if (candidate / "output").is_dir():
-            return candidate
-    return here.parents[3]
-
-
-WORKSPACE_ROOT = resolve_workspace_root()
+WORKSPACE_ROOT = resolve_workspace_root(Path(__file__))
 RULES_STANDARDS_ROOT = WORKSPACE_ROOT / "rules" / "standards"
 RULES_BUSINESS_RULES_PATH = WORKSPACE_ROOT / "rules" / "业务规则.md"
 STANDARD_LIBRARY_SOURCE_NAME = "标准规范库（业务规则引用标准）"

@@ -31,6 +31,7 @@ from libs.auto_review import (
 )
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
+from libs.workspace_paths import resolve_workspace_root
 from libs.db.repository import (
     STATE_COLLECTIONS,
     ensure_collections_loaded,
@@ -166,7 +167,10 @@ from libs.security.tenant import (
     set_request_tenant_id,
 )
 
-WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+# 不能用 parents[3] 倒推：容器里代码在 /app/apps/worker/，往上三层是 /，
+# 而文件在 /app/output/——13 份实际存在的资料因此被判成「源文件已丢失」
+# （2026-08-29 审计）。routes.py 早就修过同款 bug，这里漏了。判据只留一份实现。
+WORKSPACE_ROOT = resolve_workspace_root(Path(__file__))
 
 
 def ocr_result_state_records(document_id: str, version_id: str) -> dict[str, list[dict[str, Any]]]:
