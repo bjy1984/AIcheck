@@ -211,6 +211,45 @@ def dispatch_document_ai_shadow(run_id: str) -> dict[str, Any]:
     }
 
 
+def dispatch_document_classification(
+    project_id: str,
+    document_id: str,
+    document_version_id: str,
+) -> dict[str, Any]:
+    mode = dispatch_mode()
+    if mode == "inline":
+        return {
+            "mode": mode,
+            "taskId": None,
+            "statusReason": "document_classification_requires_async_dispatch",
+        }
+    if mode == "celery":
+        from apps.worker.tasks import classify_document_material
+
+        tenant_id = current_tenant_id()
+        result = classify_document_material.apply_async(
+            args=[project_id, document_id, document_version_id, tenant_id],
+            queue="llm.remote",
+            priority=broker_priority(9),
+            task_id=deterministic_task_id(
+                "document-classification",
+                f"{tenant_id}:{document_version_id}",
+            ),
+        )
+        return {
+            "mode": mode,
+            "taskId": result.id,
+            "queue": "llm.remote",
+            "priority": 9,
+            "statusReason": "document_classification_queued",
+        }
+    return {
+        "mode": mode,
+        "taskId": None,
+        "statusReason": "document_classification_requires_task_dispatch",
+    }
+
+
 def dispatch_ocr_pipeline_official(run_id: str) -> dict[str, Any]:
     return _dispatch_ocr_pipeline_stage(
         run_id,

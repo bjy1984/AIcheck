@@ -12,6 +12,7 @@ providers:
       default: default-chat
       compareFast: compare-fast
       visionReview: qwen-vision-review
+      documentClassifier: document-classifier
 
   official_api:
     baseUrlEnv: QWEN_API_BASE
@@ -23,6 +24,7 @@ providers:
       default: qwen3.7-plus
       compareFast: qwen3.6-flash
       visionReview: qwen3.7-plus
+      documentClassifier: qwen3.8-max
       coder: qwen3-coder-plus
       embeddingOptional: text-embedding-v4
 

@@ -81,6 +81,7 @@ def test_repository_runtime_maps_audit_and_vision_to_qwen37_plus() -> None:
     assert config["models"]["review"] == "qwen3.7-plus"
     assert config["models"]["default"] == "qwen3.7-plus"
     assert config["models"]["visionReview"] == "qwen3.7-plus"
+    assert config["models"]["documentClassifier"] == "qwen3.8-max"
 
 
 def test_qwen_runtime_server_mode_uses_existing_aliases(tmp_path) -> None:

@@ -26,6 +26,7 @@ MODEL_ROLE_ALIASES = {
     "default-chat": "default",
     "compare-fast": "compareFast",
     "qwen-vision-review": "visionReview",
+    "document-classifier": "documentClassifier",
 }
 
 
@@ -41,6 +42,7 @@ MODEL_ROLE_ENV = {
     "default": "AICHECK_LLM_MODEL_DEFAULT",
     "compareFast": "AICHECK_LLM_MODEL_COMPARE_FAST",
     "visionReview": "AICHECK_LLM_MODEL_VISION",
+    "documentClassifier": "AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER",
     "coder": "AICHECK_LLM_MODEL_CODER",
     "embeddingOptional": "AICHECK_LLM_MODEL_EMBEDDING",
 }

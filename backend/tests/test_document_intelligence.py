@@ -78,6 +78,108 @@ def test_post_ocr_classification_updates_document_and_knowledge_file() -> None:
     assert knowledge_file["classificationStatus"] == "classified"
 
 
+def test_llm_classification_override_skips_rule_classifier_and_targets_once(monkeypatch) -> None:
+    from libs import document_intelligence
+
+    repository = InMemoryRepository()
+    document, version = repository.create_document(
+        PROJECT_ID,
+        "扫描件001.pdf",
+        "application/pdf",
+    )
+    _apply_ocr(
+        repository,
+        document=document,
+        version=version,
+        text="特种设备设计许可证 许可项目 压力管道设计",
+    )
+
+    def unexpected_rule_classifier(**_kwargs):
+        raise AssertionError("LLM 分类成功后不应再次执行规则分类")
+
+    targeting_calls: list[dict] = []
+
+    def record_targeting(*_args, **kwargs):
+        targeting_calls.append(kwargs)
+        return {
+            "id": "MTR-LLM-1",
+            "status": "completed",
+            "createdLinks": [],
+            "createdLinkCount": 0,
+            "createdBindingCount": 0,
+        }
+
+    monkeypatch.setattr(document_intelligence, "classify_material", unexpected_rule_classifier)
+    monkeypatch.setattr(document_intelligence, "run_material_targeting", record_targeting)
+    llm_classification = {
+        "materialCategory": "资质证照",
+        "materialTypeCode": "design_license",
+        "materialTypeName": "设计单位许可证",
+        "classificationStatus": "classified",
+        "classificationConfidence": 0.97,
+        "classificationSource": "llm_classifier",
+        "classificationReasons": ["OCR 原文包含设计许可项目"],
+        "classifierVersion": "llm-material-classifier-v1",
+    }
+
+    result = document_intelligence.process_document_classification_and_targeting(
+        repository,
+        PROJECT_ID,
+        document["id"],
+        version["id"],
+        triggered_by="llm_classifier",
+        classification_override=llm_classification,
+    )
+
+    knowledge_file = repository.knowledge_file_for_version(version["id"])
+    assert result["classification"] == llm_classification
+    assert document["materialTypeCode"] == "design_license"
+    assert document["classificationSource"] == "llm_classifier"
+    assert knowledge_file is not None
+    assert knowledge_file["materialTypeCode"] == "design_license"
+    assert len(targeting_calls) == 1
+
+
+def test_classification_text_excludes_ocr_metadata_and_identifiers() -> None:
+    from libs.document_intelligence import classification_text
+
+    text = classification_text(
+        {
+            "fragments": [
+                {
+                    "candidateId": "MINERU-CAND-SECRET",
+                    "sourceCandidateIds": ["MINERU-CAND-SECRET"],
+                    "pageNo": 1,
+                    "confidence": 0.96,
+                    "sourceEngine": "mineru_vlm",
+                    "sourceMethod": "pymupdf_text_layer_block",
+                    "ocrEngine": "pymupdf_text_layer",
+                    "candidateType": "text_line",
+                    "status": "success",
+                    "coordinateSystem": "rendered_pixels",
+                    "text": "特种设备设计许可证",
+                }
+            ],
+            "fields": [],
+            "tables": [
+                {
+                    "rows": [
+                        {
+                            "text": "表格中的许可范围",
+                            "status": "success",
+                            "sourceMethod": "pymupdf_text_layer_block",
+                            "ocrEngine": "pymupdf",
+                        }
+                    ]
+                }
+            ],
+            "seals": [],
+        }
+    )
+
+    assert text == "特种设备设计许可证 表格中的许可范围"
+
+
 def test_zero_signal_persists_uniform_unclassified_result() -> None:
     from libs.document_intelligence import process_document_classification_and_targeting
 

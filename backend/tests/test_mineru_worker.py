@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
-
-import json
 
 import pytest
 
@@ -921,7 +920,13 @@ def test_mineru_success_dispatches_slice(
     所以这里断言的不是「函数被调用过」，而是**这条链是通的**。
     """
     repository = InMemoryRepository()
-    repository.state["documents"].append({"id": "DOC-MINERU-SLICE"})
+    repository.state["documents"].append(
+        {
+            "id": "DOC-MINERU-SLICE",
+            "projectId": "P-2026-HDCP-001",
+            "currentVersionId": "VER-MINERU-SLICE",
+        }
+    )
     repository.state["versions"].append(
         {"id": "VER-MINERU-SLICE", "documentId": "DOC-MINERU-SLICE"}
     )
@@ -1005,6 +1010,18 @@ def test_mineru_success_dispatches_slice(
         )
         or {"mode": "celery", "taskId": "T-1"},
     )
+    classification_queues: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        tasks,
+        "queue_document_classification_after_ocr",
+        lambda project_id, document_id, version_id: classification_queues.append(
+            (project_id, document_id, version_id)
+        )
+        or {
+            "status": "classification_queued",
+            "targeting": {"status": "awaiting_llm_classification"},
+        },
+    )
 
     output = tasks.mineru_ocr_extract.run(job["id"])
 
@@ -1015,6 +1032,9 @@ def test_mineru_success_dispatches_slice(
         "读到 0 片段当成「没有文字」，报审永久卡住"
     )
     assert output["nextDispatch"]["taskId"] == "T-1"
+    assert classification_queues == [
+        ("P-2026-HDCP-001", "DOC-MINERU-SLICE", "VER-MINERU-SLICE")
+    ]
 
 
 def test_slice_dispatch_failure_does_not_fail_the_ocr_job(

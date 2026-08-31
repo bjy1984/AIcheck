@@ -31,7 +31,6 @@ from libs.auto_review import (
 )
 from libs.business_pack import build_ai_review_prompt, load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
-from libs.workspace_paths import resolve_workspace_root
 from libs.db.repository import (
     STATE_COLLECTIONS,
     ensure_collections_loaded,
@@ -63,7 +62,10 @@ from libs.document_audit_pipeline_comparison import (
     persist_pipeline_comparison_run,
     schedule_pipeline_comparison,
 )
-from libs.document_intelligence import process_document_classification_and_targeting
+from libs.document_intelligence import (
+    classification_text,
+    process_document_classification_and_targeting,
+)
 from libs.integrations import task_dispatcher
 from libs.integrations.document_ai_client import DocumentAiClient
 from libs.integrations.embedding_client import EmbeddingClient
@@ -85,6 +87,8 @@ from libs.knowledge_indexing import (
     structure_fields_for_unit,
     units_from_local_file,
 )
+from libs.llm_document_classification import classify_document_text
+from libs.material_targeting import latest_parse_result
 from libs.mineru_ocr import (
     MinerUNormalizationError,
     MinerUNormalizedBundle,
@@ -166,6 +170,7 @@ from libs.security.tenant import (
     reset_request_tenant_id,
     set_request_tenant_id,
 )
+from libs.workspace_paths import resolve_workspace_root
 
 # 不能用 parents[3] 倒推：容器里代码在 /app/apps/worker/，往上三层是 /，
 # 而文件在 /app/output/——13 份实际存在的资料因此被判成「源文件已丢失」
@@ -358,6 +363,353 @@ def schedule_document_ai_shadow(
 
 def qwen_runtime_client() -> QwenRuntimeClient:
     return build_qwen_runtime_client(LiteLLMClient)
+
+
+def _classification_attempt(
+    *,
+    document_id: str,
+    document_version_id: str,
+) -> dict[str, Any]:
+    now = server_time()
+    attempt = {
+        "id": f"MCALL-{uuid4().hex[:12].upper()}",
+        "tenantId": current_tenant_id(),
+        "documentId": document_id,
+        "documentVersionId": document_version_id,
+        "stage": "document_classification",
+        "callKind": "document_material_classification",
+        "provider": "qwen_runtime",
+        "model": "document-classifier",
+        "status": "running",
+        "createdAt": now,
+        "startedAt": now,
+        "updatedAt": now,
+    }
+    repo.state.setdefault("model_call_attempts", []).insert(0, attempt)
+    return attempt
+
+
+def _classification_records(
+    document_id: str,
+    document_version_id: str,
+    attempt: dict[str, Any] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    records = ocr_result_state_records(document_id, document_version_id)
+    if attempt is not None:
+        records["model_call_attempts"] = [attempt]
+    return records
+
+
+def _set_classification_operation_state(
+    document_id: str,
+    document_version_id: str,
+    status: str,
+) -> None:
+    now = server_time()
+    document = repo.find_one("documents", document_id)
+    knowledge_file = repo.knowledge_file_for_version(document_version_id)
+    for record in (document, knowledge_file):
+        if record is None:
+            continue
+        record["classificationOperationVersionId"] = document_version_id
+        record["classificationOperationStatus"] = status
+        record["updatedAt"] = now
+
+
+def _completed_classification_result(
+    document: dict[str, Any],
+    document_version_id: str,
+) -> dict[str, Any]:
+    targeting = next(
+        (
+            item
+            for item in repo.state.get("material_targeting_runs", [])
+            if str(item.get("documentId") or "") == str(document.get("id") or "")
+            and str(item.get("documentVersionId") or "") == str(document_version_id)
+        ),
+        {"status": "completed", "createdLinkCount": 0, "createdBindingCount": 0},
+    )
+    return {
+        "status": "completed",
+        "documentId": document.get("id"),
+        "documentVersionId": document_version_id,
+        "classification": repo.clone(document.get("autoClassification") or {}),
+        "targeting": repo.clone(targeting),
+        "alreadyCompleted": True,
+    }
+
+
+def _retry_persistence_or_raise(self: Any, exc: Exception) -> None:
+    retry_index = int(getattr(self.request, "retries", 0) or 0)
+    called_directly = bool(getattr(self.request, "called_directly", False))
+    if not called_directly and retry_index < 4:
+        countdowns = (10, 30, 60, 120)
+        raise self.retry(
+            exc=exc,
+            countdown=countdowns[retry_index],
+            max_retries=4,
+        )
+    raise exc
+
+
+def _execute_document_material_classification(
+    self,
+    project_id: str,
+    document_id: str,
+    document_version_id: str,
+) -> dict[str, Any]:
+    refresh_ocr_worker_state(document_id, document_version_id)
+    document = repo.find_one("documents", document_id)
+    if not document or str(document.get("projectId") or "") != str(project_id):
+        return {"status": "missing_document", "documentId": document_id}
+    if str(document.get("currentVersionId") or "") != str(document_version_id):
+        return {
+            "status": "stale_version",
+            "documentId": document_id,
+            "documentVersionId": document_version_id,
+        }
+    if (
+        str(document.get("classificationOperationVersionId") or "") == str(document_version_id)
+        and str(document.get("classificationOperationStatus") or "") == "completed"
+    ):
+        result = _completed_classification_result(document, document_version_id)
+        try:
+            flush_state_records(_classification_records(document_id, document_version_id))
+        except Exception as exc:  # noqa: BLE001 - uncertain prior commit is retried without rerunning the model.
+            _retry_persistence_or_raise(self, exc)
+        return result
+    parse_result = latest_parse_result(repo, document_version_id)
+    if not parse_result:
+        return {
+            "status": "awaiting_ocr",
+            "documentId": document_id,
+            "documentVersionId": document_version_id,
+        }
+
+    attempt = _classification_attempt(
+        document_id=document_id,
+        document_version_id=document_version_id,
+    )
+    started = time.monotonic()
+    try:
+        classification, audit = classify_document_text(
+            qwen_runtime_client(),
+            classification_text(parse_result),
+        )
+    except Exception as exc:  # noqa: BLE001 - retry/fallback boundary must catch provider and validation failures.
+        attempt.update(
+            {
+                "status": "failed",
+                "failureReason": getattr(exc, "code", None) or exc.__class__.__name__,
+                "elapsedMs": round((time.monotonic() - started) * 1000),
+                "finishedAt": server_time(),
+                "updatedAt": server_time(),
+            }
+        )
+        try:
+            flush_state_records(
+                _classification_records(document_id, document_version_id, attempt)
+            )
+        except Exception as persistence_exc:  # noqa: BLE001 - preserve retry semantics when audit persistence fails.
+            retry_index = int(getattr(self.request, "retries", 0) or 0)
+            if not bool(getattr(self.request, "called_directly", False)) and retry_index < 2:
+                raise self.retry(exc=persistence_exc, countdown=(10, 30)[retry_index])
+        retry_index = int(getattr(self.request, "retries", 0) or 0)
+        called_directly = bool(getattr(self.request, "called_directly", False))
+        if not called_directly and retry_index < 2:
+            raise self.retry(exc=exc, countdown=(10, 30)[retry_index])
+        refresh_ocr_worker_state(document_id, document_version_id)
+        fallback = process_document_classification_and_targeting(
+            repo,
+            project_id,
+            document_id,
+            document_version_id,
+            triggered_by="llm_classifier_fallback",
+        )
+        fallback["classificationFallback"] = {
+            "used": True,
+            "reason": attempt["failureReason"],
+        }
+        if fallback.get("status") == "completed":
+            _set_classification_operation_state(document_id, document_version_id, "completed")
+        try:
+            flush_state_records(
+                _classification_records(document_id, document_version_id, attempt)
+            )
+        except Exception as persistence_exc:  # noqa: BLE001 - retry commit without rerunning targeting in this worker.
+            _retry_persistence_or_raise(self, persistence_exc)
+        return fallback
+
+    # The model call is remote and may take long enough for a replacement
+    # version to become current. Refresh before applying the late result;
+    # process_document_classification_and_targeting performs the final guard.
+    refresh_ocr_worker_state(document_id, document_version_id)
+    result = process_document_classification_and_targeting(
+        repo,
+        project_id,
+        document_id,
+        document_version_id,
+        triggered_by="llm_classifier",
+        classification_override=classification,
+    )
+    attempt.update(
+        {
+            "status": "success",
+            "provider": audit.get("provider") or attempt["provider"],
+            "model": audit.get("model") or attempt["model"],
+            "providerRequestId": audit.get("providerRequestId"),
+            "usage": deepcopy(audit.get("usage") or {}),
+            "rawResponse": deepcopy(audit.get("rawResponse") or {}),
+            "elapsedMs": round((time.monotonic() - started) * 1000),
+            "finishedAt": server_time(),
+            "updatedAt": server_time(),
+        }
+    )
+    if result.get("status") == "completed":
+        _set_classification_operation_state(document_id, document_version_id, "completed")
+    try:
+        flush_state_records(
+            _classification_records(document_id, document_version_id, attempt)
+        )
+    except Exception as persistence_exc:  # noqa: BLE001 - retry commit without rerunning targeting in this worker.
+        _retry_persistence_or_raise(self, persistence_exc)
+    return result
+
+
+@celery_app.task(bind=True, max_retries=4)
+@pipeline_task_lock(
+    "document-classification",
+    lambda _self, _project_id, _document_id, document_version_id, tenant_id=None: (
+        f"{tenant_id or current_tenant_id()}:{document_version_id}"
+    ),
+)
+def classify_document_material(
+    self,
+    project_id: str,
+    document_id: str,
+    document_version_id: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    tenant_token = set_request_tenant_id(tenant_id or current_tenant_id())
+    try:
+        return _execute_document_material_classification(
+            self,
+            project_id,
+            document_id,
+            document_version_id,
+        )
+    finally:
+        reset_request_tenant_id(tenant_token)
+
+
+def queue_document_classification_after_ocr(
+    project_id: str,
+    document_id: str,
+    document_version_id: str,
+) -> dict[str, Any]:
+    document = repo.find_one("documents", document_id)
+    if document and (
+        str(document.get("classificationOperationVersionId") or "") == str(document_version_id)
+        and str(document.get("classificationOperationStatus") or "") == "completed"
+    ):
+        return _completed_classification_result(document, document_version_id)
+    knowledge_file = repo.knowledge_file_for_version(document_version_id)
+    now = server_time()
+    for record in (document, knowledge_file):
+        if record is None:
+            continue
+        record["classificationStatus"] = "queued"
+        record["classificationSource"] = "llm_classifier_pending"
+        record["updatedAt"] = now
+    _set_classification_operation_state(document_id, document_version_id, "queued")
+    try:
+        flush_state_records(
+            _classification_records(document_id, document_version_id)
+        )
+    except Exception as exc:  # noqa: BLE001 - classification persistence must never block OCR or slicing.
+        return {
+            "status": "classification_deferred",
+            "documentId": document_id,
+            "documentVersionId": document_version_id,
+            "reason": f"classification_state_persistence_{exc.__class__.__name__.lower()}",
+            "targeting": {
+                "status": "awaiting_classification_retry",
+                "createdLinkCount": 0,
+                "createdBindingCount": 0,
+            },
+        }
+    try:
+        dispatch = task_dispatcher.dispatch_document_classification(
+            project_id,
+            document_id,
+            document_version_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - dispatch failure must not prevent deterministic fallback.
+        dispatch = {
+            "mode": task_dispatcher.dispatch_mode(),
+            "taskId": None,
+            "statusReason": f"document_classification_dispatch_{exc.__class__.__name__.lower()}",
+        }
+    if dispatch.get("taskId"):
+        return {
+            "status": "classification_queued",
+            "documentId": document_id,
+            "documentVersionId": document_version_id,
+            "classificationDispatch": dispatch,
+            "targeting": {
+                "status": "awaiting_llm_classification",
+                "createdLinkCount": 0,
+                "createdBindingCount": 0,
+            },
+        }
+    if dispatch.get("mode") == "inline" and isinstance(dispatch.get("result"), dict):
+        return dispatch["result"]
+    fallback = process_document_classification_and_targeting(
+        repo,
+        project_id,
+        document_id,
+        document_version_id,
+        triggered_by="llm_dispatch_fallback",
+    )
+    fallback["classificationDispatch"] = dispatch
+    if fallback.get("status") == "completed":
+        _set_classification_operation_state(document_id, document_version_id, "completed")
+    try:
+        flush_state_records(
+            _classification_records(document_id, document_version_id)
+        )
+    except Exception as exc:  # noqa: BLE001 - fallback persistence must not roll back successful OCR.
+        fallback["status"] = "classification_deferred"
+        fallback["classificationPersistence"] = {
+            "status": "failed",
+            "reason": exc.__class__.__name__,
+        }
+    return fallback
+
+
+def safe_queue_document_classification_after_ocr(
+    project_id: str,
+    document_id: str,
+    document_version_id: str,
+) -> dict[str, Any]:
+    try:
+        return queue_document_classification_after_ocr(
+            project_id,
+            document_id,
+            document_version_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - classification must never roll back successful OCR or block slicing.
+        return {
+            "status": "classification_deferred",
+            "documentId": document_id,
+            "documentVersionId": document_version_id,
+            "reason": f"classification_boundary_{exc.__class__.__name__.lower()}",
+            "targeting": {
+                "status": "awaiting_classification_retry",
+                "createdLinkCount": 0,
+                "createdBindingCount": 0,
+            },
+        }
 
 
 def compare_document_version_ids(run: dict[str, Any]) -> set[str]:
@@ -820,17 +1172,6 @@ def pipeline_apply_result(
     previous_record_ids: dict[str, set[str]],
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     applied = repo.apply_ocr_result(document_id, version_id, result)
-    document_intelligence = None
-    if applied.get("status") == "success":
-        document = repo.find_one("documents", document_id)
-        if document and document.get("projectId"):
-            document_intelligence = process_document_classification_and_targeting(
-                repo,
-                str(document["projectId"]),
-                document_id,
-                version_id,
-                triggered_by="ocr_accuracy_pipeline",
-            )
     current_records = ocr_result_state_records(document_id, version_id)
     current_record_ids = state_record_ids(current_records)
     deleted_record_ids = {
@@ -839,6 +1180,15 @@ def pipeline_apply_result(
         if object_ids - current_record_ids.get(state_key, set())
     }
     sync_state_records(current_records, deleted_record_ids)
+    document_intelligence = None
+    if applied.get("status") == "success":
+        document = repo.find_one("documents", document_id)
+        if document and document.get("projectId"):
+            document_intelligence = safe_queue_document_classification_after_ocr(
+                str(document["projectId"]),
+                document_id,
+                version_id,
+            )
     return applied, document_intelligence
 
 
@@ -1569,17 +1919,15 @@ def _execute_mineru_ocr_extract(
             and str(bound_version.get("documentId") or "") == document_id
         ):
             applied = repo.apply_ocr_result(document_id, version_id, result)
-            if applied.get("status") == "success" and bound_document.get("projectId"):
-                document_intelligence = process_document_classification_and_targeting(
-                    repo,
-                    str(bound_document["projectId"]),
-                    document_id,
-                    version_id,
-                    triggered_by="mineru_ocr",
-                )
             flush_state_records(
                 ocr_result_state_records(document_id, version_id)
             )
+            if applied.get("status") == "success" and bound_document.get("projectId"):
+                document_intelligence = safe_queue_document_classification_after_ocr(
+                    str(bound_document["projectId"]),
+                    document_id,
+                    version_id,
+                )
         else:
             flush_state_records(
                 {

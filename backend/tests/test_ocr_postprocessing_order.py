@@ -60,3 +60,64 @@ def test_shared_ocr_apply_classifies_before_downstream_processing(monkeypatch) -
     assert document["materialTypeCode"] == "design_license"
     assert knowledge_file is not None
     assert knowledge_file["materialTypeCode"] == "design_license"
+
+
+def test_shared_ocr_apply_queues_llm_classification_instead_of_rule_targeting(monkeypatch) -> None:
+    repository = InMemoryRepository()
+    document, version = repository.create_document(
+        PROJECT_ID,
+        "扫描件-shared-llm.pdf",
+        "application/pdf",
+    )
+    result = {
+        "parseResultId": "PARSE-SHARED-LLM",
+        "status": "success",
+        "outcomeStatus": "completed",
+        "fileName": document["fileName"],
+        "fragments": [
+            {
+                "pageNo": 1,
+                "text": "特种设备设计许可证 许可项目 压力管道设计",
+                "bbox": [10, 10, 500, 80],
+                "confidence": 0.96,
+            }
+        ],
+        "fields": [],
+        "tables": [],
+        "seals": [],
+        "quality": {"status": "usable", "blockingReasons": []},
+    }
+    job = repository.create_ocr_job_record(
+        document_id=document["id"],
+        version_id=version["id"],
+        storage_key=version["storageKey"],
+        file_name=document["fileName"],
+    )
+    repository.finish_ocr_job_record(job, result)
+    monkeypatch.setattr(tasks, "repo", repository)
+    monkeypatch.setattr(tasks, "sync_state_records", lambda *_args, **_kwargs: None)
+    queued: list[tuple[str, str, str]] = []
+
+    def record_queue(project_id: str, document_id: str, document_version_id: str) -> dict:
+        queued.append((project_id, document_id, document_version_id))
+        return {
+            "status": "classification_queued",
+            "targeting": {"status": "awaiting_llm_classification"},
+        }
+
+    monkeypatch.setattr(tasks, "queue_document_classification_after_ocr", record_queue)
+    previous_ids = tasks.state_record_ids(
+        tasks.ocr_result_state_records(document["id"], version["id"])
+    )
+
+    applied, intelligence = tasks.pipeline_apply_result(
+        document["id"],
+        version["id"],
+        result,
+        previous_ids,
+    )
+
+    assert applied["status"] == "success"
+    assert intelligence["status"] == "classification_queued"
+    assert queued == [(PROJECT_ID, document["id"], version["id"])]
+    assert repository.state["material_targeting_runs"] == []

@@ -12,7 +12,6 @@ from libs.material_auto_classify import (
 from libs.material_targeting import latest_parse_result, run_material_targeting
 from libs.security.tenant import tenant_id_for_record
 
-
 CLASSIFICATION_FIELDS = (
     "materialCategory",
     "materialTypeCode",
@@ -26,31 +25,56 @@ CLASSIFICATION_FIELDS = (
 )
 
 
-def _classification_text(parse_result: dict[str, Any] | None, *, limit: int = 120_000) -> str:
+def classification_text(parse_result: dict[str, Any] | None, *, limit: int = 120_000) -> str:
     parts: list[str] = []
     total = 0
+    text_keys = {
+        "caption",
+        "content",
+        "fieldname",
+        "fieldvalue",
+        "label",
+        "markdown",
+        "rawtext",
+        "recognizedtext",
+        "sealtext",
+        "text",
+        "title",
+        "value",
+    }
+    content_containers = {"body", "cells", "columns", "data", "headers", "items", "records", "rows"}
+    skipped_keys = {"bbox", "polygon", "metadata", "diagnostics", "engineruns"}
 
-    def visit(value: Any) -> None:
+    def append_text(value: str) -> None:
         nonlocal total
-        if total >= limit or value is None:
-            return
-        if isinstance(value, dict):
-            for key, nested in value.items():
-                if key in {"bbox", "polygon", "metadata", "diagnostics", "engineRuns"}:
-                    continue
-                visit(nested)
-            return
-        if isinstance(value, list):
-            for nested in value:
-                visit(nested)
-            return
-        text = str(value).strip()
-        if text:
+        text = value.strip()
+        if text and total < limit:
             parts.append(text)
             total += len(text) + 1
 
+    def visit(value: Any, *, content_container: bool = False) -> None:
+        if total >= limit or value is None:
+            return
+        if isinstance(value, str):
+            if content_container:
+                append_text(value)
+            return
+        if isinstance(value, list):
+            for nested in value:
+                visit(nested, content_container=content_container)
+            return
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                normalized_key = str(key).lower()
+                if normalized_key in skipped_keys or normalized_key.endswith("id") or normalized_key.endswith("ids"):
+                    continue
+                if normalized_key in content_containers:
+                    visit(nested, content_container=True)
+                elif normalized_key in text_keys:
+                    visit(nested, content_container=True)
+
     for key in ("fragments", "fields", "tables", "seals"):
-        visit((parse_result or {}).get(key))
+        visit((parse_result or {}).get(key), content_container=False)
     return " ".join(parts)[:limit]
 
 
@@ -85,6 +109,7 @@ def process_document_classification_and_targeting(
     document_version_id: str,
     *,
     triggered_by: str,
+    classification_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     document = repo.find_one("documents", document_id)
     if not document or str(document.get("projectId") or "") != str(project_id):
@@ -114,18 +139,21 @@ def process_document_classification_and_targeting(
             "documentId": document_id,
             "documentVersionId": document_version_id,
         }
-    try:
-        classification = classify_material(
-            file_name=str(document.get("fileName") or parse_result.get("fileName") or ""),
-            ocr_text=_classification_text(parse_result),
-            profile_id=str(parse_result.get("profileId") or ""),
-            document_type=str(parse_result.get("documentType") or ""),
-        )
-    except Exception as exc:  # Classification failure must not stop slice/vector processing.
-        classification = {
-            **unclassified_material_result(reason="自动分类服务异常，已进入未分类资料库"),
-            "classificationError": exc.__class__.__name__,
-        }
+    if classification_override is not None:
+        classification = repo.clone(classification_override)
+    else:
+        try:
+            classification = classify_material(
+                file_name=str(document.get("fileName") or parse_result.get("fileName") or ""),
+                ocr_text=classification_text(parse_result),
+                profile_id=str(parse_result.get("profileId") or ""),
+                document_type=str(parse_result.get("documentType") or ""),
+            )
+        except Exception as exc:  # Classification failure must not stop slice/vector processing.
+            classification = {
+                **unclassified_material_result(reason="自动分类服务异常，已进入未分类资料库"),
+                "classificationError": exc.__class__.__name__,
+            }
 
     knowledge_file = repo.knowledge_file_for_version(document_version_id)
     persist_document_classification(repo, document, knowledge_file, classification)
