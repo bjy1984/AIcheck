@@ -753,15 +753,6 @@ watch(
                     <ElEmpty :image-size="60" description="暂无 OCR 结构化内容" />
                   </div>
                   <template v-else>
-                    <ElAlert
-                      v-if="!businessFieldItems.length"
-                      type="warning"
-                      :closable="false"
-                      show-icon
-                      title="未识别出业务字段"
-                      description="只切出了原文片段，没有识别出证书编号、设计压力这类可核对的字段。核对前需人工补录或重跑抽取。"
-                      class="side-alert"
-                    />
                     <ul v-if="businessFieldItems.length" class="locate-list">
                       <li
                         v-for="item in businessFieldItems"

@@ -1977,43 +1977,50 @@ test.describe('AIcheck live business error mapping', () => {
 })
 
 test.describe('AIcheck business writeback flows', () => {
-  test('file detail keeps OCR results free of generic confidence and review warnings', async ({
+  test('file detail keeps OCR results free of generic extraction and review warnings', async ({
     page
   }) => {
-    await page.route(/\/api\/projects\/[^/]+\/documents\/[^/]+$/, async (route) => {
-      const response = await route.fetch()
-      const body = await response.json()
-      if (body?.data?.document) {
-        body.data.document.ocrReadiness = {
-          status: 'incomplete',
-          blockingReasons: [
-            {
-              code: 'OCR_QUALITY_GATE_BLOCKED',
-              message: 'OCR 已执行，但必填字段、表格、印章或可定位证据仍不完整。',
-              qualityReasons: ['required_field_missing'],
-              actionKey: 'review_ocr',
-              targetId: body.data.document.id
-            }
-          ]
-        }
-        body.data.extractedFields = [
-          {
-            id: 'FIELD-E2E-CONFIDENCE-HIDDEN',
-            documentVersionId: body.data.currentVersion?.id,
-            fieldName: '证书编号',
-            fieldValue: 'TS3832083-2026',
-            pageNo: 1,
-            confidence: 0,
-            reviewStatus: '置信度未知',
-            evidenceLinkId: ''
-          }
-        ]
-      }
-      await route.fulfill({ response, json: body })
-    })
-
     await loginTo(page, '/workbench/contractor')
     await selectProject(page, '华东成品油管道改造工程')
+
+    const token = await page.evaluate(() => JSON.parse(sessionStorage.getItem('user') || '{}').token)
+    const detailResponse = await page.request.get(
+      '/api/projects/P-2026-HDCP-001/documents/DOC-CC359ACD',
+      { headers: { Authorization: token } }
+    )
+    expect(detailResponse.ok()).toBeTruthy()
+    const body = await detailResponse.json()
+    const data = body?.data
+    if (!data?.document) throw new Error('文件详情夹具缺少 document')
+    data.document.ocrReadiness = {
+      status: 'incomplete',
+      blockingReasons: [
+        {
+          code: 'OCR_QUALITY_GATE_BLOCKED',
+          message: 'OCR 已执行，但必填字段、表格、印章或可定位证据仍不完整。',
+          qualityReasons: ['required_field_missing'],
+          actionKey: 'review_ocr',
+          targetId: data.document.id
+        }
+      ]
+    }
+    data.extractedFields = [
+      {
+        id: 'FIELD-E2E-PLACEHOLDER',
+        documentVersionId: data.currentVersion?.id,
+        fieldName: 'OCR文本1',
+        fieldValue: '原文切片',
+        pageNo: 1,
+        confidence: 0,
+        reviewStatus: '置信度未知',
+        evidenceLinkId: ''
+      }
+    ]
+    data.evidenceLinks = []
+    data.ocrStructured = { ...data.ocrStructured, layoutBlocks: [] }
+    await page.route(/\/api\/projects\/[^/]+\/documents\/[^/]+$/, async (route) => {
+      await route.fulfill({ json: body })
+    })
 
     const fileRow = page.locator('.contractor-files-table .el-table__row').first()
     await expect(fileRow).toBeVisible()
@@ -2021,8 +2028,8 @@ test.describe('AIcheck business writeback flows', () => {
 
     const fileDialog = visibleOverlay(page, '文件详情')
     await expect(fileDialog).toBeVisible()
-    await expect(fileDialog).toContainText('证书编号')
-    await expect(fileDialog).toContainText('TS3832083-2026')
+    await expect(fileDialog).toContainText('原文片段 1 条')
+    await expect(fileDialog).not.toContainText('未识别出业务字段')
     await expect(fileDialog).not.toContainText('OCR 抽取不完整')
     await expect(fileDialog).not.toContainText('未识别到必要内容')
     await expect(fileDialog).not.toContainText(

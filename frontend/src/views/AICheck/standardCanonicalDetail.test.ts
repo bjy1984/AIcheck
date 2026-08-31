@@ -386,10 +386,9 @@ assert.match(
 
 const canonicalStart = dialog.indexOf('<StandardCanonicalDetail')
 const projectFallback = dialog.indexOf('<template v-else>', canonicalStart)
-const projectWarning = dialog.indexOf('没有识别出证书编号、设计压力', canonicalStart)
 assert.ok(canonicalStart >= 0, '公共文件详情必须接入标准 canonical 详情')
 assert.ok(projectFallback > canonicalStart, '项目资料 OCR 界面必须放在标准详情的 v-else 分支')
-assert.ok(projectWarning > projectFallback, '项目资料告警只能出现在非标准文档分支')
+assert.doesNotMatch(dialog, /没有识别出证书编号、设计压力/, 'OCR 详情不得显示业务字段告警')
 assert.match(
   dialog,
   /canonicalDetailIdentity\(standardCanonical\.value, document\.value\?\.id\)/,
