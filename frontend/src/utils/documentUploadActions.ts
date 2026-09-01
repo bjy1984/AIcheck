@@ -8,10 +8,62 @@ export const canSubmitDocumentUpload = (
 export const canRetryDocumentUpload = (uploadStatus: DocumentUploadStatus): boolean =>
   uploadStatus === '失败重新上传'
 
+/** 从完整资料列表中选出单条提交按钮可点击的项目。调用方传入的判断函数必须与
+ * 行内提交按钮共用，避免批量与单条出现两套业务口径。 */
+export const collectBatchSubmittableItems = <T>(
+  items: readonly T[],
+  canSubmit: (item: T) => boolean
+): T[] => items.filter(canSubmit)
+
+export type BatchSubmissionResult<T> = {
+  confirmed: boolean
+  succeeded: T[]
+  failed: T[]
+}
+
+/** 一次确认后顺序提交，避免同一项目的多个写请求互相覆盖；单项失败不阻断其余资料。 */
+export const runConfirmedBatchSubmission = async <T>(options: {
+  items: readonly T[]
+  confirm: (count: number) => Promise<boolean>
+  submit: (item: T) => Promise<boolean>
+}): Promise<BatchSubmissionResult<T>> => {
+  const confirmed = await options.confirm(options.items.length)
+  if (!confirmed) return { confirmed: false, succeeded: [], failed: [] }
+
+  const succeeded: T[] = []
+  const failed: T[] = []
+  for (const item of options.items) {
+    try {
+      if (await options.submit(item)) succeeded.push(item)
+      else failed.push(item)
+    } catch {
+      failed.push(item)
+    }
+  }
+  return { confirmed: true, succeeded, failed }
+}
+
+/** 服务端提交结果已经确定后先反馈给用户；后续列表刷新失败不能吞掉这份结果。 */
+export const reportBatchResultThenRefresh = async <T>(options: {
+  result: BatchSubmissionResult<T>
+  report: (result: BatchSubmissionResult<T>) => void
+  refresh: () => Promise<void>
+}): Promise<boolean> => {
+  options.report(options.result)
+  try {
+    await options.refresh()
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const canSubmitNdtDocumentUpload = (
   approvalStatus: string,
-  uploadStatus: DocumentUploadStatus
-): boolean => canSubmitDocumentUpload(['草稿', '需补正'].includes(approvalStatus), uploadStatus)
+  uploadStatus: DocumentUploadStatus,
+  writable = true
+): boolean =>
+  writable && canSubmitDocumentUpload(['草稿', '需补正'].includes(approvalStatus), uploadStatus)
 
 /** 为什么这个「提交审批」点不了。返回空串表示可以点。
  *

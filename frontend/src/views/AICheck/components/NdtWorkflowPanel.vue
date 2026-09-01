@@ -33,6 +33,7 @@ import { documentBusinessStatus, documentPipelineStatus } from '@/utils/document
 import {
   canRetryDocumentUpload,
   canSubmitNdtDocumentUpload,
+  collectBatchSubmittableItems,
   ndtEditBlockedReason,
   ndtSubmitBlockedReason
 } from '@/utils/documentUploadActions'
@@ -57,6 +58,7 @@ const props = defineProps<{
   reports: NdtReport[]
   feedback: NdtFeedback[]
   projectFiles: DocumentAsset[]
+  readOnly?: boolean
   loading: boolean
   filmError?: string
   recordImportError?: string
@@ -93,6 +95,7 @@ const emit = defineEmits<{
   uploadReport: []
   replaceMaterialBindings: [payload: { documentId: string; nodeIds: number[] }]
   submitMaterial: [payload: { documentId: string; bindingIds: string[] }]
+  submitMaterialBatch: [payloads: Array<{ documentId: string; bindingIds: string[] }>]
   retryUpload: [documentId: string]
 }>()
 
@@ -217,8 +220,10 @@ const atomicFileRows = computed(() =>
       uploadStatus,
       editableBindingIds: canEdit ? editableBindings.map((binding) => binding.id) : [],
       canEdit,
-      canSubmit: canSubmitNdtDocumentUpload(approvalStatus, uploadStatus),
-      submitBlockedReason: ndtSubmitBlockedReason(approvalStatus, uploadStatus),
+      canSubmit: canSubmitNdtDocumentUpload(approvalStatus, uploadStatus, !props.readOnly),
+      submitBlockedReason: props.readOnly
+        ? '当前项目为只读状态，不能提交文件。'
+        : ndtSubmitBlockedReason(approvalStatus, uploadStatus),
       editBlockedReason: ndtEditBlockedReason(approvalStatus)
     }
   })
@@ -305,6 +310,21 @@ const saveBindingAdjustment = () => {
 const submitAtomicFile = (row: (typeof atomicFileRows.value)[number]) => {
   if (!row.canSubmit) return
   emit('submitMaterial', { documentId: row.id, bindingIds: row.editableBindingIds })
+}
+
+const batchSubmittableAtomicFiles = computed(() =>
+  collectBatchSubmittableItems(atomicFileRows.value, (row) => row.canSubmit)
+)
+
+const submitAtomicFilesBatch = () => {
+  if (!batchSubmittableAtomicFiles.value.length || props.loading) return
+  emit(
+    'submitMaterialBatch',
+    batchSubmittableAtomicFiles.value.map((row) => ({
+      documentId: row.id,
+      bindingIds: row.editableBindingIds
+    }))
+  )
 }
 
 const retryAtomicFileUpload = (row: (typeof atomicFileRows.value)[number]) => {
@@ -539,6 +559,14 @@ const handleRectifyNdt = async (rectificationId?: string) => {
             <p>请逐个核对资料类型；文件上传成功后可分别提交审批，无需等待其他资料上传完成。</p>
           </div>
           <div class="ndt-actions">
+            <ElButton
+              type="primary"
+              :loading="loading"
+              :disabled="readOnly || loading || !batchSubmittableAtomicFiles.length"
+              @click="submitAtomicFilesBatch"
+            >
+              批量提交
+            </ElButton>
             <ElButton plain @click="filmDialogVisible = true">登记底片编号</ElButton>
             <ElButton plain type="primary" @click="emit('uploadReport')">上传检测报告</ElButton>
           </div>

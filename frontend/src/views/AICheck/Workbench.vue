@@ -139,6 +139,7 @@ import type {
   ActionCode,
   ArchiveItem,
   AiReviewRun,
+  DocumentAsset,
   EvidenceLink,
   ExportTask,
   InspectionAuditItem,
@@ -166,6 +167,10 @@ import type {
 } from '@/types/aicheck'
 import { getAicheckErrorMessage, getLatestAicheckBusinessError } from '@/utils/aicheckError'
 import { buildDocumentSubmissionPayload, documentBindingSummary } from '@/utils/acceptanceFlows'
+import {
+  reportBatchResultThenRefresh,
+  runConfirmedBatchSubmission
+} from '@/utils/documentUploadActions'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
 import type { ProjectAnalysisBannerState } from './projectAnalysisPresentation'
 
@@ -3397,21 +3402,70 @@ const handleReplaceNdtAtomicBindings = async (payload: {
   }
 }
 
-const handleSubmitNdtAtomicMaterial = async (payload: {
+type NdtAtomicSubmitPayload = {
   documentId: string
   bindingIds: string[]
-}) => {
+}
+
+const submitNdtAtomicMaterialRequest = async (payload: NdtAtomicSubmitPayload) =>
+  Boolean(
+    await submitNdtAtomicMaterialApi(activeProjectId.value, payload, {
+      etag: currentProject.value?.etag,
+      idempotencyKey: `ndt-material-submit-${activeProjectId.value}-${payload.documentId}-${payload.bindingIds.join('-')}`
+    })
+  )
+
+const handleSubmitNdtAtomicMaterial = async (payload: NdtAtomicSubmitPayload) => {
   if (!ensureWritableProject()) return
   actionLoading.value = true
   ndtSubmitError.value = ''
   try {
-    await submitNdtAtomicMaterialApi(activeProjectId.value, payload, {
-      etag: currentProject.value?.etag
-    })
+    await submitNdtAtomicMaterialRequest(payload)
     ElMessage.success('该文件已单独提交审批')
     await Promise.all([loadProjectBundle(), loadSubmissionHistory()])
   } catch (error) {
     showNdtSubmitError('单文件提交审批失败，请确认文件仍处于草稿或需补正状态。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleSubmitNdtAtomicMaterialsBatch = async (payloads: NdtAtomicSubmitPayload[]) => {
+  if (!ensureWritableProject() || !payloads.length) return
+  ndtSubmitError.value = ''
+  const result = await runConfirmedBatchSubmission({
+    items: payloads,
+    confirm: (count) =>
+      confirmIrreversibleAction({
+        title: '批量提交资料',
+        message: `将批量提交全部可提交文件，共 ${count} 份。提交后进入监检流程，需要撤回时须另行申请。`,
+        confirmText: '确认批量提交'
+      }),
+    submit: async (payload) => {
+      actionLoading.value = true
+      return submitNdtAtomicMaterialRequest(payload)
+    }
+  })
+  if (!result.confirmed) return
+  try {
+    const refreshed = await reportBatchResultThenRefresh({
+      result,
+      report: (batchResult) => {
+        if (batchResult.failed.length) {
+          showNdtSubmitError(
+            `批量提交完成：成功 ${batchResult.succeeded.length} 份，失败 ${batchResult.failed.length} 份。请刷新状态后重试失败项。`
+          )
+        } else {
+          ElMessage.success(`已批量提交 ${batchResult.succeeded.length} 份文件`)
+        }
+      },
+      refresh: async () => {
+        await Promise.all([loadProjectBundle(), loadSubmissionHistory()])
+      }
+    })
+    if (!refreshed) {
+      ElMessage.warning('提交结果已保存，但列表刷新失败，请手动刷新后查看最新状态。')
+    }
   } finally {
     actionLoading.value = false
   }
@@ -3531,6 +3585,37 @@ const handleInspectionWorkspaceViewChange = async (view: InspectionWorkspaceView
   )
 }
 
+const submitProjectFileRequest = async (file: DocumentAsset): Promise<boolean> => {
+  const submissionPayload = buildDocumentSubmissionPayload(file)
+  if (!submissionPayload) return false
+  const isProjectSubmit = submissionPayload.mode === 'project'
+  const res = await submitNodePackageApi(
+    activeProjectId.value,
+    isProjectSubmit
+      ? {
+          submissionType: 'project',
+          documentIds: submissionPayload.documentIds,
+          bindingIds: [],
+          nodeIds: [],
+          batchName: `${file.fileName} 项目资料池提交`,
+          submitterComment: '从项目文件库提交到监检资料池，不关联审核环节。'
+        }
+      : {
+          nodeIds: submissionPayload.nodeIds,
+          bindingIds: submissionPayload.bindingIds,
+          batchName: `${file.fileName} 多节点文件提交`,
+          submitterComment: '从项目文件库提交该文件的全部待提交挂载。'
+        },
+    {
+      etag: currentProject.value?.etag,
+      idempotencyKey: isProjectSubmit
+        ? `project-pool-submit-${activeProjectId.value}-${file.id}`
+        : `project-file-submit-${activeProjectId.value}-${file.id}-${submissionPayload.bindingIds.join('-')}`
+    }
+  )
+  return Boolean(res)
+}
+
 const handleSubmitProjectFile = async (documentId: string) => {
   if (!ensureWritableProject()) return
   if (!documentId) {
@@ -3565,31 +3650,7 @@ const handleSubmitProjectFile = async (documentId: string) => {
   if (!confirmed) return
   actionLoading.value = true
   try {
-    const res = await submitNodePackageApi(
-      activeProjectId.value,
-      isProjectSubmit
-        ? {
-            submissionType: 'project',
-            documentIds: submissionPayload.documentIds,
-            bindingIds: [],
-            nodeIds: [],
-            batchName: `${file.fileName} 项目资料池提交`,
-            submitterComment: '从项目文件库提交到监检资料池，不关联审核环节。'
-          }
-        : {
-            nodeIds: submissionPayload.nodeIds,
-            bindingIds: submissionPayload.bindingIds,
-            batchName: `${file.fileName} 多节点文件提交`,
-            submitterComment: '从项目文件库提交该文件的全部待提交挂载。'
-          },
-      {
-        etag: currentProject.value?.etag,
-        idempotencyKey: isProjectSubmit
-          ? `project-pool-submit-${activeProjectId.value}-${documentId}`
-          : `project-file-submit-${activeProjectId.value}-${documentId}-${submissionPayload.bindingIds.join('-')}`
-      }
-    )
-    if (!res) {
+    if (!(await submitProjectFileRequest(file))) {
       showActionError('项目文件提交失败，请检查文件状态、节点范围和当前项目权限。')
       return
     }
@@ -3602,6 +3663,54 @@ const handleSubmitProjectFile = async (documentId: string) => {
     await loadSubmissionHistory()
   } catch (error) {
     showActionError('项目文件提交失败，请检查文件状态、节点范围和当前项目权限。', error)
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+const handleSubmitProjectFilesBatch = async (documentIds: string[]) => {
+  if (!ensureWritableProject() || !documentIds.length) return
+  const requestedIds = new Set(documentIds)
+  const files = (nodePackage.value?.projectFiles || []).filter(
+    (file) => requestedIds.has(file.id) && Boolean(buildDocumentSubmissionPayload(file))
+  )
+  if (!files.length) {
+    ElMessage.warning('当前没有可提交的文件')
+    return
+  }
+  const result = await runConfirmedBatchSubmission({
+    items: files,
+    confirm: (count) =>
+      confirmIrreversibleAction({
+        title: '批量提交资料',
+        message: `将批量提交全部可提交文件，共 ${count} 份。提交后进入监检流程，需要撤回时须另行申请。`,
+        confirmText: '确认批量提交'
+      }),
+    submit: async (file) => {
+      actionLoading.value = true
+      return submitProjectFileRequest(file)
+    }
+  })
+  if (!result.confirmed) return
+  try {
+    const refreshed = await reportBatchResultThenRefresh({
+      result,
+      report: (batchResult) => {
+        if (batchResult.failed.length) {
+          showActionError(
+            `批量提交完成：成功 ${batchResult.succeeded.length} 份，失败 ${batchResult.failed.length} 份。请刷新状态后重试失败项。`
+          )
+        } else {
+          ElMessage.success(`已批量提交 ${batchResult.succeeded.length} 份文件`)
+        }
+      },
+      refresh: async () => {
+        await Promise.all([loadProjectBundle(), loadSubmissionHistory()])
+      }
+    })
+    if (!refreshed) {
+      ElMessage.warning('提交结果已保存，但列表刷新失败，请手动刷新后查看最新状态。')
+    }
   } finally {
     actionLoading.value = false
   }
@@ -5880,6 +5989,7 @@ onBeforeUnmount(() => {
               @file-replace="handleReplaceProjectFile"
               @file-bind="handleOpenBindDialog"
               @file-submit="handleSubmitProjectFile"
+              @file-submit-batch="handleSubmitProjectFilesBatch"
               @file-retry-upload="handleRetryProjectFileUpload"
               @file-delete="handleDeleteProjectFile"
             />
@@ -6643,6 +6753,7 @@ onBeforeUnmount(() => {
               :reports="ndtReports"
               :feedback="ndtFeedback"
               :project-files="nodePackage?.projectFiles || []"
+              :read-only="isReadOnly"
               :loading="actionLoading"
               :film-error="ndtFilmError"
               :record-import-error="ndtRecordImportError"
@@ -6656,6 +6767,7 @@ onBeforeUnmount(() => {
               @upload-report="handleOpenNdtReportUpload"
               @replace-material-bindings="handleReplaceNdtAtomicBindings"
               @submit-material="handleSubmitNdtAtomicMaterial"
+              @submit-material-batch="handleSubmitNdtAtomicMaterialsBatch"
               @retry-upload="handleRetryProjectFileUpload"
               @rectify-ndt="handleRectifyNdt"
               @open-report-detail="handleOpenNdtReportDetail"

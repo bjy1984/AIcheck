@@ -23,6 +23,11 @@ assert.equal(canRetryDocumentUpload('上传中'), false)
 assert.equal(canRetryDocumentUpload('上传成功'), false)
 
 assert.equal(canSubmitNdtDocumentUpload('草稿', '上传成功'), true)
+assert.equal(
+  canSubmitNdtDocumentUpload('草稿', '上传成功', false),
+  false,
+  '只读项目中无损检测资料的单条和批量提交都必须禁用'
+)
 assert.equal(canSubmitNdtDocumentUpload('需补正', '上传成功'), true)
 assert.equal(canSubmitNdtDocumentUpload('待审查', '上传成功'), false)
 assert.equal(canSubmitNdtDocumentUpload('草稿', '上传中'), false)

@@ -39,7 +39,11 @@ import ContractorStatusCards from './contractor/ContractorStatusCards.vue'
 import ContractorUploadPanel from './contractor/ContractorUploadPanel.vue'
 import { documentBindingSummary } from '@/utils/acceptanceFlows'
 import { documentBusinessStatus, type DocumentBusinessStatus } from '@/utils/documentPipelineStatus'
-import { canRetryDocumentUpload, canSubmitDocumentUpload } from '@/utils/documentUploadActions'
+import {
+  canRetryDocumentUpload,
+  canSubmitDocumentUpload,
+  collectBatchSubmittableItems
+} from '@/utils/documentUploadActions'
 import {
   buildContractorWorkbenchModel,
   contractorStatusFilterOptions,
@@ -126,6 +130,7 @@ const emit = defineEmits<{
   'file-replace': [file: { documentId: string; fileName: string; materialCategory: string }]
   'file-bind': [documentId: string]
   'file-submit': [documentId: string]
+  'file-submit-batch': [documentIds: string[]]
   'file-retry-upload': [documentId: string]
   'file-delete': [documentId: string]
 }>()
@@ -614,6 +619,19 @@ const requestFileSubmit = (file: ContractorFileRow) => {
   }
 }
 
+// 必须从完整台账取数，不使用 filtered/paged rows；筛选和分页只影响展示。
+const batchSubmittableContractorFiles = computed(() =>
+  collectBatchSubmittableItems(contractorFileRows.value, canSubmitContractorFile)
+)
+
+const requestBatchFileSubmit = () => {
+  if (!batchSubmittableContractorFiles.value.length || props.actionLoading) return
+  emit(
+    'file-submit-batch',
+    batchSubmittableContractorFiles.value.map((file) => file.documentId)
+  )
+}
+
 const requestFileRetryUpload = (file: ContractorFileRow) => {
   if (!props.readOnly && canRetryDocumentUpload(file.processingStatus)) {
     emit('file-retry-upload', file.documentId)
@@ -733,6 +751,14 @@ const getPillClass = (value?: string): AuditStatusTone => {
               <h2>三、上传资料列表</h2>
             </div>
             <div class="file-library-head-actions">
+              <ElButton
+                type="primary"
+                :loading="actionLoading"
+                :disabled="readOnly || actionLoading || !batchSubmittableContractorFiles.length"
+                @click="requestBatchFileSubmit"
+              >
+                批量提交
+              </ElButton>
               <AuditStatusTag tone="blue">
                 {{ filteredContractorFileRows.length }} / {{ contractorFileRows.length }} 个文件
               </AuditStatusTag>
