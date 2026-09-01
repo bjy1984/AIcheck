@@ -88,6 +88,9 @@ runtime = {
     # DeepSeek 拒绝（HTTP 400），run 卡死——2026-08-28 实测。新增 LLM 角色时
     # 这份清单必须同步补齐。
     "AICHECK_LLM_MODEL_PROJECT_REVIEW": "deepseek-v4-pro",
+    # 资料分类与其它文本角色共用当前 DeepSeek provider。若遗漏该角色，
+    # qwen_runtime.yaml 会回退 qwen3.8-max，而 DeepSeek 会直接返回 HTTP 400。
+    "AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER": "deepseek-v4-pro",
     # 视觉单独走一家：DeepSeek 的 chat.completions 不接受图片，发 image_url
     # 直接 400（unknown variant `image_url`）。此前这一项也写着 deepseek-v4-pro，
     # 等于声明了一个不存在的能力——印章读字上线第一次实跑就栽在这里。

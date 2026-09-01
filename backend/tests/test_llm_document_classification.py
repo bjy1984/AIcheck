@@ -56,6 +56,8 @@ def test_llm_classifier_returns_existing_single_type_with_grounded_evidence() ->
     assert audit["providerRequestId"] == "chatcmpl-classifier-1"
     assert audit["usage"]["total_tokens"] == 120
     assert client.calls[0]["model"] == "document-classifier"
+    rendered_prompt = "\n".join(str(message.get("content") or "") for message in client.calls[0]["messages"])
+    assert "json" in rendered_prompt.lower()
 
 
 @pytest.mark.parametrize(

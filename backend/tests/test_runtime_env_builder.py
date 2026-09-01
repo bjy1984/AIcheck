@@ -49,6 +49,9 @@ def test_模型配置进得了生成结果(tmp_path: pathlib.Path):
     # 一键分析角色漏配的实测后果（2026-08-28）：回退 qwen3.7-plus 被 DeepSeek
     # 400 拒绝，run 卡死。角色清单必须和 libs/qwen_runtime.MODEL_ROLE_ENV 对齐。
     assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"].startswith("deepseek-")
+    # 资料分类角色同样走当前 DeepSeek provider；漏配会回退 qwen3.8-max，
+    # 供应商会以 invalid_request_error / HTTP 400 明确拒绝。
+    assert env["AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER"].startswith("deepseek-")
 
 
 def test_模型密钥沿用凭证文件里的那一份(tmp_path: pathlib.Path):
