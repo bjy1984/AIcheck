@@ -43,6 +43,15 @@ output/**/*.inspect.ndjson
 output/knowledge_uploads/
 output/document_uploads/
 
+# Local QA and project-analysis replay artifacts.
+audit-reports/2026-08-29-contractor-file-list-analysis/
+audit-reports/2026-08-29-upload-ocr-vector-targeting/
+audit-reports/2026-08-30-file-detail-ocr-copy-audit/
+design-qa.md
+output/project-analysis-routing-replay/
+output/test_project_three_actual_llm_prompt_full.md
+output/test_project_three_actual_llm_request.json
+
 # Local bundled runtime link used by the standalone R01-R69 XLSX renderer.
 scripts/r01_r69_pack/node_modules
 
