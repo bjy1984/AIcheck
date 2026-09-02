@@ -86,6 +86,52 @@ def test_project_analysis_run_is_idempotent_for_same_snapshot_and_route() -> Non
     assert len(state["project_analysis_runs"]) == 1
 
 
+def test_project_analysis_run_is_not_reused_across_model_switch() -> None:
+    """换了实际模型就是一次新的运行。
+
+    路由版本 2026.08 下先后打过 deepseek-v4-pro 与通义；只按路由版本复用，
+    切换模型对资料没变的项目完全不生效——点按钮拿回的仍是旧模型那次结果。
+    """
+    from libs.project_analysis.domain import create_project_analysis_run
+
+    state = {"project_analysis_runs": [], "project_analysis_events": []}
+    base = {
+        "tenant_id": "TENANT-1",
+        "project_id": "P-1",
+        "snapshot": {
+            "projectAnalysisSnapshotId": "PASNAP-1",
+            "snapshotHash": "sha256:snapshot",
+            "nodeIds": [1],
+        },
+        "actor_id": "USER-1",
+    }
+    preview = {
+        "includedNodeCount": 1,
+        "uniqueFileCount": 1,
+        "fileReferenceCount": 1,
+        "estimatedInputTokens": 100,
+        "maxContextTokens": 1000,
+        "reservedOutputTokens": 100,
+        "modelAlias": "project-review-large",
+        "modelRouteVersion": "2026.08",
+    }
+    deepseek = create_project_analysis_run(
+        state, **base, preview={**preview, "modelName": "official_api:deepseek-v4-pro"}
+    )
+    qwen = create_project_analysis_run(
+        state, **base, preview={**preview, "modelName": "official_api:qwen3.8-max"}
+    )
+    again = create_project_analysis_run(
+        state, **base, preview={**preview, "modelName": "official_api:qwen3.8-max"}
+    )
+
+    assert deepseek is not qwen
+    assert qwen is again
+    assert deepseek["projectAnalysisRunId"] != qwen["projectAnalysisRunId"]
+    assert not qwen["projectAnalysisRunId"].endswith("-R2"), "不是重试，是另一份运行身份"
+    assert len(state["project_analysis_runs"]) == 2
+
+
 def test_project_analysis_status_reconciles_stale_non_terminal_run_for_display() -> None:
     from libs.project_analysis.domain import project_analysis_status_view
 

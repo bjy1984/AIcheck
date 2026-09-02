@@ -13,6 +13,7 @@ from typing import Any
 from libs.business_pack import load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.model_usage import estimate_messages_tokens, estimate_text_tokens
+from libs.qwen_runtime import resolved_model_label
 from libs.review_evidence import active_node_document_versions
 
 PROMPT_VERSION = "project-monolithic-analysis@1.3.0"
@@ -718,6 +719,8 @@ def project_analysis_preview(
         "snapshot": snapshot,
         "request": request,
         "snapshotHash": snapshot["snapshotHash"],
+        # 实际模型进幂等键（见 domain.create_project_analysis_run）：换模型即新运行。
+        "modelName": resolved_model_label(str(model_route.get("modelAlias") or DEFAULT_MODEL_ALIAS)),
         "includedNodeCount": len(snapshot["nodeIds"]),
         "uniqueFileCount": len(payload["project"]["fileCorpus"]),
         "fileReferenceCount": reference_count,

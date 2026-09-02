@@ -88,6 +88,10 @@ def create_project_analysis_run(
             "snapshotHash": snapshot.get("snapshotHash"),
             "promptVersion": snapshot.get("promptVersion"),
             "modelRouteVersion": preview.get("modelRouteVersion"),
+            # 实际模型也算运行身份：路由版本不随模型切换而变（2026.08 下先后打过
+            # deepseek-v4-pro 与通义），只按路由版本复用会让换模型对资料没变的
+            # 项目完全不生效——点按钮拿回的仍是旧模型那次结果。
+            "modelName": preview.get("modelName"),
         },
     )
     rows = state.setdefault("project_analysis_runs", [])

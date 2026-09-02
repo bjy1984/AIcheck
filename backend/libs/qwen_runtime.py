@@ -146,6 +146,24 @@ def fallback_provider(config: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
+def resolved_model_label(role_or_model: str, config: dict[str, Any] | None = None) -> str:
+    """某角色当前实际会打到的模型，形如 official_api:qwen3.8-max / server:project-review-large。
+
+    一键分析用它进幂等键：换了模型，同一份资料就该是一次新的运行——否则切换
+    只对「资料变过」的项目生效，没变的项目点按钮拿回的还是旧模型那次结果
+    （2026-09-02 切 DeepSeek→通义时实测）。server 模式下真正的模型由网关决定，
+    这里只能记到别名，仍足以区分「换过模式」。
+    """
+    cfg = config if config is not None else qwen_runtime_config()
+    mode = str(cfg.get("mode") or "server")
+    if mode != "official_api":
+        alias = (cfg.get("aliases") or {}).get(MODEL_ROLE_ALIASES.get(role_or_model, role_or_model))
+        return f"{mode}:{alias or role_or_model}"
+    role = MODEL_ROLE_ALIASES.get(role_or_model, role_or_model)
+    models = cfg.get("models") if isinstance(cfg.get("models"), dict) else {}
+    return f"{mode}:{models.get(role) or models.get(role_or_model) or role_or_model}"
+
+
 def provider_label_for(mode: str, base_url: str) -> str:
     """供应商显示名。
 
