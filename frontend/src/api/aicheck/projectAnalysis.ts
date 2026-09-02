@@ -21,6 +21,8 @@ export type ProjectAnalysisPreview = {
   availableInputTokens: number
   contextLimitExceeded: boolean
   modelAlias: string
+  /** 实际会打到的模型（official_api:qwen3.8-max 之类）；换模型即新运行 */
+  modelName?: string
   modelRouteVersion: string
 }
 

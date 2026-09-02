@@ -87,6 +87,14 @@ const open = async () => {
     failureMessage.value = projectAnalysisRequestFailure(error).message
   }
 }
+const projectAnalysisIdempotencyKey = (
+  projectId: string,
+  preview: { snapshotHash: string; modelName?: string }
+) =>
+  [`project-analysis-${projectId}-${preview.snapshotHash}`, preview.modelName || '']
+    .filter(Boolean)
+    .join('-')
+
 const start = async () => {
   if (!preview.value || preview.value.contextLimitExceeded || isRunning.value) return
   await ElMessageBox.confirm(
@@ -100,7 +108,10 @@ const start = async () => {
     const response = await createProjectAnalysisRunApi(
       props.projectId,
       preview.value.snapshotHash,
-      { idempotencyKey: `project-analysis-${props.projectId}-${preview.value.snapshotHash}` }
+      // 键里带实际模型：切换模型后同一份资料要能发起新运行。只按快照做键，
+      // 服务端会原样重放切换前那次 POST 的响应，界面永远停在旧模型的结果上
+      // （2026-09-02 切 DeepSeek→通义后实测）。
+      { idempotencyKey: projectAnalysisIdempotencyKey(props.projectId, preview.value) }
     )
     activeRun.value = response.data.run
     status.value = response.data.run
