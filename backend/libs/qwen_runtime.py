@@ -70,6 +70,33 @@ def official_api_key(config: dict[str, Any] | None = None) -> str:
     return str(os.getenv(GENERIC_API_KEY_ENV) or os.getenv(fallback_env) or "")
 
 
+# 可以单独换供应商的角色 → 环境变量前缀（AICHECK_LLM_<前缀>_API_BASE / _API_KEY）。
+# 视觉：主供应商 DeepSeek 不接受图片。一键分析：DeepSeek V4 Pro 在同一份提示词下
+# 几乎不写 evidenceRefs、通过的节点直接回空 findings，校验器把它们全部降级成
+# 「证据不足」——2026-09-01 生产 PARUN-4B22A0B9B5D34554：24 条 finding 23 条无效；
+# 同一代码同一提示词，qwen3.7-plus 那次 66 条里 40 条带引用。
+ROLE_PROVIDER_ENV_PREFIX = {
+    "visionReview": "VISION",
+    "projectReview": "PROJECT_REVIEW",
+}
+
+
+def role_provider_override(role_or_model: str) -> tuple[str, str]:
+    """按角色单独指定供应商（地址、密钥）；未配置或只配一半返回 ("", "")。
+
+    与 vision_override 同规矩：地址与密钥**两个都配齐才生效**——只配一半就
+    退回主供应商，避免出现「地址是新的、密钥是旧的」这种拼出来的组合。
+    模型名仍走 AICHECK_LLM_MODEL_<ROLE>，所以换供应商时模型名要一起改。
+    """
+    role = MODEL_ROLE_ALIASES.get(role_or_model, role_or_model)
+    prefix = ROLE_PROVIDER_ENV_PREFIX.get(role)
+    if not prefix:
+        return "", ""
+    base = str(os.getenv(f"AICHECK_LLM_{prefix}_API_BASE") or "").rstrip("/")
+    key = str(os.getenv(f"AICHECK_LLM_{prefix}_API_KEY") or "")
+    return (base, key) if base and key else ("", "")
+
+
 def vision_override(role_or_model: str) -> tuple[str, str]:
     """视觉角色可以走另一家供应商。
 
@@ -82,13 +109,12 @@ def vision_override(role_or_model: str) -> tuple[str, str]:
     所以视觉单独配一组地址与密钥（DashScope 的 qwen-vl 之类）。
     两个都配齐才生效——只配一半就退回主供应商，避免出现
     「地址是新的、密钥是旧的」这种拼出来的组合。
+    现在是 role_provider_override 的视觉特例，保留给既有调用处。
     """
     role = MODEL_ROLE_ALIASES.get(role_or_model, role_or_model)
     if role != "visionReview":
         return "", ""
-    base = str(os.getenv("AICHECK_LLM_VISION_API_BASE") or "").rstrip("/")
-    key = str(os.getenv("AICHECK_LLM_VISION_API_KEY") or "")
-    return (base, key) if base and key else ("", "")
+    return role_provider_override(role)
 
 
 def fallback_provider(config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -412,9 +438,9 @@ class QwenRuntimeClient:
         else:
             base_url = str(self.config.get("baseUrl") or "").rstrip("/")
             api_key = official_api_key(self.config)
-            vision_base, vision_key = vision_override(role_or_model)
-            if vision_base and vision_key:
-                base_url, api_key = vision_base, vision_key
+            override_base, override_key = role_provider_override(role_or_model)
+            if override_base and override_key:
+                base_url, api_key = override_base, override_key
             if not base_url:
                 raise RuntimeError("模型地址未配置（AICHECK_LLM_API_BASE 或 QWEN_API_BASE）")
             if not api_key:
@@ -425,8 +451,15 @@ class QwenRuntimeClient:
             model = self._official_model_for(role_or_model)
         # 供应商标签必须报实际打过的那家：备胎响应写主供应商的名字，
         # 事后追溯「这条结论是谁生成的」时记录就在说谎（provider_label_for 的老教训）。
+        # 角色级换了供应商时同样按实际地址报，不能沿用主供应商的名字。
         provider_label = (
-            _provider["label"] if _provider else self.config.get("provider")
+            _provider["label"]
+            if _provider
+            else (
+                provider_label_for("official_api", base_url)
+                if base_url != str(self.config.get("baseUrl") or "").rstrip("/")
+                else self.config.get("provider")
+            )
         )
         client_kwargs: dict[str, Any] = {"timeout": float(kwargs.pop("timeout", 60))}
         if self.transport is not None:

@@ -46,9 +46,9 @@ def test_模型配置进得了生成结果(tmp_path: pathlib.Path):
     # 模型名必须显式写死：配置文件默认是 qwen3.7-plus，DeepSeek 不认
     assert env["AICHECK_LLM_MODEL_REVIEW"].startswith("deepseek-")
     assert env["AICHECK_LLM_MODEL_COMPARE_FAST"].startswith("deepseek-")
-    # 一键分析角色漏配的实测后果（2026-08-28）：回退 qwen3.7-plus 被 DeepSeek
-    # 400 拒绝，run 卡死。角色清单必须和 libs/qwen_runtime.MODEL_ROLE_ENV 对齐。
-    assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"].startswith("deepseek-")
+    # 一键分析角色单独走 DashScope 的 qwen3.8-max（见 test_一键分析角色随视觉密钥
+    # 直连DashScope）；角色清单必须和 libs/qwen_runtime.MODEL_ROLE_ENV 对齐。
+    assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
     # 资料分类角色同样走当前 DeepSeek provider；漏配会回退 qwen3.8-max，
     # 供应商会以 invalid_request_error / HTTP 400 明确拒绝。
     assert env["AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER"].startswith("deepseek-")
@@ -100,3 +100,26 @@ def test_备用供应商随视觉密钥一起生成(tmp_path: pathlib.Path):
 
     without_key = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "DEEPSEEK_API_KEY": "sk-d"})
     assert "AICHECK_LLM_FALLBACK_API_BASE" not in without_key
+
+
+def test_一键分析角色随视觉密钥直连DashScope(tmp_path: pathlib.Path):
+    """模型名写的是 qwen3.8-max，地址密钥必须同时给到，否则 role_provider_override
+    退回主供应商 DeepSeek，DeepSeek 对这个模型名直接 HTTP 400，run 卡死。"""
+    env = _build(
+        tmp_path,
+        {
+            "AICHECK_POSTGRES_PASSWORD": "pw",
+            "DEEPSEEK_API_KEY": "sk-deepseek",
+            "AICHECK_LLM_VISION_API_KEY": "sk-dashscope",
+        },
+    )
+    assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
+    assert env["AICHECK_LLM_PROJECT_REVIEW_API_BASE"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert env["AICHECK_LLM_PROJECT_REVIEW_API_KEY"] == "sk-dashscope"
+    # 其它文本角色仍走 DeepSeek 主供应商
+    assert env["AICHECK_LLM_API_BASE"] == "https://api.deepseek.com"
+    assert env["AICHECK_LLM_MODEL_REVIEW"].startswith("deepseek-")
+
+    without_key = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "DEEPSEEK_API_KEY": "sk-d"})
+    assert "AICHECK_LLM_PROJECT_REVIEW_API_BASE" not in without_key
+    assert "AICHECK_LLM_PROJECT_REVIEW_API_KEY" not in without_key
