@@ -83,7 +83,11 @@ export const projectAnalysisProgressView = (status: ProjectAnalysisStatus) => {
   const base =
     status.progressMode === 'indeterminate'
       ? { mode: 'indeterminate' as const }
-      : { mode: 'determinate' as const, percent: status.percent || 0 }
+      : {
+          mode: 'determinate' as const,
+          // 没带 percent 的记录（如 run 列表原始项）：已完成就是 100，不能显示成 0
+          percent: status.percent ?? (status.phase === 'waiting_human_review' ? 100 : 0)
+        }
   const labels: Record<string, string> = {
     preparing_snapshot: `正在收集节点 ${status.preparedNodeCount}/${status.includedNodeCount}`,
     building_prompt: `正在拼接 OCR ${status.loadedFileCount}/${status.uniqueFileCount} · 预计 ${status.estimatedInputTokens.toLocaleString()} tokens`,

@@ -72,8 +72,13 @@ const load = async () => {
     ])
     preview.value = previewResponse.data.preview
     activeRun.value = runsResponse.data.items[0]
-    status.value = activeRun.value
-    if (activeRun.value && !terminalPhases.has(activeRun.value.phase)) startPolling()
+    // 列表里的是 run 原始记录，没有 progressMode/percent：直接当状态用，
+    // 已完成的分析打开抽屉会先显示 0%。先取一次状态视图，再决定是否轮询。
+    status.value = undefined
+    if (activeRun.value) {
+      await poll()
+      if (!terminalPhases.has(String(status.value?.phase || activeRun.value.phase))) startPolling()
+    }
   } finally {
     loading.value = false
   }
@@ -176,7 +181,10 @@ onBeforeUnmount(stopPolling)
           :duration="2"
         />
         <span>{{ progress.label }}</span>
-        <small v-if="status?.lastHeartbeatAt">最近心跳：{{ status.lastHeartbeatAt }}</small>
+        <small v-if="terminalPhases.has(status?.phase || '') && (status?.finishedAt || status?.lastHeartbeatAt)">
+          完成于：{{ status?.finishedAt || status?.lastHeartbeatAt }}
+        </small>
+        <small v-else-if="status?.lastHeartbeatAt">最近心跳：{{ status.lastHeartbeatAt }}</small>
       </div>
       <template #footer>
         <ElButton
