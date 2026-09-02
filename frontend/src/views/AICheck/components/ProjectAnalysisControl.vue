@@ -36,6 +36,16 @@ const progress = computed(() =>
 )
 const bannerState = computed(() => projectAnalysisBannerState(status.value, starting.value))
 const isRunning = computed(() => bannerState.value?.tone === 'running')
+// 终态显示完成时刻，进行中显示最近心跳
+const activityLabel = computed(() => {
+  const current = status.value
+  if (!current) return ''
+  if (terminalPhases.has(current.phase)) {
+    const finishedAt = current.finishedAt || current.lastHeartbeatAt
+    return finishedAt ? `完成于：${finishedAt}` : ''
+  }
+  return current.lastHeartbeatAt ? `最近心跳：${current.lastHeartbeatAt}` : ''
+})
 
 const stopPolling = () => {
   if (pollTimer) clearInterval(pollTimer)
@@ -181,10 +191,7 @@ onBeforeUnmount(stopPolling)
           :duration="2"
         />
         <span>{{ progress.label }}</span>
-        <small v-if="terminalPhases.has(status?.phase || '') && (status?.finishedAt || status?.lastHeartbeatAt)">
-          完成于：{{ status?.finishedAt || status?.lastHeartbeatAt }}
-        </small>
-        <small v-else-if="status?.lastHeartbeatAt">最近心跳：{{ status.lastHeartbeatAt }}</small>
+        <small v-if="activityLabel">{{ activityLabel }}</small>
       </div>
       <template #footer>
         <ElButton
