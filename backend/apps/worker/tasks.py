@@ -5498,12 +5498,24 @@ def _project_analysis_skip_persisted_nodes(run: dict[str, Any]) -> None:
     snapshot_id = str(run.get("projectAnalysisSnapshotId") or "")
     if not snapshot_id or not run.get("batchPlan"):
         return
+    # 只复用同一运行身份（同幂等键：快照 + 提示词版本 + 路由版本 + 实际模型）
+    # 下的节点结果。只看快照会把上一个模型的结果当成本次结果——2026-09-02 切
+    # DeepSeek→通义后第一次点按钮，28 个节点全部 allNodesReused，一次模型都没打。
+    own_key = str(run.get("idempotencyKey") or "")
+    key_by_run_id = {
+        str(row.get("projectAnalysisRunId") or row.get("id") or ""): str(row.get("idempotencyKey") or "")
+        for row in repo.state.get("project_analysis_runs") or []
+    }
     done: dict[int, str] = {}
     for row in repo.state.get("review_runs") or []:
-        if str(row.get("projectAnalysisSnapshotId") or "") == snapshot_id:
-            done[int(row.get("nodeId") or 0)] = str(
-                row.get("reviewRunId") or row.get("id") or ""
-            )
+        if str(row.get("projectAnalysisSnapshotId") or "") != snapshot_id:
+            continue
+        parent_key = key_by_run_id.get(str(row.get("projectAnalysisRunId") or ""), "")
+        if own_key and parent_key != own_key:
+            continue
+        done[int(row.get("nodeId") or 0)] = str(
+            row.get("reviewRunId") or row.get("id") or ""
+        )
     if not done:
         return
     remaining: list[dict[str, Any]] = []

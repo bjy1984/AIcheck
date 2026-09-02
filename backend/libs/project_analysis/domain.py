@@ -132,6 +132,7 @@ def create_project_analysis_run(
         "maxContextTokens": int(preview.get("maxContextTokens") or 0),
         "reservedOutputTokens": int(preview.get("reservedOutputTokens") or 0),
         "modelAlias": preview.get("modelAlias"),
+        "modelName": preview.get("modelName"),
         "modelRouteVersion": preview.get("modelRouteVersion"),
         "batchPlan": deepcopy(preview.get("batchPlan") or []),
         "batchCount": int(preview.get("batchCount") or 1),

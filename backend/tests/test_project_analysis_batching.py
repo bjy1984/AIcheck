@@ -158,12 +158,21 @@ def test_retry_run_skips_nodes_already_persisted_for_same_snapshot(monkeypatch) 
         {
             "reviewRunId": "RRUN-PA-DONE1",
             "projectAnalysisSnapshotId": "PASNAP-RETRY",
+            "projectAnalysisRunId": "PARUN-RETRY-PREV",
             "nodeId": 1,
-        }
+        },
+        {
+            # 同快照、但上一次是另一个模型打的（幂等键不同）：不能当成本次结果
+            "reviewRunId": "RRUN-PA-OTHER-MODEL",
+            "projectAnalysisSnapshotId": "PASNAP-RETRY",
+            "projectAnalysisRunId": "PARUN-OTHER-MODEL",
+            "nodeId": 2,
+        },
     ]
     run = {
         "projectAnalysisRunId": "PARUN-RETRY",
         "projectAnalysisSnapshotId": "PASNAP-RETRY",
+        "idempotencyKey": "PAKEY-RETRY",
         "phase": "preparing_snapshot",
         "status": "preparing_snapshot",
         "batchPlan": [
@@ -176,7 +185,15 @@ def test_retry_run_skips_nodes_already_persisted_for_same_snapshot(monkeypatch) 
         "uniqueFileCount": 1,
         "revision": 1,
     }
-    tasks.repo.state["project_analysis_runs"] = [run]
+    tasks.repo.state["project_analysis_runs"] = [
+        run,
+        {"projectAnalysisRunId": "PARUN-RETRY-PREV", "idempotencyKey": "PAKEY-RETRY", "phase": "failed"},
+        {
+            "projectAnalysisRunId": "PARUN-OTHER-MODEL",
+            "idempotencyKey": "PAKEY-OTHER-MODEL",
+            "phase": "waiting_human_review",
+        },
+    ]
     tasks.repo.state["project_analysis_events"] = []
     monkeypatch.setattr(tasks, "load_state", lambda *_a, **_k: None)
     monkeypatch.setattr(tasks, "flush_state", lambda *_a, **_k: None)
@@ -188,7 +205,8 @@ def test_retry_run_skips_nodes_already_persisted_for_same_snapshot(monkeypatch) 
 
     result = tasks.project_analysis_prepare.run("PARUN-RETRY")
 
-    # 节点 1 已有同快照结果：从批次方案剔除，历史 id 并入 derived
+    # 节点 1 已有同运行身份的结果：从批次方案剔除，历史 id 并入 derived；
+    # 节点 2 的历史结果来自另一个模型（幂等键不同），必须重打
     assert result["reusedNodeIds"] == [1]
     assert result["derivedReviewRunIds"] == ["RRUN-PA-DONE1"]
     assert [b["nodeIds"] for b in result["batchPlan"]] == [[2], [3]]
