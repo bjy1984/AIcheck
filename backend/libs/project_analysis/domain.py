@@ -88,6 +88,10 @@ def create_project_analysis_run(
             "snapshotHash": snapshot.get("snapshotHash"),
             "promptVersion": snapshot.get("promptVersion"),
             "modelRouteVersion": preview.get("modelRouteVersion"),
+            # 实际模型也算运行身份：路由版本不随模型切换而变（2026.08 下先后打过
+            # deepseek-v4-pro 与通义），只按路由版本复用会让换模型对资料没变的
+            # 项目完全不生效——点按钮拿回的仍是旧模型那次结果。
+            "modelName": preview.get("modelName"),
         },
     )
     rows = state.setdefault("project_analysis_runs", [])
@@ -128,6 +132,7 @@ def create_project_analysis_run(
         "maxContextTokens": int(preview.get("maxContextTokens") or 0),
         "reservedOutputTokens": int(preview.get("reservedOutputTokens") or 0),
         "modelAlias": preview.get("modelAlias"),
+        "modelName": preview.get("modelName"),
         "modelRouteVersion": preview.get("modelRouteVersion"),
         "batchPlan": deepcopy(preview.get("batchPlan") or []),
         "batchCount": int(preview.get("batchCount") or 1),
@@ -162,8 +167,10 @@ def advance_project_analysis_phase(
     run.update(deepcopy(updates))
     run["phase"] = phase
     run["status"] = phase
-    if updates.get("heartbeat") or phase == "model_running":
-        run["lastHeartbeatAt"] = server_time()
+    # 任何相位推进都是一次活动：心跳时间跟着走，终态时它就是完成时刻。
+    # 原来只在 model_running 打点，界面上「最近心跳」在分析完成后仍停在模型
+    # 开始调用的时刻（2026-09-02 实测差 14 分钟），收敛器看到的活动时间也偏早。
+    run["lastHeartbeatAt"] = server_time()
     if phase in TERMINAL_PHASES:
         run["finishedAt"] = server_time()
     run["updatedAt"] = server_time()

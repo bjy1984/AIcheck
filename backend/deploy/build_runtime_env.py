@@ -84,10 +84,18 @@ runtime = {
     "AICHECK_LLM_MODEL_REVIEW": "deepseek-v4-pro",
     "AICHECK_LLM_MODEL_DEFAULT": "deepseek-v4-pro",
     "AICHECK_LLM_MODEL_COMPARE_FAST": "deepseek-v4-flash",
-    # 一键分析（full-project-analysis）的角色。漏配会回退 qwen3.7-plus 被
-    # DeepSeek 拒绝（HTTP 400），run 卡死——2026-08-28 实测。新增 LLM 角色时
-    # 这份清单必须同步补齐。
-    "AICHECK_LLM_MODEL_PROJECT_REVIEW": "deepseek-v4-pro",
+    # 一键分析（full-project-analysis）单独走 DashScope 的 qwen3.8-max（与本地一样
+    # 直连通义；本地 litellm 映射的是 qwen3.7-plus，2026-09-02 按要求升到 3.8 max）。
+    # 地址与密钥在下方 update 之后由视觉那把 DashScope 凭证带入
+    # （AICHECK_LLM_PROJECT_REVIEW_API_BASE/_API_KEY），
+    # 两个都配齐才生效，否则 qwen_runtime 退回主供应商 DeepSeek——那时这个模型名
+    # 会被 DeepSeek 以 HTTP 400 拒绝，run 卡死（2026-08-28 漏配角色时实测过）。
+    #
+    # 为什么不继续用 deepseek-v4-pro：同一份提示词下它几乎不写 evidenceRefs，
+    # 通过的节点直接回空 findings，校验器把整个节点降级成「证据不足」，监检
+    # 工作台一条结果都看不到。2026-09-01 PARUN-4B22A0B9B5D34554：24 条 finding
+    # 23 条无效；08-28 qwen3.7-plus 那次 66 条里 40 条带原文引用。
+    "AICHECK_LLM_MODEL_PROJECT_REVIEW": "qwen3.8-max",
     # 资料分类与其它文本角色共用当前 DeepSeek provider。若遗漏该角色，
     # qwen_runtime.yaml 会回退 qwen3.8-max，而 DeepSeek 会直接返回 HTTP 400。
     "AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER": "deepseek-v4-pro",
@@ -163,6 +171,10 @@ if secrets.get("AICHECK_LLM_VISION_API_KEY"):
     # 地址与密钥两个都配齐才生效（fallback_provider 的规矩），所以放同一个 if 里。
     runtime["AICHECK_LLM_FALLBACK_API_BASE"] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     runtime["AICHECK_LLM_FALLBACK_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
+    # 一键分析角色直连 DashScope（模型名见上方 AICHECK_LLM_MODEL_PROJECT_REVIEW）。
+    # 同一把 key、同一个地址；地址与密钥两个都配齐才生效（role_provider_override 的规矩）。
+    runtime["AICHECK_LLM_PROJECT_REVIEW_API_BASE"] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    runtime["AICHECK_LLM_PROJECT_REVIEW_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
 
 TARGET.write_text("".join("%s=%s\n" % (k, v) for k, v in sorted(runtime.items())))
 TARGET.chmod(0o600)

@@ -170,3 +170,11 @@ assert.equal(
     .label,
   '大模型正在进行全工程分析'
 )
+
+// run 列表原始项没有 percent：已完成的分析打开抽屉时不能显示成 0%
+assert.deepEqual(
+  projectAnalysisProgressView(
+    status({ phase: 'waiting_human_review', progressMode: 'determinate', percent: undefined })
+  ),
+  { mode: 'determinate', percent: 100, label: '全工程分析完成，等待人工确认' }
+)
