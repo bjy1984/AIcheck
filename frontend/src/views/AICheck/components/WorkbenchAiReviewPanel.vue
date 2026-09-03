@@ -256,9 +256,7 @@ const ruleLabel = (rule: Record<string, unknown>) => String(rule.text || rule.so
   background: linear-gradient(135deg, #f7faff 0%, #fff 58%);
   border: 1px solid #dbe6f4;
   border-radius: 12px;
-  box-shadow:
-    inset 3px 0 0 var(--ai-result-accent),
-    0 6px 18px rgb(31 72 125 / 6%);
+  box-shadow: 0 6px 18px rgb(31 72 125 / 6%);
 }
 
 .ai-current-result.is-red {
@@ -343,11 +341,10 @@ const ruleLabel = (rule: Record<string, unknown>) => String(rule.text || rule.so
 .ai-finding {
   --ai-finding-accent: #9db5d3;
 
-  padding: 14px 16px 14px 18px;
+  padding: 14px 16px;
   background: #fff;
   border: 1px solid #e3ebf5;
   border-radius: 10px;
-  box-shadow: inset 3px 0 0 var(--ai-finding-accent);
 }
 
 .ai-finding.is-blue {
