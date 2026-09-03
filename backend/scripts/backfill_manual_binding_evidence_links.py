@@ -23,6 +23,7 @@ sys.path.insert(0, "/app")
 from libs.contracts.responses import server_time  # noqa: E402
 from libs.manual_binding_links import (  # noqa: E402
     bindings_missing_evidence_links,
+    refresh_manual_binding_links,
     upsert_manual_binding_evidence_links,
 )
 
@@ -51,9 +52,12 @@ def main() -> int:
         created_total += len(created)
         for link in created:
             print(f"  已建 {link['id']} → {pid} 节点 {link['nodeId']} {link.get('fileName')}")
-    if created_total:
+    refreshed = refresh_manual_binding_links(repo.state, project_id)
+    for link in refreshed:
+        print(f"  已重算要点 {link['id']} → {link.get('reviewPointId')} / {link.get('materialTypeCode')}")
+    if created_total or refreshed:
         flush_state({"node_evidence_links"})
-    print(f"共补 {created_total} 条证据链接")
+    print(f"共补 {created_total} 条证据链接，重算要点 {len(refreshed)} 条")
     return 0
 
 

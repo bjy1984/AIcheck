@@ -118,6 +118,76 @@ def document_already_submitted(state: dict[str, Any], project_id: str, document_
     )
 
 
+def _review_points(state: dict[str, Any], project_id: str, node_id: int) -> list[dict[str, Any]]:
+    admin = state.get("admin_config") if isinstance(state.get("admin_config"), dict) else {}
+    project = next(
+        (row for row in _records(state, "projects") if str(row.get("id") or "") == str(project_id)),
+        {},
+    )
+    pack_id = str(project.get("businessPackId") or "engineering_inspection_v1")
+    return [
+        row
+        for row in (admin.get("materialReviewPoints") or [])
+        if isinstance(row, dict)
+        and row.get("enabled", True)
+        and int(row.get("nodeId") or 0) == int(node_id)
+        and str(row.get("businessPackId") or pack_id) == pack_id
+    ]
+
+
+def resolve_manual_binding_review_point(
+    state: dict[str, Any], project_id: str, binding: dict[str, Any], document: dict[str, Any]
+) -> dict[str, Any] | None:
+    """人工挂载对应的审查要点：先按挂载时选的资料要求（requirementId → 资料类型），
+    再按资料自身的分类找同类型要点。要点表（materialReviewPoints）的 id 与旧的
+    REQ-xx-xx 不是一套编号，链接只有挂到要点 id 上，资料要求汇总才认。"""
+    node_id = int(binding.get("nodeId") or 0)
+    points = _review_points(state, project_id, node_id)
+    if not points:
+        return None
+    requirement_id = str(binding.get("requirementId") or "").strip()
+    codes: list[str] = []
+    if requirement_id:
+        for row in _records(state, "requirements", "node_requirements"):
+            rid = str(row.get("id") or "")
+            if (rid == requirement_id or rid.endswith(":" + requirement_id)) and str(row.get("projectId") or project_id) == str(project_id):
+                if row.get("materialTypeCode"):
+                    codes.append(str(row["materialTypeCode"]))
+                break
+    if document.get("materialTypeCode"):
+        codes.append(str(document["materialTypeCode"]))
+    for code in codes:
+        for point in points:
+            if str(point.get("materialTypeCode") or "") == code:
+                return point
+    return None
+
+
+def _apply_review_point(link: dict[str, Any], point: dict[str, Any] | None, binding: dict[str, Any], document: dict[str, Any]) -> None:
+    if point:
+        link.update(
+            {
+                "reviewPointId": point.get("id"),
+                "reviewContent": point.get("reviewContent") or binding.get("requirementName"),
+                "materialTypeCode": point.get("materialTypeCode") or document.get("materialTypeCode"),
+                "materialTypeName": point.get("materialTypeName") or document.get("materialTypeName"),
+                "materialCategory": point.get("materialCategory") or document.get("materialCategory"),
+                "requiredType": point.get("requiredType"),
+                "responsibleParty": point.get("responsibleParty"),
+            }
+        )
+    else:
+        link.update(
+            {
+                "reviewPointId": binding.get("requirementId"),
+                "reviewContent": binding.get("requirementName") or link.get("nodeName"),
+                "materialTypeCode": document.get("materialTypeCode"),
+                "materialTypeName": document.get("materialTypeName"),
+                "materialCategory": document.get("materialCategory"),
+            }
+        )
+
+
 def upsert_manual_binding_evidence_links(
     state: dict[str, Any],
     project_id: str,
@@ -189,11 +259,11 @@ def upsert_manual_binding_evidence_links(
             "nodeId": node_id,
             "nodeName": node.get("name") or node.get("nodeName"),
             "ruleId": node.get("ruleId"),
-            "reviewPointId": binding.get("requirementId"),
-            "reviewContent": binding.get("requirementName") or node.get("name"),
-            "materialTypeCode": document.get("materialTypeCode"),
-            "materialTypeName": document.get("materialTypeName"),
-            "materialCategory": document.get("materialCategory"),
+            "reviewPointId": None,
+            "reviewContent": None,
+            "materialTypeCode": None,
+            "materialTypeName": None,
+            "materialCategory": None,
             "requiredType": None,
             "responsibleParty": None,
             "documentId": str(document.get("id") or ""),
@@ -212,7 +282,9 @@ def upsert_manual_binding_evidence_links(
             "scoreReasons": ["人工在界面上把整份资料挂到本节点"],
             "evidenceFacts": [],
             "formalEvidenceFactCount": 0,
-            "formalEvidenceEligible": False,
+            # 人选的整份资料算正式证据（否则只是 advisory，资料要求汇总看不见它）；
+            # 没有页码/bbox，汇总里记成「已确认但不可定位」，正式引用仍要监检定位字段。
+            "formalEvidenceEligible": True,
             "evidenceTier": "manual",
             "manualStatus": "confirmed",
             "manualStatusLabel": "已确认",
@@ -222,11 +294,35 @@ def upsert_manual_binding_evidence_links(
             "bindingId": binding.get("id"),
             "createdAt": now,
         }
+        _apply_review_point(link, resolve_manual_binding_review_point(state, project_id, binding, document), binding, document)
         links.insert(0, link)
         by_id[link_id] = link
         covered.add((node_id, version_id))
         created.append(link)
     return created
+
+
+def refresh_manual_binding_links(state: dict[str, Any], project_id: str | None = None) -> list[dict[str, Any]]:
+    """把已有人工链接的审查要点字段按当前要点表重算（回填/要点表变更后用）。"""
+    documents = {str(row.get("id") or ""): row for row in _records(state, "documents") if row.get("id")}
+    bindings = {str(row.get("id") or ""): row for row in _bindings(state) if row.get("id")}
+    changed: list[dict[str, Any]] = []
+    for link in _records(state, "node_evidence_links"):
+        if link.get("source") != MANUAL_BINDING_SOURCE:
+            continue
+        pid = str(link.get("projectId") or "")
+        if project_id is not None and pid != str(project_id):
+            continue
+        binding = bindings.get(str(link.get("bindingId") or "")) or {"nodeId": link.get("nodeId")}
+        document = documents.get(str(link.get("documentId") or "")) or {}
+        before = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible")}
+        link["formalEvidenceEligible"] = True
+        _apply_review_point(link, resolve_manual_binding_review_point(state, pid, binding, document), binding, document)
+        after = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible")}
+        if before != after:
+            link["updatedAt"] = server_time()
+            changed.append(link)
+    return changed
 
 
 def bindings_missing_evidence_links(state: dict[str, Any], project_id: str | None = None) -> list[dict[str, Any]]:

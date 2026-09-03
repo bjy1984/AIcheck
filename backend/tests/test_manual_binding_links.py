@@ -23,8 +23,16 @@ def _state():
             {"id": "DOC-OLD", "projectId": "P-1", "fileName": "旧版.pdf", "currentVersionId": "DV-OLD-V2"},
         ],
         "tree_nodes": [{"projectId": "P-1", "nodeId": 2, "name": "施工单位许可资质", "businessPackId": "bp"}],
+        "projects": [{"id": "P-1", "businessPackId": "bp"}],
+        "requirements": [{"id": "REQ-02-01", "projectId": "P-1", "nodeId": 2, "materialTypeCode": "construction_license"}],
+        "admin_config": {
+            "materialReviewPoints": [
+                {"id": "MRP-2-construction_license", "businessPackId": "bp", "nodeId": 2, "materialTypeCode": "construction_license", "materialTypeName": "施工单位安装许可证", "materialCategory": "资质", "requiredType": "条件必传", "responsibleParty": "contractor", "reviewContent": "施工单位许可资质"},
+                {"id": "MRP-2-design_document", "businessPackId": "bp", "nodeId": 2, "materialTypeCode": "design_document"},
+            ]
+        },
         "bindings": [
-            {"id": "BIND-2-A", "projectId": "P-1", "nodeId": 2, "documentId": "DOC-LIC", "documentVersionId": "DV-LIC-V1", "bindingStatus": "已提交", "requirementName": "施工许可证"},
+            {"id": "BIND-2-A", "projectId": "P-1", "nodeId": 2, "documentId": "DOC-LIC", "documentVersionId": "DV-LIC-V1", "bindingStatus": "已提交", "requirementId": "REQ-02-01", "requirementName": "施工许可证"},
             {"id": "BIND-2-B", "projectId": "P-1", "nodeId": 2, "documentId": "DOC-DRAW", "documentVersionId": "DV-DRAW-V2", "bindingStatus": "已提交"},
             {"id": "BIND-2-C", "projectId": "P-1", "nodeId": 2, "documentId": "DOC-OLD", "documentVersionId": "DV-OLD-V1", "bindingStatus": "已提交"},
             {"id": "BIND-2-D", "projectId": "P-1", "nodeId": 2, "documentId": "DOC-LIC", "documentVersionId": "DV-LIC-V1", "bindingStatus": "草稿挂载"},
@@ -54,6 +62,10 @@ def test_补链接幂等_已有自动打靶链接不重复():
     link = created[0]
     assert link["source"] == "manual_binding" and link["manualStatus"] == "confirmed"
     assert link["nodeName"] == "施工单位许可资质" and link["bindingId"] == "BIND-2-A"
+    # 挂载时选的是「施工单位安装许可证」要求：链接挂到同类型的审查要点上，资料类型跟要点走
+    # （资料本身被词典分类成 manufacturing_license，人工选择优先）
+    assert link["reviewPointId"] == "MRP-2-construction_license"
+    assert link["materialTypeCode"] == "construction_license" and link["formalEvidenceEligible"] is True
     assert upsert_manual_binding_evidence_links(state, "P-1", state["bindings"]) == []
     assert bindings_missing_evidence_links(state, "P-1") == []
     # 驳回后再次提交：同一条链接恢复为已确认
@@ -70,3 +82,16 @@ def test_资料已进审查视野的判定():
     assert not document_already_submitted(state, "P-1", "DOC-LIC")
     state["documents"][0]["poolSubmissionStatus"] = "已提交"
     assert document_already_submitted(state, "P-1", "DOC-LIC")
+
+
+def test_重算要点_老链接补上要点id():
+    from libs.manual_binding_links import refresh_manual_binding_links
+
+    state = _state()
+    upsert_manual_binding_evidence_links(state, "P-1", state["bindings"])
+    link = next(row for row in state["node_evidence_links"] if row["source"] == "manual_binding")
+    link.update({"reviewPointId": "REQ-02-01", "materialTypeCode": "manufacturing_license", "formalEvidenceEligible": False})
+    changed = refresh_manual_binding_links(state, "P-1")
+    assert [row["id"] for row in changed] == [link["id"]]
+    assert link["reviewPointId"] == "MRP-2-construction_license" and link["formalEvidenceEligible"] is True
+    assert refresh_manual_binding_links(state, "P-1") == []
