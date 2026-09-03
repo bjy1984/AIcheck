@@ -355,6 +355,23 @@ def build_tool_arguments(
                 {"source": "designDocument.designSealOrganization", "value": read_fact(facts, "designDocument.designSealOrganization")},
             ],
         )
+    if tool_name == "check_certificate_validity":
+        cert_facts = nested_dict(facts, "certificateFacts")
+        period = nested_dict(cert_facts, "period")
+        arguments.setdefault("certificateType", cert_facts.get("certificateType"))
+        arguments.setdefault("certificates", list(cert_facts.get("certificates") or []))
+        arguments.setdefault("periodStart", period.get("periodStart") or read_fact(facts, "project.constructionStart"))
+        arguments.setdefault("periodEnd", period.get("periodEnd") or read_fact(facts, "project.plannedConstructionEnd"))
+        arguments.setdefault("referenceDate", period.get("referenceDate"))
+        arguments.setdefault("expectedHolder", cert_facts.get("expectedHolder"))
+        if profile in {
+            "r01_design_license_period",
+            "r01_certificate_validity",
+            "r02_installation_license_period",
+            "r02_certificate_validity",
+        }:
+            arguments.setdefault("requiredScopes", list_fact(facts, "project.pipelineGrades"))
+        arguments.setdefault("requiredScopes", [])
     if tool_name == "check_design_license_scope":
         arguments.setdefault("licenseScopes", list_fact(facts, "designLicense.scopeCodes"))
         grade_path = "designDocument.pipelineGrades" if profile == "r01_design_scope_documents" else "project.pipelineGrades"

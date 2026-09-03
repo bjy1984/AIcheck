@@ -104,6 +104,9 @@ SYSTEM_PROMPT = """你是压力管道安装工程监督检验 AI 审查代理。
 8. 只输出符合 outputSchema 的一个合法 JSON 对象。
 9. fileCorpus 条目带 identicalToFileId 时，表示该文件内容与所指文件逐字相同：
    按所指文件的 fullOcrText 审查，evidenceRefs.fileId 仍写当前文件自己的 fileId。
+10. node.certificateVerification 是服务端对证照/资格证有效期、持证主体、许可范围的
+   确定性核验结论。解释并引用它，不得改写：result 为 failed 的证书不得判为满足，
+   evidence_insufficient 的证书只能要求人工确认；有效期数值以它为准。
 """
 
 
@@ -291,6 +294,46 @@ def _route_limits(model_route: dict[str, Any]) -> tuple[int, int]:
     return maximum, reserved
 
 
+def _certificate_verification_for_node(
+    state: dict[str, Any], project_id: str, node_id: int, document_version_ids: list[str]
+) -> dict[str, Any] | None:
+    from libs.review_orchestrator.certificate_facts import (
+        build_certificate_facts,
+        certificate_profile_for_node,
+    )
+    from libs.review_orchestrator.deterministic_tools import check_certificate_validity
+
+    if not certificate_profile_for_node(node_id):
+        return None
+    facts = build_certificate_facts(state, project_id, node_id, document_version_ids)
+    cert_facts = facts.get("certificateFacts") or {}
+    period = cert_facts.get("period") or {}
+    output = check_certificate_validity(
+        {
+            "certificateType": cert_facts.get("certificateType"),
+            "certificates": list(cert_facts.get("certificates") or []),
+            "periodStart": period.get("periodStart"),
+            "periodEnd": period.get("periodEnd"),
+            "referenceDate": period.get("referenceDate"),
+            "expectedHolder": cert_facts.get("expectedHolder"),
+            "requiredScopes": [],
+        }
+    )
+    verified = output.get("facts") or {}
+    return {
+        "result": output.get("result"),
+        "ruleVersion": output.get("ruleVersion"),
+        "certificateType": verified.get("certificateType"),
+        "period": {"start": verified.get("periodStart"), "end": verified.get("periodEnd"), "referenceDate": verified.get("referenceDate")},
+        "expectedHolder": verified.get("expectedHolder"),
+        "certificates": [
+            {k: item.get(k) for k in ("label", "holder", "certificateNo", "issuer", "validFrom", "validUntil", "scopes", "result", "checks")}
+            for item in verified.get("certificates") or []
+        ],
+        "warnings": list(output.get("warnings") or []) + list(cert_facts.get("extractionWarnings") or []),
+    }
+
+
 def _active_project_node_documents(
     state: dict[str, Any], project_id: str, node_id: int
 ) -> list[dict[str, Any]]:
@@ -397,6 +440,14 @@ def build_project_analysis_snapshot(
             "configuredRequirements": _node_requirements(state, project_id, node_id),
             "fileRefs": file_refs,
         }
+        # 证书类节点先做确定性有效性核验，结论随节点一起进提示词：模型看到的是
+        # 「有效期至 2028-01-17，覆盖施工期：通过」而不是一堆 OCR 片段。它进快照哈希，
+        # 证书事实变了就是一次新的分析。
+        certificate_verification = _certificate_verification_for_node(
+            state, project_id, node_id, [str(row["documentVersionId"]) for row in file_refs]
+        )
+        if certificate_verification is not None:
+            node_payload["certificateVerification"] = certificate_verification
         nodes.append(node_payload)
         node_snapshot_hashes[str(node_id)] = _stable_hash(node_payload)
         for version_id in sorted({row["documentVersionId"] for row in file_refs}):

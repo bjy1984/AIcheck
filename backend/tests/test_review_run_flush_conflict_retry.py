@@ -7,7 +7,7 @@ worker 跑完收尾整批 flush → ai_runs baseline 不符 → 事务回滚 →
 from __future__ import annotations
 
 from libs.db.repository import ConcurrentPersistenceError
-from libs.review_orchestrator import execution
+from libs.review_orchestrator import persistence_retry as execution
 
 
 def test_conflict_retry_reloads_and_merges_then_flushes(monkeypatch) -> None:
@@ -35,7 +35,7 @@ def test_conflict_retry_reloads_and_merges_then_flushes(monkeypatch) -> None:
     monkeypatch.setattr(execution, "flush_state_records", fake_flush)
     records = {"ai_runs": [stale_ai_run], "review_runs": [inflight_run], "review_events": [{"id": "EV-1", "reviewRunId": "RRUN-1"}]}
 
-    execution.flush_review_run_records_with_conflict_retry("RRUN-1", records)
+    execution.flush_review_run_records_with_conflict_retry("RRUN-1", records, inflight_runs={})
 
     assert len(calls) == 2, "第一次冲突后必须重试一次"
     retried_ai_run = calls[1]["ai_runs"][0]

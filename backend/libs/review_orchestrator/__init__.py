@@ -23,6 +23,7 @@ from typing import Any
 
 # 名字 → 所在子模块。新增导出时同步这张表。
 _EXPORTS: dict[str, str] = {
+    "with_certificate_fact_builders": "certificate_facts",
     "ALLOWED_AGENT_TOOLS": "execution",
     "REVIEW_GRAPH_EDGES": "execution",
     "REVIEW_GRAPH_STEPS": "execution",
@@ -50,6 +51,7 @@ _EXPORTS: dict[str, str] = {
 }
 
 __all__ = [
+    "with_certificate_fact_builders",
     "ALLOWED_AGENT_TOOLS",
     "REVIEW_GRAPH_EDGES",
     "REVIEW_GRAPH_STEPS",

@@ -35,6 +35,34 @@ DETERMINISTIC_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         "outputSchema": RESULT_SCHEMA,
     },
     {
+        "name": "check_certificate_validity",
+        "capability": (
+            "证照/人员资格证有效性核验：有效期是否覆盖业务期间（缺业务期间时按当日判断）、"
+            "持证主体是否与项目责任单位一致、许可/合格范围是否覆盖要求、关键字段是否齐全。"
+            "输入来自 certificateFacts（certificate_facts 构建），任一必核字段缺失即证据不足，永不自动判通过。"
+        ),
+        "inputSchema": {
+            "certificateType": "string",
+            "certificates": [
+                {
+                    "holder": "string?",
+                    "certificateNo": "string?",
+                    "issuer": "string?",
+                    "validFrom": "date?",
+                    "validUntil": "date?",
+                    "scopes": ["string"],
+                    "evidence": [{"documentVersionId": "string", "pageNo": "integer?", "quotedText": "string?"}],
+                }
+            ],
+            "periodStart": "date?",
+            "periodEnd": "date?",
+            "referenceDate": "date?",
+            "expectedHolder": "string?",
+            "requiredScopes": ["string"],
+        },
+        "outputSchema": RESULT_SCHEMA,
+    },
+    {
         "name": "check_design_license_scope",
         "capability": "按照设计许可级别规则判断许可范围是否覆盖项目管道级别。",
         "inputSchema": {"licenseScopes": ["string"], "requiredPipelineGrades": ["string"]},
@@ -104,6 +132,7 @@ def dispatch_deterministic_tool(tool_name: str, arguments: dict[str, Any]) -> di
     handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
         "check_all_equal": check_all_equal,
         "check_date_covers": check_date_covers,
+        "check_certificate_validity": check_certificate_validity,
         "check_design_license_scope": check_design_license_scope,
         "decode_welder_qualification": decode_welder_qualification,
         "check_welder_work_coverage": check_welder_work_coverage,
@@ -159,6 +188,129 @@ def check_date_covers(arguments: dict[str, Any]) -> dict[str, Any]:
             }
         ]
     return output
+
+
+def check_certificate_validity(arguments: dict[str, Any]) -> dict[str, Any]:
+    """证照/资格证有效性的确定性核验。
+
+    - 有效期：有业务期间时要求 validFrom <= periodStart 且 validUntil >= periodEnd；
+      项目没填施工起止时按 referenceDate（默认当日）判断是否已过期，并记 warning；
+    - 主体一致：给了 expectedHolder 才比（去空白、去括号差异）；
+    - 范围覆盖：给了 requiredScopes 才比；
+    - 一张证缺 validUntil → 该证 evidence_insufficient；没有任何证 → evidence_insufficient。
+    多张证时：任一 failed → failed；否则任一 insufficient → evidence_insufficient；否则 passed。
+    """
+    certificates = [item for item in arguments.get("certificates") or [] if isinstance(item, dict)]
+    period_start = parse_date(arguments.get("periodStart"))
+    period_end = parse_date(arguments.get("periodEnd"))
+    reference = parse_date(arguments.get("referenceDate")) or business_today()
+    expected_holder = _norm_holder(arguments.get("expectedHolder"))
+    required_scopes = {normalize_grade(item) for item in arguments.get("requiredScopes") or [] if item}
+    warnings: list[str] = []
+    if period_end is None:
+        warnings.append("construction_period_missing_using_reference_date")
+    per_certificate: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
+    statuses: list[str] = []
+    for index, cert in enumerate(certificates):
+        label = str(cert.get("certificateNo") or cert.get("holder") or cert.get("fileName") or f"#{index + 1}")
+        cert_checks: list[dict[str, Any]] = []
+        status = "passed"
+        valid_until = parse_date(cert.get("validUntil"))
+        valid_from = parse_date(cert.get("validFrom"))
+        if valid_until is None:
+            status = "evidence_insufficient"
+            cert_checks.append(check(f"{label}:valid_until_present", False, None, "present"))
+        else:
+            end_target = period_end or reference
+            covers_end = valid_until >= end_target
+            cert_checks.append(
+                check(f"{label}:valid_until_covers_period_end" if period_end else f"{label}:not_expired_on_reference_date",
+                      covers_end, valid_until.isoformat(), end_target.isoformat())
+            )
+            if not covers_end:
+                status = "failed"
+            if period_start is not None and valid_from is not None:
+                covers_start = valid_from <= period_start
+                cert_checks.append(check(f"{label}:valid_from_covers_period_start", covers_start, valid_from.isoformat(), period_start.isoformat()))
+                if not covers_start:
+                    status = "failed"
+        if expected_holder:
+            actual_holder = _norm_holder(cert.get("holder"))
+            if not actual_holder:
+                cert_checks.append(check(f"{label}:holder_present", False, None, "present"))
+                if status == "passed":
+                    status = "evidence_insufficient"
+            else:
+                same = actual_holder == expected_holder or actual_holder in expected_holder or expected_holder in actual_holder
+                cert_checks.append(check(f"{label}:holder_matches_project", same, cert.get("holder"), arguments.get("expectedHolder")))
+                if not same:
+                    status = "failed"
+        if required_scopes:
+            scopes = {normalize_grade(item) for item in cert.get("scopes") or [] if item}
+            missing = sorted(required_scopes - scopes)
+            if not scopes:
+                cert_checks.append(check(f"{label}:scope_present", False, None, sorted(required_scopes)))
+                if status == "passed":
+                    status = "evidence_insufficient"
+            else:
+                cert_checks.append(check(f"{label}:scope_covers_required", not missing, sorted(scopes), sorted(required_scopes)))
+                if missing:
+                    status = "failed"
+        for field in ("certificateNo", "issuer"):
+            if not cert.get(field):
+                warnings.append(f"{field}_missing:{label}")
+        checks.extend(cert_checks)
+        statuses.append(status)
+        per_certificate.append(
+            {
+                "label": label,
+                "certificateType": cert.get("certificateType") or arguments.get("certificateType"),
+                "holder": cert.get("holder"),
+                "certificateNo": cert.get("certificateNo"),
+                "issuer": cert.get("issuer"),
+                "validFrom": valid_from.isoformat() if valid_from else None,
+                "validUntil": valid_until.isoformat() if valid_until else None,
+                "scopes": list(cert.get("scopes") or []),
+                "result": status,
+                "checks": cert_checks,
+                "evidenceRefs": list(cert.get("evidence") or []),
+            }
+        )
+    if not certificates:
+        overall = "evidence_insufficient"
+        warnings.append("no_certificate_extracted")
+    elif "failed" in statuses:
+        overall = "failed"
+    elif "evidence_insufficient" in statuses:
+        overall = "evidence_insufficient"
+    else:
+        overall = "passed"
+    output = result(
+        "check_certificate_validity",
+        overall,
+        facts={
+            "certificateType": arguments.get("certificateType"),
+            "certificateCount": len(certificates),
+            "periodStart": period_start.isoformat() if period_start else None,
+            "periodEnd": period_end.isoformat() if period_end else None,
+            "referenceDate": reference.isoformat(),
+            "expectedHolder": arguments.get("expectedHolder"),
+            "requiredScopes": sorted(required_scopes),
+            "certificates": per_certificate,
+        },
+        checks=checks,
+        rule_version="certificate-validity-cn-v1",
+    )
+    if warnings:
+        output["warnings"] = list(dict.fromkeys(warnings))
+    return output
+
+
+def _norm_holder(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(r"[\s（）()·•\-—–]", "", text)
+    return text.strip().lower()
 
 
 def check_design_license_scope(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -666,6 +818,14 @@ def parse_date(value: Any) -> date | None:
     text = str(value or "").strip().replace("年", "-").replace("月", "-").replace("日", "").replace(".", "-").replace("/", "-")
     try:
         return date.fromisoformat(text)
+    except ValueError:
+        pass
+    # 中文日期常不补零（2028-1-17）；fromisoformat 不认，这里补上
+    match = re.fullmatch(r"\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*", text)
+    if not match:
+        return None
+    try:
+        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
     except ValueError:
         return None
 

@@ -256,6 +256,7 @@ from libs.review_conversation_prompt import (
 from libs.review_evidence import attach_review_evidence_package_to_ai_run
 from libs.review_orchestrator import (
     apply_review_human_input_for_review_run,
+    with_certificate_fact_builders,
     build_review_orchestration_scorecard,
     clone_review_run_for_replay,
     dispatch_existing_review_run,
@@ -270,6 +271,7 @@ from libs.review_orchestrator import (
     signal_review_run_human_decision,
     signal_review_run_human_input,
 )
+from libs.review_orchestrator.fact_builders import NODE_FACT_BUILDERS
 from libs.review_orchestrator.execution import (
     current_published_rule_for_node,
     qwen_runtime_client,
@@ -281,19 +283,6 @@ from libs.review_orchestrator.llm_tool_schemas import (
     build_review_conversation_agent_tools,
     is_external_registry_tool,
 )
-from libs.review_orchestrator.r13_facts import build_r13_business_facts
-from libs.review_orchestrator.r14_facts import build_r14_business_facts
-from libs.review_orchestrator.r15_facts import build_r15_business_facts
-from libs.review_orchestrator.r16_facts import build_r16_business_facts
-from libs.review_orchestrator.r17_facts import build_r17_business_facts
-from libs.review_orchestrator.r18_facts import build_r18_business_facts
-from libs.review_orchestrator.r20_r23_facts import (
-    build_r20_business_facts,
-    build_r21_business_facts,
-    build_r22_business_facts,
-    build_r23_business_facts,
-)
-from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
@@ -10558,19 +10547,7 @@ def review_conversation_tool_result_summary(tool_name: str, output: dict[str, An
 CONVERSATION_FORMAL_JUDGMENT_EXCLUDED_NODES = {12, 19}
 
 # 与 execution.py load_context 步骤保持一致的 fact builder 分发表（不含 R12/R19）。
-CONVERSATION_FORMAL_FACT_BUILDERS: dict[int, Any] = {
-    13: build_r13_business_facts,
-    14: build_r14_business_facts,
-    15: build_r15_business_facts,
-    16: build_r16_business_facts,
-    17: build_r17_business_facts,
-    18: build_r18_business_facts,
-    20: build_r20_business_facts,
-    21: build_r21_business_facts,
-    22: build_r22_business_facts,
-    23: build_r23_business_facts,
-    **{int(key.removeprefix("r")): builder for key, builder in R24_R34_FACT_BUILDERS.items()},
-}
+CONVERSATION_FORMAL_FACT_BUILDERS: dict[int, Any] = with_certificate_fact_builders(NODE_FACT_BUILDERS)
 
 
 def review_conversation_formal_judgment(

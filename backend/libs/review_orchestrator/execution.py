@@ -25,14 +25,9 @@ from libs.business_pack.clause_store import (
     review_run_clause_snapshot,
 )
 from libs.contracts.responses import server_time
-from libs.db.repository import (
-    STATE_COLLECTIONS,
-    ConcurrentPersistenceError,
-    flush_state_records,
-    load_review_run_state,
-    postgres_persistence_configured,
-    repo,
-)
+from libs.review_orchestrator.certificate_facts import CERTIFICATE_VERIFICATION_REQUIREMENT, certificate_verification_from_tool_execution, merge_certificate_facts  # noqa: E501
+from libs.review_orchestrator.persistence_retry import flush_review_run_records_with_conflict_retry, review_run_state_records  # noqa: E501
+from libs.db.repository import STATE_COLLECTIONS, flush_state_records, load_review_run_state, repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
@@ -332,45 +327,6 @@ def review_task_queues() -> dict[str, str]:
         "retrieval": os.getenv("AICHECK_REVIEW_RETRIEVAL_TASK_QUEUE", "review.retrieval"),
         "validation": os.getenv("AICHECK_REVIEW_VALIDATION_TASK_QUEUE", "review.validation"),
     }
-
-
-def review_run_state_records(review_run_id: str) -> dict[str, list[dict[str, Any]]]:
-    review_run = repo.find_one("review_runs", review_run_id, id_field="reviewRunId") or repo.find_one(
-        "review_runs", review_run_id
-    )
-    if not review_run:
-        return {}
-    ai_run_id = str(review_run.get("aiRunId") or "")
-    project_id = str(review_run.get("projectId") or "")
-    node_id = int(review_run.get("nodeId") or 0)
-    records: dict[str, list[dict[str, Any]]] = {"review_runs": [review_run]}
-    for collection in REVIEW_STATE_COLLECTIONS:
-        if collection == "review_runs":
-            continue
-        records[collection] = [
-            item
-            for item in repo.state.get(collection, [])
-            if str(item.get("reviewRunId") or "") == review_run_id
-        ]
-    records["ai_runs"] = [
-        item for item in repo.state.get("ai_runs", []) if ai_run_id and str(item.get("id") or "") == ai_run_id
-    ]
-    records["ai_trace_steps"] = [
-        item
-        for item in repo.state.get("ai_trace_steps", [])
-        if ai_run_id and str(item.get("aiRunId") or "") == ai_run_id
-    ]
-    records["review_findings"] = [
-        item
-        for item in repo.state.get("review_findings", [])
-        if str(item.get("reviewRunId") or "") == review_run_id
-    ]
-    records["tree_nodes"] = [
-        item
-        for item in repo.state.get("tree_nodes", [])
-        if str(item.get("projectId") or "") == project_id and int(item.get("nodeId") or 0) == node_id
-    ]
-    return records
 
 
 def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "temporal") -> dict[str, Any]:
@@ -1147,7 +1103,7 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             if inflight is not None and records:
                 records["review_runs"] = [inflight]
             if records:
-                flush_review_run_records_with_conflict_retry(review_run_id, records)
+                flush_review_run_records_with_conflict_retry(review_run_id, records, inflight_runs=_INFLIGHT_REVIEW_RUNS)
         except Exception:  # noqa: BLE001 - 落库尽力而为，不掀翻已跑完的结果
             # 但必须留下声音。第一版这里是 `pass`，结果把真正的根因盖了整整一轮：
             # flush 抛在 ai_runs 上（别的进程改过那条），事务回滚，
@@ -1156,87 +1112,6 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         finally:
             _INFLIGHT_REVIEW_RUNS.pop(review_run_id, None)
             repo.unpin_object(REVIEW_RUN_COLLECTION_NAME, review_run_id)
-
-
-# 收尾 flush 撞上并发修改时，只重载这几个集合并把执行结果合并回去再试。
-# 其它记录（事件、草稿、trace）都是本次运行新建的，不会被别的进程改。
-_CONFLICT_RETRY_COLLECTIONS = ("ai_runs", "review_runs", "tree_nodes")
-
-
-def flush_review_run_records_with_conflict_retry(
-    review_run_id: str, records: dict[str, list[dict[str, Any]]], *, attempts: int = 2
-) -> None:
-    """落库；撞上 ConcurrentPersistenceError 时重载冲突集合、合并本次结果后重试。
-
-    自动审查异步化后（2026-09-03 实测）：worker 起任务时加载了 ai_run，API 进程
-    在派发返回后又回填了同一行（reviewRunId/workflowId），worker 跑完 255 秒收尾
-    整批 flush 时 ai_runs 的 baseline 对不上，事务回滚——库里的运行永远 queued，
-    而报错的是 ai_runs、丢的是 review_runs。
-
-    重试的做法：把本次执行改过的对象按 id 留一份，解钉后只增量重载这几个集合
-    （拿到库里的新 baseline），再把执行结果的字段覆盖回新载入的对象上，重新 flush。
-    并发方写的字段（workflowId 之类）只在本次没写时保留库里的值。
-    """
-    last_error: Exception | None = None
-    for attempt in range(max(1, attempts)):
-        try:
-            flush_state_records(records)
-            return
-        except ConcurrentPersistenceError as exc:
-            last_error = exc
-            if attempt + 1 >= attempts or not postgres_persistence_configured():
-                raise
-            logging.getLogger(__name__).warning(
-                "ReviewRun %s 落库撞上并发修改，重载冲突集合后重试：%s", review_run_id, exc
-            )
-            _reload_and_merge_conflicting_records(review_run_id, records)
-    if last_error is not None:
-        raise last_error
-
-
-def _reload_and_merge_conflicting_records(
-    review_run_id: str, records: dict[str, list[dict[str, Any]]]
-) -> None:
-    stale_by_key: dict[str, dict[str, dict[str, Any]]] = {}
-    for state_key in _CONFLICT_RETRY_COLLECTIONS:
-        rows = [row for row in records.get(state_key) or [] if isinstance(row, dict)]
-        if not rows:
-            continue
-        collection_name = STATE_COLLECTIONS.get(state_key, state_key)
-        stale_by_key[state_key] = {}
-        for index, row in enumerate(rows):
-            object_id = repo.persistence_object_id(collection_name, row, index)
-            stale_by_key[state_key][object_id] = dict(row)
-            repo.unpin_object(collection_name, object_id)
-    if not stale_by_key:
-        return
-    repo.refresh_collections_incrementally(set(stale_by_key))
-    for state_key, stale_rows in stale_by_key.items():
-        collection_name = STATE_COLLECTIONS.get(state_key, state_key)
-        fresh_rows = repo.state.setdefault(state_key, [])
-        merged: list[dict[str, Any]] = []
-        for object_id, stale in stale_rows.items():
-            fresh = next(
-                (
-                    row
-                    for index, row in enumerate(fresh_rows)
-                    if isinstance(row, dict)
-                    and repo.persistence_object_id(collection_name, row, index) == object_id
-                ),
-                None,
-            )
-            if fresh is None:
-                fresh = stale
-                fresh_rows.insert(0, fresh)
-            else:
-                for field, value in stale.items():
-                    if field == "workflowId" and not value:
-                        continue
-                    fresh[field] = value
-            merged.append(fresh)
-            if state_key == "review_runs" and object_id == review_run_id:
-                _INFLIGHT_REVIEW_RUNS[review_run_id] = fresh
-        records[state_key] = merged
 
 
 # 正在执行中的运行记录，按 reviewRunId 索引。存在的唯一理由是并发重载会把
@@ -1604,6 +1479,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         elif f"r{int(review_run.get('nodeId') or 0)}" in R24_R34_FACT_BUILDERS:
             builder = R24_R34_FACT_BUILDERS[f"r{int(review_run.get('nodeId') or 0)}"]
             context["businessFacts"] = builder(repo.state, review_run)
+        context["businessFacts"] = merge_certificate_facts(repo.state, review_run, context.get("businessFacts"))
         applied_corrections = apply_node_fact_corrections(
             repo.state,
             str(review_run.get("projectId") or ""),
@@ -1858,6 +1734,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context["currentRule"] = rule
         context["ruleResults"] = [result]
         context["atomicToolExecution"] = tool_execution
+        context["certificateVerification"] = certificate_verification_from_tool_execution(tool_execution)
         if int(review_run.get("nodeId") or 0) == 19:
             verification_tool = {"verificationCount": 0, "status": "skipped_for_r19"}
         else:
@@ -2087,6 +1964,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
+            *([CERTIFICATE_VERIFICATION_REQUIREMENT] if context.get("certificateVerification") else []),
             *grounding_block["requirements"],
         ],
         "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
@@ -2098,6 +1976,9 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         # 压掉嵌套工具输出里的证据引用列表再进提示词。原样给会让单个
         # locate_evidence_fragment 结果占掉 39% 预算（见 rule_result_digest）。
         "ruleResults": compact_rule_results(context.get("ruleResults") or []),
+        # 证书有效性核验结论单独给一个键：模型解释它、引用它，不得改写它。
+        # 它不是 OCR 正文（没有页码坐标），也不该淹没在 ruleResults 的压缩摘要里。
+        "certificateVerification": context.get("certificateVerification") or None,
         "fixedClausePackage": context.get("clausePackageSnapshot") or {},
         "retrievalTraceIds": [item.get("retrievalTraceId") for item in context.get("retrievalTraces") or []],
         # 检索到的条款正文与 ID。原先只给 traceId，不给条款本身——而输出 schema

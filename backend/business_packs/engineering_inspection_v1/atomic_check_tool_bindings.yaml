@@ -37,6 +37,7 @@ atomicCheckToolBindingSet:
   - R32
   - R33
   - R34
+  - R38
   - R60
   - R61
   - R62
@@ -82,6 +83,7 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R01-03
   sourceRuleId: R01
   requiredFacts:
+  - certificateFacts.certificates
   - designLicense.validFrom
   - designLicense.validUntil
   - project.constructionStart
@@ -91,6 +93,7 @@ atomicCheckToolBindings:
   tools:
   - extract_document_fields
   - check_date_covers
+  - check_certificate_validity
   - validate_evidence_grounding
   parameters:
     profile: design_license
@@ -159,6 +162,7 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R02-02
   sourceRuleId: R02
   requiredFacts:
+  - certificateFacts.certificates
   - installationLicense.validFrom
   - installationLicense.validUntil
   - project.constructionStart
@@ -166,6 +170,7 @@ atomicCheckToolBindings:
   tools:
   - extract_document_fields
   - check_date_covers
+  - check_certificate_validity
   - validate_evidence_grounding
   parameters:
     profile: installation_license
@@ -255,6 +260,7 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R03-03
   sourceRuleId: R03
   requiredFacts:
+  - certificateFacts.certificates
   - ndtAgencies.agencies[].agencyId
   - ndtAgencies.agencies[].validFrom
   - ndtAgencies.agencies[].validUntil
@@ -262,6 +268,7 @@ atomicCheckToolBindings:
   - ndtAgencies.agencies[].plannedPeriodEnd
   tools:
   - extract_document_fields
+  - check_certificate_validity
   - evaluate_ndt_agencies
   - validate_evidence_grounding
   parameters:
@@ -1682,6 +1689,7 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R24-01
   sourceRuleId: R24
   requiredFacts:
+  - certificateFacts.certificates
   - r24.certificates
   - r24.qualificationCodes
   - r24.workDate
@@ -1689,6 +1697,7 @@ atomicCheckToolBindings:
   - extract_welder_certificate
   - decode_welder_qualification
   - check_welder_work_coverage
+  - check_certificate_validity
   parameters:
     profile: r24_welder_qualification
     argumentProfile: r24_certificate_validity_identity
@@ -2298,6 +2307,7 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R38-01
   sourceRuleId: R38
   requiredFacts:
+  - certificateFacts.certificates
   - ndtPersonnel.roster
   - ndtPersonnel.qualificationCodes
   - ndtPersonnel.registration
@@ -2309,6 +2319,7 @@ atomicCheckToolBindings:
   - check_required
   - check_conditional_requirement
   - check_ndt_personnel_coverage
+  - check_certificate_validity
   - validate_evidence_grounding
   parameters:
     profile: ndt_personnel
