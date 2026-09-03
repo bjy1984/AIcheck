@@ -25,6 +25,51 @@ export type WorkbenchAiFinding = {
   ruleRefs: Array<Record<string, unknown>>
 }
 
+export type WorkbenchEvidenceGroup = {
+  fileId: string
+  fileName: string
+  pages: number[]
+  quotes: string[]
+}
+
+/** 同一文件的多条引用合成一组：文件名只出现一次，引用原文列在下面，页码去重。 */
+export const workbenchEvidenceGroups = (
+  refs: Array<Record<string, unknown>>
+): WorkbenchEvidenceGroup[] => {
+  const groups = new Map<string, WorkbenchEvidenceGroup>()
+  refs.forEach((ref) => {
+    const fileId = String(ref.fileId || ref.documentId || '')
+    const fileName = String(ref.fileName || fileId || '证据文件')
+    const key = fileId || fileName
+    const group = groups.get(key) || { fileId, fileName, pages: [], quotes: [] }
+    const pageNo = Number(ref.pageNo)
+    if (Number.isFinite(pageNo) && pageNo > 0 && !group.pages.includes(pageNo))
+      group.pages.push(pageNo)
+    const quote = String(ref.quotedText || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (quote && !group.quotes.includes(quote)) group.quotes.push(quote)
+    groups.set(key, group)
+  })
+  return [...groups.values()].map((group) => ({
+    ...group,
+    pages: [...group.pages].sort((a, b) => a - b)
+  }))
+}
+
+const SEVERITY_TONES: Record<string, 'gray' | 'blue' | 'orange' | 'red'> = {
+  low: 'gray',
+  medium: 'blue',
+  high: 'orange',
+  critical: 'red'
+}
+const SEVERITY_TAGS: Record<string, string> = {
+  low: '提示',
+  medium: '一般',
+  high: '重要',
+  critical: '严重'
+}
+
 export const workbenchFindingDisplay = (finding: WorkbenchAiFinding) => ({
   id: finding.id,
   title: finding.title,
@@ -32,7 +77,12 @@ export const workbenchFindingDisplay = (finding: WorkbenchAiFinding) => ({
   evidenceCount: finding.evidenceCount,
   ruleCount: finding.ruleCount,
   evidenceRefs: finding.evidenceRefs,
-  ruleRefs: finding.ruleRefs
+  ruleRefs: finding.ruleRefs,
+  severityTag: SEVERITY_TAGS[finding.severity] || finding.severityLabel || '',
+  severityTone: SEVERITY_TONES[finding.severity] || 'gray',
+  confidencePercent:
+    typeof finding.confidence === 'number' ? Math.round(finding.confidence * 100) : undefined,
+  evidenceGroups: workbenchEvidenceGroups(finding.evidenceRefs)
 })
 
 export type WorkbenchCertificateVerification = {

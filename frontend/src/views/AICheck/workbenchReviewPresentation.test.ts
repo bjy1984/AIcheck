@@ -9,6 +9,7 @@ import {
   inspectionReviewDirectoryItemsWithAiStatus,
   projectAnalysisExecutionStepStatus,
   selectWorkbenchAiPresentation,
+  workbenchEvidenceGroups,
   workbenchFindingDisplay,
   workbenchReviewSectionOrder
 } from './workbenchReviewPresentation'
@@ -106,8 +107,30 @@ assert.deepEqual(workbenchFindingDisplay(completed.findings[0]), {
   evidenceCount: 1,
   ruleCount: 1,
   evidenceRefs: [{ fileId: 'DOC-1' }],
-  ruleRefs: [{ source: 'criteria', text: '规则原文' }]
+  ruleRefs: [{ source: 'criteria', text: '规则原文' }],
+  severityTag: '重要',
+  severityTone: 'orange',
+  confidencePercent: 72,
+  evidenceGroups: [{ fileId: 'DOC-1', fileName: 'DOC-1', pages: [], quotes: [] }]
 })
+assert.deepEqual(
+  workbenchEvidenceGroups([
+    { fileId: 'DOC-9', fileName: '焊工证.pdf', pageNo: 2, quotedText: '姓名 姜军' },
+    { fileId: 'DOC-9', fileName: '焊工证.pdf', pageNo: 1, quotedText: ' 姓名  姜军 ' },
+    { fileId: 'DOC-9', fileName: '焊工证.pdf', pageNo: null, quotedText: '有效期至 2029-09-30' },
+    { fileId: 'DOC-8', fileName: '工艺卡.pdf' }
+  ]),
+  [
+    {
+      fileId: 'DOC-9',
+      fileName: '焊工证.pdf',
+      pages: [1, 2],
+      quotes: ['姓名 姜军', '有效期至 2029-09-30']
+    },
+    { fileId: 'DOC-8', fileName: '工艺卡.pdf', pages: [], quotes: [] }
+  ],
+  '同一文件的引用合并成一组，页码排序、引用原文去重'
+)
 assert.deepEqual(buildWorkbenchHumanAiContext(completed), {
   overall: '当前节点形成 1 条审查发现，所有结果均需人工确认。',
   ruleConclusion: '部分证据支持',

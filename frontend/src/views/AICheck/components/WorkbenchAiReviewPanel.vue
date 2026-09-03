@@ -21,10 +21,7 @@ const emit = defineEmits<{
 
 const displayFindings = computed(() => props.presentation.findings.map(workbenchFindingDisplay))
 
-const evidenceLabel = (evidence: Record<string, unknown>) =>
-  [evidence.fileName || evidence.fileId, evidence.pageNo ? `第 ${evidence.pageNo} 页` : '']
-    .filter(Boolean)
-    .join(' · ')
+const pageLabel = (pages: number[]) => (pages.length ? `第 ${pages.join('、')} 页` : '')
 
 const ruleLabel = (rule: Record<string, unknown>) => String(rule.text || rule.source || '规则依据')
 </script>
@@ -75,18 +72,45 @@ const ruleLabel = (rule: Record<string, unknown>) => String(rule.text || rule.so
         />
 
         <div v-if="presentation.findings.length" class="ai-result-findings">
-          <article v-for="finding in displayFindings" :key="finding.id">
-            <h3>{{ finding.title || '审查发现' }}</h3>
-            <p>{{ finding.description }}</p>
-            <div v-if="finding.evidenceRefs.length" class="ai-reference-row">
-              <button
-                v-for="(evidence, index) in finding.evidenceRefs"
-                :key="String(evidence.fileId || index)"
-                type="button"
-                @click="emit('openFile', String(evidence.fileId || ''))"
+          <div class="ai-result-findings-head">
+            <span>审查发现</span>
+            <small>{{ displayFindings.length }} 条 · 均需人工确认</small>
+          </div>
+          <article
+            v-for="(finding, findingIndex) in displayFindings"
+            :key="finding.id"
+            :class="['ai-finding', `is-${finding.severityTone}`]"
+          >
+            <div class="ai-finding-head">
+              <span class="ai-finding-index">{{ findingIndex + 1 }}</span>
+              <h3>{{ finding.title || '审查发现' }}</h3>
+              <AuditStatusTag v-if="finding.severityTag" :tone="finding.severityTone" round>
+                {{ finding.severityTag }}
+              </AuditStatusTag>
+              <span v-if="finding.confidencePercent !== undefined" class="ai-finding-confidence">
+                置信度 {{ finding.confidencePercent }}%
+              </span>
+            </div>
+            <p class="ai-finding-description">{{ finding.description }}</p>
+            <div v-if="finding.evidenceGroups.length" class="ai-evidence-groups">
+              <div
+                v-for="group in finding.evidenceGroups"
+                :key="group.fileId || group.fileName"
+                class="ai-evidence-group"
               >
-                {{ evidenceLabel(evidence) }}
-              </button>
+                <button
+                  type="button"
+                  class="ai-evidence-file"
+                  @click="emit('openFile', group.fileId)"
+                >
+                  <span class="ai-evidence-file-icon" aria-hidden="true">▤</span>
+                  <span class="ai-evidence-file-name">{{ group.fileName }}</span>
+                  <small v-if="group.pages.length">{{ pageLabel(group.pages) }}</small>
+                </button>
+                <ul v-if="group.quotes.length" class="ai-evidence-quotes">
+                  <li v-for="quote in group.quotes" :key="quote">{{ quote }}</li>
+                </ul>
+              </div>
             </div>
             <div v-if="finding.ruleRefs.length" class="ai-rule-list">
               <span v-for="(rule, index) in finding.ruleRefs" :key="index">
@@ -294,54 +318,175 @@ const ruleLabel = (rule: Record<string, unknown>) => String(rule.text || rule.so
 .ai-result-findings {
   display: grid;
   margin-top: 16px;
+  gap: 10px;
+}
+
+.ai-result-findings-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding-top: 14px;
   border-top: 1px solid #e3ebf5;
 }
 
-.ai-result-findings > article {
-  padding: 16px 2px;
-  border-bottom: 1px solid #e8eef6;
+.ai-result-findings-head > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aicheck-text-strong, #172033);
 }
 
-.ai-result-findings > article:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.ai-result-findings h3,
-.ai-result-findings p {
-  margin: 8px 0 0;
-}
-
-.ai-finding-head,
-.ai-reference-row,
-.ai-rule-list {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.ai-finding-head {
-  align-items: center;
-}
-
-.ai-finding-head > span {
+.ai-result-findings-head > small {
   font-size: 12px;
   color: var(--aicheck-text-subtle, #667085);
 }
 
-.ai-reference-row,
-.ai-rule-list {
-  margin-top: 10px;
+.ai-finding {
+  --ai-finding-accent: #9db5d3;
+
+  padding: 14px 16px 14px 18px;
+  background: #fff;
+  border: 1px solid #e3ebf5;
+  border-radius: 10px;
+  box-shadow: inset 3px 0 0 var(--ai-finding-accent);
 }
 
-.ai-reference-row button {
-  padding: 3px 7px;
+.ai-finding.is-blue {
+  --ai-finding-accent: var(--aicheck-primary, #1f66d8);
+}
+
+.ai-finding.is-orange {
+  --ai-finding-accent: var(--aicheck-warning, #b45309);
+}
+
+.ai-finding.is-red {
+  --ai-finding-accent: var(--aicheck-danger, #b42318);
+}
+
+.ai-finding-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ai-finding-head h3 {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--aicheck-text-strong, #172033);
+}
+
+.ai-finding-index {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
   font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--ai-finding-accent);
+  border-radius: 50%;
+  place-items: center;
+}
+
+.ai-finding-confidence {
+  font-size: 12px;
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-finding-description {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: #34445a;
+}
+
+.ai-evidence-groups {
+  display: grid;
+  margin-top: 12px;
+  gap: 8px;
+}
+
+.ai-evidence-group {
+  padding: 8px 10px;
+  background: #f6f9fd;
+  border: 1px dashed #d5e1f0;
+  border-radius: 8px;
+}
+
+.ai-evidence-file {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+  padding: 0;
+  font-size: 13px;
   color: var(--aicheck-primary, #1f66d8);
   cursor: pointer;
-  background: #eef5ff;
+  background: transparent;
   border: 0;
-  border-radius: 6px;
+}
+
+.ai-evidence-file:hover .ai-evidence-file-name {
+  text-decoration: underline;
+}
+
+.ai-evidence-file-icon {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.ai-evidence-file-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-evidence-file small {
+  font-size: 12px;
+  color: var(--aicheck-text-subtle, #667085);
+}
+
+.ai-evidence-quotes {
+  display: flex;
+  gap: 6px;
+  padding: 0;
+  margin: 6px 0 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.ai-evidence-quotes li {
+  max-width: 100%;
+  padding: 2px 8px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 20px;
+  color: #3f5068;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid #dfe8f3;
+  border-radius: 999px;
+}
+
+.ai-evidence-quotes li::before {
+  color: #9db5d3;
+  content: '“';
+}
+
+.ai-evidence-quotes li::after {
+  color: #9db5d3;
+  content: '”';
+}
+
+.ai-rule-list {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
 }
 
 .ai-rule-list span {
