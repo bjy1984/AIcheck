@@ -32,6 +32,9 @@ const warningText = (code: string) => {
     return '本节点资料里没有可核验的证书'
   if (code.startsWith('issuer_missing')) return `未识别到发证机关：${code.split(':')[1] || ''}`
   if (code.startsWith('valid_until_missing')) return `未识别到有效期：${code.split(':')[1] || ''}`
+  if (code.startsWith('holder_missing')) return `未识别到持证主体：${code.split(':')[1] || ''}`
+  if (code.startsWith('certificate_no_missing'))
+    return `未识别到证书编号：${code.split(':')[1] || ''}`
   return code
 }
 </script>

@@ -648,7 +648,10 @@ def with_certificate_fact_builders(builders: dict[int, Any]) -> dict[int, Any]:
 CERTIFICATE_VERIFICATION_REQUIREMENT = (
     "certificateVerification is the deterministic result of certificate validity checks "
     "(validity period, holder, scope). Explain and cite it; never contradict or upgrade it: "
-    "failed stays failed, evidence_insufficient stays insufficient."
+    "failed stays failed, evidence_insufficient stays insufficient. "
+    "Write findings for inspectors in business language (服务端证照核验通过/未通过/证据不足); "
+    "do not put field names or enum values such as certificateVerification, result or "
+    "evidence_insufficient into title/description."
 )
 
 

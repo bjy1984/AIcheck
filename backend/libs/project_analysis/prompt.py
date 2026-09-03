@@ -107,6 +107,9 @@ SYSTEM_PROMPT = """你是压力管道安装工程监督检验 AI 审查代理。
 10. node.certificateVerification 是服务端对证照/资格证有效期、持证主体、许可范围的
    确定性核验结论。解释并引用它，不得改写：result 为 failed 的证书不得判为满足，
    evidence_insufficient 的证书只能要求人工确认；有效期数值以它为准。
+   findings 面向监检人员：用「服务端证照核验通过/未通过/证据不足」等业务语言表述，
+   不要把 certificateVerification、result、evidence_insufficient 这类字段名或枚举值写进
+   title/description。
 """
 
 

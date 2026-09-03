@@ -87,12 +87,14 @@ const load = async () => {
     status.value = undefined
     if (activeRun.value) {
       await poll()
-      if (!terminalPhases.has(String(status.value?.phase || activeRun.value.phase))) startPolling()
+      // 经过 poll() 之后 status 已被重新赋值，TS 仍按上面的 undefined 收窄，走函数读取。
+      if (!terminalPhases.has(currentPhase() || String(activeRun.value.phase))) startPolling()
     }
   } finally {
     loading.value = false
   }
 }
+const currentPhase = (): string => String(status.value?.phase || '')
 const open = async () => {
   drawerVisible.value = true
   failureMessage.value = ''
