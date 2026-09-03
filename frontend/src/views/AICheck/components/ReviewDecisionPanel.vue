@@ -287,10 +287,22 @@ const evidenceText = (evidence: EvidenceLink) =>
   align-items: flex-start;
   width: 100%;
   height: auto;
-  min-height: 44px;
-  padding: 8px 10px;
+  min-height: 56px;
+  padding: 12px 14px;
   margin-right: 0;
   white-space: normal;
+  border-radius: 8px;
+}
+
+.review-evidence-options :deep(.el-checkbox__input) {
+  margin-top: 3px;
+}
+
+.review-evidence-options :deep(.el-checkbox__label) {
+  display: grid;
+  min-width: 0;
+  padding-left: 10px;
+  gap: 4px;
 }
 
 .review-evidence-label,
@@ -300,6 +312,18 @@ const evidenceText = (evidence: EvidenceLink) =>
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.review-evidence-label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.review-evidence-options small {
+  line-height: 20px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .review-evidence-options small,
