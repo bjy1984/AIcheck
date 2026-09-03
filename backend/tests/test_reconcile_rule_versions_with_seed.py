@@ -71,3 +71,16 @@ def test_错位记录被替换_一致与独有记录不动():
     assert fixed["reconciledFromVersion"] == "engineering-inspection-r38-v20260703"
     assert next(row for row in state["rule_versions"] if row["id"] == "RULE-DRAFT-X") is draft
     assert next(row for row in state["rule_versions"] if row["id"] == "RULE-ENG-INSP-R01") == r01
+
+
+def test_种子没有的错位孤儿记录被下线_对齐的不动():
+    module = _load_module()
+    seed = _seed_rows()
+    orphan = {"id": "RULE-ENG-INSP-R24", "status": "已发布", "nodeIds": [36], "version": "old", "revision": 1}
+    aligned_extra = {"id": "RULE-ENG-INSP-R99", "status": "已发布", "nodeIds": [99], "version": "x"}
+    draft = {"id": "RULE-ENG-INSP-R40", "status": "草稿", "nodeIds": [52], "version": "y"}
+    state = {"rule_versions": [orphan, aligned_extra, draft]}
+    orphans = module.plan_orphan_retirement(state, seed)
+    assert [row["id"] for row in orphans] == ["RULE-ENG-INSP-R24"]
+    assert module.apply_orphan_retirement(orphans) == ["RULE-ENG-INSP-R24"]
+    assert orphan["status"] == "已下线" and orphan["retiredStatus"] == "已发布" and orphan["revision"] == 2
