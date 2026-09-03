@@ -84,3 +84,25 @@ def test_force_async_falls_back_to_legacy_when_ai_run_missing(monkeypatch) -> No
     dispatch = task_dispatcher.dispatch_ai_recheck("P-1", 24, "AIRUN-MISSING", force_async=True)
     assert legacy == [("P-1", 24, "AIRUN-MISSING")]
     assert dispatch["forcedAsync"] is True
+
+
+def test_manual_recheck_under_inline_celery_is_async_too(monkeypatch) -> None:
+    """手动复核也走异步：API 单进程同步跑审查会占着租户锁，连登录都超时（2026-09-03 实测）。"""
+    from apps.worker import tasks
+    from libs.integrations import task_dispatcher
+    from libs.review_orchestrator import dispatcher
+
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    monkeypatch.setattr(task_dispatcher, "dispatch_mode", lambda: "celery")
+    monkeypatch.setattr(dispatcher, "prepare_review_run_for_async_dispatch", lambda run_id: {"reviewRunId": "RRUN-MANUAL-1"})
+    queued: list[str] = []
+
+    class _Result:
+        id = "celery-task-3"
+
+    monkeypatch.setattr(tasks.review_run_execute, "delay", lambda rid: queued.append(rid) or _Result())
+    monkeypatch.setattr(tasks.ai_recheck, "delay", lambda *a: (_ for _ in ()).throw(AssertionError("不应回落旧任务")))
+
+    dispatch = task_dispatcher.dispatch_ai_recheck("P-1", 38, "AIRUN-38-X", force_async=False)
+    assert queued == ["RRUN-MANUAL-1"]
+    assert dispatch["reviewRunId"] == "RRUN-MANUAL-1" and dispatch["status"] == "queued"

@@ -298,3 +298,43 @@ def test_model_running_phase_is_persisted_before_the_model_call(monkeypatch) -> 
         on_model_running=lambda: phase_seen_by_flush.append(str(run["phase"])),
     )
     assert run["phase"] == "validating_output"
+
+
+def test_streaming_model_call_emits_heartbeats(monkeypatch) -> None:
+    """流式调用期间要打心跳，否则 15 分钟无活动就被收敛器当僵尸落 failed（2026-09-03 险些）。"""
+    from test_project_analysis_prompt import _route, _state
+
+    from libs.project_analysis.execution import execute_project_analysis_model
+    from libs.project_analysis.prompt import build_project_analysis_snapshot, project_analysis_preview
+
+    state = _state()
+    state.update({"project_analysis_snapshots": [], "project_analysis_runs": [], "project_analysis_events": [], "model_call_attempts": []})
+    route = _route()
+    preview = project_analysis_preview(state, "P-1", model_route=route)
+    snapshot = build_project_analysis_snapshot(
+        state, "P-1", business_pack_id="engineering_inspection_v1", prompt_version="project-monolithic-analysis@1.0.0", model_route=route
+    )
+    snapshot["request"] = preview["request"]
+    state["project_analysis_snapshots"].append(snapshot)
+    run = {
+        "id": "PARUN-HB", "projectAnalysisRunId": "PARUN-HB", "projectAnalysisSnapshotId": snapshot["projectAnalysisSnapshotId"],
+        "tenantId": "TENANT-1", "projectId": "P-1", "phase": "queued", "status": "queued", "includedNodeCount": 2,
+        "uniqueFileCount": 2, "fileReferenceCount": 3, "estimatedInputTokens": preview["estimatedInputTokens"],
+        "maxContextTokens": 131072, "reservedOutputTokens": 24000, "modelAlias": "project-review-large", "revision": 1,
+    }
+    state["project_analysis_runs"].append(run)
+    beats: list[str] = []
+
+    class FakeClient:
+        def chat_sync(self, messages, **kwargs):
+            for _ in range(3):
+                kwargs["stream_handler"]("content", "chunk")
+            return {"id": "RESP-HB", "model": "qwen3.8-max", "choices": [{"finish_reason": "stop", "message": {"content": "{}"}}], "usage": {}}
+
+    execute_project_analysis_model(
+        state, "PARUN-HB", client=FakeClient(),
+        on_heartbeat=lambda current: beats.append(current["lastHeartbeatAt"]),
+        heartbeat_interval_seconds=0,
+    )
+    assert len(beats) == 3, "每块到点都应打一次心跳（间隔 0 时每块一次）"
+    assert run["lastHeartbeatAt"] == beats[-1]

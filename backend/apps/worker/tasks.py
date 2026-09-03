@@ -5621,6 +5621,8 @@ def project_analysis_execute_model(self, run_id: str) -> dict[str, Any]:
             run_id,
             client=build_qwen_runtime_client(LiteLLMClient),
             on_model_running=flush_state,
+            # 流式期间每分钟只落这一行：收敛器看的是 lastHeartbeatAt，整份 flush 太重
+            on_heartbeat=lambda current: flush_state_records({"project_analysis_runs": [current]}),
         )
     except Exception as exc:
         if int(self.request.retries or 0) >= 2:  # 与装饰器 max_retries 一致

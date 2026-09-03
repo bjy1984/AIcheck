@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import time
 from copy import deepcopy
 from typing import Any
 from uuid import uuid4
@@ -46,6 +48,35 @@ def _discard_stream_delta(_channel: str, _delta: str) -> None:
     return None
 
 
+def _heartbeat_stream_handler(run: dict[str, Any], on_heartbeat, interval_seconds: float):
+    """流式调用期间按间隔打心跳。
+
+    模型调用是流式的，httpx 超时只管两块之间的间隔，整次调用可远超 10 分钟；而
+    model_running 期间此前没有任何心跳，收敛器 reconcile_stalled_analysis_runs
+    （阈值 600+300s）会把仍在生成的运行落 failed——2026-09-03 一次 28 节点的
+    qwen3.8-max 分析跑了 15 分钟，离被误杀只差 4 分钟。每收到一块就看时间，
+    到点就更新 lastHeartbeatAt 并让调用方把这一行落库。
+    """
+    if on_heartbeat is None:
+        return _discard_stream_delta
+    last_beat = time.monotonic()
+
+    def handle(_channel: str, _delta: str) -> None:
+        nonlocal last_beat
+        now = time.monotonic()
+        if now - last_beat < interval_seconds:
+            return
+        last_beat = now
+        run["lastHeartbeatAt"] = server_time()
+        run["updatedAt"] = server_time()
+        try:
+            on_heartbeat(run)
+        except Exception:  # noqa: BLE001 - 心跳落库失败不能打断正在进行的模型调用
+            logging.getLogger(__name__).exception("一键分析心跳落库失败 run=%s", run.get("projectAnalysisRunId"))
+
+    return handle
+
+
 def _stable_hash(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -86,6 +117,8 @@ def execute_project_analysis_model(
     *,
     client,
     on_model_running=None,
+    on_heartbeat=None,
+    heartbeat_interval_seconds: float = 60.0,
 ) -> dict[str, Any]:
     run = next(
         (
@@ -155,7 +188,7 @@ def execute_project_analysis_model(
                 run, node_count=len(project_analysis_current_batch_node_ids(run) or [])
             ),
             timeout=project_analysis_model_timeout_seconds(),
-            stream_handler=_discard_stream_delta,
+            stream_handler=_heartbeat_stream_handler(run, on_heartbeat, heartbeat_interval_seconds),
         )
         choice = (response.get("choices") or [{}])[0]
         if str(choice.get("finish_reason") or "").lower() in {

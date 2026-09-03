@@ -442,6 +442,11 @@ def dispatch_ai_recheck(
     # 锁。若在锁内同步跑完整 inline 审查（含 LLM，单节点几十秒、多节点串行），
     # 锁被长期占用 → 后续每个 beat 周期全 duplicate_inflight → 自动派发永久卡死
     # 且无自愈（2026-08-29 生产实测）。异步入队让锁快速释放，审查在 worker 里跑。
+    # inline 编排 + celery：手动复核也一律异步。API 是单进程 uvicorn，路由里同步跑
+    # 完整审查（2–6 分钟）会占着租户互斥锁，期间连 /api/auth/login 都排队超时
+    # （2026-09-03 实测，界面上就是「timeout of 60000ms exceeded」）。审查在 worker
+    # 里跑，界面按 live-status 轮询——自动审查已经这么走了，手动没有理由不同。
+    force_async = force_async or (orchestration_mode == "inline" and dispatch_mode() == "celery")
     if force_async and dispatch_mode() == "celery":
         if orchestration_mode == "temporal":
             # Temporal 的启动本身就是异步的，不会占着周期锁
