@@ -164,6 +164,9 @@ def resolve_manual_binding_review_point(
 
 
 def _apply_review_point(link: dict[str, Any], point: dict[str, Any] | None, binding: dict[str, Any], document: dict[str, Any]) -> None:
+    # 资料要求汇总的 supportStatus 只认「命中/待人工确认/未命中」：人工挂载已确认但没定位，
+    # 记「待人工确认」而不是 unmatched，否则要求行显示「未命中」却又列着这份文件。
+    link["supportStatus"] = "待人工确认"
     if point:
         link.update(
             {
@@ -276,7 +279,7 @@ def upsert_manual_binding_evidence_links(
             "quotedText": None,
             "matchedEvidenceItems": [],
             "evidenceCoverage": None,
-            "supportStatus": "manual",
+            "supportStatus": "待人工确认",
             "confidence": 1.0,
             "score": None,
             "scoreReasons": ["人工在界面上把整份资料挂到本节点"],
@@ -315,10 +318,10 @@ def refresh_manual_binding_links(state: dict[str, Any], project_id: str | None =
             continue
         binding = bindings.get(str(link.get("bindingId") or "")) or {"nodeId": link.get("nodeId")}
         document = documents.get(str(link.get("documentId") or "")) or {}
-        before = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible")}
+        before = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible", "supportStatus")}
         link["formalEvidenceEligible"] = True
         _apply_review_point(link, resolve_manual_binding_review_point(state, pid, binding, document), binding, document)
-        after = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible")}
+        after = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible", "supportStatus")}
         if before != after:
             link["updatedAt"] = server_time()
             changed.append(link)

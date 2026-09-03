@@ -192,6 +192,7 @@ from libs.knowledge_indexing import (
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.workspace_paths import resolve_workspace_root
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
+from libs.ai_run_order import sort_ai_runs_latest_first
 from libs.manual_binding_links import document_already_submitted, upsert_manual_binding_evidence_links
 from libs.material_targeting import (
     build_node_evidence_readiness,
@@ -6729,11 +6730,12 @@ def node_package(request: Request, project_id: str, node_id: int):
             repo.find_one("documents", file.get("id")) or file
         )
     visible_document_ids = {item["id"] for item in project_files}
-    node_ai_runs = [
+    # 按活动时间排，不靠列表顺序：库重载后顺序不定，曾把 00:48 那次当成比 01:40 还新的
+    node_ai_runs = sort_ai_runs_latest_first([
         item
         for item in repo.state["ai_runs"]
         if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)
-    ]
+    ])
     # 人工结论。既给 reviewOpinions，也给自动审核状态当输入——
     # 两处各查一遍的话，界面上「有人工结论」和「状态按人工算」会不同步。
     node_review_opinions = [] if review_process_hidden else [repo.clone(item) for item in repo.state["review_opinions"] if item["projectId"] == effective_project_id and int(item["nodeId"]) == int(node_id)]
@@ -9528,13 +9530,13 @@ def node_live_status(request: Request, project_id: str, node_id: int):
     if scope_error:
         return scope_error
     tenant_id = request_tenant_id(request)
-    node_runs = [
+    node_runs = sort_ai_runs_latest_first([
         item
         for item in repo.state.get("ai_runs", [])
         if item.get("projectId") == project_id
         and int(item.get("nodeId") or 0) == int(node_id)
         and tenant_id_for_record(item) == tenant_id
-    ]
+    ])
     latest = node_runs[0] if node_runs else None
     node = repo.node(project_id, node_id) or {}
     document_repo = repo.project_document_read_view(project_id)

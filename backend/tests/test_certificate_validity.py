@@ -192,3 +192,34 @@ def test_证书证据登记为证据链后守卫放行引用():
     [result] = apply_grounding_guardrails([draft], context["groundingInput"])
     assert result["groundingStatus"] == "grounded", result
     assert result["evidenceLinkIds"] == ["EVL-CERT-1-1"]
+
+
+def test_被分类成制造许可证的安装许可证按正文归入安装单位节点():
+    """测试项目3 节点 2：江苏三江「特种设备生产许可证」写着「获准从事下列压力管道的安装」，
+    词典把它分成 manufacturing_license，安装单位许可证 profile 原来直接拒收。"""
+    state = {
+        "projects": [{"id": "P-1", "constructionOrgName": "江苏三江机电工程有限公司"}],
+        "documents": [
+            {"id": "DOC-INS", "projectId": "P-1", "fileName": "江苏三江压力管道资质.jpg", "materialTypeCode": "manufacturing_license", "currentVersionId": "DV-INS"},
+        ],
+        "ocr_parse_results": [
+            {
+                "documentVersionId": "DV-INS",
+                "status": "success",
+                "profileId": "qualification_certificate_v1",
+                "fields": [
+                    {"fieldCode": "certificate_no", "fieldName": "编号", "fieldValue": "TS3832083-2026", "pageNo": 1},
+                    {"fieldCode": "organization_name", "fieldName": "单位名称", "fieldValue": "江苏三江机电工程有限公司", "pageNo": 1},
+                    {"fieldCode": "license_scope", "fieldName": "许可范围", "fieldValue": "公用管道安装(GB2)；工业管道安装(GC2)", "pageNo": 1},
+                    {"fieldCode": "valid_until", "fieldName": "有效期至", "fieldValue": "2026年12月25日", "pageNo": 1},
+                ],
+                "fragments": [{"pageNo": 1, "text": "中华人民共和国 特种设备生产许可证 编号：TS3832083-2026 单位名称：江苏三江机电工程有限公司 经审查，获准从事下列压力管道的安装： 承压类特种设备安装、修理、改造 工业管道安装(GC2) 发证机关：江苏省市场监督管理局 有效期至：2026年12月25日"}],
+            }
+        ],
+    }
+    facts = build_certificate_facts(state, "P-1", 2, ["DV-INS"])
+    certs = facts["certificateFacts"]["certificates"]
+    assert len(certs) == 1 and certs[0]["certificateNo"] == "TS3832083-2026"
+    assert certs[0]["validUntil"] == "2026-12-25" and certs[0]["holder"] == "江苏三江机电工程有限公司"
+    # 设计单位节点不会误收：正文没有「设计」类标记
+    assert build_certificate_facts(state, "P-1", 1, ["DV-INS"])["certificateFacts"]["certificates"] == []

@@ -304,6 +304,28 @@ def _project_record(state: dict[str, Any], project_id: str) -> dict[str, Any]:
     return {}
 
 
+# 词典分类分不清许可证的「种类」：设计/安装单位拿的都叫「特种设备生产许可证」，
+# 只有正文里「获准从事下列压力管道的安装/设计」才说明是哪一种。2026-09-03 审计：
+# 测试项目3 节点 2 人工挂上的安装许可证被分类成 manufacturing_license，profile 直接
+# 判「明确是别的类型」，OCR 字段里明明有 TS3832083-2026 / 有效期至 2026年12月25日。
+# 这些许可证族代码视为未定，交给 kindMarkers 按正文再判。
+AMBIGUOUS_TYPE_CODES = frozenset(
+    {
+        "",
+        "generic_document",
+        "generic_review_material",
+        "unclassified_material",
+        "qualification_certificate",
+        "manufacturing_license",
+        "design_license",
+        "construction_license",
+        "installation_license",
+        "special_equipment_license",
+        "license",
+    }
+)
+
+
 def _matches_profile(profile: dict[str, Any], parse_result: dict[str, Any], document: dict[str, Any]) -> bool:
     metadata = parse_result.get("metadata") if isinstance(parse_result.get("metadata"), dict) else {}
     type_codes = {
@@ -313,7 +335,7 @@ def _matches_profile(profile: dict[str, Any], parse_result: dict[str, Any], docu
     }
     if type_codes & set(profile["materialTypeCodes"]):
         return True
-    if type_codes - {"", "generic_document", "generic_review_material", "unclassified_material", "qualification_certificate"}:
+    if type_codes - AMBIGUOUS_TYPE_CODES:
         # 已经明确是别的类型，不再按关键词猜
         return False
     hint = " ".join(

@@ -66,6 +66,7 @@ def test_补链接幂等_已有自动打靶链接不重复():
     # （资料本身被词典分类成 manufacturing_license，人工选择优先）
     assert link["reviewPointId"] == "MRP-2-construction_license"
     assert link["materialTypeCode"] == "construction_license" and link["formalEvidenceEligible"] is True
+    assert link["supportStatus"] == "待人工确认", "要求汇总按这个值显示「待人工确认」而不是「未命中」"
     assert upsert_manual_binding_evidence_links(state, "P-1", state["bindings"]) == []
     assert bindings_missing_evidence_links(state, "P-1") == []
     # 驳回后再次提交：同一条链接恢复为已确认
