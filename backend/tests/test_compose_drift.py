@@ -73,7 +73,8 @@ def test_模型网关豁免是查出来的不是写死的() -> None:
 
     # 当前生产声明为直连 → 网关可以合法缺席
     assert "official_api" in gateway_exemption()
-    assert "deepseek" in gateway_exemption()
+    # 2026-09-03 起生产直连通义 DashScope（DeepSeek 只作回退）；断言跟着实际声明走
+    assert "dashscope" in gateway_exemption()
 
     with TemporaryDirectory() as tmp:
         # 改回网关模式 → 豁免立刻失效

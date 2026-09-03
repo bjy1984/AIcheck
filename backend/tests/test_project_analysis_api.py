@@ -90,8 +90,10 @@ def test_preview_create_list_detail_and_status_are_project_scoped() -> None:
         )
     )["status"]
 
-    assert preview["includedNodeCount"] == 1
-    assert preview["uniqueFileCount"] == 1
+    # 节点 1 有证据链接；种子里节点 16/24/40 的已提交人工挂载（含需补正）也进审查范围，
+    # 草稿挂载（焊工名册）不进——2026-09-03 起链接与已提交挂载取并集。
+    assert preview["includedNodeCount"] == 4
+    assert preview["uniqueFileCount"] == 4
     assert preview["contextLimitExceeded"] is False
     assert created["projectAnalysisRunId"] == replayed["projectAnalysisRunId"]
     assert listed["total"] == 1

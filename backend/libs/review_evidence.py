@@ -90,6 +90,20 @@ def active_node_document_versions(
             int(link.get("revision") or 0),
         )
 
+    # 人工「选择环节 + 提交」只写 node_bindings，不产证据链接；原来这里只看链接，
+    # 项目里一旦有自动打靶链接，人工挂载的资料就从审查视野里消失（2026-09-03 审计：
+    # 测试项目3 节点 2 已提交 3 份、AI 只看到 2 份）。已提交挂载与链接取并集。
+    from libs.manual_binding_links import submitted_binding_document_versions
+
+    for entry in submitted_binding_document_versions(state, project_id, node_id):
+        existing = active.get(entry["documentVersionId"])
+        if existing is None:
+            active[entry["documentVersionId"]] = entry
+            continue
+        for mount_id in entry["mountLinkIds"]:
+            if mount_id not in existing["mountLinkIds"]:
+                existing["mountLinkIds"].append(mount_id)
+        existing["mountRevision"] = max(int(existing.get("mountRevision") or 0), int(entry["mountRevision"]))
     for entry in active.values():
         entry["mountLinkIds"].sort()
     return sorted(active.values(), key=lambda row: row["documentVersionId"])

@@ -192,6 +192,7 @@ from libs.knowledge_indexing import (
 from libs.knowledge_readiness import build_knowledge_rule_scorecard
 from libs.workspace_paths import resolve_workspace_root
 from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
+from libs.manual_binding_links import document_already_submitted, upsert_manual_binding_evidence_links
 from libs.material_targeting import (
     build_node_evidence_readiness,
     evidence_link_is_locatable,
@@ -7848,6 +7849,7 @@ def bind_documents(
         changed = []
         for node_id in node_ids:
             requirements = [item for item in repo.state["requirements"] if int(item["nodeId"]) == node_id]
+            node_created: list[dict[str, Any]] = []
             for index, binding_input in enumerate(binding_inputs):
                 # 逐条声明了节点时按声明分派，避免每条资料被挂到所有节点上（笛卡尔积）。
                 declared = binding_input.get("nodeId") if isinstance(binding_input, dict) else None
@@ -7858,6 +7860,10 @@ def bind_documents(
                 if not document or not version_id:
                     continue
                 requirement = requirements[index % len(requirements)] if requirements else None
+                # 已进入审查视野的资料改挂/加挂节点是「换个地方看同一份资料」，不是新的提交：
+                # 直接继承已提交，并补证据链接。原来一律落草稿挂载，文件在台账上从
+                # 「已提交」退回「未提交」，监检还提交不了施工方的挂载（2026-09-03 审计）。
+                already_submitted = document_already_submitted(repo.state, project_id, document["id"])
                 binding = {
                     "id": f"BIND-{node_id}-{uuid4().hex[:6].upper()}",
                     "projectId": project_id,
@@ -7870,14 +7876,18 @@ def bind_documents(
                     "versionNo": (repo.current_version(document["id"]) or {}).get("versionNo") or "--",
                     "usage": binding_input.get("usage") or body.get("usage") or "原始提交",
                     "sourceOrgName": document["sourceOrgName"],
-                    "bindingStatus": "草稿挂载",
+                    "bindingStatus": "已提交" if already_submitted else "草稿挂载",
                     "boundByName": request_actor_name(request),
                     "boundAt": server_time(),
-                    "actions": ["submission:submit"],
+                    "actions": [] if already_submitted else ["submission:submit"],
                 }
+                if already_submitted:
+                    binding["inheritedSubmission"] = True
                 repo.state["bindings"].insert(0, binding)
                 created.append(binding["id"])
-            changed.append(repo.set_node_status(project_id, node_id, "部分提交"))
+                node_created.append(binding)
+            inherited = upsert_manual_binding_evidence_links(repo.state, project_id, node_created, actor_name=request_actor_name(request))
+            changed.append(repo.set_node_status(project_id, node_id, "待审查" if inherited or any(item.get("inheritedSubmission") for item in node_created) else "部分提交"))
         return ok(repo.mutation_result("保存节点挂载关系", "NodeFileBinding", created[0] if created else "BIND-EMPTY", next_status="部分提交", changed=changed, affected_ids=created), request)
 
     return idempotent(
@@ -8542,9 +8552,13 @@ def submit_node_package(
             return fail(errors.FORBIDDEN, request, message="当前角色无权关联该补正记录。", http_status=403)
         submitted_at = server_time()
         changed = []
+        submitted_bindings = []
         for binding in repo.state["bindings"]:
             if binding["id"] in binding_ids:
                 binding["bindingStatus"] = "已提交"
+                submitted_bindings.append(binding)
+        # 人工挂载提交即进审查视野：补证据链接，否则 AI 复核/一键分析只看自动打靶的资料
+        upsert_manual_binding_evidence_links(repo.state, project_id, submitted_bindings, actor_name=request_actor_name(request))
         for node_id in node_ids:
             changed.append(repo.set_node_status(project_id, node_id, "待审查"))
         todo_id = f"TODO-{uuid4().hex[:8].upper()}"
@@ -8762,10 +8776,13 @@ def submit_rectification(
         submitted_at = server_time()
         submission_id = f"SUB-RECT-{uuid4().hex[:8].upper()}"
         snapshot_id = f"SNAP-{submission_id}"
+        resubmitted_bindings = []
         for binding_id in binding_ids:
             binding = repo.find_one("bindings", binding_id)
             if binding:
                 binding["bindingStatus"] = "已提交"
+                resubmitted_bindings.append(binding)
+        upsert_manual_binding_evidence_links(repo.state, project_id, resubmitted_bindings, actor_name=request_actor_name(request))
         rectification["bindingIds"] = binding_ids
         rectification["replacementBindingIds"] = replacement_binding_ids
         rectification["feedbackComment"] = body.get("comment") or body.get("description")

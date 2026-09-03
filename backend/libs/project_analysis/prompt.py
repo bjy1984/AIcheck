@@ -14,6 +14,7 @@ from libs.business_pack import load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
 from libs.model_usage import estimate_messages_tokens, estimate_text_tokens
 from libs.qwen_runtime import resolved_model_label
+from libs.manual_binding_links import SUBMITTED_BINDING_STATUSES
 from libs.review_evidence import active_node_document_versions
 
 PROMPT_VERSION = "project-monolithic-analysis@1.3.0"
@@ -340,49 +341,9 @@ def _certificate_verification_for_node(
 def _active_project_node_documents(
     state: dict[str, Any], project_id: str, node_id: int
 ) -> list[dict[str, Any]]:
-    active = {
-        str(row.get("documentVersionId") or ""): deepcopy(row)
-        for row in active_node_document_versions(state, project_id, node_id)
-    }
-    has_project_evidence_links = any(
-        str(row.get("projectId") or "") == str(project_id)
-        and str(row.get("manualStatus") or "").lower() != "rejected"
-        for row in _records(state, "node_evidence_links")
-    )
-    if has_project_evidence_links:
-        return sorted(active.values(), key=lambda row: str(row.get("documentVersionId") or ""))
-    documents = {
-        str(row.get("id") or ""): row
-        for row in _records(state, "documents")
-        if str(row.get("projectId") or "") == str(project_id)
-    }
-    rejected_statuses = {"rejected", "驳回", "已撤回", "已作废", "已删除"}
-    for binding in _records(state, "bindings", "node_bindings"):
-        if (
-            str(binding.get("projectId") or "") != str(project_id)
-            or int(binding.get("nodeId") or 0) != int(node_id)
-            or str(binding.get("bindingStatus") or "").lower() in rejected_statuses
-        ):
-            continue
-        document_id = str(binding.get("documentId") or "")
-        version_id = str(binding.get("documentVersionId") or "")
-        document = documents.get(document_id) or {}
-        if (
-            not document_id
-            or not version_id
-            or str(document.get("currentVersionId") or "") != version_id
-        ):
-            continue
-        active.setdefault(
-            version_id,
-            {
-                "documentId": document_id,
-                "documentVersionId": version_id,
-                "mountLinkIds": [str(binding.get("id") or "")],
-                "mountRevision": int(binding.get("revision") or 0),
-            },
-        )
-    return sorted(active.values(), key=lambda row: str(row.get("documentVersionId") or ""))
+    # 链接 ∪ 已提交人工挂载，逻辑收口在 review_evidence.active_node_document_versions：
+    # 节点复核与一键分析看到的资料集合必须一致。
+    return [deepcopy(row) for row in active_node_document_versions(state, project_id, node_id)]
 
 
 def build_project_analysis_snapshot(
@@ -400,15 +361,14 @@ def build_project_analysis_snapshot(
         and str(row.get("manualStatus") or "").lower() != "rejected"
         and int(row.get("nodeId") or 0) > 0
     }
-    legacy_node_ids = {
+    submitted_binding_node_ids = {
         int(row.get("nodeId") or 0)
         for row in _records(state, "bindings", "node_bindings")
         if str(row.get("projectId") or "") == str(project_id)
         and int(row.get("nodeId") or 0) > 0
-        and str(row.get("bindingStatus") or "").lower()
-        not in {"rejected", "驳回", "已撤回", "已作废", "已删除"}
+        and str(row.get("bindingStatus") or "") in SUBMITTED_BINDING_STATUSES
     }
-    node_ids = sorted(evidence_node_ids or legacy_node_ids)
+    node_ids = sorted(evidence_node_ids | submitted_binding_node_ids)
     nodes: list[dict[str, Any]] = []
     document_versions: set[str] = set()
     document_ocr_hashes: dict[str, dict[str, str]] = {}
