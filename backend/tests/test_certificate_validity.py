@@ -145,3 +145,50 @@ def test_一键分析节点块带证书核验结论():
     assert block["result"] == "passed"
     assert block["certificates"][0]["validUntil"] == "2028-01-17"
     assert _certificate_verification_for_node(_state_with_design_license(), "P-1", 25, ["DV-1"]) is None
+
+
+def test_证书证据登记为证据链后守卫放行引用():
+    from libs.review_grounding import apply_grounding_guardrails
+    from libs.review_orchestrator.certificate_facts import attach_certificate_evidence
+
+    verification = {
+        "result": "passed",
+        "certificates": [
+            {
+                "certificateNo": "TS1844171-2028",
+                "holder": "广东政和工程有限公司",
+                "validUntil": "2028-01-17",
+                "scopes": ["GC1"],
+                "checks": [{"code": "x", "passed": True, "actual": "2028-01-17", "expected": "2026-09-03"}],
+                "evidenceRefs": [
+                    {"documentVersionId": "DV-1", "fileName": "设计资质.png", "pageNo": 1, "bbox": [1, 2, 3, 4], "quotedText": "有效期至：2028年1月17日"}
+                ],
+            }
+        ],
+    }
+    context = {
+        "certificateVerification": verification,
+        "evidenceLinks": [],
+        "groundingInput": {"documentVersionIds": ["DV-1"], "groundingStatus": "grounded", "evidenceLinks": [], "evidenceTextCorpus": ["压力管道设计许可证 有效期至：2028年1月17日 核验"], "fields": [], "tables": [], "seals": [], "fragments": []},
+    }
+    attach_certificate_evidence(context)
+    assert context["evidenceLinks"][0]["id"] == "EVL-CERT-1-1"
+    assert verification["certificates"][0]["evidenceRefs"][0]["evidenceLinkId"] == "EVL-CERT-1-1"
+    assert "2028-01-17" in context["groundingInput"]["evidenceTextCorpus"]
+
+    draft = {
+        "findingType": "design_license_validity_period",
+        "severity": "low",
+        "title": "设计许可证有效期覆盖",
+        "description": "许可证 TS1844171-2028 有效期至 2028-01-17，核验通过。",
+        "evidenceRefs": [{"evidenceLinkId": "EVL-CERT-1-1", "documentVersionId": "DV-1", "pageNo": 1, "quotedText": "有效期至：2028年1月17日"}],
+        "ruleRefs": [],
+        "kbRefs": [],
+        "confidence": 0.8,
+        "suggestedAction": "human_confirm",
+        "groundingStatus": "grounded",
+        "unsupportedClaims": [],
+    }
+    [result] = apply_grounding_guardrails([draft], context["groundingInput"])
+    assert result["groundingStatus"] == "grounded", result
+    assert result["evidenceLinkIds"] == ["EVL-CERT-1-1"]

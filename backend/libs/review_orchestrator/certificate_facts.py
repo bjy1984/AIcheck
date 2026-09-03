@@ -613,3 +613,97 @@ def certificate_verification_from_tool_execution(tool_execution: dict[str, Any] 
     return None
 
 
+
+
+def certificate_evidence_links(verification: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """把证书核验结论里的证据位置登记成可引用的 evidenceLink（id 形如 EVL-CERT-…）。
+
+    锚定守卫只认提示词里登记过的 evidenceLinkId；证书证据来自字段/正文定位，
+    没有登记就引不到——模型正确引用了核验结论，finding 仍被整条丢弃（2026-09-03
+    节点 1 实测）。
+    """
+    links: list[dict[str, Any]] = []
+    for cert_index, cert in enumerate((verification or {}).get("certificates") or []):
+        label = str(cert.get("certificateNo") or cert.get("label") or f"cert{cert_index + 1}")
+        for ref_index, ref in enumerate(cert.get("evidenceRefs") or []):
+            if not isinstance(ref, dict) or not ref.get("documentVersionId"):
+                continue
+            links.append(
+                {
+                    "id": f"EVL-CERT-{cert_index + 1}-{ref_index + 1}",
+                    "objectType": "certificate",
+                    "objectId": label,
+                    "documentId": ref.get("documentId"),
+                    "documentVersionId": ref.get("documentVersionId"),
+                    "fileName": ref.get("fileName"),
+                    "pageNo": ref.get("pageNo"),
+                    "fieldName": "certificateVerification",
+                    "quotedText": ref.get("quotedText"),
+                    "bbox": ref.get("bbox"),
+                    "confidence": 1.0,
+                }
+            )
+    return links
+
+
+def certificate_claim_texts(verification: dict[str, Any] | None) -> list[str]:
+    """核验结论里模型会原样引用的值（ISO 日期、编号、主体、范围），补进比对语料。"""
+    texts: list[str] = []
+    period = (verification or {}).get("period") or {}
+    for value in (period.get("start"), period.get("end"), period.get("referenceDate")):
+        texts.extend(_date_renderings(value))
+    for cert in (verification or {}).get("certificates") or []:
+        for key in ("certificateNo", "holder", "issuer", "label"):
+            if cert.get(key):
+                texts.append(str(cert[key]))
+        for key in ("validFrom", "validUntil"):
+            texts.extend(_date_renderings(cert.get(key)))
+        texts.extend(str(item) for item in cert.get("scopes") or [] if item)
+        for check_item in cert.get("checks") or []:
+            for key in ("actual", "expected"):
+                value = check_item.get(key)
+                if value not in (None, "", [], {}):
+                    texts.append(str(value))
+                    texts.extend(_date_renderings(value))
+        for ref in cert.get("evidenceRefs") or []:
+            for key in ("documentVersionId", "documentId", "fileName", "quotedText"):
+                if isinstance(ref, dict) and ref.get(key):
+                    texts.append(str(ref[key]))
+    return list(dict.fromkeys(item for item in texts if item))
+
+
+def _date_renderings(value: Any) -> list[str]:
+    """同一个日期模型可能写成 2028-01-17 / 2028年1月17日 / 2028年01月17日 / 2028.1.17，都算引用了它。"""
+    parsed = parse_date(value)
+    if not parsed:
+        return [str(value)] if value else []
+    y, m, d = parsed.year, parsed.month, parsed.day
+    return [
+        parsed.isoformat(),
+        f"{y}年{m}月{d}日",
+        f"{y}年{m:02d}月{d:02d}日",
+        f"{y}.{m}.{d}",
+        f"{y}.{m:02d}.{d:02d}",
+        f"{y}/{m}/{d}",
+        f"{y}-{m}-{d}",
+    ]
+
+
+def attach_certificate_evidence(context: dict[str, Any]) -> None:
+    """把证书证据链与可引用文本挂进本次运行的上下文（提示词与守卫共用）。"""
+    verification = context.get("certificateVerification")
+    if not verification:
+        return
+    links = certificate_evidence_links(verification)
+    # 把登记的 id 回写进核验结论里的证据项：模型照抄 evidenceLinkId 才能被守卫认下
+    cursor = 0
+    for cert in verification.get("certificates") or []:
+        for ref in cert.get("evidenceRefs") or []:
+            if isinstance(ref, dict) and ref.get("documentVersionId") and cursor < len(links):
+                ref["evidenceLinkId"] = links[cursor]["id"]
+                cursor += 1
+    context.setdefault("evidenceLinks", []).extend(links)
+    grounding_input = context.get("groundingInput") if isinstance(context.get("groundingInput"), dict) else None
+    if grounding_input is not None:
+        grounding_input.setdefault("evidenceLinks", []).extend(links)
+        grounding_input.setdefault("evidenceTextCorpus", []).extend(certificate_claim_texts(verification))

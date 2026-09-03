@@ -25,7 +25,7 @@ from libs.business_pack.clause_store import (
     review_run_clause_snapshot,
 )
 from libs.contracts.responses import server_time
-from libs.review_orchestrator.certificate_facts import CERTIFICATE_VERIFICATION_REQUIREMENT, certificate_verification_from_tool_execution, merge_certificate_facts  # noqa: E501
+from libs.review_orchestrator.certificate_facts import CERTIFICATE_VERIFICATION_REQUIREMENT, attach_certificate_evidence, certificate_verification_from_tool_execution, merge_certificate_facts  # noqa: E501
 from libs.review_orchestrator.persistence_retry import flush_review_run_records_with_conflict_retry, review_run_state_records  # noqa: E501
 from libs.db.repository import STATE_COLLECTIONS, flush_state_records, load_review_run_state, repo
 from libs.integrations.errors import IntegrationServiceError
@@ -1735,6 +1735,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         context["ruleResults"] = [result]
         context["atomicToolExecution"] = tool_execution
         context["certificateVerification"] = certificate_verification_from_tool_execution(tool_execution)
+        attach_certificate_evidence(context)
         if int(review_run.get("nodeId") or 0) == 19:
             verification_tool = {"verificationCount": 0, "status": "skipped_for_r19"}
         else:
