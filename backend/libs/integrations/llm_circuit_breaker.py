@@ -78,7 +78,9 @@ def is_provider_fault(exc: Exception) -> bool:
         return False
     status = exc.status_code
     if status is not None:
-        return status >= 500 or status == 429
+        # 402（余额不足/欠费）对调用方而言等同于供应商不可用：不切备胎，每次审查都
+        # 直接失败——2026-09-03 DeepSeek 欠费，节点复核全部 REVIEW_WORKFLOW_FAILED。
+        return status >= 500 or status in {402, 429}
     return (exc.reason or "") in _PROVIDER_FAULT_REASONS
 
 

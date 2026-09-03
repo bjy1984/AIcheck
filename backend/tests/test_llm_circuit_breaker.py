@@ -96,3 +96,10 @@ def test_network_reason_counts_as_provider_fault() -> None:
         IntegrationServiceError("Qwen official API", "chat.completions", reason="CONNECTERROR")
     )
     assert not breaker.is_provider_fault(RuntimeError("misc"))
+
+
+def test_欠费402也算供应商故障要切备胎() -> None:
+    from libs.integrations.errors import IntegrationServiceError
+
+    assert breaker.is_provider_fault(IntegrationServiceError("Qwen official API", "chat.completions", status_code=402))
+    assert not breaker.is_provider_fault(IntegrationServiceError("Qwen official API", "chat.completions", status_code=400))
