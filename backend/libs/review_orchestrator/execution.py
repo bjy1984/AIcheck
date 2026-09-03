@@ -1327,6 +1327,7 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["status"] = "完成"
             ai_run["finishedAt"] = review_run["finishedAt"]
             ai_run["findingDrafts"] = repo.clone(review_run.get("findingDrafts") or [])
+            ai_run["certificateVerification"] = repo.clone(context.get("certificateVerification") or None)
             ai_run["evidenceLinks"] = repo.clone(context.get("evidenceLinks") or [])
             ai_run["reviewRunId"] = review_run.get("reviewRunId")
             ai_run["promptAudit"] = repo.clone(review_run.get("promptAudit") or context.get("promptShape") or {})

@@ -281,3 +281,30 @@ const failedHistory = buildWorkbenchAiHistory({
   ]
 })
 assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查没有开始执行。')
+
+// 证照核验块要原样带到展示模型：监检看卡片就能知道「证还有效吗」，不必翻 finding 文字
+{
+  const { workbenchCertificateVerification } = await import('./workbenchReviewPresentation')
+  const block = workbenchCertificateVerification({
+    result: 'passed',
+    certificateType: 'design_license',
+    period: { start: null, end: null, referenceDate: '2026-09-03' },
+    certificates: [
+      {
+        label: 'TS1',
+        holder: '广东政和工程有限公司',
+        certificateNo: 'TS1844171-2028',
+        validFrom: null,
+        validUntil: '2028-01-17',
+        scopes: ['GC1'],
+        result: 'passed'
+      }
+    ],
+    warnings: ['construction_period_missing_using_reference_date']
+  })
+  assert.equal(block?.result, 'passed')
+  assert.equal(block?.certificates[0].validUntil, '2028-01-17')
+  assert.deepEqual(block?.certificates[0].scopes, ['GC1'])
+  assert.equal(workbenchCertificateVerification(null), undefined)
+  assert.equal(workbenchCertificateVerification('x'), undefined)
+}

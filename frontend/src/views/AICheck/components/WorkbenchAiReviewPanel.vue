@@ -8,6 +8,7 @@ import {
   type WorkbenchAiPresentation
 } from '../workbenchReviewPresentation'
 import AuditStatusTag from './AuditStatusTag.vue'
+import CertificateVerificationCard from './CertificateVerificationCard.vue'
 
 const props = defineProps<{
   presentation: WorkbenchAiPresentation
@@ -68,6 +69,10 @@ const ruleLabel = (rule: Record<string, unknown>) => String(rule.text || rule.so
           </AuditStatusTag>
         </div>
         <p class="ai-result-summary">{{ presentation.summary }}</p>
+        <CertificateVerificationCard
+          v-if="presentation.certificateVerification"
+          :verification="presentation.certificateVerification"
+        />
 
         <div v-if="presentation.findings.length" class="ai-result-findings">
           <article v-for="finding in displayFindings" :key="finding.id">

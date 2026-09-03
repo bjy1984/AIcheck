@@ -27,6 +27,20 @@ def persist_project_analysis_node_results(
     project_run_id = str(project_run.get("projectAnalysisRunId") or "")
     rows = state.setdefault("review_runs", [])
     persisted: list[dict[str, Any]] = []
+    # 快照里每个证书节点的确定性核验块随节点结果一起落到派生运行上，节点页才展示得出来
+    snapshot = next(
+        (
+            row
+            for row in state.get("project_analysis_snapshots") or []
+            if row.get("projectAnalysisSnapshotId") == project_run.get("projectAnalysisSnapshotId")
+        ),
+        None,
+    )
+    certificate_blocks = {
+        int(node.get("nodeId") or 0): node.get("certificateVerification")
+        for node in (snapshot or {}).get("nodes") or []
+        if isinstance(node, dict) and node.get("certificateVerification")
+    }
     for review in validated_output.get("nodeReviews") or []:
         node_id = int(review.get("nodeId") or 0)
         review_run_id = _stable_id(
@@ -81,6 +95,7 @@ def persist_project_analysis_node_results(
             "currentStep": "waiting_human_review",
             "reviewResult": review.get("reviewResult"),
             "findingDrafts": finding_drafts,
+            "certificateVerification": deepcopy(certificate_blocks.get(node_id)),
             "outputHash": _stable_id("OUTPUT", finding_drafts).replace("OUTPUT-", "sha256:"),
             "createdAt": server_time(),
             "finishedAt": server_time(),

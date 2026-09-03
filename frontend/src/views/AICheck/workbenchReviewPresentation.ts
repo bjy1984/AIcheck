@@ -35,6 +35,57 @@ export const workbenchFindingDisplay = (finding: WorkbenchAiFinding) => ({
   ruleRefs: finding.ruleRefs
 })
 
+export type WorkbenchCertificateVerification = {
+  result: string
+  certificateType: string
+  period: { start?: string | null; end?: string | null; referenceDate?: string | null }
+  certificates: Array<{
+    label: string
+    holder: string
+    certificateNo: string
+    validFrom: string
+    validUntil: string
+    scopes: string[]
+    result: string
+  }>
+  warnings: string[]
+}
+
+/** 服务端 certificateVerification 块 → 展示模型；不是对象或没有证书条目时返回 undefined。 */
+export const workbenchCertificateVerification = (
+  raw: unknown
+): WorkbenchCertificateVerification | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const block = raw as Record<string, unknown>
+  const period = (block.period && typeof block.period === 'object' ? block.period : {}) as Record<
+    string,
+    unknown
+  >
+  const certificates = Array.isArray(block.certificates) ? block.certificates : []
+  const text = (value: unknown) => (value === null || value === undefined ? '' : String(value))
+  return {
+    result: text(block.result),
+    certificateType: text(block.certificateType),
+    period: {
+      start: text(period.start) || null,
+      end: text(period.end) || null,
+      referenceDate: text(period.referenceDate) || null
+    },
+    certificates: certificates
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map((item) => ({
+        label: text(item.label),
+        holder: text(item.holder),
+        certificateNo: text(item.certificateNo),
+        validFrom: text(item.validFrom),
+        validUntil: text(item.validUntil),
+        scopes: Array.isArray(item.scopes) ? item.scopes.map(text) : [],
+        result: text(item.result)
+      })),
+    warnings: Array.isArray(block.warnings) ? block.warnings.map(text) : []
+  }
+}
+
 export type WorkbenchAiPresentation = {
   runId: string
   activityAt: string
@@ -45,6 +96,7 @@ export type WorkbenchAiPresentation = {
   summary: string
   meta: string
   findings: WorkbenchAiFinding[]
+  certificateVerification?: WorkbenchCertificateVerification
   errorMessage: string
   canRetry: boolean
   running: boolean
@@ -225,6 +277,9 @@ export const buildWorkbenchAiPresentation = (
       .filter(Boolean)
       .join(' · '),
     findings,
+    certificateVerification: workbenchCertificateVerification(
+      (nodeReview as Record<string, unknown> | undefined)?.certificateVerification
+    ),
     errorMessage: failed
       ? String(run.errorMessage || run.errorCode || '模型结果未通过校验，请重新发起分析。')
       : '',
@@ -278,6 +333,9 @@ export const selectWorkbenchAiPresentation = ({
         '当前节点暂无结果说明。',
     meta: [nodeRun.model, nodeRun.finishedAt || nodeRun.id].filter(Boolean).join(' · '),
     findings: nodeFindings,
+    certificateVerification: workbenchCertificateVerification(
+      (nodeRun as unknown as Record<string, unknown>).certificateVerification
+    ),
     errorMessage: failed ? failureText : '',
     canRetry: failed ? nodeRun.failure?.retryable !== false : false,
     running
