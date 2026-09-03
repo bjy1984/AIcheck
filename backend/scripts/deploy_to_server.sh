@@ -218,6 +218,9 @@ except Exception:
       # 调用中断、任务要等 visibility_timeout（85 分钟）才重投，而巡检 30 分钟就把
       # 运行收敛成 failed——每次部署都可能白白杀掉一次一键分析（2026-09-03 审计）。
       # 先 SIGTERM 让 celery 温停：不再取新任务，把手上这个跑完再退出，最多等 20 分钟。
+      # 容器命令必须是 `sh -c "exec celery …"`：不带 exec 时 PID 1 是 sh，不会把
+      # docker stop 的 SIGTERM 转给 celery，温停会干等满 20 分钟再被 SIGKILL
+      # （2026-09-03 首次部署实测卡住，手工 kill -TERM 才放行）。
       if [ \"\$name\" = aicheck-worker-llm ] && docker inspect \$name >/dev/null 2>&1; then
         echo \"    温停 \$name（等在途大模型任务收尾，最多 20 分钟）\"
         docker stop -t 1200 \$name >/dev/null 2>&1 || true
@@ -231,7 +234,7 @@ except Exception:
         -v $SERVER_DATA_ROOT/files/output:/app/output \
         -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
         --env-file /home/dev-bjy/aicheck-runtime.env aicheck-api:local \
-        sh -c \"celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --prefetch-multiplier=1 \$*\" >/dev/null
+        sh -c \"exec celery -A apps.worker.celery_app.celery_app worker --loglevel=INFO --prefetch-multiplier=1 \$*\" >/dev/null
     }
     # -B 内嵌 beat：compose 权威（docker-compose.deploy.yml）一直这么声明，
     # 部署脚本此前把 -B 弄丢了——auto_review 的四个 60 秒周期任务
