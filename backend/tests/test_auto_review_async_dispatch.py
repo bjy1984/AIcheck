@@ -18,7 +18,7 @@ def test_dispatch_ai_recheck_supports_force_async() -> None:
     source = (BACKEND_ROOT / "libs" / "integrations" / "task_dispatcher.py").read_text(encoding="utf-8")
     assert "force_async" in source, "dispatch_ai_recheck 必须支持强制异步"
     # force_async 分支必须在 inline/temporal 分支之前，否则 inline 仍会同步执行
-    body = source.split("def dispatch_ai_recheck", 1)[1][:900]
+    body = source.split("def dispatch_ai_recheck", 1)[1].split("\ndef ", 1)[0]
     force_pos = body.index("if force_async")
     inline_pos = body.index('orchestration_mode in {"temporal", "inline"}')
     assert force_pos < inline_pos, "force_async 必须优先于 inline 分支"
@@ -29,3 +29,58 @@ def test_auto_review_path_forces_async() -> None:
     source = (BACKEND_ROOT / "apps" / "api" / "routes.py").read_text(encoding="utf-8")
     assert "auto_review_dispatch = body.get(\"autoReviewPolicyRevision\")" in source
     assert "force_async=auto_review_dispatch" in source
+
+
+def test_force_async_under_inline_orchestration_goes_through_review_run(monkeypatch) -> None:
+    """异步也必须走编排器：建 ReviewRun 后入队 review_run_execute，而不是旧版 ai_recheck。
+
+    2026-09-03 实测：自动审查的节点 24 焊工证运行只有一步 chat.completions，
+    没有 ReviewRun、没有 run_rule_engine、零工具调用。
+    """
+    from apps.worker import tasks
+    from libs.integrations import task_dispatcher
+    from libs.review_orchestrator import dispatcher
+
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    monkeypatch.setattr(task_dispatcher, "dispatch_mode", lambda: "celery")
+    prepared = {"reviewRunId": "RRUN-ASYNC-1", "workflowId": "WF-1"}
+    monkeypatch.setattr(
+        dispatcher, "prepare_review_run_for_async_dispatch", lambda run_id: prepared
+    )
+    queued: list[str] = []
+    legacy: list[tuple] = []
+
+    class _Result:
+        id = "celery-task-1"
+
+    monkeypatch.setattr(tasks.review_run_execute, "delay", lambda rid: queued.append(rid) or _Result())
+    monkeypatch.setattr(tasks.ai_recheck, "delay", lambda *a: legacy.append(a) or _Result())
+
+    dispatch = task_dispatcher.dispatch_ai_recheck("P-1", 24, "AIRUN-24-X", force_async=True)
+
+    assert queued == ["RRUN-ASYNC-1"], "必须把建好的 ReviewRun 交给编排执行任务"
+    assert legacy == [], "不得再回落到旧版 ai_recheck 单次对话任务"
+    assert dispatch["forcedAsync"] is True
+    assert dispatch["reviewRunId"] == "RRUN-ASYNC-1"
+    assert dispatch["taskId"] == "celery-task-1"
+
+
+def test_force_async_falls_back_to_legacy_when_ai_run_missing(monkeypatch) -> None:
+    from apps.worker import tasks
+    from libs.integrations import task_dispatcher
+    from libs.review_orchestrator import dispatcher
+
+    monkeypatch.setenv("AICHECK_REVIEW_ORCHESTRATION", "inline")
+    monkeypatch.setattr(task_dispatcher, "dispatch_mode", lambda: "celery")
+    monkeypatch.setattr(dispatcher, "prepare_review_run_for_async_dispatch", lambda run_id: None)
+    legacy: list[tuple] = []
+
+    class _Result:
+        id = "celery-task-2"
+
+    monkeypatch.setattr(tasks.review_run_execute, "delay", lambda rid: (_ for _ in ()).throw(AssertionError("不应入队")))
+    monkeypatch.setattr(tasks.ai_recheck, "delay", lambda *a: legacy.append(a) or _Result())
+
+    dispatch = task_dispatcher.dispatch_ai_recheck("P-1", 24, "AIRUN-MISSING", force_async=True)
+    assert legacy == [("P-1", 24, "AIRUN-MISSING")]
+    assert dispatch["forcedAsync"] is True

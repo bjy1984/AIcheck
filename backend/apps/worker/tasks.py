@@ -5245,6 +5245,21 @@ def export_package(self, export_id: str) -> dict[str, Any]:
 
 
 @celery_app.task(bind=True, max_retries=0)
+def review_run_execute(self, review_run_id: str) -> dict[str, Any]:
+    """在 worker 里执行一条已建好的 ReviewRun（自动审查的异步编排入口）。
+
+    ReviewRun 由 API/周期任务进程建好并落库后入队（见 dispatcher.
+    prepare_review_run_for_async_dispatch）；这里只负责执行与落库。不做任务级
+    重试：编排器内部有模型级重掷，任务级重复执行会产生重复运行。
+    """
+    load_state()
+    from libs.review_orchestrator import execute_review_run_inline
+
+    result = execute_review_run_inline(review_run_id) or {}
+    return {"reviewRunId": review_run_id, "status": result.get("status")}
+
+
+@celery_app.task(bind=True, max_retries=0)
 def review_conversation_execute(
     self,
     session_id: str,

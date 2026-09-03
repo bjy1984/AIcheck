@@ -443,6 +443,29 @@ def dispatch_ai_recheck(
     # 锁被长期占用 → 后续每个 beat 周期全 duplicate_inflight → 自动派发永久卡死
     # 且无自愈（2026-08-29 生产实测）。异步入队让锁快速释放，审查在 worker 里跑。
     if force_async and dispatch_mode() == "celery":
+        if orchestration_mode == "temporal":
+            # Temporal 的启动本身就是异步的，不会占着周期锁
+            from libs.review_orchestrator import dispatch_review_run
+
+            return {**dispatch_review_run(run_id), "forcedAsync": True}
+        if orchestration_mode == "inline":
+            # 异步也要走编排器：旧版 ai_recheck 任务只是一次 chat.completions，
+            # 没有规则引擎、零工具调用（2026-09-03 审计）。这里只建运行、入队，
+            # 审查在 worker 里由 execute_review_run_inline 跑，锁仍然秒级释放。
+            from apps.worker.tasks import review_run_execute
+            from libs.review_orchestrator.dispatcher import prepare_review_run_for_async_dispatch
+
+            review_run = prepare_review_run_for_async_dispatch(run_id)
+            if review_run is not None:
+                result = review_run_execute.delay(str(review_run["reviewRunId"]))
+                return {
+                    "mode": "celery",
+                    "taskId": result.id,
+                    "forcedAsync": True,
+                    "reviewRunId": review_run["reviewRunId"],
+                    "workflowId": review_run.get("workflowId"),
+                    "status": "queued",
+                }
         from apps.worker.tasks import ai_recheck
 
         result = ai_recheck.delay(project_id, node_id, run_id)

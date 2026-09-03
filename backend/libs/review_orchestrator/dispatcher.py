@@ -69,6 +69,29 @@ def dispatch_review_run(ai_run_id: str) -> dict[str, Any]:
     return dispatch_existing_review_run(review_run)
 
 
+def prepare_review_run_for_async_dispatch(ai_run_id: str) -> dict[str, Any] | None:
+    """为异步执行建好 ReviewRun 并落库，返回它；ai_run 不存在返回 None。
+
+    自动审查（force_async）此前直接把 ai_run 丢给 worker 里的旧版 ai_recheck 任务：
+    一次 chat.completions，没有 ReviewRun、没有 run_rule_engine、零工具调用
+    （2026-09-03 实测节点 24 焊工证自动审查，规则版本还是核心种子的旧值）。
+    inline/temporal 编排下，异步也必须走编排器——在这里先把 ReviewRun 建好并
+    落库，再由 worker 用 execute_review_run_inline 执行；周期锁内只做建运行与入队，
+    不再同步跑审查。
+    """
+    mode = review_orchestration_mode()
+    ai_run = repo.find_one("ai_runs", ai_run_id)
+    if not ai_run:
+        return None
+    review_run = create_review_run_from_ai_run(ai_run, mode=mode)
+    review_run["workflowEngine"] = "temporal" if mode == "temporal" else "inline_temporal_compatible"
+    review_run["dispatchMode"] = "celery_async"
+    review_run["updatedAt"] = review_run.get("updatedAt") or review_run.get("createdAt")
+    ai_run["reviewRunId"] = review_run["reviewRunId"]
+    flush_state_records(review_run_state_records(str(review_run["reviewRunId"])))
+    return review_run
+
+
 def start_temporal_workflow(review_run: dict[str, Any]) -> dict[str, Any]:
     try:
         return asyncio.run(_start_temporal_workflow(review_run))
