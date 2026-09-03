@@ -771,6 +771,12 @@ def _date_renderings(value: Any) -> list[str]:
         f"{y}.{m:02d}.{d:02d}",
         f"{y}/{m}/{d}",
         f"{y}-{m}-{d}",
+        # 证书常只写到月，模型也会只引到月
+        f"{y}年{m}月",
+        f"{y}年{m:02d}月",
+        f"{y}年{m:02d}",
+        f"{y}-{m:02d}",
+        f"{y}.{m:02d}",
     ]
 
 
@@ -787,8 +793,21 @@ def attach_certificate_evidence(context: dict[str, Any]) -> None:
             if isinstance(ref, dict) and ref.get("documentVersionId") and cursor < len(links):
                 ref["evidenceLinkId"] = links[cursor]["id"]
                 cursor += 1
-    context.setdefault("evidenceLinks", []).extend(links)
+    # 可重复调用：证据预算裁剪会整体重建 groundingInput（evidenceLinks / evidenceTextCorpus
+    # 都从字段片段重算），裁剪后必须再挂一次，否则守卫又看不到证书证据。
+    _extend_unique(context.setdefault("evidenceLinks", []), links, key="id")
     grounding_input = context.get("groundingInput") if isinstance(context.get("groundingInput"), dict) else None
     if grounding_input is not None:
-        grounding_input.setdefault("evidenceLinks", []).extend(links)
-        grounding_input.setdefault("evidenceTextCorpus", []).extend(certificate_claim_texts(verification))
+        _extend_unique(grounding_input.setdefault("evidenceLinks", []), links, key="id")
+        corpus = grounding_input.setdefault("evidenceTextCorpus", [])
+        for text in certificate_claim_texts(verification):
+            if text not in corpus:
+                corpus.append(text)
+
+
+def _extend_unique(target: list[dict[str, Any]], items: list[dict[str, Any]], *, key: str) -> None:
+    seen = {str(row.get(key)) for row in target if isinstance(row, dict)}
+    for item in items:
+        if str(item.get(key)) not in seen:
+            target.append(item)
+            seen.add(str(item.get(key)))

@@ -2180,6 +2180,7 @@ def trim_review_input_to_budget(
     trimmed["groundingStatus"] = "insufficient_evidence"
     trimmed["truncationRequirements"] = truncation_requirements(report)
     context["groundingInput"] = trimmed
+    attach_certificate_evidence(context)  # 裁剪重建了 groundingInput，证书证据要再挂一次
     context["evidenceBudget"] = report
     review_run["evidenceBudget"] = repo.clone(report)
 
