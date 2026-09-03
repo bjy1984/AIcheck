@@ -71,34 +71,27 @@ runtime = {
     # Office 在线预览：浏览器经本机 nginx 反代 /onlyoffice/ 访问，与页面同源
     "AICHECK_ONLYOFFICE_BASE": "/onlyoffice",
     "AICHECK_REVIEW_ORCHESTRATION": "inline",
-    # 模型链路：DeepSeek 直连，不经 LiteLLM 网关。
+    # 模型链路：通义（DashScope 兼容模式）直连，不经 LiteLLM 网关。
     #
     # 网关那条路卡在镜像上——ghcr.io/berriai/litellm 在 daocloud 镜像源不在白名单，
-    # 拉不到。而 DeepSeek 是 OpenAI 兼容接口，official_api 这条路直接能打。
+    # 拉不到。official_api 这条路走 OpenAI 兼容协议，直接能打。
     #
-    # 模型名必须显式写出来：配置文件里的默认值是 qwen3.7-plus，DeepSeek 不认。
-    # 取值以 https://api.deepseek.com/models 实测为准（2026-08-14：
-    # deepseek-v4-pro / deepseek-v4-flash 两个）。
+    # 2026-09-03 起全部文本角色统一用通义（此前主供应商是 DeepSeek）：
+    # - DeepSeek V4 Pro 在审查提示词下几乎不写 evidenceRefs，通过的节点直接回空
+    #   findings，校验器整体降级成「证据不足」（PARUN-4B22A0B9B5D34554：24 条 23 条无效）；
+    # - 09-03 DeepSeek 欠费 HTTP 402，全部复核失败。
+    # 主密钥由下方 update 之后从视觉那把 DashScope 凭证带入（同账号同 key）。
+    # 模型名以 DashScope 实际可调为准（09-02/09-03 实测 qwen3.7-plus / qwen3.8-max 均 200）。
     "AICHECK_QWEN_CALL_MODE": "official_api",
-    "AICHECK_LLM_API_BASE": "https://api.deepseek.com",
-    "AICHECK_LLM_MODEL_REVIEW": "deepseek-v4-pro",
-    "AICHECK_LLM_MODEL_DEFAULT": "deepseek-v4-pro",
-    "AICHECK_LLM_MODEL_COMPARE_FAST": "deepseek-v4-flash",
-    # 一键分析（full-project-analysis）单独走 DashScope 的 qwen3.8-max（与本地一样
-    # 直连通义；本地 litellm 映射的是 qwen3.7-plus，2026-09-02 按要求升到 3.8 max）。
-    # 地址与密钥在下方 update 之后由视觉那把 DashScope 凭证带入
-    # （AICHECK_LLM_PROJECT_REVIEW_API_BASE/_API_KEY），
-    # 两个都配齐才生效，否则 qwen_runtime 退回主供应商 DeepSeek——那时这个模型名
-    # 会被 DeepSeek 以 HTTP 400 拒绝，run 卡死（2026-08-28 漏配角色时实测过）。
-    #
-    # 为什么不继续用 deepseek-v4-pro：同一份提示词下它几乎不写 evidenceRefs，
-    # 通过的节点直接回空 findings，校验器把整个节点降级成「证据不足」，监检
-    # 工作台一条结果都看不到。2026-09-01 PARUN-4B22A0B9B5D34554：24 条 finding
-    # 23 条无效；08-28 qwen3.7-plus 那次 66 条里 40 条带原文引用。
+    "AICHECK_LLM_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "AICHECK_LLM_MODEL_REVIEW": "qwen3.7-plus",
+    "AICHECK_LLM_MODEL_DEFAULT": "qwen3.7-plus",
+    "AICHECK_LLM_MODEL_COMPARE_FAST": "qwen3.6-flash",
+    # 一键分析（full-project-analysis）用 qwen3.8-max（2026-09-02 按要求升到 3.8 max）。
     "AICHECK_LLM_MODEL_PROJECT_REVIEW": "qwen3.8-max",
-    # 资料分类与其它文本角色共用当前 DeepSeek provider。若遗漏该角色，
-    # qwen_runtime.yaml 会回退 qwen3.8-max，而 DeepSeek 会直接返回 HTTP 400。
-    "AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER": "deepseek-v4-pro",
+    # 资料分类：qwen_runtime.yaml 的默认值也是 qwen3.8-max，这里显式写出，
+    # 新增 LLM 角色时这份清单必须同步补齐（漏配角色曾让 run 卡死，2026-08-28）。
+    "AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER": "qwen3.8-max",
     # 视觉单独走一家：DeepSeek 的 chat.completions 不接受图片，发 image_url
     # 直接 400（unknown variant `image_url`）。此前这一项也写着 deepseek-v4-pro，
     # 等于声明了一个不存在的能力——印章读字上线第一次实跑就栽在这里。
@@ -154,27 +147,23 @@ runtime = {
 # 凭证覆盖固定配置：口令、密钥以文件为准
 runtime.update({k: v for k, v in secrets.items() if not k.startswith("AICHECK_BOOTSTRAP_PASSWORD_")})
 
-# 模型密钥沿用 DEEPSEEK_API_KEY，不在凭证文件里复制一份。
-# 复制一份的代价是轮换时要记得改两处，而漏改的那一处不会报错——只会静默降级。
-# 放在 update 之后：这一行的来源就是凭证文件本身，不能反过来被它覆盖成空。
-if secrets.get("DEEPSEEK_API_KEY"):
-    runtime["AICHECK_LLM_API_KEY"] = secrets["DEEPSEEK_API_KEY"]
-
-# embedding 复用视觉那把 DashScope 密钥（同账号同 key）。
-# 同样放在 update 之后，且只在真有值时写：写成空串的话 EmbeddingClient
-# 仍然 enabled（它只看 base_url），请求会带一个空 Authorization 打过去，
-# 报 401 而不是「没配置」——比缺配置更难查。
+# 主模型密钥复用视觉那把 DashScope 密钥（同账号同 key）——embedding 也是它。
+# 不在凭证文件里复制第二份：轮换时漏改的那份不会报错，只会静默降级。
+# 放在 update 之后，且只在真有值时写：写成空串会让就绪检查以为「配了但是空的」。
 if secrets.get("AICHECK_LLM_VISION_API_KEY"):
+    runtime["AICHECK_LLM_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
     runtime["AICHECK_EMBEDDING_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
-    # LLM 备用供应商（DeepSeek 供应商级故障/熔断时降级）也复用这把 DashScope
-    # 密钥：模型名走 qwen_runtime.yaml 里 official_api 的通义默认值。
-    # 地址与密钥两个都配齐才生效（fallback_provider 的规矩），所以放同一个 if 里。
-    runtime["AICHECK_LLM_FALLBACK_API_BASE"] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    runtime["AICHECK_LLM_FALLBACK_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
-    # 一键分析角色直连 DashScope（模型名见上方 AICHECK_LLM_MODEL_PROJECT_REVIEW）。
-    # 同一把 key、同一个地址；地址与密钥两个都配齐才生效（role_provider_override 的规矩）。
-    runtime["AICHECK_LLM_PROJECT_REVIEW_API_BASE"] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    runtime["AICHECK_LLM_PROJECT_REVIEW_API_KEY"] = secrets["AICHECK_LLM_VISION_API_KEY"]
+
+# LLM 备用供应商：DeepSeek（通义供应商级故障/熔断时降级）。模型名必须显式覆盖，
+# 否则 fallback_provider 用 qwen_runtime.yaml 的通义默认值，DeepSeek 会 400。
+# 地址与密钥两个都配齐才生效（fallback_provider 的规矩），所以放同一个 if 里。
+# 注意 DeepSeek 欠费（HTTP 402）时备胎照样打不通——那不是配置问题，去充值。
+if secrets.get("DEEPSEEK_API_KEY"):
+    runtime["AICHECK_LLM_FALLBACK_API_BASE"] = "https://api.deepseek.com"
+    runtime["AICHECK_LLM_FALLBACK_API_KEY"] = secrets["DEEPSEEK_API_KEY"]
+    for role in ("REVIEW", "DEFAULT", "PROJECT_REVIEW", "DOCUMENT_CLASSIFIER"):
+        runtime[f"AICHECK_LLM_FALLBACK_MODEL_{role}"] = "deepseek-v4-pro"
+    runtime["AICHECK_LLM_FALLBACK_MODEL_COMPARE_FAST"] = "deepseek-v4-flash"
 
 TARGET.write_text("".join("%s=%s\n" % (k, v) for k, v in sorted(runtime.items())))
 TARGET.chmod(0o600)

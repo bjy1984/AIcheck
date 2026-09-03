@@ -40,24 +40,25 @@ def _build(tmp_path: pathlib.Path, secrets: dict[str, str]) -> dict[str, str]:
 
 
 def test_模型配置进得了生成结果(tmp_path: pathlib.Path):
-    env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "DEEPSEEK_API_KEY": "sk-deepseek"})
+    env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-dashscope"})
     assert env["AICHECK_QWEN_CALL_MODE"] == "official_api"
-    assert env["AICHECK_LLM_API_BASE"] == "https://api.deepseek.com"
-    # 模型名必须显式写死：配置文件默认是 qwen3.7-plus，DeepSeek 不认
-    assert env["AICHECK_LLM_MODEL_REVIEW"].startswith("deepseek-")
-    assert env["AICHECK_LLM_MODEL_COMPARE_FAST"].startswith("deepseek-")
-    # 一键分析角色单独走 DashScope 的 qwen3.8-max（见 test_一键分析角色随视觉密钥
-    # 直连DashScope）；角色清单必须和 libs/qwen_runtime.MODEL_ROLE_ENV 对齐。
+    # 2026-09-03 起全部文本角色统一走通义（DashScope 兼容模式）
+    assert env["AICHECK_LLM_API_BASE"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert env["AICHECK_LLM_MODEL_REVIEW"] == "qwen3.7-plus"
+    assert env["AICHECK_LLM_MODEL_DEFAULT"] == "qwen3.7-plus"
+    assert env["AICHECK_LLM_MODEL_COMPARE_FAST"] == "qwen3.6-flash"
     assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
-    # 资料分类角色同样走当前 DeepSeek provider；漏配会回退 qwen3.8-max，
-    # 供应商会以 invalid_request_error / HTTP 400 明确拒绝。
-    assert env["AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER"].startswith("deepseek-")
+    assert env["AICHECK_LLM_MODEL_DOCUMENT_CLASSIFIER"] == "qwen3.8-max"
+    # 角色清单必须和 libs/qwen_runtime.MODEL_ROLE_ENV 对齐（漏配角色曾让 run 卡死）
+    for name in ("deepseek",):
+        assert not any(name in str(v).lower() for k, v in env.items() if k.startswith("AICHECK_LLM_MODEL_"))
 
 
-def test_模型密钥沿用凭证文件里的那一份(tmp_path: pathlib.Path):
+def test_主模型密钥沿用视觉那把DashScope密钥(tmp_path: pathlib.Path):
     """不在凭证文件里复制第二份——轮换时漏改的那份不会报错，只会静默降级。"""
-    env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "DEEPSEEK_API_KEY": "sk-real"})
+    env = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-real"})
     assert env["AICHECK_LLM_API_KEY"] == "sk-real"
+    assert env["AICHECK_EMBEDDING_API_KEY"] == "sk-real"
 
 
 def test_没有密钥时不写出空密钥(tmp_path: pathlib.Path):
@@ -84,9 +85,8 @@ def test_部署脚本用的是仓库里的这份生成器():
     assert "cp deploy/build_runtime_env.py" in script
 
 
-def test_备用供应商随视觉密钥一起生成(tmp_path: pathlib.Path):
-    """有 DashScope 密钥就必须配出 LLM 备胎——两项都写（fallback_provider
-    要求地址密钥齐全才生效，只写一半等于没配）。"""
+def test_备用供应商是DeepSeek且模型名显式覆盖(tmp_path: pathlib.Path):
+    """通义故障时切 DeepSeek；模型名不覆盖的话备胎会拿通义默认值去打 DeepSeek，直接 400。"""
     env = _build(
         tmp_path,
         {
@@ -95,31 +95,13 @@ def test_备用供应商随视觉密钥一起生成(tmp_path: pathlib.Path):
             "AICHECK_LLM_VISION_API_KEY": "sk-dashscope",
         },
     )
-    assert env["AICHECK_LLM_FALLBACK_API_BASE"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    assert env["AICHECK_LLM_FALLBACK_API_KEY"] == "sk-dashscope"
+    assert env["AICHECK_LLM_FALLBACK_API_BASE"] == "https://api.deepseek.com"
+    assert env["AICHECK_LLM_FALLBACK_API_KEY"] == "sk-deepseek"
+    assert env["AICHECK_LLM_FALLBACK_MODEL_REVIEW"] == "deepseek-v4-pro"
+    assert env["AICHECK_LLM_FALLBACK_MODEL_PROJECT_REVIEW"] == "deepseek-v4-pro"
+    assert env["AICHECK_LLM_FALLBACK_MODEL_COMPARE_FAST"] == "deepseek-v4-flash"
+    # 主供应商已是 DashScope，一键分析角色不再需要单独的地址密钥
+    assert "AICHECK_LLM_PROJECT_REVIEW_API_BASE" not in env
 
-    without_key = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "DEEPSEEK_API_KEY": "sk-d"})
+    without_key = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "AICHECK_LLM_VISION_API_KEY": "sk-d"})
     assert "AICHECK_LLM_FALLBACK_API_BASE" not in without_key
-
-
-def test_一键分析角色随视觉密钥直连DashScope(tmp_path: pathlib.Path):
-    """模型名写的是 qwen3.8-max，地址密钥必须同时给到，否则 role_provider_override
-    退回主供应商 DeepSeek，DeepSeek 对这个模型名直接 HTTP 400，run 卡死。"""
-    env = _build(
-        tmp_path,
-        {
-            "AICHECK_POSTGRES_PASSWORD": "pw",
-            "DEEPSEEK_API_KEY": "sk-deepseek",
-            "AICHECK_LLM_VISION_API_KEY": "sk-dashscope",
-        },
-    )
-    assert env["AICHECK_LLM_MODEL_PROJECT_REVIEW"] == "qwen3.8-max"
-    assert env["AICHECK_LLM_PROJECT_REVIEW_API_BASE"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    assert env["AICHECK_LLM_PROJECT_REVIEW_API_KEY"] == "sk-dashscope"
-    # 其它文本角色仍走 DeepSeek 主供应商
-    assert env["AICHECK_LLM_API_BASE"] == "https://api.deepseek.com"
-    assert env["AICHECK_LLM_MODEL_REVIEW"].startswith("deepseek-")
-
-    without_key = _build(tmp_path, {"AICHECK_POSTGRES_PASSWORD": "pw", "DEEPSEEK_API_KEY": "sk-d"})
-    assert "AICHECK_LLM_PROJECT_REVIEW_API_BASE" not in without_key
-    assert "AICHECK_LLM_PROJECT_REVIEW_API_KEY" not in without_key
