@@ -63,13 +63,13 @@ export const projectAnalysisRequestFailure = (error: unknown) => {
       message: '项目资料在预览后发生了变化，请刷新预览确认范围后重新发起。'
     }
   }
-  return {
-    terminal: true,
-    message:
-      reason === 'NOT_FOUND'
-        ? '分析任务不存在或已失效，请重新发起。'
-        : '全工程分析状态刷新失败，请稍后重试。'
+  if (reason === 'NOT_FOUND') {
+    return { terminal: true, message: '分析任务不存在或已失效，请重新发起。' }
   }
+  /* 网络抖动、单次超时、5xx 都不是运行本身的终态：轮询要继续。
+   * 原来任何未知错误都 terminal → 停止轮询，界面停在旧进度、提示「刷新失败」，
+   * 而后台运行其实还在跑并最终完成（2026-09-03 实测）。 */
+  return { terminal: false, message: '全工程分析状态刷新失败，正在重试…' }
 }
 
 /* 分批运行的进度后缀：「（第 2/4 批）」；单批不显示，与分批前文案一致 */
@@ -77,6 +77,14 @@ const batchSuffix = (status: ProjectAnalysisStatus) => {
   const total = Number(status.batchCount || 1)
   if (total <= 1) return ''
   return `（第 ${Number(status.currentBatchIndex || 0) + 1}/${total} 批）`
+}
+
+/* 排队文案：llm 队列只有一个槽位，前面排着 OCR 抽取/节点复核时要让用户知道在等什么 */
+const queuedLabel = (status: ProjectAnalysisStatus) => {
+  const ahead = status.queueAhead
+  if (typeof ahead !== 'number') return '已进入大模型队列'
+  if (ahead <= 0) return '已进入大模型队列，即将开始'
+  return `已进入大模型队列，前面还有 ${ahead} 个任务`
 }
 
 export const projectAnalysisProgressView = (status: ProjectAnalysisStatus) => {
@@ -91,7 +99,7 @@ export const projectAnalysisProgressView = (status: ProjectAnalysisStatus) => {
   const labels: Record<string, string> = {
     preparing_snapshot: `正在收集节点 ${status.preparedNodeCount}/${status.includedNodeCount}`,
     building_prompt: `正在拼接 OCR ${status.loadedFileCount}/${status.uniqueFileCount} · 预计 ${status.estimatedInputTokens.toLocaleString()} tokens`,
-    queued: `已进入大模型队列${batchSuffix(status)}`,
+    queued: `${queuedLabel(status)}${batchSuffix(status)}`,
     model_running: `大模型正在进行全工程分析${batchSuffix(status)}`,
     validating_output: `正在校验分析结果 ${status.validatedFindingCount}/${status.totalFindingCount}`,
     persisting_results: `正在回挂节点结果 ${status.persistedNodeCount}/${status.includedNodeCount}`,

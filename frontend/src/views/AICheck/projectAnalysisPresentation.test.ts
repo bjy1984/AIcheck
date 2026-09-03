@@ -20,9 +20,10 @@ assert.deepEqual(
   projectAnalysisRequestFailure?.({ response: { data: { data: { reason: 'NOT_FOUND' } } } }),
   { terminal: true, message: '分析任务不存在或已失效，请重新发起。' }
 )
+// 网络抖动/超时不是运行终态：轮询继续，不能停在旧进度上
 assert.deepEqual(projectAnalysisRequestFailure?.(new Error('network')), {
-  terminal: true,
-  message: '全工程分析状态刷新失败，请稍后重试。'
+  terminal: false,
+  message: '全工程分析状态刷新失败，正在重试…'
 })
 
 // 机器可读错误码必须译成人话——空范围这种错误照抄兜底文案会骗用户去「稍后重试」
@@ -152,6 +153,17 @@ assert.deepEqual(
       '项目资料总量超出模型可处理上限，请减少纳入分析的资料后重试。占用最大的资料：RT检测报告R2.pdf（约 41.2k tokens）、质量证明书.pdf（约 12.6k tokens）。'
   }
 )
+
+// 排队文案带前面的任务数（服务端问 Redis 得来）；问不到时保持原文案
+assert.equal(
+  projectAnalysisProgressView(status({ phase: 'queued', queueAhead: 2 })).label,
+  '已进入大模型队列，前面还有 2 个任务'
+)
+assert.equal(
+  projectAnalysisProgressView(status({ phase: 'queued', queueAhead: 0 })).label,
+  '已进入大模型队列，即将开始'
+)
+assert.equal(projectAnalysisProgressView(status({ phase: 'queued' })).label, '已进入大模型队列')
 
 // 分批运行的进度文案带批次；单批不带（与分批前一致）
 assert.equal(

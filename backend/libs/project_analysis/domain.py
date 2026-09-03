@@ -179,7 +179,14 @@ def advance_project_analysis_phase(
     return run
 
 
-def project_analysis_status_view(run: dict[str, Any]) -> dict[str, Any]:
+def project_analysis_status_view(
+    run: dict[str, Any],
+    *,
+    queue_probe=None,
+) -> dict[str, Any]:
+    """queue_probe(queueTaskId) -> {"pending": bool|None, "ahead": int|None}：
+    排队中的运行没有心跳，只按时间会把「等 worker」误判成僵尸；能问到 broker
+    说任务还在队列里，就不判 STALLED，并把前面的任务数带给界面。"""
     phase = str(run.get("phase") or "preparing_snapshot")
     view = {
         "projectAnalysisRunId": run.get("projectAnalysisRunId"),
@@ -207,11 +214,20 @@ def project_analysis_status_view(run: dict[str, Any]) -> dict[str, Any]:
         "updatedAt": run.get("updatedAt"),
         "finishedAt": run.get("finishedAt"),
     }
+    queue_state: dict[str, Any] = {}
+    if phase == "queued" and queue_probe is not None:
+        try:
+            queue_state = dict(queue_probe(run.get("queueTaskId")) or {})
+        except Exception:  # noqa: BLE001 - 探针失败退回时间判定
+            queue_state = {}
+        if queue_state.get("ahead") is not None:
+            view["queueAhead"] = int(queue_state["ahead"])
     last_activity_at = project_analysis_last_activity_at(run)
     if (
         phase not in TERMINAL_PHASES
         and last_activity_at is not None
         and datetime.now(SERVER_TZ) - last_activity_at > PROJECT_ANALYSIS_STALL_TIMEOUT
+        and queue_state.get("pending") is not True
     ):
         view.update(
             {
@@ -266,8 +282,13 @@ def reap_stalled_project_analysis_runs(
     model_running_timeout: timedelta | None = None,
     project_id: str | None = None,
     tenant_id: str | None = None,
+    queue_alive=None,
 ) -> list[dict[str, Any]]:
     """把超时无进展的非终态运行落 failed 终态（改库，不是改显示）。
+
+    queue_alive(queueTaskId) -> True/False/None：queued 相位没有心跳，任务只是在
+    llm.remote 里等 worker（单槽位，前面可能排着几份 OCR 抽取和节点复核）。
+    broker 里还能看到这条任务就不是僵尸，不收敛；问不到（None）退回时间阈值。
 
     status 视图的 STALLED 判定只骗显示不改库，而**非终态 run 会被幂等复用**：
     worker 猝死留下的僵尸 run 让同一份资料永远发不起新分析。收敛器与视图
@@ -293,6 +314,13 @@ def reap_stalled_project_analysis_runs(
         last_activity_at = project_analysis_last_activity_at(run)
         if last_activity_at is not None and reap_at - last_activity_at <= timeout:
             continue
+        if phase == "queued" and queue_alive is not None:
+            try:
+                alive = queue_alive(run.get("queueTaskId"))
+            except Exception:  # noqa: BLE001 - 探针失败退回时间判定
+                alive = None
+            if alive is True:
+                continue
         advance_project_analysis_phase(
             state,
             run,

@@ -14,6 +14,9 @@ failed 运行不被幂等复用，用户重新点按钮即可得到新运行。
 model_running 相位的阈值取 max(30 分钟, 模型超时 + 5 分钟)：
 模型调用最长可配 3600 秒且期间无心跳，统一阈值会误杀合法长调用。
 
+queued 相位先问 Redis：任务还在 llm.remote 里排队就不是僵尸（单槽位 worker
+前面排着 OCR 抽取/节点复核时，等 30 分钟以上是正常的；2026-09-03 审计）。
+
 ## 用法
 
     docker exec aicheck-api python3 /app/scripts/reconcile_stalled_analysis_runs.py [--apply] [--minutes 30]
@@ -37,6 +40,7 @@ from libs.project_analysis.domain import (  # noqa: E402
 from libs.project_analysis.execution import (  # noqa: E402
     project_analysis_model_timeout_seconds,
 )
+from libs.project_analysis.queue_probe import queue_task_is_pending  # noqa: E402
 
 
 def main() -> int:
@@ -59,6 +63,7 @@ def main() -> int:
             model_running_timeout=timedelta(
                 seconds=project_analysis_model_timeout_seconds() + 300
             ),
+            queue_alive=queue_task_is_pending,
         )
         for run in preview:
             print(
@@ -74,6 +79,7 @@ def main() -> int:
         model_running_timeout=timedelta(
             seconds=project_analysis_model_timeout_seconds() + 300
         ),
+        queue_alive=queue_task_is_pending,
     )
     for run in reaped:
         print(

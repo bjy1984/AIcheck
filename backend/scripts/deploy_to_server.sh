@@ -214,6 +214,14 @@ except Exception:
     set -eo pipefail
     recreate_worker() {
       name=\$1; shift
+      # llm worker 可能正抱着一次 10–15 分钟的一键分析模型调用。rm -f 是 SIGKILL：
+      # 调用中断、任务要等 visibility_timeout（85 分钟）才重投，而巡检 30 分钟就把
+      # 运行收敛成 failed——每次部署都可能白白杀掉一次一键分析（2026-09-03 审计）。
+      # 先 SIGTERM 让 celery 温停：不再取新任务，把手上这个跑完再退出，最多等 20 分钟。
+      if [ \"\$name\" = aicheck-worker-llm ] && docker inspect \$name >/dev/null 2>&1; then
+        echo \"    温停 \$name（等在途大模型任务收尾，最多 20 分钟）\"
+        docker stop -t 1200 \$name >/dev/null 2>&1 || true
+      fi
       docker rm -f \$name >/dev/null 2>&1 || true
       # output/rules 必须和 API 挂一样的卷：worker 要读用户上传的 local:// 原件
       # （OCR/切片都从这里取源文件）。此前只有 API 挂了，worker 容器里 /app/output

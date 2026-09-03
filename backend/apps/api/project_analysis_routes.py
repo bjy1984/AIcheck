@@ -29,6 +29,7 @@ from libs.project_analysis.domain import (
 )
 from libs.project_analysis.execution import project_analysis_model_timeout_seconds
 from libs.project_analysis.prompt import project_analysis_preview
+from libs.project_analysis.queue_probe import queue_status_for_task, queue_task_is_pending
 
 project_analysis_router = APIRouter()
 LOGGER = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ def create_project_analysis(
         model_running_timeout=timedelta(
             seconds=project_analysis_model_timeout_seconds() + 300
         ),
+        queue_alive=queue_task_is_pending,
     )
     if reaped:
         flush_state({"project_analysis_runs", "project_analysis_events"})
@@ -281,4 +283,4 @@ def get_project_analysis_status(request: Request, project_id: str, run_id: str):
     run = _run_for_request(request, project_id, run_id)
     if not run:
         return fail(errors.NOT_FOUND, request)
-    return ok({"status": project_analysis_status_view(run)}, request)
+    return ok({"status": project_analysis_status_view(run, queue_probe=queue_status_for_task)}, request)

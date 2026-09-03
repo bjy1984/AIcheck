@@ -30,6 +30,9 @@ const activeRun = ref<ProjectAnalysisRun>()
 const status = ref<ProjectAnalysisStatus>()
 const failureMessage = ref('')
 let pollTimer: ReturnType<typeof setInterval> | undefined
+// 连续刷新失败计数：偶发超时继续轮询；连续失败太多次才停，避免后台无限打点
+let consecutivePollFailures = 0
+const MAX_CONSECUTIVE_POLL_FAILURES = 15
 const terminalPhases = new Set(['waiting_human_review', 'failed', 'partial_failure'])
 const progress = computed(() =>
   status.value ? projectAnalysisProgressView(status.value) : undefined
@@ -60,15 +63,25 @@ const poll = async () => {
     )
     status.value = response.data.status
     failureMessage.value = ''
+    consecutivePollFailures = 0
     if (terminalPhases.has(status.value.phase)) stopPolling()
   } catch (error) {
     const failure = projectAnalysisRequestFailure(error)
-    failureMessage.value = failure.message
-    if (failure.terminal) stopPolling()
+    consecutivePollFailures += 1
+    if (failure.terminal) {
+      failureMessage.value = failure.message
+      stopPolling()
+    } else if (consecutivePollFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+      failureMessage.value = '全工程分析状态连续刷新失败，请稍后重新打开本抽屉查看。'
+      stopPolling()
+    } else {
+      failureMessage.value = failure.message
+    }
   }
 }
 const startPolling = () => {
   stopPolling()
+  consecutivePollFailures = 0
   void poll()
   pollTimer = setInterval(() => void poll(), 2000)
 }

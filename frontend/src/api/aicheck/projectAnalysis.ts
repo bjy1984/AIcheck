@@ -45,6 +45,8 @@ export type ProjectAnalysisStatus = {
   progressMode: 'determinate' | 'indeterminate'
   percent?: number
   queueTaskId?: string | null
+  /** 排队中时前面还有几个大模型任务（服务端问 Redis 得来；问不到时没有） */
+  queueAhead?: number | null
   lastHeartbeatAt?: string | null
   errorCode?: string | null
   errorMessage?: string | null
