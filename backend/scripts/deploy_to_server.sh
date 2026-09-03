@@ -185,7 +185,12 @@ PY
     fi
     # 容器起来了 ≠ 新代码进去了。直接探印章端点存不存在——
     # 404 说明跑的是旧镜像，这种情况部署必须失败，而不是报「完成」。
-    code=\$(docker exec aicheck-ocr-service python -c \"
+    # 服务加载 PaddleX 模型要几十秒，起来 15 秒就探一次会得到 HTTP 0 并把整次
+    # 部署打断在 worker 重建之前（2026-09-03 实测：API 已是新镜像、worker 还是旧的）。
+    # HTTP 0（还没监听）最多等 120 秒；404 才是「旧镜像」，立刻失败。
+    code=0
+    for attempt in \$(seq 1 24); do
+      code=\$(docker exec aicheck-ocr-service python -c \"
 import urllib.request, urllib.error
 req = urllib.request.Request('http://127.0.0.1:8010/internal/ocr/seal-read', data=b'x', method='POST')
 try:
@@ -195,6 +200,9 @@ except urllib.error.HTTPError as e:
 except Exception:
     print(0)
 \")
+      [ \"\$code\" != 0 ] && break
+      sleep 5
+    done
     if [ \"\$code\" = 404 ] || [ \"\$code\" = 0 ]; then
       echo \"    印章端点不可用（HTTP \$code）——容器可能跑着旧镜像\" >&2; exit 1
     fi
