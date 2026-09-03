@@ -70,10 +70,32 @@ const SEVERITY_TAGS: Record<string, string> = {
   critical: '严重'
 }
 
+const CERT_RESULT_WORDS: Record<string, string> = {
+  passed: '核验通过',
+  failed: '核验未通过',
+  evidence_insufficient: '证据不足',
+  not_applicable: '不适用'
+}
+
+/**
+ * 旧 run 里模型把字段名和枚举值原样写进了发现文案（"certificateVerification.result为passed"），
+ * 提示词已改，但已落库的文案不会重跑；展示层按业务语言改写，监检人员不必认字段名。
+ */
+export const humanizeFindingText = (text: string) =>
+  String(text || '')
+    .replace(
+      /certificateVerification(?:\.result)?\s*(?:为|=|:|：|是)\s*[「"']?([a-z_]+)[」"']?/gi,
+      (_match, value: string) =>
+        `服务端证照核验结论为「${CERT_RESULT_WORDS[value.toLowerCase()] || value}」`
+    )
+    .replace(/certificateVerification\.result/g, '证照核验结论')
+    .replace(/certificateVerification/g, '证照核验')
+    .replace(/\bevidence_insufficient\b/g, '证据不足')
+
 export const workbenchFindingDisplay = (finding: WorkbenchAiFinding) => ({
   id: finding.id,
-  title: finding.title,
-  description: finding.description,
+  title: humanizeFindingText(finding.title),
+  description: humanizeFindingText(finding.description),
   evidenceCount: finding.evidenceCount,
   ruleCount: finding.ruleCount,
   evidenceRefs: finding.evidenceRefs,

@@ -6,6 +6,7 @@ import {
   buildWorkbenchAiPresentation,
   buildWorkbenchHumanAiContext,
   inspectionReviewDirectoryItems,
+  humanizeFindingText,
   inspectionReviewDirectoryItemsWithAiStatus,
   projectAnalysisExecutionStepStatus,
   selectWorkbenchAiPresentation,
@@ -113,6 +114,17 @@ assert.deepEqual(workbenchFindingDisplay(completed.findings[0]), {
   confidencePercent: 72,
   evidenceGroups: [{ fileId: 'DOC-1', fileName: 'DOC-1', pages: [], quotes: [] }]
 })
+assert.equal(
+  humanizeFindingText('certificateVerification.result为passed，证书X持证人为姜军。'),
+  '服务端证照核验结论为「核验通过」，证书X持证人为姜军。'
+)
+assert.equal(
+  humanizeFindingText(
+    'certificateVerification.result为evidence_insufficient；证书为evidence_insufficient'
+  ),
+  '服务端证照核验结论为「证据不足」；证书为证据不足'
+)
+assert.equal(humanizeFindingText('依据 certificateVerification 判断'), '依据 证照核验 判断')
 assert.deepEqual(
   workbenchEvidenceGroups([
     { fileId: 'DOC-9', fileName: '焊工证.pdf', pageNo: 2, quotedText: '姓名 姜军' },
