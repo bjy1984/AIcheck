@@ -71,9 +71,16 @@ const evidenceLabel = (evidence: EvidenceLink) =>
   [evidence.fieldName, evidence.fileName, evidence.pageNo ? `第 ${evidence.pageNo} 页` : '']
     .filter(Boolean)
     .join(' · ') || evidence.id
+// 人工挂载的整份资料没有字段/引用原文：说明它是怎么来的，而不是把链接 id 甩给用户
+const manualBindingCaption = (evidence: EvidenceLink) => {
+  const extra = evidence as { source?: string; confirmedByName?: string }
+  if (extra.source !== 'manual_binding') return undefined
+  return `整份资料 · 人工挂载${extra.confirmedByName ? `（${extra.confirmedByName}）` : ''}`
+}
 const evidenceText = (evidence: EvidenceLink) =>
   evidence.quotedText ||
   evidence.matchedEvidenceItems?.join('、') ||
+  (manualBindingCaption(evidence) ?? '') ||
   evidence.objectId ||
   evidence.id
 </script>
