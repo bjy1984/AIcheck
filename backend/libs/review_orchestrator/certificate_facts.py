@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from libs.contracts.responses import business_today
@@ -36,8 +36,9 @@ from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr
 from .deterministic_tools import parse_date as _iso_parse_date
 
 
-def parse_date(value: Any) -> date | None:
-    """比 deterministic_tools.parse_date 多一步：中文日期不补零（2028年1月17日）也要认。"""
+def parse_date(value: Any, *, month_end: bool = False) -> date | None:
+    """比 deterministic_tools.parse_date 多两步：中文日期不补零（2028年1月17日）也要认；
+    只到月的（2028年10月 / 2028-10）按月初、month_end=True 时按月末——证书有效期常只写到月。"""
     if value in (None, ""):
         return None
     if isinstance(value, date):
@@ -47,6 +48,17 @@ def parse_date(value: Any) -> date | None:
     if match:
         try:
             return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except ValueError:
+            return None
+    match = re.search(r"(\d{4})\s*[年.\-/]\s*(\d{1,2})\s*月?(?!\s*[\d日])", text)
+    if match:
+        try:
+            year, month = int(match.group(1)), int(match.group(2))
+            if not 1 <= month <= 12:
+                return None
+            if month_end:
+                return date(year + (month == 12), 1 if month == 12 else month + 1, 1) - timedelta(days=1)
+            return date(year, month, 1)
         except ValueError:
             return None
     return _iso_parse_date(text)
@@ -128,19 +140,25 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 _DATE_TEXT = r"(\d{4}\s*[年.\-/]\s*\d{1,2}\s*[月.\-/]\s*\d{1,2}\s*日?)"
+_MONTH_TEXT = r"(\d{4}\s*[年.\-/]\s*\d{1,2}\s*月?)(?![\d日])"
 _TEXT_PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "validUntil": [
         re.compile(r"有效期(?:限)?(?:至|止|到)\s*[:：]?\s*" + _DATE_TEXT),
         re.compile(r"有效(?:期|日期)\s*[:：]?\s*" + _DATE_TEXT + r"\s*(?:至|到|—|-|~)\s*" + _DATE_TEXT),
         re.compile(r"(?:至|到)\s*" + _DATE_TEXT + r"\s*(?:止|有效)"),
+        re.compile(r"有效期(?:限)?(?:至|止|到)\s*[:：]?\s*" + _MONTH_TEXT),
+        re.compile(r"有效期(?:限)?\s*[:：]?\s*(?:自)?\s*" + _MONTH_TEXT + r"\s*(?:至|到|—|-|~)\s*" + _MONTH_TEXT),
+        re.compile(r"自\s*" + _MONTH_TEXT + r"\s*(?:至|到)\s*" + _MONTH_TEXT),
     ],
     "validFrom": [
         re.compile(r"有效期(?:自|起|从)\s*[:：]?\s*" + _DATE_TEXT),
         re.compile(r"(?:发证|批准|签发|颁发)日期\s*[:：]?\s*" + _DATE_TEXT),
     ],
     "certificateNo": [
-        re.compile(r"(?:许可证|证书|资格证|注册)?编号\s*[:：]?\s*([A-Z]{1,4}[A-Z0-9\-—–/]{4,})"),
+        re.compile(r"(?<!注册)(?:证书|资格证|证件)编号\s*[:：]?\s*(\d{14,17}[0-9X])"),
+        re.compile(r"(?:许可证|证书|资格证)编号\s*[:：]?\s*([A-Z]{1,4}[A-Z0-9\-—–/]{4,})"),
         re.compile(r"\b(TS\d{7}-\d{4})\b"),
+        re.compile(r"(?:注册证书|注册)编号\s*[:：]?\s*([A-Z]{1,6}\d{6,})"),
     ],
     "issuer": [
         re.compile(r"(?:发证|颁发|核准|批准)(?:机关|单位)\s*[:：]?\s*([一-龥（）()]{4,40}(?:局|委员会|协会|中心|学会|总局))"),
@@ -326,9 +344,19 @@ def _extract_certificates(
     if profile["certificateType"] == "welder_certificate":
         welder = _welder_certificates(parse_result, version_id, file_name)
         if welder:
+            _fill_from_text(welder[0], _full_text(parse_result), parse_result, version_id, file_name)
             return welder
     fields = _field_values(parse_result)
     text = _full_text(parse_result)
+    segments = _person_segments(text) if profile["certificateType"] == "ndt_personnel_certificate" else []
+    if len(segments) > 1:
+        records = []
+        for segment in segments:
+            record = _record_from_text(profile, segment, parse_result, document, version_id, file_name)
+            if record:
+                records.append(record)
+        if records:
+            return records
     record: dict[str, Any] = {
         "certificateType": profile["certificateType"],
         "documentVersionId": version_id,
@@ -362,6 +390,61 @@ def _extract_certificates(
         record["evidence"].append(_evidence(version_id, file_name, hit.get("pageNo"), hit.get("bbox"), hit.get("raw")))
     if scope_hits:
         record["sources"]["scopes"] = "ocr_field"
+    _fill_from_text(record, text, parse_result, version_id, file_name)
+    if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
+        return []
+    return [record]
+
+
+
+_PERSON_SPLIT = re.compile(r"(?=特种设备检验检测人员证)")
+
+
+def _person_segments(text: str) -> list[str]:
+    """一份 PDF 里常装着多个人的资格证：按证书抬头切段，每段一个人。"""
+    parts = [part.strip() for part in _PERSON_SPLIT.split(text) if part and "证书编号" in part]
+    return parts
+
+
+def _record_from_text(
+    profile: dict[str, Any],
+    text: str,
+    parse_result: dict[str, Any],
+    document: dict[str, Any],
+    version_id: str,
+    file_name: str,
+) -> dict[str, Any] | None:
+    record: dict[str, Any] = {
+        "certificateType": profile["certificateType"],
+        "documentVersionId": version_id,
+        "documentId": str(document.get("id") or ""),
+        "fileName": file_name,
+        "holder": None,
+        "certificateNo": None,
+        "issuer": None,
+        "validFrom": None,
+        "validUntil": None,
+        "scopes": [],
+        "evidence": [],
+        "sources": {},
+    }
+    name = re.search(r"姓名\s*[:：]?\s*([一-龥·]{2,6})", text)
+    if name:
+        record["holder"] = name.group(1)
+        record["sources"]["holder"] = "ocr_text"
+    _fill_from_text(record, text, parse_result, version_id, file_name)
+    if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
+        return None
+    return record
+
+
+def _fill_from_text(record: dict[str, Any], text: str, parse_result: dict[str, Any], version_id: str, file_name: str) -> None:
+    """按正文正则补缺（持证人、编号、发证机关、有效期起止、范围代号）。"""
+    if not record.get("holder"):
+        name = re.search(r"姓\s*名\s*[:：]?\s*([一-龥·]{2,6})", text)
+        if name:
+            record["holder"] = name.group(1)
+            record.setdefault("sources", {})["holder"] = "ocr_text"
     for key, patterns in _TEXT_PATTERNS.items():
         if record.get(key):
             continue
@@ -372,29 +455,31 @@ def _extract_certificates(
             raw = match.group(match.lastindex or 1)
             value: Any = raw
             if key in {"validFrom", "validUntil"}:
-                if key == "validUntil" and match.lastindex and match.lastindex >= 2 and pattern.pattern.startswith("有效(?:期|日期)"):
+                if key == "validUntil" and match.lastindex and match.lastindex >= 2:
                     raw = match.group(2)
                     if not record.get("validFrom"):
-                        parsed_from = parse_date(match.group(1))
+                        parsed_from = parse_date(re.sub(r"\s+", "", match.group(1)))
                         if parsed_from:
                             record["validFrom"] = parsed_from.isoformat()
-                            record["sources"]["validFrom"] = "ocr_text"
-                parsed = parse_date(re.sub(r"\s+", "", raw))
+                            record.setdefault("sources", {})["validFrom"] = "ocr_text"
+                parsed = parse_date(re.sub(r"\s+", "", raw), month_end=(key == "validUntil"))
                 value = parsed.isoformat() if parsed else None
             if value:
                 record[key] = value
-                record["sources"][key] = "ocr_text"
+                record.setdefault("sources", {})[key] = "ocr_text"
                 page_no, quoted = _locate_text(parse_result, match.group(0))
-                record["evidence"].append(_evidence(version_id, file_name, page_no, None, quoted))
+                record.setdefault("evidence", []).append(_evidence(version_id, file_name, page_no, None, quoted))
                 break
-    if not record["scopes"]:
-        for code in _scope_codes_from_text(text):
-            record["scopes"].append(code)
+    if not record.get("scopes"):
+        codes = [f"{m.group(1).upper()}-{_roman(m.group(2))}" for m in re.finditer(r"\b(RT|UT|MT|PT|ET|TOFD|PAUT|VT|AE)\s*[\(（]?\s*(I{1,3}|Ⅰ|Ⅱ|Ⅲ|1|2|3)\b", text)]
+        codes += _scope_codes_from_text(text)
+        record["scopes"] = list(dict.fromkeys(codes))
         if record["scopes"]:
-            record["sources"]["scopes"] = "ocr_text"
-    if not any(record.get(key) for key in ("certificateNo", "validUntil", "holder")):
-        return []
-    return [record]
+            record.setdefault("sources", {})["scopes"] = "ocr_text"
+
+
+def _roman(value: str) -> str:
+    return {"I": "I", "II": "II", "III": "III", "Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "1": "I", "2": "II", "3": "III"}.get(value, value)
 
 
 def _welder_certificates(parse_result: dict[str, Any], version_id: str, file_name: str) -> list[dict[str, Any]]:
