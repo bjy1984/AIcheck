@@ -1110,8 +1110,10 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             # review_runs 跟着一起没落库——界面永远显示排队中，日志里一个字都没有。
             logging.getLogger(__name__).exception("ReviewRun %s 落库失败", review_run_id)
         finally:
-            _INFLIGHT_REVIEW_RUNS.pop(review_run_id, None)
+            finished_run = _INFLIGHT_REVIEW_RUNS.pop(review_run_id, None) or {}
             repo.unpin_object(REVIEW_RUN_COLLECTION_NAME, review_run_id)
+            if finished_run.get("aiRunId"):
+                repo.unpin_object(STATE_COLLECTIONS["ai_runs"], str(finished_run["aiRunId"]))
 
 
 # 正在执行中的运行记录，按 reviewRunId 索引。存在的唯一理由是并发重载会把
@@ -1147,6 +1149,11 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         return {"reviewRunId": review_run_id, "status": "missing"}
     # 记下这一份，落库时认它——中途若被并发重载换掉，state 里那份就不是它了。
     _INFLIGHT_REVIEW_RUNS[review_run_id] = review_run
+    # ai_run 也要钉住：执行期间别的请求触发的作用域重载会把 state 里的 ai_run 换成
+    # 库里的干净副本（推理中），收尾 review_run_state_records 取到的就是那份，
+    # 完成状态落不下去——节点页永远「推理中」（2026-09-03 实测 AIRUN-24-A7A91B67）。
+    if review_run.get("aiRunId"):
+        repo.pin_object(STATE_COLLECTIONS["ai_runs"], str(review_run["aiRunId"]))
     # 更根本的一道：让并发加载别去覆盖它。只记住对象还不够——执行体里后续
     # 还会再 find_one 拿这条运行，覆盖之后拿到的就是另一个对象，改在那上面，
     # 我记住的这份反而成了旧的。实测就栽在这：事件跑完了，库里仍是 queued。
