@@ -157,16 +157,33 @@ status, body = raw_call(f"/api/projects/{PID}/inspection/nodes/24/review-workspa
 record("越权：施工方读监检工作台被拒", rejected(status, body), f"HTTP {status} code={envelope_code(body)}")
 
 other = api("/api/projects", "admin")
+contractor_user_id = USERS["contractor"][1]
+
+
+def _contractor_is_member(project_id: str) -> bool:
+    members = api(f"/api/projects/{project_id}/members?pageSize=200", "admin")
+    rows = ((members.get("data") or {}).get("items") or []) if isinstance(members, dict) else []
+    return any(
+        str(item.get("userId") or "") == contractor_user_id and str(item.get("status") or "启用") != "停用"
+        for item in rows
+        if isinstance(item, dict)
+    )
+
+
+# 必须挑一个施工方**真的不是成员**的项目。写审计探针建的项目会把四个引导账号都加成成员，
+# 拿它来测「非成员跨项目读取」会得到合法的 200，连续误报了两周（2026-09-04 审计）。
 other_ids = [
     str(item.get("id"))
     for item in ((other.get("data") or {}).get("items") or [])
-    if str(item.get("id")) != PID
+    if str(item.get("id")) != PID and not _contractor_is_member(str(item.get("id")))
 ][:1]
 if other_ids:
     status, body = raw_call(f"/api/projects/{other_ids[0]}/documents", "contractor")
     # 该施工方不是这个项目的成员：必须被拒，返回 200+数据即越权
     record("越权：非成员跨项目读取被拒", rejected(status, body),
            f"HTTP {status} code={envelope_code(body)}（项目 {other_ids[0]}）")
+else:
+    record("越权：非成员跨项目读取被拒", True, "跳过：没有施工方不是成员的项目可测")
 
 # ---- 4. 注入面：关键词参数带 SQL/JSONB 元字符 ----
 injections = ["' OR 1=1--", '"; DROP TABLE aicheck_state;--', "{\"$ne\": null}", "%27%20OR%201=1"]
