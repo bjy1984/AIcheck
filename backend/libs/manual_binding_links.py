@@ -31,6 +31,12 @@ import json
 from typing import Any
 
 from libs.contracts.responses import server_time
+from libs.material_targeting import (
+    PARTIAL_STATUS,
+    SUPPORTED_STATUS,
+    evidence_facts_for_point,
+    repo_safe_fact,
+)
 
 SUBMITTED_BINDING_STATUSES = frozenset({"已提交", "需补正", "已通过"})
 REJECTED_BINDING_STATUSES = frozenset({"rejected", "驳回", "已撤回", "已作废", "已删除"})
@@ -163,7 +169,74 @@ def resolve_manual_binding_review_point(
     return None
 
 
-def _apply_review_point(link: dict[str, Any], point: dict[str, Any] | None, binding: dict[str, Any], document: dict[str, Any]) -> None:
+def _latest_parse_result(state: dict[str, Any], version_id: str) -> dict[str, Any] | None:
+    rows = [
+        row
+        for row in _records(state, "ocr_parse_results")
+        if str(row.get("documentVersionId") or "") == str(version_id)
+    ]
+    if not rows:
+        return None
+    return max(rows, key=lambda row: str(row.get("finishedAt") or row.get("updatedAt") or row.get("createdAt") or ""))
+
+
+def _extracted_fields(state: dict[str, Any], version_id: str) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in _records(state, "extracted_fields")
+        if str(row.get("documentVersionId") or "") == str(version_id)
+    ]
+
+
+def _locate_manual_link(
+    state: dict[str, Any], link: dict[str, Any], point: dict[str, Any] | None, document: dict[str, Any]
+) -> None:
+    """人工挂载的是整份文件，但文件早已 OCR：按审查要点的事实目标（证号/单位名称/有效期…）
+    从结构化字段和正文里定位页码、bbox、引用原文，让链接和自动打靶的一样可定位——
+    正式审查引用证据要求可定位，否则人工挂的资料永远「已确认但不可定位」。"""
+    version_id = str(link.get("documentVersionId") or "")
+    if not point or not version_id:
+        return
+    parse_result = _latest_parse_result(state, version_id)
+    fields = _extracted_fields(state, version_id)
+    if not parse_result and not fields:
+        return
+    facts, targets = evidence_facts_for_point(point, document, parse_result, fields)
+    if not facts:
+        return
+    formal = [item for item in facts if item.get("formalEvidenceEligible") is True]
+    excerpt = repo_safe_fact(formal[0] if formal else facts[0])
+    matched = list(
+        dict.fromkeys(
+            str(item.get("sourceEvidenceItem") or "") for item in facts if str(item.get("sourceEvidenceItem") or "").strip()
+        )
+    )
+    link.update(
+        {
+            "pageNo": excerpt.get("pageNo"),
+            "bbox": excerpt.get("bbox"),
+            "fieldName": excerpt.get("fieldName"),
+            "fieldId": excerpt.get("fieldId"),
+            "quotedText": excerpt.get("quotedText"),
+            "matchedEvidenceItems": matched,
+            "evidenceCoverage": round(len({str(item.get("targetCode") or "") for item in facts}) / len(targets), 4) if targets else None,
+            "evidenceFacts": [repo_safe_fact(item) for item in facts],
+            "formalEvidenceFactCount": len(formal),
+            "evidenceTier": "formal" if formal else "manual",
+            "supportStatus": SUPPORTED_STATUS if formal else PARTIAL_STATUS,
+            "confidence": 0.9 if formal else 0.7,
+            "scoreReasons": ["人工在界面上把整份资料挂到本节点", f"按审查要点从 OCR 字段定位 {len(facts)} 项事实"],
+        }
+    )
+
+
+def _apply_review_point(
+    state: dict[str, Any],
+    link: dict[str, Any],
+    point: dict[str, Any] | None,
+    binding: dict[str, Any],
+    document: dict[str, Any],
+) -> None:
     # 资料要求汇总的 supportStatus 只认「命中/待人工确认/未命中」：人工挂载已确认但没定位，
     # 记「待人工确认」而不是 unmatched，否则要求行显示「未命中」却又列着这份文件。
     link["supportStatus"] = "待人工确认"
@@ -189,6 +262,7 @@ def _apply_review_point(link: dict[str, Any], point: dict[str, Any] | None, bind
                 "materialCategory": document.get("materialCategory"),
             }
         )
+    _locate_manual_link(state, link, point, document)
 
 
 def upsert_manual_binding_evidence_links(
@@ -297,7 +371,7 @@ def upsert_manual_binding_evidence_links(
             "bindingId": binding.get("id"),
             "createdAt": now,
         }
-        _apply_review_point(link, resolve_manual_binding_review_point(state, project_id, binding, document), binding, document)
+        _apply_review_point(state, link, resolve_manual_binding_review_point(state, project_id, binding, document), binding, document)
         links.insert(0, link)
         by_id[link_id] = link
         covered.add((node_id, version_id))
@@ -318,10 +392,11 @@ def refresh_manual_binding_links(state: dict[str, Any], project_id: str | None =
             continue
         binding = bindings.get(str(link.get("bindingId") or "")) or {"nodeId": link.get("nodeId")}
         document = documents.get(str(link.get("documentId") or "")) or {}
-        before = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible", "supportStatus")}
+        keys = ("reviewPointId", "materialTypeCode", "formalEvidenceEligible", "supportStatus", "pageNo", "quotedText", "bbox")
+        before = {key: link.get(key) for key in keys}
         link["formalEvidenceEligible"] = True
-        _apply_review_point(link, resolve_manual_binding_review_point(state, pid, binding, document), binding, document)
-        after = {key: link.get(key) for key in ("reviewPointId", "materialTypeCode", "formalEvidenceEligible", "supportStatus")}
+        _apply_review_point(state, link, resolve_manual_binding_review_point(state, pid, binding, document), binding, document)
+        after = {key: link.get(key) for key in keys}
         if before != after:
             link["updatedAt"] = server_time()
             changed.append(link)
