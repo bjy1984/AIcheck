@@ -102,6 +102,7 @@ PY
     fi
     docker rm -f aicheck-api-next >/dev/null 2>&1 || true
     docker run -d --name aicheck-api-next --network aicheck-net \
+      --log-opt max-size=100m --log-opt max-file=3 \
       -p 127.0.0.1:\$NEXT_PORT:8000 \
       -v $SERVER_DATA_ROOT/files/output:/app/output \
       -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
@@ -165,6 +166,7 @@ PY
     mkdir -p /home/dev-bjy/aicheck-paddlex-cache && chmod 777 /home/dev-bjy/aicheck-paddlex-cache
     docker rm -f aicheck-ocr-service >/dev/null 2>&1 || true
     docker run -d --name aicheck-ocr-service --network aicheck-net --restart unless-stopped \
+      --log-opt max-size=100m --log-opt max-file=3 \
       -v /home/dev-bjy/aicheck-ocr-models/official_models:/models/official_models:ro \
       -v /home/dev-bjy/aicheck-paddlex-cache:/paddlex-cache \
       --env-file /home/dev-bjy/aicheck-runtime.env \
@@ -230,7 +232,9 @@ except Exception:
       # （OCR/切片都从这里取源文件）。此前只有 API 挂了，worker 容器里 /app/output
       # 根本不存在——worker 读不到任何本地上传件，且 WORKSPACE_ROOT 回落成 /，
       # 于是 13 份实际在库的资料被判成「源文件已丢失」（2026-08-29 审计实锤）。
+      # 日志必须封顶：2026-09-06 生产磁盘被一个容器 34 GB 的 json 日志写满，Postgres 直接崩溃。
       docker run -d --name \$name --network aicheck-net --restart unless-stopped \
+        --log-opt max-size=100m --log-opt max-file=3 \
         -v $SERVER_DATA_ROOT/files/output:/app/output \
         -v $SERVER_DATA_ROOT/files/rules:/app/rules:ro \
         --env-file /home/dev-bjy/aicheck-runtime.env aicheck-api:local \
