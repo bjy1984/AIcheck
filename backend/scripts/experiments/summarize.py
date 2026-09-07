@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -57,7 +57,7 @@ def pa_table(rows: list[dict]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--date", default=date.today().isoformat())
+    parser.add_argument("--date", default=datetime.now(UTC).date().isoformat())
     parser.add_argument("--out-root", default=str(Path(__file__).resolve().parent / "out"))
     args = parser.parse_args()
     out_dir = Path(args.out_root) / args.date

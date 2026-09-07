@@ -25,7 +25,7 @@ import sys
 import time
 import uuid
 from copy import deepcopy
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
 
@@ -242,7 +242,7 @@ def main() -> int:
     parser.add_argument("--project")
     parser.add_argument("--node", type=int)
     parser.add_argument(
-        "--out", default=str(Path(__file__).resolve().parent / "out" / date.today().isoformat())
+        "--out", default=str(Path(__file__).resolve().parent / "out" / datetime.now(UTC).date().isoformat())
     )
     args = parser.parse_args()
     model_label = os.getenv("AICHECK_LLM_MODEL_REVIEW", "default")

@@ -15,7 +15,7 @@ import json
 import os
 import sys
 import time
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
@@ -43,7 +43,7 @@ def main() -> int:
     parser.add_argument("--models", required=True, help="逗号分隔的模型名")
     parser.add_argument("--max-tokens", type=int, default=SMALL_MODEL_MAX_TOKENS)
     parser.add_argument(
-        "--out", default=str(Path(__file__).resolve().parent / "out" / date.today().isoformat())
+        "--out", default=str(Path(__file__).resolve().parent / "out" / datetime.now(UTC).date().isoformat())
     )
     args = parser.parse_args()
 
