@@ -4,7 +4,9 @@ import math
 import re
 from typing import Any
 
-POSITIVE_CLAIM_RE = re.compile(r"(满足|符合|匹配|覆盖|一致|有效|真实|通过|已确认|具备|齐全|完整)")
+# 否定形式（不一致 / 未覆盖 / 不符合）是在说差距，不是肯定结论——2026-09-06 清单模式实测，
+# "与工艺卡要求的方法不一致"被当成肯定断言整条降级。
+POSITIVE_CLAIM_RE = re.compile(r"(?<![不未非没])(满足|符合|匹配|覆盖|一致|有效|真实|通过|已确认|具备|齐全|完整)")
 CODE_TOKEN_RE = re.compile(r"\b(?:[A-Z]{1,8}[A-Z0-9]*[-/][A-Z0-9][A-Z0-9./-]{2,}|[A-Z]{1,8}\d{4,}[A-Z0-9./-]*)\b", re.IGNORECASE)
 DATE_TOKEN_RE = re.compile(r"\d{4}\s*(?:[-/.年]\s*\d{1,2})?(?:[-/.月]\s*\d{1,2}\s*日?)?")
 ORG_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}(?:有限公司|设计院|研究院|监督管理局|公司|单位)")

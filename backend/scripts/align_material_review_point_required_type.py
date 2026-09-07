@@ -23,7 +23,7 @@ from typing import Any
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.db.repository import load_state, repo
+from libs.db.repository import flush_state, load_state, repo
 
 
 def required_type_drift(
@@ -34,6 +34,13 @@ def required_type_drift(
         for item in asset_items
         if isinstance(item, dict) and item.get("id")
     }
+    # 生产库 164 条审查点里只有 18 条 id 与配置文件一致（2026-09-06 核实）：id 的哈希后缀由
+    # 映射表行序与内容生成，老种子的行序早已不同。按 id 找不到时退回按 (nodeId, materialTypeCode)
+    # 唯一匹配，否则映射表的改动永远到不了生产。
+    by_key: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for item in asset_items:
+        if isinstance(item, dict):
+            by_key.setdefault((int(item.get("nodeId") or 0), str(item.get("materialTypeCode") or "")), []).append(item)
     drift: list[dict[str, Any]] = []
     for index, item in enumerate(points):
         if not isinstance(item, dict) or not item.get("id"):
@@ -41,8 +48,12 @@ def required_type_drift(
         if str(item.get("businessPackId") or business_pack_id) != business_pack_id:
             continue
         source = expected.get(str(item["id"]))
+        matched_by = "id"
         if not source:
-            continue
+            candidates = by_key.get((int(item.get("nodeId") or 0), str(item.get("materialTypeCode") or "")), [])
+            if len(candidates) != 1:
+                continue
+            source, matched_by = candidates[0], "node+materialType"
         current = str(item.get("requiredType") or "")
         target = str(source.get("requiredType") or "")
         if current != target:
@@ -51,6 +62,8 @@ def required_type_drift(
                     "id": str(item["id"]),
                     # 按位置写回：同一 id 可能在另一个业务包下也有一条，不能按 id 查最后一个
                     "index": index,
+                    "assetId": str(source.get("id")),
+                    "matchedBy": matched_by,
                     "nodeId": item.get("nodeId"),
                     "materialTypeCode": item.get("materialTypeCode"),
                     "current": current,
@@ -103,7 +116,7 @@ def main() -> int:
         applied = apply_alignment(points, drift, ids)
     print(json.dumps({"apply": args.apply, "drift": drift, "applied": applied}, ensure_ascii=False, indent=2))
     if applied:
-        repo.flush()
+        flush_state(selected_singleton_keys={"admin_config"})
         print("flushed")
     return 0
 

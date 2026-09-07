@@ -23,7 +23,7 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.db.repository import load_state, repo  # noqa: E402
+from libs.db.repository import flush_state, load_state, repo
 
 
 def retired_ids_from_asset(asset_path: Path, current_ids: set[str], business_pack_id: str) -> list[str]:
@@ -79,7 +79,7 @@ def main() -> int:
 
     print(json.dumps({"apply": args.apply, "targets": targets, "changes": changes}, ensure_ascii=False, indent=2))
     if args.apply and any(change["action"] == "disable" for change in changes):
-        repo.flush()
+        flush_state(selected_singleton_keys={"admin_config"})
         print("flushed")
     return 0
 

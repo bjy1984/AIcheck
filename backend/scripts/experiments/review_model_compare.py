@@ -244,8 +244,15 @@ def main() -> int:
     parser.add_argument(
         "--out", default=str(Path(__file__).resolve().parent / "out" / datetime.now(UTC).date().isoformat())
     )
+    parser.add_argument(
+        "--prompt-mode",
+        choices=["freeform", "checklist"],
+        default=os.getenv("AICHECK_REVIEW_PROMPT_MODE", "freeform"),
+        help="P8 H5：清单填表 vs 自由模式对照；结果标签带模式后缀",
+    )
     args = parser.parse_args()
-    model_label = os.getenv("AICHECK_LLM_MODEL_REVIEW", "default")
+    os.environ["AICHECK_REVIEW_PROMPT_MODE"] = args.prompt_mode
+    model_label = os.getenv("AICHECK_LLM_MODEL_REVIEW", "default") + (f"@{args.prompt_mode}" if args.prompt_mode != "freeform" else "")
     disable_persistence()
     load_state()
     samples = [(args.project, args.node)] if args.project and args.node else list(DEFAULT_SAMPLES)

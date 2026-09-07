@@ -87,6 +87,8 @@ runtime = {
     "AICHECK_LLM_MODEL_REVIEW": "qwen3.7-plus",
     # P8 H4：分片信封修复失败后的升级模型（只对"模型没按契约输出"的分片重跑一次）。
     "AICHECK_LLM_MODEL_REVIEW_ESCALATION": "qwen3.8-max",
+    # P8 H5：审查提示词模式，checklist=清单填表（灰度用，基准对照后再切）；默认自由模式。
+    "AICHECK_REVIEW_PROMPT_MODE": "freeform",
     "AICHECK_LLM_MODEL_DEFAULT": "qwen3.7-plus",
     "AICHECK_LLM_MODEL_COMPARE_FAST": "qwen3.6-flash",
     # 一键分析（full-project-analysis）用 qwen3.8-max（2026-09-02 按要求升到 3.8 max）。

@@ -29,6 +29,7 @@ from libs.db.repository import flush_state_records, repo
 from libs.integrations.errors import IntegrationServiceError
 from libs.model_usage import model_cost_cny, normalize_model_usage
 from libs.qwen_runtime import QwenRuntimeClient
+from libs.review_orchestrator import checklist_mode
 from libs.review_orchestrator._shared import qwen_runtime_client
 
 LOGGER = logging.getLogger(__name__)
@@ -121,7 +122,7 @@ def repair_envelope(
     model = str(review_run.get("modelAlias") or "review-chat")
     attempt = _record_attempt(review_run, context, stage="envelope_repair", model=model)
     messages = [
-        {"role": "system", "content": _REPAIR_SYSTEM_PROMPT},
+        {"role": "system", "content": checklist_mode.REPAIR_PROMPT if checklist_mode.checklist_enabled() else _REPAIR_SYSTEM_PROMPT},
         {"role": "user", "content": str(raw_output)[:60000]},
     ]
     try:

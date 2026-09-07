@@ -55,7 +55,7 @@ from libs.review_grounding import (
     is_canonical_clause,
     merge_canonical_grounding_metadata,
 )
-from libs.review_orchestrator import shard_execution, shard_recovery
+from libs.review_orchestrator import checklist_mode, shard_execution, shard_recovery
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
@@ -2027,6 +2027,9 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             ]
         },
     }
+    if checklist_mode.checklist_enabled():  # P8 H5：清单填表模式，结构由代码给，模型只填 verdict/note
+        context["checklistItems"] = checklist_mode.build_checklist_items(pack, int(review_run.get("nodeId") or 0), context.get("requirements") or node.get("requiredMaterials") or [])
+        user_payload = checklist_mode.apply_to_payload(user_payload, context["checklistItems"])
     review_task_json = json.dumps(user_payload, ensure_ascii=False)
     user_content = prompt["user"]
     if "{{reviewTaskJson}}" in user_content:
@@ -2476,6 +2479,8 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:
     base = build_finding_draft(review_run, context)
     grounding_input = grounding_input_with_supplements(context)
+    if checklist_mode.checklist_enabled() and context.get("checklistItems"):
+        return checklist_mode.normalize_checklist_output(review_run, context, content, base=base, grounding_input=grounding_input, guard=apply_grounding_guardrails, clone=repo.clone, bounded_confidence=bounded_confidence)
     if not content.strip():
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_EMPTY")
     try:
