@@ -396,3 +396,27 @@ def test_table_without_cells_is_not_given_a_synthetic_row() -> None:
     table = structured_tables(parse_result)[0]
     assert len(table["normalizedRows"]) == 1
     assert table["normalizedRows"][0]["序号"] == "1"
+
+
+def test_column_order_source_tells_probe_whether_header_cells_exist() -> None:
+    """探针只在列序真来自字典键时才怀疑 jsonb 泄漏；有表头单元格的表哪怕列名恰好排好序也不是泄漏。"""
+    with_header = {
+        "tables": [
+            {
+                "tableId": "T-V",
+                "cells": [
+                    {"row": 0, "col": 0, "text": "产品名称", "isHeader": True},
+                    {"row": 0, "col": 1, "text": "公称压力", "isHeader": True},
+                    {"row": 0, "col": 2, "text": "公称尺寸", "isHeader": True},
+                    {"row": 0, "col": 3, "text": "适用温度", "isHeader": True},
+                ],
+                "normalizedRows": [{"产品名称": "截止阀", "公称压力": "PN≤32.0MPa", "公称尺寸": "DN≤400mm", "适用温度": "-29°C~540°C"}],
+            }
+        ]
+    }
+    table = structured_tables(with_header)[0]
+    assert table["columnOrderSource"] == "header_cells"
+    assert table["columnNames"] == ["产品名称", "公称压力", "公称尺寸", "适用温度"]
+
+    keys_only = {"tables": [{"tableId": "T-K", "normalizedRows": [{"备注": "√", "序号": "1", "焊条": "J422"}]}]}
+    assert structured_tables(keys_only)[0]["columnOrderSource"] == "dict_keys"

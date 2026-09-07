@@ -193,6 +193,10 @@ def structured_tables(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
                 "rows": item.get("rows"),
                 "columns": item.get("columns"),
                 "columnNames": column_names,
+                # 列序来源：有表头单元格就按 col 下标还原（jsonb 不影响数组），
+                # 没有表头单元格才只能用字典键序——那才是真正可能"泄漏"jsonb 键序的情形。
+                # 业务链探针据此判断，不再靠"列名恰好排好序"猜。
+                "columnOrderSource": "header_cells" if header_texts else "dict_keys",
                 # 表头不可信时界面不画表头行——见 table_header_is_reliable
                 "headerReliable": header_reliable,
                 "normalizedRows": normalized,

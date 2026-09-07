@@ -145,15 +145,22 @@ def check_table_column_order_is_not_alphabetical(
         )
         for table in ((detail.get("ocrStructured") or {}).get("tables")) or []:
             names = [str(name) for name in table.get("columnNames") or []]
-            # 三列表随机排好序的概率是 1/6，2026-09 起每次部署都被一张
-            # 「35 / JH/QR-1-035 / 工艺文件修改通知单」的三列表误报——那是数据行被当成了表头。
-            # 只看 ≥4 列、且列名里没有纯数字（纯数字不是表头是数据）的表；
-            # 判"泄漏"用 jsonb 真正的键序（先按字节长、再按字节序），不是普通字典序。
-            if len(names) < 4 or not table.get("headerReliable"):
-                continue
-            if any(name.strip().isdigit() for name in names):
+            if len(names) < 3 or not table.get("headerReliable"):
                 continue
             checked += 1
+            source = table.get("columnOrderSource")
+            if source is not None:
+                # 新版接口直接说列序从哪来：有表头单元格就不可能是键序泄漏。
+                # 2026-09-07 一张阀门表「产品名称/公称压力/公称尺寸/适用温度」恰好按字节序排好，
+                # 靠"排没排序"猜连续误报两次；表头单元格顺序才是真相。
+                if source == "dict_keys" and names == sorted(names, key=lambda name: (len(name.encode("utf-8")), name.encode("utf-8"))):
+                    raise ProbeFailure(
+                        f"表格列序来自字典键序且呈 jsonb 键序（无表头单元格可还原）：{names[:5]}"
+                    )
+                continue
+            # 旧版接口没有 columnOrderSource：退回启发式，只看 ≥4 列且无纯数字列名
+            if len(names) < 4 or any(name.strip().isdigit() for name in names):
+                continue
             if names == sorted(names, key=lambda name: (len(name.encode("utf-8")), name.encode("utf-8"))):
                 raise ProbeFailure(
                     f"表格列序疑似字典序（jsonb 键序泄漏）：{names[:5]}"
