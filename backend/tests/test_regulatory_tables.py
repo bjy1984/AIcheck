@@ -230,3 +230,41 @@ def test_pipe_limits_cover_five_standards_and_keep_them_apart():
     # 12771 的铁素体牌号非热处理态不作伸长率要求
     ferritic = pipe_material_limits("GB/T 12771-2019", "06Cr13Al")
     assert "elongationPctMinAsWelded" not in ferritic["mechanical"]
+
+
+def test_wps_thickness_coverage_follows_table6_and_impact_rule():
+    """NB/T 47014-2023 表 6/表 7 + 6.1.5.2：一份评定报告能覆盖多厚的焊件。"""
+    from libs.regulatory_tables import wps_thickness_coverage
+
+    # 表 6 常规行：T=12 落在 10<T<20，母材 5~2T，焊缝金属 ≤2t
+    normal = wps_thickness_coverage(12, weld_metal_thickness_mm=12, welding_method="焊条电弧焊")
+    assert normal["specimenRange"] == "10<T<20"
+    assert (normal["baseMetalMinMm"], normal["baseMetalMaxMm"]) == (5.0, 24.0)
+    assert normal["weldMetalMaxMm"] == 24.0 and normal["notes"] == []
+
+    # 6.1.5.2：有冲击试验且 T≥6 → 母材最小值取 T 与 16 的较小值
+    impact = wps_thickness_coverage(12, weld_metal_thickness_mm=12, welding_method="焊条电弧焊", impact_tested=True)
+    assert impact["baseMetalMinMm"] == 12.0 and "6.1.5.2" in impact["notes"][0]
+    # T<6 → 最小值为 T/2
+    thin = wps_thickness_coverage(4, weld_metal_thickness_mm=4, welding_method="埋弧焊", impact_tested=True)
+    assert thin["baseMetalMinMm"] == 2.0
+
+    # 闭区间边界：T=10 归 1.5<=T<=10 那一行，不掉进 10<T<20
+    edge = wps_thickness_coverage(10, weld_metal_thickness_mm=10, welding_method="埋弧焊")
+    assert edge["specimenRange"] == "1.5<=T<=10" and edge["baseMetalMinMm"] == 1.5
+
+    # 38<=T<=150 的上限是 200mm（注 a），只限四种电弧焊
+    thick = wps_thickness_coverage(40, weld_metal_thickness_mm=25, welding_method="焊条电弧焊")
+    assert thick["baseMetalMaxMm"] == 200.0 and thick["weldMetalMaxMm"] == 200.0
+    other = wps_thickness_coverage(40, weld_metal_thickness_mm=25, welding_method="摩擦焊")
+    assert other["baseMetalMaxMm"] is None, "注 a 不适用的方法不给上限，不猜"
+    assert any("注 a" in note for note in other["notes"])
+
+    # 表 7（纵向弯曲）只有三行，T>10 一律 5~2T
+    longitudinal = wps_thickness_coverage(12, weld_metal_thickness_mm=12, bend="longitudinal")
+    assert longitudinal["specimenRange"] == ">10" and longitudinal["baseMetalMaxMm"] == 24.0
+
+    # 没给焊缝金属厚度就说清算不出，不猜
+    partial = wps_thickness_coverage(12, welding_method="焊条电弧焊")
+    assert partial["weldMetalMaxMm"] is None and "算不出" in partial["notes"][0]
+    assert wps_thickness_coverage(0) is None and wps_thickness_coverage("x") is None

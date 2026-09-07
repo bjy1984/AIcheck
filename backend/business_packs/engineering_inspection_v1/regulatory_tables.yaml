@@ -1586,3 +1586,33 @@ nbt47014SpecificFactors:
     methodsByClass:
       重要因素:
       - 电子束焊
+
+nbt47014ThicknessCoverage:
+  source: NB/T 47014-2023 表 6、表 7 对接焊缝试件厚度与焊件厚度规定；6.1.5 试件厚度与焊件厚度的评定规则
+  extractedFrom: official_pdf_ocr_page_images
+  sourceFile: 用户 2026-09-07 提供的 NB/T 47014-2023 PDF，第 41 页看图抄录
+  verifiedBy: null
+  note: T 为试件母材厚度，t 为试件每种焊接方法焊接的焊缝金属厚度；单位毫米。表 6 用于横向弯曲试验，表 7 用于纵向弯曲试验
+  impactRule:
+    clause: "6.1.5.2"
+    text: 规定进行冲击试验时，焊条电弧焊/埋弧焊/钨极气体保护焊/熔化极气体保护焊/等离子弧焊/气电立焊评定合格后——T≥6mm 时母材厚度有效范围最小值取 T 与 16mm 的较小值；T<6mm 时最小值为 T/2
+    exception: 试件经高于上转变温度的焊后热处理、奥氏体-铁素体双相钢接头、或奥氏体接头经固溶处理时，有冲击试验的评定用于无冲击要求的焊件仍按表 6 或表 7
+  footnotes:
+    a: 限于焊条电弧焊、埋弧焊、钨极气体保护焊、熔化极气体保护焊；其余按表 8、表 9 或 2T、2t
+    b: 试件厚度大于 150mm 时应全厚度焊接
+  transverseBend:
+    table: 表 6
+    rows:
+      - {specimenT: "<1.5", baseMin: T, baseMax: 2T, weldMin: 不限, weldMax: 2t}
+      - {specimenT: "1.5<=T<=10", baseMin: 1.5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
+      - {specimenT: "10<T<20", baseMin: 5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
+      - {specimenT: "20<=T<38", baseMin: 5, baseMax: 2T, weldMin: 不限, weldMax: "2t（t<20）/ 2T（t>=20）"}
+      - {specimenT: "38<=T<=150", baseMin: 5, baseMax: "200（注a）", weldMin: 不限, weldMax: "2t（t<20）/ 200（注a，t>=20）"}
+      - {specimenT: ">150（注b）", baseMin: 5, baseMax: "1.33T（注a）", weldMin: 不限, weldMax: "2t（t<20）/ 1.33T（注a，t>=20）"}
+  longitudinalBend:
+    table: 表 7
+    rows:
+      - {specimenT: "<1.5", baseMin: T, baseMax: 2T, weldMin: 不限, weldMax: 2t}
+      - {specimenT: "1.5<=T<=10", baseMin: 1.5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
+      - {specimenT: ">10", baseMin: 5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
+

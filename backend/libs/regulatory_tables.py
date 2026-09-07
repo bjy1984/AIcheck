@@ -215,3 +215,103 @@ def wps_factor_class(method: str, keyword: str) -> str | None:
         if hit and (found is None or ranked.index(cls) < ranked.index(found)):
             found = cls
     return found
+
+
+_IMPACT_METHODS = {"焊条电弧焊", "埋弧焊", "钨极气体保护焊", "熔化极气体保护焊", "等离子弧焊", "气电立焊"}
+_FOOTNOTE_A_METHODS = {"焊条电弧焊", "埋弧焊", "钨极气体保护焊", "熔化极气体保护焊"}
+
+
+def _coverage_row(specimen_t: float, bend: str) -> dict[str, Any] | None:
+    section = table("nbt47014ThicknessCoverage")
+    key = "longitudinalBend" if bend == "longitudinal" else "transverseBend"
+    rows = (section.get(key) or {}).get("rows") or []
+    # 行的区间用文字写（"20<=T<38"），这里按同一顺序判，避免再解析一遍字符串
+    if bend == "longitudinal":
+        bounds = [(None, 1.5), (1.5, 10.0), (10.0, None)]
+    else:
+        bounds = [(None, 1.5), (1.5, 10.0), (10.0, 20.0), (20.0, 38.0), (38.0, 150.0), (150.0, None)]
+    for row, (low, high) in zip(rows, bounds, strict=False):
+        if low is not None and specimen_t < low:
+            continue
+        # 表 6 的 1.5<=T<=10 与 38<=T<=150 是闭区间，边界值归本行
+        closed_upper = specimen_t == high and "<=T<=" in str(row.get("specimenT", ""))
+        if high is not None and specimen_t >= high and not closed_upper:
+            continue
+        return row
+    return rows[-1] if rows else None
+
+
+def wps_thickness_coverage(
+    specimen_thickness_mm: float,
+    *,
+    weld_metal_thickness_mm: float | None = None,
+    bend: str = "transverse",
+    welding_method: str | None = None,
+    impact_tested: bool = False,
+) -> dict[str, Any] | None:
+    """NB/T 47014-2023 表 6/表 7 + 6.1.5.2：一份评定报告适用于焊件的厚度范围。
+
+    返回 baseMin/baseMax（母材）与 weldMax（焊缝金属）的**数值**，算不出来的位置返回 None
+    并在 notes 里说清为什么——不猜。
+    """
+    try:
+        specimen = float(specimen_thickness_mm)
+    except (TypeError, ValueError):
+        return None
+    if specimen <= 0:
+        return None
+    row = _coverage_row(specimen, bend)
+    if row is None:
+        return None
+    section = table("nbt47014ThicknessCoverage")
+    notes: list[str] = []
+    method = str(welding_method or "").strip()
+
+    base_min: float | None = specimen if str(row["baseMin"]) == "T" else float(row["baseMin"])
+    # 6.1.5.2：要求冲击试验时最小值另有规定
+    if impact_tested and method in _IMPACT_METHODS:
+        base_min = min(specimen, 16.0) if specimen >= 6 else specimen / 2
+        notes.append(f"按 6.1.5.2（有冲击试验，{method}）取母材最小值 {base_min:g}mm")
+
+    raw_max = str(row["baseMax"])
+    if raw_max == "2T":
+        base_max: float | None = 2 * specimen
+    elif raw_max.startswith("200"):
+        base_max = 200.0
+    elif raw_max.startswith("1.33T"):
+        base_max = round(1.33 * specimen, 2)
+    else:
+        base_max = None
+    if "注a" in raw_max and method and method not in _FOOTNOTE_A_METHODS:
+        base_max = None
+        notes.append(f"注 a 只限四种电弧焊；{method} 的母材厚度上限按表 8、表 9 或 2T、2t 另判")
+
+    weld_max: float | None = None
+    if weld_metal_thickness_mm is not None:
+        t = float(weld_metal_thickness_mm)
+        raw_weld = str(row["weldMax"])
+        if raw_weld == "2t" or t < 20:
+            weld_max = 2 * t
+        elif "200" in raw_weld:
+            weld_max = 200.0
+        elif "1.33T" in raw_weld:
+            weld_max = round(1.33 * specimen, 2)
+        elif "2T" in raw_weld:
+            weld_max = 2 * specimen
+        if "注a" in raw_weld and method and method not in _FOOTNOTE_A_METHODS:
+            weld_max = None
+            notes.append("焊缝金属厚度上限同样受注 a 限制")
+    else:
+        notes.append("未给试件焊缝金属厚度 t，焊缝金属上限算不出")
+
+    return {
+        "table": (section.get("longitudinalBend" if bend == "longitudinal" else "transverseBend") or {}).get("table"),
+        "specimenThicknessMm": specimen,
+        "specimenRange": row["specimenT"],
+        "baseMetalMinMm": base_min,
+        "baseMetalMaxMm": base_max,
+        "weldMetalMinMm": 0.0,
+        "weldMetalMaxMm": weld_max,
+        "verified": is_verified(section),
+        "notes": notes,
+    }
