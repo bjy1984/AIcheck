@@ -76,6 +76,7 @@ from libs.review_orchestrator.r12_agent import (
     validate_r12_human_input,
 )
 from libs.review_orchestrator.r13_facts import build_r13_business_facts
+from libs.review_orchestrator.pipeline_facts import merge_project_pipelines
 from libs.review_orchestrator.r14_facts import build_r14_business_facts
 from libs.review_orchestrator.r15_facts import build_r15_business_facts
 from libs.review_orchestrator.r16_facts import build_r16_business_facts
@@ -1492,6 +1493,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             builder = R24_R34_FACT_BUILDERS[f"r{int(review_run.get('nodeId') or 0)}"]
             context["businessFacts"] = builder(repo.state, review_run)
         context["businessFacts"] = merge_certificate_facts(repo.state, review_run, context.get("businessFacts"))
+        context["businessFacts"] = merge_project_pipelines(repo.state, review_run, context.get("businessFacts"))  # P11 N-02：逐管线事实
         applied_corrections = apply_node_fact_corrections(
             repo.state,
             str(review_run.get("projectId") or ""),
