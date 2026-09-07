@@ -346,3 +346,112 @@ def test_annex_b_filler_metal_requirement_checks_class_and_standard():
     assert unknown is not None and len(unknown["reportContents"]) == 8
     # 什么都不给不该凭空产生要求
     assert filler_metal_classification_requirement() is None
+
+
+def test_acceptance_limits_respect_the_standard_s_applicability_rules():
+    """标准不要求的项不该下发限值——下发了就会拿它去要证据，本该通过的项掉进证据不足。
+
+    GB/T 5310：冲击按 7.4.2 要外径≥76 且壁厚≥14；布氏按 7.4.3 a）要壁厚≥5.0；
+    维氏按 7.4.3 c）只在合同注明时做。
+    """
+    from libs.review_orchestrator.material_facts import _enrich_material_design_item
+
+    def limits_of(spec: str) -> tuple[set[str], str]:
+        item = _enrich_material_design_item({"sourceRow": {"材料牌号": "20G", "执行标准": "GB/T 5310-2023", "规格": spec}})
+        names = {entry["name"] for entry in item.get("acceptanceLimits") or []}
+        return names, " ".join(item.get("acceptanceLimitsNotApplicable") or [])
+
+    # 够粗够厚：冲击要做，布氏要做，维氏仍然不做
+    thick, thick_skipped = limits_of("φ108×16")
+    assert {"抗拉强度", "屈服强度", "断后伸长率", "冲击吸收能量", "布氏硬度"} <= thick
+    assert "维氏硬度" not in thick and "7.4.3 c）" in thick_skipped
+
+    # 壁厚 5：冲击不做，布氏仍要做
+    medium, medium_skipped = limits_of("φ57×5")
+    assert "冲击吸收能量" not in medium and "布氏硬度" in medium
+    assert "7.4.2" in medium_skipped
+
+    # 壁厚 4：冲击与布氏都不做
+    thin, thin_skipped = limits_of("φ108×4")
+    assert "冲击吸收能量" not in thin and "布氏硬度" not in thin
+    assert "7.4.3 a）" in thin_skipped
+
+    # 规格串同时给出外径与壁厚
+    parsed = _enrich_material_design_item({"sourceRow": {"材料牌号": "20G", "执行标准": "GB/T 5310-2023", "规格": "φ108×16"}})
+    assert (parsed["outerDiameterMm"], parsed["wallThicknessMm"]) == (108.0, 16.0)
+
+
+def test_quality_level_reaches_the_limit_lookup():
+    """Q345 这类分质量等级的牌号：伸长率与冲击写在等级层，等级传不进去就一条都取不到。
+
+    设计资料上写的是"质量等级"，此前别名表里没有它，`pipe_material_limits` 永远按 None 查，
+    只拿得到各级共有的抗拉与屈服。
+    """
+    from libs.review_orchestrator.material_facts import _enrich_material_design_item
+
+    def limits_of(level: str | None, spec: str = "φ108×8") -> dict[str, float]:
+        row = {"材料牌号": "Q345", "执行标准": "GB/T 8163-2018", "规格": spec}
+        if level:
+            row["质量等级"] = level
+        item = _enrich_material_design_item({"sourceRow": row})
+        return {entry["name"]: entry.get("minimum") for entry in item.get("acceptanceLimits") or []}
+
+    assert limits_of("B")["断后伸长率"] == 20
+    assert limits_of("D")["断后伸长率"] == 21, "D 级比 B 级多一个点，取错等级就判错"
+    assert limits_of("B")["冲击吸收能量"] == 34
+
+    # 5.4.2.1：外径<70 或壁厚<6.5 不做冲击
+    assert "冲击吸收能量" not in limits_of("B", "φ57×4")
+
+    # 没写等级时只给各级共有的两项，不猜等级
+    common = limits_of(None)
+    assert set(common) == {"抗拉强度", "屈服强度"}
+
+
+def _limits(row: dict) -> dict:
+    from libs.review_orchestrator.material_facts import _enrich_material_design_item
+
+    item = _enrich_material_design_item({"sourceRow": row})
+    return {
+        "limits": {entry["name"]: (entry.get("minimum"), entry.get("maximum")) for entry in item.get("acceptanceLimits") or []},
+        "notes": " ".join(item.get("acceptanceLimitsNotes") or []),
+        "unresolved": " ".join(item.get("acceptanceLimitsUnresolved") or []),
+    }
+
+
+def test_welded_pipe_elongation_follows_the_delivery_condition():
+    """GB/T 12771 的伸长率分热处理/非热处理两列，此前两列都读不到，九个牌号一条限值都出不来。"""
+    base = {"材料牌号": "S30408", "执行标准": "GB/T 12771-2019", "规格": "φ108×4"}
+
+    heat_treated = _limits({**base, "交货状态": "固溶热处理"})
+    assert heat_treated["limits"]["断后伸长率"] == (40, None)
+
+    as_welded = _limits({**base, "交货状态": "焊态"})
+    assert as_welded["limits"]["断后伸长率"] == (35, None)
+
+    # 交货状态没写就不选档，记成未决而不是随便挑一列
+    unknown = _limits(base)
+    assert "断后伸长率" not in unknown["limits"]
+    assert "选不出档" in unknown["unresolved"]
+
+
+def test_rockwell_hardness_is_parsed_for_thin_wall_pipe():
+    """GB/T 5310 7.4.3 b）：壁厚小于 5.0mm 做的是洛氏。"85-97 HRBW" 这种写法此前解析不了，
+    薄壁管等于一项硬度都不核。"""
+    thin = _limits({"材料牌号": "12Cr2MoWVTiB", "执行标准": "GB/T 5310-2023", "规格": "φ60×4"})
+    assert thin["limits"]["洛氏硬度（HRBW）"] == (85.0, 97.0)
+    assert "布氏硬度" not in thin["limits"], "壁厚 4mm 不做布氏"
+
+
+def test_elongation_picks_the_sampling_direction_when_the_document_states_it():
+    """无缝不锈钢管的伸长率分纵/横向：横向下限低一档，写了方向就按方向取。"""
+    base = {"材料牌号": "S30408", "执行标准": "GB/T 14976-2025", "规格": "φ108×4"}
+
+    transverse = _limits({**base, "取样方向": "横向"})
+    assert transverse["limits"]["断后伸长率"] == (30, None)
+    assert "按横向取样" in transverse["notes"]
+
+    # 没写方向时取纵向（较严的一档）并说明，不悄悄放宽
+    unstated = _limits(base)
+    assert unstated["limits"]["断后伸长率"] == (35, None)
+    assert "未写取样方向" in unstated["notes"]

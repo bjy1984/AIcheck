@@ -240,6 +240,9 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
         "standardRef": ("standardRef", "acceptanceStandard", "productStandard", "执行标准", "验收标准", "产品标准"),
         "deliveryCondition": ("deliveryCondition", "supplyCondition", "交货状态", "供货状态"),
         "wallThicknessMm": ("wallThicknessMm", "wallThickness", "壁厚", "公称壁厚", "厚度"),
+        "outerDiameterMm": ("outerDiameterMm", "outerDiameter", "外径", "公称外径"),
+        "qualityLevel": ("qualityLevel", "质量等级", "等级", "钢级"),
+        "samplingDirection": ("samplingDirection", "取样方向", "试样方向"),
         "specification": ("specification", "size", "规格", "规格型号", "尺寸"),
         "batchNo": ("batchNo", "lotNo", "批号", "批次号", "炉批号"),
         "heatNo": ("heatNo", "炉号"),
@@ -283,29 +286,34 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
-_SPEC_THICKNESS_RE = re.compile(r"[×xX*]\s*(\d+(?:\.\d+)?)")
+_SPEC_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[×xX*]\s*(\d+(?:\.\d+)?)")
 
 
 def _fill_wall_thickness(item: dict[str, Any]) -> None:
-    """壁厚：显式字段优先，没有就从规格串（φ108×4.5、108*4.5）里取乘号后的那一段。
+    """壁厚与外径：显式字段优先，没有就从规格串（φ108×4.5、108*4.5）里取。
 
-    为什么要它：GB/T 14976 的 S32168/S32169、GB/T 3087 的 Q345 这些牌号，限值按壁厚分档，
-    没有壁厚就选不出档，限值填不出来。
+    为什么要它：GB/T 14976 的 S32168/S32169、GB/T 3087 的 Q345 这些牌号限值按壁厚分档；
+    GB/T 5310 的冲击要求还看外径（7.4.2 外径≥76 且壁厚≥14）。取不到就选不出档、
+    也判不了适用性。
     """
-    if _present(item.get("wallThicknessMm")):
-        try:
-            item["wallThicknessMm"] = float(str(item["wallThicknessMm"]).strip().rstrip("mm ").strip())
-            return
-        except (TypeError, ValueError):
-            item.pop("wallThicknessMm", None)
+    for field in ("wallThicknessMm", "outerDiameterMm"):
+        if _present(item.get(field)):
+            value = _to_float(item.get(field))
+            if value is None:
+                item.pop(field, None)
+            else:
+                item[field] = value
     spec = str(item.get("specification") or "").strip()
-    match = _SPEC_THICKNESS_RE.search(spec)
-    if match:
-        try:
-            item["wallThicknessMm"] = float(match.group(1))
-            item["wallThicknessSource"] = "specification"
-        except ValueError:
-            pass
+    match = _SPEC_SIZE_RE.search(spec)
+    if not match:
+        return
+    diameter, thickness = _to_float(match.group(1)), _to_float(match.group(2))
+    if thickness is not None and not _present(item.get("wallThicknessMm")):
+        item["wallThicknessMm"] = thickness
+        item["wallThicknessSource"] = "specification"
+    if diameter is not None and not _present(item.get("outerDiameterMm")):
+        item["outerDiameterMm"] = diameter
+        item["outerDiameterSource"] = "specification"
 
 
 _THICKNESS_BUCKET_RE = re.compile(r"^(<=|>=|<|>)?\s*(\d+(?:\.\d+)?)\s*mm$")
@@ -354,6 +362,120 @@ def _parse_limit_text(text: Any) -> tuple[float | None, float | None]:
     return None, None
 
 
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(str(value).strip().rstrip("mm ").strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _bool_flag(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"true", "yes", "1", "是", "有", "注明"}:
+        return True
+    if text in {"false", "no", "0", "否", "无", "未注明"}:
+        return False
+    return None
+
+
+def _applies(rule: Any, item: dict[str, Any], *, contract_flag: str | None = None) -> bool:
+    """标准对这一项有没有要求。
+
+    没写规则就当有要求；写了规则但尺寸不明，也当有要求——宁可多要一次证据，
+    也不要因为尺寸没填就悄悄不检。只有明确不满足时才跳过：
+    尺寸低于门槛、牌号不在指定名单、或者这是合同选做项而合同没注明。
+    """
+    if not isinstance(rule, dict):
+        return True
+    thickness_mm = _to_float(item.get("wallThicknessMm"))
+    outer_diameter_mm = _to_float(item.get("outerDiameterMm"))
+    minimum_thickness = rule.get("minWallThicknessMm")
+    if minimum_thickness is not None and thickness_mm is not None and thickness_mm < float(minimum_thickness):
+        return False
+    minimum_diameter = rule.get("minOuterDiameterMm")
+    if minimum_diameter is not None and outer_diameter_mm is not None and outer_diameter_mm < float(minimum_diameter):
+        return False
+    only_grades = rule.get("grades")
+    if only_grades:
+        grade = str(item.get("materialGrade") or "").strip().upper()
+        if grade and grade not in {str(one).strip().upper() for one in only_grades}:
+            return False
+    if rule.get("contractOnly") and contract_flag and _bool_flag(item.get(contract_flag)) is not True:
+        return False
+    return True
+
+
+_ROCKWELL_RE = re.compile(r"^(?:(<=|>=|≤|≥)\s*)?(\d+(?:\.\d+)?)(?:\s*[-~～]\s*(\d+(?:\.\d+)?))?\s*(HR[A-Z]*)?", re.IGNORECASE)
+
+
+def _parse_rockwell(raw: Any) -> tuple[float | None, float | None, str | None]:
+    """"85-97 HRBW" → (85, 97, "HRBW")；"<=25 HRC" → (None, 25, "HRC")。看不懂返回三个 None。"""
+    text = str(raw or "").strip()
+    if not text or text in {"—", "-", "－"}:
+        return None, None, None
+    match = _ROCKWELL_RE.match(text)
+    if not match:
+        return None, None, None
+    operator, first, second, scale = match.groups()
+    scale_text = (scale or "").upper() or None
+    if second is not None:
+        return float(first), float(second), scale_text
+    if operator in {"<=", "≤"}:
+        return None, float(first), scale_text
+    if operator in {">=", "≥"}:
+        return float(first), None, scale_text
+    return None, None, scale_text
+
+
+def _sampling_direction(item: dict[str, Any]) -> str | None:
+    """设计项/质保书上写的取样方向：纵向 / 横向。没写返回 None。"""
+    text = str(item.get("samplingDirection") or item.get("取样方向") or "").strip()
+    if any(token in text for token in ("横", "transverse")):
+        return "transverse"
+    if any(token in text for token in ("纵", "longitudinal")):
+        return "longitudinal"
+    return None
+
+
+def _pick_by_direction(mechanical: dict[str, Any], item: dict[str, Any], base: str) -> tuple[Any, str | None]:
+    """纵/横向两列里取一个。写了方向就按方向取；没写按纵向取并说明——
+    纵向的下限更高，是更严的一档，宁可多一次复核也不放过。"""
+    single = mechanical.get(base)
+    if single is not None:
+        return single, None
+    longitudinal = mechanical.get(f"{base}Longitudinal")
+    transverse = mechanical.get(f"{base}Transverse")
+    if longitudinal is None and transverse is None:
+        return None, None
+    direction = _sampling_direction(item)
+    if direction == "transverse" and transverse is not None:
+        return transverse, "按横向取样"
+    if direction == "longitudinal" and longitudinal is not None:
+        return longitudinal, "按纵向取样"
+    if longitudinal is not None:
+        return longitudinal, "资料未写取样方向，按纵向（较严的一档）取限值"
+    return transverse, "资料未写取样方向，本牌号只有横向限值"
+
+
+def _pick_elongation(mechanical: dict[str, Any], item: dict[str, Any]) -> tuple[Any, str | None]:
+    """伸长率：单值 → 纵/横向 → 热处理/非热处理（焊接钢管按交货状态分两列）。"""
+    value, note = _pick_by_direction(mechanical, item, "elongationPctMin")
+    if value is not None:
+        return value, note
+    heat_treated = mechanical.get("elongationPctMinHeatTreated")
+    as_welded = mechanical.get("elongationPctMinAsWelded")
+    if heat_treated is None and as_welded is None:
+        return None, None
+    condition = str(item.get("deliveryCondition") or "")
+    if any(token in condition for token in ("热处理", "固溶", "退火", "正火")):
+        return heat_treated, "按热处理交货状态取限值"
+    if any(token in condition for token in ("焊态", "未热处理", "非热处理")):
+        return as_welded, "按非热处理（焊态）交货状态取限值"
+    return None, "限值按交货状态分热处理/非热处理两列，资料未写交货状态，选不出档"
+
+
 def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
     """设计项没带验收限值时，按「执行标准 + 材料牌号」从法规数值表推导。
 
@@ -378,6 +500,9 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
         return
     mechanical = found.get("mechanical") or {}
     limits: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    notes: list[str] = []
+    unresolved: list[str] = []
 
     def add(code: str, name: str, *, minimum: Any = None, maximum: Any = None) -> None:
         if minimum is None and maximum is None:
@@ -395,14 +520,32 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
         add("tensileStrength", "抗拉强度", minimum=low, maximum=high)
     add("tensileStrength", "抗拉强度", minimum=mechanical.get("tensileMPaMin"))
     add("yieldStrength", "屈服强度", minimum=mechanical.get("yieldMPaMin") or mechanical.get("rp02MPaMin"))
-    add("elongation", "断后伸长率", minimum=mechanical.get("elongationPctMin") or mechanical.get("elongationPctMinLongitudinal"))
-    add("impactEnergy", "冲击吸收能量", minimum=mechanical.get("kv2JMin") or mechanical.get("kv2JMinLongitudinal"))
+    # 伸长率有三套写法：单值、纵/横向（无缝管）、热处理/非热处理（焊接管，GB/T 12771）。
+    # 只认前两种时，GB/T 12771 的九个牌号一条伸长率限值都出不来。
+    elongation, elongation_note = _pick_elongation(mechanical, item)
+    add("elongation", "断后伸长率", minimum=elongation)
+    if elongation is None and any(key.startswith("elongationPctMin") for key in mechanical):
+        unresolved.append(f"断后伸长率：{elongation_note}")
+    elif elongation_note:
+        notes.append(f"断后伸长率：{elongation_note}")
+    # 冲击：标准往往只对够粗够厚的管子才要求（GB/T 5310 7.4.2 是外径≥76 且壁厚≥14）。
+    # 无条件下发限值，等于拿标准不要求的项去要证据，本该通过的项会掉进证据不足。
+    applicability = found.get("applicability") or {}
+    if _applies(applicability.get("impact"), item, contract_flag="impactRequiredByContract"):
+        impact_value, impact_note = _pick_by_direction(mechanical, item, "kv2JMin")
+        add("impactEnergy", "冲击吸收能量", minimum=impact_value)
+        if impact_note:
+            notes.append(f"冲击吸收能量：{impact_note}")
+        temperature = mechanical.get("impactTemperatureC")
+        if impact_value is not None and temperature is not None:
+            notes.append(f"冲击试验温度：{temperature}℃")
+    else:
+        skipped.append(f"冲击吸收能量：{(applicability.get('impact') or {}).get('basis') or '本标准对该规格不要求'}")
 
     # 按壁厚分档的限值（GB/T 14976 的 S32168/S32169/S31252、GB/T 3087 的 Q345 等）。
     # 选不出档就不填，并把原因记下来——宁可停在证据不足，也不猜一档去判不符合。
     thickness = item.get("wallThicknessMm")
     thickness_mm = float(thickness) if isinstance(thickness, (int, float)) else None
-    unresolved: list[str] = []
     for key, code, name in (
         ("tensileMPaMinByThickness", "tensileStrength", "抗拉强度"),
         ("yieldMPaMinByThickness", "yieldStrength", "屈服强度"),
@@ -416,11 +559,23 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
         elif reason:
             unresolved.append(f"{name}：{reason}")
 
-    # 硬度区间（GB/T 5310 表 8 的 HBW/HV，13296 表 5 的上限）——质保书上这两项也要核
+    # 硬度区间（GB/T 5310 表 8 的 HBW/HV，13296 表 5 的上限）——质保书上这两项也要核。
+    # 但维氏按 7.4.3 c）只在合同注明时做，布氏按 a）要壁厚够；不满足就不下发。
     hardness = found.get("hardness") or {}
+    hardness_rules = applicability.get("hardness") or {}
     for key, code, name in (("HBW", "hardnessHBW", "布氏硬度"), ("HV", "hardnessHV", "维氏硬度")):
+        rule = hardness_rules.get(key)
+        if not _applies(rule, item, contract_flag=f"{key.lower()}RequiredByContract"):
+            skipped.append(f"{name}：{(rule or {}).get('basis') or '本标准对该规格不要求'}")
+            continue
         low, high = _parse_limit_text(hardness.get(key))
         add(code, name, minimum=low, maximum=high)
+
+    # 洛氏是"85-97 HRBW" / "<=25 HRC" 这种带单位的写法，前面的数值解析认不出来。
+    # GB/T 5310 7.4.3 b）壁厚小于 5.0mm 时做的正是洛氏——不解析它，薄壁管等于一项硬度都不核。
+    rockwell_low, rockwell_high, scale = _parse_rockwell(hardness.get("rockwell"))
+    if (rockwell_low is not None or rockwell_high is not None) and _applies(hardness_rules.get("rockwell"), item, contract_flag="rockwellRequiredByContract"):
+        add("hardnessRockwell", f"洛氏硬度（{scale}）" if scale else "洛氏硬度", minimum=rockwell_low, maximum=rockwell_high)
 
     if limits:
         item["acceptanceLimits"] = limits
@@ -435,6 +590,10 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
             item["acceptanceLimitsSource"]["wallThicknessMm"] = thickness_mm
     if unresolved:
         item["acceptanceLimitsUnresolved"] = unresolved
+    if skipped:
+        item["acceptanceLimitsNotApplicable"] = skipped
+    if notes:
+        item["acceptanceLimitsNotes"] = notes
 
 
 def _all_business_rows(parse_result: dict[str, Any]) -> list[dict[str, Any]]:

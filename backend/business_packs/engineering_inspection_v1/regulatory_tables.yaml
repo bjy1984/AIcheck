@@ -764,6 +764,8 @@ pipeMaterialLimits:
       verifiedBy: null
       impactApplicability: 5.4.2.1——Q345/Q390/Q420/Q460 的 B/C/D/E 级，外径 ≥70mm 且壁厚 ≥6.5mm 时做纵向冲击；一组 3 个试样算术平均，允许一个低于规定值但不低于规定值的 70%
       smallSpecimenFactors: {"10x10": 1, "10x7.5": 0.75, "10x5": 0.5}
+      applicability:
+        impact: {minOuterDiameterMm: 70, minWallThicknessMm: 6.5, basis: "5.4.2.1——Q345/Q390/Q420/Q460 且质量等级 B/C/D/E，外径不小于 70mm 且壁厚不小于 6.5mm 才做纵向冲击；10/20 钢无冲击要求"}
       grades:
         - grade: "10"
           composition: {C: "0.07-0.13", Si: "0.17-0.37", Mn: "0.35-0.65", P: "<=0.030", S: "<=0.030", Cr: "<=0.15", Ni: "<=0.30", Cu: "<=0.20"}
@@ -1150,6 +1152,11 @@ pipeMaterialLimits:
         rule: 表 8 的冲击值是全尺寸（10×10）试样要求；小试样最小要求值 = 全尺寸要求值 × 递减系数
         factors: {"10x10": 1, "10x7.5": 0.75, "10x5": 0.5}
       impactApplicability: 7.4.2——外径不小于 76mm 且壁厚不小于 14mm 的优质碳素钢和合金钢钢管才做冲击试验
+      applicability:
+        impact: {minOuterDiameterMm: 76, minWallThicknessMm: 14, basis: "7.4.2"}
+        hardness:
+          HBW: {minWallThicknessMm: 5.0, basis: "7.4.3 a）——壁厚不小于 5.0mm 做布氏或洛氏"}
+          HV: {contractOnly: true, basis: "7.4.3 c）——维氏只在合同注明时做"}
       hardnessApplicability:
         clause: "7.4.3"
         rules:
@@ -1289,6 +1296,12 @@ pipeMaterialLimits:
       verifiedBy: null
       coverage: 表 4 共 31 个牌号，已全部录入（扫描件按文字包围盒几何重建行列，逐行核对，不依赖 OCR 输出顺序）
       tableFootnote: 热挤压钢管的抗拉强度可降低 20 MPa（表 4 脚注）；脚注标记落在哪几行未能从扫描件确认，故不自动放宽判定，只在结论里提示
+      applicability:
+        hardness:
+          HBW: {contractOnly: true, minWallThicknessMm: 1.7, basis: "7.4.2——经供需双方协商并在合同中注明，壁厚不小于 1.7mm 的钢管可做布氏/洛氏/维氏"}
+          HRB: {contractOnly: true, minWallThicknessMm: 1.7, basis: "7.4.2"}
+          HV: {contractOnly: true, minWallThicknessMm: 1.7, basis: "7.4.2"}
+        impact: {contractOnly: true, grades: [07Cr19Ni10, 07Cr19Ni11Ti], basis: "7.4.3——经协商并在合同中注明试验温度时才做"}
       hardnessLimits:
         source: 表 5
         austenitic: {"06Cr18Ni13Si4": {HBW: "<=207", HRB: "<=95", HV: "<=218"}, "015Cr20Ni18Mo6CuN": {HBW: "<=220", HRB: "<=96", HV: "<=230"}, "022Cr21Ni25Mo7N": {HRB: "<=100"}, 其他: {HBW: "<=192", HRB: "<=90", HV: "<=200"}}

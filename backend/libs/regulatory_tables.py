@@ -221,6 +221,9 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
                 "standard": item.get("standard"),
                 "grade": entry.get("grade"),
                 "verified": is_verified(item),
+                # 适用性写在标准层（冲击要外径与壁厚都够、维氏只在合同注明时做），
+                # 调用方要按它决定某项限值下不下发，否则会拿标准不要求的项去要证据
+                "applicability": dict(item.get("applicability") or {}),
                 "composition": dict(entry.get("composition") or entry.get("compositionCommon") or {}),
                 "mechanical": dict(entry.get("mechanical") or entry.get("mechanicalCommon") or {}),
             }

@@ -9,6 +9,13 @@
 # 用 rsync 增量同步而不是每次 tar+scp：追踪文件有 1.6GB（扫描件、图纸 PDF、OCR 产物），
 # 打包重传一次要十几分钟，增量同步第二次起只传改动的那几个文件。
 #
+# 这个环境里有 8 条测试跑不过，都不是回归，别当成红灯：
+#   · 3 条 release_manifest —— 镜像里没有 git 可执行文件
+#   · 2 条 local_startup / start_local_dev —— 镜像里没有 zsh
+#   · 2 条 import_offline_test_projects（test2 项目）+ 1 条 contract 的 knowledgeFileId
+#     —— 用到被排除的 test2/ 夹具
+# 基线是 2932 passed / 8 failed / 65 skipped（2026-09-08）。失败数超过 8 才需要看。
+#
 # 用法：AICHECK_DEPLOY_HOST=aicheck-prod-new bash backend/scripts/run_tests_in_container.sh [pytest 参数...]
 set -euo pipefail
 HOST="${AICHECK_DEPLOY_HOST:-aicheck-prod-new}"
@@ -29,7 +36,13 @@ git -c core.quotePath=false ls-files \
   | grep -vE '^(rules/results/|rules/standards/|audit-reports/|Scan/|test2/|backend/data/visual_extraction_pages/|.*\.(zip|dump|mp4)$)' \
   > "$LIST"
 
-ssh "$HOST" "mkdir -p '$REMOTE_WS'"
+# 上一轮容器以 uid 999 写下的产物（output/ 下的上传件等）主机用户删不掉，也会挡住 rsync；
+# 先用同一个镜像以 root 身份清掉它们。
+ssh "$HOST" "
+  mkdir -p '$REMOTE_WS'
+  docker run --rm -u root -v '$REMOTE_WS':/ws '$IMAGE' \
+    sh -c 'rm -rf /ws/output /ws/tmp /ws/backend/data/runtime-exports /ws/backend/ocr_eval/reports' || true
+"
 rsync -a --files-from="$LIST" ./ "$HOST:$REMOTE_WS/"
 
 ssh "$HOST" "
