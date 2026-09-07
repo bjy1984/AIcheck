@@ -145,10 +145,16 @@ def check_table_column_order_is_not_alphabetical(
         )
         for table in ((detail.get("ocrStructured") or {}).get("tables")) or []:
             names = [str(name) for name in table.get("columnNames") or []]
-            if len(names) < 3 or not table.get("headerReliable"):
+            # 三列表随机排好序的概率是 1/6，2026-09 起每次部署都被一张
+            # 「35 / JH/QR-1-035 / 工艺文件修改通知单」的三列表误报——那是数据行被当成了表头。
+            # 只看 ≥4 列、且列名里没有纯数字（纯数字不是表头是数据）的表；
+            # 判"泄漏"用 jsonb 真正的键序（先按字节长、再按字节序），不是普通字典序。
+            if len(names) < 4 or not table.get("headerReliable"):
+                continue
+            if any(name.strip().isdigit() for name in names):
                 continue
             checked += 1
-            if names == sorted(names):
+            if names == sorted(names, key=lambda name: (len(name.encode("utf-8")), name.encode("utf-8"))):
                 raise ProbeFailure(
                     f"表格列序疑似字典序（jsonb 键序泄漏）：{names[:5]}"
                 )
