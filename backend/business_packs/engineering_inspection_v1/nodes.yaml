@@ -663,10 +663,10 @@ nodeTemplates:
   - id: REQ-24-02
     materialTypeCode: welder_roster
     name: 焊工名册
-    requiredType: 必传
+    requiredType: 可选
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
-    note: 依据 R24，用于支撑焊工资格证及持证合格项目 (B类)中焊工名册相关核查。
+    note: 依据 R24，焊工名册只作辅助比对（N-34）：施工方自填，与证书、平台记录不一致时以证书和平台为准，缺名册不构成缺材料。
   - id: REQ-24-03
     materialTypeCode: external_query_screenshot
     name: 外部查询截图

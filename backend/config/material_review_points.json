@@ -1,9 +1,9 @@
 {
   "schemaVersion": "aicheck-material-review-points@1",
-  "version": "engineering-inspection-material-map@c5f6ff57875b",
+  "version": "engineering-inspection-material-map@8276ff53b689",
   "businessPackId": "engineering_inspection_v1",
   "source": "docs/工程监检资料映射表.md",
-  "sourceSha256": "c5f6ff57875b72d152325067f6f00fc956ed7dcfc4bdafe8dbd65cefacb68079",
+  "sourceSha256": "8276ff53b689ab6af7d8d3c5bf91b87e8d698a1c5fd062f6dece5067da5fb477",
   "itemCount": 162,
   "items": [
     {
@@ -1834,7 +1834,7 @@
       ],
       "responsibleParty": "contractor",
       "responsiblePartyLabel": "施工方上传",
-      "requiredType": "必传",
+      "requiredType": "可选",
       "mappingRelation": "直接资料类型匹配",
       "minConfidence": 0.65,
       "enabled": true,

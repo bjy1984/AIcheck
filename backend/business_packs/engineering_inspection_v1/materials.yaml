@@ -195,7 +195,8 @@ materialTypes:
     evidenceRequired: true
   - code: welder_roster
     name: 焊工名册
-    requiredType: 必传
+    # N-34（2026-09-06）：名册由施工方自填，与证书/平台不一致时以证书和平台为准；降为可选，只作辅助比对。
+    requiredType: 可选
     requiredFields: [name, certificate_no, work_scope]
     evidenceRequired: true
   - code: wps_pqr
