@@ -234,7 +234,7 @@ def execute_project_analysis_model(
             "responseHash": _stable_hash(response),
             "usage": raw_usage,
             "usageNormalized": normalize_model_usage(raw_usage),
-            "costNormalized": model_cost_cny(raw_usage),
+            "costNormalized": model_cost_cny(raw_usage, model=str(response.get("model") or request["model"])),
             "finishedAt": server_time(),
             "updatedAt": server_time(),
         }

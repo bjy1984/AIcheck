@@ -120,7 +120,7 @@ def test_legacy_positive_input_cap_never_drops_or_rejects_evidence(monkeypatch):
         lambda _run, _context: [{"role": "user", "content": "完整证据" * 1000}],
     )
     monkeypatch.setattr(ex, "estimate_messages_tokens", lambda _messages: 100000)
-    monkeypatch.setattr(ex, "model_cost_cny", lambda _usage: {"total": 0.0})
+    monkeypatch.setattr(ex, "model_cost_cny", lambda _usage, **_kwargs: {"total": 0.0})
     monkeypatch.setattr(ex, "qwen_runtime_public_config", lambda: {"provider": "test"})
     monkeypatch.setattr(ex, "qwen_runtime_client", lambda: FakeRuntime())
     monkeypatch.setattr(

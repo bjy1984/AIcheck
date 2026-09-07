@@ -2343,7 +2343,7 @@ def _generate_finding_drafts_once(
     response_hash = stable_hash_payload(response)
     raw_usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
     normalized_usage = normalize_model_usage(raw_usage)
-    normalized_cost = model_cost_cny(raw_usage)
+    normalized_cost = model_cost_cny(raw_usage, model=str(response.get("model") or ""))
     attempt.update(
         {
             "status": "response_received",

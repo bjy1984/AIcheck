@@ -15,6 +15,7 @@ from libs.integrations.raw_http_capture import (
     post_json_with_raw_capture,
     stream_chat_completion_with_raw_capture,
 )
+from libs.model_capabilities import apply_model_capabilities
 from libs.raw_vault import RawCapture, RawCaptureContext, raw_capture_from_environment
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "qwen_runtime.yaml"
@@ -130,7 +131,7 @@ def fallback_provider(config: dict[str, Any] | None = None) -> dict[str, Any]:
     if not base or not key:
         return {}
     cfg = config or qwen_runtime_config()
-    yaml_models = deepcopy((cfg.get("yamlOfficialModels") or {}))
+    yaml_models = deepcopy(cfg.get("yamlOfficialModels") or {})
     for role, env_name in MODEL_ROLE_ENV.items():
         override = str(
             os.getenv(env_name.replace("AICHECK_LLM_MODEL_", "AICHECK_LLM_FALLBACK_MODEL_"))
@@ -482,6 +483,13 @@ class QwenRuntimeClient:
         client_kwargs: dict[str, Any] = {"timeout": float(kwargs.pop("timeout", 60))}
         if self.transport is not None:
             client_kwargs["transport"] = self.transport
+        # 按模型能力表钳 max_tokens、补 enable_thinking（P8 H1）。不这样做，qwen-plus/flash
+        # 在一键分析默认 48000 上限下直接 400，qwen3 开源系列非流式一律 400。
+        kwargs, capability_changes = apply_model_capabilities(
+            model, kwargs, streaming=stream_handler is not None
+        )
+        if capability_changes:
+            LOGGER.info("模型参数按能力表调整 %s", capability_changes)
         if stream_handler is not None:
             # SSE 串流模式：与 LiteLLM 分支同构，组装结果保持非串流响应结构。
             stream_payload: dict[str, Any] = {"model": model, "messages": messages, "stream": True, **kwargs}
@@ -514,6 +522,8 @@ class QwenRuntimeClient:
                 ) from exc
             payload.setdefault("model", model)
             payload.setdefault("provider", provider_label)
+            if capability_changes:
+                payload["modelCapabilities"] = capability_changes
             return payload
         try:
             with httpx.Client(**client_kwargs) as client:
@@ -555,6 +565,8 @@ class QwenRuntimeClient:
             raise IntegrationServiceError("Qwen official API", "chat.completions", reason="INVALID_RESPONSE")
         payload.setdefault("model", model)
         payload.setdefault("provider", provider_label)
+        if capability_changes:
+            payload["modelCapabilities"] = capability_changes
         return payload
 
     def _official_model_for(self, role_or_model: str, models: dict[str, Any] | None = None) -> str:

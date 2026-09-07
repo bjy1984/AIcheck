@@ -3624,7 +3624,7 @@ def qwen_structured_pipeline_call(
         )
         usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
         normalized_usage = normalize_model_usage(usage)
-        normalized_cost = model_cost_cny(usage)
+        normalized_cost = model_cost_cny(usage, model=str(response.get("model") or ""))
         attempt.update(
             {
                 "status": "response_received",

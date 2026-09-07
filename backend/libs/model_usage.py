@@ -47,12 +47,24 @@ def normalize_model_usage(raw: dict[str, Any] | None) -> dict[str, int | str]:
 def model_cost_cny(
     usage: dict[str, Any] | None,
     *,
+    model: str | None = None,
     input_rate: float | None = None,
     output_rate: float | None = None,
     cache_write_rate: float | None = None,
     cache_read_rate: float | None = None,
 ) -> dict[str, Any]:
+    """按模型单价计费；没传 model 或表里没有时回退全局单价并标 priceSource=default。"""
+    from libs.model_capabilities import PRICE_VERSION_TABLE, pricing_for
+
     normalized = normalize_model_usage(usage)
+    price_source = "default"
+    price_version = "env-configured-model-pricing-2026-07"
+    matched = pricing_for(model) if (input_rate is None and output_rate is None) else None
+    if matched:
+        input_rate = matched["input"]
+        output_rate = matched["output"]
+        price_source = "table"
+        price_version = PRICE_VERSION_TABLE
     input_rate = float(input_rate if input_rate is not None else os.getenv("AICHECK_QWEN_INPUT_CNY_PER_MILLION", "2"))
     output_rate = float(output_rate if output_rate is not None else os.getenv("AICHECK_QWEN_OUTPUT_CNY_PER_MILLION", "8"))
     cache_write_rate = float(
@@ -78,7 +90,9 @@ def model_cost_cny(
         "cacheRead": round(cache_read_cost, 6),
         "ocrApi": 0.0,
         "total": round(total, 6),
-        "priceVersion": "env-configured-model-pricing-2026-07",
+        "priceVersion": price_version,
+        "priceSource": price_source,
+        "model": model or None,
     }
 
 
