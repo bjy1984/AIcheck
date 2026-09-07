@@ -875,6 +875,7 @@ entries:
   verifiedBy: null
 - code: GB/T 20801.1-2025
   name: 压力管道规范 第1部分：工业管道
+  publishedOn: '2025-10-31'
   effectiveFrom: '2026-05-01'
   supersedes:
   - GB/T 20801.1-2020
@@ -885,9 +886,10 @@ entries:
   - GB/T 20801.6-2020
   sourceUrls:
     std: https://std.samr.gov.cn/gb/search/gbDetailed?id=B4C25880C2DA1CB3E05397BE0A0A92D0
-    note: std.samr.gov.cn 显示 20801.5-2020 被 20801.1-2025 全部代替、2026-05-01 废止；化规通/工标网同
-  extractionMethod: online_lookup
-  verifiedBy: std.samr.gov.cn 页面（2026-09-07 网页核）
+    fullText: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=02B92F024E3208D2CEA17BDF0F2743A0
+    note: std.samr.gov.cn 显示 20801.5-2020 被 20801.1-2025 全部代替、2026-05-01 废止；化规通/工标网同。2026-09-07 已在国家标准全文公开平台读到正文（311 页），第 8 章检验与试验数值已录入 regulatory_tables.yaml
+  extractionMethod: official_full_text_preview
+  verifiedBy: openstd.samr.gov.cn 全文公开在线预览（2026-09-07 逐页核）
   verifiedOn: '2026-09-07'
 - code: GB/T 20801.1-2020
   name: 压力管道规范 工业管道 第1部分：总则

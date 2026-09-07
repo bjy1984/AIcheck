@@ -348,7 +348,7 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     ndt_methods = list(dict.fromkeys(match.group(1).upper() for match in _NDT_METHOD_RE.finditer(text)))
     coverage = _NDT_COVERAGE_RE.search(text)
     level = _NDT_LEVEL_RE.search(text)
-    # 按管线级别推缺省检查等级与体积检测比例（GB/T 20801.5 §6.1 / 表 5-1，待核）：取本工程最严的一条
+    # 按管线级别推缺省检查等级与体积检测比例（GB/T 20801.1-2025 8.3.1 / 表 42）：取本工程最严的一条
     grade_levels = [inspection_level_for_grade(str(item.get("pipelineGrade") or "")) for item in pipelines]
     level_rank = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
     strictest = min((lvl for lvl in grade_levels if lvl), key=lambda lvl: level_rank.get(lvl, 9), default=None)
@@ -377,8 +377,9 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     ratio = _TEST_RATIO_RE.search(text)
     pressure_criteria = _PRESSURE_CRITERIA_RE.search(text)
     method_text = pressure_method.group(1) if pressure_method else None
-    ratios = pressure_test_ratios()  # 液压 1.5、气压 1.1（GB/T 20801.5 征求意见稿，待核正式版）
-    required_ratio = ratios["pneumatic"] if method_text and "气压" in method_text else ratios["hydro"]
+    ratios = pressure_test_ratios()  # GB/T 20801.1-2025 8.6.1.3/8.6.1.4：液压 ≥1.5；气压 ≥1.1 且 ≤1.33
+    is_pneumatic = bool(method_text and "气压" in method_text)
+    required_ratio = ratios["pneumatic"] if is_pneumatic else ratios["hydro"]
     test_pressure_value = float(test_pressure.group(1)) if test_pressure else None
     ratio_value = float(ratio.group(1)) if ratio else (round(test_pressure_value / max_design_pressure, 3) if test_pressure_value and max_design_pressure else None)
     pressure_test = _domain(
@@ -390,6 +391,9 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "testPressureRatio": ratio_value,
             "requiredTestPressureRatio": required_ratio,
             "testPressureMeetsRatio": (ratio_value >= required_ratio) if ratio_value is not None else None,
+            # 气压试验有上限：超过 1.33 倍设计压力是不符合，不是"更保险"
+            "maxTestPressureRatio": ratios["pneumaticMax"] if is_pneumatic else None,
+            "testPressureExceedsMax": (ratio_value > ratios["pneumaticMax"]) if (is_pneumatic and ratio_value is not None) else None,
             "acceptanceCriteria": pressure_criteria.group(1) if pressure_criteria else None,
         },
         standard_refs,

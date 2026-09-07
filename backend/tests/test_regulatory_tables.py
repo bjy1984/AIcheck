@@ -31,11 +31,18 @@ def test_material_lookups_are_case_and_hyphen_insensitive() -> None:
     assert wps_base_material_group("S31603") is None, "未抄到的牌号不猜"
 
 
-def test_inspection_levels_and_ratios_follow_the_draft_table() -> None:
-    assert inspection_level_for_grade("GC1") == "Ⅱ" and inspection_level_for_grade("GC1", toxic=True) == "Ⅰ"
-    assert inspection_level_for_grade("GC2") == "Ⅳ" and inspection_level_for_grade("GC3") == "Ⅴ"
-    assert volumetric_ndt_ratio("Ⅱ") == 20 and volumetric_ndt_ratio("Ⅳ") == 5 and volumetric_ndt_ratio("Ⅴ") == 0
-    assert pressure_test_ratios() == {"hydro": 1.5, "pneumatic": 1.1}
+def test_inspection_levels_and_ratios_follow_gbt20801_1_2025() -> None:
+    """GB/T 20801.1-2025 8.3.1：GC1 整级为 Ⅰ 级（2020 版是"剧毒 GC1 才 Ⅰ 级"）；GC2 按介质细分。"""
+    assert inspection_level_for_grade("GC1") == "Ⅰ"
+    assert inspection_level_for_grade("GC1", toxic=True) == "Ⅰ", "GC1 无论介质都是 Ⅰ 级"
+    assert inspection_level_for_grade("GC2") == "Ⅳ"
+    assert inspection_level_for_grade("GC2", leak_hazard=True) == "Ⅱ"
+    assert inspection_level_for_grade("GC2", toxic=True) == "Ⅲ"
+    assert inspection_level_for_grade("GC3") == "Ⅴ"
+    assert volumetric_ndt_ratio("Ⅰ") == 100 and volumetric_ndt_ratio("Ⅱ") == 20
+    assert volumetric_ndt_ratio("Ⅳ") == 5 and volumetric_ndt_ratio("Ⅴ") == 0
+    # 8.6.1.4 e)：气压试验有上限，超过 1.33 倍设计压力是不符合
+    assert pressure_test_ratios() == {"hydro": 1.5, "pneumatic": 1.1, "pneumaticMax": 1.33}
 
 
 def test_welder_code_decoder_matches_tables_a7_and_a8() -> None:

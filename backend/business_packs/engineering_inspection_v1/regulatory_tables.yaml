@@ -115,49 +115,91 @@ nbt47014_2023:
       - 混合气体规定配比要求（表 5）
 
 gbt20801_inspection:
-  source: GB/T 20801.5 压力管道规范 工业管道 第5部分 检验与试验——征求意见稿（201X）；正式版 2020 已于 2026-05-01 并入 GB/T 20801.1-2025
+  source: GB/T 20801.1-2025 压力管道规范 第1部分：工业管道（2025-10-31 发布，2026-05-01 实施；整合代替 GB/T 20801.1~6-2020）
+  extractedFrom: official_full_text_preview
+  sourceUrl: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=02B92F024E3208D2CEA17BDF0F2743A0
+  readOn: "2026-09-07"
   verifiedBy: null
-  caveat: 数值取自征求意见稿，与 2020 正式版及 2025 合并版可能不同；写入判定前必须对照 GB/T 20801.1-2025 正文
+  caveat: 2026-09-07 已逐条对照国家标准全文公开平台的在线预览正文（第 8 章，正文第 109 页起），不再是征求意见稿；只差法规核对人签字，签字前判定仍按预警口径
   inspectionLevels:
-    sourceClause: "6.1 检查等级"
+    sourceClause: "8.3.1 检查等级（8.3.1.2~8.3.1.6）"
     rules:
       - level: Ⅰ
-        conditions: [剧烈循环工况, 剧毒介质的 GC1, 高温工况（GB/T 20801.3 3.13）, 钛/镍/高铬镍钼奥氏体不锈钢管道, PN>160, 夹套管内管, 免除压力试验的管道, 设计要求 100% 无损检测]
+        conditions:
+          - 设计文件注明为剧烈循环工况的管道
+          - GC1 级管道
+          - 高温蠕变工况使用的管道
+          - 设计温度低于 -46℃ 的铁素体钢管道
+          - 镍及镍基合金、钛及钛基合金、锆及锆基合金、铬镍钼合金含量高于 300 系的高耐蚀性能奥氏体不锈钢的管道
+          - 公称压力大于 PN160 的管道
+          - 夹套管的内管
+          - 按 8.6.1.7 的规定可免除压力试验的管道
+          - 设计要求进行焊接接头 100% 无损检测的管道
       - level: Ⅱ
-        conditions: [除剧毒外的 GC1, PN>50 的碳钢（要求冲击试验）, PN>110 的奥氏体不锈钢, 低温含镍钢/铬钼钢/双相不锈钢/铝, 设计要求 20% 无损检测]
+        conditions:
+          - 泄漏危害性介质的 GC2 级管道
+          - 公称压力大于 PN50 的碳钢管道（本文件要求冲击试验的）
+          - 公称压力大于 PN110 的奥氏体不锈钢管道
+          - 低温镍钢、铬钼合金钢、双相不锈钢、铝及铝合金管道
+          - 设计要求进行焊接接头 20% 无损检测的管道
       - level: Ⅲ
-        conditions: [除 GC3 外 PN≤50 的碳钢（要求冲击试验）, 除 GC3 外 PN≤110 的奥氏体不锈钢, 设计要求 10% 无损检测]
+        conditions:
+          - 毒性程度为有毒介质的 GC2 级管道
+          - 除 GC3 级管道外，公称压力不大于 PN50 的碳钢管道（本文件要求冲击试验的）
+          - 除 GC3 级管道外，公称压力不大于 PN110 的奥氏体不锈钢管道
+          - 设计要求进行焊接接头 10% 无损检测的管道
       - level: Ⅳ
-        conditions: [GC2, 除 GC3 外 PN≤50 的碳钢（无冲击试验要求）, 设计要求 5% 无损检测]
+        conditions:
+          - 除 8.3.1.3 a) 和 8.3.1.4 a) 以外的 GC2 级管道
+          - 除 GC3 级管道外，公称压力不大于 PN50 的碳钢管道（本文件无冲击试验要求的）
+          - 设计要求进行焊接接头 5% 无损检测的管道
       - level: Ⅴ
-        conditions: [GC3]
+        conditions: [GC3 级管道]
     gradeDefault:
-      GC1: Ⅱ
-      GC1_toxic: Ⅰ
+      GC1: Ⅰ
       GC2: Ⅳ
+      GC2_leakHazard: Ⅱ
+      GC2_toxic: Ⅲ
       GC3: Ⅴ
+    gradeDefaultNote: 2025 版把 GC1 整级提到 Ⅰ 级（2020/征求意见稿是"剧毒 GC1 才 Ⅰ 级、其余 GC1 为 Ⅱ 级"）；GC2 按介质细分 Ⅱ/Ⅲ/Ⅳ。这条改动直接影响 R09 的必检比例判定
+    stricterAllowed: 表 42 注 a——建设单位（使用单位）或工程设计可用更严格的等级代替较低等级
   ratiosByLevel:
-    sourceClause: 表 5-1 焊接接头检查方法和比例（%）
-    columns: [对接环缝, 角焊缝, 支管连接]
+    sourceClause: 表 42 焊接接头检查方法和比例（%）
+    columns: [环向对接接头, 角焊缝, 支管连接]
+    methodNames: {visual: 目视检查, surface: 磁粉/渗透检测, volumetric: 射线检测/超声检测}
     levels:
       Ⅰ: {visual: [100, 100, 100], surface: [100, 100, 100], volumetric: [100, null, 100]}
       Ⅱ: {visual: [100, 100, 100], surface: [20, 20, 20], volumetric: [20, null, 20]}
       Ⅲ: {visual: [100, 100, 100], surface: [10, null, 10], volumetric: [10, null, null]}
       Ⅳ: {visual: [100, 100, 100], volumetric: [5, null, null]}
       Ⅴ: {visual: [10, 100, 100]}
-    notes: [注4 碳钢/不锈钢/铝合金无表面检测要求, 注5 支管体积检测适用于 ≥DN100]
+    notes:
+      - 注 b 角焊缝包括平焊法兰和承插焊法兰（图 21）及其他承插焊接头（图 22）的角焊缝、补强圈或鞍形补强件外缘的角焊缝、密封焊缝以及非承压件（管道支承件、结构附件等）与管道的连接焊缝
+      - 注 c 支管连接焊接头应符合 7.4.8，也包括补强圈与支管连接的焊接接头
+      - 注 d 对碳钢、不锈钢及铝合金无（表面检测）要求
+      - 注 e 适用于支管公称直径大于或等于 DN100 的焊接接头
+      - Ⅴ 级环向对接接头的目视检查比例是 10%（不是 100%）
   acceptance:
-    sourceClause: "6.3.1.2"
-    rules: [100% 射线 → JB/T 4730.2 Ⅱ级, 抽样/局部射线 → Ⅲ级, 100% 脉冲反射超声 → JB/T 4730.3 Ⅰ级, 抽样/局部超声 → Ⅱ级, TOFD → JB/T 4730.10 Ⅱ级]
+    sourceClause: "8.3.2.2 目视检查验收准则"
+    rules: [焊接接头目视检查按 NB/T 47013.7 执行，检查内容与合格指标不低于表 43]
+    legacyDraftRules: [100% 射线 → JB/T 4730.2 Ⅱ级, 抽样/局部射线 → Ⅲ级, 100% 脉冲反射超声 → JB/T 4730.3 Ⅰ级, 抽样/局部超声 → Ⅱ级, TOFD → JB/T 4730.10 Ⅱ级]
+    legacyDraftNote: 上面这组是征求意见稿口径（JB/T 4730 已被 NB/T 47013 代替），2025 版无损检测验收级别待补读 8.3.3
   pressureTest:
-    sourceClause: "9.1.3 液压试验 b)、9.1.4 气压试验 d)、9.2.1 常规泄漏试验"
+    sourceClause: "8.6.1.3 液压试验、8.6.1.4 气压试验"
     hydroTestRatio: 1.5
-    hydroTemperatureCorrection: PT = 1.5·P·S1/S2
+    hydroTemperatureCorrection: pT = 1.5·p·S1/S2（公式 54；S1 试验温度下许用应力、S2 设计温度下许用应力）
+    hydroFluid: 一般用洁净水；奥氏体不锈钢管道或连有奥氏体不锈钢组件时水中氯离子含量不超过 50 mg/L；可燃液体闪点不低于 49℃；试验时流体温度不低于 5℃
     pneumaticTestRatioMin: 1.1
-    pneumaticNote: 征求意见稿为"不低于 1.1 倍设计压力"；GB 50235 口径 1.15 倍，两者待核取正式版
+    pneumaticTestRatioMax: 1.33
+    pneumaticCeilingNote: 承受内压的金属管道，气压试验压力不低于 1.1 倍设计压力，同时不超过下列压力的较小者——1.33 倍设计压力；不超过管道屈服强度极限时的 90% 试验压力
+    pneumaticMedium: 干燥洁净的空气、氮气或其他不可燃和无毒的气体
+    pneumaticTemperature: 至少比管道系统材料的最低允许金属温度高 17℃；材料最低允许金属温度不明确时不低于 17℃；不准许包括铸铁等脆性材料
+    pneumaticApproval: 试验压力大于 1.6 MPa 时需建设单位（使用单位）、设计单位、安装单位同意
+    pneumaticSteps: 预试验 0.2 MPa → 升至试验压力的 50% 初检 → 按试验压力的 10% 逐级升压、每级稳压 3 min → 达到规定试验压力后降至设计压力查漏
+    reliefValveSetting: 不高于 1.1 倍试验压力
     leakTestPressure: 设计压力（真空管道 0.1MPa 内压）
     leakTestRequiredFor: [剧毒流体, 易燃易爆气体]
-    reliefValveSetting: 不高于 1.1 倍试验压力
+    leakTestNote: 泄漏试验口径仍取自征求意见稿 9.2.1，2025 版对应条款待补读
 
 tsg31_2025:
   source: TSG 31-2025 工业管道安全技术规程（2026-01-01 施行）

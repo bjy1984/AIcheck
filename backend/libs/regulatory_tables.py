@@ -61,12 +61,19 @@ def wps_base_material_group(grade: str) -> str | None:
     return None
 
 
-def inspection_level_for_grade(pipeline_grade: str, *, toxic: bool = False) -> str | None:
-    """GB/T 20801.5（征求意见稿）§6.1 按管道级别的缺省检查等级（Ⅰ～Ⅴ）。"""
+def inspection_level_for_grade(pipeline_grade: str, *, toxic: bool = False, leak_hazard: bool = False) -> str | None:
+    """GB/T 20801.1-2025 §8.3.1 按管道级别的缺省检查等级（Ⅰ～Ⅴ）。
+
+    2025 版把 GC1 整级提到 Ⅰ 级；GC2 按介质细分：泄漏危害性 → Ⅱ、有毒 → Ⅲ、其余 → Ⅳ。
+    toxic/leak_hazard 只对 GC2 生效（GC1 无论介质都是 Ⅰ 级）。
+    """
     defaults = table("gbt20801_inspection", "inspectionLevels").get("gradeDefault") or {}
     grade = str(pipeline_grade or "").upper()
-    if grade == "GC1" and toxic:
-        return defaults.get("GC1_toxic")
+    if grade == "GC2":
+        if leak_hazard and defaults.get("GC2_leakHazard"):
+            return defaults["GC2_leakHazard"]
+        if toxic and defaults.get("GC2_toxic"):
+            return defaults["GC2_toxic"]
     return defaults.get(grade)
 
 
@@ -84,8 +91,13 @@ def volumetric_ndt_ratio(level: str | None) -> int | None:
 
 
 def pressure_test_ratios() -> dict[str, float]:
+    """液压下限、气压下限与气压上限（GB/T 20801.1-2025 8.6.1.3/8.6.1.4）。"""
     section = table("gbt20801_inspection", "pressureTest")
-    return {"hydro": float(section.get("hydroTestRatio") or 1.5), "pneumatic": float(section.get("pneumaticTestRatioMin") or 1.1)}
+    return {
+        "hydro": float(section.get("hydroTestRatio") or 1.5),
+        "pneumatic": float(section.get("pneumaticTestRatioMin") or 1.1),
+        "pneumaticMax": float(section.get("pneumaticTestRatioMax") or 1.33),
+    }
 
 
 def _norm_designation(value: str) -> str:

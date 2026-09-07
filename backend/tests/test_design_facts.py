@@ -127,7 +127,7 @@ def test_design_special_requirements_feed_r09_frozen_rules() -> None:
         "耐压试验：液压试验，试验压力为设计压力的 1.5 倍，保压 10 min 无泄漏无变形。"
         "泄漏试验：气密性试验，泄漏试验压力 1.6MPa，采用发泡剂检查无泄漏。"
     )
-    pipelines = [{"pipelineId": "PL-101", "designPressureMPa": 1.6, "pipelineGrade": "GC1"}]
+    pipelines = [{"pipelineId": "PL-101", "designPressureMPa": 1.6, "pipelineGrade": "GC2"}]
     requirements = design_special_requirements(text, pipelines)
     domains = requirements["domains"]
     assert domains["ndt"]["specified"] and domains["ndt"]["requirements"]["coverage"] == "20%" and domains["ndt"]["requirements"]["acceptanceCriteria"] == "Ⅱ级"
@@ -152,6 +152,17 @@ def test_design_special_requirements_feed_r09_frozen_rules() -> None:
         }
     )
     assert outcome["result"] == "passed", outcome
+
+    # GB/T 20801.1-2025 8.3.1.2 b)：GC1 整级为 Ⅰ 级 → 环向对接接头 100% 射线/超声，设计说明写 20% 不够
+    gc1 = design_special_requirements(text, [{"pipelineId": "PL-1", "designPressureMPa": 1.6, "pipelineGrade": "GC1"}])
+    gc1_ndt = gc1["domains"]["ndt"]["requirements"]
+    assert gc1_ndt["requiredInspectionLevel"] == "Ⅰ" and gc1_ndt["requiredCoveragePercent"] == 100
+    assert gc1_ndt["coverageMeetsRequirement"] is False
+
+    # 8.6.1.4 e)：气压试验压力不超过 1.33 倍设计压力
+    over = design_special_requirements("依据 GB/T 20801.1-2025。气压试验，试验压力为设计压力的 1.5 倍。", pipelines)
+    over_pt = over["domains"]["pressureTest"]["requirements"]
+    assert over_pt["maxTestPressureRatio"] == 1.33 and over_pt["testPressureExceedsMax"] is True
 
     # 只写了"耐压试验压力 1.6MPa"（= 设计压力，倍数 1.0）→ 试验压力倍数不满足 → 不符合
     weak = design_special_requirements("依据 GB/T 20801.1-2025。液压试验，试验压力 1.6MPa，保压 10min 无泄漏。", pipelines)
