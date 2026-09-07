@@ -834,36 +834,265 @@ pipeMaterialLimits:
         tensile: {grades: [S30403, S30408, S31603, S31608], tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 40, elongationPctMinTransverse: 35}
         impact: {temperatureC: -196, "10x10": {avgLongitudinalJMin: 60, avgTransverseJMin: 48, singleLongitudinalJMin: 42, singleTransverseJMin: 34, lateralExpansionMmMin: 0.38}, "10x7.5": {avgLongitudinalJMin: 45, avgTransverseJMin: 36, singleLongitudinalJMin: 31, singleTransverseJMin: 25, lateralExpansionMmMin: 0.38}}
         note: 钢管尺寸不足以截取 10mm×2.5mm 冲击试样时不做冲击；设计温度低于 -196℃ 由供需双方协商
-      gradeCoverage: 表 2/表 3 共 32 个牌号，这里先录工业管道最常用的六个奥氏体牌号，其余待补
+      gradeCoverage: 表 1（热处理制度、密度）、表 2（化学成分）、表 3（室温拉伸性能）共 32 个牌号，均已全部录入
+      compositionNote: 表 2 注——表中所列成分除标明范围或最小值外，其余均为最大值（本表已按此把单值写成 <=）
       grades:
         - grade: S30210
           alias: 12Cr18Ni9
+          seqInTable3: 1
+          structure: austenitic
           composition: {C: "<=0.15", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-10.00", Cr: "17.00-19.00", N: "<=0.10"}
           mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
           heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
         - grade: S30403
           alias: 022Cr19Ni10
+          seqInTable3: 2
+          structure: austenitic
           composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-12.00", Cr: "18.00-20.00"}
           mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMinLongitudinal: 40, elongationPctMinTransverse: 35}
+          densityKgPerDm3: 7.93
           heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
         - grade: S30408
           alias: 06Cr19Ni10
+          seqInTable3: 3
+          structure: austenitic
           composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-11.00", Cr: "18.00-20.00"}
           mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
           heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S30409
+          alias: 07Cr19Ni10
+          seqInTable3: 4
+          structure: austenitic
+          composition: {C: "0.04-0.10", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-11.00", Cr: "18.00-20.00"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S30453
+          alias: 022Cr19Ni10N
+          seqInTable3: 5
+          structure: austenitic
+          composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-11.00", Cr: "18.00-20.00", N: "0.10-0.16"}
+          mechanical: {tensileMPaMin: 550, rp02MPaMin: 245, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S30458
+          alias: 06Cr19Ni10N
+          seqInTable3: 6
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-11.00", Cr: "18.00-20.00", N: "0.10-0.16"}
+          mechanical: {tensileMPaMin: 550, rp02MPaMin: 275, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S30478
+          alias: 06Cr19Ni9NbN
+          seqInTable3: 7
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "7.50-10.50", Cr: "18.00-20.00", N: "0.15-0.30", 其他元素: "Nb:0.15"}
+          mechanical: {tensileMPaMin: 685, rp02MPaMin: 345, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S30908
+          alias: 06Cr23Ni13
+          seqInTable3: 8
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "12.00-15.00", Cr: "22.00-24.00"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1030℃~1150℃，水冷或其他方式快冷
+        - grade: S31008
+          alias: 06Cr25Ni20
+          seqInTable3: 9
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.50", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "19.00-22.00", Cr: "24.00-26.00"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1030℃~1180℃，水冷或其他方式快冷
+        - grade: S31252
+          alias: 015Cr20Ni18Mo6CuN
+          seqInTable3: 10
+          structure: austenitic
+          composition: {C: "<=0.020", Si: "<=0.80", Mn: "<=1.00", P: "<=0.030", S: "<=0.010", Ni: "17.50-18.50", Cr: "19.50-20.50", Mo: "6.00-6.50", Cu: "0.50-1.00", N: "0.18-0.22"}
+          mechanical: {tensileMPaMinByThickness: {"<=5mm": 675, ">5mm": 655}, rp02MPaMin: 310, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 8.1
+          heatTreatment: ≥1150℃，水冷或其他方式快冷
         - grade: S31603
           alias: 022Cr17Ni12Mo2
+          seqInTable3: 11
+          structure: austenitic
           composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-14.00", Cr: "16.00-18.00", Mo: "2.00-3.00"}
           mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMinLongitudinal: 40, elongationPctMinTransverse: 35}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
         - grade: S31608
           alias: 06Cr17Ni12Mo2
+          seqInTable3: 12
+          structure: austenitic
           composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-14.00", Cr: "16.00-18.00", Mo: "2.00-3.00"}
           mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S31609
+          alias: 07Cr17Ni12Mo2
+          seqInTable3: 13
+          structure: austenitic
+          composition: {C: "0.04-0.10", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-14.00", Cr: "16.00-18.00", Mo: "2.00-3.00"}
+          mechanical: {tensileMPaMin: 515, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: ≥1040℃，水冷或其他方式快冷
+        - grade: S31653
+          alias: 022Cr17Ni12Mo2N
+          seqInTable3: 14
+          structure: austenitic
+          composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-13.00", Cr: "16.00-18.00", Mo: "2.00-3.00", N: "0.10-0.16"}
+          mechanical: {tensileMPaMin: 550, rp02MPaMin: 245, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S31658
+          alias: 06Cr17Ni12Mo2N
+          seqInTable3: 15
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-13.00", Cr: "16.00-18.00", Mo: "2.00-3.00", N: "0.10-0.16"}
+          mechanical: {tensileMPaMin: 550, rp02MPaMin: 275, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S31668
+          alias: 06Cr17Ni12Mo2Ti
+          seqInTable3: 16
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-14.00", Cr: "16.00-18.00", Mo: "2.00-3.00", N: "<=0.10"}
+          mechanical: {tensileMPaMin: 530, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1000℃~1100℃，水冷或其他方式快冷
+        - grade: S31683
+          alias: 022Cr18Ni14Mo2Cu2
+          seqInTable3: 17
+          structure: austenitic
+          composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "12.00-16.00", Cr: "17.00-19.00", Mo: "1.20-2.75", Cu: "1.00-2.50"}
+          mechanical: {tensileMPaMin: 480, rp02MPaMin: 180, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S31688
+          alias: 06Cr18Ni12Mo2Cu2
+          seqInTable3: 18
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-14.00", Cr: "17.00-19.00", Mo: "1.20-2.75", Cu: "1.00-2.50"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S31703
+          alias: 022Cr19Ni13Mo3
+          seqInTable3: 19
+          structure: austenitic
+          composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "11.00-15.00", Cr: "18.00-20.00", Mo: "3.00-4.00"}
+          mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S31708
+          alias: 06Cr19Ni13Mo3
+          seqInTable3: 20
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "11.00-15.00", Cr: "18.00-20.00", Mo: "<=4.00"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.98
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
         - grade: S32168
           alias: 06Cr18Ni11Ti
+          seqInTable3: 21
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "9.00-12.00", Cr: "17.00-19.00", N: "<=0.10", 其他元素: "Ti:5(C+N)~0.70"}
           mechanical: {tensileMPaMinByThickness: {"<=9.5mm": 520, ">9.5mm": 485}, rp02MPaMinByThickness: {"<=9.5mm": 205, ">9.5mm": 170}, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
           heatTreatment: 920℃~1150℃，水冷或其他方式快冷
-          note: 成分在表 2 第三页，待补
+        - grade: S32169
+          alias: 07Cr19Ni11Ti
+          seqInTable3: 22
+          structure: austenitic
+          composition: {C: "0.04-0.10", Si: "<=0.75", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "9.00-13.00", Cr: "17.00-20.00", N: "<=0.10", 其他元素: "Ti:4(C+N)~0.70"}
+          mechanical: {tensileMPaMinByThickness: {"<=9.5mm": 520, ">9.5mm": 480}, rp02MPaMinByThickness: {"<=9.5mm": 205, ">9.5mm": 170}, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 7.93
+          heatTreatment: 冷轧(拔)≥1100℃、热轧(挤锻扩)≥1050℃，水冷或其他方式快冷
+        - grade: S34778
+          alias: 06Cr18Ni11Nb
+          seqInTable3: 23
+          structure: austenitic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "9.00-12.00", Cr: "17.00-19.00", 其他元素: "Nb:10C~1.10"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 8.03
+          heatTreatment: 920℃~1150℃，水冷或其他方式快冷
+        - grade: S34779
+          alias: 07Cr18Ni11Nb
+          seqInTable3: 24
+          structure: austenitic
+          composition: {C: "0.04-0.10", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "9.00-12.00", Cr: "17.00-19.00", 其他元素: "Nb:8C~1.10"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 8.03
+          heatTreatment: 冷轧(拔)≥1100℃、热轧(挤锻扩)≥1050℃，水冷或其他方式快冷
+        - grade: S39042
+          alias: 015Cr21Ni26Mo5Cu2
+          seqInTable3: 25
+          structure: austenitic
+          composition: {C: "<=0.020", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "23.00-28.00", Cr: "19.00-23.00", Mo: "4.00-5.00", Cu: "1.00-2.00", N: "<=0.10"}
+          mechanical: {tensileMPaMin: 490, rp02MPaMin: 220, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          densityKgPerDm3: 8.05
+          heatTreatment: 1065℃~1150℃，水冷或其他方式快冷
+        - grade: S11306
+          alias: 06Cr13
+          seqInTable3: 26
+          structure: ferritic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=1.00", P: "<=0.035", S: "<=0.030", Ni: "<=0.60", Cr: "11.5-13.50"}
+          mechanical: {tensileMPaMin: 370, rp02MPaMin: 180, elongationPctMinLongitudinal: 22, elongationPctMinTransverse: 20}
+          densityKgPerDm3: 7.75
+          heatTreatment: 800℃~900℃缓冷或750℃空冷
+        - grade: S11348
+          alias: 06Cr13Al
+          seqInTable3: 27
+          structure: ferritic
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=1.00", P: "<=0.035", S: "<=0.030", Ni: "<=0.60", Cr: "11.50-14.50", 其他元素: "Al:0.10~0.30"}
+          mechanical: {tensileMPaMin: 415, rp02MPaMin: 205, elongationPctMinLongitudinal: 20, elongationPctMinTransverse: 18}
+          densityKgPerDm3: 7.75
+          heatTreatment: 780℃~830℃，空冷或缓冷
+        - grade: S11510
+          alias: 10Cr15
+          seqInTable3: 28
+          structure: ferritic
+          composition: {C: "<=0.12", Si: "<=1.00", Mn: "<=1.00", P: "<=0.035", S: "<=0.030", Ni: "<=0.60", Cr: "14.00-16.00"}
+          mechanical: {tensileMPaMin: 415, rp02MPaMin: 240, elongationPctMinLongitudinal: 20, elongationPctMinTransverse: 18}
+          densityKgPerDm3: 7.7
+          heatTreatment: 780℃~850℃，空冷或缓冷
+        - grade: S11710
+          alias: 10Cr17
+          seqInTable3: 29
+          structure: ferritic
+          composition: {C: "<=0.12", Si: "<=1.00", Mn: "<=1.00", P: "<=0.035", S: "<=0.030", Ni: "<=0.60", Cr: "16.00-18.00"}
+          mechanical: {tensileMPaMin: 415, rp02MPaMin: 240, elongationPctMinLongitudinal: 20, elongationPctMinTransverse: 18}
+          densityKgPerDm3: 7.7
+          heatTreatment: 780℃~850℃，空冷或缓冷
+        - grade: S11763
+          alias: 022Cr17NbTi
+          seqInTable3: 30
+          structure: ferritic
+          composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=1.00", P: "<=0.035", S: "<=0.030", Ni: "<=0.60", Cr: "16.00-19.00", 其他元素: "Ti或Nb:0.10~1.00"}
+          mechanical: {tensileMPaMin: 415, rp02MPaMin: 205, elongationPctMinLongitudinal: 20, elongationPctMinTransverse: 18}
+          densityKgPerDm3: 7.7
+          heatTreatment: 780℃~950℃，空冷或缓冷
+        - grade: S11972
+          alias: 019Cr19Mo2NbTi
+          seqInTable3: 31
+          structure: ferritic
+          composition: {C: "<=0.025", Si: "<=1.00", Mn: "<=1.00", P: "<=0.035", S: "<=0.030", Ni: "<=1.00", Cr: "17.50-19.50", Mo: "1.75-2.50", N: "<=0.035", 其他元素: "(Ti+Nb):[0.20+4(C+N)]~0.80"}
+          mechanical: {tensileMPaMin: 415, rp02MPaMin: 275, elongationPctMinLongitudinal: 20, elongationPctMinTransverse: 18}
+          densityKgPerDm3: 7.75
+          heatTreatment: 800℃~1050℃，空冷
+        - grade: S41010
+          alias: 12Cr13
+          seqInTable3: 32
+          structure: martensitic
+          composition: {C: "<=0.15", Si: "<=1.00", Mn: "<=1.00", P: "<=0.035", S: "<=0.030", Ni: "<=0.60", Cr: "11.50-13.50"}
+          mechanical: {tensileMPaMin: 415, rp02MPaMin: 205, elongationPctMinLongitudinal: 20, elongationPctMinTransverse: 18}
+          densityKgPerDm3: 7.75
+          heatTreatment: 800℃~900℃缓冷或750℃空冷
     - standard: GB/T 12771-2019
       name: 流体输送用不锈钢焊接钢管
       extractedFrom: official_pdf_ocr_page_images
@@ -915,59 +1144,151 @@ pipeMaterialLimits:
       sourceClause: 表 8 钢管的力学性能（7.4.1）；热处理制度见表 7
       verifiedBy: null
       note: PDF 文字层是坏编码（自定义字体映射），本表按 Vision OCR 逐页看图抄录。伸长率与冲击分纵向/横向两列，另有布氏与维氏硬度区间——质保书上这两项也要核
+      gradeCoverage: 表 8 共 25 个牌号，已全部录入（逐页看图核对）
+      smallSpecimenImpactFactors:
+        source: 表 9 小尺寸试样冲击吸收能量递减系数
+        rule: 表 8 的冲击值是全尺寸（10×10）试样要求；小试样最小要求值 = 全尺寸要求值 × 递减系数
+        factors: {"10x10": 1, "10x7.5": 0.75, "10x5": 0.5}
+      impactApplicability: 7.4.2——外径不小于 76mm 且壁厚不小于 14mm 的优质碳素钢和合金钢钢管才做冲击试验
+      hardnessApplicability:
+        clause: "7.4.3"
+        rules:
+          - 壁厚不小于 5.0mm 的钢管，做布氏硬度试验或洛氏硬度试验
+          - 壁厚小于 5.0mm 的钢管，做洛氏硬度试验；表 8 中未给出洛氏要求值的不做洛氏硬度试验
+          - 经供需双方协商并在合同中注明，可用维氏硬度试验代替布氏或洛氏；合同规定维氏时其值应符合表 8
       grades:
         - grade: 20G
           unifiedCode: U50207
+          seqInTable8: 1
           mechanical: {"tensileMPa": "410-550", "yieldMPaMin": 245, "elongationPctMinLongitudinal": 24, "elongationPctMinTransverse": 22, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "120-160", "HV": "125-170"}
         - grade: 20MnG
           unifiedCode: U50208
+          seqInTable8: 2
           mechanical: {"tensileMPa": "415-560", "yieldMPaMin": 240, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "125-170", "HV": "130-180"}
         - grade: 25MnG
           unifiedCode: U50257
+          seqInTable8: 3
           mechanical: {"tensileMPa": "485-640", "yieldMPaMin": 275, "elongationPctMinLongitudinal": 20, "elongationPctMinTransverse": 18, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "130-180", "HV": "135-190"}
         - grade: 15MoG
           unifiedCode: A65158
+          seqInTable8: 4
           mechanical: {"tensileMPa": "450-600", "yieldMPaMin": 270, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "125-180", "HV": "130-190"}
         - grade: 20MoG
           unifiedCode: A65208
+          seqInTable8: 5
           mechanical: {"tensileMPa": "415-665", "yieldMPaMin": 220, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "125-180", "HV": "130-190"}
         - grade: 12CrMoG
           unifiedCode: A30120
+          seqInTable8: 6
           mechanical: {"tensileMPa": "410-560", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 21, "elongationPctMinTransverse": 19, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "125-170", "HV": "130-180"}
         - grade: 15CrMoG
           unifiedCode: A30158
+          seqInTable8: 7
           mechanical: {"tensileMPa": "440-640", "yieldMPaMin": 295, "elongationPctMinLongitudinal": 21, "elongationPctMinTransverse": 19, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "125-195", "HV": "130-205"}
         - grade: 12Cr2MoG
           unifiedCode: A30128
+          seqInTable8: 8
           mechanical: {"tensileMPa": "450-600", "yieldMPaMin": 280, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "125-180", "HV": "130-190"}
         - grade: 12Cr1MoVG
           unifiedCode: A31128
+          seqInTable8: 9
           mechanical: {"tensileMPa": "470-640", "yieldMPaMin": 255, "elongationPctMinLongitudinal": 21, "elongationPctMinTransverse": 19, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
           hardness: {"HBW": "135-195", "HV": "140-205"}
+        - grade: 12Cr2MoWVTiB
+          unifiedCode: A32128
+          seqInTable8: 10
+          mechanical: {"tensileMPa": "540-735", "yieldMPaMin": 345, "elongationPctMinLongitudinal": 18, "kv2JMinLongitudinal": 40}
+          hardness: {"HBW": "160-220", "HV": "170-230", "rockwell": "85-97 HRBW"}
+        - grade: 07Cr2MoW2VNbB
+          unifiedCode: A38078
+          seqInTable8: 11
+          mechanical: {"tensileMPa": ">=510", "yieldMPaMin": 400, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 18, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "150-220", "HV": "160-230", "rockwell": "80-97 HRBW"}
+        - grade: 12Cr3MoVSiTiB
+          unifiedCode: A31120
+          seqInTable8: 12
+          mechanical: {"tensileMPa": "610-805", "yieldMPaMin": 440, "elongationPctMinLongitudinal": 16, "kv2JMinLongitudinal": 40}
+          hardness: {"HBW": "180-250", "HV": "190-265", "rockwell": "<=25 HRC"}
+        - grade: 15Ni1MnMoNbCu
+          unifiedCode: A61158
+          seqInTable8: 13
+          mechanical: {"tensileMPa": "620-780", "yieldMPaMin": 440, "elongationPctMinLongitudinal": 19, "elongationPctMinTransverse": 17, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "190-255", "HV": "200-270", "rockwell": "<=25 HRC"}
         - grade: 10Cr9Mo1VNbN
           unifiedCode: A31108
+          seqInTable8: 14
           mechanical: {"tensileMPa": ">=585", "yieldMPaMin": 415, "elongationPctMinLongitudinal": 20, "elongationPctMinTransverse": 16, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
-          hardness: {"HBW": "190-250", "HV": "200-265"}
-          note: 洛氏 ≤25 HRC
+          hardness: {"HBW": "190-250", "HV": "200-265", "rockwell": "<=25 HRC"}
+        - grade: 10Cr9MoW2VNbBN
+          unifiedCode: A38108
+          seqInTable8: 15
+          mechanical: {"tensileMPa": ">=620", "yieldMPaMin": 440, "elongationPctMinLongitudinal": 20, "elongationPctMinTransverse": 16, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "190-250", "HV": "200-265", "rockwell": "<=25 HRC"}
+        - grade: 08Cr9W3Co3VNbCuBN
+          unifiedCode: A32088
+          seqInTable8: 16
+          mechanical: {"tensileMPa": ">=660", "yieldMPaMin": 480, "elongationPctMinLongitudinal": 20, "elongationPctMinTransverse": 16, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "195-250", "HV": "195-265"}
         - grade: 07Cr19Ni10
           unifiedCode: S30409
+          seqInTable8: 17
           mechanical: {"tensileMPa": ">=515", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 35}
-          hardness: {"HBW": "140-192", "HV": "150-200"}
-          note: 奥氏体，无横向与冲击要求；洛氏 75~90 HRBW
+          hardness: {"HBW": "140-192", "HV": "150-200", "rockwell": "75-90 HRBW"}
+        - grade: 10Cr18Ni9NbCu3BN
+          unifiedCode: S30489
+          seqInTable8: 18
+          mechanical: {"tensileMPa": ">=590", "yieldMPaMin": 235, "elongationPctMinLongitudinal": 35}
+          hardness: {"HBW": "150-219", "HV": "160-230", "rockwell": "80-95 HRBW"}
+        - grade: 07Cr23Ni15Cu4NbN
+          unifiedCode: S30989
+          seqInTable8: 19
+          mechanical: {"tensileMPa": ">=655", "yieldMPaMin": 295, "elongationPctMinLongitudinal": 35}
+          hardness: {"HBW": "140-219", "HV": "150-230", "rockwell": "75-95 HRBW"}
+        - grade: 07Cr25Ni21
+          unifiedCode: S31009
+          seqInTable8: 20
+          mechanical: {"tensileMPa": ">=515", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 35}
+          hardness: {"HBW": "140-192", "HV": "150-200", "rockwell": "75-90 HRBW"}
+        - grade: 07Cr25Ni21NbN
+          unifiedCode: S31059
+          seqInTable8: 21
+          mechanical: {"tensileMPa": ">=655", "yieldMPaMin": 295, "elongationPctMinLongitudinal": 30}
+          hardness: {"HBW": "150-256", "HV": "160-270", "rockwell": "80-100 HRBW"}
+        - grade: 07Cr22Ni25W3Cu3Co2MoNbN
+          unifiedCode: S31089
+          seqInTable8: 22
+          mechanical: {"tensileMPa": ">=670", "yieldMPaMin": 310, "elongationPctMinLongitudinal": 40}
+          hardness: {"HBW": "<=230", "HV": "<=240", "rockwell": "<=100 HRBW"}
+        - grade: 07Cr19Ni11Ti
+          unifiedCode: S32169
+          seqInTable8: 23
+          mechanical: {"tensileMPa": ">=515", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 35}
+          hardness: {"HBW": "125-192", "HV": "130-200", "rockwell": "70-90 HRBW"}
+        - grade: 07Cr18Ni11Nb
+          unifiedCode: S34779
+          seqInTable8: 24
+          mechanical: {"tensileMPa": ">=520", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 35}
+          hardness: {"HBW": "125-192", "HV": "130-200", "rockwell": "70-90 HRBW"}
+        - grade: 08Cr18Ni11NbFG
+          unifiedCode: S34770
+          seqInTable8: 25
+          mechanical: {"tensileMPa": ">=550", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 35}
+          hardness: {"HBW": "140-192", "HV": "150-200", "rockwell": "75-90 HRBW"}
     - standard: GB/T 13296-2023
       name: 锅炉、热交换器用不锈钢无缝钢管
       extractedFrom: official_pdf_ocr_page_images
       sourceClause: 表 4 钢管的热处理制度、室温拉伸性能及密度；表 5 硬度；7.5 液压试验；7.6 工艺性能
       verifiedBy: null
-      coverage: 表 4 共 31 个牌号，这里先录第 20~31 号（含常用的 06Cr19Ni13Mo3、06Cr18Ni11Ti、10Cr17、06Cr13）；1~19 号待补
+      coverage: 表 4 共 31 个牌号，已全部录入（扫描件按文字包围盒几何重建行列，逐行核对，不依赖 OCR 输出顺序）
+      tableFootnote: 热挤压钢管的抗拉强度可降低 20 MPa（表 4 脚注）；脚注标记落在哪几行未能从扫描件确认，故不自动放宽判定，只在结论里提示
       hardnessLimits:
         source: 表 5
         austenitic: {"06Cr18Ni13Si4": {HBW: "<=207", HRB: "<=95", HV: "<=218"}, "015Cr20Ni18Mo6CuN": {HBW: "<=220", HRB: "<=96", HV: "<=230"}, "022Cr21Ni25Mo7N": {HRB: "<=100"}, 其他: {HBW: "<=192", HRB: "<=90", HV: "<=200"}}
@@ -981,14 +1302,37 @@ pipeMaterialLimits:
         flattening: 壁厚不大于 10mm 应做压扁；H = (1+α)S/(α+S/D)，奥氏体 α=0.09、其他 α=0.07
         flaring: 外径不大于 150mm 且壁厚不大于 10mm 应做扩口；顶芯锥度 60°，奥氏体扩口率 18%、其他 15%
       grades:
-        - {grade: S31708, alias: 06Cr19Ni13Mo3, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 1010℃~1150℃，急冷}
-        - {grade: S31703, alias: 022Cr19Ni13Mo3, mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMin: 35}, heatTreatment: 1010℃~1150℃，急冷}
-        - {grade: S32168, alias: 06Cr18Ni11Ti, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 920℃~1150℃，急冷}
-        - {grade: S34778, alias: 06Cr18Ni11Nb, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 980℃~1150℃，急冷}
-        - {grade: S38148, alias: 06Cr18Ni13Si4, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 1010℃~1150℃，急冷}
-        - {grade: S11710, alias: 10Cr17, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, heatTreatment: 780℃~850℃，空冷或缓冷}
-        - {grade: S11306, alias: 06Cr13, mechanical: {tensileMPaMin: 410, rp02MPaMin: 210, elongationPctMin: 20}, heatTreatment: 750℃空冷或 800℃~900℃缓冷}
-        - {grade: S12791, alias: 008Cr27Mo, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, heatTreatment: 900℃~1050℃，急冷}
+        - {grade: S30210, alias: 12Cr18Ni9, seqInTable4: 1, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.93, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S30408, alias: 06Cr19Ni10, seqInTable4: 2, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.93, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S30403, alias: 022Cr19Ni10, seqInTable4: 3, structure: austenitic, mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMin: 35}, densityKgPerDm3: 7.9, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S30409, alias: 07Cr19Ni10, seqInTable4: 4, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.9, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S30458, alias: 06Cr19Ni10N, seqInTable4: 5, structure: austenitic, mechanical: {tensileMPaMin: 550, rp02MPaMin: 240, elongationPctMin: 35}, densityKgPerDm3: 7.93, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S30453, alias: 022Cr19Ni10N, seqInTable4: 6, structure: austenitic, mechanical: {tensileMPaMin: 515, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.93, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S30920, alias: 16Cr23Ni13, seqInTable4: 7, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.98, heatTreatment: 1030℃~1150℃，急冷}
+        - {grade: S30908, alias: 06Cr23Ni13, seqInTable4: 8, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.98, heatTreatment: 1030℃~1150℃，急冷}
+        - {grade: S31020, alias: 20Cr25Ni20, seqInTable4: 9, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.98, heatTreatment: 1030℃~1180℃，急冷}
+        - {grade: S31008, alias: 06Cr25Ni20, seqInTable4: 10, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.98, heatTreatment: 1030℃~1180℃，急冷}
+        - {grade: S31608, alias: 06Cr17Ni12Mo2, seqInTable4: 11, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.0, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31603, alias: 022Cr17Ni12Mo2, seqInTable4: 12, structure: austenitic, mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMin: 40}, densityKgPerDm3: 8.0, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31609, alias: 07Cr17Ni12Mo2, seqInTable4: 13, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.0, heatTreatment: 1040℃~1150℃，急冷}
+        - {grade: S31668, alias: 06Cr17Ni12Mo2Ti, seqInTable4: 14, structure: austenitic, mechanical: {tensileMPaMin: 530, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.9, heatTreatment: 1000℃~1100℃，急冷}
+        - {grade: S31658, alias: 06Cr17Ni12Mo2N, seqInTable4: 15, structure: austenitic, mechanical: {tensileMPaMin: 550, rp02MPaMin: 240, elongationPctMin: 35}, densityKgPerDm3: 8.0, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31653, alias: 022Cr17Ni12Mo2N, seqInTable4: 16, structure: austenitic, mechanical: {tensileMPaMin: 515, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.04, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31688, alias: 06Cr18Ni12Mo2Cu2, seqInTable4: 17, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.96, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31683, alias: 022Cr18Ni14Mo2Cu2, seqInTable4: 18, structure: austenitic, mechanical: {tensileMPaMin: 480, rp02MPaMin: 180, elongationPctMin: 35}, densityKgPerDm3: 7.96, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S39042, alias: 015Cr21Ni26Mo5Cu2, seqInTable4: 19, structure: austenitic, mechanical: {tensileMPaMin: 490, rp02MPaMin: 220, elongationPctMin: 35}, densityKgPerDm3: 8.0, heatTreatment: 1065℃~1150℃，急冷}
+        - {grade: S31708, alias: 06Cr19Ni13Mo3, seqInTable4: 20, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.0, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31703, alias: 022Cr19Ni13Mo3, seqInTable4: 21, structure: austenitic, mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMin: 35}, densityKgPerDm3: 7.98, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S32168, alias: 06Cr18Ni11Ti, seqInTable4: 22, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.03, heatTreatment: 920℃~1150℃，急冷}
+        - {grade: S32169, alias: 07Cr19Ni11Ti, seqInTable4: 23, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.03, heatTreatment: 冷拔(轧)≥1100℃、热轧(挤压)≥1050℃，急冷}
+        - {grade: S34778, alias: 06Cr18Ni11Nb, seqInTable4: 24, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.03, heatTreatment: 980℃~1150℃，急冷}
+        - {grade: S34779, alias: 07Cr18Ni11Nb, seqInTable4: 25, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 8.03, heatTreatment: 冷拔(轧)≥1100℃、热轧(挤压)≥1050℃，急冷}
+        - {grade: S38148, alias: 06Cr18Ni13Si4, seqInTable4: 26, structure: austenitic, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, densityKgPerDm3: 7.75, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31252, alias: 015Cr20Ni18Mo6CuN, seqInTable4: 27, structure: austenitic, mechanical: {tensileMPaMin: 675, rp02MPaMin: 310, elongationPctMin: 35}, densityKgPerDm3: 8.1, heatTreatment: ≥1150℃，急冷}
+        - {grade: S38367, alias: 022Cr21Ni25Mo7N, seqInTable4: 28, structure: austenitic, mechanical: {tensileMPaMin: 690, rp02MPaMin: 310, elongationPctMin: 30}, densityKgPerDm3: 8.06, heatTreatment: ≥1110℃，急冷}
+        - {grade: S11710, alias: 10Cr17, seqInTable4: 29, structure: ferritic, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, densityKgPerDm3: 7.7, heatTreatment: 780℃~850℃，空冷或缓冷}
+        - {grade: S12791, alias: 008Cr27Mo, seqInTable4: 30, structure: ferritic, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, densityKgPerDm3: 7.67, heatTreatment: 900℃~1050℃，急冷}
+        - {grade: S11306, alias: 06Cr13, seqInTable4: 31, structure: ferritic, mechanical: {tensileMPaMin: 410, rp02MPaMin: 210, elongationPctMin: 20}, densityKgPerDm3: 7.75, heatTreatment: 750℃空冷或800℃~900℃缓冷}
   productInspectionRules:
     purpose: R14 判「这个产品标准要求做哪些出厂检验」——设计项没写特殊检验要求时的兜底依据
     note: 只写各标准正文里**逐根或按批强制**的项；「根据需方要求、经协商」的选项不写进来，那不是标准强制
@@ -1022,11 +1366,15 @@ pipeMaterialLimits:
           - {item: 低温冲击试验, condition: 设计温度低于 -101℃ 的奥氏体不锈钢管，按附录 A（-196℃ 冲击）, basis: 附录 A.4}
         basis: GB/T 14976-2025 7.2 室温拉伸为强制；冲击只在低温工况附加要求里
   pending:
-    - GB/T 14976-2025 表 2/表 3 其余 26 个牌号（铁素体、马氏体、双相）待补
-    - GB/T 13296-2023 表 4 的 1~19 号牌号待补（已录 20~31 号）
-    - GB/T 5310-2023 表 8 其余牌号（共 25 个，已录 11 个常用）；GB/T 9711-2023 已 OCR 完，表格待抄
+    - GB/T 14976-2025 表 2 化学成分：32 个牌号里只有 6 个奥氏体牌号有成分，其余 26 个待补（力学与热处理已全）
+    - GB/T 13296-2023 表 3 化学成分未录（力学、硬度、热处理、密度已全）
+    - GB/T 9711-2023：业务包里没有任何规则引用这本，且手上扫描件 OCR 质量差（表 A.3 抄出来大面积乱码），先不抄；哪天有规则要用再按几何重建法重做
+    - NB/T 47014-2023 附录 C~F 未录
 
 nbt47014SpecificFactors:
+  factorTextQuality: truncated
+  factorTextCaveat: 67 条里有 56 条的 factor 文字在半句处被截断（如"3）改变衬垫的公称"）——表 5 在扫描件里是跨页的多列矩阵，文字列被邻列的横杠和页眉污染，两次重抽都没抽干净。
+  usageRule: 分类（哪种焊接方法下属重要/补加/次要）是可用的，判"改了要不要重新评定"只用分类；factor 文字不要展示给审查人，也不要拿来做关键词匹配，直到重抄。
   source: NB/T 47014-2023 表 5 各种焊接方法的专用焊接工艺评定因素
   sourceClause: 5.2.2；分类定义见 5.2.1——重要因素影响拉伸与弯曲性能，补加因素影响冲击韧性，次要因素对力学性能无明显影响
   extractedFrom: official_pdf_text_layer_positional
@@ -1674,6 +2022,45 @@ nbt47014ThicknessCoverage:
       - {specimenT: "<1.5", baseMin: T, baseMax: 2T, weldMin: 不限, weldMax: 2t}
       - {specimenT: "1.5<=T<=10", baseMin: 1.5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
       - {specimenT: ">10", baseMin: 5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
+
+nbt47014AnnexB:
+  source: NB/T 47014-2023 附录 B（规范性）母材、填充金属和焊接方法的补充规定
+  purpose: 表 1 查不到母材、表 2~表 4 查不到填充金属时，评定不是"无法判定"——附录 B 规定了替代路径与必须存档的报告
+  extractedFrom: official_pdf_text_layer
+  verifiedBy: null
+  baseMaterial:
+    clause: B.2
+    inRangeButNotListed: 公称成分在表 1 所列母材范围内时，若"母材归类报告"表明承制单位已掌握该材料的化学成分、力学性能和焊接性，并确认与表 1 内某材料相当，可归入该类别、组别；否则应按每个材料代号分别评定
+    outOfRange: 公称成分不在表 1 范围内时，承制单位应制订本单位的评定标准（技术要求不低于本文件），母材按"母材归类报告"分类分组
+    reportContents:
+      - 母材相应的标准或技术条件
+      - 母材的冶炼方法、热处理状态、制品形态、技术要求
+      - 产品质量证明书
+      - 母材的焊接性（焊接性分析；工艺焊接性能、使用焊接性能）
+      - 焊接方法、焊接材料和焊接工艺
+      - 母材的使用业绩及其来源
+      - 各项结论、数据及来源
+      - 母材归类、归组陈述
+      - 结论：该母材归入的类别、组别及其规定的标准抗拉强度最低值
+    retention: 母材归类报告应存档备查（B.2.3）
+  fillerMetal:
+    clause: B.3
+    categoryExistsButNotListedStandard: 表 2~表 4 中有相应类别但不是所列标准中的填充金属，若"填充金属归类报告"表明已掌握其化学成分、力学性能和焊接性，可按表 2~表 4 的分类依据分类；否则按各制造厂提供的型号或代号分别评定
+    categoryNotListed: 表 2~表 4 尚未列出类别的填充金属，承制单位应制订本单位的评定标准，填充材料按"填充金属归类报告"分类
+    reportContents:
+      - 填充材料相应的标准或技术条件
+      - 填充材料原始条件（制造厂型号或牌号；焊条药皮类型、电流类别及极性、焊接位置、熔敷金属化学成分和力学性能；埋弧焊焊丝-焊剂组合分类与熔敷金属 S、P 含量及力学性能；气焊/气保焊/等离子弧焊焊丝与填充丝的型号、化学成分、熔敷金属 S、P 含量及力学性能；产品质量证明书）
+      - 填充材料的工艺性能
+      - 填充材料的焊接性（焊接性分析；工艺焊接性能、使用焊接性能）
+      - 填充材料的使用业绩及其来源
+      - 各项结论、数据及来源
+      - 填充金属归类陈述
+      - 结论：该填充金属归入的类别
+    retention: 填充金属归类报告应存档备查（B.3.3）
+  weldingMethod:
+    clause: B.4
+    rule: 承压设备采用本文件规定范围以外的焊接方法时，应由承制单位遵照本文件相应规定，并参照近期 ASME 及国标等评定标准，编制该焊接方法的评定企业标准
+
 
 nbt47014FillerClasses:
   source: NB/T 47014-2023 表 2 焊条分类、表 3 气焊/气体保护焊/等离子弧焊用焊丝与填充丝分类、表 4 埋弧焊用焊丝-焊剂组合分类

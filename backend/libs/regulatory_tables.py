@@ -74,6 +74,66 @@ def wps_base_material_group(grade: str) -> str | None:
     return None
 
 
+def base_material_classification_requirement(grade: str) -> dict[str, Any] | None:
+    """母材不在 NB/T 47014-2023 表 1 时，附录 B.2 要求什么。
+
+    表 1 查不到不等于判不了：附录 B 是规范性的，给了两条替代路径，并规定"母材归类报告"
+    必须包含哪九项。返回 None 表示该牌号在表 1 里，走正常组别比对即可。
+    """
+    if wps_base_material_group(grade):
+        return None
+    annex = table("nbt47014AnnexB", "baseMaterial")
+    if not annex:
+        return None
+    return {
+        "grade": grade,
+        "clause": annex.get("clause"),
+        "inRangeButNotListed": annex.get("inRangeButNotListed"),
+        "outOfRange": annex.get("outOfRange"),
+        "requiredReport": "母材归类报告",
+        "reportContents": list(annex.get("reportContents") or []),
+        "retention": annex.get("retention"),
+        "verified": is_verified(table("nbt47014AnnexB")),
+    }
+
+
+def filler_metal_classification_requirement(*, filler_class: str | None = None, standard: str | None = None) -> dict[str, Any] | None:
+    """填充金属落在表 2~表 4 之外时，附录 B.3 要求什么。返回 None 表示表内已覆盖。
+
+    表 2~表 4 列的是**类别代号**（FeT-1-1 这类）和它们对应的 NB/T 47018 系列标准，
+    不是 E5015 这样的产品型号。所以判两件事：类别代号在不在表里，以及焊材执行的标准
+    是不是表里所列的那几本（B.3.1.1 说的就是"有相应类别但不是所列标准中的填充金属"）。
+    两个参数都不给就返回 None——没有输入不该产生要求。
+    """
+    code = str(filler_class or "").strip()
+    standard_text = "".join(ch for ch in str(standard or "").upper() if ch.isalnum())
+    if not code and not standard_text:
+        return None
+    tables = table("nbt47014FillerClasses").get("tables") or {}
+    entries = [entry for kind in tables.values() for entry in (kind or {}).get("entries") or []]
+    if code and not any(str(entry.get("fillerClass") or "").strip().upper() == code.upper() for entry in entries):
+        pass  # 类别代号不在表里 → 需要归类报告
+    elif standard_text and not any(
+        "".join(ch for ch in str(entry.get("standard") or "").upper() if ch.isalnum()) == standard_text for entry in entries
+    ):
+        pass  # 类别在表里，但执行的不是表中所列标准 → B.3.1.1
+    else:
+        return None
+    annex = table("nbt47014AnnexB", "fillerMetal")
+    if not annex:
+        return None
+    return {
+        "designation": code,
+        "clause": annex.get("clause"),
+        "categoryExistsButNotListedStandard": annex.get("categoryExistsButNotListedStandard"),
+        "categoryNotListed": annex.get("categoryNotListed"),
+        "requiredReport": "填充金属归类报告",
+        "reportContents": list(annex.get("reportContents") or []),
+        "retention": annex.get("retention"),
+        "verified": is_verified(table("nbt47014AnnexB")),
+    }
+
+
 def inspection_level_for_grade(pipeline_grade: str, *, toxic: bool = False, leak_hazard: bool = False) -> str | None:
     """GB/T 20801.1-2025 §8.3.1 按管道级别的缺省检查等级（Ⅰ～Ⅴ）。
 
@@ -152,8 +212,9 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
         if _norm_designation(item.get("standard")) != wanted_standard:
             continue
         for entry in item.get("grades") or []:
-            # 质保书上写的可能是统一数字代号（S30408），也可能是牌号（06Cr19Ni10），两种都认
-            names = {entry.get("grade"), entry.get("alias")}
+            # 质保书上写的可能是统一数字代号（S30408 / U50207），也可能是牌号（06Cr19Ni10、20G），都认。
+            # GB/T 5310 把数字代号放在 unifiedCode 而不是 alias，漏掉它按代号就查不到。
+            names = {entry.get("grade"), entry.get("alias"), entry.get("unifiedCode")}
             if wanted_grade not in {_norm_designation(name) for name in names if name}:
                 continue
             merged: dict[str, Any] = {
@@ -195,11 +256,21 @@ def wps_specific_factors(method: str) -> dict[str, list[dict[str, Any]]]:
     wanted = str(method or "").strip()
     if not wanted:
         return {}
+    # factor 文字目前是截断的（见表里的 factorTextQuality/factorTextCaveat），
+    # 分类可用、文字不可用——把这件事跟着每一条带出去，免得下游当完整句子展示或做关键词匹配。
+    text_truncated = str(section.get("factorTextQuality") or "") == "truncated"
     out: dict[str, list[dict[str, Any]]] = {}
     for item in section.get("factors") or []:
         for cls, methods in (item.get("methodsByClass") or {}).items():
             if wanted in methods:
-                out.setdefault(cls, []).append({"seq": item.get("seq"), "category": item.get("category"), "factor": item.get("factor")})
+                out.setdefault(cls, []).append(
+                    {
+                        "seq": item.get("seq"),
+                        "category": item.get("category"),
+                        "factor": item.get("factor"),
+                        "factorTextTruncated": text_truncated,
+                    }
+                )
     return out
 
 

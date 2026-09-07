@@ -319,3 +319,30 @@ def test_product_inspection_rules_cover_all_pipe_standards():
     assert rules["GB/T 3087-2022"]["conditionalItems"][0]["item"] == "高温拉伸"
     assert rules["GB/T 8163-2018"]["conditionalItems"][0]["item"] == "纵向冲击试验"
     assert all(rule["basis"] for rule in rules.values()), "每条都要有条款出处"
+
+
+def test_annex_b_gives_a_path_when_the_material_is_not_in_table1():
+    """表 1 查不到母材不等于判不了——附录 B 是规范性的，规定了替代路径和归类报告的必备内容。"""
+    from libs.regulatory_tables import base_material_classification_requirement
+
+    assert base_material_classification_requirement("Q345R") is None, "表 1 里的牌号走正常组别比对"
+    requirement = base_material_classification_requirement("某进口未列入牌号")
+    assert requirement is not None
+    assert requirement["requiredReport"] == "母材归类报告"
+    assert len(requirement["reportContents"]) == 9
+    assert "存档备查" in requirement["retention"]
+
+
+def test_annex_b_filler_metal_requirement_checks_class_and_standard():
+    """表 2~表 4 列的是类别代号与 NB/T 47018 系列标准，型号（E5015）不在其中，别拿型号去比。"""
+    from libs.regulatory_tables import filler_metal_classification_requirement
+
+    assert filler_metal_classification_requirement(filler_class="FeT-1-1", standard="NB/T 47018.2") is None
+    # 类别在表里但执行的不是表中所列标准 → B.3.1.1
+    other_standard = filler_metal_classification_requirement(filler_class="FeT-1-1", standard="GB/T 5117")
+    assert other_standard is not None and other_standard["requiredReport"] == "填充金属归类报告"
+    # 类别代号根本不在表里
+    unknown = filler_metal_classification_requirement(filler_class="ZZ-9-9")
+    assert unknown is not None and len(unknown["reportContents"]) == 8
+    # 什么都不给不该凭空产生要求
+    assert filler_metal_classification_requirement() is None

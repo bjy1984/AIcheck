@@ -155,6 +155,21 @@ def evaluate_welding_consumable(arguments: dict[str, Any]) -> dict[str, Any]:
                     elif not _within_limits(value, limits):
                         explicit = True
                         reasons.append(f"{group_name}_{field}_out_of_range")
+        # 焊材类别与母材组别是否配套（NB/T 47014-2023 表 2~表 4）。
+        # 只在设计要求同时给了焊材类别代号与母材牌号时判——两者缺一就什么都不说，不猜。
+        filler_class = _first(required, "fillerClass", "fillerMetalClass", "焊材类别") or _first(cert, "fillerClass", "fillerMetalClass")
+        base_grade = _first(required, "baseMaterialGrade", "materialGrade", "母材牌号")
+        if _present(filler_class) and _present(base_grade):
+            from libs.regulatory_tables import filler_matches_base_material
+
+            verdict = filler_matches_base_material(str(filler_class), str(base_grade))
+            if verdict is None:
+                missing = True
+                reasons.append("base_material_group_unknown_for_filler_match")
+            elif not verdict["matched"]:
+                explicit = True
+                reasons.append("filler_class_not_listed_for_base_material_group")
+
         batch = _first(cert, "batchNo", "lotNo")
         matching_physical = [item for item in physical if batch and _norm(_first(item, "batchNo", "lotNo")) == _norm(batch)]
         if physical and not matching_physical:
@@ -780,8 +795,18 @@ def _wps_pqr_ranges(wps: dict[str, Any], pqr: dict[str, Any], work: dict[str, An
             incomplete = True
             reasons.append(f"{field}_wps_pqr_or_actual_missing")
         elif len({_norm(wps_value), _norm(pqr_value), _norm(actual_value)}) != 1:
-            failed = True
-            reasons.append(f"{field}_wps_pqr_actual_mismatch")
+            # 母材那一组：字面不同不等于不覆盖。NB/T 47014-2023 表 1 把牌号归到类别-组别，
+            # 评定按组别生效——WPS 写 Q345R、PQR 写 Fe-1-2、实际用 Q345B，三者同组就是覆盖的。
+            # 只在三者都能查到组别且组别相同时才放行；查不到组别就维持原来的字面判定，不猜。
+            if field == "materialCategory" and _same_base_material_group(wps_value, pqr_value, actual_value):
+                reasons.append("materialCategory_matched_by_nbt47014_group")
+            else:
+                failed = True
+                reasons.append(f"{field}_wps_pqr_actual_mismatch")
+                # 牌号本身不在表 1 里时，附录 B.2 给了替代路径：查一份"母材归类报告"就能定组别。
+                # 只报"对不上"而不说这一条，现场无从下手。
+                if field == "materialCategory" and _base_material_needs_classification_report(actual_value):
+                    reasons.append("base_material_not_in_nbt47014_table1_needs_classification_report")
     for key in ("current", "voltage", "weldingSpeed", "interpassTemperature"):
         wps_range = _range(wps.get(f"{key}Range"), wps, f"{key}Min", f"{key}Max")
         pqr_range = _range(pqr.get(f"{key}QualifiedRange") or pqr.get(f"{key}Range"), pqr, f"{key}Min", f"{key}Max")
@@ -801,6 +826,12 @@ def _wps_pqr_ranges(wps: dict[str, Any], pqr: dict[str, Any], work: dict[str, An
             reasons.append(f"actual_{key}_outside_wps_range")
     thickness = decimal(_first(work, "thickness", "wallThickness"))
     qualified_thickness = _range(pqr.get("thicknessRange"), pqr, "thicknessMin", "thicknessMax")
+    if qualified_thickness is None:
+        # PQR 常常只写试件厚度，不写合格厚度范围——范围本来就是按表 6/表 7 从试件厚度算出来的。
+        # 以前这里直接报证据不足，等于把标准里算得出的东西当成缺证据。
+        qualified_thickness = _qualified_thickness_from_specimen(pqr, wps)
+        if qualified_thickness is not None:
+            reasons.append("qualified_thickness_derived_from_nbt47014_table6_7")
     if thickness is None or qualified_thickness is None:
         incomplete = True
         reasons.append("actual_or_qualified_thickness_missing")
@@ -808,6 +839,59 @@ def _wps_pqr_ranges(wps: dict[str, Any], pqr: dict[str, Any], work: dict[str, An
         failed = True
         reasons.append("actual_thickness_not_covered_by_pqr")
     return ("failed" if failed else "evidence_insufficient" if incomplete else "passed"), reasons
+
+
+def _base_material_needs_classification_report(grade: Any) -> bool:
+    """实际用的牌号不在 NB/T 47014-2023 表 1 里（此时按附录 B.2 应有母材归类报告）。"""
+    from libs.regulatory_tables import base_material_classification_requirement
+
+    return bool(base_material_classification_requirement(str(grade or "")))
+
+
+
+def _same_base_material_group(*values: Any) -> bool:
+    """三个母材写法是否属于 NB/T 47014-2023 表 1 的同一类别-组别。
+
+    任何一个查不到组别就返回 False——查不到不等于相同，宁可维持字面判定。
+    组别本身（"Fe-1-2"）也算一种写法，PQR 上很常见。
+    """
+    from libs.regulatory_tables import wps_base_material_group
+
+    groups: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            return False
+        group = wps_base_material_group(text)
+        if group is None:
+            # PQR 上直接写组别代号的情形
+            if re.fullmatch(r"(?i)fe-[0-9]+[a-z]?-[0-9]+", text.replace(" ", "")):
+                group = text.replace(" ", "").title().replace("Fe-", "Fe-")
+            else:
+                return False
+        groups.add(group.upper())
+    return len(groups) == 1
+
+
+def _qualified_thickness_from_specimen(pqr: dict[str, Any], wps: dict[str, Any]) -> tuple[Decimal, Decimal] | None:
+    """PQR 只给试件厚度时，按 NB/T 47014-2023 表 6/表 7 算出这份评定覆盖的母材厚度范围。"""
+    specimen = decimal(_first(pqr, "specimenThickness", "testCouponThickness", "试件厚度"))
+    if specimen is None or specimen <= 0:
+        return None
+    from libs.regulatory_tables import wps_thickness_coverage
+
+    coverage = wps_thickness_coverage(
+        float(specimen),
+        bend=str(_first(pqr, "bendType", "bend") or "transverse"),
+        welding_method=str(_first(pqr, "weldingMethod", "method") or _first(wps, "weldingMethod", "method") or "") or None,
+        impact_tested=_bool(_first(pqr, "impactTested", "impactTestPerformed")) is True,
+    )
+    if not coverage:
+        return None
+    low, high = coverage.get("baseMetalMinMm"), coverage.get("baseMetalMaxMm")
+    if low is None or high is None:
+        return None
+    return Decimal(str(low)), Decimal(str(high))
 
 
 def _fit_up_limit(material: str, thickness: Decimal | None) -> Decimal | None:

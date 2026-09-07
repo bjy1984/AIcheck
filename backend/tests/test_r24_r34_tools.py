@@ -154,3 +154,118 @@ def test_r34_hardness_is_material_and_design_conditioned_not_fixed_generic_200()
     missing_design_limit = evaluate_heat_treatment({"profile": "heat_treatment_result", "weldItems": [_carbon_pwht_weld()], "heatTreatmentReports": [report], "hardnessReports": [hardness]})
     assert passed["result"] == "passed"
     assert missing_design_limit["result"] == "evidence_insufficient"
+
+
+def _nbt47014_case(work: dict, pqr_extra: dict | None = None) -> dict:
+    pqr = {
+        "pqrNo": "P1",
+        "approved": True,
+        "weldingMethod": "焊条电弧焊",
+        "materialGroup": "Fe-1-2",
+        "specimenThickness": 12,
+        "currentRange": "80-150",
+        "voltageRange": "18-28",
+        "weldingSpeedRange": "4-25",
+        "interpassTemperatureRange": "0-260",
+    }
+    pqr.update(pqr_extra or {})
+    arguments = {
+        "wpsItems": [
+            {
+                "wpsNo": "W1",
+                "pqrNo": "P1",
+                "approved": True,
+                "weldingMethod": "焊条电弧焊",
+                "materialGrade": "Q345R",
+                "currentRange": "90-140",
+                "voltageRange": "20-26",
+                "weldingSpeedRange": "5-20",
+                "interpassTemperatureRange": "0-250",
+            }
+        ],
+        "pqrItems": [pqr],
+        "workItems": [work],
+    }
+    return check_wps_pqr_coverage(arguments)["facts"]["wpsPqrCoverageMatrix"][0]
+
+
+def test_wps_pqr_material_coverage_uses_nbt47014_groups_not_string_equality():
+    """评定按类别-组别生效：WPS 写 Q345R、PQR 写 Fe-1-2、实际用 Q345B，同组就是覆盖。
+
+    改之前这里三个字面不同就判不符合，是把「写法不同」当成「评定不覆盖」。
+    """
+    same_group = _nbt47014_case({"id": "J1", "weldingMethod": "焊条电弧焊", "materialGrade": "Q345B", "thickness": 16})
+    assert same_group["result"] == "passed"
+    assert "materialCategory_matched_by_nbt47014_group" in same_group["reasonCodes"]
+
+    # 真正不同组的仍要判不符合——放行只针对同组
+    other_group = _nbt47014_case({"id": "J2", "weldingMethod": "焊条电弧焊", "materialGrade": "S30408", "thickness": 16})
+    assert other_group["result"] == "failed"
+    assert "materialCategory_wps_pqr_actual_mismatch" in other_group["reasonCodes"]
+
+    # 表 1 里查不到的牌号不猜，维持原来的字面判定
+    unknown = _nbt47014_case({"id": "J4", "weldingMethod": "焊条电弧焊", "materialGrade": "XX999", "thickness": 16})
+    assert unknown["result"] == "failed"
+    assert "materialCategory_wps_pqr_actual_mismatch" in unknown["reasonCodes"]
+
+
+def test_qualified_thickness_derived_from_specimen_when_pqr_omits_the_range():
+    """PQR 常常只写试件厚度：合格厚度范围本来就该按表 6/表 7 算，不是缺证据。"""
+    derived = _nbt47014_case({"id": "J1", "weldingMethod": "焊条电弧焊", "materialGrade": "Q345B", "thickness": 16})
+    assert "qualified_thickness_derived_from_nbt47014_table6_7" in derived["reasonCodes"]
+    assert derived["result"] == "passed"
+
+    # T=12 的试件按表 6 覆盖 5~24mm，26mm 的焊件超出上限，要判不符合
+    too_thick = _nbt47014_case({"id": "J3", "weldingMethod": "焊条电弧焊", "materialGrade": "Q345B", "thickness": 26})
+    assert too_thick["result"] == "failed"
+    assert "actual_thickness_not_covered_by_pqr" in too_thick["reasonCodes"]
+
+    # 连试件厚度都没有时仍然是证据不足，不许凭空造范围
+    no_specimen = _nbt47014_case(
+        {"id": "J5", "weldingMethod": "焊条电弧焊", "materialGrade": "Q345B", "thickness": 16},
+        {"specimenThickness": None},
+    )
+    assert no_specimen["result"] == "evidence_insufficient"
+    assert "actual_or_qualified_thickness_missing" in no_specimen["reasonCodes"]
+
+
+def _consumable_case(required_extra: dict) -> dict:
+    """R26 的一条最小可判用例：证书齐全，只变设计要求里的焊材类别与母材牌号。"""
+    required = {"itemId": "C1", "designation": "E5015", "standardRef": "GB/T 5117-2012"}
+    required.update(required_extra)
+    arguments = {
+        "designRequirements": [required],
+        "qualityCertificates": [
+            {
+                "id": "MTC1",
+                "designation": "E5015",
+                "standardRef": "GB/T 5117-2012",
+                "batchNo": "B1",
+                "originalSeen": True,
+                "conclusion": "合格",
+                "chemicalComposition": [{"element": "C", "value": 0.06}],
+                "mechanicalProperties": [{"item": "tensileStrength", "value": 520}],
+            }
+        ],
+        "physicalItems": [{"batchNo": "B1"}],
+    }
+    return evaluate_welding_consumable(arguments)["facts"]["consumableCertificateMatrix"][0]
+
+
+def test_filler_class_is_checked_against_the_base_material_group():
+    """NB/T 47014 表 2~表 4：焊材类别要与母材的类别-组别配套，此前这一项完全没判。"""
+    matched = _consumable_case({"fillerClass": "FeT-1-2", "baseMaterialGrade": "Q345R"})
+    assert "filler_class_not_listed_for_base_material_group" not in matched["reasonCodes"]
+
+    mismatched = _consumable_case({"fillerClass": "FeT-8-1", "baseMaterialGrade": "Q345R"})
+    assert mismatched["result"] == "failed"
+    assert "filler_class_not_listed_for_base_material_group" in mismatched["reasonCodes"]
+
+    # 母材查不到组别时只说证据不足，不给"匹配"或"不匹配"的结论
+    unknown = _consumable_case({"fillerClass": "FeT-1-2", "baseMaterialGrade": "XX999"})
+    assert "base_material_group_unknown_for_filler_match" in unknown["reasonCodes"]
+    assert "filler_class_not_listed_for_base_material_group" not in unknown["reasonCodes"]
+
+    # 两项缺一就什么都不说
+    silent = _consumable_case({"baseMaterialGrade": "Q345R"})
+    assert not any("filler" in code or "base_material_group" in code for code in silent["reasonCodes"])

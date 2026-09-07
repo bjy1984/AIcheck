@@ -239,6 +239,8 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
         "materialGrade": ("materialGrade", "material", "grade", "材料牌号", "材质", "牌号"),
         "standardRef": ("standardRef", "acceptanceStandard", "productStandard", "执行标准", "验收标准", "产品标准"),
         "deliveryCondition": ("deliveryCondition", "supplyCondition", "交货状态", "供货状态"),
+        "wallThicknessMm": ("wallThicknessMm", "wallThickness", "壁厚", "公称壁厚", "厚度"),
+        "specification": ("specification", "size", "规格", "规格型号", "尺寸"),
         "batchNo": ("batchNo", "lotNo", "批号", "批次号", "炉批号"),
         "heatNo": ("heatNo", "炉号"),
         "serialNo": ("serialNo", "产品编号", "出厂编号"),
@@ -276,8 +278,80 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
             value = _list_value(value)
         if _present(value):
             output[target] = value
+    _fill_wall_thickness(output)
     _fill_acceptance_limits_from_standard(output)
     return output
+
+
+_SPEC_THICKNESS_RE = re.compile(r"[×xX*]\s*(\d+(?:\.\d+)?)")
+
+
+def _fill_wall_thickness(item: dict[str, Any]) -> None:
+    """壁厚：显式字段优先，没有就从规格串（φ108×4.5、108*4.5）里取乘号后的那一段。
+
+    为什么要它：GB/T 14976 的 S32168/S32169、GB/T 3087 的 Q345 这些牌号，限值按壁厚分档，
+    没有壁厚就选不出档，限值填不出来。
+    """
+    if _present(item.get("wallThicknessMm")):
+        try:
+            item["wallThicknessMm"] = float(str(item["wallThicknessMm"]).strip().rstrip("mm ").strip())
+            return
+        except (TypeError, ValueError):
+            item.pop("wallThicknessMm", None)
+    spec = str(item.get("specification") or "").strip()
+    match = _SPEC_THICKNESS_RE.search(spec)
+    if match:
+        try:
+            item["wallThicknessMm"] = float(match.group(1))
+            item["wallThicknessSource"] = "specification"
+        except ValueError:
+            pass
+
+
+_THICKNESS_BUCKET_RE = re.compile(r"^(<=|>=|<|>)?\s*(\d+(?:\.\d+)?)\s*mm$")
+
+
+def _bucket_matches(bucket: str, thickness_mm: float) -> bool:
+    match = _THICKNESS_BUCKET_RE.match(str(bucket).strip())
+    if not match:
+        return False
+    operator, raw = match.group(1) or "<=", match.group(2)
+    bound = float(raw)
+    if operator == "<=":
+        return thickness_mm <= bound
+    if operator == "<":
+        return thickness_mm < bound
+    if operator == ">=":
+        return thickness_mm >= bound
+    return thickness_mm > bound
+
+
+def _resolve_by_thickness(mapping: Any, thickness_mm: float | None) -> tuple[Any, str | None]:
+    """按壁厚在分档表里选一档。取不到壁厚就返回 (None, 原因)——不猜档，宁可空着。"""
+    if not isinstance(mapping, dict) or not mapping:
+        return None, None
+    if thickness_mm is None:
+        return None, f"限值按壁厚分档（{'、'.join(str(key) for key in mapping)}），设计项未给壁厚，选不出档"
+    for bucket, value in mapping.items():
+        if _bucket_matches(bucket, thickness_mm):
+            return value, None
+    return None, f"壁厚 {thickness_mm}mm 不落在任何分档（{'、'.join(str(key) for key in mapping)}）"
+
+
+_RANGE_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*[-~～]\s*(\d+(?:\.\d+)?)$")
+_BOUND_RE = re.compile(r"^(<=|>=|≤|≥)\s*(\d+(?:\.\d+)?)$")
+
+
+def _parse_limit_text(text: Any) -> tuple[float | None, float | None]:
+    """"120-160" → (120, 160)；"<=230" → (None, 230)；">=515" → (515, None)。"""
+    raw = str(text or "").strip()
+    match = _RANGE_RE.match(raw)
+    if match:
+        return float(match.group(1)), float(match.group(2))
+    match = _BOUND_RE.match(raw)
+    if match:
+        return (None, float(match.group(2))) if match.group(1) in {"<=", "≤"} else (float(match.group(2)), None)
+    return None, None
 
 
 def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
@@ -316,15 +390,37 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
         limits.append(entry)
 
     tensile = mechanical.get("tensileMPa")
-    if isinstance(tensile, str) and "-" in tensile:
-        low, high = tensile.split("-", 1)
-        add("tensileStrength", "抗拉强度", minimum=float(low), maximum=float(high))
-    elif isinstance(tensile, str) and tensile.startswith(">="):
-        add("tensileStrength", "抗拉强度", minimum=float(tensile[2:]))
+    if isinstance(tensile, str):
+        low, high = _parse_limit_text(tensile)
+        add("tensileStrength", "抗拉强度", minimum=low, maximum=high)
     add("tensileStrength", "抗拉强度", minimum=mechanical.get("tensileMPaMin"))
     add("yieldStrength", "屈服强度", minimum=mechanical.get("yieldMPaMin") or mechanical.get("rp02MPaMin"))
     add("elongation", "断后伸长率", minimum=mechanical.get("elongationPctMin") or mechanical.get("elongationPctMinLongitudinal"))
     add("impactEnergy", "冲击吸收能量", minimum=mechanical.get("kv2JMin") or mechanical.get("kv2JMinLongitudinal"))
+
+    # 按壁厚分档的限值（GB/T 14976 的 S32168/S32169/S31252、GB/T 3087 的 Q345 等）。
+    # 选不出档就不填，并把原因记下来——宁可停在证据不足，也不猜一档去判不符合。
+    thickness = item.get("wallThicknessMm")
+    thickness_mm = float(thickness) if isinstance(thickness, (int, float)) else None
+    unresolved: list[str] = []
+    for key, code, name in (
+        ("tensileMPaMinByThickness", "tensileStrength", "抗拉强度"),
+        ("yieldMPaMinByThickness", "yieldStrength", "屈服强度"),
+        ("rp02MPaMinByThickness", "yieldStrength", "屈服强度"),
+    ):
+        if key not in mechanical:
+            continue
+        value, reason = _resolve_by_thickness(mechanical.get(key), thickness_mm)
+        if value is not None:
+            add(code, name, minimum=value)
+        elif reason:
+            unresolved.append(f"{name}：{reason}")
+
+    # 硬度区间（GB/T 5310 表 8 的 HBW/HV，13296 表 5 的上限）——质保书上这两项也要核
+    hardness = found.get("hardness") or {}
+    for key, code, name in (("HBW", "hardnessHBW", "布氏硬度"), ("HV", "hardnessHV", "维氏硬度")):
+        low, high = _parse_limit_text(hardness.get(key))
+        add(code, name, minimum=low, maximum=high)
 
     if limits:
         item["acceptanceLimits"] = limits
@@ -335,6 +431,10 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
             "derivedFrom": "regulatory_tables.pipeMaterialLimits",
             "verified": found.get("verified", False),
         }
+        if thickness_mm is not None:
+            item["acceptanceLimitsSource"]["wallThicknessMm"] = thickness_mm
+    if unresolved:
+        item["acceptanceLimitsUnresolved"] = unresolved
 
 
 def _all_business_rows(parse_result: dict[str, Any]) -> list[dict[str, Any]]:
