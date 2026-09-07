@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from copy import deepcopy
@@ -122,6 +123,14 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         "inputSchema": {"idNumber": "string"},
     },
     {
+        "name": "verify_org_license",
+        "capability": (
+            "按单位名称查全国特种设备公示信息平台，输出该单位的登记状态（有效期、发证机关）；"
+            "有许可明细时比对许可证编号，输出 verified_match / verified_mismatch / not_found / unable_to_verify。"
+        ),
+        "inputSchema": {"name": "string", "expectedLicenseNo": "string?"},
+    },
+    {
         "name": "verify_welder_on_platform",
         "capability": (
             "把焊工证或焊工名册上的项目代号与全国特种设备公示信息平台的全部焊工证书逐项比对，"
@@ -200,6 +209,8 @@ def dispatch_runtime_tool(
         return search_cnse_persons_tool(args)
     if tool_name == "verify_welder_on_platform":
         return verify_welder_on_platform_tool(args)
+    if tool_name == "verify_org_license":
+        return verify_org_license_tool(args)
     if tool_name == "lookup_standard_status":
         return lookup_standard_status_tool(args)
     if tool_name == "search_samr_standards":
@@ -841,6 +852,36 @@ def _normalize_welder_item(code: str) -> str:
 def _split_welder_items(code: str) -> list[str]:
     parts = re.split(r"[和、;；,，]|\band\b", str(code or ""))
     return [_normalize_welder_item(part) for part in parts if part and part.strip()]
+
+
+def verify_org_license_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """P10 N-19：制造/安装单位许可在公示平台的核实，结果与 R12 人工核验记录同形。"""
+    from libs.review_orchestrator.r12_registry import auto_verify_candidates
+
+    tool_name = "verify_org_license"
+    name = str(arguments.get("name") or arguments.get("organizationName") or "").strip()
+    if not name:
+        return _cnse_tool_failure(tool_name, error_code="VALIDATION_ERROR", message="请输入单位名称。")
+    candidate = {
+        "candidateId": str(arguments.get("candidateId") or "ORG-" + hashlib.sha256(f"{name}|{arguments.get('expectedLicenseNo') or ''}".encode()).hexdigest()[:12].upper()),
+        "organizationName": name,
+        "licenseNo": str(arguments.get("expectedLicenseNo") or arguments.get("licenseNo") or ""),
+    }
+    verification = (auto_verify_candidates([candidate]) or [{}])[0]
+    outcome = str(verification.get("outcome") or "unable_to_verify")
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": tool_name,
+        "status": "succeeded" if not verification.get("platformError") else "failed",
+        "outcome": outcome,
+        "verification": verification,
+        "requiresHumanConfirmation": outcome != "verified_match",
+        "summary": {
+            "verified_match": "平台登记的许可证编号与证书一致。",
+            "verified_mismatch": "平台登记的许可证编号与证书不一致，需人工核对。",
+            "not_found": "公示平台按单位名称未查到该单位，需人工核对单位名称与平台。",
+        }.get(outcome, "平台已返回单位登记状态，许可证编号与范围需人工核对。"),
+    }
 
 
 def verify_welder_on_platform_tool(arguments: dict[str, Any]) -> dict[str, Any]:

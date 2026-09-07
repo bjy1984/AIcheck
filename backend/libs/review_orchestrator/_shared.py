@@ -163,6 +163,7 @@ ALLOWED_AGENT_TOOLS = {
     "verify_license_or_certificate",
     "verify_welder_certificate_authenticity",
     "verify_welder_on_platform",
+    "verify_org_license",
     "check_all_equal",
     "check_date_covers",
     "check_design_license_scope",

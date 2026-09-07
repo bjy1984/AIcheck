@@ -241,6 +241,77 @@ def _parse_person_record(raw: Any) -> Mapping[str, str]:
     return person
 
 
+# 单位许可证记录（remotePubQuery.json 以许可证编号为 keyword 时返回 type=organization）。
+# 2026-09-06 实测 TS1844171-2028：czzt=有效、zsbh、dwmc、fzjg、zsxkxm=压力管道设计、zsyxq=2028-01-17、tyshxydm。
+ORG_LICENSE_FIELDS = (
+    "zsbh",  # 证书编号
+    "dwmc",  # 单位名称
+    "czzt",  # 证照状态（有效/注销/…）
+    "dwlb",  # 单位类别
+    "fzjg",  # 发证机关
+    "xklb",  # 许可类别
+    "xkxm",  # 许可项目
+    "zsxkxm",  # 证书许可项目
+    "zsxkfw",  # 许可范围
+    "zsxkfwDesc",
+    "zsfzrq",  # 发证日期
+    "zsyxq",  # 有效期至
+    "zsbgrq",  # 变更日期
+    "tyshxydm",  # 统一社会信用代码
+    "dwid",
+    "sqlb",  # 申请类别（换证/新取证…）
+    "validFlag",
+    "sjgxsj",
+)
+_LICENSE_NO_RE = re.compile(r"^[A-Z0-9][A-Z0-9-]{4,30}$")
+
+
+def normalize_license_no(value: str) -> str:
+    """许可证编号：去空格、转大写，允许字母数字与连字符（TS1844171-2028）。"""
+    if not isinstance(value, str):
+        raise CnseConfigurationError("licenseNo must be text")
+    normalized = value.replace(" ", "").strip().upper()
+    if not _LICENSE_NO_RE.fullmatch(normalized):
+        raise CnseConfigurationError("请输入有效的许可证编号")
+    return normalized
+
+
+def _parse_organization_license_record(raw: Any) -> Mapping[str, str]:
+    if not isinstance(raw, Mapping):
+        raise CnseProtocolError("CNSE organization license record is invalid")
+    record: dict[str, str] = {}
+    for field in ORG_LICENSE_FIELDS:
+        value = raw.get(field, "")
+        if value is None:
+            value = ""
+        if not isinstance(value, str) or len(value.encode("utf-8")) > MAX_PERSON_FIELD_BYTES:
+            raise CnseProtocolError("CNSE organization license record is invalid")
+        record[field] = value
+    return record
+
+
+@dataclass(frozen=True)
+class CnseLicenseQueryResult:
+    license_no: str
+    found: bool
+    record: Mapping[str, str]
+    move_length: int
+    confidence: float
+
+    def to_dict(self) -> Mapping[str, Any]:
+        return {
+            "status": "COMPLETED",
+            "algorithm": ALGORITHM,
+            "captureMode": "api",
+            "confidence": self.confidence,
+            "moveLength": self.move_length,
+            "licenseNo": self.license_no,
+            "queryEndpoint": PERSON_SEARCH_PATH,
+            "found": self.found,
+            "record": dict(self.record),
+        }
+
+
 def _parse_license_record(raw: Any) -> Mapping[str, str]:
     """licList 里的记录字段与 remotePubQuery 相同，但允许缺字段（老证书 khdw/yxrqs 常为空）。"""
     if not isinstance(raw, Mapping):
@@ -644,6 +715,44 @@ class CnseApiClient:
         if len(raw_list) > MAX_LICENSE_COUNT:
             raise CnseProtocolError("CNSE person info returned too many licenses")
         return tuple(_parse_license_record(item) for item in raw_list)
+
+    def submit_license_search(self, license_no: str, move_length: int) -> Mapping[str, str] | None:
+        """以许可证编号为关键字查 remotePubQuery：返回单位许可记录；平台答"未查询到数据"时返回 None。"""
+        normalized = normalize_license_no(license_no)
+        if isinstance(move_length, bool) or not isinstance(move_length, int) or not 0 <= move_length <= 65_535:
+            raise CnseConfigurationError("CNSE query parameters are invalid")
+        data = self._request_json(
+            "GET",
+            PERSON_SEARCH_PATH,
+            limit=MAX_QUERY_BYTES,
+            params={"keyword": normalized, "moveLength": str(move_length)},
+        )
+        if not isinstance(data, Mapping):
+            raise CnseProtocolError("CNSE license query returned invalid data")
+        if data.get("messageLevel") != "success":
+            message = data.get("messageText")
+            if isinstance(message, str) and "未查询到" in message:
+                return None
+            raise CnseProtocolError((message if isinstance(message, str) and message else "CNSE license query failed")[:128])
+        payload = data.get("data")
+        if not isinstance(payload, Mapping) or payload.get("type") != "organization":
+            raise CnseProtocolError("CNSE license query did not return an organization record")
+        return _parse_organization_license_record(payload.get("data"))
+
+    def query_organization_license(self, license_no: str) -> CnseLicenseQueryResult:
+        """许可证编号 → 平台登记的单位许可记录（走人员查询同一套验证码会话）。"""
+        normalized = normalize_license_no(license_no)
+        challenge = self.fetch_person_challenge()
+        move_length, matched = self._solve_challenge(challenge)
+        self.check_person_captcha(move_length)
+        record = self.submit_license_search(normalized, move_length)
+        return CnseLicenseQueryResult(
+            license_no=normalized,
+            found=record is not None,
+            record=record or {},
+            move_length=move_length,
+            confidence=matched.confidence,
+        )
 
     def query_person(
         self, id_number: str, *, include_licenses: bool = True

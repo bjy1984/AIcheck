@@ -852,6 +852,7 @@ atomicCheckToolBindings:
   - check_scope_coverage
   - evaluate_component_manufacturer_scope
   - validate_evidence_grounding
+  - verify_org_license
   parameters:
     profile: component_manufacturer_license
     clauseSource: frozen_standard_clause_package

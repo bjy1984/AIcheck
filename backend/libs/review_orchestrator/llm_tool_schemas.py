@@ -9,6 +9,7 @@ EXTERNAL_REGISTRY_TOOL_NAMES = frozenset(
         "search_cnse_organizations",
         "search_cnse_persons",
         "verify_welder_on_platform",
+        "verify_org_license",
         "lookup_standard_status",
         "search_samr_standards",
     }
@@ -87,6 +88,22 @@ STD_SAMR_LLM_TOOLS: list[dict[str, Any]] = [
                 "holderName": {"type": "string", "description": "证书上的姓名，用于与平台姓名比对。"},
             },
             "required": ["idNumber"],
+            "additionalProperties": False,
+        },
+    ),
+    llm_function_tool(
+        "verify_org_license",
+        (
+            "按单位名称查全国特种设备公示信息平台，返回登记状态（有效期、发证机关）；"
+            "有许可明细时比对许可证编号。not_found / unable_to_verify 不是证书为假，只能要求人工核对。"
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "许可证上的单位名称。"},
+                "expectedLicenseNo": {"type": "string", "description": "许可证编号，例如 TS1844171-2028。"},
+            },
+            "required": ["name"],
             "additionalProperties": False,
         },
     ),

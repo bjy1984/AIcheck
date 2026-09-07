@@ -8,6 +8,11 @@ from typing import Any
 from uuid import uuid4
 
 from libs.contracts.responses import server_time
+from libs.review_orchestrator.r12_registry import (
+    auto_verify_candidates,
+    auto_verify_enabled,
+    merge_registry_verifications,
+)
 
 R12_NODE_ID = 12
 R12_TASK_TYPE = "official_registry_license_verification"
@@ -379,6 +384,15 @@ def ensure_r12_human_input_task(
     candidates = extract_r12_license_candidates(state, review_run)
     if not candidates:
         return None
+    # P10 N-19：先查公示平台。全部候选都 verified_match（许可证号比对一致）才免人工任务；
+    # 单位查询不带许可证号时结果是 unable_to_verify，仍开人工任务，但事实里已带平台登记状态。
+    if auto_verify_enabled() and not review_run.get("autoRegistryVerifications"):
+        review_run["autoRegistryVerifications"] = auto_verify_candidates(candidates)
+    auto_by_candidate = {
+        str(item.get("candidateId")): item for item in review_run.get("autoRegistryVerifications") or [] if isinstance(item, dict)
+    }
+    if candidates and all(str(auto_by_candidate.get(str(item.get("candidateId")), {}).get("outcome")) == "verified_match" for item in candidates):
+        return None
     task_input_hash = stable_payload_hash(
         {
             "reviewRunInputHash": review_run.get("inputHash"),
@@ -565,6 +579,10 @@ def build_r12_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
         for verification in record.get("verifications") or []:
             if isinstance(verification, dict) and verification.get("candidateId"):
                 latest_by_candidate[str(verification["candidateId"])] = verification
+    # P10 N-19：平台自动核验补人工没填的候选；人工（attested）永远覆盖自动
+    merged_verifications = merge_registry_verifications(
+        list(latest_by_candidate.values()), list(review_run.get("autoRegistryVerifications") or [])
+    )
     component_items = extract_r12_component_items(state, review_run)
     evidence_refs = [
         item.get("evidence")
@@ -573,7 +591,8 @@ def build_r12_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
     ]
     return {
         "manufacturerLicenseCandidates": candidates,
-        "manualRegistryVerifications": list(latest_by_candidate.values()),
+        "manualRegistryVerifications": merged_verifications,
+        "autoRegistryVerificationCount": len(review_run.get("autoRegistryVerifications") or []),
         "componentItems": component_items,
         "judgment": {
             "claimedFacts": [

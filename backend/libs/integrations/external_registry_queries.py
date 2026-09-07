@@ -62,6 +62,16 @@ def query_cnse_organizations(keyword: str) -> dict[str, Any]:
         return dict(client.query(keyword).to_dict())
 
 
+def query_cnse_organization_license(license_no: str) -> dict[str, Any]:
+    """许可证编号 → 平台登记的单位许可记录（P10 N-19）。found=False 表示平台"未查询到数据"。"""
+
+    with CnseApiClient(
+        origin=configured_cnse_origin(),
+        min_confidence=configured_cnse_min_confidence(),
+    ) as client:
+        return dict(client.query_organization_license(license_no).to_dict())
+
+
 def query_cnse_persons(id_number: str) -> dict[str, Any]:
     """Execute the person challenge/check/search flow in one session."""
 

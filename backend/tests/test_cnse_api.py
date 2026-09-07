@@ -447,3 +447,38 @@ def test_cnse_person_live_smoke_for_welder_certificate() -> None:
     assert result["status"] == "COMPLETED"
     assert result["person"]["sfzh"] == "430524198608135291"
     assert result["person"]["ryxm"] == "廖柏鑫"
+
+
+def test_cnse_license_lookup_returns_organization_record_or_not_found() -> None:
+    """以许可证编号为 keyword 的 remotePubQuery 返回 type=organization 的单位许可记录（2026-09-06 实测）。"""
+    requests: list[httpx.Request] = []
+    record = {
+        "czzt": "有效", "dwid": "e9f9127a", "dwlb": "生产单位", "dwmc": "广东政和工程有限公司", "fzjg": "广东省市场监督管理局",
+        "xklb": "境内地方局发证", "xkxm": "压力管道设计设计", "zsxkxm": "压力管道设计", "zsxkfw": "", "zsxkfwDesc": "",
+        "zsfzrq": "2024-01-02", "zsyxq": "2028-01-17", "zsbgrq": "", "tyshxydm": "914401017792068107", "sqlb": "换证",
+        "validFlag": "1", "sjgxsj": "2024-07-16 06:18:41", "zsbh": "TS1844171-2028", "licList": [], "itemList": [],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = request.url.path
+        if request.method == "GET" and path.endswith("pubQueryVCodeData.json"):
+            return httpx.Response(200, json=challenge_json())
+        if request.method == "POST" and path.endswith("checkPubQuerycode.json"):
+            return httpx.Response(200, json={"errcode": 0, "errmsg": "验证通过"})
+        assert path.endswith("remotePubQuery.json")
+        keyword = dict(request.url.params)["keyword"]
+        if keyword == "TS1844171-2028":
+            return httpx.Response(200, json={"messageText": "", "messageLevel": "success", "data": {"type": "organization", "data": record}})
+        return httpx.Response(200, json={"messageText": "未查询到数据", "messageLevel": "error"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        integration = CnseApiClient(client=http_client, solver=fake_solver)
+        found = integration.query_organization_license(" ts1844171-2028 ").to_dict()
+        missing = integration.query_organization_license("TS0000000-2030").to_dict()
+
+    assert found["found"] is True and found["licenseNo"] == "TS1844171-2028"
+    assert found["record"]["dwmc"] == "广东政和工程有限公司" and found["record"]["zsxkxm"] == "压力管道设计"
+    assert "licList" not in found["record"], "只保留白名单字段"
+    assert missing["found"] is False and missing["record"] == {}
+    assert [request.method for request in requests] == ["GET", "POST", "GET", "GET", "POST", "GET"]
