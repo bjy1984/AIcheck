@@ -215,20 +215,6 @@ nodeTemplates:
     responsibleParty: 施工方上传
     applicability: 按当前节点规则适用条件判断
     note: 依据 R09，用于支撑设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求中项目范围、设计参数、签章或标准引用等信息核查。
-  - id: REQ-09-02
-    materialTypeCode: leakage_test_report
-    name: 泄漏试验记录或报告
-    requiredType: 条件必传
-    responsibleParty: 施工方上传
-    applicability: 按当前节点规则适用条件判断
-    note: 依据 R09，用于支撑设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求中泄漏试验记录或报告相关核查。
-  - id: REQ-09-03
-    materialTypeCode: instrument_calibration_certificate
-    name: 仪表检定或校准证书
-    requiredType: 条件必传
-    responsibleParty: 施工方上传
-    applicability: 按当前节点规则适用条件判断
-    note: 依据 R09，用于支撑设计文件上注明的无损检测、防腐、耐压试验和泄漏试验要求中仪表检定或校准证书相关核查。
 - nodeId: 10
   code: '10'
   name: 采用其他标准时，设计文件或工程规定中应包括符合《工业管道安全技术规程》基本安全的符合性申明及比照表
