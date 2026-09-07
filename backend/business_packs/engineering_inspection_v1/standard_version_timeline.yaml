@@ -947,3 +947,71 @@ entries:
   extractionMethod: online_lookup
   verifiedBy: std.samr.gov.cn 页面（2026-09-07 网页核）
   verifiedOn: '2026-09-07'
+- code: GB/T 14976-2025
+  name: 输送流体用不锈钢无缝钢管
+  publishedOn: '2025-08-01'
+  effectiveFrom: '2026-02-01'
+  supersedes:
+  - GB/T 14976-2012
+  sourceUrls:
+    info: https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=064C7CE386EE926B10AECD1E3E9C539A
+    fullText: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=064C7CE386EE926B10AECD1E3E9C539A
+    note: openstd.samr.gov.cn 全文公开可在线预览（无需验证码）；hcno 记在这里，后续补录限值表直接用
+  extractionMethod: online_lookup
+  verifiedBy: openstd.samr.gov.cn 标准详情页（2026-09-07 网页核，发布/实施日期直读）
+  verifiedOn: '2026-09-07'
+- code: GB/T 14976-2012
+  name: 流体输送用不锈钢无缝钢管
+  effectiveFrom: '2012-12-01'
+  replacedBy: GB/T 14976-2025
+  withdrawnOn: '2026-02-01'
+  sourceUrls:
+    list: https://openstd.samr.gov.cn/bzgk/gb/std_list?p.p2=14976
+    note: 列表页显示 2012 版（推标与 EN 两行）均为"废止"；废止日期按 2025 版实施日推断，待核公告
+  extractionMethod: online_lookup
+  verifiedBy: openstd.samr.gov.cn 列表页（2026-09-07 网页核："废止"状态已确认；废止日期按 2025 版实施日 2026-02-01 推断，公告待核）
+  verifiedOn: '2026-09-07'
+- code: GB/T 8163-2018
+  name: 输送流体用无缝钢管
+  publishedOn: '2018-05-14'
+  effectiveFrom: '2019-02-01'
+  sourceUrls:
+    info: https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=D5537747C227CE74971D8E07FAB5BFD9
+    fullText: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=D5537747C227CE74971D8E07FAB5BFD9
+    note: openstd.samr.gov.cn 全文公开可在线预览（无需验证码）；hcno 记在这里，后续补录限值表直接用
+  extractionMethod: online_lookup
+  verifiedBy: openstd.samr.gov.cn 标准详情页（2026-09-07 网页核，发布/实施日期直读）
+  verifiedOn: '2026-09-07'
+- code: GB/T 12771-2019
+  name: 流体输送用不锈钢焊接钢管
+  publishedOn: '2019-10-18'
+  effectiveFrom: '2020-09-01'
+  sourceUrls:
+    info: https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=1583FF03CAB055F55123FB3BCD9B9FC5
+    fullText: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=1583FF03CAB055F55123FB3BCD9B9FC5
+    note: openstd.samr.gov.cn 全文公开可在线预览（无需验证码）；hcno 记在这里，后续补录限值表直接用
+  extractionMethod: online_lookup
+  verifiedBy: openstd.samr.gov.cn 标准详情页（2026-09-07 网页核，发布/实施日期直读）
+  verifiedOn: '2026-09-07'
+- code: GB/T 13296-2023
+  name: 锅炉、热交换器用不锈钢无缝钢管
+  publishedOn: '2023-11-27'
+  effectiveFrom: '2024-06-01'
+  sourceUrls:
+    info: https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=B2AB9AB2087F1B28D918295A8E0E0351
+    fullText: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=B2AB9AB2087F1B28D918295A8E0E0351
+    note: openstd.samr.gov.cn 全文公开可在线预览（无需验证码）；hcno 记在这里，后续补录限值表直接用
+  extractionMethod: online_lookup
+  verifiedBy: openstd.samr.gov.cn 标准详情页（2026-09-07 网页核，发布/实施日期直读）
+  verifiedOn: '2026-09-07'
+- code: GB/T 5310-2023
+  name: 高压锅炉用无缝钢管
+  publishedOn: '2023-09-07'
+  effectiveFrom: '2024-04-01'
+  sourceUrls:
+    info: https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=8E0C6BA351BFF10918C0F5E27E801031
+    fullText: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=8E0C6BA351BFF10918C0F5E27E801031
+    note: openstd.samr.gov.cn 全文公开可在线预览（无需验证码）；hcno 记在这里，后续补录限值表直接用
+  extractionMethod: online_lookup
+  verifiedBy: openstd.samr.gov.cn 标准详情页（2026-09-07 网页核，发布/实施日期直读）
+  verifiedOn: '2026-09-07'
