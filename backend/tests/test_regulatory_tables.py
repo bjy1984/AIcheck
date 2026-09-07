@@ -302,3 +302,20 @@ def test_filler_class_matches_base_material_group():
     # 母材查不到组别时不给结论
     assert filler_matches_base_material("FeT-1-1", "X99NotAGrade") is None
     assert filler_classes_for_group("") == [] and filler_classes_for_group("Fe-99") == []
+
+
+def test_product_inspection_rules_cover_all_pipe_standards():
+    """R14 判「这个产品标准要求做哪些出厂检验」——此前只写死了一本标准。"""
+    from libs.regulatory_tables import product_inspection_rules
+
+    rules = product_inspection_rules()
+    assert len(rules) == 6
+    # 逐根强制的才进 requiredItems
+    assert rules["GB/T 12771-2019"]["requiredItems"] == ["nondestructive_testing"]
+    assert rules["GB/T 13296-2023"]["requiredItems"] == ["pressure_test"]
+    assert rules["GB/T 5310-2023"]["requiredItems"] == ["hardness_test"]
+    # 「根据需方要求、经协商」的选项不进 requiredItems，只作条件项——拿它判不符合会冤枉人
+    assert rules["GB/T 3087-2022"]["requiredItems"] == []
+    assert rules["GB/T 3087-2022"]["conditionalItems"][0]["item"] == "高温拉伸"
+    assert rules["GB/T 8163-2018"]["conditionalItems"][0]["item"] == "纵向冲击试验"
+    assert all(rule["basis"] for rule in rules.values()), "每条都要有条款出处"

@@ -989,6 +989,38 @@ pipeMaterialLimits:
         - {grade: S11710, alias: 10Cr17, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, heatTreatment: 780℃~850℃，空冷或缓冷}
         - {grade: S11306, alias: 06Cr13, mechanical: {tensileMPaMin: 410, rp02MPaMin: 210, elongationPctMin: 20}, heatTreatment: 750℃空冷或 800℃~900℃缓冷}
         - {grade: S12791, alias: 008Cr27Mo, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, heatTreatment: 900℃~1050℃，急冷}
+  productInspectionRules:
+    purpose: R14 判「这个产品标准要求做哪些出厂检验」——设计项没写特殊检验要求时的兜底依据
+    note: 只写各标准正文里**逐根或按批强制**的项；「根据需方要求、经协商」的选项不写进来，那不是标准强制
+    verifiedBy: null
+    rules:
+      - standard: GB/T 12771-2019
+        requiredItems: [nondestructive_testing]
+        basis: GB/T 12771-2019 6.9 焊缝无损检测
+      - standard: GB/T 13296-2023
+        requiredItems: [pressure_test]
+        basis: GB/T 13296-2023 7.5.1 钢管应逐根进行液压试验（供方可用涡流检测代替，验收按 GB/T 7735-2016 E3H 级）
+        conditionalItems:
+          - {item: 压扁试验, condition: 壁厚不大于 10mm, basis: "7.6.1"}
+          - {item: 扩口试验, condition: 外径不大于 150mm 且壁厚不大于 10mm, basis: "7.6.2"}
+      - standard: GB/T 5310-2023
+        requiredItems: [hardness_test]
+        basis: GB/T 5310-2023 表 8 给出布氏与维氏硬度区间，属交货状态力学性能的一部分
+      - standard: GB/T 8163-2018
+        requiredItems: []
+        conditionalItems:
+          - {item: 纵向冲击试验, condition: 牌号 Q345/Q390/Q420/Q460 且质量等级 B/C/D/E，外径不小于 70mm 且壁厚不小于 6.5mm, basis: "5.4.2.1"}
+        basis: GB/T 8163-2018 5.4.2.1；10/20 钢无冲击要求
+      - standard: GB/T 3087-2022
+        requiredItems: []
+        conditionalItems:
+          - {item: 高温拉伸, condition: 需方注明用于中压锅炉过热蒸汽管，供方能保证时可不做, basis: "6.4.2.1"}
+        basis: GB/T 3087-2022 6.4；室温拉伸为强制，高温拉伸为条件项
+      - standard: GB/T 14976-2025
+        requiredItems: []
+        conditionalItems:
+          - {item: 低温冲击试验, condition: 设计温度低于 -101℃ 的奥氏体不锈钢管，按附录 A（-196℃ 冲击）, basis: 附录 A.4}
+        basis: GB/T 14976-2025 7.2 室温拉伸为强制；冲击只在低温工况附加要求里
   pending:
     - GB/T 14976-2025 表 2/表 3 其余 26 个牌号（铁素体、马氏体、双相）待补
     - GB/T 13296-2023 表 4 的 1~19 号牌号待补（已录 20~31 号）

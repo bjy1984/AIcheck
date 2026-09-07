@@ -454,3 +454,24 @@ def welding_consumable_profile_for(standard: str, designation: str | None = None
         if wanted in {_norm_designation(name) for name in names if name}:
             return {**entry, "standard": profile["standard"], "designation": code, "verified": profile["verified"]}
     return None
+
+
+def product_inspection_rules() -> dict[str, dict[str, Any]]:
+    """R14 要的「产品标准 → 强制出厂检验项」。
+
+    只给标准正文里逐根或按批强制的项；「根据需方要求、经协商」的选项放在 conditionalItems 里，
+    不进 requiredItems——那不是标准强制，拿它判不符合会冤枉人。
+    """
+    section = table("pipeMaterialLimits").get("productInspectionRules") or {}
+    out: dict[str, dict[str, Any]] = {}
+    for rule in section.get("rules") or []:
+        standard = str(rule.get("standard") or "").strip()
+        if not standard:
+            continue
+        out[standard] = {
+            "requiredItems": list(rule.get("requiredItems") or []),
+            "basis": rule.get("basis"),
+            "conditionalItems": list(rule.get("conditionalItems") or []),
+            "verified": is_verified(section),
+        }
+    return out

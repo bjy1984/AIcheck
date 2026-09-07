@@ -32,6 +32,7 @@ from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
+from libs.regulatory_tables import product_inspection_rules
 from libs.qwen_runtime import (
     QwenRuntimeClient,
     build_qwen_runtime_client,
@@ -585,7 +586,10 @@ def plan_r14_tool_review(
     facts: dict[str, Any],
 ) -> dict[str, Any]:
     r14 = facts.get("r14") if isinstance(facts.get("r14"), dict) else {}
-    product_rules = {
+    # 产品标准的出厂检验要求原先只写死了 GB/T 12771-2019 一条，别的标准一律
+    # product_standard_rule_missing → 证据不足（2026-09-07 线上审计后补）。
+    # 现在从法规数值表读，六本管材标准都在；表里查不到时仍回落到原来那条，行为不退化。
+    product_rules = product_inspection_rules() or {
         "GB/T 12771-2019": {
             "requiredItems": ["nondestructive_testing"],
             "basis": "GB/T 12771-2019 6.9",
