@@ -864,10 +864,108 @@ pipeMaterialLimits:
           mechanical: {tensileMPaMinByThickness: {"<=9.5mm": 520, ">9.5mm": 485}, rp02MPaMinByThickness: {"<=9.5mm": 205, ">9.5mm": 170}, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
           heatTreatment: 920℃~1150℃，水冷或其他方式快冷
           note: 成分在表 2 第三页，待补
+    - standard: GB/T 12771-2019
+      name: 流体输送用不锈钢焊接钢管
+      extractedFrom: official_pdf_ocr_page_images
+      sourceClause: 表 4 钢管的推荐热处理制度、力学性能；6.4.1 拉伸、6.4.2 焊接接头拉伸
+      verifiedBy: null
+      note: 焊接钢管，与无缝管（GB/T 14976）值不同——同为 S30408，本标准 515/205，14976-2025 是 520/205；伸长率按"热处理/非热处理"两列，不按纵横向
+      weldJointTensile: 外径不小于 168mm 的钢管应做焊接接头横向拉伸；接头抗拉强度应符合表 4 母材抗拉强度的规定
+      grades:
+        - grade: S30210
+          alias: 12Cr18Ni9
+          mechanical: {tensileMPaMin: 515, rp02MPaMin: 205, elongationPctMinHeatTreated: 40, elongationPctMinAsWelded: 35}
+          heatTreatment: ≥1040℃，快冷
+        - grade: S30403
+          alias: 022Cr19Ni10
+          mechanical: {tensileMPaMin: 485, rp02MPaMin: 180, elongationPctMinHeatTreated: 40, elongationPctMinAsWelded: 35}
+          heatTreatment: ≥1040℃，快冷
+        - grade: S30408
+          alias: 06Cr19Ni10
+          mechanical: {tensileMPaMin: 515, rp02MPaMin: 205, elongationPctMinHeatTreated: 40, elongationPctMinAsWelded: 35}
+          heatTreatment: ≥1040℃，快冷
+        - grade: S30458
+          alias: 06Cr19Ni10N
+          mechanical: {tensileMPaMin: 550, rp02MPaMin: 240, elongationPctMinHeatTreated: 30, elongationPctMinAsWelded: 25}
+          heatTreatment: ≥1040℃，快冷
+        - grade: S31603
+          alias: 022Cr17Ni12Mo2
+          mechanical: {tensileMPaMin: 485, rp02MPaMin: 180, elongationPctMinHeatTreated: 40, elongationPctMinAsWelded: 35}
+          heatTreatment: ≥1040℃，快冷
+        - grade: S31608
+          alias: 06Cr17Ni12Mo2
+          mechanical: {tensileMPaMin: 515, rp02MPaMin: 205, elongationPctMinHeatTreated: 40, elongationPctMinAsWelded: 35}
+          heatTreatment: ≥1040℃，快冷
+        - grade: S31658
+          alias: 06Cr17Ni12Mo2N
+          mechanical: {tensileMPaMin: 550, rp02MPaMin: 240, elongationPctMinHeatTreated: 35, elongationPctMinAsWelded: 30}
+          heatTreatment: ≥1040℃，快冷
+        - grade: S32168
+          alias: 06Cr18Ni11Ti
+          mechanical: {tensileMPaMin: 515, rp02MPaMin: 205, elongationPctMinHeatTreated: 40, elongationPctMinAsWelded: 35}
+          heatTreatment: ≥1040℃，快冷；需方规定稳定化热处理时 850℃~930℃，标识代号 ST
+        - grade: S11348
+          alias: 06Cr13Al
+          mechanical: {tensileMPaMin: 415, rp02MPaMin: 170, elongationPctMinHeatTreated: 20}
+          heatTreatment: 780℃~830℃，快冷或缓冷
+          note: 铁素体型，非热处理态不作伸长率要求
+    - standard: GB/T 5310-2023
+      name: 高压锅炉用无缝钢管
+      extractedFrom: official_pdf_ocr_page_images
+      sourceClause: 表 8 钢管的力学性能（7.4.1）；热处理制度见表 7
+      verifiedBy: null
+      note: PDF 文字层是坏编码（自定义字体映射），本表按 Vision OCR 逐页看图抄录。伸长率与冲击分纵向/横向两列，另有布氏与维氏硬度区间——质保书上这两项也要核
+      grades:
+        - grade: 20G
+          unifiedCode: U50207
+          mechanical: {"tensileMPa": "410-550", "yieldMPaMin": 245, "elongationPctMinLongitudinal": 24, "elongationPctMinTransverse": 22, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "120-160", "HV": "125-170"}
+        - grade: 20MnG
+          unifiedCode: U50208
+          mechanical: {"tensileMPa": "415-560", "yieldMPaMin": 240, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "125-170", "HV": "130-180"}
+        - grade: 25MnG
+          unifiedCode: U50257
+          mechanical: {"tensileMPa": "485-640", "yieldMPaMin": 275, "elongationPctMinLongitudinal": 20, "elongationPctMinTransverse": 18, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "130-180", "HV": "135-190"}
+        - grade: 15MoG
+          unifiedCode: A65158
+          mechanical: {"tensileMPa": "450-600", "yieldMPaMin": 270, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "125-180", "HV": "130-190"}
+        - grade: 20MoG
+          unifiedCode: A65208
+          mechanical: {"tensileMPa": "415-665", "yieldMPaMin": 220, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "125-180", "HV": "130-190"}
+        - grade: 12CrMoG
+          unifiedCode: A30120
+          mechanical: {"tensileMPa": "410-560", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 21, "elongationPctMinTransverse": 19, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "125-170", "HV": "130-180"}
+        - grade: 15CrMoG
+          unifiedCode: A30158
+          mechanical: {"tensileMPa": "440-640", "yieldMPaMin": 295, "elongationPctMinLongitudinal": 21, "elongationPctMinTransverse": 19, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "125-195", "HV": "130-205"}
+        - grade: 12Cr2MoG
+          unifiedCode: A30128
+          mechanical: {"tensileMPa": "450-600", "yieldMPaMin": 280, "elongationPctMinLongitudinal": 22, "elongationPctMinTransverse": 20, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "125-180", "HV": "130-190"}
+        - grade: 12Cr1MoVG
+          unifiedCode: A31128
+          mechanical: {"tensileMPa": "470-640", "yieldMPaMin": 255, "elongationPctMinLongitudinal": 21, "elongationPctMinTransverse": 19, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "135-195", "HV": "140-205"}
+        - grade: 10Cr9Mo1VNbN
+          unifiedCode: A31108
+          mechanical: {"tensileMPa": ">=585", "yieldMPaMin": 415, "elongationPctMinLongitudinal": 20, "elongationPctMinTransverse": 16, "kv2JMinLongitudinal": 40, "kv2JMinTransverse": 27}
+          hardness: {"HBW": "190-250", "HV": "200-265"}
+          note: 洛氏 ≤25 HRC
+        - grade: 07Cr19Ni10
+          unifiedCode: S30409
+          mechanical: {"tensileMPa": ">=515", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 35}
+          hardness: {"HBW": "140-192", "HV": "150-200"}
+          note: 奥氏体，无横向与冲击要求；洛氏 75~90 HRBW
   pending:
     - GB/T 14976-2025 表 2/表 3 其余 26 个牌号（铁素体、马氏体、双相）待补
-    - GB/T 12771-2019（焊接钢管）、GB/T 13296-2023（锅炉换热器管）：文字层单元格内换行，待按页看图抄录
-    - GB/T 5310-2023、GB/T 9711-2023：PDF 文字层是坏编码或纯扫描件，需重 OCR 后看图抄录
+    - GB/T 13296-2023（锅炉换热器管）：表 4 待按页看图抄录
+    - GB/T 5310-2023 表 8 其余牌号（共 25 个，已录 11 个常用）；GB/T 9711-2023 已 OCR 完，表格待抄
 
 nbt47014SpecificFactors:
   source: NB/T 47014-2023 表 5 各种焊接方法的专用焊接工艺评定因素

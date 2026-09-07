@@ -203,3 +203,30 @@ def test_trust_policy_is_recorded_not_faked_and_can_be_switched_back():
     signed = table("tsg31_2025", "designApproval")
     assert signed.get("verifiedBy") and is_verified(signed)
     assert is_verified(copy.deepcopy(unsigned[0]))
+
+
+def test_pipe_limits_cover_five_standards_and_keep_them_apart():
+    """同一牌号在不同管材标准下限值不同——质保书核对必须按管材标准分开查。"""
+    from libs.regulatory_tables import pipe_material_limits, table
+
+    standards = {item["standard"] for item in table("pipeMaterialLimits")["standards"]}
+    assert {"GB/T 8163-2018", "GB/T 3087-2022", "GB/T 14976-2025", "GB/T 12771-2019", "GB/T 5310-2023"} == standards
+
+    # S30408：焊接管 515，无缝管 520，伸长率的口径也不同
+    welded = pipe_material_limits("GB/T 12771-2019", "06Cr19Ni10")
+    seamless = pipe_material_limits("GB/T 14976-2025", "06Cr19Ni10")
+    assert welded["mechanical"]["tensileMPaMin"] == 515
+    assert seamless["mechanical"]["tensileMPaMin"] == 520
+    assert "elongationPctMinAsWelded" in welded["mechanical"]
+    assert "elongationPctMinTransverse" in seamless["mechanical"]
+
+    # GB/T 5310 的锅炉管另有硬度区间，质保书上也要核
+    g20 = pipe_material_limits("GB/T 5310-2023", "20G")
+    assert g20["mechanical"]["tensileMPa"] == "410-550"
+    assert g20["mechanical"]["kv2JMinLongitudinal"] == 40 and g20["mechanical"]["kv2JMinTransverse"] == 27
+    assert g20["hardness"] == {"HBW": "120-160", "HV": "125-170"}
+    assert pipe_material_limits("GB/T 5310-2023", "12Cr1MoVG")["mechanical"]["yieldMPaMin"] == 255
+
+    # 12771 的铁素体牌号非热处理态不作伸长率要求
+    ferritic = pipe_material_limits("GB/T 12771-2019", "06Cr13Al")
+    assert "elongationPctMinAsWelded" not in ferritic["mechanical"]

@@ -163,7 +163,7 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
                 "composition": dict(entry.get("composition") or entry.get("compositionCommon") or {}),
                 "mechanical": dict(entry.get("mechanical") or entry.get("mechanicalCommon") or {}),
             }
-            for key in ("hotYieldRp02MPa", "note"):
+            for key in ("hotYieldRp02MPa", "hardness", "heatTreatment", "unifiedCode", "alias", "note"):
                 if entry.get(key) is not None:
                     merged[key] = entry[key]
             levels = entry.get("levels") or []
