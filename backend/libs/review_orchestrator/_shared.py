@@ -162,6 +162,7 @@ ALLOWED_AGENT_TOOLS = {
     "extract_welder_certificate",
     "verify_license_or_certificate",
     "verify_welder_certificate_authenticity",
+    "verify_welder_on_platform",
     "check_all_equal",
     "check_date_covers",
     "check_design_license_scope",

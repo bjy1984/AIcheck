@@ -438,3 +438,117 @@ def test_runtime_tool_dispatcher_rejects_invalid_standard_ref(monkeypatch) -> No
     assert result["status"] == "failed"
     assert result["errorCode"] == "VALIDATION_ERROR"
 
+
+def _platform_person_result(licenses: list[dict]) -> dict:
+    first = licenses[0]
+    return {
+        "status": "COMPLETED",
+        "idNumber": first["sfzh"],
+        "person": first,
+        "licenses": licenses,
+        "licenseCount": len(licenses),
+        "licenseLookup": {"status": "completed", "endpoint": "/info-pub/pub/getPerInfoBySfzh.json"},
+    }
+
+
+_WELDER_A = {
+    "ryxm": "李卫伍",
+    "sfzh": "342130197103286116",
+    "zsbh": "342130197103286116",
+    "zslb": "特种设备作业人员",
+    "cyzl": "作业人员",
+    "fzjg": "清江浦区市场监督管理局",
+    "czxm": "GTAW-FeⅡ-6FG-12/19-FefS-02/11/12",
+    "pzrq": "2024-11-13",
+    "yxrqs": "2024-11-01",
+    "yxrqz": "2028-10-31",
+    "validFlag": "1",
+}
+_WELDER_EXPIRED = {**_WELDER_A, "czxm": "SMAW-FeⅡ-6G-5/57-Fef3J", "yxrqs": "2020-11", "yxrqz": "2024-10", "validFlag": "1"}
+_CRANE = {**_WELDER_A, "czxm": "起重机指挥", "fzjg": "靖江市数据局", "yxrqs": "2025-05-01", "yxrqz": "2029-04-30"}
+
+
+def test_search_cnse_persons_tool_exposes_full_license_list(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_persons",
+        lambda id_number: _platform_person_result([_CRANE, _WELDER_A, _WELDER_EXPIRED]),
+    )
+    result = dispatch_runtime_tool({}, "search_cnse_persons", {"idNumber": _WELDER_A["sfzh"], "referenceDate": "2026-09-06"})
+    assert result["status"] == "succeeded"
+    assert result["licenseLookup"]["status"] == "completed"
+    assert [item["czxm"] for item in result["welderLicenses"]] == [_WELDER_A["czxm"], _WELDER_EXPIRED["czxm"]]
+    # validFlag=1 的到期证书不能算现行
+    assert [item["czxm"] for item in result["currentWelderLicenses"]] == [_WELDER_A["czxm"]]
+
+
+def test_verify_welder_on_platform_consistent_and_mismatch(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_persons",
+        lambda id_number: _platform_person_result([_CRANE, _WELDER_A, _WELDER_EXPIRED]),
+    )
+    ok = dispatch_runtime_tool(
+        {},
+        "verify_welder_on_platform",
+        {
+            "idNumber": _WELDER_A["sfzh"],
+            "expectedItems": ["GTAW-FeII-6FG-12/19-FefS-02/11/12"],  # 半角罗马数字也要匹配
+            "workDate": "2026-09-06",
+            "holderName": "李卫伍",
+        },
+    )
+    assert ok["verdict"] == "consistent"
+    assert ok["matchedItems"] == ["GTAW-FEII-6FG-12/19-FEFS-02/11/12"]
+    assert ok["requiresHumanConfirmation"] is False
+
+    expired = dispatch_runtime_tool(
+        {},
+        "verify_welder_on_platform",
+        {"idNumber": _WELDER_A["sfzh"], "expectedItems": ["SMAW-FeⅡ-6G-5/57-Fef3J"], "workDate": "2026-09-06"},
+    )
+    assert expired["verdict"] == "mismatch"
+    assert expired["expiredItems"] == ["SMAW-FEII-6G-5/57-FEF3J"]
+
+    missing = dispatch_runtime_tool(
+        {},
+        "verify_welder_on_platform",
+        {"idNumber": _WELDER_A["sfzh"], "expectedItems": ["GTAW-FeⅣ-6G-5/57-FefS-02/10/12"], "workDate": "2026-09-06"},
+    )
+    assert missing["verdict"] == "mismatch"
+    assert missing["missingItems"] == ["GTAW-FEIV-6G-5/57-FEFS-02/10/12"]
+    assert missing["requiresHumanConfirmation"] is True
+
+
+def test_verify_welder_on_platform_not_returned_and_platform_error(monkeypatch) -> None:
+    # 平台只回了首条（非焊工）且全表没取到：不是假证，只能判需人工确认
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_persons",
+        lambda id_number: {
+            "status": "COMPLETED",
+            "idNumber": _CRANE["sfzh"],
+            "person": _CRANE,
+            "licenses": [],
+            "licenseCount": 0,
+            "licenseLookup": {"status": "failed", "reason": "CnseRequestError"},
+        },
+    )
+    partial = dispatch_runtime_tool(
+        {},
+        "verify_welder_on_platform",
+        {"idNumber": _CRANE["sfzh"], "expectedItems": [_WELDER_A["czxm"]], "workDate": "2026-09-06"},
+    )
+    assert partial["verdict"] == "not_returned"
+    assert partial["requiresHumanConfirmation"] is True
+
+    from libs.integrations.cnse_client import CnseRequestError
+
+    monkeypatch.setattr(
+        "libs.review_orchestrator.runtime_tools.query_cnse_persons",
+        lambda id_number: (_ for _ in ()).throw(CnseRequestError("down")),
+    )
+    failed = dispatch_runtime_tool(
+        {},
+        "verify_welder_on_platform",
+        {"idNumber": _CRANE["sfzh"], "expectedItems": [_WELDER_A["czxm"]]},
+    )
+    assert failed["verdict"] == "platform_error"
+    assert failed["errorCode"] == "CNSE_UPSTREAM_FAILED"

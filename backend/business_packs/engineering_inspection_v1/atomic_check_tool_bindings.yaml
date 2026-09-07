@@ -1701,6 +1701,7 @@ atomicCheckToolBindings:
   - decode_welder_qualification
   - check_welder_work_coverage
   - check_certificate_validity
+  - verify_welder_on_platform
   parameters:
     profile: r24_welder_qualification
     argumentProfile: r24_certificate_validity_identity

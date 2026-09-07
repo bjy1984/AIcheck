@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import re
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -31,7 +32,10 @@ from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr
 from libs.review_orchestrator.deterministic_tools import (
     DETERMINISTIC_TOOL_DESCRIPTORS,
     DETERMINISTIC_TOOL_NAMES,
+    business_today,
     dispatch_deterministic_tool,
+    normalize_roman,
+    parse_date,
 )
 from libs.review_tools import BUSINESS_TOOL_DESCRIPTORS, BUSINESS_TOOL_NAMES, dispatch_business_tool
 
@@ -112,9 +116,23 @@ RUNTIME_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
         "name": "search_cnse_persons",
         "capability": (
             "查询全国特种设备公示信息平台的从业人员资格信息。"
-            "输入身份证号，返回姓名、作业项目、发证机关和有效期等公示记录。"
+            "输入身份证号，返回该人员全部公示证书（licenses）、其中的焊工项目与现行项目，"
+            "以及平台首条记录；有效期按到期日计算，不依赖平台 validFlag。"
         ),
         "inputSchema": {"idNumber": "string"},
+    },
+    {
+        "name": "verify_welder_on_platform",
+        "capability": (
+            "把焊工证或焊工名册上的项目代号与全国特种设备公示信息平台的全部焊工证书逐项比对，"
+            "输出 consistent / mismatch / not_returned / platform_error，并按施焊日期判断证书是否现行。"
+        ),
+        "inputSchema": {
+            "idNumber": "string",
+            "expectedItems": ["string"],
+            "workDate": "string?",
+            "holderName": "string?",
+        },
     },
     {
         "name": "lookup_standard_status",
@@ -180,6 +198,8 @@ def dispatch_runtime_tool(
         return search_cnse_organizations_tool(args)
     if tool_name == "search_cnse_persons":
         return search_cnse_persons_tool(args)
+    if tool_name == "verify_welder_on_platform":
+        return verify_welder_on_platform_tool(args)
     if tool_name == "lookup_standard_status":
         return lookup_standard_status_tool(args)
     if tool_name == "search_samr_standards":
@@ -737,6 +757,21 @@ def search_cnse_persons_tool(arguments: dict[str, Any]) -> dict[str, Any]:
             message="全国特种设备公示信息查询平台暂不可用，请稍后重试。",
         )
     person = result.get("person") if isinstance(result.get("person"), dict) else {}
+    licenses = [item for item in (result.get("licenses") or []) if isinstance(item, dict)]
+    lookup = result.get("licenseLookup") if isinstance(result.get("licenseLookup"), dict) else {}
+    reference = parse_date(arguments.get("referenceDate")) or business_today()
+    welder_licenses = [item for item in licenses if _is_welder_license(item)]
+    current_welder = [item for item in welder_licenses if _license_is_current(item, reference)]
+    if lookup.get("status") == "completed":
+        summary = (
+            f"公示平台返回 {len(licenses)} 条证书，其中焊工项目 {len(welder_licenses)} 条、"
+            f"截至 {reference.isoformat()} 现行 {len(current_welder)} 条；最终登记状态以公示平台结果为准。"
+        )
+    else:
+        summary = (
+            "公示平台只返回首条记录，全部证书列表未取到（"
+            f"{lookup.get('status') or 'not_attempted'}）；未返回焊接项目不能判为无证，需人工到平台复核。"
+        )
     return {
         "toolCallId": runtime_tool_call_id(),
         "toolName": tool_name,
@@ -748,8 +783,152 @@ def search_cnse_persons_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         "qualifiedItems": person.get("czxm"),
         "validUntil": person.get("yxrqz") or person.get("yxrq"),
         "person": person,
+        "licenses": licenses,
+        "licenseLookup": lookup,
+        "welderLicenses": welder_licenses,
+        "currentWelderLicenses": current_welder,
+        "referenceDate": reference.isoformat(),
         "requiresHumanConfirmation": True,
-        "summary": "已查询全国特种设备公示从业人员资格信息，最终登记状态以公示平台结果为准。",
+        "summary": summary,
+    }
+
+
+_WELDER_CODE_RE = re.compile(r"\b(SMAW|GTAW|GMAW|FCAW|SAW|PAW|OFW|ESW|EGW|SW|LBW|EBW|TIG|MIG|MAG)\b", re.IGNORECASE)
+
+
+def _is_welder_license(item: dict[str, Any]) -> bool:
+    text = " ".join(str(item.get(key) or "") for key in ("czxm", "cyzl", "zslb"))
+    return bool(_WELDER_CODE_RE.search(text)) or "焊" in text
+
+
+def _platform_date(value: Any, *, month_end: bool = False) -> date | None:
+    """平台日期有三种写法：2029-04-30、2025-05（老证只到月）、2025年05月至2029年04月（取后一段）。"""
+    text = str(value or "").strip()
+    if "至" in text:
+        text = text.split("至")[-1].strip()
+    parsed = parse_date(text)
+    if parsed is not None:
+        return parsed
+    match = re.fullmatch(r"(\d{4})[-/.年](\d{1,2})月?", text)
+    if not match:
+        return None
+    year, month = int(match.group(1)), int(match.group(2))
+    if not 1 <= month <= 12:
+        return None
+    if not month_end:
+        return date(year, month, 1)
+    next_month = date(year + (month // 12), (month % 12) + 1, 1)
+    return next_month - timedelta(days=1)
+
+
+def _license_is_current(item: dict[str, Any], reference: date) -> bool:
+    """现行 = 到期日不早于参考日；平台 validFlag 对已到期记录仍为 1，不能用。"""
+    valid_until = _platform_date(item.get("yxrqz") or item.get("yxrq"), month_end=True)
+    if valid_until is None:
+        return False
+    valid_from = _platform_date(item.get("yxrqs"))
+    if valid_from is not None and valid_from > reference:
+        return False
+    return valid_until >= reference
+
+
+def _normalize_welder_item(code: str) -> str:
+    text = normalize_roman(str(code or ""))
+    text = text.translate(str.maketrans("／－（）", "/-()"))
+    return re.sub(r"\s+", "", text).upper()
+
+
+def _split_welder_items(code: str) -> list[str]:
+    parts = re.split(r"[和、;；,，]|\band\b", str(code or ""))
+    return [_normalize_welder_item(part) for part in parts if part and part.strip()]
+
+
+def verify_welder_on_platform_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """三方比对的平台一侧：证书/名册项目代号 vs 平台全部焊工证书。
+
+    结论只有四种：consistent（每个期望项目都在平台现行证书里）、mismatch（平台有焊工证但
+    期望项目不在其中或已到期）、not_returned（平台没有返回任何焊工证书，或全表没取到）、
+    platform_error（平台不可用）。not_returned 与 platform_error 都不是"证书为假"，
+    规则层只能据此输出需人工确认。
+    """
+    tool_name = "verify_welder_on_platform"
+    base = search_cnse_persons_tool({"idNumber": arguments.get("idNumber"), "referenceDate": arguments.get("workDate")})
+    if base.get("status") != "succeeded":
+        return {
+            **base,
+            "toolName": tool_name,
+            "status": "succeeded",
+            "verdict": "platform_error",
+            "matchedItems": [],
+            "missingItems": [],
+            "requiresHumanConfirmation": True,
+            "summary": f"公示平台查询失败（{base.get('errorCode')}），无法比对，需人工到平台复核。",
+        }
+    expected_raw = arguments.get("expectedItems") or []
+    if isinstance(expected_raw, str):
+        expected_raw = [expected_raw]
+    expected: list[str] = []
+    for item in expected_raw:
+        expected.extend(_split_welder_items(str(item)))
+    expected = list(dict.fromkeys(item for item in expected if item))
+    reference = parse_date(arguments.get("workDate")) or business_today()
+    platform_items: dict[str, dict[str, Any]] = {}
+    for lic in base.get("welderLicenses") or []:
+        for code in _split_welder_items(str(lic.get("czxm") or "")):
+            record = platform_items.setdefault(code, {"code": code, "current": False, "licenses": []})
+            record["licenses"].append({
+                "certificateNo": lic.get("zsbh"),
+                "issuer": lic.get("fzjg"),
+                "validFrom": lic.get("yxrqs"),
+                "validUntil": lic.get("yxrqz") or lic.get("yxrq"),
+                "employer": lic.get("khdw"),
+            })
+            if _license_is_current(lic, reference):
+                record["current"] = True
+    matched = [code for code in expected if code in platform_items and platform_items[code]["current"]]
+    expired = [code for code in expected if code in platform_items and not platform_items[code]["current"]]
+    missing = [code for code in expected if code not in platform_items]
+    holder = str(arguments.get("holderName") or "").strip()
+    platform_name = str(base.get("personName") or "").strip()
+    name_matches = (not holder) or (holder == platform_name)
+    lookup_status = (base.get("licenseLookup") or {}).get("status")
+    if lookup_status != "completed" and not platform_items or not platform_items:
+        verdict = "not_returned"
+    elif expected and not missing and not expired and name_matches:
+        verdict = "consistent"
+    elif not expected:
+        verdict = "consistent" if name_matches else "mismatch"
+    else:
+        verdict = "mismatch"
+    summary_bits = [f"平台焊工证书 {len(platform_items)} 项（现行 {sum(1 for r in platform_items.values() if r['current'])} 项）"]
+    if matched:
+        summary_bits.append(f"一致 {len(matched)} 项")
+    if expired:
+        summary_bits.append(f"已到期 {len(expired)} 项")
+    if missing:
+        summary_bits.append(f"平台未见 {len(missing)} 项")
+    if not name_matches:
+        summary_bits.append(f"姓名不一致（证书 {holder} / 平台 {platform_name}）")
+    if lookup_status != "completed":
+        summary_bits.append("全表未取到，只比对了首条记录")
+    return {
+        "toolCallId": runtime_tool_call_id(),
+        "toolName": tool_name,
+        "status": "succeeded",
+        "verdict": verdict,
+        "referenceDate": reference.isoformat(),
+        "expectedItems": expected,
+        "matchedItems": matched,
+        "expiredItems": expired,
+        "missingItems": missing,
+        "platformItems": list(platform_items.values()),
+        "personName": platform_name,
+        "holderName": holder or None,
+        "nameMatches": name_matches,
+        "licenseLookup": base.get("licenseLookup"),
+        "licenseCount": len(base.get("licenses") or []),
+        "requiresHumanConfirmation": verdict != "consistent",
+        "summary": "；".join(summary_bits) + "。平台记录作为证据保留，最终以平台原始页面为准。",
     }
 
 

@@ -12,6 +12,7 @@ import binascii
 import json
 import math
 import re
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -34,11 +35,18 @@ SEARCH_PATH = "/info-pub/pub/orgSearchData.json"
 PERSON_CAPTCHA_PATH = "/info-pub/pub/pubQueryVCodeData.json"
 PERSON_CHECK_PATH = "/info-pub/pub/checkPubQuerycode.json"
 PERSON_SEARCH_PATH = "/info-pub/pub/remotePubQuery.json"
+# 网页流程的后两步：remotePubQuery 只回一条记录（网页只用它取身份证号），
+# 全部证书要先打开结果页拿 validCode，再调 getPerInfoBySfzh 取 licList。
+# 2026-09-06 实测：李卫伍 remotePubQuery 只回"起重机指挥"，licList 有 7 条（含 3 张现行焊工证）。
+PERSON_RESULT_PAGE_PATH = "/info-pub/pub/perResult"
+PERSON_INFO_PATH = "/info-pub/pub/getPerInfoBySfzh.json"
 DEFAULT_TIMEOUT: tuple[float, float] = (5.0, 20.0)
 MAX_CHALLENGE_BYTES = 16 * 1024 * 1024
 MAX_QUERY_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_BASE64_CHARACTERS = 12_000_000
 MAX_PERSON_FIELD_BYTES = 1024
+MAX_PAGE_BYTES = 512 * 1024
+MAX_LICENSE_COUNT = 200
 ROW_FIELDS = ("dwid", "fzjg", "zsyxq", "dwmc", "dwlb", "sjgxsj", "zsyxqyz")
 PERSON_FIELDS = (
     "ryxm",
@@ -127,10 +135,14 @@ class CnsePersonQueryResult:
     confidence: float
     match_box: Mapping[str, int]
     target_center: Mapping[str, int]
+    # 全表证书；空元组配合 license_lookup["status"] != "completed" 表示没拿到而不是没有
+    licenses: tuple[Mapping[str, str], ...] = ()
+    license_lookup: Mapping[str, Any] = None  # type: ignore[assignment]
 
     def to_dict(self) -> Mapping[str, Any]:
         """Return the public person-search contract used by the HTTP route."""
 
+        lookup = dict(self.license_lookup or {"status": "not_attempted"})
         return {
             "status": "COMPLETED",
             "algorithm": ALGORITHM,
@@ -141,6 +153,9 @@ class CnsePersonQueryResult:
             "idNumber": self.id_number,
             "queryEndpoint": PERSON_SEARCH_PATH,
             "person": dict(self.person),
+            "licenses": [dict(item) for item in self.licenses],
+            "licenseCount": len(self.licenses),
+            "licenseLookup": lookup,
             "targetCenter": dict(self.target_center),
             "matchBox": dict(self.match_box),
         }
@@ -224,6 +239,63 @@ def _parse_person_record(raw: Any) -> Mapping[str, str]:
             raise CnseProtocolError("CNSE person record is invalid")
         person[field] = value
     return person
+
+
+def _parse_license_record(raw: Any) -> Mapping[str, str]:
+    """licList 里的记录字段与 remotePubQuery 相同，但允许缺字段（老证书 khdw/yxrqs 常为空）。"""
+    if not isinstance(raw, Mapping):
+        raise CnseProtocolError("CNSE license record is invalid")
+    record: dict[str, str] = {}
+    for field in PERSON_FIELDS:
+        value = raw.get(field, "")
+        if value is None:
+            value = ""
+        if not isinstance(value, str) or len(value.encode("utf-8")) > MAX_PERSON_FIELD_BYTES:
+            raise CnseProtocolError("CNSE license record is invalid")
+        record[field] = value
+    for extra in ("limitRange", "remark", "eCertFileId", "khrq", "pzdw"):
+        value = raw.get(extra, "")
+        if isinstance(value, str) and len(value.encode("utf-8")) <= MAX_PERSON_FIELD_BYTES:
+            record[extra] = value
+    return record
+
+
+_VALID_CODE_RE = re.compile(r'id="validCode"\s+value="([0-9a-fA-F]{8,64})"')
+_ERRCODE_RE = re.compile(r'id="errcode"\s+value="([^"]*)"')
+
+
+def _parse_person_result_page(html: str) -> str:
+    err = _ERRCODE_RE.search(html)
+    if err is None or err.group(1).strip() != "0":
+        raise CnseProtocolError("CNSE person result page rejected the captcha session")
+    match = _VALID_CODE_RE.search(html)
+    if match is None:
+        raise CnseProtocolError("CNSE person result page has no validCode")
+    return match.group(1)
+
+
+def _bounded_text_response(response: httpx.Response, *, limit: int, label: str) -> str:
+    status = getattr(response, "status_code", None)
+    if not isinstance(status, int):
+        raise CnseRequestError(f"{label} returned no HTTP status")
+    if 300 <= status < 400:
+        raise CnseRequestError(f"{label} redirects are not permitted")
+    if not 200 <= status < 300:
+        raise CnseRequestError(f"{label} returned HTTP {status}")
+    body = bytearray()
+    iterator = getattr(response, "iter_bytes", None)
+    if not callable(iterator):
+        raise CnseRequestError(f"{label} returned an unreadable response")
+    for chunk in iterator(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        body.extend(chunk)
+        if len(body) > limit:
+            raise CnseRequestError(f"{label} response is too large")
+    try:
+        return bytes(body).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise CnseProtocolError(f"{label} returned undecodable text") from exc
 
 
 def _decode_base64_image(value: Any, field: str) -> bytes:
@@ -401,7 +473,11 @@ class CnseApiClient:
         return _parse_challenge_envelope(data)
 
     def check_person_captcha(self, move_length: int) -> None:
-        if isinstance(move_length, bool) or not isinstance(move_length, int) or not 0 <= move_length <= 65_535:
+        if (
+            isinstance(move_length, bool)
+            or not isinstance(move_length, int)
+            or not 0 <= move_length <= 65_535
+        ):
             raise CnseConfigurationError("CNSE query parameters are invalid")
         data = self._request_json(
             "POST",
@@ -418,7 +494,11 @@ class CnseApiClient:
 
     def submit_person_search(self, id_number: str, move_length: int) -> Mapping[str, str]:
         normalized_id = normalize_id_number(id_number)
-        if isinstance(move_length, bool) or not isinstance(move_length, int) or not 0 <= move_length <= 65_535:
+        if (
+            isinstance(move_length, bool)
+            or not isinstance(move_length, int)
+            or not 0 <= move_length <= 65_535
+        ):
             raise CnseConfigurationError("CNSE query parameters are invalid")
         data = self._request_json(
             "GET",
@@ -518,12 +598,77 @@ class CnseApiClient:
             target_center={"x": matched.target_x, "y": matched.target_y},
         )
 
-    def query_person(self, id_number: str) -> CnsePersonQueryResult:
+    def fetch_person_valid_code(self, id_number: str, move_length: int) -> str:
+        """打开人员结果页，取出 getPerInfoBySfzh 需要的 validCode（同一验证码会话内）。"""
+        normalized_id = normalize_id_number(id_number)
+        headers = {"Referer": self._url(PAGE_PATH)}
+        response = None
+        try:
+            request = self.client.build_request(
+                "GET",
+                self._url(PERSON_RESULT_PAGE_PATH),
+                headers=headers,
+                params={"sfzh": normalized_id, "moveLength": str(move_length)},
+            )
+            response = self.client.send(request, stream=True, follow_redirects=False)
+            html = _bounded_text_response(response, limit=MAX_PAGE_BYTES, label="perResult")
+        except CnseApiError:
+            raise
+        except Exception as exc:
+            raise CnseRequestError("CNSE request failed: perResult") from exc
+        finally:
+            if response is not None and callable(getattr(response, "close", None)):
+                response.close()
+        return _parse_person_result_page(html)
+
+    def fetch_person_licenses(
+        self, id_number: str, valid_code: str
+    ) -> tuple[Mapping[str, str], ...]:
+        normalized_id = normalize_id_number(id_number)
+        if not isinstance(valid_code, str) or not re.fullmatch(r"[0-9a-fA-F]{8,64}", valid_code):
+            raise CnseConfigurationError("CNSE validCode is invalid")
+        data = self._request_json(
+            "GET",
+            PERSON_INFO_PATH,
+            limit=MAX_QUERY_BYTES,
+            params={
+                "sfzh": normalized_id,
+                "validCode": valid_code,
+                "r": str(int(time.time() * 1000)),
+            },
+        )
+        payload = data.get("data") if isinstance(data, Mapping) and "licList" not in data else data
+        if not isinstance(payload, Mapping) or not isinstance(payload.get("licList"), list):
+            raise CnseProtocolError("CNSE person info did not return licList")
+        raw_list = payload["licList"]
+        if len(raw_list) > MAX_LICENSE_COUNT:
+            raise CnseProtocolError("CNSE person info returned too many licenses")
+        return tuple(_parse_license_record(item) for item in raw_list)
+
+    def query_person(
+        self, id_number: str, *, include_licenses: bool = True
+    ) -> CnsePersonQueryResult:
         normalized_id = normalize_id_number(id_number)
         challenge = self.fetch_person_challenge()
         move_length, matched = self._solve_challenge(challenge)
         self.check_person_captcha(move_length)
         person = self.submit_person_search(normalized_id, move_length)
+        licenses: tuple[Mapping[str, str], ...] = ()
+        lookup: dict[str, Any] = {"status": "not_attempted"}
+        if include_licenses:
+            # 后两步失败不应让第一步的结果作废：降级为"只拿到一条"，并把原因带出去，
+            # 让规则层输出"需人工确认"而不是把"未返回焊接项目"当作假证。
+            try:
+                valid_code = self.fetch_person_valid_code(normalized_id, move_length)
+                licenses = self.fetch_person_licenses(normalized_id, valid_code)
+                lookup = {"status": "completed", "endpoint": PERSON_INFO_PATH}
+            except CnseApiError as exc:
+                lookup = {
+                    "status": "failed",
+                    "endpoint": PERSON_INFO_PATH,
+                    "reason": exc.__class__.__name__,
+                    "message": str(exc)[:160],
+                }
         return CnsePersonQueryResult(
             id_number=normalized_id,
             person=person,
@@ -537,4 +682,6 @@ class CnseApiClient:
                 "height": matched.height,
             },
             target_center={"x": matched.target_x, "y": matched.target_y},
+            licenses=licenses,
+            license_lookup=lookup,
         )

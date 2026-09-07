@@ -55,6 +55,27 @@ PERSON = {
 }
 
 
+VALID_CODE = "4da6d0f41bbb4db711a915a952183f19"
+PERSON_RESULT_PAGE = (
+    "<html><body>"
+    f"<input type=\"hidden\" id=\"sfzh\" value=\"{PERSON['sfzh']}\">"
+    "<input type=\"hidden\" id=\"errcode\" value=\"0\">"
+    f"<input type=\"hidden\" id=\"validCode\" value=\"{VALID_CODE}\">"
+    "<div id=\"contentDetail\"></div></body></html>"
+)
+CRANE_LICENSE = {
+    **PERSON,
+    "czxm": "起重机指挥",
+    "fzjg": "靖江市数据局",
+    "khdw": "/",
+    "pzrq": "2025-02-25",
+    "yxrqs": "2025-05-01",
+    "yxrqz": "2029-04-30",
+    "yxrq": "2029-04-30 00:00:00",
+    "limitRange": "",
+}
+
+
 def png_bytes(array: np.ndarray) -> bytes:
     output = io.BytesIO()
     Image.fromarray(array, mode="RGBA").save(output, format="PNG")
@@ -138,30 +159,79 @@ def test_cnse_person_client_keeps_session_across_challenge_check_and_query() -> 
             assert request.content.decode() == "moveLength=177"
             return httpx.Response(200, json={"errcode": 0, "errmsg": "验证通过"})
         assert request.method == "GET"
-        assert path.endswith("remotePubQuery.json")
-        assert dict(request.url.params) == {
-            "keyword": PERSON["sfzh"],
-            "moveLength": "177",
-        }
-        return httpx.Response(
-            200,
-            json={
-                "messageText": "",
-                "messageLevel": "success",
-                "data": {"type": "person", "data": PERSON},
-            },
-        )
+        if path.endswith("remotePubQuery.json"):
+            assert dict(request.url.params) == {
+                "keyword": PERSON["sfzh"],
+                "moveLength": "177",
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "messageText": "",
+                    "messageLevel": "success",
+                    "data": {"type": "person", "data": PERSON},
+                },
+            )
+        if path.endswith("/pub/perResult"):
+            assert dict(request.url.params) == {"sfzh": PERSON["sfzh"], "moveLength": "177"}
+            return httpx.Response(200, text=PERSON_RESULT_PAGE)
+        assert path.endswith("getPerInfoBySfzh.json")
+        params = dict(request.url.params)
+        assert params["sfzh"] == PERSON["sfzh"]
+        assert params["validCode"] == VALID_CODE
+        assert params["r"].isdigit()
+        return httpx.Response(200, json={"sfzh": PERSON["sfzh"], "ryxm": PERSON["ryxm"], "licList": [PERSON, CRANE_LICENSE]})
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
         integration = CnseApiClient(client=http_client, solver=fake_solver)
         result = integration.query_person(f" {PERSON['sfzh']} ").to_dict()
 
-    assert [request.method for request in requests] == ["GET", "POST", "GET"]
+    # 网页流程四步：验证码 → 校验 → 首条记录 → 结果页取 validCode → 全部证书
+    assert [request.method for request in requests] == ["GET", "POST", "GET", "GET", "GET"]
     assert result["status"] == "COMPLETED"
     assert result["idNumber"] == PERSON["sfzh"]
     assert result["queryEndpoint"] == PERSON_SEARCH_PATH
     assert result["person"] == PERSON
     assert set(result["person"]) == set(PERSON_FIELDS)
+    assert result["licenseLookup"]["status"] == "completed"
+    assert result["licenseCount"] == 2
+    assert [item["czxm"] for item in result["licenses"]] == [PERSON["czxm"], "起重机指挥"]
+
+
+def test_cnse_person_client_degrades_when_license_page_fails() -> None:
+    """后两步失败不能让首条记录作废：降级为 licenseLookup.failed，规则层据此只能判需人工确认。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.endswith("pubQueryVCodeData.json"):
+            return httpx.Response(200, json=challenge_json())
+        if request.method == "POST":
+            return httpx.Response(200, json={"errcode": 0, "errmsg": "验证通过"})
+        if path.endswith("remotePubQuery.json"):
+            return httpx.Response(
+                200,
+                json={"messageLevel": "success", "data": {"type": "person", "data": PERSON}},
+            )
+        return httpx.Response(403, text="forbidden")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        integration = CnseApiClient(client=http_client, solver=fake_solver)
+        result = integration.query_person(PERSON["sfzh"]).to_dict()
+
+    assert result["person"] == PERSON
+    assert result["licenses"] == []
+    assert result["licenseLookup"]["status"] == "failed"
+    assert result["licenseLookup"]["reason"] == "CnseRequestError"
+
+
+def test_cnse_person_result_page_requires_errcode_zero_and_valid_code() -> None:
+    from libs.integrations.cnse_client import _parse_person_result_page
+
+    assert _parse_person_result_page(PERSON_RESULT_PAGE) == VALID_CODE
+    with pytest.raises(CnseProtocolError):
+        _parse_person_result_page(PERSON_RESULT_PAGE.replace('value="0"', 'value="1"'))
+    with pytest.raises(CnseProtocolError):
+        _parse_person_result_page("<html><input type=\"hidden\" id=\"errcode\" value=\"0\"></html>")
 
 
 def test_cnse_person_client_rejects_non_person_payload() -> None:

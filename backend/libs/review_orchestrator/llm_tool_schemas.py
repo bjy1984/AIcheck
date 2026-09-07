@@ -8,6 +8,7 @@ EXTERNAL_REGISTRY_TOOL_NAMES = frozenset(
     {
         "search_cnse_organizations",
         "search_cnse_persons",
+        "verify_welder_on_platform",
         "lookup_standard_status",
         "search_samr_standards",
     }
@@ -66,6 +67,29 @@ CNSE_LLM_TOOLS: list[dict[str, Any]] = [
 
 
 STD_SAMR_LLM_TOOLS: list[dict[str, Any]] = [
+    llm_function_tool(
+        "verify_welder_on_platform",
+        (
+            "把焊工证或焊工名册上的项目代号与公示平台该身份证号下的全部焊工证书逐项比对，"
+            "按施焊日期判断是否现行；输出 consistent / mismatch / not_returned / platform_error。"
+            "not_returned 与 platform_error 不是证书为假，只能要求人工复核。"
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "idNumber": {"type": "string", "description": "焊工身份证号。"},
+                "expectedItems": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "证书或名册上的项目代号，例如 GTAW-FeⅡ-6G-3/57-FefS-02/11/12。",
+                },
+                "workDate": {"type": "string", "description": "施焊日期 YYYY-MM-DD，用于判断证书是否现行；缺省为业务当日。"},
+                "holderName": {"type": "string", "description": "证书上的姓名，用于与平台姓名比对。"},
+            },
+            "required": ["idNumber"],
+            "additionalProperties": False,
+        },
+    ),
     llm_function_tool(
         "lookup_standard_status",
         (

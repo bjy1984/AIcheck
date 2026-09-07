@@ -36,6 +36,7 @@ def test_external_registry_llm_tools_include_std_samr_and_cnse() -> None:
     assert names == {
         "search_cnse_organizations",
         "search_cnse_persons",
+        "verify_welder_on_platform",
         "lookup_standard_status",
         "search_samr_standards",
     }
@@ -63,6 +64,7 @@ def test_is_external_registry_tool() -> None:
         {
             "search_cnse_organizations",
             "search_cnse_persons",
+            "verify_welder_on_platform",
             "lookup_standard_status",
             "search_samr_standards",
         }
