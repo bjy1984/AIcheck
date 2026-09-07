@@ -5812,3 +5812,56 @@ def _project_analysis_persist_results_inner(run_id: str) -> dict[str, Any]:
     )
     flush_state()
     return run
+
+
+# ---------------------------------------------------------------------------
+# P12 F4：每周盲审抽样（celery beat，周一 08:00 服务器时区）。只抽样落盘，不改业务状态。
+# ---------------------------------------------------------------------------
+BLIND_REVIEW_STATE_KEYS = {"ai_runs", "review_opinions", "blind_review_tasks", "audit_logs"}
+
+
+def blind_review_weekly_sample_enabled() -> bool:
+    return str(os.getenv("AICHECK_BLIND_REVIEW_AUTO_SAMPLE", "1")).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def blind_review_alert_threshold() -> float:
+    try:
+        return float(os.getenv("AICHECK_RUBBER_STAMP_ALERT_THRESHOLD", "0.05"))
+    except ValueError:
+        return 0.05
+
+
+def run_blind_review_weekly_sample(state: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    """纯函数部分：抽样 + 指数 + 阈值判断，便于测试。"""
+    from libs.feedback.blind_review import (
+        DEFAULT_SAMPLE_RATIO,
+        rubber_stamp_index,
+        sample_blind_review_tasks,
+    )
+
+    try:
+        ratio = float(os.getenv("AICHECK_BLIND_REVIEW_SAMPLE_RATIO", str(DEFAULT_SAMPLE_RATIO)))
+    except ValueError:
+        ratio = DEFAULT_SAMPLE_RATIO
+    tasks = sample_blind_review_tasks(state, ratio=ratio, window_days=7, now=now, created_by="celery-beat")
+    index = rubber_stamp_index(state)
+    threshold = blind_review_alert_threshold()
+    alert = index.get("value") is not None and int(index.get("sampleSize") or 0) >= 5 and float(index["value"]) < threshold
+    return {"sampled": len(tasks), "batchId": tasks[0]["batchId"] if tasks else None, "rubberStampIndex": index, "alert": alert, "threshold": threshold}
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+@pipeline_task_lock("blind-review-periodic", lambda _self: "blind_review_weekly_sample")
+def blind_review_weekly_sample(self) -> dict[str, Any]:
+    if not blind_review_weekly_sample_enabled():
+        return {"skipped": "disabled"}
+    load_state(BLIND_REVIEW_STATE_KEYS)
+    result = run_blind_review_weekly_sample(repo.state, now=datetime.now(UTC))
+    if result["sampled"]:
+        repo.add_audit("每周盲审抽样", "BlindReviewBatch", str(result["batchId"]))
+    if result["alert"]:
+        # 橡皮图章指数低于阈值：常规审查基本照抄 AI。审计留痕 + 日志，前端盲审页同口径红条
+        repo.add_audit("橡皮图章指数低于阈值", "BlindReviewIndex", f"{result['rubberStampIndex'].get('value')}<{result['threshold']}")
+        logging.getLogger(__name__).warning("rubber-stamp index %s below threshold %s (sample=%s)", result["rubberStampIndex"].get("value"), result["threshold"], result["rubberStampIndex"].get("sampleSize"))
+    flush_state({"blind_review_tasks", "audit_logs"}, selected_singleton_keys=set())
+    return result

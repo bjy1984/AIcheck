@@ -6,6 +6,7 @@ import { NO_RESET_WHITE_LIST } from '@/constants'
 
 const AICheckStaticLayout = () => import('@/layout/AICheckStaticLayout.vue')
 const FdeFeedbackTriage = () => import('@/views/AICheck/FdeFeedbackTriage.vue')
+const FdeBlindReview = () => import('@/views/AICheck/FdeBlindReview.vue')
 const AdminOverview = () => import('@/views/AICheck/AdminOverview.vue')
 const KnowledgeOverview = () => import('@/views/AICheck/KnowledgeOverview.vue')
 const KnowledgeNetwork = () => import('@/views/AICheck/KnowledgeNetwork.vue')
@@ -107,6 +108,30 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
         name: 'FdeFeedbackTriage',
         meta: {
           title: '反馈归因',
+          hidden: true,
+          noCache: true,
+          roles: ['fde']
+        }
+      }
+    ]
+  },
+  {
+    /* P12 F4 盲审页：与 triage 页同样独立于 FdeConsole 棘轮。 */
+    path: '/fde-blind-review',
+    component: AICheckStaticLayout,
+    name: 'FdeBlindReviewLayout',
+    meta: {
+      hidden: true,
+      noCache: true,
+      roles: ['fde']
+    },
+    children: [
+      {
+        path: '',
+        component: FdeBlindReview,
+        name: 'FdeBlindReview',
+        meta: {
+          title: '盲审抽样',
           hidden: true,
           noCache: true,
           roles: ['fde']

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 from libs.task_priority import MAX_TASK_PRIORITY, broker_priority
 
@@ -69,6 +70,11 @@ celery_app.conf.update(
         "auto-review-finalize-project-runs": {
             "task": "apps.worker.tasks.auto_review_finalize_project_runs",
             "schedule": 60.0,
+        },
+        # P12 F4：每周一 08:00 抽 10% 已完成节点做盲审（AICHECK_BLIND_REVIEW_AUTO_SAMPLE=0 关闭）
+        "blind-review-weekly-sample": {
+            "task": "apps.worker.tasks.blind_review_weekly_sample",
+            "schedule": crontab(day_of_week="mon", hour=8, minute=0),
         },
     },
     task_default_queue="business.light",

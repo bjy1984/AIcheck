@@ -5551,6 +5551,65 @@ export const getFdeFeedbackMetricsApi = (): Promise<IResponse<FdeFeedbackMetrics
   return request.get({ url: '/api/fde/feedback/metrics' })
 }
 
+/** P12 F4 盲审：未判任务不带 AI / 常规结论，判完后 reveal 才回带。 */
+export type FdeBlindReviewTask = {
+  id: string
+  batchId: string
+  status: 'open' | 'done'
+  projectId: string
+  nodeId: number
+  aiRunId?: string
+  createdAt: string
+  excludedReviewerName?: string
+  sampleRatio?: number
+  windowDays?: number | null
+  aiResult?: string
+  regularResult?: string
+  blindResult?: string
+  blindReviewerName?: string
+  blindComment?: string
+  decidedAt?: string
+  divergesFromAi?: boolean
+  divergesFromRegular?: boolean
+}
+
+export type FdeRubberStampIndex = {
+  value: number | null
+  blindDivergence: number | null
+  regularDivergence: number | null
+  sampleSize: number
+}
+
+export const listFdeBlindReviewTasksApi = (params?: {
+  status?: 'open' | 'done'
+  reveal?: boolean
+}): Promise<IResponse<{ tasks: FdeBlindReviewTask[]; rubberStampIndex: FdeRubberStampIndex }>> => {
+  return request.get({ url: '/api/fde/blind-review/tasks', params })
+}
+
+export const sampleFdeBlindReviewApi = (
+  data: { ratio?: number; windowDays?: number | null; seed?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ tasks: FdeBlindReviewTask[]; sampled: number }>> => {
+  return request.post({
+    url: '/api/fde/blind-review/sample',
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
+export const decideFdeBlindReviewApi = (
+  taskId: string,
+  data: { result: string; reviewerName?: string; comment?: string },
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ task: FdeBlindReviewTask; rubberStampIndex: FdeRubberStampIndex }>> => {
+  return request.post({
+    url: `/api/fde/blind-review/tasks/${taskId}/decision`,
+    data,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const triageFdeFeedbackApi = (
   feedbackId: string,
   data: {

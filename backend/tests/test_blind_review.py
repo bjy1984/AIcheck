@@ -93,3 +93,23 @@ def test_blind_review_endpoints_roundtrip() -> None:
     assert decided["rubberStampIndex"]["sampleSize"] == 1
     forbidden = client.post("/api/fde/blind-review/sample", json={}, headers={"X-Role": "contractor"}).json()
     assert forbidden["code"] != 0
+
+
+def test_weekly_sample_task_samples_and_flags_rubber_stamp(monkeypatch) -> None:
+    from apps.worker.tasks import run_blind_review_weekly_sample
+
+    monkeypatch.setenv("AICHECK_RUBBER_STAMP_ALERT_THRESHOLD", "0.05")
+    state = _state(30)
+    for opinion in state["review_opinions"]:
+        opinion["createdAt"] = NOW.strftime("%Y-%m-%d %H:%M:%S")
+    result = run_blind_review_weekly_sample(state, now=NOW)
+    assert result["sampled"] == 3 and result["batchId"] and result["alert"] is False
+    # 判完且盲审全跟 AI 一致 → 指数 = 0 − 常规差异率 < 阈值 → 报警
+    for task in state["blind_review_tasks"]:
+        ai = "需补正" if task["aiResult"] == "建议不符合" else "满足要求"
+        record_blind_decision(task, result=ai, reviewer_name="李工", comment=None, now=NOW)
+    state["blind_review_tasks"].extend(
+        {**t, "id": f"{t['id']}-{i}"} for i, t in enumerate(list(state["blind_review_tasks"]))
+    )  # 凑够样本 ≥5
+    again = run_blind_review_weekly_sample(state, now=NOW)
+    assert again["rubberStampIndex"]["sampleSize"] >= 5 and again["alert"] is True
