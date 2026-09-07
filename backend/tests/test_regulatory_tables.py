@@ -268,3 +268,33 @@ def test_wps_thickness_coverage_follows_table6_and_impact_rule():
     partial = wps_thickness_coverage(12, welding_method="焊条电弧焊")
     assert partial["weldMetalMaxMm"] is None and "算不出" in partial["notes"][0]
     assert wps_thickness_coverage(0) is None and wps_thickness_coverage("x") is None
+
+
+def test_filler_class_matches_base_material_group():
+    """NB/T 47014-2023 表 2~表 4：焊材分类代号与母材组别的对应，供焊材选用判定。"""
+    from libs.regulatory_tables import filler_classes_for_group, filler_matches_base_material, table
+
+    tables = table("nbt47014FillerClasses")["tables"]
+    assert {v["codePrefix"] for v in tables.values()} == {"FeT", "FeS", "FeMSG"}
+    assert sum(len(v["entries"]) for v in tables.values()) == 73
+
+    # 三张表同一个母材组各有一条，前缀不同
+    assert [item["fillerClass"] for item in filler_classes_for_group("Fe-1-2")] == ["FeT-1-2", "FeS-1-2", "FeMSG-1-2"]
+    # 给了方法就只给那张表：焊条走表 2、埋弧焊走表 4、钨极走表 3
+    assert [i["fillerClass"] for i in filler_classes_for_group("Fe-1-2", welding_method="焊条电弧焊")] == ["FeT-1-2"]
+    assert [i["fillerClass"] for i in filler_classes_for_group("Fe-1-2", welding_method="埋弧焊")] == ["FeMSG-1-2"]
+    assert [i["fillerClass"] for i in filler_classes_for_group("Fe-1-2", welding_method="钨极气体保护焊")] == ["FeS-1-2"]
+
+    # Fe-1-x 按强度分档，抗拉强度下限跟着组别走
+    by_code = {i["fillerClass"]: i for i in filler_classes_for_group("Fe-1-1") + filler_classes_for_group("Fe-1-3")}
+    assert by_code["FeT-1-1"]["tensileMPaMin"] == 430
+    assert by_code["FeT-1-3"]["tensileMPaMin"] == 550
+
+    # 端到端：Q345R 属 Fe-1-2，配 FeT-1-2 匹配、配 FeT-1-1 不匹配
+    ok = filler_matches_base_material("FeT-1-2", "Q345R")
+    assert ok["matched"] is True and ok["baseMaterialGroup"] == "Fe-1-2"
+    assert filler_matches_base_material("FeT-1-1", "Q345R")["matched"] is False
+
+    # 母材查不到组别时不给结论
+    assert filler_matches_base_material("FeT-1-1", "X99NotAGrade") is None
+    assert filler_classes_for_group("") == [] and filler_classes_for_group("Fe-99") == []

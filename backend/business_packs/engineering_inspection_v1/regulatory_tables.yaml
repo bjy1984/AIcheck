@@ -1616,3 +1616,263 @@ nbt47014ThicknessCoverage:
       - {specimenT: "1.5<=T<=10", baseMin: 1.5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
       - {specimenT: ">10", baseMin: 5, baseMax: 2T, weldMin: 不限, weldMax: 2t}
 
+nbt47014FillerClasses:
+  source: NB/T 47014-2023 表 2 焊条分类、表 3 气焊/气体保护焊/等离子弧焊用焊丝与填充丝分类、表 4 埋弧焊用焊丝-焊剂组合分类
+  sourceClause: 5.1.3 焊接材料分类；表 2~表 4 以外的填充金属分类代号补充规定见附录 B
+  extractedFrom: official_pdf_text_layer
+  sourceFile: 用户 2026-09-07 提供的 NB/T 47014-2023 PDF
+  verifiedBy: null
+  note: 三张表用不同前缀——焊条 FeT-、焊丝与填充丝 FeS-、埋弧焊焊丝焊剂组合 FeMSG-，但后缀与母材分类分组一一对应（FeS-1-1 对 Fe-1-1）。抽取按「用于焊接 X 组」的文字配对，不依赖合并单元格的行序。抗拉强度只在 Fe-1-x 这类按强度分档的组里有；其余组的分类依据是「熔敷金属公称成分与该母材组相当」。
+  tables:
+    焊条:
+      title: 表 2 焊条分类
+      codePrefix: FeT
+      entries:
+      - fillerClass: FeT-1-1
+        baseMaterialGroup: Fe-1-1
+        standard: NB/T 47018.2
+        tensileMPaMin: 430
+      - fillerClass: FeT-1-2
+        baseMaterialGroup: Fe-1-2
+        standard: NB/T 47018.2
+        tensileMPaMin: 490
+      - fillerClass: FeT-1-3
+        baseMaterialGroup: Fe-1-3
+        standard: NB/T 47018.2
+        tensileMPaMin: 550
+      - fillerClass: FeT-1-4
+        baseMaterialGroup: Fe-1-4
+        standard: NB/T 47018.2
+        tensileMPaMin: 590
+      - fillerClass: FeT-2
+        baseMaterialGroup: Fe-2
+        standard: NB/T 47018.2
+      - fillerClass: FeT-3-1
+        baseMaterialGroup: Fe-3-1
+        standard: NB/T 47018.2
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeT-3-2
+        baseMaterialGroup: Fe-3-2
+        standard: NB/T 47018.2
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeT-3-3
+        baseMaterialGroup: Fe-3-3
+        standard: NB/T 47018.2
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeT-4
+        baseMaterialGroup: Fe-4
+        standard: NB/T 47018.2
+      - fillerClass: FeT-5A
+        baseMaterialGroup: Fe-5A
+        standard: NB/T 47018.2
+      - fillerClass: FeT-5B
+        baseMaterialGroup: Fe-5B
+        standard: NB/T 47018.2
+      - fillerClass: FeT-5C
+        baseMaterialGroup: Fe-5C
+        standard: NB/T 47018.2
+      - fillerClass: FeT-6
+        baseMaterialGroup: Fe-6
+        standard: NB/T 47018.2
+      - fillerClass: FeT-7
+        baseMaterialGroup: Fe-7
+        standard: NB/T 47018.2
+      - fillerClass: FeT-8
+        baseMaterialGroup: Fe-8
+        standard: NB/T 47018.2
+      - fillerClass: FeT-9B
+        baseMaterialGroup: Fe-9B
+        standard: NB/T 47018.2
+      - fillerClass: FeT-10I
+        baseMaterialGroup: Fe-10I
+        standard: NB/T 47018.2
+      - fillerClass: FeT-10H
+        baseMaterialGroup: Fe-10H
+        standard: NB/T 47018.2
+      - fillerClass: CuT-1
+        baseMaterialGroup: Cu-1
+        standard: NB/T 47018.2
+      - fillerClass: CuT-2
+        baseMaterialGroup: Cu-2
+        standard: NB/T 47018.2
+      - fillerClass: CuT-3
+        baseMaterialGroup: Cu-3
+        standard: NB/T 47018.2
+      - fillerClass: CuT-4
+        baseMaterialGroup: Cu-4
+        standard: NB/T 47018.2
+      - fillerClass: CuT-6
+        baseMaterialGroup: Cu-6
+        standard: NB/T 47018.2
+      - fillerClass: CuT-7
+        baseMaterialGroup: Cu-7
+        standard: NB/T 47018.2
+      - fillerClass: NiT-1
+        baseMaterialGroup: Ni-1
+        standard: NB/T 47018.2
+    焊丝和填充丝:
+      title: 表 3 气焊、气体保护焊、等离子弧焊用焊丝、填充丝分类
+      codePrefix: FeS
+      entries:
+      - fillerClass: FeS-1-1
+        baseMaterialGroup: Fe-1-1
+        standard: NB/T 47018.3
+        tensileMPaMin: 430
+      - fillerClass: FeS-1-2
+        baseMaterialGroup: Fe-1-2
+        standard: NB/T 47018.3
+        tensileMPaMin: 490
+      - fillerClass: FeS-1-3
+        baseMaterialGroup: Fe-1-3
+        standard: NB/T 47018.3
+        tensileMPaMin: 550
+      - fillerClass: FeS-1-4
+        baseMaterialGroup: Fe-1-4
+        standard: NB/T 47018.3
+        tensileMPaMin: 590
+      - fillerClass: FeS-2
+        baseMaterialGroup: Fe-2
+        standard: NB/T 47018.3
+      - fillerClass: FeS-3-1
+        baseMaterialGroup: Fe-3-1
+        standard: NB/T 47018.3
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeS-3-2
+        baseMaterialGroup: Fe-3-2
+        standard: NB/T 47018.3
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeS-3-3
+        baseMaterialGroup: Fe-3-3
+        standard: NB/T 47018.3
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeS-4
+        baseMaterialGroup: Fe-4
+        standard: NB/T 47018.3
+      - fillerClass: FeS-5A
+        baseMaterialGroup: Fe-5A
+        standard: NB/T 47018.3
+      - fillerClass: FeS-5B
+        baseMaterialGroup: Fe-5B
+        standard: NB/T 47018.3
+      - fillerClass: FeS-5C
+        baseMaterialGroup: Fe-5C
+        standard: NB/T 47018.3
+      - fillerClass: FeS-6
+        baseMaterialGroup: Fe-6
+        standard: NB/T 47018.3
+      - fillerClass: FeS-7
+        baseMaterialGroup: Fe-7
+        standard: NB/T 47018.3
+      - fillerClass: FeS-8
+        baseMaterialGroup: Fe-8
+        standard: NB/T 47018.3
+      - fillerClass: FeS-9B
+        baseMaterialGroup: Fe-9B
+        standard: NB/T 47018.3
+      - fillerClass: FeS-10I
+        baseMaterialGroup: Fe-10I
+        standard: NB/T 47018.3
+      - fillerClass: FeS-10H
+        baseMaterialGroup: Fe-10H
+        standard: NB/T 47018.3
+      - fillerClass: AlS-1
+        baseMaterialGroup: Al-1
+        standard: NB/T 47018.3
+      - fillerClass: AlS-2
+        baseMaterialGroup: Al-2
+        standard: NB/T 47018.3
+      - fillerClass: AlS-3
+        baseMaterialGroup: Al-3
+        standard: NB/T 47018.3
+      - fillerClass: TiS-1
+        baseMaterialGroup: Ti-1
+        standard: NB/T 47018.3
+      - fillerClass: TiS-2
+        baseMaterialGroup: Ti-2
+        standard: NB/T 47018.3
+      - fillerClass: TiS-4
+        baseMaterialGroup: Ti-4
+        standard: NB/T 47018.3
+      - fillerClass: ZrS-3
+        baseMaterialGroup: Zr-3
+        standard: NB/T 47018.3
+      - fillerClass: ZrS-5
+        baseMaterialGroup: Zr-5
+        standard: NB/T 47018.3
+      - fillerClass: CuS-1
+        baseMaterialGroup: Cu-1
+        standard: NB/T 47018.3
+      - fillerClass: CuS-2
+        baseMaterialGroup: Cu-2
+        standard: NB/T 47018.3
+      - fillerClass: CuS-3
+        baseMaterialGroup: Cu-3
+        standard: NB/T 47018.3
+      - fillerClass: CuS-4
+        baseMaterialGroup: Cu-4
+        standard: NB/T 47018.3
+      - fillerClass: CuS-6
+        baseMaterialGroup: Cu-6
+        standard: NB/T 47018.3
+      - fillerClass: CuS-7
+        baseMaterialGroup: Cu-7
+        standard: NB/T 47018.3
+    埋弧焊焊丝-焊剂组合:
+      title: 表 4 埋弧焊用焊丝-焊剂组合分类
+      codePrefix: FeMSG
+      entries:
+      - fillerClass: FeMSG-1-1
+        baseMaterialGroup: Fe-1-1
+        standard: NB/T 47018.4
+        tensileMPaMin: 430
+      - fillerClass: FeMSG-1-2
+        baseMaterialGroup: Fe-1-2
+        standard: NB/T 47018.4
+        tensileMPaMin: 490
+      - fillerClass: FeMSG-1-3
+        baseMaterialGroup: Fe-1-3
+        standard: NB/T 47018.4
+        tensileMPaMin: 550
+      - fillerClass: FeMSG-1-4
+        baseMaterialGroup: Fe-1-4
+        standard: NB/T 47018.4
+        tensileMPaMin: 590
+      - fillerClass: FeMSG-2
+        baseMaterialGroup: Fe-2
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-3-1
+        baseMaterialGroup: Fe-3-1
+        standard: NB/T 47018.4
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeMSG-3-2
+        baseMaterialGroup: Fe-3-2
+        standard: NB/T 47018.4
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeMSG-3-3
+        baseMaterialGroup: Fe-3-3
+        standard: NB/T 47018.4
+        basisKind: 熔敷金属公称成分与该母材组相当
+      - fillerClass: FeMSG-4
+        baseMaterialGroup: Fe-4
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-5A
+        baseMaterialGroup: Fe-5A
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-5B
+        baseMaterialGroup: Fe-5B
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-5C
+        baseMaterialGroup: Fe-5C
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-6
+        baseMaterialGroup: Fe-6
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-7
+        baseMaterialGroup: Fe-7
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-9B
+        baseMaterialGroup: Fe-9B
+        standard: NB/T 47018.4
+      - fillerClass: FeMSG-10I
+        baseMaterialGroup: Fe-10I
+        standard: NB/T 47018.4

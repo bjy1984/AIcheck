@@ -315,3 +315,53 @@ def wps_thickness_coverage(
         "verified": is_verified(section),
         "notes": notes,
     }
+
+
+_FILLER_KIND_BY_METHOD = {
+    "焊条电弧焊": "焊条",
+    "埋弧焊": "埋弧焊焊丝-焊剂组合",
+    "钨极气体保护焊": "焊丝和填充丝",
+    "熔化极气体保护焊": "焊丝和填充丝",
+    "等离子弧焊": "焊丝和填充丝",
+    "气焊": "焊丝和填充丝",
+    "气电立焊": "焊丝和填充丝",
+}
+
+
+def filler_classes_for_group(base_material_group: str, *, welding_method: str | None = None) -> list[dict[str, Any]]:
+    """NB/T 47014-2023 表 2~表 4：这个母材组该配哪一类焊材。
+
+    给了焊接方法就只返回该方法对应的那张表（焊条走表 2、埋弧焊走表 4、其余走表 3）；
+    不给方法就三张表都返回。查不到返回空列表，不猜。
+    """
+    wanted = str(base_material_group or "").strip()
+    if not wanted:
+        return []
+    tables = table("nbt47014FillerClasses").get("tables") or {}
+    kinds = [_FILLER_KIND_BY_METHOD[welding_method]] if welding_method in _FILLER_KIND_BY_METHOD else list(tables)
+    out: list[dict[str, Any]] = []
+    for kind in kinds:
+        for entry in (tables.get(kind) or {}).get("entries") or []:
+            if str(entry.get("baseMaterialGroup")) == wanted:
+                out.append({**entry, "kind": kind})
+    return out
+
+
+def filler_matches_base_material(filler_class: str, base_material_grade: str) -> dict[str, Any] | None:
+    """焊材分类代号与母材牌号是否匹配（先把牌号查成组别，再比对）。
+
+    返回 {matched, baseMaterialGroup, expectedClasses}；母材查不到组别时返回 None——
+    查不到就不该给"匹配"或"不匹配"的结论。
+    """
+    group = wps_base_material_group(base_material_grade)
+    if not group:
+        return None
+    code = str(filler_class or "").strip()
+    expected = [item["fillerClass"] for item in filler_classes_for_group(group)]
+    return {
+        "matched": code in expected,
+        "fillerClass": code,
+        "baseMaterialGrade": base_material_grade,
+        "baseMaterialGroup": group,
+        "expectedClasses": expected,
+    }
