@@ -681,8 +681,11 @@ class DeploymentConfigValidator:
             except Exception as exc:
                 failures.append(f"material review asset invalid: {exc}")
         items = payload.get("items") if isinstance(payload.get("items"), list) else []
-        if len(items) != 162:
-            failures.append(f"material review asset must contain 162 items, got {len(items)}")
+        # 棘轮：挡的是"资产意外变空/缩水"，不是"不许新增"。写死等于 162 时，
+        # 每次往映射表加一行都要改这里，而真正危险的只有变少。2026-09-07 加了
+        # P0 2.2 的五个新资料类型（六条审查点），162 → 168。
+        if len(items) < 162:
+            failures.append(f"material review asset must contain at least 162 items, got {len(items)}")
         if not payload.get("sourceSha256"):
             failures.append("material review asset must record sourceSha256")
         if payload.get("itemCount") != len(items):

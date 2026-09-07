@@ -89,6 +89,10 @@ runtime = {
     "AICHECK_LLM_MODEL_REVIEW_ESCALATION": "qwen3.8-max",
     # P8 H5：审查提示词模式，checklist=清单填表（灰度用，基准对照后再切）；默认自由模式。
     "AICHECK_REVIEW_PROMPT_MODE": "freeform",
+    # P0 2.2：资料类型变更。stage1=加 wps/pqr/工艺卡/平台核验/PMI 并拆节点 25，焊材证明与施焊记录仍是条件必传；
+    # stage2=再把节点 26 焊材证明、节点 29/24 施焊记录改必传。翻到 stage1 的前置是 2.4 重键迁移
+    # （2026-09-07 已完成）与新类型的审查点（同日补进 config/material_review_points.json）。
+    "AICHECK_WELDING_MATERIAL_TYPES_V2": "stage1",
     "AICHECK_LLM_MODEL_DEFAULT": "qwen3.7-plus",
     "AICHECK_LLM_MODEL_COMPARE_FAST": "qwen3.6-flash",
     # 一键分析（full-project-analysis）用 qwen3.8-max（2026-09-02 按要求升到 3.8 max）。

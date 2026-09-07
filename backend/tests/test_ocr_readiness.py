@@ -121,6 +121,10 @@ def test_material_review_asset_is_packaged_and_versioned() -> None:
     status = material_review_asset_status()
 
     assert asset["schemaVersion"] == "aicheck-material-review-points@1"
-    assert asset["itemCount"] == 162
+    # 数量只设下限：挡资产变空/缩水，不挡新增（2026-09-07 加 P0 2.2 的六条 → 168）
+    assert asset["itemCount"] >= 162 and asset["itemCount"] == len(asset["items"])
     assert asset["sourceSha256"]
+    # 新增的五个资料类型都要有审查点，否则翻 stage1 后新类型在生产上没有审查点可挂
+    codes = {item["materialTypeCode"] for item in asset["items"]}
+    assert {"wps", "pqr", "welding_process_card", "platform_verification", "pmi_report"} <= codes
     assert status["ready"] is True
