@@ -98,7 +98,19 @@ assert.deepEqual(completed.findings[0], {
   evidenceCount: 1,
   ruleCount: 1,
   evidenceRefs: [{ fileId: 'DOC-1' }],
-  ruleRefs: [{ source: 'criteria', text: '规则原文' }]
+  ruleRefs: [{ source: 'criteria', text: '规则原文' }],
+  // P9 R1 契约字段：没有守卫信息时按"通过守卫、无待核对项"处理
+  findingType: 'license_scope',
+  groundingStatus: '',
+  unsupportedClaims: [],
+  rawUnsupportedClaims: [],
+  suggestedAction: '',
+  actionLabel: '',
+  modelTitle: '',
+  modelDescription: '',
+  unverified: false,
+  policyPending: false,
+  policyName: ''
 })
 assert.equal(completed.canRetry, false)
 assert.deepEqual(workbenchFindingDisplay(completed.findings[0]), {
@@ -372,4 +384,115 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(views[0].confidence, 0.62)
   assert.deepEqual(nodeRunFindingViews(null), [])
   assert.deepEqual(nodeRunFindingViews({}), [])
+}
+
+// P9 R1：结论卡只由 12.3 的决策表推导；三组排序；证据不足折叠为去重待核对项。
+{
+  const { buildWorkbenchAiConclusion, nodeRunFindingViews, describeUnsupportedClaim } =
+    await import('./workbenchReviewPresentation')
+  const claims = [{ claim: 'TS9999999-2030', reason: 'not_present_in_supplied_evidence' }]
+  const downgraded = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    findingType: 'missing_evidence',
+    severity: 'medium',
+    title: '证据不足，需人工确认',
+    description: '模型给出的业务结论缺少证据支持，已整条丢弃并降级为待人工确认。',
+    groundingStatus: 'insufficient_evidence',
+    unsupportedClaims: claims,
+    unverified: true,
+    evidenceRefs: [],
+    ruleRefs: [],
+    ...extra
+  })
+  const grounded = (id: string, severity: string, title: string) => ({
+    id,
+    findingType: 'qualification_mismatch',
+    severity,
+    title,
+    description: '许可证许可范围为 GC2，本工程为 GC1，范围不覆盖。',
+    groundingStatus: 'grounded',
+    suggestedAction: 'request_correction',
+    evidenceRefs: [{ fileName: '安装许可证.pdf', pageNo: 2, quotedText: '许可范围 GC2' }],
+    ruleRefs: [{ ruleCode: 'AC-R01-01' }]
+  })
+
+  assert.equal(
+    describeUnsupportedClaim({
+      claim: 'TS9999999-2030',
+      reason: 'not_present_in_supplied_evidence'
+    }),
+    '「TS9999999-2030」在已提交资料中未找到'
+  )
+  assert.equal(
+    describeUnsupportedClaim({
+      claim: 'positive_business_conclusion',
+      reason: 'positive_claim_without_specific_evidence_token'
+    }),
+    '肯定结论没有指向任何具体证据'
+  )
+
+  // 全部降级：结论「证据不足」，两条同断言集合的降级条目只剩一个待核对项
+  const allDowngraded = buildWorkbenchAiConclusion({
+    findings: nodeRunFindingViews({ findings: [downgraded('F1'), downgraded('F2')] }),
+    deterministicResult: 'passed'
+  })
+  assert.equal(allDowngraded.verdict, '证据不足')
+  assert.equal(allDowngraded.tone, 'gray')
+  assert.deepEqual(allDowngraded.counts, { needAction: 0, confirm: 0, insufficient: 2 })
+  assert.equal(allDowngraded.insufficientClaims.length, 1)
+  assert.equal(allDowngraded.insufficientClaims[0].findingId, 'F1')
+  assert.equal(allDowngraded.action, '要求补资料')
+  assert.ok(allDowngraded.headline.length <= 40)
+
+  // 混合：high 通过守卫 → 需处理；medium → 待确认；降级 → 证据不足；关键事实带证据位置
+  const mixed = buildWorkbenchAiConclusion({
+    findings: nodeRunFindingViews({
+      findings: [
+        downgraded('F1'),
+        grounded('F2', 'medium', '施工日期早于许可证有效期起始日，需核对'),
+        grounded('F3', 'high', '安装许可证许可范围 GC2 不覆盖本工程 GC1 管道')
+      ]
+    }),
+    deterministicResult: 'failed'
+  })
+  assert.equal(mixed.verdict, '需处理')
+  assert.equal(mixed.tone, 'red')
+  assert.deepEqual(
+    mixed.groups.needAction.map((item) => item.id),
+    ['F3']
+  )
+  assert.deepEqual(
+    mixed.groups.confirm.map((item) => item.id),
+    ['F2']
+  )
+  assert.deepEqual(
+    mixed.groups.insufficient.map((item) => item.id),
+    ['F1']
+  )
+  assert.equal(mixed.keyFacts[0].text, '安装许可证许可范围 GC2 不覆盖本工程 GC1 管道')
+  assert.equal(mixed.keyFacts[0].location, '安装许可证.pdf 第 2 页')
+  assert.equal(mixed.action, '要求补资料')
+  assert.equal(mixed.deterministicLabel, '确定性核验未通过')
+  assert.equal(mixed.groups.needAction[0].typeLabel, '资质不匹配')
+  assert.equal(mixed.groups.needAction[0].actionLabel, '要求补资料')
+
+  // 只有 medium/low 通过守卫 → 待确认
+  const confirmOnly = buildWorkbenchAiConclusion({
+    findings: nodeRunFindingViews({ findings: [grounded('F2', 'low', '合同工期未提取到')] }),
+    deterministicResult: 'passed'
+  })
+  assert.equal(confirmOnly.verdict, '待确认')
+  assert.equal(confirmOnly.action, '人工确认')
+
+  // 全部通过：确定性 passed 且无发现 → 未见问题；无确定性结果也无发现 → 证据不足（不敢说未见问题）
+  const clean = buildWorkbenchAiConclusion({ findings: [], deterministicResult: 'passed' })
+  assert.equal(clean.verdict, '未见问题')
+  assert.equal(clean.tone, 'green')
+  assert.equal(buildWorkbenchAiConclusion({ findings: [] }).verdict, '证据不足')
+
+  // 确定性 failed 但没有任何发现，仍是需处理（规则结果优先）
+  assert.equal(
+    buildWorkbenchAiConclusion({ findings: [], deterministicResult: 'failed' }).verdict,
+    '需处理'
+  )
 }

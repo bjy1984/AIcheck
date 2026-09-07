@@ -456,6 +456,19 @@ AI_FEEDBACK_TYPES = {
     "hallucination",
     "format_error",
     "unsafe_output",
+    # P12 F1：守卫把有依据的断言判成无据（"其实有依据"），是守卫语料迭代的直接输入，与幻觉相反。
+    "guard_false_downgrade",
+}
+# 人工结论与 AI 不一致时的"为什么"单选（P12 F2 七类根因的采集端子集）。
+AI_FEEDBACK_ROOT_CAUSES = {
+    "data_table",  # A 数据表/限值
+    "rule_logic",  # B 确定性规则
+    "guard_downgrade",  # C 守卫误杀
+    "evidence_extraction",  # D 证据抽取
+    "prompt",  # E 提示词
+    "policy",  # F 业务口径
+    "external_source",  # G 外部源
+    "other",
 }
 
 FDE_ROLES = {"fde"}
@@ -13605,6 +13618,17 @@ def return_correction(request: Request, project_id: str, node_id: int, body: dic
             "returnedAt": returned_at,
             "reviewerName": request_actor_name(request),
             "createdAt": returned_at,
+            # P12 F1：从哪条 AI 发现触发的退回、AI 建议的动作是什么——否则退回补正与 AI 输出无法关联。
+            "sourceFindingIds": compact_id_list(body.get("sourceFindingIds")),
+            "suggestedAction": compact_plain_text(body.get("suggestedAction"), 40) or None,
+            "aiRunId": next(
+                (
+                    item.get("id")
+                    for item in repo.state.get("ai_runs", [])
+                    if item.get("projectId") == project_id and int(item.get("nodeId") or 0) == int(node_id)
+                ),
+                None,
+            ),
         }
         if opinion:
             repo.state["review_opinions"].insert(0, opinion)
@@ -16711,6 +16735,15 @@ def create_ai_run_feedback(
                 message="AI 反馈类型不支持。",
                 data={"allowedTypes": sorted(AI_FEEDBACK_TYPES)},
             )
+        root_cause = compact_plain_text(body.get("rootCause"), 40)
+        if root_cause and root_cause not in AI_FEEDBACK_ROOT_CAUSES:
+            return fail(
+                errors.VALIDATION_ERROR,
+                request,
+                message="AI 反馈根因不支持。",
+                data={"allowedRootCauses": sorted(AI_FEEDBACK_ROOT_CAUSES)},
+            )
+        finding_id = compact_plain_text(body.get("findingId"), 120)
         feedback = {
             "id": body.get("id") or f"AIFB-{uuid4().hex[:8].upper()}",
             "aiRunId": run_id,
@@ -16725,11 +16758,21 @@ def create_ai_run_feedback(
             "comment": body.get("comment") or body.get("reason"),
             "correctedOutput": body.get("correctedOutput"),
             "shouldEnterEvaluationSet": bool(body.get("shouldEnterEvaluationSet", False)),
+            # P12 F1 采集字段：发现级反馈带 findingId；"其实有依据"带具体断言；
+            # 人工结论与 AI 不一致时带根因与两边结论；source 标明入口（结论卡/采纳/驳回/审查意见）。
+            "findingId": finding_id or None,
+            "claim": compact_plain_text(body.get("claim"), 200) or None,
+            "rootCause": root_cause or None,
+            "source": compact_plain_text(body.get("source"), 40) or None,
+            "humanResult": compact_plain_text(body.get("humanResult"), 40) or None,
+            "suggestedResult": compact_plain_text(body.get("suggestedResult"), 40) or None,
             "createdAt": server_time(),
         }
         repo.state["ai_feedback"].insert(0, feedback)
         run.setdefault("humanFeedback", []).insert(0, feedback)
-        run["status"] = "已人工确认" if feedback["accepted"] else run.get("status")
+        # 只有对整次运行的采纳才把运行标成"已人工确认"；采纳单条发现不代表认可整次结论。
+        if feedback["accepted"] and not finding_id:
+            run["status"] = "已人工确认"
         audit_id = repo.add_audit("记录 AI 反馈", "AIRun", run_id)
         return ok({"feedback": feedback, "aiRun": repo.clone(run), "auditLogId": audit_id}, request)
 

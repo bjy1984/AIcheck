@@ -23,6 +23,19 @@ export type WorkbenchAiFinding = {
   ruleCount: number
   evidenceRefs: Array<Record<string, unknown>>
   ruleRefs: Array<Record<string, unknown>>
+  /** 以下为 P9 R1 契约字段；旧路径（自由文本解析）没有，按"通过守卫、无待核对项"处理。 */
+  findingType?: string
+  groundingStatus?: string
+  /** 已翻译成监检能读的"待核对句"，原始 {claim, reason} 在 rawUnsupportedClaims。 */
+  unsupportedClaims?: string[]
+  rawUnsupportedClaims?: Array<{ claim: string; reason: string }>
+  suggestedAction?: string
+  actionLabel?: string
+  modelTitle?: string
+  modelDescription?: string
+  unverified?: boolean
+  policyPending?: boolean
+  policyName?: string
 }
 
 export type WorkbenchEvidenceGroup = {
@@ -169,6 +182,8 @@ export type WorkbenchAiPresentation = {
   meta: string
   findings: WorkbenchAiFinding[]
   certificateVerification?: WorkbenchCertificateVerification
+  /** 后端 suggestion.deterministicResult（passed/failed/evidence_insufficient/not_applicable）。 */
+  deterministicResult?: string
   errorMessage: string
   canRetry: boolean
   running: boolean
@@ -275,9 +290,12 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
   const ruleRefs = Array.isArray(raw.ruleRefs)
     ? (raw.ruleRefs as Array<Record<string, unknown>>)
     : []
+  const rawClaims = rawUnsupportedClaims(raw.unsupportedClaims)
+  const suggestedAction = String(raw.suggestedAction || '')
+  const findingType = String(raw.findingType || '')
   return {
     id: String(raw.id || `finding-${index + 1}`),
-    typeLabel: String(raw.findingType || '审查发现'),
+    typeLabel: FINDING_TYPE_LABELS[findingType] || findingType || '审查发现',
     severity,
     severityLabel: SEVERITY_LABELS[severity] || severity,
     title: String(raw.title || ''),
@@ -286,7 +304,18 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
     evidenceCount: evidenceRefs.length,
     ruleCount: ruleRefs.length,
     evidenceRefs,
-    ruleRefs
+    ruleRefs,
+    findingType,
+    groundingStatus: String(raw.groundingStatus || ''),
+    unsupportedClaims: rawClaims.map(describeUnsupportedClaim),
+    rawUnsupportedClaims: rawClaims,
+    suggestedAction,
+    actionLabel: SUGGESTED_ACTION_LABELS[suggestedAction] || '',
+    modelTitle: String(raw.modelTitle || ''),
+    modelDescription: String(raw.modelDescription || ''),
+    unverified: raw.unverified === true,
+    policyPending: raw.policyPending === true,
+    policyName: String(raw.policyName || raw.policyKey || '')
   }
 }
 
@@ -363,11 +392,212 @@ export const buildWorkbenchAiPresentation = (
     certificateVerification: workbenchCertificateVerification(
       (nodeReview as Record<string, unknown> | undefined)?.certificateVerification
     ),
+    deterministicResult:
+      String((nodeReview as Record<string, unknown> | undefined)?.deterministicResult || '') ||
+      undefined,
     errorMessage: failed
       ? String(run.errorMessage || run.errorCode || '模型结果未通过校验，请重新发起分析。')
       : '',
     canRetry: failed,
     running
+  }
+}
+
+// ── P9 R1：结论卡与三组发现（契约见《优化计划-焊接节点》12.3，词表全文唯一） ──────────
+
+const FINDING_TYPE_LABELS: Record<string, string> = {
+  missing_evidence: '缺少证据',
+  evidence_conflict: '证据冲突',
+  qualification_mismatch: '资质不匹配',
+  expired_certificate: '证书过期',
+  scope_mismatch: '范围不覆盖',
+  inconsistency: '前后不一致',
+  ai_review_suggestion: 'AI 复核建议'
+}
+
+const SUGGESTED_ACTION_LABELS: Record<string, string> = {
+  human_confirm: '人工确认',
+  request_correction: '要求补资料'
+}
+
+const CLAIM_REASON_TEXT: Record<string, (claim: string) => string> = {
+  not_present_in_supplied_evidence: (claim) => `「${claim}」在已提交资料中未找到`,
+  positive_claim_without_specific_evidence_token: () => '肯定结论没有指向任何具体证据'
+}
+
+export const rawUnsupportedClaims = (value: unknown): Array<{ claim: string; reason: string }> =>
+  (Array.isArray(value) ? value : [])
+    .map((item) =>
+      item && typeof item === 'object'
+        ? {
+            claim: String((item as Record<string, unknown>).claim || '').trim(),
+            reason: String((item as Record<string, unknown>).reason || '').trim()
+          }
+        : { claim: String(item || '').trim(), reason: '' }
+    )
+    .filter((item) => item.claim)
+
+/** unsupportedClaims 里的 {claim, reason} → 监检能读的一句"待核对"。 */
+export const describeUnsupportedClaim = (item: { claim: string; reason: string }) => {
+  const render = CLAIM_REASON_TEXT[item.reason]
+  if (render) return render(item.claim)
+  return item.claim === 'positive_business_conclusion'
+    ? '肯定结论没有指向任何具体证据'
+    : `「${item.claim}」待核对`
+}
+
+export type WorkbenchAiVerdict = '需处理' | '待确认' | '证据不足' | '未见问题'
+export type WorkbenchAiAction = '发联络单' | '要求补资料' | '现场核对原件' | '平台核验' | '人工确认'
+export type WorkbenchAiFindingGroupKey = 'needAction' | 'confirm' | 'insufficient'
+
+export type WorkbenchAiConclusion = {
+  verdict: WorkbenchAiVerdict
+  tone: 'red' | 'orange' | 'gray' | 'green'
+  headline: string
+  counts: Record<WorkbenchAiFindingGroupKey, number>
+  keyFacts: Array<{ text: string; location: string }>
+  action: WorkbenchAiAction
+  groups: Record<WorkbenchAiFindingGroupKey, WorkbenchAiFinding[]>
+  /** 证据不足组展开后的去重待核对项；每项指回第一条带它的发现。 */
+  insufficientClaims: Array<{ text: string; claim: string; findingId: string }>
+  deterministicLabel: string
+}
+
+const DETERMINISTIC_LABELS: Record<string, string> = {
+  passed: '确定性核验通过',
+  failed: '确定性核验未通过',
+  evidence_insufficient: '确定性核验证据不足',
+  not_applicable: '规则不适用'
+}
+
+const clip = (text: string, max: number) => {
+  const compact = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact
+}
+
+const isInsufficient = (finding: WorkbenchAiFinding) =>
+  finding.groundingStatus === 'insufficient_evidence' ||
+  (finding.unsupportedClaims?.length ?? 0) > 0 ||
+  finding.title.startsWith('证据不足，需人工确认')
+
+/** 状态映射表 12.3：通过守卫且 critical/high → 需处理；其余通过守卫 → 待确认；降级 → 证据不足。 */
+export const workbenchFindingGroup = (finding: WorkbenchAiFinding): WorkbenchAiFindingGroupKey => {
+  if (isInsufficient(finding)) return 'insufficient'
+  if (finding.severity === 'critical' || finding.severity === 'high') return 'needAction'
+  return 'confirm'
+}
+
+const findingLocation = (finding: WorkbenchAiFinding) => {
+  const group = workbenchEvidenceGroups(finding.evidenceRefs)[0]
+  if (!group) return ''
+  return group.pages.length ? `${group.fileName} 第 ${group.pages[0]} 页` : group.fileName
+}
+
+const SITE_CHECK_RE = /印章|盖章|签字|签名|原件|涂改/
+const PLATFORM_CHECK_RE = /平台|公示|注册|持证|证书号|许可证/
+
+const recommendedAction = (
+  verdict: WorkbenchAiVerdict,
+  groups: WorkbenchAiConclusion['groups'],
+  deterministic: string
+): WorkbenchAiAction => {
+  if (verdict === '需处理') {
+    const heads = groups.needAction
+    if (heads.some((item) => item.suggestedAction === 'request_correction')) return '要求补资料'
+    const text = heads.map((item) => `${item.typeLabel} ${item.title}`).join(' ')
+    if (SITE_CHECK_RE.test(text)) return '现场核对原件'
+    if (PLATFORM_CHECK_RE.test(text)) return '平台核验'
+    return '发联络单'
+  }
+  if (verdict === '证据不足') {
+    return deterministic === 'evidence_insufficient' || groups.insufficient.length
+      ? '要求补资料'
+      : '人工确认'
+  }
+  return '人工确认'
+}
+
+/**
+ * 结论只由 12.3 的决策表推导，不由模型自由发挥；卡片上必须标"AI 建议，未经人工确认"。
+ * 决策表按行第一条命中：需处理 → 待确认 → 证据不足 → 未见问题。
+ */
+export const buildWorkbenchAiConclusion = ({
+  findings,
+  deterministicResult
+}: {
+  findings: WorkbenchAiFinding[]
+  deterministicResult?: string | null
+}): WorkbenchAiConclusion => {
+  const deterministic = String(deterministicResult || '').toLowerCase()
+  const groups: WorkbenchAiConclusion['groups'] = { needAction: [], confirm: [], insufficient: [] }
+  findings.forEach((finding) => groups[workbenchFindingGroup(finding)].push(finding))
+  const seen = new Map<string, { text: string; claim: string; findingId: string }>()
+  groups.insufficient.forEach((finding) => {
+    ;(finding.rawUnsupportedClaims || []).forEach((raw) => {
+      const key = raw.claim.replace(/\s+/g, '').toLowerCase()
+      if (!seen.has(key)) {
+        seen.set(key, {
+          text: describeUnsupportedClaim(raw),
+          claim: raw.claim,
+          findingId: finding.id
+        })
+      }
+    })
+  })
+  const insufficientClaims = [...seen.values()]
+  const counts = {
+    needAction: groups.needAction.length,
+    confirm: groups.confirm.length,
+    insufficient: groups.insufficient.length
+  }
+  let verdict: WorkbenchAiVerdict
+  if (deterministic === 'failed' || counts.needAction) verdict = '需处理'
+  else if (counts.confirm) verdict = '待确认'
+  else if (counts.insufficient || deterministic === 'evidence_insufficient') verdict = '证据不足'
+  else if (deterministic === 'passed' || deterministic === 'not_applicable') verdict = '未见问题'
+  else verdict = '证据不足'
+
+  const first = groups.needAction[0] || groups.confirm[0]
+  let headline: string
+  if (verdict === '需处理') {
+    headline = first
+      ? clip(first.title, 40)
+      : clip(`${DETERMINISTIC_LABELS.failed}，请按规则结果处理`, 40)
+  } else if (verdict === '待确认') {
+    headline = clip(`${counts.confirm} 项待人工确认：${first?.title || ''}`, 40)
+  } else if (verdict === '证据不足') {
+    headline = counts.insufficient
+      ? clip(`${counts.insufficient} 条发现证据不足，待核对 ${insufficientClaims.length} 项`, 40)
+      : deterministic === 'evidence_insufficient'
+        ? '确定性核验证据不足，请补充资料后复核'
+        : 'AI 未形成任何发现，也无确定性核验结果'
+  } else {
+    headline =
+      deterministic === 'not_applicable' ? '规则不适用，AI 未见问题' : '确定性核验通过，AI 未见问题'
+  }
+  const keyFacts = [...groups.needAction, ...groups.confirm].slice(0, 3).map((finding) => ({
+    text: clip(finding.title || finding.description, 40),
+    location: findingLocation(finding)
+  }))
+  return {
+    verdict,
+    tone:
+      verdict === '需处理'
+        ? 'red'
+        : verdict === '待确认'
+          ? 'orange'
+          : verdict === '未见问题'
+            ? 'green'
+            : 'gray',
+    headline,
+    counts,
+    keyFacts,
+    action: recommendedAction(verdict, groups, deterministic),
+    groups,
+    insufficientClaims,
+    deterministicLabel: DETERMINISTIC_LABELS[deterministic] || ''
   }
 }
 
@@ -419,6 +649,7 @@ export const selectWorkbenchAiPresentation = ({
     certificateVerification: workbenchCertificateVerification(
       (nodeRun as unknown as Record<string, unknown>).certificateVerification
     ),
+    deterministicResult: String(nodeRun.suggestion?.deterministicResult || '') || undefined,
     errorMessage: failed ? failureText : '',
     canRetry: failed ? nodeRun.failure?.retryable !== false : false,
     running

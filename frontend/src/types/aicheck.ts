@@ -447,6 +447,9 @@ export type AiReviewRun = {
     id: string
     result: '满足要求' | '需补正' | '不适用' | '需人工确认' | '证据不足'
     opinionDraft: string
+    /** P9 R2：opinionDraft 取自哪里（grounded_finding / deterministic_result / downgraded_summary / empty）。 */
+    opinionSource?: string
+    deterministicResult?: string | null
     confidence: number
     manualConfirmItems: string[]
   }
@@ -660,6 +663,10 @@ export type RectificationItem = {
   bindingIds?: string[]
   feedbackAt?: string
   feedbackByName?: string
+  /** P12 F1：由哪条 AI 发现触发的退回。 */
+  sourceFindingIds?: string[]
+  suggestedAction?: string | null
+  aiRunId?: string | null
 }
 
 export type ReportVersion = {

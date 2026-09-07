@@ -3775,7 +3775,7 @@ export const rejectNodeEvidenceLinkApi = (
   projectId: string,
   nodeId: number,
   evidenceLinkId: string,
-  payload: { comment?: string } = {},
+  payload: { comment?: string; reasonCode?: string } = {},
   options?: MutationHeaderOptions
 ): Promise<IResponse<NodeEvidenceDecisionPayload>> => {
   return request.post({
@@ -3832,6 +3832,32 @@ export const rejectAiSuggestionApi = (
   })
 }
 
+export type AiRunFeedbackPayload = {
+  feedbackType: string
+  accepted: boolean
+  comment?: string
+  findingId?: string
+  claim?: string
+  rootCause?: string
+  source?: string
+  humanResult?: string
+  suggestedResult?: string
+  correctedOutput?: Record<string, unknown>
+}
+
+/** P12 F1：结论卡、采纳/驳回、审查意见三处入口都写同一张 ai_feedback。 */
+export const createAiRunFeedbackApi = (
+  runId: string,
+  payload: AiRunFeedbackPayload,
+  options?: MutationHeaderOptions
+): Promise<IResponse<{ feedback: Record<string, unknown>; aiRun: AiReviewRun }>> => {
+  return request.post({
+    url: `/api/ai/runs/${runId}/feedback`,
+    data: payload,
+    headers: mutationHeaders(options)
+  })
+}
+
 export const returnCorrectionApi = (
   projectId: string,
   nodeId: number,
@@ -3842,6 +3868,9 @@ export const returnCorrectionApi = (
     mode?: 'return_correction' | 'supplement_request'
     opinion?: string
     supplementRequirements?: SupplementRequirementInput[]
+    /** P12 F1：退回由哪条 AI 发现触发。 */
+    sourceFindingIds?: string[]
+    suggestedAction?: string
   },
   options?: MutationHeaderOptions
 ): Promise<IResponse<ReturnCorrectionPayload>> => {
