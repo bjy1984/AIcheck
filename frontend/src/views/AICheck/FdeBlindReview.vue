@@ -27,12 +27,15 @@ import {
   type FdeRubberStampIndex
 } from '@/api/aicheck'
 import StaticPageShell from './components/StaticPageShell.vue'
+import {
+  ALERT_THRESHOLD,
+  RESULT_OPTIONS,
+  formatPct,
+  indexAlert as computeIndexAlert,
+  indexLabel as computeIndexLabel
+} from './fdeBlindReviewModel'
 import { useUserStore } from '@/store/modules/user'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
-
-const RESULT_OPTIONS = ['满足要求', '需补正', '不适用', '证据不足'] as const
-/** 与 backend AICHECK_RUBBER_STAMP_ALERT_THRESHOLD 默认一致：指数低于它说明常规审查基本照抄 AI。 */
-const ALERT_THRESHOLD = 0.05
 
 const userStore = useUserStore()
 const userLabel = computed(() => {
@@ -66,22 +69,8 @@ const visibleTasks = computed(() =>
 const openCount = computed(() => tasks.value.filter((task) => task.status === 'open').length)
 const doneCount = computed(() => tasks.value.filter((task) => task.status === 'done').length)
 
-const formatPct = (value: number | null | undefined) =>
-  value === null || value === undefined ? '—' : `${(value * 100).toFixed(1)}%`
-const indexLabel = computed(() => {
-  const value = index.value?.value
-  if (value === null || value === undefined) return '待盲审'
-  return `${value >= 0 ? '+' : ''}${value.toFixed(3)}`
-})
-const indexAlert = computed(() => {
-  const value = index.value?.value
-  return (
-    value !== null &&
-    value !== undefined &&
-    (index.value?.sampleSize || 0) >= 5 &&
-    value < ALERT_THRESHOLD
-  )
-})
+const indexLabel = computed(() => computeIndexLabel(index.value))
+const indexAlert = computed(() => computeIndexAlert(index.value))
 
 const load = async () => {
   loading.value = true

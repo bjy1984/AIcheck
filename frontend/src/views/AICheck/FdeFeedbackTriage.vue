@@ -25,38 +25,20 @@ import {
   type FdeFeedback
 } from '@/api/aicheck'
 import StaticPageShell from './components/StaticPageShell.vue'
+import {
+  FEEDBACK_TYPE_LABELS,
+  GOVERNANCE_LABELS,
+  ROOT_CAUSE_OPTIONS,
+  countBy,
+  filterRows,
+  formatRatio,
+  stateTagType,
+  triagePayload,
+  withinWindow,
+  type WindowKey
+} from './fdeFeedbackTriageModel'
 import { useUserStore } from '@/store/modules/user'
 import { getAicheckRoleLabel } from '@/utils/roleAccess'
-
-/** 与 backend/apps/api/feedback_capture.AI_FEEDBACK_ROOT_CAUSES 一一对应。 */
-const ROOT_CAUSE_OPTIONS = [
-  { value: 'data_table', label: 'A 数据表 / 限值' },
-  { value: 'rule_logic', label: 'B 确定性规则' },
-  { value: 'guard_downgrade', label: 'C 守卫误杀' },
-  { value: 'evidence_extraction', label: 'D 证据抽取' },
-  { value: 'prompt', label: 'E 提示词' },
-  { value: 'policy', label: 'F 业务口径' },
-  { value: 'external_source', label: 'G 外部源' },
-  { value: 'other', label: '其它 / 未定' }
-] as const
-
-const GOVERNANCE_LABELS: Record<string, string> = {
-  needs_triage: '待归因',
-  triaged: '已归因',
-  ready_for_eval: '可入评测',
-  promoted_to_eval: '已入评测',
-  needs_adjudication: '待仲裁'
-}
-
-const FEEDBACK_TYPE_LABELS: Record<string, string> = {
-  accepted: '采纳',
-  rejected: '驳回',
-  wrong_evidence: '证据有误',
-  missed_issue: '漏报',
-  guard_false_downgrade: '守卫误降级',
-  human_override: '人工改判',
-  return_for_correction: '退回补正'
-}
 
 const userStore = useUserStore()
 const userLabel = computed(() => {
@@ -73,7 +55,7 @@ const metricsMarkdown = ref('')
 
 const rootCauseFilter = ref('')
 const stateFilter = ref('needs_triage')
-const weekFilter = ref<'week' | 'month' | 'all'>('week')
+const weekFilter = ref<WindowKey>('week')
 
 /** 每行的待提交归因草稿；不直接改 rows，保存成功后再回填。 */
 const drafts = ref<
@@ -100,40 +82,27 @@ const draftFor = (row: FdeFeedback) => {
   return drafts.value[row.id]
 }
 
-const withinWindow = (row: FdeFeedback) => {
-  if (weekFilter.value === 'all') return true
-  const created = Date.parse(row.createdAt || '')
-  if (Number.isNaN(created)) return true
-  const days = weekFilter.value === 'week' ? 7 : 30
-  return Date.now() - created <= days * 86400000
-}
-
 const visibleRows = computed(() =>
-  rows.value.filter((row) => {
-    if (rootCauseFilter.value && (row.rootCause || '') !== rootCauseFilter.value) return false
-    if (stateFilter.value && (row.governanceState || 'needs_triage') !== stateFilter.value)
-      return false
-    return withinWindow(row)
+  filterRows(rows.value, {
+    rootCause: rootCauseFilter.value,
+    state: stateFilter.value,
+    window: weekFilter.value
   })
 )
 
-const rootCauseCounts = computed(() => {
-  const counts: Record<string, number> = {}
-  rows.value.filter(withinWindow).forEach((row) => {
-    const key = row.rootCause || 'untriaged'
-    counts[key] = (counts[key] || 0) + 1
-  })
-  return counts
-})
+const rootCauseCounts = computed(() =>
+  countBy(
+    rows.value.filter((row) => withinWindow(row, weekFilter.value)),
+    (row) => row.rootCause || 'untriaged'
+  )
+)
 
-const stateCounts = computed(() => {
-  const counts: Record<string, number> = {}
-  rows.value.filter(withinWindow).forEach((row) => {
-    const key = row.governanceState || 'needs_triage'
-    counts[key] = (counts[key] || 0) + 1
-  })
-  return counts
-})
+const stateCounts = computed(() =>
+  countBy(
+    rows.value.filter((row) => withinWindow(row, weekFilter.value)),
+    (row) => row.governanceState || 'needs_triage'
+  )
+)
 
 const menuSections = computed(() => [
   {
@@ -144,7 +113,7 @@ const menuSections = computed(() => [
       {
         index: 'state:',
         label: '全部',
-        badge: String(rows.value.filter(withinWindow).length),
+        badge: String(rows.value.filter((row) => withinWindow(row, weekFilter.value)).length),
         active: stateFilter.value === ''
       },
       ...Object.entries(GOVERNANCE_LABELS).map(([key, label]) => ({
@@ -163,7 +132,7 @@ const menuSections = computed(() => [
       {
         index: 'cause:',
         label: '全部',
-        badge: String(rows.value.filter(withinWindow).length),
+        badge: String(rows.value.filter((row) => withinWindow(row, weekFilter.value)).length),
         active: rootCauseFilter.value === ''
       },
       ...ROOT_CAUSE_OPTIONS.map((option) => ({
@@ -189,13 +158,6 @@ const handleMenuSelect = (item: { index?: string }) => {
     rootCauseFilter.value = ''
     stateFilter.value = 'needs_triage'
   } else if (key.startsWith('cause:')) rootCauseFilter.value = key.slice('cause:'.length)
-}
-
-const formatRatio = (item: unknown) => {
-  if (!item || typeof item !== 'object') return '—'
-  const value = (item as { value?: number | null }).value
-  if (value === null || value === undefined) return '—'
-  return `${(Number(value) * 100).toFixed(1)}%`
 }
 
 const metricCards = computed(() => {
@@ -255,13 +217,7 @@ const saveTriage = async (row: FdeFeedback) => {
   }
   saving.value = row.id
   try {
-    const res = await triageFdeFeedbackApi(row.id, {
-      rootCause: draft.rootCause,
-      status: draft.canUseForEval ? 'approved_for_eval' : 'triaged',
-      canUseForEval: draft.canUseForEval,
-      canUseForTraining: draft.canUseForTraining,
-      adjudicationRequired: draft.adjudicationRequired
-    })
+    const res = await triageFdeFeedbackApi(row.id, triagePayload(draft))
     const updated = res.data?.feedback
     if (updated) {
       rows.value = rows.value.map((item) => (item.id === row.id ? { ...item, ...updated } : item))
@@ -283,13 +239,6 @@ const copyMarkdown = async () => {
   } catch {
     ElMessage.warning('浏览器不允许写剪贴板，可从右栏抄录。')
   }
-}
-
-const stateTagType = (state?: string) => {
-  if (state === 'promoted_to_eval' || state === 'ready_for_eval') return 'success'
-  if (state === 'needs_adjudication') return 'danger'
-  if (state === 'triaged') return 'info'
-  return 'warning'
 }
 
 onMounted(load)
