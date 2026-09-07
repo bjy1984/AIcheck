@@ -19,7 +19,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from libs.review_orchestrator.certificate_facts import _documents_by_version
+from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
+from libs.review_orchestrator.pipeline_facts import build_project_pipelines
 
 DESIGN_FACT_NODES = frozenset({4, 5, 6, 7, 8, 9})
 
@@ -41,6 +42,16 @@ _DESIGN_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 _ROLE_LABELS = ("设计", "校核", "审核", "审定", "批准", "专业负责", "项目负责")
 _ROLE_RE = re.compile(r"(设计|校核|审核|审定|批准)\s*[人:：]\s*([一-龥]{2,4})")
 _LINE_NO_RE = re.compile(r"\b[A-Z]{1,4}-?\d{2,5}(?:-[A-Z0-9]{1,6})?\b")
+CALCULATION_TYPES = frozenset({"strength_calculation", "straight_pipe_strength_calculation", "pipeline_stress_calculation"})
+_PARAM_RES = {
+    "designPressureMPa": re.compile(r"设计压力\s*[:：]?\s*(\d+(?:\.\d+)?)\s*MPa?", re.IGNORECASE),
+    "designTemperatureC": re.compile(r"设计温度\s*[:：]?\s*(-?\d+(?:\.\d+)?)\s*[℃C]?"),
+    "material": re.compile(r"(?:材质|材料牌号|材料)\s*[:：]\s*([A-Za-z0-9#\-]{2,16})"),
+    "specification": re.compile(r"(?:规格|公称直径)\s*[:：]?\s*((?:DN|Φ|φ)?\s*\d+(?:[x×*]\d+(?:\.\d+)?)?)"),
+}
+_ORG_LABEL_RE = re.compile(r"(原设计单位|设计单位|批准单位|变更单位|审批单位)\s*[:：]\s*([一-龥（）()]{4,40}?(?:公司|院|所|中心))")
+_DRAWING_NO_RE = re.compile(r"(?:图号|原图号|图纸编号)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9\-/.]{3,30})")
+_APPROVAL_RE = re.compile(r"(同意|批准|准予|审批通过)")
 
 
 def _text_of(item: Any) -> str:
@@ -130,6 +141,11 @@ def build_design_business_facts(
     project_id = str(review_run.get("projectId") or "")
     requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
     versions = _documents_by_version(state, project_id)
+    pipelines = build_project_pipelines(state, project_id)
+    if known_pipeline_ids is None:
+        known_pipeline_ids = {str(item.get("pipelineId")) for item in pipelines if item.get("pipelineId")}
+    texts: dict[str, str] = {}
+    parse_by_version: dict[str, dict[str, Any]] = {}
     documents: list[dict[str, Any]] = []
     uploaded: list[str] = []
     parseable: list[str] = []
@@ -153,6 +169,8 @@ def build_design_business_facts(
         if design_type == "design_document_other":
             unclassified.append({"documentVersionId": version_id, "fileName": file_name})
         roles = signature_roles(parse_result)
+        texts[version_id] = _all_text(parse_result)
+        parse_by_version[version_id] = parse_result
         page_no = int((next((item for item in parse_result.get("fragments") or [] if isinstance(item, dict)), {}) or {}).get("pageNo") or 1)
         documents.append(
             {
@@ -176,4 +194,94 @@ def build_design_business_facts(
             "unclassified": unclassified,
         },
         "designDocuments": {"documents": documents, "documentCount": len(documents)},
+        "calculationDocuments": calculation_documents(documents, texts, pipelines),
+        "designChanges": design_changes(documents, parse_by_version, texts, _project_record(state, project_id)),
     }
+
+
+def _seal_texts(parse_result: dict[str, Any]) -> list[str]:
+    return [
+        " ".join(str(seal.get(key) or "") for key in ("sealName", "name", "text", "ownerName"))
+        for seal in parse_result.get("seals") or []
+        if isinstance(seal, dict)
+    ]
+
+
+def parameter_comparisons(text: str, pipeline: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """计算书正文里的设计参数 vs 管道特性表（覆盖管线）的设计参数；两边都有值才比。"""
+    if not pipeline:
+        return []
+    comparisons: list[dict[str, Any]] = []
+    for code, pattern in _PARAM_RES.items():
+        match = pattern.search(text or "")
+        design_value = pipeline.get(code)
+        if not match or design_value in (None, ""):
+            continue
+        document_value = match.group(1).replace(" ", "")
+        if code in ("designPressureMPa", "designTemperatureC"):
+            comparisons.append({"code": code, "documentValue": document_value, "designValue": design_value, "tolerance": 0.01 if code == "designPressureMPa" else 1})
+        else:
+            comparisons.append({"code": code, "documentValue": document_value, "designValue": design_value, "normalizer": "text"})
+    return comparisons
+
+
+def _design_org_name(project: dict[str, Any]) -> str:
+    for key in ("designOrgName", "designOrganizationName", "designUnitName", "designUnit"):
+        value = str(project.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def calculation_documents(documents: list[dict[str, Any]], texts: dict[str, str], pipelines: list[dict[str, Any]]) -> dict[str, Any]:
+    """N-10/N-11：计算书按覆盖管线与设计参数比对；覆盖管线集 ⊇ 需计算管线集（GC1/GCD）作 coverage。"""
+    by_id = {str(item.get("pipelineId")): item for item in pipelines if item.get("pipelineId")}
+    output: list[dict[str, Any]] = []
+    covered_all: set[str] = set()
+    for document in documents:
+        if document.get("documentType") not in CALCULATION_TYPES:
+            continue
+        text = texts.get(str(document.get("documentVersionId")), "")
+        covered = [item for item in document.get("coveredPipelineIds") or []]
+        covered_all.update(covered)
+        first = by_id.get(covered[0]) if covered else (pipelines[0] if len(pipelines) == 1 else None)
+        output.append({**document, "parameterComparisons": parameter_comparisons(text, first)})
+    required = [str(item.get("pipelineId")) for item in pipelines if str(item.get("pipelineGrade") or "").upper() in {"GC1", "GCD"}]
+    return {
+        "documents": output,
+        "documentCount": len(output),
+        "requiredPipelineIds": required,
+        "coveredPipelineIds": sorted(covered_all),
+        "uncoveredRequiredPipelineIds": [item for item in required if item not in covered_all],
+    }
+
+
+def design_changes(documents: list[dict[str, Any]], parse_results: dict[str, dict[str, Any]], texts: dict[str, str], project: dict[str, Any]) -> dict[str, Any]:
+    """N-12/N-13：设计变更单的书面批准、原设计单位、签字级别、引用原图号是否在设计集合里。"""
+    change_docs = [item for item in documents if item.get("documentType") == "design_change_document"]
+    all_design_text = "\n".join(texts.get(str(item.get("documentVersionId")), "") for item in documents if item.get("documentType") != "design_change_document")
+    design_org = _design_org_name(project)
+    output: list[dict[str, Any]] = []
+    for document in change_docs:
+        version_id = str(document.get("documentVersionId"))
+        text = texts.get(version_id, "")
+        parse_result = parse_results.get(version_id, {})
+        labeled = {label: name for label, name in _ORG_LABEL_RE.findall(text)}
+        seals = _seal_texts(parse_result)
+        roles = document.get("signatureRoles") or []
+        drawing_nos = list(dict.fromkeys(_DRAWING_NO_RE.findall(text)))
+        changed_type = classify_design_document("", text.replace("设计变更", "").replace("变更通知", ""))
+        output.append(
+            {
+                **document,
+                "changedDocumentType": changed_type if changed_type != "design_change_document" else "design_document_other",
+                "writtenApproval": bool(_APPROVAL_RE.search(text)) and (bool({"批准", "审定", "审核"} & set(roles)) or bool(seals)),
+                "originalDesignOrganizationName": labeled.get("原设计单位") or design_org or None,
+                "approvingOrganizationName": labeled.get("批准单位") or labeled.get("审批单位") or labeled.get("变更单位") or labeled.get("设计单位") or next((seal for seal in seals if "公司" in seal or "院" in seal), None),
+                "designLicenseSeal": any("设计许可" in seal or "许可印章" in seal for seal in seals),
+                "referencedDrawingNos": drawing_nos,
+                "referencedDrawingsFound": [no for no in drawing_nos if no in all_design_text],
+                "referencedDrawingsMissing": [no for no in drawing_nos if no not in all_design_text],
+            }
+        )
+    return {"hasDesignChanges": bool(change_docs), "documents": output, "documentCount": len(output)}

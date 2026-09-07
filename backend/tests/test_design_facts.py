@@ -68,3 +68,45 @@ def test_design_facts_feed_r04_completeness_and_approval_checks() -> None:
     )
     assert approval["result"] == "passed", approval
     assert approval["documentResults"][0]["triggerCodes"] == ["GC1_PIPELINE"], "PL-101 是 GC1，触发四级会签，逐管线判"
+
+
+def test_calculation_and_design_change_facts_feed_r06_and_r07() -> None:
+    from libs.review_tools.business_tools import (
+        evaluate_calculation_document_consistency,
+        evaluate_design_change_approval,
+    )
+
+    state = _state()
+    state["projects"] = [{"id": "P-1", "designOrgName": "广东政和工程有限公司"}]
+    state["documents"].append({"id": "D-CHG", "projectId": "P-1", "currentVersionId": "V-CHG", "fileName": "设计变更通知单.pdf", "materialTypeCode": "design_change_document"})
+    state["ocr_parse_results"].append(
+        {
+            "documentVersionId": "V-CHG",
+            "status": "success",
+            "fragments": [{"pageNo": 1, "text": "设计变更通知单 涉及 管道布置图 图号：PID-001 管线 PL-101 原设计单位：广东政和工程有限公司 批准单位：广东政和工程有限公司 同意变更 设计：张三 校核：李四 审核：王五 审定：赵六"}],
+            "seals": [{"sealName": "广东政和工程有限公司压力管道设计许可印章"}],
+        }
+    )
+    # 强度计算书写了设计压力 1.6 / 设计温度 90（管道特性表 80）
+    calc = next(item for item in state["ocr_parse_results"] if item["documentVersionId"] == "V-CALC")
+    calc["fragments"][0]["text"] += " 设计压力：1.6MPa 设计温度：90℃ 图号：PID-001"
+    run = {"projectId": "P-1", "nodeId": 6, "inputDocumentVersionIds": ["V-CAT", "V-DS", "V-CALC", "V-MYST", "V-CHG"]}
+    facts = merge_project_pipelines(state, run, build_design_business_facts(state, run))
+
+    calc_facts = facts["calculationDocuments"]
+    assert calc_facts["requiredPipelineIds"] == ["PL-101"] and calc_facts["uncoveredRequiredPipelineIds"] == []
+    comparisons = {item["code"]: item for item in calc_facts["documents"][0]["parameterComparisons"]}
+    assert comparisons["designPressureMPa"]["documentValue"] == "1.6" and comparisons["designPressureMPa"]["designValue"] == 1.6
+    consistency = evaluate_calculation_document_consistency({"documents": calc_facts["documents"], "targetDocumentTypes": ["strength_calculation"]})
+    assert consistency["result"] == "failed", "设计温度 90 ≠ 特性表 80"
+
+    changes = facts["designChanges"]
+    assert changes["hasDesignChanges"] is True
+    change = changes["documents"][0]
+    assert change["changedDocumentType"] == "pipeline_layout_drawing"
+    assert change["writtenApproval"] is True and change["designLicenseSeal"] is True
+    assert change["originalDesignOrganizationName"] == "广东政和工程有限公司" == change["approvingOrganizationName"]
+    assert change["referencedDrawingsFound"] == ["PID-001"] and change["referencedDrawingsMissing"] == []
+    approval = evaluate_design_change_approval({"hasDesignChanges": True, "documents": changes["documents"], "pipelines": project_pipeline_facts(facts)})
+    assert approval["result"] == "passed", approval
+    assert approval["documentResults"][0]["requiredApprovalLevel"] == 4, "变更的是布置图且覆盖 GC1 管线 → 四级"
