@@ -9979,6 +9979,22 @@
         ]
       }
     },
+    "/api/fde/feedback/metrics": {
+      "get": {
+        "operationId": "fde_feedback_metrics_api_fde_feedback_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Fde Feedback Metrics"
+      }
+    },
     "/api/fde/feedback/{feedback_id}/triage": {
       "post": {
         "operationId": "fde_triage_feedback_api_fde_feedback__feedback_id__triage_post",
@@ -32558,6 +32574,22 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/fde/feedback/metrics": {
+      "get": {
+        "operationId": "fde_feedback_metrics_fde_feedback_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Fde Feedback Metrics"
       }
     },
     "/fde/feedback/{feedback_id}/triage": {
