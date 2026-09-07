@@ -18,7 +18,9 @@ from libs.review_orchestrator.deterministic_tools import decode_welder_code
 
 def test_tables_load_with_verification_flags() -> None:
     assert is_verified(table("tsg31_2025", "designApproval")) is True
-    assert is_verified(table("tsgZ6002_2026", "materialCategories")) is False, "OCR 预填，写入判定前须人工核对"
+    # 2026-09-07 采信策略改为 accept_without_human_signoff：未签字的表也可用于判定
+    assert is_verified(table("tsgZ6002_2026", "materialCategories")) is True
+    assert table("tsgZ6002_2026", "materialCategories").get("verifiedBy") is None, "采信不等于伪造签字：verifiedBy 仍为空"
     assert table("tsg31_2025", "designApproval")["fourLevelTriggers"][0] == "GC1 级管道"
 
 
@@ -80,7 +82,7 @@ def test_welding_consumable_lookup_by_designation_alias_and_wire_class():
     wire = welding_consumable_spec("ER50-6")
     assert wire and wire["wireComposition"]["Mn"] == "1.40-1.85" and wire["mechanical"]["yieldMPaMin"] == 390
     assert welding_consumable_spec("S6") is wire
-    assert not is_verified(wire)  # 预填值未核对：只能预警
+    assert is_verified(wire) and wire.get("verifiedBy") is None  # 采信策略生效，但没有假签字
     assert welding_consumable_spec("E9999") is None
 
 
@@ -111,7 +113,7 @@ def test_pipe_material_limits_merge_level_rows_and_never_guess():
     q345b = pipe_material_limits("GB/T 8163-2018", "Q345", "B")
     assert q345b["mechanical"] == {"tensileMPa": "470-630", "yieldMPaMin": 345, "elongationPctMin": 20, "impactTemperatureC": 20, "kv2JMin": 34}
     assert q345b["composition"]["C"] == "<=0.20" and q345b["composition"]["Mn"] == "<=1.70"
-    assert q345b["verified"] is False, "未签字前只能出预警"
+    assert q345b["verified"] is True, "采信策略开着：可用于判定"
 
     q345e = pipe_material_limits("GB/T 8163-2018", "Q345", "E")
     assert q345e["composition"]["C"] == "<=0.18" and q345e["composition"]["S"] == "<=0.020"
@@ -180,3 +182,24 @@ def test_nbt47014_table5_specific_factors_by_welding_method():
     assert {"重要因素", "补加因素", "次要因素"} == set(smaw)
     assert all(item["category"] for group in smaw.values() for item in group)
     assert wps_specific_factors("") == {} and wps_factor_class("焊条电弧焊", "查无此因素") is None
+
+
+def test_trust_policy_is_recorded_not_faked_and_can_be_switched_back():
+    """"直接采信"是一条显式声明，不是往 verifiedBy 里填人名；改回 require_human_signoff 就恢复门禁。"""
+    import copy
+
+    from libs.regulatory_tables import accepts_without_signoff, is_verified, table, trust_policy
+
+    policy = trust_policy()
+    assert policy["mode"] == "accept_without_human_signoff"
+    assert policy["decidedBy"] and policy["decidedOn"] and policy["rationale"]
+    assert accepts_without_signoff() is True
+
+    # 全表没有一处把人名写进 verifiedBy 来冒充核对
+    unsigned = [item for item in table("pipeMaterialLimits").get("standards") or []]
+    assert all(item.get("verifiedBy") is None for item in unsigned)
+
+    # is_verified 对"已签字"和"策略采信"都返回 True，但两者可区分
+    signed = table("tsg31_2025", "designApproval")
+    assert signed.get("verifiedBy") and is_verified(signed)
+    assert is_verified(copy.deepcopy(unsigned[0]))

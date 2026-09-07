@@ -32,8 +32,21 @@ def table(*keys: str, path: Path | None = None) -> dict[str, Any]:
     return node if isinstance(node, dict) else {}
 
 
+def trust_policy(path: Path | None = None) -> dict[str, Any]:
+    """采信策略：mode 为 accept_without_human_signoff 时不等签字直接采信（见 YAML 顶部说明）。"""
+    policy = load_tables(path).get("trustPolicy")
+    return policy if isinstance(policy, dict) else {}
+
+
+def accepts_without_signoff(path: Path | None = None) -> bool:
+    return str(trust_policy(path).get("mode") or "") == "accept_without_human_signoff"
+
+
 def is_verified(section: dict[str, Any]) -> bool:
-    return bool(section.get("verifiedBy"))
+    """这张表能不能用于"判不符合"。签字了当然可以；采信策略开着时未签字的也可以。"""
+    if section.get("verifiedBy"):
+        return True
+    return accepts_without_signoff()
 
 
 def welder_material_category(grade: str) -> str | None:
@@ -146,7 +159,7 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
             merged: dict[str, Any] = {
                 "standard": item.get("standard"),
                 "grade": entry.get("grade"),
-                "verified": bool(item.get("verifiedBy")),
+                "verified": is_verified(item),
                 "composition": dict(entry.get("composition") or entry.get("compositionCommon") or {}),
                 "mechanical": dict(entry.get("mechanical") or entry.get("mechanicalCommon") or {}),
             }

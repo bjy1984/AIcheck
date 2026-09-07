@@ -5,6 +5,17 @@
 # GB/T 20801.5 征求意见稿（tced.com PDF；正式版 2020 已于 2026-05-01 被 GB/T 20801.1-2025 代替，正文未取得）、
 # TSG 31-2025 官方 PDF OCR。
 schemaVersion: regulatory-tables-v1
+
+# 采信策略（2026-09-07 项目负责人决定）：不等法规核对人逐格签字，直接采信本文件的数值。
+# 这里不把人名写进 verifiedBy——那等于伪造一份没发生过的背书；改用这个显式声明记录真实来由。
+# 影响：is_verified() 一律返回 True，标准时间线里"已废止"的判定也随之生效（此前只有这一处受签字门禁）。
+# 要退回"必须签字"，把 mode 改成 require_human_signoff 即可。
+trustPolicy:
+  mode: accept_without_human_signoff
+  decidedBy: 项目负责人
+  decidedOn: "2026-09-07"
+  rationale: 数值多数已对照标准正文（官方全文平台或正版 PDF），项目决定先按现值判定，核对清单（docs/法规数值核对清单.md）留作后续复核
+  residualRisk: 扫描件视觉识别的数值（GB/T 5117 表 6/表 7、GB/T 8163 表 5~8、GB/T 14976 表 2/表 3）个别数字可能认错；清单按可信度排序，最需要复核的排在最前
 updatedAt: "2026-09-07"
 
 tsgZ6002_2026:
