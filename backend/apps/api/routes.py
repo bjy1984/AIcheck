@@ -539,6 +539,9 @@ FDE_ROOT_CAUSES = {
     "ambiguous_business_standard",
     "human_review_error",
 }
+# P12 F2：反馈记录采集时已按七类根因（feedback_capture.AI_FEEDBACK_ROOT_CAUSES）写 rootCause，triage 必须认这套词表，
+# 否则带七类根因的记录一到 triage 就被"类型不支持"挡住。老 12 类保留给历史记录。
+FDE_ROOT_CAUSES = FDE_ROOT_CAUSES | feedback_capture.AI_FEEDBACK_ROOT_CAUSES
 
 
 def role_from_query(role: str | None = None, x_role: str | None = None) -> str:
@@ -21764,7 +21767,13 @@ def fde_replay_ai_run(
 
 
 @router.get("/fde/feedback")
-def fde_feedback(request: Request, feedbackType: str | None = None, status: str | None = None):
+def fde_feedback(
+    request: Request,
+    feedbackType: str | None = None,
+    status: str | None = None,
+    rootCause: str | None = None,
+    governanceState: str | None = None,
+):
     _, role_error = fde_error_unless_allowed(request, "fde:feedback:view")
     if role_error:
         return role_error
@@ -21773,8 +21782,13 @@ def fde_feedback(request: Request, feedbackType: str | None = None, status: str 
         items = [item for item in items if item.get("feedbackType") == feedbackType]
     if status:
         items = [item for item in items if item.get("status") == status]
+    if rootCause:
+        items = [item for item in items if (item.get("rootCause") or "") == rootCause]
     triage_by_feedback = {item.get("feedbackId"): item for item in repo.state.get("feedback_triage", [])}
-    return ok([fde_feedback_governance_view(item, triage_by_feedback.get(item["id"])) for item in items], request)
+    views = [fde_feedback_governance_view(item, triage_by_feedback.get(item["id"])) for item in items]
+    if governanceState:
+        views = [item for item in views if item.get("governanceState") == governanceState]
+    return ok(views, request)
 
 
 def fde_feedback_governance_view(

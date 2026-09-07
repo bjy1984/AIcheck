@@ -2438,3 +2438,33 @@ def test_fde_vector_file_detail_rejects_unmaterialized_synthetic_document() -> N
         ),
         "NOT_FOUND",
     )
+
+
+def test_fde_feedback_triage_accepts_seven_class_root_cause_and_filters() -> None:
+    """P12 F2：采集端写的七类根因（data_table 等）到 triage 不能被老词表挡住；列表按 rootCause / governanceState 过滤。"""
+    triage = assert_ok(
+        client.post(
+            "/api/fde/feedback/AIFB-24-001/triage",
+            json={"rootCause": "data_table", "status": "triaged", "canUseForEval": False},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-triage-seven-class-001"},
+        )
+    )
+    assert triage["feedback"]["rootCause"] == "data_table"
+    assert triage["feedback"]["governanceState"] == "triaged"
+    assert triage["feedback"]["canUseForTraining"] is False
+
+    filtered = assert_ok(client.get("/api/fde/feedback", params={"rootCause": "data_table"}, headers={"X-Role": "fde"}))
+    assert [item["id"] for item in filtered] == ["AIFB-24-001"]
+    triaged = assert_ok(client.get("/api/fde/feedback", params={"governanceState": "triaged"}, headers={"X-Role": "fde"}))
+    assert any(item["id"] == "AIFB-24-001" for item in triaged)
+    assert all(item["governanceState"] == "triaged" for item in triaged)
+
+    rejected = assert_error(
+        client.post(
+            "/api/fde/feedback/AIFB-24-001/triage",
+            json={"rootCause": "made_up"},
+            headers={"X-Role": "fde", "Idempotency-Key": "fde-triage-seven-class-002"},
+        ),
+        "VALIDATION_ERROR",
+    )
+    assert "data_table" in rejected["data"]["allowedTypes"]
