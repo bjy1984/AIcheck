@@ -5,6 +5,7 @@ import { Layout } from '@/utils/routerHelper'
 import { NO_RESET_WHITE_LIST } from '@/constants'
 
 const AICheckStaticLayout = () => import('@/layout/AICheckStaticLayout.vue')
+const FdeFeedbackTriage = () => import('@/views/AICheck/FdeFeedbackTriage.vue')
 const AdminOverview = () => import('@/views/AICheck/AdminOverview.vue')
 const KnowledgeOverview = () => import('@/views/AICheck/KnowledgeOverview.vue')
 const KnowledgeNetwork = () => import('@/views/AICheck/KnowledgeNetwork.vue')
@@ -88,6 +89,30 @@ export const constantRouterMap: AppRouteRecordRaw[] = [
       noCache: true,
       roles: ['fde']
     }
+  },
+  {
+    /* P12 F2 周度 triage 页：FdeConsole.vue 已到 2.7 万行棘轮，独立拆页（优化计划 §18.7）。 */
+    path: '/fde-feedback-triage',
+    component: AICheckStaticLayout,
+    name: 'FdeFeedbackTriageLayout',
+    meta: {
+      hidden: true,
+      noCache: true,
+      roles: ['fde']
+    },
+    children: [
+      {
+        path: '',
+        component: FdeFeedbackTriage,
+        name: 'FdeFeedbackTriage',
+        meta: {
+          title: '反馈归因',
+          hidden: true,
+          noCache: true,
+          roles: ['fde']
+        }
+      }
+    ]
   },
   {
     path: '/fde/:fdePath(.*)*',

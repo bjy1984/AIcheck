@@ -2427,6 +2427,13 @@ export type FdeFeedback = {
   sampleUsage?: Record<string, unknown>
   createdAt: string
   triage?: Record<string, unknown>
+  findingId?: string
+  claim?: string
+  source?: string
+  humanResult?: string
+  suggestedResult?: string
+  agentId?: string
+  businessPackVersion?: string
 }
 
 export type FdeEvaluationCaseResult = {
@@ -5528,8 +5535,20 @@ export const createFdeReviewRunFeedbackApi = (
 export const listFdeFeedbackApi = (params?: {
   feedbackType?: string
   status?: string
+  rootCause?: string
+  governanceState?: string
 }): Promise<IResponse<FdeFeedback[]>> => {
   return request.get({ url: '/api/fde/feedback', params })
+}
+
+/** P12 F2 §17.3 指标（libs/feedback/metrics.py）；markdown 是同一份数据的可贴报告。 */
+export type FdeFeedbackMetricsPayload = {
+  metrics: Record<string, unknown>
+  markdown: string
+}
+
+export const getFdeFeedbackMetricsApi = (): Promise<IResponse<FdeFeedbackMetricsPayload>> => {
+  return request.get({ url: '/api/fde/feedback/metrics' })
 }
 
 export const triageFdeFeedbackApi = (
@@ -5539,6 +5558,8 @@ export const triageFdeFeedbackApi = (
     status?: string
     canUseForEval?: boolean
     canUseForTraining?: boolean
+    adjudicationRequired?: boolean
+    dataSensitivity?: string
   },
   options?: MutationHeaderOptions
 ): Promise<
