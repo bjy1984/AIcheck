@@ -96,11 +96,28 @@ def model_cost_cny(
     }
 
 
+def is_cjk_char(char: str) -> bool:
+    code = ord(char)
+    return (
+        0x3000 <= code <= 0x9FFF  # CJK 标点、日文假名、统一汉字
+        or 0xF900 <= code <= 0xFAFF  # 兼容汉字
+        or 0xFF00 <= code <= 0xFFEF  # 全角标点与字母
+        or 0x20000 <= code <= 0x2FFFF  # 扩展 B–F
+    )
+
+
 def estimate_text_tokens(text: str) -> int:
+    """中文感知的 token 估算：CJK 字符按 1 token，其余按 4 字符 1 token。
+
+    2026-09-06 审计实测（P8 H2）：按 len/4 估的 5,849 token 分片，模型计费 26,756 token，
+    比例 4.6——通义千问对中文基本是一字一 token。按 utf-8 字节 /4 也偏低（一个汉字 3 字节
+    只算 0.75）。估算偏低的后果不是省钱，是分片被切得远大于目标、9 片 52 万 token。
+    """
     if not text:
         return 0
-    utf8_bytes = len(text.encode("utf-8"))
-    return max(1, (utf8_bytes + 3) // 4)
+    cjk = sum(1 for char in text if is_cjk_char(char))
+    other = len(text) - cjk
+    return max(1, cjk + (other + 3) // 4)
 
 
 def estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:

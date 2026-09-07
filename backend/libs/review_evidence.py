@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 from copy import deepcopy
 from typing import Any
 
 from libs.contracts.responses import server_time
+from libs.model_usage import estimate_text_tokens, is_cjk_char
 
 
 def _stable_hash(value: Any) -> str:
@@ -225,10 +225,12 @@ def _artifacts_for_document(
     )
     for artifact_type, collection_name in parse_groups:
         rows = [
-            row
+            compact_artifact_payload(artifact_type, row)
             for row in parse_result.get(collection_name) or []
             if isinstance(row, dict)
         ]
+        if artifact_type == "fragment":
+            rows = _collapse_empty_fragments(rows, parse_result_id)
         for index, row in enumerate(rows, start=1):
             source_id = str(
                 row.get("id")
@@ -319,8 +321,107 @@ def build_evidence_manifest(
 
 
 def _estimated_tokens(value: Any) -> int:
+    """分片估算。中文感知（P8 H2）：此前按 len/4 估，节点 2 目标 12,000 的分片计费 5.5 万 token。"""
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
-    return max(1, math.ceil(len(raw) / 4))
+    return estimate_text_tokens(raw)
+
+
+def _split_text_by_tokens(text: str, max_tokens: int) -> list[tuple[int, int]]:
+    """按估算 token 切分正文，返回 [start, end) 字符区间；区间首尾相接可原样拼回。"""
+    budget = max(1, int(max_tokens))
+    ranges: list[tuple[int, int]] = []
+    start = 0
+    spent = 0.0
+    for index, char in enumerate(text):
+        cost = 1.0 if is_cjk_char(char) else 0.25
+        if spent + cost > budget and index > start:
+            ranges.append((start, index))
+            start = index
+            spent = 0.0
+        spent += cost
+    if start < len(text) or not ranges:
+        ranges.append((start, len(text)))
+    return ranges
+
+
+# 分片层的无损压缩（P8 H2）。OCR 解析结果把同一张表原样带了三份——table.html、
+# table.rows/cells、以及同页一条 blockType=table 的 fragment 还带 tableHtml；
+# 单元格里 bbox/confidence 为 null 的键也一起送。提示词层已经去掉 rows/cellsSummary
+# 别名，但分片按压缩前的体量切，片数照旧。这里只去重复与空值，不动任何有内容的键。
+_TABLE_ALIAS_PAIRS = (("rows", "normalizedRows"), ("cells", "cellsSummary"))
+_EMPTY_VALUES = (None, "", [], {})
+
+
+def _compact_cells(cells: Any) -> Any:
+    if not isinstance(cells, list):
+        return cells
+    return [
+        {key: value for key, value in cell.items() if value not in _EMPTY_VALUES}
+        if isinstance(cell, dict)
+        else cell
+        for cell in cells
+    ]
+
+
+def compact_artifact_payload(artifact_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """去掉 OCR 载荷里的重复副本与空值。严格无损：删掉的都是另一键的同一内容或 null。"""
+    if not isinstance(payload, dict):
+        return payload
+    item = dict(payload)
+    if artifact_type == "table":
+        for keep, alias in _TABLE_ALIAS_PAIRS:
+            if alias in item and keep in item and item[alias] == item[keep]:
+                item.pop(alias)
+            elif alias in item and keep not in item:
+                item[keep] = item.pop(alias)
+        if item.get("rows") or item.get("cells"):
+            item.pop("html", None)
+        if "cells" in item:
+            item["cells"] = _compact_cells(item["cells"])
+        if "rows" in item and isinstance(item["rows"], list):
+            item["rows"] = [
+                {key: value for key, value in row.items() if value not in _EMPTY_VALUES}
+                if isinstance(row, dict)
+                else row
+                for row in item["rows"]
+            ]
+    elif artifact_type == "fragment":
+        if str(item.get("text") or "").strip():
+            item.pop("tableHtml", None)
+        item = {key: value for key, value in item.items() if value is not None}
+    return item
+
+
+def _collapse_empty_fragments(rows: list[dict[str, Any]], parse_result_id: str) -> list[dict[str, Any]]:
+    """同一页里没有文本的碎片合成一条"该页无可用 OCR 文本"。
+
+    空碎片只有 bbox 与 null 字段，对审查没有信息量，却按条计入分片。
+    审计计划原文写"置信度全 0 的整页"，但 MinerU 给所有碎片都标 confidence 0.0，
+    按置信度判会把整份资料判空——这里只看有没有文本。
+    """
+    kept: list[dict[str, Any]] = []
+    empty_by_page: dict[int, int] = {}
+    for row in rows:
+        if str(row.get("text") or "").strip():
+            kept.append(row)
+            continue
+        try:
+            page_no = int(row.get("pageNo") or row.get("page") or 0)
+        except (TypeError, ValueError):
+            page_no = 0
+        empty_by_page[page_no] = empty_by_page.get(page_no, 0) + 1
+    for page_no, count in sorted(empty_by_page.items()):
+        kept.append(
+            {
+                "fragmentId": f"{parse_result_id}:page-{page_no}:no-text",
+                "pageNo": page_no,
+                "text": "",
+                "ocrTextUnavailable": True,
+                "collapsedFragmentCount": count,
+                "note": f"第 {page_no} 页有 {count} 个 OCR 碎片没有文本，已合并为一条。",
+            }
+        )
+    return kept
 
 
 def _chunk_sequence(
@@ -359,10 +460,8 @@ def _split_text_payload(
     text = str(payload[text_key])
     metadata = {key: deepcopy(value) for key, value in payload.items() if key != text_key}
     metadata_tokens = _estimated_tokens(metadata)
-    max_characters = max(1, (max_estimated_tokens - metadata_tokens - 20) * 4)
     segments: list[dict[str, Any]] = []
-    for start in range(0, len(text), max_characters):
-        end = min(len(text), start + max_characters)
+    for start, end in _split_text_by_tokens(text, max_estimated_tokens - metadata_tokens - 20):
         segments.append(
             {
                 "payloadSlice": {**deepcopy(metadata), text_key: text[start:end]},

@@ -32,6 +32,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from libs.model_usage import estimate_text_tokens
+
 # 与证据一起送的固定开销（工具目录、规则、模板等）留出的余量。
 # 宁可少送一点，也不要卡在边界上——估算本身有误差。
 BUDGET_SAFETY_MARGIN_TOKENS = 512
@@ -41,8 +43,8 @@ EVIDENCE_COLLECTIONS = ("fields", "tables", "seals", "fragments", "evidenceLinks
 
 
 def _tokens_of(value: Any) -> int:
-    """与 estimate_messages_tokens 同口径的粗估：约 3.2 字符 1 token。"""
-    return int(len(json.dumps(value, ensure_ascii=False)) / 3.2)
+    """与 estimate_messages_tokens 同口径：中文感知（CJK 一字一 token，其余 4 字符 1 token）。"""
+    return estimate_text_tokens(json.dumps(value, ensure_ascii=False))
 
 
 def evidence_tokens_by_version(evidence: dict[str, Any]) -> dict[str, int]:
