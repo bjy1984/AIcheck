@@ -54,3 +54,16 @@ def test_deterministic_category_lookup_reads_table_a2() -> None:
     assert material_category_for_grade("06Cr19Ni10") == "FeIV"
     assert material_category_for_grade("12Cr5Mo") == "FeIII"
     assert material_category_for_grade("Q235B") == "FeI"
+
+
+def test_welding_consumable_lookup_by_designation_alias_and_wire_class():
+    from libs.regulatory_tables import is_verified, welding_consumable_spec
+
+    j422 = welding_consumable_spec("J422")
+    assert j422 and j422["designation"] == "E4303" and j422["mechanical"]["tensileMPaMin"] == 430
+    assert welding_consumable_spec("e5015")["commonName"] == "J507"
+    wire = welding_consumable_spec("ER50-6")
+    assert wire and wire["wireComposition"]["Mn"] == "1.40-1.85" and wire["mechanical"]["yieldMPaMin"] == 390
+    assert welding_consumable_spec("S6") is wire
+    assert not is_verified(wire)  # 预填值未核对：只能预警
+    assert welding_consumable_spec("E9999") is None

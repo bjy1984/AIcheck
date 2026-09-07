@@ -181,3 +181,60 @@ tsg31_2025:
     extractedFrom: ocr
     verifiedBy: 官方 PDF OCR 逐字核（2026-09-07）
     rule: 管道图纸目录和管道布置图上加盖设计单位压力管道设计许可印章；印章至少含设计单位名称、许可证编号、许可有效期
+
+weldingConsumables:
+  source: GB/T 5117-2012 非合金钢及细晶粒钢焊条；GB/T 8110-2020 熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝
+  caveat: 2026-09-07 预填值来自焊材厂商产品页转述的"标准保证值"（xiangind.com、bocastwelding.com），不是标准正文；写入判定前须对照 GB/T 5117-2012 表 4/表 5、GB/T 8110-2020 表
+  electrodes:
+    - designation: E4303
+      commonName: J422
+      standard: GB/T 5117-2012
+      depositedMetalComposition: {C: "<=0.20", Mn: "<=1.20", Si: "<=1.00", P: "<=0.040", S: "<=0.035"}
+      mechanical: {tensileMPaMin: 430, yieldMPaMin: 330, elongationPctMin: 20, impact: [{temperatureC: 0, kv2JMin: 27}, {temperatureC: -20, kv2JMin: 47}]}
+      extractedFrom: vendor_page
+      sourceUrl: https://www.xiangind.com/e4303
+      verifiedBy: null
+      note: 供应商页称"保证值"；-20℃ 47J 与研究报告 3.5 节的记忆值一致，仍待核标准表
+    - designation: E5015
+      commonName: J507
+      standard: GB/T 5117-2012
+      depositedMetalComposition: {C: "<=0.15", Mn: "<=1.60", Si: "<=0.90", P: "<=0.035", S: "<=0.035", Cr: "<=0.20", Mo: "<=0.30", V: "<=0.08", Ni: "<=0.30"}
+      mechanical: {tensileMPaMin: 490, yieldMPaMin: 400, elongationPctMin: 20, impact: [{temperatureC: -30, kv2JMin: 27}]}
+      extractedFrom: vendor_page
+      sourceUrl: http://www.bocastwelding.com/product/bc-j507-e5015.html
+      verifiedBy: null
+      note: 研究报告 3.5 节记 -30℃ ≥47J，供应商页为 ≥27J——两来源冲突，以标准正文为准
+  wires:
+    - designation: ER50-6
+      standard: GB/T 8110-2020
+      classification2020: S6（型号 G 49 A xx S6；2008 版对照 ER50-6，见标准 4.3 对照表）
+      sourceClause: 表 4 焊丝化学成分（S6 行）；表 1 熔敷金属抗拉强度代号 49X
+      wireComposition: {C: "0.06-0.15", Mn: "1.40-1.85", Si: "0.80-1.15", P: "<=0.025", S: "<=0.025", Ni: "<=0.15", Cr: "<=0.15", Mo: "<=0.15"}
+      mechanical: {tensileMPa: "490-670", yieldMPaMin: 390, elongationPctMin: 18}
+      extractedFrom: ocr
+      sourceUrl: https://www.eia543.com（GB/T 8110-2020 扫描件，会话留存 gbt8110_ocr.txt）
+      verifiedBy: null
+      note: 表 4 的 Cu 列 OCR 截断（一般 ≤0.50）待核；厂商页写 Rm≥480/ReL≥400 属 2008 版口径，按 2020 版 49X 为 490～670/≥390/A≥18%
+  tensileCodes:
+    sourceClause: GB/T 8110-2020 表 1 熔敷金属抗拉强度代号
+    extractedFrom: ocr
+    verifiedBy: null
+    rows:
+      - {code: 43X, tensileMPa: "430-600", yieldMPaMin: 330, elongationPctMin: 20}
+      - {code: 49X, tensileMPa: "490-670", yieldMPaMin: 390, elongationPctMin: 18}
+      - {code: 55X, tensileMPa: "550-740", yieldMPaMin: 460, elongationPctMin: 17}
+      - {code: 57X, tensileMPa: "570-770", yieldMPaMin: 490, elongationPctMin: 17}
+    note: X=A（焊态）/P（焊后热处理）/AP；表 2 冲击温度代号 Z 无要求、Y +20、0、2 -20、3 -30、4 -40、4H -45、5 -50、6 -60、7 -70、7H -75、8 -80、10 -100，KV2≥27J（附加 U 为 ≥47J）
+  preheatByClass:
+    sourceClause: GB/T 8110-2020 表 6 预热温度和道间温度（熔敷金属试件）
+    extractedFrom: ocr
+    verifiedBy: null
+    rows:
+      - {classes: [S2, S3, S4, S6, S7, S10, S11, S12, S13, S14, S15, S16, S17, S18, SN2MC, SN3MC], preheatC: 室温, interpassC: 室温}
+      - {classes: [S1M3, S2M3, S2M31, S3M3T, S3M1, S3M1T, S4M31, S4M31T, S4M3T, SN1, SN2, SN3, SN5, SN7, SN71, SN9], preheatC: "150±15", interpassC: ">=100"}
+  storageAndDrying:
+    source: JB/T 3223-2017 焊接材料质量管理规程（2018-04-01 实施）
+    sourceClause: "7.3 烘干、保温及清理"
+    extractedFrom: none
+    verifiedBy: null
+    note: 2026-09-07 只取得目录与前言（修改了"烘干后在常温下搁置"的要求、增加烘箱标示牌要求）；正文各镜像站均需下载 PDF，数值未预填。规则侧只做"有无烘干记录/发放记录"的存在性检查

@@ -86,3 +86,23 @@ def volumetric_ndt_ratio(level: str | None) -> int | None:
 def pressure_test_ratios() -> dict[str, float]:
     section = table("gbt20801_inspection", "pressureTest")
     return {"hydro": float(section.get("hydroTestRatio") or 1.5), "pneumatic": float(section.get("pneumaticTestRatioMin") or 1.1)}
+
+
+def _norm_designation(value: str) -> str:
+    return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
+
+
+def welding_consumable_spec(designation: str) -> dict[str, Any] | None:
+    """GB/T 5117 / GB/T 8110 预填表：型号或牌号（E4303 / J422 / ER50-6 / S6）→ 成分与力学性能条目。"""
+    wanted = _norm_designation(designation)
+    if not wanted:
+        return None
+    section = table("weldingConsumables")
+    for item in (section.get("electrodes") or []) + (section.get("wires") or []):
+        keys = {item.get("designation"), item.get("commonName")}
+        classification = str(item.get("classification2020") or "")
+        if classification:
+            keys.add(classification.split("（")[0])
+        if wanted in {_norm_designation(k) for k in keys if k}:
+            return item
+    return None
