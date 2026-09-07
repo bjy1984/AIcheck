@@ -66,7 +66,27 @@ def review_run_evidence_package(
     return manifest, shards
 
 
+DOWNGRADED_TITLE = "证据不足，需人工确认"
+_SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+
 def _finding_key(finding: dict[str, Any]) -> tuple[str, ...]:
+    """合并键。
+
+    守卫降级后的条目标题、正文都是同一句模板，只有 unsupportedClaims 不同；原来把 severity
+    也放进键里，9 个分片各降一条就并排 9 条"证据不足"（2026-09-06 节点 2 实测 13 条里 10 条）。
+    降级条目改按"断言集合"去重，severity 由合并时取最高。
+    """
+    title = " ".join(str(finding.get("title") or "").split())
+    if title.startswith(DOWNGRADED_TITLE):
+        claims = sorted(
+            {
+                " ".join(str(item.get("claim") if isinstance(item, dict) else item).split()).casefold()
+                for item in finding.get("unsupportedClaims") or []
+                if item
+            }
+        )
+        return ("downgraded", str(finding.get("findingType") or "").casefold(), *claims)
     return tuple(
         " ".join(str(finding.get(key) or "").split()).casefold()
         for key in (
@@ -77,6 +97,13 @@ def _finding_key(finding: dict[str, Any]) -> tuple[str, ...]:
             "suggestedAction",
         )
     )
+
+
+def _merge_severity(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+    current = _SEVERITY_RANK.get(str(existing.get("severity") or "").lower(), 0)
+    candidate = _SEVERITY_RANK.get(str(incoming.get("severity") or "").lower(), 0)
+    if candidate > current:
+        existing["severity"] = incoming.get("severity")
 
 
 def _union_records(
@@ -125,6 +152,8 @@ def aggregate_shard_findings(
             if not existing:
                 findings_by_key[key] = finding
                 continue
+            _merge_severity(existing, finding)
+            existing.setdefault("mergedFindingIds", []).append(str(finding.get("id") or ""))
             for refs_key in ("evidenceRefs", "ruleRefs", "kbRefs"):
                 existing[refs_key] = _union_records(
                     existing.get(refs_key) or [], finding.get(refs_key) or []

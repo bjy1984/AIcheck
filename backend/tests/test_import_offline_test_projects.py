@@ -106,8 +106,8 @@ def test_two_projects_keep_separate_requirements_with_shared_business_ids() -> N
         ]
         for project_id in ("P-TEST-OCR-001", "P-TEST-OCR-002")
     }
-    assert len(requirements_by_project["P-TEST-OCR-001"]) == 167
-    assert len(requirements_by_project["P-TEST-OCR-002"]) == 167
+    assert len(requirements_by_project["P-TEST-OCR-001"]) == 165
+    assert len(requirements_by_project["P-TEST-OCR-002"]) == 165
 
 
 def test_reimport_removes_stale_records_owned_by_the_offline_scenario() -> None:

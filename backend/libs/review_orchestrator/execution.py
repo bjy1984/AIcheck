@@ -44,9 +44,10 @@ from libs.reasoning_budget import (
     truncation_caused_by_reasoning,
 )
 from libs.review_evidence import bind_evidence_package_to_review_run, review_run_evidence_lineage
+from libs.review_orchestrator.opinion_draft import opinion_draft_from_findings
 from libs.review_grounding import (
     apply_grounding_guardrails,
-    supplemental_grounding_identifiers,
+    grounding_input_with_supplements,
     build_grounded_review_input,
     canonical_grounding_metadata,
     clause_formal_evidence_eligible,
@@ -1339,13 +1340,15 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             deterministic_verdict = str(
                 next(iter(context.get("ruleResults") or []), {}).get("result") or ""
             )
+            opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=deterministic_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {
                     # 建议结论携带确定性判定（最终仍由监检人员确认，任何结论不自动成立）。
                     "result": SUGGESTION_RESULT_LABELS.get(deterministic_verdict, "需人工确认"),
                     "deterministicResult": deterministic_verdict or None,
-                    "opinionDraft": (review_run.get("findingDrafts") or [{}])[0].get("description", "AI 审查草稿已生成。"),
-                    "confidence": (review_run.get("findingDrafts") or [{}])[0].get("confidence", 0.82),
+                    "opinionDraft": opinion["text"],
+                    "opinionSource": opinion["source"],
+                    "confidence": opinion["confidence"],
                     "manualConfirmItems": ["证据链、规则依据和条款适用性"],
                 }
             )
@@ -2233,10 +2236,7 @@ def _generate_finding_drafts_once(
             "resultText": "",
         }
         review_run["llmMetadata"] = repo.clone(metadata)
-        drafts = apply_grounding_guardrails(
-            [build_finding_draft(review_run, context)],
-            _grounding_input_with_supplements(context),
-        )
+        drafts = apply_grounding_guardrails([build_finding_draft(review_run, context)], grounding_input_with_supplements(context))
         return drafts, metadata
     budget_policy = review_model_budget_policy(review_run)
     messages = build_review_messages(review_run, context)
@@ -2470,20 +2470,9 @@ def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any])
     return shard_execution.generate_sharded_finding_drafts(repo.state, review_run, context, mode=review_llm_execution_mode(), generate_once=_generate_finding_drafts_once)
 
 
-def _grounding_input_with_supplements(context: dict[str, Any]) -> dict[str, Any]:
-    """守卫语料 = 分片证据 + 我们发给模型的标识符（法规号、工程元数据）。不改原 groundingInput。"""
-    grounding_input = dict(context.get("groundingInput") or {})
-    supplements = supplemental_grounding_identifiers(context)
-    if supplements:
-        grounding_input["supplementalIdentifiers"] = list(
-            dict.fromkeys([*(grounding_input.get("supplementalIdentifiers") or []), *supplements])
-        )
-    return grounding_input
-
-
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:
     base = build_finding_draft(review_run, context)
-    grounding_input = _grounding_input_with_supplements(context)
+    grounding_input = grounding_input_with_supplements(context)
     if not content.strip():
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_EMPTY")
     try:

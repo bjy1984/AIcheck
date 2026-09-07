@@ -434,6 +434,10 @@ def apply_grounding_guardrails(drafts: list[dict[str, Any]], grounding_input: di
             model_title = str(item.get("title") or "")
             model_description = str(item.get("description") or "")
             item["title"] = "证据不足，需人工确认"
+            # unverified：前端据此加"未经证据核实"标签并默认折叠（P9 R2）。
+            # 无据断言分支不保留原文——人会记住那个名字（见 test_无据断言的原文一个字都不能带出来）；
+            # "其实有依据"的复核靠 unsupportedClaims 里的具体断言，不靠整句原文。
+            item["unverified"] = True
             if unsupported:
                 item["description"] = _UNSUPPORTED_CLAIM_DESCRIPTION
             else:
@@ -557,6 +561,17 @@ def supplemental_grounding_identifiers(context: dict[str, Any]) -> list[str]:
     for text in texts:
         identifiers.extend(_regulation_codes(text))
     return list(dict.fromkeys(item for item in identifiers if item))
+
+
+def grounding_input_with_supplements(context: dict[str, Any]) -> dict[str, Any]:
+    """守卫语料 = 分片证据 + 我们发给模型的标识符（法规号、工程元数据）。不改原 groundingInput。"""
+    grounding_input = dict(context.get("groundingInput") or {})
+    supplements = supplemental_grounding_identifiers(context)
+    if supplements:
+        grounding_input["supplementalIdentifiers"] = list(
+            dict.fromkeys([*(grounding_input.get("supplementalIdentifiers") or []), *supplements])
+        )
+    return grounding_input
 
 
 def unsupported_claims(text: str, evidence_texts: list[str]) -> list[dict[str, Any]]:

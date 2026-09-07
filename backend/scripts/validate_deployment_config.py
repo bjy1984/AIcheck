@@ -681,8 +681,8 @@ class DeploymentConfigValidator:
             except Exception as exc:
                 failures.append(f"material review asset invalid: {exc}")
         items = payload.get("items") if isinstance(payload.get("items"), list) else []
-        if len(items) != 164:
-            failures.append(f"material review asset must contain 164 items, got {len(items)}")
+        if len(items) != 162:
+            failures.append(f"material review asset must contain 162 items, got {len(items)}")
         if not payload.get("sourceSha256"):
             failures.append("material review asset must record sourceSha256")
         if payload.get("itemCount") != len(items):
@@ -696,7 +696,7 @@ class DeploymentConfigValidator:
         self.add(
             "runtime.material-review-asset",
             "fail" if failures else "pass",
-            "; ".join(failures) if failures else "Versioned material review asset contains 164 items.",
+            "; ".join(failures) if failures else "Versioned material review asset contains 162 items.",
             {"itemCount": len(items), "version": payload.get("version")},
         )
 

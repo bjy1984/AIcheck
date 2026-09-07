@@ -5046,7 +5046,14 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
             "findingType": "ai_review_suggestion",
             "severity": "medium",
             "title": "AI 资料复核建议",
-            "description": answer[:800],
+            # 模型返回的是 JSON 时不能把花括号当正文给监检人员看（2026-09-06 生产实测 884 字 JSON）；
+            # 原文进 modelDescription 供排查，正文改为可读说明。
+            "description": (
+                "模型返回了结构化结果但未通过发现校验，请查看原始输出或重新发起 AI 复核。"
+                if answer.lstrip().startswith(("{", "["))
+                else answer[:800]
+            ),
+            "modelDescription": answer[:4000],
             "evidenceLinkIds": [item.get("id") for item in evidence_links[:3] if isinstance(item, dict)],
             "evidenceRefs": [
                 {
