@@ -858,3 +858,622 @@ pipeMaterialLimits:
     - GB/T 12771-2019（焊接钢管）、GB/T 13296-2023（锅炉换热器管）：文字层单元格内换行，待按页看图抄录
     - GB/T 5310-2023、GB/T 9711-2023：PDF 文字层是坏编码或纯扫描件，需重 OCR 后看图抄录
 
+nbt47014SpecificFactors:
+  source: NB/T 47014-2023 表 5 各种焊接方法的专用焊接工艺评定因素
+  sourceClause: 5.2.2；分类定义见 5.2.1——重要因素影响拉伸与弯曲性能，补加因素影响冲击韧性，次要因素对力学性能无明显影响
+  extractedFrom: official_pdf_text_layer_positional
+  sourceFile: 用户 2026-09-07 提供的 NB/T 47014-2023 PDF，pdftotext -layout 抽取后按列位解析每行 30 个标记
+  verifiedBy: null
+  methodOrder:
+  - 气焊
+  - 焊条电弧焊
+  - 埋弧焊
+  - 熔化极气体保护焊
+  - 钨极气体保护焊
+  - 等离子弧焊
+  - 气电立焊
+  - 螺柱电弧焊
+  - 摩擦焊
+  - 电子束焊
+  note: 每行 30 个标记 = 重要/补加/次要三组 × 10 种焊接方法，列序取自表头图。已用三处已知点校验：焊条电弧焊「改变电流种类或极性」为重要因素（2023 版由次要改来，见前言）、埋弧焊「改变混合焊剂的混合比例」为重要因素、气焊「改变可燃气体种类」为重要因素。带 * 号的因素本身就是冲击相关的补加因素。因素文字来自版面抽取，个别换行处可能缺字，判定只用编号与类别。
+  factors:
+  - seq: 1
+    category: 接头
+    factor: 1）改变坡口形式
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+      补加因素:
+      - 等离子弧焊
+      - 气电立焊
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 2
+    category: 接头
+    factor: 2）增加或取消衬垫
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+      次要因素:
+      - 气焊
+  - seq: 3
+    category: 接头
+    factor: 3）改变衬垫的公称
+    methodsByClass:
+      次要因素:
+      - 气焊
+  - seq: 4
+    category: 接头
+    factor: 4）增大坡口根部间隙
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+      补加因素:
+      - 气电立焊
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 5
+    category: 接头
+    factor: 5）减小坡口根部间隙
+    methodsByClass:
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+      - 电子束焊
+  - seq: 6
+    category: 接头
+    factor: 6）取消单面焊时的
+    methodsByClass:
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+  - seq: 7
+    category: 接头
+    factor: 7）增加或取消非金属或非熔化的焊接熔池
+    methodsByClass:
+      重要因素:
+      - 气电立焊
+      - 电子束焊
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 8
+    category: 接头
+    factor: 8）增加或取消衬垫或
+    methodsByClass:
+      重要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+      - 螺柱电弧焊
+      - 摩擦焊
+      - 电子束焊
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 9
+    category: 接头
+    factor: 9）增加衬垫，或改变
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+      次要因素:
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 10
+    category: 接头
+    factor: 10）改变螺柱焊端部的
+    methodsByClass:
+      重要因素:
+      - 螺柱电弧焊
+  - seq: 11
+    category: 接头
+    factor: 11）改变电弧保护套圈型号或焊
+    methodsByClass:
+      重要因素:
+      - 螺柱电弧焊
+  - seq: 12
+    category: 接头
+    factor: 12）两工件端部焊接平面与旋转
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+  - seq: 13
+    category: 接头
+    factor: 13）焊接接头横截头面积的变化大于评定值10%，或两工
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+  - seq: 14
+    category: 接头
+    factor: 14）管-管相焊处的外径变化超出
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+  - seq: 15
+    category: 填充金属
+    factor: 1）焊丝或填充丝
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 16
+    category: 填充金属
+    factor: 2）改变混合焊剂
+    methodsByClass:
+      重要因素:
+      - 埋弧焊
+  - seq: 17
+    category: 填充金属
+    factor: 3）增加或取消填
+    methodsByClass:
+      重要因素:
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 电子束焊
+  - seq: 18
+    category: 填充金属
+    factor: 4）添加或取消附加充的填充丝，与评定
+    methodsByClass:
+      重要因素:
+      - 埋弧焊
+      - 熔化极气体保护焊
+  - seq: 19
+    category: 填充金属
+    factor: 5）实心焊丝、药芯焊丝、金属粉之
+    methodsByClass:
+      重要因素:
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 20
+    category: 填充金属
+    factor: 6）增加或取消可
+    methodsByClass:
+      次要因素:
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 21
+    category: 焊接位置
+    factor: 1）与评定试件相
+    methodsByClass:
+      重要因素:
+      - 螺柱电弧焊
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 22
+    category: 焊接位置
+    factor: 2）立缝反面清根露出正面合格的接
+    methodsByClass:
+      次要因素:
+      - 焊条电弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 23
+    category: 焊接位置
+    factor: '*3）从评定合格的焊接位置改变为'
+    methodsByClass:
+      补加因素:
+      - 焊条电弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 24
+    category: 预热、后热
+    factor: 1）预热温度比已评定合格值降低
+    methodsByClass:
+      重要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+      - 螺柱电弧焊
+      - 摩擦焊
+      - 电子束焊
+      次要因素:
+      - 气焊
+  - seq: 25
+    category: 预热、后热
+    factor: '*2）道间最高温度比经评定记录值'
+    methodsByClass:
+      补加因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 26
+    category: 预热、后热
+    factor: 3）施焊结束后至焊后热处理前，改
+    methodsByClass:
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+  - seq: 27
+    category: 气体
+    factor: 1）改变可燃气体
+    methodsByClass:
+      重要因素:
+      - 气焊
+  - seq: 28
+    category: 气体
+    factor: 2）改变气体保护方式（如真空、惰
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+      - 电子束焊
+  - seq: 29
+    category: 气体
+    factor: 3）改变单一保护气体种类；改变混合保护配比超出GB/T39255公称值制备公差；从单
+    methodsByClass:
+      重要因素:
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 气电立焊
+      - 螺柱电弧焊
+  - seq: 30
+    category: 气体
+    factor: 4）当类别号为Fe-10I、Ti-1、Ti-2、Zr-3、Zr-5、Ni-1～Ni-5时，取消焊缝背面保护气体，或背面保护气从惰
+    methodsByClass:
+      重要因素:
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 31
+    category: 气体
+    factor: 5）当焊接Fe-10I、Ti-1、Ti-2、Zr-3、Zr-5类材料时，取消尾部保护气体；尾部保护气从惰
+    methodsByClass:
+      重要因素:
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 32
+    category: 气体
+    factor: 6）改变离子气和
+    methodsByClass:
+      重要因素:
+      - 等离子弧焊
+  - seq: 33
+    category: 气体
+    factor: 7）保护气体流量
+    methodsByClass:
+      次要因素:
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 气电立焊
+  - seq: 34
+    category: 气体
+    factor: 8）除 4）外增加或取消背面保护气体，改变背面保护气体规定的流量和组成
+    methodsByClass:
+      次要因素:
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 35
+    category: 电特性
+    factor: 1）改变电流种类
+    methodsByClass:
+      重要因素:
+      - 焊条电弧焊
+      补加因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+      - 螺柱电弧焊
+      次要因素:
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 螺柱电弧焊
+  - seq: 36
+    category: 电特性
+    factor: '*2）增加热输入或单位长度焊道的'
+    methodsByClass:
+      补加因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 37
+    category: 电特性
+    factor: 3）改变焊接电流范围，除焊条电弧焊、钨极气体保护
+    methodsByClass:
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 38
+    category: 电特性
+    factor: 4）在直流电源上叠加或取消脉冲
+    methodsByClass:
+      次要因素:
+      - 钨极气体保护焊
+  - seq: 39
+    category: 电特性
+    factor: 5）钨极的种类或
+    methodsByClass:
+      次要因素:
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 40
+    category: 电特性
+    factor: 6）从粗滴过渡、喷射过渡或脉冲
+    methodsByClass:
+      重要因素:
+      - 熔化极气体保护焊
+  - seq: 41
+    category: 电特性
+    factor: 7）与评定值相比，改变电弧时间超
+    methodsByClass:
+      重要因素:
+      - 螺柱电弧焊
+  - seq: 42
+    category: 电特性
+    factor: 8）与评定值相比，改变电流超
+    methodsByClass:
+      重要因素:
+      - 螺柱电弧焊
+  - seq: 43
+    category: 电特性
+    factor: 9）改变焊接电源
+    methodsByClass:
+      重要因素:
+      - 螺柱电弧焊
+  - seq: 44
+    category: 电特性
+    factor: 10）电子束电流改变超过评定值±5%；电子束电压改变超过评定值±2%；焊接速度改
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+  - seq: 45
+    category: 电特性
+    factor: 11）电子枪至工件距离改变超过评定值±5%；振荡幅度或宽度改变超
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+  - seq: 46
+    category: 技术措施
+    factor: 1）从氧化焰改为
+    methodsByClass:
+      次要因素:
+      - 气焊
+  - seq: 47
+    category: 技术措施
+    factor: 2）左焊法或右焊法
+    methodsByClass:
+      次要因素:
+      - 气焊
+  - seq: 48
+    category: 技术措施
+    factor: 3）不摆动焊或摆
+    methodsByClass:
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 49
+    category: 技术措施
+    factor: 4）改变焊前清理
+    methodsByClass:
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+      - 电子束焊
+  - seq: 50
+    category: 技术措施
+    factor: 5）改变清根方法
+    methodsByClass:
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 51
+    category: 技术措施
+    factor: 6）机动焊、自动焊措时，改变电极（焊施丝、钨极）摆动幅
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+      次要因素:
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 52
+    category: 技术措施
+    factor: 7）改变导电嘴至
+    methodsByClass:
+      次要因素:
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 气电立焊
+  - seq: 53
+    category: 技术措施
+    factor: '*8）由每面多道焊'
+    methodsByClass:
+      补加因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 54
+    category: 技术措施
+    factor: '*9）机动焊、自动焊时，单丝焊改为'
+    methodsByClass:
+      补加因素:
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+      次要因素:
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 55
+    category: 技术措施
+    factor: 10）机动焊、自动焊时，改变电极
+    methodsByClass:
+      次要因素:
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 56
+    category: 技术措施
+    factor: 11）从手工焊改为机动焊、自动焊，或
+    methodsByClass:
+      次要因素:
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+  - seq: 57
+    category: 技术措施
+    factor: 12）有无锤击焊缝
+    methodsByClass:
+      次要因素:
+      - 气焊
+      - 焊条电弧焊
+      - 埋弧焊
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 气电立焊
+  - seq: 58
+    category: 技术措施
+    factor: 13）嘴孔、喷嘴
+    methodsByClass:
+      次要因素:
+      - 熔化极气体保护焊
+      - 钨极气体保护焊
+      - 等离子弧焊
+  - seq: 59
+    category: 技术措施
+    factor: 14）改变螺柱焊枪施型号；与评定变化
+    methodsByClass:
+      重要因素:
+      - 螺柱电弧焊
+  - seq: 60
+    category: 技术措施
+    factor: 15）与评定值相比，工件外表面线
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+  - seq: 61
+    category: 技术措施
+    factor: 16）顶锻压力变化
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+  - seq: 62
+    category: 技术措施
+    factor: 17）转动能量变化
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+  - seq: 63
+    category: 技术措施
+    factor: 18）顶锻变形量变化量大于评定值
+    methodsByClass:
+      重要因素:
+      - 摩擦焊
+  - seq: 64
+    category: 技术措施
+    factor: 19）填丝焊改为小
+    methodsByClass:
+      重要因素:
+      - 等离子弧焊
+  - seq: 65
+    category: 技术措施
+    factor: 20）对于纯钛、钛合金和锆、锆合金，在密封室内焊
+    methodsByClass:
+      重要因素:
+      - 钨极气体保护焊
+      - 等离子弧焊
+      - 电子束焊
+  - seq: 66
+    category: 技术措施
+    factor: 21）改变射束流轴线对工件的角度；改变焊接设备的类型；真空焊接环
+    methodsByClass:
+      重要因素:
+      - 电子束焊
+  - seq: 67
+    category: 技术措施
+    factor: 22）增加饰面焊道；改变焊接设备
+    methodsByClass:
+      重要因素:
+      - 电子束焊

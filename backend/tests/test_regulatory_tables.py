@@ -151,3 +151,32 @@ def test_austenitic_pipe_limits_accept_both_code_and_grade_name():
     annex = next(item for item in table("pipeMaterialLimits")["standards"] if item["standard"] == "GB/T 14976-2025")["lowTemperatureAnnex"]
     assert annex["tensile"]["tensileMPaMin"] == 520 and annex["impact"]["temperatureC"] == -196
     assert annex["impact"]["10x10"]["avgLongitudinalJMin"] == 60
+
+
+def test_nbt47014_table5_specific_factors_by_welding_method():
+    """NB/T 47014-2023 表 5：67 条专用评定因素，按方法分重要/补加/次要。"""
+    from libs.regulatory_tables import table, wps_factor_class, wps_specific_factors
+
+    section = table("nbt47014SpecificFactors")
+    assert len(section["factors"]) == 67
+    assert section["methodOrder"][:3] == ["气焊", "焊条电弧焊", "埋弧焊"]
+    assert all(len(item["methodsByClass"]) > 0 for item in section["factors"]), "每条因素至少属于一类"
+    assert not section.get("verifiedBy")
+
+    # 2023 版把焊条电弧焊「改变电流种类或极性」从次要改成重要（见前言）；其他方法仍是补加
+    assert wps_factor_class("焊条电弧焊", "改变电流种类") == "重要因素"
+    assert wps_factor_class("埋弧焊", "改变电流种类") == "补加因素"
+    assert wps_factor_class("气焊", "改变电流种类") is None, "气焊没有电流"
+
+    # 预热温度降低 55℃ 以上：除气焊外都是重要因素，气焊只是次要
+    assert wps_factor_class("焊条电弧焊", "预热温度比已评定合格值降低") == "重要因素"
+    assert wps_factor_class("气焊", "预热温度比已评定合格值降低") == "次要因素"
+
+    # 埋弧焊特有：改变混合焊剂配比要重新评定
+    assert wps_factor_class("埋弧焊", "改变混合焊剂") == "重要因素"
+    assert wps_factor_class("焊条电弧焊", "改变混合焊剂") is None
+
+    smaw = wps_specific_factors("焊条电弧焊")
+    assert {"重要因素", "补加因素", "次要因素"} == set(smaw)
+    assert all(item["category"] for group in smaw.values() for item in group)
+    assert wps_specific_factors("") == {} and wps_factor_class("焊条电弧焊", "查无此因素") is None

@@ -171,3 +171,34 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
                     merged["composition"][key] = value
             return merged
     return None
+
+
+def wps_specific_factors(method: str) -> dict[str, list[dict[str, Any]]]:
+    """NB/T 47014-2023 表 5：某种焊接方法下，各因素按重要/补加/次要归类。
+
+    重要因素变了要重新评定；补加因素变了要重做冲击试验；次要因素只需改 WPS，不用重新评定（5.2.1）。
+    """
+    section = table("nbt47014SpecificFactors")
+    wanted = str(method or "").strip()
+    if not wanted:
+        return {}
+    out: dict[str, list[dict[str, Any]]] = {}
+    for item in section.get("factors") or []:
+        for cls, methods in (item.get("methodsByClass") or {}).items():
+            if wanted in methods:
+                out.setdefault(cls, []).append({"seq": item.get("seq"), "category": item.get("category"), "factor": item.get("factor")})
+    return out
+
+
+def wps_factor_class(method: str, keyword: str) -> str | None:
+    """某方法下，含该关键词的因素属于哪一类；命中多条时按 重要 > 补加 > 次要 取最严的一档。"""
+    wanted = str(keyword or "").strip()
+    if not wanted:
+        return None
+    ranked = ["重要因素", "补加因素", "次要因素"]
+    found = None
+    for cls, items in wps_specific_factors(method).items():
+        hit = any(wanted in str(item.get("factor") or "") for item in items)
+        if hit and (found is None or ranked.index(cls) < ranked.index(found)):
+            found = cls
+    return found
