@@ -20,6 +20,11 @@ import re
 from typing import Any
 
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
+from libs.regulatory_tables import (
+    inspection_level_for_grade,
+    pressure_test_ratios,
+    volumetric_ndt_ratio,
+)
 from libs.review_grounding import REGULATION_CODE_RE
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
@@ -343,9 +348,23 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     ndt_methods = list(dict.fromkeys(match.group(1).upper() for match in _NDT_METHOD_RE.finditer(text)))
     coverage = _NDT_COVERAGE_RE.search(text)
     level = _NDT_LEVEL_RE.search(text)
+    # 按管线级别推缺省检查等级与体积检测比例（GB/T 20801.5 §6.1 / 表 5-1，待核）：取本工程最严的一条
+    grade_levels = [inspection_level_for_grade(str(item.get("pipelineGrade") or "")) for item in pipelines]
+    level_rank = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
+    strictest = min((lvl for lvl in grade_levels if lvl), key=lambda lvl: level_rank.get(lvl, 9), default=None)
+    required_ratio_pct = volumetric_ndt_ratio(strictest)
+    coverage_pct = int(coverage.group(1)) if coverage else None
     ndt = _domain(
         bool(ndt_methods and (coverage or level)) or bool(re.search(r"无损检测", text) and ndt_methods),
-        {"method": "、".join(ndt_methods) or None, "coverage": f"{coverage.group(1)}%" if coverage else None, "coveragePercent": int(coverage.group(1)) if coverage else None, "acceptanceCriteria": f"{level.group(1)}级" if level else None},
+        {
+            "method": "、".join(ndt_methods) or None,
+            "coverage": f"{coverage.group(1)}%" if coverage else None,
+            "coveragePercent": coverage_pct,
+            "acceptanceCriteria": f"{level.group(1)}级" if level else None,
+            "requiredInspectionLevel": strictest,
+            "requiredCoveragePercent": required_ratio_pct,
+            "coverageMeetsRequirement": (coverage_pct >= required_ratio_pct) if coverage_pct is not None and required_ratio_pct is not None else None,
+        },
         standard_refs,
         source,
     )
@@ -358,7 +377,8 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     ratio = _TEST_RATIO_RE.search(text)
     pressure_criteria = _PRESSURE_CRITERIA_RE.search(text)
     method_text = pressure_method.group(1) if pressure_method else None
-    required_ratio = 1.15 if method_text and "气压" in method_text else 1.5
+    ratios = pressure_test_ratios()  # 液压 1.5、气压 1.1（GB/T 20801.5 征求意见稿，待核正式版）
+    required_ratio = ratios["pneumatic"] if method_text and "气压" in method_text else ratios["hydro"]
     test_pressure_value = float(test_pressure.group(1)) if test_pressure else None
     ratio_value = float(ratio.group(1)) if ratio else (round(test_pressure_value / max_design_pressure, 3) if test_pressure_value and max_design_pressure else None)
     pressure_test = _domain(

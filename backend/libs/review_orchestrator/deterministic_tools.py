@@ -752,7 +752,16 @@ def qualification_covers_work(qualification: dict[str, Any], work: dict[str, Any
     return not actual_factors or actual_factors <= qualified_factors
 
 
+_ROMAN_CATEGORY_ASCII = {"FeⅠ": "FeI", "FeⅡ": "FeII", "FeⅢ": "FeIII", "FeⅣ": "FeIV"}
+
+
 def material_category_for_grade(value: Any) -> str | None:
+    """牌号 → 焊工证母材类别。先查 TSG Z6002-2026 表 A-2（regulatory_tables，OCR 预填待核），查不到再用旧的小表。"""
+    from libs.regulatory_tables import welder_material_category
+
+    category = welder_material_category(str(value or ""))
+    if category:
+        return _ROMAN_CATEGORY_ASCII.get(category, category)
     grade = re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
     if grade in {"20", "10", "Q235B", "Q235C", "Q235D", "Q245R"}:
         return "FeI"

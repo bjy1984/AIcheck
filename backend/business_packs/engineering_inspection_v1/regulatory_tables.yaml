@@ -1,0 +1,183 @@
+# 法规数值表（P1/P2/P10/N-16 的数据侧）。每张表都带 sourceClause / extractedFrom / verifiedBy：
+# - verifiedBy 为空 = 由 OCR 或标准草案预填，写入判定前须由法规核对人对照正文逐格打钩（优化计划 §2.1）；
+# - 代码里的判定只读这里的数值；数值不齐的规则只给预警，不给不符合。
+# 2026-09-07 预填来源：TSG Z6002-2026 官方 PDF OCR（会话留存 z6002-2026-ocr.txt）、NB/T 47014-2023 OCR、
+# GB/T 20801.5 征求意见稿（tced.com PDF；正式版 2020 已于 2026-05-01 被 GB/T 20801.1-2025 代替，正文未取得）、
+# TSG 31-2025 官方 PDF OCR。
+schemaVersion: regulatory-tables-v1
+updatedAt: "2026-09-07"
+
+tsgZ6002_2026:
+  source: TSG Z6002-2026 特种设备焊接操作人员考核细则（2026-08-01 施行）
+  materialCategories:
+    sourceClause: 附件 A 表 A-2 金属材料类别与示例
+    extractedFrom: ocr
+    verifiedBy: null
+    note: 牌号清单按 OCR 抄录，个别牌号（如 Q2iSA→Q215A、12CrlMo→12Cr1Mo）已按常识修正；写入判定前须逐格核对
+    categories:
+      - code: FeⅠ
+        name: 低碳钢
+        grades: [Q195, Q215A, Q215B, Q235AF, Q235A, Q235B, Q235C, Q235D, Q245R, Q275A, Q275B, "10", "15", "20", 20G, "25", HP235, HP265, L175, L175P, L210, L245, L245N, L245R, L245Q, L245M, L290, L290N, L290Q, L290M, CF370, CF415, CF415K, LF415K1, LF415K2, F290, WCA, ZG200-400]
+      - code: FeⅡ
+        name: 低合金钢
+        grades: [Q345R, Q345A, Q345B, Q345C, Q345D, Q345E, Q355B, Q355C, Q355D, Q370R, Q390A, Q390B, Q390C, Q390D, Q390E, Q420R, Q420A, Q420B, Q420C, Q420D, Q420E, Q460C, Q460D, Q460E, Q460R, Q460DR, L320, L320N, L320Q, L320M, L360, L360N, L360Q, L360M, L390, L390N, L390Q, L390M, L415, L415M, L415N, L415Q, L450, L450M, L450Q, L485, L485M, L485Q, L555, L555M, L555Q, 16Mn, 15MnV, 20MnMo, 10MoWVNb, 13MnNiMoR, 20MnMoNb, 07MnMoVR, 12MnNiVR, 20MnG, 10MnDG, 25MnG, 15MoG, 20MoG, 12CrMo, 12CrMoG, 15CrMo, 15CrMoR, 15CrMoG, 14Cr1Mo, 14Cr1MoR, 12Cr1Mo, 12Cr1MoV, 12Cr1MoVG, 12Cr1MoVR, 08Cr2AlMo, 07Cr2AlMoR, 12Cr2Mo, 12Cr2Mo1, 12Cr2Mo1R, 12Cr2MoG, 12CrMoWVTiB, 12Cr3MoVSiTiB, 15NiCuMoNb, 07Cr2MoW2VNbB, 12Cr2Mo1VR, 18MnMoNbR, 09MnD, 09MnNiD, 09MnNiDR, 09Mn2VDG, 16MnD, 16MnDR, 16MnDG, 15MnNiDR, 15MnNiNbDR, 20MnMoD, 07MnNiVDR, 07MnNiMoDR, 08MnNiMoVD, 08Ni3D, 06Ni9D, 10Ni3MoVD, 06Ni3MoDG, ZG230-450, ZG20CrMo, ZG15Cr1Mo1V, ZG12Cr2Mo1G, F485, F555, "GB/SA387Gr12Cl", "GB/SA516Gr70", "GB/SA537Cl1", S290, S315, S360, S385, S415, S450, S480, HP295, HP325, HP345, HP365]
+      - code: FeⅢ
+        name: Cr≥5% 铬钼钢、铁素体钢、马氏体钢
+        grades: [12Cr5Mo, 00Cr27Mo, 12Cr13, 10Cr17, 10Cr9Mo1VNbN, 06Cr13Al, 1Cr9Mo1, 06Cr13, ZG16Cr5MoG, 10Cr9MoW2VNbBN, 12Cr9Mo1, AF9G]
+      - code: FeⅣ
+        name: 奥氏体型不锈钢、奥氏体与铁素体型不锈钢
+        grades: [06Cr19Ni10, 06Cr17Ni12Mo2Ti, 06Cr23Ni13, 07Cr19Ni11Ti, 06Cr19Ni13Mo3, 06Cr25Ni20, 022Cr19Ni10, CF3, 022Cr17Ni12Mo2, 12Cr18Ni9, CF8, 022Cr19Ni13Mo3, 015Cr21Ni26Mo5Cu2, SF304, 022Cr23Ni5Mo3N, SF321, 03Cr25Ni6Mo3Cu2N, SF347, SF2205, SF316, 015Cr21Ni26SiMo5Cu2, 06Cr17Ni12Mo2]
+  positionCoverage:
+    sourceClause: 附件 A 表 A-6 试件适用焊件焊缝和焊件位置（手工焊焊工）
+    extractedFrom: ocr
+    verifiedBy: null
+    pipeButtWeld:
+      1G: {butt: [平], fillet: [平]}
+      2G: {butt: [平, 横], fillet: [平, 横], pipeSheet: [2FRG, 2FG]}
+      5G: {butt: [平, 立, 仰], fillet: [平, 立, 仰], pipeSheet: [5FG, 2FRG, 2FG]}
+      5GX: {butt: [平, 立向下, 仰], fillet: [平, 立向下, 仰]}
+      6G: {butt: [平, 横, 立, 仰], fillet: [平, 横, 立, 仰], pipeSheet: 所有位置}
+      6GX: {butt: [平, 立向下, 横, 仰], fillet: [平, 立向下, 横, 仰]}
+    plateButtWeld:
+      1G: {plateAndLargePipe: [平], smallPipe: [平（注A-2）], fillet: [平]}
+      2G: {plateAndLargePipe: [平, 横], smallPipe: [平, 横（注A-2）], fillet: [平, 横]}
+      3G: {plateAndLargePipe: [平, 立（注A-1）], smallPipe: [平（注A-2）], fillet: [平, 横, 立]}
+      4G: {plateAndLargePipe: [平, 仰], smallPipe: [平（注A-2）], fillet: [平, 横, 仰]}
+    notes:
+      - 向下立焊试件合格不免考向上立焊，反之亦然（A4.3.5.1(3)）
+      - 板材/外径 >600mm 管材 与 外径 ≤600mm 管材 适用范围不同（注 A-2 待核）
+  thicknessCoverage:
+    sourceClause: 附件 A 表 A-7 手工焊对接焊缝试件适用于对接焊缝焊件焊缝金属厚度范围（mm）
+    extractedFrom: ocr
+    verifiedBy: null
+    rules:
+      - specimenThickness: "<12"
+        weldMetalThicknessMin: 不限
+        weldMetalThicknessMax: 2t
+        note: 注 A-5：t 为该焊工该方法在试件上的对接焊缝金属厚度（余高不计）
+      - specimenThickness: ">=12"
+        weldMetalThicknessMin: 不限
+        weldMetalThicknessMax: 不限
+        condition: t 不应小于 12mm 且焊缝不少于 3 层
+    codeAlignment: deterministic_tools.decode_welder_code 已按 T<12→2T、T≥12→不限 实现
+  diameterCoverage:
+    sourceClause: 附件 A 表 A-8 手工焊管材对接焊缝试件适用于对接焊缝焊件外径范围（mm）
+    extractedFrom: ocr
+    verifiedBy: null
+    rules:
+      - specimenOuterDiameter: "<25"
+        workMin: D
+        workMax: 不限
+      - specimenOuterDiameter: "25<=D<76"
+        workMin: 25
+        workMax: 不限
+      - specimenOuterDiameter: ">=76"
+        workMin: 76
+        workMax: 不限
+      - specimenOuterDiameter: ">=300（注A-6 管材向下焊试件）"
+        workMin: 76
+        workMax: 不限
+    codeAlignment: deterministic_tools.decode_welder_code 已按 <25→D、<76→25、≥76→76 实现
+  transition:
+    sourceClause: 市监特设发〔2026〕85 号；TSG Z6002-2026 4.8
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+    rule: 2026-08-01 前按 2010 版取得的证书在有效期内继续有效
+
+nbt47014_2023:
+  source: NB/T 47014-2023 承压设备焊接工艺评定（2024-06-28 实施）
+  baseMaterialGroups:
+    sourceClause: 表 1 焊制承压设备用母材分类分组（节选管道常用牌号）
+    extractedFrom: ocr
+    verifiedBy: null
+    note: OCR 表格跨页错位，只抄录能与组别行对应的牌号；完整表需对照正文
+    groups:
+      - group: Fe-1-1
+        grades: ["10", "15", "20", 20G, Q195, Q215A, Q215B, Q235AF, Q235A, Q235B, Q235C, Q235D, Q245R, Q275A, Q275B]
+        standards: [GB/T 699, GB/T 711, GB/T 3087, GB/T 6479, GB/T 8163, GB/T 9948, NB/T 47019.2, GB/T 5310, GB/T 700, GB/T 3091, GB/T 3274, GB/T 713]
+      - group: Fe-1-2
+        grades: [10MnDG, 20MnG, L175, L210, L245, L245N, L245R, L245Q, L245M, L290, L290N, L290Q, L290M, Q345R, Q345A, Q345B, Q345C, Q345D, Q355C, Q355D, 09MnD, 16Mn, 25MnG, 16MnD, 16MnDR, 16MnDG, 15MnNiDR, 09Mn2VDG, 09MnNiDR, 09MnNiD, Q390A, Q390B, Q390C, Q390D, Q390E, L320, L320N, L320Q, L320M, L360, L360N, L360Q, L360M, L390, L390N, L390Q]
+      - group: Fe-4-1
+        grades: [08MnNiMoVD, 10Ni3MoVD, L555, L555M, L555Q, F555, 15MoG, 20MoG, 12CrMo]
+        note: 15CrMo/15CrMoG/15CrMoR 在 OCR 中紧随 Fe-4-1 区块（第 764–766 行），组别归属待核
+      - group: Fe-5A
+        grades: [12Cr1MoV, 12Cr1MoVG]
+        note: 与 ZG20CrMo、AF11/AF12 同页；Fe-4-2 / Fe-5A / Fe-5B 边界待核
+      - group: Fe-8-1
+        grades: [S31609（07Cr17Ni12Mo2）, S31653（022Cr17Ni12Mo2N）, S31658（06Cr17Ni12Mo2N）, S31668（06Cr17Ni12Mo2Ti）, S31683（022Cr18Ni14Mo2Cu2）]
+        note: S30408（06Cr19Ni10）、S30403、S31603 应同属 Fe-8-1，OCR 页未抄到，待核
+  factorChanges2023:
+    sourceClause: 前言
+    extractedFrom: ocr
+    verifiedBy: null
+    items:
+      - 焊条电弧焊改变电源类型由"次要因素"改为"重要因素"
+      - 增加电子束焊工艺评定、锆材工艺评定、带隔离层对接焊缝工艺评定
+      - 混合气体规定配比要求（表 5）
+
+gbt20801_inspection:
+  source: GB/T 20801.5 压力管道规范 工业管道 第5部分 检验与试验——征求意见稿（201X）；正式版 2020 已于 2026-05-01 并入 GB/T 20801.1-2025
+  verifiedBy: null
+  caveat: 数值取自征求意见稿，与 2020 正式版及 2025 合并版可能不同；写入判定前必须对照 GB/T 20801.1-2025 正文
+  inspectionLevels:
+    sourceClause: "6.1 检查等级"
+    rules:
+      - level: Ⅰ
+        conditions: [剧烈循环工况, 剧毒介质的 GC1, 高温工况（GB/T 20801.3 3.13）, 钛/镍/高铬镍钼奥氏体不锈钢管道, PN>160, 夹套管内管, 免除压力试验的管道, 设计要求 100% 无损检测]
+      - level: Ⅱ
+        conditions: [除剧毒外的 GC1, PN>50 的碳钢（要求冲击试验）, PN>110 的奥氏体不锈钢, 低温含镍钢/铬钼钢/双相不锈钢/铝, 设计要求 20% 无损检测]
+      - level: Ⅲ
+        conditions: [除 GC3 外 PN≤50 的碳钢（要求冲击试验）, 除 GC3 外 PN≤110 的奥氏体不锈钢, 设计要求 10% 无损检测]
+      - level: Ⅳ
+        conditions: [GC2, 除 GC3 外 PN≤50 的碳钢（无冲击试验要求）, 设计要求 5% 无损检测]
+      - level: Ⅴ
+        conditions: [GC3]
+    gradeDefault:
+      GC1: Ⅱ
+      GC1_toxic: Ⅰ
+      GC2: Ⅳ
+      GC3: Ⅴ
+  ratiosByLevel:
+    sourceClause: 表 5-1 焊接接头检查方法和比例（%）
+    columns: [对接环缝, 角焊缝, 支管连接]
+    levels:
+      Ⅰ: {visual: [100, 100, 100], surface: [100, 100, 100], volumetric: [100, null, 100]}
+      Ⅱ: {visual: [100, 100, 100], surface: [20, 20, 20], volumetric: [20, null, 20]}
+      Ⅲ: {visual: [100, 100, 100], surface: [10, null, 10], volumetric: [10, null, null]}
+      Ⅳ: {visual: [100, 100, 100], volumetric: [5, null, null]}
+      Ⅴ: {visual: [10, 100, 100]}
+    notes: [注4 碳钢/不锈钢/铝合金无表面检测要求, 注5 支管体积检测适用于 ≥DN100]
+  acceptance:
+    sourceClause: "6.3.1.2"
+    rules: [100% 射线 → JB/T 4730.2 Ⅱ级, 抽样/局部射线 → Ⅲ级, 100% 脉冲反射超声 → JB/T 4730.3 Ⅰ级, 抽样/局部超声 → Ⅱ级, TOFD → JB/T 4730.10 Ⅱ级]
+  pressureTest:
+    sourceClause: "9.1.3 液压试验 b)、9.1.4 气压试验 d)、9.2.1 常规泄漏试验"
+    hydroTestRatio: 1.5
+    hydroTemperatureCorrection: PT = 1.5·P·S1/S2
+    pneumaticTestRatioMin: 1.1
+    pneumaticNote: 征求意见稿为"不低于 1.1 倍设计压力"；GB 50235 口径 1.15 倍，两者待核取正式版
+    leakTestPressure: 设计压力（真空管道 0.1MPa 内压）
+    leakTestRequiredFor: [剧毒流体, 易燃易爆气体]
+    reliefValveSetting: 不高于 1.1 倍试验压力
+
+tsg31_2025:
+  source: TSG 31-2025 工业管道安全技术规程（2026-01-01 施行）
+  designApproval:
+    sourceClause: "3.1.3.3 设计文件审批"
+    extractedFrom: ocr
+    verifiedBy: 官方 PDF OCR 逐字核（2026-09-07）
+    threeLevel: [设计, 校核, 审核]
+    threeLevelDocuments: [管道数据表, 管道材料等级表, 设备布置图, 管道布置图, 强度计算书, 管道应力计算书]
+    fourLevel: [设计, 校核, 审核, 审定]
+    fourLevelDocuments: [材料等级表, 应力计算书, 设备布置图, 管道布置图]
+    fourLevelTriggers: [GC1 级管道, "GCD 级且设计压力 ≥16.7MPa", "GCD 级且设计压力 ≥4.0MPa 且设计温度 ≥570℃"]
+    codeAlignment: business_tools.design_four_level_trigger 与 FOUR_LEVEL_DESIGN_DOCUMENT_TYPES 一致
+  highPressureDesignApproval:
+    sourceClause: "3.3.1.2（高压管道）"
+    extractedFrom: ocr
+    verifiedBy: 官方 PDF OCR 逐字核（2026-09-07）
+    rule: 管道数据表、设备布置图、管道布置图、管道材料等级表、强度计算书和管道应力计算书应当有四级签字
+  designLicenseSeal:
+    sourceClause: "3.1.2"
+    extractedFrom: ocr
+    verifiedBy: 官方 PDF OCR 逐字核（2026-09-07）
+    rule: 管道图纸目录和管道布置图上加盖设计单位压力管道设计许可印章；印章至少含设计单位名称、许可证编号、许可有效期

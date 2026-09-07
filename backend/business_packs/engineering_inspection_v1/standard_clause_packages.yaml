@@ -871,6 +871,13 @@ standardClausePackages:
         standardRef: STD-GBT-20801.1-2025
         sourceClause: GB/T 20801.5 合格级别
         verifiedBy: null
+      - code: coverage_meets_grade_requirement
+        actualPath: requirements.coverageMeetsRequirement
+        operator: equals
+        expected: true
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 §6.1 检查等级 + 表 5-1（regulatory_tables.yaml gbt20801_inspection，待核）
+        verifiedBy: null
     corrosion:
       checks:
       - code: protection_method_specified

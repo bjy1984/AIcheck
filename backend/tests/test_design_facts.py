@@ -200,8 +200,8 @@ def test_design_standard_references_feed_r08_version_check() -> None:
     facts = design_standard_references({"V-1": "设计依据：TSG D0001—2009、GB/T 20801.1-2025", "V-2": "焊工按 TSG Z6002-2026 考核"}, "2026-09-06")
     refs = {item["standardRef"]: item for item in facts["standardReferences"]}
     assert refs["TSG D0001-2009"]["timelineStatus"] == "withdrawn" and refs["TSG Z6002-2026"]["timelineStatus"] == "current"
-    assert refs["GB/T 20801.1-2025"]["requiresOnlineLookup"] is True
-    assert facts["requiresOnlineLookup"] == ["GB/T 20801.1-2025"]
+    assert refs["GB/T 20801.1-2025"]["timelineStatus"] == "current"
+    assert facts["requiresOnlineLookup"] == []
     outcome = check_standard_version_active({"standardReferences": facts["standardReferences"], "reviewDate": "2026-09-06"})
     assert outcome["result"] == "failed", "引用了已废止的 TSG D0001-2009"
     failed = [item for item in outcome["checks"] if not item["passed"]]

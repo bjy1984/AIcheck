@@ -873,3 +873,75 @@ entries:
     catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_a360cdbe861a4a5d93bb2b4d2eeb18a6.html
   extractionMethod: catalog
   verifiedBy: null
+- code: GB/T 20801.1-2025
+  name: 压力管道规范 第1部分：工业管道
+  effectiveFrom: '2026-05-01'
+  supersedes:
+  - GB/T 20801.1-2020
+  - GB/T 20801.2-2020
+  - GB/T 20801.3-2020
+  - GB/T 20801.4-2020
+  - GB/T 20801.5-2020
+  - GB/T 20801.6-2020
+  sourceUrls:
+    std: https://std.samr.gov.cn/gb/search/gbDetailed?id=B4C25880C2DA1CB3E05397BE0A0A92D0
+    note: std.samr.gov.cn 显示 20801.5-2020 被 20801.1-2025 全部代替、2026-05-01 废止；化规通/工标网同
+  extractionMethod: online_lookup
+  verifiedBy: std.samr.gov.cn 页面（2026-09-07 网页核）
+  verifiedOn: '2026-09-07'
+- code: GB/T 20801.1-2020
+  name: 压力管道规范 工业管道 第1部分：总则
+  effectiveFrom: '2021-06-01'
+  replacedBy: GB/T 20801.1-2025
+  withdrawnOn: '2026-05-01'
+  extractionMethod: online_lookup
+  verifiedBy: 待核（按 20801.1-2025 代替公告整体推断）
+  verifiedOn: null
+- code: GB/T 20801.2-2020
+  name: 压力管道规范 工业管道 第2部分：材料
+  effectiveFrom: '2021-06-01'
+  replacedBy: GB/T 20801.1-2025
+  withdrawnOn: '2026-05-01'
+  extractionMethod: online_lookup
+  verifiedBy: 待核（按 20801.1-2025 代替公告整体推断）
+  verifiedOn: null
+- code: GB/T 20801.3-2020
+  name: 压力管道规范 工业管道 第3部分：设计和计算
+  effectiveFrom: '2021-06-01'
+  replacedBy: GB/T 20801.1-2025
+  withdrawnOn: '2026-05-01'
+  extractionMethod: online_lookup
+  verifiedBy: 待核（按 20801.1-2025 代替公告整体推断）
+  verifiedOn: null
+- code: GB/T 20801.4-2020
+  name: 压力管道规范 工业管道 第4部分：制作与安装
+  effectiveFrom: '2021-06-01'
+  replacedBy: GB/T 20801.1-2025
+  withdrawnOn: '2026-05-01'
+  extractionMethod: online_lookup
+  verifiedBy: 待核（按 20801.1-2025 代替公告整体推断）
+  verifiedOn: null
+- code: GB/T 20801.5-2020
+  name: 压力管道规范 工业管道 第5部分：检验与试验
+  effectiveFrom: '2021-06-01'
+  replacedBy: GB/T 20801.1-2025
+  withdrawnOn: '2026-05-01'
+  extractionMethod: online_lookup
+  verifiedBy: std.samr.gov.cn 页面（第 5 部分逐字核；其余部分按同一公告，待逐个核）
+  verifiedOn: '2026-09-07'
+- code: GB/T 20801.6-2020
+  name: 压力管道规范 工业管道 第6部分：安全防护
+  effectiveFrom: '2021-06-01'
+  replacedBy: GB/T 20801.1-2025
+  withdrawnOn: '2026-05-01'
+  extractionMethod: online_lookup
+  verifiedBy: 待核（按 20801.1-2025 代替公告整体推断）
+  verifiedOn: null
+- code: GB/T 20801.5-2006
+  name: 压力管道规范 工业管道 第5部分：检验与试验
+  effectiveFrom: '2007-06-01'
+  replacedBy: GB/T 20801.5-2020
+  withdrawnOn: '2021-06-01'
+  extractionMethod: online_lookup
+  verifiedBy: std.samr.gov.cn 页面（2026-09-07 网页核）
+  verifiedOn: '2026-09-07'
