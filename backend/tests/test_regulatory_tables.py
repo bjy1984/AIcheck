@@ -102,3 +102,30 @@ def test_nbt47014_base_material_groups_cover_the_whole_table_1():
     # GB/T 9711 双写牌号两种写法都能查到
     assert wps_base_material_group("L245") == wps_base_material_group("L245/B") == "Fe-1-1"
     assert not section.get("verifiedBy"), "数值已对照正版 PDF，但仍等法规核对人签字"
+
+
+def test_pipe_material_limits_merge_level_rows_and_never_guess():
+    """P10 管材限值：Q345 这类分质量等级的牌号，取到的是共有值 + 该级独有值合并后的一份。"""
+    from libs.regulatory_tables import pipe_material_limits
+
+    q345b = pipe_material_limits("GB/T 8163-2018", "Q345", "B")
+    assert q345b["mechanical"] == {"tensileMPa": "470-630", "yieldMPaMin": 345, "elongationPctMin": 20, "impactTemperatureC": 20, "kv2JMin": 34}
+    assert q345b["composition"]["C"] == "<=0.20" and q345b["composition"]["Mn"] == "<=1.70"
+    assert q345b["verified"] is False, "未签字前只能出预警"
+
+    q345e = pipe_material_limits("GB/T 8163-2018", "Q345", "E")
+    assert q345e["composition"]["C"] == "<=0.18" and q345e["composition"]["S"] == "<=0.020"
+    assert q345e["mechanical"]["impactTemperatureC"] == -40 and q345e["mechanical"]["kv2JMin"] == 27
+
+    # 同为 20 钢，GB/T 3087 的 P/S 比 GB/T 8163 严，屈服强度还按壁厚分档
+    assert pipe_material_limits("GB/T 8163-2018", "20")["composition"]["S"] == "<=0.030"
+    t3087 = pipe_material_limits("GB/T 3087-2022", "20")
+    assert t3087["composition"]["S"] == "<=0.020"
+    assert t3087["mechanical"]["yieldMPaMinByThickness"] == {"<=16mm": 245, ">16mm": 235}
+    assert t3087["hotYieldRp02MPa"][300] == 149
+
+    # 不给等级时回报有哪些等级；查不到的牌号/标准返回 None
+    assert pipe_material_limits("GB/T 8163-2018", "Q345")["availableLevels"] == ["A", "B", "C", "D", "E"]
+    assert pipe_material_limits("GB/T 8163-2018", "Q460")["availableLevels"] == ["C", "D", "E"], "Q460 没有 A/B 级"
+    assert pipe_material_limits("GB/T 8163-2018", "X99") is None
+    assert pipe_material_limits("GB/T 9999-2099", "20") is None

@@ -741,3 +741,76 @@ weldingConsumables:
     extractedFrom: none
     verifiedBy: null
     note: 2026-09-07 只取得目录与前言（修改了"烘干后在常温下搁置"的要求、增加烘箱标示牌要求）；正文各镜像站均需下载 PDF，数值未预填。规则侧只做"有无烘干记录/发放记录"的存在性检查
+
+pipeMaterialLimits:
+  purpose: P10 管材限值档案——质量证明书上的成分与力学值对着这里核（节点 16~22）
+  caveat: 用户 2026-09-07 提供的 PDF；GB/T 8163-2018 那份带第三方文库水印（学兔兔），属流传副本而非采购原件，数值已逐页看图抄录，仍等法规核对人对照采购件签字
+  standards:
+    - standard: GB/T 8163-2018
+      name: 输送流体用无缝钢管
+      extractedFrom: official_pdf_ocr_page_images
+      sourceClause: 表 5（10/20 化学成分）、表 6（Q345~Q460 化学成分与碳当量）、表 7（力学性能）、表 8（小尺寸试样递减系数）、5.4.2.1
+      verifiedBy: null
+      impactApplicability: 5.4.2.1——Q345/Q390/Q420/Q460 的 B/C/D/E 级，外径 ≥70mm 且壁厚 ≥6.5mm 时做纵向冲击；一组 3 个试样算术平均，允许一个低于规定值但不低于规定值的 70%
+      smallSpecimenFactors: {"10x10": 1, "10x7.5": 0.75, "10x5": 0.5}
+      grades:
+        - grade: "10"
+          composition: {C: "0.07-0.13", Si: "0.17-0.37", Mn: "0.35-0.65", P: "<=0.030", S: "<=0.030", Cr: "<=0.15", Ni: "<=0.30", Cu: "<=0.20"}
+          mechanical: {tensileMPa: "335-475", yieldMPaMin: 205, elongationPctMin: 24}
+        - grade: "20"
+          composition: {C: "0.17-0.23", Si: "0.17-0.37", Mn: "0.35-0.65", P: "<=0.030", S: "<=0.030", Cr: "<=0.25", Ni: "<=0.30", Cu: "<=0.20"}
+          mechanical: {tensileMPa: "410-530", yieldMPaMin: 245, elongationPctMin: 20}
+        - grade: Q345
+          compositionCommon: {Si: "<=0.50", Mn: "<=1.70", Cr: "<=0.30", Ni: "<=0.50", Cu: "<=0.20", N: "<=0.012", Mo: "<=0.10", Ti: "<=0.20", carbonEquivalentMax: 0.45}
+          mechanicalCommon: {tensileMPa: "470-630", yieldMPaMin: 345}
+          levels:
+            - {level: A, C: "<=0.20", P: "<=0.035", S: "<=0.035", elongationPctMin: 20, impactTemperatureC: null, kv2JMin: null}
+            - {level: B, C: "<=0.20", P: "<=0.035", S: "<=0.035", elongationPctMin: 20, impactTemperatureC: 20, kv2JMin: 34}
+            - {level: C, C: "<=0.18", P: "<=0.030", S: "<=0.030", Nb: "<=0.07", V: "<=0.15", AlsMin: 0.015, elongationPctMin: 21, impactTemperatureC: 0, kv2JMin: 34}
+            - {level: D, C: "<=0.18", P: "<=0.030", S: "<=0.025", Nb: "<=0.07", V: "<=0.15", AlsMin: 0.015, elongationPctMin: 21, impactTemperatureC: -20, kv2JMin: 34}
+            - {level: E, C: "<=0.18", P: "<=0.025", S: "<=0.020", Nb: "<=0.07", V: "<=0.15", AlsMin: 0.015, elongationPctMin: 21, impactTemperatureC: -40, kv2JMin: 27}
+        - grade: Q390
+          compositionCommon: {C: "<=0.20", Si: "<=0.50", Mn: "<=1.70", Nb: "<=0.07", V: "<=0.20", Ti: "<=0.20", Cr: "<=0.30", Ni: "<=0.50", Cu: "<=0.20", N: "<=0.015", Mo: "<=0.10", carbonEquivalentMax: 0.46}
+          mechanicalCommon: {tensileMPa: "490-650", yieldMPaMin: 390}
+          levels:
+            - {level: A, P: "<=0.035", S: "<=0.035", elongationPctMin: 18, impactTemperatureC: null, kv2JMin: null}
+            - {level: B, P: "<=0.035", S: "<=0.035", elongationPctMin: 18, impactTemperatureC: 20, kv2JMin: 34}
+            - {level: C, P: "<=0.030", S: "<=0.030", AlsMin: 0.015, elongationPctMin: 19, impactTemperatureC: 0, kv2JMin: 34}
+            - {level: D, P: "<=0.030", S: "<=0.025", AlsMin: 0.015, elongationPctMin: 19, impactTemperatureC: -20, kv2JMin: 34}
+            - {level: E, P: "<=0.025", S: "<=0.020", AlsMin: 0.015, elongationPctMin: 19, impactTemperatureC: -40, kv2JMin: 27}
+        - grade: Q420
+          compositionCommon: {C: "<=0.20", Si: "<=0.50", Mn: "<=1.70", Nb: "<=0.07", V: "<=0.20", Ti: "<=0.20", Cr: "<=0.30", Ni: "<=0.80", Cu: "<=0.20", N: "<=0.015", Mo: "<=0.20", carbonEquivalentMax: 0.48}
+          mechanicalCommon: {tensileMPa: "520-680", yieldMPaMin: 420}
+          levels:
+            - {level: A, P: "<=0.035", S: "<=0.035", elongationPctMin: 18, impactTemperatureC: null, kv2JMin: null}
+            - {level: B, P: "<=0.035", S: "<=0.035", elongationPctMin: 18, impactTemperatureC: 20, kv2JMin: 34}
+            - {level: C, P: "<=0.030", S: "<=0.030", AlsMin: 0.015, elongationPctMin: 19, impactTemperatureC: 0, kv2JMin: 34}
+            - {level: D, P: "<=0.025", S: "<=0.025", AlsMin: 0.015, elongationPctMin: 19, impactTemperatureC: -20, kv2JMin: 34}
+            - {level: E, P: "<=0.025", S: "<=0.020", AlsMin: 0.015, elongationPctMin: 19, impactTemperatureC: -40, kv2JMin: 27}
+        - grade: Q460
+          compositionCommon: {C: "<=0.20", Si: "<=0.60", Mn: "<=1.80", Nb: "<=0.11", V: "<=0.20", Ti: "<=0.20", Cr: "<=0.30", Ni: "<=0.80", Cu: "<=0.20", N: "<=0.015", Mo: "<=0.20", B: "<=0.005", AlsMin: 0.015, carbonEquivalentMax: 0.53}
+          mechanicalCommon: {tensileMPa: "550-720", yieldMPaMin: 460, elongationPctMin: 17}
+          levels:
+            - {level: C, P: "<=0.030", S: "<=0.030", impactTemperatureC: 0, kv2JMin: 34}
+            - {level: D, P: "<=0.030", S: "<=0.025", impactTemperatureC: -20, kv2JMin: 34}
+            - {level: E, P: "<=0.025", S: "<=0.020", impactTemperatureC: -40, kv2JMin: 27}
+          note: Q460 只有 C/D/E 三个质量等级
+    - standard: GB/T 3087-2022
+      name: 低中压锅炉用无缝钢管
+      extractedFrom: official_pdf_text_layer
+      sourceClause: 表 5 化学成分、表 6 力学性能、表 7 高温规定塑性延伸强度
+      verifiedBy: null
+      note: 同为 10/20 牌号，但 P/S 比 GB/T 8163-2018 严（0.025/0.020 对 0.030/0.030）；屈服强度按壁厚分档
+      grades:
+        - grade: "10"
+          composition: {C: "0.07-0.13", Si: "0.17-0.37", Mn: "0.35-0.65", P: "<=0.025", S: "<=0.020", Cr: "<=0.15", Ni: "<=0.30", Cu: "<=0.20"}
+          mechanical: {tensileMPa: "335-475", yieldMPaMinByThickness: {"<=16mm": 205, ">16mm": 195}, elongationPctMin: 24}
+          hotYieldRp02MPa: {200: 165, 250: 145, 300: 122, 350: 111, 400: 109, 450: 107}
+        - grade: "20"
+          composition: {C: "0.17-0.23", Si: "0.17-0.37", Mn: "0.35-0.65", P: "<=0.025", S: "<=0.020", Cr: "<=0.25", Ni: "<=0.30", Cu: "<=0.20"}
+          mechanical: {tensileMPa: "410-550", yieldMPaMinByThickness: {"<=16mm": 245, ">16mm": 235}, elongationPctMin: 20}
+          hotYieldRp02MPa: {200: 188, 250: 170, 300: 149, 350: 137, 400: 134, 450: 132}
+  pending:
+    - GB/T 14976-2025、GB/T 12771-2019：文字层单元格内换行且数字列黏连，待按页看图抄录
+    - GB/T 5310-2023：PDF 文字层是坏编码（自定义字体映射），需重 OCR
+

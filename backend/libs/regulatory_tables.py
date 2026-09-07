@@ -122,3 +122,50 @@ def welding_consumable_spec(designation: str) -> dict[str, Any] | None:
         if wanted in {_norm_designation(k) for k in keys if k}:
             return item
     return None
+
+
+def pipe_material_limits(standard: str, grade: str, level: str | None = None) -> dict[str, Any] | None:
+    """P10 管材限值：按标准号 + 牌号（+ 质量等级）取成分与力学限值。
+
+    Q345 这类带质量等级的牌号，成分与力学分两层：compositionCommon/mechanicalCommon 是各级共有，
+    levels 里是该级独有（C、P、S、伸长率、冲击温度与能量）。返回的是合并后的一份，
+    调用方不用关心分层；查不到返回 None，不猜。
+    """
+    wanted_standard = _norm_designation(standard)
+    wanted_grade = _norm_designation(grade)
+    if not wanted_standard or not wanted_grade:
+        return None
+    for item in table("pipeMaterialLimits").get("standards") or []:
+        if _norm_designation(item.get("standard")) != wanted_standard:
+            continue
+        for entry in item.get("grades") or []:
+            if _norm_designation(entry.get("grade")) != wanted_grade:
+                continue
+            merged: dict[str, Any] = {
+                "standard": item.get("standard"),
+                "grade": entry.get("grade"),
+                "verified": bool(item.get("verifiedBy")),
+                "composition": dict(entry.get("composition") or entry.get("compositionCommon") or {}),
+                "mechanical": dict(entry.get("mechanical") or entry.get("mechanicalCommon") or {}),
+            }
+            for key in ("hotYieldRp02MPa", "note"):
+                if entry.get(key) is not None:
+                    merged[key] = entry[key]
+            levels = entry.get("levels") or []
+            if not levels:
+                return merged if level is None else None
+            wanted_level = str(level or "").strip().upper()
+            row = next((item2 for item2 in levels if str(item2.get("level") or "").upper() == wanted_level), None)
+            if row is None:
+                merged["availableLevels"] = [str(item2.get("level")) for item2 in levels]
+                return merged
+            merged["level"] = row["level"]
+            for key, value in row.items():
+                if key == "level":
+                    continue
+                if key in {"elongationPctMin", "impactTemperatureC", "kv2JMin"}:
+                    merged["mechanical"][key] = value
+                else:
+                    merged["composition"][key] = value
+            return merged
+    return None
