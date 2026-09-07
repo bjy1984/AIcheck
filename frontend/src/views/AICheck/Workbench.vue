@@ -262,6 +262,7 @@ import { loadRoleScopedReportArchive } from './workbenchRoleAccess'
 import { submittedFileCountLabel, workbenchRolePresentation } from './workbenchRolePresentation'
 import { buildCorrectionUploadBindingPayload } from './contractorCorrectionUpload'
 import {
+  nodeRunFindingViews,
   buildWorkbenchAiHistory,
   buildWorkbenchAiPresentation,
   inspectionReviewDirectoryItems,
@@ -710,8 +711,14 @@ const aiRecheckFindings = computed(() => parseAiFindings(aiRecheckResultText.val
 const projectAnalysisPresentation = computed(() =>
   buildWorkbenchAiPresentation(nodePackage.value?.projectAnalysis)
 )
-const nodeAiPresentationFindings = computed<WorkbenchAiFinding[]>(() =>
-  aiRecheckFindings.value.map((finding, index) => ({
+/**
+ * 优先用后端已落库的 findings（带证据、规则、接地状态）；
+ * 只有运行没有 findings 数组时才退回解析自由文本。
+ */
+const nodeAiPresentationFindings = computed<WorkbenchAiFinding[]>(() => {
+  const stored = nodeRunFindingViews(aiRecheckDisplayRun.value)
+  if (stored.length) return stored
+  return aiRecheckFindings.value.map((finding, index) => ({
     id: `node-finding-${index + 1}`,
     typeLabel: finding.typeLabel,
     severity: finding.severity,
@@ -723,7 +730,7 @@ const nodeAiPresentationFindings = computed<WorkbenchAiFinding[]>(() =>
     evidenceRefs: [],
     ruleRefs: []
   }))
-)
+})
 const visibleNodeAiPresentationFindings = computed(() =>
   nodeAiPresentationFindings.value.map(workbenchFindingDisplay)
 )

@@ -450,6 +450,12 @@ export type AiReviewRun = {
     confidence: number
     manualConfirmItems: string[]
   }
+  /**
+   * 已落库的审查发现（守卫处理后的最终稿）。监检面板必须直接读它：
+   * 2026-09-06 登录实测，面板曾只从 llmResultText 解析发现，67 次完成运行里
+   * 47 次文本为空或不是 findings JSON，监检人员看到的是"零发现 + 一句模板"。
+   */
+  findings?: Array<Record<string, unknown>>
   evidenceLinks: EvidenceLink[]
   createdAt?: string
   updatedAt?: string

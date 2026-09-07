@@ -290,6 +290,17 @@ const findingView = (raw: Record<string, unknown>, index: number): WorkbenchAiFi
   }
 }
 
+/**
+ * 节点级 AiRun 的发现视图：直接读后端落库的 findings 数组。
+ * 只有数组为空时，调用方才退回到解析 llmResultText 的旧路径。
+ */
+export const nodeRunFindingViews = (
+  run?: Pick<AiReviewRun, 'findings'> | null
+): WorkbenchAiFinding[] =>
+  (Array.isArray(run?.findings) ? run.findings : [])
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    .map(findingView)
+
 export const buildWorkbenchAiPresentation = (
   projectAnalysis?: ProjectAnalysisView | null
 ): WorkbenchAiPresentation => {

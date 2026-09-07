@@ -343,3 +343,33 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
   assert.equal(workbenchCertificateVerification(null), undefined)
   assert.equal(workbenchCertificateVerification('x'), undefined)
 }
+
+// 节点级运行的发现必须直接来自落库的 findings 数组，而不是从自由文本解析：
+// 2026-09-06 登录实测节点 2 库里 13 条、面板 0 张卡，就是因为只解析 llmResultText。
+{
+  const { nodeRunFindingViews } = await import('./workbenchReviewPresentation')
+  const views = nodeRunFindingViews({
+    findings: [
+      {
+        id: 'FND-1',
+        findingType: '资质不匹配',
+        severity: 'high',
+        title: '许可证有效期覆盖施工计划工期存疑',
+        description: '许可证有效期至 2026-12-25，施工计划工期未提取到。',
+        confidence: 0.62,
+        evidenceRefs: [{ documentVersionId: 'DV-1', pageNo: 1, quotedText: '有效期至 2026-12-25' }],
+        ruleRefs: [{ ruleCode: 'engineering-inspection-r02' }]
+      },
+      null,
+      'not-an-object'
+    ] as unknown as Array<Record<string, unknown>>
+  })
+  assert.equal(views.length, 1)
+  assert.equal(views[0].id, 'FND-1')
+  assert.equal(views[0].severityLabel, '高')
+  assert.equal(views[0].evidenceCount, 1)
+  assert.equal(views[0].ruleCount, 1)
+  assert.equal(views[0].confidence, 0.62)
+  assert.deepEqual(nodeRunFindingViews(null), [])
+  assert.deepEqual(nodeRunFindingViews({}), [])
+}
