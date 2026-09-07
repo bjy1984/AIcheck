@@ -23,6 +23,7 @@ from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
 from libs.review_grounding import REGULATION_CODE_RE
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
+from libs.standard_timeline import standard_reference_fact
 
 DESIGN_FACT_NODES = frozenset({4, 5, 6, 7, 8, 9})
 
@@ -208,6 +209,8 @@ def build_design_business_facts(
         ),
         "fixedClauses": {"designSpecialRequirementRules": frozen_special_requirement_rules(review_run.get("businessPackId"))},
         "drawingReviewWitness": drawing_review_witness(documents, texts, _project_record(state, project_id)),
+        "design": design_standard_references(texts, str(_project_record(state, project_id).get("constructionStart") or "")[:10] or None),
+        "standardCatalog": {"versionStatus": design_standard_references(texts, None)["versionStatus"]},
     }
 
 
@@ -484,3 +487,20 @@ def drawing_review_witness(documents: list[dict[str, Any]], texts: dict[str, str
 
 def _normalize_name(value: str) -> str:
     return re.sub(r"[\s（）()·\-—]", "", value or "")
+
+
+def design_standard_references(texts: dict[str, str], review_date: str | None) -> dict[str, Any]:
+    """N-03：设计文件引用的规范/标准编号 → 本地时间线状态（TSG）；未收录的标为需在线查询。"""
+    codes: list[str] = []
+    for text in texts.values():
+        for match in REGULATION_CODE_RE.finditer(text or ""):
+            code = " ".join(match.group(0).split())
+            if code not in codes:
+                codes.append(code)
+    references = [standard_reference_fact(code, review_date) for code in codes]
+    return {
+        "standardReferences": references,
+        "reviewDate": review_date,
+        "versionStatus": {item["standardRef"]: item["timelineStatus"] for item in references},
+        "requiresOnlineLookup": [item["standardRef"] for item in references if item.get("requiresOnlineLookup")],
+    }

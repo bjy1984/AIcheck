@@ -189,6 +189,10 @@ def build_tool_arguments(
         arguments.setdefault("documents", changes.get("documents") or [])
         if tool_name == "evaluate_design_change_approval":
             arguments.setdefault("pipelines", project_pipeline_facts(facts))
+    if tool_name == "check_standard_version_active":
+        design = nested_dict(facts, "design")
+        arguments.setdefault("standardReferences", list_value(design.get("standardReferences")))
+        arguments.setdefault("reviewDate", design.get("reviewDate") or nested_dict(facts, "project").get("constructionStart"))
     if tool_name == "evaluate_drawing_review_witness":
         arguments.setdefault("witness", nested_dict(facts, "drawingReviewWitness"))
     if tool_name == "evaluate_design_special_requirements":

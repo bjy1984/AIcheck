@@ -191,3 +191,18 @@ def test_drawing_review_witness_facts_feed_r05() -> None:
     unknown = drawing_review_witness([documents[0]], {"V-W": "施工图审查合格书 审查日期：2026-01-15"}, {"name": "别的工程", "constructionStart": "2026-03-01"})
     assert unknown["issuer"]["projectNameMatches"] is None
     assert evaluate_drawing_review_witness({"witness": unknown})["result"] == "evidence_insufficient"
+
+
+def test_design_standard_references_feed_r08_version_check() -> None:
+    from libs.review_orchestrator.design_facts import design_standard_references
+    from libs.review_tools.business_tools import check_standard_version_active
+
+    facts = design_standard_references({"V-1": "设计依据：TSG D0001—2009、GB/T 20801.1-2025", "V-2": "焊工按 TSG Z6002-2026 考核"}, "2026-09-06")
+    refs = {item["standardRef"]: item for item in facts["standardReferences"]}
+    assert refs["TSG D0001-2009"]["timelineStatus"] == "withdrawn" and refs["TSG Z6002-2026"]["timelineStatus"] == "current"
+    assert refs["GB/T 20801.1-2025"]["requiresOnlineLookup"] is True
+    assert facts["requiresOnlineLookup"] == ["GB/T 20801.1-2025"]
+    outcome = check_standard_version_active({"standardReferences": facts["standardReferences"], "reviewDate": "2026-09-06"})
+    assert outcome["result"] == "failed", "引用了已废止的 TSG D0001-2009"
+    failed = [item for item in outcome["checks"] if not item["passed"]]
+    assert [item["code"] for item in failed] == ["TSG D0001-2009"]

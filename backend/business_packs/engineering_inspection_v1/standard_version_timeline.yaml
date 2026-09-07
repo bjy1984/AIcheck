@@ -1,0 +1,83 @@
+# TSG 安全技术规范版本时间线（P11 N-03；依据《研究-TSG规范在线核验源》）。
+#
+# 每条：编号（规范化为 "TSG X-YYYY"）、名称、发布日期、实施日期、替代编号（replacedBy）、
+# 被替代编号（supersedes）、废止日期（withdrawnOn）、过渡期截止（graceUntil）、来源 URL、
+# 抽取方式（manual / catalog / announcement / ocr）、核对人与核对日期。
+# 判定口径（AC-R08-01）：现行 → 通过；已被替代且设计签发日在新版实施日之后 → 过渡期内预警 / 过渡期外不符合；
+# 未收录 → 在线查询 + 人工确认；OCR 抽取且未核对的条目 → 只给预警不给不符合。
+#
+# 目录接口只是发布档案，"在列"不等于"现行"；现行状态只能由公告与附则推导（见 sync_tsg_catalog.py）。
+schemaVersion: standard-version-timeline-v1
+updatedAt: "2026-09-06"
+entries:
+  - code: TSG 31-2025
+    name: 工业管道安全技术规程
+    publishedOn: "2025-09-22"
+    catalogDate: "2025-10-30"
+    effectiveFrom: "2026-01-01"
+    supersedes: [TSG D0001-2009, TSG D7005-2018]
+    sourceUrls:
+      catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_3d469eb86022439e8c959a1c6735e3b1.html
+      announcement: https://www.samr.gov.cn/tzsbj/tzgg/zjwh/art/2026/art_ed12d58e1b4a4f668ff80268b375ef59.html
+      appendix: 官方 PDF 附则 9.4 施行时间（扫描件 OCR）
+    extractionMethod: announcement+ocr
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2/§3（人工核对 2026-09-06）
+    verifiedOn: "2026-09-06"
+  - code: TSG D0001-2009
+    name: 压力管道安全技术监察规程——工业管道
+    replacedBy: TSG 31-2025
+    withdrawnOn: "2026-01-01"
+    sourceUrls:
+      appendix: TSG 31-2025 附则 9.4 "以下安全技术规范同时废止：(1) TSG D0001—2009"
+    extractionMethod: ocr
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§3
+    verifiedOn: "2026-09-06"
+  - code: TSG D7005-2018
+    name: 压力管道定期检验规则——工业管道
+    replacedBy: TSG 31-2025
+    withdrawnOn: "2026-01-01"
+    sourceUrls:
+      appendix: TSG 31-2025 附则 9.4 "(2) TSG D7005—2018"
+    extractionMethod: ocr
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§3
+    verifiedOn: "2026-09-06"
+  - code: TSG Z6002-2026
+    name: 特种设备焊接操作人员考核细则
+    publishedOn: "2026-03-16"
+    catalogDate: "2026-03-19"
+    effectiveFrom: "2026-08-01"
+    supersedes: [TSG Z6002-2010]
+    sourceUrls:
+      catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_d04733c1b8fb4011b86424e4560e67ff.html
+      announcement: https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/tzsbs/art/2026/art_4153ad05135445e1b342d6a80814ad72.html
+      transition: 市监特设发〔2026〕85 号
+    extractionMethod: announcement
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+    verifiedOn: "2026-09-06"
+  - code: TSG Z6002-2010
+    name: 特种设备焊接操作人员考核细则
+    replacedBy: TSG Z6002-2026
+    withdrawnOn: "2026-08-01"
+    # 办公厅通知规定的过渡：2026-08-01 前取得的证书在有效期内继续有效（证书过渡，不是规范过渡）
+    graceUntil: null
+    sourceUrls:
+      appendix: TSG Z6002-2026 4.8（研究报告已核）
+      transition: 市监特设发〔2026〕85 号
+    extractionMethod: announcement
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+    verifiedOn: "2026-09-06"
+  - code: TSG 08-2026
+    name: 特种设备使用管理规则
+    publishedOn: "2026-02-02"
+    effectiveFrom: "2026-05-01"
+    supersedes: [TSG 08-2017]
+    extractionMethod: announcement
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+    verifiedOn: "2026-09-06"
+  - code: TSG 08-2017
+    name: 特种设备使用管理规则
+    replacedBy: TSG 08-2026
+    withdrawnOn: "2026-05-01"
+    extractionMethod: announcement
+    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+    verifiedOn: "2026-09-06"
