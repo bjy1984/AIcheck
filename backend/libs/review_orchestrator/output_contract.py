@@ -84,9 +84,11 @@ def cap_findings(drafts: list[dict[str, Any]], *, limit: int = MAX_FINDINGS_PER_
     kept = ordered[:limit]
     extra_grounded = [item for item in ordered[limit:] if not _is_downgraded(item)]
     extra_downgraded = [item for item in ordered[limit:] if _is_downgraded(item)]
-    # 归并条 / 降级汇总条要占名额：先从保留区尾部让出对应个数
-    slots = int(bool(extra_grounded)) + int(bool(extra_downgraded) and not any(_is_downgraded(item) for item in kept))
-    for _ in range(slots):
+    # 归并条 / 降级汇总条要占名额：从保留区尾部让位，让出的条目本身也进入待归并，直到放得下为止
+    def needed_slots() -> int:
+        return int(bool(extra_grounded)) + int(bool(extra_downgraded) and not any(_is_downgraded(item) for item in kept))
+
+    while kept and len(kept) + needed_slots() > limit:
         spill = kept.pop()
         (extra_downgraded if _is_downgraded(spill) else extra_grounded).insert(0, spill)
     if extra_grounded:
