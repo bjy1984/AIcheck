@@ -144,6 +144,16 @@ def load_business_pack(pack_id: str = DEFAULT_BUSINESS_PACK_ID) -> dict[str, Any
     validation = validate_business_pack(pack)
     if not validation["ok"]:
         raise BusinessPackError("; ".join(validation["errors"]))
+    if pack_id == DEFAULT_BUSINESS_PACK_ID:
+        # P0 2.2 资料类型变更在开关后面（默认 off 原样返回）；变换后的包要再过一遍校验
+        from libs.business_pack.welding_material_types_v2 import apply_welding_material_types_v2
+
+        transformed = apply_welding_material_types_v2(pack)
+        if transformed is not pack:
+            validation = validate_business_pack(transformed)
+            if not validation["ok"]:
+                raise BusinessPackError("welding material types v2: " + "; ".join(validation["errors"]))
+            pack = transformed
     pack["snapshotHash"] = snapshot_hash(pack)
     return pack
 
