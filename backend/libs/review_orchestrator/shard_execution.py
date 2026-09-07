@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from copy import deepcopy
 from typing import Any
 
@@ -17,6 +18,9 @@ class EvidenceShardProcessingIncomplete(RuntimeError):
     def __init__(self, failed_shard_ids: list[str]) -> None:
         self.failed_shard_ids = sorted({str(item) for item in failed_shard_ids if item})
         super().__init__("evidence shard processing incomplete")
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _stable_hash(value: Any) -> str:
@@ -278,6 +282,8 @@ def generate_sharded_finding_drafts(
             try:
                 drafts, metadata = generate_once(review_run, shard_context)
             except Exception as exc:
+                # 分片失败原因此前只留在 failureReason 的类名里，排查时看不到堆栈；记一条 warning
+                LOGGER.warning("evidence shard %s failed: %r", shard_id, exc, exc_info=True)
                 attempt_ids = [
                     str(row.get("id") or "")
                     for row in state.get("model_call_attempts") or []

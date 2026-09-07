@@ -209,7 +209,7 @@ def test_model_review_calls_once_per_shard_and_records_bidirectional_lineage(
     monkeypatch.setattr(ex, "build_review_prompt_shape", lambda _run, _context: {})
     monkeypatch.setattr(ex, "qwen_runtime_public_config", lambda: {"provider": "test"})
     monkeypatch.setattr(ex, "qwen_runtime_client", lambda: FakeRuntime())
-    monkeypatch.setattr(ex, "model_cost_cny", lambda _usage: {"total": 0.0})
+    monkeypatch.setattr(ex, "model_cost_cny", lambda _usage, **_kwargs: {"total": 0.0})
 
     drafts, metadata = ex.generate_finding_drafts(review_run, _context())
 
@@ -296,7 +296,7 @@ def test_model_failure_keeps_completed_sibling_and_marks_processing_incomplete(
     monkeypatch.setattr(ex, "build_review_prompt_shape", lambda _run, _context: {})
     monkeypatch.setattr(ex, "qwen_runtime_public_config", lambda: {"provider": "test"})
     monkeypatch.setattr(ex, "qwen_runtime_client", lambda: FailingSecondRuntime())
-    monkeypatch.setattr(ex, "model_cost_cny", lambda _usage: {"total": 0.0})
+    monkeypatch.setattr(ex, "model_cost_cny", lambda _usage, **_kwargs: {"total": 0.0})
 
     with pytest.raises(EvidenceShardProcessingIncomplete) as error:
         ex.generate_finding_drafts(review_run, _context())

@@ -8,7 +8,7 @@ POSITIVE_CLAIM_RE = re.compile(r"(满足|符合|匹配|覆盖|一致|有效|真�
 CODE_TOKEN_RE = re.compile(r"\b(?:[A-Z]{1,8}[A-Z0-9]*[-/][A-Z0-9][A-Z0-9./-]{2,}|[A-Z]{1,8}\d{4,}[A-Z0-9./-]*)\b", re.IGNORECASE)
 DATE_TOKEN_RE = re.compile(r"\d{4}\s*(?:[-/.年]\s*\d{1,2})?(?:[-/.月]\s*\d{1,2}\s*日?)?")
 ORG_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}(?:有限公司|设计院|研究院|监督管理局|公司|单位)")
-PERSON_TOKEN_RE = re.compile(r"(?:焊工|姓名|人员|审核|编制|校核|负责人|许可人员)\s*[:：]?\s*([\u4e00-\u9fff]{2,4})(?=证书|持证|有效|资格|,|，|。|\s|$)")
+PERSON_TOKEN_RE = re.compile(r"(?:焊工|姓名|人员|审核|编制|校核|负责人|许可人员)\s*[:：]?\s*(?!证|资格|名册|考试|清单|项目)([\u4e00-\u9fff]{2,4})(?=证书|持证|有效|资格|,|，|。|\s|$)")
 
 GROUNDING_TERMS = {
     "有效期",
@@ -458,6 +458,13 @@ def _supplied_identifiers(grounding_input: dict[str, Any]) -> list[str]:
 
     模型复述这些 ID 不构成断言，只是引用。放进比对语料是为了不把「正确引用」
     误判成「无据断言」——那会让整条诊断被丢掉，代价是监检不知道去查哪一份。
+
+    2026-09-06 六模型实测里被误杀最多的四类，全都是"我们自己给模型的东西"：
+    规则文本里的法规号（TSG Z6002-2010、D7006-2020）、工程元数据里的施工单位名
+    （中石化安装有限公司）、证据里换了写法的日期（2026年12月25日 ↔ 2026-12-25）、
+    去掉连字符的编号。前两类由 supplementalIdentifiers 带进来（见
+    supplemental_grounding_identifiers），后两类在 unsupported_claims 里按规范化比对。
+    原则不变：只补标识符，不补规则正文里的结论词。
     """
     identifiers: list[str] = [
         str(item) for item in grounding_input.get("documentVersionIds") or [] if item
@@ -470,21 +477,111 @@ def _supplied_identifiers(grounding_input: dict[str, Any]) -> list[str]:
                 value = item.get(id_key)
                 if value:
                     identifiers.append(str(value))
+    identifiers.extend(
+        str(item) for item in grounding_input.get("supplementalIdentifiers") or [] if item
+    )
     return identifiers
+
+
+# 法规/标准编号：TSG Z6002-2026、TSG 31-2025、NB/T 47014-2023、GB/T 20801.4-2025、JB/T 3223-2017、
+# HG/T 20519-2009、SY/T 0407-2012、市监特设发〔2026〕85号。只抓编号，不抓条文。
+REGULATION_CODE_RE = re.compile(
+    r"(?:TSG\s*[A-Z]{0,2}\s?\d{2,5}(?:\s*[-—–－]\s*\d{4})?"
+    r"|(?:GB|NB|JB|HG|SY|SH|DL|CJJ|API|ASME)\s*/?\s*T?\s*\d{2,6}(?:\.\d{1,2})?(?:\s*[-—–－]\s*\d{4})?"
+    r"|[\u4e00-\u9fff]{2,6}〔\d{4}〕\s*\d{1,4}\s*号)",
+    re.IGNORECASE,
+)
+_PROJECT_IDENTIFIER_KEYS = (
+    "name",
+    "projectName",
+    "ownerOrgName",
+    "contractorOrgName",
+    "designOrgName",
+    "ndtOrgName",
+    "inspectionOrgName",
+    "supervisionOrgName",
+    "pipelineGrade",
+    "constructionStart",
+    "plannedConstructionEnd",
+    "constructionEnd",
+    "contractNo",
+    "projectCode",
+)
+
+
+def _regulation_codes(text: str) -> list[str]:
+    return [re.sub(r"\s+", " ", match.group(0)).strip() for match in REGULATION_CODE_RE.finditer(text or "")]
+
+
+def supplemental_grounding_identifiers(context: dict[str, Any]) -> list[str]:
+    """从审查上下文收集"我们发给模型的标识符"：规则/条款里的法规号、工程元数据、设计参数。
+
+    这些东西模型引用了是在复述输入，不是在下结论；但它们不在 OCR 语料里，
+    原来一律被判无据。只收标识符，不收 criteria 的结论性文字。
+    """
+    identifiers: list[str] = []
+    project = context.get("project") if isinstance(context.get("project"), dict) else {}
+    for key in _PROJECT_IDENTIFIER_KEYS:
+        value = project.get(key)
+        if isinstance(value, str | int | float) and str(value).strip():
+            identifiers.append(str(value).strip())
+    design = project.get("designParameters") if isinstance(project.get("designParameters"), dict) else {}
+    for value in design.values():
+        if isinstance(value, str | int | float) and str(value).strip():
+            identifiers.append(str(value).strip())
+    contractor = project.get("contractor") if isinstance(project.get("contractor"), dict) else {}
+    for key in ("name", "orgName", "licenseNo"):
+        if isinstance(contractor.get(key), str) and contractor[key].strip():
+            identifiers.append(contractor[key].strip())
+    texts: list[str] = []
+    for key in ("rule", "businessRule"):
+        rule = context.get(key)
+        if isinstance(rule, dict):
+            texts.extend(str(rule.get(field) or "") for field in ("criteria", "checkMethod", "witnessText", "standardText"))
+    for item in context.get("ruleResults") or []:
+        if isinstance(item, dict):
+            texts.extend(str(item.get(field) or "") for field in ("criteria", "ruleText", "clauseText"))
+    for item in (context.get("clausePackageSnapshot") or {}).get("clauses") or []:
+        if isinstance(item, dict):
+            texts.append(str(item.get("text") or ""))
+            if item.get("standardRef"):
+                identifiers.append(str(item["standardRef"]))
+            if item.get("clauseId"):
+                identifiers.append(str(item["clauseId"]))
+    for item in context.get("knowledgeClauses") or []:
+        if isinstance(item, dict):
+            texts.append(str(item.get("text") or item.get("content") or ""))
+            for key in ("clauseId", "standardRef", "standardNo"):
+                if item.get(key):
+                    identifiers.append(str(item[key]))
+    for text in texts:
+        identifiers.extend(_regulation_codes(text))
+    return list(dict.fromkeys(item for item in identifiers if item))
 
 
 def unsupported_claims(text: str, evidence_texts: list[str]) -> list[dict[str, Any]]:
     if not POSITIVE_CLAIM_RE.search(text or ""):
         return []
-    evidence = _normalized_text(" ".join(evidence_texts))
+    evidence = _normalized_text(_canonicalize_dates(" ".join(evidence_texts)))
+    # 短标识符（单位名、法规号）经常被抽成更长的断言 token，例如 ORG_TOKEN_RE 会把
+    # "持证单位中石化安装有限公司" 整个抓出来；只要我们给过的标识符是这个 token 的一部分，
+    # 它就是在复述输入，不是新断言。只对 ≥4 字符的标识符做包含判断，避免 "GC2" 这类短串误放行。
+    short_identifiers = [
+        _normalized_text(_canonicalize_dates(item))
+        for item in evidence_texts
+        if isinstance(item, str) and 4 <= len(item.strip()) <= 60
+    ]
     claims: list[dict[str, Any]] = []
     claim_tokens = _claim_tokens(text)
     if not claim_tokens:
         claims.append({"claim": "positive_business_conclusion", "reason": "positive_claim_without_specific_evidence_token"})
     for token in claim_tokens:
-        normalized = _normalized_text(token)
-        if normalized and normalized not in evidence:
-            claims.append({"claim": token, "reason": "not_present_in_supplied_evidence"})
+        normalized = _normalized_text(_canonicalize_dates(token))
+        if not normalized or normalized in evidence:
+            continue
+        if any(identifier and identifier in normalized for identifier in short_identifiers):
+            continue
+        claims.append({"claim": token, "reason": "not_present_in_supplied_evidence"})
     if not claims and not evidence:
         claims.append({"claim": "positive_business_conclusion", "reason": "no_supplied_evidence"})
     seen: set[str] = set()
@@ -1167,6 +1264,22 @@ def _claim_tokens(text: str) -> list[str]:
     tokens.update(match.group(0) for match in ORG_TOKEN_RE.finditer(text or ""))
     tokens.update(match.group(1) for match in PERSON_TOKEN_RE.finditer(text or ""))
     return [token for token in tokens if token]
+
+
+_DATE_FULL_RE = re.compile(r"(\d{4})\s*[年./\-]\s*(\d{1,2})\s*[月./\-]\s*(\d{1,2})日?")
+_DATE_MONTH_RE = re.compile(r"(\d{4})\s*[年./\-]\s*(\d{1,2})\s*月(?!\s*\d)")
+
+
+def _canonicalize_dates(value: str) -> str:
+    """把 2026年12月25日 / 2026.12.25 / 2026/12/25 统一成 2026-12-25，月份日期补零。
+
+    守卫此前对"日期写法不同"一律判无据：证据 OCR 是 2026-12-25，模型写 2026年12月25日
+    就整条丢弃。日期是同一个事实的不同写法，不是新断言。
+    """
+    text = str(value or "")
+    text = _DATE_FULL_RE.sub(lambda m: f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}", text)
+    text = _DATE_MONTH_RE.sub(lambda m: f"{m.group(1)}-{int(m.group(2)):02d}", text)
+    return text
 
 
 def _normalized_text(value: str) -> str:
