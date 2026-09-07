@@ -269,3 +269,61 @@ def test_filler_class_is_checked_against_the_base_material_group():
     # 两项缺一就什么都不说
     silent = _consumable_case({"baseMaterialGrade": "Q345R"})
     assert not any("filler" in code or "base_material_group" in code for code in silent["reasonCodes"])
+
+
+def test_deviations_carry_the_nbt47014_factor_class():
+    """NB/T 47014-2023 表 5 给了每个因素的严重度：重要因素变了要重新评定，
+    补加因素变了要重做冲击，次要因素只需改 WPS（5.2.1）。偏差项带上这个分级，
+    现场才知道该做什么。只作提示，不改判定结论。"""
+    row = _nbt47014_case(
+        {"id": "J1", "weldingMethod": "焊条电弧焊", "materialGrade": "Q345B", "thickness": 16},
+        None,
+    )
+    assert "nbt47014FactorClasses" not in row, "没有偏差就不该出现分级"
+
+    arguments = {
+        "wpsItems": [
+            {
+                "wpsNo": "W1",
+                "pqrNo": "P1",
+                "approved": True,
+                "weldingMethod": "焊条电弧焊",
+                "materialGrade": "Q345R",
+                "currentRange": "90-200",
+                "voltageRange": "20-26",
+                "weldingSpeedRange": "5-20",
+                "interpassTemperatureRange": "0-250",
+            }
+        ],
+        "pqrItems": [
+            {
+                "pqrNo": "P1",
+                "approved": True,
+                "weldingMethod": "焊条电弧焊",
+                "materialGroup": "Fe-1-2",
+                "specimenThickness": 12,
+                "currentRange": "80-150",
+                "voltageRange": "18-28",
+                "weldingSpeedRange": "4-25",
+                "interpassTemperatureRange": "0-260",
+            }
+        ],
+        "workItems": [{"id": "J1", "weldingMethod": "焊条电弧焊", "materialGrade": "Q345B", "thickness": 16}],
+    }
+    deviating = check_wps_pqr_coverage(arguments)["facts"]["wpsPqrCoverageMatrix"][0]
+    assert "current_wps_outside_pqr_range" in deviating["reasonCodes"]
+    assert deviating["nbt47014FactorClasses"]["current"] == "重要因素"
+
+
+def test_table5_factor_text_is_no_longer_truncated():
+    """表 5 的因素文字曾有 56/67 条在半句处断掉，不能展示也不能做关键词匹配。"""
+    from libs.regulatory_tables import table, wps_factor_class, wps_specific_factors
+
+    section = table("nbt47014SpecificFactors")
+    assert section["factorTextQuality"] == "verified_full_text"
+    assert all(not item.get("factorTextTruncated") for items in wps_specific_factors("焊条电弧焊").values() for item in items)
+
+    # 抄对之后关键词匹配才有意义
+    assert wps_factor_class("焊条电弧焊", "预热") == "重要因素"
+    assert wps_factor_class("焊条电弧焊", "热输入") == "补加因素"
+    assert wps_factor_class("焊条电弧焊", "清根") == "次要因素"

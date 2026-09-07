@@ -1385,9 +1385,9 @@ pipeMaterialLimits:
     - NB/T 47014-2023 附录 C~F 未录
 
 nbt47014SpecificFactors:
-  factorTextQuality: truncated
-  factorTextCaveat: 67 条里有 56 条的 factor 文字在半句处被截断（如"3）改变衬垫的公称"）——表 5 在扫描件里是跨页的多列矩阵，文字列被邻列的横杠和页眉污染，两次重抽都没抽干净。
-  usageRule: 分类（哪种焊接方法下属重要/补加/次要）是可用的，判"改了要不要重新评定"只用分类；factor 文字不要展示给审查人，也不要拿来做关键词匹配，直到重抄。
+  factorTextQuality: verified_full_text
+  factorTextNote: 2026-09-08 重抄：按每页裁出因素文字列单独识别（避开邻列的横杠与页眉），再按「旧截断文字是新文字前缀」对齐；60 条自动对齐、7 条逐格看图确认、15 条残留污染逐条改正。67 条全部核过。
+  usageRule: 分类（哪种焊接方法下属重要/补加/次要）与文字都可用。重要因素变了要重新评定，补加因素变了要重做冲击试验，次要因素只需改 WPS（5.2.1）。
   source: NB/T 47014-2023 表 5 各种焊接方法的专用焊接工艺评定因素
   sourceClause: 5.2.2；分类定义见 5.2.1——重要因素影响拉伸与弯曲性能，补加因素影响冲击韧性，次要因素对力学性能无明显影响
   extractedFrom: official_pdf_text_layer_positional
@@ -1408,7 +1408,7 @@ nbt47014SpecificFactors:
   factors:
   - seq: 1
     category: 接头
-    factor: 1）改变坡口形式
+    factor: "1）改变坡口形式"
     methodsByClass:
       重要因素:
       - 电子束焊
@@ -1425,7 +1425,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 2
     category: 接头
-    factor: 2）增加或取消衬垫
+    factor: "2）增加或取消衬垫"
     methodsByClass:
       重要因素:
       - 电子束焊
@@ -1433,13 +1433,13 @@ nbt47014SpecificFactors:
       - 气焊
   - seq: 3
     category: 接头
-    factor: 3）改变衬垫的公称
+    factor: "3）改变衬垫的公称成分"
     methodsByClass:
       次要因素:
       - 气焊
   - seq: 4
     category: 接头
-    factor: 4）增大坡口根部间隙
+    factor: "4）增大坡口根部间隙"
     methodsByClass:
       重要因素:
       - 电子束焊
@@ -1455,7 +1455,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 5
     category: 接头
-    factor: 5）减小坡口根部间隙
+    factor: "5）减小坡口根部间隙"
     methodsByClass:
       次要因素:
       - 气焊
@@ -1468,7 +1468,7 @@ nbt47014SpecificFactors:
       - 电子束焊
   - seq: 6
     category: 接头
-    factor: 6）取消单面焊时的
+    factor: "6）取消单面焊时的衬垫"
     methodsByClass:
       次要因素:
       - 焊条电弧焊
@@ -1476,7 +1476,7 @@ nbt47014SpecificFactors:
       - 熔化极气体保护焊
   - seq: 7
     category: 接头
-    factor: 7）增加或取消非金属或非熔化的焊接熔池
+    factor: "7）增加或取消非金属或非熔化的焊接熔池金属成形块（或焊缝背面成形块）"
     methodsByClass:
       重要因素:
       - 气电立焊
@@ -1489,7 +1489,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 8
     category: 接头
-    factor: 8）增加或取消衬垫或
+    factor: "8）增加或取消衬垫或锁底焊缝"
     methodsByClass:
       重要因素:
       - 气焊
@@ -1510,7 +1510,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 9
     category: 接头
-    factor: 9）增加衬垫，或改变
+    factor: "9）增加衬垫，或改变衬垫的公称成分"
     methodsByClass:
       重要因素:
       - 电子束焊
@@ -1519,37 +1519,37 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 10
     category: 接头
-    factor: 10）改变螺柱焊端部的
+    factor: "10）改变螺柱焊端部的尺寸和形状"
     methodsByClass:
       重要因素:
       - 螺柱电弧焊
   - seq: 11
     category: 接头
-    factor: 11）改变电弧保护套圈型号或焊
+    factor: "11）改变电弧保护套圈型号或焊剂型号"
     methodsByClass:
       重要因素:
       - 螺柱电弧焊
   - seq: 12
     category: 接头
-    factor: 12）两工件端部焊接平面与旋转
+    factor: "12）两工件端部焊接平面与旋转轴线夹角变化大于评定值±10°"
     methodsByClass:
       重要因素:
       - 摩擦焊
   - seq: 13
     category: 接头
-    factor: 13）焊接接头横截头面积的变化大于评定值10%，或两工
+    factor: "13）焊接接头横截面积的变化大于评定值10%，或两工件相焊处，从实心截面改变空心截面，或反之"
     methodsByClass:
       重要因素:
       - 摩擦焊
   - seq: 14
     category: 接头
-    factor: 14）管-管相焊处的外径变化超出
+    factor: "14）管-管相焊处的外径变化超出评定试件±10%"
     methodsByClass:
       重要因素:
       - 摩擦焊
   - seq: 15
     category: 填充金属
-    factor: 1）焊丝或填充丝
+    factor: "1）焊丝或填充丝"
     methodsByClass:
       重要因素:
       - 电子束焊
@@ -1563,13 +1563,13 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 16
     category: 填充金属
-    factor: 2）改变混合焊剂
+    factor: "2）改变混合焊剂的混合比例"
     methodsByClass:
       重要因素:
       - 埋弧焊
   - seq: 17
     category: 填充金属
-    factor: 3）增加或取消填
+    factor: "3）增加或取消填充金属"
     methodsByClass:
       重要因素:
       - 钨极气体保护焊
@@ -1577,14 +1577,14 @@ nbt47014SpecificFactors:
       - 电子束焊
   - seq: 18
     category: 填充金属
-    factor: 4）添加或取消附加充的填充丝，与评定
+    factor: "4）添加或取消附加的填充丝，与评定值比，填充金属体积改变超过10%"
     methodsByClass:
       重要因素:
       - 埋弧焊
       - 熔化极气体保护焊
   - seq: 19
     category: 填充金属
-    factor: 5）实心焊丝、药芯焊丝、金属粉之
+    factor: "5）实心焊丝、药芯焊丝、金属粉之间变更"
     methodsByClass:
       重要因素:
       - 熔化极气体保护焊
@@ -1593,14 +1593,14 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 20
     category: 填充金属
-    factor: 6）增加或取消可
+    factor: "6）增加或取消可熔性嵌条"
     methodsByClass:
       次要因素:
       - 钨极气体保护焊
       - 等离子弧焊
   - seq: 21
     category: 焊接位置
-    factor: 1）与评定试件相
+    factor: "1）与评定试件相比，改变焊接位置"
     methodsByClass:
       重要因素:
       - 螺柱电弧焊
@@ -1613,7 +1613,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 22
     category: 焊接位置
-    factor: 2）立缝反面清根露出正面合格的接
+    factor: "2）立缝反面清根露出正面合格的焊缝金属时，根部焊道向上或向下"
     methodsByClass:
       次要因素:
       - 焊条电弧焊
@@ -1622,7 +1622,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 23
     category: 焊接位置
-    factor: '*3）从评定合格的焊接位置改变为'
+    factor: "*3）从评定合格的焊接位置改变为向上立焊"
     methodsByClass:
       补加因素:
       - 焊条电弧焊
@@ -1631,7 +1631,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 24
     category: 预热、后热
-    factor: 1）预热温度比已评定合格值降低
+    factor: "1）预热温度比已评定合格值降低55℃以上"
     methodsByClass:
       重要因素:
       - 焊条电弧焊
@@ -1647,7 +1647,7 @@ nbt47014SpecificFactors:
       - 气焊
   - seq: 25
     category: 预热、后热
-    factor: '*2）道间最高温度比经评定记录值'
+    factor: "*2）道间最高温度比经评定记录值高55℃以上"
     methodsByClass:
       补加因素:
       - 焊条电弧焊
@@ -1657,7 +1657,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 26
     category: 预热、后热
-    factor: 3）施焊结束后至焊后热处理前，改
+    factor: "3）施焊结束后至焊后热处理前，改变后热温度和保温时间"
     methodsByClass:
       次要因素:
       - 焊条电弧焊
@@ -1665,20 +1665,20 @@ nbt47014SpecificFactors:
       - 熔化极气体保护焊
   - seq: 27
     category: 气体
-    factor: 1）改变可燃气体
+    factor: "1）改变可燃气体种类"
     methodsByClass:
       重要因素:
       - 气焊
   - seq: 28
     category: 气体
-    factor: 2）改变气体保护方式（如真空、惰
+    factor: "2）改变气体保护方式（如真空、惰性气体等）"
     methodsByClass:
       重要因素:
       - 摩擦焊
       - 电子束焊
   - seq: 29
     category: 气体
-    factor: 3）改变单一保护气体种类；改变混合保护配比超出GB/T39255公称值制备公差；从单
+    factor: "3）改变单一保护气体种类；改变混合保护配比超出GB/T 39255公称值制备公差；从单一保护气体改用混合保护气体或反之；增加或取消保护气体"
     methodsByClass:
       重要因素:
       - 熔化极气体保护焊
@@ -1687,7 +1687,7 @@ nbt47014SpecificFactors:
       - 螺柱电弧焊
   - seq: 30
     category: 气体
-    factor: 4）当类别号为Fe-10I、Ti-1、Ti-2、Zr-3、Zr-5、Ni-1～Ni-5时，取消焊缝背面保护气体，或背面保护气从惰
+    factor: "4）当类别号为Fe-10I、Ti-1、Ti-2、Zr-3、Zr-5、Ni-1~Ni-5时，取消焊缝背面保护气体，或背面保护气从惰性气体改变为混合气体，或背面保护气体流量比评定值减少10%或更多"
     methodsByClass:
       重要因素:
       - 熔化极气体保护焊
@@ -1695,7 +1695,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 31
     category: 气体
-    factor: 5）当焊接Fe-10I、Ti-1、Ti-2、Zr-3、Zr-5类材料时，取消尾部保护气体；尾部保护气从惰
+    factor: "5）当焊接Fe-10I、Ti-1、Ti-2、Zr-3、Zr-5类材料时，取消尾部保护气体；尾部保护气从惰性气体改变为混合气体；或尾部保护气体流量比评定值减少10%或更多"
     methodsByClass:
       重要因素:
       - 熔化极气体保护焊
@@ -1703,13 +1703,13 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 32
     category: 气体
-    factor: 6）改变离子气和
+    factor: "6）改变离子气和保护气体的组成"
     methodsByClass:
       重要因素:
       - 等离子弧焊
   - seq: 33
     category: 气体
-    factor: 7）保护气体流量
+    factor: "7）保护气体流量改变超出规定范围"
     methodsByClass:
       次要因素:
       - 熔化极气体保护焊
@@ -1717,7 +1717,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 34
     category: 气体
-    factor: 8）除 4）外增加或取消背面保护气体，改变背面保护气体规定的流量和组成
+    factor: "8）除4）外增加或取消背面保护气体，改变背面保护气体规定的流量和组成"
     methodsByClass:
       次要因素:
       - 熔化极气体保护焊
@@ -1725,7 +1725,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 35
     category: 电特性
-    factor: 1）改变电流种类
+    factor: "1）改变电流种类或极性"
     methodsByClass:
       重要因素:
       - 焊条电弧焊
@@ -1745,7 +1745,7 @@ nbt47014SpecificFactors:
       - 螺柱电弧焊
   - seq: 36
     category: 电特性
-    factor: '*2）增加热输入或单位长度焊道的'
+    factor: "*2）增加热输入或单位长度焊道的熔敷金属体积超过评定合格值"
     methodsByClass:
       补加因素:
       - 焊条电弧焊
@@ -1756,7 +1756,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 37
     category: 电特性
-    factor: 3）改变焊接电流范围，除焊条电弧焊、钨极气体保护
+    factor: "3）改变焊接电流范围，除焊条电弧焊、钨极气体保护焊外改变电弧电压范围"
     methodsByClass:
       次要因素:
       - 焊条电弧焊
@@ -1767,68 +1767,68 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 38
     category: 电特性
-    factor: 4）在直流电源上叠加或取消脉冲
+    factor: "4）在直流电源上叠加或取消脉冲电流"
     methodsByClass:
       次要因素:
       - 钨极气体保护焊
   - seq: 39
     category: 电特性
-    factor: 5）钨极的种类或
+    factor: "5）钨极的种类或直径"
     methodsByClass:
       次要因素:
       - 钨极气体保护焊
       - 等离子弧焊
   - seq: 40
     category: 电特性
-    factor: 6）从粗滴过渡、喷射过渡或脉冲
+    factor: "6）从粗滴过渡、喷射过渡或脉冲过渡改变为短路过渡，或反之"
     methodsByClass:
       重要因素:
       - 熔化极气体保护焊
   - seq: 41
     category: 电特性
-    factor: 7）与评定值相比，改变电弧时间超
+    factor: "7）与评定值相比，改变电弧时间超过±0.1s"
     methodsByClass:
       重要因素:
       - 螺柱电弧焊
   - seq: 42
     category: 电特性
-    factor: 8）与评定值相比，改变电流超
+    factor: "8）与评定值相比，改变电流超过±10%"
     methodsByClass:
       重要因素:
       - 螺柱电弧焊
   - seq: 43
     category: 电特性
-    factor: 9）改变焊接电源
+    factor: "9）改变焊接电源类型"
     methodsByClass:
       重要因素:
       - 螺柱电弧焊
   - seq: 44
     category: 电特性
-    factor: 10）电子束电流改变超过评定值±5%；电子束电压改变超过评定值±2%；焊接速度改
+    factor: "10）电子束电流改变超过评定值±5%；电子束电压改变超过评定值±2%；焊接速度改变超过评定值±2%；电子束焦点电流改变超过评定值±5%"
     methodsByClass:
       重要因素:
       - 电子束焊
   - seq: 45
     category: 电特性
-    factor: 11）电子枪至工件距离改变超过评定值±5%；振荡幅度或宽度改变超
+    factor: "11）电子枪至工件距离改变超过评定值±5%；振荡幅度或宽度改变超过评定值±20%；电子束脉动频率相对评定值发生改变"
     methodsByClass:
       重要因素:
       - 电子束焊
   - seq: 46
     category: 技术措施
-    factor: 1）从氧化焰改为
+    factor: "1）从氧化焰改为还原焰，或反之"
     methodsByClass:
       次要因素:
       - 气焊
   - seq: 47
     category: 技术措施
-    factor: 2）左焊法或右焊法
+    factor: "2）左焊法或右焊法"
     methodsByClass:
       次要因素:
       - 气焊
   - seq: 48
     category: 技术措施
-    factor: 3）不摆动焊或摆
+    factor: "3）不摆动焊或摆动焊"
     methodsByClass:
       次要因素:
       - 气焊
@@ -1839,7 +1839,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 49
     category: 技术措施
-    factor: 4）改变焊前清理
+    factor: "4）改变焊前清理和层间清理方法"
     methodsByClass:
       次要因素:
       - 气焊
@@ -1852,7 +1852,7 @@ nbt47014SpecificFactors:
       - 电子束焊
   - seq: 50
     category: 技术措施
-    factor: 5）改变清根方法
+    factor: "5）改变清根方法"
     methodsByClass:
       次要因素:
       - 焊条电弧焊
@@ -1862,7 +1862,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 51
     category: 技术措施
-    factor: 6）机动焊、自动焊措时，改变电极（焊施丝、钨极）摆动幅
+    factor: "6）机动焊、自动焊时，改变电极（焊丝、钨极）摆动幅度、频率和两端停留时间"
     methodsByClass:
       重要因素:
       - 电子束焊
@@ -1874,7 +1874,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 52
     category: 技术措施
-    factor: 7）改变导电嘴至
+    factor: "7）改变导电嘴至工件的距离"
     methodsByClass:
       次要因素:
       - 埋弧焊
@@ -1882,7 +1882,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 53
     category: 技术措施
-    factor: '*8）由每面多道焊'
+    factor: "*8）由每面多道焊改为每面单道焊"
     methodsByClass:
       补加因素:
       - 焊条电弧焊
@@ -1898,7 +1898,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 54
     category: 技术措施
-    factor: '*9）机动焊、自动焊时，单丝焊改为'
+    factor: "*9）机动焊、自动焊时，单丝焊改为多丝焊，或反之"
     methodsByClass:
       补加因素:
       - 埋弧焊
@@ -1913,7 +1913,7 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 55
     category: 技术措施
-    factor: 10）机动焊、自动焊时，改变电极
+    factor: "10）机动焊、自动焊时，改变电极间距"
     methodsByClass:
       次要因素:
       - 埋弧焊
@@ -1923,7 +1923,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 56
     category: 技术措施
-    factor: 11）从手工焊改为机动焊、自动焊，或
+    factor: "11）从手工焊改为机动焊、自动焊，或反之"
     methodsByClass:
       次要因素:
       - 焊条电弧焊
@@ -1932,7 +1932,7 @@ nbt47014SpecificFactors:
       - 钨极气体保护焊
   - seq: 57
     category: 技术措施
-    factor: 12）有无锤击焊缝
+    factor: "12）有无锤击焊缝"
     methodsByClass:
       次要因素:
       - 气焊
@@ -1944,7 +1944,7 @@ nbt47014SpecificFactors:
       - 气电立焊
   - seq: 58
     category: 技术措施
-    factor: 13）嘴孔、喷嘴
+    factor: "13）嘴孔、喷嘴尺寸"
     methodsByClass:
       次要因素:
       - 熔化极气体保护焊
@@ -1952,43 +1952,43 @@ nbt47014SpecificFactors:
       - 等离子弧焊
   - seq: 59
     category: 技术措施
-    factor: 14）改变螺柱焊枪施型号；与评定变化
+    factor: "14）改变螺柱焊枪型号；与评定变化值相比，提升高度变化超过0.8mm"
     methodsByClass:
       重要因素:
       - 螺柱电弧焊
   - seq: 60
     category: 技术措施
-    factor: 15）与评定值相比，工件外表面线
+    factor: "15）与评定值相比，工件外表面线速度变化量大于评定值±10%"
     methodsByClass:
       重要因素:
       - 摩擦焊
   - seq: 61
     category: 技术措施
-    factor: 16）顶锻压力变化
+    factor: "16）顶锻压力变化量大于评定值±10%"
     methodsByClass:
       重要因素:
       - 摩擦焊
   - seq: 62
     category: 技术措施
-    factor: 17）转动能量变化
+    factor: "17）转动能量变化量大于评定值±10%"
     methodsByClass:
       重要因素:
       - 摩擦焊
   - seq: 63
     category: 技术措施
-    factor: 18）顶锻变形量变化量大于评定值
+    factor: "18）顶锻变形量变化量大于评定值±10%"
     methodsByClass:
       重要因素:
       - 摩擦焊
   - seq: 64
     category: 技术措施
-    factor: 19）填丝焊改为小
+    factor: "19）填丝焊改为小孔焊，或反之"
     methodsByClass:
       重要因素:
       - 等离子弧焊
   - seq: 65
     category: 技术措施
-    factor: 20）对于纯钛、钛合金和锆、锆合金，在密封室内焊
+    factor: "20）对于纯钛、钛合金和锆、锆合金，在密封室内焊接，改变为密封室外焊接"
     methodsByClass:
       重要因素:
       - 钨极气体保护焊
@@ -1996,13 +1996,13 @@ nbt47014SpecificFactors:
       - 电子束焊
   - seq: 66
     category: 技术措施
-    factor: 21）改变射束流轴线对工件的角度；改变焊接设备的类型；真空焊接环
+    factor: "21）改变射束流轴线对工件的角度；改变焊接设备的类型；真空焊接环境压力增加超过评定值；灯丝种类、大小或外型的任何改变"
     methodsByClass:
       重要因素:
       - 电子束焊
   - seq: 67
     category: 技术措施
-    factor: 22）增加饰面焊道；改变焊接设备
+    factor: "22）增加饰面焊道；改变焊接设备的类型；单面焊改为双面焊，或反之"
     methodsByClass:
       重要因素:
       - 电子束焊

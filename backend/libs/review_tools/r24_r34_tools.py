@@ -90,7 +90,13 @@ def check_wps_pqr_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
         failed |= status == "failed"
         incomplete |= status == "evidence_insufficient"
         checks.append(check(f"work_{index}_wps_pqr_and_range_coverage", status == "passed", matched_wps, "approved_linked_and_covering"))
-        matrix.append({"workItemId": _id(work, index), "matchedWpsNos": matched_wps, "result": status, "reasonCodes": list(dict.fromkeys(reasons))})
+        row: dict[str, Any] = {"workItemId": _id(work, index), "matchedWpsNos": matched_wps, "result": status, "reasonCodes": list(dict.fromkeys(reasons))}
+        # 偏差项按 NB/T 47014-2023 表 5 标出标准自己的严重度：重要因素变了要重新评定，
+        # 补加因素变了要重做冲击，次要因素只需改 WPS（5.2.1）。只作提示，不改判定结论。
+        factor_classes = _factor_classes_for(reasons, _first(work, "weldingMethod", "method"))
+        if factor_classes:
+            row["nbt47014FactorClasses"] = factor_classes
+        matrix.append(row)
     return _output("check_wps_pqr_coverage", failed, incomplete, {"processType": process_type, "wpsPqrCoverageMatrix": matrix}, checks, R25_VERSION)
 
 
@@ -892,6 +898,38 @@ def _qualified_thickness_from_specimen(pqr: dict[str, Any], wps: dict[str, Any])
     if low is None or high is None:
         return None
     return Decimal(str(low)), Decimal(str(high))
+
+
+# 偏差原因码 → 表 5 里对应的因素关键词
+_DEVIATION_KEYWORDS = {
+    "current": "电流",
+    "voltage": "电压",
+    "weldingSpeed": "焊接速度",
+    "interpassTemperature": "道间",
+    "weldingMethod": "焊接方法",
+    "materialCategory": "母材",
+}
+
+
+def _factor_classes_for(reasons: list[str], welding_method: Any) -> dict[str, str]:
+    """把偏差项映射到 NB/T 47014-2023 表 5 的重要/补加/次要。
+
+    查不到分类的项不出现在结果里——表 5 没写就是没写，不编一个等级出来。
+    """
+    method = str(welding_method or "").strip()
+    if not method:
+        return {}
+    from libs.regulatory_tables import wps_factor_class
+
+    out: dict[str, str] = {}
+    for reason in reasons:
+        for field, keyword in _DEVIATION_KEYWORDS.items():
+            if not reason.startswith(field) or field in out:
+                continue
+            found = wps_factor_class(method, keyword)
+            if found:
+                out[field] = found
+    return out
 
 
 def _fit_up_limit(material: str, thickness: Decimal | None) -> Decimal | None:

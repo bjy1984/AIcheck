@@ -41,7 +41,7 @@ git -c core.quotePath=false ls-files \
 ssh "$HOST" "
   mkdir -p '$REMOTE_WS'
   docker run --rm -u root -v '$REMOTE_WS':/ws '$IMAGE' \
-    sh -c 'rm -rf /ws/output /ws/tmp /ws/backend/data/runtime-exports /ws/backend/ocr_eval/reports' || true
+    sh -c 'rm -rf /ws/output /ws/tmp /ws/backend/data/runtime-exports /ws/backend/ocr_eval/reports /ws/backend/data/aicheck.sqlite3' || true
 "
 rsync -a --files-from="$LIST" ./ "$HOST:$REMOTE_WS/"
 
@@ -52,6 +52,7 @@ ssh "$HOST" "
   find '$REMOTE_WS' -name '._*' -delete
   # 容器里跑的是 uid 999，这些目录测试要写
   mkdir -p '$REMOTE_WS'/output '$REMOTE_WS'/tmp '$REMOTE_WS'/backend/data/runtime-exports '$REMOTE_WS'/backend/ocr_eval/reports
-  chmod -R a+rwX '$REMOTE_WS'/output '$REMOTE_WS'/tmp '$REMOTE_WS'/backend/data '$REMOTE_WS'/backend/ocr_eval
+  # 容器以 uid 999 建的文件主机 chmod 不动（sqlite 库文件就是），失败不该中断整轮
+  chmod -R a+rwX '$REMOTE_WS'/output '$REMOTE_WS'/tmp '$REMOTE_WS'/backend/data '$REMOTE_WS'/backend/ocr_eval 2>/dev/null || true
   docker run --rm -v '$REMOTE_WS':/ws -w /ws/backend '$IMAGE' python -m pytest -q -p no:cacheprovider ${*:-tests}
 "
