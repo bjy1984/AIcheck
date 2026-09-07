@@ -110,3 +110,49 @@ def test_calculation_and_design_change_facts_feed_r06_and_r07() -> None:
     approval = evaluate_design_change_approval({"hasDesignChanges": True, "documents": changes["documents"], "pipelines": project_pipeline_facts(facts)})
     assert approval["result"] == "passed", approval
     assert approval["documentResults"][0]["requiredApprovalLevel"] == 4, "变更的是布置图且覆盖 GC1 管线 → 四级"
+
+
+def test_design_special_requirements_feed_r09_frozen_rules() -> None:
+    from libs.review_orchestrator.design_facts import (
+        design_special_requirements,
+        frozen_special_requirement_rules,
+        standard_ref_id,
+    )
+    from libs.review_tools.business_tools import evaluate_design_special_requirements
+
+    assert standard_ref_id("GB/T 20801.1-2025") == "STD-GBT-20801.1-2025" and standard_ref_id("TSG 31-2025") == "STD-TSG-31-2025"
+    text = (
+        "设计说明 依据 GB/T 20801.1-2025 与 TSG 31-2025。无损检测：焊缝采用射线检测(RT)，检测比例不低于 20%，Ⅱ级合格。"
+        "防腐：管道外表面喷砂除锈 Sa2.5，环氧富锌底漆两道，涂层厚度不小于 200μm。"
+        "耐压试验：液压试验，试验压力为设计压力的 1.5 倍，保压 10 min 无泄漏无变形。"
+        "泄漏试验：气密性试验，泄漏试验压力 1.6MPa，采用发泡剂检查无泄漏。"
+    )
+    pipelines = [{"pipelineId": "PL-101", "designPressureMPa": 1.6, "pipelineGrade": "GC1"}]
+    requirements = design_special_requirements(text, pipelines)
+    domains = requirements["domains"]
+    assert domains["ndt"]["specified"] and domains["ndt"]["requirements"]["coverage"] == "20%" and domains["ndt"]["requirements"]["acceptanceCriteria"] == "Ⅱ级"
+    assert "STD-GBT-20801.1-2025" in domains["ndt"]["standardRefs"] and "STD-TSG-31-2025" in domains["ndt"]["standardRefs"]
+    assert domains["pressureTest"]["requirements"]["testPressureRatio"] == 1.5 and domains["pressureTest"]["requirements"]["testPressureMeetsRatio"] is True
+    assert domains["leakTest"]["requirements"]["leakPressureNotBelowDesign"] is True
+    assert "喷砂" in domains["corrosion"]["requirements"]["protectionMethod"]
+
+    rules = frozen_special_requirement_rules()
+    assert set(rules) == {"ndt", "corrosion", "pressureTest", "leakTest"}
+    outcome = evaluate_design_special_requirements(
+        {
+            "requirements": domains,
+            "standardRules": rules,
+            "domains": ["ndt", "corrosion", "pressureTest", "leakTest"],
+            "requiredPathsByDomain": {
+                "ndt": ["requirements.method", "requirements.coverage", "requirements.acceptanceCriteria"],
+                "corrosion": ["requirements.protectionMethod", "requirements.acceptanceCriteria"],
+                "pressureTest": ["requirements.method", "requirements.testPressure", "requirements.acceptanceCriteria"],
+                "leakTest": ["requirements.method", "requirements.testPressure", "requirements.acceptanceCriteria"],
+            },
+        }
+    )
+    assert outcome["result"] == "passed", outcome
+
+    # 只写了"耐压试验压力 1.6MPa"（= 设计压力，倍数 1.0）→ 试验压力倍数不满足 → 不符合
+    weak = design_special_requirements("依据 GB/T 20801.1-2025。液压试验，试验压力 1.6MPa，保压 10min 无泄漏。", pipelines)
+    assert weak["domains"]["pressureTest"]["requirements"]["testPressureMeetsRatio"] is False

@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
+from libs.review_grounding import REGULATION_CODE_RE
 from libs.review_orchestrator.certificate_facts import _documents_by_version, _project_record
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
 
@@ -196,6 +198,14 @@ def build_design_business_facts(
         "designDocuments": {"documents": documents, "documentCount": len(documents)},
         "calculationDocuments": calculation_documents(documents, texts, pipelines),
         "designChanges": design_changes(documents, parse_by_version, texts, _project_record(state, project_id)),
+        # N-16/N-17：设计说明 / 设计规定的四领域要求；没有设计说明时退回全部设计文件正文
+        "designSpecialRequirements": design_special_requirements(
+            "\n".join(texts[str(item["documentVersionId"])] for item in documents if item.get("documentType") == "design_specification")
+            or "\n".join(texts.values()),
+            pipelines,
+            source={"documentVersionIds": [str(item["documentVersionId"]) for item in documents if item.get("documentType") == "design_specification"]},
+        ),
+        "fixedClauses": {"designSpecialRequirementRules": frozen_special_requirement_rules(review_run.get("businessPackId"))},
     }
 
 
@@ -285,3 +295,106 @@ def design_changes(documents: list[dict[str, Any]], parse_results: dict[str, dic
             }
         )
     return {"hasDesignChanges": bool(change_docs), "documents": output, "documentCount": len(output)}
+
+
+# ── N-16/N-17：设计文件上注明的无损检测 / 防腐 / 耐压试验 / 泄漏试验要求 ──────────────
+_NDT_METHOD_RE = re.compile(r"(射线|超声|渗透|磁粉|RT|UT|PT|MT|TOFD)", re.IGNORECASE)
+_NDT_COVERAGE_RE = re.compile(r"(?:检测比例|抽检比例|检测率|比例)\s*[:：]?\s*(?:不低于|不少于|≥|>=)?\s*(\d{1,3})\s*%")
+_NDT_LEVEL_RE = re.compile(r"([ⅠⅡⅢⅣIVX]{1,3}|[1-4])\s*级\s*(?:合格|为合格)?")
+_CORROSION_RE = re.compile(r"(防腐|涂层|涂料|油漆|环氧|喷砂|除锈|镀锌|保温)")
+_COATING_CRITERIA_RE = re.compile(r"(涂层厚度\s*[:：]?\s*(?:不小于|≥|>=)?\s*\d+\s*(?:μm|um|微米)|附着力[^\n。；;]{0,20}|除锈等级\s*[:：]?\s*Sa\s*\d(?:\.\d)?)")
+_PRESSURE_METHOD_RE = re.compile(r"(液压试验|水压试验|气压试验|气液组合|耐压试验|压力试验)")
+_TEST_PRESSURE_RE = re.compile(r"(?:试验压力|耐压试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
+_TEST_RATIO_RE = re.compile(r"(?:试验压力|耐压试验压力)[^\n。；;]{0,20}?(\d(?:\.\d+)?)\s*倍")
+_PRESSURE_CRITERIA_RE = re.compile(r"(无泄漏|无渗漏|无变形|无异常|保压\s*\d+\s*(?:min|分钟)|压力(?:无|不)下降)")
+_LEAK_METHOD_RE = re.compile(r"(泄漏试验|气密性试验|气密试验|泄漏性试验|真空试验|卤素|氦)")
+_LEAK_PRESSURE_RE = re.compile(r"(?:泄漏试验压力|气密性?试验压力|泄漏性试验压力)\s*[:：]?\s*(?:为|取)?\s*(\d+(?:\.\d+)?)\s*MPa", re.IGNORECASE)
+_LEAK_CRITERIA_RE = re.compile(r"(无泄漏|发泡剂|皂液|压力降\s*[^\n。；;]{0,15}|保压\s*\d+\s*(?:min|分钟))")
+
+_STD_ID_FIXES = {"GB/T": "GBT", "GB": "GB", "NB/T": "NBT", "JB/T": "JBT", "HG/T": "HGT", "SY/T": "SYT", "SH/T": "SHT", "TSG": "TSG"}
+
+
+def standard_ref_id(code: str) -> str:
+    """"GB/T 20801.1-2025" → "STD-GBT-20801.1-2025"，与规则包 standardRef 同一写法。"""
+    text = code.strip().upper().replace("—", "-").replace("–", "-")
+    match = re.match(r"([A-Z]+(?:/T)?)\s*([A-Z0-9.\-]+)", text)
+    if not match:
+        return f"STD-{re.sub(r'[^A-Z0-9.]+', '-', text)}"
+    prefix = _STD_ID_FIXES.get(match.group(1), match.group(1).replace("/", ""))
+    return f"STD-{prefix}-{match.group(2)}"
+
+
+def _domain(specified: bool, requirements: dict[str, Any], standard_refs: list[str], source: dict[str, Any]) -> dict[str, Any]:
+    return {"specified": specified, "requirements": {key: value for key, value in requirements.items() if value not in (None, "")}, "standardRefs": standard_refs, "source": source}
+
+
+def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, source: dict[str, Any] | None = None) -> dict[str, Any]:
+    """从设计说明/设计规定文本抽四领域要求；数值判定（试验压力倍数）在这里算好，规则只比布尔与存在性。"""
+    text = text or ""
+    standard_refs = list(dict.fromkeys(standard_ref_id(match.group(0)) for match in REGULATION_CODE_RE.finditer(text)))
+    source = source or {}
+    max_design_pressure = max((float(item["designPressureMPa"]) for item in pipelines if isinstance(item.get("designPressureMPa"), int | float)), default=None)
+
+    ndt_methods = list(dict.fromkeys(match.group(1).upper() for match in _NDT_METHOD_RE.finditer(text)))
+    coverage = _NDT_COVERAGE_RE.search(text)
+    level = _NDT_LEVEL_RE.search(text)
+    ndt = _domain(
+        bool(ndt_methods and (coverage or level)) or bool(re.search(r"无损检测", text) and ndt_methods),
+        {"method": "、".join(ndt_methods) or None, "coverage": f"{coverage.group(1)}%" if coverage else None, "coveragePercent": int(coverage.group(1)) if coverage else None, "acceptanceCriteria": f"{level.group(1)}级" if level else None},
+        standard_refs,
+        source,
+    )
+    corrosion_methods = list(dict.fromkeys(match.group(1) for match in _CORROSION_RE.finditer(text)))
+    coating = _COATING_CRITERIA_RE.search(text)
+    corrosion = _domain(bool(corrosion_methods), {"protectionMethod": "、".join(corrosion_methods) or None, "acceptanceCriteria": coating.group(1).strip() if coating else None}, standard_refs, source)
+
+    pressure_method = _PRESSURE_METHOD_RE.search(text)
+    test_pressure = _TEST_PRESSURE_RE.search(text)
+    ratio = _TEST_RATIO_RE.search(text)
+    pressure_criteria = _PRESSURE_CRITERIA_RE.search(text)
+    method_text = pressure_method.group(1) if pressure_method else None
+    required_ratio = 1.15 if method_text and "气压" in method_text else 1.5
+    test_pressure_value = float(test_pressure.group(1)) if test_pressure else None
+    ratio_value = float(ratio.group(1)) if ratio else (round(test_pressure_value / max_design_pressure, 3) if test_pressure_value and max_design_pressure else None)
+    pressure_test = _domain(
+        bool(pressure_method or test_pressure),
+        {
+            "method": method_text,
+            "testPressure": f"{test_pressure_value}MPa" if test_pressure_value is not None else (f"{ratio.group(1)}倍设计压力" if ratio else None),
+            "testPressureMPa": test_pressure_value,
+            "testPressureRatio": ratio_value,
+            "requiredTestPressureRatio": required_ratio,
+            "testPressureMeetsRatio": (ratio_value >= required_ratio) if ratio_value is not None else None,
+            "acceptanceCriteria": pressure_criteria.group(1) if pressure_criteria else None,
+        },
+        standard_refs,
+        source,
+    )
+    leak_method = _LEAK_METHOD_RE.search(text)
+    leak_pressure = _LEAK_PRESSURE_RE.search(text)
+    leak_criteria = _LEAK_CRITERIA_RE.search(text)
+    leak_value = float(leak_pressure.group(1)) if leak_pressure else None
+    leak_test = _domain(
+        bool(leak_method),
+        {
+            "method": leak_method.group(1) if leak_method else None,
+            "testPressure": f"{leak_value}MPa" if leak_value is not None else None,
+            "testPressureMPa": leak_value,
+            "designPressureMPa": max_design_pressure,
+            "leakPressureNotBelowDesign": (leak_value >= max_design_pressure) if leak_value is not None and max_design_pressure else None,
+            "acceptanceCriteria": leak_criteria.group(1) if leak_criteria else None,
+        },
+        standard_refs,
+        source,
+    )
+    return {"domains": {"ndt": ndt, "corrosion": corrosion, "pressureTest": pressure_test, "leakTest": leak_test}, "standardRefs": standard_refs}
+
+
+def frozen_special_requirement_rules(business_pack_id: str | None = None) -> dict[str, Any]:
+    """规则包 CLAUSE-PKG-R09 里冻结的 designSpecialRequirementRules（N-16）。"""
+    pack = load_business_pack(str(business_pack_id or DEFAULT_BUSINESS_PACK_ID))
+    for package in pack.get("standardClausePackages") or []:
+        if isinstance(package, dict) and str(package.get("sourceRuleId") or "") == "R09":
+            rules = package.get("designSpecialRequirementRules")
+            return dict(rules) if isinstance(rules, dict) else {}
+    return {}

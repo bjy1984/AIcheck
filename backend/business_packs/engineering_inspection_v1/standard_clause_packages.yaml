@@ -849,6 +849,66 @@ standardClausePackages:
       endPage: 130
       precision: page_range
       verificationStatus: text_verified
+  # N-16：四领域冻结判定规则。数值口径待法规核对（verifiedBy 为空前只作预警口径，见优化计划 §2.1）。
+  designSpecialRequirementRules:
+    ndt:
+      checks:
+      - code: method_specified
+        actualPath: requirements.method
+        operator: present
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 无损检测方法
+        verifiedBy: null
+      - code: coverage_specified
+        actualPath: requirements.coverage
+        operator: present
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 检测比例按管道级别
+        verifiedBy: null
+      - code: acceptance_level_specified
+        actualPath: requirements.acceptanceCriteria
+        operator: present
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 合格级别
+        verifiedBy: null
+    corrosion:
+      checks:
+      - code: protection_method_specified
+        actualPath: requirements.protectionMethod
+        operator: present
+        standardRef: STD-TSG-31-2025
+        sourceClause: TSG 31-2025 3.1.3.2(4)
+        verifiedBy: null
+    pressureTest:
+      checks:
+      - code: method_specified
+        actualPath: requirements.method
+        operator: present
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 压力试验
+        verifiedBy: null
+      - code: test_pressure_ratio
+        actualPath: requirements.testPressureMeetsRatio
+        operator: equals
+        expected: true
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 液压 1.5 倍 / 气压 1.15 倍设计压力
+        verifiedBy: null
+    leakTest:
+      checks:
+      - code: method_specified
+        actualPath: requirements.method
+        operator: present
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 泄漏试验
+        verifiedBy: null
+      - code: leak_pressure_not_below_design
+        actualPath: requirements.leakPressureNotBelowDesign
+        operator: equals
+        expected: true
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.5 泄漏试验压力不低于设计压力
+        verifiedBy: null
   atomicCheckIds:
   - AC-R09-01
   - AC-R09-02
