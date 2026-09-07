@@ -55,6 +55,7 @@ def model_cost_cny(
 ) -> dict[str, Any]:
     """按模型单价计费；没传 model 或表里没有时回退全局单价并标 priceSource=default。"""
     from libs.model_capabilities import PRICE_VERSION_TABLE, pricing_for
+    from libs.model_capabilities import unpriced_reason as _unpriced_reason
 
     normalized = normalize_model_usage(usage)
     price_source = "default"
@@ -93,6 +94,9 @@ def model_cost_cny(
         "priceVersion": price_version,
         "priceSource": price_source,
         "model": model or None,
+        # 没命中价目表时说清为什么——回退单价是按 qwen 定的，用在别家模型上金额是错的，
+        # 光看 priceSource=default 看不出这层含义（2026-09-07 线上审计发现）。
+        "unpricedReason": _unpriced_reason(model) if price_source != "table" else None,
     }
 
 

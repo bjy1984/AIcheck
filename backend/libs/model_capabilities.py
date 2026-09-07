@@ -107,6 +107,19 @@ DEFAULT_MODEL_PRICING_CNY: dict[str, dict[str, float]] = {
     "qwen-vl-max": {"input": 3.0, "output": 9.0},
 }
 
+# 能力表里有、但故意不写价的模型，以及不写的理由。
+#
+# 为什么要显式列出来：没有价目的模型会回退到全局 env 单价（按 qwen 定的），
+# 金额是错的却看不出来。2026-09-07 线上审计实测——deepseek-v4-pro 占历史模型调用的 55%
+# （113/204），一直按 qwen 单价计费。列在这里 + 配套用例，保证以后新增模型要么补价，
+# 要么明确写清为什么不补，不会再悄悄漏掉。
+UNPRICED_MODELS: dict[str, str] = {
+    "deepseek-v4-pro": "DeepSeek 2026-09 公开价未核实；用它计费前必须补价，否则按 qwen 全局单价错算",
+    "deepseek-v4-flash": "同上",
+    "qwen3.7-max": "百炼价目未核实",
+    "qwen3-": "前缀占位条目，不是真实模型",
+}
+
 
 def _match_prefix(model: str, table: dict[str, Any]) -> tuple[str | None, Any]:
     name = str(model or "").strip().lower()
@@ -169,6 +182,14 @@ def _pricing_table() -> dict[str, dict[str, float]]:
                         "output": float(value["output"]),
                     }
     return table
+
+
+def unpriced_reason(model: str | None) -> str | None:
+    """这个模型为什么没有单价；能定价时返回 None。给成本记录与审计用。"""
+    if pricing_for(model):
+        return None
+    key, reason = _match_prefix(str(model or ""), UNPRICED_MODELS)
+    return reason if key else "不在能力表与价目表里"
 
 
 def pricing_for(model: str | None) -> dict[str, Any] | None:

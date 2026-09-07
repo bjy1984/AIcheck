@@ -88,3 +88,43 @@ def test_model_cost_uses_per_model_pricing_when_known(monkeypatch) -> None:
     overridden = model_cost_cny(usage, model="official_api:qwen-flash")
     assert overridden["total"] == 2.0
     assert pricing_for("qwen-flash")["input"] == 1.0
+
+
+def test_every_capability_model_is_either_priced_or_explicitly_unpriced():
+    """能力表里的模型要么有单价，要么写清为什么没有——不许悄悄漏掉。
+
+    2026-09-07 线上审计：deepseek-v4-pro 占历史模型调用 55%，一直按 qwen 全局单价计费，
+    而 priceSource=default 这一个字段看不出「金额是错的」。
+    """
+    from libs.model_capabilities import (
+        MODEL_CAPABILITIES,
+        UNPRICED_MODELS,
+        pricing_for,
+        unpriced_reason,
+    )
+
+    missing = [m for m in MODEL_CAPABILITIES if not pricing_for(m) and not unpriced_reason(m)]
+    assert missing == [], f"这些模型既没单价也没写明原因：{missing}"
+
+    silent = [m for m in MODEL_CAPABILITIES if not pricing_for(m) and unpriced_reason(m) == "不在能力表与价目表里"]
+    assert silent == [], f"能力表里有却没在 UNPRICED_MODELS 里说明：{silent}"
+
+    # 说明本身要有内容，不能是空串占位
+    assert all(str(reason).strip() for reason in UNPRICED_MODELS.values())
+
+
+def test_cost_record_says_why_a_model_has_no_price():
+    """回退到全局单价时，成本记录要带原因；命中价目表时不带。"""
+    from libs.model_usage import model_cost_cny
+
+    usage = {"prompt_tokens": 10000, "completion_tokens": 1000}
+    priced = model_cost_cny(usage, model="qwen3.8-max")
+    assert priced["priceSource"] == "table" and priced["unpricedReason"] is None
+    assert priced["total"] == 0.084
+
+    fallback = model_cost_cny(usage, model="deepseek-v4-pro")
+    assert fallback["priceSource"] == "default"
+    assert "未核实" in fallback["unpricedReason"]
+
+    unknown = model_cost_cny(usage, model="brand-new-model")
+    assert unknown["unpricedReason"] == "不在能力表与价目表里"
