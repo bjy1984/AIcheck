@@ -76,6 +76,7 @@ from libs.review_orchestrator.r12_agent import (
     validate_r12_human_input,
 )
 from libs.review_orchestrator.r13_facts import build_r13_business_facts
+from libs.review_orchestrator.design_facts import DESIGN_FACT_NODES, build_design_business_facts
 from libs.review_orchestrator.pipeline_facts import merge_project_pipelines
 from libs.review_orchestrator.r14_facts import build_r14_business_facts
 from libs.review_orchestrator.r15_facts import build_r15_business_facts
@@ -1465,7 +1466,9 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         node = repo.node(str(review_run.get("projectId")), int(review_run.get("nodeId") or 0))
         context["project"] = project or {}
         context["node"] = node or {}
-        if int(review_run.get("nodeId") or 0) == 12:
+        if int(review_run.get("nodeId") or 0) in DESIGN_FACT_NODES:  # P11 N-06/N-07：设计节点事实
+            context["businessFacts"] = build_design_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 12:
             context["businessFacts"] = build_r12_business_facts(repo.state, review_run)
         elif int(review_run.get("nodeId") or 0) == 13:
             context["businessFacts"] = build_r13_business_facts(repo.state, review_run)
