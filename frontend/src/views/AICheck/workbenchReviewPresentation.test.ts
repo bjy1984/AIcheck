@@ -496,3 +496,18 @@ assert.equal(failedHistory[0].summary, '编排服务连接失败，本次审查�
     '需处理'
   )
 }
+
+// P8 H4：修复与升级都失败的分片要让人看见——结果只覆盖了部分证据。
+{
+  const { partialCoverageLabel } = await import('./workbenchReviewPresentation')
+  assert.equal(partialCoverageLabel(null), undefined)
+  assert.equal(partialCoverageLabel({ failedEvidenceShardIds: [] }), undefined)
+  assert.equal(
+    partialCoverageLabel({
+      failedEvidenceShardIds: ['ESHARD-2'],
+      evidenceCoverage: { expectedShardCount: 9 }
+    }),
+    '部分分片未完成 1/9'
+  )
+  assert.equal(partialCoverageLabel({ failedEvidenceShardIds: ['A', 'B'] }), '部分分片未完成 2 片')
+}

@@ -239,7 +239,7 @@ def test_model_review_calls_once_per_shard_and_records_bidirectional_lineage(
     )
 
 
-def test_model_failure_keeps_completed_sibling_and_marks_processing_incomplete(
+def test_model_failure_keeps_completed_sibling_and_reports_partial_coverage(
     monkeypatch,
 ) -> None:
     _manifest, shards = _install_package()
@@ -298,10 +298,13 @@ def test_model_failure_keeps_completed_sibling_and_marks_processing_incomplete(
     monkeypatch.setattr(ex, "qwen_runtime_client", lambda: FailingSecondRuntime())
     monkeypatch.setattr(ex, "model_cost_cny", lambda _usage, **_kwargs: {"total": 0.0})
 
-    with pytest.raises(EvidenceShardProcessingIncomplete) as error:
-        ex.generate_finding_drafts(review_run, _context())
+    # P8 H4：一片失败不再让整次审查 review_incomplete——完成的分片照常产出，
+    # 失败分片记进 failedEvidenceShardIds 由质量门禁标"部分分片未完成"。
+    drafts, metadata = ex.generate_finding_drafts(review_run, _context())
 
-    assert error.value.failed_shard_ids == ["ESHARD-2"]
+    assert drafts
+    assert metadata["failedShardIds"] == ["ESHARD-2"]
+    assert review_run["failedEvidenceShardIds"] == ["ESHARD-2"]
     assert shards[0]["status"] == "completed"
     assert shards[0]["findingDrafts"]
     assert shards[1]["status"] == "failed"

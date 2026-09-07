@@ -163,6 +163,13 @@ const ruleLabel = (rule: Record<string, unknown>) =>
             <AuditStatusTag :tone="conclusion.tone" round>{{ conclusion.verdict }}</AuditStatusTag>
             <strong class="ai-conclusion-headline">{{ conclusion.headline }}</strong>
             <span class="ai-conclusion-note">AI 建议，未经人工确认</span>
+            <span
+              v-if="presentation.partialCoverageLabel"
+              class="ai-conclusion-note is-partial"
+              title="修复与升级模型重试后仍失败的证据分片，这些证据没有被 AI 审到"
+            >
+              {{ presentation.partialCoverageLabel }}
+            </span>
           </div>
           <dl class="ai-conclusion-counts">
             <div class="is-red">
@@ -657,6 +664,12 @@ const ruleLabel = (rule: Record<string, unknown>) =>
   background: #fff5e0;
   border: 1px solid #f3dfb0;
   border-radius: 999px;
+}
+
+.ai-conclusion-note.is-partial {
+  color: var(--aicheck-danger, #b42318);
+  background: #fff5f4;
+  border-color: #f2d2cf;
 }
 
 .ai-conclusion-counts {

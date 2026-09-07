@@ -85,6 +85,8 @@ runtime = {
     "AICHECK_QWEN_CALL_MODE": "official_api",
     "AICHECK_LLM_API_BASE": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "AICHECK_LLM_MODEL_REVIEW": "qwen3.7-plus",
+    # P8 H4：分片信封修复失败后的升级模型（只对"模型没按契约输出"的分片重跑一次）。
+    "AICHECK_LLM_MODEL_REVIEW_ESCALATION": "qwen3.8-max",
     "AICHECK_LLM_MODEL_DEFAULT": "qwen3.7-plus",
     "AICHECK_LLM_MODEL_COMPARE_FAST": "qwen3.6-flash",
     # 一键分析（full-project-analysis）用 qwen3.8-max（2026-09-02 按要求升到 3.8 max）。

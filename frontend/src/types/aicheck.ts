@@ -459,6 +459,14 @@ export type AiReviewRun = {
    * 47 次文本为空或不是 findings JSON，监检人员看到的是"零发现 + 一句模板"。
    */
   findings?: Array<Record<string, unknown>>
+  /** P8 H4：修复与升级都失败的分片；非空时结果只覆盖部分证据。 */
+  failedEvidenceShardIds?: string[]
+  evidenceCoverage?: {
+    expectedShardCount?: number
+    completedShardCount?: number
+    failedShardCount?: number
+    coveragePassed?: boolean
+  }
   evidenceLinks: EvidenceLink[]
   createdAt?: string
   updatedAt?: string

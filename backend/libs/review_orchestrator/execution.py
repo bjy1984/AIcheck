@@ -55,7 +55,7 @@ from libs.review_grounding import (
     is_canonical_clause,
     merge_canonical_grounding_metadata,
 )
-from libs.review_orchestrator import shard_execution
+from libs.review_orchestrator import shard_execution, shard_recovery
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
@@ -1337,9 +1337,9 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             ai_run["llmMetadata"] = repo.clone(review_run.get("llmMetadata") or {})
             ai_run["reasoningProcess"] = (ai_run.get("llmMetadata") or {}).get("reasoningProcess")
             ai_run["llmResultText"] = (ai_run.get("llmMetadata") or {}).get("resultText")
-            deterministic_verdict = str(
-                next(iter(context.get("ruleResults") or []), {}).get("result") or ""
-            )
+            ai_run["evidenceCoverage"] = repo.clone(review_run.get("evidenceCoverage") or ai_run.get("evidenceCoverage") or {})
+            ai_run["failedEvidenceShardIds"] = list(review_run.get("failedEvidenceShardIds") or [])
+            deterministic_verdict = str(next(iter(context.get("ruleResults") or []), {}).get("result") or "")
             opinion = opinion_draft_from_findings(review_run.get("findingDrafts") or [], deterministic_verdict=deterministic_verdict)
             ai_run.setdefault("suggestion", {}).update(
                 {
@@ -1879,6 +1879,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         return result
     if node_key == "quality_gate":
         result = review_quality_gate(context.get("findingDrafts") or [], context.get("validationResults") or {})
+        result["failedShards"] = list(review_run.get("failedEvidenceShardIds") or [])  # P8 H4：部分分片未完成
+        result["partialCoverage"] = bool(result["failedShards"])
         context.setdefault("validationResults", {})[node_key] = result
         review_run["qualityGate"] = result
         append_review_event(
@@ -2267,7 +2269,7 @@ def _generate_finding_drafts_once(
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),
         "evidenceShardId": evidence_shard_id,
-        "stage": "review_generate_findings",
+        "stage": str(context.get("modelAttemptStage") or "review_generate_findings"),
         "callKind": "review_findings",
         "logicalCallId": logical_call_id,
         "attempt": attempt_number,
@@ -2295,7 +2297,7 @@ def _generate_finding_drafts_once(
     try:
         response = qwen_runtime_client().chat_sync(
             messages,
-            model=str(review_run.get("modelAlias") or "review-chat"),
+            model=str(context.get("modelOverride") or review_run.get("modelAlias") or "review-chat"),
             temperature=0.1,
             response_format={"type": "json_object"},
             max_tokens=budget_policy["maxOutputTokens"],
@@ -2467,7 +2469,8 @@ def _generate_finding_drafts_once(
 
 
 def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    return shard_execution.generate_sharded_finding_drafts(repo.state, review_run, context, mode=review_llm_execution_mode(), generate_once=_generate_finding_drafts_once)
+    # P8 H4：单次生成外包一层信封修复 → 升级模型重跑；失败分片只影响部分覆盖。
+    return shard_execution.generate_sharded_finding_drafts(repo.state, review_run, context, mode=review_llm_execution_mode(), generate_once=lambda run, ctx: shard_recovery.generate_with_recovery(run, ctx, generate_once=_generate_finding_drafts_once, normalize=normalize_llm_findings))
 
 
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:

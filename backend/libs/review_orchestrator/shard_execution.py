@@ -391,8 +391,13 @@ def generate_sharded_finding_drafts(
         "shardCalls": metadata_rows,
         "sourceModelAttemptIds": aggregate["sourceModelAttemptIds"],
     }
+    combined_metadata["failedShardIds"] = list(failed_shard_ids)
+    review_run["failedEvidenceShardIds"] = list(failed_shard_ids)
     review_run["llmMetadata"] = deepcopy(combined_metadata)
-    if not deterministic and failed_shard_ids:
+    # P8 H4：失败分片不再让整次审查 review_incomplete。修复与升级都试过仍失败的分片
+    # 记进 failedEvidenceShardIds，其余分片照常完成，质量门禁标"部分分片未完成"；
+    # 只有一片都没完成（没有任何可审的产出）才整次标未完成。
+    if not deterministic and failed_shard_ids and not shard_results:
         raise EvidenceShardProcessingIncomplete(failed_shard_ids)
     return aggregate["findingDrafts"], combined_metadata
 

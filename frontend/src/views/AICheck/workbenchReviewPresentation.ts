@@ -184,6 +184,8 @@ export type WorkbenchAiPresentation = {
   certificateVerification?: WorkbenchCertificateVerification
   /** 后端 suggestion.deterministicResult（passed/failed/evidence_insufficient/not_applicable）。 */
   deterministicResult?: string
+  /** P8 H4：部分证据分片修复与升级后仍失败时的提示，例如"部分分片未完成 1/9"。 */
+  partialCoverageLabel?: string
   errorMessage: string
   canRetry: boolean
   running: boolean
@@ -601,6 +603,15 @@ export const buildWorkbenchAiConclusion = ({
   }
 }
 
+export const partialCoverageLabel = (
+  run?: Pick<AiReviewRun, 'failedEvidenceShardIds' | 'evidenceCoverage'> | null
+): string | undefined => {
+  const failed = Array.isArray(run?.failedEvidenceShardIds) ? run.failedEvidenceShardIds.length : 0
+  if (!failed) return undefined
+  const expected = Number(run?.evidenceCoverage?.expectedShardCount || 0)
+  return expected > 0 ? `部分分片未完成 ${failed}/${expected}` : `部分分片未完成 ${failed} 片`
+}
+
 export const selectWorkbenchAiPresentation = ({
   projectAnalysis,
   projectAnalysisFinishedAt,
@@ -650,6 +661,7 @@ export const selectWorkbenchAiPresentation = ({
       (nodeRun as unknown as Record<string, unknown>).certificateVerification
     ),
     deterministicResult: String(nodeRun.suggestion?.deterministicResult || '') || undefined,
+    partialCoverageLabel: partialCoverageLabel(nodeRun),
     errorMessage: failed ? failureText : '',
     canRetry: failed ? nodeRun.failure?.retryable !== false : false,
     running
