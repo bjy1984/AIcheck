@@ -113,3 +113,47 @@ def test_weekly_sample_task_samples_and_flags_rubber_stamp(monkeypatch) -> None:
     )  # 凑够样本 ≥5
     again = run_blind_review_weekly_sample(state, now=NOW)
     assert again["rubberStampIndex"]["sampleSize"] >= 5 and again["alert"] is True
+
+
+def test_rubber_stamp_alert_sends_message_to_sampled_projects_only(monkeypatch) -> None:
+    """指数超阈值时发站内信——只发给出了盲审样本的项目，不给所有项目群发。"""
+    from apps.worker.tasks import notify_rubber_stamp_alert
+
+    state = {
+        "blind_review_tasks": [
+            {"status": "done", "projectId": "P-A"},
+            {"status": "done", "projectId": "P-A"},
+            {"status": "done", "projectId": "P-B"},
+            {"status": "open", "projectId": "P-C"},  # 没判完，不该收到
+        ],
+        "messages": [],
+    }
+    index = {"value": 0.0, "blindDivergence": 0.2, "regularDivergence": 0.2, "sampleSize": 6}
+    sent = notify_rubber_stamp_alert(state, index, 0.05)
+
+    assert len(sent) == 2
+    projects = {item["projectId"] for item in state["messages"]}
+    assert projects == {"P-A", "P-B"}, "只发给出了样本的项目"
+    message = state["messages"][0]
+    assert message["title"] == "橡皮图章指数低于阈值"
+    assert "+0.000" in message["content"] and "阈值 0.05" in message["content"]
+    assert message["read"] is False and message["targetType"] == "blind_review"
+
+    # 没有已判样本时不发
+    assert notify_rubber_stamp_alert({"blind_review_tasks": [], "messages": []}, index, 0.05) == []
+
+
+def test_weekly_task_notifies_when_index_breaches(monkeypatch) -> None:
+    """周任务里，报警与站内信是一起发生的。"""
+    from apps.worker.tasks import run_blind_review_weekly_sample
+
+    monkeypatch.setenv("AICHECK_RUBBER_STAMP_ALERT_THRESHOLD", "0.05")
+    state = _state(30)
+    for opinion in state["review_opinions"]:
+        opinion["createdAt"] = NOW.strftime("%Y-%m-%d %H:%M:%S")
+    run_blind_review_weekly_sample(state, now=NOW)
+    for task in state["blind_review_tasks"]:
+        ai = "需补正" if task["aiResult"] == "建议不符合" else "满足要求"
+        record_blind_decision(task, result=ai, reviewer_name="李工", comment=None, now=NOW)
+    state["blind_review_tasks"].extend({**t, "id": f"{t['id']}-x{i}"} for i, t in enumerate(list(state["blind_review_tasks"])))
+    assert run_blind_review_weekly_sample(state, now=NOW)["alert"] is True

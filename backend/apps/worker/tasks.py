@@ -5860,8 +5860,49 @@ def blind_review_weekly_sample(self) -> dict[str, Any]:
     if result["sampled"]:
         repo.add_audit("每周盲审抽样", "BlindReviewBatch", str(result["batchId"]))
     if result["alert"]:
-        # 橡皮图章指数低于阈值：常规审查基本照抄 AI。审计留痕 + 日志，前端盲审页同口径红条
-        repo.add_audit("橡皮图章指数低于阈值", "BlindReviewIndex", f"{result['rubberStampIndex'].get('value')}<{result['threshold']}")
-        logging.getLogger(__name__).warning("rubber-stamp index %s below threshold %s (sample=%s)", result["rubberStampIndex"].get("value"), result["threshold"], result["rubberStampIndex"].get("sampleSize"))
-    flush_state({"blind_review_tasks", "audit_logs"}, selected_singleton_keys=set())
+        # 橡皮图章指数低于阈值：常规审查基本照抄 AI。
+        # 只写审计日志与页面红条是不够的——没人会主动去翻审计日志，指标掉下去也没人知道。
+        # 这里同时发一条站内信，走的是既有的 messages 通道（项目待办面板会显示）。
+        index = result["rubberStampIndex"]
+        repo.add_audit("橡皮图章指数低于阈值", "BlindReviewIndex", f"{index.get('value')}<{result['threshold']}")
+        logging.getLogger(__name__).warning(
+            "rubber-stamp index %s below threshold %s (sample=%s)",
+            index.get("value"), result["threshold"], index.get("sampleSize"),
+        )
+        result["notified"] = notify_rubber_stamp_alert(repo.state, index, result["threshold"])
+    flush_state({"blind_review_tasks", "audit_logs", "messages"}, selected_singleton_keys=set())
     return result
+
+
+def notify_rubber_stamp_alert(state: dict[str, Any], index: dict[str, Any], threshold: float) -> list[str]:
+    """给有盲审样本的项目各发一条站内信；返回发出的消息 id。
+
+    收件范围按"这些盲审任务落在哪些项目"来定，而不是给所有项目群发——
+    指数是按样本算的，只有出样本的项目才需要看这条。
+    """
+    tasks = [item for item in state.get("blind_review_tasks") or [] if isinstance(item, dict) and item.get("status") == "done"]
+    project_ids = sorted({str(item.get("projectId")) for item in tasks if item.get("projectId")})
+    if not project_ids:
+        return []
+    value = index.get("value")
+    content = (
+        f"本周盲审的橡皮图章指数为 {value:+.3f}（阈值 {threshold}，样本 {index.get('sampleSize')} 个）。"
+        f"盲审差异率 {index.get('blindDivergence')}、常规差异率 {index.get('regularDivergence')}——"
+        "两者接近说明常规审查基本照抄了 AI 结论，建议安排培训并调整结论卡展示。"
+    )
+    sent: list[str] = []
+    state.setdefault("messages", [])
+    for project_id in project_ids:
+        message = {
+            "id": f"MSG-RSI-{uuid4().hex[:8].upper()}",
+            "title": "橡皮图章指数低于阈值",
+            "content": content,
+            "projectId": project_id,
+            "targetType": "blind_review",
+            "targetId": "rubber-stamp-index",
+            "read": False,
+            "createdAt": server_time(),
+        }
+        state["messages"].insert(0, message)
+        sent.append(message["id"])
+    return sent
