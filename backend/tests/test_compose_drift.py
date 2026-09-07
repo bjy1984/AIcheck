@@ -18,6 +18,7 @@ from scripts.compose_drift_check import (
     declared_services,
     drift,
     gateway_exemption,
+    temporal_exemption,
 )
 
 # 2026-08-13 线上实测的容器清单
@@ -149,3 +150,41 @@ def test_service_name_mapping_covers_every_declared_service() -> None:
         and (services[name].get("container_name") or "") != f"aicheck-{name}"
     ]
     assert unmapped == [], f"这些服务的容器名靠猜：{unmapped}"
+
+
+def test_temporal豁免是查出来的不是写死的() -> None:
+    """2026-09-07 线上审计：部署探针每次都报 aicheck-temporal「声明了却没在跑」。
+
+    实际编排是 inline，Temporal 根本用不上，只是豁免名单里没登记它。
+    常红的噪音本身不致命，致命的是真漂移出现时会被它盖住——这正是 litellm 那次的形状。
+
+    所以豁免和网关一样去查生产配置：编排模式改回 temporal，报警必须自动回来。
+    """
+    from pathlib import Path as _Path
+    from tempfile import TemporaryDirectory
+
+    # 当前生产声明 inline → Temporal 一套可以合法缺席
+    assert "inline" in temporal_exemption()
+
+    with TemporaryDirectory() as tmp:
+        # 改成 temporal 编排 → 豁免立刻失效，缺容器要重新报警
+        temporal = _Path(tmp) / "builder.py"
+        temporal.write_text('"AICHECK_REVIEW_ORCHESTRATION": "temporal",\n', encoding="utf-8")
+        assert temporal_exemption(temporal) == ""
+
+        # 压根没声明编排模式，也不给豁免（不能靠"没写"来免检）
+        silent = _Path(tmp) / "s.py"
+        silent.write_text('"AICHECK_QWEN_CALL_MODE": "official_api",\n', encoding="utf-8")
+        assert temporal_exemption(silent) == ""
+
+
+def test_inline编排下temporal不再报成漂移() -> None:
+    """按当前生产实际在跑的容器算一次，missing 必须为空——探针不该有常红项。"""
+    running = {
+        "aicheck-api", "aicheck-postgres", "aicheck-redis", "aicheck-minio", "aicheck-web",
+        "aicheck-onlyoffice", "aicheck-ocr-service", "aicheck-worker-business",
+        "aicheck-worker-cpu-heavy", "aicheck-worker-llm", "aicheck-worker-ocr-remote",
+    }
+    report = drift(running, declared_services())
+    assert report["missing"] == [], f"仍有声明了却没跑的容器：{report['missing']}"
+    assert "aicheck-temporal" not in report["missing"]

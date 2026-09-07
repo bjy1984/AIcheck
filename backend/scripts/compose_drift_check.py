@@ -109,11 +109,11 @@ _GATEWAY_CONSUMERS = {"litellm-service"}
 
 
 def model_path_declaration(builder_path: Path | None = None) -> dict[str, str]:
-    """读生产 env 生成器里声明的模型链路配置。"""
+    """读生产 env 生成器里声明的运行时配置（模型链路 + 编排模式）。"""
     path = builder_path or (BACKEND_ROOT / "deploy" / "build_runtime_env.py")
     source = path.read_text(encoding="utf-8")
     declared: dict[str, str] = {}
-    for key in ("AICHECK_QWEN_CALL_MODE", "AICHECK_LLM_API_BASE"):
+    for key in ("AICHECK_QWEN_CALL_MODE", "AICHECK_LLM_API_BASE", "AICHECK_REVIEW_ORCHESTRATION"):
         match = re.search(rf'"{key}":\s*"([^"]*)"', source)
         if match:
             declared[key] = match.group(1)
@@ -131,6 +131,26 @@ def gateway_exemption(builder_path: Path | None = None) -> str:
         # 声明成直连却指回网关，说明配置自相矛盾，不给豁免
         return ""
     return f"生产声明为 official_api 直连（{base}），不经网关；见 deploy/build_runtime_env.py"
+
+
+# Temporal 相关容器只在编排走 temporal 时才该跑。
+_TEMPORAL_CONSUMERS = {"temporal-service", "temporal-ui", "temporal-admin-tools", "temporal-postgres"}
+
+
+def temporal_exemption(builder_path: Path | None = None) -> str:
+    """Temporal 一套容器是否可以合法缺席。可以则返回理由，不可以返回空串。
+
+    和网关豁免同一套做法：**去查生产配置**，不写死一句会过期的手写理由。
+    2026-09-07 线上审计发现，部署探针每次都报 aicheck-temporal「声明了却没在跑」——
+    实际编排模式是 inline，Temporal 根本用不上，但豁免名单里没登记它。
+    这条常红的噪音最危险的地方不是它自己，而是真漂移出现时会被它盖住。
+
+    编排模式一旦改回 temporal，这里立刻不再豁免，报警自动回来。
+    """
+    mode = model_path_declaration(builder_path).get("AICHECK_REVIEW_ORCHESTRATION", "")
+    if mode != "inline":
+        return ""
+    return "生产声明编排为 inline（AICHECK_REVIEW_ORCHESTRATION=inline），不经 Temporal；见 deploy/build_runtime_env.py"
 
 
 def declared_services(compose_path: Path | None = None) -> dict[str, Any]:
@@ -151,6 +171,8 @@ def drift(running: set[str], services: dict[str, Any]) -> dict[str, list[str]]:
     exempt = set(INTENTIONALLY_ABSENT) | set(UNRESOLVED_DRIFT)
     if gateway_exemption():
         exempt |= _GATEWAY_CONSUMERS
+    if temporal_exemption():
+        exempt |= _TEMPORAL_CONSUMERS
     expected = {
         SERVICE_TO_CONTAINER.get(name, f"aicheck-{name}")
         for name in services
