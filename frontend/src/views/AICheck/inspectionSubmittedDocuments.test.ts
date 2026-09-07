@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const workbenchSource = readFileSync(new URL('./Workbench.vue', import.meta.url), 'utf8')
+// 退回补正的动作已搬到 composable（巨石棘轮），提交资料的绑定过滤在那里断言
+const reviewActionsSource = readFileSync(
+  new URL('./useWorkbenchReviewActions.ts', import.meta.url),
+  'utf8'
+)
 const apiSource = readFileSync(new URL('../../api/aicheck/index.ts', import.meta.url), 'utf8')
 const actionBarSource = readFileSync(
   new URL('./components/WorkbenchActionBar.vue', import.meta.url),
@@ -21,7 +26,7 @@ assert.match(workbenchSource, /已提交审查资料/)
 assert.match(workbenchSource, /label="提交审查时间"/)
 assert.match(workbenchSource, /row\.submittedAt/)
 assert.match(workbenchSource, /binding\.bindingStatus === '已提交'/)
-assert.match(workbenchSource, /bindingIds: submittedBindingIds/)
+assert.match(reviewActionsSource, /bindingIds: submittedBindingIds/)
 assert.match(mockSource, /inspection\\\/submitted-documents/)
 assert.match(mockSource, /SUBMISSION_WITHDRAW_NOT_ALLOWED/)
 assert.doesNotMatch(workbenchSource, /currentVersion\?\.uploadTime \|\| file\.updatedAt/)

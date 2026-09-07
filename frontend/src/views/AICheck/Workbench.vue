@@ -40,14 +40,12 @@ import {
   View
 } from '@element-plus/icons-vue'
 import {
-  adoptAiSuggestionApi,
   archiveReportApi,
   bindDocumentsToNodeApi,
   bindInspectionDocumentsApi,
   completeTodoApi,
   completeDocumentUploadSessionApi,
   completeNdtReportUploadSessionApi,
-  confirmNodeEvidenceLinkApi,
   createNdtFilmApi,
   createDocumentUploadSessionApi,
   createInspectionAttachmentUploadSessionApi,
@@ -90,11 +88,8 @@ import {
   listTodosApi,
   markAllMessagesReadApi,
   markMessageReadApi,
-  rejectAiSuggestionApi,
-  rejectNodeEvidenceLinkApi,
   retryDocumentUploadApi,
   requestAiRecheckApi,
-  returnCorrectionApi,
   saveReviewOpinionApi,
   saveSubmissionDraftApi,
   searchApi,
@@ -237,12 +232,8 @@ import ReportArchivePanel from './components/ReportArchivePanel.vue'
 import ReportDetailDrawer from './components/ReportDetailDrawer.vue'
 import ReviewDecisionPanel from './components/ReviewDecisionPanel.vue'
 import WorkbenchAiReviewPanel from './components/WorkbenchAiReviewPanel.vue'
-import {
-  AI_RESULT_TO_OPINION,
-  EVIDENCE_REJECT_REASONS,
-  pickReason,
-  useAiFindingFeedback
-} from './aiFindingFeedback'
+import { useWorkbenchReviewActions } from './useWorkbenchReviewActions'
+import { AI_RESULT_TO_OPINION, useAiFindingFeedback } from './aiFindingFeedback'
 import RoleContextPanel from './components/RoleContextPanel.vue'
 import SubmissionBatchDialog from './components/SubmissionBatchDialog.vue'
 import SubmissionDetailDrawer from './components/SubmissionDetailDrawer.vue'
@@ -758,8 +749,6 @@ const workbenchAiHistory = computed(() =>
     nodeRuns: nodePackage.value?.aiRuns || []
   })
 )
-// P12 F1：结论卡上的发现级反馈 + 采纳/驳回/审查意见不一致的原因，全部写 ai_feedback。
-// 反馈挂在当前展示的节点运行上；一键分析视图没有节点 AiRun 时退回最近一次节点复核。
 const {
   decisions: aiFindingDecisions,
   busy: aiFeedbackBusy,
@@ -780,16 +769,7 @@ const {
   ensureWritable: () => ensureWritableNode(),
   reload: () => loadNodePackage(activeNodeId.value, { silent: true })
 })
-/** 「据此退回补正」：把发现填进退回原因，退回时带上 finding id 与建议动作。 */
 const pendingCorrectionFinding = ref<WorkbenchAiFinding>()
-const handleReturnCorrectionFromFinding = (finding: WorkbenchAiFinding) => {
-  if (!ensureWritableNode()) return
-  pendingCorrectionFinding.value = finding
-  correctionReason.value =
-    `${finding.title}${finding.description ? `：${finding.description}` : ''}`.slice(0, 500)
-  activeSideTab.value = 'opinion'
-  ElMessage.info('已按该条发现填入退回原因，请核对后点击「退回补正」')
-}
 const inspectionReviewAuditItems = computed(() =>
   inspectionReviewDirectoryItemsWithAiStatus(
     inspectionReviewAuditItemsBase.value,
@@ -2925,16 +2905,6 @@ const handleProjectChange = async () => {
   await loadProjectBundle()
 }
 
-/** P9 R4：工程级结果表点"查看节点"→ 切到该节点（与左侧树点选同一路径）。 */
-const handleProjectAnalysisSelectNode = async (nodeId: number) => {
-  const node = projectTreeNodes.value.find((item) => item.nodeId === nodeId)
-  if (!node) {
-    ElMessage.warning(`当前项目树里没有节点 ${nodeId}`)
-    return
-  }
-  await handleNodeSelect(node)
-}
-
 const handleNodeSelect = async (node: ProjectTreeNode) => {
   mobileTreeOpen.value = false
   const routeItem = inspectionReviewItemKey(route.query.auditItem)
@@ -4340,109 +4310,44 @@ const handleSaveReviewOpinion = async () => {
   }
 }
 
-const handleAdoptAiSuggestion = async (suggestionId: string) => {
-  if (!ensureWritableNode() || !latestAiRun.value) return
-  if (latestAiReviewDisplay.value.failed) {
-    ElMessage.warning('本次 AI 复核失败，未生成可采纳的建议。')
-    return
-  }
-  const confirmed = await confirmIrreversibleAction({
-    title: '采纳 AI 建议',
-    message: `将以 AI 建议「${latestAiRun.value.suggestion.result}」生成人工结论草稿。AI 建议不能替代人工判断，请确认已核对证据与条款依据。`,
-    confirmText: '确认采纳'
-  })
-  if (!confirmed) return
-  actionLoading.value = true
-  try {
-    const aiResult = latestAiRun.value.suggestion.result
-    // AI 建议结论 → 人工结论预填（口径见 aiFindingFeedback.AI_RESULT_TO_OPINION）。
-    const normalizedResult = AI_RESULT_TO_OPINION[aiResult]
-    const res = await adoptAiSuggestionApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      suggestionId,
-      {
-        result: normalizedResult,
-        opinion: latestAiRun.value.suggestion.opinionDraft,
-        evidenceLinkIds: selectedReviewEvidenceIds.value,
-        reason: '采纳 AI 建议作为人工审查草稿。'
-      },
-      {
-        etag: currentProject.value?.etag
-      }
-    )
-    if (!res) {
-      showActionError('AI 建议采纳失败，请刷新 AI 建议后重试。')
-      return
-    }
-    reviewResult.value = res.data.draftOpinion.result
-    reviewOpinion.value = res.data.draftOpinion.opinion
-    selectedReviewEvidenceIds.value = res.data.draftOpinion.evidenceLinkIds || []
-    draftRequiresEvidenceSelection.value = Boolean(res.data.draftOpinion.requiresEvidenceSelection)
-    activeSideTab.value = 'opinion'
-    if (res.data.draftOpinion.requiresEvidenceSelection) {
-      rememberActionBlocker(
-        'AI 建议已转为草稿，但仍需选择证据',
-        '请选择当前节点 confirmed 证据后再保存正式审查意见。'
-      )
-      activeSideTab.value = 'evidence'
-      ElMessage.warning('AI 建议已采纳为草稿，但仍需人工选择 confirmed 证据')
-    } else {
-      actionBlocker.value = undefined
-      ElMessage.success('AI 建议已采纳为审查草稿')
-    }
-    await recordAiRunDecision(true, '采纳 AI 建议作为人工审查草稿。')
-    await loadNodePackage(activeNodeId.value)
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-const handleRejectAiSuggestion = async (suggestionId: string) => {
-  if (!ensureWritableNode()) return
-  let rejectionReason = ''
-  try {
-    const prompt = await ElMessageBox.prompt(
-      '请说明 AI 建议与人工判断不一致的具体原因。该说明会进入审计日志。',
-      '驳回 AI 建议',
-      {
-        confirmButtonText: '确认驳回',
-        cancelButtonText: '取消',
-        inputType: 'textarea',
-        inputPlaceholder: '填写证据、规则或结论方面的差异',
-        inputValidator: (value) =>
-          value.trim().length >= 4 ? true : '请至少填写 4 个字符的具体原因'
-      }
-    )
-    rejectionReason = prompt.value.trim()
-  } catch {
-    return
-  }
-  actionLoading.value = true
-  try {
-    const res = await rejectAiSuggestionApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      suggestionId,
-      {
-        reason: rejectionReason,
-        manualOpinion: reviewOpinion.value
-      },
-      {
-        etag: currentProject.value?.etag
-      }
-    )
-    if (!res) {
-      showActionError('AI 建议驳回失败，请刷新 AI 建议后重试。')
-      return
-    }
-    await recordAiRunDecision(false, rejectionReason)
-    ElMessage.success('AI 建议已驳回')
-    await loadNodePackage(activeNodeId.value)
-  } finally {
-    actionLoading.value = false
-  }
-}
+const {
+  handleAdoptAiSuggestion,
+  handleRejectAiSuggestion,
+  handleConfirmEvidence,
+  handleRejectEvidence,
+  handleReturnCorrectionFromFinding,
+  handleReturnCorrection,
+  handleProjectAnalysisSelectNode
+} = useWorkbenchReviewActions({
+  findTreeNode: (nodeId) => projectTreeNodes.value.find((item) => item.nodeId === nodeId),
+  selectNode: (node) => handleNodeSelect(node),
+  activeProjectId,
+  activeNodeId,
+  latestAiRun,
+  latestAiReviewFailed: () => latestAiReviewDisplay.value.failed,
+  reviewResult,
+  reviewOpinion,
+  correctionReason,
+  selectedReviewEvidenceIds,
+  draftRequiresEvidenceSelection,
+  activeSideTab,
+  actionLoading,
+  actionBlocker,
+  pendingCorrectionFinding,
+  etag: () => currentProject.value?.etag,
+  submittedBindingIds: () =>
+    bindings.value
+      .filter((binding) => binding.bindingStatus === '已提交')
+      .map((binding) => binding.id),
+  evidenceLinkIds: () => evidenceLinks.value.map((item) => item.id),
+  ensureWritableNode: () => ensureWritableNode(),
+  confirmIrreversibleAction: (options) => confirmIrreversibleAction(options),
+  rememberActionBlocker: (title, message) => rememberActionBlocker(title, message),
+  showActionError: (message) => showActionError(message),
+  loadNodePackage: (nodeId, options) => loadNodePackage(nodeId, options),
+  loadProjectBundle: () => loadProjectBundle(),
+  recordAiRunDecision: (accepted, comment) => recordAiRunDecision(accepted, comment)
+})
 
 const handleLocateEvidence = (evidence: EvidenceLink) => {
   activeEvidence.value = evidence
@@ -4561,110 +4466,6 @@ const handleSubmitR19HumanInput = async (payload: {
     ElMessage.error(getAicheckErrorMessage(error, 'R19 人工确认提交失败，请刷新后重试。'))
   } finally {
     humanInputLoading.value = false
-  }
-}
-
-const handleConfirmEvidence = async (evidence: EvidenceLink) => {
-  if (!ensureWritableNode()) return
-  actionLoading.value = true
-  try {
-    const res = await confirmNodeEvidenceLinkApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      evidence.id,
-      { comment: '监检人员确认采用该证据。' },
-      { etag: currentProject.value?.etag }
-    )
-    if (!res) {
-      showActionError('证据确认失败，请刷新后重试。')
-      return
-    }
-    ElMessage.success('证据已确认')
-    await loadNodePackage(activeNodeId.value, { silent: true })
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-const handleRejectEvidence = async (evidence: EvidenceLink) => {
-  if (!ensureWritableNode()) return
-  const reason = await pickReason({
-    title: '不采用该证据',
-    message: '请选择不采用的原因，会写入该证据的人工备注并用于证据抽取的纠正。',
-    reasons: EVIDENCE_REJECT_REASONS,
-    allowNote: true,
-    confirmText: '确认不采用'
-  })
-  if (!reason) return
-  actionLoading.value = true
-  try {
-    const res = await rejectNodeEvidenceLinkApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      evidence.id,
-      {
-        comment: reason.note ? `${reason.label}：${reason.note}` : reason.label,
-        reasonCode: reason.code
-      },
-      { etag: currentProject.value?.etag }
-    )
-    if (!res) {
-      showActionError('证据不采用失败，请刷新后重试。')
-      return
-    }
-    ElMessage.success('已标记为不采用')
-    await loadNodePackage(activeNodeId.value, { silent: true })
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-const handleReturnCorrection = async () => {
-  if (!ensureWritableNode()) return
-  if (!correctionReason.value.trim()) {
-    ElMessage.warning('请填写退回补正原因')
-    return
-  }
-  const submittedBindingIds = bindings.value
-    .filter((binding) => binding.bindingStatus === '已提交')
-    .map((binding) => binding.id)
-  if (!submittedBindingIds.length) {
-    ElMessage.warning('当前节点没有可退回的已提交资料')
-    return
-  }
-  const confirmed = await confirmIrreversibleAction({
-    title: '退回补正',
-    message: `将退回 ${submittedBindingIds.length} 份已提交资料并通知施工方整改，节点状态转为「需补正」。确认退回？`,
-    confirmText: '确认退回'
-  })
-  if (!confirmed) return
-  actionLoading.value = true
-  try {
-    const res = await returnCorrectionApi(
-      activeProjectId.value,
-      activeNodeId.value,
-      {
-        reason: correctionReason.value.trim(),
-        bindingIds: submittedBindingIds,
-        evidenceLinkIds: evidenceLinks.value.map((item) => item.id),
-        sourceFindingIds: pendingCorrectionFinding.value
-          ? [pendingCorrectionFinding.value.id]
-          : undefined,
-        suggestedAction: pendingCorrectionFinding.value?.suggestedAction || undefined
-      },
-      {
-        etag: currentProject.value?.etag
-      }
-    )
-    if (!res) {
-      showActionError('退回补正失败，请检查补正原因和节点权限。')
-      return
-    }
-    ElMessage.success('已退回施工方补正')
-    pendingCorrectionFinding.value = undefined
-    await loadProjectBundle()
-  } finally {
-    actionLoading.value = false
   }
 }
 
