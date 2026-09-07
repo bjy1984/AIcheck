@@ -810,7 +810,51 @@ pipeMaterialLimits:
           composition: {C: "0.17-0.23", Si: "0.17-0.37", Mn: "0.35-0.65", P: "<=0.025", S: "<=0.020", Cr: "<=0.25", Ni: "<=0.30", Cu: "<=0.20"}
           mechanical: {tensileMPa: "410-550", yieldMPaMinByThickness: {"<=16mm": 245, ">16mm": 235}, elongationPctMin: 20}
           hotYieldRp02MPa: {200: 188, 250: 170, 300: 149, 350: 137, 400: 134, 450: 132}
+    - standard: GB/T 14976-2025
+      name: 输送流体用不锈钢无缝钢管
+      effectiveFrom: "2026-02-01"
+      extractedFrom: official_pdf_ocr_page_images
+      sourceClause: 表 2 钢的牌号和化学成分（熔炼分析）、表 3 钢管室温拉伸性能、附录 A 低温工况附加要求
+      verifiedBy: null
+      note: 2012 版已废止。断后伸长率分纵向/横向两列，022 系低碳牌号是 40/35，06 系是 35/30——调研报告里"A ≥35 还是 ≥40"的疑问按牌号与取样方向区分，不是版本冲突
+      lowTemperatureAnnex:
+        appliesWhen: 设计温度低于 -101℃（如液化天然气用管），按附录 A
+        manufacturing: 冷轧（拔）无缝
+        tensile: {grades: [S30403, S30408, S31603, S31608], tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 40, elongationPctMinTransverse: 35}
+        impact: {temperatureC: -196, "10x10": {avgLongitudinalJMin: 60, avgTransverseJMin: 48, singleLongitudinalJMin: 42, singleTransverseJMin: 34, lateralExpansionMmMin: 0.38}, "10x7.5": {avgLongitudinalJMin: 45, avgTransverseJMin: 36, singleLongitudinalJMin: 31, singleTransverseJMin: 25, lateralExpansionMmMin: 0.38}}
+        note: 钢管尺寸不足以截取 10mm×2.5mm 冲击试样时不做冲击；设计温度低于 -196℃ 由供需双方协商
+      gradeCoverage: 表 2/表 3 共 32 个牌号，这里先录工业管道最常用的六个奥氏体牌号，其余待补
+      grades:
+        - grade: S30210
+          alias: 12Cr18Ni9
+          composition: {C: "<=0.15", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-10.00", Cr: "17.00-19.00", N: "<=0.10"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S30403
+          alias: 022Cr19Ni10
+          composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-12.00", Cr: "18.00-20.00"}
+          mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMinLongitudinal: 40, elongationPctMinTransverse: 35}
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S30408
+          alias: 06Cr19Ni10
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "8.00-11.00", Cr: "18.00-20.00"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          heatTreatment: 1010℃~1150℃，水冷或其他方式快冷
+        - grade: S31603
+          alias: 022Cr17Ni12Mo2
+          composition: {C: "<=0.030", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-14.00", Cr: "16.00-18.00", Mo: "2.00-3.00"}
+          mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMinLongitudinal: 40, elongationPctMinTransverse: 35}
+        - grade: S31608
+          alias: 06Cr17Ni12Mo2
+          composition: {C: "<=0.08", Si: "<=1.00", Mn: "<=2.00", P: "<=0.035", S: "<=0.030", Ni: "10.00-14.00", Cr: "16.00-18.00", Mo: "2.00-3.00"}
+          mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+        - grade: S32168
+          alias: 06Cr18Ni11Ti
+          mechanical: {tensileMPaMinByThickness: {"<=9.5mm": 520, ">9.5mm": 485}, rp02MPaMinByThickness: {"<=9.5mm": 205, ">9.5mm": 170}, elongationPctMinLongitudinal: 35, elongationPctMinTransverse: 30}
+          heatTreatment: 920℃~1150℃，水冷或其他方式快冷
+          note: 成分在表 2 第三页，待补
   pending:
-    - GB/T 14976-2025、GB/T 12771-2019：文字层单元格内换行且数字列黏连，待按页看图抄录
-    - GB/T 5310-2023：PDF 文字层是坏编码（自定义字体映射），需重 OCR
+    - GB/T 14976-2025 表 2/表 3 其余 26 个牌号（铁素体、马氏体、双相）待补
+    - GB/T 12771-2019（焊接钢管）、GB/T 13296-2023（锅炉换热器管）：文字层单元格内换行，待按页看图抄录
+    - GB/T 5310-2023、GB/T 9711-2023：PDF 文字层是坏编码或纯扫描件，需重 OCR 后看图抄录
 

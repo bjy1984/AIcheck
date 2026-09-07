@@ -139,7 +139,9 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
         if _norm_designation(item.get("standard")) != wanted_standard:
             continue
         for entry in item.get("grades") or []:
-            if _norm_designation(entry.get("grade")) != wanted_grade:
+            # 质保书上写的可能是统一数字代号（S30408），也可能是牌号（06Cr19Ni10），两种都认
+            names = {entry.get("grade"), entry.get("alias")}
+            if wanted_grade not in {_norm_designation(name) for name in names if name}:
                 continue
             merged: dict[str, Any] = {
                 "standard": item.get("standard"),

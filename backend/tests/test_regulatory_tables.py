@@ -129,3 +129,25 @@ def test_pipe_material_limits_merge_level_rows_and_never_guess():
     assert pipe_material_limits("GB/T 8163-2018", "Q460")["availableLevels"] == ["C", "D", "E"], "Q460 没有 A/B 级"
     assert pipe_material_limits("GB/T 8163-2018", "X99") is None
     assert pipe_material_limits("GB/T 9999-2099", "20") is None
+
+
+def test_austenitic_pipe_limits_accept_both_code_and_grade_name():
+    """质保书上写 S30408 还是 06Cr19Ni10 都能查到；伸长率分纵向/横向不是版本冲突。"""
+    from libs.regulatory_tables import pipe_material_limits, table
+
+    by_code = pipe_material_limits("GB/T 14976-2025", "S30408")
+    by_name = pipe_material_limits("GB/T 14976-2025", "06Cr19Ni10")
+    assert by_code == by_name and by_code["mechanical"]["tensileMPaMin"] == 520
+    assert by_code["mechanical"]["elongationPctMinLongitudinal"] == 35
+    assert by_code["mechanical"]["elongationPctMinTransverse"] == 30
+
+    # 低碳的 022 系列强度低一档、伸长率高一档
+    low_carbon = pipe_material_limits("GB/T 14976-2025", "022Cr17Ni12Mo2")
+    assert low_carbon["grade"] == "S31603" and low_carbon["composition"]["C"] == "<=0.030"
+    assert low_carbon["mechanical"]["tensileMPaMin"] == 480
+    assert low_carbon["mechanical"]["elongationPctMinLongitudinal"] == 40
+
+    # 附录 A：设计温度低于 -101℃ 时另有一套值，-196℃ 冲击
+    annex = next(item for item in table("pipeMaterialLimits")["standards"] if item["standard"] == "GB/T 14976-2025")["lowTemperatureAnnex"]
+    assert annex["tensile"]["tensileMPaMin"] == 520 and annex["impact"]["temperatureC"] == -196
+    assert annex["impact"]["10x10"]["avgLongitudinalJMin"] == 60
