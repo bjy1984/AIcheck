@@ -55,7 +55,7 @@ from libs.review_grounding import (
     is_canonical_clause,
     merge_canonical_grounding_metadata,
 )
-from libs.review_orchestrator import checklist_mode, shard_execution, shard_recovery
+from libs.review_orchestrator import checklist_mode, output_contract, shard_execution, shard_recovery
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
@@ -1984,6 +1984,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
+            *output_contract.PROMPT_FORMAT_REQUIREMENTS,
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
             *([CERTIFICATE_VERIFICATION_REQUIREMENT] if context.get("certificateVerification") else []),
@@ -2478,7 +2479,7 @@ def _generate_finding_drafts_once(
 
 def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     # P8 H4：单次生成外包一层信封修复 → 升级模型重跑；失败分片只影响部分覆盖。
-    return shard_execution.generate_sharded_finding_drafts(repo.state, review_run, context, mode=review_llm_execution_mode(), generate_once=lambda run, ctx: shard_recovery.generate_with_recovery(run, ctx, generate_once=_generate_finding_drafts_once, normalize=normalize_llm_findings))
+    return output_contract.cap_generated_findings(shard_execution.generate_sharded_finding_drafts(repo.state, review_run, context, mode=review_llm_execution_mode(), generate_once=lambda run, ctx: shard_recovery.generate_with_recovery(run, ctx, generate_once=_generate_finding_drafts_once, normalize=normalize_llm_findings)))
 
 
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:
@@ -2598,6 +2599,7 @@ def validate_review_schema(drafts: list[dict[str, Any]]) -> dict[str, Any]:
                 failures.append({"code": "FINDING_SCHEMA_CONFIDENCE_RANGE", "index": index, "confidence": confidence})
             if confidence < 0.7:
                 warnings.append({"code": "LOW_CONFIDENCE_FINDING", "index": index, "confidence": confidence})
+        warnings.extend(output_contract.text_length_warnings_for(draft, index))  # P9 R3：只警告不截断
         if draft.get("requiresHumanConfirmation") is not True:
             failures.append({"code": "FINDING_MUST_REQUIRE_HUMAN_CONFIRMATION", "index": index})
         if not isinstance(draft.get("ruleRefs"), list):
