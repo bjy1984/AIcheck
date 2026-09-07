@@ -106,7 +106,10 @@ def _build(node: str, state: dict[str, Any], review_run: dict[str, Any]) -> dict
     elif node == "r25":
         facts["processType"] = review_run.get("processType") or "welding"
     elif node == "r26":
-        facts["productStandardProfiles"] = review_run.get("productStandardProfiles") or {}
+        # 没人往 review_run 里放这份档案时，从法规数值表生成。
+        # 2026-09-07 线上审计前一直是空的：evaluate_welding_consumable 拿不到限值，
+        # 成分与力学每一项都报 product_standard_limit_profile_missing，整条判定停在证据不足。
+        facts["productStandardProfiles"] = review_run.get("productStandardProfiles") or _consumable_profiles_by_designation()
         facts["reviewDate"] = review_run.get("reviewDate")
     elif node == "r27":
         facts["controlRequirements"] = review_run.get("weldingConsumableControlRequirements") or {}
@@ -309,3 +312,36 @@ def _bool(value: Any) -> bool | None:
 
 def _norm(value: Any) -> str:
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", str(value or "").lower())
+
+
+def _consumable_profiles_by_designation() -> dict[str, Any]:
+    """把法规表里的焊材限值摊成 evaluate_welding_consumable 要的形状。
+
+    该工具按「标准号」取档案，再逐项比对成分与力学，所以同一标准下的不同型号必须分开——
+    E4303 与 E5015 的抗拉强度差 60MPa，混在一起比会把合格的判成不合格。
+    这里把键做成「标准号 + 型号」，同时保留只按标准号的兜底（该标准只有一个型号时才有意义）。
+    """
+    import re
+
+    from libs.regulatory_tables import welding_consumable_standard_profiles
+
+    out: dict[str, Any] = {}
+    for profile in welding_consumable_standard_profiles().values():
+        standard = profile["standard"]
+        by_designation = profile.get("byDesignation") or {}
+        for designation, entry in by_designation.items():
+            payload = {
+                "standard": standard,
+                "designation": designation,
+                "chemicalComposition": entry.get("chemicalComposition") or {},
+                "mechanicalProperties": entry.get("mechanicalProperties") or {},
+                "impactTemperatureC": entry.get("impactTemperatureC"),
+                "verified": profile.get("verified", False),
+            }
+            for key in {standard, f"{standard} {designation}", designation, entry.get("commonName")}:
+                if key:
+                    out.setdefault(re.sub(r"[^a-z0-9]", "", str(key).lower()), payload)
+        if len(by_designation) != 1:
+            # 一个标准多个型号时，只按标准号取档案是不安全的——拿掉那个兜底键
+            out.pop(re.sub(r"[^a-z0-9]", "", standard.lower()), None)
+    return out

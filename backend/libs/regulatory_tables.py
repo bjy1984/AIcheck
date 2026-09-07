@@ -365,3 +365,92 @@ def filler_matches_base_material(filler_class: str, base_material_grade: str) ->
         "baseMaterialGroup": group,
         "expectedClasses": expected,
     }
+
+
+def _limit_from_text(raw: Any) -> dict[str, float] | None:
+    """把 "<=0.20" / "0.06-0.15" / ">=430" 变成 {min, max}；看不懂就返回 None，不猜。"""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        if text.startswith("<="):
+            return {"max": float(text[2:])}
+        if text.startswith(">="):
+            return {"min": float(text[2:])}
+        if "-" in text and not text.startswith("-"):
+            low, high = text.split("-", 1)
+            return {"min": float(low), "max": float(high)}
+        return {"min": float(text), "max": float(text)}
+    except ValueError:
+        return None
+
+
+def welding_consumable_standard_profiles() -> dict[str, dict[str, Any]]:
+    """R26 要的「产品标准限值档案」：标准号 → {chemicalComposition, mechanicalProperties}。
+
+    evaluate_welding_consumable 拿不到这份档案时，成分与力学的每一项都报
+    product_standard_limit_profile_missing，整条判定只能停在证据不足——
+    2026-09-07 线上审计前一直是这个状态，而限值其实已经在法规表里。
+
+    键按 r24_r34_tools._standard_key 的口径归一化（去掉非字母数字并转小写）。
+    同一标准下多个型号的限值不同，这里按型号分组挂在 byDesignation 下，
+    顶层只放该标准所有型号都相同的项——宁可少给，不给错。
+    """
+    import re
+
+    section = table("weldingConsumables")
+    electrodes = section.get("electrodes") or {}
+    # 焊条的标准号写在段落的 sourceClause 上，焊丝写在条目自己的 standard 上——两种都认
+    electrode_standard = str(electrodes.get("sourceClause") or "")
+    items = [(item, electrode_standard) for item in electrodes.get("items") or []]
+    items += [(item, str(item.get("standard") or "")) for item in section.get("wires") or []]
+    profiles: dict[str, dict[str, Any]] = {}
+    for item, standard_hint in items:
+        standard = standard_hint.split("；")[0].split("（")[0].strip()
+        match = re.search(r"(GB/T|NB/T|JB/T)\s?[\d.]+-\d{4}", standard)
+        if not match:
+            continue
+        key = re.sub(r"[^a-z0-9]", "", match.group(0).lower())
+        entry = profiles.setdefault(key, {"standard": match.group(0), "byDesignation": {}, "verified": is_verified(section)})
+        chemistry = {
+            field: parsed
+            for field, raw in (item.get("depositedMetalComposition") or item.get("wireComposition") or {}).items()
+            if (parsed := _limit_from_text(raw))
+        }
+        mech = item.get("mechanical") or {}
+        mechanics: dict[str, dict[str, float]] = {}
+        if mech.get("tensileMPaMin"):
+            mechanics["tensileStrength"] = {"min": float(mech["tensileMPaMin"])}
+        elif isinstance(mech.get("tensileMPa"), str):
+            parsed = _limit_from_text(mech["tensileMPa"])
+            if parsed:
+                mechanics["tensileStrength"] = parsed
+        if mech.get("yieldMPaMin"):
+            mechanics["yieldStrength"] = {"min": float(mech["yieldMPaMin"])}
+        if mech.get("elongationPctMin"):
+            mechanics["elongation"] = {"min": float(mech["elongationPctMin"])}
+        if mech.get("kv2JMin"):
+            mechanics["impactEnergy"] = {"min": float(mech["kv2JMin"])}
+        entry["byDesignation"][str(item.get("designation"))] = {
+            "chemicalComposition": chemistry,
+            "mechanicalProperties": mechanics,
+            "commonName": item.get("commonName"),
+            "impactTemperatureC": mech.get("impactTemperatureC"),
+        }
+    return profiles
+
+
+def welding_consumable_profile_for(standard: str, designation: str | None = None) -> dict[str, Any] | None:
+    """取某标准（可再指定型号）的限值档案；给了型号就直接返回那一档，供 R26 逐项比对。"""
+    import re
+
+    key = re.sub(r"[^a-z0-9]", "", str(standard or "").lower())
+    profile = welding_consumable_standard_profiles().get(key)
+    if profile is None or designation is None:
+        return profile
+    wanted = _norm_designation(designation)
+    for code, entry in (profile.get("byDesignation") or {}).items():
+        names = {code, entry.get("commonName")}
+        if wanted in {_norm_designation(name) for name in names if name}:
+            return {**entry, "standard": profile["standard"], "designation": code, "verified": profile["verified"]}
+    return None
