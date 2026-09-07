@@ -189,6 +189,8 @@ def build_tool_arguments(
         arguments.setdefault("documents", changes.get("documents") or [])
         if tool_name == "evaluate_design_change_approval":
             arguments.setdefault("pipelines", project_pipeline_facts(facts))
+    if tool_name == "evaluate_drawing_review_witness":
+        arguments.setdefault("witness", nested_dict(facts, "drawingReviewWitness"))
     if tool_name == "evaluate_design_special_requirements":
         special = nested_dict(facts, "designSpecialRequirements")
         fixed_clauses = nested_dict(facts, "fixedClauses")

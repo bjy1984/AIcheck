@@ -184,6 +184,7 @@ def build_design_business_facts(
                 "bodyUploaded": True,
                 "parsed": parsed_ok,
                 "signatureRoles": roles,
+                "sealTexts": [item for item in _seal_texts(parse_result) if item.strip()],
                 "coveredPipelineIds": covered_pipeline_ids(parse_result, known_pipeline_ids or set()),
                 "evidenceRefs": [{"documentVersionId": version_id, "pageNo": page_no, "quotedText": file_name}],
             }
@@ -206,6 +207,7 @@ def build_design_business_facts(
             source={"documentVersionIds": [str(item["documentVersionId"]) for item in documents if item.get("documentType") == "design_specification"]},
         ),
         "fixedClauses": {"designSpecialRequirementRules": frozen_special_requirement_rules(review_run.get("businessPackId"))},
+        "drawingReviewWitness": drawing_review_witness(documents, texts, _project_record(state, project_id)),
     }
 
 
@@ -398,3 +400,87 @@ def frozen_special_requirement_rules(business_pack_id: str | None = None) -> dic
             rules = package.get("designSpecialRequirementRules")
             return dict(rules) if isinstance(rules, dict) else {}
     return {}
+
+
+# ── N-08/N-09：施工图审查见证材料 ─────────────────────────────────────────────
+_WITNESS_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("review_approval_certificate", ("审查合格书", "审查合格证", "施工图审查合格", "审图合格")),
+    ("owner_filing_receipt", ("备案回执", "备案表", "备案证明")),
+    ("design_reply", ("设计回复", "回复意见", "修改回复", "答复")),
+    ("review_opinion", ("审查意见", "审图意见", "审查报告", "图纸会审")),
+)
+_REVIEW_DATE_RE = re.compile(r"(?:审查日期|审图日期|审查完成日期|日期)\s*[:：]?\s*(\d{4})[-./年](\d{1,2})[-./月](\d{1,2})")
+_ANY_DATE_RE = re.compile(r"(\d{4})[-./年](\d{1,2})[-./月](\d{1,2})")
+_PROJECT_NAME_RE = re.compile(r"(?:工程名称|项目名称)\s*[:：]\s*([^\n，,。；;]{4,60})")
+_ISSUER_RE = re.compile(r"(?:审查机构|审图机构|出具单位|审查单位)\s*[:：]\s*([一-龥（）()]{4,40}?(?:公司|院|所|中心|站))")
+_VERSION_RE = re.compile(r"(?:版次|版本|版号)\s*[:：]?\s*([A-Za-z0-9.]{1,6})")
+
+
+def _date_from(text: str, pattern: re.Pattern[str]) -> str | None:
+    match = pattern.search(text or "")
+    if not match:
+        return None
+    return f"{match.group(1)}-{int(match.group(2)):02d}-{int(match.group(3)):02d}"
+
+
+def drawing_review_witness(documents: list[dict[str, Any]], texts: dict[str, str], project: dict[str, Any]) -> dict[str, Any]:
+    """见证材料事实：类型口径、工程名称一致、审查日期早于开工、图纸版本一致、签章存在。缺的字段留 None 让规则判证据不足。"""
+    candidates = []
+    for document in documents:
+        text = texts.get(str(document.get("documentVersionId")), "")
+        head = f"{document.get('fileName') or ''}\n{text[:800]}".replace(" ", "")
+        types = [code for code, keywords in _WITNESS_TYPE_RULES if any(keyword in head for keyword in keywords)]
+        if document.get("documentType") == "drawing_review_record" and not types:
+            types = ["review_opinion"]
+        if types:
+            candidates.append((document, text, types))
+    if not candidates:
+        return {"document": None, "witnessTypes": [], "issuer": {}, "signatures": {}, "candidateCount": 0}
+    document, text, types = candidates[0]
+    all_types = list(dict.fromkeys(code for _, _, codes in candidates for code in codes))
+    project_name = str(project.get("name") or project.get("projectName") or "").strip()
+    name_in_doc = (_PROJECT_NAME_RE.search(text) or [None, None])[1]
+    name_in_doc = name_in_doc.strip() if isinstance(name_in_doc, str) else None
+    matches = None
+    if project_name and name_in_doc:
+        matches = _normalize_name(name_in_doc) == _normalize_name(project_name) or _normalize_name(project_name) in _normalize_name(name_in_doc)
+    elif project_name and project_name.replace(" ", "") in text.replace(" ", ""):
+        name_in_doc, matches = project_name, True
+    review_date = _date_from(text, _REVIEW_DATE_RE) or _date_from(text, _ANY_DATE_RE)
+    construction_start = str(project.get("constructionStart") or "").strip()[:10] or None
+    before = (review_date <= construction_start) if review_date and construction_start else None
+    versions = list(dict.fromkeys(match.group(1) for match in _VERSION_RE.finditer(text)))
+    current_versions = list(
+        dict.fromkeys(
+            match.group(1)
+            for item in documents
+            if item.get("documentType") not in ("drawing_review_record", "design_document_other")
+            for match in _VERSION_RE.finditer(texts.get(str(item.get("documentVersionId")), ""))
+        )
+    )
+    consistent = (set(versions) <= set(current_versions)) if versions and current_versions else None
+    issuer_match = _ISSUER_RE.search(text)
+    roles = list(document.get("signatureRoles") or [])
+    seal_texts = list(document.get("sealTexts") or [])
+    return {
+        "document": {key: document.get(key) for key in ("documentId", "documentVersionId", "documentType", "fileName", "bodyUploaded", "evidenceRefs")},
+        "witnessTypes": all_types,
+        "candidateCount": len(candidates),
+        "issuer": {
+            "name": issuer_match.group(1) if issuer_match else None,
+            "projectNameInDocument": name_in_doc,
+            "expectedProjectName": project_name or None,
+            "projectNameMatches": matches,
+        },
+        "reviewDate": review_date,
+        "constructionStart": construction_start,
+        "reviewBeforeConstruction": before,
+        "drawingVersions": versions,
+        "currentDrawingVersions": current_versions,
+        "drawingVersionConsistent": consistent,
+        "signatures": {"roles": roles, "sealPresent": bool(seal_texts), "sealTexts": seal_texts},
+    }
+
+
+def _normalize_name(value: str) -> str:
+    return re.sub(r"[\s（）()·\-—]", "", value or "")

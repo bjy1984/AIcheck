@@ -129,6 +129,7 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_design_document_approval",
     "evaluate_design_change_approval",
     "evaluate_design_special_requirements",
+    "evaluate_drawing_review_witness",
     "evaluate_heat_treatment",
     "evaluate_heat_treatment_instruments",
     "evaluate_installation_license_scope",
@@ -270,6 +271,9 @@ BUSINESS_TOOL_CAPABILITIES = {
     ),
     "evaluate_design_special_requirements": (
         "核验设计说明是否对无损检测、防腐、耐压试验和泄漏试验规定了具体要求，并按冻结标准规则逐领域判断符合性。"
+    ),
+    "evaluate_drawing_review_witness": (
+        "核验施工图审查见证材料：文件类型属于认定口径、文件中的工程名称与本工程一致、审查日期早于开工、图纸版本与当前施工图一致、签章存在。"
     ),
     "evaluate_r13_supervision_certificate_completeness": (
         "对需制造监检的埋弧焊钢管、聚乙烯管和指定元件组合装置，按批次或台件核对制造监督检验证书是否齐全、合格且可追溯。"
@@ -585,6 +589,13 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             }
             if name == "evaluate_design_special_requirements"
             else {
+                "witness": "object",
+                "acceptedTypes": ["string"],
+                "requireSeal": "boolean?",
+                "ruleVersion": "string?",
+            }
+            if name == "evaluate_drawing_review_witness"
+            else {
                 "hasDesignChanges": "boolean",
                 "documents": ["object"],
                 "requiredDocumentTypes": ["string"],
@@ -685,6 +696,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_design_document_approval": evaluate_design_document_approval,
         "evaluate_design_change_approval": evaluate_design_change_approval,
         "evaluate_design_special_requirements": evaluate_design_special_requirements,
+        "evaluate_drawing_review_witness": evaluate_drawing_review_witness,
         "evaluate_calculation_document_consistency": evaluate_calculation_document_consistency,
         "evaluate_component_manufacturer_scope": evaluate_component_manufacturer_scope,
         "evaluate_rt_film": evaluate_rt_film,
@@ -1519,6 +1531,48 @@ def verify_design_license_seals(arguments: dict[str, Any]) -> dict[str, Any]:
     )
     output["documentResults"] = document_results
     return output
+
+
+DRAWING_REVIEW_WITNESS_TYPES = {"review_approval_certificate", "review_opinion", "design_reply", "owner_filing_receipt"}
+
+
+def evaluate_drawing_review_witness(arguments: dict[str, Any]) -> dict[str, Any]:
+    """R05（N-09）：施工图审查见证材料。口径（N-08 默认）：审图机构合格书 / 审查意见书 + 设计回复 / 建设单位备案回执。"""
+    witness = dict_value(arguments.get("witness"))
+    accepted = normalized_set(arguments.get("acceptedTypes")) or {normalize_value(item, "text") for item in DRAWING_REVIEW_WITNESS_TYPES}
+    require_seal = arguments.get("requireSeal", True) is not False
+    document = dict_value(witness.get("document"))
+    if not document or not document.get("documentId"):
+        return insufficient("evaluate_drawing_review_witness", arguments, "drawing_review_witness_document_missing")
+    witness_types = {normalize_value(item, "text") for item in string_list(witness.get("witnessTypes"))}
+    issuer = dict_value(witness.get("issuer"))
+    signatures = dict_value(witness.get("signatures"))
+    checks = [
+        check("witness_type_accepted", bool(witness_types & accepted), sorted(witness_types), sorted(accepted)),
+        check("body_uploaded", document.get("bodyUploaded") is True, document.get("bodyUploaded"), True),
+    ]
+    # 审查意见书必须配设计回复才算完整见证
+    if "review_opinion" in witness_types and "review_approval_certificate" not in witness_types and "owner_filing_receipt" not in witness_types:
+        checks.append(check("design_reply_present", "design_reply" in witness_types, sorted(witness_types), "design_reply"))
+    project_match = issuer.get("projectNameMatches")
+    if project_match is None:
+        return insufficient("evaluate_drawing_review_witness", arguments, "witness_project_name_missing")
+    checks.append(check("project_name_matches", project_match is True, issuer.get("projectNameInDocument"), issuer.get("expectedProjectName")))
+    before = witness.get("reviewBeforeConstruction")
+    if before is None:
+        return insufficient("evaluate_drawing_review_witness", arguments, "review_date_or_construction_start_missing")
+    checks.append(check("review_before_construction", before is True, witness.get("reviewDate"), witness.get("constructionStart")))
+    consistent = witness.get("drawingVersionConsistent")
+    if consistent is not None:
+        checks.append(check("drawing_version_consistent", consistent is True, witness.get("drawingVersions"), witness.get("currentDrawingVersions")))
+    if require_seal:
+        checks.append(check("seal_or_signature_present", bool(signatures.get("sealPresent")) or bool(signatures.get("roles")), signatures, "present"))
+    return checked_result(
+        "evaluate_drawing_review_witness",
+        {"witness": witness, "acceptedTypes": sorted(accepted)},
+        checks,
+        str(arguments.get("ruleVersion") or "r05-drawing-review-witness-v1"),
+    )
 
 
 def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str, Any]:

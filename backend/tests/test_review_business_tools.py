@@ -42,7 +42,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 88
+    assert len(BUSINESS_TOOL_NAMES) == 89
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -1366,6 +1366,7 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "classify_r15_regulatory_requirements",
     "evaluate_design_change_approval",
     "evaluate_design_special_requirements",
+    "evaluate_drawing_review_witness",
     "validate_r19_semantic_judgment",
     "verify_design_license_seals",
     "evaluate_rt_film",

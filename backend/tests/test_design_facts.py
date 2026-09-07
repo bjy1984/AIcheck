@@ -156,3 +156,38 @@ def test_design_special_requirements_feed_r09_frozen_rules() -> None:
     # 只写了"耐压试验压力 1.6MPa"（= 设计压力，倍数 1.0）→ 试验压力倍数不满足 → 不符合
     weak = design_special_requirements("依据 GB/T 20801.1-2025。液压试验，试验压力 1.6MPa，保压 10min 无泄漏。", pipelines)
     assert weak["domains"]["pressureTest"]["requirements"]["testPressureMeetsRatio"] is False
+
+
+def test_drawing_review_witness_facts_feed_r05() -> None:
+    from libs.review_orchestrator.design_facts import drawing_review_witness
+    from libs.review_tools.business_tools import evaluate_drawing_review_witness
+
+    project = {"name": "地上甲类储罐区2（含泵区）压力管道安装", "constructionStart": "2026-03-01"}
+    documents = [
+        {"documentId": "D-W", "documentVersionId": "V-W", "documentType": "drawing_review_record", "fileName": "施工图审查合格书.pdf", "bodyUploaded": True, "signatureRoles": [], "sealTexts": ["XX施工图审查中心审图专用章"], "evidenceRefs": []},
+        {"documentId": "D-DS", "documentVersionId": "V-DS", "documentType": "pipeline_data_sheet", "fileName": "管道特性表.pdf", "bodyUploaded": True, "signatureRoles": [], "sealTexts": [], "evidenceRefs": []},
+    ]
+    texts = {
+        "V-W": "施工图审查合格书 工程名称：地上甲类储罐区2（含泵区）压力管道安装 审查机构：广东省施工图审查中心 审查日期：2026-01-15 版次：A",
+        "V-DS": "管道特性表 版次：A",
+    }
+    witness = drawing_review_witness(documents, texts, project)
+    assert witness["witnessTypes"] == ["review_approval_certificate"]
+    assert witness["issuer"]["projectNameMatches"] is True and witness["issuer"]["name"] == "广东省施工图审查中心"
+    assert witness["reviewBeforeConstruction"] is True and witness["drawingVersionConsistent"] is True
+    assert witness["signatures"]["sealPresent"] is True
+    outcome = evaluate_drawing_review_witness({"witness": witness, "acceptedTypes": ["review_approval_certificate", "review_opinion", "design_reply", "owner_filing_receipt"]})
+    assert outcome["result"] == "passed", outcome
+
+    # 只有审查意见书、没有设计回复，且审查日期晚于开工 → 不符合
+    late = drawing_review_witness([documents[0] | {"fileName": "审查意见书.pdf"}], {"V-W": "审查意见书 工程名称：地上甲类储罐区2（含泵区）压力管道安装 审查日期：2026-04-01"}, project)
+    assert late["witnessTypes"] == ["review_opinion"] and late["reviewBeforeConstruction"] is False
+    failed = evaluate_drawing_review_witness({"witness": late})
+    assert failed["result"] == "failed"
+    codes = {item["code"] for item in failed["checks"] if not item["passed"]}
+    assert {"design_reply_present", "review_before_construction"} <= codes
+
+    # 工程名称都没识别到 → 证据不足，不猜
+    unknown = drawing_review_witness([documents[0]], {"V-W": "施工图审查合格书 审查日期：2026-01-15"}, {"name": "别的工程", "constructionStart": "2026-03-01"})
+    assert unknown["issuer"]["projectNameMatches"] is None
+    assert evaluate_drawing_review_witness({"witness": unknown})["result"] == "evidence_insufficient"

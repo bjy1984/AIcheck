@@ -418,14 +418,22 @@ atomicCheckToolBindings:
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_document_set_completeness
+  - evaluate_drawing_review_witness
   - validate_evidence_grounding
   parameters:
     profile: drawing_review_witness
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    # N-08 默认口径（业务方另定前）：审图机构合格书 / 审查意见书 + 设计回复 / 建设单位备案回执，三选一或组合
+    acceptedTypes:
+    - review_approval_certificate
+    - review_opinion
+    - design_reply
+    - owner_filing_receipt
+    requireSeal: true
+    ruleVersion: r05-drawing-review-witness-v1
   outputSchema: deterministic-tool-result-v1
-  implementationStatus: binding_only
+  implementationStatus: pilot_implemented
 - atomicCheckId: AC-R05-02
   sourceRuleId: R05
   requiredFacts:

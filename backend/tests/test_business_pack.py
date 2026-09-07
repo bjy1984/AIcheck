@@ -169,10 +169,11 @@ def test_engineering_pack_has_complete_standard_clause_packages_and_atomic_check
     assert {item["atomicCheckId"] for item in tool_bindings} == {item["id"] for item in checks}
     assert all(item["requiredFacts"] and item["tools"] and item["outputSchema"] for item in tool_bindings)
     # implementationStatus 口径（2026-08-07 审计修正，issue #7）：
-    # pilot_implemented 仅覆盖存在专用 fact builder / handler 的规则（R04、R12-R34）；
+    # pilot_implemented 仅覆盖存在专用 fact builder / handler 的规则（R04、R05、R12-R34）；
+    # R05 于 2026-09-06 由 design_facts.drawing_review_witness + evaluate_drawing_review_witness 实装（N-08/N-09）。
     # 其余为 binding_only（仅绑定声明，走通用规则解释器，缺参数时 evidence_insufficient）。
     pilot_bindings = [item for item in tool_bindings if item["implementationStatus"] == "pilot_implemented"]
-    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R04"} | {f"R{n}" for n in range(12, 35)}
+    assert {item["sourceRuleId"] for item in pilot_bindings} == {"R04", "R05"} | {f"R{n}" for n in range(12, 35)}
     binding_only = [item for item in tool_bindings if item["implementationStatus"] == "binding_only"]
     assert len(pilot_bindings) + len(binding_only) == 194
     pilot_rule_ids = set((pack.get("atomicCheckToolBindingSet") or {}).get("pilotRules") or [])
