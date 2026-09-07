@@ -135,3 +135,31 @@ def test_配置为空时不动库():
     loaded = {"admin_config": {"materialReviewPoints": [{"id": "MRP-1", "materialCategory": "甲"}]}}
     assert repo.reconcile_material_review_points(loaded, {"admin_config": {}}) is False
     assert loaded["admin_config"]["materialReviewPoints"][0]["materialCategory"] == "甲"
+
+
+def test_reconcile_adds_newly_configured_points_but_never_deletes():
+    """配置文件新增的审查点要能到达已播种的库；停用的条目不会被"复活"，多出来的条目不被删。"""
+    from libs.db.repository import repo
+
+    seeded = {"admin_config": {"materialReviewPoints": [
+        {"id": "MRP-1-a-AAA", "nodeId": 1, "materialTypeCode": "a", "materialCategory": "新类别", "enabled": True},
+        {"id": "MRP-2-b-BBB", "nodeId": 2, "materialTypeCode": "b", "materialCategory": "乙", "enabled": True},
+    ]}}
+    loaded = {"admin_config": {"materialReviewPoints": [
+        {"id": "MRP-1-a-AAA", "nodeId": 1, "materialTypeCode": "a", "materialCategory": "旧类别", "enabled": True},
+        {"id": "MRP-9-x-XXX", "nodeId": 9, "materialTypeCode": "x", "enabled": False},  # 已退役，库里独有
+    ]}}
+
+    changed = repo.reconcile_material_review_points(loaded, seeded)
+    points = loaded["admin_config"]["materialReviewPoints"]
+    by_id = {item["id"]: item for item in points}
+
+    assert changed is True
+    assert by_id["MRP-1-a-AAA"]["materialCategory"] == "新类别", "既有条目的派生字段被对齐"
+    assert "MRP-2-b-BBB" in by_id, "配置文件新增的条目被补进库"
+    assert by_id["MRP-9-x-XXX"]["enabled"] is False, "库里独有的退役条目原样保留，不删也不启用"
+    assert len(points) == 3
+
+    # 再跑一次不应重复添加
+    assert repo.reconcile_material_review_points(loaded, seeded) is False
+    assert len(loaded["admin_config"]["materialReviewPoints"]) == 3

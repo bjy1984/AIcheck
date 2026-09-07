@@ -3891,7 +3891,26 @@ class InMemoryRepository:
                 len(drifted),
                 drifted[:10],
             )
-        return bool(drifted)
+
+        # 补齐配置文件里新增、库里还没有的条目。
+        #
+        # 只对齐已有条目是不够的：库一旦播过种，往映射表加一行就再也到不了生产——
+        # 2026-09-07 翻 P0 2.2 stage1 时实测，六个新资料类型的审查点全部卡在这里，
+        # 新类型在生产上没有审查点可挂，节点级复核对它们直接空转。
+        #
+        # 只增不删：退役走 retire_material_review_points.py 置 enabled=False（证据链上
+        # 还引用着这些 id，删不得），所以被停用的条目仍在库里，不会被这里重新"复活"。
+        existing_ids = {str(item.get("id")) for item in current if item.get("id")}
+        added = [item for point_id, item in expected.items() if point_id not in existing_ids]
+        if added:
+            target = loaded.setdefault("admin_config", {}).setdefault("materialReviewPoints", current)
+            target.extend(self.clone(item) for item in added)
+            LOGGER.info(
+                "配置文件新增了 %d 条资料审查点，已补进库：%s",
+                len(added),
+                [item.get("id") for item in added][:10],
+            )
+        return bool(drifted or added)
 
     def apply_seed_compatibility_defaults(self, loaded: dict[str, Any]) -> bool:
         """Backfill fields added after an existing local database was initialized."""
