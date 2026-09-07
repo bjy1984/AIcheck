@@ -1,83 +1,875 @@
 # TSG 安全技术规范版本时间线（P11 N-03；依据《研究-TSG规范在线核验源》）。
-#
-# 每条：编号（规范化为 "TSG X-YYYY"）、名称、发布日期、实施日期、替代编号（replacedBy）、
-# 被替代编号（supersedes）、废止日期（withdrawnOn）、过渡期截止（graceUntil）、来源 URL、
-# 抽取方式（manual / catalog / announcement / ocr）、核对人与核对日期。
-# 判定口径（AC-R08-01）：现行 → 通过；已被替代且设计签发日在新版实施日之后 → 过渡期内预警 / 过渡期外不符合；
-# 未收录 → 在线查询 + 人工确认；OCR 抽取且未核对的条目 → 只给预警不给不符合。
-#
-# 目录接口只是发布档案，"在列"不等于"现行"；现行状态只能由公告与附则推导（见 sync_tsg_catalog.py）。
+# 每条：编号（规范化为 "TSG X-YYYY"）、名称、发布/目录日期、实施日期（effectiveFrom）、替代编号（replacedBy）、
+# 被替代编号（supersedes）、废止日期（withdrawnOn）、过渡期截止（graceUntil）、来源 URL、抽取方式、核对人与核对日期。
+# 判定口径（libs/standard_timeline.py）：现行 → 通过；已被替代且设计签发日在新版实施日之后 → 过渡期内预警 / 过渡期外不符合；
+# 只有目录行（extractionMethod=catalog，无实施/废止日期）→ 按未收录处理（"在列"不等于"现行"）；未核对的废止只预警。
+# 由 scripts/sync_tsg_catalog.py 维护（默认 dry-run；--apply 只新增/补空字段，不覆盖人工字段，但会重写本注释以外的格式）。
 schemaVersion: standard-version-timeline-v1
-updatedAt: "2026-09-06"
+updatedAt: '2026-09-07'
 entries:
-  - code: TSG 31-2025
-    name: 工业管道安全技术规程
-    publishedOn: "2025-09-22"
-    catalogDate: "2025-10-30"
-    effectiveFrom: "2026-01-01"
-    supersedes: [TSG D0001-2009, TSG D7005-2018]
-    sourceUrls:
-      catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_3d469eb86022439e8c959a1c6735e3b1.html
-      announcement: https://www.samr.gov.cn/tzsbj/tzgg/zjwh/art/2026/art_ed12d58e1b4a4f668ff80268b375ef59.html
-      appendix: 官方 PDF 附则 9.4 施行时间（扫描件 OCR）
-    extractionMethod: announcement+ocr
-    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2/§3（人工核对 2026-09-06）
-    verifiedOn: "2026-09-06"
-  - code: TSG D0001-2009
-    name: 压力管道安全技术监察规程——工业管道
-    replacedBy: TSG 31-2025
-    withdrawnOn: "2026-01-01"
-    sourceUrls:
-      appendix: TSG 31-2025 附则 9.4 "以下安全技术规范同时废止：(1) TSG D0001—2009"
-    extractionMethod: ocr
-    verifiedBy: 研究报告《研究-TSG规范在线核验源》§3
-    verifiedOn: "2026-09-06"
-  - code: TSG D7005-2018
-    name: 压力管道定期检验规则——工业管道
-    replacedBy: TSG 31-2025
-    withdrawnOn: "2026-01-01"
-    sourceUrls:
-      appendix: TSG 31-2025 附则 9.4 "(2) TSG D7005—2018"
-    extractionMethod: ocr
-    verifiedBy: 研究报告《研究-TSG规范在线核验源》§3
-    verifiedOn: "2026-09-06"
-  - code: TSG Z6002-2026
-    name: 特种设备焊接操作人员考核细则
-    publishedOn: "2026-03-16"
-    catalogDate: "2026-03-19"
-    effectiveFrom: "2026-08-01"
-    supersedes: [TSG Z6002-2010]
-    sourceUrls:
-      catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_d04733c1b8fb4011b86424e4560e67ff.html
-      announcement: https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/tzsbs/art/2026/art_4153ad05135445e1b342d6a80814ad72.html
-      transition: 市监特设发〔2026〕85 号
-    extractionMethod: announcement
-    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
-    verifiedOn: "2026-09-06"
-  - code: TSG Z6002-2010
-    name: 特种设备焊接操作人员考核细则
-    replacedBy: TSG Z6002-2026
-    withdrawnOn: "2026-08-01"
-    # 办公厅通知规定的过渡：2026-08-01 前取得的证书在有效期内继续有效（证书过渡，不是规范过渡）
-    graceUntil: null
-    sourceUrls:
-      appendix: TSG Z6002-2026 4.8（研究报告已核）
-      transition: 市监特设发〔2026〕85 号
-    extractionMethod: announcement
-    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
-    verifiedOn: "2026-09-06"
-  - code: TSG 08-2026
-    name: 特种设备使用管理规则
-    publishedOn: "2026-02-02"
-    effectiveFrom: "2026-05-01"
-    supersedes: [TSG 08-2017]
-    extractionMethod: announcement
-    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
-    verifiedOn: "2026-09-06"
-  - code: TSG 08-2017
-    name: 特种设备使用管理规则
-    replacedBy: TSG 08-2026
-    withdrawnOn: "2026-05-01"
-    extractionMethod: announcement
-    verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
-    verifiedOn: "2026-09-06"
+- code: TSG 31-2025
+  name: 工业管道安全技术规程
+  publishedOn: '2025-09-22'
+  catalogDate: '2025-10-30'
+  effectiveFrom: '2026-01-01'
+  supersedes:
+  - TSG D0001-2009
+  - TSG D7005-2018
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_3d469eb86022439e8c959a1c6735e3b1.html
+    announcement: https://www.samr.gov.cn/tzsbj/tzgg/zjwh/art/2026/art_ed12d58e1b4a4f668ff80268b375ef59.html
+    appendix: 官方 PDF 附则 9.4 施行时间（扫描件 OCR）
+  extractionMethod: announcement+ocr
+  verifiedBy: 研究报告《研究-TSG规范在线核验源》§2/§3（人工核对 2026-09-06）
+  verifiedOn: '2026-09-06'
+- code: TSG D0001-2009
+  name: 压力管道安全技术监察规程——工业管道
+  replacedBy: TSG 31-2025
+  withdrawnOn: '2026-01-01'
+  sourceUrls:
+    appendix: TSG 31-2025 附则 9.4 "以下安全技术规范同时废止：(1) TSG D0001—2009"
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398893879853.pdf
+  extractionMethod: ocr
+  verifiedBy: 研究报告《研究-TSG规范在线核验源》§3
+  verifiedOn: '2026-09-06'
+  catalogDate: '2019-04-17'
+- code: TSG D7005-2018
+  name: 压力管道定期检验规则——工业管道
+  replacedBy: TSG 31-2025
+  withdrawnOn: '2026-01-01'
+  sourceUrls:
+    appendix: TSG 31-2025 附则 9.4 "(2) TSG D7005—2018"
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398889165761.pdf
+  extractionMethod: ocr
+  verifiedBy: 研究报告《研究-TSG规范在线核验源》§3
+  verifiedOn: '2026-09-06'
+  catalogDate: '2018-01-31'
+- code: TSG Z6002-2026
+  name: 特种设备焊接操作人员考核细则
+  publishedOn: '2026-03-16'
+  catalogDate: '2026-03-19'
+  effectiveFrom: '2026-08-01'
+  supersedes:
+  - TSG Z6002-2010
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_d04733c1b8fb4011b86424e4560e67ff.html
+    announcement: https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/tzsbs/art/2026/art_4153ad05135445e1b342d6a80814ad72.html
+    transition: 市监特设发〔2026〕85 号
+  extractionMethod: announcement
+  verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+  verifiedOn: '2026-09-06'
+- code: TSG Z6002-2010
+  name: 特种设备焊接操作人员考核细则
+  replacedBy: TSG Z6002-2026
+  withdrawnOn: '2026-08-01'
+  graceUntil: null
+  sourceUrls:
+    appendix: TSG Z6002-2026 4.8（研究报告已核）
+    transition: 市监特设发〔2026〕85 号
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398890922744.pdf
+  extractionMethod: announcement
+  verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+  verifiedOn: '2026-09-06'
+  catalogDate: '2019-04-17'
+- code: TSG 08-2026
+  name: 特种设备使用管理规则
+  publishedOn: '2026-02-02'
+  effectiveFrom: '2026-05-01'
+  supersedes:
+  - TSG 08-2017
+  extractionMethod: announcement
+  verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+  verifiedOn: '2026-09-06'
+- code: TSG 08-2017
+  name: 特种设备使用管理规则
+  replacedBy: TSG 08-2026
+  withdrawnOn: '2026-05-01'
+  extractionMethod: announcement
+  verifiedBy: 研究报告《研究-TSG规范在线核验源》§2
+  verifiedOn: '2026-09-06'
+  catalogDate: '2017-04-18'
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398887853634.pdf
+- code: TSG 09-2025
+  name: 缺陷特种设备召回管理规则
+  catalogDate: '2025-05-30'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_e7251a3e7fa24e6d86d062b244fbb3d7.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 51-2023
+  name: 《起重机械安全技术规程》
+  catalogDate: '2025-04-16'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/aqjsgf/art/2025/art_ca8bed560bf34ad199c4d8abd8af4a24.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 71-2023
+  name: 《大型游乐设施安全技术规程》
+  catalogDate: '2025-04-16'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2025/art_18ed3bbd68a445cc8f8896924d70ca71.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z7001-2021
+  name: 《特种设备检验机构核准规则》
+  catalogDate: '2025-03-31'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2026/art_33610fe5e8c14b6a806fb88fd60d2358.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D7002-2023
+  name: 压力管道元件型式试验规则
+  catalogDate: '2023-07-14'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2023/art_89d59fa7f5ef4a84860e4ca07ad5327e.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7008-2023
+  name: 电梯自行检测规则
+  catalogDate: '2023-04-07'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202304/P020230407313550673854.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7001-2023
+  name: 电梯监督检验和定期检验规则
+  catalogDate: '2023-04-07'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202304/P020230407312594358312.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D7003-2022
+  name: 压力管道定期检验规则—长输管道
+  catalogDate: '2022-12-30'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202212/P020221230533745942697.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z8002-2022
+  name: 特种设备检验人员考核规则
+  catalogDate: '2022-08-16'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2025/art_893e9f5e0adf4eecad5fa2ba50759f51.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 81-2022
+  name: 《场(厂)内专用机动车辆安全技术规程 》
+  catalogDate: '2022-08-05'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202208/P020220805477810597573.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z7002-2022
+  name: 《特种设备检测机构核准规则》
+  catalogDate: '2022-06-21'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202206/P020220621631759093000.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7007-2022
+  name: 电梯型式试验规则
+  catalogDate: '2022-06-21'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202206/P020220621631494576480.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 91-2021
+  name: 《锅炉节能环保技术规程》
+  catalogDate: '2022-06-21'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202206/P020220621630617363725.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 23-2021
+  name: 气瓶安全技术规程
+  catalogDate: '2021-01-07'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202101/P020210107369096126373.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 11-2020
+  name: 锅炉安全技术规程
+  catalogDate: '2020-11-02'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202011/P020201102411979468191.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R0005-2011
+  name: 移动式压力容器安全技术监察规程
+  catalogDate: '2020-04-23'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398896532903.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z8001-2019
+  name: 特种设备无损检测人员考核规则
+  catalogDate: '2019-10-30'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2025/art_71b81df8f57540459306c3dcecd5a954.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z6001-2019
+  name: 特种设备作业人员考核规则
+  catalogDate: '2019-09-16'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398895898072.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 07-2019
+  name: 特种设备生产和充装单位许可规则
+  catalogDate: '2019-09-16'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398895294868.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7016-2016
+  name: 起重机械安装改造重大修理监督检验规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398895027203.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7015-2016
+  name: 起重机械定期检验规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398894728433.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D7004-2010
+  name: 压力管道定期检验规则—公用管道
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398894455766.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D7003-2010
+  name: 压力管道定期检验规则—长输（油气）管道
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398894160129.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG RF001-2009
+  name: 气瓶附件安全技术监察规程
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398893590715.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R7004-2013
+  name: 压力容器监督检验规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398893295041.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R7003-2011
+  name: 气瓶制造监督检验规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398893015229.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R7001-2013
+  name: 压力容器定期检验规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398892617709.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R0006-2014
+  name: 气瓶安全技术监察规程
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398892335202.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G7001-2015
+  name: 锅炉监督检验规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398892056690.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z8002-2013
+  name: 特种设备检验人员考核规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398891772119.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z7005-2015
+  name: 特种设备无损检测机构核准规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398891494086.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z7004-2011
+  name: 特种设备型式试验机构核准规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398891202836.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z0002-2009
+  name: 特种设备信息化工作管理规则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398890635560.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 24-2015
+  name: 氧舱安全技术监察规程
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398890346298.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 03-2015
+  name: 特种设备事故报告和调查处理导则
+  catalogDate: '2019-04-17'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398889469888.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG S7001-2013
+  name: 客运索道监督检验和定期检验规则
+  catalogDate: '2017-06-09'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398888852655.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T5002-2017
+  name: 电梯维护保养规则
+  catalogDate: '2017-05-15'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398888560704.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG N0001-2017
+  name: 场(厂)内专用机动车辆安全技术监察规程
+  catalogDate: '2017-04-18'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398888193581.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G5003-2008
+  name: 《锅炉化学清洗规则》
+  catalogDate: '2016-08-22'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2016/art_5e4d7bcc1f24408c9d98c3a4786abf47.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG ZB001-2008
+  name: 《燃油(气)燃烧器安全技术规则》
+  catalogDate: '2016-08-22'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2016/art_a716fcf940aa4d8cb703f749e04cc92b.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG ZB002-2008
+  name: 《燃油(气)燃烧器型式试验规则》
+  catalogDate: '2016-08-22'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2016/art_405a93bb5f5d466db143992880480adc.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7007-2016
+  name: 电梯型式试验规则
+  catalogDate: '2016-07-25'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398887549995.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG 21-2016
+  name: 固定式压力容器安全技术监察规程
+  catalogDate: '2016-06-23'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398887241379.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G7002-2015
+  name: 锅炉定期检验规则
+  catalogDate: '2015-11-04'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398886962133.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G0001-2012
+  name: 锅炉安全技术监察规程
+  catalogDate: '2013-02-01'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398886678126.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7005-2012
+  name: 电梯监督检验和定期检验规则——自动扶梯与自动人行道
+  catalogDate: '2012-06-15'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398886395341.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7006-2012
+  name: 电梯监督检验和定期检验规则——杂物电梯
+  catalogDate: '2012-06-15'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398886118511.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7004-2012
+  name: 电梯监督检验和定期检验规则——液压电梯
+  catalogDate: '2012-06-15'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398885811328.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G8001-2011
+  name: 锅炉水（介）质处理检测人员考核规则
+  catalogDate: '2011-10-18'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398885540025.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7002-2011
+  name: 电梯监督检验和定期检验规则-消防员电梯
+  catalogDate: '2011-10-18'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398885244823.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7003-2011
+  name: 电梯监督检验和定期检验规则-防爆电梯
+  catalogDate: '2011-10-18'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398884953274.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG ZF003-2011
+  name: 爆破片装置安全技术监察规程
+  catalogDate: '2011-10-18'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398884642068.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G5001-2010
+  name: 锅炉水(介)质处理监督管理规则
+  catalogDate: '2011-03-14'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398884361370.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G5002-2010
+  name: 锅炉水（介)质处理检验规则
+  catalogDate: '2011-03-14'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2011/art_9545c698ed924ff98f5728f6d1864349.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G0002-2010
+  name: 锅炉节能技术监督管理规程
+  catalogDate: '2010-10-27'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398865701176.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G0003-2010
+  name: 工业锅炉能效测试与评价规则
+  catalogDate: '2010-10-27'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398865419383.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG T7001-2009
+  name: 电梯监督检验和定期检验规则－曳引与强制驱动电梯
+  catalogDate: '2010-06-08'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398864823824.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D2001-2006
+  name: 关于公布《压力管道元件制造许可规则》
+  catalogDate: '2010-02-05'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2010/art_9b2ed01c5daa40b1aa050ac9e1e4ee5d.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R7002-2009
+  name: 气甁型式试验规则
+  catalogDate: '2009-08-24'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2009/art_d4d4b56ffc5d45a480cb801cd528aa7d.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R0009-2009
+  name: 车用气瓶安全技术监察规程
+  catalogDate: '2009-08-24'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/cms_files/filemanager/samr/www/samrnew/tzsbj/zcfg/aqjsgf/202006/P020200622398856641466.pdf
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z7001-2004
+  name: 关于公布《特种设备检验检测机构核准规则》
+  catalogDate: '2009-06-03'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2009/art_e5dfdc083d244c648dfb10445b0d68ad.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG ZF001-2006
+  name: 关于公布《安全阀安全技术监察规程》
+  catalogDate: '2009-05-22'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2009/art_d090008288af4a7b918c0cf3ec16221f.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D7002-2006
+  name: 压力管道元件型式试验规则
+  catalogDate: '2008-06-27'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2008/art_57f4cc617e654da0b6caea155fe43514.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG S1001-2008
+  name: 客运索道设计文件鉴定规则
+  catalogDate: '2008-06-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2008/art_3c4939121641486da81e6aa9a4294a60.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7014-2008
+  name: 起重机械安全保护装置型式试验细则
+  catalogDate: '2008-06-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2008/art_8b07c8b48d6642c6b2fd327230fc5717.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7012-2008
+  name: 轻小型起重设备型式试验细则
+  catalogDate: '2008-06-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2008/art_fa6cab0fa5284383983f49df5d020f50.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7005-2008
+  name: 流动式起重机型式试验细则
+  catalogDate: '2008-06-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2008/art_57a5e43cc0004a49bdc5dd80562ca621.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q0002-2008
+  name: 起重机械安全技术监察规程——桥式起重机
+  catalogDate: '2008-06-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2008/art_49d4bccb84b44deaaa031ffa0e029f90.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7010-2007
+  name: 桅杆起重机型式试验细则
+  catalogDate: '2007-12-06'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_0639132489df4acba9c24ce790fa2afa.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7009-2007
+  name: 缆索起重机型式试验细则
+  catalogDate: '2007-12-06'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_7a29b761eb5d4cffbcecb34ce87f8722.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7008-2007
+  name: 升降机型式试验细则
+  catalogDate: '2007-12-06'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_3bbe3d95e5f84010b0f57e257b7f3776.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7007-2007
+  name: 门座起重机型式试验细则
+  catalogDate: '2007-12-06'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_1a3079f577814dfc8b7f7257fd95e3a2.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7006-2007
+  name: 铁路起重机型式试验细则
+  catalogDate: '2007-12-05'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_350d2ad5a35742488798292eb1ef7be3.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7003-2007
+  name: 门式起重机型式试验细则
+  catalogDate: '2007-12-05'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_62cb85f2a9134cfe906f906062b33aaa.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7002-2007
+  name: 桥式起重机型式试验细则
+  catalogDate: '2007-12-05'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_441fd919016142869c4547139d5470a3.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7013-2006
+  name: 机械停车设备型式试验细则
+  catalogDate: '2007-02-13'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_649ccc47fc934e4391b21bd252a0b146.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Q7004-2006
+  name: 塔式起重机型式试验细则
+  catalogDate: '2007-02-13'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_8aff335d914d43d0827d31486731cfce.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D2002-2006
+  name: 燃气用聚乙烯管道焊接技术规则
+  catalogDate: '2007-02-13'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2007/art_b11bbfbb4bf24e1687212bd6f76f6afb.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z7003-2004
+  name: 特种设备检验检测机构质量管理体系要求
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_dc87fdce13064ff6a6d9749625441f9e.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z7002-2004
+  name: 特种设备检验检测机构鉴定评审细则
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_34954e79275f4f82897f36a0911e33b0.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG Z0003-2005
+  name: 特种设备鉴定评审人员考核大纲
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_29b6a4d9a03448dea2687c76f347c678.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG S7005-2005
+  name: 客运索道部件型式试验细则
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_fbf150e2c2d440debdde1b42f8e03c86.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG S7004-2005
+  name: 客运拖牵索道型式试验细则
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_0a5653c41b544afda32bd663309b0650.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG S7003-2005
+  name: 客运索道型式试验规则
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_7e2b00db64a148268959cd96495786d8.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG D7001-2005
+  name: 压力管道元件制造监督检验规则[埋弧焊钢管与聚乙烯管]
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_a2a1646e7ed04158a8dcc493c0c37c39.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG R1003-2006
+  name: 气瓶设计文件鉴定规则
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_32b8ffcc2668453aa86e87417b58842d.html
+  extractionMethod: catalog
+  verifiedBy: null
+- code: TSG G1001-2004
+  name: 锅炉设计文件鉴定管理规则
+  catalogDate: '2006-10-26'
+  effectiveFrom: null
+  supersedes: []
+  sourceUrls:
+    catalog: https://www.samr.gov.cn/tzsbj/zcfg/aqjsgf/art/2006/art_a360cdbe861a4a5d93bb2b4d2eeb18a6.html
+  extractionMethod: catalog
+  verifiedBy: null

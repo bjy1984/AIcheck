@@ -83,6 +83,20 @@ def timeline_status(code: str, on_date: date | str | None = None, *, path: Path 
     withdrawn = _parse_date(entry.get("withdrawnOn"))
     grace = _parse_date(entry.get("graceUntil"))
     verified = bool(entry.get("verifiedBy")) and str(entry.get("extractionMethod") or "") != "ocr_unverified"
+    if effective is None and withdrawn is None:
+        # 只有目录行（sync 抓来的、没人核过公告与附则）："在列"不等于"现行"，按未收录处理，但把目录信息带出去
+        return {
+            "code": normalized,
+            "name": entry.get("name"),
+            "status": STATUS_UNKNOWN,
+            "label": STATUS_LABELS[STATUS_UNKNOWN],
+            "onDate": day.isoformat() if day else None,
+            "catalogListed": True,
+            "catalogDate": entry.get("catalogDate"),
+            "sourceUrls": dict(entry.get("sourceUrls") or {}),
+            "extractionMethod": entry.get("extractionMethod"),
+            "verified": False,
+        }
     if withdrawn and day and day >= withdrawn:
         status = STATUS_GRACE if grace and day <= grace else STATUS_WITHDRAWN
     elif effective and day and day < effective:

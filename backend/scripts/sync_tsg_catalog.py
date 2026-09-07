@@ -32,11 +32,17 @@ sys.path.insert(0, str(BACKEND_ROOT))
 from libs.standard_timeline import TIMELINE_PATH, normalize_code
 
 CATALOG_ORIGIN = "https://www.samr.gov.cn"
-CATALOG_ENDPOINT = (
-    "/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic"
-    "&webId=29e9522dc89d4e088a953d8cede72f4c&tplSetId=5c30fb89ae5e48b9aefe3cdf49853830"
-    "&pageType=column&tagId=ajax%E5%88%86%E9%A1%B5&editType=null&pageId=6b042a0744f4442c928a9a6aff47129f"
-)
+CATALOG_ENDPOINT = "/api-gateway/jpaas-publish-server/front/page/build/unit"
+# 固定参数必须和 paramJson 一起以 params 传：httpx 的 params 会整体替换 URL 自带的查询串（2026-09-06 实测返回 success=false、data={}）
+CATALOG_PARAMS = {
+    "parseType": "bulidstatic",
+    "webId": "29e9522dc89d4e088a953d8cede72f4c",
+    "tplSetId": "5c30fb89ae5e48b9aefe3cdf49853830",
+    "pageType": "column",
+    "tagId": "ajax分页",
+    "editType": "null",
+    "pageId": "6b042a0744f4442c928a9a6aff47129f",
+}
 _ITEM_RE = re.compile(r'<a\s+href="([^"]+)"\s+title="([^"]*)"[^>]*>.*?</a>\s*<div class="contentRight01time">(\d{4}-\d{2}-\d{2})</div>', re.DOTALL)
 _COUNT_RE = re.compile(r'count="(\d+)"')
 _TSG_IN_TITLE_RE = re.compile(r"TSG\s*([A-Z]{0,2}\s?\d{2,5})\s*[-—–－]\s*(\d{4})", re.IGNORECASE)
@@ -85,7 +91,7 @@ def fetch_catalog(page_size: int = 10, *, timeout: float = 20.0) -> list[dict[st
     page_no = 1
     with httpx.Client(timeout=timeout, headers={"User-Agent": "Mozilla/5.0 AIcheck-tsg-sync"}) as client:
         while True:
-            params = {"paramJson": json.dumps({"pageNo": page_no, "pageSize": page_size})}
+            params = {**CATALOG_PARAMS, "paramJson": json.dumps({"pageNo": page_no, "pageSize": page_size}, separators=(",", ":"))}
             response = client.get(CATALOG_ORIGIN + CATALOG_ENDPOINT, params=params)
             response.raise_for_status()
             payload = response.json()

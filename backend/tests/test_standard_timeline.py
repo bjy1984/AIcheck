@@ -74,3 +74,10 @@ def test_merge_adds_new_codes_and_never_overwrites_verified_entries() -> None:
     assert by_code["TSG Z6002-2026"]["extractionMethod"] == "catalog+announcement" and by_code["TSG Z6002-2026"]["verifiedBy"] is None
     assert by_code["TSG Z6002-2010"]["replacedBy"] == "TSG Z6002-2026" and by_code["TSG Z6002-2010"]["withdrawnOn"] == "2026-08-01"
     assert [change["action"] for change in changes] == ["add", "add_superseded", "update"]
+
+
+def test_catalog_only_entries_are_listed_but_not_current() -> None:
+    """目录只是发布档案："在列"不等于"现行"，没核过公告与附则的条目按未收录处理。"""
+    listed = timeline_status("TSG 09-2025", "2026-09-06")
+    assert listed["status"] == "unknown" and listed.get("catalogListed") is True
+    assert standard_reference_fact("TSG 09-2025", "2026-09-06")["requiresOnlineLookup"] is True
