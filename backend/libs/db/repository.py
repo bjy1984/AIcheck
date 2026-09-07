@@ -130,6 +130,7 @@ STATE_COLLECTIONS = {
     "ai_trace_steps": "ai_trace_steps",
     "ai_run_replays": "ai_run_replays",
     "feedback_triage": "feedback_triage",
+    "blind_review_tasks": "blind_review_tasks",
     "evaluation_sets": "evaluation_sets",
     "evaluation_cases": "evaluation_cases",
     "evaluation_case_results": "evaluation_case_results",

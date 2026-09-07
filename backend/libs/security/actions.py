@@ -111,6 +111,8 @@ ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/fde/data-exports/[^/]+/expire$", "fde:security:manage"),
     ("POST", r"/fde/security/masking-policies$", "fde:security:manage"),
     ("POST", r"/fde/feedback/[^/]+/triage$", "fde:feedback:triage"),
+    ("POST", r"/fde/blind-review/sample$", "fde:feedback:triage"),
+    ("POST", r"/fde/blind-review/tasks/[^/]+/decision$", "fde:feedback:triage"),
     ("POST", r"/fde/evaluation-runs$", "fde:evaluation:run"),
     ("POST", r"/fde/ocr-corrections$", "fde:ocr-quality:view"),
     ("POST", r"/fde/vector-corrections$", "fde:vector-quality:review"),

@@ -38,6 +38,14 @@ def _key(item: dict[str, Any]) -> tuple[str, int]:
     return (str(item.get("projectId") or ""), int(item.get("nodeId") or 0))
 
 
+def _rubber_stamp_value(state: dict[str, Any]) -> float | None:
+    from libs.feedback.blind_review import (
+        rubber_stamp_index,  # 延迟导入：blind_review 也依赖本模块的结果映射
+    )
+
+    return rubber_stamp_index(state).get("value")
+
+
 def compute_feedback_metrics(state: dict[str, Any]) -> dict[str, Any]:
     ai_runs = [item for item in state.get("ai_runs") or [] if isinstance(item, dict)]
     opinions = [item for item in state.get("review_opinions") or [] if isinstance(item, dict)]
@@ -96,7 +104,7 @@ def compute_feedback_metrics(state: dict[str, Any]) -> dict[str, Any]:
         "evidenceReferenceAccuracy": {"value": _ratio(len(confirmed_links), len(decided_links)), "numerator": len(confirmed_links), "denominator": len(decided_links)},
         "rootCauses": {cause: root_causes.get(cause, 0) for cause in ROOT_CAUSES},
         "feedbackSources": dict(sources),
-        "rubberStampIndex": None,
+        "rubberStampIndex": _rubber_stamp_value(state),
     }
 
 
@@ -117,7 +125,7 @@ def render_markdown(metrics: dict[str, Any]) -> str:
         ("降级率", _fmt(metrics["downgradeRate"]), "下降"),
         ("误降级率", _fmt(metrics["falseDowngradeRate"]), "下降"),
         ("证据引用准确率", _fmt(metrics["evidenceReferenceAccuracy"]), "上升"),
-        ("橡皮图章指数", "待 F4 盲审", "不趋零"),
+        ("橡皮图章指数", "待 F4 盲审" if metrics.get("rubberStampIndex") is None else f"{metrics['rubberStampIndex']:+.3f}", "不趋零"),
     ]
     text = "| 指标 | 当前值 | 方向 |\n|---|---|---|\n" + "".join(f"| {name} | {value} | {direction} |\n" for name, value, direction in rows)
     causes = metrics.get("rootCauses") or {}

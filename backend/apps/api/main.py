@@ -36,6 +36,7 @@ from apps.api.routes import (
 )
 from apps.api.std_samr_routes import router as std_samr_router
 from apps.api.auto_review_routes import auto_review_router
+from apps.api.blind_review_routes import blind_review_router
 from apps.api.feedback_metrics_routes import feedback_metrics_router
 from apps.api.project_analysis_routes import project_analysis_router
 from apps.api.knowledge_admin_routes import knowledge_admin_router
@@ -1447,6 +1448,8 @@ app.include_router(auto_review_router)
 app.include_router(auto_review_router, prefix="/api")
 app.include_router(feedback_metrics_router)
 app.include_router(feedback_metrics_router, prefix="/api")
+app.include_router(blind_review_router)
+app.include_router(blind_review_router, prefix="/api")
 app.include_router(project_analysis_router)
 app.include_router(project_analysis_router, prefix="/api")
 app.include_router(org_delegation_router)
