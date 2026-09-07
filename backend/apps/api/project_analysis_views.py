@@ -14,7 +14,8 @@ review_run_view 由调用方注入：它住在 routes.py，直接 import 会成�
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from libs.db.repository import repo
 from libs.project_analysis.domain import project_analysis_status_view
@@ -106,3 +107,67 @@ def project_analysis_results_for_review_workspace(
         }
         for item in rows[:20]
     ]
+
+
+DOWNGRADED_TITLE = "证据不足，需人工确认"
+
+
+def project_analysis_run_summary(
+    project_id: str,
+    run: dict[str, Any],
+    *,
+    tenant_id: str,
+) -> dict[str, Any]:
+    """P9 R4：一次全工程分析的工程级结果——每节点一行原始结果 + 共性风险。
+
+    结论（需处理/待确认/证据不足/未见问题）由前端按 12.3 决策表推导，这里只给原料：
+    节点名、审查结果、发现草稿、失败分片。共性风险 = 同一标题（去掉守卫模板句）在 ≥2 个节点出现。
+    """
+    run_id = str(run.get("projectAnalysisRunId") or run.get("id") or "")
+    by_node: dict[int, dict[str, Any]] = {}
+    for item in repo.state.get("review_runs", []):
+        if str(item.get("projectAnalysisRunId") or "") != run_id or tenant_id_for_record(item) != tenant_id:
+            continue
+        node_id = int(item.get("nodeId") or 0)
+        current = by_node.get(node_id)
+        if current is None or _record_time(item) >= _record_time(current):
+            by_node[node_id] = item
+    nodes: list[dict[str, Any]] = []
+    title_nodes: dict[str, set[int]] = {}
+    for node_id, item in sorted(by_node.items()):
+        node = repo.node(project_id, node_id) or {}
+        drafts = [draft for draft in item.get("findingDrafts") or [] if isinstance(draft, dict)]
+        for draft in drafts:
+            title = " ".join(str(draft.get("title") or "").split())
+            if title and not title.startswith(DOWNGRADED_TITLE):
+                title_nodes.setdefault(title, set()).add(node_id)
+        nodes.append(
+            {
+                "nodeId": node_id,
+                "nodeName": str(node.get("name") or item.get("nodeName") or f"节点 {node_id}"),
+                "nodeStatus": node.get("status"),
+                "reviewRunId": item.get("reviewRunId") or item.get("id"),
+                "status": item.get("status"),
+                "reviewResult": item.get("reviewResult"),
+                "findingDrafts": repo.clone(drafts),
+                "failedEvidenceShardIds": [str(value) for value in item.get("failedEvidenceShardIds") or [] if value],
+                "finishedAt": item.get("finishedAt"),
+            }
+        )
+    common_risks = sorted(
+        (
+            {"title": title, "nodeIds": sorted(node_ids), "nodeCount": len(node_ids)}
+            for title, node_ids in title_nodes.items()
+            if len(node_ids) >= 2
+        ),
+        key=lambda row: (-row["nodeCount"], row["title"]),
+    )[:5]
+    return {
+        "schemaVersion": "ProjectAnalysisSummary@1.0.0",
+        "projectAnalysisRunId": run_id,
+        "projectId": project_id,
+        "run": project_analysis_status_view(run),
+        "nodes": nodes,
+        "commonRisks": common_risks,
+    }
+

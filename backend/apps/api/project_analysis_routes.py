@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
 
+from apps.api.project_analysis_views import project_analysis_run_summary
 from apps.api.routes import (
     effective_role_for_request,
     idempotent,
@@ -272,6 +273,22 @@ def get_project_analysis_run(request: Request, project_id: str, run_id: str):
     if not run:
         return fail(errors.NOT_FOUND, request)
     return ok({"run": project_analysis_run_view(run)}, request)
+
+
+@project_analysis_router.get(
+    "/projects/{project_id}/inspection/full-project-analysis/runs/{run_id}/summary"
+)
+def get_project_analysis_summary(request: Request, project_id: str, run_id: str):
+    """P9 R4：工程级结果——节点优先级表与共性风险的原料。"""
+    if error := _authorize(request, project_id, write=False):
+        return error
+    run = _run_for_request(request, project_id, run_id)
+    if not run:
+        return fail(errors.NOT_FOUND, request)
+    return ok(
+        {"summary": project_analysis_run_summary(project_id, run, tenant_id=request_tenant_id(request))},
+        request,
+    )
 
 
 @project_analysis_router.get(

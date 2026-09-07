@@ -56,6 +56,27 @@ export type ProjectAnalysisStatus = {
 }
 
 export type ProjectAnalysisRun = ProjectAnalysisStatus & Record<string, unknown>
+
+/** P9 R4：工程级结果的原料，结论由前端按 12.3 决策表推导。 */
+export type ProjectAnalysisSummaryNode = {
+  nodeId: number
+  nodeName: string
+  nodeStatus?: string | null
+  reviewRunId?: string
+  status?: string
+  reviewResult?: string | null
+  findingDrafts: Array<Record<string, unknown>>
+  failedEvidenceShardIds: string[]
+  finishedAt?: string | null
+}
+export type ProjectAnalysisSummary = {
+  schemaVersion: string
+  projectAnalysisRunId: string
+  projectId: string
+  run: ProjectAnalysisStatus
+  nodes: ProjectAnalysisSummaryNode[]
+  commonRisks: Array<{ title: string; nodeIds: number[]; nodeCount: number }>
+}
 export type ProjectAnalysisMutationOptions = { idempotencyKey?: string }
 
 type RequestConfig = {
@@ -99,6 +120,13 @@ export const createProjectAnalysisApi = (
   ): Promise<IResponse<{ run: ProjectAnalysisRun }>> =>
     adapter.get({
       url: `/api/projects/${projectId}/inspection/full-project-analysis/runs/${runId}`
+    }),
+  getProjectAnalysisSummaryApi: (
+    projectId: string,
+    runId: string
+  ): Promise<IResponse<{ summary: ProjectAnalysisSummary }>> =>
+    adapter.get({
+      url: `/api/projects/${projectId}/inspection/full-project-analysis/runs/${runId}/summary`
     }),
   getProjectAnalysisStatusApi: (
     projectId: string,

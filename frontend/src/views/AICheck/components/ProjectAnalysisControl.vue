@@ -6,10 +6,12 @@ import {
   createProjectAnalysisRunApi,
   getProjectAnalysisPreviewApi,
   getProjectAnalysisStatusApi,
+  getProjectAnalysisSummaryApi,
   listProjectAnalysisRunsApi,
   type ProjectAnalysisPreview,
   type ProjectAnalysisRun,
-  type ProjectAnalysisStatus
+  type ProjectAnalysisStatus,
+  type ProjectAnalysisSummary
 } from '@/api/aicheck'
 import {
   projectAnalysisBannerState,
@@ -17,11 +19,35 @@ import {
   projectAnalysisRequestFailure,
   type ProjectAnalysisBannerState
 } from '../projectAnalysisPresentation'
+import ProjectAnalysisSummaryPanel from './ProjectAnalysisSummaryPanel.vue'
 
 const props = defineProps<{ projectId: string; disabled?: boolean }>()
 const emit = defineEmits<{
   'state-change': [state: ProjectAnalysisBannerState | undefined]
+  'select-node': [nodeId: number]
 }>()
+/** P9 R4：分析完成后的工程级结果（节点优先级表 + 共性风险）。 */
+const summary = ref<ProjectAnalysisSummary>()
+const summaryLoading = ref(false)
+const summaryRunId = ref('')
+const loadSummary = async () => {
+  const run = activeRun.value
+  if (!run || !props.projectId || summaryRunId.value === run.projectAnalysisRunId) return
+  summaryLoading.value = true
+  try {
+    const response = await getProjectAnalysisSummaryApi(props.projectId, run.projectAnalysisRunId)
+    summary.value = response.data.summary
+    summaryRunId.value = run.projectAnalysisRunId
+  } catch {
+    summary.value = undefined
+  } finally {
+    summaryLoading.value = false
+  }
+}
+const handleSelectNode = (nodeId: number) => {
+  drawerVisible.value = false
+  emit('select-node', nodeId)
+}
 const drawerVisible = ref(false)
 const loading = ref(false)
 const starting = ref(false)
@@ -64,7 +90,10 @@ const poll = async () => {
     status.value = response.data.status
     failureMessage.value = ''
     consecutivePollFailures = 0
-    if (terminalPhases.has(status.value.phase)) stopPolling()
+    if (terminalPhases.has(status.value.phase)) {
+      stopPolling()
+      void loadSummary()
+    }
   } catch (error) {
     const failure = projectAnalysisRequestFailure(error)
     consecutivePollFailures += 1
@@ -164,6 +193,8 @@ watch(
     preview.value = undefined
     activeRun.value = undefined
     status.value = undefined
+    summary.value = undefined
+    summaryRunId.value = ''
     failureMessage.value = ''
     drawerVisible.value = false
     if (!projectId) return
@@ -183,7 +214,7 @@ onBeforeUnmount(stopPolling)
     <ElButton type="primary" :loading="loading" :disabled="disabled || !projectId" @click="open">
       一键分析
     </ElButton>
-    <ElDrawer v-model="drawerVisible" title="全工程一键分析" size="460px">
+    <ElDrawer v-model="drawerVisible" title="全工程一键分析" :size="summary ? '760px' : '460px'">
       <div v-if="preview" class="analysis-preview">
         <strong>分析范围</strong>
         <span>节点 {{ preview.includedNodeCount }}</span>
@@ -208,6 +239,12 @@ onBeforeUnmount(stopPolling)
         <span>{{ progress.label }}</span>
         <small v-if="activityLabel">{{ activityLabel }}</small>
       </div>
+      <ProjectAnalysisSummaryPanel
+        v-if="status && terminalPhases.has(status.phase)"
+        :summary="summary"
+        :loading="summaryLoading"
+        @select-node="handleSelectNode"
+      />
       <template #footer>
         <ElButton
           type="primary"

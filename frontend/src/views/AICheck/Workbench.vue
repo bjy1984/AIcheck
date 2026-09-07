@@ -2925,6 +2925,16 @@ const handleProjectChange = async () => {
   await loadProjectBundle()
 }
 
+/** P9 R4：工程级结果表点"查看节点"→ 切到该节点（与左侧树点选同一路径）。 */
+const handleProjectAnalysisSelectNode = async (nodeId: number) => {
+  const node = projectTreeNodes.value.find((item) => item.nodeId === nodeId)
+  if (!node) {
+    ElMessage.warning(`当前项目树里没有节点 ${nodeId}`)
+    return
+  }
+  await handleNodeSelect(node)
+}
+
 const handleNodeSelect = async (node: ProjectTreeNode) => {
   mobileTreeOpen.value = false
   const routeItem = inspectionReviewItemKey(route.query.auditItem)
@@ -5456,6 +5466,7 @@ onBeforeUnmount(() => {
             :project-id="activeProjectId"
             :disabled="!activeProjectId"
             @state-change="projectAnalysisBanner = $event"
+            @select-node="handleProjectAnalysisSelectNode"
           />
           <ElButton
             v-if="role === 'inspection' && canManageRegistration"

@@ -6,7 +6,9 @@ export type {
   ProjectAnalysisPhase,
   ProjectAnalysisPreview,
   ProjectAnalysisRun,
-  ProjectAnalysisStatus
+  ProjectAnalysisStatus,
+  ProjectAnalysisSummary,
+  ProjectAnalysisSummaryNode
 } from './projectAnalysis'
 export type {
   AutoReviewMutationOptions,
@@ -4281,7 +4283,8 @@ export const {
   createProjectAnalysisRunApi,
   listProjectAnalysisRunsApi,
   getProjectAnalysisRunApi,
-  getProjectAnalysisStatusApi
+  getProjectAnalysisStatusApi,
+  getProjectAnalysisSummaryApi
 } = projectAnalysisApi
 
 export const getKnowledgeOverviewApi = (): Promise<IResponse<KnowledgeOverviewPayload>> => {
