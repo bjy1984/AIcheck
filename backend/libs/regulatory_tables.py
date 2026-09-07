@@ -110,7 +110,11 @@ def welding_consumable_spec(designation: str) -> dict[str, Any] | None:
     if not wanted:
         return None
     section = table("weldingConsumables")
-    for item in (section.get("electrodes") or []) + (section.get("wires") or []):
+    electrodes = section.get("electrodes") or {}
+    # 焊条段落带了 sourceClause/impactRule 等元数据，条目在 items 里；焊丝仍是裸列表
+    candidates = list(electrodes.get("items") or []) if isinstance(electrodes, dict) else list(electrodes)
+    candidates += list(section.get("wires") or [])
+    for item in candidates:
         keys = {item.get("designation"), item.get("commonName")}
         classification = str(item.get("classification2020") or "")
         if classification:

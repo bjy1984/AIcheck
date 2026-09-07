@@ -28,7 +28,9 @@ def test_material_lookups_are_case_and_hyphen_insensitive() -> None:
     assert welder_material_category("06Cr19Ni10") == "FeⅣ"
     assert welder_material_category("ZZZ") is None
     assert wps_base_material_group("20G") == "Fe-1-1" and wps_base_material_group("Q345R") == "Fe-1-2"
-    assert wps_base_material_group("S31603") is None, "未抄到的牌号不猜"
+    # 表 1 已是全表：S31603 抄到了；查不到的牌号仍然不猜
+    assert wps_base_material_group("S31603") == "Fe-8-1"
+    assert wps_base_material_group("X99NotAGrade") is None, "查不到的牌号不猜"
 
 
 def test_inspection_levels_and_ratios_follow_gbt20801_1_2025() -> None:
@@ -66,11 +68,37 @@ def test_deterministic_category_lookup_reads_table_a2() -> None:
 def test_welding_consumable_lookup_by_designation_alias_and_wire_class():
     from libs.regulatory_tables import is_verified, welding_consumable_spec
 
+    # GB/T 5117-2012 表 6/表 7 正文值；冲击按 4.5.2 是 ≥27J，只有带 U 代号才 ≥47J
     j422 = welding_consumable_spec("J422")
-    assert j422 and j422["designation"] == "E4303" and j422["mechanical"]["tensileMPaMin"] == 430
-    assert welding_consumable_spec("e5015")["commonName"] == "J507"
+    assert j422 and j422["designation"] == "E4303"
+    assert j422["mechanical"] == {"tensileMPaMin": 430, "yieldMPaMin": 330, "elongationPctMin": 20, "impactTemperatureC": 0, "kv2JMin": 27, "kv2JMinWithU": 47}
+    assert j422["depositedMetalComposition"]["Mn"] == "<=1.20"
+    j507 = welding_consumable_spec("e5015")
+    assert j507["commonName"] == "J507" and j507["mechanical"]["impactTemperatureC"] == -30
+    assert j507["mechanical"]["kv2JMin"] == 27 and j507["depositedMetalComposition"]["Mn"] == "<=1.60"
+    assert welding_consumable_spec("J506")["designation"] == "E5016"
     wire = welding_consumable_spec("ER50-6")
     assert wire and wire["wireComposition"]["Mn"] == "1.40-1.85" and wire["mechanical"]["yieldMPaMin"] == 390
     assert welding_consumable_spec("S6") is wire
     assert not is_verified(wire)  # 预填值未核对：只能预警
     assert welding_consumable_spec("E9999") is None
+
+
+def test_nbt47014_base_material_groups_cover_the_whole_table_1():
+    """NB/T 47014-2023 表 1 全表（含 Ti/Zr/Cu/Ni），组别边界按合并单元格居中规则还原。"""
+    from libs.regulatory_tables import table, wps_base_material_group
+
+    section = table("nbt47014_2023", "baseMaterialGroups")
+    groups = {item["group"]: item["grades"] for item in section["groups"]}
+    assert len(groups) >= 38 and sum(len(v) for v in groups.values()) >= 380
+    assert {"Fe-1-1", "Fe-8-1", "Fe-11A", "Ti-1", "Zr-3", "Cu-1", "Ni-1"} <= set(groups)
+    # 已知归属：错了就是块边界推歪了
+    assert wps_base_material_group("Q345R") == "Fe-1-2"
+    assert wps_base_material_group("Q245R") == "Fe-1-1"
+    assert wps_base_material_group("S30408") == "Fe-8-1" == wps_base_material_group("06Cr19Ni10")
+    assert wps_base_material_group("12Cr5Mo") == "Fe-5B-1"
+    assert wps_base_material_group("06Ni9DR") == "Fe-11A"
+    assert wps_base_material_group("12Cr13") == "Fe-6"
+    # GB/T 9711 双写牌号两种写法都能查到
+    assert wps_base_material_group("L245") == wps_base_material_group("L245/B") == "Fe-1-1"
+    assert not section.get("verifiedBy"), "数值已对照正版 PDF，但仍等法规核对人签字"

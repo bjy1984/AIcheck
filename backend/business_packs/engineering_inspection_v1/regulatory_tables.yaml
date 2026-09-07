@@ -86,25 +86,478 @@ tsgZ6002_2026:
 nbt47014_2023:
   source: NB/T 47014-2023 承压设备焊接工艺评定（2024-06-28 实施）
   baseMaterialGroups:
-    sourceClause: 表 1 焊制承压设备用母材分类分组（节选管道常用牌号）
-    extractedFrom: ocr
+    sourceClause: 表 1 焊制承压设备用母材分类分组（全表，含非铁族 Ti/Zr/Cu/Ni）
+    extractedFrom: official_pdf_text_layer
+    sourceFile: NB/T 47014-2023 正版 PDF（用户 2026-09-07 提供），pdftotext -layout 抽取
     verifiedBy: null
-    note: OCR 表格跨页错位，只抄录能与组别行对应的牌号；完整表需对照正文
+    note: 合并单元格的组别标签在块内垂直居中，解析按「块末行 = 2×标签行号 − 块首行号」逐页推边界，已用 Q345R→Fe-1-2、S30408→Fe-8-1、12Cr5Mo→Fe-5B-1、06Ni9DR→Fe-11A 等已知归属校验。残留不确定：跨页块边界可能偏一行，牌号 15/20/06Cr13/SF310 各出现在两个组里，须人工核这四个。GB/T 9711 的双写牌号（L245/B）已同时收录国标号与
+      API 号两种写法。
     groups:
-      - group: Fe-1-1
-        grades: ["10", "15", "20", 20G, Q195, Q215A, Q215B, Q235AF, Q235A, Q235B, Q235C, Q235D, Q245R, Q275A, Q275B]
-        standards: [GB/T 699, GB/T 711, GB/T 3087, GB/T 6479, GB/T 8163, GB/T 9948, NB/T 47019.2, GB/T 5310, GB/T 700, GB/T 3091, GB/T 3274, GB/T 713]
-      - group: Fe-1-2
-        grades: [10MnDG, 20MnG, L175, L210, L245, L245N, L245R, L245Q, L245M, L290, L290N, L290Q, L290M, Q345R, Q345A, Q345B, Q345C, Q345D, Q355C, Q355D, 09MnD, 16Mn, 25MnG, 16MnD, 16MnDR, 16MnDG, 15MnNiDR, 09Mn2VDG, 09MnNiDR, 09MnNiD, Q390A, Q390B, Q390C, Q390D, Q390E, L320, L320N, L320Q, L320M, L360, L360N, L360Q, L360M, L390, L390N, L390Q]
-      - group: Fe-4-1
-        grades: [08MnNiMoVD, 10Ni3MoVD, L555, L555M, L555Q, F555, 15MoG, 20MoG, 12CrMo]
-        note: 15CrMo/15CrMoG/15CrMoR 在 OCR 中紧随 Fe-4-1 区块（第 764–766 行），组别归属待核
-      - group: Fe-5A
-        grades: [12Cr1MoV, 12Cr1MoVG]
-        note: 与 ZG20CrMo、AF11/AF12 同页；Fe-4-2 / Fe-5A / Fe-5B 边界待核
-      - group: Fe-8-1
-        grades: [S31609（07Cr17Ni12Mo2）, S31653（022Cr17Ni12Mo2N）, S31658（06Cr17Ni12Mo2N）, S31668（06Cr17Ni12Mo2Ti）, S31683（022Cr18Ni14Mo2Cu2）]
-        note: S30408（06Cr19Ni10）、S30403、S31603 应同属 Fe-8-1，OCR 页未抄到，待核
+    - group: Fe-1-1
+      grades:
+      - '10'
+      - '15'
+      - '20'
+      - 20G
+      - Q195
+      - Q215A
+      - Q215B
+      - Q235AF
+      - Q235A
+      - Q235B
+      - Q235C
+      - Q235D
+      - Q245R
+      - Q275A
+      - Q275B
+      - 10MnDG
+      - 20MnG
+      - L175/A25
+      - L175
+      - A25
+      - L175P/A25P
+      - L175P
+      - A25P
+      - L210/A
+      - L210
+      - L245/B
+      - L245
+      - L245N/BN
+      - L245N
+      - BN
+      - L245R/
+      - BR
+      - L245Q/BQ
+      - L245Q
+      - BQ
+      - L245M/BM
+      - L245M
+      - BM
+      - L290
+      - L290N
+      - L290Q
+      - L290M
+      - F290
+      - WCA
+      - ZG200-400
+      - CF370
+      - CF415
+      - CF415K
+      - LF415K1
+      - LF415K2
+    - group: Fe-1-2
+      grades:
+      - '25'
+      - Q345R
+      - Q345A
+      - Q345B
+      - Q345C
+      - Q345D
+      - Q345E
+      - GB/SA516Gr70
+      - GB/SA537Cl1
+      - Q355B
+      - Q355C
+      - Q355D
+      - 09MnD
+      - 16Mn
+      - 25MnG
+      - 16MnD
+      - 16MnDR
+      - 16MnDG
+      - 15MnNiDR
+      - 09Mn2VDG
+      - 09MnNiDR
+      - 09MnNiD
+      - Q390A
+      - Q390B
+      - Q390C
+      - Q390D
+      - Q390E
+      - L320
+      - L320N
+      - L320Q
+      - L320M
+      - L360
+      - L360N
+      - L360Q
+      - L360M
+      - L390
+      - L390N
+      - L390Q
+      - L390M
+      - CF485
+      - CF485K
+      - LF485K2
+      - ZG230-450
+      - ZG18
+      - WCB
+      - WCC
+      - A105
+      - F360
+    - group: Fe-1-3
+      grades:
+      - Q370R
+      - 15MnNiNbDR
+      - Q420R
+      - Q420A
+      - Q420B
+      - Q420C
+      - Q420D
+      - Q420E
+      - Q460C
+      - Q460D
+      - Q460E
+      - L415
+      - L415M
+      - L415N
+      - L415Q
+      - L450
+      - L450M
+      - L450Q
+    - group: Fe-1-4
+      grades:
+      - L485
+      - L485M
+      - L485Q
+      - F415
+      - F450
+      - F485
+      - 07MnMoVR
+      - 07MnNiVDR
+      - 07MnNiMoDR
+      - 12MnNiVR
+      - '15'
+      - 08MnNiMoVD
+      - 10Ni3MoVD
+      - L555
+      - L555M
+      - L555Q
+      - F555
+    - group: Fe-2
+      grades:
+      - 15MoG
+    - group: Fe-3-1
+      grades:
+      - 20MoG
+      - 12CrMo
+    - group: Fe-3-2
+      grades:
+      - 12CrMoG
+      - 20MnMo
+      - 20MnMoD
+      - 10MoWVNb
+      - 12SiMoVNb
+      - 13MnNiMoR
+    - group: Fe-3-3
+      grades:
+      - 18MnMoNbR
+      - 20MnNiMo
+      - 20MnMoNb
+      - 15NiCuMoNb
+    - group: Fe-4-1
+      grades:
+      - 15Ni1MnMoNbCu
+      - 09CrCuSb
+      - 12Cr1Mo
+      - 14Cr1Mo
+      - 14Cr1MoR
+      - 15CrMo
+      - 15CrMoG
+      - 15CrMoR
+      - GB/SA387Gr12Cl2
+      - ZG18CrMo
+      - ZG20CrMo
+      - AF11
+      - AF11G
+      - AF12
+      - AF12G
+    - group: Fe-4-2
+      grades:
+      - 12Cr1MoV
+      - 12Cr1MoVG
+      - 12Cr1MoVR
+      - AF14
+      - ZG15Cr1Mo1V
+      - ZG20CrMoV
+    - group: Fe-5A
+      grades:
+      - 08Cr2A1Mo
+      - 07Cr2A1MoR
+      - 12Cr2Mo
+      - 12Cr2MoG
+      - 12Cr2Mo1
+      - 12Cr2Mo1R
+      - 07Cr2MoW2VNbB
+      - AF22
+      - AF22G
+      - ZG17Cr2Mo
+    - group: Fe-5B-1
+      grades:
+      - 12Cr5Mo
+      - 12Cr5MoI
+      - 12Cr5MoNT
+      - AF5
+      - AF5G
+      - ZG16Cr5Mo
+    - group: Fe-5B-2
+      grades:
+      - 10Cr9Mo1VNbN
+      - 10Cr9MoW2VNbBN
+      - 10Cr11MoW2VNbCu1BN
+      - 11Cr9Mo1W1VNbBN
+      - AF91
+    - group: Fe-5B-3
+      grades:
+      - 12Cr9MoI
+      - 12Cr9MoNT
+      - AF9
+      - AF9G
+    - group: Fe-5C
+      grades:
+      - 12Cr2MoWVTiB
+      - 12Cr3MoVSiTiB
+      - 12Cr2Mo1VR
+      - 12Cr2Mo1V
+      - 12Cr3Mo1V
+    - group: Fe-6
+      grades:
+      - S41008
+      - 06Cr13
+      - S41010
+      - 12Cr13
+      - S42020
+      - 20Cr13
+    - group: Fe-7-1
+      grades:
+      - S11306
+      - 06Cr13
+      - S11348
+      - 06Cr13Al
+    - group: Fe-7-2
+      grades:
+      - S11710
+      - 10Cr17
+      - S11972
+      - 019Cr19Mo2NbTi
+    - group: Fe-8-1
+      grades:
+      - S30210
+      - 12Cr18Ni9
+      - S30403
+      - 022Cr19Ni10
+      - S30408
+      - 06Cr19Ni10
+      - S30409
+      - 07Cr19Ni10
+      - S30432
+      - 10Cr18Ni9NbCu3BN
+      - S30453
+      - 022Cr19Ni10N
+      - S30458
+      - 06Cr19Ni10N
+      - S30478
+      - 06Cr19Ni9NbN
+      - S31252
+      - 015Cr20Ni18Mo6CuN
+      - S31603
+      - 022Cr17Ni12Mo2
+      - S31608
+      - 06Cr17Ni12Mo2
+      - S31609
+      - 07Cr17Ni12Mo2
+      - S31653
+      - 022Cr17Ni12Mo2N
+      - S31658
+      - 06Cr17Ni12Mo2N
+      - S31668
+      - 06Cr17Ni12Mo2Ti
+      - S31683
+      - 022Cr18Ni14Mo2Cu2
+      - S31688
+      - 06Cr18Ni12Mo2Cu2
+      - S31703
+      - 022Cr19Ni13Mo3
+      - S31708
+      - 06Cr19Ni13Mo3
+      - S32168
+      - 06Cr18Ni11Ti
+      - S32169
+      - 07Cr19Ni11Ti
+      - S34778
+      - 06Cr18Ni11Nb
+      - S34779
+      - 07Cr18Ni11Nb
+      - S38148
+      - 06Cr18Ni13Si4
+      - S39042
+      - 015Cr21Ni26Mo5Cu2
+      - 08Cr18Ni11NbFG
+      - CF3
+      - CF3M
+      - CF8
+      - CF8M
+      - CF8C
+      - SF304
+      - SF304L
+      - SF304H
+      - SF310
+      - SF316
+      - SF316L
+      - SF316H
+      - SF321
+      - SF321H
+      - SF347
+      - SF347H
+    - group: Fe-8-2
+      grades:
+      - S30908
+      - 06Cr23Ni13
+      - S30920
+      - 16Cr23Ni13
+      - S31008
+      - 06Cr25Ni20
+      - S31009
+      - 07Cr25Ni21
+      - S31020
+      - 20Cr25Ni20
+      - S31042
+      - 07Cr25Ni21NbN
+      - SF310
+    - group: Fe-9B
+      grades:
+      - 08Ni3DR
+      - 08Ni3D
+      - 06Ni3MoDG
+      - LF450K3
+      - ZG012Ni4
+    - group: Fe-10I
+      grades:
+      - S12791
+      - 008Cr27Mo
+    - group: Fe-10H
+      grades:
+      - S21953
+      - 022Cr19Ni5Mo3Si2N
+      - S22153
+      - 022Cr21Ni3Mo2N
+      - S22253
+      - 022Cr22Ni5Mo3N
+      - S22053
+      - 022Cr23Ni5Mo3N
+      - S22294
+      - 03Cr22Mn5Ni2MoCuN
+      - S23043
+      - 022Cr23Ni4MoCuN
+      - S25073
+      - 022Cr25Ni7Mo4N
+      - S25554
+      - 03Cr25Ni6Mo3Cu2N
+      - SF2225
+      - SF2205
+      - SF2507
+      - '20'
+    - group: Fe-11A
+      grades:
+      - 06Ni9DR
+      - 06Ni9D
+      - 06Ni9DG
+      - LF680K4
+    - group: Ti-1
+      grades:
+      - 1050A
+      - A1-1
+      - A1-2
+      - 5A03
+      - A1-3
+      - 6A02
+      - A1-4
+      - A1-5
+      - 5A05
+      - TA0
+      - TA1
+      - TA1G
+      - ZTi1
+      - ZTi2
+      - TA2
+      - TA2G
+      - TA7
+      - TA8
+      - TA9
+      - TA3
+      - TA3G
+    - group: Ti-2
+      grades:
+      - TA4
+      - TA4G
+      - TA10
+    - group: Zr-3
+      grades:
+      - R60702
+    - group: Zr-5
+      grades:
+      - R60705
+    - group: Cu-1
+      grades:
+      - T2
+      - TP1
+      - TP2
+      - TU2
+    - group: Cu-2
+      grades:
+      - H62
+      - HSn62-1
+      - HSn70-1
+      - HA177-2
+    - group: Cu-3
+      grades:
+      - QSi3-1
+    - group: Cu-4
+      grades:
+      - B19
+      - BFe10-1-1
+      - BFe30-1-1
+    - group: Cu-5
+      grades:
+      - QAl5
+      - QAl9-4
+      - ZCuAl10Fe3
+    - group: Ni-1
+      grades:
+      - N5
+      - N6
+      - N7
+    - group: Ni-2
+      grades:
+      - NCu30
+    - group: Ni-3
+      grades:
+      - NS3102
+      - N06600
+      - NS3105
+      - N06690
+      - NS3304
+      - N10276
+      - NS3305
+      - N06455
+      - NS3306
+      - N06625
+    - group: Ni-4
+      grades:
+      - NS3201
+      - N10001
+      - NS3202
+      - N10665
+    - group: Ni-5
+      grades:
+      - NS1101
+      - N08800
+      - NS1102
+      - N08810
+      - NS1402
+      - N08825
+      - NS1403
+      - N08020
   factorChanges2023:
     sourceClause: 前言
     extractedFrom: ocr
@@ -226,26 +679,34 @@ tsg31_2025:
 
 weldingConsumables:
   source: GB/T 5117-2012 非合金钢及细晶粒钢焊条；GB/T 8110-2020 熔化极气体保护电弧焊用非合金钢及细晶粒钢实心焊丝
-  caveat: 2026-09-07 预填值来自焊材厂商产品页转述的"标准保证值"（xiangind.com、bocastwelding.com），不是标准正文；写入判定前须对照 GB/T 5117-2012 表 4/表 5、GB/T 8110-2020 表
+  caveat: 焊条（E4303/E5015/E5016/E4315）与焊丝（ER50-6）均已对照正版标准正文抄录，不再是厂商页转述；仍等法规核对人签字后才从预警升级为判不符合
   electrodes:
-    - designation: E4303
-      commonName: J422
-      standard: GB/T 5117-2012
-      depositedMetalComposition: {C: "<=0.20", Mn: "<=1.20", Si: "<=1.00", P: "<=0.040", S: "<=0.035"}
-      mechanical: {tensileMPaMin: 430, yieldMPaMin: 330, elongationPctMin: 20, impact: [{temperatureC: 0, kv2JMin: 27}, {temperatureC: -20, kv2JMin: 47}]}
-      extractedFrom: vendor_page
-      sourceUrl: https://www.xiangind.com/e4303
-      verifiedBy: null
-      note: 供应商页称"保证值"；-20℃ 47J 与研究报告 3.5 节的记忆值一致，仍待核标准表
-    - designation: E5015
-      commonName: J507
-      standard: GB/T 5117-2012
-      depositedMetalComposition: {C: "<=0.15", Mn: "<=1.60", Si: "<=0.90", P: "<=0.035", S: "<=0.035", Cr: "<=0.20", Mo: "<=0.30", V: "<=0.08", Ni: "<=0.30"}
-      mechanical: {tensileMPaMin: 490, yieldMPaMin: 400, elongationPctMin: 20, impact: [{temperatureC: -30, kv2JMin: 27}]}
-      extractedFrom: vendor_page
-      sourceUrl: http://www.bocastwelding.com/product/bc-j507-e5015.html
-      verifiedBy: null
-      note: 研究报告 3.5 节记 -30℃ ≥47J，供应商页为 ≥27J——两来源冲突，以标准正文为准
+    sourceClause: GB/T 5117-2012 表 6 熔敷金属化学成分、表 7 力学性能、4.5.2/4.5.3 冲击判定
+    extractedFrom: official_pdf_ocr
+    sourceFile: GB/T 5117-2012 正版 PDF（用户 2026-09-07 提供，扫描件经 Vision OCR + 逐页核对表 6/表 7）
+    impactRule: 表 7 只给冲击试验温度；能量按 4.5.2——五个试样去掉最大最小，余三个中两个 ≥27J、另一个 ≥20J，平均 ≥27J。型号带可选代号 U 时按 4.5.3：三个试样，仅一个可 <47J 但 ≥32J，平均 ≥47J
+    tensileCodeNote: 表 1 抗拉强度代号 43→≥430MPa、50→≥490MPa、57→≥570MPa；2012 版把代号"49"改成"50"，焊态代号由"A"改为无标记
+    items:
+      - designation: E4303
+        commonName: J422
+        depositedMetalComposition: {C: "<=0.20", Mn: "<=1.20", Si: "<=1.00", P: "<=0.040", S: "<=0.035", Ni: "<=0.30", Cr: "<=0.20", Mo: "<=0.30", V: "<=0.08"}
+        mechanical: {tensileMPaMin: 430, yieldMPaMin: 330, elongationPctMin: 20, impactTemperatureC: 0, kv2JMin: 27, kv2JMinWithU: 47}
+        verifiedBy: null
+      - designation: E5015
+        commonName: J507
+        depositedMetalComposition: {C: "<=0.15", Mn: "<=1.60", Si: "<=0.90", P: "<=0.035", S: "<=0.035", Ni: "<=0.30", Cr: "<=0.20", Mo: "<=0.30", V: "<=0.08"}
+        mechanical: {tensileMPaMin: 490, yieldMPaMin: 400, elongationPctMin: 20, impactTemperatureC: -30, kv2JMin: 27, kv2JMinWithU: 47}
+        verifiedBy: null
+      - designation: E5016
+        commonName: J506
+        depositedMetalComposition: {C: "<=0.15", Mn: "<=1.60", Si: "<=0.75", P: "<=0.035", S: "<=0.035", Ni: "<=0.30", Cr: "<=0.20", Mo: "<=0.30", V: "<=0.08"}
+        mechanical: {tensileMPaMin: 490, yieldMPaMin: 400, elongationPctMin: 20, impactTemperatureC: -30, kv2JMin: 27, kv2JMinWithU: 47}
+        verifiedBy: null
+      - designation: E4315
+        commonName: J427
+        depositedMetalComposition: {C: "<=0.20", Mn: "<=1.20", Si: "<=1.00", P: "<=0.040", S: "<=0.035", Ni: "<=0.30", Cr: "<=0.20", Mo: "<=0.30", V: "<=0.08"}
+        mechanical: {tensileMPaMin: 430, yieldMPaMin: 330, elongationPctMin: 20, impactTemperatureC: -30, kv2JMin: 27, kv2JMinWithU: 47}
+        verifiedBy: null
   wires:
     - designation: ER50-6
       standard: GB/T 8110-2020
