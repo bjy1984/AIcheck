@@ -276,7 +276,65 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
             value = _list_value(value)
         if _present(value):
             output[target] = value
+    _fill_acceptance_limits_from_standard(output)
     return output
+
+
+def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
+    """设计项没带验收限值时，按「执行标准 + 材料牌号」从法规数值表推导。
+
+    为什么要这一步：R16 的数值比对（evaluate_r16_quality_certificate_results）要求调用方
+    把 acceptanceLimits 传进来，传不进来就返回 evidence_insufficient。而设计图纸上通常只写
+    「GB/T 8163-2018 Q345B」，限值在标准里——2026-09-07 线上审计前，这一步没人做，
+    于是质保书上的实测值再离谱也只会被判成"证据不足"。
+
+    只在设计项本身没给限值时才填，人工填的优先；查不到标准或牌号就什么都不做，不猜。
+    """
+    if _present(item.get("acceptanceLimits")):
+        return
+    standard = str(item.get("standardRef") or "").strip()
+    grade = str(item.get("materialGrade") or "").strip()
+    if not standard or not grade:
+        return
+    from libs.regulatory_tables import pipe_material_limits
+
+    level = str(item.get("qualityLevel") or item.get("质量等级") or "").strip() or None
+    found = pipe_material_limits(standard, grade, level)
+    if not found:
+        return
+    mechanical = found.get("mechanical") or {}
+    limits: list[dict[str, Any]] = []
+
+    def add(code: str, name: str, *, minimum: Any = None, maximum: Any = None) -> None:
+        if minimum is None and maximum is None:
+            return
+        entry: dict[str, Any] = {"itemCode": code, "name": name, "source": f"{found['standard']} {found['grade']}"}
+        if minimum is not None:
+            entry["minimum"] = minimum
+        if maximum is not None:
+            entry["maximum"] = maximum
+        limits.append(entry)
+
+    tensile = mechanical.get("tensileMPa")
+    if isinstance(tensile, str) and "-" in tensile:
+        low, high = tensile.split("-", 1)
+        add("tensileStrength", "抗拉强度", minimum=float(low), maximum=float(high))
+    elif isinstance(tensile, str) and tensile.startswith(">="):
+        add("tensileStrength", "抗拉强度", minimum=float(tensile[2:]))
+    add("tensileStrength", "抗拉强度", minimum=mechanical.get("tensileMPaMin"))
+    add("yieldStrength", "屈服强度", minimum=mechanical.get("yieldMPaMin") or mechanical.get("rp02MPaMin"))
+    add("elongation", "断后伸长率", minimum=mechanical.get("elongationPctMin") or mechanical.get("elongationPctMinLongitudinal"))
+    add("impactEnergy", "冲击吸收能量", minimum=mechanical.get("kv2JMin") or mechanical.get("kv2JMinLongitudinal"))
+
+    if limits:
+        item["acceptanceLimits"] = limits
+        item["acceptanceLimitsSource"] = {
+            "standard": found["standard"],
+            "grade": found["grade"],
+            "level": found.get("level"),
+            "derivedFrom": "regulatory_tables.pipeMaterialLimits",
+            "verified": found.get("verified", False),
+        }
 
 
 def _all_business_rows(parse_result: dict[str, Any]) -> list[dict[str, Any]]:

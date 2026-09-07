@@ -205,12 +205,16 @@ def test_trust_policy_is_recorded_not_faked_and_can_be_switched_back():
     assert is_verified(copy.deepcopy(unsigned[0]))
 
 
-def test_pipe_limits_cover_five_standards_and_keep_them_apart():
+def test_pipe_limits_cover_six_standards_and_keep_them_apart():
     """同一牌号在不同管材标准下限值不同——质保书核对必须按管材标准分开查。"""
     from libs.regulatory_tables import pipe_material_limits, table
 
     standards = {item["standard"] for item in table("pipeMaterialLimits")["standards"]}
-    assert {"GB/T 8163-2018", "GB/T 3087-2022", "GB/T 14976-2025", "GB/T 12771-2019", "GB/T 5310-2023"} == standards
+    assert standards == {
+        "GB/T 8163-2018", "GB/T 3087-2022", "GB/T 14976-2025",
+        "GB/T 12771-2019", "GB/T 5310-2023", "GB/T 13296-2023",
+    }
+    assert sum(len(item["grades"]) for item in table("pipeMaterialLimits")["standards"]) >= 42
 
     # S30408：焊接管 515，无缝管 520，伸长率的口径也不同
     welded = pipe_material_limits("GB/T 12771-2019", "06Cr19Ni10")

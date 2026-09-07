@@ -962,9 +962,36 @@ pipeMaterialLimits:
           mechanical: {"tensileMPa": ">=515", "yieldMPaMin": 205, "elongationPctMinLongitudinal": 35}
           hardness: {"HBW": "140-192", "HV": "150-200"}
           note: 奥氏体，无横向与冲击要求；洛氏 75~90 HRBW
+    - standard: GB/T 13296-2023
+      name: 锅炉、热交换器用不锈钢无缝钢管
+      extractedFrom: official_pdf_ocr_page_images
+      sourceClause: 表 4 钢管的热处理制度、室温拉伸性能及密度；表 5 硬度；7.5 液压试验；7.6 工艺性能
+      verifiedBy: null
+      coverage: 表 4 共 31 个牌号，这里先录第 20~31 号（含常用的 06Cr19Ni13Mo3、06Cr18Ni11Ti、10Cr17、06Cr13）；1~19 号待补
+      hardnessLimits:
+        source: 表 5
+        austenitic: {"06Cr18Ni13Si4": {HBW: "<=207", HRB: "<=95", HV: "<=218"}, "015Cr20Ni18Mo6CuN": {HBW: "<=220", HRB: "<=96", HV: "<=230"}, "022Cr21Ni25Mo7N": {HRB: "<=100"}, 其他: {HBW: "<=192", HRB: "<=90", HV: "<=200"}}
+        ferritic: {"10Cr17、06Cr13": {HBW: "<=183"}, "008Cr27Mo": {HBW: "<=219"}}
+      hydrostaticTest:
+        clause: "7.5.1"
+        formula: P = 2SR/D
+        note: R 取表 4 规定塑性延伸强度最小值的 60%；最大试验压力不超过 20MPa，稳压不少于 10s；P<7MPa 修约到 0.5MPa，P>=7MPa 修约到 1MPa
+        alternative: 供方可用涡流检测代替液压试验，验收等级按 GB/T 7735-2016 的 E3H 级
+      processTests:
+        flattening: 壁厚不大于 10mm 应做压扁；H = (1+α)S/(α+S/D)，奥氏体 α=0.09、其他 α=0.07
+        flaring: 外径不大于 150mm 且壁厚不大于 10mm 应做扩口；顶芯锥度 60°，奥氏体扩口率 18%、其他 15%
+      grades:
+        - {grade: S31708, alias: 06Cr19Ni13Mo3, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S31703, alias: 022Cr19Ni13Mo3, mechanical: {tensileMPaMin: 480, rp02MPaMin: 175, elongationPctMin: 35}, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S32168, alias: 06Cr18Ni11Ti, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 920℃~1150℃，急冷}
+        - {grade: S34778, alias: 06Cr18Ni11Nb, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 980℃~1150℃，急冷}
+        - {grade: S38148, alias: 06Cr18Ni13Si4, mechanical: {tensileMPaMin: 520, rp02MPaMin: 205, elongationPctMin: 35}, heatTreatment: 1010℃~1150℃，急冷}
+        - {grade: S11710, alias: 10Cr17, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, heatTreatment: 780℃~850℃，空冷或缓冷}
+        - {grade: S11306, alias: 06Cr13, mechanical: {tensileMPaMin: 410, rp02MPaMin: 210, elongationPctMin: 20}, heatTreatment: 750℃空冷或 800℃~900℃缓冷}
+        - {grade: S12791, alias: 008Cr27Mo, mechanical: {tensileMPaMin: 410, rp02MPaMin: 245, elongationPctMin: 20}, heatTreatment: 900℃~1050℃，急冷}
   pending:
     - GB/T 14976-2025 表 2/表 3 其余 26 个牌号（铁素体、马氏体、双相）待补
-    - GB/T 13296-2023（锅炉换热器管）：表 4 待按页看图抄录
+    - GB/T 13296-2023 表 4 的 1~19 号牌号待补（已录 20~31 号）
     - GB/T 5310-2023 表 8 其余牌号（共 25 个，已录 11 个常用）；GB/T 9711-2023 已 OCR 完，表格待抄
 
 nbt47014SpecificFactors:
