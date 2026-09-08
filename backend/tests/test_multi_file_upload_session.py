@@ -180,6 +180,9 @@ def test_postgres_eight_file_session_persists_every_hash_and_binding(
 ) -> None:
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "disabled")
     repo.configure_sync_postgres(isolated_postgres_url)
+    from scripts.migrate_backend import apply_migrations
+
+    apply_migrations(isolated_postgres_url)
     repo.ensure_postgres_schema()
     try:
         upload, completed_files = _create_and_put_eight_files()
@@ -201,6 +204,9 @@ def test_overlapping_postgres_puts_cannot_lose_the_first_hash(
 
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "disabled")
     repo.configure_sync_postgres(isolated_postgres_url)
+    from scripts.migrate_backend import apply_migrations
+
+    apply_migrations(isolated_postgres_url)
     repo.ensure_postgres_schema()
     upload = _assert_ok(
         client.post(

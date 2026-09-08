@@ -101,20 +101,23 @@ def isolated_postgres_url() -> Iterator[str]:
     from psycopg import sql
     from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-    schema = f"aicheck_test_{uuid4().hex}"
+    # Immutable migration 0003 targets public.aicheck_state. Isolate databases,
+    # not search_path schemas; this also prevents advisory locks leaking across tests.
+    database = f"aicheck_test_{uuid4().hex}"
     with psycopg.connect(database_url, autocommit=True) as connection:
-        connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+        connection.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'").format(sql.Identifier(database)))
     scoped_url = make_conninfo(
         **{
             **conninfo_to_dict(database_url),
-            "options": f"-c search_path={schema},public",
+            "dbname": database,
+            "options": "-c statement_timeout=30000 -c lock_timeout=10000",
         }
     )
     try:
         yield scoped_url
     finally:
         with psycopg.connect(database_url, autocommit=True) as connection:
-            connection.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+            connection.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(database)))
 
 
 @pytest.fixture(autouse=True)

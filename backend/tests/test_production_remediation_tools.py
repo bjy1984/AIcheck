@@ -293,7 +293,7 @@ def test_legacy_production_preparation_upgrades_realistic_old_schema(isolated_po
         assert "idx_idempotency_updated_at" not in old_indexes
         assert "idx_aicheck_state_payload_gin" in old_indexes
 
-    assert apply_migrations(isolated_postgres_url) == ["0001_backend_audit_hardening"]
+    assert apply_migrations(isolated_postgres_url) == ["0001_backend_audit_hardening", "0002_agent_raw_event_vault", "0003_state_change_probe_index"]
     with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
         assert connection.execute(
             "SELECT count(*) FROM aicheck_state WHERE tenant_id='TENANT-DEFAULT'"

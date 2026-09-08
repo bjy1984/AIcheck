@@ -20,7 +20,12 @@ def test_manifest_includes_new_files_and_fixtures_but_not_deleted_or_ignored(tmp
     (tmp_path / '.env').write_text('PRIVATE=never-sync')
     (tmp_path / 'test2').mkdir()
     (tmp_path / 'test2/fixture.pdf').write_bytes(b'fixture')
+    (tmp_path / 'output/two_project_ai_review_20260825').mkdir(parents=True)
+    (tmp_path / 'output/two_project_ai_review_20260825/review_input.json').write_text('{}')
+    (tmp_path / 'output/private-output.json').write_text('{}')
     names = source_files(tmp_path)
+    assert 'output/two_project_ai_review_20260825/review_input.json' in names
+    assert 'output/private-output.json' not in names
     assert 'new_test.py' in names
     assert 'test2/fixture.pdf' in names
     assert 'deleted.py' not in names
