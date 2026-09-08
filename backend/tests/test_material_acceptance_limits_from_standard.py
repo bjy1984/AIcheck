@@ -23,11 +23,11 @@ def test_limits_derived_from_standard_and_grade():
 
 def test_quality_level_picks_the_right_row():
     """Q345 分 A~E 级，限值随等级变——冲击温度与能量只有 B 级以上才有。"""
-    b = _enrich_material_design_item({"standardRef": "GB/T 8163-2018", "materialGrade": "Q345", "qualityLevel": "B"})
+    b = _enrich_material_design_item({"standardRef": "GB/T 8163-2018", "materialGrade": "Q345", "outerDiameterMm": 108, "wallThicknessMm": 10, "qualityLevel": "B"})
     codes = {limit["itemCode"]: limit for limit in b["acceptanceLimits"]}
     assert codes["tensileStrength"]["minimum"] == 470.0 and codes["yieldStrength"]["minimum"] == 345
     assert codes["impactEnergy"]["minimum"] == 34
-    e = _enrich_material_design_item({"standardRef": "GB/T 8163-2018", "materialGrade": "Q345", "qualityLevel": "E"})
+    e = _enrich_material_design_item({"standardRef": "GB/T 8163-2018", "materialGrade": "Q345", "outerDiameterMm": 108, "wallThicknessMm": 10, "qualityLevel": "E"})
     assert {limit["itemCode"]: limit for limit in e["acceptanceLimits"]}["impactEnergy"]["minimum"] == 27
 
 

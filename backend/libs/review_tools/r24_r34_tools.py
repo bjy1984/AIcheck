@@ -147,7 +147,14 @@ def evaluate_welding_consumable(arguments: dict[str, Any]) -> dict[str, Any]:
         if not mechanics:
             missing = True
             reasons.append("mechanical_properties_missing")
-        profile = profiles.get(_standard_key(standard_ref)) if standard_ref else None
+        designation = _first(cert, "designation", "model", "materialGrade", "brand") or _first(required, "designation", "model", "materialGrade", "brand")
+        profile = profiles.get(_standard_key(f"{standard_ref} {designation}")) if standard_ref and designation else None
+        if profile is None and standard_ref:
+            candidate = profiles.get(_standard_key(standard_ref))
+            # A caller may provide a profile for one standard, but never borrow a
+            # different designation's profile when a designation was supplied.
+            if isinstance(candidate, dict) and (not candidate.get("designation") or _norm(candidate["designation"]) == _norm(designation)):
+                profile = candidate
         if profile is None:
             missing = True
             reasons.append("product_standard_limit_profile_missing")
@@ -168,7 +175,7 @@ def evaluate_welding_consumable(arguments: dict[str, Any]) -> dict[str, Any]:
         if _present(filler_class) and _present(base_grade):
             from libs.regulatory_tables import filler_matches_base_material
 
-            verdict = filler_matches_base_material(str(filler_class), str(base_grade))
+            verdict = filler_matches_base_material(str(filler_class), str(base_grade), welding_method=_first(required, "weldingMethod", "method") or _first(cert, "weldingMethod", "method"))
             if verdict is None:
                 missing = True
                 reasons.append("base_material_group_unknown_for_filler_match")
@@ -198,7 +205,7 @@ def evaluate_welding_consumable(arguments: dict[str, Any]) -> dict[str, Any]:
         failed |= explicit
         incomplete |= missing and not explicit
         checks.append(check(f"consumable_{index}_mtc_and_traceability", status == "passed", _id(cert, index), "qualified_and_batch_traceable"))
-        matrix.append({"itemId": _id(required, index), "certificateId": _id(cert, index), "standardRef": standard_ref, "result": status, "reasonCodes": list(dict.fromkeys(reasons))})
+        matrix.append({"itemId": _id(required, index), "certificateId": _id(cert, index), "standardRef": standard_ref, "designation": designation, "limitSource": {"standard": (profile or {}).get("standard"), "designation": (profile or {}).get("designation"), "verified": (profile or {}).get("verified")}, "result": status, "reasonCodes": list(dict.fromkeys(reasons))})
     return _output("evaluate_welding_consumable", failed, incomplete, {"consumableCertificateMatrix": matrix}, checks, R26_VERSION)
 
 

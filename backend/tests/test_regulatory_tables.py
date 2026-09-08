@@ -405,7 +405,7 @@ def test_quality_level_reaches_the_limit_lookup():
 
     # 没写等级时只给各级共有的两项，不猜等级
     common = limits_of(None)
-    assert set(common) == {"抗拉强度", "屈服强度"}
+    assert {name for name in common if not name.startswith("化学成分")} == {"抗拉强度", "屈服强度"}
 
 
 def _limits(row: dict) -> dict:

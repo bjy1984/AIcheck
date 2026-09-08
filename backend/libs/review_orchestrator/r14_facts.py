@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+from libs.regulatory_tables import product_inspection_rules
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
 from libs.review_orchestrator.r13_facts import (
     _business_rows,
@@ -87,6 +88,7 @@ def build_r14_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
     return {
         "r14": {
             "designItems": design_items,
+            "productInspectionRules": product_inspection_rules(),
             "pipelineCharacteristics": pipeline_characteristics,
             "factoryInspectionReports": factory_reports,
             "specialInspectionReports": special_reports,

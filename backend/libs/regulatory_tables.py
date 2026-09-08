@@ -303,8 +303,13 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
             # 质保书上写的可能是统一数字代号（S30408 / U50207），也可能是牌号（06Cr19Ni10、20G），都认。
             # GB/T 5310 把数字代号放在 unifiedCode 而不是 alias，漏掉它按代号就查不到。
             names = {entry.get("grade"), entry.get("alias"), entry.get("unifiedCode")}
-            if wanted_grade not in {_norm_designation(name) for name in names if name}:
+            normalized_names = {_norm_designation(name) for name in names if name}
+            inferred_level = next((str(row["level"]) for row in entry.get("levels") or []
+                                   if wanted_grade == _norm_designation(entry["grade"]) + _norm_designation(row["level"])), None)
+            if wanted_grade not in normalized_names and inferred_level is None:
                 continue
+            if inferred_level and level and inferred_level.upper() != str(level).upper():
+                return None
             merged: dict[str, Any] = {
                 "standard": item.get("standard"),
                 "grade": entry.get("grade"),
@@ -321,7 +326,7 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
             levels = entry.get("levels") or []
             if not levels:
                 return merged if level is None else None
-            wanted_level = str(level or "").strip().upper()
+            wanted_level = str(level or inferred_level or "").strip().upper()
             row = next((item2 for item2 in levels if str(item2.get("level") or "").upper() == wanted_level), None)
             if row is None:
                 merged["availableLevels"] = [str(item2.get("level")) for item2 in levels]
@@ -540,7 +545,7 @@ def filler_classes_for_group(base_material_group: str, *, welding_method: str | 
     return out
 
 
-def filler_matches_base_material(filler_class: str, base_material_grade: str) -> dict[str, Any] | None:
+def filler_matches_base_material(filler_class: str, base_material_grade: str, *, welding_method: str | None = None) -> dict[str, Any] | None:
     """焊材分类代号与母材牌号是否匹配（先把牌号查成组别，再比对）。
 
     返回 {matched, baseMaterialGroup, expectedClasses}；母材查不到组别时返回 None——
@@ -550,7 +555,7 @@ def filler_matches_base_material(filler_class: str, base_material_grade: str) ->
     if not group:
         return None
     code = str(filler_class or "").strip()
-    expected = [item["fillerClass"] for item in filler_classes_for_group(group)]
+    expected = [item["fillerClass"] for item in filler_classes_for_group(group, welding_method=welding_method)]
     if not expected:
         # 表 2~表 4 没给这个组别的焊材类别（Fe-11A、Ni-2~Ni-5 等 6 个组别）。
         # 空集合不等于"都不配套"——照旧返回 matched=False 会把每一种焊材都判成不符合。
