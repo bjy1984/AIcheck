@@ -368,7 +368,7 @@ class QwenRuntimeClient:
         try:
             llm_circuit_breaker.ensure_closed(host)
             result = self._chat_sync_dispatch(messages, model=model, **kwargs)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- model boundary records breaker failure before explicit failover
             llm_circuit_breaker.record_failure(host, exc)
             return self._failover_chat_sync(messages, model, exc, **kwargs)
         llm_circuit_breaker.record_success(host)

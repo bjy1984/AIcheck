@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from libs.db.repository import repo
 from libs.review_orchestrator import execution as ex
 from libs.review_orchestrator.shard_execution import (

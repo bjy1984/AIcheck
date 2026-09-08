@@ -68,7 +68,7 @@ def test_一个节点失败不影响其余(monkeypatch):
     monkeypatch.setattr(batch, "_node_has_reviewable_material", lambda *_: True)
     monkeypatch.setattr(batch, "_node_has_running_review", lambda *_: False)
 
-    import apps.api.routes as routes
+    from apps.api import routes
 
     def flaky(request, project_id, node_id, *rest):
         if int(node_id) == 2:
@@ -87,7 +87,7 @@ def test_一个节点失败不影响其余(monkeypatch):
 def test_超出上限的部分明确回报而不是静默截断(monkeypatch):
     monkeypatch.setattr(batch, "_node_has_reviewable_material", lambda *_: True)
     monkeypatch.setattr(batch, "_node_has_running_review", lambda *_: False)
-    import apps.api.routes as routes
+    from apps.api import routes
 
     monkeypatch.setattr(routes, "ai_recheck", lambda *a, **k: type("R", (), {"body": b"{}"})())
 

@@ -163,7 +163,7 @@ def test_deferred_not_loaded_reports_unloaded_collections() -> None:
     assert set(repo.deferred_not_loaded()) == deferred_bulk_state_keys()
 
     # 标记其一已加载后，它不再出现在清单里
-    from libs.db.repository import STATE_COLLECTIONS, _EPOCH_WATERMARK, configured_tenant_id
+    from libs.db.repository import _EPOCH_WATERMARK, STATE_COLLECTIONS, configured_tenant_id
 
     repo._collection_watermarks[
         (configured_tenant_id(), STATE_COLLECTIONS["knowledge_vectors"])

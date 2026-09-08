@@ -4,27 +4,26 @@ import asyncio
 import base64
 import hashlib
 import json
-
-import orjson
 import logging
 import os
-from functools import wraps
 import re
 import sqlite3
 import threading
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from functools import wraps
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
+import orjson
+
 from libs.audit_context import current_request_audit_context
 from libs.contracts.responses import server_time
 from libs.db.state_freshness import StateFreshnessProbe
 from libs.field_confidence import field_review_status, is_low_confidence
-from libs.material_auto_classify import classify_material
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
@@ -38,6 +37,7 @@ from libs.knowledge_indexing import (
     cosine_similarity,
     vector_payload_for_pg,
 )
+from libs.material_auto_classify import classify_material
 from libs.ocr_readiness import (
     parse_result_ingestion_status,
     parse_result_outcome_status,
@@ -589,13 +589,13 @@ class InMemoryRepository:
             return ""
         try:
             from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
-        except Exception:
+        except Exception:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
             return ""
         project = self.require_project(str(project_id or "")) or {}
         pack_id = project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID
         try:
             pack = load_business_pack(str(pack_id))
-        except Exception:
+        except Exception:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
             return ""
         for item in pack.get("materialTypes") or []:
             if str(item.get("code") or "") == code:
@@ -2274,9 +2274,9 @@ class InMemoryRepository:
             lease_stale = False
             if existing_token and lease_at:
                 try:
-                    lease_stale = datetime.strptime(
+                    lease_stale = datetime.strptime(  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
                         server_time(), "%Y-%m-%d %H:%M:%S"
-                    ) - datetime.strptime(
+                    ) - datetime.strptime(  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
                         lease_at, "%Y-%m-%d %H:%M:%S"
                     ) > timedelta(minutes=2)
                 except ValueError:
@@ -2697,8 +2697,8 @@ class InMemoryRepository:
             stage["finishedAt"] = now
             if stage.get("startedAt"):
                 try:
-                    started_at = datetime.strptime(str(stage["startedAt"]), "%Y-%m-%d %H:%M:%S")
-                    finished_at = datetime.strptime(now, "%Y-%m-%d %H:%M:%S")
+                    started_at = datetime.strptime(str(stage["startedAt"]), "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
+                    finished_at = datetime.strptime(now, "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
                     stage["elapsedSeconds"] = max(0, round((finished_at - started_at).total_seconds(), 3))
                 except ValueError:
                     stage["elapsedSeconds"] = None
@@ -3089,7 +3089,7 @@ class InMemoryRepository:
         # 要么开始无视这个标记（那它就再也不起作用了）。
         # 标成「置信度未知」：既不冒充已确认，也不诬告识别质量。
         confidence_unavailable = "provider_confidence_unavailable" in (
-            ((result.get("quality") or {}).get("reasons") or [])
+            (result.get("quality") or {}).get("reasons") or []
         )
         for index, field in enumerate(fields, start=1):
             field_id = f"FIELD-{version_id}-{index}"
@@ -3465,7 +3465,7 @@ class InMemoryRepository:
             if connection is not None:
                 try:
                     connection.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
                     pass
 
     def ensure_sync_postgres_connection(self, dsn: str | None = None) -> bool:
@@ -3484,7 +3484,7 @@ class InMemoryRepository:
                     self.sync_postgres.rollback()
                     if row and int(row[0]) == 1:
                         return True
-                except Exception:
+                except Exception:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
                     self.close_sync_postgres()
             return False
 
@@ -4805,7 +4805,7 @@ class InMemoryRepository:
                     "SELECT max(updated_at) FROM aicheck_state WHERE tenant_id = %s",
                     (effective_tenant_id,),
                 ).fetchone()
-            except Exception as exc:  # noqa: BLE001 — 见 docstring：探测失败不阻断请求
+            except Exception as exc:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
                 LOGGER.warning("state_freshness_probe_failed: %s", exc)
                 return set()
             global_max = row[0] if row else None
@@ -4821,7 +4821,7 @@ class InMemoryRepository:
                     """,
                     (effective_tenant_id,),
                 ).fetchall()
-            except Exception as exc:  # noqa: BLE001 — 同上
+            except Exception as exc:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
                 LOGGER.warning("state_freshness_detail_probe_failed: %s", exc)
                 return set()
             collection_max = {str(item[0]): item[1] for item in rows}
@@ -4895,7 +4895,7 @@ class InMemoryRepository:
                             (effective_tenant_id, collection_name),
                         ).fetchall()
                     }
-                except Exception as exc:  # noqa: BLE001 - 增量失败就退回整表，别让请求挂掉
+                except Exception as exc:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
                     LOGGER.warning("incremental_refresh_failed: %s %s", collection_name, exc)
                     full_reload_keys.add(state_key)
                     continue
@@ -4931,7 +4931,7 @@ class InMemoryRepository:
                 WHERE datname = current_database()
                 """
             ).fetchone()
-        except Exception as exc:  # noqa: BLE001 - 拿不到就退回旧行为
+        except Exception as exc:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
             LOGGER.debug("safe_watermark_unavailable: %s", exc)
             return None
         return row[0] if row else None
@@ -6196,10 +6196,10 @@ class InMemoryRepository:
                 )
                 self.sync_postgres.commit()
                 return True
-            except Exception:
+            except Exception:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
                 try:
                     self.sync_postgres.rollback()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
                     pass
                 return False
 

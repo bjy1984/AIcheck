@@ -1371,13 +1371,13 @@ def _ensure_retrieval_collections(state: dict[str, Any]) -> None:
     """
     try:
         from libs.db.repository import ensure_collections_loaded, repo
-    except Exception:  # noqa: BLE001 - 检索不能因为持久化层不可用而崩
+    except Exception:  # noqa: BLE001 -- optional page index loading must preserve existing retrieval fallback
         return
     if state is not repo.state:
         return
     try:
         ensure_collections_loaded("knowledge_page_index_nodes")
-    except Exception:  # noqa: BLE001 - 加载失败退化为少召回，好过整条检索失败
+    except Exception:  # noqa: BLE001 -- optional page index loading must preserve existing retrieval fallback
         return
 
 

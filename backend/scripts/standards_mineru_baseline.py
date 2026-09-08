@@ -14,8 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,17 +47,7 @@ def _fetch_rows(connection, collection: str, *, source_filter: str | None = None
             """,
             (collection,),
         )
-    elif collection == "knowledge_chunks":
-        cur = connection.execute(
-            """
-            SELECT object_id, payload
-            FROM aicheck_state
-            WHERE collection = %s AND payload->>'sourceId' = %s
-            ORDER BY object_id
-            """,
-            (collection, source_filter or SOURCE_ID),
-        )
-    elif collection == "knowledge_vectors":
+    elif collection == "knowledge_chunks" or collection == "knowledge_vectors":
         cur = connection.execute(
             """
             SELECT object_id, payload
@@ -108,7 +97,7 @@ def _pdf_page_count(path: Path) -> int | None:
         count = int(doc.page_count)
         doc.close()
         return count
-    except Exception:
+    except Exception:  # noqa: BLE001 -- report per-item/probe failure without abandoning the audit batch
         return None
 
 
@@ -123,7 +112,7 @@ def _upload_file_for_kf(uploads_root: Path, knowledge_file_id: str) -> Path | No
     ]
     if not candidates:
         return None
-    return sorted(candidates, key=lambda item: item.name)[0]
+    return min(candidates, key=lambda item: item.name)
 
 
 def freeze(connection, baseline_dir: Path, uploads_root: Path) -> dict[str, Any]:
@@ -176,7 +165,7 @@ def freeze(connection, baseline_dir: Path, uploads_root: Path) -> dict[str, Any]
     }
 
     summary = {
-        "frozenAt": datetime.now(timezone.utc).isoformat(),
+        "frozenAt": datetime.now(UTC).isoformat(),
         "sourceId": SOURCE_ID,
         "counts": {
             "knowledge_files": len(files),

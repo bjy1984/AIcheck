@@ -1623,7 +1623,7 @@ def test_foreign_document_id_generic_mutations_fail_before_state_change(
 
 
 def test_split_material_category_route_cannot_recategorize_foreign_document() -> None:
-    category = sorted(known_categories())[0]
+    category = min(known_categories())
     document = repo.find_one("documents", DOCUMENTS["contractor_b"])
     before = deepcopy(document)
     response = client.patch(

@@ -24,6 +24,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 sys.path.insert(0, "/app")
 
@@ -275,7 +276,6 @@ def check_org_delegation() -> bool:
     只验反向：能做什么由单测覆盖，线上要确认的是「不能做的确实做不到」。
     """
     from apps.api import org_delegation_routes as delegation
-    from libs.db.repository import repo
 
     ok_all = True
 
@@ -455,7 +455,7 @@ def check_project_leader() -> bool:
     # 没有唯一性约束：多负责人是允许的
     from apps.api import routes
 
-    src = open(routes.__file__, encoding="utf-8").read()
+    src = Path(routes.__file__).read_text(encoding="utf-8")
     no_unique = "已有负责人" not in src and "只能有一位" not in src
     print(f"  没有「只能一个负责人」的限制：{'✓' if no_unique else '✗ AB 角和轮班会被卡住'}")
     return recognized and not cross and no_unique

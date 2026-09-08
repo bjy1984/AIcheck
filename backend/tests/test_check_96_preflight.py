@@ -78,24 +78,7 @@ def append_flat_ocr_model_env(env_file: Path) -> None:
     env_file.write_text(
         env_file.read_text(encoding="utf-8")
         + "\n"
-        + "\n".join(
-            [
-                "AICHECK_PADDLEOCR_DET_MODEL_DIR=/models/PP-OCRv6_medium_det",
-                "AICHECK_PADDLEOCR_REC_MODEL_DIR=/models/PP-OCRv6_medium_rec",
-                "AICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR=/models/PP-DocLayout-L",
-                "AICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR=/models/SLANeXt_wired",
-                "AICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR=/models/RT-DETR-L_wired_table_cell_det",
-                "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR=/models/SLANeXt_wireless",
-                "AICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR=/models/RT-DETR-L_wireless_table_cell_det",
-                "AICHECK_SEAL_DET_MODEL_DIR=/models/PP-OCRv4_server_seal_det",
-                "AICHECK_SEAL_REC_MODEL_DIR=/models/PP-OCRv4_server_rec",
-                "AICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR=/models/PP-DocLayoutV3",
-                "AICHECK_PADDLEOCR_VL_REC_MODEL_DIR=/models/PaddleOCR-VL-1.6",
-                "AICHECK_PADDLEOCR_VL_DOC_ORI_MODEL_DIR=/models/PP-LCNet_x1_0_doc_ori",
-                "AICHECK_PADDLEOCR_VL_DOC_UNWARP_MODEL_DIR=/models/UVDoc",
-                "DOCLING_ARTIFACTS_PATH=/models/docling-artifacts",
-            ]
-        ),
+        + "AICHECK_PADDLEOCR_DET_MODEL_DIR=/models/PP-OCRv6_medium_det\nAICHECK_PADDLEOCR_REC_MODEL_DIR=/models/PP-OCRv6_medium_rec\nAICHECK_PPSTRUCTURE_LAYOUT_MODEL_DIR=/models/PP-DocLayout-L\nAICHECK_PPSTRUCTURE_WIRED_TABLE_STRUCTURE_MODEL_DIR=/models/SLANeXt_wired\nAICHECK_PPSTRUCTURE_WIRED_TABLE_CELLS_MODEL_DIR=/models/RT-DETR-L_wired_table_cell_det\nAICHECK_PPSTRUCTURE_WIRELESS_TABLE_STRUCTURE_MODEL_DIR=/models/SLANeXt_wireless\nAICHECK_PPSTRUCTURE_WIRELESS_TABLE_CELLS_MODEL_DIR=/models/RT-DETR-L_wireless_table_cell_det\nAICHECK_SEAL_DET_MODEL_DIR=/models/PP-OCRv4_server_seal_det\nAICHECK_SEAL_REC_MODEL_DIR=/models/PP-OCRv4_server_rec\nAICHECK_PADDLEOCR_VL_LAYOUT_MODEL_DIR=/models/PP-DocLayoutV3\nAICHECK_PADDLEOCR_VL_REC_MODEL_DIR=/models/PaddleOCR-VL-1.6\nAICHECK_PADDLEOCR_VL_DOC_ORI_MODEL_DIR=/models/PP-LCNet_x1_0_doc_ori\nAICHECK_PADDLEOCR_VL_DOC_UNWARP_MODEL_DIR=/models/UVDoc\nDOCLING_ARTIFACTS_PATH=/models/docling-artifacts",
         encoding="utf-8",
     )
 

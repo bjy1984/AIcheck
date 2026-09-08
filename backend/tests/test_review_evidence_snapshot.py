@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 VERSIONS = {
     "rule_version": "rule-v1",
     "clause_package_version": "clauses-v1",

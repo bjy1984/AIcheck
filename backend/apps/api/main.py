@@ -17,13 +17,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from apps.api.auto_review_routes import auto_review_router
 from apps.api.batch_review_routes import batch_review_router
-from apps.api.document_category_routes import document_category_router
-from apps.api.org_delegation_routes import org_delegation_router
-from apps.api.project_registration_routes import project_registration_router
+from apps.api.blind_review_routes import blind_review_router
 from apps.api.cnse_routes import router as cnse_router
-from apps.api.mineru_ocr_routes import router as mineru_ocr_router
+from apps.api.document_category_routes import document_category_router
+from apps.api.feedback_metrics_routes import feedback_metrics_router
 from apps.api.idempotency_scope import authorization_membership_snapshot
+from apps.api.knowledge_admin_routes import knowledge_admin_router
+from apps.api.mineru_ocr_routes import router as mineru_ocr_router
+from apps.api.org_delegation_routes import org_delegation_router
+from apps.api.project_analysis_routes import project_analysis_router
+from apps.api.project_registration_routes import project_registration_router
+from apps.api.report_template_routes import report_template_router
 from apps.api.routes import (
     binding_node_ids,
     document_node_ids,
@@ -35,12 +41,6 @@ from apps.api.routes import (
     scope_error_for_record,
 )
 from apps.api.std_samr_routes import router as std_samr_router
-from apps.api.auto_review_routes import auto_review_router
-from apps.api.blind_review_routes import blind_review_router
-from apps.api.feedback_metrics_routes import feedback_metrics_router
-from apps.api.project_analysis_routes import project_analysis_router
-from apps.api.knowledge_admin_routes import knowledge_admin_router
-from apps.api.report_template_routes import report_template_router
 from libs.audit_context import (
     current_request_audit_context,
     reset_request_audit_context,
@@ -150,7 +150,7 @@ async def runtime_database_scope_refresh_loop() -> None:
             await _refresh_runtime_database_scope_once()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 -- readiness boundary reports unavailable without exposing driver credentials
             # The core refresh is fail-closed. Avoid exception text here because a driver error
             # may contain connection identity; the next bounded interval retries.
             logger.warning("Runtime database-scope refresh failed")
@@ -1093,7 +1093,7 @@ def database_schema_readiness() -> dict[str, bool]:
             or (anchor is not None and int(anchor) >= int(head))
         )
         return {"schema": schema_ready, "auditAnchor": anchor_ready}
-    except Exception:
+    except Exception:  # noqa: BLE001 -- readiness boundary reports unavailable without exposing driver credentials
         return {"schema": False, "auditAnchor": False}
 
 
@@ -1237,7 +1237,7 @@ def mineru_worker_health_status() -> dict[str, object]:
                 "lastError": payload.get("lastError"),
             }
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- readiness boundary reports unavailable without exposing driver credentials
         status["ready"] = not required
         status["lastError"] = type(exc).__name__
     return status
@@ -1268,7 +1268,7 @@ def raw_vault_health_status() -> dict[str, object]:
             lock_status = str(getattr(lock_config, "status", "") or "").upper()
             status["bucketLocked"] = lock_status == "ENABLED"
             status["legalHoldCapable"] = status["bucketLocked"]
-    except Exception:
+    except Exception:  # noqa: BLE001 -- readiness boundary reports unavailable without exposing driver credentials
         pass
     try:
         import psycopg
@@ -1307,7 +1307,7 @@ def raw_vault_health_status() -> dict[str, object]:
                 """
             ).fetchone()
             status["relayReady"] = bool(heartbeat)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- readiness boundary reports unavailable without exposing driver credentials
         status["reason"] = f"{type(exc).__name__}: raw vault readiness probe failed"
     status["ready"] = bool(
         status["configured"]
@@ -1378,7 +1378,7 @@ def review_workflow_metrics() -> dict[str, object]:
                 outbox_pending_count = int(outbox_row[0] or 0)
                 outbox_max_attempts = int(outbox_row[1] or 0)
                 outbox_oldest_age_seconds = float(outbox_row[2]) if outbox_row[2] is not None else None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- readiness boundary reports unavailable without exposing driver credentials
             worker_heartbeat = {
                 "ready": False,
                 "activeCount": 0,
@@ -1413,7 +1413,7 @@ async def temporal_health_status() -> dict[str, object]:
         from temporalio.client import Client
 
         await asyncio.wait_for(Client.connect(address, namespace=namespace), timeout=2.0)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- readiness boundary reports unavailable without exposing driver credentials
         return {
             "mode": mode,
             "configured": True,

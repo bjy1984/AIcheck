@@ -305,7 +305,10 @@ def test_streaming_model_call_emits_heartbeats(monkeypatch) -> None:
     from test_project_analysis_prompt import _route, _state
 
     from libs.project_analysis.execution import execute_project_analysis_model
-    from libs.project_analysis.prompt import build_project_analysis_snapshot, project_analysis_preview
+    from libs.project_analysis.prompt import (
+        build_project_analysis_snapshot,
+        project_analysis_preview,
+    )
 
     state = _state()
     state.update({"project_analysis_snapshots": [], "project_analysis_runs": [], "project_analysis_events": [], "model_call_attempts": []})

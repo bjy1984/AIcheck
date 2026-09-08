@@ -11304,7 +11304,6 @@ def test_project_delete_removes_empty_project_and_archives_project_with_business
 
 def test_upload_complete_inline_ocr_writes_fields_without_indexing_tasks(monkeypatch) -> None:
     from apps.worker import tasks
-    from libs.knowledge_indexing import OFFLINE_EMBEDDING_MODEL, OFFLINE_VECTOR_DIMENSIONS
 
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "inline")
     monkeypatch.setenv("AICHECK_WORKER_OCR_ALLOW_IN_PROCESS", "true")

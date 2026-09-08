@@ -66,11 +66,9 @@ def classification_text(parse_result: dict[str, Any] | None, *, limit: int = 120
         if isinstance(value, dict):
             for key, nested in value.items():
                 normalized_key = str(key).lower()
-                if normalized_key in skipped_keys or normalized_key.endswith("id") or normalized_key.endswith("ids"):
+                if normalized_key in skipped_keys or normalized_key.endswith(("id", "ids")):
                     continue
-                if normalized_key in content_containers:
-                    visit(nested, content_container=True)
-                elif normalized_key in text_keys:
+                if normalized_key in content_containers or normalized_key in text_keys:
                     visit(nested, content_container=True)
 
     for key in ("fragments", "fields", "tables", "seals"):
@@ -149,7 +147,7 @@ def process_document_classification_and_targeting(
                 profile_id=str(parse_result.get("profileId") or ""),
                 document_type=str(parse_result.get("documentType") or ""),
             )
-        except Exception as exc:  # Classification failure must not stop slice/vector processing.
+        except Exception as exc:  # Classification failure must not stop slice/vector processing.  # noqa: BLE001 -- advisory classification or targeting must not roll back successful OCR
             classification = {
                 **unclassified_material_result(reason="自动分类服务异常，已进入未分类资料库"),
                 "classificationError": exc.__class__.__name__,
@@ -175,7 +173,7 @@ def process_document_classification_and_targeting(
                 document_version_id,
                 triggered_by=triggered_by,
             )
-        except Exception as exc:  # Targeting is advisory to the upload processing lifecycle.
+        except Exception as exc:  # Targeting is advisory to the upload processing lifecycle.  # noqa: BLE001 -- advisory classification or targeting must not roll back successful OCR
             targeting = {
                 "status": "failed",
                 "documentId": document_id,
@@ -211,7 +209,7 @@ def process_document_classification_and_targeting(
             }
             if event:
                 targeting["autoReviewEventId"] = event.get("id")
-        except Exception as exc:  # Automatic review must never roll back OCR/classification success.
+        except Exception as exc:  # Automatic review must never roll back OCR/classification success.  # noqa: BLE001 -- advisory classification or targeting must not roll back successful OCR
             targeting["autoReviewDispatch"] = {
                 "status": "not_enqueued",
                 "reason": exc.__class__.__name__,

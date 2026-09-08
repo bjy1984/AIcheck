@@ -9,14 +9,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.responses import JSONResponse
-from libs.db.repository import repo
 
+from libs.db.repository import repo
 from scripts.deployment_report import (
     REQUIRED_STORAGE_BUCKETS,
     DeploymentReportBuilder,
+    auto_review_orchestration_contract_check,
     backend_action_coverage_check,
     backend_mutation_idempotency_check,
-    auto_review_orchestration_contract_check,
     backup_recoverability_contract_section,
     called_function_names,
     export_artifact_contract_check,
@@ -28,8 +28,8 @@ from scripts.deployment_report import (
     knowledge_rule_contract_check,
     litellm_client_contract_check,
     lossless_evidence_coverage_check,
-    monolithic_project_analysis_contract_check,
     markdown_report,
+    monolithic_project_analysis_contract_check,
     ocr_evaluation_contract_check,
     ocr_service_contract_check,
     postgres_index_contract_check,

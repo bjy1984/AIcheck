@@ -23,6 +23,8 @@ MinerU 通了之后，第一份真实许可证识别成功，5 个字段全部�
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from libs.db.repository import repo
 
 
@@ -81,7 +83,7 @@ def test_两种状态都要进复核队列():
     from apps.api import routes
 
     source = routes.__dict__
-    assert "置信度未知" in open(routes.__file__, encoding="utf-8").read(), (
+    assert "置信度未知" in Path(routes.__file__).read_text(encoding="utf-8"), (
         "路由侧没认这个状态，会漏掉一整类待复核字段"
     )
     assert source is not None

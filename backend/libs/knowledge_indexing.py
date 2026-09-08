@@ -471,7 +471,7 @@ def table_view_fields_from_html(html: str) -> dict[str, Any]:
     if normalized:
         keys = set(normalized[0].keys())
         column_names = [name for name in ordered if name in keys]
-        column_names.extend(name for name in normalized[0].keys() if name not in column_names)
+        column_names.extend(name for name in normalized[0] if name not in column_names)
     else:
         column_names = ordered
 

@@ -33,8 +33,8 @@ from datetime import UTC, datetime, timedelta
 
 sys.path.insert(0, "/app")
 
-from libs.db.repository import load_state, repo  # noqa: E402
-from libs.integrations import task_dispatcher  # noqa: E402
+from libs.db.repository import load_state, repo
+from libs.integrations import task_dispatcher
 
 STUCK_SLICE = {"待切片", "切片中"}
 STUCK_VECTOR = {"待向量化", "向量化中"}
@@ -97,7 +97,7 @@ def main() -> int:
             else:
                 task_dispatcher.dispatch_slice(file_id)
             ok += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- report per-item/probe failure without abandoning the audit batch
             print(f"  ✗ {file_id}: {exc.__class__.__name__} {exc}")
     print(f"\n已重新排队 {ok}/{len(stuck)} 份")
 
@@ -151,7 +151,7 @@ def reconcile_stuck_ocr_jobs(minutes: int, *, apply: bool) -> int:
         try:
             if task_dispatcher.dispatch_mineru_ocr(job_id, retry=True).get("taskId"):
                 ok += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- report per-item/probe failure without abandoning the audit batch
             print(f"  ✗ {job_id}: {exc.__class__.__name__} {exc}")
     print(f"已重新派发 OCR {ok}/{len(stuck)} 份")
     return ok

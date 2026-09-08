@@ -347,7 +347,7 @@ class DeploymentConfigValidator:
             failures.append("workflow-migrate must run the LangGraph checkpoint schema setup")
         if "python -m scripts.migrate_backend" not in workflow_migrate_command:
             failures.append("workflow-migrate must run the AIcheck database migration runner")
-        queue_list = set(re.split(r"[, ]+", " ".join([worker_command, cpu_heavy_worker_command, llm_remote_worker_command])))
+        queue_list = set(re.split(r"[, ]+", f"{worker_command} {cpu_heavy_worker_command} {llm_remote_worker_command}"))
         missing_queues = sorted(REQUIRED_WORKER_QUEUES - queue_list)
         if missing_queues:
             failures.append(f"worker-service missing queues: {', '.join(missing_queues)}")

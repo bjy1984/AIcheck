@@ -797,7 +797,7 @@ def _create_crashed_staging_state(
 
 
 def test_later_put_recovers_staged_temporary_file(monkeypatch, tmp_path) -> None:
-    upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
+    _upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
         tmp_path,
         artifact="temporary",
     )
@@ -825,7 +825,7 @@ def test_later_put_recovers_staged_temporary_file(monkeypatch, tmp_path) -> None
 
 
 def test_later_put_finalizes_already_promoted_staged_file(monkeypatch, tmp_path) -> None:
-    upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
+    _upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
         tmp_path,
         artifact="promoted",
     )

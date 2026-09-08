@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 
-
 def _state_with_node() -> dict:
     return {
         "documents": [{"id": "DOC-1", "projectId": "P-1", "currentVersionId": "DV-1"}],

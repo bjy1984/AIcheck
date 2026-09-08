@@ -364,7 +364,7 @@ def _parse_limit_text(text: Any) -> tuple[float | None, float | None]:
 
 def _to_float(value: Any) -> float | None:
     try:
-        return float(str(value).strip().rstrip("mm ").strip())
+        return float(str(value).strip().removesuffix("mm").strip())
     except (TypeError, ValueError, AttributeError):
         return None
 
@@ -402,9 +402,7 @@ def _applies(rule: Any, item: dict[str, Any], *, contract_flag: str | None = Non
         grade = str(item.get("materialGrade") or "").strip().upper()
         if grade and grade not in {str(one).strip().upper() for one in only_grades}:
             return False
-    if rule.get("contractOnly") and contract_flag and _bool_flag(item.get(contract_flag)) is not True:
-        return False
-    return True
+    return not (rule.get("contractOnly") and contract_flag and _bool_flag(item.get(contract_flag)) is not True)
 
 
 _ROCKWELL_RE = re.compile(r"^(?:(<=|>=|≤|≥)\s*)?(\d+(?:\.\d+)?)(?:\s*[-~～]\s*(\d+(?:\.\d+)?))?\s*(HR[A-Z]*)?", re.IGNORECASE)

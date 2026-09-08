@@ -460,7 +460,11 @@ def test_elongation_picks_the_sampling_direction_when_the_document_states_it():
 def test_gc2_inspection_level_follows_the_medium_hazard():
     """GB/T 20801.1-2025 8.3.1：GC2 管道的检查等级看介质——有毒 Ⅲ 级、泄漏危害性 Ⅱ 级，
     都比缺省的 Ⅳ 级严，对应的体积检测比例也更高。按 Ⅳ 级一口咬定会把比例要求降下来。"""
-    from libs.regulatory_tables import inspection_level_for_grade, medium_hazard_flags, volumetric_ndt_ratio
+    from libs.regulatory_tables import (
+        inspection_level_for_grade,
+        medium_hazard_flags,
+        volumetric_ndt_ratio,
+    )
 
     assert inspection_level_for_grade("GC2") == "Ⅳ"
     assert inspection_level_for_grade("GC2", toxic=True) == "Ⅲ"
@@ -537,7 +541,11 @@ def test_filler_class_matching_handles_the_coarser_group_codes_in_tables_2_to_4(
     只做全等匹配时，奥氏体不锈钢、铬钼钢等 15 个组别一条焊材类别都取不到，
     配套性判定会把每一种焊材都判成"不配套"——那是假的不符合。
     """
-    from libs.regulatory_tables import filler_classes_for_group, filler_matches_base_material, wps_base_material_group
+    from libs.regulatory_tables import (
+        filler_classes_for_group,
+        filler_matches_base_material,
+        wps_base_material_group,
+    )
 
     assert wps_base_material_group("S30408") == "Fe-8-1"
     assert [item["fillerClass"] for item in filler_classes_for_group("Fe-8-1")] == ["FeT-8", "FeS-8"]

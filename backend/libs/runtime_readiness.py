@@ -17,7 +17,6 @@ from libs.official_ocr_control import official_ocr_control_status
 from libs.qwen_runtime import qwen_runtime_config, redact_url, server_mode_base_url
 from scripts.setup_langgraph_checkpoint import REQUIRED_TABLES
 
-
 ReviewDependencyProvider = Callable[[], Mapping[str, Any]]
 WorkerHeartbeatRowsProvider = Callable[[], list[Mapping[str, Any]]]
 _TEMPORAL_DEPENDENCY_REASON_CODES = {
@@ -77,7 +76,7 @@ def temporal_service_connectivity_status() -> dict[str, Any]:
 
     try:
         asyncio.run(asyncio.wait_for(connect(), timeout=_probe_timeout_seconds()))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- readiness probe must report failed status for every dependency exception
         return {
             "configured": True,
             "ready": False,
@@ -141,7 +140,7 @@ def review_worker_heartbeat_status(
                 {"payload": row[0], "lastSeenAt": row[1]}
                 for row in database_rows
             ]
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- readiness probe must report failed status for every dependency exception
             return {
                 "ready": False,
                 "activeCount": 0,
@@ -239,7 +238,7 @@ def live_review_runtime_dependencies() -> dict[str, dict[str, Any]]:
         if future in done:
             try:
                 results[key] = future.result()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- readiness probe must report failed status for every dependency exception
                 results[key] = {"ready": False, "errorType": type(exc).__name__}
         else:
             results[key] = {"ready": False, "errorType": "ReadinessProbeTimeout"}
@@ -415,7 +414,7 @@ def workflow_schema_status() -> dict[str, Any]:
             ).fetchall()
             connection.rollback()
         found = {str(row[0]) for row in rows} & REQUIRED_TABLES
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- readiness probe must report failed status for every dependency exception
         return {
             "ready": False,
             "required": True,

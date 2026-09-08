@@ -15,10 +15,11 @@ MinerU 路径的 OCR 成功后从不派发切片（见 tasks.py 里 dispatch_sli
 """
 import os
 import sys
+
 sys.path.insert(0, "/app")
 
-from libs.db.repository import load_state, repo, flush_state
 from apps.api.routes import dispatch_knowledge_file_index_pipeline
+from libs.db.repository import flush_state, load_state, repo
 
 load_state()
 

@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -524,7 +524,7 @@ class StdSamrClient:
             follow_redirects=False,
         )
 
-    def __enter__(self) -> StdSamrClient:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_: object) -> None:

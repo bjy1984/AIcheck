@@ -295,9 +295,7 @@ def validate_project_analysis_output(
             findings.append(finding)
             invalid_count += int(invalid)
         review["findings"] = findings
-        if str(review.get("reviewResult") or "") not in REVIEW_RESULTS:
-            review["reviewResult"] = "insufficient_evidence"
-        elif not findings or invalid_count == len(findings):
+        if str(review.get("reviewResult") or "") not in REVIEW_RESULTS or not findings or invalid_count == len(findings):
             review["reviewResult"] = "insufficient_evidence"
         elif invalid_count:
             review["reviewResult"] = "partially_supported"

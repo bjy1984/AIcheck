@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, "/app")
 
-from libs.contracts.responses import SERVER_TZ, server_time  # noqa: E402
+from libs.contracts.responses import SERVER_TZ, server_time
 
 TERMINAL_REVIEW = {"waiting_human_review", "failed", "review_incomplete", "completed", "cancelled"}
 PENDING_REVIEW = {"queued", "created", "running", "推理中", ""}

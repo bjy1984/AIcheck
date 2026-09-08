@@ -53,7 +53,7 @@ def validate_auto_review_policy(
 
     daily_time = str(payload.get("dailyTime", existing.get("dailyTime") or DEFAULT_DAILY_TIME))
     try:
-        datetime.strptime(daily_time, "%H:%M")
+        datetime.strptime(daily_time, "%H:%M")  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
     except ValueError as exc:
         raise ValueError("dailyTime must use HH:MM") from exc
 
@@ -330,7 +330,7 @@ def dispatch_project_review_run(
         }
         try:
             child = start_node_review(str(project_run["projectId"]), int(node_id), metadata)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- record child dispatch failures while finishing the project batch
             failed_node_ids.append(int(node_id))
             project_run.setdefault("dispatchFailures", []).append(
                 {"nodeId": int(node_id), "errorType": exc.__class__.__name__}
@@ -388,7 +388,7 @@ def finalize_project_review_run(
             completed_nodes.add(node_id)
     completed = sorted(completed_nodes)
     _FAILED_STATUSES = {"failed", "failed_to_start", "cancelled", "review_incomplete", "失败"}
-    failed_nodes = set(int(item) for item in project_run.get("failedNodeIds") or [])
+    failed_nodes = {int(item) for item in project_run.get("failedNodeIds") or []}
     for row in child_rows:
         if str(row.get("status") or "") in _FAILED_STATUSES and int(row.get("nodeId") or 0) > 0:
             failed_nodes.add(int(row.get("nodeId") or 0))
@@ -670,7 +670,7 @@ def policy_due_for_daily_scan(policy: dict[str, Any], now: datetime) -> bool:
     timezone = ZoneInfo(str(policy.get("timezone") or DEFAULT_TIMEZONE))
     effective_now = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
     local_now = effective_now.astimezone(timezone)
-    daily_time = datetime.strptime(
+    daily_time = datetime.strptime(  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
         str(policy.get("dailyTime") or DEFAULT_DAILY_TIME), "%H:%M"
     ).time()
     if local_now.time().replace(tzinfo=None) < daily_time:

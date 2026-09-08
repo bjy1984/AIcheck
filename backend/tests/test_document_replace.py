@@ -29,7 +29,7 @@ from libs.db.repository import repo
 
 
 def _make_document(project_id: str = "P-REPLACE", status: str = "已上传") -> dict:
-    session_id, urls = repo.create_upload_session(
+    _session_id, urls = repo.create_upload_session(
         project_id,
         [{"fileName": "质量证明.pdf", "fileType": "pdf", "fileSize": 1024}],
     )

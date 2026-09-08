@@ -18,7 +18,6 @@ key 有效性、出站网络、回调解析、产物落库，任何一环断了�
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import os
@@ -26,6 +25,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 TIMEOUT = 60
 
@@ -102,7 +102,7 @@ def main() -> int:
         project_id = str(rows[0].get("id") or rows[0].get("projectId"))
     print(f"项目：{project_id}")
 
-    raw = open(args.file, "rb").read()
+    raw = Path(args.file).read_bytes()
     name = os.path.basename(args.file)
     digest = "sha256:" + hashlib.sha256(raw).hexdigest()
     print(f"素材：{name}  {len(raw)} 字节")

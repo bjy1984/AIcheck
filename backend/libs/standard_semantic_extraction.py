@@ -17,7 +17,6 @@ from libs.knowledge_retrieval import (
     standard_refs_from_text,
 )
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = BACKEND_ROOT / "config/standard_canonical_extraction_v1.json"
 PROMPT_VERSION = "standard-canonical-extraction-v1"
@@ -476,7 +475,7 @@ def _identity_code_candidates(record: dict[str, Any]) -> list[tuple[int, str, st
         else:
             normalized_path = _normalize_text(raw_section_path)
             section_tail = re.split(r"[/|>]", normalized_path)[-1].strip()
-        context_text = " ".join((title, section_tail, text))
+        context_text = f"{title} {section_tail} {text}"
         excluded = any(marker in context_text for marker in _IDENTITY_EXCLUSION_MARKERS)
         named_front_matter = any(
             value.endswith(marker)
@@ -761,13 +760,13 @@ def _validate_relations(key: str, value: Any, page_digest: dict[int, str]) -> li
     if value is None:
         return []
     if not isinstance(value, list):
-        raise ValueError(f"{key}: value must be a list")
+        raise ValueError(f"{key}: value must be a list")  # noqa: TRY004 -- schema validation callers handle ValueError for invalid model/file payloads
     allowed_keys = _NORMATIVE_KEYS if key == "normativeReferences" else _REPLACEMENT_KEYS
     accepted: list[dict[str, Any]] = []
     for index, item in enumerate(value):
         path = f"{key}[{index}]"
         if not isinstance(item, dict):
-            raise ValueError(f"{path}: value must be an object")
+            raise ValueError(f"{path}: value must be an object")  # noqa: TRY004 -- schema validation callers handle ValueError for invalid model/file payloads
         unknown = set(item) - allowed_keys
         if unknown:
             raise ValueError(f"{path}: unsupported properties {sorted(unknown)}")
@@ -803,7 +802,7 @@ def validate_standard_semantics(
     requested_fields: set[str] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
-        raise ValueError("model response must be a strict JSON object")
+        raise ValueError("model response must be a strict JSON object")  # noqa: TRY004 -- schema validation callers handle ValueError for invalid model/file payloads
     schema = _schema()
     allowed = set(schema["required"])
     unknown = set(payload) - allowed

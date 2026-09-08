@@ -6,6 +6,7 @@ from re import search
 from uuid import uuid4
 
 import pytest
+from psycopg import ProgrammingError
 
 # AICHECK_REQUIRE_AUTH 的代码默认值是 true（漏配必须表现为「登不进去」而不是「谁都能进」）。
 # 测试套件跑的是业务逻辑，用 X-Dev-Role 头直接扮演角色，因此在这里显式声明本地开发姿态。
@@ -67,7 +68,7 @@ def pytest_configure() -> None:
         return
     try:
         test_target = _postgres_target(test_dsn)
-    except Exception as exc:
+    except (ValueError, ProgrammingError) as exc:
         raise pytest.UsageError(
             "AICHECK_TEST_POSTGRES_URL is not a valid PostgreSQL connection string."
         ) from exc
@@ -79,8 +80,8 @@ def pytest_configure() -> None:
             continue
         try:
             same_target = _postgres_target(live_dsn) == test_target
-        except Exception:
-            continue
+        except (ValueError, ProgrammingError) as exc:
+            raise pytest.UsageError(f"{variable} is not a valid PostgreSQL connection string.") from exc
         if same_target and not isolated_schema:
             host, port, database = test_target
             raise pytest.UsageError(

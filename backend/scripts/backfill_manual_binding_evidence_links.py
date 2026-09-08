@@ -20,8 +20,8 @@ import sys
 
 sys.path.insert(0, "/app")
 
-from libs.contracts.responses import server_time  # noqa: E402
-from libs.manual_binding_links import (  # noqa: E402
+from libs.contracts.responses import server_time
+from libs.manual_binding_links import (
     bindings_missing_evidence_links,
     refresh_manual_binding_links,
     upsert_manual_binding_evidence_links,

@@ -9,28 +9,27 @@ import os
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import psycopg
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.security.tenant import configured_tenant_id  # noqa: E402
-from libs.standard_knowledge_canonical import REQUIRED_CATEGORIES  # noqa: E402
-from scripts.rebuild_standard_knowledge_canonical import (  # noqa: E402
+from libs.security.tenant import configured_tenant_id
+from libs.standard_knowledge_canonical import REQUIRED_CATEGORIES
+from scripts.rebuild_standard_knowledge_canonical import (
     CANONICAL_COLLECTION,
     SOURCE_COLLECTIONS,
     STANDARD_SOURCE_ID,
     source_collection_digests,
 )
-
 
 _STRUCTURED_GROUPS = (
     "sections",
@@ -826,11 +825,11 @@ def verify(database_url: str, *, require_count: int) -> dict[str, Any]:
                     record and record.get("contextType") != "context_only" and has_mineru(record)
                 ),
                 "missingCategories": list(
-                    (
+
                         (record.get("completeness") or {}).get("missingCategories") or []
                         if record and isinstance(record.get("completeness"), dict)
                         else []
-                    )
+
                 ),
                 "missingProvenance": next(
                     (

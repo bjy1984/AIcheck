@@ -21,12 +21,9 @@ from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from apps.api import routes as routes_module
-from libs.db.repository import ensure_collections_loaded, requires_collections
-from libs.ocr_structured_view import build_ocr_structured_view
 from apps.api.routes import (
     ALLOWED_KNOWLEDGE_UPLOAD_TYPES,
     DEFAULT_BUSINESS_PACK_ID,
-    EmbeddingClient,
     KNOWLEDGE_TASK_STATUS_ORDER,
     MAX_UPLOAD_BYTES,
     OFFLINE_EMBEDDING_MODEL,
@@ -34,10 +31,11 @@ from apps.api.routes import (
     STANDARD_LIBRARY_SOURCE_NAME,
     STANDARD_RULES_SOURCE_ID,
     STANDARD_RULES_VERSION,
+    EmbeddingClient,
     active_embedding_target,
     admin_user_snapshot,
-    attach_document_ocr_readiness,
     answer_draft_from_clauses,
+    attach_document_ocr_readiness,
     bounded_form_value,
     build_business_pack_knowledge_network,
     build_knowledge_rule_scorecard,
@@ -90,6 +88,8 @@ from apps.api.routes import (
     validate_operation_preview,
     versioned_record,
 )
+from libs.db.repository import ensure_collections_loaded, requires_collections
+from libs.ocr_structured_view import build_ocr_structured_view
 
 knowledge_admin_router = APIRouter()
 router = knowledge_admin_router  # 迁移块内的装饰器沿用 @router，别名保持 diff 最小
@@ -2209,7 +2209,7 @@ def cancel_knowledge_task(
 
                 celery_app.control.revoke(celery_task_id, terminate=False)
                 revoke_results.append({"taskId": celery_task_id, "status": "requested"})
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- report dispatch failure or explicit offline retrieval fallback
                 revoke_results.append({"taskId": celery_task_id, "status": "failed", "reason": exc.__class__.__name__})
         task["cancelDispatches"] = revoke_results
         if not celery_task_ids or all(item["status"] == "requested" for item in revoke_results):
@@ -2408,7 +2408,7 @@ def retrieval_test(request: Request, body: dict[str, Any] = Body(default_factory
                 query_embedding = (vectors[0] if vectors else {}).get("embedding")
                 embedding_model = embedding_client.model_id
                 index_version = body.get("indexVersion") or embedding_client.index_version
-            except Exception:
+            except Exception:  # noqa: BLE001 -- report dispatch failure or explicit offline retrieval fallback
                 vector_status_reason = "remote_embedding_unavailable_hash_fallback"
         if not isinstance(query_embedding, list) or not query_embedding:
             query_embedding = offline_hash_embedding(str(question))

@@ -12,9 +12,9 @@ from typing import Any
 
 from libs.business_pack import load_business_pack, matching_rule_for_node
 from libs.contracts.responses import server_time
+from libs.manual_binding_links import SUBMITTED_BINDING_STATUSES
 from libs.model_usage import estimate_messages_tokens, estimate_text_tokens
 from libs.qwen_runtime import resolved_model_label
-from libs.manual_binding_links import SUBMITTED_BINDING_STATUSES
 from libs.review_evidence import active_node_document_versions
 
 PROMPT_VERSION = "project-monolithic-analysis@1.3.0"

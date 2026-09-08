@@ -263,7 +263,7 @@ def test_health_payload_uses_shared_dispatch_snapshot_without_second_temporal_pr
     monkeypatch.setattr(api_main, "production_runtime_status", runtime_status)
     monkeypatch.setattr(api_main, "temporal_health_status", forbidden_temporal_probe)
     monkeypatch.setattr(api_main.security_sessions, "ready", ready)
-    monkeypatch.setattr(api_main, "review_workflow_metrics", lambda: {})
+    monkeypatch.setattr(api_main, "review_workflow_metrics", dict)
     monkeypatch.setattr(api_main, "raw_vault_health_status", lambda: {"ready": True})
     monkeypatch.setattr(api_main, "mineru_worker_health_status", lambda: {"ready": True})
 

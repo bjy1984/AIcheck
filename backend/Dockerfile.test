@@ -1,0 +1,7 @@
+ARG AICHECK_TEST_BASE_IMAGE=aicheck-api:local
+FROM ${AICHECK_TEST_BASE_IMAGE}
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git zsh \
+    && rm -rf /var/lib/apt/lists/*
+USER aicheck
