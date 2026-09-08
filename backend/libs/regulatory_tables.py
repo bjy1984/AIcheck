@@ -314,6 +314,8 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
                 "standard": item.get("standard"),
                 "grade": entry.get("grade"),
                 "verified": is_verified(item),
+                "compositionSource": item.get("compositionSource"),
+                "sourcePdfSha256": item.get("sourcePdfSha256"),
                 # 适用性写在标准层（冲击要外径与壁厚都够、维氏只在合同注明时做），
                 # 调用方要按它决定某项限值下不下发，否则会拿标准不要求的项去要证据
                 "applicability": dict(item.get("applicability") or {}),
@@ -323,6 +325,15 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
             for key in ("hotYieldRp02MPa", "hardness", "heatTreatment", "unifiedCode", "alias", "note"):
                 if entry.get(key) is not None:
                     merged[key] = entry[key]
+            hardness_options = (item.get("hardnessLimits") or {}).get(entry.get("structure")) or {}
+            hardness = next((values for aliases, values in hardness_options.items()
+                             if str(entry.get("alias")) in str(aliases).split("、")), hardness_options.get("其他"))
+            if hardness:
+                merged["hardness"] = {**hardness}
+                if hardness.get("HRB"):
+                    merged["hardness"]["rockwell"] = f"{hardness['HRB']} HRB"
+                    hardness_rules = merged["applicability"].get("hardness") or {}
+                    merged["applicability"]["hardness"] = {**hardness_rules, "rockwell": hardness_rules.get("HRB")}
             levels = entry.get("levels") or []
             if not levels:
                 return merged if level is None else None
@@ -674,6 +685,7 @@ def product_inspection_rules() -> dict[str, dict[str, Any]]:
             "requiredItems": list(rule.get("requiredItems") or []),
             "basis": rule.get("basis"),
             "conditionalItems": list(rule.get("conditionalItems") or []),
+            "alternativeReports": dict(rule.get("alternativeReports") or {}),
             "verified": is_verified(section),
         }
     return out

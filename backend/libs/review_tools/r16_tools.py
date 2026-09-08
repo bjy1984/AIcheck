@@ -177,12 +177,26 @@ def evaluate_r16_quality_certificate_results(arguments: dict[str, Any]) -> dict[
             code = str(limit.get("itemCode") or limit.get("name") or "")
             actual = decimal(results.get(_norm(code)))
             minimum, maximum = decimal(limit.get("minimum")), decimal(limit.get("maximum"))
+            if limit.get("actualFromComposition"):
+                parts = [decimal(results.get(_norm(f"chemicalComposition.{element}"))) for element in limit["actualFromComposition"]]
+                actual = sum(parts) if all(value is not None for value in parts) else None
+            minimum_known = True
+            formula = limit.get("minimumFromComposition")
+            if isinstance(formula, dict):
+                parts = [decimal(results.get(_norm(f"chemicalComposition.{element}"))) for element in formula.get("elements") or []]
+                multiplier = decimal(formula.get("multiplier"))
+                minimum_known = bool(parts) and multiplier is not None and all(value is not None for value in parts)
+                if minimum_known:
+                    minimum = sum(parts) * multiplier
+                else:
+                    item_incomplete = True
             if actual is None:
                 item_incomplete = True
                 passed = False
             else:
                 passed = (minimum is None or actual >= minimum) and (maximum is None or actual <= maximum)
                 item_failed |= not passed
+                passed = passed and minimum_known
             comparisons.append({"itemCode": code, "actual": actual, "minimum": minimum, "maximum": maximum, "passed": passed})
             checks.append(check(f"component_{index}_{_safe(code)}_within_limits", passed, actual, {"minimum": minimum, "maximum": maximum}))
         failed |= item_failed

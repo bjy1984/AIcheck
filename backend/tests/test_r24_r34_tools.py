@@ -327,3 +327,14 @@ def test_table5_factor_text_is_no_longer_truncated():
     assert wps_factor_class("焊条电弧焊", "预热") == "重要因素"
     assert wps_factor_class("焊条电弧焊", "热输入") == "补加因素"
     assert wps_factor_class("焊条电弧焊", "清根") == "次要因素"
+
+
+def test_r25_welding_method_aliases_cover_same_process_but_not_other_processes():
+    arguments = _wps_pqr_arguments()
+    arguments['wpsItems'][0]['weldingMethod'] = '钨极气体保护焊'
+    arguments['workItems'][0]['method'] = arguments['workItems'][0].pop('weldingMethod')
+    assert check_wps_pqr_coverage(arguments)['result'] == 'passed'
+    arguments['workItems'][0]['method'] = 'SMAW'
+    assert check_wps_pqr_coverage(arguments)['result'] == 'failed'
+    arguments['workItems'][0].pop('method')
+    assert check_wps_pqr_coverage(arguments)['result'] == 'evidence_insufficient'

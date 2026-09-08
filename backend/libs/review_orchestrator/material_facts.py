@@ -244,6 +244,10 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
         "outerDiameterMm": ("outerDiameterMm", "outerDiameter", "外径", "公称外径"),
         "qualityLevel": ("qualityLevel", "质量等级", "等级", "钢级"),
         "samplingDirection": ("samplingDirection", "取样方向", "试样方向"),
+        "hbwRequiredByContract": ("hbwRequiredByContract", "布氏硬度合同要求"),
+        "hvRequiredByContract": ("hvRequiredByContract", "维氏硬度合同要求"),
+        "rockwellRequiredByContract": ("rockwellRequiredByContract", "hrbRequiredByContract", "洛氏硬度合同要求"),
+        "impactRequiredByContract": ("impactRequiredByContract", "冲击合同要求"),
         "specification": ("specification", "size", "规格", "规格型号", "尺寸"),
         "batchNo": ("batchNo", "lotNo", "批号", "批次号", "炉批号"),
         "heatNo": ("heatNo", "炉号"),
@@ -276,7 +280,9 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
         if _present(output.get(target)):
             continue
         value = _row_value(row, *keys)
-        if target.startswith(("requires", "listedIn")) or target.endswith("Occurred"):
+        if target.endswith("RequiredByContract"):
+            value = _bool_flag(value)
+        elif target.startswith(("requires", "listedIn")) or target.endswith("Occurred"):
             value = _boolean_value(value)
         elif target in {"requiredInspectionItems", "requiredRetestItems", "requiredMaterialNdtMethods", "materialTestTriggerReasons", "requiredQuantitativeItems"}:
             value = _list_value(value)
@@ -517,6 +523,17 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
 
     for element, raw in (found.get("composition") or {}).items():
         code = element.removesuffix("Max").removesuffix("Min")
+        relation = re.fullmatch(r"(\d+)\*\(?([A-Z][a-z]?)(?:\+([A-Z][a-z]?))?\)?-(\d+(?:\.\d+)?)", str(raw))
+        if relation:
+            multiplier, first, second, upper = relation.groups()
+            limits.append({"itemCode": f"chemicalComposition.{element}", "name": f"化学成分 {element}",
+                           "minimumFromComposition": {"multiplier": float(multiplier), "elements": [value for value in (first, second) if value]},
+                           "maximum": float(upper), "source": f"{found['standard']} {found['grade']}"})
+            continue
+        if element == "NiPlusCuMax":
+            limits.append({"itemCode": "chemicalComposition.Ni+Cu", "name": "化学成分 Ni+Cu",
+                           "actualFromComposition": ["Ni", "Cu"], "maximum": raw, "source": f"{found['standard']} {found['grade']}"})
+            continue
         parsed = ({"max": raw} if element.endswith("Max") else {"min": raw} if element.endswith("Min") else _limit_from_text(raw))
         if parsed:
             add(f"chemicalComposition.{code}", f"化学成分 {code}", minimum=parsed.get("min"), maximum=parsed.get("max"))
@@ -605,6 +622,8 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
             "level": found.get("level"),
             "derivedFrom": "regulatory_tables.pipeMaterialLimits",
             "verified": found.get("verified", False),
+            "compositionSource": found.get("compositionSource"),
+            "sourcePdfSha256": found.get("sourcePdfSha256"),
         }
         if thickness_mm is not None:
             item["acceptanceLimitsSource"]["wallThicknessMm"] = thickness_mm

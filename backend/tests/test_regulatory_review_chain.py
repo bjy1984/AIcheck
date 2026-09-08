@@ -54,12 +54,13 @@ def test_r14_frozen_product_rules_reach_formal_arguments():
     from libs.review_tools.r14_tools import resolve_r14_required_inspection_items
 
     facts = build_r14_business_facts({}, {})
-    facts['r14']['designItems'] = [{'componentType': '钢管', 'standardRef': 'GB/T 8163-2018', 'materialGrade': '20'}]
+    facts['r14']['designItems'] = [{'componentType': '钢管', 'standardRef': 'GB/T 8163-2018', 'materialGrade': '20', 'requiresManufacturingLicense': False, 'requiresManufacturingSupervision': False, 'requiresTypeTest': False}]
     binding = next(item for item in load_business_pack('engineering_inspection_v1')['atomicCheckToolBindings'] if item['atomicCheckId'] == 'AC-R14-02')
     args = build_tool_arguments('resolve_r14_required_inspection_items', binding, facts=facts, explicit={}, document_version_ids=[], evidence_facts=[], evidence_refs=[])
     assert 'GB/T 8163-2018' in args['productInspectionRules']
     output = resolve_r14_required_inspection_items(args)
-    assert all(row.get('requirementSource') != 'product_standard_rule_missing' for row in output['inspectionRequirementMatrix'])
+    assert output['result'] == 'passed'
+    assert output['inspectionRequirementMatrix'][0]['requirementSource'].startswith('frozen_product_standard_rule:')
 
 
 @pytest.mark.parametrize(('carbon', 'expected'), [(0.2, 'passed'), (0.9, 'failed'), (None, 'evidence_insufficient')])
@@ -111,3 +112,28 @@ def test_r26_designation_profile_is_used_by_formal_binding(strength, expected):
     output = evaluate_welding_consumable(args)
     assert output['result'] == expected
     assert output['facts']['consumableCertificateMatrix'][0]['limitSource']['designation'] == 'E5015'
+
+
+@pytest.mark.parametrize(('method', 'level', 'design_override', 'expected'), [('ET', 'E3H', False, 'passed'), ('ET', None, False, 'evidence_insufficient'), ('ET', 'E3H', True, 'failed')])
+def test_r14_standard_alternative_does_not_make_hydrostatic_test_unconditionally_mandatory(method, level, design_override, expected):
+    from libs.regulatory_tables import product_inspection_rules
+    from libs.review_tools.r14_tools import evaluate_r14_special_report_coverage
+
+    item = {'componentItemId': 'C1', 'componentType': '钢管', 'standardRef': 'GB/T 13296-2023',
+            'requiresManufacturingLicense': False, 'requiresManufacturingSupervision': False, 'requiresTypeTest': False, 'batchNo': 'B1'}
+    if design_override:
+        item['requiredInspectionItems'] = ['pressure_test']
+    report = {'reportId': 'ET1', 'batchNo': 'B1', 'reportType': 'nondestructive_testing', 'testMethod': method,
+              'acceptanceLevel': level, 'standardRef': 'GB/T 7735-2016', 'conclusion': '合格'}
+    result = evaluate_r14_special_report_coverage({'designItems': [item], 'specialInspectionReports': [report], 'productInspectionRules': product_inspection_rules()})
+    assert result['result'] == expected
+
+
+def test_r14_alternative_rule_does_not_override_nonapplicable_component_route():
+    from libs.regulatory_tables import product_inspection_rules
+    from libs.review_tools.r14_tools import evaluate_r14_special_report_coverage
+
+    result = evaluate_r14_special_report_coverage({'designItems': [{'componentType': '钢管', 'standardRef': 'GB/T 13296-2023',
+        'requiresManufacturingLicense': True, 'requiresManufacturingSupervision': False, 'requiresTypeTest': False}],
+        'productInspectionRules': product_inspection_rules()})
+    assert result['result'] == 'not_applicable'
