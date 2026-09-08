@@ -21,8 +21,10 @@ from typing import Any
 
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
 from libs.regulatory_tables import (
+    acceptance_level_meets,
     inspection_level_for_grade,
     medium_hazard_flags,
+    ndt_acceptance_level,
     pressure_test_ratios,
     volumetric_ndt_ratio,
 )
@@ -369,6 +371,18 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     strictest = min((lvl for lvl in grade_levels if lvl), key=lambda lvl: level_rank.get(lvl, 9), default=None)
     required_ratio_pct = volumetric_ndt_ratio(strictest)
     coverage_pct = int(coverage.group(1)) if coverage else None
+    # 合格级别按检查比例定（8.3.2.2/8.3.2.3）：射线 100% 要 Ⅱ 级、局部 Ⅲ 级；
+    # 超声 100% 要 Ⅰ 级、局部 Ⅱ 级。设计写"验收等级 Ⅲ级"配 100% 射线是不合格的，
+    # 此前只把这个字段抄出来，没有任何地方拿它跟标准比。
+    required_acceptance = next(
+        (found for method in ndt_methods if (found := ndt_acceptance_level(method, coverage_percent=coverage_pct))),
+        None,
+    )
+    acceptance_ok = (
+        acceptance_level_meets(level.group(1), required_acceptance["level"])
+        if level and required_acceptance
+        else None
+    )
     ndt = _domain(
         bool(ndt_methods and (coverage or level)) or bool(re.search(r"无损检测", text) and ndt_methods),
         {
@@ -376,6 +390,9 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "coverage": f"{coverage.group(1)}%" if coverage else None,
             "coveragePercent": coverage_pct,
             "acceptanceCriteria": f"{level.group(1)}级" if level else None,
+            "requiredAcceptanceLevel": required_acceptance.get("level") if required_acceptance else None,
+            "requiredAcceptanceTechnique": required_acceptance.get("technique") if required_acceptance else None,
+            "acceptanceLevelMeetsRequirement": acceptance_ok,
             "requiredInspectionLevel": strictest,
             "requiredCoveragePercent": required_ratio_pct,
             # 这些 GC2 管线的检查等级取决于介质毒性/泄漏危害性，资料里没写，按缺省 Ⅳ 级算出来的

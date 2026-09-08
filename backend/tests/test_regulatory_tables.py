@@ -493,3 +493,39 @@ def test_undetermined_gc2_pipelines_are_listed_instead_of_silently_defaulted():
     assert ndt["inspectionLevelUndeterminedPipelines"] == ["P-101"]
     # P-102 写了中度危害 → Ⅲ 级，比 GC3 的 Ⅴ 级严，取最严的一条
     assert ndt["requiredInspectionLevel"] == "Ⅲ"
+
+
+def test_ndt_acceptance_level_depends_on_the_examination_ratio():
+    """GB/T 20801.1-2025 8.3.2：合格级别按检查比例定。100% 射线要 Ⅱ 级、局部才是 Ⅲ 级；
+    100% 超声要 Ⅰ 级、局部是 Ⅱ 级。设计写"验收等级 Ⅲ级"配 100% 射线是不合格的。"""
+    from libs.regulatory_tables import acceptance_level_meets, ndt_acceptance_level
+
+    assert ndt_acceptance_level("RT", coverage_percent=100)["level"] == "不低于 Ⅱ 级"
+    assert ndt_acceptance_level("射线检测", coverage_percent=5)["level"] == "不低于 Ⅲ 级"
+    assert ndt_acceptance_level("UT", coverage_percent=100)["level"] == "Ⅰ 级"
+    assert ndt_acceptance_level("超声", coverage_percent=20)["level"] == "不低于 Ⅱ 级"
+    # 比例不明就判不了，不猜是全检还是抽检
+    assert ndt_acceptance_level("RT") is None
+    # 认不出的方法也不猜
+    assert ndt_acceptance_level("敲一敲听声音", coverage_percent=100) is None
+
+    assert acceptance_level_meets("Ⅱ级", "不低于 Ⅱ 级") is True
+    assert acceptance_level_meets("Ⅲ级", "不低于 Ⅱ 级") is False
+    assert acceptance_level_meets("看不懂", "不低于 Ⅱ 级") is None
+
+
+def test_design_acceptance_level_is_compared_against_the_standard():
+    """此前只把"验收等级 Ⅲ级"抄进事实，没有任何地方拿它跟标准比。"""
+    from libs.review_orchestrator.design_facts import design_special_requirements
+
+    pipelines = [{"pipelineId": "P-1", "pipelineGrade": "GC2", "mediumToxicity": "无毒"}]
+
+    # 100% 射线配 Ⅲ 级 → 不达标
+    bad = design_special_requirements("管道采用射线检测 RT，检测比例 100%，验收等级 Ⅲ级", pipelines)
+    ndt = bad["domains"]["ndt"]["requirements"]
+    assert ndt["requiredAcceptanceLevel"] == "不低于 Ⅱ 级"
+    assert ndt["acceptanceLevelMeetsRequirement"] is False
+
+    # 局部检查配 Ⅲ 级 → 达标
+    good = design_special_requirements("管道采用射线检测 RT，检测比例 20%，验收等级 Ⅲ级", pipelines)
+    assert good["domains"]["ndt"]["requirements"]["acceptanceLevelMeetsRequirement"] is True

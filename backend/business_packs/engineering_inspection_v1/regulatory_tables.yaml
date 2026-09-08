@@ -2,7 +2,7 @@
 # - verifiedBy 为空 = 由 OCR 或标准草案预填，写入判定前须由法规核对人对照正文逐格打钩（优化计划 §2.1）；
 # - 代码里的判定只读这里的数值；数值不齐的规则只给预警，不给不符合。
 # 2026-09-07 预填来源：TSG Z6002-2026 官方 PDF OCR（会话留存 z6002-2026-ocr.txt）、NB/T 47014-2023 OCR、
-# GB/T 20801.5 征求意见稿（tced.com PDF；正式版 2020 已于 2026-05-01 被 GB/T 20801.1-2025 代替，正文未取得）、
+# GB/T 20801.1-2025 官方 PDF 正文（文字层；2026-09-08 由项目负责人提供，此前只有征求意见稿）、
 # TSG 31-2025 官方 PDF OCR。
 schemaVersion: regulatory-tables-v1
 
@@ -580,11 +580,11 @@ nbt47014_2023:
 
 gbt20801_inspection:
   source: GB/T 20801.1-2025 压力管道规范 第1部分：工业管道（2025-10-31 发布，2026-05-01 实施；整合代替 GB/T 20801.1~6-2020）
-  extractedFrom: official_full_text_preview
+  extractedFrom: official_pdf_text_layer
   sourceUrl: https://openstd.samr.gov.cn/bzgk/std/showGb?type=online&hcno=02B92F024E3208D2CEA17BDF0F2743A0
-  readOn: "2026-09-07"
+  readOn: "2026-09-08"
   verifiedBy: null
-  caveat: 2026-09-07 已逐条对照国家标准全文公开平台的在线预览正文（第 8 章，正文第 109 页起），不再是征求意见稿；只差法规核对人签字，签字前判定仍按预警口径
+  caveat: 2026-09-08 换成官方 PDF 正文（文字层，非 OCR）逐条核对第 8 章。此前在线预览取不到第 121 页那一组图片，8.3.3（表面无损检测）与 8.6.2（泄漏试验）只能留占位；PDF 到手后两处已按正文补全，acceptance 里那组 JB/T 4730 的征求意见稿口径也一并换掉了
   inspectionLevels:
     sourceClause: "8.3.1 检查等级（8.3.1.2~8.3.1.6）"
     rules:
@@ -638,16 +638,35 @@ gbt20801_inspection:
       Ⅳ: {visual: [100, 100, 100], volumetric: [5, null, null]}
       Ⅴ: {visual: [10, 100, 100]}
     notes:
+      - 注 a 根据建设单位（使用单位）或工程设计要求，可采用较表 42 更严格的检查等级代替较低的检查等级——设计比标准严不是不符合
       - 注 b 角焊缝包括平焊法兰和承插焊法兰（图 21）及其他承插焊接头（图 22）的角焊缝、补强圈或鞍形补强件外缘的角焊缝、密封焊缝以及非承压件（管道支承件、结构附件等）与管道的连接焊缝
       - 注 c 支管连接焊接头应符合 7.4.8，也包括补强圈与支管连接的焊接接头
       - 注 d 对碳钢、不锈钢及铝合金无（表面检测）要求
       - 注 e 适用于支管公称直径大于或等于 DN100 的焊接接头
       - Ⅴ 级环向对接接头的目视检查比例是 10%（不是 100%）
   acceptance:
-    sourceClause: "8.3.2.2 目视检查验收准则"
-    rules: [焊接接头目视检查按 NB/T 47013.7 执行，检查内容与合格指标不低于表 43]
-    legacyDraftRules: [100% 射线 → JB/T 4730.2 Ⅱ级, 抽样/局部射线 → Ⅲ级, 100% 脉冲反射超声 → JB/T 4730.3 Ⅰ级, 抽样/局部超声 → Ⅱ级, TOFD → JB/T 4730.10 Ⅱ级]
-    legacyDraftNote: 上面这组是征求意见稿口径（JB/T 4730 已被 NB/T 47013 代替），2025 版无损检测验收级别待补读 8.3.3
+    sourceClause: 8.3.2.2 射线检测、8.3.2.3 超声检测、8.3.2.4 组合检测、8.3.3 表面无损检测
+    volumetric:
+      radiographic:
+        standard: NB/T 47013.2、NB/T 47013.11、NB/T 47013.14
+        full: {technique: 不低于 AB 级, level: 不低于 Ⅱ 级, appliesTo: 100% 检查的焊接接头}
+        partial: {technique: 不低于 AB 级, level: 不低于 Ⅲ 级, appliesTo: 局部或抽样检查的焊接接头}
+      ultrasonic:
+        standard: NB/T 47013.3、NB/T 47013.10、NB/T 47013.15
+        full: {technique: 脉冲反射法不低于 B 级, level: Ⅰ 级, appliesTo: 100% 检查的焊接接头}
+        partial: {technique: 脉冲反射法不低于 B 级, level: 不低于 Ⅱ 级, appliesTo: 局部或抽样检查的焊接接头}
+        tofd: {technique: 原则上不低于 B 级, level: 不低于 Ⅱ 级, appliesTo: 采用衍射时差法的焊接接头}
+        phasedArray: {technique: 原则上不低于 B 级, level: 不低于 Ⅱ 级, appliesTo: 采用相控阵超声检测的焊接接头}
+      combined: 采用射线、超声等方法组合检测时，质量要求和合格级别按各自执行的标准确定，且均应合格（8.3.2.4）
+    surface:
+      sourceClause: "8.3.3"
+      scope: 除设计文件另有规定外，现场焊接的管道及管道组成件的对接接头、支管连接接头和角焊缝应进行磁粉或渗透检测，检测比例不低于表 42（8.3.3.1）
+      standard: NB/T 47013.4、NB/T 47013.5
+      level: Ⅰ 级
+      delayedCrackHold: 具有延迟裂纹倾向的材料，焊接完成 24h 后才做无损检测（8.3.3.3）
+      reheatCrackTwice: 具有再热裂纹倾向的材料，焊接后与热处理后各做一次表面无损检测（8.3.3.4）
+    nonconformity: 抽样或局部检查发现不合格时按 8.1.4 累进检查；返修后用原规定的检测方法重新检查（8.3.4）
+    spotLocationApproval: 局部无损检测的位置及检查点由检查人员确定，并经建设单位（使用单位）或检验机构的检验人员批准（8.3.5）
   pressureTest:
     sourceClause: "8.6.1.3 液压试验、8.6.1.4 气压试验"
     hydroTestRatio: 1.5
@@ -661,10 +680,59 @@ gbt20801_inspection:
     pneumaticApproval: 试验压力大于 1.6 MPa 时需建设单位（使用单位）、设计单位、安装单位同意
     pneumaticSteps: 预试验 0.2 MPa → 升至试验压力的 50% 初检 → 按试验压力的 10% 逐级升压、每级稳压 3 min → 达到规定试验压力后降至设计压力查漏
     reliefValveSetting: 不高于 1.1 倍试验压力
-    leakTestPressure: 设计压力（真空管道 0.1MPa 内压）
-    leakTestRequiredFor: [剧毒流体, 易燃易爆气体]
-    leakTestNote: 泄漏试验口径仍取自征求意见稿 9.2.1，2025 版对应条款待补读
+    holdMinutes: 10
+    holdNote: 保压不少于 10 min；保压后可降至设计压力检查所有接头和连接处有无泄漏及其他异常（8.6.1.1.4 a）
+    afterHeatTreatment: 压力试验应在全部热处理完成后进行（8.6.1.1.4 b）
+    prePressureAirCheck: 液压试验前可先用不大于 170kPa 的空气试验找泄漏点（8.6.1.1.3 c）
+    yieldLimitRule: 试验压力使周向或轴向应力超过试验温度下屈服强度时，可降到该温度下不超过屈服强度的最大压力（8.6.1.1.3 a）
+    exemptions:
+      - 管道组成件或预制件可单独试验，也可装配后与系统一起试验
+      - 装配前已试验过的法兰接头、以及试验时为隔离容器或其他管道而插盲板的法兰接头，不需重新试验
+      - 最后一条连接焊接接头若已按 8.4 做过制作过程检查、且经 100% 射线或超声检测合格，同时该系统已通过压力试验，则该接头不需再做压力试验
+      - 系统压力试验后的仪表接头（螺纹或其他管接头）不需再做压力试验
+    substitution:
+      gc3InitialRun: GC3 级管道经建设单位（使用单位）或设计单位同意，可用 8.6.1.6 的初始运行压力试验代替液压试验
+      pneumaticForHydro: 建设单位（使用单位）或设计单位认为液压试验不切实际时，可用气压试验代替；顾虑气压危险性时可用液压-气压试验
+      exemptWhenBothImpractical: 两者都不切实际且同时存在"液压会损害衬里/内隔热层、污染工艺、支撑过载或低温脆断风险"与"气压风险更大或低温脆断风险"时，可按 8.6.1.7 免除或替代
+      atmosphericVent: 排放且连通大气的管线（如最后一个切断阀后的放空管线、排污管线），除设计另有规定外不需做压力试验
+    vacuumOrExternalPressure: 真空或外压管道按内外压力差的 1.5 倍、但不小于 105kPa 做内压压力试验；经同意可用真空度试验代替，但应制定试验规程（8.6.1.6）
+    jacketedPipe: 内管试验压力按内部或外部设计压力中的较大值确定；需对内管接头做目视检查时，压力试验要在夹套完成之前进行。外管除设计另有规定外按 8.6.1 试验（8.6.1.7）
 
+  leakTest:
+    sourceClause: "8.6.2 泄漏试验（8.6.2.1 一般要求、8.6.2.2 敏感性泄漏试验、8.6.2.3 气密性试验）"
+    appliesTo: 输送泄漏危害性介质的管道，压力试验后还应进行泄漏试验
+    focusPoints: [阀门填料函, 法兰或螺纹连接处, 放空阀, 排气阀, 排水阀]
+    kinds: [敏感性泄漏试验, 气密性试验]
+    methodPerDesign: 泄漏试验的方法和要求按设计文件规定
+    exemption: 按 8.6.1.4 经气压试验合格、且试验后未拆卸过的管道系统可不做泄漏试验（8.6.2.1.3）
+    sensitive:
+      appliesTo: 输送 GB/T 42594-2023 表 1 规定的急性毒性危害类别 1 介质、急性毒性危害类别 2 气体介质的工艺管道
+      preferredSensitivity: 优先采用试验灵敏度不低于 1e-5 Pa·m³/s 的泄漏检测方法
+      substitution: 经建设单位（使用单位）、设计单位、安装单位同意，可用 8.6.2.3 的气密性试验代替，以无可察泄漏为合格
+      bubbleMethod:
+        standard: NB/T 47013.8-2012 附录 A 气泡泄漏检测——直接加压技术
+        testPressure: 不小于 25% 设计压力
+        procedure: 先升至 50% 试验压力初检，再分级升至试验压力，每级保压至管道应变平衡
+        acceptance: 无重复或连续的气泡出现
+      higherSensitivityMethods:
+        - {method: 卤素泄漏检测（漏率型检漏仪）, annex: NB/T 47013.8-2012 附录 C, sensitivityPaM3PerS: 1e-5}
+        - {method: 氦质谱仪泄漏检测——吸枪技术, annex: NB/T 47013.8-2012 附录 D, sensitivityPaM3PerS: 1e-6, gas: 氦气或含 1% 或 10% 氦的混合气体（用混合气体时按氦的比例相应提高灵敏度）}
+        - {method: 氦质谱仪泄漏检测——示踪探头技术, annex: NB/T 47013.8-2012 附录 E, sensitivityPaM3PerS: 1e-6, note: 待检管道或组件内需抽真空，在待检部位外用氦气或含氦混合气体吹扫}
+        - {method: 氨泄漏检测, annex: NB/T 47013.8-2012 附录 G, gas: 充入 10%~30% 或 1% 氨气, note: 试验压力及方法按该标准规定}
+      halogenAndHeliumTestPressure:
+        initial: 不小于 105kPa 与 25% 设计压力两者的较小值
+        procedure: 先升至 170kPa 与 50% 试验压力两者的较小值初检，再分级升至试验压力，每级保压至管道应变平衡
+    airtightness:
+      testPressure: 设计压力；真空管道为内压 0.1 MPa
+      medium: 可采用空气
+      procedure: 除试验压力外，按 8.6.1.4 气压试验的相关要求进行
+      approvalAbove1_6MPa: 试验压力大于 1.6 MPa 时应取得设计单位、建设单位（使用单位）和安装单位同意
+      combineWithCommissioning: 经建设单位（使用单位）或设计单位同意，可按最高工作压力或结合试车一并进行
+  vacuumTest:
+    sourceClause: "8.6.3 真空度试验"
+    rule: 除 8.6.1.6 b) 的情况外，真空管道系统压力试验合格后按设计文件规定做 24h 真空度试验
+    maxPressureRisePct: 5
+    formula: Δp =（p2 − p1）/ p1 × 100%（公式 55；p1 试验初始绝压、p2 试验最终绝压，MPa）
 tsg31_2025:
   source: TSG 31-2025 工业管道安全技术规程（2026-01-01 施行）
   designApproval:

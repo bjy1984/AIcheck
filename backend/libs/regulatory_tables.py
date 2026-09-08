@@ -74,6 +74,57 @@ def wps_base_material_group(grade: str) -> str | None:
     return None
 
 
+_LEVEL_RANK = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
+_METHOD_KEYS = {
+    "RT": "radiographic",
+    "射线": "radiographic",
+    "UT": "ultrasonic",
+    "超声": "ultrasonic",
+    "TOFD": "tofd",
+    "衍射时差": "tofd",
+    "PAUT": "phasedArray",
+    "相控阵": "phasedArray",
+}
+
+
+def ndt_acceptance_level(method: str, *, coverage_percent: float | None = None) -> dict[str, Any] | None:
+    """GB/T 20801.1-2025 8.3.2：某种无损检测方法在该检查比例下的技术等级与合格级别。
+
+    100% 检查与局部/抽样检查的合格级别不同——射线 100% 要 Ⅱ 级、局部才是 Ⅲ 级；
+    超声 100% 要 Ⅰ 级、局部是 Ⅱ 级。设计文件写"验收等级 Ⅲ 级"配 100% 射线是不合格的，
+    此前没有任何地方比这一项。比例不明时返回 None——不知道是全检还是抽检就判不了。
+    """
+    text = str(method or "").upper()
+    key = next((value for token, value in _METHOD_KEYS.items() if token.upper() in text), None)
+    if key is None:
+        return None
+    volumetric = table("gbt20801_inspection", "acceptance").get("volumetric") or {}
+    if key in {"tofd", "phasedArray"}:
+        entry = (volumetric.get("ultrasonic") or {}).get(key)
+        if not entry:
+            return None
+        return {"method": key, "standard": (volumetric.get("ultrasonic") or {}).get("standard"), **entry}
+    section = volumetric.get(key) or {}
+    if coverage_percent is None:
+        return None
+    entry = section.get("full") if coverage_percent >= 100 else section.get("partial")
+    if not entry:
+        return None
+    return {"method": key, "standard": section.get("standard"), "coveragePercent": coverage_percent, **entry}
+
+
+def acceptance_level_meets(actual: str, required: str) -> bool | None:
+    """合格级别是否达标：级别数字越小越严，实际必须不低于（即数字不大于）要求。"""
+    def rank(value: Any) -> int | None:
+        text = str(value or "")
+        return next((score for glyph, score in _LEVEL_RANK.items() if glyph in text), None)
+
+    actual_rank, required_rank = rank(actual), rank(required)
+    if actual_rank is None or required_rank is None:
+        return None
+    return actual_rank <= required_rank
+
+
 def base_material_classification_requirement(grade: str) -> dict[str, Any] | None:
     """母材不在 NB/T 47014-2023 表 1 时，附录 B.2 要求什么。
 
