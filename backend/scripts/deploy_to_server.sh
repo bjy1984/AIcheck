@@ -14,7 +14,7 @@
 #   bash scripts/deploy_to_server.sh --frontend # 只更新前端静态资源
 set -euo pipefail
 
-HOST="${AICHECK_DEPLOY_HOST:-dev-bjy}"
+HOST="${AICHECK_DEPLOY_HOST:-aicheck-prod-new}"
 REMOTE_HOME=/home/dev-bjy
 SERVER_DATA_ROOT="${AICHECK_SERVER_DATA_ROOT:-$REMOTE_HOME/aicheck-data}"
 # 网关对外端口（安全组放行的是 8081；改端口时这里要跟着改）
@@ -25,6 +25,10 @@ trap 'rm -rf "$STAGE"' EXIT
 
 COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 MODE="${1:-all}"
+case "$MODE" in all|--backend|--frontend) ;; *) echo "Unknown deploy mode: $MODE" >&2; exit 2 ;; esac
+REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" 'command -v docker >/dev/null && command -v python3 >/dev/null'
+
 
 # backend/data/visual_extraction_pages 是被误提交的 OCR 页面图产物（1106 个 PNG，
 # 约 550MB）。部署不需要它，剔除后包体从 557MB 降到 3.5MB。
@@ -42,6 +46,20 @@ with tarfile.open(src) as si, tarfile.open(dst, "w:gz", compresslevel=9) as so:
         so.addfile(m, si.extractfile(m) if m.isfile() else None)
 PY
   scp -q "$STAGE/src.tar.gz" "$HOST:$REMOTE_HOME/aicheck-src.tar.gz"
+
+  echo "==> 只读检查审查点 ID；需要迁移时停止部署"
+  ssh "$HOST" 'bash -s' <<'ID_PREFLIGHT'
+    set -euo pipefail
+    stage=$(mktemp -d /tmp/aicheck-id-preflight.XXXXXXXX)
+    trap 'rm -rf "$stage"' EXIT
+    tar xzf /home/dev-bjy/aicheck-src.tar.gz -C "$stage" \
+      backend/scripts/migrate_material_review_point_ids.py backend/config/material_review_points.json
+    chmod -R a+rX "$stage"
+    docker run --rm --network aicheck-net --env-file /home/dev-bjy/aicheck-runtime.env \
+      -e PYTHONPATH=/app -v "$stage":/preflight:ro aicheck-api:local \
+      python /preflight/backend/scripts/migrate_material_review_point_ids.py \
+      --asset /preflight/backend/config/material_review_points.json --check-current
+ID_PREFLIGHT
 
   echo "==> 服务器解包并提交到本地 git 仓库"
   ssh "$HOST" "
@@ -75,7 +93,7 @@ PY
   ssh "$HOST" "
     set -eo pipefail
     cd $REMOTE_HOME/AIcheck/backend
-    docker build -q -f Dockerfile.server -t aicheck-api:local . >/dev/null
+    docker build -q -f Dockerfile.server --build-arg AICHECK_REVISION=$REVISION -t aicheck-api:local . >/dev/null
     # 运行时 env 生成器以仓库版本为准，覆盖服务器上可能被手改过的副本。
     # 此前它只存在于服务器，部署逻辑有一半没有版本管理。
     cp deploy/build_runtime_env.py /home/dev-bjy/build-runtime-env.py
@@ -224,9 +242,10 @@ except Exception:
       # 反引号会在本机当命令替换执行，2026-09-07 就这样跑出一句 celery Usage 报错）：不带 exec 时 PID 1 是 sh，不会把
       # docker stop 的 SIGTERM 转给 celery，温停会干等满 20 分钟再被 SIGKILL
       # （2026-09-03 首次部署实测卡住，手工 kill -TERM 才放行）。
-      if [ \"\$name\" = aicheck-worker-llm ] && docker inspect \$name >/dev/null 2>&1; then
+      if docker inspect \$name >/dev/null 2>&1; then
         echo \"    温停 \$name（等在途大模型任务收尾，最多 20 分钟）\"
-        docker stop -t 1200 \$name >/dev/null 2>&1 || true
+        docker stop -t 1200 \$name >/dev/null
+        [ \"\$(docker inspect \$name --format '{{.State.ExitCode}}')\" != 137 ] || { echo \"worker \$name 未能温停，部署中止\" >&2; exit 1; }
       fi
       docker rm -f \$name >/dev/null 2>&1 || true
       # output/rules 必须和 API 挂一样的卷：worker 要读用户上传的 local:// 原件
@@ -265,16 +284,9 @@ except Exception:
     echo '    四个 worker 均已用新镜像重建'
   "
 
-  # 确认容器真的换成了新代码，而不是又跑起旧实例
-  echo "==> 校验容器代码与本地一致"
-  ssh "$HOST" "
-    docker exec aicheck-api python -c \"
-import hashlib, pathlib
-print('容器内 routes.py:', hashlib.sha256(pathlib.Path('/app/apps/api/routes.py').read_bytes()).hexdigest()[:16])
-\"
-  "
-  local_hash=$(LC_ALL=C LANG=C shasum -a 256 "$REPO_ROOT/backend/apps/api/routes.py" | cut -c1-16)
-  echo "  本地 routes.py:   $local_hash"
+  echo "==> 校验 API 和 worker 镜像及提交版本"
+  ssh "$HOST" "python3 $REMOTE_HOME/AIcheck/backend/scripts/verify_runtime_revision.py --expected-revision '$REVISION'"
+
 }
 
 sync_frontend() {
@@ -444,7 +456,7 @@ PROBE_PY
     # 检查脚本本身不连 docker，正是为了能这样拆开跑。
     running=$(docker ps --format "{{.Names}}" | grep "^aicheck-" | paste -sd, -)
     docker exec -e PYTHONPATH=/app -w /app aicheck-api \
-      python scripts/compose_drift_check.py --running "$running" || true
+      python scripts/compose_drift_check.py --running "$running"
 
     docker ps --filter name=aicheck- --format "  {{.Names}}  {{.Status}}"
 REMOTE_VERIFY
@@ -453,7 +465,7 @@ REMOTE_VERIFY
 case "$MODE" in
   --backend)  sync_backend ;;
   --frontend) sync_frontend ;;
-  *)          sync_backend; sync_frontend ;;
+  all)        sync_backend; sync_frontend ;;
 esac
 verify
 echo "==> 部署完成（${COMMIT}）"
