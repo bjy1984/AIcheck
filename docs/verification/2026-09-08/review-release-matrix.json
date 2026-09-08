@@ -3233,7 +3233,7 @@
       ],
       "genericInterpreters": [],
       "unconfiguredInterpreters": [],
-      "emptyInputResult": "failed",
+      "emptyInputResult": "evidence_insufficient",
       "evidenceGroundingBound": false,
       "scenarioAcceptance": {
         "compliant": "not_recorded",

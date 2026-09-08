@@ -137,3 +137,13 @@ def test_r14_alternative_rule_does_not_override_nonapplicable_component_route():
         'requiresManufacturingLicense': True, 'requiresManufacturingSupervision': False, 'requiresTypeTest': False}],
         'productInspectionRules': product_inspection_rules()})
     assert result['result'] == 'not_applicable'
+
+
+def test_r23_no_extractable_test_report_is_insufficient_in_formal_fact_path():
+    from libs.review_orchestrator.r20_r23_facts import build_r23_business_facts
+    from libs.review_tools.r20_r23_tools import evaluate_r23_valve_test_records
+
+    facts = build_r23_business_facts({}, {})
+    args = build_tool_arguments('evaluate_r23_valve_test_records', {}, facts=facts, explicit={}, document_version_ids=[], evidence_facts=[], evidence_refs=[])
+    assert args['testRecords'] == []
+    assert evaluate_r23_valve_test_records(args)['result'] == 'evidence_insufficient'

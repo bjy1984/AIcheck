@@ -28,7 +28,7 @@
 | R20 | 是 | 2 | True | evidence_insufficient | — |
 | R21 | 是 | 2 | True | evidence_insufficient | — |
 | R22 | 是 | 2 | True | evidence_insufficient | — |
-| R23 | 是 | 3 | True | failed | — |
+| R23 | 是 | 3 | True | evidence_insufficient | — |
 | R24 | 是 | 5 | True | evidence_insufficient | — |
 | R25 | 是 | 3 | True | evidence_insufficient | — |
 | R26 | 是 | 3 | True | evidence_insufficient | — |
