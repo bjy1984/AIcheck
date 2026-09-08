@@ -107,7 +107,9 @@ def load_review_points_from_mapping_doc(
         rows.append(dict(zip(header, padded[: len(header)])))
 
     review_points: list[dict[str, Any]] = []
-    for index, row in enumerate(rows, start=1):
+    seen_keys: set[tuple[int, str, str]] = set()
+    seen_ids: set[str] = set()
+    for row in rows:
         material_type_name, material_type_code = extract_material_type(row.get("上传资料类型") or "")
         if not material_type_code:
             continue
@@ -116,7 +118,12 @@ def load_review_points_from_mapping_doc(
             continue
         evidence_items = split_evidence_items(row.get("需定位的内容项/字段") or "")
         review_content = (row.get("审查内容") or row.get("节点名称") or material_type_name).strip()
-        point_id = f"MRP-{node_id}-{material_type_code}-{stable_short_id(index, review_content, material_type_code, length=6)}"
+        key = (node_id, material_type_code, review_content)
+        point_id = f"MRP-{node_id}-{material_type_code}-{stable_short_id(*key, length=6)}"
+        if key in seen_keys or point_id in seen_ids:
+            raise ValueError(f"Duplicate material review point: {key!r}")
+        seen_keys.add(key)
+        seen_ids.add(point_id)
         review_points.append(
             {
                 "id": point_id,
