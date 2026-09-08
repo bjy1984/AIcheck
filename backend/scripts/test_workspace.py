@@ -9,7 +9,11 @@ from pathlib import Path
 
 MARKER = '.aicheck-test-workspace'
 MANIFEST = '.aicheck-test-manifest.json'
-EXCLUDED = ('rules/results/', 'rules/standards/', 'audit-reports/', 'Scan/',
+FIXTURES = ('output/two_project_ai_review_20260825/review_input.json',
+            'output/two_project_node_eval_20260824/node_targeting_results.json',
+            'output/test_qwen_classification_20260824/ocr/',
+            'output/two_project_node_eval_20260824/test2/ocr/')
+EXCLUDED = ('rules/results/', 'audit-reports/', 'Scan/',
             'backend/data/visual_extraction_pages/', 'output/', 'tmp/')
 GENERATED = ('output', 'tmp', 'backend/data/runtime-exports', 'backend/ocr_eval/reports',
              'backend/data/aicheck.sqlite3')
@@ -21,7 +25,7 @@ def source_files(root: Path) -> list[str]:
     ).decode().split('\0')
     result = []
     for name in sorted(set(names)):
-        if not name or name.startswith(EXCLUDED) or name.endswith(('.zip', '.dump', '.mp4')):
+        if not name or (name.startswith(EXCLUDED) and not name.startswith(FIXTURES)) or name.endswith(('.zip', '.dump', '.mp4')):
             continue
         path = root / name
         if not path.is_file():

@@ -4,4 +4,9 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git zsh \
     && rm -rf /var/lib/apt/lists/*
+# Scripts retaining /app compatibility must resolve to the synchronized checkout,
+# never to the older source baked into the production base image.
+RUN rm -rf /app && ln -s /ws/backend /app
+ENV PYTHONPATH=/ws/backend
+WORKDIR /ws/backend
 USER aicheck
