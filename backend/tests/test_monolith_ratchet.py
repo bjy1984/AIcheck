@@ -61,3 +61,13 @@ def test_direct_write_pattern_does_not_flag_plain_reads() -> None:
         'if repo.state["documents"] == []:',
     ):
         assert not pattern.search(snippet), snippet
+
+
+def test_import_wrapping_does_not_expand_logical_size(tmp_path):
+    path = tmp_path / 'module.py'
+    path.write_text('from example import first, second\nvalue = 1\n')
+    compact = monolith_baseline.measure_file(path)
+    path.write_text('from example import (\n    first,\n    # public re-export\n    second,\n)\nvalue = 1\n')
+    assert monolith_baseline.measure_file(path) == compact
+    path.write_text(path.read_text() + 'another_value = 2\n')
+    assert monolith_baseline.measure_file(path)['lines'] == compact['lines'] + 1
