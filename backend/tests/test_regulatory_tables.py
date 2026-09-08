@@ -529,3 +529,27 @@ def test_design_acceptance_level_is_compared_against_the_standard():
     # 局部检查配 Ⅲ 级 → 达标
     good = design_special_requirements("管道采用射线检测 RT，检测比例 20%，验收等级 Ⅲ级", pipelines)
     assert good["domains"]["ndt"]["requirements"]["acceptanceLevelMeetsRequirement"] is True
+
+
+def test_filler_class_matching_handles_the_coarser_group_codes_in_tables_2_to_4():
+    """表 1 的组别写到 Fe-8-1、Fe-5B-1，表 2~表 4 只写到 Fe-8、Fe-5B。
+
+    只做全等匹配时，奥氏体不锈钢、铬钼钢等 15 个组别一条焊材类别都取不到，
+    配套性判定会把每一种焊材都判成"不配套"——那是假的不符合。
+    """
+    from libs.regulatory_tables import filler_classes_for_group, filler_matches_base_material, wps_base_material_group
+
+    assert wps_base_material_group("S30408") == "Fe-8-1"
+    assert [item["fillerClass"] for item in filler_classes_for_group("Fe-8-1")] == ["FeT-8", "FeS-8"]
+    assert filler_matches_base_material("FeT-8", "S30408")["matched"] is True
+    assert filler_matches_base_material("FeT-1-1", "S30408")["matched"] is False
+
+    # 细组别优先：Fe-1-2 在表 2~4 里有自己的条目，不该退到 Fe-1
+    assert [item["fillerClass"] for item in filler_classes_for_group("Fe-1-2")] == ["FeT-1-2", "FeS-1-2", "FeMSG-1-2"]
+
+    # 表 2~表 4 根本没列的组别返回 None（判不了），不是"不配套"
+    from libs.regulatory_tables import table
+
+    groups = table("nbt47014_2023", "baseMaterialGroups").get("groups") or []
+    unlisted = [g["group"] for g in groups if not filler_classes_for_group(g["group"])]
+    assert set(unlisted) == {"Fe-11A", "Cu-5", "Ni-2", "Ni-3", "Ni-4", "Ni-5"}

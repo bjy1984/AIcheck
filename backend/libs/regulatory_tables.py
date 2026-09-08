@@ -500,11 +500,23 @@ def filler_classes_for_group(base_material_group: str, *, welding_method: str | 
         return []
     tables = table("nbt47014FillerClasses").get("tables") or {}
     kinds = [_FILLER_KIND_BY_METHOD[welding_method]] if welding_method in _FILLER_KIND_BY_METHOD else list(tables)
+    # 表 2~表 4 的母材组别写得比表 1 粗：表 1 是 Fe-8-1、Fe-5B-1，表 2~4 只到 Fe-8、Fe-5B。
+    # 只做全等匹配时，奥氏体不锈钢、铬钼钢等 15 个组别一条焊材类别都取不到，
+    # 配套性判定会把每一种焊材都判成"不配套"——那是假的不符合。
+    # 所以先全等，取不到再退到父级（去掉最后一段）。
+    candidates = [wanted]
+    if "-" in wanted:
+        parent = wanted.rsplit("-", 1)[0]
+        if parent and parent != wanted:
+            candidates.append(parent)
     out: list[dict[str, Any]] = []
-    for kind in kinds:
-        for entry in (tables.get(kind) or {}).get("entries") or []:
-            if str(entry.get("baseMaterialGroup")) == wanted:
-                out.append({**entry, "kind": kind})
+    for group_code in candidates:
+        for kind in kinds:
+            for entry in (tables.get(kind) or {}).get("entries") or []:
+                if str(entry.get("baseMaterialGroup")) == group_code:
+                    out.append({**entry, "kind": kind, "matchedGroup": group_code})
+        if out:
+            break
     return out
 
 
@@ -519,6 +531,10 @@ def filler_matches_base_material(filler_class: str, base_material_grade: str) ->
         return None
     code = str(filler_class or "").strip()
     expected = [item["fillerClass"] for item in filler_classes_for_group(group)]
+    if not expected:
+        # 表 2~表 4 没给这个组别的焊材类别（Fe-11A、Ni-2~Ni-5 等 6 个组别）。
+        # 空集合不等于"都不配套"——照旧返回 matched=False 会把每一种焊材都判成不符合。
+        return None
     return {
         "matched": code in expected,
         "fillerClass": code,
