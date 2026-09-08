@@ -1,0 +1,32 @@
+{
+  "codeRevision": "3931776",
+  "mode": "offline_evidence_package_replay",
+  "modelCalls": 0,
+  "paidCost": 0,
+  "goldReviewed": false,
+  "qualityVerdict": "not_evaluated_no_blind_review_gold",
+  "projects": [
+    {
+      "projectCode": "test",
+      "result": {
+        "projectCode": "test",
+        "projectId": "P-TEST-OCR-001",
+        "includedNodeCount": 42,
+        "packageCoveragePassed": true,
+        "coveragePassed": false,
+        "manifestPath": "/private/tmp/aicheck-offline-replay-20260908/evidence_shards/test/manifest.json"
+      }
+    },
+    {
+      "projectCode": "test2",
+      "result": {
+        "projectCode": "test2",
+        "projectId": "P-TEST-OCR-002",
+        "includedNodeCount": 42,
+        "packageCoveragePassed": true,
+        "coveragePassed": false,
+        "manifestPath": "/private/tmp/aicheck-offline-replay-20260908/evidence_shards/test2/manifest.json"
+      }
+    }
+  ]
+}
