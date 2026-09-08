@@ -127,7 +127,7 @@ def test_design_special_requirements_feed_r09_frozen_rules() -> None:
         "耐压试验：液压试验，试验压力为设计压力的 1.5 倍，保压 10 min 无泄漏无变形。"
         "泄漏试验：气密性试验，泄漏试验压力 1.6MPa，采用发泡剂检查无泄漏。"
     )
-    pipelines = [{"pipelineId": "PL-101", "designPressureMPa": 1.6, "pipelineGrade": "GC2"}]
+    pipelines = [{"pipelineId": "PL-101", "designPressureMPa": 1.6, "pipelineGrade": "GC2", "mediumToxicity": "无毒", "leakHazard": "否"}]
     requirements = design_special_requirements(text, pipelines)
     domains = requirements["domains"]
     assert domains["ndt"]["specified"] and domains["ndt"]["requirements"]["coverage"] == "20%" and domains["ndt"]["requirements"]["acceptanceCriteria"] == "Ⅱ级"

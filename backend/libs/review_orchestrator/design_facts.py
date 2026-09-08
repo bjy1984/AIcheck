@@ -364,12 +364,13 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             leak_hazard=item.get("leakHazard"),
             medium=item.get("medium"),
         )
-        grade_levels.append(inspection_level_for_grade(grade, toxic=flags["toxic"] is True, leak_hazard=flags["leakHazard"] is True))
-        if grade.upper() == "GC2" and not flags["determined"]:
+        if grade.strip().upper() == "GC2" and not flags["determined"]:
             undetermined.append(item.get("pipelineId") or item.get("lineNo") or "未编号管线")
+            continue
+        grade_levels.append(inspection_level_for_grade(grade.strip(), toxic=flags["toxic"] is True, leak_hazard=flags["leakHazard"] is True))
     level_rank = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
     strictest = min((lvl for lvl in grade_levels if lvl), key=lambda lvl: level_rank.get(lvl, 9), default=None)
-    required_ratio_pct = volumetric_ndt_ratio(strictest)
+    required_ratio_pct = volumetric_ndt_ratio(strictest) if not undetermined else None
     coverage_pct = int(coverage.group(1)) if coverage else None
     # 合格级别按检查比例定（8.3.2.2/8.3.2.3）：射线 100% 要 Ⅱ 级、局部 Ⅲ 级；
     # 超声 100% 要 Ⅰ 级、局部 Ⅱ 级。设计写"验收等级 Ⅲ级"配 100% 射线是不合格的，
