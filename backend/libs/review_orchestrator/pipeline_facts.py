@@ -53,6 +53,10 @@ def _pipeline_from_characteristic(item: dict[str, Any]) -> dict[str, Any]:
     pipeline["pipelineGrade"] = str(item.get("pipelineGrade") or "").strip().upper() or None
     pipeline["specification"] = _value(row, "specification", "spec", "规格", "规格型号", "公称直径", "DN")
     pipeline["medium"] = _value(row, "medium", "fluid", "介质", "输送介质")
+    # 毒性程度与泄漏危害性决定 GC2 管道的检查等级（GB/T 20801.1-2025 8.3.1.3 a）/8.3.1.4 a）：
+    # 有毒 → Ⅲ 级、泄漏危害性 → Ⅱ 级，都比缺省的 Ⅳ 级严，对应的体积检测比例也更高。
+    pipeline["mediumToxicity"] = _value(row, "mediumToxicity", "toxicity", "毒性程度", "介质毒性")
+    pipeline["leakHazard"] = _value(row, "leakHazard", "泄漏危害性", "泄漏危害")
     pipeline["weldingMethod"] = _value(row, "weldingMethod", "焊接方法")
     pipeline["ndtRatio"] = _value(row, "ndtRatio", "检测比例", "无损检测比例")
     pipeline["source"] = {

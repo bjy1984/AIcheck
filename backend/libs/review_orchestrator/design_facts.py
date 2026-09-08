@@ -22,6 +22,7 @@ from typing import Any
 from libs.business_pack import DEFAULT_BUSINESS_PACK_ID, load_business_pack
 from libs.regulatory_tables import (
     inspection_level_for_grade,
+    medium_hazard_flags,
     pressure_test_ratios,
     volumetric_ndt_ratio,
 )
@@ -349,7 +350,21 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
     coverage = _NDT_COVERAGE_RE.search(text)
     level = _NDT_LEVEL_RE.search(text)
     # 按管线级别推缺省检查等级与体积检测比例（GB/T 20801.1-2025 8.3.1 / 表 42）：取本工程最严的一条
-    grade_levels = [inspection_level_for_grade(str(item.get("pipelineGrade") or "")) for item in pipelines]
+    # GC2 的等级看介质：有毒 → Ⅲ、泄漏危害性 → Ⅱ，都比缺省的 Ⅳ 严。
+    # 资料没写毒性/泄漏危害性时不按 Ⅳ 一口咬定——那会把比例要求降下来，
+    # 而这正是"标准里有、判定拿不到"最容易出错的地方。
+    grade_levels = []
+    undetermined: list[str] = []
+    for item in pipelines:
+        grade = str(item.get("pipelineGrade") or "")
+        flags = medium_hazard_flags(
+            toxicity=item.get("mediumToxicity"),
+            leak_hazard=item.get("leakHazard"),
+            medium=item.get("medium"),
+        )
+        grade_levels.append(inspection_level_for_grade(grade, toxic=flags["toxic"] is True, leak_hazard=flags["leakHazard"] is True))
+        if grade.upper() == "GC2" and not flags["determined"]:
+            undetermined.append(item.get("pipelineId") or item.get("lineNo") or "未编号管线")
     level_rank = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
     strictest = min((lvl for lvl in grade_levels if lvl), key=lambda lvl: level_rank.get(lvl, 9), default=None)
     required_ratio_pct = volumetric_ndt_ratio(strictest)
@@ -363,6 +378,9 @@ def design_special_requirements(text: str, pipelines: list[dict[str, Any]], *, s
             "acceptanceCriteria": f"{level.group(1)}级" if level else None,
             "requiredInspectionLevel": strictest,
             "requiredCoveragePercent": required_ratio_pct,
+            # 这些 GC2 管线的检查等级取决于介质毒性/泄漏危害性，资料里没写，按缺省 Ⅳ 级算出来的
+            # 比例可能偏低——把管线号列出来让人去补，而不是让它悄悄过去
+            "inspectionLevelUndeterminedPipelines": undetermined or None,
             "coverageMeetsRequirement": (coverage_pct >= required_ratio_pct) if coverage_pct is not None and required_ratio_pct is not None else None,
         },
         standard_refs,

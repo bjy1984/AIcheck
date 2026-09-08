@@ -455,3 +455,41 @@ def test_elongation_picks_the_sampling_direction_when_the_document_states_it():
     unstated = _limits(base)
     assert unstated["limits"]["断后伸长率"] == (35, None)
     assert "未写取样方向" in unstated["notes"]
+
+
+def test_gc2_inspection_level_follows_the_medium_hazard():
+    """GB/T 20801.1-2025 8.3.1：GC2 管道的检查等级看介质——有毒 Ⅲ 级、泄漏危害性 Ⅱ 级，
+    都比缺省的 Ⅳ 级严，对应的体积检测比例也更高。按 Ⅳ 级一口咬定会把比例要求降下来。"""
+    from libs.regulatory_tables import inspection_level_for_grade, medium_hazard_flags, volumetric_ndt_ratio
+
+    assert inspection_level_for_grade("GC2") == "Ⅳ"
+    assert inspection_level_for_grade("GC2", toxic=True) == "Ⅲ"
+    assert inspection_level_for_grade("GC2", leak_hazard=True) == "Ⅱ"
+    # 等级更严，比例要求也更高
+    assert volumetric_ndt_ratio("Ⅱ") > volumetric_ndt_ratio("Ⅲ") > volumetric_ndt_ratio("Ⅳ")
+
+    # 只认资料上明确写的分级用语
+    assert medium_hazard_flags(toxicity="中度危害")["toxic"] is True
+    assert medium_hazard_flags(toxicity="无毒")["toxic"] is False
+    assert medium_hazard_flags(leak_hazard="泄漏危害性介质")["leakHazard"] is True
+
+    # 介质名称本身不拿来猜——判一种介质有没有毒要查物质清单
+    guessed = medium_hazard_flags(medium="液氨")
+    assert guessed["toxic"] is None and guessed["determined"] is False
+
+
+def test_undetermined_gc2_pipelines_are_listed_instead_of_silently_defaulted():
+    """资料没写毒性/泄漏危害性的 GC2 管线要点名，让人去补，而不是按最宽的 Ⅳ 级悄悄过去。"""
+    from libs.review_orchestrator.design_facts import design_special_requirements
+
+    text = "管道采用射线检测 RT，检测比例 5%，验收等级 Ⅲ级"
+    pipelines = [
+        {"pipelineId": "P-101", "pipelineGrade": "GC2", "medium": "液氨"},
+        {"pipelineId": "P-102", "pipelineGrade": "GC2", "mediumToxicity": "中度危害", "medium": "液氨"},
+        {"pipelineId": "P-103", "pipelineGrade": "GC3", "medium": "循环水"},
+    ]
+    facts = design_special_requirements(text, pipelines)
+    ndt = facts["domains"]["ndt"]["requirements"]
+    assert ndt["inspectionLevelUndeterminedPipelines"] == ["P-101"]
+    # P-102 写了中度危害 → Ⅲ 级，比 GC3 的 Ⅴ 级严，取最严的一条
+    assert ndt["requiredInspectionLevel"] == "Ⅲ"

@@ -150,6 +150,42 @@ def inspection_level_for_grade(pipeline_grade: str, *, toxic: bool = False, leak
     return defaults.get(grade)
 
 
+_TOXIC_TOKENS = ("极度危害", "高度危害", "中度危害", "轻度危害", "有毒", "剧毒")
+_LEAK_TOKENS = ("泄漏危害", "易泄漏")
+
+
+def medium_hazard_flags(*, toxicity: Any = None, leak_hazard: Any = None, medium: Any = None) -> dict[str, Any]:
+    """从设计资料写的毒性程度/泄漏危害性栏推出两个开关，推不出来就说推不出来。
+
+    只认资料上明确写的分级用语（GB 5044 的四档危害程度、"有毒"、"泄漏危害性"）。
+    介质名称本身不拿来猜——判一种介质有没有毒要查物质清单，那不是这里该做的事，
+    猜错会把有毒 GC2 管道按最宽的 Ⅳ 级算，体积检测比例要求跟着降下来。
+    """
+    toxicity_text = str(toxicity or "").strip()
+    leak_text = str(leak_hazard or "").strip()
+    negative = ("无毒", "非有毒", "无", "否")
+
+    def flag(text: str, tokens: tuple[str, ...]) -> bool | None:
+        if not text:
+            return None
+        if any(token in text for token in negative) and not any(token in text for token in ("轻度", "中度", "高度", "极度")):
+            return False
+        return True if any(token in text for token in tokens) else None
+
+    toxic_flag = flag(toxicity_text, _TOXIC_TOKENS)
+    leak_flag = flag(leak_text, _LEAK_TOKENS)
+    if leak_flag is None and leak_text and leak_text not in {"无", "否"}:
+        leak_flag = True
+    return {
+        "toxic": toxic_flag,
+        "leakHazard": leak_flag,
+        "toxicitySource": toxicity_text or None,
+        "leakHazardSource": leak_text or None,
+        "medium": str(medium or "").strip() or None,
+        "determined": toxic_flag is not None or leak_flag is not None,
+    }
+
+
 def volumetric_ndt_ratio(level: str | None) -> int | None:
     """表 5-1 该检查等级对接环缝的射线/超声比例（%）；Ⅴ 级无体积检测要求 → 0。"""
     if not level:
