@@ -47,6 +47,15 @@ def check_wps_pqr_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
     if not wps_items or not pqr_items or not work_items:
         return _insufficient("check_wps_pqr_coverage", "wps_pqr_or_actual_work_missing", R25_VERSION, arguments)
 
+    from libs.standard_annex_sources import special_qualification_source
+
+    special_sources = [source for item in [*wps_items, *pqr_items, *work_items]
+                       if (source := special_qualification_source(str(item.get("qualificationKind") or "")))]
+    if special_sources:
+        output = _insufficient("check_wps_pqr_coverage", "special_joint_qualification_requires_annex_review", R25_VERSION, arguments)
+        output["sourceReferences"] = [{key: value for key, value in source.items() if key != "pages"} for source in special_sources]
+        return output
+
     matrix: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
     failed = incomplete = False

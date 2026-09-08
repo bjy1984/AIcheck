@@ -1447,10 +1447,9 @@ pipeMaterialLimits:
           - {item: 低温冲击试验, condition: 设计温度低于 -101℃ 的奥氏体不锈钢管，按附录 A（-196℃ 冲击）, basis: 附录 A.4}
         basis: GB/T 14976-2025 7.2 室温拉伸为强制；冲击只在低温工况附加要求里
   pending:
-    - GB/T 14976-2025 表 2 化学成分：32 个牌号里只有 6 个奥氏体牌号有成分，其余 26 个待补（力学与热处理已全）
     - GB/T 13296-2023 表 3 化学成分未录（力学、硬度、热处理、密度已全）
     - GB/T 9711-2023：业务包里没有任何规则引用这本，且手上扫描件 OCR 质量差（表 A.3 抄出来大面积乱码），先不抄；哪天有规则要用再按几何重建法重做
-    - NB/T 47014-2023 附录 C~F 未录
+    - NB/T 47014-2023 附录 C–F 已录条文及页码到 nbt47014_special_qualification_annexes.yaml；图示、公式和特殊接头自动判定仍待验收
 
 nbt47014SpecificFactors:
   factorTextQuality: verified_full_text
