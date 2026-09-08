@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import builtins
 import inspect
 import json
+import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -89,6 +91,33 @@ def test_shadow_official_ocr_never_applies_business_state_directly() -> None:
     assert "official_shadow" in parse_source
     assert "officialOcrJobRecordId" in parse_source
     assert "pipeline_apply_result" not in official_source
+
+
+def test_shadow_official_ocr_branch_has_no_undefined_names() -> None:
+    """影子分支只在 official_shadow 为真时才走到，平时跑不到——写错的名字不会当场炸。
+
+    2026-09-08 发现该分支里用了 `run.get("storageBucket")`，而 parse_document 里没有 `run`
+    这个名字（同一函数别处取的是 `version`），official_shadow 一旦打开就是 NameError。
+    ruff 的 F821 能抓，但 CI 卡在 ruff 棘轮上三周多，没人看见。这里用编译期的名字解析
+    兜住：把函数源码单独编译一遍，检查影子分支引用的自由变量都在函数作用域里。
+    """
+    import symtable
+
+    source = textwrap.dedent(inspect.getsource(worker_tasks.parse_document.run))
+    table = symtable.symtable(source, "parse_document", "exec")
+    function = next(child for child in table.get_children() if child.get_name() == "parse_document")
+    local_names = set(function.get_identifiers())
+    module_names = set(dir(worker_tasks)) | set(dir(builtins))
+    undefined = sorted(
+        name
+        for name in local_names
+        if function.lookup(name).is_referenced()
+        and not function.lookup(name).is_assigned()
+        and not function.lookup(name).is_parameter()
+        and not function.lookup(name).is_imported()
+        and name not in module_names
+    )
+    assert undefined == [], f"parse_document 里引用了未定义的名字：{undefined}"
 
 
 def test_compatible_client_uses_chat_completions_and_1920_image(tmp_path: Path) -> None:

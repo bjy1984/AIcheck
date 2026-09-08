@@ -53,6 +53,9 @@ ssh "$HOST" "
   # 容器里跑的是 uid 999，这些目录测试要写
   mkdir -p '$REMOTE_WS'/output '$REMOTE_WS'/tmp '$REMOTE_WS'/backend/data/runtime-exports '$REMOTE_WS'/backend/ocr_eval/reports
   # 容器以 uid 999 建的文件主机 chmod 不动（sqlite 库文件就是），失败不该中断整轮
-  chmod -R a+rwX '$REMOTE_WS'/output '$REMOTE_WS'/tmp '$REMOTE_WS'/backend/data '$REMOTE_WS'/backend/ocr_eval 2>/dev/null || true
+  # 主机用户 chmod 不动容器以 uid 999 写下的文件，必须用 root 容器放权，
+  # 否则下一轮会冒出几十条 PermissionError: /ws/output/...，看着像回归其实是权限
+  docker run --rm -u root -v '$REMOTE_WS':/ws '$IMAGE' \
+    sh -c 'chmod -R a+rwX /ws/output /ws/tmp /ws/backend/data /ws/backend/ocr_eval' >/dev/null 2>&1 || true
   docker run --rm -v '$REMOTE_WS':/ws -w /ws/backend '$IMAGE' python -m pytest -q -p no:cacheprovider ${*:-tests}
 "

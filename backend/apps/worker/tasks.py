@@ -2615,7 +2615,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 document_id=document_id,
                 version_id=version_id,
                 storage_key=storage_key,
-                storage_bucket=str(run.get("storageBucket") or "documents"),
+                storage_bucket=str((version or {}).get("storageBucket") or "documents"),
                 file_name=file_name,
                 profile_id=routed_profile_id,
                 document_type=routed_profile.get("documentType") or document_type,
