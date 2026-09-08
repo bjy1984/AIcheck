@@ -197,6 +197,7 @@ def test_触发判据看可信识别而不是有没有文字():
     而它恰恰是最需要扫的那一份。
     """
     import inspect
+
     from apps.worker import tasks
 
     source = inspect.getsource(tasks._scan_missed_seal_pages)

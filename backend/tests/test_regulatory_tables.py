@@ -405,7 +405,7 @@ def test_quality_level_reaches_the_limit_lookup():
 
     # 没写等级时只给各级共有的两项，不猜等级
     common = limits_of(None)
-    assert set(common) == {"抗拉强度", "屈服强度"}
+    assert {name for name in common if not name.startswith("化学成分")} == {"抗拉强度", "屈服强度"}
 
 
 def _limits(row: dict) -> dict:
@@ -460,7 +460,11 @@ def test_elongation_picks_the_sampling_direction_when_the_document_states_it():
 def test_gc2_inspection_level_follows_the_medium_hazard():
     """GB/T 20801.1-2025 8.3.1：GC2 管道的检查等级看介质——有毒 Ⅲ 级、泄漏危害性 Ⅱ 级，
     都比缺省的 Ⅳ 级严，对应的体积检测比例也更高。按 Ⅳ 级一口咬定会把比例要求降下来。"""
-    from libs.regulatory_tables import inspection_level_for_grade, medium_hazard_flags, volumetric_ndt_ratio
+    from libs.regulatory_tables import (
+        inspection_level_for_grade,
+        medium_hazard_flags,
+        volumetric_ndt_ratio,
+    )
 
     assert inspection_level_for_grade("GC2") == "Ⅳ"
     assert inspection_level_for_grade("GC2", toxic=True) == "Ⅲ"
@@ -485,7 +489,7 @@ def test_undetermined_gc2_pipelines_are_listed_instead_of_silently_defaulted():
     text = "管道采用射线检测 RT，检测比例 5%，验收等级 Ⅲ级"
     pipelines = [
         {"pipelineId": "P-101", "pipelineGrade": "GC2", "medium": "液氨"},
-        {"pipelineId": "P-102", "pipelineGrade": "GC2", "mediumToxicity": "中度危害", "medium": "液氨"},
+        {"pipelineId": "P-102", "pipelineGrade": "GC2", "mediumToxicity": "中度危害", "leakHazard": "否", "medium": "液氨"},
         {"pipelineId": "P-103", "pipelineGrade": "GC3", "medium": "循环水"},
     ]
     facts = design_special_requirements(text, pipelines)
@@ -537,7 +541,11 @@ def test_filler_class_matching_handles_the_coarser_group_codes_in_tables_2_to_4(
     只做全等匹配时，奥氏体不锈钢、铬钼钢等 15 个组别一条焊材类别都取不到，
     配套性判定会把每一种焊材都判成"不配套"——那是假的不符合。
     """
-    from libs.regulatory_tables import filler_classes_for_group, filler_matches_base_material, wps_base_material_group
+    from libs.regulatory_tables import (
+        filler_classes_for_group,
+        filler_matches_base_material,
+        wps_base_material_group,
+    )
 
     assert wps_base_material_group("S30408") == "Fe-8-1"
     assert [item["fillerClass"] for item in filler_classes_for_group("Fe-8-1")] == ["FeT-8", "FeS-8"]
@@ -553,3 +561,38 @@ def test_filler_class_matching_handles_the_coarser_group_codes_in_tables_2_to_4(
     groups = table("nbt47014_2023", "baseMaterialGroups").get("groups") or []
     unlisted = [g["group"] for g in groups if not filler_classes_for_group(g["group"])]
     assert set(unlisted) == {"Fe-11A", "Cu-5", "Ni-2", "Ni-3", "Ni-4", "Ni-5"}
+
+
+def test_gc2_partial_negative_and_unknown_hazard_never_certify_lowest_level():
+    from libs.regulatory_tables import medium_hazard_flags
+    from libs.review_orchestrator.design_facts import design_special_requirements
+
+    for toxicity, leak in [('无毒', None), (None, '否'), ('无毒', '待确认'), ('有毒', None)]:
+        assert not medium_hazard_flags(toxicity=toxicity, leak_hazard=leak)['determined']
+        requirements = design_special_requirements(
+            '射线检测，检测比例 5%，验收等级 Ⅲ级',
+            [{'pipelineId': 'P1', 'pipelineGrade': 'GC2', 'mediumToxicity': toxicity, 'leakHazard': leak}],
+        )['domains']['ndt']['requirements']
+        assert requirements['inspectionLevelUndeterminedPipelines'] == ['P1']
+        assert 'coverageMeetsRequirement' not in requirements
+    assert medium_hazard_flags(toxicity=False, leak_hazard=False)['determined']
+    assert medium_hazard_flags(leak_hazard=True)['determined']
+    assert medium_hazard_flags(leak_hazard='待确认')['leakHazard'] is None
+
+
+def test_welding_method_aliases_and_missing_footnote_inputs():
+    from libs.regulatory_tables import (
+        filler_classes_for_group,
+        wps_specific_factors,
+        wps_thickness_coverage,
+    )
+
+    assert wps_specific_factors('SMAW') == wps_specific_factors('焊条电弧焊')
+    assert filler_classes_for_group('Fe-1-2', welding_method='SMAW') == filler_classes_for_group(
+        'Fe-1-2', welding_method='焊条电弧焊')
+    assert filler_classes_for_group('Fe-1-2', welding_method='未知方法') == []
+    assert wps_thickness_coverage(12, impact_tested=True, welding_method='SMAW')['baseMetalMinMm'] == 12
+    assert wps_thickness_coverage(40, weld_metal_thickness_mm=25)['baseMetalMaxMm'] is None
+    for value in [float('nan'), float('inf'), -1]:
+        assert wps_thickness_coverage(value) is None
+        assert wps_thickness_coverage(12, weld_metal_thickness_mm=value) is None

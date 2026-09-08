@@ -29,10 +29,10 @@ from collections import Counter
 
 sys.path.insert(0, "/app")
 
-from apps.api.routes import dispatch_knowledge_file_index_pipeline  # noqa: E402
-from libs.db.repository import flush_state, load_state, repo  # noqa: E402
-from libs.integrations import task_dispatcher  # noqa: E402
-from libs.integrations.embedding_client import EmbeddingClient  # noqa: E402
+from apps.api.routes import dispatch_knowledge_file_index_pipeline
+from libs.db.repository import flush_state, load_state, repo
+from libs.integrations import task_dispatcher
+from libs.integrations.embedding_client import EmbeddingClient
 
 load_state()
 client = EmbeddingClient()
@@ -70,7 +70,7 @@ print(f"\n需要重建：{len(stale)} 份" + ("（只算伪向量）" if only_ha
 
 if "--apply" not in sys.argv:
     for f in stale[:15]:
-        print(f"  {f['id']} {str(f.get('indexVersion') or '(无)')} {str(f.get('fileName'))[:36]}")
+        print(f"  {f['id']} {f.get('indexVersion') or '(无)'!s} {str(f.get('fileName'))[:36]}")
     print("\n（dry-run。加 --apply 才真正重建）")
     raise SystemExit(0)
 

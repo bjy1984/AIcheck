@@ -31,16 +31,16 @@ from datetime import timedelta
 
 sys.path.insert(0, "/app")
 
-from libs.contracts.responses import server_time  # noqa: E402
-from libs.db.repository import flush_state, load_state, repo  # noqa: E402
-from libs.project_analysis.domain import (  # noqa: E402
+from libs.contracts.responses import server_time
+from libs.db.repository import flush_state, load_state, repo
+from libs.project_analysis.domain import (
     TERMINAL_PHASES,
     reap_stalled_project_analysis_runs,
 )
-from libs.project_analysis.execution import (  # noqa: E402
+from libs.project_analysis.execution import (
     project_analysis_model_timeout_seconds,
 )
-from libs.project_analysis.queue_probe import queue_task_is_pending  # noqa: E402
+from libs.project_analysis.queue_probe import queue_task_is_pending
 
 
 def main() -> int:

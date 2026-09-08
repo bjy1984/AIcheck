@@ -12,7 +12,6 @@ from typing import Any
 
 from libs.knowledge_retrieval import canonical_standard_text, standard_refs_from_text
 
-
 CANONICAL_VERSION = "standard-knowledge-canonical@1"
 SOURCE_PRIORITY = {
     "new_mineru_semantic": 550,
@@ -1514,7 +1513,7 @@ def _read_optional_json(path: Path) -> dict[str, Any] | None:
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"expected JSON object: {path}")
+        raise ValueError(f"expected JSON object: {path}")  # noqa: TRY004 -- schema validation callers handle ValueError for invalid model/file payloads
     return payload
 
 

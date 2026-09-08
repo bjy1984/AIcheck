@@ -50,14 +50,7 @@ def test_deployment_config_validator_strict_production_passes_repository_compose
 def test_strict_production_fails_when_ocr_dependency_baseline_is_incomplete(tmp_path) -> None:
     incomplete_requirements = tmp_path / "requirements-ocr.txt"
     incomplete_requirements.write_text(
-        "\n".join(
-            [
-                "PyMuPDF==1.27.2.3",
-                "paddlepaddle==3.3.1",
-                "paddlex[ocr]>=3.7.0,<3.8.0",
-                "opencv-python-headless>=4.10,<5",
-            ]
-        ),
+        "PyMuPDF==1.27.2.3\npaddlepaddle==3.3.1\npaddlex[ocr]>=3.7.0,<3.8.0\nopencv-python-headless>=4.10,<5",
         encoding="utf-8",
     )
     validator = DeploymentConfigValidator(

@@ -201,6 +201,7 @@ def _extract_records(
             "testItems": inspection_items,
             "methods": _list_value(_value(merged, "methods", "ndtMethods", "检测方法", "无损检测方法")),
             "testResults": _test_results_from_row(merged) or table_test_results,
+            "chemicalComposition": _value(merged, "chemicalComposition", "化学成分") or {},
             "signatureRoles": _list_value(_value(merged, "signatureRoles", "签字角色", "签署角色")) or signatures,
             "witnessRoles": _list_value(_value(merged, "witnessRoles", "见证人员角色", "见证角色")) or signatures,
             "requiredSignatureRoles": _list_value(_value(merged, "requiredSignatureRoles", "要求签字角色")),
@@ -243,6 +244,10 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
         "outerDiameterMm": ("outerDiameterMm", "outerDiameter", "外径", "公称外径"),
         "qualityLevel": ("qualityLevel", "质量等级", "等级", "钢级"),
         "samplingDirection": ("samplingDirection", "取样方向", "试样方向"),
+        "hbwRequiredByContract": ("hbwRequiredByContract", "布氏硬度合同要求"),
+        "hvRequiredByContract": ("hvRequiredByContract", "维氏硬度合同要求"),
+        "rockwellRequiredByContract": ("rockwellRequiredByContract", "hrbRequiredByContract", "洛氏硬度合同要求"),
+        "impactRequiredByContract": ("impactRequiredByContract", "冲击合同要求"),
         "specification": ("specification", "size", "规格", "规格型号", "尺寸"),
         "batchNo": ("batchNo", "lotNo", "批号", "批次号", "炉批号"),
         "heatNo": ("heatNo", "炉号"),
@@ -275,7 +280,9 @@ def _enrich_material_design_item(item: dict[str, Any]) -> dict[str, Any]:
         if _present(output.get(target)):
             continue
         value = _row_value(row, *keys)
-        if target.startswith(("requires", "listedIn")) or target.endswith("Occurred"):
+        if target.endswith("RequiredByContract"):
+            value = _bool_flag(value)
+        elif target.startswith(("requires", "listedIn")) or target.endswith("Occurred"):
             value = _boolean_value(value)
         elif target in {"requiredInspectionItems", "requiredRetestItems", "requiredMaterialNdtMethods", "materialTestTriggerReasons", "requiredQuantitativeItems"}:
             value = _list_value(value)
@@ -364,7 +371,7 @@ def _parse_limit_text(text: Any) -> tuple[float | None, float | None]:
 
 def _to_float(value: Any) -> float | None:
     try:
-        return float(str(value).strip().rstrip("mm ").strip())
+        return float(str(value).strip().removesuffix("mm").strip())
     except (TypeError, ValueError, AttributeError):
         return None
 
@@ -380,13 +387,8 @@ def _bool_flag(value: Any) -> bool | None:
     return None
 
 
-def _applies(rule: Any, item: dict[str, Any], *, contract_flag: str | None = None) -> bool:
-    """标准对这一项有没有要求。
-
-    没写规则就当有要求；写了规则但尺寸不明，也当有要求——宁可多要一次证据，
-    也不要因为尺寸没填就悄悄不检。只有明确不满足时才跳过：
-    尺寸低于门槛、牌号不在指定名单、或者这是合同选做项而合同没注明。
-    """
+def _applies(rule: Any, item: dict[str, Any], *, contract_flag: str | None = None) -> bool | None:
+    """明确不满足则不适用；门槛参数不全则未知，不能把未知当成强制要求。"""
     if not isinstance(rule, dict):
         return True
     thickness_mm = _to_float(item.get("wallThicknessMm"))
@@ -404,6 +406,8 @@ def _applies(rule: Any, item: dict[str, Any], *, contract_flag: str | None = Non
             return False
     if rule.get("contractOnly") and contract_flag and _bool_flag(item.get(contract_flag)) is not True:
         return False
+    if (minimum_thickness is not None and thickness_mm is None) or (minimum_diameter is not None and outer_diameter_mm is None):
+        return None
     return True
 
 
@@ -492,17 +496,20 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
     grade = str(item.get("materialGrade") or "").strip()
     if not standard or not grade:
         return
-    from libs.regulatory_tables import pipe_material_limits
+    from libs.regulatory_tables import _limit_from_text, pipe_material_limits
 
     level = str(item.get("qualityLevel") or item.get("质量等级") or "").strip() or None
     found = pipe_material_limits(standard, grade, level)
     if not found:
+        item["acceptanceLimitsUnresolved"] = ["standard_or_grade_not_found"]
         return
     mechanical = found.get("mechanical") or {}
     limits: list[dict[str, Any]] = []
     skipped: list[str] = []
     notes: list[str] = []
     unresolved: list[str] = []
+    if found.get("availableLevels"):
+        unresolved.append("quality_level_missing_or_unknown")
 
     def add(code: str, name: str, *, minimum: Any = None, maximum: Any = None) -> None:
         if minimum is None and maximum is None:
@@ -513,6 +520,27 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
         if maximum is not None:
             entry["maximum"] = maximum
         limits.append(entry)
+
+    for element, raw in (found.get("composition") or {}).items():
+        code = element.removesuffix("Max").removesuffix("Min")
+        relation = re.fullmatch(r"(\d+)\*\(?([A-Z][a-z]?)(?:\+([A-Z][a-z]?))?\)?-(\d+(?:\.\d+)?)", str(raw))
+        if relation:
+            multiplier, first, second, upper = relation.groups()
+            limits.append({"itemCode": f"chemicalComposition.{element}", "name": f"化学成分 {element}",
+                           "minimumFromComposition": {"multiplier": float(multiplier), "elements": [value for value in (first, second) if value]},
+                           "maximum": float(upper), "source": f"{found['standard']} {found['grade']}"})
+            continue
+        if element == "NiPlusCuMax":
+            limits.append({"itemCode": "chemicalComposition.Ni+Cu", "name": "化学成分 Ni+Cu",
+                           "actualFromComposition": ["Ni", "Cu"], "maximum": raw, "source": f"{found['standard']} {found['grade']}"})
+            continue
+        parsed = ({"max": raw} if element.endswith("Max") else {"min": raw} if element.endswith("Min") else _limit_from_text(raw))
+        if parsed:
+            add(f"chemicalComposition.{code}", f"化学成分 {code}", minimum=parsed.get("min"), maximum=parsed.get("max"))
+        elif raw not in (None, "", "—", "-"):
+            unresolved.append(f"chemical_composition_limit_unresolved:{element}")
+    if not found.get("composition"):
+        unresolved.append("chemical_composition_standard_data_missing")
 
     tensile = mechanical.get("tensileMPa")
     if isinstance(tensile, str):
@@ -531,7 +559,12 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
     # 冲击：标准往往只对够粗够厚的管子才要求（GB/T 5310 7.4.2 是外径≥76 且壁厚≥14）。
     # 无条件下发限值，等于拿标准不要求的项去要证据，本该通过的项会掉进证据不足。
     applicability = found.get("applicability") or {}
-    if _applies(applicability.get("impact"), item, contract_flag="impactRequiredByContract"):
+    impact_applies = _applies(applicability.get("impact"), item, contract_flag="impactRequiredByContract")
+    if not any(key.startswith("kv2JMin") for key in mechanical):
+        impact_applies = False
+    if impact_applies is None:
+        unresolved.append("impact_applicability_parameters_missing")
+    elif impact_applies:
         impact_value, impact_note = _pick_by_direction(mechanical, item, "kv2JMin")
         add("impactEnergy", "冲击吸收能量", minimum=impact_value)
         if impact_note:
@@ -565,7 +598,11 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
     hardness_rules = applicability.get("hardness") or {}
     for key, code, name in (("HBW", "hardnessHBW", "布氏硬度"), ("HV", "hardnessHV", "维氏硬度")):
         rule = hardness_rules.get(key)
-        if not _applies(rule, item, contract_flag=f"{key.lower()}RequiredByContract"):
+        applies = _applies(rule, item, contract_flag=f"{key.lower()}RequiredByContract")
+        if applies is None:
+            unresolved.append(f"{code}_applicability_parameters_missing")
+            continue
+        if not applies:
             skipped.append(f"{name}：{(rule or {}).get('basis') or '本标准对该规格不要求'}")
             continue
         low, high = _parse_limit_text(hardness.get(key))
@@ -585,6 +622,8 @@ def _fill_acceptance_limits_from_standard(item: dict[str, Any]) -> None:
             "level": found.get("level"),
             "derivedFrom": "regulatory_tables.pipeMaterialLimits",
             "verified": found.get("verified", False),
+            "compositionSource": found.get("compositionSource"),
+            "sourcePdfSha256": found.get("sourcePdfSha256"),
         }
         if thickness_mm is not None:
             item["acceptanceLimitsSource"]["wallThicknessMm"] = thickness_mm

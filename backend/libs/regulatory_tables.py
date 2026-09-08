@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -212,28 +213,28 @@ def medium_hazard_flags(*, toxicity: Any = None, leak_hazard: Any = None, medium
     介质名称本身不拿来猜——判一种介质有没有毒要查物质清单，那不是这里该做的事，
     猜错会把有毒 GC2 管道按最宽的 Ⅳ 级算，体积检测比例要求跟着降下来。
     """
-    toxicity_text = str(toxicity or "").strip()
-    leak_text = str(leak_hazard or "").strip()
-    negative = ("无毒", "非有毒", "无", "否")
-
-    def flag(text: str, tokens: tuple[str, ...]) -> bool | None:
-        if not text:
-            return None
-        if any(token in text for token in negative) and not any(token in text for token in ("轻度", "中度", "高度", "极度")):
+    def flag(value: Any, tokens: tuple[str, ...], negatives: set[str]) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        text = str(value or "").strip()
+        if text in negatives:
             return False
-        return True if any(token in text for token in tokens) else None
+        if not text or any(word in text for word in ("待确认", "待核", "未知", "不详", "未确定")):
+            return None
+        return True if text in {"是", "有", "true"} or any(token in text for token in tokens) else None
 
-    toxic_flag = flag(toxicity_text, _TOXIC_TOKENS)
-    leak_flag = flag(leak_text, _LEAK_TOKENS)
-    if leak_flag is None and leak_text and leak_text not in {"无", "否"}:
-        leak_flag = True
+    toxicity_text = str(toxicity).strip() if toxicity is not None else ""
+    leak_text = str(leak_hazard).strip() if leak_hazard is not None else ""
+    toxic_flag = flag(toxicity, _TOXIC_TOKENS, {"无毒", "非有毒", "无", "否", "false"})
+    leak_flag = flag(leak_hazard, _LEAK_TOKENS, {"无泄漏危害", "无泄漏危害性", "非泄漏危害性介质", "无", "否", "false"})
+
     return {
         "toxic": toxic_flag,
         "leakHazard": leak_flag,
         "toxicitySource": toxicity_text or None,
         "leakHazardSource": leak_text or None,
         "medium": str(medium or "").strip() or None,
-        "determined": toxic_flag is not None or leak_flag is not None,
+        "determined": leak_flag is True or (toxic_flag is not None and leak_flag is not None),
     }
 
 
@@ -302,12 +303,19 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
             # 质保书上写的可能是统一数字代号（S30408 / U50207），也可能是牌号（06Cr19Ni10、20G），都认。
             # GB/T 5310 把数字代号放在 unifiedCode 而不是 alias，漏掉它按代号就查不到。
             names = {entry.get("grade"), entry.get("alias"), entry.get("unifiedCode")}
-            if wanted_grade not in {_norm_designation(name) for name in names if name}:
+            normalized_names = {_norm_designation(name) for name in names if name}
+            inferred_level = next((str(row["level"]) for row in entry.get("levels") or []
+                                   if wanted_grade == _norm_designation(entry["grade"]) + _norm_designation(row["level"])), None)
+            if wanted_grade not in normalized_names and inferred_level is None:
                 continue
+            if inferred_level and level and inferred_level.upper() != str(level).upper():
+                return None
             merged: dict[str, Any] = {
                 "standard": item.get("standard"),
                 "grade": entry.get("grade"),
                 "verified": is_verified(item),
+                "compositionSource": item.get("compositionSource"),
+                "sourcePdfSha256": item.get("sourcePdfSha256"),
                 # 适用性写在标准层（冲击要外径与壁厚都够、维氏只在合同注明时做），
                 # 调用方要按它决定某项限值下不下发，否则会拿标准不要求的项去要证据
                 "applicability": dict(item.get("applicability") or {}),
@@ -317,10 +325,19 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
             for key in ("hotYieldRp02MPa", "hardness", "heatTreatment", "unifiedCode", "alias", "note"):
                 if entry.get(key) is not None:
                     merged[key] = entry[key]
+            hardness_options = (item.get("hardnessLimits") or {}).get(entry.get("structure")) or {}
+            hardness = next((values for aliases, values in hardness_options.items()
+                             if str(entry.get("alias")) in str(aliases).split("、")), hardness_options.get("其他"))
+            if hardness:
+                merged["hardness"] = {**hardness}
+                if hardness.get("HRB"):
+                    merged["hardness"]["rockwell"] = f"{hardness['HRB']} HRB"
+                    hardness_rules = merged["applicability"].get("hardness") or {}
+                    merged["applicability"]["hardness"] = {**hardness_rules, "rockwell": hardness_rules.get("HRB")}
             levels = entry.get("levels") or []
             if not levels:
                 return merged if level is None else None
-            wanted_level = str(level or "").strip().upper()
+            wanted_level = str(level or inferred_level or "").strip().upper()
             row = next((item2 for item2 in levels if str(item2.get("level") or "").upper() == wanted_level), None)
             if row is None:
                 merged["availableLevels"] = [str(item2.get("level")) for item2 in levels]
@@ -337,13 +354,24 @@ def pipe_material_limits(standard: str, grade: str, level: str | None = None) ->
     return None
 
 
+_WELDING_METHOD_ALIASES = {
+    "SMAW": "焊条电弧焊", "SAW": "埋弧焊", "GTAW": "钨极气体保护焊",
+    "GMAW": "熔化极气体保护焊", "PAW": "等离子弧焊", "EGW": "气电立焊",
+}
+
+
+def normalize_welding_method(value: Any) -> str:
+    text = str(value or "").strip()
+    return _WELDING_METHOD_ALIASES.get(text.upper(), text)
+
+
 def wps_specific_factors(method: str) -> dict[str, list[dict[str, Any]]]:
     """NB/T 47014-2023 表 5：某种焊接方法下，各因素按重要/补加/次要归类。
 
     重要因素变了要重新评定；补加因素变了要重做冲击试验；次要因素只需改 WPS，不用重新评定（5.2.1）。
     """
     section = table("nbt47014SpecificFactors")
-    wanted = str(method or "").strip()
+    wanted = normalize_welding_method(method)
     if not wanted:
         return {}
     # factor 文字目前是截断的（见表里的 factorTextQuality/factorTextCaveat），
@@ -419,14 +447,14 @@ def wps_thickness_coverage(
         specimen = float(specimen_thickness_mm)
     except (TypeError, ValueError):
         return None
-    if specimen <= 0:
+    if not math.isfinite(specimen) or specimen <= 0:
         return None
     row = _coverage_row(specimen, bend)
     if row is None:
         return None
     section = table("nbt47014ThicknessCoverage")
     notes: list[str] = []
-    method = str(welding_method or "").strip()
+    method = normalize_welding_method(welding_method)
 
     base_min: float | None = specimen if str(row["baseMin"]) == "T" else float(row["baseMin"])
     # 6.1.5.2：要求冲击试验时最小值另有规定
@@ -443,13 +471,18 @@ def wps_thickness_coverage(
         base_max = round(1.33 * specimen, 2)
     else:
         base_max = None
-    if "注a" in raw_max and method and method not in _FOOTNOTE_A_METHODS:
+    if "注a" in raw_max and method not in _FOOTNOTE_A_METHODS:
         base_max = None
         notes.append(f"注 a 只限四种电弧焊；{method} 的母材厚度上限按表 8、表 9 或 2T、2t 另判")
 
     weld_max: float | None = None
     if weld_metal_thickness_mm is not None:
-        t = float(weld_metal_thickness_mm)
+        try:
+            t = float(weld_metal_thickness_mm)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(t) or t <= 0:
+            return None
         raw_weld = str(row["weldMax"])
         if raw_weld == "2t" or t < 20:
             weld_max = 2 * t
@@ -459,7 +492,7 @@ def wps_thickness_coverage(
             weld_max = round(1.33 * specimen, 2)
         elif "2T" in raw_weld:
             weld_max = 2 * specimen
-        if "注a" in raw_weld and method and method not in _FOOTNOTE_A_METHODS:
+        if "注a" in raw_weld and method not in _FOOTNOTE_A_METHODS:
             weld_max = None
             notes.append("焊缝金属厚度上限同样受注 a 限制")
     else:
@@ -499,6 +532,9 @@ def filler_classes_for_group(base_material_group: str, *, welding_method: str | 
     if not wanted:
         return []
     tables = table("nbt47014FillerClasses").get("tables") or {}
+    welding_method = normalize_welding_method(welding_method)
+    if welding_method and welding_method not in _FILLER_KIND_BY_METHOD:
+        return []
     kinds = [_FILLER_KIND_BY_METHOD[welding_method]] if welding_method in _FILLER_KIND_BY_METHOD else list(tables)
     # 表 2~表 4 的母材组别写得比表 1 粗：表 1 是 Fe-8-1、Fe-5B-1，表 2~4 只到 Fe-8、Fe-5B。
     # 只做全等匹配时，奥氏体不锈钢、铬钼钢等 15 个组别一条焊材类别都取不到，
@@ -520,7 +556,7 @@ def filler_classes_for_group(base_material_group: str, *, welding_method: str | 
     return out
 
 
-def filler_matches_base_material(filler_class: str, base_material_grade: str) -> dict[str, Any] | None:
+def filler_matches_base_material(filler_class: str, base_material_grade: str, *, welding_method: str | None = None) -> dict[str, Any] | None:
     """焊材分类代号与母材牌号是否匹配（先把牌号查成组别，再比对）。
 
     返回 {matched, baseMaterialGroup, expectedClasses}；母材查不到组别时返回 None——
@@ -530,7 +566,7 @@ def filler_matches_base_material(filler_class: str, base_material_grade: str) ->
     if not group:
         return None
     code = str(filler_class or "").strip()
-    expected = [item["fillerClass"] for item in filler_classes_for_group(group)]
+    expected = [item["fillerClass"] for item in filler_classes_for_group(group, welding_method=welding_method)]
     if not expected:
         # 表 2~表 4 没给这个组别的焊材类别（Fe-11A、Ni-2~Ni-5 等 6 个组别）。
         # 空集合不等于"都不配套"——照旧返回 matched=False 会把每一种焊材都判成不符合。
@@ -649,6 +685,7 @@ def product_inspection_rules() -> dict[str, dict[str, Any]]:
             "requiredItems": list(rule.get("requiredItems") or []),
             "basis": rule.get("basis"),
             "conditionalItems": list(rule.get("conditionalItems") or []),
+            "alternativeReports": dict(rule.get("alternativeReports") or {}),
             "verified": is_verified(section),
         }
     return out

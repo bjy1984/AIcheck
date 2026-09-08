@@ -36,7 +36,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Header, Request
 
 from libs.contracts import errors
-from libs.contracts.responses import fail, ok, server_time
+from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
 
 org_delegation_router = APIRouter()

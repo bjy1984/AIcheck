@@ -160,29 +160,48 @@ def evaluate_r16_quality_certificate_results(arguments: dict[str, Any]) -> dict[
         certificate = matches[0]
         limits = _records(item.get("acceptanceLimits"))
         results = _result_map(certificate.get("testResults"))
+        chemistry = certificate.get("chemicalComposition") or (certificate.get("testResults") or {}).get("chemicalComposition") if isinstance(certificate.get("testResults"), dict) else certificate.get("chemicalComposition")
+        for element, value in _result_map(chemistry).items():
+            results[_norm(f"chemicalComposition.{element}")] = value
         required_quantitative = _string_set(item.get("requiredQuantitativeItems"))
-        if required_quantitative and not limits:
+        if not limits:
             incomplete = True
             matrix.append({"componentItemId": _id(item, index), "result": "evidence_insufficient", "reasonCodes": ["quantitative_acceptance_limits_not_frozen"]})
             checks.append(check(f"component_{index}_acceptance_limits_available", False, [], sorted(required_quantitative)))
             continue
-        item_failed = item_incomplete = False
+        item_failed = False
+        unresolved = list(item.get("acceptanceLimitsUnresolved") or [])
+        item_incomplete = bool(unresolved)
         comparisons = []
         for limit in limits:
             code = str(limit.get("itemCode") or limit.get("name") or "")
             actual = decimal(results.get(_norm(code)))
             minimum, maximum = decimal(limit.get("minimum")), decimal(limit.get("maximum"))
+            if limit.get("actualFromComposition"):
+                parts = [decimal(results.get(_norm(f"chemicalComposition.{element}"))) for element in limit["actualFromComposition"]]
+                actual = sum(parts) if all(value is not None for value in parts) else None
+            minimum_known = True
+            formula = limit.get("minimumFromComposition")
+            if isinstance(formula, dict):
+                parts = [decimal(results.get(_norm(f"chemicalComposition.{element}"))) for element in formula.get("elements") or []]
+                multiplier = decimal(formula.get("multiplier"))
+                minimum_known = bool(parts) and multiplier is not None and all(value is not None for value in parts)
+                if minimum_known:
+                    minimum = sum(parts) * multiplier
+                else:
+                    item_incomplete = True
             if actual is None:
                 item_incomplete = True
                 passed = False
             else:
                 passed = (minimum is None or actual >= minimum) and (maximum is None or actual <= maximum)
                 item_failed |= not passed
+                passed = passed and minimum_known
             comparisons.append({"itemCode": code, "actual": actual, "minimum": minimum, "maximum": maximum, "passed": passed})
             checks.append(check(f"component_{index}_{_safe(code)}_within_limits", passed, actual, {"minimum": minimum, "maximum": maximum}))
         failed |= item_failed
         incomplete |= item_incomplete
-        matrix.append({"componentItemId": _id(item, index), "certificateId": certificate.get("certificateId"), "comparisons": comparisons, "result": "failed" if item_failed else "evidence_insufficient" if item_incomplete else "passed"})
+        matrix.append({"componentItemId": _id(item, index), "certificateId": certificate.get("certificateId"), "comparisons": comparisons, "limitSource": item.get("acceptanceLimitsSource"), "unresolvedRequirements": unresolved, "result": "failed" if item_failed else "evidence_insufficient" if item_incomplete else "passed"})
     output = result("evaluate_r16_quality_certificate_results", _aggregate(failed, incomplete), facts={"numericResultMatrix": matrix}, checks=checks, rule_version=R16_RULE_VERSION)
     output["numericResultMatrix"] = matrix
     return output

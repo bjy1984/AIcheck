@@ -218,7 +218,7 @@ def validate_upload_session_completion(
             storage_hash = object_storage.content_hash(
                 update["storageBucket"], update["storageKey"]
             )
-        except Exception:  # noqa: BLE001 - surface retryable authoritative failure
+        except Exception:  # noqa: BLE001 -- upload recovery boundary preserves retryable state and reports failed dispatch
             return None, {
                 "message": "无法核验对象存储中的文件内容哈希，请稍后重试。",
                 "reason": "AUTHORITATIVE_CONTENT_HASH_UNAVAILABLE",
@@ -891,7 +891,7 @@ async def upload_session_file(
                 upload_token=upload_token,
                 expected_staging_id=expected_staging_id,
             )
-        except Exception as exc:  # noqa: BLE001 - compensate committed staging
+        except Exception as exc:  # noqa: BLE001 -- upload recovery boundary preserves retryable state and reports failed dispatch
             claim = repo.claim_upload_session_file_recovery(
                 session_id,
                 document_version_id,
@@ -1021,7 +1021,7 @@ def dispatch_completed_upload_files(
                 task["retryable"] = deferred
                 task["lastDispatch"] = repo.clone(outcome)
                 task["updatedAt"] = server_time()
-        except Exception as exc:  # noqa: BLE001 - completion is already durable
+        except Exception as exc:  # noqa: BLE001 -- upload recovery boundary preserves retryable state and reports failed dispatch
             outcome = {
                 "documentId": document_id,
                 "documentVersionId": version_id,
@@ -1043,7 +1043,7 @@ def dispatch_completed_upload_files(
             services.flush_mutation_records(
                 {"knowledge_tasks": list(changed_tasks_by_id.values())}, []
             )
-        except Exception:  # noqa: BLE001 - durable task state remains retryable
+        except Exception:  # noqa: BLE001 -- upload recovery boundary preserves retryable state and reports failed dispatch
             for outcome in dispatches:
                 outcome["statePersistence"] = "pending"
     return dispatches
@@ -1086,7 +1086,7 @@ def replay_upload_dispatch_outcomes(
                     "status": "dispatch_deferred",
                     "retryable": True,
                 }
-        except Exception as exc:  # noqa: BLE001 - replay must remain truthful
+        except Exception as exc:  # noqa: BLE001 -- upload recovery boundary preserves retryable state and reports failed dispatch
             outcome = {
                 "documentId": document_id,
                 "documentVersionId": version_id,
@@ -1117,7 +1117,7 @@ def completed_upload_response(
     else:
         try:
             dispatches = dispatch_files(files)
-        except Exception as exc:  # noqa: BLE001 - commit already succeeded
+        except Exception as exc:  # noqa: BLE001 -- upload recovery boundary preserves retryable state and reports failed dispatch
             dispatches = [
                 {
                     "documentId": str(file.get("documentId") or ""),
@@ -1139,7 +1139,7 @@ def completed_upload_response(
     if duplicate_projection is not None:
         try:
             duplicates = duplicate_projection(project_id, files, request=request)
-        except Exception as exc:  # noqa: BLE001 - projection cannot undo commit
+        except Exception as exc:  # noqa: BLE001 -- upload recovery boundary preserves retryable state and reports failed dispatch
             duplicates = []
             warnings.append(
                 {

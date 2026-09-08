@@ -5,6 +5,10 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "test2/**"
+      - "docs/工程监检资料映射表.md"
+      - "rules/**"
+      - "业务规则.md"
       - ".github/workflows/backend-quality.yml"
   push:
     branches:
@@ -12,6 +16,10 @@ on:
       - master
     paths:
       - "backend/**"
+      - "test2/**"
+      - "docs/工程监检资料映射表.md"
+      - "rules/**"
+      - "业务规则.md"
       - ".github/workflows/backend-quality.yml"
 
 permissions:
@@ -22,6 +30,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ruff ratchet (no new lint findings)
+        run: python -m pip install ruff==0.16.2 && python -m scripts.ruff_baseline
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -57,6 +79,9 @@ jobs:
             backend/pyproject.toml
             backend/requirements.txt
 
+      - name: Install test shell
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
       - name: Install backend and test dependencies
         run: >-
           python -m pip install --upgrade pip &&
@@ -65,10 +90,8 @@ jobs:
       - name: Verify immutable migration manifest
         run: python scripts/migrate_backend.py --verify-only
 
-      # ruff 配置在 pyproject.toml 里，但此前从未进 CI——1124 条存量已冻结为基线，
-      # 这一步只拦"新增告警"（棘轮），存量清理按批进行并用 --update 收紧基线。
-      - name: Ruff ratchet (no new lint findings)
-        run: python -m pip install ruff==0.16.2 && python -m scripts.ruff_baseline
+      - name: Collect backend tests
+        run: pytest --collect-only -q
 
       - name: Run backend suite with real PostgreSQL
         run: pytest -q

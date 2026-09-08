@@ -1,0 +1,68 @@
+{
+  "postgresFull": {
+    "revision": "354adfb",
+    "commandLog": "/tmp/aicheck-full-postgres-head.log",
+    "logSha256": "810953afd36bf2eefb9850cefd45a16c19670313429005c3e36e1a9eaa29b7c6",
+    "passed": 3073,
+    "skipped": 4,
+    "failed": 0,
+    "seconds": 157.31
+  },
+  "collection": {
+    "revision": "354adfb",
+    "commandLog": "/tmp/aicheck-final-collect.log",
+    "logSha256": "d6c2a6751f555bb765e9856f2d303e92030f438f3cb0b1aa452adcd4cc948db5",
+    "collected": 3077
+  },
+  "r23Regression": {
+    "revision": "354adfb",
+    "commandLog": "/tmp/aicheck-r23-regression.log",
+    "logSha256": "0dee3e12e56805119c7de347292fa00dce58297081b84e5909164f70806ed606",
+    "passed": 49,
+    "failed": 0
+  },
+  "standardsRegression": {
+    "revision": "3931776",
+    "commandLog": "/tmp/aicheck-standards-regression.log",
+    "logSha256": "f0caf78880e5f2e6b4408874c3008499275318974910de900886e5d83dba39b6",
+    "passed": 46,
+    "failed": 0
+  },
+  "ruff": {
+    "version": "0.16.2",
+    "findings": 289,
+    "baseline": 289,
+    "newFindings": 0
+  },
+  "migrationManifest": {
+    "verified": [
+      "0001_backend_audit_hardening",
+      "0002_agent_raw_event_vault",
+      "0003_state_change_probe_index"
+    ]
+  },
+  "production": {
+    "deployed": false,
+    "idMigrationApplied": false,
+    "backupRestoreDrill": false,
+    "browserBusinessAcceptance": false
+  },
+  "isolatedContainerFull": {
+    "revision": "3931776",
+    "passed": 3010,
+    "skipped": 66,
+    "failed": 0,
+    "seconds": 478.73,
+    "collected": 3076,
+    "logSha256": "196807b14fef2426ff598e304593c700c4d01cc8d1e9f69eff2be570d4025a92",
+    "commandLog": "/tmp/aicheck-container-full-latest.log"
+  },
+  "isolatedContainerHeadRegression": {
+    "revision": "354adfb",
+    "passed": 49,
+    "failed": 0,
+    "seconds": 4.88,
+    "logSha256": "8328b914f66e611e6b745554981d19e4f97e7be484ea904947b6263a5bf3c65d",
+    "commandLog": "/tmp/aicheck-container-head-targeted.log"
+  }
+}

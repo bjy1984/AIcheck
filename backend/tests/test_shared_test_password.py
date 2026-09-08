@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from libs.security.auth import USERS, verify_password
 
-
 TEST_PASSWORD = "anyuekeji.123"
 
 

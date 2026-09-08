@@ -32,7 +32,7 @@ def current_findings() -> dict[str, dict[str, int]]:
         text=True,
         check=False,
     )
-    if result.returncode != 0 and not result.stdout.strip():
+    if result.returncode != 0:
         print(result.stderr, file=sys.stderr)
         raise SystemExit(f"ruff 本身运行失败（退出码 {result.returncode}）")
     findings: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -50,16 +50,8 @@ def main() -> int:
     findings = current_findings()
     total = sum(sum(rules.values()) for rules in findings.values())
 
-    if args.update:
-        BASELINE_PATH.write_text(
-            json.dumps(findings, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        print(f"基线已更新：{total} 条存量告警，{len(findings)} 个文件。")
-        return 0
-
     if not BASELINE_PATH.exists():
-        print(f"缺少基线文件 {BASELINE_PATH.name}，先跑 --update 生成。", file=sys.stderr)
+        print(f"缺少基线文件 {BASELINE_PATH.name}，请从版本管理恢复。", file=sys.stderr)
         return 2
 
     baseline: dict[str, dict[str, int]] = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
@@ -78,6 +70,13 @@ def main() -> int:
             print(line, file=sys.stderr)
         print("\n修掉新增告警；确属误报再在行内 noqa 并说明原因。", file=sys.stderr)
         return 1
+    if args.update:
+        BASELINE_PATH.write_text(
+            json.dumps(findings, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"基线已收紧：{total} 条存量告警，{len(findings)} 个文件。")
+        return 0
     if total < baseline_total:
         print(f"存量少了 {baseline_total - total} 条——记得跑 --update 收紧基线，别让余量被吃掉。")
     return 0

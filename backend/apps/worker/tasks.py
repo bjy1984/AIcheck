@@ -340,7 +340,7 @@ def schedule_document_ai_shadow(
     persist_document_ai_shadow_run(run)
     try:
         dispatch = task_dispatcher.dispatch_document_ai_shadow(run_id)
-    except Exception as exc:  # pragma: no cover - Celery broker boundary
+    except Exception as exc:  # pragma: no cover - Celery broker boundary  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         dispatch = {
             "mode": task_dispatcher.dispatch_mode(),
             "taskId": None,
@@ -475,7 +475,7 @@ def _execute_document_material_classification(
         result = _completed_classification_result(document, document_version_id)
         try:
             flush_state_records(_classification_records(document_id, document_version_id))
-        except Exception as exc:  # noqa: BLE001 - uncertain prior commit is retried without rerunning the model.
+        except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
             _retry_persistence_or_raise(self, exc)
         return result
     parse_result = latest_parse_result(repo, document_version_id)
@@ -496,7 +496,7 @@ def _execute_document_material_classification(
             qwen_runtime_client(),
             classification_text(parse_result),
         )
-    except Exception as exc:  # noqa: BLE001 - retry/fallback boundary must catch provider and validation failures.
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         attempt.update(
             {
                 "status": "failed",
@@ -510,7 +510,7 @@ def _execute_document_material_classification(
             flush_state_records(
                 _classification_records(document_id, document_version_id, attempt)
             )
-        except Exception as persistence_exc:  # noqa: BLE001 - preserve retry semantics when audit persistence fails.
+        except Exception as persistence_exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
             retry_index = int(getattr(self.request, "retries", 0) or 0)
             if not bool(getattr(self.request, "called_directly", False)) and retry_index < 2:
                 raise self.retry(exc=persistence_exc, countdown=(10, 30)[retry_index])
@@ -536,7 +536,7 @@ def _execute_document_material_classification(
             flush_state_records(
                 _classification_records(document_id, document_version_id, attempt)
             )
-        except Exception as persistence_exc:  # noqa: BLE001 - retry commit without rerunning targeting in this worker.
+        except Exception as persistence_exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
             _retry_persistence_or_raise(self, persistence_exc)
         return fallback
 
@@ -626,7 +626,7 @@ def queue_document_classification_after_ocr(
         flush_state_records(
             _classification_records(document_id, document_version_id)
         )
-    except Exception as exc:  # noqa: BLE001 - classification persistence must never block OCR or slicing.
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         return {
             "status": "classification_deferred",
             "documentId": document_id,
@@ -644,7 +644,7 @@ def queue_document_classification_after_ocr(
             document_id,
             document_version_id,
         )
-    except Exception as exc:  # noqa: BLE001 - dispatch failure must not prevent deterministic fallback.
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         dispatch = {
             "mode": task_dispatcher.dispatch_mode(),
             "taskId": None,
@@ -678,7 +678,7 @@ def queue_document_classification_after_ocr(
         flush_state_records(
             _classification_records(document_id, document_version_id)
         )
-    except Exception as exc:  # noqa: BLE001 - fallback persistence must not roll back successful OCR.
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         fallback["status"] = "classification_deferred"
         fallback["classificationPersistence"] = {
             "status": "failed",
@@ -698,7 +698,7 @@ def safe_queue_document_classification_after_ocr(
             document_id,
             document_version_id,
         )
-    except Exception as exc:  # noqa: BLE001 - classification must never roll back successful OCR or block slicing.
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         return {
             "status": "classification_deferred",
             "documentId": document_id,
@@ -1980,7 +1980,7 @@ def _execute_mineru_ocr_extract(
                 job.get("artifactReferences") or {}
             ),
         }
-    except Exception as exc:  # noqa: BLE001 - Celery task boundary persists a safe failure.
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         code = _mineru_failure_code(job, exc)
         retryable = bool(getattr(exc, "retryable", False))
         failed_stage = str(job.get("stage") or "unknown")
@@ -2502,7 +2502,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
         )
         if str(result.get("status") or "").lower() != "success":
             raise RuntimeError("ocr_service_returned_failed_result")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         failure_result = {
             "storageKey": storage_key,
             "fileName": file_name,
@@ -2531,7 +2531,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 repo.append_task_log(task, "warning", pipeline_run["recommendedAction"])
             try:
                 persist_ocr_pipeline_progress(pipeline_run, task=task, ocr_job=ocr_job_record)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
                 pass
             raise self.retry(exc=exc, countdown=countdown)
         repo.mark_ocr_pipeline_stage(
@@ -2701,7 +2701,7 @@ def parse_document(self, document_id: str, version_id: str, storage_key: str, fi
                 parse_result=parse_result_record or result,
                 operation_id=str(getattr(self.request, "id", "") or "") or None,
             )
-        except Exception as exc:  # Shadow must never change baseline OCR completion.
+        except Exception as exc:  # Shadow must never change baseline OCR completion.  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
             document_ai_shadow_dispatch = {
                 "status": "not_dispatched",
                 "statusReason": f"shadow_setup_{exc.__class__.__name__.lower()}",
@@ -2952,7 +2952,7 @@ def _complete_saved_heavy_stage(
 def _persist_retry_state(run: dict[str, Any]) -> None:
     try:
         persist_ocr_pipeline_progress(run)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         # The Celery retry still needs to be scheduled when PostgreSQL is briefly unavailable.
         pass
 
@@ -3003,7 +3003,7 @@ def ocr_pipeline_structure_scan(self, run_id: str) -> dict[str, Any]:
         next_dispatch = _next_after_structure(run, profile)
         persist_ocr_pipeline_progress(run)
         return {"pipelineRunId": run_id, "status": status, "nextDispatch": next_dispatch}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         retry_index = int(getattr(self.request, "retries", 0) or 0)
         if retry_index < 3:
             countdown = (10, 30, 90)[retry_index]
@@ -3065,7 +3065,7 @@ def ocr_pipeline_seal_scan(self, run_id: str) -> dict[str, Any]:
         next_dispatch = _next_after_seal(run)
         persist_ocr_pipeline_progress(run)
         return {"pipelineRunId": run_id, "status": status, "nextDispatch": next_dispatch}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         retry_index = int(getattr(self.request, "retries", 0) or 0)
         if retry_index < 3:
             countdown = (10, 30, 90)[retry_index]
@@ -3125,7 +3125,7 @@ def ocr_pipeline_evidence_fusion(self, run_id: str) -> dict[str, Any]:
             raise RuntimeError("qwen_dispatch_failed")
         persist_ocr_pipeline_progress(run)
         return {"pipelineRunId": run_id, "status": "success", "nextDispatch": dispatch}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         retry_index = int(getattr(self.request, "retries", 0) or 0)
         if retry_index < 2:
             countdown = (5, 15)[retry_index]
@@ -3496,7 +3496,7 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
             "costCny": run.get("costCny"),
             "nextDispatch": dispatch,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         retry_index = int(getattr(self.request, "retries", 0) or 0)
         max_attempts = max(1, int(runtime["official"].get("maxAttempts") or 3))
         retryable = isinstance(exc, AliyunOcrRetryableError) or not isinstance(exc, AliyunOcrError)
@@ -3965,7 +3965,7 @@ def ocr_pipeline_qwen_extract(self, run_id: str) -> dict[str, Any]:
             "validatedFieldCount": len(grounded_fields),
             "finalizeDispatch": dispatch,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         retry_index = int(getattr(self.request, "retries", 0) or 0)
         if retry_index < 3:
             countdown = (10, 30, 90)[retry_index]
@@ -4341,12 +4341,12 @@ def document_ai_shadow_extract(self, run_id: str) -> dict[str, Any]:
         persist_document_ai_shadow_run(run)
         try:
             run["pipelineComparisonDispatch"] = schedule_pipeline_comparison(run)
-        except Exception as exc:  # Pipeline A/B must never affect Document AI Shadow success.
+        except Exception as exc:  # Pipeline A/B must never affect Document AI Shadow success.  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
             run["pipelineComparisonDispatch"] = {
                 "status": "not_dispatched",
                 "statusReason": f"pipeline_comparison_setup_{exc.__class__.__name__.lower()}",
             }
-    except Exception as exc:  # Shadow failures are observable but never propagated into baseline OCR.
+    except Exception as exc:  # Shadow failures are observable but never propagated into baseline OCR.  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         reason = (
             exc.reason
             if isinstance(exc, IntegrationServiceError) and exc.reason
@@ -4551,7 +4551,7 @@ def document_audit_pipeline_comparison(self, run_id: str) -> dict[str, Any]:
                 "rawReasoningStored": False,
             }
         )
-    except Exception as exc:  # Comparison failure must never affect either production or Shadow source results.
+    except Exception as exc:  # Comparison failure must never affect either production or Shadow source results.  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         reason = (
             exc.reason
             if isinstance(exc, IntegrationServiceError) and exc.reason
@@ -4856,7 +4856,7 @@ def embed_knowledge(
         repo.state["knowledge_embedding_batches"] = [
             item for item in repo.state.get("knowledge_embedding_batches", []) if item.get("fileId") != file_id
         ]
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         retry_index = int(getattr(self.request, "retries", 0) or 0)
         if retry_index < 3:
             countdown = (10, 30, 90)[retry_index]
@@ -5115,7 +5115,7 @@ def ai_recheck(self, project_id: str, node_id: int, run_id: str) -> dict[str, An
         )
         run["findingDrafts"] = guarded_drafts
         status = "完成"
-    except Exception:
+    except Exception:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         run["status"] = "失败"
         run["finishedAt"] = server_time()
         run["errorCode"] = "AI_RUN_FAILED"
@@ -5211,7 +5211,7 @@ def llm_compare(self, run_id: str) -> dict[str, Any]:
         run["results"] = results
         run["status"] = "完成"
         run["finishedAt"] = server_time()
-    except Exception:
+    except Exception:  # noqa: BLE001 -- task boundary persists terminal or retry state; shadow failures stay isolated
         run["status"] = "失败"
         run["errorCode"] = "EXTERNAL_TOOL_FAILED"
         run["errorMessage"] = service_failure_message("QwenRuntime 模型对比")

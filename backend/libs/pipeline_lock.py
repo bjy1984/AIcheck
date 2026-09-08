@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import threading
 from collections.abc import Callable, Iterator
@@ -47,8 +48,8 @@ def pipeline_lock(key: str) -> Iterator[bool]:
             # 60 秒足够任务体跑完（周期任务本身很快），又能兜住泄漏。
             try:
                 connection.execute("SET idle_session_timeout = '60s'")
-            except Exception:
-                pass  # 老版本 PG（<14）不支持，退回原行为，不阻断获锁
+            except psycopg.Error as exc:
+                logging.getLogger(__name__).warning("idle timeout unavailable: %s", type(exc).__name__)
             acquired = bool(connection.execute("SELECT pg_try_advisory_lock(%s)", (advisory_lock_id(key),)).fetchone()[0])
         except Exception as exc:
             if _strict_production():
@@ -62,13 +63,13 @@ def pipeline_lock(key: str) -> Iterator[bool]:
             try:
                 if acquired:
                     connection.execute("SELECT pg_advisory_unlock(%s)", (advisory_lock_id(key),))
-            except Exception:
-                pass
+            except psycopg.Error as exc:
+                logging.getLogger(__name__).warning("advisory unlock failed: %s", type(exc).__name__)
             finally:
                 try:
                     connection.close()
-                except Exception:
-                    pass
+                except psycopg.Error as exc:
+                    logging.getLogger(__name__).warning("lock connection close failed: %s", type(exc).__name__)
         return
     if _strict_production():
         raise PipelineLockUnavailable("PostgreSQL is required for strict pipeline locking")

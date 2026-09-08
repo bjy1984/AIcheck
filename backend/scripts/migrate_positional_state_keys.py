@@ -27,7 +27,7 @@ import sys
 
 sys.path.insert(0, "/app")
 
-from libs.db.repository import load_state, repo  # noqa: E402
+from libs.db.repository import load_state, repo
 
 # 集合 → 该集合的稳定主键字段
 TARGETS = {

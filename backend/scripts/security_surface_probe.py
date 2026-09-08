@@ -22,7 +22,7 @@ import urllib.request
 
 sys.path.insert(0, "/app")
 sys.path.insert(0, "/app/scripts")
-from write_ops_audit import BASE, api, record, RESULTS, token_for, USERS  # noqa: E402
+from write_ops_audit import BASE, RESULTS, USERS, api, record, token_for
 
 PID = "P-2026-HDCP-001"
 
@@ -64,7 +64,7 @@ def raw_call(path: str, role: str, method: str = "GET", body: bytes | None = Non
             return response.status, response.read(2000).decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(2000).decode("utf-8", "replace")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- report per-item/probe failure without abandoning the audit batch
         return 0, f"{exc.__class__.__name__}: {exc}"
 
 
@@ -233,7 +233,7 @@ def unauthenticated(headers: dict) -> tuple[int, str]:
             return r.status, r.read(500).decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(500).decode("utf-8", "replace")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- report per-item/probe failure without abandoning the audit batch
         return 0, str(exc)
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from libs.review_evidence import build_evidence_snapshot
 
-
 VERSIONS = {
     "rule_version": "rule-v1",
     "clause_package_version": "clauses-v1",

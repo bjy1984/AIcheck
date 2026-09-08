@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, "/app")
 sys.path.insert(0, "/app/scripts")
 
-from libs.contracts.responses import server_time  # noqa: E402
+from libs.contracts.responses import server_time
 
 
 def _auto_review_chain_checks() -> list[tuple[str, bool, str]]:
@@ -48,7 +48,7 @@ def _auto_review_chain_checks() -> list[tuple[str, bool, str]]:
 
     def _age_minutes(value: object) -> float | None:
         try:
-            parsed = datetime.strptime(str(value or "")[:19], "%Y-%m-%d %H:%M:%S")
+            parsed = datetime.strptime(str(value or "")[:19], "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
         except ValueError:
             return None
         return (now - parsed.replace(tzinfo=SERVER_TZ)).total_seconds() / 60

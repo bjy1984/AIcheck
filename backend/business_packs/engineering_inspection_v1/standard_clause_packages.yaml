@@ -876,7 +876,14 @@ standardClausePackages:
         operator: equals
         expected: true
         standardRef: STD-GBT-20801.1-2025
-        sourceClause: GB/T 20801.5 §6.1 检查等级 + 表 5-1（regulatory_tables.yaml gbt20801_inspection，待核）
+        sourceClause: GB/T 20801.1-2025 8.3.1 检查等级、表 42 检查比例
+        verifiedBy: null
+      - code: acceptance_level_meets_requirement
+        actualPath: requirements.acceptanceLevelMeetsRequirement
+        operator: equals
+        expected: true
+        standardRef: STD-GBT-20801.1-2025
+        sourceClause: GB/T 20801.1-2025 8.3.2.2、8.3.2.3
         verifiedBy: null
     corrosion:
       checks:

@@ -11,7 +11,6 @@ from hashlib import sha256
 from threading import Condition
 from typing import Protocol, TypedDict
 
-
 _WORKER_ROLES = ("mineru-worker", "review-worker")
 _PARTICIPANT_ROLES = {
     "mineru-worker": "processingWorker",
@@ -259,11 +258,11 @@ def _probe_runtime_database_scope(dsn: str, run_marker: str) -> _ProbeResult:
                     """,
                     (max_age, max_age, list(_WORKER_ROLES)),
                 ).fetchall()
-            except Exception:
+            except Exception:  # noqa: BLE001 -- failed live probes cannot certify worker readiness
                 connection.rollback()
                 return _ProbeResult(scope)
             connection.rollback()
-    except Exception:
+    except Exception:  # noqa: BLE001 -- failed live probes cannot certify worker readiness
         return _ProbeResult(_empty_scope())
 
     fresh_payloads: dict[str, list[object]] = {role: [] for role in _WORKER_ROLES}

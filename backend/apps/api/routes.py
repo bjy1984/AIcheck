@@ -32,14 +32,14 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from apps.api import document_access_policy, upload_session_workflow, feedback_capture
+from apps.api import document_access_policy, feedback_capture, upload_session_workflow
 from apps.api.idempotency_scope import replay_authorization_digests
-from apps.api.review_session_evidence import refresh_review_session_evidence_fingerprint
+from apps.api.office_preview_routes import router as office_preview_router
 from apps.api.project_analysis_views import (
     node_project_analysis_view,
     project_analysis_results_for_review_workspace,
 )
-from apps.api.office_preview_routes import router as office_preview_router
+from apps.api.review_session_evidence import refresh_review_session_evidence_fingerprint
 from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
 from apps.api.upload_session_workflow import (
     local_review_confidence,
@@ -49,6 +49,7 @@ from apps.api.upload_session_workflow import (
 from apps.ocr_service.evaluation import compact_evaluation_report, evaluate_cases
 from apps.ocr_service.readiness import build_ocr_100_scorecard
 from libs.ai_run_failure import ai_run_failure_view
+from libs.ai_run_order import sort_ai_runs_latest_first
 from libs.audit_context import (
     current_request_audit_context,
     reset_request_audit_context,
@@ -177,28 +178,38 @@ from libs.fde_console_views import (
 )
 from libs.field_confidence import field_confirm_confidence, is_low_confidence
 from libs.integrations import task_dispatcher
-from libs.integrations.embedding_client import EmbeddingClient
+from libs.integrations.embedding_client import (
+    EmbeddingClient,  # noqa: F401 -- public re-export and monkeypatch compatibility
+)
 from libs.integrations.errors import IntegrationServiceError
 from libs.integrations.ocr_client import OcrClient
 from libs.integrations.storage import ObjectStorageUnavailable, object_storage, parse_storage_url
-from libs.knowledge_graph import build_business_pack_knowledge_network
+from libs.knowledge_graph import (
+    build_business_pack_knowledge_network,  # noqa: F401 -- public re-export and monkeypatch compatibility
+)
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
     STANDARD_INDEX_VERSION,
-    active_embedding_target,
-    offline_hash_embedding,
+    active_embedding_target,  # noqa: F401 -- public re-export and monkeypatch compatibility
+    offline_hash_embedding,  # noqa: F401 -- public re-export and monkeypatch compatibility
     reject_if_dedicated_ingestion,
 )
-from libs.knowledge_readiness import build_knowledge_rule_scorecard
-from libs.workspace_paths import resolve_workspace_root
-from libs.knowledge_retrieval import answer_draft_from_clauses, retrieve_knowledge_clauses
-from libs.ai_run_order import sort_ai_runs_latest_first
-from libs.manual_binding_links import document_already_submitted, upsert_manual_binding_evidence_links
+from libs.knowledge_readiness import (
+    build_knowledge_rule_scorecard,  # noqa: F401 -- public re-export and monkeypatch compatibility
+)
+from libs.knowledge_retrieval import (  # noqa: F401 -- public re-export and monkeypatch compatibility
+    answer_draft_from_clauses,
+    retrieve_knowledge_clauses,
+)
+from libs.manual_binding_links import (
+    document_already_submitted,
+    upsert_manual_binding_evidence_links,
+)
 from libs.material_targeting import (
     build_node_evidence_readiness,
     evidence_link_is_locatable,
     node_evidence_links_for_node,
-    recompute_project_material_targeting,
+    recompute_project_material_targeting,  # noqa: F401 -- public re-export and monkeypatch compatibility
     review_points_for_project,
     run_material_targeting,
     set_node_evidence_link_manual_status,
@@ -232,7 +243,9 @@ from libs.ocr_expected_geometry import (
 )
 from libs.ocr_readiness import attach_document_ocr_readiness
 from libs.ocr_structured_view import build_ocr_structured_view
-from libs.project_analysis.domain import project_analysis_status_view
+from libs.project_analysis.domain import (
+    project_analysis_status_view,  # noqa: F401 -- public re-export and monkeypatch compatibility
+)
 from libs.qwen_runtime import QwenRuntimeClient, qwen_runtime_public_config
 from libs.raw_vault import (
     capture_agent_turn,
@@ -258,7 +271,6 @@ from libs.review_conversation_prompt import (
 from libs.review_evidence import attach_review_evidence_package_to_ai_run
 from libs.review_orchestrator import (
     apply_review_human_input_for_review_run,
-    with_certificate_fact_builders,
     build_review_orchestration_scorecard,
     clone_review_run_for_replay,
     dispatch_existing_review_run,
@@ -272,13 +284,14 @@ from libs.review_orchestrator import (
     signal_review_run_cancel,
     signal_review_run_human_decision,
     signal_review_run_human_input,
+    with_certificate_fact_builders,
 )
-from libs.review_orchestrator.fact_builders import NODE_FACT_BUILDERS
 from libs.review_orchestrator.execution import (
     current_published_rule_for_node,
     qwen_runtime_client,
     review_llm_execution_mode,
 )
+from libs.review_orchestrator.fact_builders import NODE_FACT_BUILDERS
 from libs.review_orchestrator.llm_tool_schemas import (
     CONVERSATION_AGENT_RUNTIME_TOOL_NAMES,
     EXTERNAL_REGISTRY_LLM_TOOLS,
@@ -321,6 +334,7 @@ from libs.security.tenant import (
     tenant_is_allowed,
 )
 from libs.todo_visibility import visible_todos
+from libs.workspace_paths import resolve_workspace_root
 from scripts.ocr_100_action_board import (
     ACTION_BOARD_LANES,
     action_board_csv,
@@ -6685,16 +6699,12 @@ def node_package(request: Request, project_id: str, node_id: int):
     if effective_role == "inspection":
         submitted_rows = build_inspection_submitted_document_rows(effective_project_id, scope)
         submitted_document_ids = {str(item.get("documentId") or "") for item in submitted_rows}
-        submitted_binding_ids = {
-            str(binding.get("id") or "")
-            for item in submitted_rows
-            for binding in item.get("submittedBindings") or []
-        }
+
         # 0817 第 8 条：施工方一上传监检就能看见，不再按已提交过滤掉；
         # 但每条要标出有没有正式提交——去掉门，不是去掉区分。
         # 口径统一用 SUBMITTED_DOCUMENT_BINDING_STATUSES（不用「有没有提交记录」，
         # 两者实测不等价）。理由详见 tests/test_inspection_sees_unsubmitted.py。
-        _submitted = lambda item: str(item.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES  # noqa: E731
+        _submitted = lambda item: str(item.get("bindingStatus") or "") in SUBMITTED_DOCUMENT_BINDING_STATUSES
         submitted_doc_ids = submitted_document_ids | {
             str(item.get("documentId") or "") for item in project_bindings if _submitted(item)
         }

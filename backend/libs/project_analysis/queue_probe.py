@@ -32,7 +32,7 @@ _TASK_ID_PATTERN = re.compile(r'"id"\s*:\s*"([^"]+)"')
 
 def _redis_client():
     try:
-        import redis  # noqa: PLC0415 - 依赖 celery[redis]，按需加载
+        import redis
 
         url = (
             os.getenv("AICHECK_REDIS_URL")
@@ -40,12 +40,12 @@ def _redis_client():
             or "redis://aicheck-redis:6379/0"
         )
         return redis.Redis.from_url(url, socket_connect_timeout=0.5, socket_timeout=0.5)
-    except Exception:  # noqa: BLE001 - fail-open
+    except Exception:  # noqa: BLE001 -- optional queue observation returns unknown on broker failure
         return None
 
 
 def _priority_queue_names(queue: str) -> list[str]:
-    from apps.worker.celery_app import celery_app  # noqa: PLC0415 - 只为读同一份配置
+    from apps.worker.celery_app import celery_app
 
     options = celery_app.conf.broker_transport_options or {}
     steps = list(options.get("priority_steps") or [0])
@@ -80,7 +80,7 @@ def pending_task_ids(queue: str = DEFAULT_QUEUE, *, client=None) -> list[str] | 
                 task_id = _message_task_id(raw)
                 if task_id:
                     ordered.append(task_id)
-    except Exception:  # noqa: BLE001 - fail-open
+    except Exception:  # noqa: BLE001 -- optional queue observation returns unknown on broker failure
         return None
     return ordered
 

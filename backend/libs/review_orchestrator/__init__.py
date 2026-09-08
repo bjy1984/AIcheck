@@ -51,7 +51,6 @@ _EXPORTS: dict[str, str] = {
 }
 
 __all__ = [
-    "with_certificate_fact_builders",
     "ALLOWED_AGENT_TOOLS",
     "REVIEW_GRAPH_EDGES",
     "REVIEW_GRAPH_STEPS",
@@ -76,6 +75,7 @@ __all__ = [
     "signal_review_run_cancel",
     "signal_review_run_human_decision",
     "signal_review_run_human_input",
+    "with_certificate_fact_builders",
 ]
 
 

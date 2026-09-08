@@ -493,18 +493,12 @@ def evaluate_r23_valve_test_records(arguments: dict[str, Any]) -> dict[str, Any]
     records = _records(arguments.get("testRecords"))
     construction_records = _records(arguments.get("constructionRecords"))
     if not records:
-        if "testRecords" not in arguments:
-            return _insufficient(
-                "evaluate_r23_valve_test_records",
-                "valve_test_record_facts_missing",
-                R23_RULE_VERSION,
-            )
-        return result(
+        # Fact builders use [] when no report could be extracted. That is not
+        # evidence that the required test was omitted or failed.
+        return _insufficient(
             "evaluate_r23_valve_test_records",
-            "failed",
-            facts={"testRecordCount": 0},
-            checks=[check("valve_test_record_present", False, 0, ">=1")],
-            rule_version=R23_RULE_VERSION,
+            "valve_test_record_facts_missing",
+            R23_RULE_VERSION,
         )
     basis = resolve_r23_valve_test_basis(arguments)
     if basis.get("result") != "passed":

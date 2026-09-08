@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+from libs.regulatory_tables import product_inspection_rules
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
 from libs.review_orchestrator.r13_facts import (
     _business_rows,
@@ -87,6 +88,7 @@ def build_r14_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
     return {
         "r14": {
             "designItems": design_items,
+            "productInspectionRules": product_inspection_rules(),
             "pipelineCharacteristics": pipeline_characteristics,
             "factoryInspectionReports": factory_reports,
             "specialInspectionReports": special_reports,
@@ -232,6 +234,8 @@ def _extract_r14_reports(
                 "nominalPressureMPa": _value(merged, "nominalPressureMPa", "nominal_pressure_mpa", "公称压力MPa"),
                 "testPressureMPa": _value(merged, "testPressureMPa", "test_pressure_mpa", "actualTestPressureMPa", "试验压力MPa", "试验压力"),
                 "testItems": _value(merged, "testItems", "test_items", "inspectionItems", "检验项目", "试验项目"),
+                "testMethod": _value(merged, "testMethod", "ndtMethod", "检测方法", "试验方法"),
+                "acceptanceLevel": _value(merged, "acceptanceLevel", "验收级别", "验收等级", "合格级别"),
                 "testResults": _value(merged, "testResults", "test_results", "inspectionResults", "检验结果", "试验结果"),
                 "conclusion": _value(merged, "conclusion", "inspectionConclusion", "testConclusion", "检验结论", "试验结论", "结论"),
                 "standardRef": _value(merged, "standardRef", "standardNo", "standard_no", "依据标准", "执行标准", "产品标准"),

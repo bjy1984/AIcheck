@@ -267,6 +267,28 @@ def evaluate_r14_special_report_coverage(arguments: dict[str, Any]) -> dict[str,
         matched_ids: list[str] = []
         for inspection_type in sorted(required_items):
             typed = [report for report in matching_reports if inspection_type in _report_inspection_types(report)]
+            alternative_unresolved = False
+            if not typed and source.startswith("frozen_product_standard_rule:"):
+                standard = _normalize_standard(_first(item, "standardRef", "standardNo", "productStandard"))
+                profile = next((value for key, value in (arguments.get("productInspectionRules") or {}).items()
+                                if _normalize_standard(key) == standard and isinstance(value, dict)), {})
+                alternative = (profile.get("alternativeReports") or {}).get(inspection_type)
+                if alternative:
+                    for report in matching_reports:
+                        method = str(_first(report, "testMethod", "ndtMethod") or "").upper()
+                        method = "ET" if method in {"涡流", "涡流检测"} else method
+                        if method != alternative["method"]:
+                            continue
+                        level = str(report.get("acceptanceLevel") or "").upper()
+                        report_standard = _normalize_standard(_first(report, "standardRef", "standardNo"))
+                        if level == alternative["acceptanceLevel"] and report_standard == _normalize_standard(alternative["standardRef"]):
+                            typed.append(report)
+                        else:
+                            alternative_unresolved = True
+            if not typed and alternative_unresolved:
+                component_incomplete = True
+                checks.append(check(f"component_{index}_{inspection_type}_alternative_basis", False, None, "verified_alternative_method_level_and_standard"))
+                continue
             if not typed:
                 component_failed = True
                 checks.append(check(f"component_{index}_{inspection_type}_report_present", False, None, "matching_report"))

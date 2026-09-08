@@ -32,7 +32,7 @@ from libs.review_orchestrator.execution import (
 def _minutes_ago(minutes: int) -> str:
     from datetime import datetime, timedelta
 
-    now = datetime.strptime(str(server_time())[:19], "%Y-%m-%d %H:%M:%S")
+    now = datetime.strptime(str(server_time())[:19], "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
     return (now - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
 
 

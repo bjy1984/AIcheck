@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from libs.knowledge_indexing import build_chunks_for_file, build_vector_rows, offline_hash_embeddings
+from libs.knowledge_indexing import (
+    build_chunks_for_file,
+    build_vector_rows,
+    offline_hash_embeddings,
+)
 
 
 def test_chunks_and_vectors_capture_final_classification_metadata() -> None:

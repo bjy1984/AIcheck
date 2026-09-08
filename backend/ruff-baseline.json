@@ -1,12 +1,11 @@
 {
  "apps/api/main.py": {
-  "BLE001": 6,
   "DTZ005": 1,
   "S110": 1
  },
  "apps/api/routes.py": {
   "B023": 3,
-  "BLE001": 16,
+  "BLE001": 14,
   "S110": 3,
   "SIM101": 1,
   "SIM102": 1,
@@ -57,7 +56,6 @@
   "BLE001": 1
  },
  "apps/worker/tasks.py": {
-  "BLE001": 16,
   "S110": 2,
   "TRY004": 1
  },
@@ -72,9 +70,7 @@
   "SIM117": 1
  },
  "libs/db/repository.py": {
-  "BLE001": 6,
   "C409": 1,
-  "DTZ007": 2,
   "FURB162": 1,
   "S110": 2
  },
@@ -88,9 +84,6 @@
  "libs/fde_console_views.py": {
   "BLE001": 7
  },
- "libs/integrations/cnse_client.py": {
-  "PYI034": 1
- },
  "libs/integrations/document_ai_client.py": {
   "BLE001": 1,
   "SIM117": 1
@@ -100,9 +93,6 @@
  },
  "libs/integrations/ocr_client.py": {
   "SIM117": 1
- },
- "libs/integrations/std_samr_client.py": {
-  "PYI034": 1
  },
  "libs/integrations/storage.py": {
   "BLE001": 5
@@ -130,10 +120,6 @@
   "BLE001": 2,
   "RUF034": 1
  },
- "libs/pipeline_lock.py": {
-  "BLE001": 2,
-  "S110": 2
- },
  "libs/qwen_runtime.py": {
   "TRY004": 1
  },
@@ -150,18 +136,14 @@
   "BLE001": 2
  },
  "libs/review_orchestrator/execution.py": {
-  "BLE001": 4,
-  "ISC004": 1,
-  "S110": 1
+  "BLE001": 2,
+  "ISC004": 1
  },
  "libs/review_orchestrator/graph.py": {
   "BLE001": 3
  },
  "libs/review_orchestrator/r24_r34_facts.py": {
   "PLC0206": 1
- },
- "libs/runtime_readiness.py": {
-  "BLE001": 1
  },
  "libs/security/auth.py": {
   "BLE001": 4
@@ -237,7 +219,6 @@
   "BLE001": 1
  },
  "scripts/ocr_100_ingest_samples.py": {
-  "BLE001": 1,
   "TRY004": 1
  },
  "scripts/ocr_100_label_studio_export.py": {
@@ -305,20 +286,13 @@
   "BLE001": 2
  },
  "scripts/validate_deployment_config.py": {
-  "BLE001": 4,
-  "FLY002": 1
+  "BLE001": 4
  },
  "scripts/verify_deployment.py": {
   "BLE001": 24
  },
  "scripts/verify_deployment_business_rules.py": {
   "BLE001": 1
- },
- "tests/test_business_today.py": {
-  "UP017": 1
- },
- "tests/test_check_96_preflight.py": {
-  "FLY002": 1
  },
  "tests/test_cnse_api.py": {
   "UP031": 1
@@ -335,11 +309,5 @@
  },
  "tests/test_review_orchestration_100_probe.py": {
   "SIM117": 2
- },
- "tests/test_review_runtime_tool_dispatcher.py": {
-  "FLY002": 1
- },
- "tests/test_validate_deployment_config.py": {
-  "FLY002": 1
  }
 }

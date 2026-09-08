@@ -15,26 +15,24 @@ from typing import Any, Literal
 import psycopg
 from psycopg.types.json import Jsonb
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.integrations.litellm_client import LiteLLMClient  # noqa: E402
-from libs.qwen_runtime import build_qwen_runtime_client  # noqa: E402
-from libs.security.tenant import configured_tenant_id  # noqa: E402
-from libs.standard_knowledge_canonical import (  # noqa: E402
+from libs.integrations.litellm_client import LiteLLMClient
+from libs.qwen_runtime import build_qwen_runtime_client
+from libs.security.tenant import configured_tenant_id
+from libs.standard_knowledge_canonical import (
     canonical_semantic_selected_values_hash,
     merge_canonical_semantic_candidates,
 )
-from libs.standard_semantic_extraction import (  # noqa: E402
+from libs.standard_semantic_extraction import (
     MODEL_ROUTE,
     PROMPT_VERSION,
     extract_standard_semantics,
     semantic_extraction_hashes,
     semantic_field_names,
 )
-
 
 CANONICAL_COLLECTION = "standard_knowledge_records"
 _SEMANTIC_CATEGORY_FIELDS = {
@@ -85,7 +83,7 @@ def _load_canonical_records(
           AND collection='standard_knowledge_records'
           {file_filter}
         ORDER BY object_id
-        """,  # noqa: S608 - only a fixed optional SQL fragment is interpolated
+        """,
         params,
     ).fetchall()
     return [

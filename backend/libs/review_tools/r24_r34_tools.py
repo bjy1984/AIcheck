@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from libs.contracts.responses import business_today
+from libs.regulatory_tables import normalize_welding_method
 from libs.review_orchestrator.deterministic_tools import (
     check,
     check_welder_work_coverage,
@@ -46,6 +47,15 @@ def check_wps_pqr_coverage(arguments: dict[str, Any]) -> dict[str, Any]:
     work_items = _records(arguments.get("workItems") or arguments.get("pipelineItems"))
     if not wps_items or not pqr_items or not work_items:
         return _insufficient("check_wps_pqr_coverage", "wps_pqr_or_actual_work_missing", R25_VERSION, arguments)
+
+    from libs.standard_annex_sources import special_qualification_source
+
+    special_sources = [source for item in [*wps_items, *pqr_items, *work_items]
+                       if (source := special_qualification_source(str(item.get("qualificationKind") or "")))]
+    if special_sources:
+        output = _insufficient("check_wps_pqr_coverage", "special_joint_qualification_requires_annex_review", R25_VERSION, arguments)
+        output["sourceReferences"] = [{key: value for key, value in source.items() if key != "pages"} for source in special_sources]
+        return output
 
     matrix: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
@@ -147,7 +157,14 @@ def evaluate_welding_consumable(arguments: dict[str, Any]) -> dict[str, Any]:
         if not mechanics:
             missing = True
             reasons.append("mechanical_properties_missing")
-        profile = profiles.get(_standard_key(standard_ref)) if standard_ref else None
+        designation = _first(cert, "designation", "model", "materialGrade", "brand") or _first(required, "designation", "model", "materialGrade", "brand")
+        profile = profiles.get(_standard_key(f"{standard_ref} {designation}")) if standard_ref and designation else None
+        if profile is None and standard_ref:
+            candidate = profiles.get(_standard_key(standard_ref))
+            # A caller may provide a profile for one standard, but never borrow a
+            # different designation's profile when a designation was supplied.
+            if isinstance(candidate, dict) and (not candidate.get("designation") or _norm(candidate["designation"]) == _norm(designation)):
+                profile = candidate
         if profile is None:
             missing = True
             reasons.append("product_standard_limit_profile_missing")
@@ -168,7 +185,7 @@ def evaluate_welding_consumable(arguments: dict[str, Any]) -> dict[str, Any]:
         if _present(filler_class) and _present(base_grade):
             from libs.regulatory_tables import filler_matches_base_material
 
-            verdict = filler_matches_base_material(str(filler_class), str(base_grade))
+            verdict = filler_matches_base_material(str(filler_class), str(base_grade), welding_method=_first(required, "weldingMethod", "method") or _first(cert, "weldingMethod", "method"))
             if verdict is None:
                 missing = True
                 reasons.append("base_material_group_unknown_for_filler_match")
@@ -198,7 +215,7 @@ def evaluate_welding_consumable(arguments: dict[str, Any]) -> dict[str, Any]:
         failed |= explicit
         incomplete |= missing and not explicit
         checks.append(check(f"consumable_{index}_mtc_and_traceability", status == "passed", _id(cert, index), "qualified_and_batch_traceable"))
-        matrix.append({"itemId": _id(required, index), "certificateId": _id(cert, index), "standardRef": standard_ref, "result": status, "reasonCodes": list(dict.fromkeys(reasons))})
+        matrix.append({"itemId": _id(required, index), "certificateId": _id(cert, index), "standardRef": standard_ref, "designation": designation, "limitSource": {"standard": (profile or {}).get("standard"), "designation": (profile or {}).get("designation"), "verified": (profile or {}).get("verified")}, "result": status, "reasonCodes": list(dict.fromkeys(reasons))})
     return _output("evaluate_welding_consumable", failed, incomplete, {"consumableCertificateMatrix": matrix}, checks, R26_VERSION)
 
 
@@ -800,7 +817,8 @@ def _wps_pqr_ranges(wps: dict[str, Any], pqr: dict[str, Any], work: dict[str, An
         if not _present(wps_value) or not _present(pqr_value) or not _present(actual_value):
             incomplete = True
             reasons.append(f"{field}_wps_pqr_or_actual_missing")
-        elif len({_norm(wps_value), _norm(pqr_value), _norm(actual_value)}) != 1:
+        elif len({(_norm(normalize_welding_method(value)) if field == "weldingMethod" else _norm(value))
+                  for value in (wps_value, pqr_value, actual_value)}) != 1:
             # 母材那一组：字面不同不等于不覆盖。NB/T 47014-2023 表 1 把牌号归到类别-组别，
             # 评定按组别生效——WPS 写 Q345R、PQR 写 Fe-1-2、实际用 Q345B，三者同组就是覆盖的。
             # 只在三者都能查到组别且组别相同时才放行；查不到组别就维持原来的字面判定，不猜。
@@ -1157,12 +1175,11 @@ def _design_limit(record: dict[str, Any], key: str) -> Decimal | None:
 
 
 def _same_if_present(left: dict[str, Any], right: dict[str, Any], *fields: str) -> bool:
-    for field in fields:
-        rv = _first(right, field)
-        left_value = _first(left, field)
-        if _present(rv) and _present(left_value) and _norm(left_value) != _norm(rv):
-            return False
-    return True
+    rv = _first(right, *fields)
+    left_value = _first(left, *fields)
+    if not _present(rv) or not _present(left_value):
+        return True  # Range evaluation reports the missing method as insufficient.
+    return _norm(normalize_welding_method(left_value)) == _norm(normalize_welding_method(rv))
 
 
 def _standard_key(value: Any) -> str:

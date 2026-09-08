@@ -180,6 +180,9 @@ def test_postgres_eight_file_session_persists_every_hash_and_binding(
 ) -> None:
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "disabled")
     repo.configure_sync_postgres(isolated_postgres_url)
+    from scripts.migrate_backend import apply_migrations
+
+    apply_migrations(isolated_postgres_url)
     repo.ensure_postgres_schema()
     try:
         upload, completed_files = _create_and_put_eight_files()
@@ -201,6 +204,9 @@ def test_overlapping_postgres_puts_cannot_lose_the_first_hash(
 
     monkeypatch.setenv("AICHECK_TASK_DISPATCH", "disabled")
     repo.configure_sync_postgres(isolated_postgres_url)
+    from scripts.migrate_backend import apply_migrations
+
+    apply_migrations(isolated_postgres_url)
     repo.ensure_postgres_schema()
     upload = _assert_ok(
         client.post(
@@ -797,7 +803,7 @@ def _create_crashed_staging_state(
 
 
 def test_later_put_recovers_staged_temporary_file(monkeypatch, tmp_path) -> None:
-    upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
+    _upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
         tmp_path,
         artifact="temporary",
     )
@@ -825,7 +831,7 @@ def test_later_put_recovers_staged_temporary_file(monkeypatch, tmp_path) -> None
 
 
 def test_later_put_finalizes_already_promoted_staged_file(monkeypatch, tmp_path) -> None:
-    upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
+    _upload, target, staged_body, temporary_path, _final_path = _create_crashed_staging_state(
         tmp_path,
         artifact="promoted",
     )

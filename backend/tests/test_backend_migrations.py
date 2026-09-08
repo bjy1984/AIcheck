@@ -44,13 +44,14 @@ def test_backend_migration_enforces_tenant_keys_and_append_only_audit(isolated_p
     assert pending["current"] is False
     assert pending["summary"] == {
         "applied": 0,
-        "pending": 2,
+        "pending": 3,
         "checksum_mismatch": 0,
         "database_only": 0,
     }
     assert apply_migrations(isolated_postgres_url, plan_only=True) == [
         "0001_backend_audit_hardening",
         "0002_agent_raw_event_vault",
+        "0003_state_change_probe_index",
     ]
     with psycopg.connect(isolated_postgres_url, autocommit=True) as connection:
         assert connection.execute(
@@ -59,12 +60,13 @@ def test_backend_migration_enforces_tenant_keys_and_append_only_audit(isolated_p
     assert apply_migrations(isolated_postgres_url) == [
         "0001_backend_audit_hardening",
         "0002_agent_raw_event_vault",
+        "0003_state_change_probe_index",
     ]
     assert apply_migrations(isolated_postgres_url) == []
     current = migrate_backend.migration_status(isolated_postgres_url)
     assert current["compatible"] is True
     assert current["current"] is True
-    assert current["summary"]["applied"] == 2
+    assert current["summary"]["applied"] == 3
     with psycopg.connect(isolated_postgres_url, autocommit=False) as connection:
         primary_key_columns = [
             str(name)
@@ -185,6 +187,7 @@ def test_backend_migration_upgrades_legacy_single_tenant_tables(isolated_postgre
     assert apply_migrations(isolated_postgres_url) == [
         "0001_backend_audit_hardening",
         "0002_agent_raw_event_vault",
+        "0003_state_change_probe_index",
     ]
 
     with psycopg.connect(isolated_postgres_url, autocommit=False) as connection:

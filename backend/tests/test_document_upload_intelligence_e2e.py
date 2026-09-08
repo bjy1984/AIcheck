@@ -15,7 +15,6 @@ from libs.db.repository import repo
 from libs.integrations import task_dispatcher
 from libs.material_targeting import targeting_input_versions_for_node
 
-
 client = TestClient(app)
 PROJECT_ID = "P-2026-HDCP-001"
 PDF_BYTES = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"

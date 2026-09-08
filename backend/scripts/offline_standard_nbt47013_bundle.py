@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from typing import Any
 
 TARGET_FILE_ID = "KF-KB-B4C51A523B"

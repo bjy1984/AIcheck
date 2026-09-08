@@ -15,17 +15,15 @@ from typing import Any, Literal
 import psycopg
 from psycopg.types.json import Jsonb
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.security.tenant import configured_tenant_id  # noqa: E402
-from libs.standard_knowledge_canonical import (  # noqa: E402
+from libs.security.tenant import configured_tenant_id
+from libs.standard_knowledge_canonical import (
     build_standard_knowledge_record,
 )
-
 
 STANDARD_SOURCE_ID = "KS-STANDARD-RULES"
 CANONICAL_COLLECTION = "standard_knowledge_records"

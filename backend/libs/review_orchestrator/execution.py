@@ -25,17 +25,17 @@ from libs.business_pack.clause_store import (
     review_run_clause_snapshot,
 )
 from libs.contracts.responses import server_time
-from libs.review_orchestrator.certificate_facts import CERTIFICATE_VERIFICATION_REQUIREMENT, attach_certificate_evidence, certificate_verification_from_tool_execution, merge_certificate_facts  # noqa: E501
-from libs.review_orchestrator.persistence_retry import flush_review_run_records_with_conflict_retry, review_run_state_records  # noqa: E501
 from libs.db.repository import STATE_COLLECTIONS, flush_state_records, load_review_run_state, repo
 from libs.integrations.errors import IntegrationServiceError
-from libs.integrations.litellm_client import LiteLLMClient, production_mode_enabled
+from libs.integrations.litellm_client import (  # noqa: F401 -- public re-export and monkeypatch compatibility
+    LiteLLMClient,
+    production_mode_enabled,
+)
 from libs.knowledge_retrieval import retrieve_knowledge_clauses
 from libs.model_usage import estimate_messages_tokens, model_cost_cny, normalize_model_usage
-from libs.regulatory_tables import product_inspection_rules
 from libs.qwen_runtime import (
     QwenRuntimeClient,
-    build_qwen_runtime_client,
+    build_qwen_runtime_client,  # noqa: F401 -- public re-export and monkeypatch compatibility
     qwen_runtime_public_config,
 )
 from libs.raw_vault import raw_context_from_record
@@ -44,20 +44,32 @@ from libs.reasoning_budget import (
     review_reasoning_effort,
     truncation_caused_by_reasoning,
 )
+from libs.regulatory_tables import product_inspection_rules
 from libs.review_evidence import bind_evidence_package_to_review_run, review_run_evidence_lineage
-from libs.review_orchestrator.opinion_draft import opinion_draft_from_findings
 from libs.review_grounding import (
     apply_grounding_guardrails,
-    grounding_input_with_supplements,
     build_grounded_review_input,
     canonical_grounding_metadata,
     clause_formal_evidence_eligible,
+    grounding_input_with_supplements,
     grounding_prompt_block,
     is_canonical_clause,
     merge_canonical_grounding_metadata,
 )
-from libs.review_orchestrator import checklist_mode, output_contract, shard_execution, shard_recovery
+from libs.review_orchestrator import (
+    checklist_mode,
+    output_contract,
+    shard_execution,
+    shard_recovery,
+)
+from libs.review_orchestrator.certificate_facts import (
+    CERTIFICATE_VERIFICATION_REQUIREMENT,
+    attach_certificate_evidence,
+    certificate_verification_from_tool_execution,
+    merge_certificate_facts,
+)
 from libs.review_orchestrator.clause_digest import retrieved_clause_digest
+from libs.review_orchestrator.design_facts import DESIGN_FACT_NODES, build_design_business_facts
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
     truncation_requirements,
@@ -68,6 +80,12 @@ from libs.review_orchestrator.node_fact_overrides import (
     apply_node_fact_corrections,
     pure_llm_grounding_input,
 )
+from libs.review_orchestrator.opinion_draft import opinion_draft_from_findings
+from libs.review_orchestrator.persistence_retry import (
+    flush_review_run_records_with_conflict_retry,
+    review_run_state_records,
+)
+from libs.review_orchestrator.pipeline_facts import merge_project_pipelines
 from libs.review_orchestrator.r12_agent import (
     apply_r12_human_input,
     build_r12_business_facts,
@@ -77,8 +95,6 @@ from libs.review_orchestrator.r12_agent import (
     validate_r12_human_input,
 )
 from libs.review_orchestrator.r13_facts import build_r13_business_facts
-from libs.review_orchestrator.design_facts import DESIGN_FACT_NODES, build_design_business_facts
-from libs.review_orchestrator.pipeline_facts import merge_project_pipelines
 from libs.review_orchestrator.r14_facts import build_r14_business_facts
 from libs.review_orchestrator.r15_facts import build_r15_business_facts
 from libs.review_orchestrator.r16_facts import build_r16_business_facts
@@ -86,14 +102,14 @@ from libs.review_orchestrator.r17_facts import build_r17_business_facts
 from libs.review_orchestrator.r18_facts import build_r18_business_facts
 from libs.review_orchestrator.r19_agent import (
     R19_EXECUTION_MODE,
-    R19_REVIEW_QUESTIONS,
+    R19_REVIEW_QUESTIONS,  # noqa: F401 -- public re-export and monkeypatch compatibility
     R19_TASK_TYPE,
     apply_r19_human_input,
     build_r19_agent_context,
     ensure_r19_human_input_task,
     is_r19_formal_review,
     validate_r19_human_input,
-    validate_r19_semantic_submission,
+    validate_r19_semantic_submission,  # noqa: F401 -- public re-export and monkeypatch compatibility
 )
 from libs.review_orchestrator.r19_agent import (
     context_for_model as r19_context_for_model,
@@ -113,6 +129,7 @@ from libs.review_orchestrator.rule_result_digest import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 from ._shared import (  # noqa: F401 - re-export，外部按 execution 路径引用
     ALLOWED_AGENT_TOOLS,
@@ -124,13 +141,10 @@ from ._shared import (  # noqa: F401 - re-export，外部按 execution 路径引
     review_llm_execution_mode,
     stable_hash_payload,
 )
-from .rule_planners import (  # noqa: F401 - re-export
+from .rule_planners import (
     plan_r12_human_verification,
     plan_r19_semantic_review,
 )
-from libs.security.tenant import current_tenant_id, tenant_id_for_record
-
-
 
 # 确定性判定 → AI 建议结论展示词。所有结论均为建议，最终由监检人员确认。
 SUGGESTION_RESULT_LABELS = {
@@ -253,17 +267,17 @@ def resolve_ai_run(
                 str(review_run.get("reviewRunId") or review_run.get("id") or "")
             )
         except Exception:
-            logging.exception("重新加载 ReviewRun 作用域失败 aiRunId=%s", ai_run_id)
+            logging.getLogger(__name__).exception("重新加载 ReviewRun 作用域失败 aiRunId=%s", ai_run_id)
             return None
     if allow_reload:
-        logging.exception(
+        logging.getLogger(__name__).exception(
             "收尾时找不到 ai_run，状态无法回写，界面会一直显示执行中 aiRunId=%s", ai_run_id
         )
     else:
         # API 请求路径里不能重载：作用域加载会把这次请求正在改的记录整批换掉，
         # 请求随后按旧对象提交，报的却是幂等冲突——查起来完全指不到这里。
         # 实测被 test_review_run_terminal_mutation... 逮到过一次。
-        logging.warning("内存中找不到 ai_run（不重载）aiRunId=%s", ai_run_id)
+        logging.getLogger(__name__).warning("内存中找不到 ai_run（不重载）aiRunId=%s", ai_run_id)
     return None
 
 
@@ -1112,7 +1126,7 @@ def execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                 records["review_runs"] = [inflight]
             if records:
                 flush_review_run_records_with_conflict_retry(review_run_id, records, inflight_runs=_INFLIGHT_REVIEW_RUNS)
-        except Exception:  # noqa: BLE001 - 落库尽力而为，不掀翻已跑完的结果
+        except Exception:
             # 但必须留下声音。第一版这里是 `pass`，结果把真正的根因盖了整整一轮：
             # flush 抛在 ai_runs 上（别的进程改过那条），事务回滚，
             # review_runs 跟着一起没落库——界面永远显示排队中，日志里一个字都没有。
@@ -3545,12 +3559,12 @@ def review_run_looks_abandoned(review_run: dict[str, Any]) -> bool:
     if not stamp:
         return False
     try:
-        moment = datetime.strptime(stamp[:19], "%Y-%m-%d %H:%M:%S")
+        moment = datetime.strptime(stamp[:19], "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
     except ValueError:
         return False
     # 时间戳不带时区，跟服务器当前时间比——两边同一口径才有意义。
     try:
-        now = datetime.strptime(str(server_time())[:19], "%Y-%m-%d %H:%M:%S")
+        now = datetime.strptime(str(server_time())[:19], "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007 -- legacy server-local/civil time contract; not an absolute UTC timestamp
     except ValueError:
         return False
     return (now - moment).total_seconds() > STALE_QUEUED_AFTER_SECONDS

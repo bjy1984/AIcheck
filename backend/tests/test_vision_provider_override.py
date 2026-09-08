@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from libs import qwen_runtime
 
 
@@ -60,9 +62,7 @@ def test_别名也认(monkeypatch):
 
 
 def test_部署配置不再把视觉指向不支持图片的模型():
-    source = open(
-        "deploy/build_runtime_env.py", encoding="utf-8"
-    ).read()
+    source = Path("deploy/build_runtime_env.py").read_text(encoding="utf-8")
     line = next(
         item for item in source.splitlines() if "AICHECK_LLM_MODEL_VISION" in item and ":" in item
     )

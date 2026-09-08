@@ -227,6 +227,8 @@ def build_tool_arguments(
         "evaluate_r14_pressure_compatibility",
     }:
         r14 = nested_dict(facts, "r14")
+        if tool_name in {"resolve_r14_required_inspection_items", "evaluate_r14_special_report_coverage"} and "productInspectionRules" not in explicit:
+            arguments["productInspectionRules"] = r14.get("productInspectionRules") or arguments.get("productInspectionRules") or {}
         arguments.setdefault("designItems", list_value(r14.get("designItems")))
         if tool_name in {"evaluate_r14_component_design_match", "evaluate_r14_pressure_compatibility"}:
             arguments.setdefault("factoryInspectionReports", list_value(r14.get("factoryInspectionReports")))

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import mimetypes
-import argparse
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,12 +15,10 @@ WORKSPACE_ROOT = BACKEND_ROOT.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.business_pack import business_pack_snapshot
+from libs.business_pack import business_pack_snapshot, load_business_pack
 from libs.business_pack.clause_store import bind_project_node_clause_packages
 from libs.business_pack.loader import build_project_requirements, build_project_tree
-from libs.business_pack import load_business_pack
 from libs.db.repository import flush_state, load_state, postgres_persistence_configured, repo
-
 
 PROJECTS = {
     "test": {
@@ -134,13 +132,10 @@ def build_project_import_plan(repo_root: Path, project_code: str) -> ProjectImpo
         ocr_path = ocr_root / f"{file_id}.md"
         local_storage_key(repo_root, source_path)
         local_storage_key(repo_root, ocr_path)
-        material_codes = set(str(code) for code in item.get("predictedMaterialTypeCodes") or [])
+        material_codes = {str(code) for code in item.get("predictedMaterialTypeCodes") or []}
         material_codes.update(material_codes_by_file.get(file_id, set()))
         is_ndt = (
-            relative_path.startswith("10、")
-            or relative_path.startswith("11.")
-            or "检测方案" in relative_path
-            or any(code.startswith("ndt_") for code in material_codes)
+            relative_path.startswith(("10、", "11.")) or "检测方案" in relative_path or any(code.startswith("ndt_") for code in material_codes)
         )
         files.append(
             ImportFile(

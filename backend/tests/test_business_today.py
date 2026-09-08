@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -34,7 +34,7 @@ def test_跨零点那八小时里不等于_utc_日期(monkeypatch: pytest.Monkey
     UTC 2026-08-14 17:30 = Asia/Shanghai 2026-08-15 01:30。
     裸 date.today() 在 UTC 容器里会给 08-14，业务上该是 08-15。
     """
-    frozen_utc = datetime(2026, 8, 14, 17, 30, tzinfo=timezone.utc)
+    frozen_utc = datetime(2026, 8, 14, 17, 30, tzinfo=UTC)
 
     class _FrozenDatetime(datetime):
         @classmethod

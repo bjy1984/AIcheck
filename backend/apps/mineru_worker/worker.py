@@ -106,7 +106,7 @@ class MinerUPostgresWorker:
                 )
                 finish_knowledge_claim(self.dsn, claim)
                 self.last_error = None
-            except Exception as exc:  # noqa: BLE001 - durable worker retry boundary
+            except Exception as exc:  # noqa: BLE001 -- worker boundary persists failure and bounded retry state
                 delay = (10, 30, 90)[min(claim.attempts, 2)]
                 self.last_error = type(exc).__name__
                 if claim.attempts >= 3:

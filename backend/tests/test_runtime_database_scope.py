@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -35,7 +35,7 @@ class _Connection:
         self.committed = False
         self.rolled_back = False
 
-    def __enter__(self) -> _Connection:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -81,9 +81,9 @@ def _matching_payload() -> dict[str, str]:
 def test_refresh_uses_authoritative_identity_and_all_matching_fresh_heartbeats(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from libs.runtime_database_scope import refresh_runtime_database_scope
-
     import psycopg
+
+    from libs.runtime_database_scope import refresh_runtime_database_scope
 
     connection = _Connection(
         heartbeats=[
@@ -136,9 +136,9 @@ def test_refresh_uses_authoritative_identity_and_all_matching_fresh_heartbeats(
 def test_mixed_fresh_instances_fail_role_and_stale_mismatch_is_ignored(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from libs.runtime_database_scope import refresh_runtime_database_scope
-
     import psycopg
+
+    from libs.runtime_database_scope import refresh_runtime_database_scope
 
     connection = _Connection(
         heartbeats=[
@@ -180,9 +180,9 @@ def test_mixed_fresh_instances_fail_role_and_stale_mismatch_is_ignored(
 def test_malformed_heartbeat_values_are_never_reflected_publicly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from libs.runtime_database_scope import refresh_runtime_database_scope
-
     import psycopg
+
+    from libs.runtime_database_scope import refresh_runtime_database_scope
 
     hostile_values = (
         "postgresql://credential-user:credential-password@private-host/secret-db",
@@ -223,9 +223,9 @@ def test_malformed_heartbeat_values_are_never_reflected_publicly(
 def test_missing_run_marker_fails_every_participant_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from libs.runtime_database_scope import refresh_runtime_database_scope
-
     import psycopg
+
+    from libs.runtime_database_scope import refresh_runtime_database_scope
 
     connection = _Connection(
         heartbeats=[
@@ -247,9 +247,9 @@ def test_runtime_database_scope_returns_empty_without_refreshing(
     monkeypatch: pytest.MonkeyPatch,
     dsn: str | None,
 ) -> None:
-    from libs.runtime_database_scope import runtime_database_scope
-
     import psycopg
+
+    from libs.runtime_database_scope import runtime_database_scope
 
     monkeypatch.delenv("AICHECK_DATABASE_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -264,9 +264,9 @@ def test_runtime_database_scope_returns_empty_without_refreshing(
 
 
 def test_refresh_redacts_connection_failures(monkeypatch: pytest.MonkeyPatch) -> None:
-    from libs.runtime_database_scope import refresh_runtime_database_scope
-
     import psycopg
+
+    from libs.runtime_database_scope import refresh_runtime_database_scope
 
     def reject(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("secret-user:secret-password@secret-host")
@@ -285,9 +285,9 @@ def test_refresh_redacts_connection_failures(monkeypatch: pytest.MonkeyPatch) ->
 def test_scope_cache_reuses_probe_then_expires_fail_closed_without_connecting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from libs import runtime_database_scope as scope_module
-
     import psycopg
+
+    from libs import runtime_database_scope as scope_module
 
     now = [100.0]
     connection = _Connection(
@@ -325,9 +325,9 @@ def test_scope_cache_reuses_probe_then_expires_fail_closed_without_connecting(
 def test_scope_cache_expires_before_a_cached_heartbeat_can_become_stale(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from libs import runtime_database_scope as scope_module
-
     import psycopg
+
+    from libs import runtime_database_scope as scope_module
 
     now = [200.0]
     connection = _Connection(
@@ -353,9 +353,9 @@ def test_scope_cache_expires_before_a_cached_heartbeat_can_become_stale(
 def test_slow_post_query_work_cannot_extend_cached_heartbeat_freshness(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from libs import runtime_database_scope as scope_module
-
     import psycopg
+
+    from libs import runtime_database_scope as scope_module
 
     now = [300.0]
     connection = _Connection(
@@ -429,9 +429,9 @@ def test_concurrent_refreshes_coalesce_to_one_probe(monkeypatch: pytest.MonkeyPa
 def test_processing_worker_heartbeat_reads_identity_and_writes_on_one_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from apps.mineru_worker import queue
-
     import psycopg
+
+    from apps.mineru_worker import queue
 
     connection = _Connection()
     observed_connections: list[object] = []
@@ -473,9 +473,9 @@ def test_processing_worker_heartbeat_reads_identity_and_writes_on_one_connection
 def test_review_worker_heartbeat_uses_identity_from_its_open_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from apps.review_worker import outbox
-
     import psycopg
+
+    from apps.review_worker import outbox
 
     connection = _Connection()
     observed_connections: list[object] = []
@@ -518,12 +518,11 @@ def test_review_worker_heartbeat_uses_identity_from_its_open_connection(
 def test_runtime_ui_context_reads_cached_scope_without_probing_and_exposes_no_dsn_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import psycopg
     from fastapi.testclient import TestClient
 
     from apps.api.main import app
     from libs import runtime_database_scope as scope_module
-
-    import psycopg
 
     dsn = (
         "postgresql://route-user:route-password@route-secret-host/route_cache"

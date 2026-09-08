@@ -25,6 +25,7 @@ audit-reports 在 2026-08-07 记下 routes.py 30,490 行、repo.state 直写 82 
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -75,7 +76,17 @@ def measure_file(path: Path) -> dict[str, int]:
         for line in text.splitlines()
         if line.strip() and not line.lstrip().startswith(("#", "//"))
     ]
-    metrics = {"lines": len(code_lines)}
+    # Count each Python import as one logical line. Sorting imports may wrap
+    # names across lines without adding code; the ratchet must ignore that.
+    import_continuations = 0
+    if path.suffix == ".py":
+        source_lines = text.splitlines()
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                physical = sum(bool(line.strip()) and not line.lstrip().startswith("#")
+                               for line in source_lines[node.lineno - 1:node.end_lineno])
+                import_continuations += physical - 1
+    metrics = {"lines": len(code_lines) - import_continuations}
     if path.suffix == ".py":
         metrics["directStateAccess"] = len(DIRECT_ACCESS_PATTERN.findall(text))
         metrics["directStateWrite"] = len(DIRECT_WRITE_PATTERN.findall(text))

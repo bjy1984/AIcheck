@@ -25,14 +25,14 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from libs.knowledge_indexing import (  # noqa: E402
+from libs.knowledge_indexing import (
     build_chunks_for_file,
     clause_from_chunk,
     embedding_text_for_chunk,
     quarantine_interference_reasons,
     structure_fields_for_unit,
 )
-from libs.mineru_ocr import _content_latex  # noqa: E402
+from libs.mineru_ocr import _content_latex
 
 EQUATION_LATEX = "$$\na = \\frac {S _ {1} - S _ {2}}{S _ {1}} \\times 100\\tag{1}\n$$"
 

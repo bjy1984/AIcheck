@@ -26,7 +26,8 @@ import base64
 import json
 import logging
 import os
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 LOGGER = logging.getLogger(__name__)
 
@@ -63,8 +64,7 @@ def parse_seal_response(text: str) -> dict[str, Any]:
     cleaned = str(text or "").strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[-1]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[: -3]
+        cleaned = cleaned.removesuffix("```")
         cleaned = cleaned.strip()
         if cleaned.startswith("json"):
             cleaned = cleaned[4:].strip()

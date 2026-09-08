@@ -1,0 +1,2053 @@
+{
+  "codeRevision": "354adfb31ec02a672a402c628d03ce74b144d1d2",
+  "note": "AST 靜態盤點，包含同模組、匯入別名與模組屬性呼叫；不涵蓋動態 getattr。原因字串／模板不是已完成業務歸因，須沿資料、標準及適用條件逐項驗證。",
+  "queries": [
+    {
+      "function": "load_tables",
+      "definition": "backend/libs/regulatory_tables.py:23",
+      "parameters": [
+        "path"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:28",
+          "arguments": "load_tables(path)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:38",
+          "arguments": "load_tables(path)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/scripts/build_regulatory_signoff_checklist.py:83",
+          "arguments": "load_tables()",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "table",
+      "definition": "backend/libs/regulatory_tables.py:27",
+      "parameters": [
+        "path"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:137",
+          "arguments": "table('nbt47014AnnexB', 'baseMaterial')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:174",
+          "arguments": "table('nbt47014AnnexB', 'fillerMetal')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:256",
+          "arguments": "table('gbt20801_inspection', 'pressureTest')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:273",
+          "arguments": "table('weldingConsumables')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:373",
+          "arguments": "table('nbt47014SpecificFactors')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:414",
+          "arguments": "table('nbt47014ThicknessCoverage')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:455",
+          "arguments": "table('nbt47014ThicknessCoverage')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:614",
+          "arguments": "table('weldingConsumables')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:148",
+          "arguments": "table('nbt47014AnnexB')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:185",
+          "arguments": "table('nbt47014AnnexB')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:58",
+          "arguments": "table('tsgZ6002_2026', 'materialCategories')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:70",
+          "arguments": "table('nbt47014_2023', 'baseMaterialGroups')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:102",
+          "arguments": "table('gbt20801_inspection', 'acceptance')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:164",
+          "arguments": "table('nbt47014FillerClasses')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:195",
+          "arguments": "table('gbt20801_inspection', 'inspectionLevels')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:245",
+          "arguments": "table('gbt20801_inspection', 'ratiosByLevel')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:299",
+          "arguments": "table('pipeMaterialLimits')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:534",
+          "arguments": "table('nbt47014FillerClasses')",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:678",
+          "arguments": "table('pipeMaterialLimits')",
+          "sameModule": true
+        }
+      ]
+    },
+    {
+      "function": "trust_policy",
+      "definition": "backend/libs/regulatory_tables.py:36",
+      "parameters": [
+        "path"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:43",
+          "arguments": "trust_policy(path)",
+          "sameModule": true
+        }
+      ]
+    },
+    {
+      "function": "accepts_without_signoff",
+      "definition": "backend/libs/regulatory_tables.py:42",
+      "parameters": [
+        "path"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:50",
+          "arguments": "accepts_without_signoff()",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/standard_timeline.py:90",
+          "arguments": "accepts_without_signoff()",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "is_verified",
+      "definition": "backend/libs/regulatory_tables.py:46",
+      "parameters": [
+        "section"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:148",
+          "arguments": "is_verified(table('nbt47014AnnexB'))",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:185",
+          "arguments": "is_verified(table('nbt47014AnnexB'))",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:509",
+          "arguments": "is_verified(section)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:689",
+          "arguments": "is_verified(section)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:316",
+          "arguments": "is_verified(item)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:627",
+          "arguments": "is_verified(section)",
+          "sameModule": true
+        }
+      ]
+    },
+    {
+      "function": "welder_material_category",
+      "definition": "backend/libs/regulatory_tables.py:53",
+      "parameters": [
+        "grade"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/deterministic_tools.py:762",
+          "arguments": "welder_material_category(str(value or ''))",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "wps_base_material_group",
+      "definition": "backend/libs/regulatory_tables.py:65",
+      "parameters": [
+        "grade"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:135",
+          "arguments": "wps_base_material_group(grade)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:565",
+          "arguments": "wps_base_material_group(base_material_grade)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:889",
+          "arguments": "wps_base_material_group(text)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "ndt_acceptance_level",
+      "definition": "backend/libs/regulatory_tables.py:91",
+      "parameters": [
+        "method",
+        "coverage_percent"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/design_facts.py:379",
+          "arguments": "ndt_acceptance_level(method, coverage_percent=coverage_pct)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "acceptance_level_meets",
+      "definition": "backend/libs/regulatory_tables.py:117",
+      "parameters": [
+        "actual",
+        "required"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/design_facts.py:383",
+          "arguments": "acceptance_level_meets(level.group(1), required_acceptance['level'])",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "base_material_classification_requirement",
+      "definition": "backend/libs/regulatory_tables.py:129",
+      "parameters": [
+        "grade"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:872",
+          "arguments": "base_material_classification_requirement(str(grade or ''))",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "filler_metal_classification_requirement",
+      "definition": "backend/libs/regulatory_tables.py:152",
+      "parameters": [
+        "filler_class",
+        "standard"
+      ],
+      "productionCallers": []
+    },
+    {
+      "function": "inspection_level_for_grade",
+      "definition": "backend/libs/regulatory_tables.py:189",
+      "parameters": [
+        "pipeline_grade",
+        "toxic",
+        "leak_hazard"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/design_facts.py:370",
+          "arguments": "inspection_level_for_grade(grade.strip(), toxic=flags['toxic'] is True, leak_hazard=flags['leakHazard'] is True)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "medium_hazard_flags",
+      "definition": "backend/libs/regulatory_tables.py:209",
+      "parameters": [
+        "toxicity",
+        "leak_hazard",
+        "medium"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/design_facts.py:362",
+          "arguments": "medium_hazard_flags(toxicity=item.get('mediumToxicity'), leak_hazard=item.get('leakHazard'), medium=item.get('medium'))",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "volumetric_ndt_ratio",
+      "definition": "backend/libs/regulatory_tables.py:241",
+      "parameters": [
+        "level"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/design_facts.py:373",
+          "arguments": "volumetric_ndt_ratio(strictest)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "pressure_test_ratios",
+      "definition": "backend/libs/regulatory_tables.py:254",
+      "parameters": [],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/design_facts.py:416",
+          "arguments": "pressure_test_ratios()",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "welding_consumable_spec",
+      "definition": "backend/libs/regulatory_tables.py:268",
+      "parameters": [
+        "designation"
+      ],
+      "productionCallers": []
+    },
+    {
+      "function": "pipe_material_limits",
+      "definition": "backend/libs/regulatory_tables.py:288",
+      "parameters": [
+        "standard",
+        "grade",
+        "level"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/material_facts.py:502",
+          "arguments": "pipe_material_limits(standard, grade, level)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "normalize_welding_method",
+      "definition": "backend/libs/regulatory_tables.py:363",
+      "parameters": [
+        "value"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:374",
+          "arguments": "normalize_welding_method(method)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:457",
+          "arguments": "normalize_welding_method(welding_method)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/regulatory_tables.py:535",
+          "arguments": "normalize_welding_method(welding_method)",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:1182",
+          "arguments": "normalize_welding_method(left_value)",
+          "sameModule": false
+        },
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:1182",
+          "arguments": "normalize_welding_method(rv)",
+          "sameModule": false
+        },
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:820",
+          "arguments": "normalize_welding_method(value)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "wps_specific_factors",
+      "definition": "backend/libs/regulatory_tables.py:368",
+      "parameters": [
+        "method"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:402",
+          "arguments": "wps_specific_factors(method)",
+          "sameModule": true
+        }
+      ]
+    },
+    {
+      "function": "wps_factor_class",
+      "definition": "backend/libs/regulatory_tables.py:395",
+      "parameters": [
+        "method",
+        "keyword"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:947",
+          "arguments": "wps_factor_class(method, keyword)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "wps_thickness_coverage",
+      "definition": "backend/libs/regulatory_tables.py:433",
+      "parameters": [
+        "specimen_thickness_mm",
+        "weld_metal_thickness_mm",
+        "bend",
+        "welding_method",
+        "impact_tested"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:907",
+          "arguments": "wps_thickness_coverage(float(specimen), bend=str(_first(pqr, 'bendType', 'bend') or 'transverse'), welding_method=str(_first(pqr, 'weldingMethod', 'method') or _first(wps, 'weldingMethod', 'method') or '') or None, impact_tested=_bool(_first(pqr, 'impactTested', 'impactTestPerformed')) is True)",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "filler_classes_for_group",
+      "definition": "backend/libs/regulatory_tables.py:525",
+      "parameters": [
+        "base_material_group",
+        "welding_method"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:569",
+          "arguments": "filler_classes_for_group(group, welding_method=welding_method)",
+          "sameModule": true
+        }
+      ]
+    },
+    {
+      "function": "filler_matches_base_material",
+      "definition": "backend/libs/regulatory_tables.py:559",
+      "parameters": [
+        "filler_class",
+        "base_material_grade",
+        "welding_method"
+      ],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_tools/r24_r34_tools.py:188",
+          "arguments": "filler_matches_base_material(str(filler_class), str(base_grade), welding_method=_first(required, 'weldingMethod', 'method') or _first(cert, 'weldingMethod', 'method'))",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "welding_consumable_standard_profiles",
+      "definition": "backend/libs/regulatory_tables.py:601",
+      "parameters": [],
+      "productionCallers": [
+        {
+          "source": "backend/libs/regulatory_tables.py:661",
+          "arguments": "welding_consumable_standard_profiles()",
+          "sameModule": true
+        },
+        {
+          "source": "backend/libs/review_orchestrator/r24_r34_facts.py:329",
+          "arguments": "welding_consumable_standard_profiles()",
+          "sameModule": false
+        }
+      ]
+    },
+    {
+      "function": "welding_consumable_profile_for",
+      "definition": "backend/libs/regulatory_tables.py:656",
+      "parameters": [
+        "standard",
+        "designation"
+      ],
+      "productionCallers": []
+    },
+    {
+      "function": "product_inspection_rules",
+      "definition": "backend/libs/regulatory_tables.py:672",
+      "parameters": [],
+      "productionCallers": [
+        {
+          "source": "backend/libs/review_orchestrator/execution.py:606",
+          "arguments": "product_inspection_rules()",
+          "sameModule": false
+        },
+        {
+          "source": "backend/libs/review_orchestrator/r14_facts.py:91",
+          "arguments": "product_inspection_rules()",
+          "sameModule": false
+        }
+      ]
+    }
+  ],
+  "reasonCodes": [
+    {
+      "codeOrTemplate": "requiredFields_not_configured",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:752",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "scope_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:768",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "manufacturing_license_candidates_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:780",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "project_component_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:848",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "verified_manufacturing_licenses_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:863",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "comparisons_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:928",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_signature_roles_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:952",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "numeric_ranges_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:960",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "condition_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:977",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "conditional_required_fields_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:986",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "sampling_parameters_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:997",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_document_types_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1015",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "standard_version_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1031",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "traceability_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1046",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "personnel_or_work_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1070",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pqr_or_work_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1090",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_scope_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1102",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "approval_item_codes_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1141",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "ndt_agencies_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1160",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_scope_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1249",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_or_construction_dates_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1254",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "ndt_organization_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1264",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_or_construction_dates_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1271",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_documents_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1278",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "calculation_documents_or_types_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1296",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "target_calculation_documents_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1299",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_applicability_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1365",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_documents_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1377",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_applicability_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1460",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "seal_documents_or_policy_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1467",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "drawing_review_witness_document_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1546",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "witness_project_name_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1559",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "review_date_or_construction_start_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1563",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_special_requirement_profile_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1587",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_documents_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1717",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "approval_rule_parameters_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1719",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "target_design_documents_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1723",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pipeline_design_parameters_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1731",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "film_inventory_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1836",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pressure_plan_required_roles_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1864",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "valve_sampling_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1874",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "requiredFields_not_configured",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1904",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "ruleChecks_not_configured",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1906",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "ndt_agency_id_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1170",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_signature_roles_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1284",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "calculation_identity_body_coverage_or_comparisons_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1311",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_identity_body_or_approval_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1387",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_signature_roles_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1390",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_organization_names_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1394",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "seal_presence_fact_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1484",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{domain_name}_requirement_fact_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/business_tools.py:1598",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{domain_name}_required_paths_or_standard_rules_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/business_tools.py:1607",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingPaths",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1685",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "document_identity_body_or_signatures_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1726",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingRoles",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1780",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1946",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_facts_missing:",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1954",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "component_mapping_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:883",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "ndt_organization_names_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1177",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "calculation_parameter_value_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1321",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "seal_identity_or_impression_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1492",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "ndt_codes_or_required_methods_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1186",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "ndt_license_or_planned_period_dates_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1200",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_pipeline_link_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1407",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_change_pipeline_parameters_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1411",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "document_pipeline_link_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1747",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pipeline_grade_pressure_or_temperature_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/business_tools.py:1751",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingTools",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/executor.py:56",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f\"unregistered_tools:{','.join(item.get('missingTools') or [])}\"",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/executor.py:86",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingTools",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/executor.py:86",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r13_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:39",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r13_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:84",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "supervision_certificate_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:171",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r13_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:205",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:283",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "report_manufacturer_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:529",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_organization_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:534",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_component_scope_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:592",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_report_number_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:594",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'type_test_{item_key}_scope_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r13_tools.py:627",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "certificate_manufacturer_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:473",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "certificate_product_category_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:478",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "certificate_number_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:496",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "report_product_category_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:520",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_conclusion_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:539",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_diameter_scope_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:569",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_pressure_scope_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:582",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_specification_scope_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:588",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "certificate_link_fields_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:157",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_scope_fields_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:270",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "certificate_conclusion_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:484",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "certificate_batch_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:491",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "certificate_serial_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:491",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "supervision_trace_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:125",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_scope_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r13_tools.py:242",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "product_standard_rule_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:562",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r14_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:42",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r14_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:71",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r14_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:175",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r14_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:227",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r14_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:360",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "design_or_pipeline_pressure_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:394",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pipeline_characteristic_match_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:384",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "factory_inspection_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:418",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "factory_inspection_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:100",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "factory_report_pressure_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:424",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pressure_test_value_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:467",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "factory_report_comparison_fields_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r14_tools.py:148",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "manufacturing_origin_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:639",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r15_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:50",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r15_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:114",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r15_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:178",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r15_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:344",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r15_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:405",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_number_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:650",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_scope_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:704",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "inspection_record_manufacturer_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:754",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "inspection_record_product_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:760",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "inspection_record_conclusion_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:765",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "inspection_record_number_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:769",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{route}_inspection_record_missing_or_not_covering_item'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r15_tools.py:523",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "official_registry_verification_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:656",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_registry_identity_fields_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:684",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "license_scope_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:241",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "manufacturing_license_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r15_tools.py:259",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r16_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:21",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r16_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:39",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "quality_certificates_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:65",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r16_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:104",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r16_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:151",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r16_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:214",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r16_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:247",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:369",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingFields",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:141",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingTestItems",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:141",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingComparisonFields",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:275",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "quality_certificate_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:49",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "copy_required_dual_seals_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:79",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "product_standard_profile_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:112",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "quality_certificate_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:116",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "quality_certificate_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:158",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "quality_certificate_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:255",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "manufacturer_quality_seal_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r16_tools.py:85",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r17_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:16",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "acceptance_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:45",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r17_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:79",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r17_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:110",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "acceptance_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:160",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:232",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingSteps",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:70",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingSignatureRoles",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:70",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "arrival_acceptance_record_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r17_tools.py:29",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r18_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:16",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r18_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:39",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "applicable_material_reports_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:87",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r18_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:117",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r18_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:186",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingSignatureRoles",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:107",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingItems",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:216",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_material_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r18_tools.py:131",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingFacts",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r19_tools.py:47",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingProcedureSteps",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:957",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r20_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:29",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r20_design_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:76",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "valve_test_lots_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:420",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "valve_test_record_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:500",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingProfileDimensions",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:923",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{test_name}_procedure_steps_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:949",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:1035",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingSpecialMaterialTypes",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:276",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "written_approval_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:328",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "report_basis_standard_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:547",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "type_test_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:709",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "technical_review_or_approval_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:728",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "technical_review_approval_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:742",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "necessary_material_data_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:747",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "approval_or_use_date_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:338",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "actual_material_usage_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:342",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pipeline_grade_lot_size_or_tested_count_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:447",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "valve_construction_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:529",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "jacket_pressure_facts_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:601",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{test_name}_test_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:567",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{test_name}_test_required_fields_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:576",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_fields_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:251",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_report_fields_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r20_r23_tools.py:620",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "wps_pqr_or_actual_work_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:49",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "consumable_certificate_or_design_requirement_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:119",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "consumable_management_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:226",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "consumable_control_requirement_profile_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:233",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pipe_fit_up_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:271",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "welding_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:323",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{field}_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:336",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "weld_appearance_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:360",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{field}_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:436",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pwht_weld_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:484",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "temperature_instrument_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:516",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_instrument_types_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:538",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "temperature_point_layout_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:541",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "missingTypes",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:543",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pwht_weld_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:551",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pwht_procedure_cards_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:553",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "pwht_weld_items_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:628",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "classification_inputs_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:695",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "actual_or_qualified_thickness_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:861",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "holding_temperature_rule_profile_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:985",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "holding_time_rule_profile_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:992",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "governing_thickness_missing_for_rate_limits",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:998",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "mtc_original_or_verified_copy_evidence_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:140",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "chemical_composition_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:156",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "mechanical_properties_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:159",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "product_standard_limit_profile_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:170",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{kind}_record_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:238",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{field}_recorded_value_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:243",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "misalignment_limit_input_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:284",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "root_gap_or_wps_limit_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:292",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "bevel_angle_or_limit_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:300",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "weld_identification_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:341",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "r24_or_r25_linked_result_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:348",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "undercut_value_or_applicable_limit_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:384",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "reinforcement_value_or_limit_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:394",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "weld_width_or_design_wps_limit_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:402",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "required_photo_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:409",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "repair_occurrence_or_records_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:421",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "same_location_repair_count_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:454",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "supporting_qualification_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:579",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "heat_treatment_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:645",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "hardness_report_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:666",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "hardness_readings_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:762",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "hardness_value_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:771",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "hardness_sampling_count_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:779",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{field}_wps_pqr_or_actual_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:819",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{key}_wps_or_pqr_range_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:840",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'actual_{key}_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:847",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'actual_{field}_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:980",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "physical_batch_evidence_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:203",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "forced_fit_up_fact_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:311",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "repair_procedure_approval_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:446",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{field}_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:592",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "temperature_time_curve_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:655",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "non_hbw_conversion_evidence_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:766",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "covering_wps_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:70",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "matching_mtc_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:127",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "mtc_copy_supplier_seal_or_handler_signature_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:149",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "expired_stock_retest_evidence_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:213",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{defect}_inspection_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:377",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "repeat_pwht_evidence_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:472",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "covering_pwht_procedure_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:569",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "supporting_qualification_approval_evidence_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:587",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "curve_continuity_fact_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:652",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "f'{group_name}_{field}_missing'",
+      "isTemplate": true,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:177",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "over_two_repairs_special_approval_missing",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:463",
+      "classification": "requires_context_review"
+    },
+    {
+      "codeOrTemplate": "base_material_hardness_missing_for_125_percent_rule",
+      "isTemplate": false,
+      "source": "backend/libs/review_tools/r24_r34_tools.py:793",
+      "classification": "requires_context_review"
+    }
+  ]
+}

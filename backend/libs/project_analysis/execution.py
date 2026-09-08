@@ -71,7 +71,7 @@ def _heartbeat_stream_handler(run: dict[str, Any], on_heartbeat, interval_second
         run["updatedAt"] = server_time()
         try:
             on_heartbeat(run)
-        except Exception:  # noqa: BLE001 - 心跳落库失败不能打断正在进行的模型调用
+        except Exception:
             logging.getLogger(__name__).exception("一键分析心跳落库失败 run=%s", run.get("projectAnalysisRunId"))
 
     return handle

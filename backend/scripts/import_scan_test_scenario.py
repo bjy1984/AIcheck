@@ -20,7 +20,13 @@ if str(BACKEND_ROOT) not in sys.path:
 from libs.business_pack import business_pack_snapshot, load_business_pack
 from libs.business_pack.clause_store import bind_project_node_clause_packages
 from libs.contracts.responses import server_time
-from libs.db.repository import ensure_collections_loaded, flush_state, load_state, repo, stable_doc_id
+from libs.db.repository import (
+    ensure_collections_loaded,
+    flush_state,
+    load_state,
+    repo,
+    stable_doc_id,
+)
 from libs.knowledge_indexing import (
     OFFLINE_EMBEDDING_MODEL,
     OFFLINE_VECTOR_DIMENSIONS,

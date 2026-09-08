@@ -37,7 +37,7 @@ ALERT_PATH = "/tmp/health-alert.log"
 
 
 def check() -> tuple[list[str], list[str]]:
-    from libs.contracts.responses import SERVER_TZ, server_time
+    from libs.contracts.responses import SERVER_TZ
     from libs.db.repository import load_state, repo
 
     load_state()
@@ -120,7 +120,7 @@ def check() -> tuple[list[str], list[str]]:
     try:
         with urllib.request.urlopen("http://127.0.0.1:8000/healthz", timeout=15) as response:
             healthy = 200 <= response.status < 300
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- report per-item/probe failure without abandoning the audit batch
         healthy = False
         facts.append(f"健康端点异常：{exc.__class__.__name__}")
     if not healthy:
@@ -199,7 +199,7 @@ def main() -> int:
     stamp = _server_time()
     try:
         alerts, facts = check()
-    except Exception as exc:  # noqa: BLE001 - 巡检自己挂了也要说出来，不能静默
+    except Exception as exc:  # noqa: BLE001 -- report per-item/probe failure without abandoning the audit batch
         alerts, facts = [f"巡检脚本自身异常：{exc.__class__.__name__}: {exc}"], []
 
     lines = [f"[{stamp}]"] + [f"  {item}" for item in facts]

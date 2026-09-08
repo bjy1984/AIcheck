@@ -26,20 +26,20 @@ SOURCE_ID = "KS-STANDARD-RULES"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from apps.ocr_service.engines import html_table_to_text  # noqa: E402
-from libs.db.repository import repo  # noqa: E402
-from libs.knowledge_indexing import (  # noqa: E402
+from apps.ocr_service.engines import html_table_to_text
+from libs.contracts.responses import server_time
+from libs.db.repository import repo
+from libs.knowledge_indexing import (
     STANDARD_INDEX_VERSION,
     build_chunks_for_file,
     clause_from_chunk,
 )
-from libs.contracts.responses import server_time  # noqa: E402
-from libs.mineru_ocr import (  # noqa: E402
+from libs.mineru_ocr import (
     MinerUNormalizationError,
     build_mineru_result,
     mineru_pages,
 )
-from libs.security.tenant import configured_tenant_id  # noqa: E402
+from libs.security.tenant import configured_tenant_id
 
 
 def parse_args() -> argparse.Namespace:

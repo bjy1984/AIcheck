@@ -1626,6 +1626,7 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
         referenced_standards = set(string_list(domain.get("standardRefs")))
         standard_checks: list[dict[str, Any]] = []
         violations: list[str] = []
+        unresolved_rules: list[str] = []
         for index, rule in enumerate(rules, 1):
             actual_path = str(rule.get("actualPath") or "").strip()
             standard_ref = str(rule.get("standardRef") or "").strip()
@@ -1636,6 +1637,12 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
                     arguments,
                     f"{domain_name}_standard_rule_{index}_invalid",
                 )
+            actual = read_path(domain, actual_path)
+            # Derived comparisons require known inputs. Unknown hazard/acceptance data
+            # must not become a failed boolean comparison or a permissive default.
+            if operator == "equals" and isinstance(rule.get("expected"), bool) and actual is None:
+                unresolved_rules.append(str(rule.get("code") or f"rule_{index}"))
+                continue
             reference_check = check(
                 f"{safe_code(domain_name)}_standard_ref_{index}",
                 standard_ref in referenced_standards,
@@ -1664,22 +1671,31 @@ def evaluate_design_special_requirements(arguments: dict[str, Any]) -> dict[str,
         checks.extend([*domain_checks, *standard_checks])
         completeness_passed = all(item.get("passed") for item in domain_checks)
         compliance_passed = all(item.get("passed") for item in standard_checks)
+        domain_result = "failed" if not completeness_passed or not compliance_passed else (
+            "evidence_insufficient" if unresolved_rules else "passed"
+        )
         domain_results.append(
             {
                 "domain": domain_name,
                 "specified": domain.get("specified"),
                 "completenessResult": "passed" if completeness_passed else "failed",
-                "standardComplianceResult": "passed" if compliance_passed else "failed",
+                "standardComplianceResult": ("failed" if not compliance_passed else
+                    "evidence_insufficient" if unresolved_rules else "passed"),
+                "unresolvedRules": unresolved_rules,
                 "missingPaths": missing_paths,
                 "violations": violations,
                 "standardRefs": sorted(referenced_standards),
-                "result": "passed" if completeness_passed and compliance_passed else "failed",
+                "result": domain_result,
             }
         )
 
+    statuses = {item["result"] for item in domain_results}
+    overall = "failed" if "failed" in statuses else (
+        "evidence_insufficient" if "evidence_insufficient" in statuses else "passed"
+    )
     output = result(
         "evaluate_design_special_requirements",
-        "passed" if checks and all(item.get("passed") for item in checks) else "failed",
+        overall,
         facts={"domains": domains},
         checks=checks,
         rule_version=str(arguments.get("ruleVersion") or "r09-design-special-requirements-v1"),

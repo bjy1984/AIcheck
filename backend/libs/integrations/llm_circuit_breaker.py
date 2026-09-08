@@ -46,14 +46,14 @@ _PROVIDER_FAULT_REASONS = {
 
 def _redis_client():
     try:
-        import redis  # noqa: PLC0415 - 依赖 celery[redis]，按需加载
+        import redis
 
         return redis.Redis.from_url(
             os.getenv("AICHECK_CELERY_BROKER_URL", "redis://aicheck-redis:6379/0"),
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         )
-    except Exception:  # noqa: BLE001 - fail-open
+    except Exception:  # noqa: BLE001 -- optional Redis breaker failure must not replace the model request outcome
         return None
 
 
@@ -93,7 +93,7 @@ def ensure_closed(host: str) -> None:
         return
     try:
         opened = client.ttl(f"llm:breaker:{host}:open")
-    except Exception:  # noqa: BLE001 - fail-open
+    except Exception:  # noqa: BLE001 -- optional Redis breaker failure must not replace the model request outcome
         return
     if opened and opened > 0:
         raise IntegrationServiceError(
@@ -127,7 +127,7 @@ def record_failure(host: str, exc: Exception) -> None:
                 count,
                 cooldown,
             )
-    except Exception:  # noqa: BLE001 - fail-open
+    except Exception:  # noqa: BLE001 -- optional Redis breaker failure must not replace the model request outcome
         return
 
 
@@ -139,7 +139,7 @@ def record_success(host: str) -> None:
         return
     try:
         client.delete(f"llm:breaker:{host}:failures")
-    except Exception:  # noqa: BLE001 - fail-open
+    except Exception:  # noqa: BLE001 -- optional Redis breaker failure must not replace the model request outcome
         return
 
 

@@ -1,0 +1,2438 @@
+{
+  "ruffVersion": "ruff 0.16.2",
+  "originalFindings": 693,
+  "originalBaseline": 337,
+  "currentFindings": 289,
+  "rows": [
+    {
+      "file": "apps/api/knowledge_admin_routes.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "apps/api/knowledge_admin_routes.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "apps/api/main.py",
+      "rule": "BLE001",
+      "originalFindings": 7,
+      "originalBaseline": 6,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 7
+    },
+    {
+      "file": "apps/api/main.py",
+      "rule": "DTZ005",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/api/main.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "apps/api/main.py",
+      "rule": "S110",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/api/org_delegation_routes.py",
+      "rule": "F401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "B023",
+      "originalFindings": 3,
+      "originalBaseline": 3,
+      "originalRegression": 0,
+      "currentFindings": 3,
+      "removed": 0
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "BLE001",
+      "originalFindings": 14,
+      "originalBaseline": 16,
+      "originalRegression": 0,
+      "currentFindings": 14,
+      "removed": 0
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "F401",
+      "originalFindings": 8,
+      "originalBaseline": 0,
+      "originalRegression": 8,
+      "currentFindings": 0,
+      "removed": 8
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "F841",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "S110",
+      "originalFindings": 3,
+      "originalBaseline": 3,
+      "originalRegression": 0,
+      "currentFindings": 3,
+      "removed": 0
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "SIM101",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "SIM102",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/api/routes.py",
+      "rule": "UP031",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/engines.py",
+      "rule": "BLE001",
+      "originalFindings": 8,
+      "originalBaseline": 8,
+      "originalRegression": 0,
+      "currentFindings": 8,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/engines.py",
+      "rule": "S110",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/engines.py",
+      "rule": "S112",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/engines.py",
+      "rule": "SIM101",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/engines.py",
+      "rule": "TRY201",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/fusion.py",
+      "rule": "DTZ001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/main.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/main.py",
+      "rule": "S110",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/pages.py",
+      "rule": "BLE001",
+      "originalFindings": 13,
+      "originalBaseline": 13,
+      "originalRegression": 0,
+      "currentFindings": 13,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/pages.py",
+      "rule": "S110",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/preprocess.py",
+      "rule": "B023",
+      "originalFindings": 15,
+      "originalBaseline": 15,
+      "originalRegression": 0,
+      "currentFindings": 15,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/preprocess.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/preprocess.py",
+      "rule": "S112",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/quality.py",
+      "rule": "BLE001",
+      "originalFindings": 3,
+      "originalBaseline": 3,
+      "originalRegression": 0,
+      "currentFindings": 3,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/runtime_doctor.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/seal_text.py",
+      "rule": "SIM102",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/service.py",
+      "rule": "B005",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/service.py",
+      "rule": "BLE001",
+      "originalFindings": 14,
+      "originalBaseline": 14,
+      "originalRegression": 0,
+      "currentFindings": 14,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/service.py",
+      "rule": "PLR0124",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/ocr_service/service.py",
+      "rule": "S110",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/review_worker/outbox.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/review_worker/raw_vault_relay.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "apps/worker/tasks.py",
+      "rule": "BLE001",
+      "originalFindings": 16,
+      "originalBaseline": 16,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 16
+    },
+    {
+      "file": "apps/worker/tasks.py",
+      "rule": "S110",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "apps/worker/tasks.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/audit_runtime.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/auto_review.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/auto_review.py",
+      "rule": "C401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/auto_review.py",
+      "rule": "DTZ007",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "libs/contracts/responses.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/db/postgres.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/db/postgres.py",
+      "rule": "SIM117",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/db/repository.py",
+      "rule": "BLE001",
+      "originalFindings": 6,
+      "originalBaseline": 6,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 6
+    },
+    {
+      "file": "libs/db/repository.py",
+      "rule": "C409",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/db/repository.py",
+      "rule": "DTZ007",
+      "originalFindings": 4,
+      "originalBaseline": 2,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 4
+    },
+    {
+      "file": "libs/db/repository.py",
+      "rule": "FURB162",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/db/repository.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/db/repository.py",
+      "rule": "S110",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "libs/db/repository.py",
+      "rule": "UP034",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/deepseek_runtime.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/document_audit_pipeline_comparison.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/document_audit_pipeline_comparison.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/document_intelligence.py",
+      "rule": "BLE001",
+      "originalFindings": 3,
+      "originalBaseline": 0,
+      "originalRegression": 3,
+      "currentFindings": 0,
+      "removed": 3
+    },
+    {
+      "file": "libs/document_intelligence.py",
+      "rule": "PIE810",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/document_intelligence.py",
+      "rule": "SIM114",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/fde_console_views.py",
+      "rule": "BLE001",
+      "originalFindings": 7,
+      "originalBaseline": 7,
+      "originalRegression": 0,
+      "currentFindings": 7,
+      "removed": 0
+    },
+    {
+      "file": "libs/fde_console_views.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/integrations/cnse_client.py",
+      "rule": "PYI034",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/integrations/document_ai_client.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/integrations/document_ai_client.py",
+      "rule": "SIM117",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/integrations/litellm_client.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/integrations/llm_circuit_breaker.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/integrations/ocr_client.py",
+      "rule": "SIM117",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/integrations/std_samr_client.py",
+      "rule": "PYI034",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/integrations/storage.py",
+      "rule": "BLE001",
+      "originalFindings": 5,
+      "originalBaseline": 5,
+      "originalRegression": 0,
+      "currentFindings": 5,
+      "removed": 0
+    },
+    {
+      "file": "libs/knowledge_indexing.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/knowledge_indexing.py",
+      "rule": "SIM118",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/ocr/profiles.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/ocr/welder_certificate_tool.py",
+      "rule": "DTZ007",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/ocr_accuracy_pipeline.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/ocr_runtime.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/official_ocr_control.py",
+      "rule": "BLE001",
+      "originalFindings": 6,
+      "originalBaseline": 6,
+      "originalRegression": 0,
+      "currentFindings": 6,
+      "removed": 0
+    },
+    {
+      "file": "libs/official_ocr_control.py",
+      "rule": "S110",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/official_ocr_pipeline.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "libs/official_ocr_pipeline.py",
+      "rule": "RUF034",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/pipeline_lock.py",
+      "rule": "BLE001",
+      "originalFindings": 3,
+      "originalBaseline": 2,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 3
+    },
+    {
+      "file": "libs/pipeline_lock.py",
+      "rule": "S110",
+      "originalFindings": 3,
+      "originalBaseline": 2,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 3
+    },
+    {
+      "file": "libs/project_analysis/execution.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/project_analysis/prompt.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/project_analysis/queue_probe.py",
+      "rule": "RUF100",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "libs/project_analysis/validation.py",
+      "rule": "SIM114",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/qwen_runtime.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/qwen_runtime.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/raw_vault.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/raw_vault_export.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/__init__.py",
+      "rule": "RUF022",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/review_orchestrator/_shared.py",
+      "rule": "F401",
+      "originalFindings": 79,
+      "originalBaseline": 0,
+      "originalRegression": 79,
+      "currentFindings": 0,
+      "removed": 79
+    },
+    {
+      "file": "libs/review_orchestrator/_shared.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/review_orchestrator/deterministic_tools.py",
+      "rule": "RUF007",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/dispatcher.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 4,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "DTZ007",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "F401",
+      "originalFindings": 5,
+      "originalBaseline": 0,
+      "originalRegression": 5,
+      "currentFindings": 0,
+      "removed": 5
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "ISC004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "LOG015",
+      "originalFindings": 3,
+      "originalBaseline": 0,
+      "originalRegression": 3,
+      "currentFindings": 0,
+      "removed": 3
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "RUF100",
+      "originalFindings": 4,
+      "originalBaseline": 0,
+      "originalRegression": 4,
+      "currentFindings": 0,
+      "removed": 4
+    },
+    {
+      "file": "libs/review_orchestrator/execution.py",
+      "rule": "S110",
+      "originalFindings": 0,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/graph.py",
+      "rule": "BLE001",
+      "originalFindings": 3,
+      "originalBaseline": 3,
+      "originalRegression": 0,
+      "currentFindings": 3,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/material_facts.py",
+      "rule": "B005",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/review_orchestrator/material_facts.py",
+      "rule": "SIM103",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/review_orchestrator/r24_r34_facts.py",
+      "rule": "PLC0206",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/review_orchestrator/rule_planners.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "libs/review_orchestrator/rule_planners.py",
+      "rule": "F401",
+      "originalFindings": 79,
+      "originalBaseline": 0,
+      "originalRegression": 79,
+      "currentFindings": 0,
+      "removed": 79
+    },
+    {
+      "file": "libs/review_orchestrator/rule_planners.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/runtime_database_scope.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "libs/runtime_database_scope.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/runtime_readiness.py",
+      "rule": "BLE001",
+      "originalFindings": 4,
+      "originalBaseline": 1,
+      "originalRegression": 3,
+      "currentFindings": 0,
+      "removed": 4
+    },
+    {
+      "file": "libs/runtime_readiness.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/seal_local_reader.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/seal_local_reader.py",
+      "rule": "UP035",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/seal_vision.py",
+      "rule": "FURB188",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/seal_vision.py",
+      "rule": "UP035",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/security/auth.py",
+      "rule": "BLE001",
+      "originalFindings": 4,
+      "originalBaseline": 4,
+      "originalRegression": 0,
+      "currentFindings": 4,
+      "removed": 0
+    },
+    {
+      "file": "libs/security/runtime.py",
+      "rule": "B018",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/security/session.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "libs/standard_knowledge_canonical.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/standard_knowledge_canonical.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/standard_semantic_extraction.py",
+      "rule": "FLY002",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/standard_semantic_extraction.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "libs/standard_semantic_extraction.py",
+      "rule": "TRY004",
+      "originalFindings": 3,
+      "originalBaseline": 0,
+      "originalRegression": 3,
+      "currentFindings": 0,
+      "removed": 3
+    },
+    {
+      "file": "scripts/analysis_probe.py",
+      "rule": "DTZ007",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/analysis_probe.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/audit_standard_clause_artifacts.py",
+      "rule": "DTZ011",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/backfill_manual_binding_evidence_links.py",
+      "rule": "RUF100",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/backfill_table_structure_fields.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/backfill_table_structure_fields.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/backup/verify_backup_readiness.py",
+      "rule": "FURB162",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/deployment_report.py",
+      "rule": "BLE001",
+      "originalFindings": 22,
+      "originalBaseline": 22,
+      "originalRegression": 0,
+      "currentFindings": 22,
+      "removed": 0
+    },
+    {
+      "file": "scripts/deployment_report.py",
+      "rule": "C405",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/document_ai_shadow_doctor.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/embed_standard_library.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/embed_standard_library.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/enrich_standard_knowledge_canonical.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/enrich_standard_knowledge_canonical.py",
+      "rule": "I001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/enrich_standard_knowledge_canonical.py",
+      "rule": "RUF100",
+      "originalFindings": 6,
+      "originalBaseline": 0,
+      "originalRegression": 6,
+      "currentFindings": 0,
+      "removed": 6
+    },
+    {
+      "file": "scripts/health_watch.py",
+      "rule": "F401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/import_offline_test_projects.py",
+      "rule": "C401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/import_offline_test_projects.py",
+      "rule": "I001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/import_offline_test_projects.py",
+      "rule": "PIE810",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/import_scan_test_scenario.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/ingest_visual_extractions.py",
+      "rule": "TRY004",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/knowledge_roi_quality_audit.py",
+      "rule": "BLE001",
+      "originalFindings": 3,
+      "originalBaseline": 3,
+      "originalRegression": 0,
+      "currentFindings": 3,
+      "removed": 0
+    },
+    {
+      "file": "scripts/migrate_backend.py",
+      "rule": "TRY004",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/migrate_positional_state_keys.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/migrate_standard_knowledge_to_postgres.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/mineru_live_probe.py",
+      "rule": "F401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/mineru_live_probe.py",
+      "rule": "SIM115",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/ocr_100_annotation_draft_labels.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_export.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_finalize_labels.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_merge_prelabels.py",
+      "rule": "TRY004",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_pack.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_pack.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_pack.py",
+      "rule": "UP022",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_prelabel.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_prelabel.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_annotation_sprint.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_collection_intake.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_collection_intake_autofill.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_collection_intake_pipeline.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_collection_intake_verify.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_corpus.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_ingest_samples.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/ocr_100_ingest_samples.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_label_studio_export.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_label_studio_export.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_label_studio_import.py",
+      "rule": "TRY004",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_label_studio_verify.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_prelabel_retry_plan.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_sample_probe_batch.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_100_scorecard.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_98_release_gate.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_annotation_readiness.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_pipeline_fault_injection.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_pipeline_fault_injection.py",
+      "rule": "S110",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_pipeline_release_manifest.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/ocr_sample_probe.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/offline_standard_nbt47013_bundle.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/offline_standard_nbt47013_bundle.py",
+      "rule": "F401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/offline_vectorize_rules.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/online_probe.py",
+      "rule": "F401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/online_probe.py",
+      "rule": "SIM115",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/openapi_contract.py",
+      "rule": "TRY004",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/publish_atomic_check_bindings.py",
+      "rule": "TRY004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/rebuild_standard_knowledge_canonical.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/rebuild_standard_knowledge_canonical.py",
+      "rule": "I001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/rebuild_standard_knowledge_canonical.py",
+      "rule": "RUF100",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/reconcile_orphan_ai_runs.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/reconcile_review_runs.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/reconcile_review_runs.py",
+      "rule": "TRY004",
+      "originalFindings": 3,
+      "originalBaseline": 3,
+      "originalRegression": 0,
+      "currentFindings": 3,
+      "removed": 0
+    },
+    {
+      "file": "scripts/reconcile_stalled_agent_executions.py",
+      "rule": "RUF100",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/reconcile_stalled_analysis_runs.py",
+      "rule": "RUF100",
+      "originalFindings": 5,
+      "originalBaseline": 0,
+      "originalRegression": 5,
+      "currentFindings": 0,
+      "removed": 5
+    },
+    {
+      "file": "scripts/reconcile_stuck_index_tasks.py",
+      "rule": "RUF100",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/reembed_stale_vectors.py",
+      "rule": "RUF010",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/reembed_stale_vectors.py",
+      "rule": "RUF100",
+      "originalFindings": 4,
+      "originalBaseline": 0,
+      "originalRegression": 4,
+      "currentFindings": 0,
+      "removed": 4
+    },
+    {
+      "file": "scripts/render_visual_pdf_pages.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/reocr_standards_with_mineru.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/reocr_standards_with_mineru.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/reocr_standards_with_mineru.py",
+      "rule": "RUF100",
+      "originalFindings": 6,
+      "originalBaseline": 0,
+      "originalRegression": 6,
+      "currentFindings": 0,
+      "removed": 6
+    },
+    {
+      "file": "scripts/requeue_index_backlog.py",
+      "rule": "I001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/review_orchestration_100_probe.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/run_review_b_smoke.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/security_release_gate.py",
+      "rule": "FURB162",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/security_release_gate.py",
+      "rule": "TRY004",
+      "originalFindings": 5,
+      "originalBaseline": 5,
+      "originalRegression": 0,
+      "currentFindings": 5,
+      "removed": 0
+    },
+    {
+      "file": "scripts/security_surface_probe.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/security_surface_probe.py",
+      "rule": "RUF100",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/setup_local_ocr.py",
+      "rule": "BLE001",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "scripts/standards_mineru_baseline.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/standards_mineru_baseline.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/standards_mineru_baseline.py",
+      "rule": "F401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/standards_mineru_baseline.py",
+      "rule": "FURB192",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/standards_mineru_baseline.py",
+      "rule": "SIM114",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/standards_mineru_baseline.py",
+      "rule": "UP017",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/validate_deployment_config.py",
+      "rule": "BLE001",
+      "originalFindings": 4,
+      "originalBaseline": 4,
+      "originalRegression": 0,
+      "currentFindings": 4,
+      "removed": 0
+    },
+    {
+      "file": "scripts/validate_deployment_config.py",
+      "rule": "FLY002",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/verify_deployment.py",
+      "rule": "BLE001",
+      "originalFindings": 24,
+      "originalBaseline": 24,
+      "originalRegression": 0,
+      "currentFindings": 24,
+      "removed": 0
+    },
+    {
+      "file": "scripts/verify_deployment_business_rules.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "scripts/verify_standard_knowledge_canonical.py",
+      "rule": "EXE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/verify_standard_knowledge_canonical.py",
+      "rule": "I001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "scripts/verify_standard_knowledge_canonical.py",
+      "rule": "RUF100",
+      "originalFindings": 3,
+      "originalBaseline": 0,
+      "originalRegression": 3,
+      "currentFindings": 0,
+      "removed": 3
+    },
+    {
+      "file": "scripts/verify_standard_knowledge_canonical.py",
+      "rule": "UP034",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/write_ops_audit.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "scripts/write_ops_audit.py",
+      "rule": "F841",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/conftest.py",
+      "rule": "BLE001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/conftest.py",
+      "rule": "S112",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_auto_review_scheduler.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_batch_review.py",
+      "rule": "PLR0402",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "tests/test_business_today.py",
+      "rule": "UP017",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_check_96_preflight.py",
+      "rule": "FLY002",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_cnse_api.py",
+      "rule": "UP031",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "tests/test_confidence_unavailable_status.py",
+      "rule": "SIM115",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_contract.py",
+      "rule": "F401",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "tests/test_data_migration.py",
+      "rule": "ISC004",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "tests/test_data_migration.py",
+      "rule": "PLW1510",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "tests/test_deferred_bulk_load.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_deployment_report.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_deployment_report.py",
+      "rule": "RUF012",
+      "originalFindings": 5,
+      "originalBaseline": 5,
+      "originalRegression": 0,
+      "currentFindings": 5,
+      "removed": 0
+    },
+    {
+      "file": "tests/test_document_org_isolation.py",
+      "rule": "FURB192",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_document_replace.py",
+      "rule": "RUF059",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_document_upload_intelligence_e2e.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_import_layering.py",
+      "rule": "B018",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 1,
+      "removed": 0
+    },
+    {
+      "file": "tests/test_import_offline_test_projects.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_knowledge_indexing.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_knowledge_structured_blocks.py",
+      "rule": "RUF100",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "tests/test_main_chain_e2e.py",
+      "rule": "PIE807",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_multi_file_upload_session.py",
+      "rule": "RUF059",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "tests/test_project_analysis_execution.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_regulatory_tables.py",
+      "rule": "I001",
+      "originalFindings": 2,
+      "originalBaseline": 0,
+      "originalRegression": 2,
+      "currentFindings": 0,
+      "removed": 2
+    },
+    {
+      "file": "tests/test_review_evidence_manifest.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_review_evidence_run_integration.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_review_evidence_shard_execution.py",
+      "rule": "F401",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_review_evidence_snapshot.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_review_orchestration_100_probe.py",
+      "rule": "SIM117",
+      "originalFindings": 2,
+      "originalBaseline": 2,
+      "originalRegression": 0,
+      "currentFindings": 2,
+      "removed": 0
+    },
+    {
+      "file": "tests/test_review_run_abandoned.py",
+      "rule": "DTZ007",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_review_runtime_tool_dispatcher.py",
+      "rule": "FLY002",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_runtime_database_scope.py",
+      "rule": "I001",
+      "originalFindings": 12,
+      "originalBaseline": 0,
+      "originalRegression": 12,
+      "currentFindings": 0,
+      "removed": 12
+    },
+    {
+      "file": "tests/test_runtime_database_scope.py",
+      "rule": "PYI034",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_seal_local_reader.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_shared_test_password.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_start_local_dev.py",
+      "rule": "I001",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_validate_deployment_config.py",
+      "rule": "FLY002",
+      "originalFindings": 1,
+      "originalBaseline": 1,
+      "originalRegression": 0,
+      "currentFindings": 0,
+      "removed": 1
+    },
+    {
+      "file": "tests/test_vision_provider_override.py",
+      "rule": "SIM115",
+      "originalFindings": 1,
+      "originalBaseline": 0,
+      "originalRegression": 1,
+      "currentFindings": 0,
+      "removed": 1
+    }
+  ]
+}

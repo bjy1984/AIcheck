@@ -102,7 +102,7 @@ def api(
     except urllib.error.HTTPError as error:
         try:
             return json.loads(error.read().decode())
-        except Exception:
+        except (ValueError, UnicodeError):
             return {"code": error.code, "message": f"HTTP {error.code}"}
 
 
@@ -190,7 +190,6 @@ def main() -> int:
 
     link = api(f"/api/projects/{pid}/registration-links", "admin", {})
     link_data = expect_ok("admin 生成注册链接", link, "token")
-    reg_token = (link_data or {}).get("token")
 
     # ---------------- contractor：上传 → 绑定 → 报审 ----------------
     print("\n== contractor：上传资料 / 挂载节点 / 报审 ==")

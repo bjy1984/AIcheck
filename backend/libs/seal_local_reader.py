@@ -32,8 +32,9 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,12 +52,13 @@ def _pipeline():
     """按需创建管线。模型加载约 20 秒，进程内缓存一份。"""
     global _PIPELINE
     if _PIPELINE is None:
+        from paddlex import create_pipeline
+
         from apps.ocr_service.engines import (  # 延迟导入：API 进程里没有 paddlex
             paddle_predictor_options,
             seal_model_dirs,
             seal_pipeline_config,
         )
-        from paddlex import create_pipeline
 
         _PIPELINE = create_pipeline(
             config=seal_pipeline_config(seal_model_dirs()),
