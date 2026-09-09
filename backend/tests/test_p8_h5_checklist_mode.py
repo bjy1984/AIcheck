@@ -177,3 +177,17 @@ def test_condition_checklist_replaces_only_mapped_instructions_and_keeps_require
     assert rule == original
     with pytest.raises(ValueError, match="node_mismatch"):
         checklist_mode.build_checklist_items(PACK, 25, effective_rule=rule)
+
+
+@pytest.mark.parametrize("verdict", ["不适用", "not_applicable"])
+def test_not_applicable_is_preserved_and_requires_evidence(verdict):
+    items = _items()
+    row = {"itemId": items[0]["itemId"], "verdict": verdict,
+           "evidenceRefs": _grounding_input()["evidenceLinks"], "note": "姜军"}
+    result = _normalize(json.dumps({"checklist": [row]}), items)
+    assert result[0]["checklistVerdict"] == "不适用"
+    assert result[0]["suggestedAction"] == "human_confirm"
+    row["evidenceRefs"] = []
+    result = _normalize(json.dumps({"checklist": [row]}), items)
+    assert result[0]["checklistVerdict"] == "证据不足"
+    assert "不适用" in checklist_mode.apply_to_payload({}, items)["outputSchema"]["checklist"][0]["verdict"]

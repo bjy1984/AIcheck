@@ -4,7 +4,7 @@
 大模型写出来的一半被守卫丢掉（2026-09-06 六模型实测）。清单模式把结构收回代码：
 
 - 清单项来自本节点的原子检查项（atomic_checks.yaml）与必传资料（node_requirements）；
-- 模型对每项只填 {itemId, verdict ∈ 符合|不符合|证据不足|需人工确认, evidenceRefs, note}，
+- 模型对每项只填 {itemId, verdict ∈ 符合|不符合|证据不足|不适用|需人工确认, evidenceRefs, note}，
   另可给最多 3 条 extraFindings（清单之外的问题）；
 - 标题由代码按清单项生成，严重度来自规则；肯定结论词只出现在代码生成的标题里，
   守卫只对 note 与 extraFindings 做断言核对。
@@ -23,9 +23,10 @@ from typing import Any
 from uuid import uuid4
 
 from libs.integrations.errors import IntegrationServiceError
+from libs.review_orchestrator.checklist_consistency import condition_checklist_verdicts
 from libs.rule_condition_bindings import compile_condition_bindings
 
-VERDICTS = ("符合", "不符合", "证据不足", "需人工确认")
+VERDICTS = ("符合", "不符合", "证据不足", "不适用", "需人工确认")
 MAX_EXTRA_FINDINGS = 3
 NOTE_MAX_CHARS = 150
 _VERDICT_ALIASES = {
@@ -38,12 +39,14 @@ _VERDICT_ALIASES = {
     "insufficient": "证据不足",
     "evidence_insufficient": "证据不足",
     "insufficient_evidence": "证据不足",
+    "not_applicable": "不适用",
     "human_confirm": "需人工确认",
     "needs_human": "需人工确认",
 }
-_VERDICT_SEVERITY_FLOOR = {"不符合": None, "证据不足": "medium", "需人工确认": "low", "符合": "low"}
+_VERDICT_SEVERITY_FLOOR = {"不符合": None, "证据不足": "medium", "需人工确认": "low", "符合": "low", "不适用": "low"}
 _VERDICT_FINDING_TYPE = {
     "符合": "checklist_pass",
+    "不适用": "checklist_not_applicable",
     "不符合": "checklist_fail",
     "证据不足": "checklist_evidence_insufficient",
     "需人工确认": "checklist_human_confirm",
@@ -118,7 +121,7 @@ def build_checklist_items(pack: dict[str, Any], node_id: int, requirements: list
 
 CHECKLIST_REQUIREMENTS = [
     "本次为清单填表：对 checklist 里每一项只填 itemId、verdict、evidenceRefs、note，不要复述题目。",
-    "verdict 只能是 符合 / 不符合 / 证据不足 / 需人工确认 四选一；没有证据支持的项不得填 符合。",
+    "verdict 只能是 符合 / 不符合 / 证据不足 / 不适用 / 需人工确认 五选一；没有证据支持的项不得填 符合 或 不适用。",
     "note 不超过 120 字，按“查到什么 → 差在哪 → 怎么做”写；不要下结论性套话。",
     "清单之外发现的问题写进 extraFindings，最多 3 条，格式同自由模式的 finding。",
 ]
@@ -143,7 +146,7 @@ def apply_to_payload(user_payload: dict[str, Any], items: list[dict[str, Any]], 
         "checklist": [
             {
                 "itemId": "string",
-                "verdict": "符合|不符合|证据不足|需人工确认",
+                "verdict": "符合|不符合|证据不足|不适用|需人工确认",
                 "evidenceRefs": finding_schema.get("evidenceRefs") or [],
                 "note": "string(<=120)",
             }
@@ -204,6 +207,14 @@ def normalize_checklist_output(
     if not items_by_id:
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="REVIEW_CHECKLIST_MISSING")
 
+    fixed_verdicts = condition_checklist_verdicts(review_run, context)
+    for identity, expected in fixed_verdicts.items():
+        matches = [row for row in parsed["checklist"] if isinstance(row, dict) and row.get("itemId") == identity]
+        if identity not in items_by_id or len(matches) != 1:
+            raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_CONDITION_COVERAGE")
+        if _normalize_verdict(matches[0].get("verdict")) != expected:
+            raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_TOOL_CONFLICT")
+
     drafts: list[dict[str, Any]] = []
     code_titles: dict[str, str] = {}
     summary = {verdict: 0 for verdict in VERDICTS}
@@ -217,7 +228,9 @@ def normalize_checklist_output(
             summary["unknownItems"] += 1
             continue
         evidence_refs = clone(row.get("evidenceRefs")) if isinstance(row.get("evidenceRefs"), list) else []
-        if verdict == "符合" and not evidence_refs:
+        if str(item["itemId"]) in fixed_verdicts and verdict != "证据不足" and not evidence_refs:
+            raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_TOOL_EVIDENCE_MISSING")
+        if verdict in {"符合", "不适用"} and not evidence_refs:
             verdict = "证据不足"  # 没有证据的"符合"不成立：规则明说过，这里兜底
         summary[verdict] += 1
         note = " ".join(str(row.get("note") or "").split())[:NOTE_MAX_CHARS]
@@ -271,7 +284,13 @@ def normalize_checklist_output(
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_EMPTY_FINDINGS")
 
     guarded = guard(drafts, grounding_input)
+    retained_ids = [str(draft.get("checklistItemId") or "") for draft in guarded]
+    if any(retained_ids.count(identity) != 1 for identity in fixed_verdicts):
+        raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_CONDITION_COVERAGE")
     for draft in guarded:
+        identity = str(draft.get("checklistItemId") or "")
+        if identity in fixed_verdicts and fixed_verdicts[identity] != "证据不足" and draft.get("groundingStatus") != "grounded":
+            raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_TOOL_EVIDENCE_REJECTED")
         title = code_titles.get(str(draft.get("id")))
         if not title:
             continue
