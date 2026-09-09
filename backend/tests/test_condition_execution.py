@@ -166,3 +166,60 @@ def test_condition_exception_is_archived_and_propagated(monkeypatch):
     with pytest.raises(ValueError, match="evaluation failed"):
         prepare_condition_results(state, run, pack, raw_capture=RawCapture(store=store))
     assert [event.event_type for event in store.events_for_run("TENANT-LAB", "RR-ERROR")] == ["tool.call.requested", "tool.call.failed"]
+
+
+def semantic_example(value):
+    pack, run, rule, state, _ = example(value)
+    run.update(nodeId=19, reviewRunId="RR-SEMANTIC")
+    rule["nodeIds"] = [19]
+    rule["executionConditions"]["checks"][0]["atomicCheckId"] = "AC-R19-01"
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    run["effectiveRuleSnapshot"] = freeze_effective_rule(run, rule)
+    rows = [{"atomicCheckId": f"AC-R19-0{i}", "result": "failed" if i == 1 else "passed",
+             "evidenceRefIds": [f"E-{i}"], "explanation": f"original-{i}"} for i in range(1, 9)]
+    return pack, run, rule, state, rows
+
+
+@pytest.mark.parametrize("value,applicability,target_result,node_result", [
+    (11, False, "passed", "passed"), (9, False, "failed", "failed"),
+    (None, False, "evidence_insufficient", "evidence_insufficient"), (9, True, "not_applicable", "passed")])
+def test_semantic_rule_engine_replaces_target_and_reaggregates_without_rewriting_history(monkeypatch, value, applicability, target_result, node_result):
+    from types import SimpleNamespace
+
+    from libs.review_orchestrator import execution as ex
+
+    pack, run, rule, state, rows = semantic_example(value)
+    if applicability:
+        rule["executionConditions"]["applicability"] = {"id": "A", "field": "required", "operator": "eq", "expected": True}
+        run["effectiveRuleSnapshot"] = freeze_effective_rule(run, rule)
+    run["r19SemanticReview"] = {"result": "failed", "atomicJudgments": rows}
+    original = deepcopy(run["r19SemanticReview"])
+    state["rule_check_results"] = []
+    monkeypatch.setattr(ex, "repo", SimpleNamespace(state=state, clone=deepcopy))
+    monkeypatch.setattr(ex, "execute_agent_tool", lambda *a, **k: pytest.fail("semantic merge must not rerun base tools"))
+    monkeypatch.setattr(ex, "append_tool_call", lambda *a, **k: None)
+    context = {"project": {"businessPackSnapshot": pack}, "clausePackageSnapshot": {"clauses": [{"clauseReferenceId": "TEST"}]}}
+    ex.run_step(run, "run_rule_engine", context)
+    result = state["rule_check_results"][0]
+    assert result["result"] == node_result
+    assert len(result["atomicCheckResults"]) == 8
+    assert result["atomicCheckResults"][0]["result"] == target_result
+    assert result["atomicCheckResults"][1]["evidenceRefIds"] == ["E-2"]
+    assert result["toolExecutionSummary"]["executionMode"] == "semantic_with_condition_replacements"
+    assert run["r19SemanticReview"] == original
+
+
+@pytest.mark.parametrize("corruption", ["missing", "duplicate", "foreign"])
+def test_incomplete_semantics_cannot_appear_complete(corruption):
+    from libs.review_tools.condition_execution import merge_semantic_condition_results
+
+    pack, run, _, state, rows = semantic_example(11)
+    replacements = prepare_condition_results(state, run, pack)
+    if corruption == "missing":
+        rows.pop()
+    elif corruption == "duplicate":
+        rows.append(deepcopy(rows[-1]))
+    else:
+        rows[-1]["atomicCheckId"] = "FOREIGN"
+    with pytest.raises(ValueError, match="retained_results_incomplete"):
+        merge_semantic_condition_results({"result": "passed", "atomicResults": rows}, replacements)

@@ -139,6 +139,7 @@ from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.review_tools.condition_execution import (
     condition_source_rule_id,
     execute_with_condition_replacements,
+    merge_semantic_condition_results,
     prepare_condition_results,
 )
 from libs.review_workstations import (
@@ -1656,8 +1657,6 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         source_rule_id = condition_source_rule_id(rule, pack) if rule.get("executionConditions") is not None else str(rule.get("sourceRuleId") or rule.get("id") or rule.get("ruleKey") or "")
         semantic_review = review_run.get("r19SemanticReview") if int(review_run.get("nodeId") or 0) == 19 else None
         if isinstance(semantic_review, dict) and semantic_review.get("atomicJudgments"):
-            if rule.get("executionConditions") is not None:
-                raise ValueError("condition_replacement_semantic_adapter_pending")
             atomic_results = []
             for judgment in semantic_review.get("atomicJudgments") or []:
                 if not isinstance(judgment, dict):
@@ -1691,6 +1690,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                     "nodeResultSource": "fixed_aggregator_over_llm_semantic_judgments",
                 },
             }
+            tool_execution = merge_semantic_condition_results(tool_execution, prepare_condition_results(repo.state, review_run, pack))
             deterministic_result = str(tool_execution["result"])
         else:
             tool_plan = compile_node_tool_plan(
@@ -1732,7 +1732,9 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             "result": deterministic_result,
             "severity": rule.get("severity") or "medium",
             "message": (
-                "R19 LLM 已完成证据约束的逐原子项语义判断，节点结果由固定聚合器生成，待人工确认。"
+                "冻结条件与保留的语义判定已合并，节点结果重新聚合，待人工确认。"
+                if tool_execution.get("summary", {}).get("executionMode") == "semantic_with_condition_replacements"
+                else "R19 LLM 已完成证据约束的逐原子项语义判断，节点结果由固定聚合器生成，待人工确认。"
                 if isinstance(semantic_review, dict) and semantic_review.get("atomicJudgments")
                 else "固定 atomicCheck Tool 执行完成，待人工确认。"
                 if deterministic_result in {"passed", "failed", "not_applicable"}

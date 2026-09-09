@@ -107,3 +107,28 @@ def condition_source_rule_id(rule: dict[str, Any], pack: dict[str, Any]) -> str:
 def require_capture_success(event) -> None:
     if event is None or isinstance(event, RawCaptureFailure):
         raise IntegrationServiceError("raw_vault", "condition_capture", status_code=503, reason="CONDITION_TOOL_CAPTURE_FAILED")
+
+
+def merge_semantic_condition_results(base: dict[str, Any], replacements: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    if not replacements:
+        return base
+    identities = next(iter(replacements.values())).get("planAtomicCheckIds") or []
+    expected = set(identities)
+    if not expected or len(expected) != len(identities) or set(replacements) - expected:
+        raise ValueError("condition_semantic_plan_mismatch")
+    for identity, result in replacements.items():
+        if set(result.get("planAtomicCheckIds") or []) != expected or result.get("atomicCheckId") != identity:
+            raise ValueError("condition_semantic_plan_mismatch")
+        if result.get("result") not in {"passed", "failed", "evidence_insufficient", "not_applicable"}:
+            raise ValueError("invalid_condition_replacement_result")
+    rows = base.get("atomicResults") or []
+    existing = {row.get("atomicCheckId"): row for row in rows}
+    if len(existing) != len(rows) or set(existing) - expected or (expected - set(replacements)) - set(existing):
+        raise ValueError("condition_semantic_retained_results_incomplete")
+    merged = {**deepcopy(existing), **deepcopy(replacements)}
+    ordered = [merged[identity] for identity in identities]
+    counts = {status: sum(row["result"] == status for row in ordered) for status in {row["result"] for row in ordered}}
+    return {"result": aggregate_atomic_results(ordered), "atomicResults": ordered,
+            "summary": {**summarize(ordered), "resultCounts": counts,
+                        "executionMode": "semantic_with_condition_replacements",
+                        "nodeResultSource": "fixed_aggregator_over_retained_semantics_and_frozen_conditions"}}
