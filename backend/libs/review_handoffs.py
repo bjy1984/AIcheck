@@ -4,6 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.review_page_scope import located_record_in_range, normalize_page_ranges
 from libs.review_workstations import digest, station_snapshot
 
 
@@ -60,12 +61,15 @@ def _build_handoff_draft(source, target, *, kind, subject, payload, evidence_ref
     if origin["runId"] == recipient["runId"] or origin["nodeId"] == recipient["nodeId"]:
         raise ReviewHandoffError("handoff_distinct_nodes_required")
     allowed = set(source.get("inputDocumentVersionIds") or [])
+    ranges = normalize_page_ranges(source.get("inputDocumentPageRanges", {}), list(allowed))
     if not isinstance(evidence_refs, list) or (kind != "collaboration" and not evidence_refs):
         raise ReviewHandoffError("handoff_evidence_required")
     for evidence in evidence_refs:
         if (not isinstance(evidence, dict) or evidence.get("documentVersionId") not in allowed
                 or type(evidence.get("pageNo")) is not int or evidence["pageNo"] < 1):
             raise ReviewHandoffError("handoff_evidence_outside_source")
+        if evidence["documentVersionId"] in ranges and not located_record_in_range(evidence, ranges[evidence["documentVersionId"]]):
+            raise ReviewHandoffError("handoff_evidence_outside_source_pages")
     record = {"schemaVersion": schema, "kind": kind, "source": origin, "target": recipient,
               "subject": deepcopy(subject), "payload": deepcopy(payload), "evidenceRefs": deepcopy(evidence_refs),
               "lifecycleStatus": "draft", "authoritative": False, "objectMatchStatus": "unverified",

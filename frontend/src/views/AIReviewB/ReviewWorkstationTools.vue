@@ -11,6 +11,7 @@ defineProps<{
   nodeId: number
   runId: string
   projectEtag?: string
+  evidenceLinks?: EvidenceLink[]
   selection: ReviewDocumentSelection | null
   documentsDisabled: boolean
 }>()
@@ -50,6 +51,8 @@ const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
       />
       <ProjectRuleEditor :project-id="projectId" :node-id="nodeId" :review-run-id="runId" />
       <ReviewHandoffPanel
+        :project-etag="projectEtag"
+        :evidence-links="evidenceLinks"
         :project-id="projectId"
         :run-id="runId"
         @evidence="emit('evidence', $event)"

@@ -17,6 +17,17 @@ SUBJECT = {"objectType": "weld", "objectId": "W-101", "repairRound": 1, "eventId
 EVIDENCE = [{"documentVersionId": "VERSION-1", "pageNo": 2}]
 
 
+def test_handoff_cannot_export_evidence_outside_selected_pages():
+    from libs.review_document_scope import freeze_document_scope
+    source, target = runs()
+    source["inputDocumentPageRanges"] = {"VERSION-1": {"start": 2, "end": 3}}
+    source["documentScopeSnapshot"] = freeze_document_scope(source)
+    create_handoff_draft(source, target, kind="facts", subject=SUBJECT, payload={"note": "review"}, evidence_refs=EVIDENCE)
+    with pytest.raises(ReviewHandoffError, match="outside_source_pages"):
+        create_handoff_draft(source, target, kind="facts", subject=SUBJECT, payload={"note": "review"},
+                             evidence_refs=[{"documentVersionId": "VERSION-1", "pageNo": 4}])
+
+
 @pytest.mark.parametrize("kind", ["facts", "judgment", "collaboration"])
 def test_three_handoff_kinds_freeze_provenance_without_granting_authority(kind):
     source, target = runs()

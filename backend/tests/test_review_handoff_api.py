@@ -31,6 +31,26 @@ def payload():
             "payload": {"request": "核对返修后检测"}, "evidenceRefs": []}
 
 
+def test_target_options_only_include_accessible_other_nodes():
+    target = repo.find_one("review_runs", "TARGET")
+    for name, updates in [("FOREIGN-PROJECT", {"projectId": "OTHER"}),
+                          ("FOREIGN-TENANT", {"tenantId": "OTHER"}),
+                          ("FOREIGN-DOC", {"inputDocumentVersionIds": ["SECRET"]}),
+                          ("FOREIGN-PACK", {"businessPackId": "OTHER"})]:
+        extra = deepcopy(target)
+        extra.update(id=name, **updates)
+        repo.state["review_runs"].append(extra)
+    response = client.get(f"/api/projects/{PROJECT}/review-handoffs/targets",
+                          params={"sourceRunId": "SOURCE"}, headers=HEADERS).json()
+    assert response["code"] == 0, response
+    assert [row["runId"] for row in response["data"]["items"]] == ["TARGET"]
+    assert response["data"]["items"][0]["stationId"] == "E"
+    assert response["data"]["total"] == 1
+    denied = client.get(f"/api/projects/{PROJECT}/review-handoffs/targets",
+                        params={"sourceRunId": "FOREIGN-DOC"}, headers=HEADERS).json()
+    assert denied["code"] != 0
+
+
 def test_save_read_deduplicate_and_preserve_stale_handoff():
     repo.state.pop("review_handoffs", None)  # Fresh seed has no persisted handoff collection.
     assert STATE_COLLECTIONS["review_handoffs"] == "review_handoffs"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReviewHandoffCreate from './ReviewHandoffCreate.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ElAlert,
@@ -20,7 +21,12 @@ import {
   handoffStatusText
 } from './handoffPresentation'
 
-const props = defineProps<{ projectId: string; runId: string }>()
+const props = defineProps<{
+  projectId: string
+  runId: string
+  projectEtag?: string
+  evidenceLinks?: EvidenceLink[]
+}>()
 const emit = defineEmits<{ evidence: [value: EvidenceLink] }>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
@@ -201,6 +207,12 @@ const valueText = (value: unknown) =>
     :close-on-click-modal="false"
   >
     <div class="handoff-panel" :aria-busy="busy">
+      <ReviewHandoffCreate
+        :project-id="projectId"
+        :run-id="runId"
+        :project-etag="projectEtag"
+        :evidence-links="evidenceLinks"
+      />
       <ElAlert
         title="人工核验仅确认这份交接的对象和证据，不代表节点或工程审查通过。"
         type="info"

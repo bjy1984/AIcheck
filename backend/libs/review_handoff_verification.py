@@ -34,8 +34,8 @@ def verification_history(record: dict[str, Any]) -> list[dict[str, Any]]:
 def append_verification(
     record: dict[str, Any], body: dict[str, Any], *, actor: str, created_at: str
 ) -> None:
-    # Serializes optimistic append within this repository process. Deployment still
-    # requires database-level coordination before enabling multiple API writers.
+    # Serializes in-process appends. API persistence also checks the loaded baseline
+    # under a database row lock; cross-process conflicts must reload before retrying.
     with _VERIFICATION_LOCK:
         _append_verification(record, body, actor=actor, created_at=created_at)
 

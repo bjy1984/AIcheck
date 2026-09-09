@@ -16,7 +16,7 @@ from libs.review_handoff_evidence import inspect_handoff_evidence
 from libs.review_handoff_sources import inspect_handoff_sources
 from libs.review_handoff_verification import append_verification, verification_view
 from libs.review_handoffs import create_handoff_draft, validate_handoff_draft
-from libs.review_workstations import digest
+from libs.review_workstations import digest, station_snapshot
 
 router = APIRouter()
 FIELDS = {"sourceRunId", "targetRunId", "kind", "subject", "payload", "evidenceRefs"}
@@ -138,6 +138,40 @@ def _record_view(request, project_id, record, visible_versions):
     return {**repo.clone(record), "validation": validation,
             "evidenceDocuments": _evidence_documents(draft, project_id),
             "verification": verification_view(record, validation)}, None
+
+
+@router.get("/projects/{project_id}/review-handoffs/targets")
+def handoff_targets(request: Request, project_id: str, sourceRunId: str = Query(...),
+                    page: int = Query(1, ge=1), pageSize: int = Query(20, ge=1, le=100)):
+    if error := _guard(request, project_id):
+        return error
+    visible = _visible_versions(request, project_id)
+    runs, error = _runs(request, project_id, sourceRunId, sourceRunId, visible)
+    if error:
+        return error
+    source = runs[0]
+    allowed_nodes = api.authorized_node_scope(request, project_id)
+    items = []
+    for candidate in repo.state.get("review_runs", []):
+        if (candidate.get("projectId") != project_id
+                or api.tenant_id_for_record(candidate) != api.request_tenant_id(request)
+                or candidate.get("businessPackId") != source.get("businessPackId")
+                or candidate.get("nodeId") == source.get("nodeId")
+                or (allowed_nodes is not None and candidate.get("nodeId") not in allowed_nodes)
+                or set(candidate.get("inputDocumentVersionIds") or []) - visible):
+            continue
+        try:
+            station = station_snapshot(candidate)
+        except (TypeError, ValueError):
+            continue
+        if not station:
+            continue
+        items.append({"runId": candidate.get("reviewRunId") or candidate.get("id"),
+                      "nodeId": candidate.get("nodeId"), "stationId": station["stationId"],
+                      "status": candidate.get("status"), "createdAt": candidate.get("createdAt")})
+    items.sort(key=lambda row: (str(row["createdAt"] or ""), str(row["runId"])), reverse=True)
+    start = (page - 1) * pageSize
+    return ok({"items": items[start:start + pageSize], "total": len(items), "page": page, "pageSize": pageSize}, request)
 
 
 @router.get("/projects/{project_id}/review-handoffs")

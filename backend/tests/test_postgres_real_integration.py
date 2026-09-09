@@ -209,3 +209,53 @@ def test_real_postgres_cold_tenant_login_loads_user_and_persists_audit(isolated_
             repo.reset()
         finally:
             reset_request_tenant_id(token)
+
+
+def test_real_postgres_handoff_verifications_preserve_conflicting_history(isolated_postgres_url: str) -> None:
+    from test_review_handoffs import SUBJECT, runs
+
+    from libs.review_handoff_verification import append_verification, verification_history
+    from libs.review_handoffs import create_handoff_draft
+
+    apply_migrations(isolated_postgres_url)
+    source, target = runs()
+    draft = create_handoff_draft(source, target, kind="collaboration", subject=SUBJECT,
+                                 payload={"request": "核对焊口"}, evidence_refs=[])
+    record = {"id": draft["id"], "tenantId": "TENANT", "draft": draft, "verifications": []}
+    repositories = [InMemoryRepository() for _ in range(3)]
+    token = set_request_tenant_id("TENANT")
+    try:
+        for repository in repositories:
+            repository.configure_sync_postgres(isolated_postgres_url)
+        seed, first, second = repositories
+        seed.upsert_state_records_to_sync_postgres({"review_handoffs": [record]})
+        first.load_from_sync_postgres({"review_handoffs"})
+        second.load_from_sync_postgres({"review_handoffs"})
+        first_record = first.find_one("review_handoffs", record["id"])
+        second_record = second.find_one("review_handoffs", record["id"])
+        body = {"snapshotHash": draft["snapshotHash"], "expectedPreviousId": None,
+                "subject": SUBJECT, "outcome": "verified", "objectMatchConfirmed": True,
+                "evidenceSupportConfirmed": True, "note": "已核对"}
+        append_verification(first_record, body, actor="FIRST", created_at="2026-09-09T00:00:00Z")
+        append_verification(second_record, {**body, "outcome": "rejected"}, actor="SECOND",
+                            created_at="2026-09-09T00:00:01Z")
+        first.upsert_state_records_to_sync_postgres({"review_handoffs": [first_record]})
+        with pytest.raises(RuntimeError, match="Concurrent persistence update detected"):
+            second.upsert_state_records_to_sync_postgres({"review_handoffs": [second_record]})
+        second.load_from_sync_postgres({"review_handoffs"})
+        fresh = second.find_one("review_handoffs", record["id"])
+        history = verification_history(fresh)
+        assert [row["reviewedByUserId"] for row in history] == ["FIRST"]
+        with pytest.raises(ValueError, match="revision_changed"):
+            append_verification(fresh, body, actor="SECOND", created_at="2026-09-09T00:00:02Z")
+        append_verification(fresh, {**body, "expectedPreviousId": history[-1]["id"], "outcome": "rejected"},
+                            actor="SECOND", created_at="2026-09-09T00:00:03Z")
+        second.upsert_state_records_to_sync_postgres({"review_handoffs": [fresh]})
+        first.load_from_sync_postgres({"review_handoffs"})
+        saved = first.find_one("review_handoffs", record["id"])
+        assert [row["reviewedByUserId"] for row in verification_history(saved)] == ["FIRST", "SECOND"]
+        assert saved["draft"] == draft
+    finally:
+        reset_request_tenant_id(token)
+        for repository in repositories:
+            close_repository(repository)

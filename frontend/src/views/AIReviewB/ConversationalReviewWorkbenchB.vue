@@ -2079,6 +2079,7 @@ onBeforeUnmount(() => {
 
         <ReviewWorkstationTools
           ref="workstationToolsRef"
+          :evidence-links="workspace?.evidenceLinks || []"
           :project-id="activeProjectId"
           :node-id="activeNodeId"
           :run-id="activeRunId"

@@ -50,6 +50,32 @@ export type HandoffDecision = {
   note: string
 }
 const base = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/review-handoffs`
+export type HandoffTarget = {
+  runId: string
+  nodeId: number
+  stationId: string
+  status?: string
+  createdAt?: string
+}
+export type HandoffCreate = {
+  sourceRunId: string
+  targetRunId: string
+  kind: 'collaboration'
+  subject: HandoffSubject & { eventId: string }
+  payload: { request: string }
+  evidenceRefs: EvidenceLink[]
+}
+export const listHandoffTargets = (projectId: string, sourceRunId: string, page: number) =>
+  request.get<{ items: HandoffTarget[]; total: number }>({
+    url: `${base(projectId)}/targets`,
+    params: { sourceRunId, page, pageSize: 20 }
+  })
+export const createHandoff = (projectId: string, data: HandoffCreate, key: string, etag?: string) =>
+  request.post<{ id: string }>({
+    url: base(projectId),
+    data,
+    headers: { 'Idempotency-Key': key, ...(etag ? { 'If-Match': etag } : {}) }
+  })
 export const listHandoffs = (projectId: string, runId: string, page: number) =>
   request.get<{ items: Handoff[]; total: number }>({
     url: base(projectId),
