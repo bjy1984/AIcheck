@@ -13246,3 +13246,25 @@ def test_rule_publish_replaces_only_same_project_and_business_pack() -> None:
     ))
     assert peers[0]["status"] == "已回滚"
     assert all(peer["status"] == "已发布" for peer in peers[1:])
+
+
+def test_lab_review_freezes_effective_rule_before_later_publication(monkeypatch) -> None:
+    from libs.review_orchestrator import execution as ex
+    from libs.review_rule_snapshot import effective_rule_snapshot
+
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    project = repo.require_project("P-2026-HDCP-001")
+    rule = {"id": "RULE-LAB-FROZEN", "projectId": project["id"], "nodeIds": [24],
+            "status": "已发布", "version": "lab-v1", "criteria": "original"}
+    repo.state["rule_versions"].append(rule)
+    ai_run = {"id": "AI-LAB-FROZEN", "projectId": project["id"], "nodeId": 24,
+              "businessPackId": project.get("businessPackId") or "engineering_inspection_v1"}
+    first = ex.create_review_run_from_ai_run(ai_run, mode="inline")
+    rule.update(criteria="new rule", version="lab-v2")
+    assert effective_rule_snapshot(first)["criteria"] == "original"
+    assert ex.create_review_run_from_ai_run(ai_run, mode="inline") is first
+    second = ex.create_review_run_from_ai_run({**ai_run, "id": "AI-LAB-NEW", "reviewRunId": None}, mode="inline")
+    assert effective_rule_snapshot(second)["criteria"] == "new rule"
+    assert second["inputHash"] != first["inputHash"]
+    assert first["ruleSetVersion"] == "lab-v1"
+    assert second["ruleSetVersion"] == "lab-v2"

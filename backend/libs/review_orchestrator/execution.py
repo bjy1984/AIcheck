@@ -128,6 +128,7 @@ from libs.review_orchestrator.rule_result_digest import (
 )
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
+from libs.review_rule_snapshot import effective_rule_snapshot, freeze_effective_rule
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.review_workstations import (
     apply_station_messages,
@@ -454,9 +455,17 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         station_pack = repo.clone(project.get("businessPackSnapshot") or load_business_pack(record["businessPackId"]))
         if record.get("atomicCheckToolBindingsSnapshot"):
             station_pack["atomicCheckToolBindings"] = record["atomicCheckToolBindingsSnapshot"]
+        effective_rule = (
+            current_published_rule_for_node(
+                int(record["nodeId"]), business_pack_id=record["businessPackId"],
+                project_id=record.get("projectId"),
+            ) or matching_rule_for_node(station_pack, int(record["nodeId"]))
+        )
+        record["effectiveRuleSnapshot"] = freeze_effective_rule(record, effective_rule)
+        record["ruleSetVersion"] = effective_rule.get("version") or record["ruleSetVersion"]
         record["workstationSnapshot"] = freeze_station(record["nodeId"], station_pack, runtime_tool_catalog())
         record["allowedTools"] = record["workstationSnapshot"]["allowedTools"]
-        record["inputHash"] = stable_hash_payload({"legacyInputHash": record["inputHash"], "workstation": record["workstationSnapshot"]["snapshotHash"]})
+        record["inputHash"] = stable_hash_payload({"legacyInputHash": record["inputHash"], "workstation": record["workstationSnapshot"]["snapshotHash"], "effectiveRule": record["effectiveRuleSnapshot"]["snapshotHash"]})
     repo.state["review_runs"].insert(0, record)
     bind_evidence_package_to_review_run(repo.state, ai_run_id=str(ai_run.get("id") or ""), review_run_id=review_run_id)
     frozen_clause_snapshot = freeze_review_run_clause_snapshot(
@@ -1671,7 +1680,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         if review_run.get("atomicCheckToolBindingsSnapshot"):
             pack["atomicCheckToolBindings"] = repo.clone(review_run["atomicCheckToolBindingsSnapshot"])
         rule = (
-            current_published_rule_for_node(
+            effective_rule_snapshot(review_run)
+            or current_published_rule_for_node(
                 int(review_run.get("nodeId") or 0),
                 business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
                 project_id=str(review_run.get("projectId") or ""),
@@ -1996,7 +2006,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     context["groundingInput"] = grounding_input
     grounding_block = grounding_prompt_block(grounding_input)
     rule_result = next(iter(context.get("ruleResults") or []), {})
-    current_rule = context.get("currentRule") or rule_result
+    current_rule = effective_rule_snapshot(review_run) or context.get("currentRule") or rule_result
     prompt_template = select_prompt_template(review_run)
     prompt = build_ai_review_prompt(
         pack,

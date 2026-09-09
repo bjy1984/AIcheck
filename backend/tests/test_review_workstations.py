@@ -105,6 +105,10 @@ def test_formal_prompt_uses_frozen_station_and_keeps_target_rule(monkeypatch):
     context = {'project': {'businessPackSnapshot': pack}, 'auditRuntime': {'mode': 'structured'},
                'groundingInput': {'groundingStatus': 'insufficient'}, 'currentRule': {'id': 'R24', 'criteria': '資格覆蓋'},
                'fields': [{'name': 'certificateNo', 'value': 'TEST'}]}
+    from libs.review_rule_snapshot import freeze_effective_rule
+
+    run['effectiveRuleSnapshot'] = freeze_effective_rule(run, context['currentRule'])
+    context['currentRule'] = {'id': 'R24', 'criteria': 'LATER_RULE_MUST_NOT_APPEAR'}
     result = ex.build_review_prompt_parts(run, context)
     assert '工位 A' in result['messages'][0]['content']
     assert 'LEGACY' not in str(result['messages'])
