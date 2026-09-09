@@ -121,3 +121,50 @@ def test_r35_real_binding_plan_four_states(scenario, expected):
         tool_runner=lambda name, args: dispatch_runtime_tool(state, name, args, context={"reviewRun": run}))
     assert output["result"] == expected, output
     assert len(output["atomicResults"]) == 2
+
+
+@pytest.mark.parametrize("bbox", [None, [], [0, 0, 1], [0, 0, 0, 10], [2, 2, 1, 1], [False, 0, 10, 10], [0, 0, float("inf"), 10], [-1, 0, 10, 10]])
+def test_normalized_rows_do_not_fabricate_original_quotes_or_valid_locations(bbox):
+    from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
+
+    state, run = fixture()
+    for table in state["ocr_parse_results"][0]["tables"]:
+        table["structureConfidence"] = 0.9
+    state["ocr_parse_results"][0]["tables"][0]["bbox"] = bbox
+    facts, _ = execute(state, run)
+    ref = facts["r35"]["manual"][0]["evidenceRefs"][0]
+    assert ref["quotedText"] is None and ref["bbox"] is None
+    output = validate_evidence_grounding({"facts": facts["judgment"]["claimedFacts"], "evidenceRefs": facts["judgment"]["evidenceRefs"]})
+    assert output["result"] == "evidence_insufficient"
+
+
+def test_r35_retains_recorded_table_text_without_reconstructing_it_from_fields():
+    state, run = fixture()
+    table = state["ocr_parse_results"][0]["tables"][0]
+    table["bbox"] = None
+    table["contentMarkdown"] = "|原文列|原文内容|\n|---|---|\n|编号|QMS-01|"
+    facts, _ = execute(state, run)
+    ref = facts["r35"]["manual"][0]["evidenceRefs"][0]
+    assert ref["quotedText"] == table["contentMarkdown"]
+    assert "conforming" not in ref["quotedText"]
+
+
+@pytest.mark.parametrize("page", [0, -1, True, "1"])
+def test_r35_malformed_page_does_not_become_valid_evidence(page):
+    state, run = fixture()
+    state["ocr_parse_results"][0]["tables"][0]["pageNo"] = page
+    facts, output = execute(state, run)
+    assert facts["r35"]["manual"][0]["evidenceRefs"][0]["pageNo"] is None
+    assert output["result"] == "evidence_insufficient"
+
+
+@pytest.mark.parametrize("key,value", [("tenantId", None), ("tenantId", ""), ("projectId", " "), ("nodeId", 24)])
+def test_r35_incomplete_task_identity_cannot_match_missing_source_identity(key, value):
+    state, run = fixture()
+    run[key] = value
+    if key == "tenantId":
+        for collection in ("documents", "versions", "ocr_parse_results"):
+            for row in state[collection]:
+                row["tenantId"] = value
+    with pytest.raises(ValueError, match="r35_review_identity"):
+        build_r35_business_facts(state, run)

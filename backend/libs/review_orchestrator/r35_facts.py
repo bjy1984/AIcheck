@@ -1,6 +1,7 @@
 """R35 typed OCR tables from frozen inputs; never infer implementation from file presence."""
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from typing import Any
 
@@ -16,7 +17,22 @@ R35_TABLES = {
 }
 
 
+
+def _table_location(table: dict[str, Any]) -> dict[str, Any]:
+    bbox = table.get("bbox")
+    valid_bbox = (isinstance(bbox, list) and len(bbox) == 4
+                  and all(type(value) in (int, float) and math.isfinite(value) for value in bbox)
+                  and bbox[0] >= 0 and bbox[1] >= 0 and bbox[2] > bbox[0] and bbox[3] > bbox[1])
+    page = table.get("pageNo")
+    text = table.get("contentMarkdown")
+    return {"pageNo": page if type(page) is int and page > 0 else None,
+            "bbox": deepcopy(bbox) if valid_bbox else None,
+            "quotedText": text if isinstance(text, str) and text.strip() else None}
+
 def build_r35_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
+    if (any(not isinstance(run.get(key), str) or not run[key].strip() for key in ("projectId", "tenantId"))
+            or run.get("nodeId") != 35):
+        raise ValueError("r35_review_identity_incomplete_or_wrong_node")
     groups: dict[str, list] = {value: [] for value in R35_TABLES.values()}
     versions = {row["id"]: row for row in state.get("versions", []) if row.get("tenantId") == run.get("tenantId")}
     documents = {row["id"] for row in state.get("documents", [])
@@ -31,9 +47,8 @@ def build_r35_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
             for index, row in enumerate(table.get("normalizedRows") or []):
                 if not isinstance(row, dict):
                     continue
-                ref = {"documentVersionId": version_id, "pageNo": table.get("pageNo"),
-                       "tableId": table.get("tableId") or table.get("id"), "rowIndex": index,
-                       "bbox": deepcopy(table.get("bbox")), "quotedText": str(row)}
+                ref = {"documentVersionId": version_id, **_table_location(table),
+                       "tableId": table.get("tableId") or table.get("id"), "rowIndex": index}
                 ref["id"] = "R35-REF-" + digest(ref)[:24]
                 ref["evidenceRefId"] = ref["id"]
                 ref["confidence"] = row.get("confidence", table.get("structureConfidence"))
