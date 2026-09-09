@@ -24,7 +24,7 @@ def evaluate_ndt_nonconformance(arguments: dict[str, Any]) -> dict[str, Any]:
         status = "failed" if "failed" in statuses else "evidence_insufficient" if "evidence_insufficient" in statuses else "not_applicable" if statuses == {"not_applicable"} else "passed"
         output = result("evaluate_ndt_nonconformance", status, facts={"nonconformanceChecks": rows},
                         checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-                        rule_version="r37-nonconformance-witness-chain-v1")
+                        rule_version="r37-nonconformance-witness-chain-v2")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
@@ -54,8 +54,11 @@ def evaluate_ndt_nonconformance(arguments: dict[str, Any]) -> dict[str, Any]:
 
     inspect(arguments.get("procedure"), "r37_procedure")
     inventory = arguments.get("caseInventory")
-    if not scoped(inventory) or inventory.get("complete") is not True or not isinstance(inventory.get("cases"), list):
+    if not scoped(inventory) or inventory.get("complete") is not True or not isinstance(inventory.get("cases"), list) or not isinstance(inventory.get("inventoryId"), str) or not inventory["inventoryId"].strip():
         add("r37_case_inventory_incomplete", "evidence_insufficient", inventory)
+        return finish()
+    if type(inventory.get("caseCount")) is not int or inventory["caseCount"] != len(inventory["cases"]):
+        add("r37_case_inventory_count_mismatch", "evidence_insufficient", inventory)
         return finish()
     add("r37_case_inventory", "passed", inventory)
     commissions = arguments.get("commissions")
@@ -71,10 +74,10 @@ def evaluate_ndt_nonconformance(arguments: dict[str, Any]) -> dict[str, Any]:
     seen = set()
     for index, case in enumerate(inventory["cases"]):
         code = f"r37_case_{index + 1}"
-        if not scoped(case) or any(not isinstance(case.get(key), str) or not case[key].strip() for key in ("caseId", "objectId", "commissionId")) or type(case.get("repairRound")) is not int or case["repairRound"] < 0:
+        if not scoped(case) or case.get("inventoryId") != inventory["inventoryId"] or any(not isinstance(case.get(key), str) or not case[key].strip() for key in ("caseId", "objectId", "commissionId")) or type(case.get("repairRound")) is not int or case["repairRound"] < 0:
             add(code + "_identity_missing", "evidence_insufficient", case)
             continue
-        identity = tuple(case[key] for key in ("caseId", "objectId", "commissionId", "repairRound"))
+        identity = tuple(case[key] for key in ("inventoryId", "caseId", "objectId", "commissionId", "repairRound"))
         if identity in seen:
             add(code + "_duplicate", "evidence_insufficient", case)
             continue
@@ -86,7 +89,7 @@ def evaluate_ndt_nonconformance(arguments: dict[str, Any]) -> dict[str, Any]:
         add(code + "_identified", "passed", case)
         for key in ("notices", "feedback"):
             records = arguments.get(key)
-            matches = [row for row in records if isinstance(row, dict) and all(row.get(field) == case[field] and type(row.get(field)) is type(case[field]) for field in ("caseId", "objectId", "commissionId", "repairRound"))] if isinstance(records, list) else []
+            matches = [row for row in records if isinstance(row, dict) and all(row.get(field) == case[field] and type(row.get(field)) is type(case[field]) for field in ("inventoryId", "caseId", "objectId", "commissionId", "repairRound"))] if isinstance(records, list) else []
             if len(matches) != 1:
                 add(code + "_" + key + "_missing_or_ambiguous", "evidence_insufficient", case)
             else:
@@ -96,6 +99,6 @@ def evaluate_ndt_nonconformance(arguments: dict[str, Any]) -> dict[str, Any]:
         if records is not None and not isinstance(records, list):
             add("r37_" + key + "_invalid", "evidence_insufficient")
         for record in records if isinstance(records, list) else []:
-            if not scoped(record) or not any(all(record.get(field) == value and type(record.get(field)) is type(value) for field, value in zip(("caseId", "objectId", "commissionId", "repairRound"), identity)) for identity in seen):
+            if not scoped(record) or not any(all(record.get(field) == value and type(record.get(field)) is type(value) for field, value in zip(("inventoryId", "caseId", "objectId", "commissionId", "repairRound"), identity)) for identity in seen):
                 add("r37_" + key + "_orphan_or_out_of_scope", "evidence_insufficient", record)
     return finish()

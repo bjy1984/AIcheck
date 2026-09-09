@@ -9,9 +9,9 @@ def arguments():
     def sourced(**values):
         return {"projectId": "P1", "organizationId": "ORG1", "status": "conforming",
                 "evidenceRefs": [{"documentVersionId": "V1", "pageNo": 3}], **values}
-    case = sourced(caseId="N1", objectId="W1", commissionId="C1", repairRound=1)
+    case = sourced(inventoryId="INV1", caseId="N1", objectId="W1", commissionId="C1", repairRound=1)
     return {"projectId": "P1", "organizationId": "ORG1", "applicability": sourced(required=True),
-            "procedure": sourced(), "caseInventory": sourced(complete=True, cases=[case]),
+            "procedure": sourced(), "caseInventory": sourced(inventoryId="INV1", complete=True, caseCount=1, cases=[case]),
             "commissions": [sourced(commissionId="C1", objectIds=["W1"])],
             "notices": [deepcopy(case)], "feedback": [deepcopy(case)]}
 
@@ -25,7 +25,7 @@ def test_complete_sourced_witness_chain_passes_without_mutating_inputs():
     before = deepcopy(body)
     output = run(body)
     assert output["result"] == "passed"
-    assert output["ruleVersion"] == "r37-nonconformance-witness-chain-v1"
+    assert output["ruleVersion"] == "r37-nonconformance-witness-chain-v2"
     assert output["evidenceRefs"]
     assert body == before
 
@@ -71,6 +71,7 @@ def test_incomplete_or_unmatched_witness_cannot_pass(case):
 def test_empty_case_inventory_requires_explicit_complete_evidence():
     body = arguments()
     body["caseInventory"]["cases"] = []
+    body["caseInventory"]["caseCount"] = 0
     body["notices"] = body["feedback"] = []
     assert run(body)["result"] == "passed"  # Procedure and commission still checked.
     body["caseInventory"].pop("complete")
