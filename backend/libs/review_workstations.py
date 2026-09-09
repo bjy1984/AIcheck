@@ -150,6 +150,8 @@ def initialize_run_workstation(record, project, published_rule, catalog, hash_pa
     effective_rule = published_rule or matching_rule_for_node(station_pack, int(record["nodeId"]))
     record["documentScopeSnapshot"] = freeze_document_scope(record, state)
     record["inputDocumentVersionIds"] = deepcopy(record["documentScopeSnapshot"]["documentVersionIds"])
+    if "documentPageRanges" in record["documentScopeSnapshot"]:
+        record["inputDocumentPageRanges"] = deepcopy(record["documentScopeSnapshot"]["documentPageRanges"])
     record["effectiveRuleSnapshot"] = freeze_effective_rule(record, effective_rule)
     record["ruleSetVersion"] = effective_rule.get("version") or record["ruleSetVersion"]
     record["workstationSnapshot"] = freeze_station(record["nodeId"], station_pack, catalog)

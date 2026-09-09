@@ -135,6 +135,7 @@ from libs.review_orchestrator.rule_result_digest import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.task_queues import review_task_queues
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
+from libs.review_page_scope import normalize_page_ranges
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
 from libs.review_tools.condition_execution import (
@@ -318,10 +319,19 @@ def current_published_rule_for_node(node_id: int, *, business_pack_id: str | Non
 
 def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "temporal") -> dict[str, Any]:
     ensure_review_state()
+    page_ranges = None
+    if "inputDocumentPageRanges" in ai_run:
+        page_ranges = normalize_page_ranges(ai_run["inputDocumentPageRanges"], ai_run.get("inputDocumentVersionIds") or [])
+        if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() not in {"1", "true", "yes"}:
+            raise ValueError("review_page_scope_requires_workstation")
     existing_id = ai_run.get("reviewRunId")
     if existing_id:
         existing = repo.find_one("review_runs", str(existing_id), id_field="reviewRunId")
         if existing:
+            if (page_ranges or {}) != (existing.get("inputDocumentPageRanges") or {}):
+                raise ValueError("review_page_scope_existing_run_mismatch")
+            if page_ranges:
+                ensure_document_sources(existing, repo.state)
             return existing
 
     review_run_id = f"RRUN-{uuid4().hex[:10].upper()}"
@@ -367,6 +377,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
         "inputDocumentVersionIds": ai_run.get("inputDocumentVersionIds") or [],
+        **({"inputDocumentPageRanges": page_ranges} if page_ranges is not None else {}),
         "schemaVersion": ai_run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
         "runMode": ai_run.get("runType") or "production",
         "status": "queued",
@@ -3922,6 +3933,8 @@ def clone_review_run_for_replay(
     run_mode: str,
     reason: str | None = None,
 ) -> dict[str, Any]:
+    if parent.get("inputDocumentPageRanges"):
+        ensure_document_sources(parent, repo.state)
     ensure_review_state()
     now = server_time()
     child_id = f"RRUN-REPLAY-{uuid4().hex[:8].upper()}"
