@@ -164,6 +164,8 @@ ATOMIC_BINDING_OVERRIDES = {'AC-R01-03': {'requiredFacts': ['certificateFacts.ce
 
 
 ATOMIC_BINDING_OVERRIDES.update({
+    "AC-R40-01": {"parameters": {"profile": "ndt_record_report", "clauseSource": "frozen_standard_clause_package",
+        "failurePolicy": "business_rule_result", "pendingCapabilities": ["technical_parameters", "design_requirements", "report_results"]}},
     "AC-R39-01": {
         "requiredFacts": ["r39.procedureReference", "r39.documentContent", "r39.approvalChain", "r39.firstUseValidation", "r39.ptEmulsifierApplication", "r39.inventoryConsistency"],
         "tools": ["get_document_ocr_result", "extract_document_fields", "extract_table_records",

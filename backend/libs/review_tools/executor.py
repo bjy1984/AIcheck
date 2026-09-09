@@ -212,6 +212,9 @@ def build_tool_arguments(
     if tool_name == "evaluate_r11_project_parameters":
         for key, value in nested_dict(nested_dict(facts, "r11"), "projectParameters").items():
             arguments.setdefault(key, deepcopy(value))
+    if tool_name == "evaluate_ndt_process" and arguments.get("profile") == "ndt_record_report":
+        for key, value in nested_dict(nested_dict(facts, "r40"), "recordReportCorrespondence").items():
+            arguments.setdefault(key, deepcopy(value))
     r39_inputs = {"evaluate_r39_procedure_reference": "procedureReference", "evaluate_r39_first_use_validation": "firstUseValidation", "evaluate_r39_approval_chain": "approvalChain", "evaluate_r39_document_content": "documentContent"}
     r39_inputs["evaluate_r39_pt_emulsifier_application"] = "ptEmulsifierApplication"
     r39_inputs["evaluate_r39_inventory_consistency"] = "inventoryConsistency"

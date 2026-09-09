@@ -694,6 +694,12 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             }
             if name == "check_installation_license_scope"
             else {
+                "profile": "string?", "projectId": "string?", "inventory": "object?",
+                "records": ["object?"], "reports": ["object?"],
+                "facts": "object?", "requiredFields": ["string?"], "ruleChecks": ["object?"],
+            }
+            if name == "evaluate_ndt_process"
+            else {
                 "facts": "object?",
                 "requiredFields": ["string?"],
                 "ruleChecks": ["object?"],
@@ -710,6 +716,9 @@ BUSINESS_TOOL_NAMES = {item["name"] for item in BUSINESS_TOOL_DESCRIPTORS}
 
 
 def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if tool_name == "evaluate_ndt_process" and arguments.get("profile") == "ndt_record_report":
+        from libs.review_tools.r40_records import evaluate_r40_records
+        return evaluate_r40_records(arguments)
     dedicated_r24_r34_tools = {
         "evaluate_welding_consumable",
         "evaluate_welding_consumable_control",

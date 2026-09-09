@@ -2440,6 +2440,10 @@ atomicCheckToolBindings:
   - validate_evidence_grounding
   parameters:
     profile: ndt_record_report
+    pendingCapabilities:
+    - technical_parameters
+    - design_requirements
+    - report_results
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
