@@ -1,0 +1,155 @@
+[
+  {
+    "file": "test2/9.1金辉焊接工艺评定20.pdf",
+    "page": 9,
+    "sourceFragmentsArtifact": "2026-09-09-pqr-embedded-rt-probe.json",
+    "fields": [],
+    "diagnostics": [
+      {
+        "code": "SEAL_NOT_FOUND",
+        "level": "warning",
+        "message": "当前 Profile 要求印章，但未检测到印章候选。"
+      },
+      {
+        "code": "REQUIRED_FIELD_MISSING",
+        "level": "warning",
+        "message": "Profile 必抽字段仍有缺失。",
+        "missingFields": [
+          "report_no",
+          "project_name",
+          "detection_method",
+          "weld_no",
+          "detection_date",
+          "evaluation_level",
+          "conclusion",
+          "inspection_unit"
+        ]
+      },
+      {
+        "code": "REQUIRED_TABLE_MISSING",
+        "level": "warning",
+        "message": "Profile 必需表格仍有缺失。",
+        "missingTables": [
+          "weld_detection_result_table"
+        ]
+      }
+    ]
+  },
+  {
+    "file": "test2/9.1金辉焊接工艺评定20.pdf",
+    "page": 10,
+    "sourceFragmentsArtifact": "2026-09-09-pqr-embedded-rt-probe.json",
+    "fields": [
+      {
+        "fieldCode": "report_no",
+        "fieldName": "报告编号",
+        "fieldValue": "2023SHZH-022RTBG-01",
+        "pageNo": 10,
+        "bbox": [
+          0.14579056059494672,
+          0.6918328581405739,
+          0.5523613843155843,
+          0.712250711891761
+        ],
+        "coordinateSystem": "normalized",
+        "sourceCoordinateSystem": null,
+        "coordinateTransform": null,
+        "coordinateTransformStatus": null,
+        "qualityFlags": [],
+        "variantId": null,
+        "selectedVariantId": null,
+        "confidence": 1,
+        "extractionMethod": "profile_heuristic",
+        "sourceEngine": "apple_vision_local"
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "SEAL_NOT_FOUND",
+        "level": "warning",
+        "message": "当前 Profile 要求印章，但未检测到印章候选。"
+      },
+      {
+        "code": "REQUIRED_FIELD_MISSING",
+        "level": "warning",
+        "message": "Profile 必抽字段仍有缺失。",
+        "missingFields": [
+          "project_name",
+          "detection_method",
+          "weld_no",
+          "detection_date",
+          "evaluation_level",
+          "conclusion",
+          "inspection_unit"
+        ]
+      },
+      {
+        "code": "REQUIRED_TABLE_MISSING",
+        "level": "warning",
+        "message": "Profile 必需表格仍有缺失。",
+        "missingTables": [
+          "weld_detection_result_table"
+        ]
+      }
+    ]
+  },
+  {
+    "file": "test2/9.1金辉焊接工艺评定20.pdf",
+    "page": 11,
+    "sourceFragmentsArtifact": "2026-09-09-pqr-embedded-rt-probe.json",
+    "fields": [
+      {
+        "fieldCode": "report_date",
+        "fieldName": "报告日期",
+        "fieldValue": "2023年10月 23日",
+        "pageNo": 11,
+        "bbox": [
+          0.6365503126643469,
+          0.8779069768410521,
+          0.8562628247894518,
+          0.8924418600775523
+        ],
+        "coordinateSystem": "normalized",
+        "sourceCoordinateSystem": null,
+        "coordinateTransform": null,
+        "coordinateTransformStatus": null,
+        "qualityFlags": [],
+        "variantId": null,
+        "selectedVariantId": null,
+        "confidence": 0.5,
+        "extractionMethod": "profile_heuristic",
+        "sourceEngine": "apple_vision_local"
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "SEAL_NOT_FOUND",
+        "level": "warning",
+        "message": "当前 Profile 要求印章，但未检测到印章候选。"
+      },
+      {
+        "code": "REQUIRED_FIELD_MISSING",
+        "level": "warning",
+        "message": "Profile 必抽字段仍有缺失。",
+        "missingFields": [
+          "report_no",
+          "project_name",
+          "detection_method",
+          "weld_no",
+          "detection_date",
+          "evaluation_level",
+          "conclusion",
+          "inspection_unit"
+        ]
+      },
+      {
+        "code": "REQUIRED_TABLE_MISSING",
+        "level": "warning",
+        "message": "Profile 必需表格仍有缺失。",
+        "missingTables": [
+          "weld_detection_result_table"
+        ]
+      }
+    ]
+  }
+]

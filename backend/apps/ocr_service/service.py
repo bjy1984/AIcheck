@@ -53,6 +53,7 @@ from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
 from libs.ocr.ndt_procedure import extract_explicit_fields as extract_ndt_procedure_fields
 from libs.ocr.ndt_record_identity import extract_record_identity
+from libs.ocr.ndt_report_fields import extract_report_fields
 from libs.ocr.page_coverage import attach_render_coverage
 from libs.ocr.profiles import profile_for
 from libs.ocr.utils import parse_bool
@@ -4090,8 +4091,11 @@ def detect_engineering_drawing_list_profile(
 def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]) -> None:
     if profile.get("profileId") == "ndt_procedure_v1":
         extract_ndt_procedure_fields(result, add_field_if_missing)
+        add_profile_quality_diagnostics(result, profile)
+        return
     if profile.get("profileId") in {"ndt_rt_report_v1", "ndt_ut_report_v1"}:
         extract_record_identity(result, add_field_if_missing)
+        extract_report_fields(result, add_field_if_missing)
         add_profile_quality_diagnostics(result, profile)
         return
     if is_engineering_drawing_profile(result, profile):

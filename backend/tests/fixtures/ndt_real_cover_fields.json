@@ -1,0 +1,176 @@
+{
+  "file": "test2/9.1金辉焊接工艺评定20.pdf",
+  "page": 10,
+  "sourceEngine": "apple_vision_local",
+  "fragments": [
+    {
+      "text": "MA",
+      "pageNo": 10,
+      "bbox": [
+        0.6468172484167827,
+        0.12773029394960833,
+        0.7248459951561127,
+        0.1571699900559711
+      ],
+      "confidence": 0.5,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "201819133578",
+      "pageNo": 10,
+      "bbox": [
+        0.6026606347383994,
+        0.16301180221382672,
+        0.7607839429585651,
+        0.18444441253269794
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "有效期至2027年09月06日",
+      "pageNo": 10,
+      "bbox": [
+        0.6195098206373943,
+        0.1792448299306436,
+        0.7440306332160437,
+        0.19453456223786758
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "射线检测报告书",
+      "pageNo": 10,
+      "bbox": [
+        0.25197809585985403,
+        0.21331390866336652,
+        0.7460292572482768,
+        0.26840938021124594
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "工程名称：广东省金辉工业设备安装有限公司焊接工",
+      "pageNo": 10,
+      "bbox": [
+        0.14989733633735475,
+        0.36039886051217884,
+        0.7659137396380049,
+        0.38372092969294913
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "艺评定试件",
+      "pageNo": 10,
+      "bbox": [
+        0.30390143722927077,
+        0.39825581361608997,
+        0.4291581125910577,
+        0.417378917273203
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "李俊",
+      "pageNo": 10,
+      "bbox": [
+        0.8521560572683352,
+        0.3808139531247292,
+        0.9240246414083704,
+        0.42165242112028145
+      ],
+      "confidence": 0.3,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "检件名称：试件",
+      "pageNo": 10,
+      "bbox": [
+        0.14784394791587108,
+        0.4883720938310201,
+        0.3655030776282767,
+        0.5101744182329335
+      ],
+      "confidence": 0.5,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "委托单位：广东省金辉工业设备安装有限公司",
+      "pageNo": 10,
+      "bbox": [
+        0.14752972682015922,
+        0.5808763621586532,
+        0.6922535857494797,
+        0.6066231623268274
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "报告编号：2023SHZH-022RTBG-01",
+      "pageNo": 10,
+      "bbox": [
+        0.14579056059494672,
+        0.6918328581405739,
+        0.5523613843155843,
+        0.712250711891761
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "广州声华科技有限公司",
+      "pageNo": 10,
+      "bbox": [
+        0.2891828501072479,
+        0.7861368942419681,
+        0.6964279279700835,
+        0.8254362170241603
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "0 3352",
+      "pageNo": 10,
+      "bbox": [
+        0.5112521478745636,
+        0.8324221247923556,
+        0.5695646855607004,
+        0.8539044167430414
+      ],
+      "confidence": 0.3,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    },
+    {
+      "text": "二零二三年十月",
+      "pageNo": 10,
+      "bbox": [
+        0.3531827513133402,
+        0.8575498577067806,
+        0.6283367524340931,
+        0.8866279065649885
+      ],
+      "confidence": 1,
+      "sourceEngine": "apple_vision_local",
+      "coordinateSystem": "normalized"
+    }
+  ]
+}
