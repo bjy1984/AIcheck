@@ -102,3 +102,11 @@ cd backend
 - 首輪：3061 passed / 2 failed / 66 skipped。R69 測試仍使用未指定要求的舊式掛載，已改為明確 requirementId；另因 routes.py 及 execution.py 超過巨石基線，抽出規則選擇、差異／預覽、工位初始化、輸出保存及工作佇列設定，沒有調高基線。
 - 修正後全量：3063 passed / 66 skipped / 6 warnings，243.84 秒，退出碼 0。完整紀錄：[backend regression](verification/2026-09-08-backend-regression.txt)。
 - 本地選擇性跳過不計入 PostgreSQL／MinIO／Temporal 實機驗收。本批無付費模型調用或生產操作。
+
+### 工程草稿 API
+
+- Lab 開關啟用時提供 `/projects/{projectId}/rules/versions` 的 GET／POST、`/{versionId}` 的 PATCH 及 `/{versionId}/fork` 的 POST（亦支援 `/api` 前綴）。
+- 限具有效工程成員身份與節點授權的監檢人員；寫入使用 review:save 動作權限。工程 ID 與業務包由伺服器確定，不接受客戶端改身份／狀態／執行欄位。
+- 修改強制 If-Match，複製及編輯同時驗證原節點與正規化後的節點，包含 sourceSequence 帶入的節點，避免繞過範圍。
+- 列表包含授權節點的平台範本與本工程版本；無權讀取其他工程的版本。只新增草稿操作，正式發布入口、結構化條件編輯、前端介面及試跑仍待完成。
+- 新 API 與巨石基線相關 7 項測試通過，Ruff 無新增告警。本批沒有重跑完整後端套件；上一批 3063 passed 不作為本批新增路由的全量驗收證明。

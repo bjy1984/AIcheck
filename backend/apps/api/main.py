@@ -29,6 +29,7 @@ from apps.api.mineru_ocr_routes import router as mineru_ocr_router
 from apps.api.org_delegation_routes import org_delegation_router
 from apps.api.project_analysis_routes import project_analysis_router
 from apps.api.project_registration_routes import project_registration_router
+from apps.api.project_rule_routes import project_rule_router
 from apps.api.report_template_routes import report_template_router
 from apps.api.routes import (
     binding_node_ids,
@@ -1464,3 +1465,6 @@ app.include_router(std_samr_router)
 app.include_router(std_samr_router, prefix="/api")
 app.include_router(mineru_ocr_router)
 app.include_router(mineru_ocr_router, prefix="/api")
+
+app.include_router(project_rule_router)
+app.include_router(project_rule_router, prefix="/api")

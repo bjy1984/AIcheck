@@ -13350,3 +13350,39 @@ def test_rule_publish_fingerprint_ignores_other_projects():
     assert rule_operation_base_fingerprint(base, None) == before
     base["revision"] += 1
     assert rule_operation_base_fingerprint(base, None) != before
+
+
+def test_lab_project_rule_draft_edit_requires_scope_and_revision(monkeypatch):
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    path = "/projects/P-2026-HDCP-001/rules/versions"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    for member in repo.state["project_members"]:
+        if member.get("userId") == "USER-INSPECTION-001":
+            member["nodeScope"] = [24]
+    body = {"inspectionItem": "焊工资格核对", "standardText": "核对资格覆盖范围", "nodeIds": [24]}
+    rule = assert_ok(client.post(path, headers=headers, json=body))["rule"]
+    assert rule["projectId"] == "P-2026-HDCP-001" and rule["status"] == "草稿"
+    assert rule["id"] in {row["id"] for row in assert_ok(client.get(path, headers=headers))["items"]}
+    assert_error(client.patch(f"{path}/{rule['id']}", headers=headers, json={"standardText": "新版"}), "VALIDATION_ERROR")
+    updated = assert_ok(client.patch(f"{path}/{rule['id']}", headers={**headers, "If-Match": rule["etag"]},
+                                    json={"standardText": "新版"}))["rule"]
+    assert updated["standardText"] == "新版"
+    assert_error(client.patch(f"{path}/{rule['id']}", headers={**headers, "If-Match": rule["etag"]},
+                              json={"standardText": "并发覆盖"}), "ETAG_CONFLICT")
+    assert_error(client.patch(f"{path}/{rule['id']}", headers={**headers, "If-Match": updated["etag"]},
+                              json={"projectId": "OTHER"}), "VALIDATION_ERROR")
+    assert_error(client.post(path, headers=headers, json={**body, "nodeIds": [1]}), "FORBIDDEN")
+    assert_error(client.get(path, headers={"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"}), "FORBIDDEN")
+    assert_error(client.patch(f"{path}/{rule['id']}", headers={**headers, "If-Match": updated["etag"]},
+                              json={"sourceSequence": 1}), "FORBIDDEN")
+    assert_error(client.post(f"{path}/{rule['id']}/fork", headers=headers,
+                             json={"sourceSequence": 1}), "FORBIDDEN")
+    assert_error(client.get(path, headers={"X-Role": "inspection", "X-User-Id": "UNKNOWN-MEMBER"}), "FORBIDDEN")
+    fork = assert_ok(client.post(f"{path}/{rule['id']}/fork", headers=headers, json={}))["rule"]
+    assert fork["projectId"] == rule["projectId"] and fork["id"] != rule["id"]
+
+
+def test_lab_project_rule_api_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("AICHECK_WORKSTATIONS_ENABLED", raising=False)
+    assert_error(client.get("/projects/P-2026-HDCP-001/rules/versions",
+                            headers={"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}), "NOT_FOUND")
