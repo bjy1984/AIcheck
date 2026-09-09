@@ -398,3 +398,126 @@ def test_event_bound_handoffs_deduplicate_only_within_same_event():
     missing["subject"].pop("eventId")
     assert client.post(url, headers=HEADERS, json=missing).json()["code"] != 0
     assert len(repo.state["review_handoffs"]) == 2
+
+
+def verification_fixture():
+    from libs.review_document_scope import freeze_document_scope
+
+    for name in ("SOURCE", "TARGET"):
+        run = repo.find_one("review_runs", name)
+        run["documentScopeSnapshot"] = freeze_document_scope(run, repo.state)
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    record = client.post(url, headers=HEADERS, json=payload()).json()["data"]
+    body = {"snapshotHash": record["draft"]["snapshotHash"], "expectedPreviousId": None,
+            "subject": record["draft"]["subject"], "outcome": "verified",
+            "objectMatchConfirmed": True, "evidenceSupportConfirmed": True,
+            "note": "synthetic test attestation"}
+    return url, record, body
+
+
+def test_human_verification_history_revision_and_source_staleness():
+    url, original, body = verification_fixture()
+    endpoint = f"{url}/{original['id']}/verifications"
+    headers = {**HEADERS, "Idempotency-Key": "verification-request"}
+    first = client.post(endpoint, headers=headers, json=body).json()
+    assert first["code"] == 0, first
+    verified = first["data"]
+    history = verified["verifications"]
+    assert history[0]["reviewedByUserId"] == HEADERS["X-User-Id"]
+    assert verified["draft"] == original["draft"]
+    assert client.post(endpoint, headers=headers, json=body).json()["data"] == verified
+    view = client.get(f"{url}/{original['id']}", headers=HEADERS).json()["data"]
+    assert view["verification"]["status"] == "verified" and not view["verification"]["authoritative"]
+    assert client.post(endpoint, headers=HEADERS, json=body).json()["code"] != 0
+    rejected_body = {**body, "expectedPreviousId": history[-1]["id"], "outcome": "rejected",
+                     "objectMatchConfirmed": False, "note": "synthetic correction"}
+    rejected = client.post(endpoint, headers=HEADERS, json=rejected_body).json()
+    assert rejected["code"] == 0, rejected
+    assert len(rejected["data"]["verifications"]) == 2
+    assert rejected["data"]["verifications"][0] == history[0]
+    # A later decision invalidates replay of the earlier confirmation response.
+    assert client.post(endpoint, headers=headers, json=body).json()["code"] != 0
+    assert client.get(f"{url}/{original['id']}", headers=HEADERS).json()["data"]["verification"]["status"] == "rejected"
+    repo.find_one("review_runs", "SOURCE")["inputHash"] = "changed"
+    stale = client.get(f"{url}/{original['id']}", headers=HEADERS).json()["data"]
+    assert stale["verification"]["status"] == "stale"
+    assert stale["verifications"] == rejected["data"]["verifications"]
+
+
+@pytest.mark.parametrize("change", ["subject", "snapshot", "actor", "confirmation", "note", "role", "scope", "unfrozen"])
+def test_invalid_or_unauthorized_verification_never_appends(change):
+    url, record, body = verification_fixture()
+    headers = HEADERS
+    if change == "subject":
+        body["subject"] = {**body["subject"], "eventId": "OTHER"}
+    elif change == "snapshot":
+        body["snapshotHash"] = "OTHER"
+    elif change == "actor":
+        body["reviewedByUserId"] = "forged"
+    elif change == "confirmation":
+        body["evidenceSupportConfirmed"] = False
+    elif change == "note":
+        body["note"] = " "
+    elif change == "role":
+        headers = {"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"}
+    elif change == "scope":
+        member = next(row for row in repo.state["project_members"] if row.get("projectId") == PROJECT
+                      and row.get("userId") == HEADERS["X-User-Id"])
+        member["nodeScope"] = [24]
+    elif change == "unfrozen":
+        repo.find_one("review_runs", "SOURCE").pop("documentScopeSnapshot")
+    response = client.post(f"{url}/{record['id']}/verifications", headers=headers, json=body).json()
+    assert response["code"] != 0, response
+    assert "verifications" not in repo.find_one("review_handoffs", record["id"])
+
+
+def test_tampered_verification_history_cannot_be_extended():
+    url, record, body = verification_fixture()
+    endpoint = f"{url}/{record['id']}/verifications"
+    saved = client.post(endpoint, headers=HEADERS, json=body).json()["data"]
+    stored = repo.find_one("review_handoffs", record["id"])
+    stored["verifications"][0]["note"] = "modified"
+    view = client.get(f"{url}/{record['id']}", headers=HEADERS).json()["data"]
+    assert view["verification"]["status"] == "invalid_history"
+    response = client.post(endpoint, headers=HEADERS,
+                           json={**body, "expectedPreviousId": saved["verifications"][0]["id"]}).json()
+    assert response["code"] != 0
+    assert len(stored["verifications"]) == 1
+
+
+def test_verification_history_survives_sqlite_reload(tmp_path, monkeypatch):
+    from libs.db.repository import InMemoryRepository
+
+    url, record, body = verification_fixture()
+    monkeypatch.setenv("AICHECK_SQLITE_DISABLE", "false")
+    path = tmp_path / "verified-handoff.sqlite3"
+    try:
+        repo.configure_sqlite(path)
+        repo.flush_to_sqlite()
+        response = client.post(f"{url}/{record['id']}/verifications", headers=HEADERS, json=body).json()
+        assert response["code"] == 0, response
+        restored = InMemoryRepository(seed=False)
+        restored.configure_sqlite(path)
+        restored.load_from_sqlite(selected_state_keys={"review_handoffs"}, tenant_id="TENANT-DEFAULT")
+        assert restored.find_one("review_handoffs", record["id"]) == response["data"]
+    finally:
+        repo.sqlite_enabled = False
+        repo.sqlite_path = None
+
+
+def test_concurrent_same_revision_cannot_append_two_decisions():
+    from concurrent.futures import ThreadPoolExecutor
+
+    from libs.review_handoff_verification import append_verification
+
+    _, record, body = verification_fixture()
+    def append(actor):
+        try:
+            append_verification(record, body, actor=actor, created_at="2026-09-09T00:00:00Z")
+            return "saved"
+        except ValueError:
+            return "conflict"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(append, ("synthetic-a", "synthetic-b")))
+    assert sorted(outcomes) == ["conflict", "saved"]
+    assert len(record["verifications"]) == 1

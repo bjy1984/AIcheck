@@ -14,7 +14,9 @@ from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import repo
 from libs.review_handoff_evidence import inspect_handoff_evidence
 from libs.review_handoff_sources import inspect_handoff_sources
+from libs.review_handoff_verification import append_verification, verification_view
 from libs.review_handoffs import create_handoff_draft, validate_handoff_draft
+from libs.review_workstations import digest
 
 router = APIRouter()
 FIELDS = {"sourceRunId", "targetRunId", "kind", "subject", "payload", "evidenceRefs"}
@@ -108,16 +110,18 @@ def _record_view(request, project_id, record, visible_versions):
         validate_handoff_draft(draft, *runs, subject=draft["subject"])
         source_check = _source_check(runs)
         if source_check["requiresRevalidation"]:
-            return {**repo.clone(record), "validation": {
-                "status": "stale_or_invalid", "authoritative": False,
-                "reason": "handoff_endpoint_sources_changed_recreate_run",
-                "inputSourceCheck": source_check}}, None
+            validation = {"status": "stale_or_invalid", "authoritative": False,
+                          "reason": "handoff_endpoint_sources_changed_recreate_run",
+                          "inputSourceCheck": source_check}
+            return {**repo.clone(record), "validation": validation,
+                    "verification": verification_view(record, validation)}, None
         validation = {"status": "current_draft", "authoritative": False,
                       "inputSourceCheck": source_check,
                       "evidenceLocationCheck": inspect_handoff_evidence(draft, repo.state.get("ocr_parse_results", []))}
     except (TypeError, ValueError) as exc:
         validation = {"status": "stale_or_invalid", "authoritative": False, "reason": str(exc)}
-    return {**repo.clone(record), "validation": validation}, None
+    return {**repo.clone(record), "validation": validation,
+            "verification": verification_view(record, validation)}, None
 
 
 @router.get("/projects/{project_id}/review-handoffs")
@@ -147,6 +151,35 @@ def list_handoffs(request: Request, project_id: str, page: int = Query(default=1
     items.sort(key=lambda row: (row.get("createdAt") or "", row["id"]), reverse=True)
     start = (page - 1) * page_size
     return ok({"items": items[start:start + page_size], "total": len(items), "page": page, "pageSize": page_size}, request)
+
+
+@router.post("/projects/{project_id}/review-handoffs/{handoff_id}/verifications")
+def verify_handoff(request: Request, project_id: str, handoff_id: str,
+                   body: dict[str, Any] = Body(default_factory=dict)):
+    if error := _guard(request, project_id):
+        return error
+    repo.ensure_deferred_loaded("review_handoffs")
+    record = repo.find_one("review_handoffs", handoff_id)
+    if not record or record.get("projectId") != project_id or api.tenant_id_for_record(record) != api.request_tenant_id(request):
+        return fail(errors.NOT_FOUND, request)
+    view, error = _record_view(request, project_id, record, _visible_versions(request, project_id))
+    if error is not None:
+        return error
+    if error := api.mutation_guard(request, project_id, node_ids=[record["sourceNodeId"], record["targetNodeId"]]):
+        return error
+    if "review:save" not in repo.role_actions("inspection"):
+        return fail(errors.FORBIDDEN, request)
+    validation = view["validation"]
+    if validation["status"] != "current_draft" or validation["inputSourceCheck"]["status"] != "current":
+        return fail(errors.VALIDATION_ERROR, request, message="handoff_current_frozen_sources_required")
+    if (body.get("outcome") == "verified" and record["draft"]["kind"] != "collaboration"
+            and validation["evidenceLocationCheck"]["status"] != "locations_found"):
+        return fail(errors.VALIDATION_ERROR, request, message="handoff_evidence_locations_required")
+    try:
+        append_verification(record, body, actor=api.request_user_id(request), created_at=server_time())
+    except (TypeError, ValueError) as exc:
+        return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+    return ok(repo.clone(record), request)
 
 
 @router.get("/projects/{project_id}/review-handoffs/{handoff_id}")
@@ -186,7 +219,7 @@ def get_pipeline_conflicts(request: Request, project_id: str, run_id: str):
 
 def handoff_replay_error(request: Request, cached: dict[str, Any]):
     """Recheck live and frozen access before the middleware returns a cached draft."""
-    match = re.fullmatch(r"(?:/api)?/projects/([^/]+)/review-handoffs", request.url.path)
+    match = re.fullmatch(r"(?:/api)?/projects/([^/]+)/review-handoffs(?:/([^/]+)/verifications)?", request.url.path)
     if request.method != "POST" or not match:
         return None
     project_id = match.group(1)
@@ -198,6 +231,16 @@ def handoff_replay_error(request: Request, cached: dict[str, Any]):
     view, error = _record_view(request, project_id, record, _visible_versions(request, project_id))
     if error is not None:
         return error
+    if match.group(2):
+        current = repo.find_one("review_handoffs", match.group(2))
+        if current is None or digest(current) != digest(record):
+            return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
+        if error := api.mutation_guard(request, project_id, node_ids=[current["sourceNodeId"], current["targetNodeId"]]):
+            return error
+        if "review:save" not in repo.role_actions("inspection"):
+            return fail(errors.FORBIDDEN, request)
+        if view["validation"].get("inputSourceCheck", {}).get("status") != "current":
+            return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
     if view["validation"]["status"] != "current_draft":
         return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
     return None
