@@ -1,3 +1,4 @@
+import { workstationNavigation } from './workstationNavigation'
 import type { Handoff } from '@/api/aicheck/reviewHandoffs'
 
 export function handoffBelongsTo(record: Handoff, projectId: string, runId: string): boolean {
@@ -47,4 +48,23 @@ export function handoffEvidenceLink(record: Handoff, versionId: string) {
     fileName: document.fileName,
     previewUrl: `/api/projects/${project}/documents/${encodeURIComponent(document.documentId)}/original?versionId=${encodeURIComponent(versionId)}&disposition=inline`
   }
+}
+
+export function handoffStationText(stationId: string): string {
+  const station = workstationNavigation.find((item) => item.id === stationId)
+  return station ? `${station.id} · ${station.name}` : `${stationId || '未提供'} 工位（待核对）`
+}
+
+export function handoffRunStatusText(status?: string): string {
+  const labels: Record<string, string> = {
+    queued: '排队中',
+    running: '审查中',
+    completed: '已完成系统审查',
+    waiting_human_review: '待人工复核',
+    waiting_human_input: '待补充信息',
+    accepted_by_human: '已人工确认',
+    failed: '执行失败',
+    cancelled: '已取消'
+  }
+  return labels[status || ''] || '任务状态待核对'
 }

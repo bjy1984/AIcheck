@@ -16,6 +16,7 @@ import {
 import { getHandoff, listHandoffs, verifyHandoff, type Handoff } from '@/api/aicheck/reviewHandoffs'
 import type { EvidenceLink } from '@/types/aicheck'
 import {
+  handoffStationText,
   handoffBelongsTo,
   handoffEvidenceLink,
   handoffCanConfirm,
@@ -243,7 +244,8 @@ const valueText = (value: unknown) =>
           @click="choose(item.id)"
         >
           {{ item.readContext?.relation === 'used_input' ? '本次用过 · ' : '' }}
-          {{ item.draft.source.stationId }} → {{ item.draft.target.stationId }} ·
+          {{ handoffStationText(item.draft.source.stationId) }} →
+          {{ handoffStationText(item.draft.target.stationId) }} ·
           {{ item.draft.subject.objectId }} · 事件 {{ item.draft.subject.eventId || '未记录' }}
         </ElButton>
       </nav>
@@ -271,7 +273,7 @@ const valueText = (value: unknown) =>
         <p>{{ handoffStatusText(selected.verification?.status) }}</p>
         <dl>
           <template v-for="(value, key) in selected.draft.payload" :key="key">
-            <dt>{{ key }}</dt
+            <dt>{{ key === 'request' ? '请协助核对' : key }}</dt
             ><dd>{{ valueText(value) }}</dd>
           </template>
         </dl>

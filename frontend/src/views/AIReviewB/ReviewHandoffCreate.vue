@@ -20,6 +20,7 @@ import {
   type HandoffCreate,
   type HandoffTarget
 } from '@/api/aicheck/reviewHandoffs'
+import { handoffStationText, handoffRunStatusText } from './handoffPresentation'
 import type { EvidenceLink } from '@/types/aicheck'
 const props = defineProps<{
   projectId: string
@@ -149,6 +150,9 @@ watch(
   <ElDialog
     v-model="visible"
     title="请另一工位协助核对"
+    class="handoff-create-dialog"
+    top="6vh"
+    append-to-body
     width="min(780px, 94vw)"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
@@ -171,8 +175,8 @@ watch(
             :disabled="saving || loading"
             @click="target = item"
           >
-            {{ item.stationId }} 工位 · 节点 {{ item.nodeId }} · {{ item.runId }} ·
-            {{ item.status || '状态未提供' }}
+            {{ handoffStationText(item.stationId) }} · 节点 {{ item.nodeId }} ·
+            {{ handoffRunStatusText(item.status) }} · 任务 {{ item.runId }}
           </ElButton>
           <ElEmpty
             v-if="!loading && !targets.length"
@@ -189,7 +193,8 @@ watch(
             @current-change="load"
           />
           <p v-if="target"
-            >已选：{{ target.stationId }} 工位 · 节点 {{ target.nodeId }} · {{ target.runId }}</p
+            >已选：{{ handoffStationText(target.stationId) }} · 节点 {{ target.nodeId }} ·
+            {{ target.runId }}</p
           >
         </div>
       </ElFormItem>
@@ -262,6 +267,26 @@ watch(
   </ElDialog>
 </template>
 <style scoped>
+:global(.handoff-create-dialog) {
+  display: flex;
+  max-height: 88vh;
+  flex-direction: column;
+}
+
+:global(.handoff-create-dialog .el-dialog__body) {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+:global(.handoff-create-dialog .el-dialog__header),
+:global(.handoff-create-dialog .el-dialog__footer) {
+  flex-shrink: 0;
+}
+
+:global(.handoff-create-dialog .el-dialog__footer .el-button) {
+  min-height: 44px;
+}
+
 .handoff-create-form {
   margin-top: 16px;
 }
