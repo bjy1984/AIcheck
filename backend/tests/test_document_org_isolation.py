@@ -2235,3 +2235,61 @@ def test_repeated_binding_with_new_operation_keeps_existing_review_state(status)
     assert second.json()["data"]["affectedIds"] == [binding_id]
     for key, rows in before.items():
         assert _without_tenant_metadata(repo.state[key]) == _without_tenant_metadata(rows)
+
+
+def test_explicit_original_reads_old_version_bytes_without_current_or_filename_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(routes_module, "WORKSPACE_ROOT", tmp_path)
+    document = repo.find_one("documents", DOCUMENTS["contractor_a"])
+    current = repo.find_one("versions", document["currentVersionId"])
+    current.update(storageKey="local://current.txt", fileName="current.txt")
+    (tmp_path / "current.txt").write_bytes(b"CURRENT VERSION")
+    old = {**current, "id": "OLD-ORIGINAL", "isCurrent": False,
+           "storageKey": "local://old.txt", "fileName": "old.txt", "fileType": "text/plain"}
+    repo.state["versions"].append(old)
+    (tmp_path / "old.txt").write_bytes(b"HISTORICAL VERSION")
+    url = f"/api/projects/{PROJECT_ID}/documents/{document['id']}/original"
+    response = client.get(url, params={"versionId": old["id"], "disposition": "attachment"}, headers=_headers("inspection"))
+    assert response.status_code == 200 and response.content == b"HISTORICAL VERSION"
+    assert response.headers["content-type"].startswith("text/plain")
+    assert 'old.txt' in response.headers['content-disposition']
+    latest = client.get(url, params={"versionId": current["id"], "disposition": "attachment"}, headers=_headers("inspection"))
+    assert latest.content == b"CURRENT VERSION"
+    # Even a same-name Scan fallback must not replace a missing historical object.
+    (tmp_path / "old.txt").unlink()
+    (tmp_path / "Scan").mkdir()
+    (tmp_path / "Scan" / document["fileName"]).write_bytes(b"WRONG FALLBACK")
+    missing = client.get(url, params={"versionId": old["id"]}, headers=_headers("inspection"))
+    assert missing.json()["data"]["reason"] == "NOT_FOUND"
+    for version_id in ("UNKNOWN-VERSION", f"DV-{DOCUMENTS['contractor_b']}-V1"):
+        refused = client.get(url, params={"versionId": version_id}, headers=_headers("inspection"))
+        assert refused.json()["data"]["reason"] == "NOT_FOUND"
+    old["tenantId"] = "TENANT-OTHER"
+    refused = client.get(url, params={"versionId": old["id"]}, headers=_headers("inspection"))
+    assert refused.json()["data"]["reason"] == "NOT_FOUND"
+
+
+def test_explicit_original_streams_only_selected_storage_object(monkeypatch):
+    from fastapi.responses import Response
+
+    document = repo.find_one("documents", DOCUMENTS["contractor_a"])
+    version = {"id": "OLD-OBJECT", "documentId": document["id"], "tenantId": "TENANT-DEFAULT",
+               "fileName": "old.pdf", "fileType": "application/pdf", "storageBucket": "documents",
+               "storageKey": "archive/old.pdf", "isCurrent": False}
+    repo.state["versions"].append(version)
+    calls = []
+
+    def stream(bucket, key, **options):
+        calls.append((bucket, key, options))
+        return Response(b"OLD OBJECT", media_type=options["content_type"])
+
+    monkeypatch.setattr(routes_module, "stream_object_storage_file", stream)
+    url = f"/api/projects/{PROJECT_ID}/documents/{document['id']}/original?versionId=OLD-OBJECT"
+    result = client.get(url, headers=_headers("inspection"))
+    assert result.content == b"OLD OBJECT"
+    assert calls == [("documents", "archive/old.pdf", {"content_type": "application/pdf", "file_name": "old.pdf", "disposition": "inline"})]
+    calls.clear()
+    refused = client.get(url, headers=_headers("contractor_b"))
+    assert refused.json()["code"] != 0 and not calls
+    monkeypatch.setattr(routes_module, "stream_object_storage_file", lambda *args, **kwargs: None)
+    missing = client.get(url, headers=_headers("inspection"))
+    assert missing.json()["data"]["reason"] == "NOT_FOUND"

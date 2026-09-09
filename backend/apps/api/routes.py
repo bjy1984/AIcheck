@@ -7573,7 +7573,11 @@ def project_document_original(
     project_id: str,
     document_id: str,
     disposition: str = Query(default="inline"),
+    version_id: str | None = Query(default=None, alias="versionId"),
 ):
+    if version_id is not None:
+        from apps.api.document_version_original import selected_version_original
+        return selected_version_original(_DOCUMENT_ACCESS_SERVICES, request, project_id, document_id, version_id, disposition)
     document, version, context_error = project_document_original_context(request, project_id, document_id)
     if context_error:
         return context_error
