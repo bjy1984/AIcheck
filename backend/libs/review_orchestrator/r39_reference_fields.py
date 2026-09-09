@@ -1,4 +1,4 @@
-"""Read one explicit instruction/procedure pair from frozen, grounded OCR fields."""
+"""Match selected instruction/procedure files by grounded OCR identity fields."""
 from copy import deepcopy
 
 from libs.review_input_data import selected_parse_results
@@ -30,43 +30,32 @@ def _field(parse, code):
     return {"value": value, "documentVersionId": parse["documentVersionId"], "evidence": ref, "evidenceRefs": [ref]}
 
 
-def reference_from_fields(state, run):
-    parses = [row for row in selected_parse_results(state, {}, context={"reviewRun": run})
-              if row.get("profileId") == "ndt_procedure_v1"]
-    # A larger or partially parsed set needs an explicit inventory; no first-match fallback.
-    if len(parses) != 2:
-        return None, []
-    documents, records = {}, []
-    for parse in parses:
-        if parse.get("tenantId") != run["tenantId"]:
-            return None, []
-        version = [row for row in state.get("versions", []) if row.get("id") == parse.get("documentVersionId")
-                   and row.get("tenantId") == run["tenantId"]]
-        if len(version) != 1:
-            return None, []
-        doc = [row for row in state.get("documents", []) if row.get("id") == version[0].get("documentId")
-               and row.get("projectId") == run["projectId"] and row.get("tenantId") == run["tenantId"]]
-        if len(doc) != 1:
-            return None, []
-        fields = {code: _field(parse, code) for code in FIELDS}
-        if any(value is None for value in fields.values()):
-            return None, []
-        kind = {"工艺规程": "procedure", "操作指导书": "instruction"}.get(fields["document_kind"]["value"])
-        if kind is None or kind in documents:
-            return None, []
-        if kind == "instruction":
-            fields.update({code: _field(parse, code) for code in ("referenced_procedure_no", "referenced_procedure_revision")})
-        if any(value is None for value in fields.values()):
-            return None, []
-        documents[kind] = (doc[0]["id"], version[0]["id"], fields)
-        records.extend(fields.values())
-    instruction, procedure = documents["instruction"], documents["procedure"]
-    if any(instruction[2][key]["value"] != procedure[2][key]["value"] for key in ("organization_name", "method")):
-        return None, []
-    # Co-selection alone does not prove an intended reference relationship.
-    # Match its explicit number before comparing the revision; never pick by revision.
-    if instruction[2]["referenced_procedure_no"]["value"] != procedure[2]["procedure_no"]["value"]:
-        return None, []
+def _document(state, run, parse):
+    if parse.get("tenantId") != run["tenantId"]:
+        return None
+    versions = [row for row in state.get("versions", []) if row.get("id") == parse.get("documentVersionId")
+                and row.get("tenantId") == run["tenantId"]]
+    if len(versions) != 1:
+        return None
+    documents = [row for row in state.get("documents", []) if row.get("id") == versions[0].get("documentId")
+                 and row.get("projectId") == run["projectId"] and row.get("tenantId") == run["tenantId"]]
+    if len(documents) != 1:
+        return None
+    fields = {code: _field(parse, code) for code in FIELDS}
+    if any(value is None for value in fields.values()):
+        return None
+    kind = {"工艺规程": "procedure", "操作指导书": "instruction"}.get(fields["document_kind"]["value"])
+    if kind is None:
+        return None
+    if kind == "instruction":
+        fields.update({code: _field(parse, code) for code in ("referenced_procedure_no", "referenced_procedure_revision")})
+    if any(value is None for value in fields.values()):
+        return None
+    return kind, (documents[0]["id"], versions[0]["id"], fields)
+
+
+def _pair(run, instruction, procedure):
+    records = [*instruction[2].values(), *procedure[2].values()]
     scope = {"projectId": run["projectId"], "organizationName": instruction[2]["organization_name"]["value"],
              "method": instruction[2]["method"]["value"], "instructionDocumentId": instruction[0],
              "instructionDocumentVersionId": instruction[1], "procedureDocumentId": procedure[0], "procedureDocumentVersionId": procedure[1]}
@@ -78,3 +67,55 @@ def reference_from_fields(state, run):
                                            referencedProcedureVersion=instruction[2]["referenced_procedure_revision"]["value"]),
             "procedureIdentity": record(procedure[2].values(), procedureNumber=procedure[2]["procedure_no"]["value"],
                                         procedureVersion=procedure[2]["procedure_revision"]["value"])}, records
+
+
+def reference_from_fields(state, run):
+    parses = [row for row in selected_parse_results(state, {}, context={"reviewRun": run})
+              if row.get("profileId") == "ndt_procedure_v1"]
+    by_version = {}
+    for parse in parses:
+        by_version.setdefault(parse.get("documentVersionId"), []).append(parse)
+    selected = set(run.get("inputDocumentVersionIds", []))
+    ndt_documents = {row.get("id") for row in state.get("documents", []) if row.get("tenantId") == run["tenantId"]
+                     and row.get("projectId") == run["projectId"] and row.get("materialTypeCode") == "ndt_procedure"}
+    for version in state.get("versions", []):
+        if version.get("id") in selected and version.get("documentId") in ndt_documents:
+            by_version.setdefault(version["id"], [])
+    if not by_version:
+        return None, []
+    issues, documents, unresolved_targets = [], {"instruction": [], "procedure": []}, set()
+    for version, candidates in sorted(by_version.items()):
+        value = _document(state, run, candidates[0]) if len(candidates) == 1 else None
+        if value is None:
+            # Missing revision data does not make a same-number alternative
+            # disappear from candidate matching.
+            for parse in candidates:
+                identity = {key: _field(parse, key) for key in ("document_kind", "organization_name", "method", "procedure_no")}
+                if all(identity.values()) and identity["document_kind"]["value"] == "工艺规程":
+                    unresolved_targets.add(tuple(identity[key]["value"] for key in ("organization_name", "method", "procedure_no")))
+            issues.append({"documentVersionId": version, "code": "r39_ocr_document_missing_or_ambiguous"})
+            continue
+        kind, document = value
+        documents[kind].append(document)
+    pairs, records, used = [], [], set()
+    for instruction in documents["instruction"]:
+        matches = [procedure for procedure in documents["procedure"] if all(
+            instruction[2][key]["value"] == procedure[2][key]["value"] for key in ("organization_name", "method"))
+            and instruction[2]["referenced_procedure_no"]["value"] == procedure[2]["procedure_no"]["value"]]
+        target = tuple(instruction[2][key]["value"] for key in ("organization_name", "method", "referenced_procedure_no"))
+        if len(matches) != 1 or target in unresolved_targets:
+            issues.append({"documentVersionId": instruction[1], "code": "r39_ocr_reference_target_missing_or_ambiguous"})
+            continue
+        pair, source_records = _pair(run, instruction, matches[0])
+        pairs.append(pair)
+        records.extend(source_records)
+        used.update((instruction[1], matches[0][1]))
+    for procedure in documents["procedure"]:
+        if procedure[1] not in used:
+            issues.append({"documentVersionId": procedure[1], "code": "r39_ocr_procedure_not_linked"})
+    if not pairs:
+        return None, []
+    if len(by_version) == 2 and len(pairs) == 1 and not issues:
+        return pairs[0], records
+    return {"projectId": run["projectId"], "fieldPairs": pairs,
+            "selectedDocumentVersionIds": sorted(by_version), "selectionIssues": issues}, records
