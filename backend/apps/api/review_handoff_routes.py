@@ -13,6 +13,7 @@ from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import repo
 from libs.review_handoff_evidence import inspect_handoff_evidence
+from libs.review_handoff_sources import inspect_handoff_sources
 from libs.review_handoffs import create_handoff_draft, validate_handoff_draft
 
 router = APIRouter()
@@ -53,6 +54,11 @@ def _runs(request, project_id, source_id, target_id, visible_versions=None):
     return runs, None
 
 
+def _source_check(runs):
+    repo.ensure_deferred_loaded("ocr_parse_results", "fact_corrections")
+    return inspect_handoff_sources(runs, repo.state)
+
+
 @router.post("/projects/{project_id}/review-handoffs")
 def save_handoff(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict),
                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
@@ -66,6 +72,8 @@ def save_handoff(request: Request, project_id: str, body: dict[str, Any] = Body(
     if error := api.mutation_guard(request, project_id, node_ids=[row["nodeId"] for row in runs]):
         return error
     try:
+        if _source_check(runs)["requiresRevalidation"]:
+            raise ValueError("handoff_endpoint_sources_changed_recreate_run")
         draft = create_handoff_draft(*runs, kind=body["kind"], subject=body["subject"],
                                      payload=body["payload"], evidence_refs=body["evidenceRefs"])
     except (TypeError, ValueError) as exc:
@@ -98,8 +106,14 @@ def _record_view(request, project_id, record, visible_versions):
         return None, error
     try:
         validate_handoff_draft(draft, *runs, subject=draft["subject"])
-        repo.ensure_deferred_loaded("ocr_parse_results")
+        source_check = _source_check(runs)
+        if source_check["requiresRevalidation"]:
+            return {**repo.clone(record), "validation": {
+                "status": "stale_or_invalid", "authoritative": False,
+                "reason": "handoff_endpoint_sources_changed_recreate_run",
+                "inputSourceCheck": source_check}}, None
         validation = {"status": "current_draft", "authoritative": False,
+                      "inputSourceCheck": source_check,
                       "evidenceLocationCheck": inspect_handoff_evidence(draft, repo.state.get("ocr_parse_results", []))}
     except (TypeError, ValueError) as exc:
         validation = {"status": "stale_or_invalid", "authoritative": False, "reason": str(exc)}

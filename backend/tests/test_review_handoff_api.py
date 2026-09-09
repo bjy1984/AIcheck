@@ -302,3 +302,78 @@ def test_handoff_cached_replay_checks_original_document_access_and_lab_flag(monk
     repo.find_one("review_runs", "SOURCE")["inputDocumentVersionIds"] = []
     assert client.post(url, headers=headers, json=payload()).json()["code"] != 0
     assert len(repo.state["review_handoffs"]) == 1
+
+
+@pytest.mark.parametrize("endpoint", ["SOURCE", "TARGET"])
+@pytest.mark.parametrize("change", ["ocr", "correction"])
+def test_frozen_endpoint_source_changes_invalidate_read_save_and_replay(endpoint, change):
+    from libs.review_document_scope import freeze_document_scope
+
+    version = "FROZEN-HANDOFF-V1"
+    repo.state["documents"].append({"id": "FROZEN-HANDOFF-D", "projectId": PROJECT,
+                                   "tenantId": "TENANT-DEFAULT", "currentVersionId": version})
+    repo.state["versions"].append({"id": version, "documentId": "FROZEN-HANDOFF-D",
+                                  "tenantId": "TENANT-DEFAULT"})
+    parse = {"id": "FROZEN-PARSE", "documentVersionId": version, "tenantId": "TENANT-DEFAULT",
+             "pages": [{"pageNo": 1, "text": "original"}]}
+    repo.state["ocr_parse_results"] = [parse]
+    selected = repo.find_one("review_runs", endpoint)
+    selected["inputDocumentVersionIds"] = [version]
+    for run_id in ("SOURCE", "TARGET"):
+        run = repo.find_one("review_runs", run_id)
+        run["documentScopeSnapshot"] = freeze_document_scope(run, repo.state)
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    headers = {**HEADERS, "Idempotency-Key": "frozen-source-request"}
+    saved = client.post(url, headers=headers, json=payload()).json()
+    assert saved["code"] == 0, saved
+    record = saved["data"]
+    detail_url = f"{url}/{record['id']}"
+    initial = client.get(detail_url, headers=HEADERS).json()["data"]
+    assert initial["validation"]["inputSourceCheck"]["status"] == "current"
+    runs_before = deepcopy(repo.state["review_runs"])
+    if change == "ocr":
+        parse["pages"][0]["text"] = "changed"
+    else:
+        repo.state.setdefault("fact_corrections", []).append({
+            "id": "CORRECTION", "projectId": PROJECT, "nodeId": selected["nodeId"],
+            "documentVersionId": version, "status": "active", "fieldId": "field", "value": "changed",
+        })
+    detail = client.get(detail_url, headers=HEADERS).json()["data"]
+    validation = detail["validation"]
+    assert validation["status"] == "stale_or_invalid"
+    assert "evidenceLocationCheck" not in validation
+    check = validation["inputSourceCheck"]
+    assert check["requiresRevalidation"] and check["affectedTargetRunId"] == "TARGET"
+    changed = [row for row in check["endpoints"] if row["status"] == "stale_or_invalid"]
+    assert [row["endpoint"] for row in changed] == [endpoint.lower()]
+    assert client.get(url, headers=HEADERS).json()["data"]["items"][0]["validation"] == validation
+    assert client.post(url, headers=HEADERS, json=payload()).json()["code"] != 0
+    assert client.post(url, headers=headers, json=payload()).json()["code"] != 0
+    assert repo.state["review_runs"] == runs_before
+    assert repo.state["review_handoffs"] == [record]
+
+
+def test_legacy_handoff_source_freshness_is_explicitly_unverified():
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    saved = client.post(url, headers=HEADERS, json=payload()).json()["data"]
+    check = client.get(f"{url}/{saved['id']}", headers=HEADERS).json()["data"]["validation"]["inputSourceCheck"]
+    assert check["status"] == "unverified"
+    assert not check["requiresRevalidation"]
+    assert check["authoritative"] is False
+
+
+def test_unselected_ocr_and_other_node_corrections_do_not_invalidate_handoff():
+    from libs.review_document_scope import freeze_document_scope
+
+    for run_id in ("SOURCE", "TARGET"):
+        run = repo.find_one("review_runs", run_id)
+        run["documentScopeSnapshot"] = freeze_document_scope(run, repo.state)
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    saved = client.post(url, headers=HEADERS, json=payload()).json()["data"]
+    repo.state["ocr_parse_results"].append({"documentVersionId": "UNSELECTED", "pages": [{"pageNo": 1}]})
+    repo.state.setdefault("fact_corrections", []).append({
+        "projectId": "OTHER", "nodeId": 1, "documentVersionId": "UNSELECTED",
+        "status": "active", "fieldId": "field", "value": "changed",
+    })
+    check = client.get(f"{url}/{saved['id']}", headers=HEADERS).json()["data"]["validation"]["inputSourceCheck"]
+    assert check["status"] == "current"
