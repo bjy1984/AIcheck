@@ -111,3 +111,16 @@ export const getHandoffDependencies = (projectId: string, runId: string) =>
   request.get<HandoffDependencies>({
     url: `/api/projects/${encodeURIComponent(projectId)}/review-runs/${encodeURIComponent(runId)}/handoff-dependencies`
   })
+
+export type HandoffNodeStatuses = {
+  projectId: string
+  items: Array<{
+    nodeId: number
+    status: 'current' | 'not_used' | 'requires_revalidation' | 'unavailable'
+    requiresRevalidation: boolean | null
+  }>
+}
+export const getHandoffNodeStatuses = (projectId: string) =>
+  request.get<HandoffNodeStatuses>({
+    url: `/api/projects/${encodeURIComponent(projectId)}/review-handoff-node-statuses`
+  })

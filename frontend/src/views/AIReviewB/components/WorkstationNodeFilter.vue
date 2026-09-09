@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElOption, ElSelect } from 'element-plus'
 import type { ProjectTreePayload } from '@/api/aicheck'
 import {
   filterWorkstationNodes,
@@ -12,10 +12,13 @@ const props = defineProps<{
   modelValue: string
   status: string
   idPrefix: string
+  handoffBusy?: boolean
+  handoffError?: string
 }>()
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   'update:status': [value: string]
+  refreshHandoffs: []
 }>()
 const nodes = computed(() => props.groups.flatMap((group) => group.nodes))
 const stationNodes = computed(() =>
@@ -31,7 +34,7 @@ const stationOptions = computed(() =>
 const statuses = computed(() => [
   ...new Set([
     ...stationNodes.value.map((node) => node.status),
-    ...(props.status ? [props.status] : [])
+    ...(props.status && !props.status.startsWith('handoff_') ? [props.status] : [])
   ])
 ])
 const visibleCount = computed(() =>
@@ -65,7 +68,21 @@ const visibleCount = computed(() =>
       :model-value="status"
       @update:model-value="emit('update:status', $event)"
     >
-      <ElOption label="全部状态" value="" /><ElOption
+      <ElOption label="全部状态" value="" />
+      <ElOption
+        :label="
+          handoffBusy || handoffError
+            ? '交接需重验（尚未核对）'
+            : `交接需重验（${stationNodes.filter((node) => node.handoffRevalidation === 'requires_revalidation').length}）`
+        "
+        value="handoff_requires_revalidation"
+        :disabled="handoffBusy || !!handoffError"
+      />
+      <ElOption
+        :label="`交接尚未确认（${stationNodes.filter((node) => node.handoffRevalidation === 'unavailable').length}）`"
+        value="handoff_unavailable"
+      />
+      <ElOption
         v-for="value in statuses"
         :key="value"
         :label="`${value}（${stationNodes.filter((node) => node.status === value).length}）`"
@@ -78,6 +95,17 @@ const visibleCount = computed(() =>
       }}
       待人工确认，{{ counts.correction }} 待补正。
     </p>
+    <p v-if="handoffBusy" role="status">正在核对交接状态……</p>
+    <p v-else-if="handoffError" role="alert">{{ handoffError }}</p>
+    <p v-else role="status">
+      交接：{{
+        stationNodes.filter((node) => node.handoffRevalidation === 'requires_revalidation').length
+      }}
+      个节点需重验，
+      {{ stationNodes.filter((node) => node.handoffRevalidation === 'unavailable').length }}
+      个尚未确认。
+    </p>
+    <ElButton :loading="handoffBusy" @click="emit('refreshHandoffs')">重新核对交接状态</ElButton>
     <p>显示 {{ visibleCount }} / {{ nodes.length }} 个节点。筛选列表不会切换当前节点。</p>
   </section>
 </template>
@@ -96,6 +124,9 @@ const visibleCount = computed(() =>
 }
 
 .workstation-node-filter :deep(.el-select__wrapper) {
+  min-height: 44px;
+}
+.workstation-node-filter :deep(.el-button) {
   min-height: 44px;
 }
 </style>

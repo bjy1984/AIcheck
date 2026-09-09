@@ -60,7 +60,13 @@ export const filterWorkstationNodes = (
       ...group,
       nodes: group.nodes.filter(
         (node) =>
-          (!station || station.nodeIds.includes(node.nodeId)) && (!status || node.status === status)
+          (!station || station.nodeIds.includes(node.nodeId)) &&
+          (!status ||
+            (status === 'handoff_requires_revalidation'
+              ? node.handoffRevalidation === 'requires_revalidation'
+              : status === 'handoff_unavailable'
+                ? node.handoffRevalidation === 'unavailable'
+                : node.status === status))
       )
     }))
     .filter((group) => group.nodes.length)

@@ -104,6 +104,7 @@ export type Project = {
 }
 
 export type ProjectTreeNode = {
+  handoffRevalidation?: 'current' | 'not_used' | 'requires_revalidation' | 'unavailable'
   id: string
   projectId: string
   nodeId: number

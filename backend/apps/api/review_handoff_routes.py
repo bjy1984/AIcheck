@@ -392,6 +392,6 @@ def get_handoff_node_statuses(request: Request, project_id: str):
         else:
             items.append({"nodeId": node_id, "reviewRunId": run_id, "status": status["status"],
                           "requiresRevalidation": status["requiresRevalidation"]})
-    return ok({"items": items, "requiresRevalidationCount": sum(row["requiresRevalidation"] is True for row in items),
+    return ok({"projectId": project_id, "items": items, "requiresRevalidationCount": sum(row["requiresRevalidation"] is True for row in items),
                "unavailableCount": sum(row["status"] == "unavailable" for row in items),
                "automaticRerun": False, "historicalResultsPreserved": True}, request)

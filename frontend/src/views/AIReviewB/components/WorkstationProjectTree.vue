@@ -5,6 +5,7 @@ import type { ProjectTreeNode } from '@/types/aicheck'
 import ProjectNodeTree from '@/views/AICheck/components/ProjectNodeTree.vue'
 import WorkstationNodeFilter from './WorkstationNodeFilter.vue'
 import { filterWorkstationNodes } from '../workstationNavigation'
+import { useHandoffNodeStatuses } from '../useHandoffNodeStatuses'
 const props = defineProps<{
   groups: ProjectTreePayload['groups']
   enabled: boolean
@@ -14,8 +15,11 @@ const props = defineProps<{
 const station = defineModel<string>({ required: true })
 const status = defineModel<string>('status', { required: true })
 const emit = defineEmits<{ select: [ProjectTreeNode]; selectOverview: [] }>()
+const { groups: handoffGroups, busy, error, refresh } = useHandoffNodeStatuses(props)
 const filtered = computed(() =>
-  props.enabled ? filterWorkstationNodes(props.groups, station.value, status.value) : props.groups
+  props.enabled
+    ? filterWorkstationNodes(handoffGroups.value, station.value, status.value)
+    : props.groups
 )
 </script>
 <template>
@@ -23,7 +27,10 @@ const filtered = computed(() =>
     v-if="enabled"
     v-model="station"
     v-model:status="status"
-    :groups="groups"
+    :groups="handoffGroups"
+    :handoff-busy="busy"
+    :handoff-error="error"
+    @refresh-handoffs="refresh"
     :id-prefix="idPrefix"
   />
   <ProjectNodeTree
