@@ -162,6 +162,7 @@ from libs.review_tools import (  # noqa: F401 -- public re-export and monkeypatc
     compile_node_tool_plan,
     execute_node_tool_plan,
 )
+from libs.review_workstations import apply_station_messages
 from libs.security.tenant import (  # noqa: F401 -- public re-export and monkeypatch compatibility
     current_tenant_id,
     tenant_id_for_record,
@@ -236,6 +237,7 @@ def plan_r12_human_verification(
             "content": f"当前识别到 {len(candidates)} 个制造许可证候选，请推进 R12 复核。",
         },
     ]
+    messages = apply_station_messages(review_run, messages)
     requested = False
     reasoning_chunks: list[str] = []
     model_attempt = {
@@ -587,6 +589,7 @@ def plan_r19_semantic_review(
         },
     ]
     reasoning_chunks: list[str] = []
+    messages = apply_station_messages(review_run, messages)
     model_attempt = {
         "id": f"MCALL-R19-{uuid4().hex[:10].upper()}",
         "reviewRunId": review_run.get("reviewRunId"),

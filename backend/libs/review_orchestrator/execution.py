@@ -129,6 +129,13 @@ from libs.review_orchestrator.rule_result_digest import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_orchestrator.tool_scope import scoped_runtime_tool_catalog
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.review_workstations import (
+    apply_station_messages,
+    freeze_station,
+    scope_catalog,
+    station_snapshot,
+    tool_allowed,
+)
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 from ._shared import (  # noqa: F401 - re-export，外部按 execution 路径引用
@@ -435,6 +442,14 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "finishedAt": None,
         "revision": 1,
     }
+    if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() in {"1", "true", "yes"}:
+        project = repo.require_project(str(record.get("projectId") or "")) or {}
+        station_pack = repo.clone(project.get("businessPackSnapshot") or load_business_pack(record["businessPackId"]))
+        if record.get("atomicCheckToolBindingsSnapshot"):
+            station_pack["atomicCheckToolBindings"] = record["atomicCheckToolBindingsSnapshot"]
+        record["workstationSnapshot"] = freeze_station(record["nodeId"], station_pack, runtime_tool_catalog())
+        record["allowedTools"] = record["workstationSnapshot"]["allowedTools"]
+        record["inputHash"] = stable_hash_payload({"legacyInputHash": record["inputHash"], "workstation": record["workstationSnapshot"]["snapshotHash"]})
     repo.state["review_runs"].insert(0, record)
     bind_evidence_package_to_review_run(repo.state, ai_run_id=str(ai_run.get("id") or ""), review_run_id=review_run_id)
     frozen_clause_snapshot = freeze_review_run_clause_snapshot(
@@ -854,6 +869,7 @@ def _plan_guarded_material_tool_review(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+    messages = apply_station_messages(review_run, messages)
     reasoning_chunks: list[str] = []
     called_tools: set[str] = set()
     model_attempt = {
@@ -1984,12 +2000,22 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     # 只下发本节点规则用得上的工具。全量 111 个占 9740 tokens ≈ 41% 预算，
     # 挂 0 份资料就已经吃掉近一半——节点 24 那次 REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED
     # 就是这么来的。裁剪一律 fail-open：认不出就送全量，见 tool_scope 的说明。
-    scoped_tools, tool_scope_meta = scoped_runtime_tool_catalog(
-        runtime_tool_catalog(), pack, review_run.get("nodeId")
-    )
+    workstation = station_snapshot(review_run)
+    if workstation:
+        scoped_tools, tool_scope_meta = scope_catalog(review_run, runtime_tool_catalog())
+        prompt["system"] = workstation["systemPrompt"]
+        prompt["user"] = "{{reviewTaskJson}}"
+        prompt["template"] = {}  # The frozen station is the sole role contract.
+    else:
+        scoped_tools, tool_scope_meta = scoped_runtime_tool_catalog(
+            runtime_tool_catalog(), pack, review_run.get("nodeId")
+        )
     context["toolScope"] = tool_scope_meta
     user_payload = {
         "task": "Generate ReviewFindingDraftList JSON only.",
+        **({"workstation": {key: value for key, value in workstation.items() if key != "systemPrompt"},
+            "targetNodeId": review_run["nodeId"], "currentRule": current_rule,
+            "nodeFields": fields} if workstation else {}),
         "auditInputMode": audit_runtime["mode"],
         "auditRuntime": audit_runtime_public_config(mode=audit_runtime["mode"]),
         "availableRuntimeTools": scoped_tools,
@@ -2118,6 +2144,7 @@ def build_review_prompt_shape(review_run: dict[str, Any], context: dict[str, Any
         # 本次给了模型哪些工具。裁剪会改变它能取到什么证据，也就会改变判定——
         # 日后复盘一个可疑结论时，这是「当时它手里有什么」的唯一记录。
         "toolScope": context.get("toolScope") or {},
+        "workstationSnapshot": station_snapshot(review_run),
     }
 
 
@@ -3073,6 +3100,10 @@ def execute_agent_tool(
         }
         append_tool_call(review_run, node_key, tool_name, result)
         return result
+    if not tool_allowed(review_run, tool_name):
+        rejected = {"toolName": tool_name, "status": "rejected", "errorCode": "WORKSTATION_TOOL_NOT_ALLOWED"}
+        append_tool_call(review_run, node_key, tool_name, rejected)
+        return rejected
     if tool_name not in ALLOWED_AGENT_TOOLS:
         result = {
             "toolName": tool_name,

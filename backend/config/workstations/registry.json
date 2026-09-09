@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "workstations-v1",
+  "version": "2026.09.lab.1",
+  "businessPackId": "engineering_inspection_v1",
+  "stations": [
+    {
+      "id": "A",
+      "key": "welding",
+      "name": "焊接與熱處理",
+      "nodeIds": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34
+      ],
+      "promptFile": "prompts/A.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "B",
+      "key": "design",
+      "name": "設計與技術基準",
+      "nodeIds": [
+        1,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        63
+      ],
+      "promptFile": "prompts/B.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "C",
+      "key": "quality_system",
+      "name": "施工組織與品質體系",
+      "nodeIds": [
+        2,
+        11,
+        69
+      ],
+      "promptFile": "prompts/C.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "D",
+      "key": "materials",
+      "name": "材料與管道元件",
+      "nodeIds": [
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ],
+      "promptFile": "prompts/D.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "E",
+      "key": "ndt",
+      "name": "無損檢測",
+      "nodeIds": [
+        3,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        65
+      ],
+      "promptFile": "prompts/E.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "F",
+      "key": "protection",
+      "name": "防腐、保溫與電氣保護",
+      "nodeIds": [
+        43,
+        44,
+        45,
+        46,
+        47,
+        50
+      ],
+      "promptFile": "prompts/F.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "G",
+      "key": "installation",
+      "name": "安裝與現場製作",
+      "nodeIds": [
+        48,
+        49,
+        51,
+        52,
+        53,
+        54,
+        55
+      ],
+      "promptFile": "prompts/G.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "H",
+      "key": "safety_accessories",
+      "name": "安全附件",
+      "nodeIds": [
+        56,
+        57,
+        58
+      ],
+      "promptFile": "prompts/H.md",
+      "promptVersion": "1.0.0"
+    },
+    {
+      "id": "I",
+      "key": "system_tests",
+      "name": "系統試驗與吹掃清洗",
+      "nodeIds": [
+        59,
+        60,
+        61,
+        62,
+        64,
+        66,
+        67,
+        68
+      ],
+      "promptFile": "prompts/I.md",
+      "promptVersion": "1.0.0"
+    }
+  ]
+}
