@@ -26776,9 +26776,21 @@ def fde_acceptance_reports(request: Request):
     return ok(repo.clone(repo.state.get("delivery_acceptance_reports", [])), request)
 
 
+def rule_read_error(request: Request, rule: dict[str, Any]) -> JSONResponse | None:
+    project_id = rule.get("projectId")
+    if not project_id:
+        return None
+    if not isinstance(project_id, str) or not repo.require_project(project_id):
+        return fail(errors.NOT_FOUND, request)
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    return member_node_scope_error(request, project_id, role, node_ids=parse_rule_node_ids(rule.get("nodeIds")))
+
+
 @router.get("/rules/versions")
 def list_rule_versions(request: Request, keyword: str | None = None, status: str | None = None, page_no: int = Query(default=1, alias="page"), page_size: int = Query(default=20, alias="pageSize")):
-    items = [versioned_record("rule-version", item) for item in repo.state["rule_versions"]]
+    items = [versioned_record("rule-version", item) for item in repo.state["rule_versions"] if rule_read_error(request, item) is None]
     if status:
         items = [item for item in items if item["status"] == status]
     items = filter_keyword(items, keyword, ["name", "inspectionItem", "inspectionCategory", "standardText", "witnessText", "ruleKey", "version"])
@@ -26804,6 +26816,8 @@ def get_rule_version(request: Request, version_id: str):
     rule = repo.find_one("rule_versions", version_id)
     if not rule:
         return fail(errors.NOT_FOUND, request)
+    if access_error := rule_read_error(request, rule):
+        return access_error
     return ok({"rule": versioned_record("rule-version", rule)}, request)
 
 
@@ -27021,7 +27035,8 @@ def rule_operation_base_fingerprint(base: dict[str, Any], target: dict[str, Any]
         for item in repo.state.get("rule_versions", [])
         if item.get("id") in {base.get("id"), (target or {}).get("id")}
         or (
-            normalize_rule_status(item.get("status")) == "已发布"
+            same_rule_scope(base, item)
+            and normalize_rule_status(item.get("status")) == "已发布"
             and (
                 bool(base.get("ruleKey") and item.get("ruleKey") == base.get("ruleKey"))
                 or bool(set(parse_rule_node_ids(base.get("nodeIds"))) & set(parse_rule_node_ids(item.get("nodeIds"))))
@@ -27047,6 +27062,8 @@ def rule_version_diff(request: Request, version_id: str, targetVersionId: str | 
     base = repo.find_one("rule_versions", version_id)
     if not base:
         return fail(errors.NOT_FOUND, request)
+    if access_error := rule_read_error(request, base):
+        return access_error
     target = matching_rule_target(base, target_version_id=targetVersionId, target_version=targetVersion)
     if (targetVersionId or targetVersion) and not target:
         return fail(errors.NOT_FOUND, request, message="目标规则版本不存在或不属于同一规则。")
@@ -27058,6 +27075,7 @@ def rule_version_diff(request: Request, version_id: str, targetVersionId: str | 
                 if item.get("id") != base.get("id")
                 and normalize_rule_status(item.get("status")) == "已发布"
                 and item.get("ruleKey") == base.get("ruleKey")
+                and same_rule_scope(base, item)
             ),
             None,
         )
@@ -27076,6 +27094,8 @@ def preview_rule_version_operation(
     base = repo.find_one("rule_versions", version_id)
     if not base:
         return fail(errors.NOT_FOUND, request)
+    if access_error := rule_read_error(request, base):
+        return access_error
     payload = rule_operation_payload(action, body)
     if not payload["reason"]:
         return fail(errors.VALIDATION_ERROR, request, message="规则发布或回滚必须填写操作原因。")
@@ -27093,10 +27113,15 @@ def preview_rule_version_operation(
         "targetVersionId": (target or {}).get("id"),
         "targetVersion": (target or {}).get("version"),
         "nodeIds": parse_rule_node_ids(base.get("nodeIds")),
-        "linkedProjects": len([item for item in repo.state.get("projects", []) if item.get("status") != "已归档"]),
+        "linkedProjects": len([
+            item for item in repo.state.get("projects", [])
+            if item.get("status") != "已归档"
+            and (not base.get("projectId") or item.get("id") == base.get("projectId"))
+            and str(item.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID) == str(base.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
+        ]),
         "summary": diff["summary"],
         "changes": diff["changes"],
-        "warnings": ["发布后会替换同规则键或重叠节点上的现行规则。"] if action == "publish" else ["回滚会立即改变后续审计采用的规则版本。"],
+        "warnings": ["发布后会替换同工程与业务包内同规则键或重叠节点上的现行规则。"] if action == "publish" else ["回滚会立即改变后续审计采用的规则版本。"],
     }
     preview = create_operation_preview(
         request,
@@ -27119,6 +27144,8 @@ def publish_rule_version(
     rule_for_preview = repo.find_one("rule_versions", version_id)
     if not rule_for_preview:
         return fail(errors.NOT_FOUND, request)
+    if access_error := rule_read_error(request, rule_for_preview):
+        return access_error
     payload = rule_operation_payload("publish", body)
     if not payload["reason"]:
         return fail(errors.VALIDATION_ERROR, request, message="发布规则必须填写操作原因。")
@@ -27180,6 +27207,8 @@ def rollback_rule_version(
     rule_for_preview = repo.find_one("rule_versions", version_id)
     if not rule_for_preview:
         return fail(errors.NOT_FOUND, request)
+    if access_error := rule_read_error(request, rule_for_preview):
+        return access_error
     payload = rule_operation_payload("rollback", body)
     if not payload["reason"]:
         return fail(errors.VALIDATION_ERROR, request, message="回滚规则必须填写操作原因。")

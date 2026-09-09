@@ -13314,3 +13314,38 @@ def test_project_rule_fork_rejects_user_without_project_membership():
                             json={"projectId": "P-2026-HDCP-001"},
                             headers={"X-User-Id": "USER-NOT-IN-PROJECT"}), "FORBIDDEN")
     assert len(repo.state["rule_versions"]) == count
+
+
+@pytest.mark.parametrize("suffix,method", [("", "GET"), ("/diff", "GET"), ("/publish-preview", "POST")])
+def test_project_rule_read_routes_reject_nonmember(suffix, method):
+    rule = repo.find_one("rule_versions", "RULE-NDT-202606")
+    rule["projectId"] = "P-2026-HDCP-001"
+    response = client.request(method, f"/rules/versions/{rule['id']}{suffix}",
+                              headers={"X-User-Id": "USER-NOT-IN-PROJECT"},
+                              json={"reason": "read isolation"} if method == "POST" else None)
+    assert_error(response, "FORBIDDEN")
+
+
+def test_rule_list_filters_inaccessible_project_rules():
+    rule = repo.find_one("rule_versions", "RULE-NDT-202606")
+    rule["projectId"] = "P-2026-HDCP-001"
+    result = assert_ok(client.get("/rules/versions?pageSize=1000", headers={"X-User-Id": "USER-NOT-IN-PROJECT"}))
+    assert rule["id"] not in {item["id"] for item in result["items"]}
+    assert all(not item.get("projectId") for item in result["items"])
+
+
+def test_rule_publish_fingerprint_ignores_other_projects():
+    from copy import deepcopy
+
+    from apps.api.routes import rule_operation_base_fingerprint
+
+    base = repo.find_one("rule_versions", "RULE-NDT-202606")
+    base["projectId"] = "P-2026-HDCP-001"
+    peer = deepcopy(base)
+    peer.update(id="RULE-FOREIGN-FINGERPRINT", projectId="OTHER-PROJECT", status="已发布")
+    repo.state["rule_versions"].append(peer)
+    before = rule_operation_base_fingerprint(base, None)
+    peer["revision"] = 999
+    assert rule_operation_base_fingerprint(base, None) == before
+    base["revision"] += 1
+    assert rule_operation_base_fingerprint(base, None) != before
