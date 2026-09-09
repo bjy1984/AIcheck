@@ -96,6 +96,7 @@ from libs.mineru_ocr import (
     validated_zip_members,
 )
 from libs.model_usage import model_cost_cny, normalize_model_usage
+from libs.ocr.page_progress import final_page_progress
 from libs.ocr.profiles import profile_for
 from libs.ocr_accuracy_pipeline import (
     SEAL_ENGINES,
@@ -3404,12 +3405,7 @@ def ocr_pipeline_official_extract(self, run_id: str) -> dict[str, Any]:
             attempt_recorder=lambda raw: _persist_official_ocr_attempt(run, raw),
             budget_key=run_id,
         )
-        run["pageProgress"] = {
-            "completed": len(result.get("pages") or []),
-            "total": len(result.get("pages") or []),
-            "currentPage": None,
-            "status": "completed",
-        }
+        run["pageProgress"] = final_page_progress(result)
         if str(result.get("status") or "").lower() != "success":
             raise RuntimeError("official_ocr_returned_failed_result")
         result["storageKey"] = run.get("storageKey")

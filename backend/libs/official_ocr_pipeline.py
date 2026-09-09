@@ -18,6 +18,7 @@ from libs.aliyun_ocr import (
     seal_candidates_from_fragments,
     table_from_call,
 )
+from libs.ocr.page_progress import recognition_page_coverage
 from libs.ocr_accuracy_pipeline import render_pages
 from libs.ocr_runtime import ocr_runtime_config
 from libs.official_ocr_control import (
@@ -729,8 +730,7 @@ def official_ocr_extract(
             and not item.get("roiColor")
             and not item.get("tileRecovery")
         ]
-        tile_calls = [item for item in page_calls if item.get("tileRecovery")]
-        if base_calls and (not base_calls[-1].get("outputTruncated") or tile_calls):
+        if base_calls and recognition_page_coverage([page_no], {page_no: page_calls})["complete"]:
             return page_no, False
         base_call = base_calls[-1] if base_calls else provider_call(
             image_path,
@@ -740,12 +740,17 @@ def official_ocr_extract(
         fresh = bool(base_call is not None and not base_calls)
         if fresh and base_call is not None:
             page_calls.append(base_call)
-        if base_call is not None and base_call.get("outputTruncated") and not tile_calls:
+        if base_call is not None and base_call.get("outputTruncated"):
             base_call["supersededByTiles"] = True
-            for tile in _split_recovery_tiles(
+            recovery_tiles = _split_recovery_tiles(
                 image_path,
                 work_directory / "truncation-recovery" / f"page-{page_no}",
-            ):
+            )
+            base_call["recoveryTileCount"] = len(recovery_tiles)
+            for tile in recovery_tiles:
+                if any(item.get("tileRecovery") and item.get("roiBbox") == tile["bbox"]
+                       and not item.get("outputTruncated") for item in page_calls):
+                    continue
                 tile_call = provider_call(tile["path"], task="advanced_recognition", page_no=page_no)
                 if tile_call is None:
                     break
@@ -756,6 +761,8 @@ def official_ocr_extract(
                         "tileRecovery": True,
                     }
                 )
+                page_calls[:] = [item for item in page_calls if not (
+                    item.get("tileRecovery") and item.get("roiBbox") == tile["bbox"])]
                 page_calls.append(tile_call)
         return page_no, fresh
 
@@ -923,6 +930,9 @@ def official_ocr_extract(
     if expensive_pages:
         quality_reasons.append("PAGE_COST_REVIEW_REQUIRED")
     invalid_grounded_fields = [field for field in fields if not field.get("formalEvidenceEligible")]
+    page_coverage = recognition_page_coverage(selected_pages, page_results)
+    if not page_coverage["complete"]:
+        quality_reasons.append("OCR_PAGE_COVERAGE_INCOMPLETE")
     reasons = sorted(set(quality_reasons))
 
     return {
@@ -971,6 +981,7 @@ def official_ocr_extract(
             "maxDocumentPages": current["render"]["maxDocumentPages"],
             "maxCostCnyPerDocument": budget_limit,
             "structuredPageLimit": current["render"]["structuredPageLimit"],
+            "recognitionPageCoverage": page_coverage,
             "formalReadinessProfileAllowed": str(profile.get("profileId") or "")
             in set(current.get("formalReadinessProfileAllowlist") or []),
             "outputTruncated": output_truncated,

@@ -4,8 +4,9 @@ CODE = "OCR_PAGE_COVERAGE_INCOMPLETE"
 
 
 def render_coverage_issue(result, document_id):
-    coverage = (result.get("metadata") or {}).get("localRenderCoverage") or {}
-    pages = sorted({page for page in coverage.get("unrenderedPageNos", []) if type(page) is int and page > 0})
+    metadata = result.get("metadata") or {}
+    coverage = metadata.get("recognitionPageCoverage") or metadata.get("localRenderCoverage") or {}
+    pages = sorted({page for page in coverage.get("unprocessedPageNos", coverage.get("unrenderedPageNos", [])) if type(page) is int and page > 0})
     ranges = []
     for page in pages:
         if ranges and page == ranges[-1][1] + 1:

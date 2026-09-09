@@ -1258,3 +1258,11 @@ cd backend
 - 新增3項正式長文件執行測試：實體35頁PDF以3頁／30頁分批均走到第35頁；前34頁有檢查點時只補尾頁；7頁案例在第二批注入失敗後，已保存頁檢查點保留，續跑只執行未保存頁並取得全頁結果。正式客戶端用離線替身，未執行付費OCR，不冒稱辨識品質或Temporal實機重啟驗收。
 - 長文件與既有正式OCR／成本控制共24項通過，Ruff289/289、diff通過。之前服務255項為另批紀錄，未重新累加。
 - 下一已確認缺口：worker最終pageProgress仍以渲染頁數填完成數，partial／成本上限下可能過滿，待修；本機分段、真實事實適配與69條验收保持待辦。整體未達90%。詳見docs/lab/verification/2026-09-09-official-long-document.md。
+
+
+## 2026-09-09：正式OCR實際頁進度與分塊續跑修復
+
+- 修正worker最後pageProgress以已渲染頁數冒充已完成頁數：正式提取附recognitionPageCoverage，按完整頁或完整分塊恢復計數；未完成頁列OCR_PAGE_COVERAGE_INCOMPLETE並傳到既有缺頁提示。頁數全讀完但品質仍partial時，狀態不改為completed。
+- 修正截斷後已有一個tile就跳過全頁的續跑問題：保留有效區塊，只補缺少或仍截斷區塊；記錄預期recoveryTileCount，重複區塊／印章ROI不算整頁完成。既有完成的純文字結果仍支持；沒有完成證據的partial舊結果不以渲染頁數猜完成數。
+- 新增12項頁進度案例及2項真實提取函數的離線客戶端情境：成本停止3頁只完成1頁→1/3 partial；單頁僅第一塊完成→0/1 partial，續跑只補tile-2後1/1 completed。共52項正式OCR／readiness／長文件／成本控制回歸通過，Ruff289/289、monolith及diff通過。
+- 此為離線客戶端與實體PDF流程驗證，未發起付費模型、未改寫歷史任務，未宣稱本輪Temporal實機重啟驗收。真實識別品質、本機全頁補全及69條驗收仍待完成，整體未達90%。詳見docs/lab/verification/2026-09-09-page-progress.md。
