@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProjectRuleEditor from './ProjectRuleEditor.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -1757,6 +1758,7 @@ onBeforeUnmount(() => {
             <p v-if="conversationSubtitle">{{ conversationSubtitle }}</p>
           </div>
           <div v-if="!props.embedded" class="run-meta">
+            <ProjectRuleEditor :project-id="activeProjectId" :node-id="activeNodeId" />
             <ElButton :icon="View" :disabled="!activeRunId" @click="tracePanels = ['trace']"
               >查看执行轨迹</ElButton
             >
