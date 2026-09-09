@@ -209,6 +209,10 @@ def build_tool_arguments(
     if tool_name == "evaluate_ndt_nonconformance":
         for key in ("projectId", "organizationId", "applicability", "procedure", "caseInventory", "commissions", "notices", "feedback"):
             arguments.setdefault(key, deepcopy(nested_dict(facts, "r37").get(key)))
+    r39_inputs = {"evaluate_r39_first_use_validation": "firstUseValidation", "evaluate_r39_approval_chain": "approvalChain"}
+    if tool_name in r39_inputs:
+        for key, value in nested_dict(nested_dict(facts, "r39"), r39_inputs[tool_name]).items():
+            arguments.setdefault(key, deepcopy(value))
     if tool_name == "evaluate_r36_ndt_plan":
         for key in ("projectId", "applicability", "plan", "requirements", "standardRequirements"):
             arguments.setdefault(key, deepcopy(nested_dict(facts, "r36").get(key)))

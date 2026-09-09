@@ -802,3 +802,12 @@ cd backend
 - 缺記錄返回不足；跨範圍、重複／孤兒簽批、無效依賴與循環先拒絕。未支援的要求欄位（資格等級、發行日期等）不得靜默忽略。完整性與授權集合須有來源，來源宣告不等於工具核實。
 - 業務工具增至95項；四態／範圍／程序／首次應用／註冊／執行器／工位／巨石相關269 passed。Ruff289／289，diff check通過。本批未重跑完整後端，上一批3794 passed／66 skipped為修改前紀錄。
 - 契約見docs/lab/verification/r39-approval-contract.md。工具只核對已聲明的簽批要求，未判定標準要求完整性、資格真偽、工藝內容或整條R39；正式凍結資料接線、原子綁定及真實文件驗收仍待完成。未發布、未部署生產、未遷移ID，W7/W9保持未完成。
+
+
+### 2026-09-09 R39凍結文件事實與工具參數接線
+
+- 新build_r39_business_facts加入NDT_FACT_BUILDERS[39]；首次應用及批准鏈工具接入build_tool_arguments，從已選版本的結構化OCR表組裝，沿用租戶／工程／版本及來源變更檢查。
+- 批准鏈來源以reviewedDocumentVersionId表示被審版本，evidenceRefs保留實際來源版本，避免將品質體系文件誤當被審文件。被審文件亦須在任務選定版本及工程註冊資料內唯一匹配。上下文／表頭須唯一，每筆步驟及簽批必須同scope，跨範圍資料不靜默捨棄。
+- 要求步驟與簽批由獨立資料列組裝，覆蓋表頭內嵌子記錄；引用使用實際來源表，不信任自報evidenceRefs。未知要求保留傳入供工具拒絕；多事件／週期保留來源與問題，不自行選第一筆。
+- 來源到runtime及既有工具／執行器／工位／巨石回歸222 passed。初次Ruff有1項I001，修正匯入排序後289／289，未提高基線；完整收集3940項，完整後端3874 passed／66 skipped／6 warnings，233.99秒，退出0；原始結果見docs/lab/verification/r39-facts-backend.txt。環境跳過不计入PostgreSQL／MinIO／Temporal實機驗收。
+- 契約見docs/lab/verification/r39-facts-contract.md。R39現有原子綁定未切換；這是來源builder及參數接線，不是整條R39驗收。工藝內容、方法要求、全部文件／週期覆蓋與原文語義支持仍待完成，未發布／部署生產／遷移ID。
