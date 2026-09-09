@@ -5,7 +5,7 @@ from libs.review_orchestrator.deterministic_tools import validate_evidence_groun
 from libs.review_orchestrator.material_facts import build_material_judgment
 
 SOURCE_GROUPS = {
-    "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities"),
+    "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
     "firstUseValidation": ("applications", "bases", "validations"),
     "approvalChain": ("approvalContexts", "requirements", "steps", "signatureInventories", "signatures"),
     "documentContent": ("contentContexts", "contentBases", "contentInventories", "contentFields"),

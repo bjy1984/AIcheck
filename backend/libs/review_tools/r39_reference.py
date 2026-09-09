@@ -11,6 +11,9 @@ SCOPE_FIELDS = ("projectId", "organizationId", "instructionDocumentId", "instruc
 
 
 def evaluate_r39_procedure_reference(arguments):
+    if "inventory" in arguments or "referencePairs" in arguments:
+        from libs.review_tools.r39_reference_inventory import evaluate_reference_inventory
+        return evaluate_reference_inventory(arguments, SCOPE_FIELDS, evaluate_r39_procedure_reference)
     rows = []
 
     def add(code, status, refs=()):

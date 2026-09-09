@@ -13,6 +13,7 @@ from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_tools import IDENTITY_FIELDS
 
 R39_TABLES = {
+    "ndt_reference_inventory": "referenceInventories", "ndt_reference_members": "referenceMembers",
     "ndt_reference_context": "referenceContexts", "ndt_reference_basis": "referenceBases",
     "ndt_instruction_reference": "instructionReferences", "ndt_procedure_identity": "procedureIdentities",
     "ndt_content_context": "contentContexts", "ndt_content_basis": "contentBases",

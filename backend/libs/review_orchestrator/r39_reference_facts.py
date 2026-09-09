@@ -2,7 +2,7 @@
 from libs.review_tools.r39_reference import SCOPE_FIELDS
 
 
-def reference_input(state, run, groups, clean):
+def _single_reference_input(state, run, groups, clean):
     names = ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities")
     if any(len(groups[name]) != 1 for name in names):
         return None
@@ -22,3 +22,41 @@ def reference_input(state, run, groups, clean):
         return None
     return {"projectId": run["projectId"], "scope": scope, "basis": records["referenceBases"],
             "instructionReference": records["instructionReferences"], "procedureIdentity": records["procedureIdentities"]}
+
+
+def reference_input(state, run, groups, clean):
+    """A declared inventory is never silently reduced to the first document pair."""
+    from libs.review_tools.r39_tools import _text
+
+    inventories = groups.get("referenceInventories", [])
+    members = groups.get("referenceMembers", [])
+    if not inventories and not members:
+        return _single_reference_input(state, run, groups, clean)
+    if len(inventories) != 1 or not members:
+        return None
+    inventory = clean(inventories[0])
+    inventory["members"] = [clean(row) for row in members]
+    keys = []
+    for member in inventory["members"]:
+        if any(not _text(member.get(field)) for field in SCOPE_FIELDS):
+            return None
+        key = tuple(member[field] for field in SCOPE_FIELDS)
+        if key in keys:
+            return None
+        keys.append(key)
+    names = ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities")
+    grouped = {key: {name: [] for name in names} for key in keys}
+    for name in names:
+        for row in groups[name]:
+            if any(not _text(row.get(field)) for field in SCOPE_FIELDS):
+                return None
+            key = tuple(row[field] for field in SCOPE_FIELDS)
+            if key not in grouped or grouped[key][name]:
+                return None
+            grouped[key][name].append(row)
+    pairs = []
+    for group in grouped.values():
+        pair = _single_reference_input(state, run, group, clean)
+        if pair is not None:
+            pairs.append(pair)
+    return {"projectId": run["projectId"], "inventory": inventory, "referencePairs": pairs}
