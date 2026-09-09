@@ -83,3 +83,19 @@ def test_r36_evidence_is_from_actual_source_and_changes_require_new_run():
     state["ocr_parse_results"][1]["tables"][1]["normalizedRows"][0]["ratioPercent"] = 5
     with pytest.raises(ValueError, match="sources_changed"):
         build_r36_business_facts(state, run)
+
+
+def test_r36_standard_requirement_table_reaches_full_plan_with_source_gate():
+    state, run = fixture()
+    requirement_table = state["ocr_parse_results"][0]["tables"][1]
+    standard = deepcopy(requirement_table)
+    standard.update(tableId="STANDARD-REQUIREMENT", businessSchema="ndt_standard_requirements")
+    standard["normalizedRows"][0].update(standardRef="EXPLICIT-STANDARD", clauseRef="8.3", ratioPercent=100)
+    state["ocr_parse_results"][0]["tables"].append(standard)
+    facts, output = execute(state, run)
+    assert output["result"] == "failed"
+    assert facts["r36"]["standardRequirements"][0]["evidenceRefs"][0]["tableId"] == "STANDARD-REQUIREMENT"
+    state["ocr_parse_results"][1]["tables"][1]["normalizedRows"][0]["ratioPercent"] = 100
+    assert execute(state, run)[1]["result"] == "passed"
+    standard["structureConfidence"] = 0.4
+    assert execute(state, run)[1]["result"] == "evidence_insufficient"

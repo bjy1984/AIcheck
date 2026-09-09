@@ -399,7 +399,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
                   "appointments": ["object"], "implementationRecords": ["object"],
                   "equipmentIds": ["string"], "equipmentEvidenceRefs": ["object"], "calibrationReports": ["object"]}
             if name == "evaluate_ndt_quality_system"
-            else {"projectId": "string", "applicability": "object", "plan": "object", "requirements": ["object"]}
+            else {"projectId": "string", "applicability": "object", "plan": "object", "requirements": ["object"], "standardRequirements": ["object?"]}
             if name == "evaluate_r36_ndt_plan"
             else {
                 "designItems": ["object"],

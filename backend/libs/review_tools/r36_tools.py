@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import check, decimal, result
+from libs.review_tools.r36_requirements import combine_r36_requirements
 
 
 def _refs(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -30,7 +31,7 @@ def evaluate_r36_ndt_plan(arguments: dict[str, Any]) -> dict[str, Any]:
         status = "failed" if "failed" in statuses else "evidence_insufficient" if "evidence_insufficient" in statuses else "not_applicable" if statuses == {"not_applicable"} else "passed"
         output = result("evaluate_r36_ndt_plan", status, facts={"planChecks": rows},
                         checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-                        rule_version="r36-explicit-ndt-plan-requirements-v1")
+                        rule_version="r36-explicit-ndt-plan-requirements-v2")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
@@ -51,7 +52,13 @@ def evaluate_r36_ndt_plan(arguments: dict[str, Any]) -> dict[str, Any]:
     for field in ("approved", "personnelReady", "equipmentReady"):
         value = plan.get(field)
         add("r36_" + field, "passed" if value is True else "failed" if value is False else "evidence_insufficient", _refs(plan))
-    requirements, items = arguments.get("requirements"), plan.get("items")
+    requirements, issues = combine_r36_requirements(arguments.get("requirements"), arguments.get("standardRequirements"))
+    if issues:
+        basis_refs = [ref for requirement in requirements for ref in _refs(requirement)]
+        for issue in issues:
+            add(issue, "evidence_insufficient", basis_refs)
+        return finish()
+    items = plan.get("items")
     if not isinstance(requirements, list) or not requirements or not isinstance(items, list):
         add("r36_requirements_or_plan_items_missing", "evidence_insufficient")
         return finish()
@@ -68,9 +75,6 @@ def evaluate_r36_ndt_plan(arguments: dict[str, Any]) -> dict[str, Any]:
         identity = (requirement.get("objectId"), requirement.get("method"))
         if any(not isinstance(value, str) or not value.strip() for value in identity):
             add(code + "_object_or_method_missing", "evidence_insufficient", refs)
-            continue
-        if sum(1 for row in requirements if isinstance(row, dict) and (row.get("objectId"), row.get("method")) == identity) != 1:
-            add(code + "_requirement_ambiguous", "evidence_insufficient", refs)
             continue
         matches = [item for item in items if isinstance(item, dict) and (item.get("objectId"), item.get("method")) == identity]
         if len(matches) != 1:
