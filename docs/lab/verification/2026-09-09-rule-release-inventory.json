@@ -5082,6 +5082,7 @@
             "check_required",
             "evaluate_ndt_process",
             "evaluate_r40_parameters",
+            "evaluate_r40_conclusions",
             "validate_evidence_grounding"
           ],
           "parameters": {

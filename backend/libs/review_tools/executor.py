@@ -215,6 +215,9 @@ def build_tool_arguments(
     if tool_name == "evaluate_ndt_process" and arguments.get("profile") == "ndt_record_report":
         for key, value in nested_dict(nested_dict(facts, "r40"), "recordReportCorrespondence").items():
             arguments.setdefault(key, deepcopy(value))
+    if tool_name == "evaluate_r40_conclusions":
+        for key, value in nested_dict(nested_dict(facts, "r40"), "recordReportCorrespondence").items():
+            arguments.setdefault(key, deepcopy(value))
     if tool_name == "evaluate_r40_parameters":
         for key, value in nested_dict(nested_dict(facts, "r40"), "parameterComparison").items():
             arguments.setdefault(key, deepcopy(value))

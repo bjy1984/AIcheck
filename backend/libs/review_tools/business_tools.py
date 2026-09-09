@@ -107,6 +107,7 @@ from libs.review_tools.r39_inventory_consistency import evaluate_r39_inventory_c
 from libs.review_tools.r39_pt import evaluate_r39_pt_emulsifier_application
 from libs.review_tools.r39_reference import evaluate_r39_procedure_reference
 from libs.review_tools.r39_tools import evaluate_r39_first_use_validation
+from libs.review_tools.r40_conclusions import evaluate_r40_conclusions
 from libs.review_tools.r40_parameters import evaluate_r40_parameters
 from libs.review_tools.r40_records import evaluate_r40_records
 
@@ -156,6 +157,7 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_ndt_agencies",
     "evaluate_ndt_process",
     "evaluate_r40_parameters",
+    "evaluate_r40_conclusions",
     "evaluate_ndt_quality_system",
     "evaluate_r36_ndt_plan",
     "evaluate_r39_first_use_validation",
@@ -220,6 +222,7 @@ DOMAIN_TOOL_NAMES = (
 
 BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r39_inventory_consistency": "核对R39引用、内容、签核和应用清单的文件版本对应关系及有来源的应用映射；清单不一致返回证据不足，不推定技术不符合或真实工程完整。",
+    "evaluate_r40_conclusions": "核对同一事件记录与报告原文结论一致性，不重新判定检测标准符合性。",
     "evaluate_r40_parameters": "核对有来源的事件清单中明示参数要求与实测值，不补猜标准限值，不代替整条R40验收。",
     "evaluate_r39_pt_emulsifier_application": "按NB/T47013.5-2015第6.3.2核对指定文件、对象及事件的乳化剂施加方法，禁止刷涂、喷洒仅适用亲水型；不代替全部PT技术要求或整条R39验收。",
     "evaluate_r37_defect_closure": "重新计算完整累进与重检清单，按事件、对象及最新返修轮次核对每个缺陷的结案证据；不接受调用方预先声明通过。",
@@ -439,6 +442,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r36_ndt_plan"
             else {"projectId": "string", "inventory": "object?", "requirements": ["object?"], "values": ["object?"], "selectionIssues": ["object?"]}
             if name == "evaluate_r40_parameters"
+            else {"projectId": "string", "inventory": "object?", "records": ["object?"], "reports": ["object?"], "selectionIssues": ["object?"]}
+            if name == "evaluate_r40_conclusions"
             else {"projectId": "string", "scope": "object?", "basis": "object?", "application": "object?", "validation": "object?", "inventory": "object?", "applications": ["object?"]}
             if name == "evaluate_r39_first_use_validation"
             else {"projectId": "string", "scope": "object?", "requirements": "object?", "signatureInventory": "object?", "inventory": "object?", "approvalCycles": ["object?"]}
@@ -749,6 +754,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         return check_wps_pqr_coverage(arguments)
     handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
         "evaluate_r40_parameters": evaluate_r40_parameters,
+        "evaluate_r40_conclusions": evaluate_r40_conclusions,
         "evaluate_r11_project_parameters": evaluate_r11_project_parameters,
         "evaluate_ndt_quality_system": evaluate_ndt_quality_system,
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,

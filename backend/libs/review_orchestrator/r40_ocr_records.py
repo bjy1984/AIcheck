@@ -27,10 +27,13 @@ def supplement_ocr_records(parses, run, groups):
         if len(matches) != 1 or scope["method"] not in {"RT", "UT"}:
             issues.append({"code": "r40_ocr_event_mapping_missing_or_ambiguous", "documentVersionId": parse["documentVersionId"]})
             continue
-        values = list(identity.values())
+        conclusion = _field(parse, "conclusion", evidence_prefix="R40-FIELD-")
+        values = [*identity.values(), *([conclusion] if conclusion else [])]
         fields.extend(values)
         record = {**scope, "recordId": identity[number_key]["value"], "documentVersionId": parse["documentVersionId"],
                   "evidence": deepcopy(identity[number_key]["evidence"]),
                   "evidenceRefs": [deepcopy(value["evidence"]) for value in values]}
+        if conclusion:
+            record.update(conclusion=conclusion["value"], conclusionEvidenceRefs=deepcopy(conclusion["evidenceRefs"]))
         groups["records" if kind == "检测记录" else "reports"].append(record)
     return fields, issues
