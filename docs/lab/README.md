@@ -205,3 +205,11 @@ cd backend
 - 最終完整後端：3130 passed / 66 skipped / 6 warnings，168.40 秒，退出碼 0。原先三項失敗逐項消除，未按失敗總數放行。Ruff 289 / 289。
 - 前端單元測試 84 個檔案全部通過。清理工作台既有 CSS 次序／註解告警，Stylelint 與 ESLint 通過。減少動畫及響應式覆寫保留必要 cascade 順序、精確註明 order/order 例外；Chrome 1200px／1600px 及兩種減少動畫設定與修改前結果一致。重跑腳本 frontend/e2e/lab-rules/check-workbench-css.mjs。
 - 完整原始紀錄在 docs/lab/verification/regression-4cac73d1/。選擇性跳過仍不算 PostgreSQL／MinIO／Temporal 的實機驗收；沒有付費模型評估、正式 69 條發布、ID 遷移或生產部署。
+
+### 以任務 OCR 資料試跑工程規則
+
+- 工程規則 trial API 可傳 reviewRunId，與手填 facts 互斥。伺服器檢查工程、節點及業務包；只接受有來源指紋的文件快照，沿用範圍與來源變動驗證讀取 OCR／人工修正。
+- 按條件欄位名稱精確匹配，保留零值、單位、文件版本、欄位 ID、頁碼、bbox 與 correctionId；不隱式把字串轉數字或轉換單位。缺欄位／定位或多筆同名欄位均輸出 factDiagnostics 並維持證據不足，多筆相同值也不假設同一焊口或材料批次。
+- 回應帶 sourceMode=run_ocr、sourceReviewRunId、sourceSnapshotHash，仍是 advisoryOnly=true / evidenceVerified=false：来源定位不是對真實性或法規適用性的人工背書，不保存正式結論，不發布規則。
+- 新取證、條件、文件快照、部署及 OpenAPI 回歸 98 passed；試跑 API 3 passed；Ruff 289 / 289，diff check 通過。本批未重跑完整後端，上一批 3130 passed 為修改前紀錄。
+- 前端任務來源選擇、對象／欄位映射、正式工具整合仍待完成。此入口可供後續真實案例離線比對，不代表 W3/W4/W10 已完成。

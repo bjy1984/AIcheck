@@ -13467,3 +13467,31 @@ def test_lab_changed_input_fails_before_specialized_planners_and_restores_node(m
     assert ai_run["status"] == "失败"
     assert ai_run["errorCode"] == result["errorCode"]
     assert run["stateTransition"]["to"] == "待人工确认"
+
+
+def test_project_rule_trial_can_use_scoped_run_ocr_without_client_values(monkeypatch):
+    from libs.review_document_scope import freeze_document_scope
+
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    path = "/projects/P-2026-HDCP-001/rules/versions"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    conditions = {"schemaVersion": "rule-conditions-v1", "checks": [
+        {"id": "thickness", "field": "thickness", "operator": "gte", "expected": 10, "unit": "mm"}]}
+    rule = assert_ok(client.post(path, headers=headers, json={"inspectionItem": "厚度核对", "standardText": "试跑条件",
+                    "nodeIds": [24], "executionConditions": conditions}))["rule"]
+    run = {"reviewRunId": "RR-TRIAL-OCR", "projectId": "P-2026-HDCP-001", "nodeId": 24,
+           "businessPackId": rule["businessPackId"], "inputDocumentVersionIds": ["D-TRIAL"]}
+    repo.state["ocr_parse_results"].append({"documentVersionId": "D-TRIAL", "fields": [
+        {"id": "F-TRIAL", "fieldName": "thickness", "value": 11, "unit": "mm", "pageNo": 1, "bbox": [0, 0, 10, 10]}]})
+    run["documentScopeSnapshot"] = freeze_document_scope(run, repo.state)
+    repo.state["review_runs"].append(run)
+    url = f"{path}/{rule['id']}/trial"
+    headers["If-Match"] = rule["etag"]
+    output = assert_ok(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"]}))
+    assert output["result"] == "pass" and output["sourceMode"] == "run_ocr"
+    assert output["sourceSnapshotHash"] == run["documentScopeSnapshot"]["snapshotHash"]
+    assert output["advisoryOnly"] is True and output["evidenceVerified"] is False
+    assert output["checks"][0]["evidenceRefs"][0]["documentVersionId"] == "D-TRIAL"
+    assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"], "facts": {}}), "VALIDATION_ERROR")
+    run["projectId"] = "OTHER"
+    assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"]}), "NOT_FOUND")

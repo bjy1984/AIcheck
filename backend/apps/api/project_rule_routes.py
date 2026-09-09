@@ -10,6 +10,7 @@ from apps.api import routes as api
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
+from libs.review_condition_facts import condition_facts_from_run
 from libs.rule_conditions import evaluate_conditions, validate_conditions
 
 project_rule_router = APIRouter()
@@ -132,9 +133,27 @@ def trial_project_rule(request: Request, project_id: str, version_id: str,
         return fail(errors.VALIDATION_ERROR, request, message="试跑需要 If-Match 版本标记。")
     if not api.record_if_match_valid("rule-version", rule, if_match):
         return fail(errors.ETAG_CONFLICT, request)
+    facts, diagnostics, run = body.get("facts"), {}, {}
+    run_id = body.get("reviewRunId")
+    if run_id is not None:
+        if not isinstance(run_id, str) or not run_id or "facts" in body:
+            return fail(errors.VALIDATION_ERROR, request, message="请选择任务资料或手填示例，不能混用。")
+        run = repo.find_one("review_runs", run_id, id_field="reviewRunId")
+        if not run or run.get("projectId") != project_id:
+            return fail(errors.NOT_FOUND, request)
+        if str(run.get("nodeId")) not in {str(node) for node in api.parse_rule_node_ids(rule.get("nodeIds"))}:
+            return fail(errors.VALIDATION_ERROR, request, message="任务节点不属于规则适用范围。")
+        if str(run.get("businessPackId")) != str(rule.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID):
+            return fail(errors.VALIDATION_ERROR, request, message="任务与规则业务包不一致。")
+        try:
+            facts, diagnostics = condition_facts_from_run(repo.state, run, rule.get("executionConditions"))
+        except (TypeError, ValueError) as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
     try:
-        result = evaluate_conditions(rule.get("executionConditions"), body.get("facts"))
+        result = evaluate_conditions(rule.get("executionConditions"), facts)
     except (TypeError, ValueError) as exc:
         return fail(errors.VALIDATION_ERROR, request, message=str(exc))
     return ok({"mode": "draft_trial", "advisoryOnly": True, "ruleVersionId": version_id,
-               "ruleRevision": rule.get("revision"), "evidenceVerified": False, **result}, request)
+               "ruleRevision": rule.get("revision"), "sourceMode": "run_ocr" if run_id else "manual_examples",
+               "sourceReviewRunId": run_id, "sourceSnapshotHash": (run.get("documentScopeSnapshot") or {}).get("snapshotHash"),
+               "factDiagnostics": diagnostics, "evidenceVerified": False, **result}, request)
