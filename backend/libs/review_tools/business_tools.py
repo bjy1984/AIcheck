@@ -96,6 +96,7 @@ from libs.review_tools.r24_r34_tools import (
 )
 from libs.review_tools.r35_tools import evaluate_ndt_quality_system
 from libs.review_tools.r36_tools import evaluate_r36_ndt_plan
+from libs.review_tools.r37_tools import evaluate_ndt_nonconformance
 
 COMMON_TOOL_NAMES = (
     "check_required",
@@ -196,6 +197,7 @@ DOMAIN_TOOL_NAMES = (
 
 BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r36_ndt_plan": "R36逐对象比对带证据的明确检测要求与方案方法、百分比、时机和验收级别，核对审批及人员设备准备事实；不自动生成标准限值或见证事实。",
+    "evaluate_ndt_nonconformance": "R37核对明确的问题清单、处理程序、委托单、通知及反馈见证，按工程、机构、问题、对象与返修轮次匹配；不从文件存在推定处理完成。",
     "evaluate_ndt_quality_system": "核对R35结构化现场体系实施记录、项目和机构匹配及实际设备检定日期覆盖；仅有文件或通用规则参数不能判定符合。证据原文支持性另由证据门禁核验。",
     "check_license_registry_match": (
         "核对制造许可证 OCR 候选与人工官网核验记录；官网未查到、信息不一致或证照非有效状态时判定不符合，未完成核验时返回证据不足。"
@@ -401,6 +403,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_ndt_quality_system"
             else {"projectId": "string", "applicability": "object", "plan": "object", "requirements": ["object"], "standardRequirements": ["object?"]}
             if name == "evaluate_r36_ndt_plan"
+            else {"projectId": "string", "organizationId": "string", "applicability": "object", "procedure": "object", "caseInventory": "object", "commissions": ["object"], "notices": ["object"], "feedback": ["object"]}
+            if name == "evaluate_ndt_nonconformance"
             else {
                 "designItems": ["object"],
                 "ruleVersion": "string?",
@@ -675,6 +679,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
     handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
         "evaluate_ndt_quality_system": evaluate_ndt_quality_system,
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,
+        "evaluate_ndt_nonconformance": evaluate_ndt_nonconformance,
         "check_license_registry_match": check_license_registry_match,
         "classify_r13_component_requirements": classify_r13_component_requirements,
         "classify_r14_component_applicability": classify_r14_component_applicability,

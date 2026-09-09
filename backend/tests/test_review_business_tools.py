@@ -1381,6 +1381,7 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "evaluate_r15_manufacturing_license_coverage",
     "evaluate_r15_type_test_coverage",
     "evaluate_valve_test",
+    "evaluate_ndt_nonconformance",  # Dedicated R37 witness-chain tests replace generic profile success.
     "evaluate_r36_ndt_plan",  # Dedicated R36 cases live in test_r36_tools.py.
     "evaluate_ndt_quality_system",  # Dedicated R35 cases live in test_r35_tools.py; generic profiles cannot pass.
 } | R16_R18_TOOL_NAMES)))
