@@ -326,13 +326,11 @@ onBeforeUnmount(() => {
             <p>{{ filePreviewUnavailableText }}</p>
           </div>
           <div v-else class="file-preview" v-loading="previewLoading">
-            <ElAlert
-              v-if="previewError"
-              :title="previewError"
-              type="warning"
-              :closable="false"
-              show-icon
-            />
+            <div v-if="previewError" class="preview-recovery" role="alert">
+              <ElAlert :title="previewError" type="warning" :closable="false" show-icon />
+              <ElButton :loading="previewLoading" @click="loadFilePreview">重试读取原文</ElButton>
+              <p>仍读取这条引用指定的文件版本和页码。</p>
+            </div>
             <template v-else-if="filePreviewAvailable">
               <div v-if="!filePreviewFrameUrl" class="preview-placeholder">原文预览加载中</div>
               <img
@@ -447,6 +445,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.preview-recovery {
+  display: grid;
+  gap: 12px;
+}
+
+.preview-recovery :deep(.el-button) {
+  min-height: 44px;
+}
+
 .evidence-summary {
   margin-bottom: 14px;
 }
@@ -508,15 +515,15 @@ onBeforeUnmount(() => {
 .clause-ocr pre,
 .clause-ocr-chunks {
   max-height: 420px;
-  overflow: auto;
-  margin: 0;
   padding: 10px;
+  margin: 0;
+  overflow: auto;
   font-family: inherit;
   font-size: 13px;
   line-height: 1.7;
   color: #344054;
-  white-space: pre-wrap;
   word-break: break-word;
+  white-space: pre-wrap;
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
@@ -614,11 +621,13 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 }
+
 .inline-locator {
   min-width: 0;
   color: var(--el-text-color-primary);
   overflow-wrap: anywhere;
 }
+
 .inline-locator-heading {
   display: flex;
   justify-content: space-between;
@@ -626,16 +635,20 @@ onBeforeUnmount(() => {
   align-items: center;
   margin-bottom: 16px;
 }
+
 .inline-locator-heading h2 {
   margin: 0;
   font-size: 16px;
 }
+
 .inline-locator-heading :deep(.el-button) {
   min-height: 44px;
 }
+
 .inline-locator .locator-grid {
   grid-template-columns: minmax(0, 1fr);
 }
+
 .inline-locator .standard-file-name,
 .inline-locator .preview-box,
 .inline-locator .detail-box,
@@ -645,6 +658,7 @@ onBeforeUnmount(() => {
   background: var(--el-bg-color);
   border-color: var(--el-border-color);
 }
+
 .inline-locator .standard-file-name strong,
 .inline-locator .clause-quote p {
   color: var(--el-text-color-primary);

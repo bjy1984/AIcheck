@@ -1,4 +1,5 @@
 import request from '@/axios'
+import { validateOriginalBlob } from './originalBlob'
 import { createAutoReviewApi } from './autoReview'
 import { createProjectAnalysisApi } from './projectAnalysis'
 export type {
@@ -3364,15 +3365,16 @@ export const getDocumentDownloadUrlApi = (
   return request.get({ url: `/api/projects/${projectId}/documents/${documentId}/download-url` })
 }
 
-export const getDocumentOriginalBlobApi = (url: string): Promise<{ data: Blob }> => {
-  return request.get({
+export const getDocumentOriginalBlobApi = async (url: string): Promise<{ data: Blob }> => {
+  const response = await request.get({
     url,
     responseType: 'blob',
     headers: {
       'X-Silent-Http-Error': 'true',
       'X-Silent-Business-Error': 'true'
     }
-  }) as unknown as Promise<{ data: Blob }>
+  })
+  return validateOriginalBlob(response as unknown as { data: Blob }, url)
 }
 
 /** Office 文件转 PDF 后的预览。后端用 LibreOffice headless 转换。 */

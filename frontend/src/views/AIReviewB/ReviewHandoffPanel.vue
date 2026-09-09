@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EvidenceLocatorDialog from '@/views/AICheck/components/EvidenceLocatorDialog.vue'
 import ReviewHandoffUse from './ReviewHandoffUse.vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import ReviewHandoffCreate from './ReviewHandoffCreate.vue'
@@ -39,6 +40,8 @@ const emit = defineEmits<{
 }>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
+const previewVisible = ref(false)
+const previewEvidence = ref<EvidenceLink>()
 const busy = ref(false)
 const error = ref('')
 const feedback = ref('')
@@ -62,6 +65,8 @@ const resetForm = () => {
 const reset = () => {
   generation++
   visible.value = false
+  previewVisible.value = false
+  previewEvidence.value = undefined
   busy.value = false
   items.value = []
   selected.value = null
@@ -196,7 +201,7 @@ const preview = (ref: EvidenceLink, index: number) => {
   if (!record || !ref.documentVersionId) return
   const location = handoffEvidenceLink(record, ref.documentVersionId)
   if (!location) return
-  emit('evidence', {
+  previewEvidence.value = {
     ...ref,
     ...location,
     id: `HANDOFF-${record.id}-${index}`,
@@ -204,7 +209,8 @@ const preview = (ref: EvidenceLink, index: number) => {
     nodeId: record.draft.source.nodeId,
     objectType: 'documentVersion',
     objectId: ref.documentVersionId
-  })
+  }
+  previewVisible.value = true
 }
 const valueText = (value: unknown) =>
   typeof value === 'string' ? value : JSON.stringify(value, null, 2)
@@ -356,6 +362,12 @@ const valueText = (value: unknown) =>
       </section>
     </div>
   </ElDialog>
+  <EvidenceLocatorDialog
+    v-model="previewVisible"
+    :project-id="projectId"
+    :evidence="previewEvidence"
+    :extracted-fields="[]"
+  />
 </template>
 
 <style scoped>
