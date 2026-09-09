@@ -755,3 +755,47 @@ def test_r15_complete_structured_facts_pass_the_full_fixed_plan() -> None:
         "humanReviewRequiredCount": 0,
         "executionErrorCount": 0,
     }
+
+
+def test_shared_tool_receives_separate_atomic_arguments_without_mutating_inputs():
+    from copy import deepcopy
+
+    plan = [
+        {"atomicCheckId": identity, "tools": ["shared"], "compilable": True, "parameters": {"limit": limit}}
+        for identity, limit in [("AC-1", 10), ("AC-2", 20)]
+    ]
+    scoped = {"AC-1": {"shared": {"records": [1]}}, "AC-2": {"shared": {"records": [2]}}}
+    original = deepcopy(scoped)
+    calls = []
+
+    def runner(name, arguments):
+        calls.append(deepcopy(arguments))
+        arguments["records"].append("mutated")
+        return {"result": "pass"}
+
+    result = execute_node_tool_plan(plan, tool_runner=runner, arguments_by_atomic_check=scoped)
+    assert [(call["limit"], call["records"]) for call in calls] == [(10, [1]), (20, [2])]
+    assert scoped == original
+    assert len(result["atomicResults"]) == 2
+
+
+@pytest.mark.parametrize("scoped,error", [
+    ({"UNKNOWN": {}}, "unknown_atomic_check"),
+    ({"AC-2": {"unbound": {}}}, "tool_not_bound"),
+    ({"AC-2": {"shared": {"limit": 999}}}, "fixed_rule_parameter"),
+])
+def test_invalid_atomic_arguments_reject_whole_plan_before_first_call(scoped, error):
+    plan = [
+        {"atomicCheckId": identity, "tools": ["shared"], "compilable": True, "parameters": {"limit": 10}}
+        for identity in ["AC-1", "AC-2"]
+    ]
+    with pytest.raises(ValueError, match=error):
+        execute_node_tool_plan(plan, tool_runner=lambda *args: pytest.fail("must validate before execution"),
+                               arguments_by_atomic_check=scoped)
+
+
+def test_common_arguments_cannot_override_fixed_rule_parameters():
+    plan = [{"atomicCheckId": "AC-1", "tools": ["shared"], "compilable": True, "parameters": {"limit": 10}}]
+    with pytest.raises(ValueError, match="fixed_rule_parameter"):
+        execute_node_tool_plan(plan, tool_runner=lambda *args: pytest.fail("must not run"),
+                               tool_arguments={"shared": {"limit": 99}})

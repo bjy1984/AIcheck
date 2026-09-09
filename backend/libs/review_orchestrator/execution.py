@@ -1771,6 +1771,9 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 tool_arguments=context.get("atomicToolArguments")
                 if isinstance(context.get("atomicToolArguments"), dict)
                 else {},
+                arguments_by_atomic_check=context.get("argumentsByAtomicCheck")
+                if isinstance(context.get("argumentsByAtomicCheck"), dict)
+                else {},
                 document_version_ids=list(review_run.get("inputDocumentVersionIds") or []),
                 evidence_facts=context.get("evidenceFacts") if isinstance(context.get("evidenceFacts"), list) else [],
                 evidence_refs=context.get("evidenceLinks") if isinstance(context.get("evidenceLinks"), list) else [],

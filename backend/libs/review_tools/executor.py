@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import date
 from typing import Any
 from uuid import uuid4
@@ -65,6 +66,7 @@ def execute_node_tool_plan(
     tool_runner: ToolRunner,
     facts: dict[str, Any] | None = None,
     tool_arguments: dict[str, dict[str, Any]] | None = None,
+    arguments_by_atomic_check: dict[str, dict[str, dict[str, Any]]] | None = None,
     document_version_ids: list[str] | None = None,
     evidence_facts: list[dict[str, Any]] | None = None,
     evidence_refs: list[dict[str, Any]] | None = None,
@@ -74,6 +76,8 @@ def execute_node_tool_plan(
 ) -> dict[str, Any]:
     facts = facts or {}
     tool_arguments = tool_arguments or {}
+    arguments_by_atomic_check = arguments_by_atomic_check or {}
+    explicit_arguments = resolve_atomic_arguments(plan, tool_arguments, arguments_by_atomic_check)
     document_version_ids = document_version_ids or []
     atomic_results = []
     for item in plan:
@@ -93,7 +97,7 @@ def execute_node_tool_plan(
                 tool_name,
                 item,
                 facts=facts,
-                explicit=tool_arguments.get(tool_name) or {},
+                explicit=explicit_arguments[(str(item.get("atomicCheckId")), tool_name)],
                 document_version_ids=document_version_ids,
                 evidence_facts=evidence_facts or [],
                 evidence_refs=evidence_refs or [],
@@ -113,7 +117,7 @@ def execute_node_tool_plan(
                     provider_tool_call_id=tool_call_id,
                 )
             try:
-                output = tool_runner(tool_name, arguments)
+                output = tool_runner(tool_name, deepcopy(arguments))
             except Exception as exc:
                 if capture_context is not None:
                     capture_tool_error(
@@ -146,6 +150,39 @@ def execute_node_tool_plan(
         "atomicResults": atomic_results,
         "summary": summarize(atomic_results),
     }
+
+
+def resolve_atomic_arguments(
+    plan: list[dict[str, Any]],
+    common: dict[str, dict[str, Any]],
+    scoped: dict[str, dict[str, dict[str, Any]]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Validate the complete batch before any tool runs; rule parameters are fixed."""
+    identities = [str(item.get("atomicCheckId")) for item in plan]
+    if len(set(identities)) != len(identities):
+        raise ValueError("duplicate_atomic_check_id")
+    if set(scoped) - set(identities):
+        raise ValueError("unknown_atomic_check_arguments")
+    resolved = {}
+    for item in plan:
+        identity = str(item.get("atomicCheckId"))
+        tools = item.get("tools") or []
+        overrides = scoped.get(identity, {})
+        if not isinstance(overrides, dict):
+            raise TypeError("atomic_check_arguments_must_be_object")
+        if set(overrides) - set(tools):
+            raise ValueError("atomic_check_tool_not_bound")
+        for tool in tools:
+            shared = common.get(tool, {})
+            specific = overrides.get(tool, {})
+            if not isinstance(shared, dict) or not isinstance(specific, dict):
+                raise TypeError("tool_arguments_must_be_object")
+            explicit = {**shared, **specific}
+            for key, value in (item.get("parameters") or {}).items():
+                if key in explicit and explicit[key] != value:
+                    raise ValueError(f"fixed_rule_parameter_override:{identity}:{key}")
+            resolved[(identity, tool)] = deepcopy(explicit)
+    return resolved
 
 
 def build_tool_arguments(
