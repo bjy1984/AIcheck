@@ -107,3 +107,50 @@ def test_read_and_save_require_both_node_scopes_and_current_document_access():
     response = client.get(f"{url}/{saved['id']}", headers=HEADERS)
     assert response.json()["code"] != 0, response.text
     assert repo.state["review_handoffs"] == before
+
+
+def test_list_filters_permissions_before_pagination_and_supports_run_filters():
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    visible_ids = set()
+    for weld in ("W-1", "W-2"):
+        body = payload()
+        body["subject"]["objectId"] = weld
+        response = client.post(url, headers=HEADERS, json=body).json()
+        assert response["code"] == 0, response
+        visible_ids.add(response["data"]["id"])
+    other = run_for(36)
+    other.update(id="TARGET-OTHER", projectId=PROJECT, tenantId="TENANT-DEFAULT", inputHash="other", inputDocumentVersionIds=[])
+    repo.state["review_runs"].append(other)
+    response = client.post(url, headers=HEADERS, json={**payload(), "targetRunId": "TARGET-OTHER"}).json()
+    assert response["code"] == 0, response
+    member = next(row for row in repo.state["project_members"] if row.get("projectId") == PROJECT and row.get("userId") == HEADERS["X-User-Id"])
+    member["nodeScope"] = [24, 35]
+    pages = [client.get(url, headers=HEADERS, params={"page": page, "pageSize": 1}).json()["data"] for page in (1, 2, 3)]
+    assert [page["total"] for page in pages] == [2, 2, 2]
+    assert {row["id"] for page in pages for row in page["items"]} == visible_ids
+    assert pages[2]["items"] == []
+    for filters, count in (({"sourceRunId": "SOURCE"}, 2), ({"targetRunId": "TARGET"}, 2), ({"targetRunId": "TARGET-OTHER"}, 0), ({"sourceRunId": "UNKNOWN"}, 0)):
+        result = client.get(url, headers=HEADERS, params=filters).json()["data"]
+        assert result["total"] == count
+    invalid = client.get(url, headers=HEADERS, params={"pageSize": 101}).json()
+    assert invalid["code"] != 0 and invalid["data"]["reason"] == "VALIDATION_ERROR", invalid
+
+
+def test_removed_source_input_does_not_bypass_frozen_document_read_permission():
+    version_id = "HANDOFF-SENSITIVE-VERSION"
+    document = {"id": "HANDOFF-SENSITIVE", "projectId": PROJECT, "tenantId": "TENANT-DEFAULT",
+                "currentVersionId": version_id, "fileName": "sensitive.pdf"}
+    repo.state["documents"].append(document)
+    repo.state["versions"].append({"id": version_id, "documentId": document["id"], "tenantId": "TENANT-DEFAULT"})
+    source = repo.find_one("review_runs", "SOURCE")
+    source["inputDocumentVersionIds"] = [version_id]
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    result = client.post(url, headers=HEADERS, json=payload()).json()
+    assert result["code"] == 0, result
+    record = result["data"]
+    assert record["draft"]["source"]["documentVersionIds"] == [version_id]
+    source["inputDocumentVersionIds"] = []
+    document["tenantId"] = "TENANT-OTHER"
+    assert client.get(f"{url}/{record['id']}", headers=HEADERS).json()["code"] != 0
+    assert client.get(url, headers=HEADERS).json()["data"]["total"] == 0
+    assert repo.find_one("review_handoffs", record["id"]) == record

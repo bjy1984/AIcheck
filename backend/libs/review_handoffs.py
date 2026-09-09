@@ -20,6 +20,7 @@ def _identity(run: dict[str, Any]) -> dict[str, Any]:
               "inputHash": run.get("inputHash"), "stationId": station["stationId"], "nodeId": run.get("nodeId")}
     if any(value is None or value == "" for value in values.values()):
         raise ReviewHandoffError("handoff_run_identity_incomplete")
+    values["documentVersionIds"] = deepcopy(run.get("inputDocumentVersionIds") or [])
     values["versionHash"] = digest({"identity": values, "station": station,
                                    "documents": run.get("documentScopeSnapshot"),
                                    "documentVersionIds": run.get("inputDocumentVersionIds"), "status": run.get("status"),
