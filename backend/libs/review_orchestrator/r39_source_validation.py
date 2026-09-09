@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
 from libs.review_orchestrator.material_facts import build_material_judgment
+from libs.review_tools.r39_approval import SCOPE_FIELDS as APPROVAL_SCOPE_FIELDS
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_reference import SCOPE_FIELDS
 from libs.review_tools.r39_tools import IDENTITY_FIELDS
@@ -11,7 +12,7 @@ SOURCE_GROUPS = {
     "ptEmulsifierApplication": ("ptContexts", "ptBases", "ptProcesses"),
     "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
     "firstUseValidation": ("applications", "bases", "validations", "applicationInventories", "applicationMembers"),
-    "approvalChain": ("approvalContexts", "requirements", "steps", "signatureInventories", "signatures"),
+    "approvalChain": ("approvalContexts", "requirements", "steps", "signatureInventories", "signatures", "approvalCycleInventories", "approvalCycleMembers"),
     "documentContent": ("contentContexts", "contentBases", "contentInventories", "contentFields", "contentDocumentInventories", "contentDocumentMembers"),
 }
 
@@ -42,9 +43,12 @@ def _isolate_inventory_sources(groups, facts, checked, input_name):
     elif input_name == "documentContent":
         fields, collection, diagnostics = CONTENT_SCOPE_FIELDS, "documents", "documentValidation"
         shared_names = {"contentDocumentInventories", "contentDocumentMembers"}
-    else:
+    elif input_name == "firstUseValidation":
         fields, collection, diagnostics = IDENTITY_FIELDS, "applications", "applicationValidation"
         shared_names = {"applicationInventories", "applicationMembers"}
+    else:
+        fields, collection, diagnostics = APPROVAL_SCOPE_FIELDS, "approvalCycles", "cycleValidation"
+        shared_names = {"approvalCycleInventories", "approvalCycleMembers"}
     value = facts.get(input_name)
     if not isinstance(value, dict) or "inventory" not in value:
         return False
@@ -60,7 +64,7 @@ def _isolate_inventory_sources(groups, facts, checked, input_name):
         if not isinstance(scope, dict):
             continue
         selected = {name: [row for row in groups[name] if all(
-            row.get("reviewedDocumentVersionId" if input_name == "documentContent" and key == "documentVersionId" else key) == scope[key]
+            row.get("reviewedDocumentVersionId" if input_name in {"documentContent", "approvalChain"} and key == "documentVersionId" else key) == scope[key]
             for key in fields)] if name not in shared_names else [] for name in names}
         validation = validate_r39_sources(selected, input_name)
         checked[diagnostics].append({"scope": dict(scope), **validation})
@@ -77,6 +81,6 @@ def gate_r39_inputs(groups, facts):
     facts["sourceValidation"] = checks
     for name, checked in checks.items():
         if checked["result"] != "passed":
-            if name not in {"procedureReference", "documentContent", "firstUseValidation"} or not _isolate_inventory_sources(groups, facts, checked, name):
+            if name not in {"procedureReference", "documentContent", "firstUseValidation", "approvalChain"} or not _isolate_inventory_sources(groups, facts, checked, name):
                 facts.pop(name, None)
             facts["sourceIssues"].append("r39_" + name + "_source_gate_failed")

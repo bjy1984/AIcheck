@@ -27,6 +27,9 @@ def _names(value):
 
 
 def evaluate_r39_approval_chain(arguments: dict[str, Any]) -> dict[str, Any]:
+    if "inventory" in arguments or "approvalCycles" in arguments:
+        from libs.review_tools.r39_approval_inventory import evaluate_approval_inventory
+        return evaluate_approval_inventory(arguments, SCOPE_FIELDS, evaluate_r39_approval_chain)
     rows = []
 
     def add(code, status, refs=None):

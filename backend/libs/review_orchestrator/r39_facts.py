@@ -7,14 +7,15 @@ from typing import Any
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.r39_application_facts import application_input
+from libs.review_orchestrator.r39_approval_facts import build_approval_inputs
 from libs.review_orchestrator.r39_content_inventory_facts import build_content_inputs
 from libs.review_orchestrator.r39_pt_facts import pt_application_input
 from libs.review_orchestrator.r39_reference_facts import reference_input
 from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
-from libs.review_tools.r39_approval import SCOPE_FIELDS
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 
 R39_TABLES = {
+    "ndt_approval_cycle_inventory": "approvalCycleInventories", "ndt_approval_cycle_members": "approvalCycleMembers",
     "ndt_application_inventory": "applicationInventories", "ndt_application_members": "applicationMembers",
     "ndt_content_document_inventory": "contentDocumentInventories", "ndt_content_document_members": "contentDocumentMembers",
     "ndt_pt_context": "ptContexts", "ndt_pt_basis": "ptBases", "ndt_pt_process": "ptProcesses",
@@ -99,29 +100,5 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
         facts["firstUseValidation"] = first_use
     else:
         issues.append("r39_application_missing_or_ambiguous")
-    contexts = groups["approvalContexts"]
-    if len(contexts) != 1:
-        issues.append("r39_approval_context_missing_or_ambiguous")
-        return finish()
-    context = _approval_record(contexts[0])
-    scope = {key: context.get(key) for key in SCOPE_FIELDS}
-    if not _reviewed_document_valid(state, run, scope):
-        issues.append("r39_reviewed_document_not_in_selected_project_scope")
-        return finish()
-    records = {key: [_approval_record(row) for row in groups[key]]
-               for key in ("requirements", "steps", "signatureInventories", "signatures")}
-    if any(len(records[key]) != 1 for key in ("requirements", "signatureInventories")):
-        issues.append("r39_approval_header_missing_or_ambiguous")
-        return finish()
-    if any(any(row.get(key) != scope[key] for key in SCOPE_FIELDS) for rows in records.values() for row in rows):
-        issues.append("r39_approval_source_scope_conflict")
-        return finish()
-    requirements = records["requirements"][0]
-    inventory = records["signatureInventories"][0]
-    # Embedded child records cannot manufacture evidence; independent rows are required.
-    requirements["steps"] = [{key: value for key, value in row.items() if key not in SCOPE_FIELDS}
-                             for row in records["steps"]]
-    inventory["signatures"] = records["signatures"]
-    facts["approvalChain"] = {"projectId": run["projectId"], "scope": scope,
-                              "requirements": requirements, "signatureInventory": inventory}
+    build_approval_inputs(state, run, groups, facts, _approval_record, _reviewed_document_valid)
     return finish()
