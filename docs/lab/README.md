@@ -117,3 +117,10 @@ cd backend
 - 可選擇當前節點的工程／平台版本、新建草稿、唯讀查看既有版本、複製成工程草稿及修改草稿文字。唯讀狀態、實際適用節點與「尚未發布」明確顯示。
 - 未保存修改在切換版本／關閉時詢問；保存錯誤保留輸入，If-Match 防止覆蓋新版。切換工程或節點時關閉編輯器並忽略舊請求回應，避免把回應帶入另一工程。
 - 前端 vue-tsc 全量型別檢查通過；修改檔 ESLint／Stylelint 通過。尚未完成登入帳號下的瀏覽器互動、截圖及端到端驗收，不能視為 W6 已完成。結構化條件、試跑與正式發布仍待接入。
+
+### 結構化條件與草稿試跑
+
+- 工程草稿新增 executionConditions，schemaVersion 為 rule-conditions-v1，checks 指定 id、field、operator、expected 與可選 unit。支援 eq/ne/gt/gte/lt/lte/in；拒絕未知運算、程式欄位、重复 ID 及非有限數值。
+- `/projects/{projectId}/rules/versions/{versionId}/trial` 接受 facts：各欄位包含 value、unit、evidenceRefs。使用已儲存條件，不接受請求覆寫門檻；不修改草稿、審查或歷史結果。
+- 缺資料／引用、單位及型別不符回傳 evidence_insufficient；不隱式換算單位。結果明確標記 draft_trial、advisoryOnly=true、evidenceVerified=false，試跑引用未作正式證據核驗。
+- 條件及 API 試跑測試 14 passed；Ruff 無新增告警。條件表單、適用性／不適用判定、正式事實組裝、工具鏈整合及發布驗收仍待完成，不等同於 69 條正式規則已實作。

@@ -13386,3 +13386,21 @@ def test_lab_project_rule_api_is_disabled_by_default(monkeypatch):
     monkeypatch.delenv("AICHECK_WORKSTATIONS_ENABLED", raising=False)
     assert_error(client.get("/projects/P-2026-HDCP-001/rules/versions",
                             headers={"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}), "NOT_FOUND")
+
+
+def test_project_rule_trial_uses_saved_conditions_and_does_not_publish(monkeypatch):
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    path = "/projects/P-2026-HDCP-001/rules/versions"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    conditions = {"schemaVersion": "rule-conditions-v1", "checks": [
+        {"id": "thickness", "field": "thickness", "operator": "gte", "expected": 10, "unit": "mm"}
+    ]}
+    rule = assert_ok(client.post(path, headers=headers, json={"inspectionItem": "厚度核对", "standardText": "试跑条件",
+                          "nodeIds": [24], "executionConditions": conditions}))["rule"]
+    output = assert_ok(client.post(f"{path}/{rule['id']}/trial", headers=headers, json={
+        "facts": {"thickness": {"value": 9, "unit": "mm", "evidenceRefs": ["EXAMPLE"]}}
+    }))
+    assert output["result"] == "fail" and output["advisoryOnly"] is True
+    assert output["evidenceVerified"] is False
+    assert repo.find_one("rule_versions", rule["id"])["status"] == "草稿"
+    assert repo.find_one("rule_versions", rule["id"])["revision"] == rule["revision"]

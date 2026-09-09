@@ -5,6 +5,7 @@ import re
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
+    ("POST", r"/projects/[^/]+/rules/versions/[^/]+/trial$", "review:save"),
     ("POST", r"/projects/[^/]+/rules/versions$", "review:save"),
     ("PATCH", r"/projects/[^/]+/rules/versions/[^/]+$", "review:save"),
     ("POST", r"/projects/[^/]+/rules/versions/[^/]+/fork$", "review:save"),
