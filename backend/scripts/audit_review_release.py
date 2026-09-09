@@ -9,7 +9,7 @@ from typing import Any
 
 from libs.business_pack import load_business_pack
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
-from libs.review_tools.business_tools import DOMAIN_TOOL_NAMES
+from libs.review_tools.business_tools import DOMAIN_TOOL_NAMES, profile_business_handler
 from libs.review_tools.executor import compile_node_tool_plan, execute_node_tool_plan
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,12 +31,19 @@ def audit(pack: dict[str, Any] | None = None) -> dict[str, Any]:
         rule = f'R{number:02d}'
         plan = compile_node_tool_plan(pack, rule, available_tools=available)
         output = execute_node_tool_plan(plan, tool_runner=lambda name, args: dispatch_runtime_tool({}, name, args))
-        generic_tools = sorted({name for binding in plan for name in binding['tools'] if name in generic})
-        unconfigured = sorted({name for binding in plan for name in binding['tools'] if name in generic and not binding['parameters'].get('ruleChecks')})
+        generic_bindings = [(binding, name) for binding in plan for name in binding['tools']
+                            if name in generic and profile_business_handler(name, binding['parameters'].get('profile')) is None]
+        generic_tools = sorted({name for _, name in generic_bindings})
+        unconfigured = sorted({name for binding, name in generic_bindings if not binding['parameters'].get('ruleChecks')})
+        specialized = [{'atomicCheckId': binding['atomicCheckId'], 'tool': name, 'profile': binding['parameters']['profile']}
+                       for binding in plan for name in binding['tools']
+                       if profile_business_handler(name, binding['parameters'].get('profile')) is not None]
+        pending = sorted({capability for binding in plan for capability in binding['parameters'].get('pendingCapabilities', [])})
         rows.append({'rule': rule, 'atomicChecks': len(plan), 'pilotEnabled': rule in pack['atomicCheckToolBindingSet']['pilotRules'],
                      'allToolsRegistered': bool(plan) and all(item['compilable'] for item in plan),
                      'requiredFacts': sorted({field for item in plan for field in item['requiredFacts']}),
                      'genericInterpreters': generic_tools, 'unconfiguredInterpreters': unconfigured,
+                     'profileDedicatedTools': specialized, 'pendingCapabilities': pending,
                      'emptyInputResult': output['result'],
                      'evidenceGroundingBound': all('validate_evidence_grounding' in item['tools'] for item in plan),
                      'scenarioAcceptance': {name: 'not_recorded' for name in ('compliant', 'noncompliant', 'insufficient', 'not_applicable')},
@@ -47,7 +54,8 @@ def audit(pack: dict[str, Any] | None = None) -> dict[str, Any]:
             'lifecycleStatus': pack['atomicCheckToolBindingSet']['lifecycleStatus'], 'ruleCount': len(rows),
             'atomicCheckCount': sum(row['atomicChecks'] for row in rows), 'releaseReady': False,
             'blockers': ['four_scenario_business_acceptance_not_recorded'] +
-                        (['unconfigured_generic_interpreters'] if any(row['unconfiguredInterpreters'] for row in rows) else []),
+                        (['unconfigured_generic_interpreters'] if any(row['unconfiguredInterpreters'] for row in rows) else []) +
+                        (['pending_business_capabilities'] if any(row['pendingCapabilities'] for row in rows) else []),
             'rules': rows}
 
 
@@ -55,10 +63,10 @@ def markdown(report: dict[str, Any]) -> str:
     lines = ['# 69 條規則發布驗收矩陣', '',
              '此表由 `backend/scripts/audit_review_release.py` 產生。空輸入探針只驗證防誤通過；工具註冊及編譯不代表業務驗收完成。', '',
              '四情境（符合／不符合／證據不足／不適用）及文件證據定位尚需逐條留存真實驗收記錄。全量發布門檻尚未達成。', '',
-             '| 規則 | 原試點 | 原子項 | 註冊完整 | 空輸入結果 | 未配置規則檔案的通用工具 |',
-             '|---|---|---:|---|---|---|']
+             '| 規則 | 原試點 | 原子項 | 註冊完整 | 空輸入結果 | 未配置規則檔案的通用工具 | 尚未完成能力 |',
+             '|---|---|---:|---|---|---|---|']
     for row in report['rules']:
-        lines.append(f"| {row['rule']} | {'是' if row['pilotEnabled'] else '否'} | {row['atomicChecks']} | {row['allToolsRegistered']} | {row['emptyInputResult']} | {', '.join(row['unconfiguredInterpreters']) or '—'} |")
+        lines.append(f"| {row['rule']} | {'是' if row['pilotEnabled'] else '否'} | {row['atomicChecks']} | {row['allToolsRegistered']} | {row['emptyInputResult']} | {', '.join(row['unconfiguredInterpreters']) or '—'} | {', '.join(row['pendingCapabilities']) or '—'} |")
     lines += ['', '完整必要事實、綁定及證據工具欄位見同目錄 JSON。`—` 只代表沒有發現此類靜態缺口，仍須業務情境驗收。', '']
     return '\n'.join(lines)
 

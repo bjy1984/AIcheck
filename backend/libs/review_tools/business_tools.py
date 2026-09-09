@@ -107,6 +107,7 @@ from libs.review_tools.r39_inventory_consistency import evaluate_r39_inventory_c
 from libs.review_tools.r39_pt import evaluate_r39_pt_emulsifier_application
 from libs.review_tools.r39_reference import evaluate_r39_procedure_reference
 from libs.review_tools.r39_tools import evaluate_r39_first_use_validation
+from libs.review_tools.r40_records import evaluate_r40_records
 
 COMMON_TOOL_NAMES = (
     "check_required",
@@ -715,10 +716,16 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
 BUSINESS_TOOL_NAMES = {item["name"] for item in BUSINESS_TOOL_DESCRIPTORS}
 
 
+PROFILE_BUSINESS_HANDLERS = {("evaluate_ndt_process", "ndt_record_report"): evaluate_r40_records}
+
+
+def profile_business_handler(tool_name: str, profile: Any):
+    return PROFILE_BUSINESS_HANDLERS.get((tool_name, profile)) if isinstance(profile, str) else None
+
+
 def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    if tool_name == "evaluate_ndt_process" and arguments.get("profile") == "ndt_record_report":
-        from libs.review_tools.r40_records import evaluate_r40_records
-        return evaluate_r40_records(arguments)
+    if handler := profile_business_handler(tool_name, arguments.get("profile")):
+        return handler(arguments)
     dedicated_r24_r34_tools = {
         "evaluate_welding_consumable",
         "evaluate_welding_consumable_control",

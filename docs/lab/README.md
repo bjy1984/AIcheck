@@ -1371,3 +1371,11 @@ cd backend
 - 全量實跑 4564 passed／1 failed／75 skipped；唯一失敗為生成 OpenAPI 工件漏掉工位交接狀態路由。已重新匯出，僅補兩個前綴路由 74 行，合約回歸 7 項全部通過。
 - 不把本次全量寫成零失敗，也不把 skip 算通過；失敗原因及修正後的針對性證據分別保留。詳見 docs/lab/verification/2026-09-09-full-backend-followup.md。
 - 69 規則空輸入檢查仍阻擋發布、原試點 36 未變。靜態發布分類尚需辨識 R40 profile 專用分流；真實案件及剩餘規則能力仍未完成，整體未證明達 90%。
+
+
+## 2026-09-09：發布矩陣辨識 profile 專用路徑
+
+- 執行端與審計共用 PROFILE_BUSINESS_HANDLERS；R40 的 evaluate_ndt_process／ndt_record_report 正確列為專用分流，其餘 profile 仍按實際通用解釋器分類。
+- 矩陣新增 profileDedicatedTools 與 pendingCapabilities，Markdown 同時顯示未完成能力；R40 不再誤列未配置通用工具，但仍列出檢測參數、設計要求、報告結果，releaseReady=false。
+- 23 項相關測試通過，包含錯 profile 不被誤列專用、四態驗收仍未記錄、試點與發布不放行；Ruff 289／289、monolith 通過。69 條、194 原子項、原 36 試點保持。
+- 最新可重現矩陣：docs/lab/verification/2026-09-09-rule-release-inventory.md 及同名 JSON。此為程式分類與空輸入防誤通過檢查，不能代替真實業務驗收；整體未證明達 90%。
