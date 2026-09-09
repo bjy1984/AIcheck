@@ -431,7 +431,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r39_first_use_validation"
             else {"projectId": "string", "scope": "object", "requirements": "object", "signatureInventory": "object"}
             if name == "evaluate_r39_approval_chain"
-            else {"projectId": "string", "scope": "object", "basis": "object", "parameters": ["object"]}
+            else {"projectId": "string", "scope": "object?", "basis": "object?", "parameters": ["object?"], "inventory": "object?", "objectComparisons": ["object?"]}
             if name == "evaluate_r11_project_parameters"
             else {"projectId": "string", "scope": "object", "basis": "object", "instructionReference": "object", "procedureIdentity": "object"}
             if name == "evaluate_r39_procedure_reference"

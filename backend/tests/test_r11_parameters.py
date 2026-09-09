@@ -65,6 +65,8 @@ def fixture():
                      table("construction_comparison_parameters", body["parameters"][:2])]},
                  {"documentVersionId": "DESIGN", "tenantId": "T", "tables": [
                      table("construction_comparison_basis", [body["basis"]]),
+                     table("construction_comparison_inventory", [{"projectId": "P", "complete": True}]),
+                     table("construction_comparison_members", [body["scope"]]),
                      table("construction_comparison_parameters", body["parameters"][2:])]}]}
     run = {"projectId": "P", "tenantId": "T", "nodeId": 11, "inputDocumentVersionIds": ["PLAN", "DESIGN"]}
     return state, run

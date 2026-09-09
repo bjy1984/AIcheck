@@ -10,8 +10,7 @@ TABLES = {"construction_comparison_context": "contexts", "construction_compariso
           "construction_comparison_parameters": "parameters"}
 
 
-def build_r11_business_facts(state, run):
-    groups = read_ndt_tables(state, run, TABLES, node_id=11)
+def _build_single(state, run, groups):
     judgment = build_material_judgment([(name, rows, ("projectId", "objectId")) for name, rows in groups.items()])
     facts = {"sourceIssues": [], "sourceRecords": deepcopy(groups)}
     output = {"r11": facts, **judgment}
@@ -46,3 +45,54 @@ def build_r11_business_facts(state, run):
     facts["projectParameters"] = {"projectId": run["projectId"], "scope": scope,
                                  "basis": deepcopy(groups["bases"][0]), "parameters": deepcopy(groups["parameters"])}
     return output
+
+
+def build_r11_business_facts(state, run):
+    schemas = {**TABLES, "construction_comparison_inventory": "inventories",
+               "construction_comparison_members": "members"}
+    groups = read_ndt_tables(state, run, schemas, node_id=11)
+    judgment = build_material_judgment([(name, rows, ("projectId", "objectId")) for name, rows in groups.items()])
+    result = {"r11": {"sourceIssues": [], "sourceRecords": deepcopy(groups)}, **judgment}
+    facts = result["r11"]
+    inventory = deepcopy(groups["inventories"][0]) if len(groups["inventories"]) == 1 else None
+    if inventory is not None:
+        inventory["members"] = deepcopy(groups["members"])
+    inventory_rows = groups["inventories"] + groups["members"]
+    if any(type(row["evidence"].get("confidence")) not in (int, float)
+           or not 0 <= row["evidence"]["confidence"] <= 1 for row in inventory_rows):
+        facts["sourceIssues"].append("r11_inventory_source_invalid")
+        return result
+    if inventory_rows:
+        evidence = build_material_judgment([("inventory", inventory_rows, ("projectId",))])["judgment"]
+        if validate_evidence_grounding({**evidence, "facts": evidence["claimedFacts"], "minConfidence": .75})["result"] != "passed":
+            facts["sourceIssues"].append("r11_inventory_source_invalid")
+            return result
+    comparisons = []
+    used = {"bases": set(), "parameters": set()}
+    seen = set()
+    for context in groups["contexts"]:
+        key = tuple(context.get(field) for field in SCOPE_FIELDS)
+        if any(not isinstance(value, str) or not value for value in key) or key in seen:
+            facts["sourceIssues"].append("r11_context_or_basis_ambiguous")
+            return result
+        seen.add(key)
+        selected = {"contexts": [context]}
+        for name, used_indexes in used.items():
+            selected[name] = []
+            for index, row in enumerate(groups[name]):
+                if all(row.get(field) == context.get(field) for field in SCOPE_FIELDS):
+                    selected[name].append(row)
+                    used_indexes.add(index)
+        single = _build_single(state, run, selected)["r11"]
+        if "projectParameters" not in single:
+            facts["sourceIssues"].extend(single["sourceIssues"])
+        else:
+            comparisons.append(single["projectParameters"])
+    if any(len(used[name]) != len(groups[name]) for name in used):
+        facts["sourceIssues"].append("r11_source_object_conflict")
+        return result
+    if facts["sourceIssues"]:
+        return result
+    facts["projectParameters"] = {"projectId": run["projectId"], "inventory": inventory,
+                                 "objectComparisons": comparisons}
+    return result

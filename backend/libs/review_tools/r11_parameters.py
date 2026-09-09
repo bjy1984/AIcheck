@@ -11,6 +11,9 @@ SCOPE_FIELDS = ("projectId", "objectType", "objectId", "planVersionId", "designV
 
 
 def evaluate_r11_project_parameters(arguments):
+    if "inventory" in arguments or "objectComparisons" in arguments:
+        from libs.review_tools.r11_inventory import evaluate_inventory
+        return evaluate_inventory(arguments, evaluate_r11_project_parameters)
     rows = []
 
     def add(code, status, refs=()):
