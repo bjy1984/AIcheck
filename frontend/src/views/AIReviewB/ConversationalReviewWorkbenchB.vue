@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
+import PipelineConflictDetails from './PipelineConflictDetails.vue'
 import ReviewDocumentPicker from './ReviewDocumentPicker.vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import {
@@ -2458,6 +2459,12 @@ onBeforeUnmount(() => {
               type="warning"
               show-icon
               :closable="false"
+            />
+            <PipelineConflictDetails
+              v-if="pipelineConflict"
+              :key="`${activeProjectId}:${activeRunId}`"
+              :project-id="activeProjectId"
+              :run-id="activeRunId"
             />
             <ElAlert
               v-if="inputChanged"
