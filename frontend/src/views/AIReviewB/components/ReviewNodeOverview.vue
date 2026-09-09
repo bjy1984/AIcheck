@@ -4,7 +4,7 @@ import { ElButton, ElTag } from 'element-plus'
 import type { EvidenceLink } from '@/types/aicheck'
 import type { ReviewBWorkspace } from '@/types/ai-review-b'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
-import { overviewResult } from '../workstationOverview'
+import { overviewProgress, overviewResult } from '../workstationOverview'
 import { documentPageLabel } from '../documentPageSelection'
 import ReviewResultCard from './ReviewResultCard.vue'
 const props = defineProps<{
@@ -68,9 +68,9 @@ const missing = computed(() => props.workspace?.evidenceReadiness.missingRequire
             >有疑问，继续追问</ElButton
           ></div
         >
-        <p v-if="busy" class="result-notice"
-          >正在审查，下面可能仍是已有结果；新结果返回后会更新。</p
-        >
+        <p v-if="workspace.activeReviewRun" class="result-notice" role="status">
+          {{ overviewProgress(workspace.activeReviewRun.status) }}
+        </p>
         <ReviewResultCard
           v-if="result"
           :key="result.reviewRunId"
@@ -80,11 +80,9 @@ const missing = computed(() => props.workspace?.evidenceReadiness.missingRequire
           focus-issues
           @open-evidence="emit('evidence', $event)"
         />
-        <p v-else class="result-notice">{{
-          workspace.activeReviewRun
-            ? '这个任务还没有可展示的结构化结果。可以查看追问助手中的分析和执行进度。'
-            : '还没有审查结果。选好资料后，可以从上方发起审查。'
-        }}</p>
+        <p v-else-if="!workspace.activeReviewRun" class="result-notice">
+          还没有审查结果。选好资料后，可以从上方发起审查。
+        </p>
       </section>
       <section class="overview-section" aria-label="本次资料">
         <div class="section-heading"

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { needsAttention, overviewResult } from './workstationOverview'
+import { needsAttention, overviewProgress, overviewResult } from './workstationOverview'
 import { filterWorkstationNodes, workstationNavigation } from './workstationNavigation'
 import type { ReviewBWorkspace } from '@/types/ai-review-b'
 import type { ProjectTreePayload } from '@/api/aicheck'
@@ -44,9 +44,22 @@ const workspace: Pick<ReviewBWorkspace, 'activeReviewRun' | 'projectAnalysisResu
     }
   ]
 }
-assert.equal(overviewResult(workspace)?.reviewRunId, 'new')
-assert.deepEqual(overviewResult(workspace)?.findingDrafts, [])
-assert.equal(overviewResult(workspace)?.reviewResult, undefined)
+assert.equal(overviewResult(workspace), undefined, 'empty draft array is not a result')
+for (const status of ['queued', 'running', 'failed', 'completed', 'waiting_human_input']) {
+  workspace.activeReviewRun = { id: 'new', status, findingDrafts: [] }
+  assert.equal(overviewResult(workspace), undefined)
+  workspace.activeReviewRun.findingDrafts = [{ title: 'partial finding' }]
+  assert.equal(
+    overviewResult(workspace)?.findingDrafts?.length,
+    1,
+    'retain actual partial findings'
+  )
+}
+assert.match(overviewProgress('queued'), /排队/)
+assert.match(overviewProgress('failed'), /没能完成/)
+assert.match(overviewProgress('waiting_human_input'), /人工待办/)
+assert.match(overviewProgress('completed'), /不代表已经通过/)
+assert.match(overviewProgress('running'), /还没出齐/)
 workspace.activeReviewRun = { id: 'pending' }
 assert.equal(
   overviewResult(workspace),
