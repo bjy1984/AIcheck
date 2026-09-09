@@ -2189,16 +2189,20 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R35-01
   sourceRuleId: R35
   requiredFacts:
-  - ndtQuality.manual
-  - ndtQuality.controlledForms
-  - ndtQuality.appointments
-  - ndtEquipment.calibrationReports
+  - r35.projectId
+  - r35.organizationId
+  - r35.activityDate
+  - r35.applicability
+  - r35.manual
+  - r35.controlledForms
+  - r35.appointments
+  - r35.implementationRecords
+  - r35.equipmentIds
+  - r35.calibrationReports
   tools:
   - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
-  - check_required
-  - check_date_covers
   - evaluate_ndt_quality_system
   - validate_evidence_grounding
   parameters:

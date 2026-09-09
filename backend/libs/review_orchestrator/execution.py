@@ -126,6 +126,7 @@ from libs.review_orchestrator.r20_r23_facts import (
     build_r23_business_facts,
 )
 from libs.review_orchestrator.r24_r34_facts import BUILDERS as R24_R34_FACT_BUILDERS
+from libs.review_orchestrator.r35_facts import build_r35_business_facts
 from libs.review_orchestrator.retry_policy import has_review_retry_consumer
 from libs.review_orchestrator.rule_result_digest import (
     compact_rule_results,
@@ -1495,6 +1496,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             context["businessFacts"] = build_r22_business_facts(repo.state, review_run)
         elif int(review_run.get("nodeId") or 0) == 23:
             context["businessFacts"] = build_r23_business_facts(repo.state, review_run)
+        elif int(review_run.get("nodeId") or 0) == 35:
+            context["businessFacts"] = build_r35_business_facts(repo.state, review_run)
         elif f"r{int(review_run.get('nodeId') or 0)}" in R24_R34_FACT_BUILDERS:
             builder = R24_R34_FACT_BUILDERS[f"r{int(review_run.get('nodeId') or 0)}"]
             context["businessFacts"] = builder(repo.state, review_run)

@@ -196,6 +196,11 @@ def build_tool_arguments(
     evidence_refs: list[dict[str, Any]],
 ) -> dict[str, Any]:
     arguments = {**dict(binding.get("parameters") or {}), **explicit}
+    if tool_name == "evaluate_ndt_quality_system":
+        r35 = nested_dict(facts, "r35")
+        for key in ("projectId", "organizationId", "activityDate", "applicability", "manual", "controlledForms",
+                    "appointments", "implementationRecords", "equipmentIds", "equipmentEvidenceRefs", "calibrationReports"):
+            arguments.setdefault(key, deepcopy(r35.get(key)))
     if tool_name in {
         "get_document_ocr_result",
         "extract_document_fields",
