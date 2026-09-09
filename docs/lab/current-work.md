@@ -87,3 +87,11 @@ flowchart LR
 - API仍明确拒绝 inputDocumentPageRanges，避免忽略参数后按整份执行；前端页码控件尚未开放。已定义的底层能力不能视为完整页码功能。
 - 下一阶段：接入 grounded model input、独立 extracted_fields/evidence_links、正式readiness／证据包、任务建立与复制、pure_llm原文读取／页数上限检查；逐路审计后才能解除API阻挡。随后接桌面选择器、摘要及发起确认。节点补充挂载是否携带范围需明确同一契约，不得默默丢范围。
 - 边界仍需补测：实际PDF页数越界、OCR未完成、大文件、历史重放、跨页表格提示及无页码人工修正提示；所排除内容不应被解释为不符合。
+
+## 2026-09-09：模型依据页码阶段
+
+- build_grounded_review_input 增加可选 review_run，检查冻结来源与版本集合，不允许扩大版本范围。存在页码范围时，OCR走共用按页入口，独立 extracted_fields／evidence_links 按相同页码与嵌套定位约束过滤；未指定范围维持原行为。
+- 限定页码任务的来源指纹加入独立字段与证据链接，防止这些来源更新后旧任务静默读入新值。原整份文档任务指纹保持原契约。
+- execution 的 load_ocr_result 与 prompt fallback 接入；有范围时重新组装 grounded input，不复用未限定范围的缓存；同步覆盖提示词字段和引用ID，并将 documentPageRanges 写入任务提示内容。
+- 测试：首次页码／快照／grounding组合59 passed；加入实际 build_review_prompt_parts 缓存旁路测试后，模型页码与工位prompt回归28 passed。两组有重叠，不相加为独立总数。小模块Ruff通过，git diff --check通过；未触发付费模型调用。
+- 尚未完成：任务建立／复制、readiness与证据包、业务工具追加事实与引用的全路径核查、pure_llm原文按页、实际PDF页数检查、桌面控件。API继续拒绝页码请求，不能宣称完整页码审查已可用。

@@ -31,6 +31,10 @@ def page_record_in_range(record: dict[str, Any], bounds: dict[str, int]) -> bool
             and bounds["start"] <= start <= end <= bounds["end"])
 
 
+def located_record_in_range(record: dict[str, Any], bounds: dict[str, int]) -> bool:
+    return page_record_in_range(record, bounds) and _nested_locations_in_range(record, bounds)
+
+
 def restrict_parse_result(parse: dict[str, Any], bounds: dict[str, int]) -> dict[str, Any]:
     """Copy located evidence only; whole-document text/summary must not survive as fallback."""
     metadata_keys = ("id", "parseResultId", "documentVersionId", "documentId", "tenantId",
@@ -38,8 +42,7 @@ def restrict_parse_result(parse: dict[str, Any], bounds: dict[str, int]) -> dict
     result = {key: deepcopy(parse[key]) for key in metadata_keys if key in parse}
     for key in ("fields", "tables", "seals", "fragments"):
         result[key] = [deepcopy(row) for row in parse.get(key) or []
-                       if isinstance(row, dict) and page_record_in_range(row, bounds)
-                       and _nested_locations_in_range(row, bounds)]
+                       if isinstance(row, dict) and located_record_in_range(row, bounds)]
     result["reviewPageScope"] = deepcopy(bounds)
     return result
 

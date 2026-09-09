@@ -4,6 +4,10 @@ import math
 import re
 from typing import Any
 
+from libs.review_document_scope import validate_document_sources
+from libs.review_input_data import selected_parse_results
+from libs.review_page_scope import located_record_in_range, normalize_page_ranges
+
 # 否定形式（不一致 / 未覆盖 / 不符合）是在说差距，不是肯定结论——2026-09-06 清单模式实测，
 # "与工艺卡要求的方法不一致"被当成肯定断言整条降级。
 POSITIVE_CLAIM_RE = re.compile(r"(?<![不未非没])(满足|符合|匹配|覆盖|一致|有效|真实|通过|已确认|具备|齐全|完整)")
@@ -196,8 +200,26 @@ def merge_canonical_grounding_metadata(
     }
 
 
-def build_grounded_review_input(state: dict[str, Any], document_version_ids: set[str] | list[str] | tuple[str, ...]) -> dict[str, Any]:
+def build_grounded_review_input(state: dict[str, Any], document_version_ids: set[str] | list[str] | tuple[str, ...],
+                               *, review_run: dict[str, Any] | None = None) -> dict[str, Any]:
     version_ids = {str(item) for item in document_version_ids if item}
+    if review_run is not None:
+        validate_document_sources(review_run, state)
+        allowed = review_run.get("inputDocumentVersionIds") or []
+        if not version_ids.issubset(set(allowed)):
+            raise ValueError("grounding_document_scope_expansion")
+        ranges = normalize_page_ranges(review_run.get("inputDocumentPageRanges", {}), allowed)
+        if ranges:
+            # Detached view: never trim persistent OCR or silently fall back to full-document text.
+            scoped_state = dict(state)
+            scoped_state["ocr_parse_results"] = selected_parse_results(
+                state, {"documentVersionIds": sorted(version_ids)}, context={"reviewRun": review_run}) if version_ids else []
+            for key in ("extracted_fields", "evidence_links"):
+                scoped_state[key] = [row for row in state.get(key, []) if isinstance(row, dict)
+                                     and row.get("documentVersionId") in version_ids
+                                     and (row["documentVersionId"] not in ranges
+                                          or located_record_in_range(row, ranges[row["documentVersionId"]]))]
+            state = scoped_state
     source_groups = [state.get("extracted_fields", []), state.get("ocr_parse_results", []), state.get("evidence_links", [])]
     available_version_ids = {
         str(item.get("documentVersionId"))

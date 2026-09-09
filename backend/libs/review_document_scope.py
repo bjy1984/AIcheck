@@ -55,7 +55,13 @@ def document_source_fingerprint(run: dict[str, Any], state: dict[str, Any]) -> s
                    and str(row.get("nodeId")) == str(run.get("nodeId"))
                    and row.get("status") == "active" and row.get("fieldId")]
     # Preserve order: the existing correction reader uses the last matching value.
-    return _hash({"parses": parses, "corrections": corrections})
+    sources = {"parses": parses, "corrections": corrections}
+    if run.get("inputDocumentPageRanges"):
+        # Scoped model grounding also reads these independent evidence stores.
+        for key in ("extracted_fields", "evidence_links"):
+            sources[key] = [row for row in state.get(key, [])
+                            if isinstance(row, dict) and row.get("documentVersionId") in allowed]
+    return _hash(sources)
 
 
 def validate_document_sources(run: dict[str, Any], state: dict[str, Any]) -> None:

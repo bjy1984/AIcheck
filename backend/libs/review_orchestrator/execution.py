@@ -1551,7 +1551,8 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
                 "groundingStatus": grounding_input.get("groundingStatus"),
                 "reviewWarnings": grounding_input.get("reviewWarnings") or [],
             }
-        grounding_input = build_grounded_review_input(repo.state, version_ids)
+        grounding_input = build_grounded_review_input(
+            repo.state, version_ids, **({"review_run": review_run} if review_run.get("inputDocumentPageRanges") else {}))
         fields = grounding_input.get("fields") or []
         evidence_links = grounding_input.get("evidenceLinks") or []
         if context.get("businessFacts"):
@@ -1959,10 +1960,15 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     )
     node = context.get("node") or {}
     fields = context.get("fields") or []
-    grounding_input = context.get("groundingInput") or build_grounded_review_input(
+    grounding_input = (None if review_run.get("inputDocumentPageRanges") else context.get("groundingInput")) or build_grounded_review_input(
         repo.state,
         set(review_run.get("inputDocumentVersionIds") or []),
+        **({"review_run": review_run} if review_run.get("inputDocumentPageRanges") else {}),
     )
+    if review_run.get("inputDocumentPageRanges"):
+        fields = grounding_input.get("fields") or []
+        context["fields"] = fields
+        context["evidenceLinks"] = grounding_input.get("evidenceLinks") or []
     context["groundingInput"] = grounding_input
     grounding_block = grounding_prompt_block(grounding_input)
     rule_result = next(iter(context.get("ruleResults") or []), {})
@@ -2016,6 +2022,8 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),
         "fieldCount": len(fields),
+        **({"documentPageRanges": repo.clone(review_run["inputDocumentPageRanges"])}
+           if review_run.get("inputDocumentPageRanges") else {}),
         "groundingStatus": grounding_input.get("groundingStatus"),
         "groundedOcrEvidence": grounding_block["groundedOcrEvidence"],
         # 压掉嵌套工具输出里的证据引用列表再进提示词。原样给会让单个
