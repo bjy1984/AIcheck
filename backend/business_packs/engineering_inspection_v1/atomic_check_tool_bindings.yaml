@@ -2380,6 +2380,7 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R39-01
   sourceRuleId: R39
   requiredFacts:
+  - r39.procedureReference
   - r39.documentContent
   - r39.approvalChain
   - r39.firstUseValidation
@@ -2387,6 +2388,7 @@ atomicCheckToolBindings:
   - get_document_ocr_result
   - extract_document_fields
   - extract_table_records
+  - evaluate_r39_procedure_reference
   - evaluate_r39_document_content
   - evaluate_r39_approval_chain
   - evaluate_r39_first_use_validation

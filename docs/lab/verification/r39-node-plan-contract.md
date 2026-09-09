@@ -31,3 +31,11 @@ validate_release會拒絕任何仍帶pendingCapabilities欄位的綁定，即使
 實際R39計畫從凍結資料經三個專用工具執行，測試全部子工具通過但整體不足、明確缺項／未批准／未驗證、低可信度失敗降級、非首次應用、證據角色、門檻格式、固定參數覆寫拒絕與發布攔截。首輪一項測試用result=execution_error但沒有既有協議的status=error，修正測試資料後重跑；未改既有故障聚合語義。
 
 相關164 passed；完整收集4069項，4003 passed／66 skipped／6 warnings，1075.12秒，退出0。完整紀錄及跳過原因見r39-node-plan-backend.txt，環境跳過不算PostgreSQL／MinIO／Temporal實機驗收。本轮較慢但原因未核定，不作性能效果宣稱。Ruff289／289、diff check通過；配置比對只有R39兩項變更，其餘192項與發布中繼資料不變。
+
+
+## 2026-09-09：R39指定文件對的規程引用比對
+
+- 新增evaluate_r39_procedure_reference及來源適配，接入實際AC-R39-01工具鏈；同工程、機構、方法及明確指定的指導書／規程固定版本，逐項比對引用編號和版本。缺值返回證據不足，明確不一致返回failed；不猜測版本等價，不把所選規程當成全工程適用規程清單。
+- 四類獨立來源表ndt_reference_context／ndt_reference_basis／ndt_instruction_reference／ndt_procedure_identity由既有凍結讀取器提供原文位置。兩個文件均須在工程、租戶與所選版本範圍內；同名多筆、不可靠來源及引用錯文件均不放行。
+- 同步atomic_binding_overrides.py、綁定YAML、tools规划.md。132條來源／R39回歸通過，最後43條綁定重建與節點回歸通過。新增子項成功仍不代表R39成功；完整文件對清單、方法專項要求及全量應用清單尚未完成，原pendingCapabilities保留。
+- 本批是合成來源的確定性比對驗收，沒有人工標準採信背書、沒有模型實跑或生產發布。真實資料解析成這四類來源表及全量文件對覆蓋仍待驗收。

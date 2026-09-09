@@ -6,12 +6,15 @@ from typing import Any
 
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.r39_reference_facts import reference_input
 from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
 from libs.review_tools.r39_approval import SCOPE_FIELDS
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_tools import IDENTITY_FIELDS
 
 R39_TABLES = {
+    "ndt_reference_context": "referenceContexts", "ndt_reference_basis": "referenceBases",
+    "ndt_instruction_reference": "instructionReferences", "ndt_procedure_identity": "procedureIdentities",
     "ndt_content_context": "contentContexts", "ndt_content_basis": "contentBases",
     "ndt_content_inventory": "contentInventories", "ndt_content_fields": "contentFields",
     "ndt_instruction_application": "applications", "ndt_first_use_basis": "bases",
@@ -74,6 +77,11 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
         return {"r39": facts, **judgment}
 
     issues = facts["sourceIssues"]
+    reference = reference_input(state, run, groups, _clean)
+    if reference is not None:
+        facts["procedureReference"] = reference
+    else:
+        issues.append("r39_reference_pair_missing_or_ambiguous")
     _content_input(state, run, groups, facts)
     applications = groups["applications"]
     if len(applications) == 1 and applications[0].get("projectId") == run["projectId"]:

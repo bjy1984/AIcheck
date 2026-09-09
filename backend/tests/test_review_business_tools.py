@@ -42,7 +42,7 @@ def call(name: str, arguments: dict) -> dict:
 def test_all_planned_business_tools_are_registered_allowed_and_fail_closed() -> None:
     catalog = {item["name"] for item in runtime_tool_catalog()}
 
-    assert len(BUSINESS_TOOL_NAMES) == 96
+    assert len(BUSINESS_TOOL_NAMES) == 97
     assert BUSINESS_TOOL_NAMES <= catalog
     assert BUSINESS_TOOL_NAMES <= ALLOWED_AGENT_TOOLS
     for name in BUSINESS_TOOL_NAMES:
@@ -1385,6 +1385,7 @@ def test_pneumatic_pressure_enforces_upper_limit_and_step_sequence() -> None:
     "evaluate_r37_progressive_inspection",  # Dedicated staged coverage tests.
     "evaluate_r37_reinspection",  # Dedicated original-method reinspection tests.
     "evaluate_ndt_nonconformance",  # Dedicated R37 witness-chain tests replace generic profile success.
+    "evaluate_r39_procedure_reference",  # Dedicated sourced pair comparison in test_r39_reference.py.
     "evaluate_r39_document_content",  # Dedicated document-kind content checks.
     "evaluate_r39_approval_chain",  # Dedicated sourced QMS comparison.
     "evaluate_r39_first_use_validation",  # Dedicated scoped first-use checks.

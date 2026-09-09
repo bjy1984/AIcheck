@@ -1,6 +1,6 @@
 {
   "schemaVersion": "lab-capability-inventory-v1",
-  "sourceSha256": "ec9629cdaab95a28f930c1253945770ba735299e5b85f26985356bbc4e6c3d62",
+  "sourceSha256": "b543b08e6482f224d523a8bbae7b75e270ae3f13b11d801d4e0b29c9ddb2a1a4",
   "scope": "Static capability inventory; compilation is not business acceptance. Existing tests are not counted as source-bound four-state acceptance.",
   "summary": {
     "rules": 69,
@@ -1386,6 +1386,7 @@
         "evaluate_r39_approval_chain",
         "evaluate_r39_document_content",
         "evaluate_r39_first_use_validation",
+        "evaluate_r39_procedure_reference",
         "extract_document_fields",
         "extract_table_records",
         "get_document_ocr_result",
@@ -1401,7 +1402,8 @@
         "judgment.evidenceRefs",
         "r39.approvalChain",
         "r39.documentContent",
-        "r39.firstUseValidation"
+        "r39.firstUseValidation",
+        "r39.procedureReference"
       ],
       "businessAcceptance": "not_verified_by_inventory",
       "scenarioAcceptance": {
@@ -2475,5 +2477,6 @@
         "not_applicable": "pending_source_bound_acceptance"
       }
     }
-  ]
+  ],
+  "sourceFile": "backend/business_packs/engineering_inspection_v1/atomic_check_tool_bindings.yaml"
 }
