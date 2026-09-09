@@ -305,8 +305,10 @@ watch(
   () => {
     reviewContextGeneration.value++
     reviewDocumentSelection.value = null
+    polling.value = false
+    nodeLoading.value = false
+    stopLiveAgentTrace()
     if (reviewStarting.value) {
-      stopLiveAgentTrace()
       actionLoading.value = false
       reviewStarting.value = false
       activityExpanded.value = false
@@ -746,6 +748,8 @@ const auditViewSignature = () =>
     .join('|')
 
 const loadAuditView = async (force = false) => {
+  const generation = reviewContextGeneration.value
+  const runId = activeRunId.value
   if (!activeRunId.value) {
     auditView.value = undefined
     loadedAuditViewSignature = ''
@@ -754,9 +758,12 @@ const loadAuditView = async (force = false) => {
   const signature = auditViewSignature()
   if (!force && auditView.value && signature === loadedAuditViewSignature) return
   try {
-    auditView.value = (await getReviewBAuditViewApi(activeRunId.value)).data
+    const result = await getReviewBAuditViewApi(runId)
+    if (generation !== reviewContextGeneration.value || runId !== activeRunId.value) return
+    auditView.value = result.data
     loadedAuditViewSignature = signature
   } catch {
+    if (generation !== reviewContextGeneration.value || runId !== activeRunId.value) return
     auditView.value = undefined
     // 指纹不留：下一轮要重试，别把一次失败当成「已经取过了」。
     loadedAuditViewSignature = ''
@@ -782,6 +789,7 @@ const eventPollCursor = () => {
 const loadSessionData = async (reset = false) => {
   if (!session.value?.id) return
   const sessionId = session.value.id
+  const generation = reviewContextGeneration.value
   if (reset) {
     messages.value = []
     events.value = []
@@ -790,6 +798,7 @@ const loadSessionData = async (reset = false) => {
     listReviewBMessagesApi(sessionId, reset ? 0 : messages.value.at(-1)?.sequence || 0),
     listReviewBEventsApi(sessionId, reset ? 0 : eventPollCursor())
   ])
+  if (generation !== reviewContextGeneration.value || sessionId !== session.value?.id) return
   // 在响应返回后再判断，避免用户恰好在轮询请求期间向上滚动时被带回底部。
   const shouldFollowLatest = reset || isTimelineNearBottom()
   mergeMessages(messageRes.data.messages)
@@ -799,11 +808,14 @@ const loadSessionData = async (reset = false) => {
 
 const pollLiveAgentTrace = async () => {
   if (!session.value?.id) return
+  const generation = reviewContextGeneration.value
+  const sessionId = session.value.id
   try {
     // 跟随判断要在合并**之前**取：合并后高度已经变了，
     // 那时再问「是不是贴着底部」永远得到 false，于是新内容一直在屏幕外滚。
     const shouldFollow = isTimelineNearBottom()
-    const eventRes = await listReviewBEventsApi(session.value.id, eventPollCursor())
+    const eventRes = await listReviewBEventsApi(sessionId, eventPollCursor())
+    if (generation !== reviewContextGeneration.value || sessionId !== session.value?.id) return
     mergeEvents(eventRes.data.events)
     if (shouldFollow) await scrollTimelineToEnd(true)
   } catch {
@@ -831,6 +843,7 @@ const startLiveAgentTrace = () => {
   // 上一版只去掉了 sendMessage 里那句，线上验证时面板依旧 aria-expanded=true，
   // 三行预览和打字光标一个都没渲染出来。
   const sessionId = session.value?.id
+  const generation = reviewContextGeneration.value
   if (!sessionId) return
   // 优先走 SSE 增量推送；连接失败或中途断开时降级为快速轮询。
   liveTraceAbort = new AbortController()
@@ -838,7 +851,14 @@ const startLiveAgentTrace = () => {
   streamReviewBEventsApi(
     sessionId,
     events.value.at(-1)?.sequence || 0,
-    (event) => mergeEvents([event]),
+    (event) => {
+      if (
+        !abort.signal.aborted &&
+        generation === reviewContextGeneration.value &&
+        sessionId === session.value?.id
+      )
+        mergeEvents([event])
+    },
     abort.signal
   ).catch(() => {
     if (!abort.signal.aborted) startLivePolling()
@@ -858,15 +878,20 @@ const stopLiveAgentTrace = () => {
 
 const ensureSession = async () => {
   if (workspace.value?.session || !activeProjectId.value || !activeNodeId.value) return
-  const idempotencyKey = `review-session-${activeProjectId.value}-${activeNodeId.value}`
+  const generation = reviewContextGeneration.value
+  const projectId = activeProjectId.value
+  const nodeId = activeNodeId.value
+  const reviewRunId = String(route.query.reviewRunId || '') || undefined
+  const currentTask = workspace.value?.businessBasis?.inspectionItem as string | undefined
+  const idempotencyKey = `review-session-${projectId}-${nodeId}`
   await createSessionWithAuthorizationRecovery(
     (key, silent) =>
       createReviewBSessionApi(
-        activeProjectId.value,
-        activeNodeId.value,
+        projectId,
+        nodeId,
         {
-          currentTask: workspace.value?.businessBasis?.inspectionItem as string | undefined,
-          reviewRunId: String(route.query.reviewRunId || '') || undefined
+          currentTask,
+          reviewRunId
         },
         {
           idempotencyKey: key,
@@ -880,7 +905,9 @@ const ensureSession = async () => {
         ? crypto.randomUUID()
         : `${Date.now()}`
   )
-  workspace.value = await fetchWorkspace(String(route.query.reviewRunId || '') || undefined)
+  if (generation !== reviewContextGeneration.value) return
+  const result = await fetchWorkspace(reviewRunId, { projectId, nodeId, generation })
+  if (generation === reviewContextGeneration.value) workspace.value = result
 }
 
 /** 取工作区，并顺手把服务端时钟对上。
@@ -904,6 +931,7 @@ const fetchWorkspace = async (
 
 const loadNodeWorkspace = async (reset = true) => {
   if (!activeProjectId.value || !activeNodeId.value) return
+  const generation = reviewContextGeneration.value
   nodeLoading.value = true
   pageError.value = ''
   if (reset) {
@@ -912,20 +940,27 @@ const loadNodeWorkspace = async (reset = true) => {
     reviewOpinion.value = ''
   }
   try {
-    workspace.value = await fetchWorkspace(String(route.query.reviewRunId || '') || undefined)
+    const result = await fetchWorkspace(String(route.query.reviewRunId || '') || undefined)
+    if (generation !== reviewContextGeneration.value) return
+    workspace.value = result
     await ensureSession()
+    if (generation !== reviewContextGeneration.value) return
     await Promise.all([loadSessionData(reset), loadAuditView()])
-    if (reset) await updateRouteQuery()
+    if (generation === reviewContextGeneration.value && reset) await updateRouteQuery()
   } catch (error) {
+    if (generation !== reviewContextGeneration.value) return
     pageError.value = getAicheckErrorMessage(error, 'AI 复核工作区加载失败，请稍后重试。')
   } finally {
-    nodeLoading.value = false
+    if (generation === reviewContextGeneration.value) nodeLoading.value = false
   }
 }
 
 const loadProjectTree = async (preferredNodeId?: number) => {
   if (!activeProjectId.value) return
-  const tree = (await getProjectTreeApi(activeProjectId.value)).data
+  const projectId = activeProjectId.value
+  const generation = reviewContextGeneration.value
+  const tree = (await getProjectTreeApi(projectId)).data
+  if (generation !== reviewContextGeneration.value || projectId !== activeProjectId.value) return
   treeGroups.value = tree.groups
   const availableIds = new Set(allNodes.value.map((node) => node.nodeId))
   const candidate =
@@ -976,18 +1011,22 @@ const loadEmbeddedContext = async () => {
 }
 
 const refreshLiveState = async () => {
-  if (polling.value || !activeProjectId.value || !activeNodeId.value) return
+  if (nodeLoading.value || polling.value || !activeProjectId.value || !activeNodeId.value) return
+  const generation = reviewContextGeneration.value
   polling.value = true
   try {
     const previousRunId = activeRunId.value
-    workspace.value = await fetchWorkspace(previousRunId || undefined)
+    const result = await fetchWorkspace(previousRunId || undefined)
+    if (generation !== reviewContextGeneration.value) return
+    workspace.value = result
     await ensureSession()
+    if (generation !== reviewContextGeneration.value) return
     await Promise.all([loadSessionData(false), loadAuditView()])
-    pageError.value = ''
+    if (generation === reviewContextGeneration.value) pageError.value = ''
   } catch {
     // 保留最后一次成功快照；下一次刷新成功后会清除旧错误提示。
   } finally {
-    polling.value = false
+    if (generation === reviewContextGeneration.value) polling.value = false
   }
 }
 

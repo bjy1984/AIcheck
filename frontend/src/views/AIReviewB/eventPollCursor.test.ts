@@ -28,7 +28,9 @@ assert.ok(
 )
 // 旁路轮询也要用游标，漏一处就等于没改
 assert.ok(
-  /listReviewBEventsApi\(session\.value\.id, eventPollCursor\(\)\)/.test(sfc),
+  /listReviewBEventsApi\(sessionId, eventPollCursor\(\)\)/.test(
+    sfc.slice(sfc.indexOf('const pollLiveAgentTrace'), sfc.indexOf('const startLivePolling'))
+  ),
   '发送期间的旁路轮询还在全量拉'
 )
 // 游标不能为负
