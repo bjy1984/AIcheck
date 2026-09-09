@@ -103,3 +103,66 @@ def test_rule_engine_step_uses_frozen_replacement_with_project_rule_id(monkeypat
     assert replacement["toolResults"][0]["toolName"] == "evaluate_saved_conditions"
     assert replacement["result"] == "passed"
     assert context["currentRule"]["id"] == "RULE"
+
+
+def test_condition_capture_archives_exact_input_result_and_links_events():
+    import json
+
+    from libs.raw_vault import InMemoryRawVaultStore, RawCapture, verify_event_chain
+
+    pack, run, _, state, _ = example(11)
+    run.update(reviewRunId="RR-CAPTURE", tenantId="TENANT-LAB")
+    store = InMemoryRawVaultStore()
+    results = prepare_condition_results(state, run, pack, raw_capture=RawCapture(store=store))
+    output = results["AC-R24-01"]["toolResults"][0]
+    events = store.events_for_run("TENANT-LAB", "RR-CAPTURE")
+    assert [event.event_type for event in events] == ["tool.call.requested", "tool.call.completed"]
+    request = json.loads(store.payload_for(events[0].id))
+    response = json.loads(store.payload_for(events[1].id))
+    assert request["conditions"]["checks"][0]["expected"] == 10
+    assert request["facts"]["thickness"]["value"] == 11
+    assert response["result"] == "passed"
+    assert response["conditionResults"]["checks"][0]["evidenceRefs"]
+    assert events[0].provider_tool_call_id == events[1].provider_tool_call_id == output["toolCallId"]
+    assert output["rawCapture"]["requestEventId"] == events[0].id
+    assert verify_event_chain(events, store.payload_for).status == "verified"
+
+
+@pytest.mark.parametrize("fail_on", [1, 2])
+def test_capture_failure_does_not_return_successful_condition_result(fail_on):
+    from libs.integrations.errors import IntegrationServiceError
+    from libs.raw_vault import InMemoryRawVaultStore, RawCapture
+
+    class FailingStore(InMemoryRawVaultStore):
+        calls = 0
+
+        def append(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == fail_on:
+                raise OSError("storage unavailable")
+            return super().append(*args, **kwargs)
+
+    pack, run, _, state, _ = example(11)
+    run["reviewRunId"] = "RR-CAPTURE-FAIL"
+    reports = []
+    with pytest.raises(IntegrationServiceError) as error:
+        prepare_condition_results(state, run, pack, raw_capture=RawCapture(store=FailingStore(), failure_reporter=reports.append))
+    assert error.value.reason == "CONDITION_TOOL_CAPTURE_FAILED"
+    assert reports[0]["eventType"] == ("tool.call.requested" if fail_on == 1 else "tool.call.completed")
+
+
+def test_condition_exception_is_archived_and_propagated(monkeypatch):
+    from libs.raw_vault import InMemoryRawVaultStore, RawCapture
+    from libs.review_tools import condition_execution
+
+    pack, run, _, state, _ = example(11)
+    run.update(reviewRunId="RR-ERROR", tenantId="TENANT-LAB")
+    store = InMemoryRawVaultStore()
+
+    def fail(*args):
+        raise ValueError("evaluation failed")
+
+    monkeypatch.setattr(condition_execution, "evaluate_conditions", fail)
+    with pytest.raises(ValueError, match="evaluation failed"):
+        prepare_condition_results(state, run, pack, raw_capture=RawCapture(store=store))
+    assert [event.event_type for event in store.events_for_run("TENANT-LAB", "RR-ERROR")] == ["tool.call.requested", "tool.call.failed"]

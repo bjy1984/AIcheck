@@ -3,7 +3,17 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
+from uuid import uuid4
 
+from libs.integrations.errors import IntegrationServiceError
+from libs.raw_vault import (
+    RawCaptureFailure,
+    capture_tool_error,
+    capture_tool_request,
+    capture_tool_result,
+    raw_capture_from_environment,
+    raw_context_from_record,
+)
 from libs.review_condition_facts import condition_facts_from_run
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools.executor import aggregate_atomic_results, resolve_atomic_arguments, summarize
@@ -11,7 +21,7 @@ from libs.rule_condition_bindings import compile_condition_bindings
 from libs.rule_conditions import evaluate_conditions
 
 
-def prepare_condition_results(state: dict[str, Any], run: dict[str, Any], pack: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def prepare_condition_results(state: dict[str, Any], run: dict[str, Any], pack: dict[str, Any], *, raw_capture=None) -> dict[str, dict[str, Any]]:
     rule = effective_rule_snapshot(run)
     if not rule or rule.get("executionConditions") is None:
         return {}
@@ -19,19 +29,41 @@ def prepare_condition_results(state: dict[str, Any], run: dict[str, Any], pack: 
     if str(plan["nodeId"]) != str(run.get("nodeId")) or plan["businessPackId"] != run.get("businessPackId"):
         raise ValueError("condition_execution_scope_mismatch")
     facts, diagnostics = condition_facts_from_run(state, run, rule["executionConditions"])
+    capture = raw_capture if raw_capture is not None else raw_capture_from_environment()
+    capture_context = raw_context_from_record(run, stage="condition_evaluation") if capture is not None else None
     results = {}
     for replacement in plan["replacements"]:
-        evaluated = evaluate_conditions(replacement["conditions"], facts)
+        tool_call_id = f"TOOL-{uuid4().hex[:16].upper()}"
+        request_event = None
+        if capture_context is not None:
+            request_event = capture_tool_request(capture, capture_context, "evaluate_saved_conditions",
+                {"atomicCheckId": replacement["atomicCheckId"], "conditions": replacement["conditions"],
+                 "facts": facts, "factDiagnostics": diagnostics, "conditionPlanHash": plan["planHash"]},
+                provider_tool_call_id=tool_call_id)
+            require_capture_success(request_event)
+        try:
+            evaluated = evaluate_conditions(replacement["conditions"], facts)
+        except Exception as exc:
+            if capture_context is not None:
+                capture_tool_error(capture, capture_context, "evaluate_saved_conditions", exc, provider_tool_call_id=tool_call_id)
+            raise
         refs = []
         for check in evaluated["checks"]:
             for ref in check["evidenceRefs"]:
                 if ref not in refs:
                     refs.append(deepcopy(ref))
-        output = {"toolName": "evaluate_saved_conditions", "status": "succeeded",
+        output = {"toolName": "evaluate_saved_conditions", "toolCallId": tool_call_id, "status": "succeeded",
                   "result": {"pass": "passed", "fail": "failed"}.get(evaluated["result"], evaluated["result"]),
                   "conditionResults": evaluated, "factDiagnostics": diagnostics, "evidenceRefs": refs,
                   "conditionPlanHash": plan["planHash"], "ruleSnapshotHash": run["effectiveRuleSnapshot"]["snapshotHash"],
                   "sourceSnapshotHash": run["documentScopeSnapshot"]["snapshotHash"]}
+        if capture_context is not None:
+            result_event = capture_tool_result(capture, capture_context, "evaluate_saved_conditions", output,
+                                              provider_tool_call_id=tool_call_id)
+            require_capture_success(result_event)
+            output["rawCapture"] = {"status": "captured", "requestEventId": request_event.id, "resultEventId": result_event.id}
+        else:
+            output["rawCapture"] = {"status": "not_configured"}
         results[replacement["atomicCheckId"]] = {"atomicCheckId": replacement["atomicCheckId"],
             "result": output["result"], "toolResults": [output], "warnings": [],
             "sourceMethod": "structured_conditions_v1",
@@ -70,3 +102,8 @@ def condition_source_rule_id(rule: dict[str, Any], pack: dict[str, Any]) -> str:
     if len(sources) != 1 or not next(iter(sources)):
         raise ValueError("condition_source_rule_ambiguous")
     return next(iter(sources))
+
+
+def require_capture_success(event) -> None:
+    if event is None or isinstance(event, RawCaptureFailure):
+        raise IntegrationServiceError("raw_vault", "condition_capture", status_code=503, reason="CONDITION_TOOL_CAPTURE_FAILED")
