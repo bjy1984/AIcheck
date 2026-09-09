@@ -44,7 +44,8 @@ def evaluate_r36_ndt_plan(arguments: dict[str, Any]) -> dict[str, Any]:
     add("r36_applicable", "passed", _refs(applicability))
     project_id, plan = arguments.get("projectId"), arguments.get("plan")
     if (not isinstance(project_id, str) or not project_id.strip() or not isinstance(plan, dict)
-            or plan.get("projectId") != project_id or not _refs(plan)):
+            or plan.get("projectId") != project_id or not isinstance(plan.get("planId"), str)
+            or not plan["planId"].strip() or not _refs(plan)):
         add("r36_plan_identity_or_evidence_missing", "evidence_insufficient")
         return finish()
     for field in ("approved", "personnelReady", "equipmentReady"):
@@ -76,7 +77,7 @@ def evaluate_r36_ndt_plan(arguments: dict[str, Any]) -> dict[str, Any]:
             add(code + "_coverage_missing_or_ambiguous", "evidence_insufficient", refs)
             continue
         item = matches[0]
-        if item.get("projectId") != project_id or not _refs(item):
+        if item.get("projectId") != project_id or item.get("planId") != plan["planId"] or not _refs(item):
             add(code + "_plan_item_evidence_missing", "evidence_insufficient", refs)
             continue
         refs = [*refs, *_refs(item)]

@@ -341,8 +341,8 @@ atomicCheck → requiredFacts → tools → parameters → outputSchema
 
 | atomicCheck | 审核内容 | requiredFacts | tools | parameters | outputSchema | 状态 |
 |---|---|---|---|---|---|---|
-| AC-R36-01 | 工作见证：需提供无损检测方案 | `ndtPlan.document`<br>`ndtPlan.methods`<br>`ndtPlan.ratios`<br>`design.ndtRequirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`check_required`<br>`evaluate_ndt_process`<br>`validate_evidence_grounding` | `profile=ndt_plan`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
-| AC-R36-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
+| AC-R36-01 | 工作见证：需提供无损检测方案 | `r36.projectId`<br>`r36.applicability`<br>`r36.plan`<br>`r36.requirements` | `get_document_ocr_result`<br>`extract_document_fields`<br>`extract_table_records`<br>`evaluate_r36_ndt_plan`<br>`validate_evidence_grounding` | `profile=ndt_plan`<br>`decisionTool=evaluate_r36_ndt_plan`<br>`clauseSource=frozen_standard_clause_package`<br>`failurePolicy=business_rule_result` | `deterministic-tool-result-v1` | `binding_only` |
+| AC-R36-02 | 核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。 | `judgment.claimedFacts`<br>`judgment.evidenceRefs`<br>`evidence.pageNo`<br>`evidence.bboxOrQuotedText`<br>`evidence.ocrConfidence`<br>`evidence.conflictStatus` | `locate_evidence_fragment`<br>`validate_evidence_grounding` | `resultRole=evidence_gate`<br>`minConfidence=0.75`<br>`requirePage=True`<br>`requireBboxOrQuotedText=True`<br>`denyOnConflict=True` | `evidence-gate-result-v1` | `binding_only` |
 
 ### R37
 

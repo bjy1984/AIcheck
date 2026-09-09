@@ -9,9 +9,9 @@ def arguments():
     refs = [{"documentVersionId": "DESIGN-V1", "pageNo": 2}]
     requirement = {"projectId": "P1", "objectId": "W1", "method": "UT", "required": True, "ratioPercent": 20,
                    "timing": "after_pwht", "acceptanceLevel": "II", "evidenceRefs": refs}
-    item = {**deepcopy(requirement), "evidenceRefs": [{"documentVersionId": "PLAN-V1", "pageNo": 3}]}
+    item = {**deepcopy(requirement), "planId": "PLAN1", "evidenceRefs": [{"documentVersionId": "PLAN-V1", "pageNo": 3}]}
     return {"projectId": "P1", "applicability": {"required": True, "evidenceRefs": refs},
-            "requirements": [requirement], "plan": {"projectId": "P1", "approved": True,
+            "requirements": [requirement], "plan": {"projectId": "P1", "planId": "PLAN1", "approved": True,
             "personnelReady": True, "equipmentReady": True, "evidenceRefs": item["evidenceRefs"], "items": [item]}}
 
 
@@ -83,3 +83,16 @@ def test_r36_explicit_readiness_failure_and_unknown_are_distinct(field):
 
 def test_r36_generic_presence_profile_is_not_a_site_plan():
     assert run({"facts": {"document": "exists"}, "requiredFields": ["document"], "ruleChecks": []})["result"] == "evidence_insufficient"
+
+
+@pytest.mark.parametrize("value", [None, "OTHER"])
+def test_r36_items_cannot_reuse_another_plans_approval(value):
+    body = arguments()
+    body["plan"]["items"][0]["planId"] = value
+    assert run(body)["result"] == "evidence_insufficient"
+
+
+def test_r36_missing_plan_identity_is_not_inferred():
+    body = arguments()
+    body["plan"].pop("planId")
+    assert run(body)["result"] == "evidence_insufficient"

@@ -2235,18 +2235,19 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R36-01
   sourceRuleId: R36
   requiredFacts:
-  - ndtPlan.document
-  - ndtPlan.methods
-  - ndtPlan.ratios
-  - design.ndtRequirements
+  - r36.projectId
+  - r36.applicability
+  - r36.plan
+  - r36.requirements
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_required
-  - evaluate_ndt_process
+  - extract_table_records
+  - evaluate_r36_ndt_plan
   - validate_evidence_grounding
   parameters:
     profile: ndt_plan
+    decisionTool: evaluate_r36_ndt_plan
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
@@ -2264,6 +2265,7 @@ atomicCheckToolBindings:
   - locate_evidence_fragment
   - validate_evidence_grounding
   parameters:
+    resultRole: evidence_gate
     minConfidence: 0.75
     requirePage: true
     requireBboxOrQuotedText: true
