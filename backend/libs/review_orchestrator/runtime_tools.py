@@ -30,6 +30,7 @@ from libs.integrations.std_samr_client import (
     parse_review_date,
 )
 from libs.ocr.welder_certificate_tool import extract_welder_certificate_from_ocr_result
+from libs.review_document_scope import validate_document_scope
 from libs.review_orchestrator.deterministic_tools import (
     DETERMINISTIC_TOOL_DESCRIPTORS,
     DETERMINISTIC_TOOL_NAMES,
@@ -559,6 +560,7 @@ def selected_parse_results(
     }
     review_run = context.get("reviewRun")
     if review_run is not None:
+        validate_document_scope(review_run)
         allowed = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
         requested = requested & allowed if requested else allowed
     results = [item for item in state.get("ocr_parse_results", []) if isinstance(item, dict)]

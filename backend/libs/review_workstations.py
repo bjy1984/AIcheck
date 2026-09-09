@@ -8,6 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from libs.review_document_scope import freeze_document_scope, validate_document_scope
 from libs.review_orchestrator.tool_scope import ALWAYS_AVAILABLE_TOOLS
 
 REGISTRY = Path(__file__).resolve().parents[1] / 'config/workstations/registry.json'
@@ -88,6 +89,7 @@ def freeze_station(node_id: Any, pack: dict[str, Any], catalog: list[dict[str, A
 
 
 def station_snapshot(review_run: dict[str, Any]) -> dict[str, Any] | None:
+    validate_document_scope(review_run)
     snapshot = review_run.get('workstationSnapshot')
     if snapshot is None:
         return None  # Historical runs retain their original execution contract.
@@ -146,11 +148,13 @@ def initialize_run_workstation(record, project, published_rule, catalog, hash_pa
     if record.get("atomicCheckToolBindingsSnapshot"):
         station_pack["atomicCheckToolBindings"] = record["atomicCheckToolBindingsSnapshot"]
     effective_rule = published_rule or matching_rule_for_node(station_pack, int(record["nodeId"]))
+    record["documentScopeSnapshot"] = freeze_document_scope(record)
+    record["inputDocumentVersionIds"] = deepcopy(record["documentScopeSnapshot"]["documentVersionIds"])
     record["effectiveRuleSnapshot"] = freeze_effective_rule(record, effective_rule)
     record["ruleSetVersion"] = effective_rule.get("version") or record["ruleSetVersion"]
     record["workstationSnapshot"] = freeze_station(record["nodeId"], station_pack, catalog)
     record["allowedTools"] = record["workstationSnapshot"]["allowedTools"]
-    record["inputHash"] = hash_payload({"legacyInputHash": record["inputHash"], "workstation": record["workstationSnapshot"]["snapshotHash"], "effectiveRule": record["effectiveRuleSnapshot"]["snapshotHash"]})
+    record["inputHash"] = hash_payload({"legacyInputHash": record["inputHash"], "documents": record["documentScopeSnapshot"]["snapshotHash"], "workstation": record["workstationSnapshot"]["snapshotHash"], "effectiveRule": record["effectiveRuleSnapshot"]["snapshotHash"]})
 
 
 def workstation_argument_scope_error(review_run: dict[str, Any], arguments: dict[str, Any]) -> str | None:
