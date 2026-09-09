@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from libs.ocr.page_coverage import render_coverage_issue
+
 OCR_READY_STATUSES = {"ready"}
 OCR_RETRYABLE_STATUSES = {"failed", "incomplete", "inconsistent"}
 OCR_FORMAL_BLOCKING_REASONS = {
@@ -174,6 +176,8 @@ def build_document_ocr_readiness(repo: Any, document: dict[str, Any]) -> dict[st
         )
     elif parse_result_quality_blockers(parse_result):
         status = "incomplete"
+        if "OCR_PAGE_COVERAGE_INCOMPLETE" in parse_result_quality_blockers(parse_result):
+            issues.append(render_coverage_issue(parse_result, document.get("id")))
         issues.append(
             {
                 "code": "OCR_QUALITY_GATE_BLOCKED",

@@ -26,6 +26,7 @@ import type {
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { bboxToPercentStyle, normalizeBbox } from '@/utils/bboxHighlight'
 import { getStatusTagType } from './status'
+import { ocrReadinessLabel as readinessLabel, ocrReadinessAlert as readinessAlert } from './ocrReadinessPresentation'
 import StandardCanonicalDetail from './StandardCanonicalDetail.vue'
 import {
   canonicalDetailIdentity,
@@ -63,50 +64,8 @@ const canonicalGenerationIdentity = computed(() =>
 )
 const currentVersion = computed(() => props.detail?.currentVersion)
 const ocrReadiness = computed(() => props.detail?.document?.ocrReadiness)
-const ocrReadinessLabel = computed(() => {
-  const labels: Record<string, string> = {
-    not_started: '待处理',
-    queued: '排队中',
-    processing: '处理中',
-    ready: '已完成',
-    incomplete: '已完成',
-    inconsistent: '状态异常',
-    failed: '处理失败'
-  }
-  return labels[String(ocrReadiness.value?.status || '')] || '等待产物校验'
-})
-const ocrReadinessAlert = computed(() => {
-  const readiness = ocrReadiness.value
-  if (!readiness) return undefined
-  const status = String(readiness.status || '')
-  const firstReason = readiness.blockingReasons?.[0]
-  if (status === 'incomplete') {
-    const specificReason = readiness.blockingReasons?.find(
-      (reason) => reason.fieldName || reason.requirementName
-    )
-    if (!specificReason) return undefined
-    const missingName = specificReason.fieldName || specificReason.requirementName
-    return {
-      title: '未识别到必要内容',
-      description:
-        specificReason.message || (missingName ? `未识别到${missingName}。` : '请补充缺失内容。')
-    }
-  }
-  if (!['not_started', 'queued', 'processing', 'inconsistent', 'failed'].includes(status)) {
-    return undefined
-  }
-  const fallbackDescriptions: Record<string, string> = {
-    not_started: '文件尚未开始识别。',
-    queued: '文件已进入识别队列。',
-    processing: '正在识别文件内容。',
-    inconsistent: 'OCR 状态异常，请重新识别。',
-    failed: 'OCR 处理失败，请重新识别。'
-  }
-  return {
-    title: `OCR ${ocrReadinessLabel.value}`,
-    description: firstReason?.message || fallbackDescriptions[status]
-  }
-})
+const ocrReadinessLabel = computed(() => readinessLabel(ocrReadiness.value?.status))
+const ocrReadinessAlert = computed(() => readinessAlert(ocrReadiness.value))
 const bindings = computed(() => props.detail?.bindings || [])
 const extractedFields = computed(() => props.detail?.extractedFields || [])
 const evidenceLinks = computed(() => props.detail?.evidenceLinks || [])

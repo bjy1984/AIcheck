@@ -3,6 +3,22 @@
 CODE = "OCR_PAGE_COVERAGE_INCOMPLETE"
 
 
+def render_coverage_issue(result, document_id):
+    coverage = (result.get("metadata") or {}).get("localRenderCoverage") or {}
+    pages = sorted({page for page in coverage.get("unrenderedPageNos", []) if type(page) is int and page > 0})
+    ranges = []
+    for page in pages:
+        if ranges and page == ranges[-1][1] + 1:
+            ranges[-1][1] = page
+        else:
+            ranges.append([page, page])
+    labels = [str(start) if start == end else f"{start}–{end}" for start, end in ranges]
+    summary = "、".join(labels[:8]) + ("等" if len(labels) > 8 else "")
+    message = f"第 {summary} 页还没完成辨识。" if summary else "这份文件还有页面未完成辨识。"
+    return {"code": CODE, "message": message + "已读到的内容会保留，请先核对剩余页的原文。",
+            "pageNos": pages, "actionKey": "review_ocr", "targetId": document_id}
+
+
 def attach_render_coverage(result):
     pages = [row for row in result.get("pages", []) if isinstance(row, dict)]
     bounded = [row for row in pages if row.get("truncated") is True]
