@@ -26807,6 +26807,27 @@ def get_rule_version(request: Request, version_id: str):
     return ok({"rule": versioned_record("rule-version", rule)}, request)
 
 
+def rule_project_mutation_error(request: Request, rule: dict[str, Any]) -> JSONResponse | None:
+    project_id = rule.get("projectId")
+    if not project_id:
+        return None  # Platform writes are governed by knowledge:manage middleware.
+    if not isinstance(project_id, str):
+        return fail(errors.VALIDATION_ERROR, request, message="工程 ID 必须是字符串。")
+    project = repo.require_project(project_id)
+    if not project:
+        return fail(errors.NOT_FOUND, request)
+    if project.get("status") == "已归档":
+        return fail(errors.ARCHIVED_READONLY, request)
+    role, identity_error = effective_role_for_request(request)
+    if identity_error:
+        return identity_error
+    if scope_error := member_node_scope_error(request, project_id, role, node_ids=parse_rule_node_ids(rule.get("nodeIds"))):
+        return scope_error
+    if str(rule.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID) != str(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID):
+        return fail(errors.VALIDATION_ERROR, request, message="规则业务包必须与工程一致。")
+    return None
+
+
 @router.post("/rules/versions")
 def create_rule_version(
     request: Request,
@@ -26822,6 +26843,8 @@ def create_rule_version(
             },
             force_status="草稿",
         )
+        if scope_error := rule_project_mutation_error(request, normalized):
+            return scope_error
         if not normalized.get("inspectionItem"):
             return fail(errors.VALIDATION_ERROR, request, message="请填写监检项目（内容）。")
         if not normalized.get("standardText") and not normalized.get("witnessText"):
@@ -26856,6 +26879,10 @@ def update_rule_version(
         merged = {**rule, **body, "id": rule["id"], "status": body.get("status") or rule.get("status") or "草稿"}
         if normalize_rule_status(merged.get("status")) == "已发布":
             return fail(errors.VALIDATION_ERROR, request, message="编辑接口不能直接发布规则，请使用发布操作。")
+        if not same_rule_scope(rule, merged):
+            return fail(errors.VALIDATION_ERROR, request, message="不能通过编辑移动规则的工程或业务包，请创建对应范围的草稿。")
+        if scope_error := rule_project_mutation_error(request, merged):
+            return scope_error
         normalized = normalize_business_rule_version_record(merged)
         normalized["revision"] = int(rule.get("revision") or 1)
         rule.clear()
@@ -26878,6 +26905,13 @@ def fork_rule_version(
         source = repo.find_one("rule_versions", version_id)
         if not source:
             return fail(errors.NOT_FOUND, request)
+        if scope_error := rule_project_mutation_error(request, source):
+            return scope_error
+        target_scope = {**source, **body}
+        if source.get("projectId") and not same_rule_scope(source, target_scope):
+            return fail(errors.VALIDATION_ERROR, request, message="工程规则只能在原工程内创建版本。")
+        if scope_error := rule_project_mutation_error(request, target_scope):
+            return scope_error
         now = server_time()
         draft = normalize_business_rule_version_record(
             {
@@ -27102,6 +27136,8 @@ def publish_rule_version(
         rule = repo.find_one("rule_versions", version_id)
         if not rule:
             return fail(errors.NOT_FOUND, request)
+        if scope_error := rule_project_mutation_error(request, rule):
+            return scope_error
         if not record_if_match_valid("rule-version", rule, if_match):
             return fail(errors.ETAG_CONFLICT, request)
         if not (rule.get("standardText") or rule.get("criteria")) and not (rule.get("witnessText") or rule.get("checkMethod")):
@@ -27168,6 +27204,8 @@ def rollback_rule_version(
         rule = repo.find_one("rule_versions", version_id)
         if not rule:
             return fail(errors.NOT_FOUND, request)
+        if scope_error := rule_project_mutation_error(request, rule):
+            return scope_error
         if not record_if_match_valid("rule-version", rule, if_match):
             return fail(errors.ETAG_CONFLICT, request)
         target = matching_rule_target(

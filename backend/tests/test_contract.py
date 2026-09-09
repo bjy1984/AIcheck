@@ -13227,13 +13227,13 @@ def test_rule_publish_replaces_only_same_project_and_business_pack() -> None:
 
     source = repo.find_one("rule_versions", "RULE-NDT-202606")
     assert source is not None
-    source["projectId"] = "P-LAB-1"
+    source["projectId"] = "P-2026-HDCP-001"
     peers = []
     for identity, project, pack in [
-        ("SAME", "P-LAB-1", source.get("businessPackId")),
+        ("SAME", "P-2026-HDCP-001", source.get("businessPackId")),
         ("OTHER-PROJECT", "P-LAB-2", source.get("businessPackId")),
         ("PLATFORM", None, source.get("businessPackId")),
-        ("OTHER-PACK", "P-LAB-1", "other-business-pack"),
+        ("OTHER-PACK", "P-2026-HDCP-001", "other-business-pack"),
     ]:
         peer = deepcopy(source)
         peer.update(id=f"RULE-LAB-{identity}", projectId=project, businessPackId=pack, status="已发布")
@@ -13268,3 +13268,49 @@ def test_lab_review_freezes_effective_rule_before_later_publication(monkeypatch)
     assert second["inputHash"] != first["inputHash"]
     assert first["ruleSetVersion"] == "lab-v1"
     assert second["ruleSetVersion"] == "lab-v2"
+
+
+@pytest.mark.parametrize("change", [{"projectId": "P-2026-HDCP-001"}, {"businessPackId": "other-pack"}])
+def test_rule_edit_cannot_move_existing_scope(change):
+    from copy import deepcopy
+
+    source = repo.find_one("rule_versions", "RULE-NDT-202606")
+    source["status"] = "草稿"
+    before = deepcopy(source)
+    response = client.patch(f"/rules/versions/{source['id']}", json=change)
+    assert_error(response, "VALIDATION_ERROR")
+    assert source.get("projectId") == before.get("projectId")
+    assert source.get("businessPackId") == before.get("businessPackId")
+    assert source["revision"] == before["revision"]
+
+
+def test_project_rule_fork_validates_target_and_keeps_platform_source():
+    source = repo.find_one("rule_versions", "RULE-NDT-202606")
+    count = len(repo.state["rule_versions"])
+    assert_error(client.post(f"/rules/versions/{source['id']}/fork",
+                            json={"projectId": "NOT-A-PROJECT"}), "NOT_FOUND")
+    assert len(repo.state["rule_versions"]) == count
+    assert_error(client.post(f"/rules/versions/{source['id']}/fork",
+                            json={"projectId": "P-2026-HDCP-001", "businessPackId": "other-pack"}), "VALIDATION_ERROR")
+    assert len(repo.state["rule_versions"]) == count
+    result = assert_ok(client.post(f"/rules/versions/{source['id']}/fork",
+                                  json={"projectId": "P-2026-HDCP-001"}))
+    assert result["rule"]["projectId"] == "P-2026-HDCP-001"
+    assert not source.get("projectId")
+    assert result["rule"]["status"] == "草稿"
+    assert_error(client.post(f"/rules/versions/{result['rule']['id']}/fork",
+                            json={"projectId": None}), "VALIDATION_ERROR")
+
+
+def test_archived_project_rejects_rule_fork():
+    repo.require_project("P-2026-HDCP-001")["status"] = "已归档"
+    assert_error(client.post("/rules/versions/RULE-NDT-202606/fork",
+                            json={"projectId": "P-2026-HDCP-001"}), "ARCHIVED_READONLY")
+
+
+def test_project_rule_fork_rejects_user_without_project_membership():
+    count = len(repo.state["rule_versions"])
+    assert_error(client.post("/rules/versions/RULE-NDT-202606/fork",
+                            json={"projectId": "P-2026-HDCP-001"},
+                            headers={"X-User-Id": "USER-NOT-IN-PROJECT"}), "FORBIDDEN")
+    assert len(repo.state["rule_versions"]) == count
