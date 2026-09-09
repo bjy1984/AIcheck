@@ -25,6 +25,14 @@ repo.state["ocr_parse_results"].append({"tenantId": "TENANT-DEFAULT", "documentV
     {"id": "F-BROWSER-TRIAL", "fieldName": "thickness", "value": 11, "unit": "mm", "pageNo": 1, "bbox": [0, 0, 10, 10]}]})
 trial_run["documentScopeSnapshot"] = freeze_document_scope(trial_run, repo.state)
 repo.state["review_runs"].append(trial_run)
+for index in range(1, 24):
+    document_id, version_id = f"DOC-PICK-{index}", f"VER-PICK-{index}"
+    repo.state["documents"].append({"id": document_id, "projectId": "P-2026-HDCP-001",
+        "tenantId": "TENANT-DEFAULT", "currentVersionId": version_id, "fileName": f"LAB-PICK-{index:02}.txt",
+        "fileType": "txt", "fileStatus": "已上传", "currentOcrStatus": "待识别", "sourceOrgName": "本地测试",
+        "uploaderName": "测试", "poolSubmissionStatus": "已提交"})
+    repo.state["versions"].append({"id": version_id, "documentId": document_id, "tenantId": "TENANT-DEFAULT",
+        "hash": f"fixture-{index}" if index != 23 else None, "versionNo": 1, "isCurrent": True, "ocrStatus": "待识别"})
 client = TestClient(app)
 
 

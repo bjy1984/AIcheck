@@ -33,3 +33,6 @@ Uses installed Chrome to compare the workbench CSS against commit `4cac73d1` at
 selects another baseline commit. Transitions are disabled during measurement so
 intermediate layout animation values do not cause false differences. This is a
 CSS regression probe, not a logged-in workbench acceptance test.
+
+
+文件選取元件驗收：啟動同一組本地 API／Vite 後，在 frontend 執行 `node e2e/lab-rules/check-documents.mjs`。入口 `/e2e/lab-rules/documents.html` 使用真實文件列表／詳情 API；驗證搜尋、跨頁保留、空殼禁止選取、取消、載入失敗保留、批選、模式、節點重設及恢復預設。測試版本的 hash／isCurrent 為記憶體夾具，不代表檔案內容驗收；預覽僅驗證不支援格式提示。

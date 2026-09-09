@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
+import ReviewDocumentPicker from './ReviewDocumentPicker.vue'
+import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import { INPUT_CHANGED_MESSAGE, needsFreshReview } from './inputRecovery'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -296,7 +298,18 @@ const conversationSubtitle = computed(() => {
 const currentTask = computed(
   () => workspace.value?.contextSummary.currentTask || currentNode.value?.name || '选择监检节点'
 )
-const canStartReview = computed(() => workspace.value?.permissions.canStartReview === true)
+const reviewDocumentSelection = ref<ReviewDocumentSelection | null>(null)
+watch(
+  () => [activeProjectId.value, activeNodeId.value],
+  () => {
+    reviewDocumentSelection.value = null
+  }
+)
+const canStartReview = computed(() =>
+  reviewDocumentSelection.value
+    ? workspace.value?.permissions.canManageEvidence === true
+    : workspace.value?.permissions.canStartReview === true
+)
 const runStatus = computed(() => String(activeRun.value?.status || '未发起'))
 
 /** 一条 queued/running 的运行，多久没动静就不能再叫「执行中」。
@@ -500,8 +513,10 @@ const runProgress = computed(() => {
   ).length
   return Math.round((completed / nodes.length) * 100)
 })
-const startReviewMode = computed<'formal' | 'gap_precheck'>(() =>
-  readiness.value?.readyForAiFormal ? 'formal' : 'gap_precheck'
+const startReviewMode = computed<'formal' | 'gap_precheck'>(
+  () =>
+    reviewDocumentSelection.value?.reviewMode ||
+    (readiness.value?.readyForAiFormal ? 'formal' : 'gap_precheck')
 )
 const taskType = computed(() => String(activeTask.value?.taskType || ''))
 const canRenderActiveTask = computed(() =>
@@ -1010,12 +1025,17 @@ const handleStartReview = async () => {
     ElMessage.warning('当前节点尚不具备可执行的正式复核或缺项预审条件。')
     return
   }
-  const modeLabel = startReviewMode.value === 'formal' ? '正式 AI 复核' : '缺项预审'
+  const selectedProject = activeProjectId.value
+  const selectedNode = activeNodeId.value
+  const selectedInput = reviewDocumentSelection.value
+  const selectedMode = startReviewMode.value
+  const modeLabel = selectedMode === 'formal' ? '正式 AI 复核' : '缺项预审'
   await ElMessageBox.confirm(
-    `将按当前文件版本、规则版本和适用标准条款包发起${modeLabel}，是否继续？`,
+    `${selectedInput ? `将仅使用已选 ${selectedInput.versions.length} 份文件版本` : '将使用节点当前资料'}，按当前规则和适用标准条款包发起${modeLabel}，是否继续？`,
     `发起${modeLabel}`,
     { type: 'warning', confirmButtonText: '确认发起', cancelButtonText: '取消' }
   )
+  if (activeProjectId.value !== selectedProject || activeNodeId.value !== selectedNode) return
   actionLoading.value = true
   reviewStarting.value = true
   executionStarted.value = true
@@ -1030,7 +1050,12 @@ const handleStartReview = async () => {
     const res = await requestAiRecheckApi(
       activeProjectId.value,
       activeNodeId.value,
-      { reviewMode: startReviewMode.value },
+      {
+        reviewMode: selectedMode,
+        ...(selectedInput
+          ? { inputDocumentVersionIds: selectedInput.versions.map((item) => item.versionId) }
+          : {})
+      },
       {
         idempotencyKey: `review-b-start-${activeProjectId.value}-${activeNodeId.value}-${Date.now()}`
       }
@@ -1760,6 +1785,13 @@ onBeforeUnmount(() => {
             <h1>{{ currentNode?.nodeId || '-' }}. {{ currentNode?.name || '请选择节点' }}</h1>
             <p v-if="conversationSubtitle">{{ conversationSubtitle }}</p>
           </div>
+          <ReviewDocumentPicker
+            :project-id="activeProjectId"
+            :node-id="activeNodeId"
+            :selection="reviewDocumentSelection"
+            :disabled="actionLoading || workspace?.permissions.canManageEvidence !== true"
+            @change="reviewDocumentSelection = $event"
+          />
           <div v-if="!props.embedded" class="run-meta">
             <ProjectRuleEditor
               :project-id="activeProjectId"
