@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
+import { INPUT_CHANGED_MESSAGE, needsFreshReview } from './inputRecovery'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -182,6 +183,7 @@ const conversationMessages = computed(() =>
   )
 )
 const activeRun = computed(() => workspace.value?.activeReviewRun)
+const inputChanged = computed(() => needsFreshReview(activeRun.value))
 const activeRunId = computed(() =>
   String(activeRun.value?.reviewRunId || activeRun.value?.id || '')
 )
@@ -387,6 +389,7 @@ const RUN_STATUS_LABELS: Record<string, string> = {
 }
 
 const runStatusText = computed(() => {
+  if (inputChanged.value) return '资料已变更，需重新发起'
   if (sending.value) return '执行中'
   // 本轮已经答完，就报本轮的结果——不要拿上一条运行的结局当「当前状态」
   if (latestAssistantExecution.value && !reviewStarting.value && !executionActive.value) {
@@ -2261,6 +2264,14 @@ onBeforeUnmount(() => {
                 ><dt>关联证据</dt><dd>{{ selectedEvidence.length }} 份</dd></div
               >
             </dl>
+            <ElAlert
+              v-if="inputChanged"
+              title="需要重新发起复核"
+              :description="INPUT_CHANGED_MESSAGE"
+              type="warning"
+              show-icon
+              :closable="false"
+            />
             <ElButton
               class="full-button"
               type="primary"
@@ -2269,7 +2280,8 @@ onBeforeUnmount(() => {
               :disabled="!canStartReview"
               @click="handleStartReview"
             >
-              发起{{ startReviewMode === 'formal' ? '正式复核' : '缺项预审' }}
+              {{ inputChanged ? '按当前资料重新发起' : '发起'
+              }}{{ startReviewMode === 'formal' ? '正式复核' : '缺项预审' }}
             </ElButton>
           </section>
 

@@ -26,6 +26,8 @@ export type ReviewBSession = {
 }
 
 export type ReviewBRun = {
+  errorCode?: string | null
+  errorMessage?: string | null
   id?: string
   reviewRunId?: string
   aiRunId?: string
