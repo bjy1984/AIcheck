@@ -299,11 +299,20 @@ const currentTask = computed(
   () => workspace.value?.contextSummary.currentTask || currentNode.value?.name || '选择监检节点'
 )
 const reviewDocumentSelection = ref<ReviewDocumentSelection | null>(null)
+const reviewContextGeneration = ref(0)
 watch(
   () => [activeProjectId.value, activeNodeId.value],
   () => {
+    reviewContextGeneration.value++
     reviewDocumentSelection.value = null
-  }
+    if (reviewStarting.value) {
+      stopLiveAgentTrace()
+      actionLoading.value = false
+      reviewStarting.value = false
+      activityExpanded.value = false
+    }
+  },
+  { flush: 'sync' }
 )
 const canStartReview = computed(() =>
   reviewDocumentSelection.value
@@ -879,10 +888,17 @@ const ensureSession = async () => {
  * 直接调 getReviewBWorkspaceApi 的地方有两处，各自记得更新时钟迟早会漏一个——
  * 漏掉的那条路径上，「运行停了多久」就又变回拿浏览器时间去比。
  */
-const fetchWorkspace = async (reviewRunId?: string) => {
-  const res = await getReviewBWorkspaceApi(activeProjectId.value, activeNodeId.value, reviewRunId)
+const fetchWorkspace = async (
+  reviewRunId?: string,
+  context = {
+    projectId: activeProjectId.value,
+    nodeId: activeNodeId.value,
+    generation: reviewContextGeneration.value
+  }
+) => {
+  const res = await getReviewBWorkspaceApi(context.projectId, context.nodeId, reviewRunId)
   const stamp = parseServerTimestamp((res as { serverTime?: string }).serverTime)
-  if (stamp) serverNow.value = stamp
+  if (stamp && context.generation === reviewContextGeneration.value) serverNow.value = stamp
   return res.data
 }
 
@@ -1021,6 +1037,7 @@ const handleOpenFileLibrary = () => {
 }
 
 const handleStartReview = async () => {
+  if (reviewStarting.value || actionLoading.value) return
   if (!canStartReview.value) {
     ElMessage.warning('当前节点尚不具备可执行的正式复核或缺项预审条件。')
     return
@@ -1028,6 +1045,18 @@ const handleStartReview = async () => {
   const selectedProject = activeProjectId.value
   const selectedNode = activeNodeId.value
   const selectedInput = reviewDocumentSelection.value
+    ? {
+        ...reviewDocumentSelection.value,
+        versions: reviewDocumentSelection.value.versions.map((item) => ({ ...item }))
+      }
+    : null
+  const contextGeneration = reviewContextGeneration.value
+  const selectedSessionId = session.value?.id
+  const isCurrentContext = () =>
+    reviewContextGeneration.value === contextGeneration &&
+    activeProjectId.value === selectedProject &&
+    activeNodeId.value === selectedNode &&
+    session.value?.id === selectedSessionId
   const selectedMode = startReviewMode.value
   const modeLabel = selectedMode === 'formal' ? '正式 AI 复核' : '缺项预审'
   await ElMessageBox.confirm(
@@ -1035,7 +1064,7 @@ const handleStartReview = async () => {
     `发起${modeLabel}`,
     { type: 'warning', confirmButtonText: '确认发起', cancelButtonText: '取消' }
   )
-  if (activeProjectId.value !== selectedProject || activeNodeId.value !== selectedNode) return
+  if (!isCurrentContext()) return
   actionLoading.value = true
   reviewStarting.value = true
   executionStarted.value = true
@@ -1048,8 +1077,8 @@ const handleStartReview = async () => {
   startLiveAgentTrace()
   try {
     const res = await requestAiRecheckApi(
-      activeProjectId.value,
-      activeNodeId.value,
+      selectedProject,
+      selectedNode,
       {
         reviewMode: selectedMode,
         ...(selectedInput
@@ -1057,13 +1086,14 @@ const handleStartReview = async () => {
           : {})
       },
       {
-        idempotencyKey: `review-b-start-${activeProjectId.value}-${activeNodeId.value}-${Date.now()}`
+        idempotencyKey: `review-b-start-${selectedProject}-${selectedNode}-${Date.now()}`
       }
     )
+    if (!isCurrentContext()) return
     const reviewRunId = String(
       res.data.dispatch?.reviewRunId || res.data.latestRun?.reviewRunId || ''
     )
-    if (session.value?.id && reviewRunId) {
+    if (selectedSessionId && reviewRunId) {
       // 这里原来是 `.catch(() => undefined)`——绑定失败悄悄丢掉。
       //
       // 后果不是「少了个链接」：工作台读的是会话上的 activeReviewRunId，
@@ -1075,18 +1105,25 @@ const handleStartReview = async () => {
       // 一条陈旧的运行等下去。
       const bindActiveRun = (etag?: string) =>
         runReviewBSessionActionApi(
-          session.value!.id,
+          selectedSessionId,
           'set_active_review_run',
           { reviewRunId },
-          { etag, idempotencyKey: `review-b-link-${session.value!.id}-${reviewRunId}` }
+          { etag, idempotencyKey: `review-b-link-${selectedSessionId}-${reviewRunId}` }
         )
       try {
-        await bindActiveRun(session.value.etag)
+        await bindActiveRun(session.value?.etag)
       } catch {
-        await loadNodeWorkspace(false)
+        if (!isCurrentContext()) return
         try {
-          await bindActiveRun(session.value?.etag)
+          const refreshed = await fetchWorkspace(undefined, {
+            projectId: selectedProject,
+            nodeId: selectedNode,
+            generation: contextGeneration
+          })
+          if (!isCurrentContext() || refreshed.session?.id !== selectedSessionId) return
+          await bindActiveRun(refreshed.session.etag)
         } catch (error) {
+          if (!isCurrentContext()) return
           ElMessage.warning(
             getAicheckErrorMessage(
               error,
@@ -1096,15 +1133,19 @@ const handleStartReview = async () => {
         }
       }
     }
+    if (!isCurrentContext()) return
     ElMessage.success(`${modeLabel}已发起`)
     await refreshLiveState()
   } catch (error) {
+    if (!isCurrentContext()) return
     ElMessage.error(getAicheckErrorMessage(error, `${modeLabel}发起失败。`))
   } finally {
-    stopLiveAgentTrace()
-    actionLoading.value = false
-    reviewStarting.value = false
-    activityExpanded.value = false
+    if (reviewContextGeneration.value === contextGeneration) {
+      stopLiveAgentTrace()
+      actionLoading.value = false
+      reviewStarting.value = false
+      activityExpanded.value = false
+    }
   }
 }
 
@@ -1672,6 +1713,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  reviewContextGeneration.value++
   if (pollTimer) window.clearInterval(pollTimer)
   stopLiveAgentTrace()
 })

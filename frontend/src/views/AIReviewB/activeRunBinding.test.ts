@@ -26,7 +26,10 @@ const codeLines = body
   .join('\n')
 assert.ok(!/catch\(\(\) => undefined\)/.test(codeLines), '绑定失败不能悄悄丢掉')
 // etag 过期是最常见的失败原因，取新会话重试一次
-assert.ok(body.includes('loadNodeWorkspace'), '失败后要取一份新会话再试')
+assert.ok(
+  body.includes('await fetchWorkspace(') && body.includes('refreshed.session.etag'),
+  '失败后要取一份新会话再试'
+)
 assert.ok(/ElMessage\.(warning|error)/.test(body), '两次都失败要如实告诉用户')
 
 console.log('Review B active run binding contract passed')
