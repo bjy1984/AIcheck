@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ReviewBRun } from '@/types/ai-review-b'
-import { automationLimitationText } from '../automationLimitations'
+import { automationLimitationScope, automationLimitationText } from '../automationLimitations'
 defineProps<{ items: NonNullable<ReviewBRun['automationLimitations']> }>()
 </script>
 
@@ -11,7 +11,9 @@ defineProps<{ items: NonNullable<ReviewBRun['automationLimitations']> }>()
     <ul>
       <li v-for="item in items" :key="`${item.atomicCheckId}:${item.code}`">
         {{ automationLimitationText(item.code) }}
-        <small v-if="item.atomicCheckId">（审查项 {{ item.atomicCheckId }}）</small>
+        <small v-if="automationLimitationScope(item.atomicCheckId)">
+          （{{ automationLimitationScope(item.atomicCheckId) }}）
+        </small>
       </li>
     </ul>
     <p>下面已有的问题和判断仍需处理；这份提示不会替代业务结论。</p>
