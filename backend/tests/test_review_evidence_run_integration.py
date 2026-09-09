@@ -320,12 +320,39 @@ def test_real_route_uses_verified_handoff_and_rejects_changed_verification(monke
     assert detail["draft"]["target"]["runId"] == "HANDOFF-TARGET"
     assert client.get(f"{base}/{record['id']}", headers=headers, params={"contextRunId": "HANDOFF-SOURCE"}).json()["code"] != 0
 
+    # The workbench summary must follow live dependencies without rerunning or rewriting history.
+    summary_path = f"/api/projects/{PROJECT_ID}/review-handoff-node-statuses"
+    repo.state.setdefault("review_sessions", []).append({
+        "id": "HANDOFF-TRANSITION-SESSION", "projectId": PROJECT_ID, "nodeId": 35,
+        "tenantId": "TENANT-DEFAULT", "createdBy": headers["X-User-Id"],
+        "status": "active", "activeReviewRunId": run["reviewRunId"],
+    })
     before = deepcopy(run)
+    task_count = len(repo.state["ai_runs"])
+
+    def assert_summary(expected_status, expected_count):
+        summary = _assert_ok(client.get(summary_path, headers=headers))
+        row = next(item for item in summary["items"] if item["nodeId"] == 35)
+        assert row["reviewRunId"] == run["reviewRunId"]
+        assert row["status"] == expected_status
+        assert summary["requiresRevalidationCount"] == expected_count
+        assert summary["automaticRerun"] is False
+        assert len(repo.state["ai_runs"]) == task_count
+        assert run == before
+
+    assert_summary("current", 0)
+    source = repo.find_one("review_runs", "HANDOFF-SOURCE")
+    original_hash = source["inputHash"]
+    source["inputHash"] = "UPSTREAM-CHANGED"
+    assert_summary("requires_revalidation", 1)
+    source["inputHash"] = original_hash
+    assert_summary("current", 0)
     decision.update(expectedPreviousId=verified["verifications"][-1]["id"], outcome="rejected", note="重新核验不匹配")
     _assert_ok(client.post(f"{base}/{record['id']}/verifications", headers=headers, json=decision))
     assert _assert_ok(client.get(dependency_path, headers=headers))["requiresRevalidation"] is True
     stale_detail = _assert_ok(client.get(f"{base}/{record['id']}", headers=headers, params={"contextRunId": run["reviewRunId"]}))
     assert stale_detail["verification"]["status"] == "rejected"
+    assert_summary("requires_revalidation", 1)
     member = next(row for row in repo.state["project_members"] if row.get("projectId") == PROJECT_ID and row.get("userId") == headers["X-User-Id"])
     previous_scope = member.get("nodeScope")
     member["nodeScope"] = [35]
