@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
 from libs.review_orchestrator.material_facts import build_material_judgment
+from libs.review_tools.r39_reference import SCOPE_FIELDS
 
 SOURCE_GROUPS = {
     "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
@@ -30,11 +31,39 @@ def validate_r39_sources(groups, input_name):
     return {"result": checked["result"], "checks": checked["checks"], "minConfidence": .75}
 
 
+def _isolate_reference_sources(groups, facts, checked):
+    """Retain independent pairs only when their shared inventory is trustworthy."""
+    value = facts.get("procedureReference")
+    if not isinstance(value, dict) or "inventory" not in value:
+        return False
+    names = SOURCE_GROUPS["procedureReference"]
+    shared = {name: groups[name] if name in {"referenceInventories", "referenceMembers"} else [] for name in names}
+    checked["inventoryValidation"] = validate_r39_sources(shared, "procedureReference")
+    if checked["inventoryValidation"]["result"] != "passed":
+        return False
+    retained = []
+    checked["pairValidation"] = []
+    for pair in value["referencePairs"]:
+        scope = pair.get("scope")
+        if not isinstance(scope, dict):
+            continue
+        selected = {name: [row for row in groups[name] if all(row.get(key) == scope[key] for key in SCOPE_FIELDS)]
+                    if name not in {"referenceInventories", "referenceMembers"} else [] for name in names}
+        validation = validate_r39_sources(selected, "procedureReference")
+        checked["pairValidation"].append({"scope": dict(scope), **validation})
+        if validation["result"] == "passed":
+            retained.append(pair)
+    # Keep coverage incomplete even if the unreliable row was outside the inventory.
+    value["referencePairs"] = [*retained, {}]
+    return True
+
+
 def gate_r39_inputs(groups, facts):
     """Keep diagnostics but do not pass unreliable inputs to a business subtool."""
     checks = {name: validate_r39_sources(groups, name) for name in SOURCE_GROUPS}
     facts["sourceValidation"] = checks
     for name, checked in checks.items():
         if checked["result"] != "passed":
-            facts.pop(name, None)
+            if name != "procedureReference" or not _isolate_reference_sources(groups, facts, checked):
+                facts.pop(name, None)
             facts["sourceIssues"].append("r39_" + name + "_source_gate_failed")
