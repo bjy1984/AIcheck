@@ -57,6 +57,7 @@ from libs.audit_context import (
 )
 from libs.audit_runtime import audit_runtime_public_config
 from libs.auto_review_status import auto_review_status
+from libs.binding_requirements import resolve_binding_requirement
 from libs.business_pack import (
     DEFAULT_BUSINESS_PACK_ID,
     build_project_requirements,
@@ -7861,10 +7862,23 @@ def bind_documents(
         )
         if body_error:
             return body_error
+        # Validate every target before mutating any binding: a bad item must not
+        # leave a partially saved batch behind.
+        resolved_requirements = {}
+        try:
+            for node_id in node_ids:
+                for index, binding_input in enumerate(binding_inputs):
+                    declared = binding_input.get("nodeId")
+                    if str(declared or "").strip().lstrip("-").isdigit() and int(declared) != node_id:
+                        continue
+                    resolved_requirements[(node_id, index)] = resolve_binding_requirement(
+                        repo.state, project_id, node_id, binding_input.get("requirementId")
+                    )
+        except (TypeError, ValueError) as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
         created = []
         changed = []
         for node_id in node_ids:
-            requirements = [item for item in repo.state["requirements"] if int(item["nodeId"]) == node_id]
             node_created: list[dict[str, Any]] = []
             for index, binding_input in enumerate(binding_inputs):
                 # 逐条声明了节点时按声明分派，避免每条资料被挂到所有节点上（笛卡尔积）。
@@ -7875,7 +7889,7 @@ def bind_documents(
                 version_id = binding_input.get("documentVersionId") or (document or {}).get("currentVersionId")
                 if not document or not version_id:
                     continue
-                requirement = requirements[index % len(requirements)] if requirements else None
+                requirement = resolved_requirements[(node_id, index)]
                 # 已进入审查视野的资料改挂/加挂节点是「换个地方看同一份资料」，不是新的提交：
                 # 直接继承已提交，并补证据链接。原来一律落草稿挂载，文件在台账上从
                 # 「已提交」退回「未提交」，监检还提交不了施工方的挂载（2026-09-03 审计）。
@@ -7932,11 +7946,22 @@ def update_binding(
             return fail(errors.NOT_FOUND, request)
         if access_error := document_access_policy.document_mutation_error(_DOCUMENT_ACCESS_SERVICES, request, project_id, binding_ids=[binding_id]):
             return access_error
+        updates = dict(body)
+        if "requirementId" in updates or "requirementName" in updates:
+            try:
+                requirement = resolve_binding_requirement(
+                    repo.state, project_id, binding["nodeId"],
+                    updates.get("requirementId", binding.get("requirementId")),
+                )
+            except (TypeError, ValueError) as exc:
+                return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+            updates["requirementId"] = requirement["id"] if requirement else None
+            updates["requirementName"] = requirement.get("name") if requirement else None
         changed = []
         for field in ["requirementId", "requirementName", "usage", "bindingStatus"]:
-            if field in body and binding.get(field) != body[field]:
-                changed.append({"field": field, "before": binding.get(field), "after": body[field]})
-                binding[field] = body[field]
+            if field in updates and binding.get(field) != updates[field]:
+                changed.append({"field": field, "before": binding.get(field), "after": updates[field]})
+                binding[field] = updates[field]
         return ok({**repo.mutation_result("更新挂载关系", "NodeFileBinding", binding_id, changed=changed), "binding": repo.clone(binding)}, request)
 
     return idempotent(request, idempotency_key, produce, fingerprint_source={"bindingId": binding_id, "body": body})

@@ -2137,3 +2137,52 @@ def test_standalone_rectification_list_and_detail_are_actor_document_filtered() 
     assert "OWN RECTIFICATION REASON" in combined
     assert "FOREIGN RECTIFICATION REASON" not in combined
     assert "MIXED RECTIFICATION REASON" not in combined
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+def test_explicit_binding_requirement_is_project_scoped_and_batch_atomic(foreign):
+    requirement = {"id": "REQ-LAB-EXPLICIT", "projectId": "OTHER-PROJECT" if foreign else PROJECT_ID,
+                   "nodeId": NODE_ID, "name": "明确选择的要求"}
+    repo.state["requirements"].append(requirement)
+    before = deepcopy(repo.state["bindings"])
+    response = client.post(
+        f"/api/projects/{PROJECT_ID}/documents/bindings",
+        headers={**_headers("contractor_a"), "Idempotency-Key": f"explicit-requirement-{foreign}"},
+        json={"bindings": [
+            {"documentId": DOCUMENTS["contractor_a"], "nodeId": NODE_ID},
+            {"documentId": DOCUMENTS["contractor_a"], "nodeId": NODE_ID,
+             "requirementId": requirement["id"], "requirementName": "伪造名称"},
+        ]},
+    )
+    if foreign:
+        assert response.json()["code"] != 0, response.text
+        assert [_without_tenant_metadata(row) for row in repo.state["bindings"]] == [_without_tenant_metadata(row) for row in before]
+    else:
+        created = [row for row in repo.state["bindings"] if row["id"] not in {item["id"] for item in before}]
+        assert len(created) == 2, response.text
+        assert {row["requirementId"] for row in created} == {None, requirement["id"]}
+        assert next(row for row in created if row["requirementId"])["requirementName"] == requirement["name"]
+
+
+def test_binding_requirement_patch_rejects_wrong_node_and_ignores_forged_name():
+    binding_id = f"BIND-{DOCUMENTS['contractor_a']}"
+    binding = repo.find_one("bindings", binding_id)
+    requirement = {"id": "REQ-LAB-PATCH", "projectId": PROJECT_ID,
+                   "nodeId": NODE_ID + 1, "name": "真实名称"}
+    repo.state["requirements"].append(requirement)
+    before = deepcopy(binding)
+    response = client.patch(
+        f"/api/projects/{PROJECT_ID}/documents/bindings/{binding_id}",
+        headers={**_headers("contractor_a"), "Idempotency-Key": "requirement-wrong-node"},
+        json={"requirementId": requirement["id"], "usage": "MUST-NOT-CHANGE"},
+    )
+    assert response.json()["code"] != 0, response.text
+    assert _without_tenant_metadata(binding) == _without_tenant_metadata(before)
+    requirement["nodeId"] = binding["nodeId"]
+    response = client.patch(
+        f"/api/projects/{PROJECT_ID}/documents/bindings/{binding_id}",
+        headers={**_headers("contractor_a"), "Idempotency-Key": "requirement-canonical-name"},
+        json={"requirementId": requirement["id"], "requirementName": "伪造名称"},
+    )
+    assert binding["requirementId"] == requirement["id"], response.text
+    assert binding["requirementName"] == requirement["name"]
