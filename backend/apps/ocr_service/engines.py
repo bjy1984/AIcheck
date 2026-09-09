@@ -207,6 +207,16 @@ class PyMuPdfTextLayerEngine(LocalOcrEngine):
                             "fragmentType": "page",
                         }
                     )
+        text_pages = sorted({item["pageNo"] for item in fragments})
+        unread_pages = sorted({item["pageNo"] for item in pages} - set(text_pages))
+        diagnostics = []
+        if unread_pages:
+            diagnostics.append({
+                "code": "PDF_TEXT_LAYER_PARTIAL" if fragments else "PDF_TEXT_LAYER_EMPTY",
+                "level": "warning" if fragments else "info",
+                "message": "部分页面没有可抽取文字，可能是扫描页或空白页，仍需核对原文。",
+                "pageNos": unread_pages,
+            })
         return {
             "ok": bool(fragments),
             "text": "\n".join(item["text"] for item in fragments),
@@ -216,10 +226,10 @@ class PyMuPdfTextLayerEngine(LocalOcrEngine):
                 "documentLevel": True,
                 "engineScope": "document",
                 "sourceCoordinateSystem": "pdf_points",
+                "nativeTextCoverage": {"pageCount": len(pages), "pagesWithText": text_pages,
+                                       "pagesWithoutText": unread_pages, "visualOcrExecuted": False},
             },
-            "diagnostics": []
-            if fragments
-            else [{"code": "PDF_TEXT_LAYER_EMPTY", "level": "info", "message": "PDF text layer is empty."}],
+            "diagnostics": diagnostics,
             "engine": self.name,
             "engineVersion": self.version,
         }

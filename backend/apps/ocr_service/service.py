@@ -223,6 +223,7 @@ AUTO_ROUTE_PROFILE_IDS = {
     "welder_certificate_v1",
 }
 BUSINESS_PDF_DEEP_SCAN_PROFILE_IDS = {
+    "ndt_procedure_v1",
     *R24_R34_BUSINESS_PROFILE_IDS,
     "quality_certificate_v1",
     "manufacturing_supervision_certificate_v1",
@@ -244,6 +245,7 @@ BUSINESS_PDF_DEEP_SCAN_PROFILE_IDS = {
     "welder_certificate_v1",
 }
 BUSINESS_PDF_DEEP_SCAN_DOCUMENT_TYPES = {
+    "ndt_procedure",
     *R24_R34_BUSINESS_DOCUMENT_TYPES,
     "quality_certificate",
     "manufacturing_supervision_certificate",
@@ -264,6 +266,7 @@ BUSINESS_PDF_DEEP_SCAN_DOCUMENT_TYPES = {
     "welder_certificate",
 }
 BUSINESS_PDF_DEEP_SCAN_DEFAULT_MAX_PAGES = {
+    "ndt_procedure_v1": 12,
     **{profile_id: 12 for profile_id in R24_R34_BUSINESS_PROFILE_IDS},
     "qualification_certificate_v1": 2,
     "quality_certificate_v1": 6,

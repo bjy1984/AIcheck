@@ -20,6 +20,8 @@ def test_native_pdf_probe_exposes_unread_pages_and_does_not_invent_identity(tmp_
     assert result["businessAcceptance"] == "not_evaluated"
     assert result["visualOcrExecuted"] is False
     assert result["profileSelection"] == "explicit_probe_override"
+    assert any(item["code"] == "PDF_TEXT_LAYER_PARTIAL" and item["pageNos"] == [1]
+               for item in result["diagnostics"])
     assert probe_pdf(path)["sha256"] == result["sha256"]
 
 
