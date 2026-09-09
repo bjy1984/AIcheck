@@ -42,6 +42,10 @@ def validate_release(pack_id: str) -> dict[str, object]:
         raise RuntimeError(
             f"Binding count mismatch: declared={declared_count}, actual={len(bindings)}"
         )
+    pending = [str(item.get("atomicCheckId")) for item in bindings
+               if "pendingCapabilities" in (item.get("parameters") or {})]
+    if pending:
+        raise RuntimeError("Bindings have pending capabilities: " + ", ".join(pending))
     invalid_statuses = sorted(
         {
             str(item.get("implementationStatus") or "")

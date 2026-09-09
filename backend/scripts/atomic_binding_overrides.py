@@ -161,3 +161,18 @@ ATOMIC_BINDING_OVERRIDES = {'AC-R01-03': {'requiredFacts': ['certificateFacts.ce
                               'requirePage': True,
                               'requireBboxOrQuotedText': True,
                               'denyOnConflict': True}}}
+
+
+ATOMIC_BINDING_OVERRIDES.update({
+    "AC-R39-01": {
+        "requiredFacts": ["r39.documentContent", "r39.approvalChain", "r39.firstUseValidation"],
+        "tools": ["get_document_ocr_result", "extract_document_fields", "extract_table_records",
+                  "evaluate_r39_document_content", "evaluate_r39_approval_chain",
+                  "evaluate_r39_first_use_validation", "validate_evidence_grounding"],
+        "parameters": {"profile": "ndt_procedure_partial_review", "clauseSource": "frozen_standard_clause_package",
+                       "failurePolicy": "business_rule_result",
+                       "pendingCapabilities": ["procedure_reference_consistency", "method_specific_technical_requirements", "complete_document_and_application_inventory"]},
+    },
+    "AC-R39-02": {"parameters": {"resultRole": "evidence_gate", "minConfidence": 0.75,
+                                  "requirePage": True, "requireBboxOrQuotedText": True, "denyOnConflict": True}},
+})

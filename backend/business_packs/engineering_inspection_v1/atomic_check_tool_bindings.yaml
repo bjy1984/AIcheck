@@ -6,7 +6,7 @@ atomicCheckToolBindingSet:
   atomicCheckCount: 194
   # implementationStatus 口径（2026-08-07 审计修正，见 issue #7）：
   #   pilot_implemented — 存在专用 fact builder / tool handler（R04、R12-R34）；
-  #   binding_only      — 仅有绑定声明，走通用规则解释器，缺参数时返回 evidence_insufficient。
+  #   binding_only      — 尚未完成整条业务验收，可含部分专用工具；不得据此发布。
   pilotRules:
   - R01
   - R02
@@ -2380,20 +2380,25 @@ atomicCheckToolBindings:
 - atomicCheckId: AC-R39-01
   sourceRuleId: R39
   requiredFacts:
-  - ndtProcedure.method
-  - ndtProcedure.parameters
-  - ndtProcedure.instruction
-  - design.ndtRequirements
+  - r39.documentContent
+  - r39.approvalChain
+  - r39.firstUseValidation
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_required
-  - evaluate_ndt_process
+  - extract_table_records
+  - evaluate_r39_document_content
+  - evaluate_r39_approval_chain
+  - evaluate_r39_first_use_validation
   - validate_evidence_grounding
   parameters:
-    profile: ndt_procedure
+    profile: ndt_procedure_partial_review
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
+    pendingCapabilities:
+    - procedure_reference_consistency
+    - method_specific_technical_requirements
+    - complete_document_and_application_inventory
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R39-02
@@ -2409,6 +2414,7 @@ atomicCheckToolBindings:
   - locate_evidence_fragment
   - validate_evidence_grounding
   parameters:
+    resultRole: evidence_gate
     minConfidence: 0.75
     requirePage: true
     requireBboxOrQuotedText: true

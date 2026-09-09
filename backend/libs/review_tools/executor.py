@@ -143,7 +143,7 @@ def execute_node_tool_plan(
                 "result": aggregate_planned_tool_results(item, outputs),
                 **({"resultRole": "evidence_gate"} if is_evidence_gate_plan(item) else {}),
                 "toolResults": outputs,
-                "warnings": [],
+                "warnings": pending_capability_warnings(item),
             }
         )
     return {
@@ -610,8 +610,24 @@ def is_evidence_gate_plan(item: dict[str, Any]) -> bool:
             and tools <= {"locate_evidence_fragment", "validate_evidence_grounding"})
 
 
+def pending_capability_warnings(item: dict[str, Any]) -> list[str]:
+    parameters = item.get("parameters") or {}
+    if "pendingCapabilities" not in parameters:
+        return []
+    pending = parameters["pendingCapabilities"]
+    if (not isinstance(pending, list) or not pending
+            or any(not isinstance(value, str) or not value.strip() for value in pending)):
+        return ["invalid_pending_capabilities"]
+    return ["pending_capability:" + value for value in pending]
+
+
 def aggregate_planned_tool_results(item: dict[str, Any], outputs: list[dict[str, Any]]) -> str:
     status = aggregate_tool_results(outputs)
+    coverage_warnings = pending_capability_warnings(item)
+    if "invalid_pending_capabilities" in coverage_warnings:
+        return "evidence_insufficient"
+    if coverage_warnings and status in {"passed", "not_applicable"}:
+        return "evidence_insufficient"
     decision = (item.get("parameters") or {}).get("decisionTool")
     if decision is None:
         return status
