@@ -13220,3 +13220,29 @@ async def test_postgres_transaction_probe_reports_skipped_without_postgres(monke
     assert result["transactionsConfigured"] is False
     assert result["transactionProbe"] == "skipped"
     assert result["reason"] == "postgres_not_configured"
+
+
+def test_rule_publish_replaces_only_same_project_and_business_pack() -> None:
+    from copy import deepcopy
+
+    source = repo.find_one("rule_versions", "RULE-NDT-202606")
+    assert source is not None
+    source["projectId"] = "P-LAB-1"
+    peers = []
+    for identity, project, pack in [
+        ("SAME", "P-LAB-1", source.get("businessPackId")),
+        ("OTHER-PROJECT", "P-LAB-2", source.get("businessPackId")),
+        ("PLATFORM", None, source.get("businessPackId")),
+        ("OTHER-PACK", "P-LAB-1", "other-business-pack"),
+    ]:
+        peer = deepcopy(source)
+        peer.update(id=f"RULE-LAB-{identity}", projectId=project, businessPackId=pack, status="已发布")
+        peers.append(peer)
+    repo.state["rule_versions"].extend(peers)
+    assert_ok(client.post(
+        f"/rules/versions/{source['id']}/publish",
+        json={"reason": "验证工程规则隔离"},
+        headers={"Idempotency-Key": "lab-rule-scope-publish"},
+    ))
+    assert peers[0]["status"] == "已回滚"
+    assert all(peer["status"] == "已发布" for peer in peers[1:])

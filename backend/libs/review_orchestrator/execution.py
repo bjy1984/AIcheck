@@ -136,6 +136,7 @@ from libs.review_workstations import (
     station_snapshot,
     tool_allowed,
 )
+from libs.rule_scope import rule_scope
 from libs.security.tenant import current_tenant_id, tenant_id_for_record
 
 from ._shared import (  # noqa: F401 - re-export，外部按 execution 路径引用
@@ -328,18 +329,24 @@ def review_rule_node_ids(rule: dict[str, Any]) -> set[int]:
     return node_ids
 
 
-def current_published_rule_for_node(node_id: int, *, business_pack_id: str | None = None) -> dict[str, Any] | None:
+def current_published_rule_for_node(node_id: int, *, business_pack_id: str | None = None, project_id: str | None = None) -> dict[str, Any] | None:
     candidates = []
     for rule in repo.state.get("rule_versions", []):
         if rule.get("status") != "已发布":
             continue
         if node_id not in review_rule_node_ids(rule):
             continue
-        if business_pack_id and rule.get("businessPackId") not in {None, "", business_pack_id}:
+        owner_project, owner_pack = rule_scope(rule)
+        if owner_project and owner_project != project_id:
+            continue
+        if owner_pack != (business_pack_id or DEFAULT_BUSINESS_PACK_ID):
             continue
         candidates.append(rule)
     candidates.sort(
-        key=lambda item: str(item.get("publishedAt") or item.get("updatedAt") or item.get("importedAt") or ""),
+        key=lambda item: (
+            bool(project_id and rule_scope(item)[0] == project_id),
+            str(item.get("publishedAt") or item.get("updatedAt") or item.get("importedAt") or ""),
+        ),
         reverse=True,
     )
     return repo.clone(candidates[0]) if candidates else None
@@ -1667,6 +1674,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             current_published_rule_for_node(
                 int(review_run.get("nodeId") or 0),
                 business_pack_id=str(review_run.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID),
+                project_id=str(review_run.get("projectId") or ""),
             )
             or matching_rule_for_node(pack, int(review_run.get("nodeId") or 0))
             or next(iter(pack.get("ruleSets") or []), {})

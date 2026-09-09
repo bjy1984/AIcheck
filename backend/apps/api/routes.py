@@ -302,6 +302,7 @@ from libs.review_orchestrator.llm_tool_schemas import (
 from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
 from libs.review_reasoning_transcript import append_reasoning_turn, reasoning_block
 from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+from libs.rule_scope import same_rule_scope
 from libs.runtime_database_scope import runtime_database_scope
 from libs.runtime_readiness import production_runtime_status
 from libs.security.actions import canonical_path
@@ -10638,7 +10639,7 @@ def review_conversation_formal_judgment(
     business_pack_id = str(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID)
     pack = repo.clone(project.get("businessPackSnapshot") or load_business_pack(business_pack_id))
     rule = (
-        current_published_rule_for_node(node_id, business_pack_id=business_pack_id)
+        current_published_rule_for_node(node_id, business_pack_id=business_pack_id, project_id=project.get("id"))
         or matching_rule_for_node(pack, node_id)
         or {}
     )
@@ -26914,10 +26915,13 @@ def matching_rule_target(
                 item
                 for item in repo.state.get("rule_versions", [])
                 if item.get("version") == target_version
+                and same_rule_scope(base, item)
                 and (not base.get("ruleKey") or item.get("ruleKey") == base.get("ruleKey"))
             ),
             None,
         )
+    if target and not same_rule_scope(base, target):
+        return None
     if target and base.get("ruleKey") and target.get("ruleKey") != base.get("ruleKey"):
         return None
     return target
@@ -27107,6 +27111,8 @@ def publish_rule_version(
         overlapping_node_ids = set(parse_rule_node_ids(rule.get("nodeIds")))
         for item in repo.state.get("rule_versions", []):
             if item.get("id") == rule.get("id") or normalize_rule_status(item.get("status")) != "已发布":
+                continue
+            if not same_rule_scope(rule, item):
                 continue
             same_key = item.get("ruleKey") and item.get("ruleKey") == rule.get("ruleKey")
             same_node = bool(overlapping_node_ids & set(parse_rule_node_ids(item.get("nodeIds"))))
