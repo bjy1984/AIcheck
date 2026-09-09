@@ -1,6 +1,6 @@
 {
   "schemaVersion": "lab-capability-inventory-v1",
-  "sourceSha256": "b543b08e6482f224d523a8bbae7b75e270ae3f13b11d801d4e0b29c9ddb2a1a4",
+  "sourceSha256": "8a8465ad8460a9e13eb036ada6d76e08f209091474ba6935fad63791af31c8f0",
   "scope": "Static capability inventory; compilation is not business acceptance. Existing tests are not counted as source-bound four-state acceptance.",
   "summary": {
     "rules": 69,
@@ -396,11 +396,11 @@
       "pilotEnabled": false,
       "pendingCapabilities": [],
       "tools": [
-        "check_cross_document_match",
-        "check_required",
         "check_signature_completeness",
         "evaluate_construction_plan",
+        "evaluate_r11_project_parameters",
         "extract_document_fields",
+        "extract_table_records",
         "get_document_ocr_result",
         "locate_evidence_fragment",
         "recognize_signatures_and_seals",
@@ -417,7 +417,8 @@
         "evidence.ocrConfidence",
         "evidence.pageNo",
         "judgment.claimedFacts",
-        "judgment.evidenceRefs"
+        "judgment.evidenceRefs",
+        "r11.projectParameters"
       ],
       "businessAcceptance": "not_verified_by_inventory",
       "scenarioAcceptance": {

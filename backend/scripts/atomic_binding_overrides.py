@@ -176,3 +176,12 @@ ATOMIC_BINDING_OVERRIDES.update({
     "AC-R39-02": {"parameters": {"resultRole": "evidence_gate", "minConfidence": 0.75,
                                   "requirePage": True, "requireBboxOrQuotedText": True, "denyOnConflict": True}},
 })
+
+
+ATOMIC_BINDING_OVERRIDES.update({
+    "AC-R11-02": {
+        "requiredFacts": ["r11.projectParameters"],
+        "tools": ["extract_table_records", "evaluate_r11_project_parameters", "validate_evidence_grounding"],
+        "parameters": {"profile": "construction_plan_object_comparison", "failurePolicy": "business_rule_result"},
+    },
+})

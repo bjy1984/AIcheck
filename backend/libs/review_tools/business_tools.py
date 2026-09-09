@@ -11,6 +11,7 @@ from libs.review_orchestrator.deterministic_tools import (
     parse_date,
     result,
 )
+from libs.review_tools.r11_parameters import evaluate_r11_project_parameters
 from libs.review_tools.r13_tools import (
     classify_r13_component_requirements,
     evaluate_r13_supervision_certificate_completeness,
@@ -133,6 +134,7 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_alternative_standard",
     "evaluate_blowing_cleaning",
     "evaluate_component_manufacturer_scope",
+    "evaluate_r11_project_parameters",
     "evaluate_construction_plan",
     "evaluate_corrosion_protection",
     "evaluate_design_approval_level",
@@ -213,6 +215,7 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r37_defect_closure": "重新计算完整累进与重检清单，按事件、对象及最新返修轮次核对每个缺陷的结案证据；不接受调用方预先声明通过。",
     "evaluate_r37_progressive_inspection": "R37按明确批次、相同件与焊工及缺陷记录核对累进检查覆盖和升级阶段；覆盖完成不代表缺陷修复或整批验收通过。",
     "evaluate_r37_reinspection": "按明确缺陷与返修轮次核对原检测方法、范围、验收准则及修复后重检结果；独立对象核对不代表批次累进检查完成。",
+    "evaluate_r11_project_parameters": "按同一对象逐项比对所选施工方案与设计固定版本的明确参数；单位、对象、原文或要求清单不明时保留不足，不代替施工技术要求验收。",
     "evaluate_r39_procedure_reference": "比对所选指导书原文引用的规程编号、版本和所选规程原文；不代替技术参数与完整文件清单验收。",
     "evaluate_r39_document_content": "按NB/T47013.1-2015第7.2.2/7.2.3逐项核对工艺规程或指导书必备内容及同版本引用；漏读与明确缺项分开，不判定技术参数正确或整条R39。",
     "evaluate_r39_approval_chain": "按有来源且完整的质量体系要求核对单份工艺文件同版本同审批周期的必需签批、授权人员、先后与人员分离；不默认审批角色或等级，不代表整条R39通过。",
@@ -428,6 +431,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r39_first_use_validation"
             else {"projectId": "string", "scope": "object", "requirements": "object", "signatureInventory": "object"}
             if name == "evaluate_r39_approval_chain"
+            else {"projectId": "string", "scope": "object", "basis": "object", "parameters": ["object"]}
+            if name == "evaluate_r11_project_parameters"
             else {"projectId": "string", "scope": "object", "basis": "object", "instructionReference": "object", "procedureIdentity": "object"}
             if name == "evaluate_r39_procedure_reference"
             else {"projectId": "string", "scope": "object", "basis": "object", "contentInventory": "object"}
@@ -712,6 +717,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
     if tool_name == "check_wps_pqr_coverage" and arguments.get("qualifiedRanges") and not arguments.get("wpsItems"):
         return check_wps_pqr_coverage(arguments)
     handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+        "evaluate_r11_project_parameters": evaluate_r11_project_parameters,
         "evaluate_ndt_quality_system": evaluate_ndt_quality_system,
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,
         "evaluate_r39_first_use_validation": evaluate_r39_first_use_validation,

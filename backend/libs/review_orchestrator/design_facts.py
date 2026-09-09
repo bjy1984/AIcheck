@@ -1,4 +1,4 @@
-"""P11 N-06/N-07：设计节点（4–9）的业务事实——设计文件集合与逐份设计文件。
+"""设计节点（4–9）事实；节点11转交独立的施工方案／设计参数比对构建器。
 
 此前节点 4–11 没有任何事实构建器：AC-R04-01 要的 designDocumentSet、AC-R04-02/03 要的
 designDocuments.documents 永远为空，规则只能输出证据不足。这里从本节点输入资料的 OCR 结果构建：
@@ -34,9 +34,10 @@ from libs.review_orchestrator.design_ndt_requirements import (
     method_value_summary,
 )
 from libs.review_orchestrator.pipeline_facts import build_project_pipelines
+from libs.review_orchestrator.r11_facts import build_r11_business_facts
 from libs.standard_timeline import standard_reference_fact
 
-DESIGN_FACT_NODES = frozenset({4, 5, 6, 7, 8, 9})
+DESIGN_FACT_NODES = frozenset({4, 5, 6, 7, 8, 9, 11})
 
 # 子类型关键词表：先匹配的先赢，顺序按"越具体越靠前"
 _DESIGN_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -152,6 +153,8 @@ def build_design_business_facts(
     *,
     known_pipeline_ids: set[str] | None = None,
 ) -> dict[str, Any]:
+    if review_run.get("nodeId") == 11:
+        return build_r11_business_facts(state, review_run)
     project_id = str(review_run.get("projectId") or "")
     versions = _documents_by_version(state, project_id)
     pipelines = build_project_pipelines(state, project_id,

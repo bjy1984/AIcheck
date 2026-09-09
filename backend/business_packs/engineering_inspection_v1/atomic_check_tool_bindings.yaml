@@ -796,17 +796,14 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R11-02
   sourceRuleId: R11
-  requiredFacts: *id002
+  requiredFacts:
+  - r11.projectParameters
   tools:
-  - get_document_ocr_result
-  - extract_document_fields
-  - check_required
-  - check_cross_document_match
-  - evaluate_construction_plan
+  - extract_table_records
+  - evaluate_r11_project_parameters
   - validate_evidence_grounding
   parameters:
-    profile: construction_plan
-    clauseSource: frozen_standard_clause_package
+    profile: construction_plan_object_comparison
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
