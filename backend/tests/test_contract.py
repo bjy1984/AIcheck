@@ -13535,3 +13535,20 @@ def test_condition_rule_cannot_be_activated_while_formal_adapter_is_missing(oper
     assert_error(response, "VALIDATION_ERROR")
     assert "正式判定工具" in response.json()["message"]
     assert repo.state["rule_versions"] == before
+
+
+def test_project_condition_mapping_is_saved_validated_and_returned_in_trial(monkeypatch):
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    path = "/projects/P-2026-HDCP-001/rules/versions"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    body = {"inspectionItem": "原子项映射", "standardText": "测试", "nodeIds": [24],
+            "executionConditions": {"schemaVersion": "rule-conditions-v1", "checks": [
+                {"id": "C1", "atomicCheckId": "AC-R25-01", "field": "thickness", "operator": "gte", "expected": 10}]}}
+    assert_error(client.post(path, headers=headers, json=body), "VALIDATION_ERROR")
+    body["executionConditions"]["checks"][0]["atomicCheckId"] = "AC-R24-01"
+    rule = assert_ok(client.post(path, headers=headers, json=body))["rule"]
+    result = assert_ok(client.post(f"{path}/{rule['id']}/trial", headers={**headers, "If-Match": rule["etag"]},
+                                  json={"facts": {"thickness": {"value": 11, "evidenceRefs": ["EXAMPLE"]}}}))
+    assert result["bindingPlan"]["replacements"][0]["atomicCheckId"] == "AC-R24-01"
+    assert len(result["bindingPlan"]["retainedAtomicCheckIds"]) == 4
+    assert result["bindingPlan"]["formalExecutable"] is False

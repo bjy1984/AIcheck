@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from libs.contracts import errors
 from libs.contracts.responses import fail
 from libs.db.repository import repo
+from libs.rule_condition_bindings import compile_condition_bindings
 from libs.rule_conditions import validate_conditions
 
 
@@ -36,6 +37,10 @@ def rule_project_mutation_error(request: Request, rule: dict[str, Any], *, publi
     if conditions is not None:
         try:
             validate_conditions(conditions)
+            if any("atomicCheckId" in check for check in conditions["checks"]):
+                project = repo.require_project(project_id) if project_id else {}
+                pack = (project or {}).get("businessPackSnapshot") or api.load_business_pack(rule.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID)
+                compile_condition_bindings({**rule, "businessPackId": rule.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID}, pack)
         except (TypeError, ValueError) as exc:
             return fail(errors.VALIDATION_ERROR, request, message=f"判定条件无效：{exc}")
         if publishing:

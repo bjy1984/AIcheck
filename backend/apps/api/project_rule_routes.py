@@ -11,6 +11,7 @@ from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
 from libs.review_condition_facts import condition_facts_from_run
+from libs.rule_condition_bindings import compile_condition_bindings
 from libs.rule_conditions import evaluate_conditions, validate_conditions
 
 project_rule_router = APIRouter()
@@ -151,6 +152,10 @@ def trial_project_rule(request: Request, project_id: str, version_id: str,
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
     try:
         result = evaluate_conditions(rule.get("executionConditions"), facts)
+        if any("atomicCheckId" in check for check in rule["executionConditions"]["checks"]):
+            project = repo.require_project(project_id)
+            pack = project.get("businessPackSnapshot") or api.load_business_pack(rule.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID)
+            result["bindingPlan"] = compile_condition_bindings(rule, pack)
     except (TypeError, ValueError) as exc:
         return fail(errors.VALIDATION_ERROR, request, message=str(exc))
     return ok({"mode": "draft_trial", "advisoryOnly": True, "ruleVersionId": version_id,

@@ -18,10 +18,12 @@ def validate_conditions(value: Any) -> dict[str, Any]:
     validation_checks = checks + (_applicability_leaves(value["applicability"]) if "applicability" in value else [])
     seen = set()
     for check in validation_checks:
-        if not isinstance(check, dict) or set(check) - {"id", "field", "operator", "expected", "unit"}:
+        if not isinstance(check, dict) or set(check) - {"id", "field", "operator", "expected", "unit", "atomicCheckId"}:
             raise ValueError("invalid_condition_fields")
         if not all(isinstance(check.get(key), str) and check[key].strip() for key in ("id", "field", "operator")):
             raise ValueError("condition_identity_missing")
+        if "atomicCheckId" in check and (not isinstance(check["atomicCheckId"], str) or not check["atomicCheckId"].strip()):
+            raise ValueError("invalid_condition_atomic_check_id")
         if check["id"] in seen:
             raise ValueError("duplicate_condition_id")
         seen.add(check["id"])
