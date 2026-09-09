@@ -137,3 +137,25 @@ def get_handoff(request: Request, project_id: str, handoff_id: str):
         return fail(errors.NOT_FOUND, request)
     view, error = _record_view(request, project_id, record, _visible_versions(request, project_id))
     return error if error is not None else ok(view, request)
+
+
+@router.get("/projects/{project_id}/review-runs/{run_id}/pipeline-conflicts")
+def get_pipeline_conflicts(request: Request, project_id: str, run_id: str):
+    if error := _guard(request, project_id):
+        return error
+    visible = _visible_versions(request, project_id)
+    runs, error = _runs(request, project_id, run_id, run_id, visible)
+    if error:
+        return error
+    run = runs[0]
+    report = run.get("pipelineConflictReport")
+    if not isinstance(report, dict) or report.get("schemaVersion") != "pipeline-conflict-report-v1":
+        return fail(errors.NOT_FOUND, request)
+    if (report.get("projectId") != project_id or report.get("tenantId") != api.request_tenant_id(request)
+            or report.get("reviewRunId") != run_id or report.get("nodeId") != run.get("nodeId")):
+        return fail(errors.NOT_FOUND, request)
+    frozen_versions = report.get("documentVersionIds")
+    if not isinstance(frozen_versions, list) or set(frozen_versions) - visible:
+        return fail(errors.FORBIDDEN, request)
+    # Original failure evidence remains historical even if the task record changes.
+    return ok({"report": repo.clone(report), "historical": True, "authoritative": False}, request)

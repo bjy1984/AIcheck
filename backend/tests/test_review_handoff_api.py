@@ -196,3 +196,78 @@ def test_evidence_location_read_checks(case, expected):
     assert repo.find_one("review_handoffs", record["id"]) == record
     repo.find_one("review_runs", "SOURCE")["inputHash"] = "CHANGED"
     assert "evidenceLocationCheck" not in client.get(detail_url, headers=HEADERS).json()["data"]["validation"]
+
+
+def test_pipeline_failure_report_is_saved_and_requires_frozen_access(monkeypatch, tmp_path):
+    from libs.review_orchestrator import execution
+    from libs.review_orchestrator.pipeline_facts import PipelineFactsConflict
+
+    version = "CONFLICT-V1"
+    document = {"id": "CONFLICT-D", "projectId": PROJECT, "tenantId": "TENANT-DEFAULT", "currentVersionId": version}
+    repo.state["documents"].append(document)
+    repo.state["versions"].append({"id": version, "documentId": document["id"], "tenantId": "TENANT-DEFAULT"})
+    run = repo.find_one("review_runs", "SOURCE")
+    run.update(reviewRunId="SOURCE", status="queued", advisoryOnly=True, inputDocumentVersionIds=[version])
+    conflicts = [{"pipelineId": "PL-1", "field": "designPressureMPa", "sources": [
+        {"value": 1.6, "source": {"documentVersionId": version, "pageNo": 2}},
+        {"value": 2.5, "source": {"documentVersionId": version, "pageNo": 3}},
+    ]}]
+
+    def fail_graph(*args, **kwargs):
+        raise PipelineFactsConflict(conflicts)
+
+    monkeypatch.setattr("libs.review_orchestrator.graph.execute_review_graph", fail_graph)
+    result = execution.execute_review_run_inline("SOURCE")
+    assert result["status"] == "failed", result
+    assert result["errorCode"] == "REVIEW_PIPELINE_FACTS_CONFLICT" and not result["retryable"]
+    report = deepcopy(run["pipelineConflictReport"])
+    assert report["conflicts"] == conflicts and report["inputHash"] == run["inputHash"]
+    conflicts[0]["sources"][0]["value"] = 999
+    assert run["pipelineConflictReport"] == report
+    assert "pipelineConflictReport" not in execution.review_run_view(run)
+    from libs.db.repository import InMemoryRepository
+
+    monkeypatch.setenv("AICHECK_SQLITE_DISABLE", "false")
+    path = tmp_path / "pipeline-report.sqlite3"
+    try:
+        repo.configure_sqlite(path)
+        repo.flush_to_sqlite()
+        restored = InMemoryRepository(seed=False)
+        restored.configure_sqlite(path)
+        restored.load_from_sqlite(selected_state_keys={"review_runs"}, tenant_id="TENANT-DEFAULT")
+        assert restored.find_one("review_runs", "SOURCE")["pipelineConflictReport"] == report
+    finally:
+        repo.sqlite_enabled = False
+        repo.sqlite_path = None
+    url = f"/api/projects/{PROJECT}/review-runs/SOURCE/pipeline-conflicts"
+    response = client.get(url, headers=HEADERS).json()
+    assert response["code"] == 0, response
+    assert response["data"] == {"report": report, "historical": True, "authoritative": False}
+    run["inputDocumentVersionIds"] = []
+    document["tenantId"] = "OTHER"
+    assert client.get(url, headers=HEADERS).json()["code"] != 0
+    assert run["pipelineConflictReport"] == report
+
+
+@pytest.mark.parametrize("case", ["missing", "tenant", "node", "run", "versions", "role", "disabled"])
+def test_pipeline_report_identity_and_access(case, monkeypatch):
+    report = {"schemaVersion": "pipeline-conflict-report-v1", "reviewRunId": "SOURCE", "projectId": PROJECT,
+              "tenantId": "TENANT-DEFAULT", "nodeId": 24, "documentVersionIds": [], "conflicts": []}
+    run = repo.find_one("review_runs", "SOURCE")
+    run["pipelineConflictReport"] = report
+    headers = HEADERS
+    if case == "missing":
+        run.pop("pipelineConflictReport")
+    elif case == "tenant":
+        report["tenantId"] = "OTHER"
+    elif case == "node":
+        report["nodeId"] = 35
+    elif case == "run":
+        report["reviewRunId"] = "TARGET"
+    elif case == "versions":
+        report.pop("documentVersionIds")
+    elif case == "role":
+        headers = {"X-Role": "contractor", "X-User-Id": "USER-CONTRACTOR-001"}
+    elif case == "disabled":
+        monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "false")
+    assert client.get(f"/api/projects/{PROJECT}/review-runs/SOURCE/pipeline-conflicts", headers=headers).json()["code"] != 0

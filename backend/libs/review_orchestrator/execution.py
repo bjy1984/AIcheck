@@ -90,7 +90,7 @@ from libs.review_orchestrator.persistence_retry import (
     flush_review_run_records_with_conflict_retry,
     review_run_state_records,
 )
-from libs.review_orchestrator.pipeline_facts import merge_project_pipelines
+from libs.review_orchestrator.pipeline_facts import PipelineFactsConflict, merge_project_pipelines
 from libs.review_orchestrator.r12_agent import (
     apply_r12_human_input,
     build_r12_business_facts,
@@ -1414,6 +1414,15 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
         review_run["status"] = failure_status
         review_run["retryableFailure"] = retryable
         review_run["errorCode"] = error_code
+        if isinstance(exc, PipelineFactsConflict):
+            review_run["pipelineConflictReport"] = {
+                "schemaVersion": "pipeline-conflict-report-v1",
+                "reviewRunId": review_run_id, "projectId": review_run.get("projectId"),
+                "tenantId": review_run.get("tenantId"), "nodeId": review_run.get("nodeId"),
+                "inputHash": review_run.get("inputHash"),
+                "documentVersionIds": repo.clone(review_run.get("inputDocumentVersionIds") or []),
+                "conflicts": repo.clone(exc.conflicts), "createdAt": server_time(),
+            }
         review_run["errorMessage"] = str(exc) if isinstance(exc, IntegrationServiceError) else type(exc).__name__
         review_run["finishedAt"] = server_time()
         bump_review_run_revision(review_run)
@@ -3591,6 +3600,7 @@ def review_run_view(review_run: dict[str, Any], *, include_sensitive: bool = Fal
             if prompt_audit.get(key) is not None
         }
         for sensitive_field in (
+            "pipelineConflictReport",
             "rawPrompt",
             "rawOcrText",
             "prompt",
