@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import ProjectRuleEditor from './ProjectRuleEditor.vue'
-import ReviewHandoffPanel from './ReviewHandoffPanel.vue'
+import ReviewWorkstationTools from './ReviewWorkstationTools.vue'
 import PipelineConflictDetails from './PipelineConflictDetails.vue'
-import ReviewDocumentPicker from './ReviewDocumentPicker.vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import {
   INPUT_CHANGED_MESSAGE,
@@ -1936,31 +1934,24 @@ onBeforeUnmount(() => {
             <h1>{{ currentNode?.nodeId || '-' }}. {{ currentNode?.name || '请选择节点' }}</h1>
             <p v-if="conversationSubtitle">{{ conversationSubtitle }}</p>
           </div>
-          <ReviewDocumentPicker
-            :project-id="activeProjectId"
-            :node-id="activeNodeId"
-            :selection="reviewDocumentSelection"
-            :project-etag="workspace?.project.etag"
-            :disabled="actionLoading || workspace?.permissions.canManageEvidence !== true"
-            @change="reviewDocumentSelection = $event"
-            @bound="refreshLiveState"
-          />
           <div v-if="!props.embedded" class="run-meta">
-            <ReviewHandoffPanel
-              :project-id="activeProjectId"
-              :run-id="activeRunId"
-              @evidence="openEvidence"
-            />
-            <ProjectRuleEditor
-              :project-id="activeProjectId"
-              :node-id="activeNodeId"
-              :review-run-id="activeRun?.reviewRunId"
-            />
             <ElButton :icon="View" :disabled="!activeRunId" @click="tracePanels = ['trace']"
               >查看执行轨迹</ElButton
             >
           </div>
         </section>
+
+        <ReviewWorkstationTools
+          :project-id="activeProjectId"
+          :node-id="activeNodeId"
+          :run-id="activeRunId"
+          :selection="reviewDocumentSelection"
+          :project-etag="workspace?.project.etag"
+          :documents-disabled="actionLoading || workspace?.permissions.canManageEvidence !== true"
+          @change="reviewDocumentSelection = $event"
+          @bound="refreshLiveState"
+          @evidence="openEvidence"
+        />
 
         <section v-if="!props.embedded" class="context-chips">
           <span class="primary-chip">当前问题：{{ currentTask }}</span>

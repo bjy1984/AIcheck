@@ -68,3 +68,15 @@ node e2e/lab-rules/check-handoffs-live.mjs
 handoff_seed.py與 /__lab/handoff/* 控制路徑僅存在於此測試橋接，不註冊於正式應用路由；Vite測試設定代理到loopback4174。不得部署或對外暴露測試橋接。腳本會修改此合成案例的OCR及seed成員節點權限，因此再次執行前必須重啟橋接。截圖：docs/lab/verification/browser/handoff-live-stale.png。這不是生產登入、真實監檢資料、資料庫跨程序或完整工作台驗收。
 
 交接真實API腳本亦驗證v3：人工確認後更新接收任務status／outputHash／findingDrafts不使交接失效；來源變動仍失效。此控制僅修改測試橋接的合成任務，未實際排程AI執行。
+
+### main UI復用：共用節點工具區
+
+在frontend目錄啟動既有Vite harness（4394），另開終端執行：
+
+```sh
+node node_modules/vite/bin/vite.js --config e2e/lab-rules/vite.config.ts --port 4394
+node e2e/lab-rules/check-workstation-tools.mjs
+node e2e/lab-rules/check-workbench-css.mjs origin/main
+```
+
+workstation-tools.html掛載真實共用工具區及三個子元件，API由測試腳本模擬，無需啟動4174橋接。涵蓋鍵盤操作、工程／任務參數、切換上下文、權限與無任務狀態、390／900橫向／1280與深淺色截圖；不是完整登入工作台的業務驗收。僅攔截/api/projects/業務請求，不攔截Vite的src/api模組。
