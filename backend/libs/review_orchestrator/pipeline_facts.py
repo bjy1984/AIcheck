@@ -7,7 +7,7 @@ executor.project_pipeline_facts），"逐管线判"实际是"整个工程一刀�
 这里把 R14 的抽取提升为工程级：扫描本工程全部已解析资料（管道特性表通常挂在设计节点，
 不在当前节点的输入里），按管线号去重，输出 pipelineId / 级别 / P / T / 材质 / 规格 / 介质
 与证据位置，并合并进 businessFacts.project。带 documentScopeSnapshot 的新任务仅扫描固定输入，
-并重建管线及级别列表；以下兼容行为只适用于无快照历史任务：
+并重建管线及级别列表；同号管线有矛盾的非空参数时阻止新任务继续判定。以下兼容行为只适用于无快照历史任务：
 - 已有非空 project.pipelines（例如上游工具已给）不覆盖；
 - 同时补 project.pipelineGrades（R01/R02 的 requiredPipelineGrades 用它）。
 """
@@ -17,6 +17,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.integrations.errors import IntegrationServiceError
 from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.certificate_facts import _documents_by_version
 from libs.review_orchestrator.r14_facts import _extract_pipeline_characteristics, _value
@@ -72,6 +73,28 @@ def _pipeline_from_characteristic(item: dict[str, Any]) -> dict[str, Any]:
     return pipeline
 
 
+
+class PipelineFactsConflict(IntegrationServiceError):
+    """Conflicting selected sources require reconciliation before deterministic review."""
+
+    def __init__(self, conflicts: list[dict[str, Any]]) -> None:
+        self.conflicts = deepcopy(conflicts)
+        super().__init__("review", "assemble_pipeline_facts", status_code=409,
+                         reason="REVIEW_PIPELINE_FACTS_CONFLICT")
+
+
+def _reject_conflicting_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
+    conflicts = []
+    for pipeline_id, rows in candidates.items():
+        fields = set().union(*(row.keys() for row in rows)) - {"pipelineId", "lineNo", "source", "evidence"}
+        for field in sorted(fields):
+            populated = [row for row in rows if row.get(field) not in (None, "")]
+            if populated and any(row[field] != populated[0][field] for row in populated[1:]):
+                conflicts.append({"pipelineId": pipeline_id, "field": field,
+                                  "sources": [{"value": row[field], "source": row["source"]} for row in populated]})
+    if conflicts:
+        raise PipelineFactsConflict(conflicts)
+
 def _completeness(pipeline: dict[str, Any]) -> int:
     return sum(1 for key in ("pipelineGrade", "designPressureMPa", "designTemperatureC", "material", "specification") if pipeline.get(key) not in (None, ""))
 
@@ -82,6 +105,7 @@ def build_project_pipelines(state: dict[str, Any], project_id: str, *, review_ru
         raise ValueError("pipeline_review_scope_mismatch")
     versions = _documents_by_version(state, project_id)
     by_line: dict[str, dict[str, Any]] = {}
+    candidates: dict[str, list[dict[str, Any]]] = {}
     parses = (selected_parse_results(state, {}, context={"reviewRun": review_run})
               if review_run is not None else state.get("ocr_parse_results") or [])
     for parse_result in parses:
@@ -97,9 +121,12 @@ def build_project_pipelines(state: dict[str, Any], project_id: str, *, review_ru
             key = pipeline["pipelineId"] or f"{version_id}:{item.get('tableId')}:{item.get('rowIndex')}"
             if not pipeline["pipelineId"]:
                 pipeline["pipelineId"] = key
+            candidates.setdefault(key, []).append(pipeline)
             existing = by_line.get(key)
             if existing is None or _completeness(pipeline) > _completeness(existing):
                 by_line[key] = pipeline
+    if review_run is not None:
+        _reject_conflicting_candidates(candidates)
     return list(by_line.values())
 
 

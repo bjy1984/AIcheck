@@ -2,7 +2,12 @@
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
 import ReviewDocumentPicker from './ReviewDocumentPicker.vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
-import { INPUT_CHANGED_MESSAGE, needsFreshReview } from './inputRecovery'
+import {
+  INPUT_CHANGED_MESSAGE,
+  PIPELINE_CONFLICT_MESSAGE,
+  hasPipelineConflict,
+  needsFreshReview
+} from './inputRecovery'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -186,6 +191,7 @@ const conversationMessages = computed(() =>
 )
 const activeRun = computed(() => workspace.value?.activeReviewRun)
 const inputChanged = computed(() => needsFreshReview(activeRun.value))
+const pipelineConflict = computed(() => hasPipelineConflict(activeRun.value))
 const activeRunId = computed(() =>
   String(activeRun.value?.reviewRunId || activeRun.value?.id || '')
 )
@@ -2445,6 +2451,14 @@ onBeforeUnmount(() => {
                 ><dt>关联证据</dt><dd>{{ selectedEvidence.length }} 份</dd></div
               >
             </dl>
+            <ElAlert
+              v-if="pipelineConflict"
+              title="需要核对管线资料冲突"
+              :description="PIPELINE_CONFLICT_MESSAGE"
+              type="warning"
+              show-icon
+              :closable="false"
+            />
             <ElAlert
               v-if="inputChanged"
               title="需要重新发起复核"
