@@ -299,6 +299,8 @@ materialTypes:
     name: 无损检测工艺文件
     requiredType: 条件必传
     requiredFields: [procedure_no, method, equipment, sensitivity, acceptance_level, standard_no]
+    ocrProfileId: ndt_procedure_v1
+    ocrFieldMappings: [procedure_no, procedure_revision, organization_name, document_kind, method, equipment, sensitivity, acceptance_level, standard_no, referenced_procedure_no, referenced_procedure_revision, removal_method, emulsifier_application, application_status]
     evidenceRequired: true
   - code: ndt_report
     name: 无损检测报告

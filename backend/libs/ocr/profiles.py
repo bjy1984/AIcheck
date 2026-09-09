@@ -3,10 +3,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from libs.ocr.ndt_procedure import make_profile as make_ndt_procedure_profile
 from libs.ocr.utils import parse_bool
 
 DEFAULT_PROFILE_ID = "generic_document_v1"
 PROFILE_ALIASES = {
+    "ndt_procedure": "ndt_procedure_v1",
     "engineering_drawing_list": "engineering_drawing_list_v1",
     "drawing_material_list": "drawing_material_list_v1",
     "process_flow_diagram": "process_flow_diagram_v1",
@@ -1339,6 +1341,9 @@ for _profile_id, (_document_type, _required_fields, _labels) in R24_R34_BUSINESS
             "seal": {"enableColorCandidate": False, "enablePaddlexSeal": False, "maxPages": 12},
         },
     }
+
+
+OCR_PROFILES["ndt_procedure_v1"] = make_ndt_procedure_profile(structured_extraction_config, BUSINESS_RECORD_PREPROCESS_POLICY)
 
 
 def profile_for(profile_id: str | None = None, document_type: str | None = None) -> dict[str, Any]:

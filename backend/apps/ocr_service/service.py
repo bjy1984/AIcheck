@@ -51,6 +51,7 @@ from apps.ocr_service.runtime_doctor import build_runtime_doctor
 from libs.capacity_guard import disk_capacity_status
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
+from libs.ocr.ndt_procedure import extract_explicit_fields as extract_ndt_procedure_fields
 from libs.ocr.profiles import profile_for
 from libs.ocr.utils import parse_bool
 from libs.ocr.welder_certificate_tool import (
@@ -4081,6 +4082,10 @@ def detect_engineering_drawing_list_profile(
 
 
 def apply_profile_postprocessing(result: dict[str, Any], profile: dict[str, Any]) -> None:
+    if profile.get("profileId") == "ndt_procedure_v1":
+        extract_ndt_procedure_fields(result, add_field_if_missing)
+        add_profile_quality_diagnostics(result, profile)
+        return
     if is_engineering_drawing_profile(result, profile):
         title_block_tables = infer_engineering_drawing_title_block_tables(result.get("fragments") or [])
         if title_block_tables:
