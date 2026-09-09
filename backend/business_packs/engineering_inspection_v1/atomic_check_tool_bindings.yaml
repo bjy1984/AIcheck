@@ -2437,6 +2437,7 @@ atomicCheckToolBindings:
   - extract_table_records
   - check_required
   - evaluate_ndt_process
+  - evaluate_r40_parameters
   - validate_evidence_grounding
   parameters:
     profile: ndt_record_report

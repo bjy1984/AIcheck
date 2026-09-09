@@ -9,7 +9,8 @@ from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.r40_ocr_records import supplement_ocr_records
 
 TABLES = {"ndt_event_inventory": "inventories", "ndt_event_members": "members",
-          "ndt_event_records": "records", "ndt_event_reports": "reports"}
+          "ndt_event_records": "records", "ndt_event_reports": "reports",
+          "ndt_parameter_requirements": "requirements", "ndt_parameter_values": "values"}
 
 
 def build_r40_business_facts(state, run):
@@ -47,5 +48,8 @@ def build_r40_business_facts(state, run):
         inventory["members"] = deepcopy(groups["members"])
         facts["recordReportCorrespondence"] = {"projectId": run["projectId"], "inventory": inventory,
                                                "records": deepcopy(groups["records"]), "reports": deepcopy(groups["reports"]), "selectionIssues": issues}
+    if "recordReportCorrespondence" in facts:
+        facts["parameterComparison"] = {"projectId": run["projectId"], "inventory": deepcopy(inventory),
+            "requirements": deepcopy(groups["requirements"]), "values": deepcopy(groups["values"]), "selectionIssues": issues}
     facts["selectionIssues"] = issues
     return {"r40": facts, **judgment}
