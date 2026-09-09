@@ -5,11 +5,12 @@ from libs.review_orchestrator.deterministic_tools import validate_evidence_groun
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_reference import SCOPE_FIELDS
+from libs.review_tools.r39_tools import IDENTITY_FIELDS
 
 SOURCE_GROUPS = {
     "ptEmulsifierApplication": ("ptContexts", "ptBases", "ptProcesses"),
     "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
-    "firstUseValidation": ("applications", "bases", "validations"),
+    "firstUseValidation": ("applications", "bases", "validations", "applicationInventories", "applicationMembers"),
     "approvalChain": ("approvalContexts", "requirements", "steps", "signatureInventories", "signatures"),
     "documentContent": ("contentContexts", "contentBases", "contentInventories", "contentFields", "contentDocumentInventories", "contentDocumentMembers"),
 }
@@ -38,9 +39,12 @@ def _isolate_inventory_sources(groups, facts, checked, input_name):
     if input_name == "procedureReference":
         fields, collection, diagnostics = SCOPE_FIELDS, "referencePairs", "pairValidation"
         shared_names = {"referenceInventories", "referenceMembers"}
-    else:
+    elif input_name == "documentContent":
         fields, collection, diagnostics = CONTENT_SCOPE_FIELDS, "documents", "documentValidation"
         shared_names = {"contentDocumentInventories", "contentDocumentMembers"}
+    else:
+        fields, collection, diagnostics = IDENTITY_FIELDS, "applications", "applicationValidation"
+        shared_names = {"applicationInventories", "applicationMembers"}
     value = facts.get(input_name)
     if not isinstance(value, dict) or "inventory" not in value:
         return False
@@ -73,6 +77,6 @@ def gate_r39_inputs(groups, facts):
     facts["sourceValidation"] = checks
     for name, checked in checks.items():
         if checked["result"] != "passed":
-            if name not in {"procedureReference", "documentContent"} or not _isolate_inventory_sources(groups, facts, checked, name):
+            if name not in {"procedureReference", "documentContent", "firstUseValidation"} or not _isolate_inventory_sources(groups, facts, checked, name):
                 facts.pop(name, None)
             facts["sourceIssues"].append("r39_" + name + "_source_gate_failed")

@@ -1,0 +1,13 @@
+# R39 應用事件清單契約與驗收
+
+`evaluate_r39_first_use_validation`新增inventory和applications；若任一欄位存在即走清單模式，不回退原single scope/application。inventory須projectId一致、complete=true、有引用和非空唯一members。每一member含projectId、organizationId、instructionId、instructionVersion、method、objectId、eventId及引用；applications每項沿用既有單事件工具輸入。
+
+按完整身份分組，禁止重複取首筆、引用另一對象／事件的驗證記錄或巢狀清單。明確非首次應用維持不適用；缺少首次應用判斷或驗證記錄為證據不足，不能推定未實施。明確未實施／不在首次應用時實施的記錄仍按既有子工具判定。清單不推斷首次應用的業務含義或來源真實性。
+
+結果包含applicationResults/applicationScope與coverage（requiredCount、comparedCount、missingApplications、complete）。比較到但缺驗證資料的事件留在applicationResults並使complete=false；沒有有效事件輸入的清單成員列missingApplications。已知失敗保留，其他缺查不消失。complete只代表聲明清單覆蓋，不代表結果符合。
+
+來源表新增ndt_application_inventory、ndt_application_members，既有applications/bases/validations按完整身份分組；所有來源仍來自選定版本reader。共用清單和成員門檻須通過才可逐事件隔離。保留sourceRecords及sourceValidation.applicationValidation，節點全域grounding門檻保持，不冒充整條R39完成。
+
+驗證：backend執行 `.venv/bin/python -m pytest -q tests/test_r39*.py tests/test_review_business_tools.py tests/test_review_tool*.py tests/test_atomic_binding_generation.py tests/test_review_workstations.py tests/test_review_acceptance_gate.py`，617 passed。新增30項四態、順序、清單失效、重複、錯用事件驗證、低可信來源、已知失敗保留及編譯後實際工具結果。Ruff289/289、monolith及diff通過。
+
+仍未完成真實文件抽取、人工對清單完整性核驗、簽核週期清單及全部方法技術要求；三類pendingCapabilities不變，沒有發布、付費調用或修改歷史任務。

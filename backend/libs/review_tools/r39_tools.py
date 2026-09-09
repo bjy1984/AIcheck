@@ -30,6 +30,9 @@ def _refs(record: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def evaluate_r39_first_use_validation(arguments: dict[str, Any]) -> dict[str, Any]:
+    if "inventory" in arguments or "applications" in arguments:
+        from libs.review_tools.r39_application_inventory import evaluate_application_inventory
+        return evaluate_application_inventory(arguments, IDENTITY_FIELDS, evaluate_r39_first_use_validation)
     rows: list[dict[str, Any]] = []
 
     def add(code, status, refs=None):

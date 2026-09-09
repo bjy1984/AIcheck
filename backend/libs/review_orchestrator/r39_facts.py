@@ -6,15 +6,16 @@ from typing import Any
 
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.r39_application_facts import application_input
 from libs.review_orchestrator.r39_content_inventory_facts import build_content_inputs
 from libs.review_orchestrator.r39_pt_facts import pt_application_input
 from libs.review_orchestrator.r39_reference_facts import reference_input
 from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
 from libs.review_tools.r39_approval import SCOPE_FIELDS
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
-from libs.review_tools.r39_tools import IDENTITY_FIELDS
 
 R39_TABLES = {
+    "ndt_application_inventory": "applicationInventories", "ndt_application_members": "applicationMembers",
     "ndt_content_document_inventory": "contentDocumentInventories", "ndt_content_document_members": "contentDocumentMembers",
     "ndt_pt_context": "ptContexts", "ndt_pt_basis": "ptBases", "ndt_pt_process": "ptProcesses",
     "ndt_reference_inventory": "referenceInventories", "ndt_reference_members": "referenceMembers",
@@ -93,18 +94,9 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
     else:
         issues.append("r39_reference_pair_missing_or_ambiguous")
     build_content_inputs(state, run, groups, facts, _approval_record, _content_input)
-    applications = groups["applications"]
-    if len(applications) == 1 and applications[0].get("projectId") == run["projectId"]:
-        application = _clean(applications[0])
-        first_use = {"projectId": run["projectId"], "scope": {key: application.get(key) for key in IDENTITY_FIELDS}, "application": application}
-        for group, key in (("bases", "basis"), ("validations", "validation")):
-            if len(groups[group]) == 1:
-                first_use[key] = _clean(groups[group][0])
-            elif len(groups[group]) > 1:
-                issues.append("r39_" + group + "_ambiguous")
-        # Do not let non-first-use short-circuit hide conflicting supplied records.
-        if not any(len(groups[key]) > 1 for key in ("bases", "validations")):
-            facts["firstUseValidation"] = first_use
+    first_use = application_input(run, groups, _clean)
+    if first_use is not None:
+        facts["firstUseValidation"] = first_use
     else:
         issues.append("r39_application_missing_or_ambiguous")
     contexts = groups["approvalContexts"]

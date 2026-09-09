@@ -222,7 +222,7 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r39_procedure_reference": "比对所选指导书引用的规程编号与版本；有来源的完整文件对清单按组核对并列出漏查项，不代替方法技术要求及整条规则验收。",
     "evaluate_r39_document_content": "按NB/T47013.1-2015第7.2.2/7.2.3核对规程或指导书必备内容；有来源的完整文件清单逐份核对并列漏查项，漏读与明确缺项分开，不代替技术参数或整条R39验收。",
     "evaluate_r39_approval_chain": "按有来源且完整的质量体系要求核对单份工艺文件同版本同审批周期的必需签批、授权人员、先后与人员分离；不默认审批角色或等级，不代表整条R39通过。",
-    "evaluate_r39_first_use_validation": "R39仅核对同工程、检测单位、指导书版本、对象及事件的首次应用工艺验证实施事实；不判定工艺技术符合性、批准程序或整条R39，缺证据不通过。",
+    "evaluate_r39_first_use_validation": "按指导书版本、对象及事件核对首次应用验证；具来源的完整应用清单逐项执行并列出漏查事件，不代替验证有效性、技术符合性或整条R39。",
     "evaluate_r36_ndt_plan": "R36逐对象比对带证据的明确检测要求与方案方法、百分比、时机和验收级别，核对审批及人员设备准备事实；不自动生成标准限值或见证事实。",
     "evaluate_ndt_nonconformance": "R37核对明确的问题清单、处理程序、委托单、通知及反馈见证，按工程、机构、问题、对象与返修轮次匹配；不从文件存在推定处理完成。",
     "evaluate_ndt_quality_system": "核对R35结构化现场体系实施记录、项目和机构匹配及实际设备检定日期覆盖；仅有文件或通用规则参数不能判定符合。证据原文支持性另由证据门禁核验。",
@@ -430,7 +430,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_ndt_quality_system"
             else {"projectId": "string", "applicability": "object", "plan": "object", "requirements": ["object"], "standardRequirements": ["object?"]}
             if name == "evaluate_r36_ndt_plan"
-            else {"projectId": "string", "scope": "object", "basis": "object", "application": "object", "validation": "object"}
+            else {"projectId": "string", "scope": "object?", "basis": "object?", "application": "object?", "validation": "object?", "inventory": "object?", "applications": ["object?"]}
             if name == "evaluate_r39_first_use_validation"
             else {"projectId": "string", "scope": "object", "requirements": "object", "signatureInventory": "object"}
             if name == "evaluate_r39_approval_chain"
