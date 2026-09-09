@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "scope": "native_pdf_extraction_only",
+  "documents": [
+    {
+      "file": "../test2/5.2检测方案-盈德气体化工管道.pdf",
+      "sha256": "3083c815329c39d40dd1e989151eb94b571c43e639e2bdd65be2d449e502ab0b",
+      "profileId": "ndt_procedure_v1",
+      "profileSelection": "explicit_probe_override",
+      "engine": "pymupdf_text_layer",
+      "pageCount": 22,
+      "pagesWithText": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22
+      ],
+      "pagesWithoutText": [
+        1
+      ],
+      "fragmentCount": 1201,
+      "fields": [
+        {
+          "fieldCode": "organization_name",
+          "fieldValue": "广州声华科技有限公司",
+          "pageNo": 3,
+          "bbox": [
+            91.91999816894531,
+            186.0516815185547,
+            271.91998291015625,
+            198.0516815185547
+          ],
+          "confidence": 1.0,
+          "qualityFlags": []
+        }
+      ],
+      "missingRequiredFields": [
+        "method",
+        "procedure_no",
+        "procedure_revision",
+        "standard_no"
+      ],
+      "diagnostics": [
+        {
+          "code": "REQUIRED_FIELD_MISSING",
+          "level": "warning",
+          "message": "Profile 必抽字段仍有缺失。",
+          "missingFields": [
+            "procedure_no",
+            "procedure_revision",
+            "method",
+            "standard_no"
+          ]
+        }
+      ],
+      "businessAcceptance": "not_evaluated",
+      "visualOcrExecuted": false
+    },
+    {
+      "file": "../test/10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+      "sha256": "32f711b7858546cfc90c8836b5d5578879cb46cbbbbb8cb2d52223f4d897441d",
+      "profileId": "ndt_procedure_v1",
+      "profileSelection": "explicit_probe_override",
+      "engine": "pymupdf_text_layer",
+      "pageCount": 28,
+      "pagesWithText": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "pagesWithoutText": [
+        1
+      ],
+      "fragmentCount": 1122,
+      "fields": [],
+      "missingRequiredFields": [
+        "method",
+        "procedure_no",
+        "procedure_revision",
+        "standard_no"
+      ],
+      "diagnostics": [
+        {
+          "code": "REQUIRED_FIELD_MISSING",
+          "level": "warning",
+          "message": "Profile 必抽字段仍有缺失。",
+          "missingFields": [
+            "procedure_no",
+            "procedure_revision",
+            "method",
+            "standard_no"
+          ]
+        }
+      ],
+      "businessAcceptance": "not_evaluated",
+      "visualOcrExecuted": false
+    }
+  ]
+}
