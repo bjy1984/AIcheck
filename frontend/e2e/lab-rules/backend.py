@@ -17,6 +17,14 @@ from libs.db.repository import repo
 repo.reset()
 repo.postgres_enabled = False
 repo.sqlite_enabled = False
+from libs.review_document_scope import freeze_document_scope
+
+trial_run = {"reviewRunId": "RR-BROWSER-TRIAL", "projectId": "P-2026-HDCP-001", "nodeId": 24,
+             "businessPackId": "engineering_inspection_v1", "inputDocumentVersionIds": ["D-BROWSER-TRIAL"]}
+repo.state["ocr_parse_results"].append({"tenantId": "TENANT-DEFAULT", "documentVersionId": "D-BROWSER-TRIAL", "fields": [
+    {"id": "F-BROWSER-TRIAL", "fieldName": "thickness", "value": 11, "unit": "mm", "pageNo": 1, "bbox": [0, 0, 10, 10]}]})
+trial_run["documentScopeSnapshot"] = freeze_document_scope(trial_run, repo.state)
+repo.state["review_runs"].append(trial_run)
 client = TestClient(app)
 
 

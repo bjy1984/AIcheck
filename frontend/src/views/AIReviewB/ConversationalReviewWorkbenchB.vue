@@ -1761,7 +1761,11 @@ onBeforeUnmount(() => {
             <p v-if="conversationSubtitle">{{ conversationSubtitle }}</p>
           </div>
           <div v-if="!props.embedded" class="run-meta">
-            <ProjectRuleEditor :project-id="activeProjectId" :node-id="activeNodeId" />
+            <ProjectRuleEditor
+              :project-id="activeProjectId"
+              :node-id="activeNodeId"
+              :review-run-id="activeRun?.reviewRunId"
+            />
             <ElButton :icon="View" :disabled="!activeRunId" @click="tracePanels = ['trace']"
               >查看执行轨迹</ElButton
             >

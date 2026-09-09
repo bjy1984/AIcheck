@@ -46,15 +46,21 @@ export const forkProjectRule = (projectId: string, rule: ProjectRule) =>
 export interface RuleTrialResult {
   result: string
   ruleRevision: number
+  sourceMode?: string
+  sourceReviewRunId?: string
+  sourceSnapshotHash?: string
+  factDiagnostics?: Record<string, string>
   checks: Array<{ id: string; field: string; result: string; reason: string }>
 }
 export const trialProjectRule = (
   projectId: string,
   rule: ProjectRule,
-  facts: Record<string, unknown>
+  source:
+    | { facts: Record<string, unknown>; reviewRunId?: never }
+    | { reviewRunId: string; facts?: never }
 ) =>
   request.post<RuleTrialResult>({
     url: `${base(projectId)}/${encodeURIComponent(rule.id)}/trial`,
-    data: { facts },
+    data: source,
     headers: headers(rule.etag)
   })

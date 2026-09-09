@@ -16,7 +16,12 @@ import {
   type RuleTrialResult
 } from '@/api/aicheck/projectRules'
 import type { ConditionNode } from './ruleConditionModel'
-const props = defineProps<{ projectId: string; rule: ProjectRule; disabled: boolean }>()
+const props = defineProps<{
+  projectId: string
+  rule: ProjectRule
+  disabled: boolean
+  reviewRunId?: string
+}>()
 interface InputFact {
   field: string
   type: string
@@ -24,6 +29,7 @@ interface InputFact {
   unit: string
   reference: string
 }
+const sourceMode = ref<'manual' | 'run'>('manual')
 const inputs = ref<InputFact[]>([])
 const result = ref<RuleTrialResult>()
 const error = ref('')
@@ -83,6 +89,21 @@ watch(
     }
   }
 )
+watch(
+  () => [sourceMode.value, props.reviewRunId],
+  () => {
+    generation += 1
+    result.value = undefined
+    error.value = ''
+    busy.value = false
+    if (!props.reviewRunId) sourceMode.value = 'manual'
+  }
+)
+const diagnostics: Record<string, string> = {
+  field_missing: '任务资料没有匹配字段',
+  field_ambiguous_requires_object_mapping: '存在多个同名字段，需先明确焊口或材料批次',
+  field_locator_missing_or_invalid: '字段缺少有效页码或位置'
+}
 const labels: Record<string, string> = {
   pass: '符合',
   fail: '不符合',
@@ -99,6 +120,11 @@ const reasons: Record<string, string> = {
   applicability_not_met: '适用条件不成立'
 }
 const run = async () => {
+  if (props.disabled || busy.value) return
+  if (sourceMode.value === 'run' && !props.reviewRunId) {
+    error.value = '请先选择当前节点的审查任务。'
+    return
+  }
   busy.value = true
   error.value = ''
   result.value = undefined
@@ -120,12 +146,21 @@ const run = async () => {
     ])
   )
   try {
-    const response = await trialProjectRule(props.projectId, props.rule, facts)
+    const response = await trialProjectRule(
+      props.projectId,
+      props.rule,
+      sourceMode.value === 'run' ? { reviewRunId: props.reviewRunId! } : { facts }
+    )
     if (current === generation) result.value = response.data
   } catch (cause) {
-    if (current === generation)
-      error.value =
-        cause instanceof Error ? cause.message : '试跑失败；若规则版本已变化，请重新加载后再试。'
+    if (current === generation) {
+      const message = cause instanceof Error ? cause.message : ''
+      error.value = message.includes('review_document_sources_changed_recreate_run')
+        ? '任务资料已变化，请按当前资料重新发起审查，再选择新任务试跑。'
+        : message.includes('trial_requires_frozen_document_scope')
+          ? '此任务没有可核对的资料快照，请重新发起审查后再试跑。'
+          : message || '试跑失败；若规则版本已变化，请重新加载后再试。'
+    }
   } finally {
     if (current === generation) busy.value = false
   }
@@ -135,28 +170,43 @@ const run = async () => {
   <section class="rule-trial">
     <h3>草稿试跑</h3>
     <ElAlert
-      title="使用下面输入的示例数据测试已保存规则。引用尚未核验，结果不作为工程审查结论。"
+      :title="
+        sourceMode === 'run'
+          ? '使用当前任务固定范围内的 OCR 与人工修正测试已保存规则。结果仅供试跑，不作为工程审查结论。'
+          : '使用下面输入的示例数据测试已保存规则。引用尚未核验，结果不作为工程审查结论。'
+      "
       type="info"
       :closable="false"
     />
     <p v-if="disabled">请先保存当前修改，再试跑这一版本。</p>
     <ElForm label-position="top" :disabled="disabled || busy">
-      <div v-for="input in inputs" :key="input.field" class="trial-fact">
-        <ElFormItem :label="`${input.field} · 示例值（留空表示缺资料）`">
-          <ElSelect v-if="input.type === 'boolean'" v-model="input.value" clearable
-            ><ElOption label="是" value="true" /><ElOption label="否" value="false"
-          /></ElSelect>
-          <ElInput
-            v-else
-            v-model="input.value"
-            :type="input.type === 'number' ? 'number' : 'text'"
-          />
-        </ElFormItem>
-        <ElFormItem label="示例值单位"><ElInput v-model="input.unit" /></ElFormItem>
-        <ElFormItem label="示例资料编号（留空可测试缺证据）"
-          ><ElInput v-model="input.reference"
-        /></ElFormItem>
-      </div>
+      <ElFormItem label="试跑资料来源">
+        <ElSelect v-model="sourceMode">
+          <ElOption label="手填示例" value="manual" />
+          <ElOption label="当前审查任务的 OCR 资料" value="run" :disabled="!reviewRunId" />
+        </ElSelect>
+      </ElFormItem>
+      <p v-if="sourceMode === 'run'"
+        >来源任务：{{ reviewRunId }}。资料变动或旧任务缺少快照时，请重新发起审查后再试跑。</p
+      >
+      <template v-if="sourceMode === 'manual'">
+        <div v-for="input in inputs" :key="input.field" class="trial-fact">
+          <ElFormItem :label="`${input.field} · 示例值（留空表示缺资料）`">
+            <ElSelect v-if="input.type === 'boolean'" v-model="input.value" clearable
+              ><ElOption label="是" value="true" /><ElOption label="否" value="false"
+            /></ElSelect>
+            <ElInput
+              v-else
+              v-model="input.value"
+              :type="input.type === 'number' ? 'number' : 'text'"
+            />
+          </ElFormItem>
+          <ElFormItem label="示例值单位"><ElInput v-model="input.unit" /></ElFormItem>
+          <ElFormItem label="示例资料编号（留空可测试缺证据）"
+            ><ElInput v-model="input.reference"
+          /></ElFormItem>
+        </div>
+      </template>
       <ElButton :loading="busy" :disabled="disabled" @click="run">运行草稿试跑</ElButton>
     </ElForm>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
@@ -165,6 +215,12 @@ const run = async () => {
         >已保存版本修订 {{ result.ruleRevision }} ·
         <ElTag>{{ labels[result.result] || result.result }}</ElTag></p
       >
+      <p v-if="result.sourceReviewRunId">本次来源任务：{{ result.sourceReviewRunId }}</p>
+      <ul v-if="Object.keys(result.factDiagnostics || {}).length">
+        <li v-for="(reason, field) in result.factDiagnostics" :key="field"
+          >{{ field }}：{{ diagnostics[reason] || reason }}</li
+        >
+      </ul>
       <ul
         ><li v-for="check in result.checks" :key="check.id"
           >{{ check.field }}：{{ labels[check.result] || check.result }} —

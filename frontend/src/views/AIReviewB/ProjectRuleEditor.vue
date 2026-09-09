@@ -25,7 +25,7 @@ import {
   type RuleDraftInput
 } from '@/api/aicheck/projectRules'
 
-const props = defineProps<{ projectId: string; nodeId: number }>()
+const props = defineProps<{ projectId: string; nodeId: number; reviewRunId?: string }>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
 const busy = ref(false)
@@ -238,6 +238,7 @@ watch(
         v-if="selected?.projectId === projectId && selected?.executionConditions"
         :project-id="projectId"
         :rule="selected"
+        :review-run-id="reviewRunId"
         :disabled="dirty || busy"
       />
       <p

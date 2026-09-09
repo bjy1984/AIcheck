@@ -2,6 +2,7 @@ import { chromium, expect } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 const browser = await chromium.launch({ headless: true, channel: 'chrome' })
 const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } })
+page.setDefaultTimeout(15000)
 const errors = []
 page.on('pageerror', error => errors.push(String(error)))
 try {
@@ -44,11 +45,35 @@ try {
   await fact.locator('input').nth(2).fill('')
   await page.getByRole('button', { name: '运行草稿试跑', exact: true }).click()
   await expect(page.locator('.rule-trial [role="status"]')).toContainText('thickness：证据不足')
+  await page.getByLabel('试跑资料来源', { exact: true }).press('Enter')
+  await page.getByRole('option', { name: '当前审查任务的 OCR 资料', exact: true }).click()
+  await expect(page.locator('.rule-trial [role="status"]')).toHaveCount(0)
+  await expect(page.locator('.trial-fact')).toHaveCount(0)
+  const sourceResponse = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/trial'))
+  await page.getByRole('button', { name: '运行草稿试跑', exact: true }).click()
+  const sourceHttp = await sourceResponse
+  const sourcePayload = sourceHttp.request().postDataJSON()
+  if (sourcePayload.reviewRunId !== 'RR-BROWSER-TRIAL' || 'facts' in sourcePayload) throw new Error('OCR trial included manual facts')
+  const sourceResult = (await sourceHttp.json()).data
+  if (sourceResult.sourceMode !== 'run_ocr' || !sourceResult.sourceSnapshotHash) throw new Error('Missing source lineage')
+  await expect(page.locator('.rule-trial [role="status"]')).toContainText('thickness：符合')
+  await expect(page.locator('.rule-trial [role="status"]')).toContainText('RR-BROWSER-TRIAL')
+  await page.locator('.rule-trial').screenshot({ path: '../docs/lab/verification/browser/rule-trial-run-ocr.png', animations: 'disabled' })
+  await page.getByPlaceholder('例如：thickness', { exact: true }).fill('missing_field')
+  const updatedResponse = page.waitForResponse(r => r.request().method() === 'PATCH' && r.url().includes('/rules/versions/'))
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await updatedResponse
+  await page.getByRole('button', { name: '运行草稿试跑', exact: true }).click()
+  await expect(page.locator('.rule-trial [role="status"]')).toContainText('任务资料没有匹配字段')
+  await expect(page.locator('.rule-trial [role="status"]')).toContainText('missing_field：证据不足')
   await page.getByLabel('判断依据与要求', { exact: true }).fill('未保存的修改')
   await expect(page.getByRole('button', { name: '运行草稿试跑', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByRole('button', { name: '继续编辑', exact: true }).click()
   await expect(page.getByLabel('判断依据与要求', { exact: true })).toHaveValue('未保存的修改')
   if (errors.length) throw new Error(errors.join('\n'))
-  console.log('PASS: readonly, create, numeric conditions, save, fail/pass/missing-evidence trials, stale-result clearing, unsaved-change guard; no browser runtime errors')
+  console.log('PASS: readonly, create, numeric conditions, save, fail/pass/missing-evidence trials, stale-result clearing, unsaved-change guard, run OCR source and missing-field diagnostics; no browser runtime errors')
+} catch (error) {
+  await page.screenshot({ path: '/tmp/aicheck-rule-trial-failure.png', fullPage: true })
+  throw error
 } finally { await browser.close() }
