@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuleDraftAssistant from './RuleDraftAssistant.vue'
 import ProjectRuleRelease from './ProjectRuleRelease.vue'
 import RuleTrialPanel from './RuleTrialPanel.vue'
 import { ruleDraftDiff } from './ruleDraftDiff'
@@ -40,6 +41,7 @@ const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
 const busy = ref(false)
 const releaseBusy = ref(false)
+const generationBusy = ref(false)
 const error = ref('')
 const rules = ref<ProjectRule[]>([])
 const atomicOptions = ref<RuleAtomicOption[]>([])
@@ -90,7 +92,7 @@ const choose = async (id: string) => {
   if (await canDiscard()) setForm(rules.value.find((rule) => rule.id === id))
 }
 const close = async (done: () => void) => {
-  if (!busy.value && !releaseBusy.value && (await canDiscard())) done()
+  if (!busy.value && !releaseBusy.value && !generationBusy.value && (await canDiscard())) done()
 }
 const open = async (keepId?: string) => {
   visible.value = true
@@ -182,7 +184,7 @@ watch(
       <ElSelect
         id="project-rule-choice"
         :model-value="selectedId"
-        :disabled="busy || releaseBusy"
+        :disabled="busy || releaseBusy || generationBusy"
         @update:model-value="choose"
       >
         <ElOption label="新建工程草稿" value="" />
@@ -198,7 +200,17 @@ watch(
         <ElTag type="info">{{ selected.status }}</ElTag>
         <span v-if="!editable">此版本只读，请复制为工程草稿后修改。</span>
       </div>
-      <ElForm label-position="top" :disabled="busy || releaseBusy || !editable">
+      <p v-if="!selectedId && dirty">已有未保存内容。请先保存；生成助手不会覆盖正在编辑的内容。</p>
+      <RuleDraftAssistant
+        v-if="!selectedId"
+        :key="`${projectId}:${nodeId}`"
+        :project-id="projectId"
+        :node-id="nodeId"
+        :disabled="busy || releaseBusy || dirty"
+        @busy="generationBusy = $event"
+        @apply="form = $event"
+      />
+      <ElForm label-position="top" :disabled="busy || releaseBusy || generationBusy || !editable">
         <ElFormItem label="审查项目" required
           ><ElInput v-model="form.inspectionItem" maxlength="200"
         /></ElFormItem>
@@ -317,13 +329,15 @@ watch(
       >
     </div>
     <template #footer>
-      <ElButton :disabled="busy || releaseBusy" @click="close(() => (visible = false))"
+      <ElButton
+        :disabled="busy || releaseBusy || generationBusy"
+        @click="close(() => (visible = false))"
         >关闭</ElButton
       >
       <ElButton
         v-if="selected && !editable"
         :loading="busy"
-        :disabled="releaseBusy || applyDisabled"
+        :disabled="releaseBusy || generationBusy || applyDisabled"
         @click="save(true)"
         >复制为工程草稿</ElButton
       >
@@ -331,7 +345,7 @@ watch(
         v-if="editable"
         type="primary"
         :loading="busy"
-        :disabled="releaseBusy || applyDisabled"
+        :disabled="releaseBusy || generationBusy || applyDisabled"
         @click="save()"
         >保存草稿</ElButton
       >

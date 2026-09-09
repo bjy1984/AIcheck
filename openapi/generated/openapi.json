@@ -26464,6 +26464,54 @@
         ]
       }
     },
+    "/api/projects/{project_id}/rules/draft-suggestion": {
+      "post": {
+        "operationId": "suggest_project_rule_api_projects__project_id__rules_draft_suggestion_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Project Rule"
+      }
+    },
     "/api/projects/{project_id}/rules/versions": {
       "get": {
         "operationId": "list_project_rules_api_projects__project_id__rules_versions_get",
@@ -50244,6 +50292,54 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/projects/{project_id}/rules/draft-suggestion": {
+      "post": {
+        "operationId": "suggest_project_rule_projects__project_id__rules_draft_suggestion_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Project Rule"
       }
     },
     "/projects/{project_id}/rules/versions": {

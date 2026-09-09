@@ -150,3 +150,16 @@ export const applyProjectRuleRelease = (
     data,
     headers: { 'If-Match': rule.etag, 'Idempotency-Key': idempotencyKey }
   })
+
+export interface RuleDraftSuggestion {
+  draft: RuleDraftInput
+  questions: string[]
+  promptVersion: string
+  requiresHumanConfirmation: true
+  saved: false
+}
+export const suggestProjectRule = (projectId: string, nodeId: number, description: string) =>
+  request.post<RuleDraftSuggestion>({
+    url: `/api/projects/${encodeURIComponent(projectId)}/rules/draft-suggestion`,
+    data: { nodeId, description }
+  })

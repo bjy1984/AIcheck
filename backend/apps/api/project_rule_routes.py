@@ -262,3 +262,27 @@ def apply_project_rule_operation(request: Request, project_id: str, version_id: 
     return api.idempotent(request, idempotency_key,
                           produce,
                           fingerprint_source={"versionId": version_id, "body": body})
+
+
+@project_rule_router.post("/projects/{project_id}/rules/draft-suggestion")
+def suggest_project_rule(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict)):
+    from libs.integrations.errors import IntegrationServiceError
+    from libs.rule_draft_generation import generate_rule_draft
+
+    node_id, description = body.get("nodeId"), body.get("description")
+    if set(body) != {"nodeId", "description"} or type(node_id) is not int or not isinstance(description, str) or not 1 <= len(description.strip()) <= 4000:
+        return fail(errors.VALIDATION_ERROR, request, message="请选择节点，并用4000字以内描述规则要求。")
+    if error := _guard(request, project_id, [node_id]):
+        return error
+    project = repo.require_project(project_id)
+    pack = project.get("businessPackSnapshot") or api.load_business_pack(project.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID)
+    if not any(item.get("nodeId") == node_id for item in pack.get("atomicChecks") or []):
+        return fail(errors.VALIDATION_ERROR, request, message="所选节点不在本工程业务规则范围内。")
+    try:
+        suggestion = generate_rule_draft(description.strip(), node_id)
+    except (ValueError, TypeError, KeyError, IndexError, IntegrationServiceError):
+        return fail(errors.EXTERNAL_TOOL_FAILED, request, message="这次没能生成可核对的草稿。原规则未变，请调整描述或稍后重试。")
+    # Recheck authorization after the provider call; no generated data enters rule storage.
+    if error := _guard(request, project_id, [node_id]):
+        return error
+    return ok({**suggestion, "requiresHumanConfirmation": True, "saved": False}, request)
