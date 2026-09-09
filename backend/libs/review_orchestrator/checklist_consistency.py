@@ -42,3 +42,27 @@ def condition_checklist_verdicts(run: dict[str, Any], context: dict[str, Any]) -
             raise IntegrationServiceError("review", "checklist", reason="REVIEW_CONDITION_RESULT_MISMATCH")
         fixed[identity] = RESULT_VERDICTS[result]
     return fixed
+
+
+def bind_condition_checklist_evidence(context: dict[str, Any], identity: str,
+                                      references: list[Any], grounding_input: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate model citations, then retain the complete tool evidence including correction IDs."""
+    row = next(item for item in context["atomicToolExecution"]["atomicResults"] if item["atomicCheckId"] == identity)
+    canonical = row["toolResults"][0].get("evidenceRefs") or []
+    links = {str(item.get("id") or item.get("evidenceLinkId")): item
+             for item in grounding_input.get("evidenceLinks") or [] if isinstance(item, dict)}
+    for ref in references:
+        if not isinstance(ref, dict):
+            raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_TOOL_EVIDENCE_MISMATCH")
+        link_id = ref.get("evidenceLinkId")
+        link = links.get(str(link_id)) if link_id else {}
+        if link is None:
+            raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_TOOL_EVIDENCE_MISMATCH")
+        resolved = {**link, **ref}
+        matches = [item for item in canonical if all(resolved.get(key) == item.get(key)
+                   for key in ("documentVersionId", "pageNo", "bbox"))
+                   and all(key not in resolved or resolved[key] == item.get(key) for key in ("fieldId", "correctionId"))]
+        if not matches or (link_id and any(key in ref and key in link and ref[key] != link[key]
+                                          for key in ("documentVersionId", "pageNo", "bbox"))):
+            raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_TOOL_EVIDENCE_MISMATCH")
+    return deepcopy(canonical)

@@ -23,7 +23,10 @@ from typing import Any
 from uuid import uuid4
 
 from libs.integrations.errors import IntegrationServiceError
-from libs.review_orchestrator.checklist_consistency import condition_checklist_verdicts
+from libs.review_orchestrator.checklist_consistency import (
+    bind_condition_checklist_evidence,
+    condition_checklist_verdicts,
+)
 from libs.rule_condition_bindings import compile_condition_bindings
 
 VERDICTS = ("符合", "不符合", "证据不足", "不适用", "需人工确认")
@@ -230,6 +233,8 @@ def normalize_checklist_output(
         evidence_refs = clone(row.get("evidenceRefs")) if isinstance(row.get("evidenceRefs"), list) else []
         if str(item["itemId"]) in fixed_verdicts and verdict != "证据不足" and not evidence_refs:
             raise IntegrationServiceError("review", "checklist", reason="REVIEW_CHECKLIST_TOOL_EVIDENCE_MISSING")
+        if str(item["itemId"]) in fixed_verdicts:
+            evidence_refs = bind_condition_checklist_evidence(context, str(item["itemId"]), evidence_refs, grounding_input)
         if verdict in {"符合", "不适用"} and not evidence_refs:
             verdict = "证据不足"  # 没有证据的"符合"不成立：规则明说过，这里兜底
         summary[verdict] += 1
