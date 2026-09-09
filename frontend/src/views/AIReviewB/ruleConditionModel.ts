@@ -1,6 +1,7 @@
 export type ConditionValue = string | number | boolean
 export interface ConditionNode {
   id?: string
+  atomicCheckId?: string
   field?: string
   operator?: string
   expected?: ConditionValue | ConditionValue[]

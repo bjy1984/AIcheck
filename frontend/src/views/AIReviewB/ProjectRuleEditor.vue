@@ -22,6 +22,7 @@ import {
   listProjectRules,
   saveProjectRule,
   type ProjectRule,
+  type RuleAtomicOption,
   type RuleDraftInput
 } from '@/api/aicheck/projectRules'
 
@@ -31,6 +32,13 @@ const visible = ref(false)
 const busy = ref(false)
 const error = ref('')
 const rules = ref<ProjectRule[]>([])
+const atomicOptions = ref<RuleAtomicOption[]>([])
+const setAtomicBinding = (index: number, value: string) => {
+  const check = form.value.executionConditions?.checks[index]
+  if (!check) return
+  if (value) check.atomicCheckId = value
+  else delete check.atomicCheckId
+}
 const selectedId = ref('')
 const form = ref<RuleDraftInput>({ inspectionItem: '', standardText: '', witnessText: '' })
 const baseline = ref(JSON.stringify(form.value))
@@ -81,6 +89,9 @@ const open = async () => {
   try {
     const response = await listProjectRules(props.projectId)
     if (revision !== contextRevision) return
+    atomicOptions.value = (response.data.atomicChecks || []).filter(
+      (item) => item.nodeId === props.nodeId
+    )
     rules.value = response.data.items.filter((rule) => rule.nodeIds.includes(props.nodeId))
     setForm(rules.value[0])
   } catch (cause) {
@@ -133,6 +144,7 @@ watch(
     visible.value = false
     busy.value = false
     rules.value = []
+    atomicOptions.value = []
     setForm()
   }
 )
@@ -208,8 +220,27 @@ watch(
           >
         </ElFormItem>
         <template v-if="form.executionConditions">
+          <p
+            >可选择要取代的原子审查项。开始绑定后，每个检查项都需选择；未被取代的原子项继续保留。当前仅供试跑，尚不能正式发布。</p
+          >
           <div v-for="(check, index) in form.executionConditions.checks" :key="check.id">
             <h3>检查项 {{ index + 1 }}</h3>
+            <ElFormItem :label="`取代的原子审查项 ${index + 1}（可选）`">
+              <ElSelect
+                :model-value="check.atomicCheckId"
+                clearable
+                filterable
+                placeholder="选择当前节点的审查项"
+                @change="setAtomicBinding(index, $event)"
+              >
+                <ElOption
+                  v-for="item in atomicOptions"
+                  :key="item.id"
+                  :value="item.id"
+                  :label="`${item.id} · ${item.name}`"
+                />
+              </ElSelect>
+            </ElFormItem>
             <ConditionExpressionEditor
               :model-value="check"
               :grouped="false"

@@ -13362,7 +13362,10 @@ def test_lab_project_rule_draft_edit_requires_scope_and_revision(monkeypatch):
     body = {"inspectionItem": "焊工资格核对", "standardText": "核对资格覆盖范围", "nodeIds": [24]}
     rule = assert_ok(client.post(path, headers=headers, json=body))["rule"]
     assert rule["projectId"] == "P-2026-HDCP-001" and rule["status"] == "草稿"
-    assert rule["id"] in {row["id"] for row in assert_ok(client.get(path, headers=headers))["items"]}
+    listed = assert_ok(client.get(path, headers=headers))
+    assert rule["id"] in {row["id"] for row in listed["items"]}
+    assert {row["nodeId"] for row in listed["atomicChecks"]} == {24}
+    assert {row["id"] for row in listed["atomicChecks"]} == {f"AC-R24-0{i}" for i in range(1, 6)}
     assert_error(client.patch(f"{path}/{rule['id']}", headers=headers, json={"standardText": "新版"}), "VALIDATION_ERROR")
     updated = assert_ok(client.patch(f"{path}/{rule['id']}", headers={**headers, "If-Match": rule["etag"]},
                                     json={"standardText": "新版"}))["rule"]

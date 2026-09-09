@@ -60,7 +60,12 @@ def list_project_rules(request: Request, project_id: str):
             continue
         if _guard(request, project_id, api.parse_rule_node_ids(rule.get("nodeIds"))) is None:
             items.append(api.versioned_record("rule-version", rule))
-    return ok({"items": sorted(items, key=api.rule_version_sort_key), "total": len(items)}, request)
+    pack = project.get("businessPackSnapshot") or api.load_business_pack(project.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID)
+    allowed_nodes = {node_id for node_id in {row["nodeId"] for row in pack.get("atomicChecks") or []}
+                     if _guard(request, project_id, [node_id]) is None}
+    atomic_checks = [{"id": row["id"], "name": row.get("name") or row["id"], "nodeId": row["nodeId"]}
+                     for row in pack.get("atomicChecks") or [] if row["nodeId"] in allowed_nodes]
+    return ok({"items": sorted(items, key=api.rule_version_sort_key), "total": len(items), "atomicChecks": atomic_checks}, request)
 
 
 @project_rule_router.post("/projects/{project_id}/rules/versions")

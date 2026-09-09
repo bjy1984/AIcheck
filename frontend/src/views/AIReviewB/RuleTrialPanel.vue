@@ -215,6 +215,10 @@ const run = async () => {
         >已保存版本修订 {{ result.ruleRevision }} ·
         <ElTag>{{ labels[result.result] || result.result }}</ElTag></p
       >
+      <p v-if="result.bindingPlan"
+        >此规则计划取代 {{ result.bindingPlan.replacements.length }} 项，保留
+        {{ result.bindingPlan.retainedAtomicCheckIds.length }} 项原有审查；试跑结果不代表已发布。</p
+      >
       <p v-if="result.sourceReviewRunId">本次来源任务：{{ result.sourceReviewRunId }}</p>
       <ul v-if="Object.keys(result.factDiagnostics || {}).length">
         <li v-for="(reason, field) in result.factDiagnostics" :key="field"

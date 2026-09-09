@@ -1,6 +1,12 @@
 import request from '@/axios'
 import type { RuleConditions } from '@/views/AIReviewB/ruleConditionModel'
 
+export interface RuleAtomicOption {
+  id: string
+  name: string
+  nodeId: number
+}
+
 export interface ProjectRule {
   id: string
   projectId?: string
@@ -23,7 +29,7 @@ const headers = (etag?: string) => ({
   ...(etag ? { 'If-Match': etag } : {})
 })
 export const listProjectRules = (projectId: string) =>
-  request.get<{ items: ProjectRule[] }>({ url: base(projectId) })
+  request.get<{ items: ProjectRule[]; atomicChecks: RuleAtomicOption[] }>({ url: base(projectId) })
 export const createProjectRule = (projectId: string, nodeId: number, data: RuleDraftInput) =>
   request.post<{ rule: ProjectRule }>({
     url: base(projectId),
@@ -50,6 +56,7 @@ export interface RuleTrialResult {
   sourceReviewRunId?: string
   sourceSnapshotHash?: string
   factDiagnostics?: Record<string, string>
+  bindingPlan?: { replacements: Array<{ atomicCheckId: string }>; retainedAtomicCheckIds: string[] }
   checks: Array<{ id: string; field: string; result: string; reason: string }>
 }
 export const trialProjectRule = (
