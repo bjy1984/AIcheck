@@ -13440,3 +13440,30 @@ def test_lab_run_detects_ocr_change_and_new_run_accepts_current_source(monkeypat
     second = ex.create_review_run_from_ai_run({**ai_run, "id": "AI-LAB-SOURCE-NEW", "reviewRunId": None}, mode="inline")
     validate_document_sources(second, repo.state)
     assert first["inputHash"] != second["inputHash"]
+
+
+@pytest.mark.parametrize("node_id", [12, 14, 24])
+def test_lab_changed_input_fails_before_specialized_planners_and_restores_node(monkeypatch, node_id):
+    from libs.review_orchestrator import execution as ex
+
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    for name in ("extract_r12_license_candidates", "build_r14_business_facts", "plan_r14_semantic_review"):
+        if hasattr(ex, name):
+            monkeypatch.setattr(ex, name, lambda *args, **kwargs: pytest.fail("changed input must stop before planner"))
+    project = repo.require_project("P-2026-HDCP-001")
+    parse = {"documentVersionId": "DOC-LAB-DRIFT", "fields": []}
+    repo.state["ocr_parse_results"].append(parse)
+    ai_run = {"id": f"AI-LAB-DRIFT-{node_id}", "projectId": project["id"], "nodeId": node_id,
+              "businessPackId": project.get("businessPackId") or "engineering_inspection_v1",
+              "inputDocumentVersionIds": ["DOC-LAB-DRIFT"], "previousNodeStatus": "待人工确认"}
+    repo.state["ai_runs"].append(ai_run)
+    run = ex.create_review_run_from_ai_run(ai_run, mode="inline")
+    parse["fields"].append({"name": "later", "value": "must not be reviewed"})
+    result = ex.execute_review_run_inline(run["reviewRunId"])
+    assert result["status"] == "failed"
+    assert result["errorCode"] == "REVIEW_INPUT_CHANGED_RECREATE_RUN"
+    assert result["retryable"] is False
+    assert run["findingDrafts"] == []
+    assert ai_run["status"] == "失败"
+    assert ai_run["errorCode"] == result["errorCode"]
+    assert run["stateTransition"]["to"] == "待人工确认"

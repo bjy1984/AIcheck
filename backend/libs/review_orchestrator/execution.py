@@ -45,6 +45,7 @@ from libs.reasoning_budget import (
     truncation_caused_by_reasoning,
 )
 from libs.regulatory_tables import product_inspection_rules
+from libs.review_document_scope import ensure_document_sources
 from libs.review_evidence import bind_evidence_package_to_review_run, review_run_evidence_lineage
 from libs.review_grounding import (
     apply_grounding_guardrails,
@@ -73,6 +74,10 @@ from libs.review_orchestrator.design_facts import DESIGN_FACT_NODES, build_desig
 from libs.review_orchestrator.evidence_budget import (
     trim_evidence_to_budget,
     truncation_requirements,
+)
+from libs.review_orchestrator.failure_policy import (
+    NON_RETRYABLE_REVIEW_REASONS,  # noqa: F401 -- public compatibility re-export
+    review_failure_retryable,
 )
 from libs.review_orchestrator.graph_topology import REVIEW_GRAPH_EDGES, REVIEW_GRAPH_STEPS
 from libs.review_orchestrator.llm_tool_schemas import build_llm_tools_for_runtime
@@ -176,19 +181,7 @@ REVIEW_RUN_TERMINAL_STATUSES = {
     "failed_to_start",
 }
 
-NON_RETRYABLE_REVIEW_REASONS = {
-    "REVIEW_INPUT_TOKEN_BUDGET_EXCEEDED",
-    "REVIEW_COST_BUDGET_EXCEEDED",
-    "REVIEW_MAX_ATTEMPTS_EXCEEDED",
-    "LLM_OUTPUT_TRUNCATED",
-    # 推理占满输出额度：重试只会再被吃光一次，要改的是预算不是次数
-    "LLM_OUTPUT_BUDGET_EXHAUSTED_BY_REASONING",
-    "LLM_OUTPUT_EMPTY",
-    "LLM_OUTPUT_INVALID_JSON",
-    "LLM_OUTPUT_INVALID_ENVELOPE",
-    "LLM_OUTPUT_EMPTY_FINDINGS",
-    "LLM_OUTPUT_INVALID_FINDING",
-}
+
 
 
 def review_workflow_id(tenant_id: str, review_run_id: str) -> str:
@@ -227,17 +220,6 @@ def bump_review_run_revision(review_run: dict[str, Any]) -> None:
     review_run["revision"] = review_run_revision(review_run) + 1
     review_run["updatedAt"] = server_time()
 
-
-def review_failure_retryable(exc: Exception) -> bool:
-    if isinstance(exc, (ValueError, TypeError, KeyError)):
-        return False
-    if isinstance(exc, IntegrationServiceError):
-        if exc.reason in NON_RETRYABLE_REVIEW_REASONS:
-            return False
-        if exc.status_code in {408, 425, 429} or (exc.status_code is not None and exc.status_code >= 500):
-            return True
-        return bool(exc.reason and any(token in exc.reason for token in ("TIMEOUT", "UNAVAILABLE", "CONNECTION")))
-    return isinstance(exc, (ConnectionError, TimeoutError, OSError, RuntimeError))
 
 
 def resolve_ai_run(
@@ -1168,91 +1150,51 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
     if review_run.get("status") in {"waiting_human_input", "waiting_human_review", *REVIEW_RUN_TERMINAL_STATUSES}:
         return {"reviewRunId": review_run_id, "status": review_run.get("status"), "alreadyCompleted": True}
     ai_run = resolve_ai_run(review_run, allow_reload=True)
-    if is_r12_formal_review(review_run):
-        candidates = extract_r12_license_candidates(repo.state, review_run)
-        completed_for_input = any(
-            isinstance(item, dict)
-            and item.get("taskType") == "official_registry_license_verification"
-            and item.get("status") == "completed"
-            and item.get("reviewRunInputHash") == review_run.get("inputHash")
-            for item in review_run.get("humanInputTasks") or []
-        )
-        requested_by, agent_trace = plan_r12_human_verification(review_run, candidates) if candidates and not completed_for_input else (
-            "workflow_guard",
-            {
-                "controlMode": (
-                    "human_registry_verification_completed"
-                    if completed_for_input
-                    else "no_license_candidate_continue_to_rule_engine"
-                ),
-                "llmCalled": False,
-                "requestedHumanInput": False,
-            },
-        )
-        task = ensure_r12_human_input_task(
-            repo.state,
-            review_run,
-            requested_by=requested_by,
-            agent_trace=agent_trace,
-        )
-        if task:
-            review_run["status"] = "waiting_human_input"
-            review_run["currentStep"] = "waiting_r12_registry_verification"
-            review_run["r12AgentControl"] = agent_trace
-            if not task.get("waitingEventRecorded"):
-                task["waitingEventRecorded"] = True
-                append_review_event(
-                    review_run_id,
-                    event_type="human_input.r12_registry_verification_required",
-                    title="R12 等待官网人工核验",
-                    status="waiting_human_input",
-                    details={
-                        "taskId": task.get("taskId"),
-                        "candidateCount": task.get("candidateCount"),
-                        "requestedBy": requested_by,
-                        "controlMode": agent_trace.get("controlMode"),
-                    },
-                )
-            bump_review_run_revision(review_run)
-            if ai_run:
-                ai_run["status"] = "待人工核验"
-                ai_run["reviewRunId"] = review_run_id
-            return {
-                "reviewRunId": review_run_id,
-                "status": "waiting_human_input",
-                "humanInputTaskId": task.get("taskId"),
-            }
-    if is_r19_formal_review(review_run):
-        r19_context = build_r19_agent_context(repo.state, review_run)
-        agent_trace = plan_r19_semantic_review(review_run, r19_context)
-        review_run["r19AgentContext"] = r19_context_for_model(r19_context)
-        review_run["r19AgentControl"] = agent_trace
-        if agent_trace.get("requestedHumanInput"):
-            task = ensure_r19_human_input_task(
+    context: dict[str, Any] = {}
+    try:
+        ensure_document_sources(review_run, repo.state)
+        if is_r12_formal_review(review_run):
+            candidates = extract_r12_license_candidates(repo.state, review_run)
+            completed_for_input = any(
+                isinstance(item, dict)
+                and item.get("taskType") == "official_registry_license_verification"
+                and item.get("status") == "completed"
+                and item.get("reviewRunInputHash") == review_run.get("inputHash")
+                for item in review_run.get("humanInputTasks") or []
+            )
+            requested_by, agent_trace = plan_r12_human_verification(review_run, candidates) if candidates and not completed_for_input else (
+                "workflow_guard",
+                {
+                    "controlMode": (
+                        "human_registry_verification_completed"
+                        if completed_for_input
+                        else "no_license_candidate_continue_to_rule_engine"
+                    ),
+                    "llmCalled": False,
+                    "requestedHumanInput": False,
+                },
+            )
+            task = ensure_r12_human_input_task(
+                repo.state,
                 review_run,
-                agent_trace.get("humanInputRequest") if isinstance(agent_trace.get("humanInputRequest"), dict) else {},
-                requested_by=(
-                    "llm_agent"
-                    if agent_trace.get("llmCalled") and agent_trace.get("controlMode") == R19_EXECUTION_MODE
-                    else "workflow_guard"
-                ),
+                requested_by=requested_by,
                 agent_trace=agent_trace,
-                agent_context=r19_context,
             )
             if task:
                 review_run["status"] = "waiting_human_input"
-                review_run["currentStep"] = "waiting_r19_semantic_evidence_confirmation"
+                review_run["currentStep"] = "waiting_r12_registry_verification"
+                review_run["r12AgentControl"] = agent_trace
                 if not task.get("waitingEventRecorded"):
                     task["waitingEventRecorded"] = True
                     append_review_event(
                         review_run_id,
-                        event_type="agent.human_input.required",
-                        title="R19 等待人工确认关键事实",
+                        event_type="human_input.r12_registry_verification_required",
+                        title="R12 等待官网人工核验",
                         status="waiting_human_input",
                         details={
                             "taskId": task.get("taskId"),
-                            "taskType": task.get("taskType"),
-                            "questionCount": task.get("questionCount"),
+                            "candidateCount": task.get("candidateCount"),
+                            "requestedBy": requested_by,
                             "controlMode": agent_trace.get("controlMode"),
                         },
                     )
@@ -1265,47 +1207,88 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
                     "status": "waiting_human_input",
                     "humanInputTaskId": task.get("taskId"),
                 }
-        if agent_trace.get("submitted"):
-            review_run["r19SemanticReview"] = {
-                "executionMode": R19_EXECUTION_MODE,
-                "result": agent_trace.get("result"),
-                "atomicJudgments": repo.clone(agent_trace.get("atomicJudgments") or []),
-                "summary": agent_trace.get("summary"),
-                "recommendedActions": repo.clone(agent_trace.get("recommendedActions") or []),
-                "knownEvidenceRefIds": repo.clone(agent_trace.get("knownEvidenceRefIds") or []),
-                "createdAt": server_time(),
-            }
-    node_id = int(review_run.get("nodeId") or 0)
-    is_formal_material_agent = (
-        node_id in {13, 14, 15, 16, 17, 18}
-        and str(review_run.get("reviewMode") or "formal") == "formal"
-        and not bool(review_run.get("advisoryOnly"))
-    )
-    if is_formal_material_agent:
-        material_facts = {
-            13: build_r13_business_facts,
-            14: build_r14_business_facts,
-            15: build_r15_business_facts,
-            16: build_r16_business_facts,
-            17: build_r17_business_facts,
-            18: build_r18_business_facts,
-        }[node_id](repo.state, review_run)
-        agent_trace = {
-            13: plan_r13_tool_review,
-            14: plan_r14_tool_review,
-            15: plan_r15_tool_review,
-            16: plan_r16_tool_review,
-            17: plan_r17_tool_review,
-            18: plan_r18_tool_review,
-        }[node_id](review_run, material_facts)
-        review_run[f"r{node_id}AgentControl"] = agent_trace
-    review_run["status"] = "running"
-    review_run["startedAt"] = review_run.get("startedAt") or server_time()
-    bump_review_run_revision(review_run)
-    if ai_run:
-        ai_run["status"] = "推理中"
-    context: dict[str, Any] = {}
-    try:
+        if is_r19_formal_review(review_run):
+            r19_context = build_r19_agent_context(repo.state, review_run)
+            agent_trace = plan_r19_semantic_review(review_run, r19_context)
+            review_run["r19AgentContext"] = r19_context_for_model(r19_context)
+            review_run["r19AgentControl"] = agent_trace
+            if agent_trace.get("requestedHumanInput"):
+                task = ensure_r19_human_input_task(
+                    review_run,
+                    agent_trace.get("humanInputRequest") if isinstance(agent_trace.get("humanInputRequest"), dict) else {},
+                    requested_by=(
+                        "llm_agent"
+                        if agent_trace.get("llmCalled") and agent_trace.get("controlMode") == R19_EXECUTION_MODE
+                        else "workflow_guard"
+                    ),
+                    agent_trace=agent_trace,
+                    agent_context=r19_context,
+                )
+                if task:
+                    review_run["status"] = "waiting_human_input"
+                    review_run["currentStep"] = "waiting_r19_semantic_evidence_confirmation"
+                    if not task.get("waitingEventRecorded"):
+                        task["waitingEventRecorded"] = True
+                        append_review_event(
+                            review_run_id,
+                            event_type="agent.human_input.required",
+                            title="R19 等待人工确认关键事实",
+                            status="waiting_human_input",
+                            details={
+                                "taskId": task.get("taskId"),
+                                "taskType": task.get("taskType"),
+                                "questionCount": task.get("questionCount"),
+                                "controlMode": agent_trace.get("controlMode"),
+                            },
+                        )
+                    bump_review_run_revision(review_run)
+                    if ai_run:
+                        ai_run["status"] = "待人工核验"
+                        ai_run["reviewRunId"] = review_run_id
+                    return {
+                        "reviewRunId": review_run_id,
+                        "status": "waiting_human_input",
+                        "humanInputTaskId": task.get("taskId"),
+                    }
+            if agent_trace.get("submitted"):
+                review_run["r19SemanticReview"] = {
+                    "executionMode": R19_EXECUTION_MODE,
+                    "result": agent_trace.get("result"),
+                    "atomicJudgments": repo.clone(agent_trace.get("atomicJudgments") or []),
+                    "summary": agent_trace.get("summary"),
+                    "recommendedActions": repo.clone(agent_trace.get("recommendedActions") or []),
+                    "knownEvidenceRefIds": repo.clone(agent_trace.get("knownEvidenceRefIds") or []),
+                    "createdAt": server_time(),
+                }
+        node_id = int(review_run.get("nodeId") or 0)
+        is_formal_material_agent = (
+            node_id in {13, 14, 15, 16, 17, 18}
+            and str(review_run.get("reviewMode") or "formal") == "formal"
+            and not bool(review_run.get("advisoryOnly"))
+        )
+        if is_formal_material_agent:
+            material_facts = {
+                13: build_r13_business_facts,
+                14: build_r14_business_facts,
+                15: build_r15_business_facts,
+                16: build_r16_business_facts,
+                17: build_r17_business_facts,
+                18: build_r18_business_facts,
+            }[node_id](repo.state, review_run)
+            agent_trace = {
+                13: plan_r13_tool_review,
+                14: plan_r14_tool_review,
+                15: plan_r15_tool_review,
+                16: plan_r16_tool_review,
+                17: plan_r17_tool_review,
+                18: plan_r18_tool_review,
+            }[node_id](review_run, material_facts)
+            review_run[f"r{node_id}AgentControl"] = agent_trace
+        review_run["status"] = "running"
+        review_run["startedAt"] = review_run.get("startedAt") or server_time()
+        bump_review_run_revision(review_run)
+        if ai_run:
+            ai_run["status"] = "推理中"
         from .graph import execute_review_graph
 
         graph_execution = execute_review_graph(
@@ -1315,6 +1298,7 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
             run_step=run_step,
             mark_graph_node=mark_graph_node,
         )
+        ensure_document_sources(review_run, repo.state)
         review_run["graphExecution"] = graph_execution
         review_run["graphRunner"] = graph_execution["runner"]
         review_run["graphEngine"] = "langgraph" if graph_execution.get("runner") == "langgraph" else "langgraph_fallback"
@@ -1462,6 +1446,7 @@ def _execute_review_run_inline(review_run_id: str) -> dict[str, Any]:
 
 
 def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any]) -> dict[str, Any]:
+    ensure_document_sources(review_run, repo.state)
     audit_runtime = audit_runtime_for_run(review_run)
     context["auditRuntime"] = audit_runtime
     if node_key == "load_context":

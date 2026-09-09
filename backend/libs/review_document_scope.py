@@ -56,3 +56,14 @@ def validate_document_sources(run: dict[str, Any], state: dict[str, Any]) -> Non
     expected = snapshot.get("sourceFingerprint")
     if expected is not None and expected != document_source_fingerprint(run, state):
         raise ValueError("review_document_sources_changed_recreate_run")
+
+
+def ensure_document_sources(run: dict[str, Any], state: dict[str, Any]) -> None:
+    """Expose a stable non-retryable workflow error without document contents."""
+    from libs.integrations.errors import IntegrationServiceError
+
+    try:
+        validate_document_sources(run, state)
+    except ValueError as exc:
+        raise IntegrationServiceError("review", "validate_inputs", status_code=409,
+                                      reason="REVIEW_INPUT_CHANGED_RECREATE_RUN") from exc
