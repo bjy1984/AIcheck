@@ -3,7 +3,13 @@ import type { DocumentAsset } from '@/types/aicheck'
 
 export type ReviewDocument = DocumentAsset & { bodyUploaded?: boolean }
 export type ReviewDocumentSelection = {
-  versions: Array<{ documentId: string; versionId: string; fileName: string; versionNo?: string }>
+  versions: Array<{
+    documentId: string
+    versionId: string
+    fileName: string
+    versionNo?: string
+    pageRange?: { start: number; end: number }
+  }>
   reviewMode: 'formal' | 'gap_precheck'
 }
 

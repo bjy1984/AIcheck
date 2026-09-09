@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+import fitz
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
@@ -12,6 +15,39 @@ from libs.review_orchestrator.execution import (
 )
 
 client = TestClient(app)
+
+
+def test_real_route_carries_page_scope_to_ai_run_and_evidence_package(monkeypatch, tmp_path):
+    from apps.api import routes
+
+    _allow_dispatch(monkeypatch)
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_REVIEW_PAGE_RANGES_ENABLED", "true")
+    version_id = _mount_ocr_document(document_id_hint="PAGES", file_name="fixed-pages.pdf",
+                                     material_type_code="design_license", quoted_text="OUTSIDE-PAGE-ONE")
+    version = repo.find_one("versions", version_id)
+    version["hash"] = "test-uploaded-body"
+    path = tmp_path / "fixed-pages.pdf"
+    with fitz.open() as pdf:
+        for _ in range(3):
+            pdf.new_page()
+        pdf.save(path)
+    monkeypatch.setattr(routes, "local_storage_path", lambda key: path)
+    body = {"reviewMode": "gap_precheck", "auditInputMode": "ocr_llm", "inputDocumentVersionIds": [version_id],
+            "inputDocumentPageRanges": {version_id: {"start": 2, "end": 3}}}
+    response = client.post(f"/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck", json=body)
+    run = _assert_ok(response)["latestRun"]
+    assert run["inputDocumentPageRanges"] == body["inputDocumentPageRanges"]
+    assert run["evidenceLinks"] == []
+    snapshots = [row for row in repo.state["evidence_snapshots"] if row.get("aiRunId") == run["id"]]
+    assert snapshots[0]["documentPageRanges"] == run["inputDocumentPageRanges"]
+    shards = [row for row in repo.state["evidence_shards"] if row.get("aiRunId") == run["id"]]
+    assert "OUTSIDE-PAGE-ONE" not in json.dumps(shards)
+    count = len(repo.state["ai_runs"])
+    body["inputDocumentPageRanges"][version_id]["end"] = 4
+    rejected = client.post(f"/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck", json=body).json()
+    assert rejected["code"] != 0
+    assert len(repo.state["ai_runs"]) == count
 
 
 def setup_function() -> None:

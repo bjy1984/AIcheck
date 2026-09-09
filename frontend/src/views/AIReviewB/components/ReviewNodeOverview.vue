@@ -5,6 +5,7 @@ import type { EvidenceLink } from '@/types/aicheck'
 import type { ReviewBWorkspace } from '@/types/ai-review-b'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import { overviewResult } from '../workstationOverview'
+import { documentPageLabel } from '../documentPageSelection'
 import ReviewResultCard from './ReviewResultCard.vue'
 const props = defineProps<{
   workspace: ReviewBWorkspace | null
@@ -97,7 +98,9 @@ const missing = computed(() => props.workspace?.evidenceReadiness.missingRequire
           <ul
             ><li v-for="version in selection.versions" :key="version.versionId"
               >{{ version.fileName }}
-              <ElTag size="small">{{ version.versionNo || '指定版本' }}</ElTag></li
+              <ElTag size="small"
+                >{{ version.versionNo || '指定版本' }} · {{ documentPageLabel(version) }}</ElTag
+              ></li
             ></ul
           >
         </template>

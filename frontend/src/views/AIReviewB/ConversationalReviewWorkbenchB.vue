@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { workstationNavigation, filterWorkstationNodes } from './workstationNavigation'
 import ReviewNodeOverview from './components/ReviewNodeOverview.vue'
+import { cloneDocumentSelectionVersions, documentSelectionPayload } from './documentPageSelection'
 import ReviewDecisionSummary from './components/ReviewDecisionSummary.vue'
 import { needsAttention, overviewResult } from './workstationOverview'
 import ReviewWorkstationTools from './ReviewWorkstationTools.vue'
@@ -1212,7 +1213,7 @@ const handleStartReview = async () => {
   const selectedInput = reviewDocumentSelection.value
     ? {
         ...reviewDocumentSelection.value,
-        versions: reviewDocumentSelection.value.versions.map((item) => ({ ...item }))
+        versions: cloneDocumentSelectionVersions(reviewDocumentSelection.value.versions)
       }
     : null
   const contextGeneration = reviewContextGeneration.value
@@ -1225,7 +1226,7 @@ const handleStartReview = async () => {
   const selectedMode = startReviewMode.value
   const modeLabel = selectedMode === 'formal' ? '正式 AI 复核' : '缺项预审'
   await ElMessageBox.confirm(
-    `${selectedInput ? `将仅使用已选 ${selectedInput.versions.length} 份文件版本` : '将使用节点当前资料'}，按当前规则和适用标准条款包发起${modeLabel}，是否继续？`,
+    `${selectedInput ? `将仅使用已选 ${selectedInput.versions.length} 份文件版本${selectedInput.versions.some((item) => item.pageRange) ? '（含指定页码范围）' : ''}` : '将使用节点当前资料'}，按当前规则和适用标准条款包发起${modeLabel}，是否继续？`,
     `发起${modeLabel}`,
     { type: 'warning', confirmButtonText: '确认发起', cancelButtonText: '取消' }
   )
@@ -1246,9 +1247,7 @@ const handleStartReview = async () => {
       selectedNode,
       {
         reviewMode: selectedMode,
-        ...(selectedInput
-          ? { inputDocumentVersionIds: selectedInput.versions.map((item) => item.versionId) }
-          : {})
+        ...(selectedInput ? documentSelectionPayload(selectedInput) : {})
       },
       {
         idempotencyKey: `review-b-start-${selectedProject}-${selectedNode}-${Date.now()}`

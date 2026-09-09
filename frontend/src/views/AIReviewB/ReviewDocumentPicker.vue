@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ReviewDocumentVersions from './ReviewDocumentVersions.vue'
+import { cloneDocumentSelectionVersions, validDocumentPageRange } from './documentPageSelection'
 import type { DocumentVersion } from '@/types/aicheck'
 import {
   ElAlert,
@@ -11,6 +12,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElInputNumber,
   ElPagination,
   ElRadioButton,
   ElRadioGroup,
@@ -32,6 +34,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ change: [selection: ReviewDocumentSelection | null]; bound: [] }>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
+const pageRangesEnabled = import.meta.env.VITE_AICHECK_REVIEW_PAGE_RANGES_ENABLED === 'true'
 const visible = ref(false)
 const loading = ref(false)
 const saving = ref(false)
@@ -90,7 +93,7 @@ const load = async () => {
 const open = () => {
   if (saving.value) return
   persistBindings.value = false
-  chosen.value = props.selection?.versions.map((item) => ({ ...item })) || []
+  chosen.value = cloneDocumentSelectionVersions(props.selection?.versions || [])
   mode.value = props.selection?.reviewMode || 'gap_precheck'
   keyword.value = ''
   page.value = 1
@@ -118,10 +121,17 @@ const search = () => {
 }
 const save = async () => {
   if (!chosen.value.length || props.disabled || saving.value) return
+  if (chosen.value.some((item) => !validDocumentPageRange(item.pageRange))) {
+    error.value = '页码范围无效，请填写从1开始、结束页不小于起始页的整数页码。'
+    return
+  }
   const context = generation
   const projectId = props.projectId
   const nodeId = props.nodeId
-  const selection = { versions: chosen.value.map((item) => ({ ...item })), reviewMode: mode.value }
+  const selection = {
+    versions: cloneDocumentSelectionVersions(chosen.value),
+    reviewMode: mode.value
+  }
   if (persistBindings.value) {
     const bindings = selection.versions
       .map((item) => ({
@@ -278,6 +288,41 @@ watch(visible, (value) => {
         >{{ item.fileName }} · {{ item.versionNo || item.versionId }}</ElTag
       >
     </div>
+    <section v-if="pageRangesEnabled && chosen.length" aria-label="本次文件页码范围">
+      <p>默认使用整份选定版本。指定页码仅适用于本次审查的PDF，发起时会核对实际页数。</p>
+      <div v-for="item in chosen" :key="item.versionId" class="document-page-range">
+        <strong>{{ item.fileName }}</strong>
+        <ElCheckbox
+          :model-value="Boolean(item.pageRange)"
+          :disabled="saving"
+          @change="
+            (value) => {
+              if (value) item.pageRange = { start: 1, end: 1 }
+              else delete item.pageRange
+            }
+          "
+          >指定页码</ElCheckbox
+        >
+        <template v-if="item.pageRange">
+          <label :for="`page-start-${item.versionId}`">起始页</label>
+          <ElInputNumber
+            :id="`page-start-${item.versionId}`"
+            v-model="item.pageRange.start"
+            :min="1"
+            :step="1"
+            :disabled="saving"
+          />
+          <label :for="`page-end-${item.versionId}`">结束页</label>
+          <ElInputNumber
+            :id="`page-end-${item.versionId}`"
+            v-model="item.pageRange.end"
+            :min="1"
+            :step="1"
+            :disabled="saving"
+          />
+        </template>
+      </div>
+    </section>
     <ElForm label-position="top">
       <ElFormItem label="本次审查方式">
         <ElRadioGroup v-model="mode" :disabled="saving">
@@ -289,6 +334,9 @@ watch(visible, (value) => {
     <ElCheckbox v-model="persistBindings" :disabled="saving"> 同时保存为本节点补充资料 </ElCheckbox>
     <p v-if="persistBindings"
       >按所选版本新增挂载，不替换原挂载或自动匹配必传要求；未提交的版本仍需提交。旧版本不会自动成为正式审查证据。</p
+    >
+    <p v-if="persistBindings && chosen.some((item) => item.pageRange)"
+      >补充资料挂载保存整份版本；页码范围仅保留在本次选择和新审查任务中。</p
     >
     <p>正式复核会重新检查所选文件是否满足要求；仅选择文件不会自动确认其证据。</p>
     <template #footer>
@@ -337,6 +385,24 @@ watch(visible, (value) => {
 <style scoped>
 .document-picker-search {
   margin-top: 16px;
+}
+
+.document-page-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.document-page-range strong {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.document-page-range :deep(.el-input-number) {
+  min-height: 44px;
 }
 
 .document-picker-list {

@@ -42,6 +42,7 @@ from apps.api.project_analysis_views import (
 from apps.api.review_input_selection import (
     ReviewInputSelectionError,
     resolve_review_input_selection,
+    selected_input_evidence_links,
 )
 from apps.api.review_session_evidence import refresh_review_session_evidence_fingerprint
 from apps.api.rule_mutation_validation import rule_project_mutation_error
@@ -9365,7 +9366,9 @@ def ai_recheck(
             input_document_version_ids = targeting_input_versions_for_node(repo, project_id, node_id)
         if selected_input:
             input_document_version_ids = selected_input[0]
-            node_evidence_links = [link for link in node_evidence_links if link.get("documentVersionId") in input_document_version_ids]
+            node_evidence_links = selected_input_evidence_links(
+                node_evidence_links, input_document_version_ids,
+                (evidence_readiness.get("inputSelection") or {}).get("documentPageRanges") or {})
         rule = (
             current_business_rule_for_node(node_id, business_pack_id=pack["id"])
             or next(
@@ -9419,6 +9422,8 @@ def ai_recheck(
             "promptVersion": f"node-{node_id}-v1",
             "ruleVersion": rule.get("version") or "ruleset-v1",
             "inputDocumentVersionIds": input_document_version_ids,
+            **({"inputDocumentPageRanges": repo.clone(evidence_readiness["inputSelection"]["documentPageRanges"])}
+               if "documentPageRanges" in (evidence_readiness.get("inputSelection") or {}) else {}),
             "evidenceReadiness": evidence_readiness,
             "status": "推理中",
             "startedAt": server_time(),

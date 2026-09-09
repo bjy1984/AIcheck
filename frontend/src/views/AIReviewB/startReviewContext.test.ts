@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { cloneDocumentSelectionVersions, documentSelectionPayload } from './documentPageSelection'
+import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 const { transpileModule, ScriptTarget, ModuleKind } = createRequire(import.meta.url)(
   'typescript'
 ) as typeof import('typescript')
@@ -31,6 +33,8 @@ const fixture = () => {
   let stops = 0
   let refreshes = 0
   const state = {
+    cloneDocumentSelectionVersions,
+    documentSelectionPayload,
     canStartReview: ref(true),
     actionLoading: ref(false),
     reviewStarting: ref(false),
@@ -40,7 +44,7 @@ const fixture = () => {
     activeNodeId: ref(24),
     reviewContextGeneration: ref(0),
     session: ref({ id: 'S-1', etag: 'old' }),
-    reviewDocumentSelection: ref({
+    reviewDocumentSelection: ref<ReviewDocumentSelection>({
       versions: [{ documentId: 'D-1', versionId: 'V-1', fileName: 'old.pdf' }],
       reviewMode: 'gap_precheck'
     }),
@@ -153,3 +157,16 @@ for (const returnToOriginal of [false, true]) {
 console.log(
   'Start-review context isolation: success, late response, ABA navigation, etag retry, late retry, fixed input'
 )
+
+{
+  const f = fixture()
+  f.state.reviewDocumentSelection.value.versions[0].pageRange = { start: 2, end: 3 }
+  f.state.ElMessageBox.confirm = async () => {
+    f.state.reviewDocumentSelection.value.versions[0].pageRange!.end = 9
+  }
+  await f.run()
+  assert.deepEqual(
+    (f.starts[0][2] as { inputDocumentPageRanges: unknown }).inputDocumentPageRanges,
+    { 'V-1': { start: 2, end: 3 } }
+  )
+}
