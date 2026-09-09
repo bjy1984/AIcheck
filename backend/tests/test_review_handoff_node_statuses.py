@@ -74,3 +74,24 @@ def test_status_list_preserves_role_and_feature_guard(case, monkeypatch):
     if case == "role": headers["X-Role"] = "contractor"
     else: monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "false")
     assert client.get(URL, headers=headers).json()["code"] != 0
+
+
+@pytest.mark.parametrize("suffix", ["review-handoff-node-statuses", "review-runs/TARGET/handoff-dependencies"])
+def test_database_refresh_failure_does_not_return_cached_status(monkeypatch, suffix):
+    from types import SimpleNamespace
+
+    calls = []
+
+    def broken_refresh(keys, *, strict=False):
+        calls.append((keys, strict))
+        raise RuntimeError("private database details")
+
+    monkeypatch.setattr(repo, "sync_postgres", SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(repo, "refresh_collections_incrementally", broken_refresh)
+    response = client.get(f"/api/projects/{PROJECT}/{suffix}", headers=HEADERS)
+    assert response.status_code == 503
+    assert response.json()["code"] == 50334
+    assert "private database details" not in response.text
+    assert "requiresRevalidationCount" not in response.text
+    assert calls and calls[0][1] is True
+    assert "review_handoffs" in calls[0][0]

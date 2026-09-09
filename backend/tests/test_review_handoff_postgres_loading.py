@@ -73,10 +73,29 @@ with psycopg.connect(settings['dsn']) as connection:
             "dsn": isolated_postgres_url, "change": change, "handoff": state["review_handoffs"][0]["id"],
         }), text=True, check=True, capture_output=True, timeout=30)
         # Explicit handoff status reads refresh dependency collections, including removed rows.
-        reader.refresh_collections_incrementally(set(state), tenant_id="T")
+        reader.refresh_collections_incrementally(set(state), tenant_id="T", strict=True)
         current = reader.find_one("review_runs", "NEXT", id_field="reviewRunId")
         assert current == before
         assert handoff_dependency_status(current, reader.state)["requiresRevalidation"] is True
+    finally:
+        reset_request_tenant_id(token)
+        if reader.sync_postgres:
+            reader.sync_postgres.close()
+
+
+def test_strict_first_load_preserves_unrelated_runtime_state(isolated_postgres_url, inputs):
+    state, _, _ = inputs
+    apply_migrations(isolated_postgres_url)
+    reader = InMemoryRepository(seed=False)
+    token = set_request_tenant_id("T")
+    try:
+        reader.configure_sync_postgres(isolated_postgres_url)
+        reader.upsert_state_records_to_sync_postgres(state)
+        reader.state["users"] = [{"id": "LOCAL-USER", "tenantId": "T"}]
+        before = deepcopy(reader.state["users"])
+        reader.refresh_collections_incrementally({"review_handoffs"}, tenant_id="T", strict=True)
+        assert reader.state["users"] == before
+        assert reader.state["review_handoffs"] == state["review_handoffs"]
     finally:
         reset_request_tenant_id(token)
         if reader.sync_postgres:

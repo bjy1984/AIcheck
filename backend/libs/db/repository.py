@@ -4843,7 +4843,7 @@ class InMemoryRepository:
         return state_keys
 
     def refresh_collections_incrementally(
-        self, state_keys: set[str], tenant_id: str | None = None
+        self, state_keys: set[str], tenant_id: str | None = None, *, strict: bool = False
     ) -> None:
         """只把**变化过的行**拉回内存，而不是整张表重来。
 
@@ -4870,6 +4870,8 @@ class InMemoryRepository:
             effective_tenant_id = str(tenant_id or configured_tenant_id())
             self.configure_sync_postgres()
             if self.sync_postgres is None:
+                if strict:
+                    raise RuntimeError("PostgreSQL connection unavailable")
                 return
             full_reload_keys: set[str] = set()
             safe_watermark = self._safe_incremental_watermark()
@@ -4896,8 +4898,10 @@ class InMemoryRepository:
                             (effective_tenant_id, collection_name),
                         ).fetchall()
                     }
-                except Exception as exc:  # noqa: BLE001 -- database boundary returns unavailable or falls back to a full refresh
+                except Exception as exc:
                     LOGGER.warning("incremental_refresh_failed: %s %s", collection_name, exc)
+                    if strict:
+                        raise
                     full_reload_keys.add(state_key)
                     continue
                 self._merge_incremental_collection(
@@ -4910,7 +4914,10 @@ class InMemoryRepository:
                 )
             if full_reload_keys:
                 # 锁是可重入的（RLock），整表加载会自己再取一次
-                self.load_from_sync_postgres(full_reload_keys, tenant_id=tenant_id)
+                if strict:
+                    self.load_collections_into_state(sorted(full_reload_keys), tenant_id=tenant_id)
+                else:
+                    self.load_from_sync_postgres(full_reload_keys, tenant_id=tenant_id)
 
     def _safe_incremental_watermark(self) -> Any:
         """增量刷新可以安全推进到的时刻 = 最老活跃事务的开始时刻。

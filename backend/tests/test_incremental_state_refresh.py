@@ -263,7 +263,7 @@ def test_整表加载后立刻建立探针基线() -> None:
     later = datetime(2026, 8, 19, 3, 5, tzinfo=UTC)
     stale = repository._state_probe.stale_collections(
         global_max=later,
-        collection_max={"knowledge_chunks": later},
+        collection_max={"knowledge_chunks": later, "projects": datetime(2026, 8, 18, tzinfo=UTC)},
         force=True,
     )
     assert stale == {"knowledge_chunks"}, (
