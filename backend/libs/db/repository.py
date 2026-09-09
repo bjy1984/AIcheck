@@ -113,6 +113,7 @@ STATE_COLLECTIONS = {
     "extracted_fields": "extracted_fields",
     "ai_runs": "ai_runs",
     "review_runs": "review_runs",
+    "review_handoffs": "review_handoffs",
     "review_step_runs": "review_step_runs",
     "review_graph_nodes": "review_graph_nodes",
     "review_tool_calls": "review_tool_calls",
