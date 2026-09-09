@@ -6,6 +6,7 @@ from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.r40_ocr_parameters import supplement_ocr_parameters
 from libs.review_orchestrator.r40_ocr_records import supplement_ocr_records
 
 TABLES = {"ndt_event_inventory": "inventories", "ndt_event_members": "members",
@@ -32,7 +33,9 @@ def build_r40_business_facts(state, run):
         if gap:
             issues.append({**gap, "code": "r40_selected_pages_incomplete", "documentVersionId": version_id})
     raw_fields, raw_issues = supplement_ocr_records(parses, run, groups)
-    issues.extend(raw_issues)
+    parameter_fields, parameter_issues = supplement_ocr_parameters(parses, run, groups)
+    raw_fields.extend(parameter_fields)
+    issues.extend([*raw_issues, *parameter_issues])
     groups["ocrIdentityFields"] = raw_fields
     judgment = build_material_judgment([(name, rows, ("value",) if name == "ocrIdentityFields" else ("projectId",)) for name, rows in groups.items()])
     facts = {"sourceIssues": [], "sourceRecords": deepcopy(groups)}
