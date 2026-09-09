@@ -18,10 +18,12 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any
 from uuid import uuid4
 
 from libs.integrations.errors import IntegrationServiceError
+from libs.rule_condition_bindings import compile_condition_bindings
 
 VERDICTS = ("符合", "不符合", "证据不足", "需人工确认")
 MAX_EXTRA_FINDINGS = 3
@@ -66,22 +68,32 @@ def _rule_for(pack: dict[str, Any], rule_id: str, source_rule_id: str) -> dict[s
     return {}
 
 
-def build_checklist_items(pack: dict[str, Any], node_id: int, requirements: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def build_checklist_items(pack: dict[str, Any], node_id: int, requirements: list[dict[str, Any]] | None = None,
+                          *, effective_rule: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """清单 = 本节点原子检查项 + 必传/条件必传资料。每项带 ruleCode 与 expectedEvidence。"""
+    replacements = {}
+    if effective_rule and effective_rule.get("executionConditions") is not None:
+        plan = compile_condition_bindings(effective_rule, pack)
+        if plan["nodeId"] != int(node_id):
+            raise ValueError("checklist_condition_node_mismatch")
+        replacements = {row["atomicCheckId"]: row["conditions"] for row in plan["replacements"]}
     items: list[dict[str, Any]] = []
     for check in pack.get("atomicChecks") or []:
         if not isinstance(check, dict) or int(check.get("nodeId") or 0) != int(node_id):
             continue
-        rule = _rule_for(pack, str(check.get("ruleId") or ""), str(check.get("sourceRuleId") or ""))
+        rule = effective_rule or _rule_for(pack, str(check.get("ruleId") or ""), str(check.get("sourceRuleId") or ""))
+        replacement = replacements.get(str(check.get("id")))
         items.append(
             {
                 "itemId": str(check.get("id")),
-                "question": f"{check.get('name') or ''}：{check.get('instruction') or ''}".strip("："),
-                "ruleCode": str(rule.get("ruleKey") or check.get("sourceRuleId") or check.get("ruleId") or ""),
+                "question": (f"{check.get('name') or check.get('id')}：按本次冻结条件解释工具结果 " + json.dumps(replacement, ensure_ascii=False)
+                             if replacement else f"{check.get('name') or ''}：{check.get('instruction') or ''}".strip("：")),
+                "ruleCode": str(rule.get("ruleKey") or (rule.get("id") if effective_rule else None) or check.get("sourceRuleId") or check.get("ruleId") or ""),
                 "ruleSetVersion": str(rule.get("version") or ""),
                 "severity": str(rule.get("severity") or "medium"),
                 "expectedEvidence": "需引用 OCR 证据" if check.get("evidenceRequired") else "可无证据",
                 "kind": "atomic_check",
+                **({"conditionReplacement": deepcopy(replacement)} if replacement else {}),
             }
         )
     for requirement in requirements or []:
@@ -120,6 +132,8 @@ def apply_to_payload(user_payload: dict[str, Any], items: list[dict[str, Any]], 
         {key: item[key] for key in ("itemId", "question", "ruleCode", "expectedEvidence")} for item in items
     ]
     payload["requirements"] = [*list(payload.get("requirements") or []), *CHECKLIST_REQUIREMENTS]
+    if any(item.get("conditionReplacement") for item in items):
+        payload["requirements"].append("已替代项只能解释冻结条件工具结果，不得使用旧原子项门槛重新判定；未替代项仍须完整审查。")
     if complete:
         payload["requirements"] = [
             text.replace("最多 3 条", "完整保留每个独立问题") for text in payload["requirements"]

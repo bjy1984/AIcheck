@@ -156,3 +156,24 @@ def test_complete_checklist_retains_extras_beyond_legacy_limit():
     assert run["llmMetadata"]["checklistSummary"]["extraFindings"] == 7
     payload = checklist_mode.apply_to_payload({}, [], complete=True)
     assert "最多 3 条" not in str(payload["requirements"])
+
+
+def test_condition_checklist_replaces_only_mapped_instructions_and_keeps_requirements():
+    from copy import deepcopy
+
+    rule = {"id": "CUSTOM", "version": "v2", "nodeIds": [24], "businessPackId": PACK["id"],
+            "executionConditions": {"schemaVersion": "rule-conditions-v1", "checks": [
+                {"id": "C", "atomicCheckId": "AC-R24-01", "field": "thickness", "operator": "gte", "expected": 10}]}}
+    original = deepcopy(rule)
+    before = _items()
+    after = checklist_mode.build_checklist_items(PACK, 24, _node_24().get("requiredMaterials"), effective_rule=rule)
+    assert [item["itemId"] for item in after] == [item["itemId"] for item in before]
+    assert after[0]["question"] != before[0]["question"]
+    assert [row["question"] for row in after[1:]] == [row["question"] for row in before[1:]]
+    assert all(row["ruleSetVersion"] == "v2" for row in after if row["kind"] == "atomic_check")
+    payload = checklist_mode.apply_to_payload({}, after)
+    assert any("不得使用旧原子项门槛" in item for item in payload["requirements"])
+    after[0]["conditionReplacement"]["checks"][0]["expected"] = 99
+    assert rule == original
+    with pytest.raises(ValueError, match="node_mismatch"):
+        checklist_mode.build_checklist_items(PACK, 25, effective_rule=rule)

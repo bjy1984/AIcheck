@@ -89,7 +89,8 @@ def test_specialized_loop_keeps_node_procedure_but_has_only_one_role():
     assert apply_station_messages({'nodeId': 12}, old) is old
 
 
-def test_formal_prompt_uses_frozen_station_and_keeps_target_rule(monkeypatch):
+@pytest.mark.parametrize("condition_checklist", [False, True])
+def test_formal_prompt_uses_frozen_station_and_keeps_target_rule(monkeypatch, condition_checklist):
     from libs.review_orchestrator import execution as ex
 
     run = run_for()
@@ -101,12 +102,16 @@ def test_formal_prompt_uses_frozen_station_and_keeps_target_rule(monkeypatch):
     monkeypatch.setattr(ex, 'audit_runtime_public_config', lambda **kwargs: {})
     monkeypatch.setattr(ex, 'grounding_prompt_block', lambda _: {
         'requirements': [], 'strictGroundingPolicy': {}, 'groundedOcrEvidence': []})
-    monkeypatch.setattr(ex.checklist_mode, 'checklist_enabled', lambda: False)
+    monkeypatch.setattr(ex.checklist_mode, 'checklist_enabled', lambda: condition_checklist)
     context = {'project': {'businessPackSnapshot': pack}, 'auditRuntime': {'mode': 'structured'},
                'groundingInput': {'groundingStatus': 'insufficient'}, 'currentRule': {'id': 'R24', 'criteria': '資格覆蓋'},
                'fields': [{'name': 'certificateNo', 'value': 'TEST'}]}
     from libs.review_rule_snapshot import freeze_effective_rule
 
+    if condition_checklist:
+        context['currentRule'].update(id='CUSTOM', version='custom-v2', nodeIds=[24], businessPackId=pack['id'],
+            executionConditions={'schemaVersion': 'rule-conditions-v1', 'checks': [
+                {'id': 'C', 'atomicCheckId': 'AC-R24-01', 'field': 'thickness', 'operator': 'gte', 'expected': 10}]})
     run['effectiveRuleSnapshot'] = freeze_effective_rule(run, context['currentRule'])
     context['currentRule'] = {'id': 'R24', 'criteria': 'LATER_RULE_MUST_NOT_APPEAR'}
     result = ex.build_review_prompt_parts(run, context)
@@ -115,6 +120,11 @@ def test_formal_prompt_uses_frozen_station_and_keeps_target_rule(monkeypatch):
     assert result['userPayload']['currentRule']['criteria'] == '資格覆蓋'
     assert result['userPayload']['targetNodeId'] == 24
     assert result['userPayload']['plannerPrompt'] == ''
+    if condition_checklist:
+        item = next(row for row in result['userPayload']['checklist'] if row['itemId'] == 'AC-R24-01')
+        assert 'thickness' in item['question'] and '冻结条件' in item['question']
+        assert item['ruleCode'] == 'CUSTOM'
+        assert context['checklistItems'][0]['ruleSetVersion'] == 'custom-v2'
     assert 'evaluate_r23_valve_test_records' not in str(result['userPayload']['availableRuntimeTools'])
 
 
