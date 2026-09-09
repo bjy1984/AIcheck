@@ -3585,7 +3585,13 @@ export const submitRectificationApi = (
 export const requestAiRecheckApi = (
   projectId: string,
   nodeId: number,
-  payload: { reviewMode: 'formal' | 'gap_precheck'; auditInputMode?: 'ocr_llm' | 'pure_llm'; inputDocumentVersionIds?: string[]; inputDocumentPageRanges?: Record<string, { start: number; end: number }>; conditionObjectMapping?: import('./projectRules').RuleObjectMappingRequest },
+  payload: {
+    reviewMode: 'formal' | 'gap_precheck'
+    auditInputMode?: 'ocr_llm' | 'pure_llm'
+    inputDocumentVersionIds?: string[]
+    inputDocumentPageRanges?: Record<string, { start: number; end: number }>
+    conditionObjectMapping?: import('./projectRules').RuleObjectMappingRequest
+  },
   options?: MutationHeaderOptions
 ): Promise<IResponse<AiRecheckPayload>> => {
   return request.post({

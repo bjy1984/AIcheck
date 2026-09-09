@@ -124,6 +124,7 @@ export interface RuleReleasePreview {
       before: unknown
       after: unknown
       fromRuleVersionId?: string
+      fromRuleScope?: 'project' | 'platform'
     }>
   }
 }

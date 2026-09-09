@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from libs.rule_scope import same_rule_scope
+from libs.rule_scope import review_rule_node_ids, rule_scope, same_rule_scope, select_published_rule
 
 
 def rule_version_sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
@@ -73,11 +73,27 @@ def matching_rule_target(
     return target
 
 
+def rule_publish_comparison_rows(rows, base):
+    affected = {row["id"]: row for row in rows
+                if row.get("id") != base.get("id") and row.get("status") == "已发布"
+                and same_rule_scope(base, row) and (
+                    (base.get("ruleKey") and base.get("ruleKey") == row.get("ruleKey"))
+                    or bool(review_rule_node_ids(base) & review_rule_node_ids(row)))}
+    project_id, pack_id = rule_scope(base)
+    for node_id in sorted(review_rule_node_ids(base)):
+        selected = select_published_rule([row for row in rows if row.get("id") != base.get("id")],
+                                         node_id, business_pack_id=pack_id, project_id=project_id)
+        if selected:
+            affected[selected["id"]] = selected
+    return sorted(affected.values(), key=lambda row: row["id"])
+
+
 def rule_operation_fingerprint_payload(rows, base, target, *, normalize_rule_status, parse_rule_node_ids):
+    comparison_ids = {row["id"] for row in rule_publish_comparison_rows(rows, base)}
     affected = [
         item
         for item in rows
-        if item.get("id") in {base.get("id"), (target or {}).get("id")}
+        if item.get("id") in {base.get("id"), (target or {}).get("id"), *comparison_ids}
         or (
             same_rule_scope(base, item)
             and normalize_rule_status(item.get("status")) == "已发布"
@@ -119,18 +135,15 @@ def rule_operation_diff(rows, base, target, action, *, versioned_record, compare
     if action == "rollback":
         return rule_diff_payload({**target, "status": "已发布"}, base, versioned_record=versioned_record, compared_at=compared_at)
     base = {**base, "status": "已发布"}
-    affected = [row for row in rows if row.get("id") != base.get("id") and row.get("status") == "已发布"
-                and same_rule_scope(base, row) and (
-                    (base.get("ruleKey") and base.get("ruleKey") == row.get("ruleKey"))
-                    or bool(set(base.get("nodeIds") or []) & set(row.get("nodeIds") or [])))]
+    affected = rule_publish_comparison_rows(rows, base)
     result = rule_diff_payload(base, affected[0] if len(affected) == 1 else None,
                               versioned_record=versioned_record, compared_at=compared_at)
     if affected:
-        result["changes"] = [{**change, "fromRuleVersionId": row["id"]}
+        result["changes"] = [{**change, "fromRuleVersionId": row["id"], "fromRuleScope": "project" if row.get("projectId") else "platform"}
                              for row in sorted(affected, key=lambda row: row["id"])
                              for change in rule_version_changes(base, row)]
         result["summary"] = {kind: sum(change["changeType"] == kind for change in result["changes"])
                              for kind in ("added", "changed", "removed")}
         result["summary"]["warning"] = sum(change["severity"] == "warning" for change in result["changes"])
-    result["affectedRuleVersionIds"] = [row["id"] for row in affected]
+    result["affectedRuleVersionIds"] = [row["id"] for row in affected if same_rule_scope(base, row)]
     return result

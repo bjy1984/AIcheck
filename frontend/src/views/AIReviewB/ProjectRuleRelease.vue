@@ -175,7 +175,10 @@ const display = (value: unknown) =>
         <h4
           >{{ change.label }}
           <small v-if="change.fromRuleVersionId"
-            >（替换版本 {{ change.fromRuleVersionId }}）</small
+            >（{{
+              change.fromRuleScope === 'platform' ? '目前平台版本，平台本身不变' : '替换工程版本'
+            }}
+            {{ change.fromRuleVersionId }}）</small
           ></h4
         >
         <div class="release-diff">

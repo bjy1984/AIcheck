@@ -121,3 +121,23 @@ def test_publish_preview_covers_every_replaced_rule_and_final_status():
     publish(new, "merged")
     active = [row["id"] for row in repo.state["rule_versions"] if row.get("projectId") == PROJECT and row.get("status") == "已发布"]
     assert active == [new["id"]]
+
+
+def test_first_project_publish_compares_effective_platform_rule_and_pins_preview():
+    from libs.rule_scope import select_published_rule
+
+    rule = draft()
+    platform = select_published_rule(repo.state["rule_versions"], 24, project_id=PROJECT)
+    assert platform and not platform.get("projectId")
+    body = {"reason": "首次工程规则应对照平台现行版本"}
+    preview = ok(client.post(f"{BASE}/{rule['id']}/publish-preview", headers=HEADERS, json=body))
+    change = next(row for row in preview["impact"]["changes"] if row["field"] == "standardText")
+    assert change["before"] == platform["standardText"]
+    assert change["after"] == "原准则" and change["fromRuleScope"] == "platform"
+    current = repo.find_one("rule_versions", platform["id"])
+    current["revision"] = current.get("revision", 1) + 1
+    response = client.post(f"{BASE}/{rule['id']}/publish", headers={**HEADERS, "If-Match": rule["etag"]},
+                           json={**body, "previewId": preview["previewId"]})
+    assert response.json()["code"] != 0
+    assert repo.find_one("rule_versions", rule["id"])["status"] == "草稿"
+    assert current["status"] == "已发布"
