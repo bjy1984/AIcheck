@@ -25942,6 +25942,43 @@
         ]
       }
     },
+    "/api/projects/{project_id}/review-handoff-node-statuses": {
+      "get": {
+        "operationId": "get_handoff_node_statuses_api_projects__project_id__review_handoff_node_statuses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Handoff Node Statuses"
+      }
+    },
     "/api/projects/{project_id}/review-handoffs": {
       "get": {
         "operationId": "list_handoffs_api_projects__project_id__review_handoffs_get",
@@ -49802,6 +49839,43 @@
         "tags": [
           "AIcheck API"
         ]
+      }
+    },
+    "/projects/{project_id}/review-handoff-node-statuses": {
+      "get": {
+        "operationId": "get_handoff_node_statuses_projects__project_id__review_handoff_node_statuses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Handoff Node Statuses"
       }
     },
     "/projects/{project_id}/review-handoffs": {
