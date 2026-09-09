@@ -161,5 +161,6 @@ export interface RuleDraftSuggestion {
 export const suggestProjectRule = (projectId: string, nodeId: number, description: string) =>
   request.post<RuleDraftSuggestion>({
     url: `/api/projects/${encodeURIComponent(projectId)}/rules/draft-suggestion`,
-    data: { nodeId, description }
+    data: { nodeId, description },
+    headers: headers()
   })

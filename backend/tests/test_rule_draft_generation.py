@@ -106,3 +106,27 @@ def test_generated_condition_uses_existing_four_state_trial(value, applicable, e
         "required": {"value": applicable, "evidenceRefs": ["DESIGN-1"]},
         "thickness": {"value": value, "unit": "mm", "evidenceRefs": ["MEASURE-1"]},
     })["result"] == expected
+
+
+def test_same_request_key_replays_without_calling_provider_again(monkeypatch):
+    calls = []
+    def generate(*_):
+        calls.append(True)
+        return deepcopy(SUGGESTION)
+    monkeypatch.setattr(generation, "generate_rule_draft", generate)
+    client = TestClient(app)
+    headers = {**HEADERS, "Idempotency-Key": "same-generation"}
+    first = client.post(BASE, headers=headers, json={"nodeId": 16, "description": "rule"}).json()
+    second = client.post(BASE, headers=headers, json={"nodeId": 16, "description": "rule"}).json()
+    assert first["code"] == 0 and first == second
+    conflict = client.post(BASE, headers=headers, json={"nodeId": 16, "description": "changed"}).json()
+    assert conflict["code"] != 0
+    assert len(calls) == 1
+
+
+def test_generation_and_release_routes_require_review_permission():
+    from libs.security.actions import required_action_for_request
+    assert required_action_for_request("POST", "/api/projects/P/rules/draft-suggestion") == "review:save"
+    for action in ("publish", "rollback", "{action}"):
+        assert required_action_for_request("POST", f"/api/projects/P/rules/versions/R/{action}") == "review:save"
+        assert required_action_for_request("POST", f"/api/projects/P/rules/versions/R/{action}-preview") == "review:save"

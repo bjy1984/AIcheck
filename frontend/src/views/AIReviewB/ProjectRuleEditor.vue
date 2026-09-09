@@ -167,6 +167,8 @@ watch(
   <ElButton v-if="enabled" :disabled="!projectId || !nodeId" @click="open()">工程规则</ElButton>
   <ElDialog
     v-model="visible"
+    class="project-rule-dialog"
+    top="6vh"
     :title="`节点 ${nodeId} · 工程规则`"
     width="min(760px, 94vw)"
     :before-close="close"
@@ -354,6 +356,22 @@ watch(
 </template>
 
 <style scoped>
+:global(.project-rule-dialog) {
+  display: flex;
+  max-height: 88vh;
+  flex-direction: column;
+}
+
+:global(.project-rule-dialog .el-dialog__body) {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+:global(.project-rule-dialog .el-dialog__header),
+:global(.project-rule-dialog .el-dialog__footer) {
+  flex-shrink: 0;
+}
+
 .rule-editor {
   display: grid;
   gap: 16px;

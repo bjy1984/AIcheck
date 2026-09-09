@@ -229,10 +229,13 @@ def _project_operation_guard(request, project_id, version_id, action, body, *, p
 
 @project_rule_router.post("/projects/{project_id}/rules/versions/{version_id}/{action}-preview")
 def preview_project_rule_operation(request: Request, project_id: str, version_id: str, action: str,
-                                   body: dict[str, Any] = Body(default_factory=dict)):
+                                   body: dict[str, Any] = Body(default_factory=dict),
+                                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if error := _project_operation_guard(request, project_id, version_id, action, body, preview=True):
         return error
-    return api.preview_rule_version_operation(request, version_id, action, body)
+    return api.idempotent(request, idempotency_key,
+                          lambda: api.preview_rule_version_operation(request, version_id, action, body),
+                          fingerprint_source={"versionId": version_id, "action": action, "body": body})
 
 
 @project_rule_router.post("/projects/{project_id}/rules/versions/{version_id}/{action}")
@@ -265,7 +268,8 @@ def apply_project_rule_operation(request: Request, project_id: str, version_id: 
 
 
 @project_rule_router.post("/projects/{project_id}/rules/draft-suggestion")
-def suggest_project_rule(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict)):
+def suggest_project_rule(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict),
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     from libs.integrations.errors import IntegrationServiceError
     from libs.rule_draft_generation import generate_rule_draft
 
@@ -278,11 +282,14 @@ def suggest_project_rule(request: Request, project_id: str, body: dict[str, Any]
     pack = project.get("businessPackSnapshot") or api.load_business_pack(project.get("businessPackId") or api.DEFAULT_BUSINESS_PACK_ID)
     if not any(item.get("nodeId") == node_id for item in pack.get("atomicChecks") or []):
         return fail(errors.VALIDATION_ERROR, request, message="所选节点不在本工程业务规则范围内。")
-    try:
-        suggestion = generate_rule_draft(description.strip(), node_id)
-    except (ValueError, TypeError, KeyError, IndexError, IntegrationServiceError):
-        return fail(errors.EXTERNAL_TOOL_FAILED, request, message="这次没能生成可核对的草稿。原规则未变，请调整描述或稍后重试。")
-    # Recheck authorization after the provider call; no generated data enters rule storage.
-    if error := _guard(request, project_id, [node_id]):
-        return error
-    return ok({**suggestion, "requiresHumanConfirmation": True, "saved": False}, request)
+    def produce():
+        try:
+            suggestion = generate_rule_draft(description.strip(), node_id)
+        except (ValueError, TypeError, KeyError, IndexError, IntegrationServiceError):
+            return fail(errors.EXTERNAL_TOOL_FAILED, request, message="这次没能生成可核对的草稿。原规则未变，请调整描述或稍后重试。")
+        # Recheck authorization after the provider call; no generated data enters rule storage.
+        if error := _guard(request, project_id, [node_id]):
+            return error
+        return ok({**suggestion, "requiresHumanConfirmation": True, "saved": False}, request)
+
+    return api.idempotent(request, idempotency_key, produce, fingerprint_source={"projectId": project_id, "body": body})
