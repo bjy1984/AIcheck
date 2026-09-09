@@ -69,3 +69,38 @@ def test_initialization_detaches_ai_inputs_and_pins_document_hash():
     run["inputDocumentVersionIds"].append("FOREIGN")
     with pytest.raises(ValueError, match="versions_mismatch"):
         station_snapshot(run)
+
+
+def source_state():
+    return {"ocr_parse_results": [{"documentVersionId": "D1", "fields": [{"name": "thickness", "value": 10}]}],
+            "fact_corrections": [{"id": "C1", "fieldId": "F1", "fieldName": "thickness", "projectId": "P1",
+                                  "nodeId": 24, "documentVersionId": "D1", "status": "active", "correctedValue": 11}]}
+
+
+@pytest.mark.parametrize("change", ["ocr", "correction", "deactivate", "new_parse"])
+def test_changed_sources_block_reading_instead_of_silently_changing_input(change):
+    run, state = frozen_run(), source_state()
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    assert selected_parse_results(state, {}, context={"reviewRun": run})[0]["fields"][0]["value"] == 11
+    if change == "ocr":
+        state["ocr_parse_results"][0]["fields"][0]["value"] = 12
+    elif change == "correction":
+        state["fact_corrections"][0]["correctedValue"] = 12
+    elif change == "deactivate":
+        state["fact_corrections"][0]["status"] = "inactive"
+    else:
+        state["ocr_parse_results"].append({"documentVersionId": "D2", "fields": []})
+    with pytest.raises(ValueError, match="sources_changed_recreate_run"):
+        selected_parse_results(state, {}, context={"reviewRun": run})
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    selected_parse_results(state, {}, context={"reviewRun": run})
+
+
+def test_other_projects_and_unselected_documents_do_not_invalidate_run():
+    run, state = frozen_run(), source_state()
+    run["documentScopeSnapshot"] = freeze_document_scope(run, state)
+    state["ocr_parse_results"].append({"documentVersionId": "FOREIGN"})
+    other = deepcopy(state["fact_corrections"][0])
+    other["projectId"] = "P2"
+    state["fact_corrections"].append(other)
+    assert len(selected_parse_results(state, {}, context={"reviewRun": run})) == 1

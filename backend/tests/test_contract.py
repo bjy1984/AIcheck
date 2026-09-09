@@ -13418,3 +13418,25 @@ def test_rule_trial_rejects_stale_version_before_evaluation(monkeypatch):
     headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
     assert_error(client.post(path, headers=headers, json={"facts": {}}), "VALIDATION_ERROR")
     assert_error(client.post(path, headers={**headers, "If-Match": 'W/"old-version"'}, json={"facts": {}}), "ETAG_CONFLICT")
+
+
+def test_lab_run_detects_ocr_change_and_new_run_accepts_current_source(monkeypatch):
+    from libs.review_document_scope import validate_document_sources
+    from libs.review_orchestrator import execution as ex
+
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    project = repo.require_project("P-2026-HDCP-001")
+    parse = {"documentVersionId": "DOC-LAB-SOURCE", "fields": [{"name": "value", "value": 1}]}
+    repo.state["ocr_parse_results"].append(parse)
+    ai_run = {"id": "AI-LAB-SOURCE", "projectId": project["id"], "nodeId": 24,
+              "businessPackId": project.get("businessPackId") or "engineering_inspection_v1",
+              "inputDocumentVersionIds": ["DOC-LAB-SOURCE"]}
+    first = ex.create_review_run_from_ai_run(ai_run, mode="inline")
+    validate_document_sources(first, repo.state)
+    parse["fields"][0]["value"] = 2
+    assert ex.create_review_run_from_ai_run(ai_run, mode="inline") is first
+    with pytest.raises(ValueError, match="sources_changed_recreate_run"):
+        validate_document_sources(first, repo.state)
+    second = ex.create_review_run_from_ai_run({**ai_run, "id": "AI-LAB-SOURCE-NEW", "reviewRunId": None}, mode="inline")
+    validate_document_sources(second, repo.state)
+    assert first["inputHash"] != second["inputHash"]

@@ -7,7 +7,7 @@ from typing import Any
 from libs.review_rule_snapshot import _hash
 
 
-def freeze_document_scope(run: dict[str, Any]) -> dict[str, Any]:
+def freeze_document_scope(run: dict[str, Any], state: dict[str, Any] | None = None) -> dict[str, Any]:
     versions = run.get("inputDocumentVersionIds", [])
     if not isinstance(versions, list) or any(not isinstance(item, str) or not item for item in versions):
         raise ValueError("invalid_document_scope_versions")
@@ -17,6 +17,8 @@ def freeze_document_scope(run: dict[str, Any]) -> dict[str, Any]:
         "businessPackId": run.get("businessPackId"),
         "documentVersionIds": deepcopy(versions),
     }
+    if state is not None:
+        snapshot["sourceFingerprint"] = document_source_fingerprint(run, state)
     snapshot["snapshotHash"] = _hash(snapshot)
     return snapshot
 
@@ -33,3 +35,24 @@ def validate_document_scope(run: dict[str, Any]) -> None:
         raise ValueError("document_scope_identity_mismatch")
     if snapshot.get("documentVersionIds") != (run.get("inputDocumentVersionIds") or []):
         raise ValueError("document_scope_versions_mismatch")
+
+
+def document_source_fingerprint(run: dict[str, Any], state: dict[str, Any]) -> str:
+    allowed = set(run.get("inputDocumentVersionIds") or [])
+    parses = [row for row in state.get("ocr_parse_results", [])
+              if isinstance(row, dict) and row.get("documentVersionId") in allowed]
+    corrections = [row for row in state.get("fact_corrections", [])
+                   if isinstance(row, dict) and row.get("documentVersionId") in allowed
+                   and row.get("projectId") == run.get("projectId")
+                   and str(row.get("nodeId")) == str(run.get("nodeId"))
+                   and row.get("status") == "active" and row.get("fieldId")]
+    # Preserve order: the existing correction reader uses the last matching value.
+    return _hash({"parses": parses, "corrections": corrections})
+
+
+def validate_document_sources(run: dict[str, Any], state: dict[str, Any]) -> None:
+    validate_document_scope(run)
+    snapshot = run.get("documentScopeSnapshot") or {}
+    expected = snapshot.get("sourceFingerprint")
+    if expected is not None and expected != document_source_fingerprint(run, state):
+        raise ValueError("review_document_sources_changed_recreate_run")

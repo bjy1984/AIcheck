@@ -140,7 +140,7 @@ def apply_station_messages(review_run: dict[str, Any], messages: list[dict[str, 
     return output
 
 
-def initialize_run_workstation(record, project, published_rule, catalog, hash_payload):
+def initialize_run_workstation(record, project, published_rule, catalog, hash_payload, *, state=None):
     from libs.business_pack import load_business_pack, matching_rule_for_node
     from libs.review_rule_snapshot import freeze_effective_rule
 
@@ -148,7 +148,7 @@ def initialize_run_workstation(record, project, published_rule, catalog, hash_pa
     if record.get("atomicCheckToolBindingsSnapshot"):
         station_pack["atomicCheckToolBindings"] = record["atomicCheckToolBindingsSnapshot"]
     effective_rule = published_rule or matching_rule_for_node(station_pack, int(record["nodeId"]))
-    record["documentScopeSnapshot"] = freeze_document_scope(record)
+    record["documentScopeSnapshot"] = freeze_document_scope(record, state)
     record["inputDocumentVersionIds"] = deepcopy(record["documentScopeSnapshot"]["documentVersionIds"])
     record["effectiveRuleSnapshot"] = freeze_effective_rule(record, effective_rule)
     record["ruleSetVersion"] = effective_rule.get("version") or record["ruleSetVersion"]

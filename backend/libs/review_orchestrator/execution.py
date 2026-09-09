@@ -418,7 +418,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         project = repo.require_project(str(record.get("projectId") or "")) or {}
         initialize_run_workstation(record, project, current_published_rule_for_node(
             int(record["nodeId"]), business_pack_id=record["businessPackId"], project_id=record.get("projectId"),
-        ), runtime_tool_catalog(), stable_hash_payload)
+        ), runtime_tool_catalog(), stable_hash_payload, state=repo.state)
     repo.state["review_runs"].insert(0, record)
     bind_evidence_package_to_review_run(repo.state, ai_run_id=str(ai_run.get("id") or ""), review_run_id=review_run_id)
     frozen_clause_snapshot = freeze_review_run_clause_snapshot(
