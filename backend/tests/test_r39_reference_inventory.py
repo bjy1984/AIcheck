@@ -136,3 +136,52 @@ def test_compiled_node_plan_consumes_inventory_and_keeps_full_rule_gate():
     assert tool["facts"]["coverage"]["complete"] is True
     assert tool["facts"]["scope"] == "declared_complete_reference_pair_inventory"
     assert output["result"] == "evidence_insufficient"
+
+
+@pytest.mark.parametrize("case", ["duplicate", "missing", "unlisted", "malformed"])
+@pytest.mark.parametrize("known_failure", [False, True])
+def test_builder_preserves_independent_pairs_when_other_rows_are_invalid(case, known_failure):
+    state, review = inventory_fixture()
+    for parse in state["ocr_parse_results"]:
+        for table in parse["tables"]:
+            if table["businessSchema"] in {"ndt_reference_members", "ndt_reference_context", "ndt_reference_basis", "ndt_instruction_reference", "ndt_procedure_identity"}:
+                extra = deepcopy(table["normalizedRows"][0])
+                extra["method"] = "RT"
+                table["normalizedRows"].append(extra)
+    identities = state["ocr_parse_results"][2]["tables"][0]["normalizedRows"]
+    if known_failure:
+        identities[0]["procedureVersion"] = "A"
+    if case == "duplicate":
+        identities.append(deepcopy(identities[1]))
+    elif case == "missing":
+        identities.pop()
+    elif case == "unlisted":
+        identities[1]["method"] = "MT"
+    else:
+        identities[1].pop("method")
+    before = deepcopy(state)
+    _, forward = evaluate(state, review, "evaluate_r39_procedure_reference")
+    assert forward["result"] == ("failed" if known_failure else "evidence_insufficient"), forward
+    assert forward["facts"]["coverage"]["comparedCount"] == 1
+    assert forward["facts"]["coverage"]["missingPairs"][0]["method"] == "RT"
+    assert not forward["facts"]["coverage"]["complete"]
+    assert state == before
+    if known_failure:
+        from test_r39_node_plan import execute
+        assert execute(state, review)["result"] == "failed"
+    for parse in state["ocr_parse_results"]:
+        for table in parse["tables"]:
+            table["normalizedRows"].reverse()
+    _, reverse = evaluate(state, review, "evaluate_r39_procedure_reference")
+    assert reverse["result"] == forward["result"]
+    assert reverse["facts"]["coverage"] == forward["facts"]["coverage"]
+    a, b = forward["facts"]["pairResults"][0], reverse["facts"]["pairResults"][0]
+    assert a["pairScope"] == b["pairScope"]
+    assert a["checks"] == b["checks"]
+    # Source row positions legitimately change; every citation must now point
+    # at the corresponding UT record in the rearranged source, not the old row.
+    for ref in b["evidenceRefs"]:
+        table = next(table for parse in state["ocr_parse_results"]
+                     if parse["documentVersionId"] == ref["documentVersionId"]
+                     for table in parse["tables"] if table["tableId"] == ref["tableId"])
+        assert table["normalizedRows"][ref["rowIndex"]]["method"] == "UT"

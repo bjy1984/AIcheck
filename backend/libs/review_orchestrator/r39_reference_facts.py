@@ -46,15 +46,20 @@ def reference_input(state, run, groups, clean):
         keys.append(key)
     names = ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities")
     grouped = {key: {name: [] for name in names} for key in keys}
+    invalid_rows = False
     for name in names:
         for row in groups[name]:
             if any(not _text(row.get(field)) for field in SCOPE_FIELDS):
-                return None
+                invalid_rows = True
+                continue
             key = tuple(row[field] for field in SCOPE_FIELDS)
-            if key not in grouped or grouped[key][name]:
-                return None
+            if key not in grouped:
+                invalid_rows = True
+                continue
+            # Keep all candidates: the single-pair adapter rejects duplicates for
+            # this pair without discarding other independently sourced pairs.
             grouped[key][name].append(row)
-    pairs = []
+    pairs = [{}] if invalid_rows else []
     for group in grouped.values():
         pair = _single_reference_input(state, run, group, clean)
         if pair is not None:
