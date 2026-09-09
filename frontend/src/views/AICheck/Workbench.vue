@@ -224,6 +224,8 @@ import NdtReportUploadDrawer from './components/NdtReportUploadDrawer.vue'
 import NdtWorkflowPanel from './components/NdtWorkflowPanel.vue'
 import NodePackagePanel from './components/NodePackagePanel.vue'
 import ProjectNodeTree from './components/ProjectNodeTree.vue'
+import WorkstationNodeFilter from '@/views/AIReviewB/components/WorkstationNodeFilter.vue'
+import { filterWorkstationNodes } from '@/views/AIReviewB/workstationNavigation'
 import ProjectRegistrationPanel from './components/ProjectRegistrationPanel.vue'
 import RectificationDetailDialog from './components/RectificationDetailDialog.vue'
 import R12RegistryVerificationDialog from './components/R12RegistryVerificationDialog.vue'
@@ -970,6 +972,20 @@ const visibleTreeGroups = computed<ProjectTreePayload['groups']>(() =>
     ? contractorFeedbackTreeGroups.value
     : treeGroups.value
 )
+const labNavigationEnabled = computed(
+  () => import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true' && role.value === 'inspection'
+)
+const labStation = ref('')
+const labNodeStatus = ref('')
+const navigationTreeGroups = computed(() =>
+  labNavigationEnabled.value
+    ? filterWorkstationNodes(visibleTreeGroups.value, labStation.value, labNodeStatus.value)
+    : visibleTreeGroups.value
+)
+watch(activeProjectId, () => {
+  labStation.value = ''
+  labNodeStatus.value = ''
+})
 const getInspectionReviewProgress = (
   status?: string
 ): { label: InspectionReviewProgressLabel; rank: number } => {
@@ -5337,8 +5353,16 @@ onBeforeUnmount(() => {
               <span>项目审核节点</span>
               <span v-if="role === 'owner'" class="section-tools">只读</span>
             </div>
-            <ProjectNodeTree
+            <WorkstationNodeFilter
+              v-if="labNavigationEnabled"
+              v-model="labStation"
+              v-model:status="labNodeStatus"
               :groups="visibleTreeGroups"
+              id-prefix="desktop-workstation"
+            />
+            <ProjectNodeTree
+              :groups="navigationTreeGroups"
+              :overview-groups="visibleTreeGroups"
               :active-node-id="activeWorkbenchSection === 'overview' ? 0 : activeNodeId"
               :show-overview="true"
               empty-description="暂无项目审核节点"
@@ -6807,8 +6831,16 @@ onBeforeUnmount(() => {
         destroy-on-close
       >
         <div id="audit-node-navigation" class="mobile-tree-navigation">
-          <ProjectNodeTree
+          <WorkstationNodeFilter
+            v-if="labNavigationEnabled"
+            v-model="labStation"
+            v-model:status="labNodeStatus"
             :groups="visibleTreeGroups"
+            id-prefix="mobile-workstation"
+          />
+          <ProjectNodeTree
+            :groups="navigationTreeGroups"
+            :overview-groups="visibleTreeGroups"
             :active-node-id="activeWorkbenchSection === 'overview' ? 0 : activeNodeId"
             :show-overview="true"
             empty-description="暂无项目审核节点"

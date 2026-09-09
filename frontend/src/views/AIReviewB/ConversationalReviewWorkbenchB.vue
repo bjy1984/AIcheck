@@ -3887,6 +3887,14 @@ onBeforeUnmount(() => {
 .review-b-shell.is-workstation-mode .conversation-column {
   min-width: 0;
 }
+.review-b-shell.is-embedded.is-workstation-mode .conversation-column {
+  display: flex;
+  overflow-y: auto;
+  flex-direction: column;
+}
+.review-b-shell.is-embedded.is-workstation-mode .conversation-column > * {
+  flex-shrink: 0;
+}
 @media (width < 1280px) {
   .review-b-shell.is-workstation-mode .review-b-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -3903,6 +3911,21 @@ onBeforeUnmount(() => {
   }
   .review-b-shell.is-workstation-mode .conversation-head {
     flex-wrap: wrap;
+  }
+  .review-b-shell.is-embedded.is-workstation-mode .review-b-layout {
+    overflow-y: auto;
+    grid-template-rows: max-content max-content;
+    align-content: start;
+  }
+  .review-b-shell.is-embedded.is-workstation-mode .conversation-column {
+    height: auto;
+    overflow: visible;
+  }
+  .review-b-shell.is-embedded.is-workstation-mode .context-panel {
+    position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
 }
 </style>

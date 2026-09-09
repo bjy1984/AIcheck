@@ -29,6 +29,7 @@ type ProjectTreeViewNode =
 
 const props = defineProps<{
   groups: ProjectTreePayload['groups']
+  overviewGroups?: ProjectTreePayload['groups']
   activeNodeId: number
   showOverview?: boolean
   emptyDescription?: string
@@ -48,10 +49,10 @@ const expandedTreeKeys = ref<string[]>([])
 const expansionInitialized = ref(false)
 
 const totalNodeCount = computed(() =>
-  props.groups.reduce((sum, group) => sum + group.nodes.length, 0)
+  (props.overviewGroups || props.groups).reduce((sum, group) => sum + group.nodes.length, 0)
 )
 const totalFileCount = computed(() =>
-  props.groups.reduce(
+  (props.overviewGroups || props.groups).reduce(
     (sum, group) => sum + group.nodes.reduce((nodeSum, node) => nodeSum + node.fileCount, 0),
     0
   )
