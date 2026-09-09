@@ -112,7 +112,7 @@ CHECKLIST_REQUIREMENTS = [
 ]
 
 
-def apply_to_payload(user_payload: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
+def apply_to_payload(user_payload: dict[str, Any], items: list[dict[str, Any]], *, complete: bool = False) -> dict[str, Any]:
     payload = dict(user_payload)
     payload["task"] = "Fill the ReviewChecklist JSON only."
     payload["promptMode"] = "checklist"
@@ -120,6 +120,10 @@ def apply_to_payload(user_payload: dict[str, Any], items: list[dict[str, Any]]) 
         {key: item[key] for key in ("itemId", "question", "ruleCode", "expectedEvidence")} for item in items
     ]
     payload["requirements"] = [*list(payload.get("requirements") or []), *CHECKLIST_REQUIREMENTS]
+    if complete:
+        payload["requirements"] = [
+            text.replace("最多 3 条", "完整保留每个独立问题") for text in payload["requirements"]
+        ]
     finding_schema = ((payload.get("outputSchema") or {}).get("findings") or [{}])[0]
     payload["outputSchema"] = {
         "checklist": [
@@ -171,6 +175,7 @@ def normalize_checklist_output(
     guard: Callable[[list[dict[str, Any]], dict[str, Any]], list[dict[str, Any]]],
     clone: Callable[[Any], Any],
     bounded_confidence: Callable[..., float],
+    complete: bool = False,
 ) -> list[dict[str, Any]]:
     """把模型填的清单组装成 finding 草稿；守卫只核对 note 与 extraFindings。"""
     if not content.strip():
@@ -228,7 +233,9 @@ def normalize_checklist_output(
         drafts.append(draft)
 
     extra = parsed.get("extraFindings") if isinstance(parsed.get("extraFindings"), list) else []
-    for item in [row for row in extra if isinstance(row, dict)][:MAX_EXTRA_FINDINGS]:
+    extra_items = [row for row in extra if isinstance(row, dict)]
+    retained_extra = extra_items if complete else extra_items[:MAX_EXTRA_FINDINGS]
+    for item in retained_extra:
         draft = clone(base)
         draft["id"] = f"FND-DRAFT-{uuid4().hex[:8].upper()}"
         draft["findingType"] = str(item.get("findingType") or "checklist_extra")
@@ -265,6 +272,6 @@ def normalize_checklist_output(
         else:
             draft["modelTitle"] = title  # 降级的清单项：模板标题照旧，代码标题留作原文
     metadata = review_run.get("llmMetadata") if isinstance(review_run.get("llmMetadata"), dict) else {}
-    metadata["checklistSummary"] = {**summary, "extraFindings": min(len(extra), MAX_EXTRA_FINDINGS), "items": len(items_by_id)}
+    metadata["checklistSummary"] = {**summary, "extraFindings": len(retained_extra), "items": len(items_by_id)}
     review_run["llmMetadata"] = metadata
     return guarded

@@ -68,3 +68,47 @@ def test_cap_generated_records_metadata_and_prompt_carries_format_rules() -> Non
     capped, metadata = cap_generated_findings((drafts, {"llmCalled": True}))
     assert len(capped) == MAX_FINDINGS_PER_NODE and metadata["cappedFindings"] == {"before": 10, "after": 8, "limit": 8}
     assert any("不超过 30 字" in item for item in PROMPT_FORMAT_REQUIREMENTS)
+
+
+def test_lab_complete_output_retains_every_problem_and_evidence():
+    from copy import deepcopy
+
+    drafts = [_grounded(index, "low") for index in range(12)] + [_downgraded(index) for index in range(12, 24)]
+    drafts[-1]["evidenceRefs"] = [{"evidenceLinkId": f"REF-{index}"} for index in range(10)]
+    before = deepcopy(drafts)
+    complete, metadata = cap_generated_findings((drafts, {}), complete=True)
+    assert complete == before
+    assert metadata["findingRetention"] == "complete"
+    assert metadata["findingCount"] == 24
+    summary = cap_findings(complete)
+    assert len(summary) == 8
+    assert complete == before, "presentation merging must not modify authoritative findings"
+    summary[0]["evidenceRefs"].clear()
+    assert complete == before
+
+
+def test_lab_generation_and_persistence_use_full_findings(monkeypatch):
+    from libs.business_pack import load_business_pack
+    from libs.review_orchestrator.runtime_tools import runtime_tool_catalog
+    from libs.review_workstations import freeze_station
+
+    pack = load_business_pack("engineering_inspection_v1")
+    run = {"projectId": "P-LAB", "nodeId": 24, "businessPackId": pack["id"],
+           "workstationSnapshot": freeze_station(24, pack, runtime_tool_catalog())}
+    drafts = [_grounded(index, "low") for index in range(15)]
+    monkeypatch.setattr(ex.shard_execution, "generate_sharded_finding_drafts", lambda *args, **kwargs: (drafts, {}))
+    generated, metadata = ex.generate_finding_drafts(run, {})
+    assert len(generated) == 15
+    assert metadata["findingRetention"] == "complete"
+    ex.run_step(run, "persist_drafts", {"findingDrafts": generated, "auditRuntime": {"mode": "structured"}})
+    assert run["findingDrafts"] == drafts
+    assert len(run["findingSummaryDrafts"]) == 8
+    assert run["outputHash"] == ex.stable_hash_payload(drafts)
+
+
+def test_complete_prompt_does_not_instruct_model_to_omit_findings():
+    from libs.review_orchestrator.output_contract import prompt_format_requirements
+
+    assert "最多 8" not in str(prompt_format_requirements(complete=True))
+    assert "完整证据引用" in str(prompt_format_requirements(complete=True))
+    assert prompt_format_requirements() == PROMPT_FORMAT_REQUIREMENTS

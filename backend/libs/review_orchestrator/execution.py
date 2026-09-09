@@ -1954,6 +1954,9 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
         return result
     if node_key == "persist_drafts":
         review_run["findingDrafts"] = repo.clone(context.get("findingDrafts") or [])
+        if station_snapshot(review_run):
+            review_run["findingRetention"] = "complete"
+            review_run["findingSummaryDrafts"] = output_contract.cap_findings(review_run["findingDrafts"])
         review_run["outputHash"] = stable_hash_payload(review_run["findingDrafts"])
         return {"findingDrafts": len(review_run["findingDrafts"]), "outputHash": review_run["outputHash"]}
     return {"skipped": True}
@@ -2049,7 +2052,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
             "Every finding must require human confirmation.",
             "Do not approve, reject, issue correction, close correction, archive, or change business status.",
             "Use evidenceRefs, ruleRefs, and kbRefs from the supplied IDs only.",
-            *output_contract.PROMPT_FORMAT_REQUIREMENTS,
+            *output_contract.prompt_format_requirements(complete=bool(workstation)),
             "When more evidence is needed, plan only with availableRuntimeTools "
             "and do not invent tools.",
             *([CERTIFICATE_VERIFICATION_REQUIREMENT] if context.get("certificateVerification") else []),
@@ -2100,7 +2103,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
     }
     if checklist_mode.checklist_enabled():  # P8 H5：清单填表模式，结构由代码给，模型只填 verdict/note
         context["checklistItems"] = checklist_mode.build_checklist_items(pack, int(review_run.get("nodeId") or 0), context.get("requirements") or node.get("requiredMaterials") or [])
-        user_payload = checklist_mode.apply_to_payload(user_payload, context["checklistItems"])
+        user_payload = checklist_mode.apply_to_payload(user_payload, context["checklistItems"], complete=bool(workstation))
     review_task_json = json.dumps(user_payload, ensure_ascii=False)
     user_content = prompt["user"]
     if "{{reviewTaskJson}}" in user_content:
@@ -2545,14 +2548,14 @@ def _generate_finding_drafts_once(
 
 def generate_finding_drafts(review_run: dict[str, Any], context: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     # P8 H4：单次生成外包一层信封修复 → 升级模型重跑；失败分片只影响部分覆盖。
-    return output_contract.cap_generated_findings(shard_execution.generate_sharded_finding_drafts(repo.state, review_run, context, mode=review_llm_execution_mode(), generate_once=lambda run, ctx: shard_recovery.generate_with_recovery(run, ctx, generate_once=_generate_finding_drafts_once, normalize=normalize_llm_findings)))
+    return output_contract.cap_generated_findings(shard_execution.generate_sharded_finding_drafts(repo.state, review_run, context, mode=review_llm_execution_mode(), generate_once=lambda run, ctx: shard_recovery.generate_with_recovery(run, ctx, generate_once=_generate_finding_drafts_once, normalize=normalize_llm_findings)), complete=bool(station_snapshot(review_run)))
 
 
 def normalize_llm_findings(review_run: dict[str, Any], context: dict[str, Any], content: str) -> list[dict[str, Any]]:
     base = build_finding_draft(review_run, context)
     grounding_input = grounding_input_with_supplements(context)
     if checklist_mode.checklist_enabled() and context.get("checklistItems"):
-        return checklist_mode.normalize_checklist_output(review_run, context, content, base=base, grounding_input=grounding_input, guard=apply_grounding_guardrails, clone=repo.clone, bounded_confidence=bounded_confidence)
+        return checklist_mode.normalize_checklist_output(review_run, context, content, base=base, grounding_input=grounding_input, guard=apply_grounding_guardrails, clone=repo.clone, bounded_confidence=bounded_confidence, complete=bool(station_snapshot(review_run)))
     if not content.strip():
         raise IntegrationServiceError("QwenRuntime", "review.chat", reason="LLM_OUTPUT_EMPTY")
     try:

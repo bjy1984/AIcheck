@@ -8,6 +8,7 @@ TEXT_TOO_LONG 警告（不判失败——截断会把"差在哪"截掉，比长�
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 TITLE_MAX_CHARS = 30
@@ -22,6 +23,15 @@ PROMPT_FORMAT_REQUIREMENTS = [
     f"description 不超过 {DESCRIPTION_MAX_CHARS} 字，固定写法：查到什么 → 差在哪 → 怎么做；不要输出 JSON 或表格原文。",
     f"每个节点最多 {MAX_FINDINGS_PER_NODE} 条 finding，同一问题不要拆成多条；超出的合并写。",
 ]
+
+
+def prompt_format_requirements(*, complete: bool = False) -> list[str]:
+    if not complete:
+        return list(PROMPT_FORMAT_REQUIREMENTS)
+    return [
+        *PROMPT_FORMAT_REQUIREMENTS[:2],
+        "保留每个独立问题及其原子审查项和完整证据引用，不得为了条数限制合并或省略不同问题；同一问题不要重复输出。",
+    ]
 
 
 def text_length_warnings_for(draft: dict[str, Any], index: int) -> list[dict[str, Any]]:
@@ -77,7 +87,7 @@ def _merge_grounded(extras: list[dict[str, Any]], template: dict[str, Any]) -> d
 
 def cap_findings(drafts: list[dict[str, Any]], *, limit: int = MAX_FINDINGS_PER_NODE) -> list[dict[str, Any]]:
     """按优先级保留 limit 条；多出的通过守卫项归并成一条，多出的降级项把断言并进保留的降级项。总数永不超过 limit。"""
-    items = [item for item in drafts if isinstance(item, dict)]
+    items = deepcopy([item for item in drafts if isinstance(item, dict)])
     if len(items) <= limit:
         return items
     ordered = sorted(items, key=_priority)
@@ -109,8 +119,12 @@ def cap_findings(drafts: list[dict[str, Any]], *, limit: int = MAX_FINDINGS_PER_
     return kept[:limit]
 
 
-def cap_generated_findings(generated: tuple[list[dict[str, Any]], dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def cap_generated_findings(
+    generated: tuple[list[dict[str, Any]], dict[str, Any]], *, complete: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     drafts, metadata = generated
+    if complete:
+        return drafts, {**metadata, "findingRetention": "complete", "findingCount": len(drafts)}
     capped = cap_findings(drafts)
     if len(capped) != len(drafts):
         metadata = {**metadata, "cappedFindings": {"before": len(drafts), "after": len(capped), "limit": MAX_FINDINGS_PER_NODE}}
