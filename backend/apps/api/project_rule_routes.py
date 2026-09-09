@@ -197,3 +197,68 @@ def trial_project_rule(request: Request, project_id: str, version_id: str,
                "ruleRevision": rule.get("revision"), "sourceMode": "run_ocr" if run_id else "manual_examples",
                "sourceReviewRunId": run_id, "sourceSnapshotHash": (run.get("documentScopeSnapshot") or {}).get("snapshotHash"),
                "factDiagnostics": diagnostics, "evidenceVerified": False, **result}, request)
+
+
+def _project_operation_guard(request, project_id, version_id, action, body, *, preview):
+    if action not in {"publish", "rollback"}:
+        return fail(errors.NOT_FOUND, request)
+    if error := _guard(request, project_id):
+        return error
+    allowed = {"reason"} | ({"targetVersionId"} if action == "rollback" else set()) | (set() if preview else {"previewId"})
+    if set(body) - allowed:
+        return fail(errors.VALIDATION_ERROR, request, message="请求包含不可写的发布字段。")
+    if not preview and not body.get("previewId"):
+        return fail(errors.VALIDATION_ERROR, request, message="请先预览影响，再确认发布或回滚。")
+    rule = repo.find_one("rule_versions", version_id)
+    if not rule or rule.get("projectId") != project_id:
+        return fail(errors.NOT_FOUND, request)
+    if error := _guard(request, project_id, api.parse_rule_node_ids(rule.get("nodeIds"))):
+        return error
+    if error := api.rule_project_mutation_error(request, rule, publishing=action == "publish"):
+        return error
+    if action == "rollback":
+        target = api.matching_rule_target(rule, target_version_id=body.get("targetVersionId"))
+        if not target or target.get("projectId") != project_id or target["id"] == rule["id"]:
+            return fail(errors.VALIDATION_ERROR, request, message="请选择本工程同一规则的其他版本。")
+        if error := _guard(request, project_id, api.parse_rule_node_ids(target.get("nodeIds"))):
+            return error
+        if error := api.rule_project_mutation_error(request, target, publishing=True):
+            return error
+    return None
+
+
+@project_rule_router.post("/projects/{project_id}/rules/versions/{version_id}/{action}-preview")
+def preview_project_rule_operation(request: Request, project_id: str, version_id: str, action: str,
+                                   body: dict[str, Any] = Body(default_factory=dict)):
+    if error := _project_operation_guard(request, project_id, version_id, action, body, preview=True):
+        return error
+    return api.preview_rule_version_operation(request, version_id, action, body)
+
+
+@project_rule_router.post("/projects/{project_id}/rules/versions/{version_id}/{action}")
+def apply_project_rule_operation(request: Request, project_id: str, version_id: str, action: str,
+                                 body: dict[str, Any] = Body(default_factory=dict),
+                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+                                 if_match: str | None = Header(default=None, alias="If-Match")):
+    if error := _project_operation_guard(request, project_id, version_id, action, body, preview=False):
+        return error
+    if not if_match:
+        return fail(errors.VALIDATION_ERROR, request, message="发布或回滚需要 If-Match 版本标记。")
+    operation = api.publish_rule_version if action == "publish" else api.rollback_rule_version
+    def produce():
+        rule = repo.find_one("rule_versions", version_id)
+        if action == "rollback":
+            target = api.matching_rule_target(rule, target_version_id=body.get("targetVersionId"))
+            if rule.get("status") != "已发布" or target.get("status") != "已回滚":
+                return fail(errors.CONFLICT, request, message="只能从当前生效版本恢复到此前使用过的版本，请刷新列表。")
+            overlapping = [row for row in repo.state.get("rule_versions", [])
+                           if row.get("projectId") == project_id and row.get("businessPackId") == rule.get("businessPackId")
+                           and row.get("status") == "已发布" and row["id"] != rule["id"]
+                           and (row.get("ruleKey") == target.get("ruleKey")
+                                or set(row.get("nodeIds") or []) & set(target.get("nodeIds") or []))]
+            if overlapping:
+                return fail(errors.CONFLICT, request, message="目标节点已有其他生效规则，请先核对冲突版本。")
+        return operation(request, version_id, body, idempotency_key, if_match)
+    return api.idempotent(request, idempotency_key,
+                          produce,
+                          fingerprint_source={"versionId": version_id, "body": body})

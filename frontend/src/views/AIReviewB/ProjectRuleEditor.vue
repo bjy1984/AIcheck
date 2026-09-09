@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProjectRuleRelease from './ProjectRuleRelease.vue'
 import RuleTrialPanel from './RuleTrialPanel.vue'
 import { ruleDraftDiff } from './ruleDraftDiff'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
@@ -38,6 +39,7 @@ const emit = defineEmits<{ applyMapping: [ReviewDocumentSelection] }>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
 const busy = ref(false)
+const releaseBusy = ref(false)
 const error = ref('')
 const rules = ref<ProjectRule[]>([])
 const atomicOptions = ref<RuleAtomicOption[]>([])
@@ -88,9 +90,9 @@ const choose = async (id: string) => {
   if (await canDiscard()) setForm(rules.value.find((rule) => rule.id === id))
 }
 const close = async (done: () => void) => {
-  if (!busy.value && (await canDiscard())) done()
+  if (!busy.value && !releaseBusy.value && (await canDiscard())) done()
 }
-const open = async () => {
+const open = async (keepId?: string) => {
   visible.value = true
   busy.value = true
   error.value = ''
@@ -102,7 +104,7 @@ const open = async () => {
       (item) => item.nodeId === props.nodeId
     )
     rules.value = response.data.items.filter((rule) => rule.nodeIds.includes(props.nodeId))
-    setForm(rules.value[0])
+    setForm(rules.value.find((rule) => rule.id === keepId) || rules.value[0])
   } catch (cause) {
     if (revision === contextRevision)
       error.value =
@@ -160,17 +162,17 @@ watch(
 </script>
 
 <template>
-  <ElButton v-if="enabled" :disabled="!projectId || !nodeId" @click="open">工程规则</ElButton>
+  <ElButton v-if="enabled" :disabled="!projectId || !nodeId" @click="open()">工程规则</ElButton>
   <ElDialog
     v-model="visible"
-    :title="`节点 ${nodeId} · 工程规则草稿`"
+    :title="`节点 ${nodeId} · 工程规则`"
     width="min(760px, 94vw)"
     :before-close="close"
     :close-on-click-modal="false"
   >
     <div class="rule-editor" v-loading="busy">
       <ElAlert
-        title="保存只产生工程草稿，不改变当前审查或历史结论。可用示例数据试跑已保存条件；正式发布尚未开放。"
+        title="保存只产生工程草稿，不改变当前审查或历史结论。发布前请查看影响；可执行条件仍需通过发布验收。"
         type="info"
         :closable="false"
         show-icon
@@ -180,7 +182,7 @@ watch(
       <ElSelect
         id="project-rule-choice"
         :model-value="selectedId"
-        :disabled="busy"
+        :disabled="busy || releaseBusy"
         @update:model-value="choose"
       >
         <ElOption label="新建工程草稿" value="" />
@@ -196,7 +198,7 @@ watch(
         <ElTag type="info">{{ selected.status }}</ElTag>
         <span v-if="!editable">此版本只读，请复制为工程草稿后修改。</span>
       </div>
-      <ElForm label-position="top" :disabled="busy || !editable">
+      <ElForm label-position="top" :disabled="busy || releaseBusy || !editable">
         <ElFormItem label="审查项目" required
           ><ElInput v-model="form.inspectionItem" maxlength="200"
         /></ElFormItem>
@@ -290,12 +292,22 @@ watch(
           </div>
         </article>
       </section>
+      <ProjectRuleRelease
+        v-if="selected?.projectId === projectId"
+        :key="selected.id"
+        :project-id="projectId"
+        :rule="selected"
+        :rules="rules"
+        :disabled="dirty || busy || applyDisabled"
+        @busy="releaseBusy = $event"
+        @changed="open($event)"
+      />
       <RuleTrialPanel
         v-if="selected?.projectId === projectId && selected?.executionConditions"
         :project-id="projectId"
         :rule="selected"
         :review-run-id="reviewRunId"
-        :disabled="dirty || busy"
+        :disabled="dirty || busy || releaseBusy"
         :apply-disabled="applyDisabled"
         @apply-mapping="emit('applyMapping', $event)"
       />
@@ -305,11 +317,24 @@ watch(
       >
     </div>
     <template #footer>
-      <ElButton :disabled="busy" @click="close(() => (visible = false))">关闭</ElButton>
-      <ElButton v-if="selected && !editable" :loading="busy" @click="save(true)"
+      <ElButton :disabled="busy || releaseBusy" @click="close(() => (visible = false))"
+        >关闭</ElButton
+      >
+      <ElButton
+        v-if="selected && !editable"
+        :loading="busy"
+        :disabled="releaseBusy || applyDisabled"
+        @click="save(true)"
         >复制为工程草稿</ElButton
       >
-      <ElButton v-if="editable" type="primary" :loading="busy" @click="save()">保存草稿</ElButton>
+      <ElButton
+        v-if="editable"
+        type="primary"
+        :loading="busy"
+        :disabled="releaseBusy || applyDisabled"
+        @click="save()"
+        >保存草稿</ElButton
+      >
     </template>
   </ElDialog>
 </template>

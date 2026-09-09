@@ -45,5 +45,5 @@ def rule_project_mutation_error(request: Request, rule: dict[str, Any], *, publi
             return fail(errors.VALIDATION_ERROR, request, message=f"判定条件无效：{exc}")
         if publishing:
             return fail(errors.VALIDATION_ERROR, request,
-                        message="结构化条件尚未接入正式判定工具，当前仅支持草稿试跑，不能发布或回滚为生效规则。")
+                        message="结构化条件已接入执行，但尚未完成发布验收；当前不能发布或回滚为生效规则。")
     return None

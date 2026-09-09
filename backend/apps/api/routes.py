@@ -27020,7 +27020,7 @@ def preview_rule_version_operation(
     )
     if action == "rollback" and (not target or target.get("id") == base.get("id")):
         return fail(errors.VALIDATION_ERROR, request, message="回滚必须选择同一规则的其他有效版本。")
-    diff = rule_diff_payload(base, target)
+    diff = rule_version_helpers.rule_operation_diff(repo.state.get("rule_versions", []), base, target, action, versioned_record=versioned_record, compared_at=server_time())
     impact = {
         "action": action,
         "ruleVersionId": version_id,

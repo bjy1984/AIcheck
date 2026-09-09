@@ -13539,7 +13539,7 @@ def test_platform_rule_writes_reject_invalid_structured_conditions(operation):
 
 
 @pytest.mark.parametrize("operation", ["publish", "rollback"])
-def test_condition_rule_cannot_be_activated_while_formal_adapter_is_missing(operation):
+def test_condition_rule_cannot_be_activated_before_release_acceptance(operation):
     from copy import deepcopy
 
     source = repo.find_one("rule_versions", "RULE-NDT-202606")
@@ -13555,7 +13555,7 @@ def test_condition_rule_cannot_be_activated_while_formal_adapter_is_missing(oper
         response = client.post(f"/rules/versions/{source['id']}/rollback",
                                json={"reason": "验证条件回滚门槛", "targetVersionId": candidate["id"]})
     assert_error(response, "VALIDATION_ERROR")
-    assert "正式判定工具" in response.json()["message"]
+    assert "尚未完成发布验收" in response.json()["message"]
     assert repo.state["rule_versions"] == before
 
 

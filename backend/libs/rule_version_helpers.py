@@ -27,6 +27,7 @@ def rule_version_changes(base: dict[str, Any], target: dict[str, Any] | None) ->
         ("witnessText", "方法及内容 / 工作见证"),
         ("nodeIds", "适用节点"),
         ("status", "状态"),
+        ("executionConditions", "可执行条件"),
     ]
     changes = []
     for field, label in compared_fields:
@@ -112,3 +113,24 @@ def rule_diff_payload(base: dict[str, Any], target: dict[str, Any] | None, *, ve
         },
         "changes": changes,
     }
+
+
+def rule_operation_diff(rows, base, target, action, *, versioned_record, compared_at):
+    if action == "rollback":
+        return rule_diff_payload({**target, "status": "已发布"}, base, versioned_record=versioned_record, compared_at=compared_at)
+    base = {**base, "status": "已发布"}
+    affected = [row for row in rows if row.get("id") != base.get("id") and row.get("status") == "已发布"
+                and same_rule_scope(base, row) and (
+                    (base.get("ruleKey") and base.get("ruleKey") == row.get("ruleKey"))
+                    or bool(set(base.get("nodeIds") or []) & set(row.get("nodeIds") or [])))]
+    result = rule_diff_payload(base, affected[0] if len(affected) == 1 else None,
+                              versioned_record=versioned_record, compared_at=compared_at)
+    if affected:
+        result["changes"] = [{**change, "fromRuleVersionId": row["id"]}
+                             for row in sorted(affected, key=lambda row: row["id"])
+                             for change in rule_version_changes(base, row)]
+        result["summary"] = {kind: sum(change["changeType"] == kind for change in result["changes"])
+                             for kind in ("added", "changed", "removed")}
+        result["summary"]["warning"] = sum(change["severity"] == "warning" for change in result["changes"])
+    result["affectedRuleVersionIds"] = [row["id"] for row in affected]
+    return result

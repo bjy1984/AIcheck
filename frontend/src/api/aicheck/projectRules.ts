@@ -8,6 +8,7 @@ export interface RuleAtomicOption {
 }
 
 export interface ProjectRule {
+  ruleKey?: string
   id: string
   projectId?: string
   nodeIds: number[]
@@ -104,4 +105,47 @@ export const trialProjectRule = (
     url: `${base(projectId)}/${encodeURIComponent(rule.id)}/trial`,
     data: source,
     headers: headers(rule.etag)
+  })
+
+export type RuleReleaseAction = 'publish' | 'rollback'
+export interface RuleReleaseInput {
+  reason: string
+  targetVersionId?: string
+}
+export interface RuleReleasePreview {
+  previewId: string
+  expiresAt: string
+  impact: {
+    nodeIds: number[]
+    warnings: string[]
+    changes: Array<{
+      field: string
+      label: string
+      before: unknown
+      after: unknown
+      fromRuleVersionId?: string
+    }>
+  }
+}
+export const previewProjectRuleRelease = (
+  projectId: string,
+  ruleId: string,
+  action: RuleReleaseAction,
+  data: RuleReleaseInput
+) =>
+  request.post<RuleReleasePreview>({
+    url: `${base(projectId)}/${encodeURIComponent(ruleId)}/${action}-preview`,
+    data
+  })
+export const applyProjectRuleRelease = (
+  projectId: string,
+  rule: ProjectRule,
+  action: RuleReleaseAction,
+  data: RuleReleaseInput & { previewId: string },
+  idempotencyKey: string
+) =>
+  request.post<{ rule: ProjectRule; target?: ProjectRule }>({
+    url: `${base(projectId)}/${encodeURIComponent(rule.id)}/${action}`,
+    data,
+    headers: { 'If-Match': rule.etag, 'Idempotency-Key': idempotencyKey }
   })
