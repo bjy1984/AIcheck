@@ -12,6 +12,7 @@ from libs.review_orchestrator.r39_content_inventory_facts import build_content_i
 from libs.review_orchestrator.r39_inventory_facts import build_inventory_consistency
 from libs.review_orchestrator.r39_pt_facts import pt_application_input
 from libs.review_orchestrator.r39_reference_facts import reference_input
+from libs.review_orchestrator.r39_reference_fields import reference_from_fields
 from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 
@@ -80,7 +81,11 @@ def _content_input(state, run, groups, facts):
 
 def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
     groups = read_ndt_tables(state, run, R39_TABLES, node_id=39)
-    judgment = build_material_judgment([(f"r39-{kind}", rows, ("instructionId", "projectId")) for kind, rows in groups.items()])
+    raw_reference, raw_records = (None, [])
+    if not any(groups[name] for name in ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers")):
+        raw_reference, raw_records = reference_from_fields(state, run)
+    groups["referenceFieldRecords"] = raw_records
+    judgment = build_material_judgment([(f"r39-{kind}", rows, ("value",) if kind == "referenceFieldRecords" else ("instructionId", "projectId")) for kind, rows in groups.items()])
     facts: dict[str, Any] = {"sourceIssues": [], "sourceRecords": deepcopy(groups)}
     def finish():
         gate_r39_inputs(groups, facts)
@@ -93,7 +98,7 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
         facts["ptEmulsifierApplication"] = pt_input
     else:
         issues.append("r39_pt_application_missing_or_ambiguous")
-    reference = reference_input(state, run, groups, _clean)
+    reference = raw_reference or reference_input(state, run, groups, _clean)
     if reference is not None:
         facts["procedureReference"] = reference
     else:

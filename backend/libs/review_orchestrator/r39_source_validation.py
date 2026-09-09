@@ -11,7 +11,7 @@ from libs.review_tools.r39_tools import IDENTITY_FIELDS
 SOURCE_GROUPS = {
     "inventoryConsistency": ("applicationDocumentLinks", "unappliedInstructions"),
     "ptEmulsifierApplication": ("ptContexts", "ptBases", "ptProcesses"),
-    "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
+    "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers", "referenceFieldRecords"),
     "firstUseValidation": ("applications", "bases", "validations", "applicationInventories", "applicationMembers"),
     "approvalChain": ("approvalContexts", "requirements", "steps", "signatureInventories", "signatures", "approvalCycleInventories", "approvalCycleMembers"),
     "documentContent": ("contentContexts", "contentBases", "contentInventories", "contentFields", "contentDocumentInventories", "contentDocumentMembers"),
@@ -31,7 +31,7 @@ def validate_r39_sources(groups, input_name):
             malformed.append(index)
     if malformed:
         return {"result": "evidence_insufficient", "invalidSourceRows": malformed, "minConfidence": .75}
-    judgment = build_material_judgment([(name, values, ("projectId",)) for name, values in selected])["judgment"]
+    judgment = build_material_judgment([(name, values, ("value",) if name == "referenceFieldRecords" else ("projectId",)) for name, values in selected])["judgment"]
     checked = validate_evidence_grounding({"facts": judgment["claimedFacts"], "evidenceRefs": judgment["evidenceRefs"], "minConfidence": .75})
     return {"result": checked["result"], "checks": checked["checks"], "minConfidence": .75}
 

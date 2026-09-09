@@ -439,7 +439,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r39_approval_chain"
             else {"projectId": "string", "scope": "object?", "basis": "object?", "parameters": ["object?"], "inventory": "object?", "objectComparisons": ["object?"]}
             if name == "evaluate_r11_project_parameters"
-            else {"projectId": "string", "scope": "object?", "basis": "object?", "instructionReference": "object?", "procedureIdentity": "object?", "inventory": "object?", "referencePairs": ["object?"]}
+            else {"projectId": "string", "identityMode": "string?", "scope": "object?", "basis": "object?", "instructionReference": "object?", "procedureIdentity": "object?", "inventory": "object?", "referencePairs": ["object?"]}
             if name == "evaluate_r39_procedure_reference"
             else {"projectId": "string", "scope": "object?", "basis": "object?", "contentInventory": "object?", "inventory": "object?", "documents": ["object?"]}
             if name == "evaluate_r39_document_content"

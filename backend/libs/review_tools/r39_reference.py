@@ -15,6 +15,8 @@ def evaluate_r39_procedure_reference(arguments):
         from libs.review_tools.r39_reference_inventory import evaluate_reference_inventory
         return evaluate_reference_inventory(arguments, SCOPE_FIELDS, evaluate_r39_procedure_reference)
     rows = []
+    by_name = arguments.get("identityMode") == "exact_source_organization_name"
+    fields = tuple("organizationName" if key == "organizationId" and by_name else key for key in SCOPE_FIELDS)
 
     def add(code, status, refs=()):
         rows.append({"code": code, "result": status, "evidenceRefs": deepcopy(list(refs))})
@@ -25,15 +27,16 @@ def evaluate_r39_procedure_reference(arguments):
                   else "not_applicable" if statuses == {"not_applicable"} else "passed")
         output = result("evaluate_r39_procedure_reference", status,
                         facts={"referenceChecks": rows, "scope": "selected_instruction_procedure_reference_only",
+                               "organizationIdentityVerified": False, "identityMode": "exact_source_organization_name" if by_name else "explicit_organization_id",
                                "technicalCompliance": "not_evaluated", "wholeRuleAcceptance": "not_evaluated",
                                "evidenceVerified": False},
                         checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-                        rule_version="r39-procedure-reference-v1")
+                        rule_version="r39-procedure-reference-fields-v1" if by_name else "r39-procedure-reference-v1")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
     scope = arguments.get("scope")
-    if (not isinstance(scope, dict) or any(not _text(scope.get(key)) for key in SCOPE_FIELDS)
+    if (not isinstance(scope, dict) or any(not _text(scope.get(key)) for key in fields)
             or scope.get("projectId") != arguments.get("projectId")
             or scope["instructionDocumentId"] == scope["procedureDocumentId"]
             or scope["instructionDocumentVersionId"] == scope["procedureDocumentVersionId"]):
@@ -41,7 +44,7 @@ def evaluate_r39_procedure_reference(arguments):
         return finish()
 
     def matches(record):
-        return isinstance(record, dict) and all(record.get(key) == scope[key] for key in SCOPE_FIELDS)
+        return isinstance(record, dict) and all(record.get(key) == scope[key] for key in fields)
 
     basis = arguments.get("basis")
     if not matches(basis) or type(basis.get("applicable")) is not bool or not _refs(basis):
