@@ -13397,10 +13397,24 @@ def test_project_rule_trial_uses_saved_conditions_and_does_not_publish(monkeypat
     ]}
     rule = assert_ok(client.post(path, headers=headers, json={"inspectionItem": "厚度核对", "standardText": "试跑条件",
                           "nodeIds": [24], "executionConditions": conditions}))["rule"]
-    output = assert_ok(client.post(f"{path}/{rule['id']}/trial", headers=headers, json={
+    output = assert_ok(client.post(f"{path}/{rule['id']}/trial", headers={**headers, "If-Match": rule["etag"]}, json={
         "facts": {"thickness": {"value": 9, "unit": "mm", "evidenceRefs": ["EXAMPLE"]}}
     }))
     assert output["result"] == "fail" and output["advisoryOnly"] is True
     assert output["evidenceVerified"] is False
     assert repo.find_one("rule_versions", rule["id"])["status"] == "草稿"
     assert repo.find_one("rule_versions", rule["id"])["revision"] == rule["revision"]
+
+
+
+def test_rule_trial_rejects_stale_version_before_evaluation(monkeypatch):
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    import apps.api.project_rule_routes as project_rules
+
+    rule = repo.find_one("rule_versions", "RULE-NDT-202606")
+    rule.update(projectId="P-2026-HDCP-001", nodeIds=[24])
+    monkeypatch.setattr(project_rules, "evaluate_conditions", lambda *args: pytest.fail("stale trial must not execute"))
+    path = f"/projects/P-2026-HDCP-001/rules/versions/{rule['id']}/trial"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    assert_error(client.post(path, headers=headers, json={"facts": {}}), "VALIDATION_ERROR")
+    assert_error(client.post(path, headers={**headers, "If-Match": 'W/"old-version"'}, json={"facts": {}}), "ETAG_CONFLICT")

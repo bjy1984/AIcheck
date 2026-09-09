@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RuleTrialPanel from './RuleTrialPanel.vue'
 import ConditionExpressionEditor from './ConditionExpressionEditor.vue'
 import { newCondition } from './ruleConditionModel'
 import { computed, ref, watch } from 'vue'
@@ -148,7 +149,7 @@ watch(
   >
     <div class="rule-editor" v-loading="busy">
       <ElAlert
-        title="保存只产生工程草稿，不改变当前审查或历史结论。试跑与正式发布尚未开放。"
+        title="保存只产生工程草稿，不改变当前审查或历史结论。可用示例数据试跑已保存条件；正式发布尚未开放。"
         type="info"
         :closable="false"
         show-icon
@@ -233,6 +234,12 @@ watch(
           >
         </template>
       </ElForm>
+      <RuleTrialPanel
+        v-if="selected?.projectId === projectId && selected?.executionConditions"
+        :project-id="projectId"
+        :rule="selected"
+        :disabled="dirty || busy"
+      />
       <p
         >适用范围：当前工程、节点
         {{ selected?.nodeIds.join('、') || nodeId }}。文本修改不代表工具数值判定条件已经改变。</p

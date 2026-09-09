@@ -42,3 +42,19 @@ export const forkProjectRule = (projectId: string, rule: ProjectRule) =>
     data: {},
     headers: headers()
   })
+
+export interface RuleTrialResult {
+  result: string
+  ruleRevision: number
+  checks: Array<{ id: string; field: string; result: string; reason: string }>
+}
+export const trialProjectRule = (
+  projectId: string,
+  rule: ProjectRule,
+  facts: Record<string, unknown>
+) =>
+  request.post<RuleTrialResult>({
+    url: `${base(projectId)}/${encodeURIComponent(rule.id)}/trial`,
+    data: { facts },
+    headers: headers(rule.etag)
+  })

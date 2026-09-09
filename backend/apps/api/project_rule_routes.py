@@ -128,7 +128,8 @@ def fork_project_rule(request: Request, project_id: str, version_id: str,
 
 @project_rule_router.post("/projects/{project_id}/rules/versions/{version_id}/trial")
 def trial_project_rule(request: Request, project_id: str, version_id: str,
-                       body: dict[str, Any] = Body(default_factory=dict)):
+                       body: dict[str, Any] = Body(default_factory=dict),
+                       if_match: str | None = Header(default=None, alias="If-Match")):
     from apps.api import routes as api
 
     if error := _guard(request, project_id):
@@ -138,6 +139,10 @@ def trial_project_rule(request: Request, project_id: str, version_id: str,
         return fail(errors.NOT_FOUND, request)
     if error := _guard(request, project_id, api.parse_rule_node_ids(rule.get("nodeIds"))):
         return error
+    if not if_match:
+        return fail(errors.VALIDATION_ERROR, request, message="试跑需要 If-Match 版本标记。")
+    if not api.record_if_match_valid("rule-version", rule, if_match):
+        return fail(errors.ETAG_CONFLICT, request)
     try:
         result = evaluate_conditions(rule.get("executionConditions"), body.get("facts"))
     except (TypeError, ValueError) as exc:
