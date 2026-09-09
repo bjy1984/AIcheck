@@ -39,6 +39,10 @@ from apps.api.project_analysis_views import (
     node_project_analysis_view,
     project_analysis_results_for_review_workspace,
 )
+from apps.api.review_input_selection import (
+    ReviewInputSelectionError,
+    resolve_review_input_selection,
+)
 from apps.api.review_session_evidence import refresh_review_session_evidence_fingerprint
 from apps.api.rule_mutation_validation import rule_project_mutation_error
 from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
@@ -9258,7 +9262,11 @@ def ai_recheck(
             )
         except RuntimeError as exc:
             return fail(errors.VALIDATION_ERROR, request, message=str(exc))
-        evidence_readiness = build_node_evidence_readiness(repo, project_id, node_id)
+        try:
+            selected_input = resolve_review_input_selection(_DOCUMENT_ACCESS_SERVICES, request, project_id, node_id, body)
+        except ReviewInputSelectionError as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+        evidence_readiness = selected_input[1] if selected_input else build_node_evidence_readiness(repo, project_id, node_id)
         requested_review_mode = str(body.get("reviewMode") or "").strip().lower()
         if requested_review_mode and requested_review_mode not in {"formal", "gap_precheck"}:
             return fail(
@@ -9347,6 +9355,9 @@ def ai_recheck(
         input_document_version_ids = sorted({str(link.get("documentVersionId")) for link in node_evidence_links if link.get("documentVersionId")})
         if not input_document_version_ids:
             input_document_version_ids = targeting_input_versions_for_node(repo, project_id, node_id)
+        if selected_input:
+            input_document_version_ids = selected_input[0]
+            node_evidence_links = [link for link in node_evidence_links if link.get("documentVersionId") in input_document_version_ids]
         rule = (
             current_business_rule_for_node(node_id, business_pack_id=pack["id"])
             or next(

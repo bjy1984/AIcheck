@@ -13555,3 +13555,40 @@ def test_project_condition_mapping_is_saved_validated_and_returned_in_trial(monk
     assert result["bindingPlan"]["replacements"][0]["atomicCheckId"] == "AC-R24-01"
     assert len(result["bindingPlan"]["retainedAtomicCheckIds"]) == 4
     assert result["bindingPlan"]["formalExecutable"] is False
+
+
+def test_lab_explicit_review_inputs_are_run_only_and_survive_evidence_packaging(monkeypatch):
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK", "true")
+    monkeypatch.delenv("AICHECK_STRICT_PRODUCTION", raising=False)
+    seed_reviewed_node_24()
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    project = "P-2026-HDCP-001"
+    doc = {"id": "DOC-SELECTED", "projectId": project, "currentVersionId": "VER-SELECTED",
+           "fileName": "补充资料.pdf", "poolSubmissionStatus": "已提交", "tenantId": "TENANT-DEFAULT"}
+    repo.state["documents"].append(doc)
+    repo.state["versions"].append({"id": "VER-SELECTED", "documentId": doc["id"], "tenantId": "TENANT-DEFAULT"})
+    repo.state["documents"].extend([
+        {**doc, "id": "DOC-FOREIGN", "projectId": "OTHER", "currentVersionId": "VER-FOREIGN"},
+        {**doc, "id": "DOC-PRIVATE", "tenantId": "TENANT-OTHER", "currentVersionId": "VER-PRIVATE"}])
+    repo.state["versions"].extend([
+        {"id": "VER-FOREIGN", "documentId": "DOC-FOREIGN", "tenantId": "TENANT-DEFAULT"},
+        {"id": "VER-PRIVATE", "documentId": "DOC-PRIVATE", "tenantId": "TENANT-DEFAULT"}])
+    before = deepcopy(repo.state["bindings"])
+    path = f"/projects/{project}/inspection/nodes/24/ai-recheck"
+    result = assert_ok(client.post(path, headers=headers, json={"reviewMode": "gap_precheck", "inputDocumentVersionIds": ["VER-SELECTED"]}))
+    run = result["latestRun"]
+    assert run["inputDocumentVersionIds"] == ["VER-SELECTED"]
+    assert run["evidenceReadiness"]["readyForAiFormal"] is False
+    assert run["evidenceLinks"] == []
+    assert repo.state["bindings"] == before
+    snapshot = next(row for row in repo.state["evidence_snapshots"] if row["aiRunId"] == run["id"])
+    assert [row["documentVersionId"] for row in snapshot["documentVersions"]] == ["VER-SELECTED"]
+    count = len(repo.state["ai_runs"])
+    for versions in ([], ["FOREIGN"], ["VER-FOREIGN"], ["VER-PRIVATE"], ["VER-SELECTED", "VER-SELECTED"], "VER-SELECTED"):
+        assert_error(client.post(path, headers=headers, json={"reviewMode": "gap_precheck", "inputDocumentVersionIds": versions}), "VALIDATION_ERROR")
+    refused = client.post(path, headers=headers, json={"reviewMode": "formal", "inputDocumentVersionIds": ["VER-SELECTED"]})
+    assert refused.status_code == 409 and refused.json()["data"]["reason"] == "CONFLICT"
+    assert len(repo.state["ai_runs"]) == count
+    monkeypatch.delenv("AICHECK_WORKSTATIONS_ENABLED")
+    assert_error(client.post(path, headers=headers, json={"reviewMode": "gap_precheck", "inputDocumentVersionIds": ["VER-SELECTED"]}), "VALIDATION_ERROR")

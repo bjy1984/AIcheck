@@ -157,11 +157,21 @@ def build_evidence_snapshot(
     clause_package_version: str,
     prompt_version: str,
     strategy_version: str,
+    document_version_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    document_versions = _enrich_document_versions(
-        state,
-        active_node_document_versions(state, project_id, node_id),
-    )
+    active = active_node_document_versions(state, project_id, node_id)
+    if document_version_ids is not None:
+        documents = {str(row.get("id")): row for row in _records(state, "documents")
+                     if str(row.get("projectId") or "") == str(project_id)}
+        owners = {str(row.get("id")): str(row.get("documentId"))
+                  for row in _records(state, "document_versions", "versions") if str(row.get("documentId")) in documents}
+        owners.update({str(row.get("currentVersionId")): identity for identity, row in documents.items() if row.get("currentVersionId")})
+        if any(version not in owners for version in document_version_ids):
+            raise ValueError("review_input_version_outside_project")
+        active = [{"documentId": owners[version], "documentVersionId": version,
+                   "mountLinkIds": [], "mountRevision": 0, "selectionMode": "run_only"}
+                  for version in sorted(set(document_version_ids))]
+    document_versions = _enrich_document_versions(state, active)
     hash_payload = {
         "projectId": str(project_id),
         "nodeId": int(node_id),
@@ -858,6 +868,7 @@ def build_review_evidence_package(
     prompt_version: str,
     strategy_version: str,
     max_shard_estimated_tokens: int | None = None,
+    document_version_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     snapshot = build_evidence_snapshot(
         state,
@@ -867,6 +878,7 @@ def build_review_evidence_package(
         clause_package_version=clause_package_version,
         prompt_version=prompt_version,
         strategy_version=strategy_version,
+        document_version_ids=document_version_ids,
     )
     manifest = build_evidence_manifest(state, snapshot)
     shards = build_evidence_shards(
@@ -940,6 +952,8 @@ def attach_review_evidence_package_to_ai_run(
         ),
         prompt_version=str(ai_run.get("promptVersion") or "review_prompt@1.0.0"),
         strategy_version="node-review-strategy-v1",
+        document_version_ids=(list(ai_run.get("inputDocumentVersionIds") or [])
+                              if (ai_run.get("evidenceReadiness") or {}).get("inputSelection", {}).get("mode") == "explicit" else None),
     )
     snapshot_versions = sorted(
         str(item.get("documentVersionId"))
