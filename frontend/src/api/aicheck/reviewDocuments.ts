@@ -1,4 +1,5 @@
 import request from '@/axios'
+import type { HandoffSelection } from './reviewHandoffs'
 import type { RuleObjectMappingRequest } from './projectRules'
 import type { DocumentAsset } from '@/types/aicheck'
 
@@ -11,6 +12,7 @@ export type ReviewDocumentSelection = {
     versionNo?: string
     pageRange?: { start: number; end: number }
   }>
+  handoffSelection?: HandoffSelection
   pageScopeExplicit?: boolean
   conditionObjectMapping?: RuleObjectMappingRequest
   reviewMode: 'formal' | 'gap_precheck'

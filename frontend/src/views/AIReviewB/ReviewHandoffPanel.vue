@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ReviewHandoffUse from './ReviewHandoffUse.vue'
+import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import ReviewHandoffCreate from './ReviewHandoffCreate.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
@@ -24,10 +26,16 @@ import {
 const props = defineProps<{
   projectId: string
   runId: string
+  selection?: ReviewDocumentSelection | null
+  applyDisabled?: boolean
   projectEtag?: string
   evidenceLinks?: EvidenceLink[]
 }>()
-const emit = defineEmits<{ evidence: [value: EvidenceLink] }>()
+const emit = defineEmits<{
+  evidence: [value: EvidenceLink]
+  use: [ReviewDocumentSelection]
+  verified: []
+}>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
 const busy = ref(false)
@@ -164,6 +172,7 @@ const submit = async (outcome: 'verified' | 'rejected') => {
       throw new Error('handoff identity mismatch')
     resetForm()
     selected.value = null
+    emit('verified')
     feedback.value =
       outcome === 'verified'
         ? '人工确认已保存，请重新打开交接查看当前状态。'
@@ -282,6 +291,15 @@ const valueText = (value: unknown) =>
           title="证据页尚未定位，暂不能确认；可填写说明退回。"
           type="warning"
           :closable="false"
+        />
+        <ReviewHandoffUse
+          :record="selected"
+          :project-id="projectId"
+          :run-id="runId"
+          :selection="selection || null"
+          :disabled="busy || dirty || applyDisabled || refreshRequired"
+          @busy="busy = $event"
+          @use="emit('use', $event)"
         />
         <fieldset :disabled="busy || !!block || refreshRequired">
           <legend>人工核验</legend>

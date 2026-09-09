@@ -5,6 +5,7 @@ import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import type { EvidenceLink } from '@/types/aicheck'
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
 import ReviewDocumentPicker from './ReviewDocumentPicker.vue'
+import ReviewHandoffDependencies from './ReviewHandoffDependencies.vue'
 import ReviewHandoffPanel from './ReviewHandoffPanel.vue'
 
 defineProps<{
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   evidence: [value: EvidenceLink]
 }>()
 const toolRoot = ref<HTMLElement>()
+const handoffRefreshKey = ref(0)
 const focusTool = (section: 'documents' | 'rules' | 'handoffs') => {
   const index = { documents: 0, rules: 1, handoffs: 2 }[section]
   const buttons = toolRoot.value?.querySelectorAll<HTMLButtonElement>(
@@ -62,6 +64,10 @@ const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
         :evidence-links="evidenceLinks"
         :project-id="projectId"
         :run-id="runId"
+        :selection="selection"
+        :apply-disabled="documentsDisabled"
+        @use="!documentsDisabled && emit('change', $event)"
+        @verified="handoffRefreshKey++"
         @evidence="emit('evidence', $event)"
       />
     </div>
@@ -71,10 +77,27 @@ const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
       的已试跑版本选择原文。调整文件后需要重新选择对象。
       <ElButton
         :disabled="documentsDisabled"
-        @click="emit('change', { versions: selection.versions, reviewMode: selection.reviewMode })"
+        @click="emit('change', { ...selection, conditionObjectMapping: undefined })"
         >移除对象选择</ElButton
       >
     </p>
+    <p v-if="selection?.handoffSelection" role="status" class="workstation-tools__hint">
+      下次使用 {{ selection.handoffSelection.items.length }} 份交接：对象
+      {{ selection.handoffSelection.subject.objectId }}， 事件
+      {{ selection.handoffSelection.subject.eventId }}，返修轮次
+      {{ selection.handoffSelection.subject.repairRound }}。
+      调整文件或重新套用规则试跑后，需要重新选择交接。
+      <ElButton
+        :disabled="documentsDisabled"
+        @click="emit('change', { ...selection, handoffSelection: undefined })"
+        >移除交接选择</ElButton
+      >
+    </p>
+    <ReviewHandoffDependencies
+      :project-id="projectId"
+      :run-id="runId"
+      :refresh-key="handoffRefreshKey"
+    />
     <p v-if="!runId" class="workstation-tools__hint">发起审查后，可核验该任务收到的工位交接。</p>
   </section>
 </template>

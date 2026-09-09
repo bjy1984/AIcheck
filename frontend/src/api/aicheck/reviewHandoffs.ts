@@ -31,7 +31,7 @@ export type Handoff = {
     inputSourceCheck?: { status: string }
     evidenceLocationCheck?: { status: string }
   }
-  verification?: { status: string; authoritative: false }
+  verification?: { status: string; authoritative: false; latestVerificationId?: string }
   verifications?: Array<{
     id: string
     outcome: string
@@ -88,4 +88,22 @@ export const verifyHandoff = (projectId: string, id: string, data: HandoffDecisi
     url: `${base(projectId)}/${encodeURIComponent(id)}/verifications`,
     data,
     headers: { 'Idempotency-Key': key }
+  })
+
+export type HandoffSelection = {
+  subject: HandoffSubject & { eventId: string }
+  confirmedSameObject: true
+  items: Array<{ handoffId: string; verificationId: string }>
+}
+export type HandoffDependencies = {
+  reviewRunId: string
+  status: 'current' | 'not_used' | 'requires_revalidation'
+  requiresRevalidation: boolean
+  handoffIds?: string[]
+  message?: string
+  automaticRerun: false
+}
+export const getHandoffDependencies = (projectId: string, runId: string) =>
+  request.get<HandoffDependencies>({
+    url: `/api/projects/${encodeURIComponent(projectId)}/review-runs/${encodeURIComponent(runId)}/handoff-dependencies`
   })

@@ -24,6 +24,9 @@ export const documentSelectionPayload = (selection: ReviewDocumentSelection) => 
       .map((item) => [item.versionId, { ...item.pageRange! }])
   )
   return {
+    ...(selection.handoffSelection
+      ? { handoffSelection: JSON.parse(JSON.stringify(selection.handoffSelection)) }
+      : {}),
     ...(selection.conditionObjectMapping
       ? { conditionObjectMapping: JSON.parse(JSON.stringify(selection.conditionObjectMapping)) }
       : {}),
