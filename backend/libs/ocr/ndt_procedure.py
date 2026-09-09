@@ -42,8 +42,8 @@ def make_profile(structured_config, preprocess_policy):
     }
 
 
-def extract_explicit_fields(result, append_field):
-    for code, labels in LABELS.items():
+def extract_explicit_fields(result, append_field, *, field_labels=None, conflict_code="NDT_PROCEDURE_LABEL_CONFLICT"):
+    for code, labels in (LABELS if field_labels is None else field_labels).items():
         existing = [row for row in result.get("fields", []) if isinstance(row, dict) and row.get("fieldCode") == code]
         candidates = {}
         pattern = re.compile(r"^(?:" + "|".join(re.escape(label) for label in labels) + r")\s*[:：]\s*(\S.*?)\s*$")
@@ -58,7 +58,7 @@ def extract_explicit_fields(result, append_field):
         if conflict:
             for row in existing:
                 row["qualityFlags"] = sorted({*(row.get("qualityFlags") or []), "field_value_conflict"})
-            result.setdefault("diagnostics", []).append({"code": "NDT_PROCEDURE_LABEL_CONFLICT", "level": "warning",
+            result.setdefault("diagnostics", []).append({"code": conflict_code, "level": "warning",
                 "message": "同一字段出现多个不同值，需核对原文。", "fieldCode": code})
         elif len(candidates) == 1 and not existing:
             append_field(result, code, labels[0], next(iter(candidates.values())))
