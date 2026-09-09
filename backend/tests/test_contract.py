@@ -13567,7 +13567,7 @@ def test_lab_explicit_review_inputs_are_run_only_and_survive_evidence_packaging(
     doc = {"id": "DOC-SELECTED", "projectId": project, "currentVersionId": "VER-SELECTED",
            "fileName": "补充资料.pdf", "poolSubmissionStatus": "已提交", "tenantId": "TENANT-DEFAULT"}
     repo.state["documents"].append(doc)
-    repo.state["versions"].append({"id": "VER-SELECTED", "documentId": doc["id"], "tenantId": "TENANT-DEFAULT"})
+    repo.state["versions"].append({"id": "VER-SELECTED", "documentId": doc["id"], "tenantId": "TENANT-DEFAULT", "hash": "selected-content-hash"})
     repo.state["documents"].extend([
         {**doc, "id": "DOC-FOREIGN", "projectId": "OTHER", "currentVersionId": "VER-FOREIGN"},
         {**doc, "id": "DOC-PRIVATE", "tenantId": "TENANT-OTHER", "currentVersionId": "VER-PRIVATE"}])
@@ -13592,3 +13592,41 @@ def test_lab_explicit_review_inputs_are_run_only_and_survive_evidence_packaging(
     assert len(repo.state["ai_runs"]) == count
     monkeypatch.delenv("AICHECK_WORKSTATIONS_ENABLED")
     assert_error(client.post(path, headers=headers, json={"reviewMode": "gap_precheck", "inputDocumentVersionIds": ["VER-SELECTED"]}), "VALIDATION_ERROR")
+
+
+@pytest.mark.parametrize("case", ["unuploaded", "missing_record", "wrong_tenant", "historical"])
+def test_explicit_input_version_requires_own_uploaded_record(case, monkeypatch):
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    monkeypatch.setenv("AICHECK_ALLOW_LOCAL_GAP_PRECHECK_FALLBACK", "true")
+    monkeypatch.delenv("AICHECK_STRICT_PRODUCTION", raising=False)
+    seed_reviewed_node_24()
+    project = "P-2026-HDCP-001"
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    document = {"id": "DOC-VERSION-BODY", "projectId": project, "currentVersionId": "VER-BODY-CURRENT",
+                "tenantId": "TENANT-DEFAULT", "fileName": "版本资料.pdf"}
+    current = {"id": document["currentVersionId"], "documentId": document["id"],
+               "tenantId": "TENANT-DEFAULT", "hash": "current-hash", "isCurrent": True}
+    selected = {**current, "id": "VER-BODY-SELECTED", "hash": "historical-hash", "isCurrent": False}
+    if case == "unuploaded":
+        selected["hash"] = None
+    if case == "wrong_tenant":
+        selected["tenantId"] = "TENANT-OTHER"
+    if case == "missing_record":
+        document["currentVersionId"] = selected["id"]
+    repo.state["documents"].append(document)
+    repo.state["versions"].append(current)
+    if case != "missing_record":
+        repo.state["versions"].append(selected)
+    before = deepcopy({key: repo.state[key] for key in ("ai_runs", "bindings", "evidence_snapshots")})
+    response = client.post(f"/projects/{project}/inspection/nodes/24/ai-recheck", headers=headers,
+                           json={"reviewMode": "gap_precheck", "inputDocumentVersionIds": [selected["id"]]})
+    if case == "historical":
+        run = assert_ok(response)["latestRun"]
+        assert run["inputDocumentVersionIds"] == [selected["id"]]
+        snapshot = next(row for row in repo.state["evidence_snapshots"] if row["aiRunId"] == run["id"])
+        assert [row["documentVersionId"] for row in snapshot["documentVersions"]] == [selected["id"]]
+        assert repo.state["bindings"] == before["bindings"]
+    else:
+        assert_error(response, "VALIDATION_ERROR")
+        for key, rows in before.items():
+            assert repo.state[key] == rows
