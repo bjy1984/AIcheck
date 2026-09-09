@@ -9,12 +9,14 @@ from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
 from libs.review_orchestrator.r39_application_facts import application_input
 from libs.review_orchestrator.r39_approval_facts import build_approval_inputs
 from libs.review_orchestrator.r39_content_inventory_facts import build_content_inputs
+from libs.review_orchestrator.r39_inventory_facts import build_inventory_consistency
 from libs.review_orchestrator.r39_pt_facts import pt_application_input
 from libs.review_orchestrator.r39_reference_facts import reference_input
 from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 
 R39_TABLES = {
+    "ndt_application_document_links": "applicationDocumentLinks",
     "ndt_approval_cycle_inventory": "approvalCycleInventories", "ndt_approval_cycle_members": "approvalCycleMembers",
     "ndt_application_inventory": "applicationInventories", "ndt_application_members": "applicationMembers",
     "ndt_content_document_inventory": "contentDocumentInventories", "ndt_content_document_members": "contentDocumentMembers",
@@ -81,6 +83,7 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
     facts: dict[str, Any] = {"sourceIssues": [], "sourceRecords": deepcopy(groups)}
     def finish():
         gate_r39_inputs(groups, facts)
+        build_inventory_consistency(run, groups, facts, _clean)
         return {"r39": facts, **judgment}
 
     issues = facts["sourceIssues"]
