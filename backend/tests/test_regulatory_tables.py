@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from libs.regulatory_tables import (
     inspection_level_for_grade,
     is_verified,
@@ -619,3 +621,17 @@ def test_ndt_invalid_or_zero_ratio_does_not_select_a_partial_inspection_rule():
             assert ndt_acceptance_level(method, coverage_percent=ratio) is None
     assert ndt_acceptance_level("PAUT")["method"] == "phasedArray"
     assert ndt_acceptance_level("TOFD")["method"] == "tofd"
+
+
+@pytest.mark.parametrize("level", ["Ⅱ", "II", "ii", "ＩＩ", "2", "２级"])
+def test_acceptance_grade_normalizes_exact_notation(level):
+    from libs.regulatory_tables import acceptance_level_meets
+    assert acceptance_level_meets(level, "不低于 Ⅱ 级") is True
+    assert acceptance_level_meets(level, "Ⅰ级") is False
+
+
+@pytest.mark.parametrize("level", ["Ⅰ/Ⅱ", "Ⅱ或Ⅲ", "不符合Ⅱ级", "Ⅱ级不合格", "VIII", "12", "等级Ⅱ（待核实）", None, 2, True])
+def test_acceptance_grade_rejects_ambiguous_or_nontext_values(level):
+    from libs.regulatory_tables import acceptance_level_meets
+    assert acceptance_level_meets(level, "Ⅱ级") is None
+    assert acceptance_level_meets("Ⅱ级", level) is None

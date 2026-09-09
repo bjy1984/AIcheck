@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -76,7 +77,6 @@ def wps_base_material_group(grade: str) -> str | None:
     return None
 
 
-_LEVEL_RANK = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
 _METHOD_KEYS = {
     "RT": "radiographic",
     "射线": "radiographic",
@@ -128,11 +128,18 @@ def ndt_acceptance_level(method: str, *, coverage_percent: float | None = None) 
 
 def acceptance_level_meets(actual: str, required: str) -> bool | None:
     """合格级别是否达标：级别数字越小越严，实际必须不低于（即数字不大于）要求。"""
-    def rank(value: Any) -> int | None:
-        text = str(value or "")
-        return next((score for glyph, score in _LEVEL_RANK.items() if glyph in text), None)
+    def rank(value: Any, *, requirement: bool = False) -> int | None:
+        if not isinstance(value, str):
+            return None
+        text = unicodedata.normalize("NFKC", value).strip().upper()
+        prefix = r"(?:不低于\s*)?" if requirement else ""
+        match = re.fullmatch(prefix + r"(I|II|III|IV|V|[1-5])\s*(?:级)?", text)
+        if not match:
+            return None
+        return {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
+                "1": 1, "2": 2, "3": 3, "4": 4, "5": 5}[match.group(1)]
 
-    actual_rank, required_rank = rank(actual), rank(required)
+    actual_rank, required_rank = rank(actual), rank(required, requirement=True)
     if actual_rank is None or required_rank is None:
         return None
     return actual_rank <= required_rank

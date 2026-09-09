@@ -46,3 +46,15 @@ def test_method_aliases_do_not_create_duplicates_or_substring_matches():
     rows = design_ndt_requirements("相控阵超声(PAUT)，检测比例100%，Ⅱ级")["methodRequirements"]
     assert [row["method"] for row in rows] == ["PAUT"]
     assert rows[0]["requiredAcceptance"]["method"] == "phasedArray"
+
+
+@pytest.mark.parametrize("level", ["Ⅱ", "II", "ii", "2"])
+def test_equivalent_exact_levels_reach_real_rule_pass(level):
+    text = f"GB/T 20801.1-2025。RT，检测比例100%，验收等级{level}级"
+    assert review_ndt(text, PIPELINE)["result"] == "passed"
+
+
+@pytest.mark.parametrize("level", ["VIII", "12", "SMARTII", "Ⅰ/Ⅱ", "Ⅲ或Ⅱ", "Ⅲ或者Ⅱ", "不符合Ⅱ", "未达到Ⅱ", "不低于Ⅱ", "Ⅱ级不合格"])
+def test_unresolved_level_expression_cannot_be_extracted_as_passing_grade(level):
+    text = f"GB/T 20801.1-2025。RT，检测比例100%，验收等级{level}级"
+    assert review_ndt(text, PIPELINE)["result"] != "passed"

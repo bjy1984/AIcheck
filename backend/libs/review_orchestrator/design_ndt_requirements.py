@@ -9,7 +9,7 @@ from libs.regulatory_tables import acceptance_level_meets, ndt_acceptance_level
 
 METHOD_RE = re.compile(r"相控阵(?:超声)?|超声相控阵|射线|超声|渗透|磁粉|(?<![A-Za-z])(?:PAUT|TOFD|RT|UT|PT|MT)(?![A-Za-z])", re.IGNORECASE)
 COVERAGE_RE = re.compile(r"(?:检测比例|抽检比例|检测率|比例)\s*[:：]?\s*(?:不低于|不少于|≥|>=)?\s*(\d{1,3})\s*%")
-LEVEL_RE = re.compile(r"([ⅠⅡⅢⅣIVX]{1,3}|[1-4])\s*级\s*(?:合格|为合格)?")
+LEVEL_RE = re.compile(r"(?<![A-Za-z0-9])((?:不符合|不满足|未达到|不低于|不高于|低于|高于)?\s*[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVX0-9/／或者至—–-]+)\s*级(?:\s*(不合格|未合格))?", re.IGNORECASE)
 _ALIASES = {"射线": "RT", "超声": "UT", "渗透": "PT", "磁粉": "MT",
             "相控阵": "PAUT", "相控阵超声": "PAUT", "超声相控阵": "PAUT"}
 
@@ -40,7 +40,7 @@ def design_ndt_requirements(text: str) -> dict[str, Any]:
             re.fullmatch(r"[\s、,，+和及与（）()]*", clause[left.end():right.start()])
             for left, right in pairwise(matches))
         ratio = int(coverages[0].group(1)) if shared and len(coverages) == 1 else None
-        level = levels[0].group(1) if shared and len(levels) == 1 else None
+        level = levels[0].group(1).strip() if shared and len(levels) == 1 and not levels[0].group(2) else None
         for method in methods:
             required = ndt_acceptance_level(method, coverage_percent=ratio) if shared else None
             rows.append({"method": method, "coveragePercent": ratio, "acceptanceLevel": level,
