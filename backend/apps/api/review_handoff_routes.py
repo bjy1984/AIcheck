@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
-from fastapi import APIRouter, Body, Query, Request
+from fastapi import APIRouter, Body, Header, Query, Request
 
 from apps.api import document_access_policy
 from apps.api import routes as api
@@ -53,7 +54,8 @@ def _runs(request, project_id, source_id, target_id, visible_versions=None):
 
 
 @router.post("/projects/{project_id}/review-handoffs")
-def save_handoff(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict)):
+def save_handoff(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict),
+                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if error := _guard(request, project_id):
         return error
     if set(body) != FIELDS:
@@ -68,14 +70,18 @@ def save_handoff(request: Request, project_id: str, body: dict[str, Any] = Body(
                                      payload=body["payload"], evidence_refs=body["evidenceRefs"])
     except (TypeError, ValueError) as exc:
         return fail(errors.VALIDATION_ERROR, request, message=str(exc))
-    existing = repo.find_one("review_handoffs", draft["id"])
-    if existing:
-        return ok(repo.clone(existing), request)
-    record = {"id": draft["id"], "tenantId": api.request_tenant_id(request), "projectId": project_id,
-              "sourceNodeId": runs[0]["nodeId"], "targetNodeId": runs[1]["nodeId"], "draft": draft,
-              "createdByUserId": api.request_user_id(request), "createdAt": server_time()}
-    repo.state.setdefault("review_handoffs", []).append(record)
-    return ok(repo.clone(record), request)
+    def produce():
+        existing = repo.find_one("review_handoffs", draft["id"])
+        if existing:
+            return ok(repo.clone(existing), request)
+        record = {"id": draft["id"], "tenantId": api.request_tenant_id(request), "projectId": project_id,
+                  "sourceNodeId": runs[0]["nodeId"], "targetNodeId": runs[1]["nodeId"], "draft": draft,
+                  "createdByUserId": api.request_user_id(request), "createdAt": server_time()}
+        repo.state.setdefault("review_handoffs", []).append(record)
+        return ok(repo.clone(record), request)
+
+    return api.idempotent(request, idempotency_key, produce,
+                          fingerprint_source={"body": body, "snapshotHash": draft["snapshotHash"]})
 
 
 def _record_view(request, project_id, record, visible_versions):
@@ -159,3 +165,22 @@ def get_pipeline_conflicts(request: Request, project_id: str, run_id: str):
         return fail(errors.FORBIDDEN, request)
     # Original failure evidence remains historical even if the task record changes.
     return ok({"report": repo.clone(report), "historical": True, "authoritative": False}, request)
+
+
+def handoff_replay_error(request: Request, cached: dict[str, Any]):
+    """Recheck live and frozen access before the middleware returns a cached draft."""
+    match = re.fullmatch(r"(?:/api)?/projects/([^/]+)/review-handoffs", request.url.path)
+    if request.method != "POST" or not match:
+        return None
+    project_id = match.group(1)
+    if error := _guard(request, project_id):
+        return error
+    record = (cached.get("response") or {}).get("data")
+    if not isinstance(record, dict) or not isinstance(record.get("draft"), dict):
+        return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
+    view, error = _record_view(request, project_id, record, _visible_versions(request, project_id))
+    if error is not None:
+        return error
+    if view["validation"]["status"] != "current_draft":
+        return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
+    return None

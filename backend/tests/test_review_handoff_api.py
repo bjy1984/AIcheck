@@ -271,3 +271,34 @@ def test_pipeline_report_identity_and_access(case, monkeypatch):
     elif case == "disabled":
         monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "false")
     assert client.get(f"/api/projects/{PROJECT}/review-runs/SOURCE/pipeline-conflicts", headers=headers).json()["code"] != 0
+
+
+def test_handoff_idempotency_replays_and_rejects_changed_body_or_snapshot():
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    headers = {**HEADERS, "Idempotency-Key": "handoff-request-1"}
+    first = client.post(url, headers=headers, json=payload()).json()
+    assert first["code"] == 0, first
+    assert client.post(url, headers=headers, json=payload()).json()["data"] == first["data"]
+    changed = {**payload(), "payload": {"request": "different"}}
+    assert client.post(url, headers=headers, json=changed).json()["code"] != 0
+    repo.find_one("review_runs", "SOURCE")["inputHash"] = "CHANGED"
+    assert client.post(url, headers=headers, json=payload()).json()["code"] != 0
+    assert len(repo.state["review_handoffs"]) == 1
+
+
+def test_handoff_cached_replay_checks_original_document_access_and_lab_flag(monkeypatch):
+    version = "REPLAY-V1"
+    doc = {"id": "REPLAY-D", "projectId": PROJECT, "tenantId": "TENANT-DEFAULT", "currentVersionId": version}
+    repo.state["documents"].append(doc)
+    repo.state["versions"].append({"id": version, "documentId": doc["id"], "tenantId": "TENANT-DEFAULT"})
+    repo.find_one("review_runs", "SOURCE")["inputDocumentVersionIds"] = [version]
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    headers = {**HEADERS, "Idempotency-Key": "guarded-replay"}
+    assert client.post(url, headers=headers, json=payload()).json()["code"] == 0
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "false")
+    assert client.post(url, headers=headers, json=payload()).json()["code"] != 0
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    doc["tenantId"] = "OTHER"
+    repo.find_one("review_runs", "SOURCE")["inputDocumentVersionIds"] = []
+    assert client.post(url, headers=headers, json=payload()).json()["code"] != 0
+    assert len(repo.state["review_handoffs"]) == 1

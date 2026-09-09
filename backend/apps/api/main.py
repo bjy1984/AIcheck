@@ -658,6 +658,10 @@ async def idempotency_replay_response(request: Request) -> JSONResponse | None:
         if cached.get("authorizationDigest") != request_authorization_digest(request, all_projects=True):
             return fail(errors.FORBIDDEN, request, message="当前授权上下文已变化，不能重放历史响应。", http_status=403)
         cached["authorizationDigest"] = request_authorization_digest(request)
+    from apps.api.review_handoff_routes import handoff_replay_error
+
+    if replay_error := handoff_replay_error(request, cached):
+        return replay_error
     if stale_project_analysis_replay(request, cached):
         repo.state["idempotency"].pop(scope, None)
         return None
