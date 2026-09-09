@@ -20,6 +20,8 @@ const deferred = <T>() => {
   return { promise, resolve, reject }
 }
 const execute = (name: string, state: Record<string, unknown>) => {
+  state.workspaceReadSequence ??= ref(0)
+  state.auditReadSequence ??= ref(0)
   const start = source.indexOf(`const ${name} =`)
   const next = source.indexOf('\nconst ', start + 1)
   const code = transpileModule(source.slice(start, next), {
@@ -201,3 +203,68 @@ console.log(
   await execute('loadSessionData', state)
   assert.deepEqual(merged, ['current message', 'current event', 'scroll'])
 }
+
+for (const firstName of ['loadNodeWorkspace', 'refreshLiveState'])
+  for (const rejectOld of [false, true]) {
+    const old = deferred<unknown>()
+    const recent = deferred<unknown>()
+    let requests = 0
+    const state = {
+      args: [false],
+      activeProjectId: ref('P'),
+      activeRunId: ref('RUN'),
+      activeNodeId: ref(24),
+      reviewContextGeneration: ref(0),
+      workspaceReadSequence: ref(0),
+      workspace: ref<unknown>({ id: 'initial' }),
+      auditView: ref(undefined),
+      reviewOpinion: ref(''),
+      nodeLoading: ref(false),
+      polling: ref(false),
+      pageError: ref(''),
+      route: { query: {} },
+      fetchWorkspace: () => (++requests === 1 ? old.promise : recent.promise),
+      ensureSession: async () => undefined,
+      loadSessionData: async () => undefined,
+      loadAuditView: async () => undefined,
+      updateRouteQuery: async () => undefined,
+      getAicheckErrorMessage: () => 'old error'
+    }
+    const first = execute(firstName, state)
+    const second = execute('loadNodeWorkspace', state)
+    recent.resolve({ id: 'latest' })
+    await second
+    state.pageError.value = 'latest message'
+    if (rejectOld) old.reject(new Error('late failure'))
+    else old.resolve({ id: 'stale' })
+    await first
+    assert.deepEqual(state.workspace.value, { id: 'latest' })
+    assert.equal(state.pageError.value, 'latest message')
+    assert.equal(state.nodeLoading.value, false)
+  }
+for (const rejectOld of [false, true]) {
+  const old = deferred<{ data: string }>()
+  const recent = deferred<{ data: string }>()
+  let requests = 0
+  const state = {
+    args: [true],
+    activeRunId: ref('SAME-RUN'),
+    reviewContextGeneration: ref(0),
+    auditReadSequence: ref(0),
+    auditView: ref<unknown>(undefined),
+    loadedAuditViewSignature: '',
+    auditViewSignature: () => 'same',
+    getReviewBAuditViewApi: () => (++requests === 1 ? old.promise : recent.promise)
+  }
+  const first = execute('loadAuditView', state)
+  const second = execute('loadAuditView', state)
+  recent.resolve({ data: 'latest audit' })
+  await second
+  if (rejectOld) old.reject(new Error('late failure'))
+  else old.resolve({ data: 'old audit' })
+  await first
+  assert.equal(state.auditView.value, 'latest audit')
+}
+console.log(
+  'Latest workspace and audit request wins on same-context reverse completion and late errors'
+)

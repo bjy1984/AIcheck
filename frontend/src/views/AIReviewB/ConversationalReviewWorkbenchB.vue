@@ -300,6 +300,8 @@ const currentTask = computed(
 )
 const reviewDocumentSelection = ref<ReviewDocumentSelection | null>(null)
 const reviewContextGeneration = ref(0)
+const workspaceReadSequence = ref(0)
+const auditReadSequence = ref(0)
 watch(
   () => [activeProjectId.value, activeNodeId.value],
   () => {
@@ -748,6 +750,7 @@ const auditViewSignature = () =>
     .join('|')
 
 const loadAuditView = async (force = false) => {
+  const requestSequence = ++auditReadSequence.value
   const generation = reviewContextGeneration.value
   const runId = activeRunId.value
   if (!activeRunId.value) {
@@ -759,11 +762,21 @@ const loadAuditView = async (force = false) => {
   if (!force && auditView.value && signature === loadedAuditViewSignature) return
   try {
     const result = await getReviewBAuditViewApi(runId)
-    if (generation !== reviewContextGeneration.value || runId !== activeRunId.value) return
+    if (
+      generation !== reviewContextGeneration.value ||
+      runId !== activeRunId.value ||
+      requestSequence !== auditReadSequence.value
+    )
+      return
     auditView.value = result.data
     loadedAuditViewSignature = signature
   } catch {
-    if (generation !== reviewContextGeneration.value || runId !== activeRunId.value) return
+    if (
+      generation !== reviewContextGeneration.value ||
+      runId !== activeRunId.value ||
+      requestSequence !== auditReadSequence.value
+    )
+      return
     auditView.value = undefined
     // 指纹不留：下一轮要重试，别把一次失败当成「已经取过了」。
     loadedAuditViewSignature = ''
@@ -878,6 +891,7 @@ const stopLiveAgentTrace = () => {
 
 const ensureSession = async () => {
   if (workspace.value?.session || !activeProjectId.value || !activeNodeId.value) return
+  const requestSequence = workspaceReadSequence.value
   const generation = reviewContextGeneration.value
   const projectId = activeProjectId.value
   const nodeId = activeNodeId.value
@@ -905,9 +919,17 @@ const ensureSession = async () => {
         ? crypto.randomUUID()
         : `${Date.now()}`
   )
-  if (generation !== reviewContextGeneration.value) return
+  if (
+    generation !== reviewContextGeneration.value ||
+    requestSequence !== workspaceReadSequence.value
+  )
+    return
   const result = await fetchWorkspace(reviewRunId, { projectId, nodeId, generation })
-  if (generation === reviewContextGeneration.value) workspace.value = result
+  if (
+    generation === reviewContextGeneration.value &&
+    requestSequence === workspaceReadSequence.value
+  )
+    workspace.value = result
 }
 
 /** 取工作区，并顺手把服务端时钟对上。
@@ -931,7 +953,9 @@ const fetchWorkspace = async (
 
 const loadNodeWorkspace = async (reset = true) => {
   if (!activeProjectId.value || !activeNodeId.value) return
+  const requestSequence = ++workspaceReadSequence.value
   const generation = reviewContextGeneration.value
+  polling.value = false
   nodeLoading.value = true
   pageError.value = ''
   if (reset) {
@@ -941,17 +965,38 @@ const loadNodeWorkspace = async (reset = true) => {
   }
   try {
     const result = await fetchWorkspace(String(route.query.reviewRunId || '') || undefined)
-    if (generation !== reviewContextGeneration.value) return
+    if (
+      generation !== reviewContextGeneration.value ||
+      requestSequence !== workspaceReadSequence.value
+    )
+      return
     workspace.value = result
     await ensureSession()
-    if (generation !== reviewContextGeneration.value) return
+    if (
+      generation !== reviewContextGeneration.value ||
+      requestSequence !== workspaceReadSequence.value
+    )
+      return
     await Promise.all([loadSessionData(reset), loadAuditView()])
-    if (generation === reviewContextGeneration.value && reset) await updateRouteQuery()
+    if (
+      generation === reviewContextGeneration.value &&
+      requestSequence === workspaceReadSequence.value &&
+      reset
+    )
+      await updateRouteQuery()
   } catch (error) {
-    if (generation !== reviewContextGeneration.value) return
+    if (
+      generation !== reviewContextGeneration.value ||
+      requestSequence !== workspaceReadSequence.value
+    )
+      return
     pageError.value = getAicheckErrorMessage(error, 'AI 复核工作区加载失败，请稍后重试。')
   } finally {
-    if (generation === reviewContextGeneration.value) nodeLoading.value = false
+    if (
+      generation === reviewContextGeneration.value &&
+      requestSequence === workspaceReadSequence.value
+    )
+      nodeLoading.value = false
   }
 }
 
@@ -1012,21 +1057,38 @@ const loadEmbeddedContext = async () => {
 
 const refreshLiveState = async () => {
   if (nodeLoading.value || polling.value || !activeProjectId.value || !activeNodeId.value) return
+  const requestSequence = ++workspaceReadSequence.value
   const generation = reviewContextGeneration.value
   polling.value = true
   try {
     const previousRunId = activeRunId.value
     const result = await fetchWorkspace(previousRunId || undefined)
-    if (generation !== reviewContextGeneration.value) return
+    if (
+      generation !== reviewContextGeneration.value ||
+      requestSequence !== workspaceReadSequence.value
+    )
+      return
     workspace.value = result
     await ensureSession()
-    if (generation !== reviewContextGeneration.value) return
+    if (
+      generation !== reviewContextGeneration.value ||
+      requestSequence !== workspaceReadSequence.value
+    )
+      return
     await Promise.all([loadSessionData(false), loadAuditView()])
-    if (generation === reviewContextGeneration.value) pageError.value = ''
+    if (
+      generation === reviewContextGeneration.value &&
+      requestSequence === workspaceReadSequence.value
+    )
+      pageError.value = ''
   } catch {
     // 保留最后一次成功快照；下一次刷新成功后会清除旧错误提示。
   } finally {
-    if (generation === reviewContextGeneration.value) polling.value = false
+    if (
+      generation === reviewContextGeneration.value &&
+      requestSequence === workspaceReadSequence.value
+    )
+      polling.value = false
   }
 }
 
