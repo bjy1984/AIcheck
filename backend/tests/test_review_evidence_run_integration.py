@@ -269,3 +269,55 @@ def test_real_route_freezes_confirmed_mapping_and_executes_selected_source(monke
     changed["conditionObjectMapping"]["ruleRevision"] = 2
     assert client.post(f"/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck", json=changed).json()["code"] != 0
     assert len(repo.state["ai_runs"]) == before
+
+
+def test_real_route_uses_verified_handoff_and_rejects_changed_verification(monkeypatch):
+    from copy import deepcopy
+
+    from test_review_workstations import run_for
+
+    from libs.review_document_scope import freeze_document_scope
+    from libs.review_orchestrator import execution
+    from libs.review_rule_snapshot import freeze_effective_rule
+
+    _allow_dispatch(monkeypatch)
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    headers = {"X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001"}
+    version_id = _mount_ocr_document(document_id_hint="HANDOFF", file_name="handoff.pdf",
+                                    material_type_code="design_license", quoted_text="焊口W1交接原文")
+    repo.find_one("versions", version_id)["hash"] = "uploaded-handoff"
+    repo.state["ocr_parse_results"].append({"id": "HANDOFF-PARSE", "tenantId": "TENANT-DEFAULT",
+        "documentVersionId": version_id, "pages": [{"pageNo": 1, "text": "焊口W1交接原文"}]})
+    for node, name in ((24, "HANDOFF-SOURCE"), (35, "HANDOFF-TARGET")):
+        run = run_for(node)
+        run.update(id=name, reviewRunId=name, projectId=PROJECT_ID, tenantId="TENANT-DEFAULT", inputHash=name,
+                   inputDocumentVersionIds=[version_id], status="completed", outputHash="OUTPUT")
+        run["documentScopeSnapshot"] = freeze_document_scope(run, repo.state)
+        run["effectiveRuleSnapshot"] = freeze_effective_rule(run, {"id": f"RULE-{node}", "version": "1"})
+        repo.state["review_runs"].append(run)
+    subject = {"objectType": "weld", "objectId": "W1", "eventId": "EV1", "repairRound": 0}
+    base = f"/api/projects/{PROJECT_ID}/review-handoffs"
+    record = _assert_ok(client.post(base, headers=headers, json={"sourceRunId": "HANDOFF-SOURCE", "targetRunId": "HANDOFF-TARGET",
+        "kind": "facts", "subject": subject, "payload": {"observation": "已核对焊口W1资料"},
+        "evidenceRefs": [{"documentVersionId": version_id, "pageNo": 1}]}))
+    decision = {"snapshotHash": record["draft"]["snapshotHash"], "expectedPreviousId": None, "subject": subject,
+        "outcome": "verified", "objectMatchConfirmed": True, "evidenceSupportConfirmed": True, "note": "人工核验示例"}
+    verified = _assert_ok(client.post(f"{base}/{record['id']}/verifications", headers=headers, json=decision))
+    selection = {"subject": subject, "confirmedSameObject": True, "items": [{"handoffId": record["id"], "verificationId": verified["verifications"][-1]["id"]}]}
+    body = {"reviewMode": "gap_precheck", "auditInputMode": "ocr_llm", "inputDocumentVersionIds": [version_id], "handoffSelection": selection}
+    path = f"/projects/{PROJECT_ID}/inspection/nodes/35/ai-recheck"
+    ai_run = _assert_ok(client.post(path, headers=headers, json=body))["latestRun"]
+    assert ai_run["handoffSelection"] == selection
+    run = execution.create_review_run_from_ai_run(ai_run, mode="inline")
+    parts = execution.build_review_prompt_parts(run, {})
+    assert parts["userPayload"]["verifiedHandoffs"][0]["handoffId"] == record["id"]
+    dependency_path = f"/api/projects/{PROJECT_ID}/review-runs/{run['reviewRunId']}/handoff-dependencies"
+    assert _assert_ok(client.get(dependency_path, headers=headers))["status"] == "current"
+    before = deepcopy(run)
+    decision.update(expectedPreviousId=verified["verifications"][-1]["id"], outcome="rejected", note="重新核验不匹配")
+    _assert_ok(client.post(f"{base}/{record['id']}/verifications", headers=headers, json=decision))
+    assert _assert_ok(client.get(dependency_path, headers=headers))["requiresRevalidation"] is True
+    count = len(repo.state["ai_runs"])
+    assert client.post(path, headers=headers, json=body).json()["code"] != 0
+    assert len(repo.state["ai_runs"]) == count
+    assert run == before

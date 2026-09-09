@@ -59,7 +59,7 @@ def _nested_locations_in_range(value: Any, bounds: dict[str, int]) -> bool:
 
 
 def task_page_ranges(ai_run: dict[str, Any]) -> dict[str, dict[str, int]] | None:
-    if "conditionObjectMapping" in ai_run and os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() not in {"1", "true", "yes"}:
+    if ({"conditionObjectMapping", "handoffSelection"} & ai_run.keys()) and os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() not in {"1", "true", "yes"}:
         raise ValueError("condition_mapping_requires_workstation")
     if "inputDocumentPageRanges" not in ai_run:
         return None
@@ -71,6 +71,8 @@ def task_page_ranges(ai_run: dict[str, Any]) -> dict[str, dict[str, int]] | None
 
 def prompt_grounding(state, run, context, grounder):
     """A scoped prompt must rebuild evidence rather than reuse unbounded context."""
+    from libs.review_handoff_inputs import handoff_prompt_payload
+    context["verifiedHandoffInputs"] = handoff_prompt_payload(run, state)
     scoped = bool(run.get("inputDocumentPageRanges"))
     grounding = (None if scoped else context.get("groundingInput")) or grounder(
         state, set(run.get("inputDocumentVersionIds") or []),
@@ -91,6 +93,8 @@ def existing_scoped_run(ai_run, ranges, repository, ensure_sources):
     if existing:
         from libs.review_condition_mapping import assert_mapping_reuse
         assert_mapping_reuse(ai_run, existing, repository.state)
+        from libs.review_handoff_inputs import assert_handoff_reuse
+        assert_handoff_reuse(ai_run, existing, repository.state)
         if (ranges or {}) != (existing.get("inputDocumentPageRanges") or {}):
             raise ValueError("review_page_scope_existing_run_mismatch")
         if ranges:

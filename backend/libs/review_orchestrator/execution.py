@@ -367,7 +367,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
         "inputDocumentVersionIds": ai_run.get("inputDocumentVersionIds") or [],
-        **({"conditionObjectMapping": repo.clone(ai_run["conditionObjectMapping"])} if "conditionObjectMapping" in ai_run else {}),
+        **{key: repo.clone(ai_run[key]) for key in ("conditionObjectMapping", "handoffSelection") if key in ai_run},
         **({"inputDocumentPageRanges": page_ranges} if page_ranges is not None else {}),
         "schemaVersion": ai_run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
         "runMode": ai_run.get("runType") or "production",
@@ -468,7 +468,6 @@ def seed_graph_nodes(review_run: dict[str, Any]) -> None:
                 "createdAt": server_time(),
             }
         )
-
 
 
 
@@ -2014,7 +2013,7 @@ def build_review_prompt_parts(review_run: dict[str, Any], context: dict[str, Any
         "strictGroundingPolicy": grounding_block["strictGroundingPolicy"],
         "projectId": review_run.get("projectId"),
         "nodeId": review_run.get("nodeId"),
-        "fieldCount": len(fields),
+        "fieldCount": len(fields), **context.get("verifiedHandoffInputs", {}),
         **({"documentPageRanges": repo.clone(review_run["inputDocumentPageRanges"])}
            if review_run.get("inputDocumentPageRanges") else {}),
         "groundingStatus": grounding_input.get("groundingStatus"),
@@ -3915,7 +3914,7 @@ def clone_review_run_for_replay(
     run_mode: str,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    if parent.get("inputDocumentPageRanges") or "conditionObjectMappingSnapshot" in parent:
+    if parent.get("inputDocumentPageRanges") or {"conditionObjectMappingSnapshot", "handoffInputsSnapshot"} & parent.keys():
         ensure_document_sources(parent, repo.state)
     ensure_review_state()
     now = server_time()

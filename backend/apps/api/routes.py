@@ -9422,7 +9422,7 @@ def ai_recheck(
             "promptVersion": f"node-{node_id}-v1",
             "ruleVersion": rule.get("version") or "ruleset-v1",
             "inputDocumentVersionIds": input_document_version_ids,
-            **({"conditionObjectMapping": repo.clone(evidence_readiness["inputSelection"]["conditionObjectMapping"])} if "conditionObjectMapping" in (evidence_readiness.get("inputSelection") or {}) else {}),
+            **{key: repo.clone(evidence_readiness["inputSelection"][key]) for key in ("conditionObjectMapping", "handoffSelection") if key in (evidence_readiness.get("inputSelection") or {})},
             **({"inputDocumentPageRanges": repo.clone(evidence_readiness["inputSelection"]["documentPageRanges"])}
                if "documentPageRanges" in (evidence_readiness.get("inputSelection") or {}) else {}),
             "evidenceReadiness": evidence_readiness,

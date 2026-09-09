@@ -26300,6 +26300,52 @@
         "summary": "Verify Handoff"
       }
     },
+    "/api/projects/{project_id}/review-runs/{run_id}/handoff-dependencies": {
+      "get": {
+        "operationId": "get_handoff_dependencies_api_projects__project_id__review_runs__run_id__handoff_dependencies_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Handoff Dependencies"
+      }
+    },
     "/api/projects/{project_id}/review-runs/{run_id}/pipeline-conflicts": {
       "get": {
         "operationId": "get_pipeline_conflicts_api_projects__project_id__review_runs__run_id__pipeline_conflicts_get",
@@ -50018,6 +50064,52 @@
           }
         },
         "summary": "Verify Handoff"
+      }
+    },
+    "/projects/{project_id}/review-runs/{run_id}/handoff-dependencies": {
+      "get": {
+        "operationId": "get_handoff_dependencies_projects__project_id__review_runs__run_id__handoff_dependencies_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Handoff Dependencies"
       }
     },
     "/projects/{project_id}/review-runs/{run_id}/pipeline-conflicts": {

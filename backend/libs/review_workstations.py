@@ -143,6 +143,7 @@ def apply_station_messages(review_run: dict[str, Any], messages: list[dict[str, 
 def initialize_run_workstation(record, project, published_rule, catalog, hash_payload, *, state=None):
     from libs.business_pack import load_business_pack, matching_rule_for_node
     from libs.review_condition_mapping import initialize_condition_mapping
+    from libs.review_handoff_inputs import initialize_handoff_inputs
     from libs.review_rule_snapshot import freeze_effective_rule
 
     station_pack = deepcopy(project.get("businessPackSnapshot") or load_business_pack(record["businessPackId"]))
@@ -160,6 +161,7 @@ def initialize_run_workstation(record, project, published_rule, catalog, hash_pa
     record["inputHash"] = hash_payload({"legacyInputHash": record["inputHash"], "documents": record["documentScopeSnapshot"]["snapshotHash"], "workstation": record["workstationSnapshot"]["snapshotHash"], "effectiveRule": record["effectiveRuleSnapshot"]["snapshotHash"]})
 
     initialize_condition_mapping(record, state)
+    initialize_handoff_inputs(record, state)
 
 def workstation_argument_scope_error(review_run: dict[str, Any], arguments: dict[str, Any]) -> str | None:
     if station_snapshot(review_run) is None:

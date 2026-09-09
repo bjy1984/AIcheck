@@ -79,9 +79,12 @@ def ensure_document_sources(run: dict[str, Any], state: dict[str, Any]) -> None:
 
     try:
         validate_document_sources(run, state)
+        if "handoffInputsSnapshot" in run:
+            from libs.review_handoff_inputs import effective_handoff_inputs
+            effective_handoff_inputs(run, state)
         if "conditionObjectMappingSnapshot" in run:
             from libs.review_condition_mapping import effective_condition_mapping
             effective_condition_mapping(run, state)
-    except ValueError as exc:
+    except (TypeError, ValueError, KeyError) as exc:
         raise IntegrationServiceError("review", "validate_inputs", status_code=409,
                                       reason="REVIEW_INPUT_CHANGED_RECREATE_RUN") from exc

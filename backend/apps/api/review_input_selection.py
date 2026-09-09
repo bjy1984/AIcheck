@@ -29,7 +29,7 @@ def resolve_review_input_selection(services, request, project_id: str, node_id: 
         # Never accept a range while downstream readers could still consume the whole file.
         raise ReviewInputSelectionError("页码范围尚未完成全链路验收，暂不能按指定页码发起审查。")
     if "inputDocumentVersionIds" not in body:
-        if "conditionObjectMapping" in body:
+        if {"conditionObjectMapping", "handoffSelection"} & body.keys():
             raise ReviewInputSelectionError("对象选择必须明确指定本次文件版本。")
         if "inputDocumentPageRanges" in body:
             raise ReviewInputSelectionError("指定页码时必须明确选择文件版本。")
@@ -100,4 +100,14 @@ def resolve_review_input_selection(services, request, project_id: str, node_id: 
                 services, request, project_id, node_id, body, ordered, ranges)
         except (TypeError, ValueError) as exc:
             raise ReviewInputSelectionError(str(exc)) from exc
+    if "handoffSelection" in body:
+        from apps.api.review_handoff_selection import prepare_handoff_selection
+        try:
+            runtime = audit_runtime_public_config(mode=str(body.get("auditInputMode") or body.get("auditRuntimeMode") or "") or None)
+            if not runtime["useOcrEvidence"]:
+                raise ValueError("使用交接证据需要 OCR 资料模式。")
+            readiness["inputSelection"]["handoffSelection"] = prepare_handoff_selection(
+                services, request, project_id, node_id, body, ordered, ranges)
+        except (TypeError, ValueError, KeyError) as exc:
+            raise ReviewInputSelectionError("交接无法用于本次审查，请核对对象、核验版本及所选原文后重试。") from exc
     return ordered, readiness

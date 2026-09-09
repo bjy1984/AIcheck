@@ -300,3 +300,26 @@ def handoff_replay_error(request: Request, cached: dict[str, Any]):
     if view["validation"]["status"] != "current_draft":
         return fail(errors.IDEMPOTENCY_KEY_CONFLICT, request)
     return None
+
+
+@router.get("/projects/{project_id}/review-runs/{run_id}/handoff-dependencies")
+def get_handoff_dependencies(request: Request, project_id: str, run_id: str):
+    from libs.review_handoff_inputs import handoff_dependency_status
+
+    if error := _guard(request, project_id):
+        return error
+    visible = _visible_versions(request, project_id)
+    runs, error = _runs(request, project_id, run_id, run_id, visible)
+    if error:
+        return error
+    run = runs[0]
+    snapshot = run.get("handoffInputsSnapshot") or {}
+    for item in snapshot.get("items", []):
+        draft = item.get("draft") or {}
+        for side in ("source", "target"):
+            if set((draft.get(side) or {}).get("documentVersionIds") or []) - visible:
+                return fail(errors.FORBIDDEN, request)
+        if error := _guard(request, project_id, [draft["source"]["nodeId"], draft["target"]["nodeId"]]):
+            return error
+    status = handoff_dependency_status(run, repo.state)
+    return ok({"reviewRunId": run_id, **status, "historicalResultsPreserved": True}, request)

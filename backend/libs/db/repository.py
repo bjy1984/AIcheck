@@ -5614,6 +5614,16 @@ class InMemoryRepository:
                     ),
                 ).fetchall()
                 rows.extend(extra_rows)
+                from libs.db.review_handoff_loading import load_handoff_rows
+                dependency_rows, dependency_ids, dependency_versions = load_handoff_rows(self.sync_postgres, review_run, configured_tenant_id())
+                rows.extend(dependency_rows)
+                for key in ("review_runs", "review_handoffs", "ocr_parse_results", "fact_corrections", "extracted_fields", "evidence_links"):
+                    collection = STATE_COLLECTIONS[key]
+                    self.state[key] = [item for index, item in enumerate(self.state.get(key, []))
+                        if self.object_is_pinned(collection, self.persistence_object_id(collection, item, index))
+                        or not (self.persistence_object_id(collection, item, index) in dependency_ids.get(key, set())
+                                or (key not in dependency_ids and item.get("documentVersionId") in dependency_versions))]
+            rows = list({(collection, object_id): (collection, object_id, payload) for collection, object_id, payload in rows}.values())
             self.sync_postgres.commit()
 
             state_key_by_collection = {value: key for key, value in STATE_COLLECTIONS.items()}
@@ -6723,6 +6733,8 @@ def load_review_run_state(review_run_id: str) -> None:
     load_state(
         {
             "review_runs",
+            "review_handoffs",
+            "fact_corrections",
             "review_step_runs",
             "review_graph_nodes",
             "review_tool_calls",
