@@ -35,3 +35,21 @@ output JSON：
 2026-09-09：本批發布檢查、發布寫入／dry-run、來源變動、工具執行器、發布盤點、業務包及巨石基線測試 63 passed／1 dependency deprecation warning；Ruff 289／289。較早一次擴展測試使用錯誤檔名，未執行任何測試；已改用 test_review_tool_executor.py 並完成上述批次。未執行本批完整後端回歸。
 
 仍待：真實案例收集與執行結果匯出／重放、逐原子證據語義支持性、必要事實覆蓋、模型與環境完整重現、可信審核留痕、原 36 條結果差異及服務／完整瀏覽器驗收。四種結果與雜湊一致不證明原文支持結論。此批不得作為全量發布完成或品質提升量測的證據；未修改生產綁定狀態。
+
+## 離線來源重放入口（2026-09-09）
+
+新增 backend/scripts/replay_review_acceptance.py。從 backend 目錄執行：
+
+```sh
+PYTHONPATH=. .venv/bin/python scripts/replay_review_acceptance.py --fixture /absolute/path/case.json --output-dir /absolute/path/new-run
+```
+
+output-dir 必須是新目錄，建議放在 backend 來源雜湊範圍以外；重跑使用另一個新目錄。輸出 fixture.json 原始輸入、output.json 完整原子／工具結果與來源引用、report.json 檔案雜湊及預期比對。matchesExpected=false 時仍保存觀測結果，CLI 退出碼為 1；一致為 0。報告始終 businessAcceptance=not_reviewed，不自動填 reviewer 或產生發布批准清單。
+
+fixture 沿用上述契約；frozenInput 另需 state（凍結的文件、版本、OCR／修正資料）及 reviewRun（含 documentScopeSnapshot）。外層 inputDocumentVersionIds 必須與 reviewRun 一致；不接受執行時重建快照來掩蓋來源變動。fixtureInputSha256 包含整份來源 state 與 reviewRun。
+
+目前從正式 NDT_FACT_BUILDERS 接入 R35–R37，重新從固定來源組裝事實並執行實際原子綁定與 runtime 工具，不接受用預計結果替換觀測結果。整個計畫執行前檢查明確的本地工具允許清單；其他節點、未註冊工具或外部查詢工具明確報錯，沒有模型或平台網路調用。此模式可以在 Lab 執行尚未發布的綁定，但不改綁定狀態，也不證明正式發布權限。
+
+semantic_result 僅移除 runtime 的 toolCallId，供同版本重跑比較；原始输出保留 ID、全部判定及證據欄位。不忽略其他差異。來源雜湊不同的版本對照與三組品質評估仍待接入。
+
+目前案例為合成結構化 OCR 測試，驗證路由及契約；不代表真實掃描品質、69 節點覆蓋、模型輸出重放或業務人員驗收。其餘節點的事實組裝器與外部平台留存回放仍需逐條接入。
