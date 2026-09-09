@@ -78,3 +78,16 @@ def test_disabled_rollout_and_missing_explicit_version_are_rejected(page_selecti
     del body["inputDocumentVersionIds"]
     with pytest.raises(selection.ReviewInputSelectionError, match="明确选择"):
         selection.resolve_review_input_selection(services, None, "P", 16, body)
+
+
+def test_mapping_keeps_frozen_version_order(page_selection, monkeypatch):
+    services, body, state, _ = page_selection
+    state["versions"].append({**state["versions"][0], "id": "V2"})
+    body["inputDocumentVersionIds"] = ["V2", "V"]
+    body["conditionObjectMapping"] = {"test": "selection"}
+    seen = []
+    monkeypatch.setattr(selection, "prepare_condition_selection", lambda *args: seen.append(args[-2]) or {})
+    versions, readiness = selection.resolve_review_input_selection(services, None, "P", 16, body)
+    assert versions == ["V2", "V"]
+    assert readiness["inputSelection"]["documentVersionIds"] == versions
+    assert seen == [["V2", "V"]]

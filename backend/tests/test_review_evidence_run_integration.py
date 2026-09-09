@@ -219,3 +219,53 @@ def test_review_run_copies_and_flushes_the_persisted_evidence_package(monkeypatc
         row["reviewRunId"] == review_run["reviewRunId"]
         for row in records["evidence_shards"]
     )
+
+
+def test_real_route_freezes_confirmed_mapping_and_executes_selected_source(monkeypatch):
+    from copy import deepcopy
+
+    from apps.api import routes
+    from libs.business_pack import load_business_pack
+    from libs.review_condition_facts import condition_candidates_from_run
+    from libs.review_document_scope import freeze_document_scope
+    from libs.review_orchestrator import execution
+    from libs.review_tools.condition_execution import prepare_condition_results
+
+    _allow_dispatch(monkeypatch)
+    monkeypatch.setenv("AICHECK_WORKSTATIONS_ENABLED", "true")
+    version_id = _mount_ocr_document(document_id_hint="MAPPING", file_name="mapping.pdf",
+                                    material_type_code="design_license", quoted_text="source")
+    repo.find_one("versions", version_id)["hash"] = "uploaded-mapping"
+    parse = {"id": "PARSE-MAPPING", "tenantId": "TENANT-DEFAULT", "documentVersionId": version_id, "fields": []}
+    repo.state["ocr_parse_results"].append(parse)
+    parse["fields"].extend([
+        {"id": "SELECTED", "fieldName": "thickness", "value": 12, "pageNo": 1, "bbox": [0, 0, 10, 10]},
+        {"id": "OTHER", "fieldName": "thickness", "value": 3, "pageNo": 1, "bbox": [20, 0, 30, 10]},
+    ])
+    pack = load_business_pack("engineering_inspection_v1")
+    atomic = next(row["id"] for row in pack["atomicChecks"] if row["nodeId"] == 1)
+    rule = {"id": "RULE-MAPPING", "projectId": PROJECT_ID, "revision": 1, "version": "test-v1", "status": "已发布",
+            "businessPackId": pack["id"], "nodeIds": [1], "executionConditions": {"schemaVersion": "rule-conditions-v1", "checks": [
+                {"id": "C", "atomicCheckId": atomic, "field": "thickness", "operator": "gte", "expected": 10}]}}
+    monkeypatch.setattr(routes, "current_published_rule_for_node", lambda *args, **kwargs: rule)
+    monkeypatch.setattr(execution, "current_published_rule_for_node", lambda *args, **kwargs: rule)
+    source = {"projectId": PROJECT_ID, "nodeId": 1, "businessPackId": pack["id"], "inputDocumentVersionIds": [version_id]}
+    source["documentScopeSnapshot"] = freeze_document_scope(source, repo.state)
+    candidates = condition_candidates_from_run(repo.state, source, rule["executionConditions"])
+    mapping = {"ruleVersionId": rule["id"], "ruleRevision": 1, "sourceSnapshotHash": source["documentScopeSnapshot"]["snapshotHash"],
+               "selection": {"subject": {"objectType": "weld", "objectId": "W1"}, "confirmedSameObject": True,
+                             "fields": {"thickness": candidates["thickness"][0]["candidateId"]}}}
+    body = {"reviewMode": "gap_precheck", "auditInputMode": "ocr_llm", "inputDocumentVersionIds": [version_id], "conditionObjectMapping": mapping}
+    response = _assert_ok(client.post(f"/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck", json=body))
+    ai_run = repo.find_one("ai_runs", response["latestRun"]["id"])
+    assert ai_run["conditionObjectMapping"] == mapping
+    run = create_review_run_from_ai_run(ai_run, mode="inline")
+    assert run["conditionObjectMappingSnapshot"]["selection"] == mapping["selection"]
+    result = prepare_condition_results(repo.state, run, pack)[atomic]
+    assert result["result"] == "passed"
+    assert result["toolResults"][0]["evidenceRefs"][0]["fieldId"] == "SELECTED"
+    before = len(repo.state["ai_runs"])
+    changed = deepcopy(body)
+    changed["conditionObjectMapping"]["ruleRevision"] = 2
+    assert client.post(f"/projects/{PROJECT_ID}/inspection/nodes/1/ai-recheck", json=changed).json()["code"] != 0
+    assert len(repo.state["ai_runs"]) == before

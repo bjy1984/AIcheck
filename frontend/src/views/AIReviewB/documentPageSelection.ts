@@ -24,8 +24,13 @@ export const documentSelectionPayload = (selection: ReviewDocumentSelection) => 
       .map((item) => [item.versionId, { ...item.pageRange! }])
   )
   return {
+    ...(selection.conditionObjectMapping
+      ? { conditionObjectMapping: JSON.parse(JSON.stringify(selection.conditionObjectMapping)) }
+      : {}),
     inputDocumentVersionIds: selection.versions.map((item) => item.versionId),
-    ...(Object.keys(ranges).length ? { inputDocumentPageRanges: ranges } : {})
+    ...(Object.keys(ranges).length || selection.pageScopeExplicit
+      ? { inputDocumentPageRanges: ranges }
+      : {})
   }
 }
 

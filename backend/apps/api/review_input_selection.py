@@ -87,7 +87,8 @@ def resolve_review_input_selection(services, request, project_id: str, node_id: 
     # Supplemental files need not already be mounted or matched to a requirement.
     # Formal readiness still comes exclusively from existing confirmed evidence.
     readiness["readyForGapPrecheck"] = True
-    readiness["inputSelection"] = {"mode": "explicit", "documentVersionIds": sorted(chosen), "scope": "run_only"}
+    ordered = list(versions) if "conditionObjectMapping" in body else sorted(chosen)
+    readiness["inputSelection"] = {"mode": "explicit", "documentVersionIds": ordered, "scope": "run_only"}
     if "inputDocumentPageRanges" in body:
         readiness["inputSelection"].update(documentPageRanges=ranges, originalPageCounts=page_counts)
     if "conditionObjectMapping" in body:
@@ -96,7 +97,7 @@ def resolve_review_input_selection(services, request, project_id: str, node_id: 
             if not runtime["useOcrEvidence"]:
                 raise ValueError("对象选择需要使用 OCR 资料模式。")
             readiness["inputSelection"]["conditionObjectMapping"] = prepare_condition_selection(
-                services, request, project_id, node_id, body, sorted(chosen), ranges)
+                services, request, project_id, node_id, body, ordered, ranges)
         except (TypeError, ValueError) as exc:
             raise ReviewInputSelectionError(str(exc)) from exc
-    return sorted(chosen), readiness
+    return ordered, readiness

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import RuleObjectMappingEditor from './RuleObjectMapping.vue'
+import { mappingSelectionFromTrial } from './ruleMappingSelection'
+import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import {
   ElAlert,
   ElButton,
@@ -23,8 +25,12 @@ const props = defineProps<{
   projectId: string
   rule: ProjectRule
   disabled: boolean
+  applyDisabled?: boolean
   reviewRunId?: string
 }>()
+const emit = defineEmits<{ applyMapping: [ReviewDocumentSelection] }>()
+const applied = ref(false)
+const applyMode = ref<'formal' | 'gap_precheck'>('gap_precheck')
 interface InputFact {
   field: string
   type: string
@@ -54,6 +60,7 @@ const clearMapping = () => {
 watch(
   [objectMapping, mappingEnabled],
   () => {
+    applied.value = false
     result.value = undefined
   },
   { deep: true }
@@ -71,6 +78,7 @@ watch(
   () => [props.projectId, props.rule.id, props.rule.etag],
   () => {
     generation += 1
+    applied.value = false
     clearMapping()
     result.value = undefined
     busy.value = false
@@ -102,6 +110,7 @@ watch(
 watch(
   inputs,
   () => {
+    applied.value = false
     result.value = undefined
   },
   { deep: true }
@@ -120,6 +129,7 @@ watch(
   () => [sourceMode.value, props.reviewRunId],
   () => {
     generation += 1
+    applied.value = false
     clearMapping()
     result.value = undefined
     error.value = ''
@@ -148,6 +158,15 @@ const reasons: Record<string, string> = {
   applicability_unknown: '适用性证据不足',
   applicability_not_met: '适用条件不成立'
 }
+const applyMapping = () => {
+  if (!result.value || props.disabled || props.applyDisabled || busy.value) return
+  try {
+    emit('applyMapping', mappingSelectionFromTrial(props.rule, result.value, applyMode.value))
+    applied.value = true
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '请重新试跑后选择。'
+  }
+}
 const run = async () => {
   if (props.disabled || busy.value) return
   if (sourceMode.value === 'run' && !props.reviewRunId) {
@@ -162,6 +181,7 @@ const run = async () => {
     error.value = '请填写对象编号，并确认所选原文属于同一对象。'
     return
   }
+  applied.value = false
   busy.value = true
   error.value = ''
   result.value = undefined
@@ -266,7 +286,28 @@ const run = async () => {
       <ElButton :loading="busy" :disabled="disabled" @click="run">运行草稿试跑</ElButton>
     </ElForm>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
+    <p v-if="applied" role="status"
+      >已将对象与本次试跑的固定版本资料带到工作台。回到节点首页确认后再发起审查。</p
+    >
     <div v-if="result" role="status">
+      <template v-if="result.objectMappingSnapshot">
+        <ElFormItem label="下次审查方式">
+          <ElSelect v-model="applyMode" :disabled="disabled || applyDisabled || busy">
+            <ElOption label="缺项预审" value="gap_precheck" /><ElOption
+              label="正式复核（仍需满足资料和发布条件）"
+              value="formal"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElButton
+          :disabled="
+            disabled || applyDisabled || busy || !result.bindingPlan || rule.status !== '已发布'
+          "
+          @click="applyMapping"
+          >下次审查使用这份对象选择</ElButton
+        >
+        <p v-if="rule.status !== '已发布'">当前还是草稿，发布后重新试跑，才能带入下次审查。</p>
+      </template>
       <p
         >已保存版本修订 {{ result.ruleRevision }} ·
         <ElTag>{{ labels[result.result] || result.result }}</ElTag></p

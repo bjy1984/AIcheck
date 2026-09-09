@@ -13495,6 +13495,9 @@ def test_project_rule_trial_can_use_scoped_run_ocr_without_client_values(monkeyp
     headers["If-Match"] = rule["etag"]
     output = assert_ok(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"]}))
     assert output["result"] == "pass" and output["sourceMode"] == "run_ocr"
+    assert output["ruleVersionId"] == rule["id"]
+    assert output["sourceDocuments"][0]["versionId"] == "D-TRIAL"
+    assert output["sourceDocuments"][0]["documentId"] == original_version["documentId"]
     assert output["sourceSnapshotHash"] == run["documentScopeSnapshot"]["snapshotHash"]
     assert output["advisoryOnly"] is True and output["evidenceVerified"] is False
     assert output["checks"][0]["evidenceRefs"][0]["documentVersionId"] == "D-TRIAL"

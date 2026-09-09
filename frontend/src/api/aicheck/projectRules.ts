@@ -67,7 +67,21 @@ export interface RuleObjectMapping {
   fields: Record<string, string>
   confirmedSameObject: boolean
 }
+export interface RuleObjectMappingRequest {
+  selection: RuleObjectMapping
+  ruleVersionId: string
+  ruleRevision: number
+  sourceSnapshotHash: string
+}
 export interface RuleTrialResult {
+  sourcePageRanges?: Record<string, { start: number; end: number }> | null
+  sourceDocuments?: Array<{
+    documentId: string
+    versionId: string
+    fileName: string
+    versionNo?: string
+    pageRange?: { start: number; end: number }
+  }>
   factCandidates?: Record<string, RuleFactCandidate[]>
   objectMappingSnapshot?: { snapshotHash: string; selection: RuleObjectMapping }
   result: string

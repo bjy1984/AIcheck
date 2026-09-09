@@ -181,7 +181,19 @@ def trial_project_rule(request: Request, project_id: str, version_id: str,
                             "sourceSnapshotHash": run["documentScopeSnapshot"]["snapshotHash"],
                             "selectedByUserId": api.request_user_id(request), "evidenceVerified": False}
         mapping_snapshot["snapshotHash"] = digest(mapping_snapshot)
-    return ok({"factCandidates": candidates, "objectMappingSnapshot": mapping_snapshot, "mode": "draft_trial", "advisoryOnly": True, "ruleVersionId": version_id,
+    versions_by_id = {row["id"]: row for row in visible.state.get("versions", [])
+                      if api.tenant_id_for_record(row) == api.request_tenant_id(request)} if run_id else {}
+    documents_by_id = {row["id"]: row for row in visible.state.get("documents", [])} if run_id else {}
+    source_documents = []
+    for document_version_id in run.get("inputDocumentVersionIds", []):
+        version = versions_by_id[document_version_id]
+        item = {"documentId": version["documentId"], "versionId": document_version_id,
+                "fileName": version.get("fileName") or (documents_by_id.get(version["documentId"]) or {}).get("fileName") or document_version_id, "versionNo": version.get("versionNo")}
+        bounds = (run.get("inputDocumentPageRanges") or {}).get(document_version_id)
+        if bounds:
+            item["pageRange"] = repo.clone(bounds)
+        source_documents.append(item)
+    return ok({"sourcePageRanges": run.get("inputDocumentPageRanges"), "sourceDocuments": source_documents, "factCandidates": candidates, "objectMappingSnapshot": mapping_snapshot, "mode": "draft_trial", "advisoryOnly": True, "ruleVersionId": version_id,
                "ruleRevision": rule.get("revision"), "sourceMode": "run_ocr" if run_id else "manual_examples",
                "sourceReviewRunId": run_id, "sourceSnapshotHash": (run.get("documentScopeSnapshot") or {}).get("snapshotHash"),
                "factDiagnostics": diagnostics, "evidenceVerified": False, **result}, request)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import RuleTrialPanel from './RuleTrialPanel.vue'
 import { ruleDraftDiff } from './ruleDraftDiff'
+import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import ConditionExpressionEditor from './ConditionExpressionEditor.vue'
 import { newCondition } from './ruleConditionModel'
 import { computed, ref, watch } from 'vue'
@@ -27,7 +28,13 @@ import {
   type RuleDraftInput
 } from '@/api/aicheck/projectRules'
 
-const props = defineProps<{ projectId: string; nodeId: number; reviewRunId?: string }>()
+const props = defineProps<{
+  projectId: string
+  nodeId: number
+  reviewRunId?: string
+  applyDisabled?: boolean
+}>()
+const emit = defineEmits<{ applyMapping: [ReviewDocumentSelection] }>()
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 const visible = ref(false)
 const busy = ref(false)
@@ -289,6 +296,8 @@ watch(
         :rule="selected"
         :review-run-id="reviewRunId"
         :disabled="dirty || busy"
+        :apply-disabled="applyDisabled"
+        @apply-mapping="emit('applyMapping', $event)"
       />
       <p
         >适用范围：当前工程、节点

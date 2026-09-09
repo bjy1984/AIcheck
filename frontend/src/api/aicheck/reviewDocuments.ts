@@ -1,4 +1,5 @@
 import request from '@/axios'
+import type { RuleObjectMappingRequest } from './projectRules'
 import type { DocumentAsset } from '@/types/aicheck'
 
 export type ReviewDocument = DocumentAsset & { bodyUploaded?: boolean }
@@ -10,6 +11,8 @@ export type ReviewDocumentSelection = {
     versionNo?: string
     pageRange?: { start: number; end: number }
   }>
+  pageScopeExplicit?: boolean
+  conditionObjectMapping?: RuleObjectMappingRequest
   reviewMode: 'formal' | 'gap_precheck'
 }
 

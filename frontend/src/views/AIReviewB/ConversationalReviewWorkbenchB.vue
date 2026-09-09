@@ -1213,6 +1213,13 @@ const handleStartReview = async () => {
   const selectedInput = reviewDocumentSelection.value
     ? {
         ...reviewDocumentSelection.value,
+        ...(reviewDocumentSelection.value.conditionObjectMapping
+          ? {
+              conditionObjectMapping: JSON.parse(
+                JSON.stringify(reviewDocumentSelection.value.conditionObjectMapping)
+              )
+            }
+          : {}),
         versions: cloneDocumentSelectionVersions(reviewDocumentSelection.value.versions)
       }
     : null
@@ -1226,7 +1233,7 @@ const handleStartReview = async () => {
   const selectedMode = startReviewMode.value
   const modeLabel = selectedMode === 'formal' ? '正式 AI 复核' : '缺项预审'
   await ElMessageBox.confirm(
-    `${selectedInput ? `将仅使用已选 ${selectedInput.versions.length} 份文件版本${selectedInput.versions.some((item) => item.pageRange) ? '（含指定页码范围）' : ''}` : '将使用节点当前资料'}，按当前规则和适用标准条款包发起${modeLabel}，是否继续？`,
+    `${selectedInput ? `将仅使用已选 ${selectedInput.versions.length} 份文件版本${selectedInput.versions.some((item) => item.pageRange) ? '（含指定页码范围）' : ''}` : '将使用节点当前资料'}${selectedInput?.conditionObjectMapping ? `，对象为 ${selectedInput.conditionObjectMapping.selection.subject.objectId}（使用已试跑的固定原文选择）` : ''}，按当前规则和适用标准条款包发起${modeLabel}，是否继续？`,
     `发起${modeLabel}`,
     { type: 'warning', confirmButtonText: '确认发起', cancelButtonText: '取消' }
   )

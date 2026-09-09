@@ -170,3 +170,32 @@ console.log(
     { 'V-1': { start: 2, end: 3 } }
   )
 }
+
+{
+  const f = fixture()
+  f.state.reviewDocumentSelection.value.conditionObjectMapping = {
+    selection: {
+      subject: { objectType: 'weld', objectId: 'W1' },
+      fields: { thickness: 'C1' },
+      confirmedSameObject: true
+    },
+    ruleVersionId: 'RULE',
+    ruleRevision: 2,
+    sourceSnapshotHash: 'SOURCE'
+  }
+  const confirmation = deferred<void>()
+  f.state.ElMessageBox.confirm = () => confirmation.promise.then(() => undefined)
+  const running = f.run()
+  await Promise.resolve()
+  f.state.reviewDocumentSelection.value.conditionObjectMapping.selection.subject.objectId = 'W2'
+  f.state.reviewDocumentSelection.value.conditionObjectMapping.selection.fields.thickness = 'C2'
+  confirmation.resolve()
+  await running
+  const payload = f.starts[0][2] as {
+    conditionObjectMapping: {
+      selection: { subject: { objectId: string }; fields: Record<string, string> }
+    }
+  }
+  assert.equal(payload.conditionObjectMapping.selection.subject.objectId, 'W1')
+  assert.equal(payload.conditionObjectMapping.selection.fields.thickness, 'C1')
+}

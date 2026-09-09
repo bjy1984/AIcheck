@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ElButton } from 'element-plus'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import type { EvidenceLink } from '@/types/aicheck'
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
@@ -49,7 +50,13 @@ const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
         @change="emit('change', $event)"
         @bound="emit('bound')"
       />
-      <ProjectRuleEditor :project-id="projectId" :node-id="nodeId" :review-run-id="runId" />
+      <ProjectRuleEditor
+        :project-id="projectId"
+        :node-id="nodeId"
+        :review-run-id="runId"
+        :apply-disabled="documentsDisabled"
+        @apply-mapping="!documentsDisabled && emit('change', $event)"
+      />
       <ReviewHandoffPanel
         :project-etag="projectEtag"
         :evidence-links="evidenceLinks"
@@ -58,6 +65,16 @@ const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
         @evidence="emit('evidence', $event)"
       />
     </div>
+    <p v-if="selection?.conditionObjectMapping" role="status" class="workstation-tools__hint">
+      下次审查对象：{{ selection.conditionObjectMapping.selection.subject.objectId }}，按规则修订
+      {{ selection.conditionObjectMapping.ruleRevision }}
+      的已试跑版本选择原文。调整文件后需要重新选择对象。
+      <ElButton
+        :disabled="documentsDisabled"
+        @click="emit('change', { versions: selection.versions, reviewMode: selection.reviewMode })"
+        >移除对象选择</ElButton
+      >
+    </p>
     <p v-if="!runId" class="workstation-tools__hint">发起审查后，可核验该任务收到的工位交接。</p>
   </section>
 </template>
