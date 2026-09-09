@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { defineAsyncComponent, computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -20,6 +20,8 @@ import { getAicheckErrorMessage } from '@/utils/aicheckError'
 import { evidencePreviewSource } from '../evidencePreviewSource'
 import { formatConfidence } from '@/utils/confidence'
 import ClauseContent from '@/components/ClauseContent'
+
+const PdfEvidencePage = defineAsyncComponent(() => import('./PdfEvidencePage.vue'))
 
 const props = defineProps<{
   modelValue: boolean
@@ -340,12 +342,12 @@ onBeforeUnmount(() => {
                 :alt="evidence.fileName || '证据原文'"
                 @error="handlePreviewImageError"
               />
-              <iframe
+              <PdfEvidencePage
                 v-else-if="filePreviewIsPdf"
-                class="file-preview-frame"
                 :src="filePreviewSrc"
-                :title="evidence.fileName || '证据原文'"
-              ></iframe>
+                :page-no="Number(evidence.pageNo || 1)"
+                :file-name="evidence.fileName"
+              />
               <ElAlert
                 v-else
                 title="当前文件类型暂不支持在线定位预览"
