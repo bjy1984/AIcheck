@@ -15,7 +15,7 @@ const locatorDialogSource = readFileSync(
 
 assert.match(workbenchSource, /<strong>压力管道监检工作台<\/strong>/)
 assert.doesNotMatch(workbenchSource, /AI 工程监检复核工作台/)
-assert.match(
-  locatorDialogSource,
-  /<ElDialog\s+v-model="visible"\s+:title="locationTitle"\s+width="1040px"\s+top="32px"\s+append-to-body\s*>/
-)
+assert.match(locatorDialogSource, /:is="inline \? 'section' : ElDialog"/)
+assert.match(locatorDialogSource, /v-model="visible"/)
+assert.match(locatorDialogSource, /'1040px'/)
+assert.match(locatorDialogSource, /:append-to-body="!inline"/)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
 import type { EvidenceLink } from '@/types/aicheck'
 import ProjectRuleEditor from './ProjectRuleEditor.vue'
@@ -18,11 +19,21 @@ const emit = defineEmits<{
   bound: []
   evidence: [value: EvidenceLink]
 }>()
+const toolRoot = ref<HTMLElement>()
+const focusTool = (section: 'documents' | 'rules' | 'handoffs') => {
+  const index = { documents: 0, rules: 1, handoffs: 2 }[section]
+  const buttons = toolRoot.value?.querySelectorAll<HTMLButtonElement>(
+    '.workstation-tools__actions > button'
+  )
+  buttons?.[index]?.scrollIntoView({ block: 'nearest' })
+  buttons?.[index]?.focus()
+}
+defineExpose({ focusTool })
 const enabled = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
 </script>
 
 <template>
-  <section v-if="enabled" class="workstation-tools" aria-label="当前节点审查工具">
+  <section v-if="enabled" ref="toolRoot" class="workstation-tools" aria-label="当前节点审查工具">
     <div class="workstation-tools__context">
       <strong>资料与审查协作</strong>
       <p>为当前节点选择资料、调整工程规则并核验交接。</p>

@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ElTag } from 'element-plus'
+import { computed, ref } from 'vue'
+import { ElButton, ElTag } from 'element-plus'
 import type { EvidenceLink } from '@/types/aicheck'
 import type { ReviewBProjectAnalysisResult } from '@/types/ai-review-b'
 import {
   projectAnalysisResultTagType,
   resolveProjectAnalysisEvidenceLink
 } from '../projectAnalysisConversation'
+import { needsAttention } from '../workstationOverview'
 import ReviewMarkdownText from './ReviewMarkdownText.vue'
 
 const props = defineProps<{
   result?: ReviewBProjectAnalysisResult
   evidenceLinks: EvidenceLink[]
+  focusIssues?: boolean
+  sourceLabel?: string
 }>()
 const emit = defineEmits<{ 'open-evidence': [evidence: EvidenceLink] }>()
 const labels: Record<string, string> = {
@@ -29,6 +32,13 @@ const explanations: Record<string, string> = {
   mismatch: '比对结果有不一致的地方，请查看下面的说明。'
 }
 const findings = computed(() => props.result?.findingDrafts || [])
+const showAll = ref(false)
+const attentionCount = computed(() => findings.value.filter(needsAttention).length)
+const visibleFindings = computed(() =>
+  findings.value
+    .map((finding, index) => ({ finding, index }))
+    .filter(({ finding }) => !props.focusIssues || showAll.value || needsAttention(finding))
+)
 const label = computed(() => labels[props.result?.reviewResult || ''] || '待人工确认')
 const records = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value)
@@ -58,7 +68,8 @@ const openEvidence = (evidence: Record<string, unknown>) => {
   <section class="review-result" aria-label="当前节点审查结果">
     <header class="result-heading">
       <div
-        ><p class="eyebrow">全工程分析 · 当前节点</p><h3>{{ label }}</h3></div
+        ><p class="eyebrow">{{ sourceLabel || '全工程分析 · 当前节点' }}</p
+        ><h3>{{ label }}</h3></div
       >
       <ElTag :type="projectAnalysisResultTagType(result?.reviewResult)" effect="plain"
         >AI 建议 · 待你确认</ElTag
@@ -68,10 +79,36 @@ const openEvidence = (evidence: Record<string, unknown>) => {
       explanations[result?.reviewResult || ''] || '这次结果还需要你确认，请先看下面的说明和原文。'
     }}</p>
     <div class="finding-heading"
-      ><h4>需要你确认的事项</h4><span>共 {{ findings.length }} 项</span></div
+      ><h4>{{ focusIssues ? '审查事项' : '需要你确认的事项' }}</h4
+      ><span>共 {{ findings.length }} 项</span></div
+    >
+    <div
+      v-if="focusIssues && findings.length"
+      class="finding-filters"
+      role="group"
+      aria-label="筛选审查事项"
+    >
+      <ElButton
+        :aria-pressed="!showAll"
+        :type="!showAll ? 'primary' : 'default'"
+        @click="showAll = false"
+        >待核对 {{ attentionCount }}</ElButton
+      >
+      <ElButton
+        :aria-pressed="showAll"
+        :type="showAll ? 'primary' : 'default'"
+        @click="showAll = true"
+        >查看全部 {{ findings.length }}</ElButton
+      >
+    </div>
+    <p v-if="focusIssues && findings.length && !visibleFindings.length"
+      >目前没有筛出的待核对项。可查看全部检查项，最终结论仍由你确认。</p
     >
     <ol v-if="findings.length" class="finding-list">
-      <li v-for="(finding, index) in findings" :key="`${finding.id || 'finding'}-${index}`">
+      <li
+        v-for="{ finding, index } in visibleFindings"
+        :key="`${finding.id || 'finding'}-${index}`"
+      >
         <div class="finding-title"
           ><span class="finding-number">{{ index + 1 }}</span
           ><h4>{{ finding.title || '待核验事项' }}</h4
@@ -312,5 +349,17 @@ dd {
 .empty-notice {
   padding: 16px 0;
   line-height: 1.7;
+}
+
+.finding-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.finding-filters :deep(.el-button) {
+  min-height: 44px;
+  margin-left: 0;
 }
 </style>

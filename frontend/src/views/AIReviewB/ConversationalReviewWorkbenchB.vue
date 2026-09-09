@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { workstationNavigation, filterWorkstationNodes } from './workstationNavigation'
+import ReviewNodeOverview from './components/ReviewNodeOverview.vue'
 import ReviewWorkstationTools from './ReviewWorkstationTools.vue'
 import PipelineConflictDetails from './PipelineConflictDetails.vue'
 import type { ReviewDocumentSelection } from '@/api/aicheck/reviewDocuments'
@@ -18,6 +20,7 @@ import {
   ElButton,
   ElCollapse,
   ElCollapseItem,
+  ElDrawer,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
@@ -149,6 +152,32 @@ const composer = ref('')
 const timelineRef = ref<HTMLElement>()
 const tracePanels = ref<string[]>([])
 const activityExpanded = ref(false)
+const workstationMode = import.meta.env.VITE_AICHECK_WORKSTATIONS_ENABLED === 'true'
+const activePane = ref<'overview' | 'assistant'>(workstationMode ? 'overview' : 'assistant')
+const workstationToolsRef = ref<InstanceType<typeof ReviewWorkstationTools>>()
+const humanPanelRef = ref<HTMLElement>()
+const navigateOverview = async (
+  section: 'documents' | 'rules' | 'handoffs' | 'assistant' | 'human'
+) => {
+  if (section === 'assistant') {
+    activePane.value = 'assistant'
+    return
+  }
+  if (section === 'human') {
+    evidenceReturnFocus = undefined
+    evidenceDialogVisible.value = false
+    rightSidebarCollapsed.value = false
+    await nextTick()
+    const target =
+      humanPanelRef.value?.querySelector<HTMLElement>('.human-task-card, .human-decision-card') ||
+      humanPanelRef.value
+    target?.setAttribute('tabindex', '-1')
+    target?.scrollIntoView({ block: 'start' })
+    target?.focus({ preventScroll: true })
+    return
+  }
+  workstationToolsRef.value?.focusTool(section)
+}
 const leftSidebarCollapsed = ref(false)
 const rightSidebarCollapsed = ref(false)
 const sidebarLayout = computed(() =>
@@ -161,6 +190,19 @@ const sidebarLayout = computed(() =>
 const executionStarted = ref(false)
 const evidenceDialogVisible = ref(false)
 const evidencePreview = ref<EvidenceLink>()
+const evidenceWide = ref(false)
+let evidenceMedia: MediaQueryList | undefined
+const updateEvidenceWidth = () => {
+  evidenceWide.value = evidenceMedia?.matches === true
+  if (workstationMode && !evidenceWide.value) leftSidebarCollapsed.value = true
+}
+let evidenceReturnFocus: HTMLElement | undefined
+watch(evidenceDialogVisible, async (visible) => {
+  if (!visible && evidenceReturnFocus?.isConnected) {
+    await nextTick()
+    evidenceReturnFocus?.focus({ preventScroll: true })
+  }
+})
 const r12DialogVisible = ref(false)
 const r19DialogVisible = ref(false)
 const humanTaskSubmitting = ref(false)
@@ -174,6 +216,17 @@ let liveTraceAbort: AbortController | undefined
 
 const TIMELINE_BOTTOM_THRESHOLD = 80
 
+const selectedStation = ref('')
+const selectedNodeStatus = ref('')
+const filteredTreeGroups = computed(() =>
+  filterWorkstationNodes(treeGroups.value, selectedStation.value, selectedNodeStatus.value)
+)
+const visibleNodeCount = computed(() =>
+  filteredTreeGroups.value.reduce((total, group) => total + group.nodes.length, 0)
+)
+const availableNodeStatuses = computed(() => [
+  ...new Set(treeGroups.value.flatMap((group) => group.nodes.map((node) => node.status)))
+])
 const allNodes = computed(() => treeGroups.value.flatMap((group) => group.nodes))
 const currentNode = computed(() => workspace.value?.node)
 const session = computed(() => workspace.value?.session)
@@ -307,8 +360,12 @@ const auditReadSequence = ref(0)
 watch(
   () => [activeProjectId.value, activeNodeId.value],
   () => {
+    activePane.value = workstationMode ? 'overview' : 'assistant'
     reviewContextGeneration.value++
     reviewDocumentSelection.value = null
+    evidenceReturnFocus = undefined
+    evidenceDialogVisible.value = false
+    evidencePreview.value = undefined
     polling.value = false
     nodeLoading.value = false
     stopLiveAgentTrace()
@@ -1322,6 +1379,7 @@ const waitForAssistantCompletion = async (sessionId: string, messageId: string) 
 const PENDING_MESSAGE_PREFIX = 'local-pending-'
 
 const sendMessage = async (preset?: string) => {
+  activePane.value = 'assistant'
   const text = (preset || composer.value).trim()
   if (!text || !session.value?.id || sending.value) return
   const sessionId = session.value.id
@@ -1437,6 +1495,9 @@ const handleSuggestion = (actionKey: string, message?: ReviewBMessage) => {
 }
 
 const openEvidence = (evidence: EvidenceLink) => {
+  evidenceReturnFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+  if (workstationMode && evidenceWide.value) rightSidebarCollapsed.value = false
   evidencePreview.value = evidence
   evidenceDialogVisible.value = true
 }
@@ -1757,6 +1818,9 @@ const formatTime = (value?: string) => {
 }
 
 onMounted(async () => {
+  evidenceMedia = window.matchMedia('(min-width: 1280px)')
+  updateEvidenceWidth()
+  evidenceMedia.addEventListener('change', updateEvidenceWidth)
   const context = resolveReviewWorkbenchContext(props)
   if (context.source === 'standalone') await loadPage()
   else await loadEmbeddedContext()
@@ -1783,6 +1847,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  evidenceMedia?.removeEventListener('change', updateEvidenceWidth)
   reviewContextGeneration.value++
   if (pollTimer) window.clearInterval(pollTimer)
   stopLiveAgentTrace()
@@ -1790,7 +1855,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div :class="['review-b-shell', { 'is-embedded': props.embedded }]">
+  <div
+    :class="[
+      'review-b-shell',
+      { 'is-embedded': props.embedded, 'is-workstation-mode': workstationMode }
+    ]"
+  >
     <header v-if="!props.embedded" class="review-b-topbar">
       <div class="brand">
         <span class="brand-mark">AI</span>
@@ -1849,7 +1919,23 @@ onBeforeUnmount(() => {
     />
 
     <div :class="['review-b-layout', ...sidebarLayout.layoutClasses]" v-loading="loading">
-      <aside v-if="!props.embedded" class="node-sidebar">
+      <component
+        :is="workstationMode && !evidenceWide ? ElDrawer : 'aside'"
+        v-if="!props.embedded"
+        class="node-sidebar"
+        v-bind="
+          workstationMode && !evidenceWide
+            ? {
+                modelValue: !leftSidebarCollapsed,
+                title: '工位与节点',
+                direction: 'ltr',
+                size: 'min(360px, 90vw)',
+                appendToBody: true
+              }
+            : {}
+        "
+        @update:model-value="leftSidebarCollapsed = !$event"
+      >
         <button
           type="button"
           class="sidebar-toggle is-left"
@@ -1873,12 +1959,39 @@ onBeforeUnmount(() => {
             <span>监检节点</span>
             <ElTag type="info" effect="plain">{{ allNodes.length }}</ElTag>
           </div>
+          <div v-if="workstationMode" class="station-filters">
+            <label for="review-station-filter">按工位查看</label>
+            <select id="review-station-filter" v-model="selectedStation">
+              <option value="">全部工位</option>
+              <option v-for="station in workstationNavigation" :key="station.id" :value="station.id"
+                >{{ station.id }} · {{ station.name }}（{{
+                  allNodes.filter((node) => station.nodeIds.includes(node.nodeId)).length
+                }}）</option
+              >
+            </select>
+            <label for="review-status-filter">节点状态</label>
+            <select id="review-status-filter" v-model="selectedNodeStatus"
+              ><option value="">全部状态</option
+              ><option v-for="status in availableNodeStatuses" :key="status" :value="status">{{
+                status
+              }}</option></select
+            >
+            <p
+              >显示 {{ visibleNodeCount }} /
+              {{ allNodes.length }} 个节点；只筛选列表，不改变权限。</p
+            >
+          </div>
           <ProjectNodeTree
-            :groups="treeGroups"
+            :groups="workstationMode ? filteredTreeGroups : treeGroups"
             :active-node-id="activeNodeId"
             :show-overview="false"
             empty-description="暂无可复核节点"
-            @select="handleNodeSelect"
+            @select="
+              (node) => {
+                if (workstationMode && !evidenceWide) leftSidebarCollapsed = true
+                handleNodeSelect(node)
+              }
+            "
           />
           <div class="sidebar-links">
             <button type="button" class="is-active"
@@ -1889,7 +2002,7 @@ onBeforeUnmount(() => {
             >
           </div>
         </div>
-      </aside>
+      </component>
 
       <main class="conversation-column" v-loading="nodeLoading">
         <section class="conversation-head">
@@ -1905,6 +2018,7 @@ onBeforeUnmount(() => {
         </section>
 
         <ReviewWorkstationTools
+          ref="workstationToolsRef"
           :project-id="activeProjectId"
           :node-id="activeNodeId"
           :run-id="activeRunId"
@@ -1916,7 +2030,42 @@ onBeforeUnmount(() => {
           @evidence="openEvidence"
         />
 
-        <section v-if="!props.embedded" class="context-chips">
+        <nav v-if="workstationMode" class="workstation-navigation" aria-label="节点工作区">
+          <ElButton v-if="!props.embedded && !evidenceWide" @click="leftSidebarCollapsed = false"
+            >选择工位与节点</ElButton
+          >
+          <ElButton
+            :type="activePane === 'overview' ? 'primary' : 'default'"
+            :aria-pressed="activePane === 'overview'"
+            @click="activePane = 'overview'"
+            >待办与结果</ElButton
+          >
+          <ElButton
+            :type="activePane === 'assistant' ? 'primary' : 'default'"
+            :aria-pressed="activePane === 'assistant'"
+            @click="activePane = 'assistant'"
+            >追问助手与记录</ElButton
+          >
+        </nav>
+        <ReviewNodeOverview
+          v-if="workstationMode"
+          v-show="activePane === 'overview'"
+          :workspace="workspace || null"
+          :selection="reviewDocumentSelection"
+          :loading="nodeLoading || loading"
+          :stale="inputChanged"
+          :conflict="pipelineConflict"
+          :busy="executionInFlight"
+          :can-start="canStartReview"
+          :status-label="runStatusText"
+          :error="pageError"
+          :start-label="`${inputChanged ? '按当前资料重新发起' : '发起'}${startReviewMode === 'formal' ? '正式复核' : '缺项预审'}`"
+          @start="handleStartReview"
+          @navigate="navigateOverview"
+          @evidence="openEvidence"
+        />
+
+        <section v-if="!props.embedded && activePane === 'assistant'" class="context-chips">
           <span class="primary-chip">当前问题：{{ currentTask }}</span>
           <span>文件资料 {{ selectedEvidence.length }}</span>
           <span>已确认 {{ workspace?.contextSummary.confirmedEvidenceCount || 0 }}</span>
@@ -1928,7 +2077,11 @@ onBeforeUnmount(() => {
           </span>
         </section>
 
-        <section ref="timelineRef" class="conversation-timeline">
+        <section
+          v-show="activePane === 'assistant'"
+          ref="timelineRef"
+          class="conversation-timeline"
+        >
           <ElSkeleton v-if="nodeLoading && !workspace" :rows="8" animated />
           <template v-else>
             <article v-if="!conversationMessages.length" class="welcome-card">
@@ -2219,7 +2372,7 @@ onBeforeUnmount(() => {
           </template>
         </section>
 
-        <section class="composer-card">
+        <section v-show="activePane === 'assistant'" class="composer-card">
           <!-- 推荐问题按「这个节点此刻卡在哪」定制，不经 LLM——系统已经知道答案，
                让模型再生成一遍只会加两秒延迟和一次 token（见 suggestedQuestions）。 -->
           <div v-if="suggestedQuestions.length" class="composer-suggestions">
@@ -2298,7 +2451,15 @@ onBeforeUnmount(() => {
         </ElCollapse>
       </main>
 
-      <aside class="context-panel">
+      <aside ref="humanPanelRef" tabindex="-1" class="context-panel">
+        <EvidenceLocatorDialog
+          v-if="workstationMode && evidenceWide && evidenceDialogVisible"
+          v-model="evidenceDialogVisible"
+          inline
+          :project-id="activeProjectId"
+          :evidence="evidencePreview"
+          :extracted-fields="extractedFields"
+        />
         <button
           v-if="!props.embedded"
           type="button"
@@ -2315,7 +2476,10 @@ onBeforeUnmount(() => {
           </ElIcon>
         </button>
         <div
-          v-show="props.embedded || sidebarLayout.rightExpanded"
+          v-show="
+            (props.embedded || sidebarLayout.rightExpanded) &&
+            !(workstationMode && evidenceWide && evidenceDialogVisible)
+          "
           id="review-context-panel-content"
           class="sidebar-content context-panel-content"
         >
@@ -2477,6 +2641,7 @@ onBeforeUnmount(() => {
     </div>
 
     <EvidenceLocatorDialog
+      v-if="!workstationMode || !evidenceWide"
       v-model="evidenceDialogVisible"
       :project-id="activeProjectId"
       :evidence="evidencePreview"
@@ -3683,5 +3848,61 @@ onBeforeUnmount(() => {
 
 .judgment-record {
   overflow-wrap: anywhere;
+}
+.workstation-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.workstation-navigation :deep(.el-button) {
+  min-height: 44px;
+  margin-left: 0;
+}
+.station-filters {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.station-filters select {
+  width: 100%;
+  min-height: 44px;
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+}
+.station-filters p {
+  margin: 0;
+  line-height: 1.6;
+}
+.review-b-shell.is-workstation-mode {
+  min-width: 0;
+  --review-ink: var(--el-text-color-primary);
+  --review-muted: var(--el-text-color-secondary);
+  --review-surface: var(--el-bg-color-page);
+  --review-line: var(--el-border-color);
+}
+.review-b-shell.is-workstation-mode .conversation-column {
+  min-width: 0;
+}
+@media (width < 1280px) {
+  .review-b-shell.is-workstation-mode .review-b-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+  .review-b-shell.is-workstation-mode .context-panel {
+    width: auto;
+    min-width: 0;
+  }
+  .review-b-shell.is-workstation-mode .review-b-topbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 12px;
+  }
+  .review-b-shell.is-workstation-mode .conversation-head {
+    flex-wrap: wrap;
+  }
 }
 </style>

@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElAlert, ElDescriptions, ElDescriptionsItem, ElDialog, ElEmpty, ElTag } from 'element-plus'
+import {
+  ElAlert,
+  ElButton,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElEmpty,
+  ElTag
+} from 'element-plus'
 import {
   getDocumentDetailApi,
   getDocumentOriginalBlobApi,
@@ -9,11 +17,13 @@ import {
 import type { DocumentDetailPayload, KnowledgeChunk } from '@/api/aicheck'
 import type { EvidenceLink, ExtractedField } from '@/types/aicheck'
 import { getAicheckErrorMessage } from '@/utils/aicheckError'
+import { evidencePreviewSource } from '../evidencePreviewSource'
 import { formatConfidence } from '@/utils/confidence'
 import ClauseContent from '@/components/ClauseContent'
 
 const props = defineProps<{
   modelValue: boolean
+  inline?: boolean
   projectId?: string
   evidence?: EvidenceLink
   extractedFields: ExtractedField[]
@@ -52,7 +62,7 @@ let previewRequestSeq = 0
 const evidenceTypeLabel = computed(() => props.evidence?.objectType || 'nodeEvidenceLink')
 const evidenceProjectId = computed(() => props.projectId || props.evidence?.projectId || '')
 const evidenceDocumentId = computed(() => props.evidence?.documentId || '')
-const directPreviewUrl = computed(() => String(props.evidence?.previewUrl || ''))
+const directPreviewUrl = computed(() => evidencePreviewSource(props.evidence, props.projectId))
 const previewTypeForSource = (source: string) => {
   const cleanSource = source.split('#')[0].split('?')[0].toLowerCase()
   if (cleanSource.endsWith('.pdf') || source.includes('/knowledge/files/')) return 'pdf'
@@ -228,6 +238,9 @@ watch(
       visible.value,
       props.evidence?.id,
       props.evidence?.documentId,
+      props.evidence?.documentVersionId,
+      props.evidence?.pageNo,
+      props.evidence?.projectId,
       props.evidence?.objectType,
       props.evidence?.previewUrl,
       props.projectId
@@ -243,7 +256,8 @@ watch(
       clauseOcrError.value = ''
       clauseOcrLoading.value = false
     }
-  }
+  },
+  { immediate: true }
 )
 
 onBeforeUnmount(() => {
@@ -252,11 +266,26 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <ElDialog v-model="visible" :title="locationTitle" width="1040px" top="32px" append-to-body>
+  <component
+    :is="inline ? 'section' : ElDialog"
+    v-if="!inline || visible"
+    v-model="visible"
+    :title="inline ? undefined : locationTitle"
+    :width="inline ? undefined : '1040px'"
+    :top="inline ? undefined : '32px'"
+    :append-to-body="!inline"
+    :style="inline ? undefined : { maxWidth: 'calc(100vw - 24px)' }"
+    :class="{ 'inline-locator': inline }"
+    :aria-label="inline ? locationTitle : undefined"
+  >
+    <header v-if="inline" class="inline-locator-heading"
+      ><h2>{{ locationTitle }}</h2
+      ><ElButton @click="visible = false">返回审查</ElButton></header
+    >
     <template v-if="evidence">
       <ElDescriptions
         v-if="evidence.objectType !== 'knowledgeClause'"
-        :column="2"
+        :column="inline ? 1 : 2"
         border
         class="evidence-summary"
       >
@@ -414,7 +443,7 @@ onBeforeUnmount(() => {
       </div>
     </template>
     <ElEmpty v-else description="未选择证据" />
-  </ElDialog>
+  </component>
 </template>
 
 <style scoped>
@@ -584,5 +613,40 @@ onBeforeUnmount(() => {
   .locator-grid {
     grid-template-columns: 1fr;
   }
+}
+.inline-locator {
+  min-width: 0;
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.inline-locator-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.inline-locator-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.inline-locator-heading :deep(.el-button) {
+  min-height: 44px;
+}
+.inline-locator .locator-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.inline-locator .standard-file-name,
+.inline-locator .preview-box,
+.inline-locator .detail-box,
+.inline-locator .clause-ocr pre,
+.inline-locator .clause-ocr-chunks {
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color);
+  border-color: var(--el-border-color);
+}
+.inline-locator .standard-file-name strong,
+.inline-locator .clause-quote p {
+  color: var(--el-text-color-primary);
 }
 </style>
