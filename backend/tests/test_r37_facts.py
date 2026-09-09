@@ -14,7 +14,7 @@ def fixture():
     groups = {**data, "contexts": [{"projectId": "P1", "organizationId": "ORG1", "required": True}],
               "procedures": [data["procedure"]], "inventories": [data["caseInventory"]], "cases": data["caseInventory"]["cases"]}
     tables = [{"tableId": schema, "businessSchema": schema, "pageNo": index + 1, "bbox": [0, 0, 100, 100],
-               "structureConfidence": 0.9, "normalizedRows": deepcopy(groups[key])} for index, (schema, key) in enumerate(R37_TABLES.items())]
+               "structureConfidence": 0.9, "normalizedRows": deepcopy(groups[key])} for index, (schema, key) in enumerate(R37_TABLES.items()) if key in groups]
     state = {"documents": [{"id": "D1", "projectId": "P1", "tenantId": "T1"}],
              "versions": [{"id": "V1", "documentId": "D1", "tenantId": "T1"}],
              "ocr_parse_results": [{"documentVersionId": "V1", "tenantId": "T1", "tables": tables}]}

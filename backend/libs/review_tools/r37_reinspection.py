@@ -9,9 +9,12 @@ from datetime import datetime
 from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import check, result
+from libs.review_tools.r37_reinspection_set import evaluate_reinspection_set
 
 
 def evaluate_r37_reinspection(arguments: dict[str, Any]) -> dict[str, Any]:
+    if "caseInventory" in arguments:
+        return evaluate_reinspection_set(arguments, evaluate_r37_reinspection)
     rows = []
     project, organization = arguments.get("projectId"), arguments.get("organizationId")
 

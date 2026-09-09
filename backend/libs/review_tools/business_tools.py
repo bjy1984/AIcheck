@@ -408,7 +408,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r36_ndt_plan"
             else {"projectId": "string", "organizationId": "string", "applicability": "object", "procedure": "object", "caseInventory": "object", "commissions": ["object"], "notices": ["object"], "feedback": ["object"]}
             if name == "evaluate_ndt_nonconformance"
-            else {"projectId": "string", "organizationId": "string", "case": "object", "originalInspection": "object", "disposition": "object", "reinspections": ["object"]}
+            else {"projectId": "string", "organizationId": "string", "case": "object?", "originalInspection": "object?", "disposition": "object?", "caseInventory": "object?", "originalInspections": ["object?"], "dispositions": ["object?"], "reinspections": ["object"]}
             if name == "evaluate_r37_reinspection"
             else {
                 "designItems": ["object"],
