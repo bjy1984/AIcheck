@@ -105,7 +105,7 @@ const visibleCount = computed(() =>
       {{ stationNodes.filter((node) => node.handoffRevalidation === 'unavailable').length }}
       个尚未确认。
     </p>
-    <ElButton :loading="handoffBusy" @click="emit('refreshHandoffs')">重新核对交接状态</ElButton>
+    <ElButton :loading="handoffBusy" @click="emit('refreshHandoffs')">刷新工位交接状态</ElButton>
     <p>显示 {{ visibleCount }} / {{ nodes.length }} 个节点。筛选列表不会切换当前节点。</p>
   </section>
 </template>
