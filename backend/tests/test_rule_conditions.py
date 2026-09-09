@@ -72,3 +72,55 @@ def test_applicability_without_evidence_is_not_a_skip():
     specification["checks"][0]["operator"] = "UNSUPPORTED"
     with pytest.raises(ValueError, match="unsupported"):
         evaluate_conditions(specification, {"required": {"value": False, "evidenceRefs": ["E1"]}})
+
+
+def leaf(identity):
+    return {"id": identity, "field": identity, "operator": "eq", "expected": True}
+
+
+@pytest.mark.parametrize("group,left,right,expected", [
+    ("all", True, True, "pass"), ("all", True, None, "evidence_insufficient"),
+    ("all", False, None, "not_applicable"), ("all", None, None, "evidence_insufficient"),
+    ("any", True, None, "pass"), ("any", False, None, "evidence_insufficient"),
+    ("any", False, False, "not_applicable"), ("any", None, None, "evidence_insufficient"),
+])
+def test_compound_applicability_preserves_unknown(group, left, right, expected):
+    specification = conditions()
+    specification["applicability"] = {group: [leaf("A"), leaf("B")]}
+    facts = {"A": {"value": left, "evidenceRefs": ["EA"]}, "B": {"value": right, "evidenceRefs": ["EB"]},
+             "thickness": {"value": 11, "unit": "mm", "evidenceRefs": ["EM"]}}
+    output = evaluate_conditions(specification, facts)
+    assert output["result"] == expected
+    assert len(output["applicability"]["children"]) == 2
+
+
+@pytest.mark.parametrize("value,expected", [(True, "not_applicable"), (False, "pass"), (None, "evidence_insufficient")])
+def test_negating_unknown_does_not_make_it_true(value, expected):
+    specification = conditions()
+    specification["applicability"] = {"not": leaf("A")}
+    output = evaluate_conditions(specification, {"A": {"value": value, "evidenceRefs": ["EA"]},
+        "thickness": {"value": 11, "unit": "mm", "evidenceRefs": ["EM"]}})
+    assert output["result"] == expected
+
+
+@pytest.mark.parametrize("expression", [{"all": []}, {"any": [], "not": leaf("A")},
+    {"not": None}, {"all": [leaf("A"), leaf("A")]}, {"any": [leaf(str(i)) for i in range(201)]}])
+def test_malformed_or_oversized_applicability_rejected(expression):
+    specification = conditions()
+    specification["applicability"] = expression
+    with pytest.raises(ValueError):
+        validate_conditions(specification)
+
+
+def test_nested_applicability_and_depth_limit():
+    specification = conditions()
+    specification["applicability"] = {"all": [leaf("A"), {"not": {"any": [leaf("B"), leaf("C")]}}]}
+    facts = {key: {"value": value, "evidenceRefs": [key]} for key, value in [("A", True), ("B", False), ("C", False)]}
+    facts["thickness"] = {"value": 11, "unit": "mm", "evidenceRefs": ["M"]}
+    assert evaluate_conditions(specification, facts)["result"] == "pass"
+    expression = leaf("A")
+    for _ in range(10):
+        expression = {"not": expression}
+    specification["applicability"] = expression
+    with pytest.raises(ValueError, match="invalid_applicability"):
+        evaluate_conditions(specification, facts)

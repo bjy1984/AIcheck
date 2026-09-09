@@ -15,7 +15,7 @@ def validate_conditions(value: Any) -> dict[str, Any]:
     checks = value["checks"]
     if not isinstance(checks, list) or not 1 <= len(checks) <= 200:
         raise ValueError("conditions_require_1_to_200_checks")
-    validation_checks = checks + ([value["applicability"]] if "applicability" in value else [])
+    validation_checks = checks + (_applicability_leaves(value["applicability"]) if "applicability" in value else [])
     seen = set()
     for check in validation_checks:
         if not isinstance(check, dict) or set(check) - {"id", "field", "operator", "expected", "unit"}:
@@ -58,9 +58,7 @@ def evaluate_conditions(conditions: dict[str, Any], facts: dict[str, Any]) -> di
         raise TypeError("condition_facts_must_be_object")
     applicability = None
     if "applicability" in conditions:
-        applicability = evaluate_conditions(
-            {"schemaVersion": "rule-conditions-v1", "checks": [conditions["applicability"]]}, facts,
-        )["checks"][0]
+        applicability = _evaluate_applicability(conditions["applicability"], facts)
         if applicability["result"] != "pass":
             not_applicable = applicability["result"] == "fail"
             return {
@@ -95,3 +93,46 @@ def evaluate_conditions(conditions: dict[str, Any], facts: dict[str, Any]) -> di
         results.append(result)
     statuses = {item["result"] for item in results}
     return {"result": "fail" if "fail" in statuses else "evidence_insufficient" if "evidence_insufficient" in statuses else "pass", "checks": results, **({"applicability": applicability} if applicability else {})}
+
+
+def _applicability_leaves(expression: Any, depth: int = 0) -> list[dict[str, Any]]:
+    if depth > 8 or not isinstance(expression, dict):
+        raise ValueError("invalid_applicability_expression")
+    groups = set(expression) & {"all", "any", "not"}
+    if not groups:
+        return [expression]
+    if len(groups) != 1 or len(expression) != 1:
+        raise ValueError("ambiguous_applicability_group")
+    operator = next(iter(groups))
+    children = [expression[operator]] if operator == "not" else expression[operator]
+    if not isinstance(children, list) or not 1 <= len(children) <= 200:
+        raise ValueError("applicability_group_requires_children")
+    leaves = []
+    for child in children:
+        leaves.extend(_applicability_leaves(child, depth + 1))
+        if len(leaves) > 200:
+            raise ValueError("applicability_expression_too_large")
+    return leaves
+
+
+def _evaluate_applicability(expression: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
+    """Three-valued logic: unknown is preserved through negation and composition."""
+    groups = set(expression) & {"all", "any", "not"}
+    if not groups:
+        return evaluate_conditions({"schemaVersion": "rule-conditions-v1", "checks": [expression]}, facts)["checks"][0]
+    operator = next(iter(groups))
+    children = [expression[operator]] if operator == "not" else expression[operator]
+    outputs = [_evaluate_applicability(child, facts) for child in children]
+    states = {output["result"] for output in outputs}
+    if operator == "not":
+        result = {"pass": "fail", "fail": "pass", "evidence_insufficient": "evidence_insufficient"}[outputs[0]["result"]]
+    elif operator == "all":
+        result = "fail" if "fail" in states else "evidence_insufficient" if "evidence_insufficient" in states else "pass"
+    else:
+        result = "pass" if "pass" in states else "evidence_insufficient" if "evidence_insufficient" in states else "fail"
+    refs = []
+    for output in outputs:
+        for ref in output["evidenceRefs"]:
+            if ref not in refs:
+                refs.append(deepcopy(ref))
+    return {"operator": operator, "result": result, "reason": "composite_applicability", "children": outputs, "evidenceRefs": refs}
