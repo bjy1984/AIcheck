@@ -13495,3 +13495,43 @@ def test_project_rule_trial_can_use_scoped_run_ocr_without_client_values(monkeyp
     assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"], "facts": {}}), "VALIDATION_ERROR")
     run["projectId"] = "OTHER"
     assert_error(client.post(url, headers=headers, json={"reviewRunId": run["reviewRunId"]}), "NOT_FOUND")
+
+
+@pytest.mark.parametrize("operation", ["create", "edit", "fork"])
+def test_platform_rule_writes_reject_invalid_structured_conditions(operation):
+    from copy import deepcopy
+
+    source = repo.find_one("rule_versions", "RULE-NDT-202606")
+    source["status"] = "草稿"
+    before = deepcopy(repo.state["rule_versions"])
+    body = {"executionConditions": {"schemaVersion": "rule-conditions-v1", "checks": [
+        {"id": "X", "field": "x", "operator": "execute_code", "expected": "bad"}]}}
+    if operation == "create":
+        response = client.post("/rules/versions", json={**body, "inspectionItem": "测试", "standardText": "测试"})
+    elif operation == "edit":
+        response = client.patch(f"/rules/versions/{source['id']}", json=body)
+    else:
+        response = client.post(f"/rules/versions/{source['id']}/fork", json=body)
+    assert_error(response, "VALIDATION_ERROR")
+    assert repo.state["rule_versions"] == before
+
+
+@pytest.mark.parametrize("operation", ["publish", "rollback"])
+def test_condition_rule_cannot_be_activated_while_formal_adapter_is_missing(operation):
+    from copy import deepcopy
+
+    source = repo.find_one("rule_versions", "RULE-NDT-202606")
+    candidate = deepcopy(source)
+    candidate.update(id="RULE-CONDITION-CANDIDATE", status="草稿", version="lab-conditions")
+    candidate["executionConditions"] = {"schemaVersion": "rule-conditions-v1", "checks": [
+        {"id": "X", "field": "thickness", "operator": "gte", "expected": 10, "unit": "mm"}]}
+    repo.state["rule_versions"].append(candidate)
+    before = deepcopy(repo.state["rule_versions"])
+    if operation == "publish":
+        response = client.post(f"/rules/versions/{candidate['id']}/publish", json={"reason": "验证条件发布门槛"})
+    else:
+        response = client.post(f"/rules/versions/{source['id']}/rollback",
+                               json={"reason": "验证条件回滚门槛", "targetVersionId": candidate["id"]})
+    assert_error(response, "VALIDATION_ERROR")
+    assert "正式判定工具" in response.json()["message"]
+    assert repo.state["rule_versions"] == before

@@ -40,6 +40,7 @@ from apps.api.project_analysis_views import (
     project_analysis_results_for_review_workspace,
 )
 from apps.api.review_session_evidence import refresh_review_session_evidence_fingerprint
+from apps.api.rule_mutation_validation import rule_project_mutation_error
 from apps.api.submission_pipeline import pipeline_incomplete_message, pipeline_stage_of
 from apps.api.upload_session_workflow import (
     local_review_confidence,
@@ -26810,25 +26811,6 @@ def get_rule_version(request: Request, version_id: str):
     return ok({"rule": versioned_record("rule-version", rule)}, request)
 
 
-def rule_project_mutation_error(request: Request, rule: dict[str, Any]) -> JSONResponse | None:
-    project_id = rule.get("projectId")
-    if not project_id:
-        return None  # Platform writes are governed by knowledge:manage middleware.
-    if not isinstance(project_id, str):
-        return fail(errors.VALIDATION_ERROR, request, message="工程 ID 必须是字符串。")
-    project = repo.require_project(project_id)
-    if not project:
-        return fail(errors.NOT_FOUND, request)
-    if project.get("status") == "已归档":
-        return fail(errors.ARCHIVED_READONLY, request)
-    role, identity_error = effective_role_for_request(request)
-    if identity_error:
-        return identity_error
-    if scope_error := member_node_scope_error(request, project_id, role, node_ids=parse_rule_node_ids(rule.get("nodeIds"))):
-        return scope_error
-    if str(rule.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID) != str(project.get("businessPackId") or DEFAULT_BUSINESS_PACK_ID):
-        return fail(errors.VALIDATION_ERROR, request, message="规则业务包必须与工程一致。")
-    return None
 
 
 @router.post("/rules/versions")
@@ -27070,7 +27052,7 @@ def publish_rule_version(
         rule = repo.find_one("rule_versions", version_id)
         if not rule:
             return fail(errors.NOT_FOUND, request)
-        if scope_error := rule_project_mutation_error(request, rule):
+        if scope_error := rule_project_mutation_error(request, rule, publishing=True):
             return scope_error
         if not record_if_match_valid("rule-version", rule, if_match):
             return fail(errors.ETAG_CONFLICT, request)
@@ -27151,6 +27133,8 @@ def rollback_rule_version(
         )
         if not target or target.get("id") == rule.get("id"):
             return fail(errors.CONFLICT, request, message="目标规则版本已变化，请重新预览。")
+        if scope_error := rule_project_mutation_error(request, target, publishing=True):
+            return scope_error
         rule["status"] = "已回滚"
         rule["rolledBackAt"] = server_time()
         rule["rollbackReason"] = payload["reason"]
