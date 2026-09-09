@@ -276,6 +276,17 @@ def test_fault_proxy_injects_only_configured_request_count(monkeypatch) -> None:
     monkeypatch.setenv("AICHECK_FAULT_PROXY_TOKEN", "test-token")
     monkeypatch.setenv("AICHECK_FAULT_PROXY_UPSTREAM", "http://127.0.0.1:9")
     ocr_fault_proxy._fault.update({"mode": "pass", "statusCode": 503, "delaySeconds": 0, "remaining": 0})
+    # Test fault consumption without host proxy settings or a real socket timeout.
+    original_client = ocr_fault_proxy.httpx.AsyncClient
+    forwarded = []
+
+    def upstream(request):
+        forwarded.append(str(request.url))
+        return ocr_fault_proxy.httpx.Response(200, json={"forwarded": True})
+
+    monkeypatch.setattr(ocr_fault_proxy.httpx, "AsyncClient", lambda **kwargs: original_client(
+        **kwargs, transport=ocr_fault_proxy.httpx.MockTransport(upstream), trust_env=False,
+    ))
     client = TestClient(ocr_fault_proxy.app)
 
     configured = client.post(
@@ -288,7 +299,9 @@ def test_fault_proxy_injects_only_configured_request_count(monkeypatch) -> None:
 
     assert configured.status_code == 200
     assert first.status_code == 429
-    assert second.status_code != 429
+    assert second.status_code == 200
+    assert second.json() == {"forwarded": True}
+    assert forwarded == ["http://127.0.0.1:9/v1/probe"]
 
 
 def test_release_manifest_can_require_bundle_and_immutable_images(monkeypatch, tmp_path: Path) -> None:

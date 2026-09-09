@@ -86,6 +86,9 @@ PUBLIC_MUTATION_ROUTES = {
     ("POST", "/api/registration-links/{token}/apply"),
 }
 READ_ONLY_POST_ROUTES = {
+    # Draft trial evaluates supplied examples without saving rules, facts, or findings.
+    ("POST", "/projects/{project_id}/rules/versions/{version_id}/trial"),
+    ("POST", "/api/projects/{project_id}/rules/versions/{version_id}/trial"),
     # 外部登记信息检索：用 POST 只为传递结构化查询条件，不写任何状态，
     # 因此没有幂等键可言（已核对 cnse_routes.py / std_samr_routes.py 均不改 repo.state）。
     ("POST", "/cnse/organizations/search"),

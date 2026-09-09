@@ -21,3 +21,15 @@ node e2e/lab-rules/check.mjs
 Requires installed Google Chrome. Uses a fresh temporary browser profile; does not access existing browser sessions. Servers bind loopback ports 4174 and 4393. Stop both servers after testing. Do not expose the test bridge to a network or deploy it.
 
 The script checks platform read-only behavior, creating and saving a numeric condition, failing/passing/missing-evidence trials, clearing stale results, disabling trials for unsaved edits, and retaining unsaved text after canceling close. It fails on browser runtime errors. The screenshot is written to `docs/lab/verification/browser/rule-trial-pass.png`.
+
+Workbench CSS comparison (from `frontend`):
+
+```sh
+node e2e/lab-rules/check-workbench-css.mjs
+```
+
+Uses installed Chrome to compare the workbench CSS against commit `4cac73d1` at
+1200px / 1600px and both reduced-motion settings. An optional first argument
+selects another baseline commit. Transitions are disabled during measurement so
+intermediate layout animation values do not cause false differences. This is a
+CSS regression probe, not a logged-in workbench acceptance test.

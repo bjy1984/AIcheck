@@ -2423,6 +2423,18 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+@keyframes typing-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes execution-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .review-b-shell {
   --review-blue: #1468e8;
   --review-ink: #172033;
@@ -2517,16 +2529,17 @@ onBeforeUnmount(() => {
 
 .review-user {
   display: flex;
-  gap: 8px;
-  align-items: center;
+
   /* 从 div 改成 button（要挂用户菜单），把浏览器默认按钮样式清掉，外观不变 */
   padding: 0;
-  color: inherit;
   font-size: 13px;
   font-weight: 600;
+  color: inherit;
+  cursor: pointer;
   background: none;
   border: 0;
-  cursor: pointer;
+  gap: 8px;
+  align-items: center;
 }
 
 .review-user span {
@@ -2827,18 +2840,18 @@ onBeforeUnmount(() => {
    等于把上千字的自言自语重新摆回视线里。 */
 .reasoning-block {
   margin: 6px 0 10px;
+  background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  background: var(--el-fill-color-lighter);
 }
 
 .reasoning-summary {
   padding: 6px 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  list-style: none;
   cursor: pointer;
   user-select: none;
-  list-style: none;
 }
 
 .reasoning-summary::-webkit-details-marker {
@@ -2846,9 +2859,9 @@ onBeforeUnmount(() => {
 }
 
 .reasoning-summary::before {
-  content: '▸';
   display: inline-block;
   margin-right: 6px;
+  content: '▸';
   transition: transform 0.15s ease;
 }
 
@@ -2864,15 +2877,15 @@ onBeforeUnmount(() => {
    等于折叠了个寂寞。 */
 .reasoning-text {
   max-height: 260px;
-  margin: 0;
   padding: 0 10px 10px;
+  margin: 0;
   overflow: auto;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.7;
   color: var(--el-text-color-secondary);
-  white-space: pre-wrap;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .welcome-card p {
@@ -3250,12 +3263,7 @@ onBeforeUnmount(() => {
   animation: typing-blink 1s steps(2, start) infinite;
 }
 
-@keyframes typing-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
+/* stylelint-disable-next-line order/order -- This override must follow the base animation. */
 @media (prefers-reduced-motion: reduce) {
   .typing-caret {
     animation: none;
@@ -3263,12 +3271,12 @@ onBeforeUnmount(() => {
 }
 
 .execution-preview {
-  margin: 6px 0 0;
   padding: 0 0 0 18px;
-  list-style: none;
-  color: #667085;
+  margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.7;
+  color: #667085;
+  list-style: none;
 }
 
 .execution-preview li {
@@ -3320,12 +3328,6 @@ onBeforeUnmount(() => {
   height: 6px;
   background: #98a2b3;
   border-radius: 50%;
-}
-
-@keyframes execution-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* 推荐问题：按当前节点卡点定制，点击填进输入框而不是直接发送。
@@ -3399,6 +3401,7 @@ onBeforeUnmount(() => {
   background: #fff;
   border: 1px solid #dbe6f7;
   border-radius: 14px;
+
   /* 阴影收敛：原来 30px 的大扩散让这张卡在页面上「浮」得过重，
      压过了它上面的消息区——输入框是工具，不该比内容更显眼。 */
   box-shadow: 0 2px 12px rgb(20 104 232 / 6%);
@@ -3666,7 +3669,7 @@ onBeforeUnmount(() => {
 .human-decision-card :deep(.el-radio-button__inner) {
   width: 100%;
 }
-
+/* stylelint-disable-next-line order/order -- Responsive overrides must follow base rules. */
 @media (width <= 1380px) {
   .review-b-layout {
     grid-template-columns: minmax(280px, 360px) minmax(610px, 1fr) 302px;

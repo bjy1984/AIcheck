@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Header, Request
 
+from apps.api import routes as api
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok
 from libs.db.repository import repo
@@ -21,8 +22,6 @@ EDITABLE_FIELDS = {
 
 
 def _guard(request, project_id, node_ids=None):
-    from apps.api import routes as api
-
     if os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() not in {"true", "1", "yes"}:
         return fail(errors.NOT_FOUND, request)
     role, identity_error = api.effective_role_for_request(request)
@@ -48,8 +47,6 @@ def _body_error(request, body):
 
 @project_rule_router.get("/projects/{project_id}/rules/versions")
 def list_project_rules(request: Request, project_id: str):
-    from apps.api import routes as api
-
     if error := _guard(request, project_id):
         return error
     project = repo.require_project(project_id)
@@ -67,8 +64,6 @@ def list_project_rules(request: Request, project_id: str):
 @project_rule_router.post("/projects/{project_id}/rules/versions")
 def create_project_rule(request: Request, project_id: str, body: dict[str, Any] = Body(default_factory=dict),
                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    from apps.api import routes as api
-
     if error := _body_error(request, body):
         return error
     nodes = api.parse_rule_node_ids(body.get("nodeIds"))
@@ -86,8 +81,6 @@ def edit_project_rule(request: Request, project_id: str, version_id: str,
                       body: dict[str, Any] = Body(default_factory=dict),
                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
                       if_match: str | None = Header(default=None, alias="If-Match")):
-    from apps.api import routes as api
-
     if error := _guard(request, project_id):
         return error
     rule = repo.find_one("rule_versions", version_id)
@@ -109,8 +102,6 @@ def edit_project_rule(request: Request, project_id: str, version_id: str,
 def fork_project_rule(request: Request, project_id: str, version_id: str,
                       body: dict[str, Any] = Body(default_factory=dict),
                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    from apps.api import routes as api
-
     if error := _guard(request, project_id):
         return error
     source = repo.find_one("rule_versions", version_id)
@@ -130,8 +121,6 @@ def fork_project_rule(request: Request, project_id: str, version_id: str,
 def trial_project_rule(request: Request, project_id: str, version_id: str,
                        body: dict[str, Any] = Body(default_factory=dict),
                        if_match: str | None = Header(default=None, alias="If-Match")):
-    from apps.api import routes as api
-
     if error := _guard(request, project_id):
         return error
     rule = repo.find_one("rule_versions", version_id)
