@@ -58,6 +58,14 @@ def binding_is_submitted(binding: dict[str, Any]) -> bool:
     return str(binding.get("bindingStatus") or "") in SUBMITTED_BINDING_STATUSES
 
 
+def matching_active_binding(state: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any] | None:
+    """Reuse only the same active business relation; never change its review state."""
+    fields = ("projectId", "nodeId", "documentId", "documentVersionId", "requirementId", "usage")
+    return next((row for row in _bindings(state)
+                 if row.get("id") and row.get("bindingStatus") in SUBMITTED_BINDING_STATUSES | {"草稿挂载"}
+                 and all(str(row.get(key) or "") == str(candidate.get(key) or "") for key in fields)), None)
+
+
 def manual_binding_link_id(project_id: str, node_id: int, document_version_id: str) -> str:
     raw = json.dumps([str(project_id), int(node_id), str(document_version_id)], ensure_ascii=False)
     return "NEL-MB-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12].upper()

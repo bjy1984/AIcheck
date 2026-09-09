@@ -2214,3 +2214,24 @@ def test_binding_requirement_patch_rejects_wrong_node_and_ignores_forged_name():
     )
     assert binding["requirementId"] == requirement["id"], response.text
     assert binding["requirementName"] == requirement["name"]
+
+
+@pytest.mark.parametrize("status", ["草稿挂载", "已提交", "需补正", "已通过"])
+def test_repeated_binding_with_new_operation_keeps_existing_review_state(status):
+    payload = {"bindings": [{"documentId": DOCUMENTS["contractor_a"],
+                            "documentVersionId": f"DV-{DOCUMENTS['contractor_a']}-V1", "usage": "监检资料"}]}
+    url = f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/file-bindings"
+    first = client.post(url, headers={**_headers("inspection"), "Idempotency-Key": "binding-first"}, json=payload)
+    assert first.json()["code"] == 0, first.text
+    binding_id = first.json()["data"]["affectedIds"][0]
+    repo.find_one("bindings", binding_id)["bindingStatus"] = status
+    for link in repo.state["node_evidence_links"]:
+        if link.get("bindingId") == binding_id:
+            link["manualStatus"] = "rejected"
+    before = deepcopy({key: repo.state[key] for key in ("bindings", "node_evidence_links", "tree_nodes")})
+    second = client.post(url, headers={**_headers("inspection"), "Idempotency-Key": "binding-after-reload"},
+                         json={"bindings": payload["bindings"] * 2})
+    assert second.json()["code"] == 0, second.text
+    assert second.json()["data"]["affectedIds"] == [binding_id]
+    for key, rows in before.items():
+        assert _without_tenant_metadata(repo.state[key]) == _without_tenant_metadata(rows)

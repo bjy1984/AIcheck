@@ -210,6 +210,7 @@ from libs.knowledge_retrieval import (  # noqa: F401 -- public re-export and mon
 )
 from libs.manual_binding_links import (
     document_already_submitted,
+    matching_active_binding,
     upsert_manual_binding_evidence_links,
 )
 from libs.material_targeting import (
@@ -7898,9 +7899,7 @@ def bind_documents(
                 if not document or not version_id:
                     continue
                 requirement = resolved_requirements[(node_id, index)]
-                # 已进入审查视野的资料改挂/加挂节点是「换个地方看同一份资料」，不是新的提交：
-                # 直接继承已提交，并补证据链接。原来一律落草稿挂载，文件在台账上从
-                # 「已提交」退回「未提交」，监检还提交不了施工方的挂载（2026-09-03 审计）。
+                # Only the selected version can inherit a previous submission.
                 already_submitted = document_already_submitted(repo.state, project_id, document["id"], version_id=version_id)
                 binding = {
                     "id": f"BIND-{node_id}-{uuid4().hex[:6].upper()}",
@@ -7921,11 +7920,16 @@ def bind_documents(
                 }
                 if already_submitted:
                     binding["inheritedSubmission"] = True
+                if existing := matching_active_binding(repo.state, binding):
+                    if existing["id"] not in created:
+                        created.append(existing["id"])
+                    continue
                 repo.state["bindings"].insert(0, binding)
                 created.append(binding["id"])
                 node_created.append(binding)
             inherited = upsert_manual_binding_evidence_links(repo.state, project_id, node_created, actor_name=request_actor_name(request))
-            changed.append(repo.set_node_status(project_id, node_id, "待审查" if inherited or any(item.get("inheritedSubmission") for item in node_created) else "部分提交"))
+            if node_created:
+                changed.append(repo.set_node_status(project_id, node_id, "待审查" if inherited or any(item.get("inheritedSubmission") for item in node_created) else "部分提交"))
         return ok(repo.mutation_result("保存节点挂载关系", "NodeFileBinding", created[0] if created else "BIND-EMPTY", next_status="部分提交", changed=changed, affected_ids=created), request)
 
     return idempotent(

@@ -44,6 +44,16 @@ try {
   await expect(page.getByRole('checkbox', { name: '同时保存为本节点补充资料' })).not.toBeChecked()
   await page.getByRole('button', { name: '取消', exact: true }).click()
   await page.unroute('**/inspection/nodes/24/file-bindings')
+  await page.reload()
+  await page.getByRole('button', { name: '选择本次文件', exact: true }).click()
+  await page.getByLabel('搜索文件名称、来源单位或类别').fill('LAB-PICK-01')
+  await page.getByRole('button', { name: '搜索 / 刷新', exact: true }).click()
+  await page.getByText('LAB-PICK-01.txt', { exact: true }).click()
+  await page.getByText('同时保存为本节点补充资料', { exact: true }).click()
+  await page.getByRole('button', { name: '保存选择并挂载', exact: true }).click()
+  await expect(page.getByTestId('selection')).toContainText('VER-PICK-1')
+  const afterReload = (await bindings()).filter(row => !before.some(old => old.id === row.id))
+  expect(afterReload.map(row => row.id)).toEqual(added.map(row => row.id))
   await page.getByRole('button', { name: '本次文件 1 份', exact: true }).click()
   await page.getByText('同时保存为本节点补充资料', { exact: true }).click()
   let release
@@ -67,5 +77,5 @@ try {
   await page.getByRole('button', { name: '选择本次文件', exact: true }).click()
   await expect(page.locator('.document-picker-chosen .el-tag')).toHaveCount(0)
   expect(errors).toEqual([])
-  console.log('PASS persistent binding: explicit opt-in, fixed version, lost-response retry, no duplicate, supplemental requirement, default reset')
+  console.log('PASS persistent binding: explicit opt-in, fixed version, lost-response retry, no duplicate after reload, supplemental requirement, default reset')
 } finally { await browser.close() }

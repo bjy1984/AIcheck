@@ -131,3 +131,19 @@ def test_没有OCR字段时退回整份文件链接():
     link = created[0]
     assert link["pageNo"] is None and link["quotedText"] is None
     assert link["supportStatus"] == "待人工确认" and link["evidenceTier"] == "manual"
+
+
+def test_binding_reuse_requires_same_business_relation_and_active_status():
+    from libs.manual_binding_links import matching_active_binding
+
+    state = _state()
+    candidate = dict(state["bindings"][0], usage="监检资料")
+    state["bindings"] = [candidate]
+    assert matching_active_binding(state, dict(candidate)) is candidate
+    for field in ("projectId", "nodeId", "documentId", "documentVersionId", "requirementId", "usage"):
+        assert matching_active_binding(state, {**candidate, field: "different"}) is None
+    for status in ("已撤回", "已作废", "已删除", "已解除挂载", "rejected", "驳回", ""):
+        state["bindings"] = [{**candidate, "bindingStatus": status}]
+        assert matching_active_binding(state, candidate) is None
+    state["bindings"] = []
+    assert matching_active_binding(state, candidate) is None
