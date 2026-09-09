@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from libs.db.repository import repo
 from libs.review_orchestrator.execution import (
     apply_review_human_input_for_review_run,
@@ -154,10 +156,16 @@ def test_r19_semantic_submission_requires_all_questions_and_registered_evidence(
     assert any("clause_ref_not_fixed" in item for item in invented_clause["errors"])
 
 
-def test_r19_agent_submits_evidence_bound_atomic_judgments_and_preserves_reasoning(monkeypatch) -> None:
+@pytest.mark.parametrize("replace_first", [False, True])
+def test_r19_agent_submits_evidence_bound_atomic_judgments_and_preserves_reasoning(monkeypatch, replace_first) -> None:
     run = review_run("RRUN-R19-AGENT")
+    if replace_first:
+        freeze_replacements(run, ["AC-R19-01"])
     context = build_r19_agent_context(r19_state(), run)
     evidence_id = context["evidenceRefIds"][0]
+    payload = semantic_payload(evidence_id)
+    if replace_first:
+        payload["atomicJudgments"] = payload["atomicJudgments"][1:]
     response = {
         "id": "chat-r19-agent",
         "choices": [
@@ -174,7 +182,7 @@ def test_r19_agent_submits_evidence_bound_atomic_judgments_and_preserves_reasoni
                             "id": "call-submit",
                             "function": {
                                 "name": "submit_r19_semantic_review",
-                                "arguments": json.dumps(semantic_payload(evidence_id), ensure_ascii=False),
+                                "arguments": json.dumps(payload, ensure_ascii=False),
                             },
                         },
                     ],
@@ -185,6 +193,8 @@ def test_r19_agent_submits_evidence_bound_atomic_judgments_and_preserves_reasoni
 
     class FakeClient:
         def chat_sync(self, messages, model, **kwargs):
+            model_context = json.loads(messages[1]["content"])["context"]
+            assert len(model_context["reviewQuestions"]) == 8 - int(replace_first)
             assert kwargs["tools"]
             assert kwargs["tool_choice"] == "auto"
             return response
@@ -200,7 +210,7 @@ def test_r19_agent_submits_evidence_bound_atomic_judgments_and_preserves_reasoni
     assert trace["submitted"] is True
     assert trace["requestedHumanInput"] is False
     assert trace["result"] == "passed"
-    assert len(trace["atomicJudgments"]) == 8
+    assert len(trace["atomicJudgments"]) == 8 - int(replace_first)
     assert "已登记证据" in trace["reasoningContent"]
     reasoning_event = next(
         item
@@ -434,3 +444,48 @@ def test_r19_inline_run_pauses_resumes_and_uses_fixed_semantic_aggregation(monke
     assert result["result"] == "failed"
     assert len(result["atomicCheckResults"]) == 8
     assert result["toolExecutionSummary"]["nodeResultSource"] == "fixed_aggregator_over_llm_semantic_judgments"
+
+
+def freeze_replacements(run, targets):
+    from libs.review_rule_snapshot import freeze_effective_rule
+
+    run["businessPackId"] = "engineering_inspection_v1"
+    rule = {"id": "CUSTOM-R19", "nodeIds": [19], "businessPackId": run["businessPackId"],
+            "executionConditions": {"schemaVersion": "rule-conditions-v1", "checks": [
+                {"id": target, "atomicCheckId": target, "field": "thickness", "operator": "gte", "expected": 10}
+                for target in targets]}}
+    run["effectiveRuleSnapshot"] = freeze_effective_rule(run, rule)
+
+
+def test_replaced_questions_are_excluded_from_context_guard_and_submission(monkeypatch):
+    monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "deterministic")
+    run = review_run()
+    freeze_replacements(run, ["AC-R19-01"])
+    context = build_r19_agent_context(r19_state(), run)
+    retained = [item["questionId"] for item in R19_REVIEW_QUESTIONS][1:]
+    assert [item["questionId"] for item in context["reviewQuestions"]] == retained
+    trace = plan_r19_semantic_review(run, context)
+    assert trace["humanInputRequest"]["questionIds"] == retained
+    task = ensure_r19_human_input_task(run, {"questionIds": ["AC-R19-01"]}, requested_by="workflow_guard")
+    assert [item["questionId"] for item in task["questions"]] == retained
+    payload = semantic_payload(context["evidenceRefIds"][0])
+    payload["atomicJudgments"] = payload["atomicJudgments"][1:]
+    assert validate_r19_semantic_submission(payload, review_run=run)["status"] == "valid"
+    assert validate_r19_semantic_submission(payload)["status"] == "invalid_input"
+    payload["atomicJudgments"].pop()
+    assert validate_r19_semantic_submission(payload, review_run=run)["status"] == "invalid_input"
+    assert validate_r19_semantic_submission(semantic_payload(context["evidenceRefIds"][0]), review_run=run)["status"] == "invalid_input"
+
+
+def test_all_replaced_questions_skip_semantic_model_and_human_guard(monkeypatch):
+    monkeypatch.setenv("AICHECK_REVIEW_LLM_EXECUTION", "litellm")
+    monkeypatch.setattr("libs.review_orchestrator.rule_planners.qwen_runtime_client",
+                        lambda: (_ for _ in ()).throw(AssertionError("no model needed")))
+    run = review_run()
+    freeze_replacements(run, [item["questionId"] for item in R19_REVIEW_QUESTIONS])
+    context = build_r19_agent_context(r19_state(), run)
+    trace = plan_r19_semantic_review(run, context)
+    assert context["reviewQuestions"] == []
+    assert trace["submitted"] and trace["atomicJudgments"] == []
+    assert not trace["llmCalled"] and not trace["requestedHumanInput"]
+    assert ensure_r19_human_input_task(run, {}, requested_by="workflow_guard") is None

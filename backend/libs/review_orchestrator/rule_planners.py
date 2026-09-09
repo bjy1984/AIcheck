@@ -126,12 +126,13 @@ from libs.review_orchestrator.r18_facts import (
 )
 from libs.review_orchestrator.r19_agent import (
     R19_EXECUTION_MODE,
-    R19_REVIEW_QUESTIONS,
+    R19_REVIEW_QUESTIONS,  # noqa: F401 -- public re-export and monkeypatch compatibility
     R19_TASK_TYPE,  # noqa: F401 -- public re-export and monkeypatch compatibility
     apply_r19_human_input,  # noqa: F401 -- public re-export and monkeypatch compatibility
     build_r19_agent_context,  # noqa: F401 -- public re-export and monkeypatch compatibility
     ensure_r19_human_input_task,  # noqa: F401 -- public re-export and monkeypatch compatibility
     is_r19_formal_review,  # noqa: F401 -- public re-export and monkeypatch compatibility
+    r19_semantic_questions,
     validate_r19_human_input,  # noqa: F401 -- public re-export and monkeypatch compatibility
     validate_r19_semantic_submission,
 )
@@ -369,6 +370,8 @@ def plan_r19_semantic_review(
     """Run the evidence-bound semantic Agent used for R19's open-format review."""
 
     ensure_review_state()
+    questions = r19_semantic_questions(review_run)
+    agent_context["reviewQuestions"] = questions
     mode = review_llm_execution_mode()
     trace: dict[str, Any] = {
         "controlMode": R19_EXECUTION_MODE,
@@ -380,13 +383,16 @@ def plan_r19_semantic_review(
         "reasoningContent": "",
         "executionMode": R19_EXECUTION_MODE,
     }
+    if not questions:
+        trace.update({"submitted": True, "atomicJudgments": [], "controlMode": "r19_conditions_only"})
+        return trace
     if mode in {"deterministic", "disabled", "mock"}:
         trace.update(
             {
                 "controlMode": "r19_llm_unavailable_human_guard",
                 "requestedHumanInput": True,
                 "humanInputRequest": {
-                    "questionIds": [item["questionId"] for item in R19_REVIEW_QUESTIONS],
+                    "questionIds": [item["questionId"] for item in questions],
                     "reason": "R19 requires semantic review but the LLM execution mode is unavailable.",
                     "title": "人工确认 R19 境外牌号材料审查事实",
                 },
@@ -513,7 +519,7 @@ def plan_r19_semantic_review(
             "function": {
                 "name": "submit_r19_semantic_review",
                 "description": (
-                    "提交覆盖AC-R19-01至AC-R19-08的结构化语义判断。passed、failed和not_applicable均必须引用"
+                    "提交完整覆盖context.reviewQuestions的结构化语义判断。passed、failed和not_applicable均必须引用"
                     "已登记EvidenceRef；节点result由服务端固定聚合，模型不能自行指定。"
                 ),
                 "parameters": {
@@ -580,7 +586,7 @@ def plan_r19_semantic_review(
             "role": "user",
             "content": json.dumps(
                 {
-                    "task": "完成R19全部八个原子项的证据化语义审查。",
+                    "task": "仅完成context.reviewQuestions所列原子项的证据化语义审查；其他项由条件工具负责，不重复判定或提问。",
                     "context": model_context,
                 },
                 ensure_ascii=False,
@@ -682,7 +688,7 @@ def plan_r19_semantic_review(
                     arguments["evidenceIndex"] = evidence_index
                     output = dispatch_runtime_tool(repo.state, tool_name, arguments)
                 elif tool_name == "request_r19_human_input":
-                    registered_ids = {item["questionId"] for item in R19_REVIEW_QUESTIONS}
+                    registered_ids = {item["questionId"] for item in questions}
                     selected_ids = [
                         str(item)
                         for item in arguments.get("questionIds") or []
@@ -699,6 +705,7 @@ def plan_r19_semantic_review(
                         arguments,
                         known_evidence_ref_ids=known_evidence_ids,
                         evidence_index=evidence_index,
+                        review_run=review_run,
                     )
                     output = validation
                     if validation.get("status") == "valid":
@@ -747,7 +754,7 @@ def plan_r19_semantic_review(
                     "controlMode": "r19_llm_incomplete_human_guard",
                     "requestedHumanInput": True,
                     "humanInputRequest": {
-                        "questionIds": [item["questionId"] for item in R19_REVIEW_QUESTIONS],
+                        "questionIds": [item["questionId"] for item in questions],
                         "reason": "R19 Agent reached its execution boundary without a valid evidence-bound submission.",
                         "title": "人工确认 R19 未完成的语义审查事实",
                     },
@@ -773,7 +780,7 @@ def plan_r19_semantic_review(
                 "controlMode": "r19_llm_failed_human_guard",
                 "requestedHumanInput": True,
                 "humanInputRequest": {
-                    "questionIds": [item["questionId"] for item in R19_REVIEW_QUESTIONS],
+                    "questionIds": [item["questionId"] for item in questions],
                     "reason": f"R19 semantic Agent failed safely: {type(exc).__name__}",
                     "title": "人工确认 R19 境外牌号材料审查事实",
                 },

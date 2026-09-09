@@ -223,3 +223,27 @@ def test_incomplete_semantics_cannot_appear_complete(corruption):
         rows[-1]["atomicCheckId"] = "FOREIGN"
     with pytest.raises(ValueError, match="retained_results_incomplete"):
         merge_semantic_condition_results({"result": "passed", "atomicResults": rows}, replacements)
+
+
+@pytest.mark.parametrize("value,expected", [(11, "passed"), (9, "failed"), (None, "evidence_insufficient")])
+def test_all_r19_conditions_execute_without_semantic_candidates(monkeypatch, value, expected):
+    from types import SimpleNamespace
+
+    from libs.review_orchestrator import execution as ex
+
+    pack, run, rule, state, _ = semantic_example(value)
+    rule["executionConditions"]["checks"] = [
+        {"id": f"C{i}", "atomicCheckId": f"AC-R19-0{i}", "field": "thickness", "operator": "gte", "expected": 10}
+        for i in range(1, 9)]
+    run["effectiveRuleSnapshot"] = freeze_effective_rule(run, rule)
+    run["r19SemanticReview"] = {"atomicJudgments": []}
+    state["rule_check_results"] = []
+    monkeypatch.setattr(ex, "repo", SimpleNamespace(state=state, clone=deepcopy))
+    monkeypatch.setattr(ex, "execute_agent_tool", lambda *a, **k: pytest.fail("all items replaced"))
+    monkeypatch.setattr(ex, "append_tool_call", lambda *a, **k: None)
+    context = {"project": {"businessPackSnapshot": pack}, "clausePackageSnapshot": {"clauses": [{"clauseReferenceId": "TEST"}]}}
+    ex.run_step(run, "run_rule_engine", context)
+    result = state["rule_check_results"][0]
+    assert result["result"] == expected
+    assert len(result["atomicCheckResults"]) == 8
+    assert all(item["result"] == expected for item in result["atomicCheckResults"])

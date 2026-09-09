@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 from uuid import uuid4
 
+from libs.business_pack import load_business_pack
 from libs.contracts.responses import server_time
 from libs.review_orchestrator.r12_agent import stable_payload_hash
+from libs.review_rule_snapshot import effective_rule_snapshot
+from libs.rule_condition_bindings import compile_condition_bindings
 
 R19_NODE_ID = 19
 R19_EXECUTION_MODE = "llm_semantic_primary"
@@ -173,11 +177,29 @@ def build_r19_agent_context(state: dict[str, Any], review_run: dict[str, Any]) -
         "documentVersionIds": sorted(requested),
         "documents": documents,
         "documentCount": len(documents),
-        "reviewQuestions": [dict(item) for item in R19_REVIEW_QUESTIONS],
+        "reviewQuestions": r19_semantic_questions(review_run),
         "humanConfirmations": human_confirmations,
         "evidenceIndex": evidence_index,
         "evidenceRefIds": sorted(evidence_index),
     }
+
+
+def r19_semantic_questions(review_run: dict[str, Any]) -> list[dict[str, Any]]:
+    """Derive semantic responsibility from the server's frozen effective rule."""
+    rule = effective_rule_snapshot(review_run)
+    questions = deepcopy(R19_REVIEW_QUESTIONS)
+    if rule is None or rule.get("executionConditions") is None:
+        return questions
+    pack = deepcopy(load_business_pack(str(review_run.get("businessPackId") or "")))
+    if review_run.get("atomicCheckToolBindingsSnapshot"):
+        pack["atomicCheckToolBindings"] = deepcopy(review_run["atomicCheckToolBindingsSnapshot"])
+    plan = compile_condition_bindings(rule, pack)
+    if plan["nodeId"] != R19_NODE_ID or int(review_run.get("nodeId") or 0) != R19_NODE_ID:
+        raise ValueError("r19_condition_scope_mismatch")
+    retained = set(plan["retainedAtomicCheckIds"])
+    if retained - {item["questionId"] for item in questions}:
+        raise ValueError("r19_semantic_question_catalog_incomplete")
+    return [item for item in questions if item["questionId"] in retained]
 
 
 def validate_r19_semantic_submission(
@@ -186,11 +208,12 @@ def validate_r19_semantic_submission(
     known_evidence_ref_ids: set[str] | None = None,
     evidence_index: dict[str, dict[str, Any]] | None = None,
     minimum_ocr_confidence: float = 0.75,
+    review_run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     judgments = payload.get("atomicJudgments")
     if not isinstance(judgments, list):
         return {"status": "invalid_input", "errors": ["atomicJudgments_must_be_array"]}
-    expected_ids = {item["questionId"] for item in R19_REVIEW_QUESTIONS}
+    expected_ids = {item["questionId"] for item in r19_semantic_questions(review_run or {})}
     allowed_clauses_by_id = {
         item["questionId"]: set(item["clauseRefs"])
         for item in R19_REVIEW_QUESTIONS
@@ -345,14 +368,17 @@ def ensure_r19_human_input_task(
 ) -> dict[str, Any] | None:
     if not is_r19_formal_review(review_run):
         return None
+    questions = r19_semantic_questions(review_run)
+    if not questions:
+        return None
     for item in reversed(review_run.get("humanInputTasks") or []):
         if isinstance(item, dict) and item.get("taskType") == R19_TASK_TYPE and item.get("status") == "pending":
             return item
     request = request if isinstance(request, dict) else {}
     requested_ids = {str(item) for item in request.get("questionIds") or [] if item}
-    selected = [item for item in R19_REVIEW_QUESTIONS if item["questionId"] in requested_ids]
+    selected = [item for item in questions if item["questionId"] in requested_ids]
     if not selected:
-        selected = list(R19_REVIEW_QUESTIONS)
+        selected = questions
     input_hash = stable_payload_hash(
         {
             "reviewRunInputHash": review_run.get("inputHash"),
