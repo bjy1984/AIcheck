@@ -15,6 +15,7 @@ from libs.raw_vault import (
     raw_context_from_record,
 )
 from libs.review_condition_facts import condition_facts_from_run
+from libs.review_condition_mapping import effective_condition_mapping
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.review_tools.executor import aggregate_atomic_results, resolve_atomic_arguments, summarize
 from libs.rule_condition_bindings import compile_condition_bindings
@@ -28,7 +29,7 @@ def prepare_condition_results(state: dict[str, Any], run: dict[str, Any], pack: 
     plan = compile_condition_bindings(rule, pack)
     if str(plan["nodeId"]) != str(run.get("nodeId")) or plan["businessPackId"] != run.get("businessPackId"):
         raise ValueError("condition_execution_scope_mismatch")
-    facts, diagnostics = condition_facts_from_run(state, run, rule["executionConditions"])
+    facts, diagnostics = condition_facts_from_run(state, run, rule["executionConditions"], object_mapping=effective_condition_mapping(run, state))
     capture = raw_capture if raw_capture is not None else raw_capture_from_environment()
     capture_context = raw_context_from_record(run, stage="condition_evaluation") if capture is not None else None
     results = {}
@@ -56,7 +57,8 @@ def prepare_condition_results(state: dict[str, Any], run: dict[str, Any], pack: 
                   "result": {"pass": "passed", "fail": "failed"}.get(evaluated["result"], evaluated["result"]),
                   "conditionResults": evaluated, "factDiagnostics": diagnostics, "evidenceRefs": refs,
                   "conditionPlanHash": plan["planHash"], "ruleSnapshotHash": run["effectiveRuleSnapshot"]["snapshotHash"],
-                  "sourceSnapshotHash": run["documentScopeSnapshot"]["snapshotHash"]}
+                  "sourceSnapshotHash": run["documentScopeSnapshot"]["snapshotHash"],
+                  "conditionObjectMappingSnapshotHash": (run.get("conditionObjectMappingSnapshot") or {}).get("snapshotHash")}
         if capture_context is not None:
             result_event = capture_tool_result(capture, capture_context, "evaluate_saved_conditions", output,
                                               provider_tool_call_id=tool_call_id)

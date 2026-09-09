@@ -59,6 +59,8 @@ def _nested_locations_in_range(value: Any, bounds: dict[str, int]) -> bool:
 
 
 def task_page_ranges(ai_run: dict[str, Any]) -> dict[str, dict[str, int]] | None:
+    if "conditionObjectMapping" in ai_run and os.getenv("AICHECK_WORKSTATIONS_ENABLED", "").lower() not in {"1", "true", "yes"}:
+        raise ValueError("condition_mapping_requires_workstation")
     if "inputDocumentPageRanges" not in ai_run:
         return None
     ranges = normalize_page_ranges(ai_run["inputDocumentPageRanges"], ai_run.get("inputDocumentVersionIds") or [])
@@ -87,6 +89,8 @@ def existing_scoped_run(ai_run, ranges, repository, ensure_sources):
     existing_id = ai_run.get("reviewRunId")
     existing = repository.find_one("review_runs", str(existing_id), id_field="reviewRunId") if existing_id else None
     if existing:
+        from libs.review_condition_mapping import assert_mapping_reuse
+        assert_mapping_reuse(ai_run, existing, repository.state)
         if (ranges or {}) != (existing.get("inputDocumentPageRanges") or {}):
             raise ValueError("review_page_scope_existing_run_mismatch")
         if ranges:

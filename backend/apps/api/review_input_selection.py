@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from apps.api.document_access_policy import actor_visible_evidence_repository
+from apps.api.review_condition_selection import prepare_condition_selection
 from apps.api.review_page_count import fixed_version_page_count
 from libs.audit_runtime import audit_runtime_public_config
 from libs.material_targeting import build_node_evidence_readiness
@@ -28,6 +29,8 @@ def resolve_review_input_selection(services, request, project_id: str, node_id: 
         # Never accept a range while downstream readers could still consume the whole file.
         raise ReviewInputSelectionError("页码范围尚未完成全链路验收，暂不能按指定页码发起审查。")
     if "inputDocumentVersionIds" not in body:
+        if "conditionObjectMapping" in body:
+            raise ReviewInputSelectionError("对象选择必须明确指定本次文件版本。")
         if "inputDocumentPageRanges" in body:
             raise ReviewInputSelectionError("指定页码时必须明确选择文件版本。")
         return None
@@ -87,4 +90,13 @@ def resolve_review_input_selection(services, request, project_id: str, node_id: 
     readiness["inputSelection"] = {"mode": "explicit", "documentVersionIds": sorted(chosen), "scope": "run_only"}
     if "inputDocumentPageRanges" in body:
         readiness["inputSelection"].update(documentPageRanges=ranges, originalPageCounts=page_counts)
+    if "conditionObjectMapping" in body:
+        try:
+            runtime = audit_runtime_public_config(mode=str(body.get("auditInputMode") or body.get("auditRuntimeMode") or "") or None)
+            if not runtime["useOcrEvidence"]:
+                raise ValueError("对象选择需要使用 OCR 资料模式。")
+            readiness["inputSelection"]["conditionObjectMapping"] = prepare_condition_selection(
+                services, request, project_id, node_id, body, sorted(chosen), ranges)
+        except (TypeError, ValueError) as exc:
+            raise ReviewInputSelectionError(str(exc)) from exc
     return sorted(chosen), readiness

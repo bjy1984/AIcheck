@@ -367,6 +367,7 @@ def create_review_run_from_ai_run(ai_run: dict[str, Any], *, mode: str = "tempor
         "kbVersion": ai_run.get("knowledgeBaseVersion") or "inspection_kb@1.0.0",
         "ocrResultVersions": ai_run.get("ocrResultVersions") or [],
         "inputDocumentVersionIds": ai_run.get("inputDocumentVersionIds") or [],
+        **({"conditionObjectMapping": repo.clone(ai_run["conditionObjectMapping"])} if "conditionObjectMapping" in ai_run else {}),
         **({"inputDocumentPageRanges": page_ranges} if page_ranges is not None else {}),
         "schemaVersion": ai_run.get("schemaVersion") or "ReviewFindingDraftList@1.0.0",
         "runMode": ai_run.get("runType") or "production",
@@ -3914,7 +3915,7 @@ def clone_review_run_for_replay(
     run_mode: str,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    if parent.get("inputDocumentPageRanges"):
+    if parent.get("inputDocumentPageRanges") or "conditionObjectMappingSnapshot" in parent:
         ensure_document_sources(parent, repo.state)
     ensure_review_state()
     now = server_time()
