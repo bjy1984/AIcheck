@@ -174,6 +174,28 @@ def handoff_targets(request: Request, project_id: str, sourceRunId: str = Query(
     return ok({"items": items[start:start + pageSize], "total": len(items), "page": page, "pageSize": pageSize}, request)
 
 
+def _context_handoff_ids(request, project_id, run_id, visible):
+    from libs.review_handoff_inputs import frozen_handoff_items
+
+    runs, error = _runs(request, project_id, run_id, run_id, visible)
+    if error:
+        return set(), error
+    run = runs[0]
+    if "handoffInputsSnapshot" not in run:
+        return set(), None
+    try:
+        items = frozen_handoff_items(run)
+    except (TypeError, ValueError, KeyError):
+        return set(), fail(errors.CONFLICT, request, message="本任务的交接依赖记录无法核对。")
+    for item in items:
+        for endpoint in (item["draft"]["source"], item["draft"]["target"]):
+            if set(endpoint.get("documentVersionIds") or []) - visible:
+                return set(), fail(errors.FORBIDDEN, request)
+            if error := _guard(request, project_id, [endpoint["nodeId"]]):
+                return set(), error
+    return {item["handoffId"] for item in items}, None
+
+
 @router.get("/projects/{project_id}/review-handoffs")
 def list_handoffs(request: Request, project_id: str, page: int = Query(default=1, ge=1),
                   page_size: int = Query(default=20, alias="pageSize", ge=1, le=100),
@@ -184,6 +206,11 @@ def list_handoffs(request: Request, project_id: str, page: int = Query(default=1
         return error
     repo.ensure_deferred_loaded("review_handoffs", "review_runs")
     visible_versions = _visible_versions(request, project_id)
+    used_ids = set()
+    if target_run_id:
+        used_ids, error = _context_handoff_ids(request, project_id, target_run_id, visible_versions)
+        if error:
+            return ok({"items": [], "total": 0, "page": page, "pageSize": page_size}, request)
     items = []
     for record in repo.state.get("review_handoffs", []):
         if record.get("projectId") != project_id or api.tenant_id_for_record(record) != api.request_tenant_id(request):
@@ -191,12 +218,14 @@ def list_handoffs(request: Request, project_id: str, page: int = Query(default=1
         draft = record.get("draft") or {}
         if source_run_id is not None and draft.get("source", {}).get("runId") != source_run_id:
             continue
-        if target_run_id is not None and draft.get("target", {}).get("runId") != target_run_id:
+        if target_run_id is not None and draft.get("target", {}).get("runId") != target_run_id and record["id"] not in used_ids:
             continue
         if event_id is not None and draft.get("subject", {}).get("eventId") != event_id:
             continue
         view, error = _record_view(request, project_id, record, visible_versions)
         if error is None:
+            if target_run_id:
+                view["readContext"] = {"runId": target_run_id, "relation": "used_input" if record["id"] in used_ids else "received"}
             items.append(view)
     items.sort(key=lambda row: (row.get("createdAt") or "", row["id"]), reverse=True)
     start = (page - 1) * page_size
@@ -238,7 +267,7 @@ def verify_handoff(request: Request, project_id: str, handoff_id: str,
 
 
 @router.get("/projects/{project_id}/review-handoffs/{handoff_id}")
-def get_handoff(request: Request, project_id: str, handoff_id: str):
+def get_handoff(request: Request, project_id: str, handoff_id: str, contextRunId: str | None = Query(default=None)):
     if error := _guard(request, project_id):
         return error
     repo.ensure_deferred_loaded("review_handoffs")
@@ -248,7 +277,16 @@ def get_handoff(request: Request, project_id: str, handoff_id: str):
             or api.tenant_id_for_record(record) != api.request_tenant_id(request)):
         return fail(errors.NOT_FOUND, request)
     view, error = _record_view(request, project_id, record, _visible_versions(request, project_id))
-    return error if error is not None else ok(view, request)
+    if error is not None:
+        return error
+    if contextRunId:
+        used_ids, error = _context_handoff_ids(request, project_id, contextRunId, _visible_versions(request, project_id))
+        if error:
+            return error
+        if record["draft"]["target"]["runId"] != contextRunId and handoff_id not in used_ids:
+            return fail(errors.NOT_FOUND, request)
+        view["readContext"] = {"runId": contextRunId, "relation": "used_input" if handoff_id in used_ids else "received"}
+    return ok(view, request)
 
 
 @router.get("/projects/{project_id}/review-runs/{run_id}/pipeline-conflicts")

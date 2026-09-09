@@ -127,7 +127,7 @@ const choose = async (id: string) => {
   selected.value = null
   resetForm()
   try {
-    const response = await getHandoff(project, id)
+    const response = await getHandoff(project, id, run)
     if (attempt !== generation) return
     if (response.data.id !== id || !handoffBelongsTo(response.data, project, run))
       throw new Error('handoff identity mismatch')
@@ -148,7 +148,6 @@ const submit = async (outcome: 'verified' | 'rejected') => {
     return
   const attempt = ++generation
   const project = props.projectId
-  const run = props.runId
   busy.value = true
   error.value = ''
   feedback.value = ''
@@ -168,7 +167,11 @@ const submit = async (outcome: 'verified' | 'rejected') => {
       crypto.randomUUID()
     )
     if (attempt !== generation) return
-    if (response.data.id !== record.id || !handoffBelongsTo(response.data, project, run))
+    if (
+      response.data.id !== record.id ||
+      response.data.projectId !== project ||
+      response.data.draft.target.runId !== record.draft.target.runId
+    )
       throw new Error('handoff identity mismatch')
     resetForm()
     selected.value = null
@@ -210,7 +213,7 @@ const valueText = (value: unknown) =>
   <ElButton v-if="enabled" :disabled="!projectId || !runId" @click="open">工位交接</ElButton>
   <ElDialog
     v-model="visible"
-    title="当前任务 · 收到的工位交接"
+    title="当前任务 · 收到或使用的交接"
     width="min(920px, 94vw)"
     :before-close="close"
     :close-on-click-modal="false"
@@ -231,7 +234,7 @@ const valueText = (value: unknown) =>
       <p v-if="feedback" role="status">{{ feedback }}</p>
       <ElButton :loading="busy" @click="load()">刷新交接列表</ElButton>
       <ElEmpty v-if="!busy && !error && !items.length" description="当前任务没有可读取的交接。" />
-      <nav class="handoff-list" aria-label="收到的交接">
+      <nav class="handoff-list" aria-label="收到或使用的交接">
         <ElButton
           v-for="item in items"
           :key="item.id"
@@ -239,6 +242,7 @@ const valueText = (value: unknown) =>
           :aria-pressed="selected?.id === item.id"
           @click="choose(item.id)"
         >
+          {{ item.readContext?.relation === 'used_input' ? '本次用过 · ' : '' }}
           {{ item.draft.source.stationId }} → {{ item.draft.target.stationId }} ·
           {{ item.draft.subject.objectId }} · 事件 {{ item.draft.subject.eventId || '未记录' }}
         </ElButton>
@@ -260,6 +264,9 @@ const valueText = (value: unknown) =>
         <p
           >节点 {{ selected.draft.source.nodeId }} → {{ selected.draft.target.nodeId }} · 返修轮次
           {{ selected.draft.subject.repairRound }}</p
+        >
+        <p v-if="selected.readContext?.relation === 'used_input'"
+          >这份交接由本任务选用，原接收任务和交接历史保持原样。</p
         >
         <p>{{ handoffStatusText(selected.verification?.status) }}</p>
         <dl>

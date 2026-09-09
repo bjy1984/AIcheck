@@ -112,18 +112,14 @@ def effective_handoff_inputs(run, state, *, visited=None):
     if run_id in visited or len(visited) >= 64:
         raise ValueError("handoff_input_dependency_cycle_or_depth")
     visited.add(run_id)
-    snapshot = run["handoffInputsSnapshot"]
-    if (not isinstance(snapshot, dict) or snapshot.get("schemaVersion") != "review-handoff-inputs-v1"
-            or snapshot.get("snapshotHash") != digest({key: value for key, value in snapshot.items() if key != "snapshotHash"})
-            or snapshot.get("binding") != _binding(run)):
-        raise ValueError("handoff_inputs_snapshot_changed")
+    items = frozen_handoff_items(run)
     validate_document_sources(run, state)
-    for item in snapshot["items"]:
-        current = _selected_item(run, state, {"handoffId": item["handoffId"], "verificationId": item["verificationId"]}, snapshot["subject"])
+    for item in items:
+        current = _selected_item(run, state, {"handoffId": item["handoffId"], "verificationId": item["verificationId"]}, run["handoffInputsSnapshot"]["subject"])
         if current != item:
             raise ValueError("handoff_input_dependency_changed")
         effective_handoff_inputs(_run(state, item["sourceRunId"]), state, visited=visited)
-    return deepcopy(snapshot["items"])
+    return deepcopy(items)
 
 
 def initialize_handoff_inputs(run, state):
@@ -165,3 +161,13 @@ def assert_handoff_reuse(ai_run, existing, state):
     effective_handoff_inputs(existing, state)
     if freeze_handoff_inputs(existing, state, selection)["snapshotHash"] != snapshot["snapshotHash"]:
         raise ValueError("handoff_input_existing_run_mismatch")
+
+
+def frozen_handoff_items(run):
+    """Validate historical linkage without requiring sources to remain current."""
+    snapshot = run["handoffInputsSnapshot"]
+    if (not isinstance(snapshot, dict) or snapshot.get("schemaVersion") != "review-handoff-inputs-v1"
+            or snapshot.get("snapshotHash") != digest({key: value for key, value in snapshot.items() if key != "snapshotHash"})
+            or snapshot.get("binding") != _binding(run)):
+        raise ValueError("handoff_inputs_snapshot_changed")
+    return deepcopy(snapshot["items"])

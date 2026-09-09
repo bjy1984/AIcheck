@@ -313,10 +313,25 @@ def test_real_route_uses_verified_handoff_and_rejects_changed_verification(monke
     assert parts["userPayload"]["verifiedHandoffs"][0]["handoffId"] == record["id"]
     dependency_path = f"/api/projects/{PROJECT_ID}/review-runs/{run['reviewRunId']}/handoff-dependencies"
     assert _assert_ok(client.get(dependency_path, headers=headers))["status"] == "current"
+    listed = _assert_ok(client.get(base, headers=headers, params={"targetRunId": run["reviewRunId"]}))
+    assert [item["id"] for item in listed["items"]] == [record["id"]]
+    detail = _assert_ok(client.get(f"{base}/{record['id']}", headers=headers, params={"contextRunId": run["reviewRunId"]}))
+    assert detail["readContext"] == {"runId": run["reviewRunId"], "relation": "used_input"}
+    assert detail["draft"]["target"]["runId"] == "HANDOFF-TARGET"
+    assert client.get(f"{base}/{record['id']}", headers=headers, params={"contextRunId": "HANDOFF-SOURCE"}).json()["code"] != 0
+
     before = deepcopy(run)
     decision.update(expectedPreviousId=verified["verifications"][-1]["id"], outcome="rejected", note="重新核验不匹配")
     _assert_ok(client.post(f"{base}/{record['id']}/verifications", headers=headers, json=decision))
     assert _assert_ok(client.get(dependency_path, headers=headers))["requiresRevalidation"] is True
+    stale_detail = _assert_ok(client.get(f"{base}/{record['id']}", headers=headers, params={"contextRunId": run["reviewRunId"]}))
+    assert stale_detail["verification"]["status"] == "rejected"
+    member = next(row for row in repo.state["project_members"] if row.get("projectId") == PROJECT_ID and row.get("userId") == headers["X-User-Id"])
+    previous_scope = member.get("nodeScope")
+    member["nodeScope"] = [35]
+    assert client.get(f"{base}/{record['id']}", headers=headers, params={"contextRunId": run["reviewRunId"]}).json()["code"] != 0
+    member["nodeScope"] = previous_scope
+
     count = len(repo.state["ai_runs"])
     assert client.post(path, headers=headers, json=body).json()["code"] != 0
     assert len(repo.state["ai_runs"]) == count

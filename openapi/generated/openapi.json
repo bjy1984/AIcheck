@@ -26202,6 +26202,22 @@
               "title": "Handoff Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "contextRunId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contextrunid"
+            }
           }
         ],
         "responses": {
@@ -49967,6 +49983,22 @@
             "schema": {
               "title": "Handoff Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contextRunId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contextrunid"
             }
           }
         ],

@@ -1120,14 +1120,20 @@ const loadEmbeddedContext = async () => {
   await loadNodeWorkspace(true)
 }
 
-const refreshLiveState = async () => {
-  if (nodeLoading.value || polling.value || !activeProjectId.value || !activeNodeId.value) return
+const refreshLiveState = async (requestedRunId?: string) => {
+  if (
+    nodeLoading.value ||
+    (polling.value && !requestedRunId) ||
+    !activeProjectId.value ||
+    !activeNodeId.value
+  )
+    return
   const requestSequence = ++workspaceReadSequence.value
   const generation = reviewContextGeneration.value
   polling.value = true
   try {
     const previousRunId = activeRunId.value
-    const result = await fetchWorkspace(previousRunId || undefined)
+    const result = await fetchWorkspace(requestedRunId || previousRunId || undefined)
     if (
       generation !== reviewContextGeneration.value ||
       requestSequence !== workspaceReadSequence.value
@@ -1313,7 +1319,7 @@ const handleStartReview = async () => {
     }
     if (!isCurrentContext()) return
     ElMessage.success(`${modeLabel}已发起`)
-    await refreshLiveState()
+    await refreshLiveState(reviewRunId || undefined)
   } catch (error) {
     if (!isCurrentContext()) return
     ElMessage.error(getAicheckErrorMessage(error, `${modeLabel}发起失败。`))

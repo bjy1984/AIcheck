@@ -71,3 +71,16 @@ assert.equal(
   }),
   true
 )
+
+const inherited = { ...record, readContext: { runId: 'NEXT', relation: 'used_input' as const } }
+assert.equal(handoffBelongsTo(inherited, 'P1', 'NEXT'), true)
+assert.equal(handoffBelongsTo(inherited, 'P2', 'NEXT'), false)
+assert.equal(handoffBelongsTo(inherited, 'P1', 'OTHER'), false)
+assert.equal(
+  handoffBelongsTo(
+    { ...inherited, readContext: { runId: 'NEXT', relation: 'received' } },
+    'P1',
+    'NEXT'
+  ),
+  false
+)

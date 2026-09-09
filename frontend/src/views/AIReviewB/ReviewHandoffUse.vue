@@ -66,7 +66,7 @@ const apply = async () => {
   emit('busy', true)
   error.value = ''
   try {
-    const response = await getHandoff(props.projectId, props.record.id)
+    const response = await getHandoff(props.projectId, props.record.id, props.runId)
     if (revision !== generation) return
     if (
       response.data.id !== props.record.id ||

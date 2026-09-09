@@ -10,6 +10,7 @@ export type HandoffSubject = {
 export type Handoff = {
   id: string
   projectId: string
+  readContext?: { runId: string; relation: 'received' | 'used_input' }
   draft: {
     schemaVersion: string
     snapshotHash: string
@@ -81,8 +82,11 @@ export const listHandoffs = (projectId: string, runId: string, page: number) =>
     url: base(projectId),
     params: { targetRunId: runId, page, pageSize: 20 }
   })
-export const getHandoff = (projectId: string, id: string) =>
-  request.get<Handoff>({ url: `${base(projectId)}/${encodeURIComponent(id)}` })
+export const getHandoff = (projectId: string, id: string, contextRunId?: string) =>
+  request.get<Handoff>({
+    url: `${base(projectId)}/${encodeURIComponent(id)}`,
+    params: contextRunId ? { contextRunId } : undefined
+  })
 export const verifyHandoff = (projectId: string, id: string, data: HandoffDecision, key: string) =>
   request.post<Handoff>({
     url: `${base(projectId)}/${encodeURIComponent(id)}/verifications`,

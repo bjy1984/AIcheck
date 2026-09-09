@@ -1,7 +1,11 @@
 import type { Handoff } from '@/api/aicheck/reviewHandoffs'
 
 export function handoffBelongsTo(record: Handoff, projectId: string, runId: string): boolean {
-  return record.projectId === projectId && record.draft.target.runId === runId
+  return (
+    record.projectId === projectId &&
+    (record.draft.target.runId === runId ||
+      (record.readContext?.runId === runId && record.readContext.relation === 'used_input'))
+  )
 }
 export function handoffReviewBlock(record: Handoff): string {
   if (!['review-handoff-draft-v2', 'review-handoff-draft-v3'].includes(record.draft.schemaVersion))
