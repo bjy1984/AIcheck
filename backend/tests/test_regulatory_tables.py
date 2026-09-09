@@ -596,3 +596,26 @@ def test_welding_method_aliases_and_missing_footnote_inputs():
     for value in [float('nan'), float('inf'), -1]:
         assert wps_thickness_coverage(value) is None
         assert wps_thickness_coverage(12, weld_metal_thickness_mm=value) is None
+
+
+def test_ndt_special_techniques_do_not_match_generic_ut_substring():
+    from libs.regulatory_tables import ndt_acceptance_level
+
+    for label, method in (("PAUT", "phasedArray"), ("相控阵超声检测（PAUT）", "phasedArray"),
+                          ("TOFD超声检测", "tofd"), ("衍射时差法", "tofd"), ("射线检测(RT)", "radiographic")):
+        found = ndt_acceptance_level(label, coverage_percent=100)
+        assert found and found["method"] == method
+    assert ndt_acceptance_level("PAUT", coverage_percent=100)["level"] == "不低于 Ⅱ 级"
+    assert ndt_acceptance_level("UT", coverage_percent=100)["level"] == "Ⅰ 级"
+    for label in ("RT/UT", "RT + PAUT", "PAUT/TOFD", "UT/PAUT", "相控阵+常规超声", "OUTPUT", "SMART"):
+        assert ndt_acceptance_level(label, coverage_percent=100) is None
+
+
+def test_ndt_invalid_or_zero_ratio_does_not_select_a_partial_inspection_rule():
+    from libs.regulatory_tables import ndt_acceptance_level
+
+    for method in ("RT", "UT", "PAUT", "TOFD"):
+        for ratio in (0, -1, 101, float("nan"), float("inf"), True, "100"):
+            assert ndt_acceptance_level(method, coverage_percent=ratio) is None
+    assert ndt_acceptance_level("PAUT")["method"] == "phasedArray"
+    assert ndt_acceptance_level("TOFD")["method"] == "tofd"

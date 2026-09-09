@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -96,8 +97,19 @@ def ndt_acceptance_level(method: str, *, coverage_percent: float | None = None) 
     此前没有任何地方比这一项。比例不明时返回 None——不知道是全检还是抽检就判不了。
     """
     text = str(method or "").upper()
-    key = next((value for token, value in _METHOD_KEYS.items() if token.upper() in text), None)
-    if key is None:
+    methods = {value for token, value in _METHOD_KEYS.items()
+               if (re.search(r"(?<![A-Z])" + re.escape(token) + r"(?![A-Z])", text)
+                   if token.isascii() else token in text)}
+    # PAUT/TOFD are ultrasonic techniques, but have dedicated rows. Their Chinese
+    # labels may also contain 超声; do not select the generic ultrasonic row.
+    explicit_ut = bool(re.search(r"(?<![A-Z])UT(?![A-Z])", text)) or any(token in text for token in ("常规超声", "普通超声"))
+    if methods & {"tofd", "phasedArray"} and not explicit_ut:
+        methods.discard("ultrasonic")
+    if len(methods) != 1:
+        return None
+    key = next(iter(methods))
+    if coverage_percent is not None and (type(coverage_percent) not in (int, float)
+            or not math.isfinite(coverage_percent) or not 0 < coverage_percent <= 100):
         return None
     volumetric = table("gbt20801_inspection", "acceptance").get("volumetric") or {}
     if key in {"tofd", "phasedArray"}:
