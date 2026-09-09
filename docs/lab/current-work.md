@@ -477,3 +477,12 @@ flowchart LR
 - 原生PyMuPDF輸出新增nativeTextCoverage及PDF_TEXT_LAYER_PARTIAL診斷，列無文字頁，保留已有正文；無文字頁可能是掃描或空白，不直接判缺文件。這是原生引擎覆蓋資訊，不代表後續視覺OCR的最終覆蓋狀態。
 - 新增8項路徑／選項／實體PDF覆蓋驗證；879項相關回歸及8項OCR接口測試通過，Ruff289/289、monolith與diff通過。兩份實際PDF重跑均明確列第1頁未讀到文字；預设深度流程使用捕獲式引擎驗證，未宣稱完整視覺OCR實跑通過。
 - 深度嘗試預設最多12頁，既有顯式頁數設定優先；長文件分段完成／最終覆蓋驗收仍待完成。R39其他業務事實及69條驗收待補，三類pendingCapabilities不變，整體未達90%。詳見docs/lab/verification/2026-09-09-ndt-routing.md。
+
+
+## 2026-09-09：本機長文件未完成狀態
+
+- 核查確認正式official_ocr_extract已有全文件分批機制與200頁／成本上限；本批不重寫該機制，也未啟動付費OCR。
+- 補本機public pages中truncated／totalPages到結果狀態的缺失傳遞：record_parse_result附localRenderCoverage、剩餘頁碼和OCR_PAGE_COVERAGE_INCOMPLETE，正式readiness識別此阻擋，已成功抽取內容保留但outcome為partial。讀快取後返回也經此路徑；既有失敗不改成部分成功。
+- 原生文字頁不冒充已渲染視覺頁；沒有明示渲染截斷的正式／原生結果保持原樣。此資訊僅反映本機視覺渲染覆蓋，不能當作全頁識別成功證據。
+- 兩份實際PDF依NDT預設12頁渲染：22頁缺13–22，28頁缺13–28，兩者皆partial。新增4項測試，770項OCR／正式管線／readiness／R39回歸通過；Ruff289/289、monolith與diff通過。
+- 本機長文件自動分段補全、全頁真實識別品質、其餘R39事實與69條驗收仍待完成，整體未達90%。詳見docs/lab/verification/2026-09-09-render-coverage.md。

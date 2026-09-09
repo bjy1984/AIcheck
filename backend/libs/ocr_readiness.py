@@ -6,6 +6,7 @@ from typing import Any
 OCR_READY_STATUSES = {"ready"}
 OCR_RETRYABLE_STATUSES = {"failed", "incomplete", "inconsistent"}
 OCR_FORMAL_BLOCKING_REASONS = {
+    "OCR_PAGE_COVERAGE_INCOMPLETE",
     "FIELD_EVIDENCE_MISSING",
     "TABLE_EVIDENCE_MISSING",
     "SEAL_EVIDENCE_MISSING",

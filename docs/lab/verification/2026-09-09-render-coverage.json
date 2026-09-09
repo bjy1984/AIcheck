@@ -1,0 +1,126 @@
+[
+  {
+    "file": "../test2/5.2检测方案-盈德气体化工管道.pdf",
+    "verificationScope": "actual_render_and_outcome_only",
+    "visualOcrExecuted": false,
+    "pageCount": 22,
+    "coverage": {
+      "scope": "local_visual_rendering",
+      "renderedPageNos": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "unrenderedPageNos": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22
+      ],
+      "complete": false
+    },
+    "outcome": "partial",
+    "diagnostics": [
+      {
+        "code": "OCR_PAGE_COVERAGE_INCOMPLETE",
+        "level": "warning",
+        "message": "这份文件还有页面未进入完整辨识，请核对剩余页面。",
+        "pageNos": [
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22
+        ]
+      }
+    ]
+  },
+  {
+    "file": "../test/10、无损检测委托单位资质/3.检测方案/射线检测施工方案(1).pdf",
+    "verificationScope": "actual_render_and_outcome_only",
+    "visualOcrExecuted": false,
+    "pageCount": 28,
+    "coverage": {
+      "scope": "local_visual_rendering",
+      "renderedPageNos": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "unrenderedPageNos": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "complete": false
+    },
+    "outcome": "partial",
+    "diagnostics": [
+      {
+        "code": "OCR_PAGE_COVERAGE_INCOMPLETE",
+        "level": "warning",
+        "message": "这份文件还有页面未进入完整辨识，请核对剩余页面。",
+        "pageNos": [
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28
+        ]
+      }
+    ]
+  }
+]

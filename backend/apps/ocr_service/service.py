@@ -52,6 +52,7 @@ from libs.capacity_guard import disk_capacity_status
 from libs.contracts.responses import server_time
 from libs.integrations.storage import object_storage, parse_storage_url
 from libs.ocr.ndt_procedure import extract_explicit_fields as extract_ndt_procedure_fields
+from libs.ocr.page_coverage import attach_render_coverage
 from libs.ocr.profiles import profile_for
 from libs.ocr.utils import parse_bool
 from libs.ocr.welder_certificate_tool import (
@@ -680,6 +681,7 @@ class OcrService:
         *,
         update_readiness: bool = True,
     ) -> dict[str, Any]:
+        attach_render_coverage(result)
         if not update_readiness:
             return result
         outcome = str(result.get("outcomeStatus") or result.get("status") or "failed")
