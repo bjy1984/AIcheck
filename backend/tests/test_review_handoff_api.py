@@ -32,6 +32,7 @@ def payload():
 
 
 def test_save_read_deduplicate_and_preserve_stale_handoff():
+    repo.state.pop("review_handoffs", None)  # Fresh seed has no persisted handoff collection.
     assert STATE_COLLECTIONS["review_handoffs"] == "review_handoffs"
     url = f"/api/projects/{PROJECT}/review-handoffs"
     before = deepcopy(repo.state["review_runs"])
@@ -184,6 +185,8 @@ def test_evidence_location_read_checks(case, expected):
     record = result["data"]
     detail_url = f"{url}/{record['id']}"
     view = client.get(detail_url, headers=HEADERS).json()["data"]
+    assert view["evidenceDocuments"] == [{"documentVersionId": version, "documentId": "HANDOFF-D",
+                                         "fileName": None, "fileType": None}]
     check = view["validation"]["evidenceLocationCheck"]
     assert check["items"][0]["status"] == expected
     assert check["authoritative"] is False and check["contentSupportStatus"] == "unverified"

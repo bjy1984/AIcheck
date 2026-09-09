@@ -29,3 +29,18 @@ export const handoffStatusText = (status?: string) =>
     stale: '来源变更，待重新核验',
     invalid_history: '核验记录异常'
   })[status || 'unreviewed'] || '状态待核对'
+
+export function handoffEvidenceLink(record: Handoff, versionId: string) {
+  const matches = (record.evidenceDocuments || []).filter(
+    (row) => row.documentVersionId === versionId
+  )
+  if (matches.length !== 1) return null
+  const document = matches[0]
+  const project = encodeURIComponent(record.projectId)
+  return {
+    documentId: document.documentId,
+    documentVersionId: versionId,
+    fileName: document.fileName,
+    previewUrl: `/api/projects/${project}/documents/${encodeURIComponent(document.documentId)}/original?versionId=${encodeURIComponent(versionId)}&disposition=inline`
+  }
+}

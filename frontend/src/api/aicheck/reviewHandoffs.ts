@@ -20,6 +20,12 @@ export type Handoff = {
     payload: Record<string, unknown>
     evidenceRefs: EvidenceLink[]
   }
+  evidenceDocuments?: Array<{
+    documentVersionId: string
+    documentId: string
+    fileName?: string
+    fileType?: string
+  }>
   validation: {
     status: string
     inputSourceCheck?: { status: string }

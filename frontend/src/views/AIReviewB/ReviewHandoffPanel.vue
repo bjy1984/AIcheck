@@ -14,6 +14,7 @@ import { getHandoff, listHandoffs, verifyHandoff, type Handoff } from '@/api/aic
 import type { EvidenceLink } from '@/types/aicheck'
 import {
   handoffBelongsTo,
+  handoffEvidenceLink,
   handoffCanConfirm,
   handoffReviewBlock,
   handoffStatusText
@@ -174,8 +175,11 @@ const submit = async (outcome: 'verified' | 'rejected') => {
 const preview = (ref: EvidenceLink, index: number) => {
   const record = selected.value
   if (!record || !ref.documentVersionId) return
+  const location = handoffEvidenceLink(record, ref.documentVersionId)
+  if (!location) return
   emit('evidence', {
     ...ref,
+    ...location,
     id: `HANDOFF-${record.id}-${index}`,
     projectId: props.projectId,
     nodeId: record.draft.source.nodeId,
@@ -251,7 +255,12 @@ const valueText = (value: unknown) =>
             {{ reference.pageNo }} 页</p
           >
           <blockquote v-if="reference.quotedText">{{ reference.quotedText }}</blockquote>
-          <ElButton :disabled="!reference.documentVersionId" @click="preview(reference, index)"
+          <ElButton
+            :disabled="
+              !reference.documentVersionId ||
+              !handoffEvidenceLink(selected, reference.documentVersionId)
+            "
+            @click="preview(reference, index)"
             >查看原文 {{ index + 1 }}</ElButton
           >
         </div>

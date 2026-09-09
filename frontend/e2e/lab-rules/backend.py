@@ -57,11 +57,21 @@ repo.state["versions"].extend([
      "storageKey": "local://historical.png"},
     {"id": "VER-PICK-1-EMPTY", "documentId": "DOC-PICK-1", "tenantId": "TENANT-DEFAULT", "versionNo": "EMPTY",
      "hash": None, "isCurrent": False}])
+from handoff_seed import control as handoff_control, seed as seed_handoffs
+seed_handoffs(repo, Path(originals.name))
 client = TestClient(app)
 
 
 class Handler(BaseHTTPRequestHandler):
     def forward(self):
+        if self.command == "POST" and self.path.startswith("/__lab/handoff/"):
+            try:
+                handoff_control(repo, self.path.rsplit("/", 1)[-1])
+                self.send_response(200)
+            except ValueError:
+                self.send_response(400)
+            self.end_headers()
+            return
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         response = client.request(self.command, self.path, content=body,
             headers={"Content-Type": "application/json", "X-Role": "inspection", "X-User-Id": "USER-INSPECTION-001",

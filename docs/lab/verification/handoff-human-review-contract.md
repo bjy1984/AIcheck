@@ -35,3 +35,13 @@ authoritative保持false；此批尚未把核驗後交接供下游判定使用�
 2026-09-09：交接API／契約／巨石基線78 passed，1條相依套件棄用警告；Ruff289／289。驗證確認、追加退回、舊修訂拒絕、快取失效、來源變動、權限／字段偽造拒絕、內容竄改、單程序並行及SQLite重載留存。本批未執行完整後端。
 
 尚待工位人工核驗介面、真實帳號瀏覽器驗收、正式下游使用、依賴圖與失效傳遞、選擇性重跑及多程序持久化併發驗收。未替任何真實交接自動添加人工背書。
+
+## 固定版本原文與空工作區（2026-09-09）
+
+交接讀取新增evidenceDocuments，由伺服器依已通過權限檢查的凍結版本，從版本／文件記錄解析documentId、文件名及類型，不採用引用自報的documentId。前端只接受唯一版本對應，構造帶versionId的原文URL交由既有證據對話框顯示；缺失或歧義時不回退最新版本。來源變更後仍可查看有權存取的固定原文，但人工核驗保持失效。
+
+實際FastAPI瀏覽器聯調發現空白seed沒有review_handoffs集合，第一次保存的find_one會拋KeyError；現在相關首次讀寫入口在延遲載入後初始化空集合，未清理或覆蓋已有記錄。回歸测试以移除初始集合覆蓋首次保存。
+
+## 集中式契約補齊
+
+完整後端回歸發現核驗路由尚缺集中式動作映射與端點冪等包裝，並且生成OpenAPI落後於新增路由。已把verifications POST接入libs/security/actions.py的review:save及既有api.idempotent，保留來源／修訂／權限重送檢查，沒有增加豁免。依FastAPI重新匯出openapi/generated/openapi.json，包含eventId查詢參數、核驗路由與Idempotency-Key。

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import type { Handoff } from '@/api/aicheck/reviewHandoffs'
-import { handoffBelongsTo, handoffCanConfirm, handoffReviewBlock } from './handoffPresentation'
+import {
+  handoffEvidenceLink,
+  handoffBelongsTo,
+  handoffCanConfirm,
+  handoffReviewBlock
+} from './handoffPresentation'
 
 const record = {
   projectId: 'P1',
@@ -34,4 +39,27 @@ assert.equal(handoffCanConfirm(missingPage), false)
 assert.equal(
   handoffCanConfirm({ ...missingPage, draft: { ...missingPage.draft, kind: 'collaboration' } }),
   true
+)
+
+const fixedVersion = {
+  ...record,
+  evidenceDocuments: [
+    { documentVersionId: 'OLD', documentId: 'D1', fileName: 'original.pdf' },
+    { documentVersionId: 'NEW', documentId: 'D1', fileName: 'revision.pdf' }
+  ]
+}
+assert.equal(
+  handoffEvidenceLink(fixedVersion, 'OLD')?.previewUrl,
+  '/api/projects/P1/documents/D1/original?versionId=OLD&disposition=inline'
+)
+assert.equal(handoffEvidenceLink(fixedVersion, 'MISSING'), null)
+assert.equal(
+  handoffEvidenceLink(
+    {
+      ...fixedVersion,
+      evidenceDocuments: [...fixedVersion.evidenceDocuments, fixedVersion.evidenceDocuments[0]]
+    },
+    'OLD'
+  ),
+  null
 )

@@ -26009,6 +26009,22 @@
               ],
               "title": "Targetrunid"
             }
+          },
+          {
+            "in": "query",
+            "name": "eventId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Eventid"
+            }
           }
         ],
         "responses": {
@@ -26140,6 +26156,79 @@
           }
         },
         "summary": "Get Handoff"
+      }
+    },
+    "/api/projects/{project_id}/review-handoffs/{handoff_id}/verifications": {
+      "post": {
+        "operationId": "verify_handoff_api_projects__project_id__review_handoffs__handoff_id__verifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "handoff_id",
+            "required": true,
+            "schema": {
+              "title": "Handoff Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Handoff"
       }
     },
     "/api/projects/{project_id}/review-runs/{run_id}/pipeline-conflicts": {
@@ -49407,6 +49496,22 @@
               ],
               "title": "Targetrunid"
             }
+          },
+          {
+            "in": "query",
+            "name": "eventId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Eventid"
+            }
           }
         ],
         "responses": {
@@ -49538,6 +49643,79 @@
           }
         },
         "summary": "Get Handoff"
+      }
+    },
+    "/projects/{project_id}/review-handoffs/{handoff_id}/verifications": {
+      "post": {
+        "operationId": "verify_handoff_projects__project_id__review_handoffs__handoff_id__verifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "handoff_id",
+            "required": true,
+            "schema": {
+              "title": "Handoff Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Handoff"
       }
     },
     "/projects/{project_id}/review-runs/{run_id}/pipeline-conflicts": {

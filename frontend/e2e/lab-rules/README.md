@@ -51,3 +51,18 @@ PDF／窄螢幕：`node e2e/lab-rules/check-version-pdf-mobile.mjs`。以 1280px
 node e2e/lab-rules/check-handoffs.mjs
 ```
 此腳本以 Playwright 模擬交接 API 回應，不需啟動後端橋接。驗證確認必填、追加退回的前版ID、核驗人欄位不由客戶端傳入、歷史內容、過期停用、提交錯誤保留意見及停用再次提交、切換任務後忽略延遲回應、390px／1280px無水平溢出與瀏覽器無runtime error。畫面保存於 docs/lab/verification/browser/handoff-review-*.png。這是隔離元件驗收；真實登入工作台、兩端權限、PDF原文預覽與完整API聯合驗收仍需另跑。
+
+交接真實API聯合驗收（每輪需重新啟動後端橋接以恢復合成資料／權限）：
+
+```sh
+# 倉庫根目錄
+PYTHONPATH=backend backend/.venv/bin/python frontend/e2e/lab-rules/backend.py
+# frontend，另一個終端
+./node_modules/.bin/vite --config e2e/lab-rules/vite.config.ts --port 4394
+# frontend
+node e2e/lab-rules/check-handoffs-live.mjs
+```
+
+此腳本不攔截或偽造API回應，透過loopback橋接呼叫實際FastAPI／權限／快照／核驗路由；只有認證傳輸替換為記憶體seed監檢身份。使用臨時合成PDF和OCR，建立帶事件的facts交接，驗證固定版本原文API的PDF內容、既有證據對話框Blob／頁碼、人工確認與追加退回、歷史保留、OCR來源變更後失效及移除來源節點權限後列表／詳情拒絕。來源變更後原文仍可按權限查看，核驗操作停用。
+
+handoff_seed.py與 /__lab/handoff/* 控制路徑僅存在於此測試橋接，不註冊於正式應用路由；Vite測試設定代理到loopback4174。不得部署或對外暴露測試橋接。腳本會修改此合成案例的OCR及seed成員節點權限，因此再次執行前必須重啟橋接。截圖：docs/lab/verification/browser/handoff-live-stale.png。這不是生產登入、真實監檢資料、資料庫跨程序或完整工作台驗收。

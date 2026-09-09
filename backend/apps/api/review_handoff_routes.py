@@ -43,6 +43,7 @@ def _visible_versions(request, project_id):
 
 def _runs(request, project_id, source_id, target_id, visible_versions=None):
     repo.ensure_deferred_loaded("review_runs", "review_handoffs")
+    repo.state.setdefault("review_handoffs", [])
     runs = [next((row for row in repo.state.get("review_runs", [])
                   if (row.get("reviewRunId") or row.get("id")) == run_id), None) for run_id in (source_id, target_id)]
     if any(not row or row.get("projectId") != project_id
@@ -94,6 +95,19 @@ def save_handoff(request: Request, project_id: str, body: dict[str, Any] = Body(
                           fingerprint_source={"body": body, "snapshotHash": draft["snapshotHash"]})
 
 
+def _evidence_documents(draft, project_id):
+    """Resolve IDs from visible repository versions, never caller-supplied document IDs."""
+    selected = {ref.get("documentVersionId") for ref in draft.get("evidenceRefs", [])}
+    tenant_id = draft["source"]["tenantId"]
+    documents = {row["id"]: row for row in repo.state.get("documents", [])
+                 if row.get("projectId") == project_id and api.tenant_id_for_record(row) == tenant_id}
+    return [{"documentVersionId": row["id"], "documentId": row["documentId"],
+             "fileName": row.get("fileName") or documents[row["documentId"]].get("fileName"),
+             "fileType": row.get("fileType") or documents[row["documentId"]].get("fileType")}
+            for row in repo.state.get("versions", []) if row.get("id") in selected
+            and row.get("documentId") in documents and api.tenant_id_for_record(row) == tenant_id]
+
+
 def _record_view(request, project_id, record, visible_versions):
     draft = record["draft"]
     # Check frozen inputs as well as current runs: editing a source run must not
@@ -114,13 +128,15 @@ def _record_view(request, project_id, record, visible_versions):
                           "reason": "handoff_endpoint_sources_changed_recreate_run",
                           "inputSourceCheck": source_check}
             return {**repo.clone(record), "validation": validation,
-                    "verification": verification_view(record, validation)}, None
+                    "verification": verification_view(record, validation),
+                    "evidenceDocuments": _evidence_documents(draft, project_id)}, None
         validation = {"status": "current_draft", "authoritative": False,
                       "inputSourceCheck": source_check,
                       "evidenceLocationCheck": inspect_handoff_evidence(draft, repo.state.get("ocr_parse_results", []))}
     except (TypeError, ValueError) as exc:
         validation = {"status": "stale_or_invalid", "authoritative": False, "reason": str(exc)}
     return {**repo.clone(record), "validation": validation,
+            "evidenceDocuments": _evidence_documents(draft, project_id),
             "verification": verification_view(record, validation)}, None
 
 
@@ -155,10 +171,12 @@ def list_handoffs(request: Request, project_id: str, page: int = Query(default=1
 
 @router.post("/projects/{project_id}/review-handoffs/{handoff_id}/verifications")
 def verify_handoff(request: Request, project_id: str, handoff_id: str,
-                   body: dict[str, Any] = Body(default_factory=dict)):
+                   body: dict[str, Any] = Body(default_factory=dict),
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if error := _guard(request, project_id):
         return error
     repo.ensure_deferred_loaded("review_handoffs")
+    repo.state.setdefault("review_handoffs", [])
     record = repo.find_one("review_handoffs", handoff_id)
     if not record or record.get("projectId") != project_id or api.tenant_id_for_record(record) != api.request_tenant_id(request):
         return fail(errors.NOT_FOUND, request)
@@ -175,11 +193,14 @@ def verify_handoff(request: Request, project_id: str, handoff_id: str,
     if (body.get("outcome") == "verified" and record["draft"]["kind"] != "collaboration"
             and validation["evidenceLocationCheck"]["status"] != "locations_found"):
         return fail(errors.VALIDATION_ERROR, request, message="handoff_evidence_locations_required")
-    try:
-        append_verification(record, body, actor=api.request_user_id(request), created_at=server_time())
-    except (TypeError, ValueError) as exc:
-        return fail(errors.VALIDATION_ERROR, request, message=str(exc))
-    return ok(repo.clone(record), request)
+    def produce():
+        try:
+            append_verification(record, body, actor=api.request_user_id(request), created_at=server_time())
+        except (TypeError, ValueError) as exc:
+            return fail(errors.VALIDATION_ERROR, request, message=str(exc))
+        return ok(repo.clone(record), request)
+    return api.idempotent(request, idempotency_key, produce,
+                          fingerprint_source={"body": body, "snapshotHash": record["draft"]["snapshotHash"]})
 
 
 @router.get("/projects/{project_id}/review-handoffs/{handoff_id}")
@@ -187,6 +208,7 @@ def get_handoff(request: Request, project_id: str, handoff_id: str):
     if error := _guard(request, project_id):
         return error
     repo.ensure_deferred_loaded("review_handoffs")
+    repo.state.setdefault("review_handoffs", [])
     record = repo.find_one("review_handoffs", handoff_id)
     if (not record or record.get("projectId") != project_id
             or api.tenant_id_for_record(record) != api.request_tenant_id(request)):

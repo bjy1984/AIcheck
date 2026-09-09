@@ -9,5 +9,5 @@ export default defineConfig({
     { find: /^@\/axios$/, replacement: fileURLToPath(new URL('./transport.ts', import.meta.url)) },
     { find: '@', replacement: fileURLToPath(new URL('../../src', import.meta.url)) }
   ] },
-  server: { host: '127.0.0.1', port: 4393, strictPort: true, proxy: { '/api': 'http://127.0.0.1:4174' } }
+  server: { host: '127.0.0.1', port: 4393, strictPort: true, proxy: { '/api': 'http://127.0.0.1:4174', '/__lab': 'http://127.0.0.1:4174' } }
 })

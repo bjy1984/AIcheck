@@ -6,6 +6,7 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 ACTION_ROUTE_RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/projects/[^/]+/review-handoffs$", "review:save"),
+    ("POST", r"/projects/[^/]+/review-handoffs/[^/]+/verifications$", "review:save"),
     ("POST", r"/projects/[^/]+/rules/versions/[^/]+/trial$", "review:save"),
     ("POST", r"/projects/[^/]+/rules/versions$", "review:save"),
     ("PATCH", r"/projects/[^/]+/rules/versions/[^/]+$", "review:save"),
