@@ -108,3 +108,9 @@ def test_reset_forces_a_fresh_baseline() -> None:
     probe.reset()
     assert probe.needs_second_stage(global_max="T1") is True
     assert probe.stale_collections(global_max="T1", collection_max={"users": "T1"}) == set()
+
+
+def test_force_detects_removed_collection_with_unchanged_global_maximum() -> None:
+    probe = _probe()
+    probe.prime(global_max="T2", collection_max={"review_handoffs": "T1", "users": "T2"})
+    assert probe.stale_collections(global_max="T2", collection_max={"users": "T2"}, force=True) == {"review_handoffs"}

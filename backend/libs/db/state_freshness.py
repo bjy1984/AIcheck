@@ -106,7 +106,7 @@ class StateFreshnessProbe:
                 # 库里一行都没有：没有可比对的东西，也就没有过期一说
                 self._seen_global = None
                 return set()
-            if not first_probe and global_max == self._seen_global:
+            if not force and not first_probe and global_max == self._seen_global:
                 return set()
             self._seen_global = global_max
             if collection_max is None:
@@ -117,6 +117,7 @@ class StateFreshnessProbe:
                 for name, stamp_value in collection_max.items()
                 if self._seen_by_collection.get(name) != stamp_value
             }
+            stale.update(set(self._seen_by_collection) - set(collection_max))
             self._seen_by_collection = dict(collection_max)
             if first_probe:
                 # 首次探针只是建立基线：此刻内存里的数据就是刚加载的，

@@ -362,6 +362,12 @@ def _dependency_status(request, project_id, run_id, visible):
 
 @router.get("/projects/{project_id}/review-runs/{run_id}/handoff-dependencies")
 def get_handoff_dependencies(request: Request, project_id: str, run_id: str):
+    # Explicit status reads must also see deleted handoffs, even if the global maximum is unchanged.
+    if repo.sync_postgres is not None:
+        repo.refresh_collections_incrementally({
+            "review_runs", "review_handoffs", "review_sessions", "documents", "versions",
+            "ocr_parse_results", "fact_corrections",
+        })
     if error := _guard(request, project_id):
         return error
     status, error = _dependency_status(request, project_id, run_id, _visible_versions(request, project_id))
@@ -370,6 +376,12 @@ def get_handoff_dependencies(request: Request, project_id: str, run_id: str):
 
 @router.get("/projects/{project_id}/review-handoff-node-statuses")
 def get_handoff_node_statuses(request: Request, project_id: str):
+    # Explicit status reads must also see deleted handoffs, even if the global maximum is unchanged.
+    if repo.sync_postgres is not None:
+        repo.refresh_collections_incrementally({
+            "review_runs", "review_handoffs", "review_sessions", "documents", "versions",
+            "ocr_parse_results", "fact_corrections",
+        })
     if error := _guard(request, project_id):
         return error
     repo.ensure_deferred_loaded("review_runs", "review_handoffs", "review_sessions")
