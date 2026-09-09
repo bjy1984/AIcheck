@@ -1,6 +1,6 @@
 # R39 首次應用工藝驗證核心（Lab）
 
-工具：evaluate_r39_first_use_validation；版本：r39-first-use-validation-occurrence-v1。
+工具：evaluate_r39_first_use_validation；版本：r39-first-use-validation-occurrence-v2。
 
 ## 原文依據與能力邊界
 
@@ -9,6 +9,8 @@
 此工具只核對該次首次應用的驗證是否實施及是否在首次應用時實施。不是整條R39判定，不核定驗證效果、工藝參數技術符合性、編審批准或完整文件內容。輸出wholeRuleAcceptance=not_evaluated、evidenceVerified=false。工具已註冊，但未接入R39正式原子綁定，也未改發布狀態。
 
 ## 輸入
+
+- projectId：必填，須與scope.projectId一致。v2在不適用判定前核對已提供validation的身份及引用，不能略過跨事件或無效記錄。
 
 - scope：projectId、organizationId、instructionId、instructionVersion、method、objectId、eventId，皆為非空且無首尾空白字串。事件指本次操作指導書應用，不由焊口或文件編號猜填。
 - basis：重複以上完整身份，standard精確為NB/T 47013.1-2015、clause為4.3.2.3、applicable為布林true，及evidenceRefs。不同標準或適用性未知返回不足，由上游選擇其他適用判定。

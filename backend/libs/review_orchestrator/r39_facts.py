@@ -6,6 +6,7 @@ from typing import Any
 
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
 from libs.review_tools.r39_approval import SCOPE_FIELDS
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_tools import IDENTITY_FIELDS
@@ -18,7 +19,7 @@ R39_TABLES = {
     "ndt_approval_requirements": "requirements", "ndt_approval_steps": "steps",
     "ndt_signature_inventory": "signatureInventories", "ndt_approval_signatures": "signatures",
 }
-PROVENANCE = {"evidence", "documentVersionId", "confidence"}
+PROVENANCE = {"evidence", "documentVersionId", "confidence", "conflicted"}
 
 
 def _clean(row):
@@ -68,12 +69,16 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
     groups = read_ndt_tables(state, run, R39_TABLES, node_id=39)
     judgment = build_material_judgment([(f"r39-{kind}", rows, ("instructionId", "projectId")) for kind, rows in groups.items()])
     facts: dict[str, Any] = {"sourceIssues": [], "sourceRecords": deepcopy(groups)}
+    def finish():
+        gate_r39_inputs(groups, facts)
+        return {"r39": facts, **judgment}
+
     issues = facts["sourceIssues"]
     _content_input(state, run, groups, facts)
     applications = groups["applications"]
     if len(applications) == 1 and applications[0].get("projectId") == run["projectId"]:
         application = _clean(applications[0])
-        first_use = {"scope": {key: application.get(key) for key in IDENTITY_FIELDS}, "application": application}
+        first_use = {"projectId": run["projectId"], "scope": {key: application.get(key) for key in IDENTITY_FIELDS}, "application": application}
         for group, key in (("bases", "basis"), ("validations", "validation")):
             if len(groups[group]) == 1:
                 first_use[key] = _clean(groups[group][0])
@@ -87,20 +92,20 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
     contexts = groups["approvalContexts"]
     if len(contexts) != 1:
         issues.append("r39_approval_context_missing_or_ambiguous")
-        return {"r39": facts, **judgment}
+        return finish()
     context = _approval_record(contexts[0])
     scope = {key: context.get(key) for key in SCOPE_FIELDS}
     if not _reviewed_document_valid(state, run, scope):
         issues.append("r39_reviewed_document_not_in_selected_project_scope")
-        return {"r39": facts, **judgment}
+        return finish()
     records = {key: [_approval_record(row) for row in groups[key]]
                for key in ("requirements", "steps", "signatureInventories", "signatures")}
     if any(len(records[key]) != 1 for key in ("requirements", "signatureInventories")):
         issues.append("r39_approval_header_missing_or_ambiguous")
-        return {"r39": facts, **judgment}
+        return finish()
     if any(any(row.get(key) != scope[key] for key in SCOPE_FIELDS) for rows in records.values() for row in rows):
         issues.append("r39_approval_source_scope_conflict")
-        return {"r39": facts, **judgment}
+        return finish()
     requirements = records["requirements"][0]
     inventory = records["signatureInventories"][0]
     # Embedded child records cannot manufacture evidence; independent rows are required.
@@ -109,4 +114,4 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
     inventory["signatures"] = records["signatures"]
     facts["approvalChain"] = {"projectId": run["projectId"], "scope": scope,
                               "requirements": requirements, "signatureInventory": inventory}
-    return {"r39": facts, **judgment}
+    return finish()

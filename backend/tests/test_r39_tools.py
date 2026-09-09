@@ -12,7 +12,7 @@ def arguments():
     def record(version, **values):
         return {**scope, **values, "evidenceRefs": [{"documentVersionId": version, "pageNo": 2, "quotedText": "Synthetic sourced fact"}]}
 
-    return {"scope": scope,
+    return {"projectId": "P1", "scope": scope,
             "basis": record("STD1", standard="NB/T 47013.1-2015", clause="4.3.2.3", applicable=True),
             "application": record("APP1", firstUse=True, completed=True),
             "validation": record("VAL1", performed=True, atFirstUse=True)}

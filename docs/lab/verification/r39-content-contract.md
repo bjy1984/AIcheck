@@ -1,6 +1,6 @@
 # R39 通用工藝文件內容核對（Lab）
 
-工具evaluate_r39_document_content，版本r39-nbt47013-common-document-content-v1。
+工具evaluate_r39_document_content，版本r39-nbt47013-common-document-content-v2。
 
 ## 來源與適用範圍
 
@@ -34,3 +34,5 @@
 ## 本批驗證
 
 340項相關回歸通過，包括兩類文件四態、逐子項缺失、六欄身份、同版本引用、明確缺項與漏讀、真假布林、重複／未知欄位、不預設批准者或級別，以及來源builder到runtime的接線與既有R39、工位、執行器、業務工具、巨石回歸。Ruff初次一項測試匯入I001，修正排序後289／289，未提高基線。本批未重跑完整後端；上一批3874 passed／66 skipped是本批修改前全量紀錄。
+
+2026-09-09後續：v2於不適用分支前核對已提供內容清單與欄位身份、重複及未知fieldId；builder另加入按工具來源分組的初步門檻，詳見r39-source-gate-contract.md。

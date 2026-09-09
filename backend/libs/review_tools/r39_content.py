@@ -46,7 +46,7 @@ def evaluate_r39_document_content(arguments: dict[str, Any]) -> dict[str, Any]:
         output = result("evaluate_r39_document_content", status,
                         facts={"contentChecks": rows, "technicalCompliance": "not_evaluated", "wholeRuleAcceptance": "not_evaluated", "evidenceVerified": False},
                         checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-                        rule_version="r39-nbt47013-common-document-content-v1")
+                        rule_version="r39-nbt47013-common-document-content-v2")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
@@ -66,6 +66,18 @@ def evaluate_r39_document_content(arguments: dict[str, Any]) -> dict[str, Any]:
             or type(basis.get("applicable")) is not bool or not _refs(basis)):
         add("r39_content_basis_missing", "evidence_insufficient")
         return finish()
+    supplied = arguments.get("contentInventory")
+    if "contentInventory" in arguments:
+        if not matches(supplied) or not isinstance(supplied.get("fields"), list):
+            add("r39_supplied_content_scope_conflict", "evidence_insufficient", _refs(basis))
+            return finish()
+        seen = set()
+        for field in supplied["fields"]:
+            if (not matches(field) or not isinstance(field.get("fieldId"), str)
+                    or field["fieldId"] not in requirements or field["fieldId"] in seen):
+                add("r39_supplied_content_field_conflict", "evidence_insufficient", _refs(basis))
+                return finish()
+            seen.add(field["fieldId"])
     if not basis["applicable"]:
         add("r39_content_clause_not_applicable", "not_applicable", _refs(basis), base_clause)
         return finish()

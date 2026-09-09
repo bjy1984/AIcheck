@@ -421,7 +421,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_ndt_quality_system"
             else {"projectId": "string", "applicability": "object", "plan": "object", "requirements": ["object"], "standardRequirements": ["object?"]}
             if name == "evaluate_r36_ndt_plan"
-            else {"scope": "object", "basis": "object", "application": "object", "validation": "object"}
+            else {"projectId": "string", "scope": "object", "basis": "object", "application": "object", "validation": "object"}
             if name == "evaluate_r39_first_use_validation"
             else {"projectId": "string", "scope": "object", "requirements": "object", "signatureInventory": "object"}
             if name == "evaluate_r39_approval_chain"

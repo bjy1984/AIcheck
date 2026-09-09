@@ -820,3 +820,11 @@ cd backend
 - 凍結builder增加內容上下文／依據／清單／獨立欄位表，接入documentContent工具參數；被審文件須在已選工程版本內，來源引用不由內嵌欄位自行指定。原R39首次應用／批准鏈仍通過回歸。
 - 業務工具增至96項，相關340 passed；Ruff初次1項I001，修正匯入排序後289／289，diff check通過。本批未重跑完整後端；上一批3874 passed／66 skipped為修改前紀錄。
 - 契約见docs/lab/verification/r39-content-contract.md。技術參數正確性、規程引用一致性、方法專項要求、全部文件覆蓋及原子綁定仍待完成，未以內容存在替代R39符合、未發布／部署生產／遷移ID。
+
+
+### 2026-09-09 R39來源門檻與不適用分支防繞過
+
+- 發現直接執行R39子工具可在低可信度／來源衝突時通過，builder現按首次應用／批准鏈／內容各自的來源重用grounding門檻，初步下限0.75；拒絕非數字、bool、NaN／Infinity／越界可信度及無效衝突標記。保留sourceValidation／原始來源／問題，不讓不相關來源互相阻擋。
+- 首次應用升v2：頂層projectId與scope一致以銜接runtime工程限制，先核對已提供驗證記錄的身份及引用，再判斷非首次應用。內容工具升v2：先核對已提供清單／欄位身份及重複／未知ID，不以不適用掩蓋衝突。
+- 相關400 passed，Ruff289／289、diff check通過。本批未重跑完整後端；先前3874 passed／66 skipped為內容工具及本批修改前全量紀錄。
+- 契約見docs/lab/verification/r39-source-gate-contract.md。初步来源門檻不代替凍結規則的更嚴格門檻、原文語義或人工核驗；整條R39仍未驗收，未改歷史結果／發布狀態／部署生產／遷移ID。

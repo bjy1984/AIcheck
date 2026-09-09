@@ -42,12 +42,13 @@ def evaluate_r39_first_use_validation(arguments: dict[str, Any]) -> dict[str, An
                         facts={"validationChecks": rows, "scope": "first_use_validation_occurrence_only",
                                "wholeRuleAcceptance": "not_evaluated", "evidenceVerified": False},
                         checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-                        rule_version="r39-first-use-validation-occurrence-v1")
+                        rule_version="r39-first-use-validation-occurrence-v2")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         return output
 
     scope = arguments.get("scope")
-    if not isinstance(scope, dict) or any(not _text(scope.get(field)) for field in IDENTITY_FIELDS):
+    if (not isinstance(scope, dict) or any(not _text(scope.get(field)) for field in IDENTITY_FIELDS)
+            or arguments.get("projectId") != scope["projectId"]):
         add("r39_application_identity_missing", "evidence_insufficient")
         return finish()
 
@@ -64,6 +65,9 @@ def evaluate_r39_first_use_validation(arguments: dict[str, Any]) -> dict[str, An
         add("r39_first_use_fact_missing_or_mismatched", "evidence_insufficient", _refs(basis))
         return finish()
     refs = [*_refs(basis), *_refs(application)]
+    if "validation" in arguments and (not matching(arguments["validation"]) or not _refs(arguments["validation"])):
+        add("r39_supplied_validation_scope_conflict", "evidence_insufficient", refs)
+        return finish()
     if not application["firstUse"]:
         add("r39_current_event_not_first_use", "not_applicable", refs)
         return finish()
