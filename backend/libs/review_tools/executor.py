@@ -140,7 +140,8 @@ def execute_node_tool_plan(
         atomic_results.append(
             {
                 "atomicCheckId": item.get("atomicCheckId"),
-                "result": aggregate_tool_results(outputs),
+                "result": aggregate_planned_tool_results(item, outputs),
+                **({"resultRole": "evidence_gate"} if is_evidence_gate_plan(item) else {}),
                 "toolResults": outputs,
                 "warnings": [],
             }
@@ -578,6 +579,33 @@ def aggregate_tool_results(outputs: list[dict[str, Any]]) -> str:
     return "evidence_insufficient"
 
 
+
+_SUPPORT_TOOLS = {"get_document_ocr_result", "extract_document_fields", "extract_table_records",
+                  "locate_evidence_fragment", "validate_evidence_grounding"}
+
+
+def is_evidence_gate_plan(item: dict[str, Any]) -> bool:
+    tools = set(item.get("tools") or [])
+    return ((item.get("parameters") or {}).get("resultRole") == "evidence_gate"
+            and "validate_evidence_grounding" in tools
+            and tools <= {"locate_evidence_fragment", "validate_evidence_grounding"})
+
+
+def aggregate_planned_tool_results(item: dict[str, Any], outputs: list[dict[str, Any]]) -> str:
+    status = aggregate_tool_results(outputs)
+    decision = (item.get("parameters") or {}).get("decisionTool")
+    if decision is None:
+        return status
+    tools = set(item.get("tools") or [])
+    decisions = [output for output in outputs if output.get("toolName") == decision]
+    if decision not in tools or len(decisions) != 1 or tools - {decision} - _SUPPORT_TOOLS:
+        return "evidence_insufficient"
+    # Preserve grounding failures and execution errors. Support-tool success cannot
+    # turn a dedicated applicability decision into business compliance.
+    if status == "passed" and decisions[0].get("result") == "not_applicable":
+        return "not_applicable"
+    return status
+
 def aggregate_atomic_results(items: list[dict[str, Any]]) -> str:
     results = [str(item.get("result")) for item in items]
     if "failed" in results:
@@ -588,7 +616,10 @@ def aggregate_atomic_results(items: list[dict[str, Any]]) -> str:
         return "human_review_required"
     if not results or any(item == "evidence_insufficient" for item in results):
         return "evidence_insufficient"
-    applicable = [item for item in results if item != "not_applicable"]
+    decisions = [str(item.get("result")) for item in items if item.get("resultRole") != "evidence_gate"]
+    if not decisions:
+        return "evidence_insufficient"
+    applicable = [item for item in decisions if item != "not_applicable"]
     if not applicable:
         return "not_applicable"
     return "passed" if all(item == "passed" for item in applicable) else "evidence_insufficient"

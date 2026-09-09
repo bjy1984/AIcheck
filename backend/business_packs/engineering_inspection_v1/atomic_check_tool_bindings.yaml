@@ -2206,6 +2206,7 @@ atomicCheckToolBindings:
   - evaluate_ndt_quality_system
   - validate_evidence_grounding
   parameters:
+    decisionTool: evaluate_ndt_quality_system
     profile: ndt_quality_system
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
@@ -2224,6 +2225,7 @@ atomicCheckToolBindings:
   - locate_evidence_fragment
   - validate_evidence_grounding
   parameters:
+    resultRole: evidence_gate
     minConfidence: 0.75
     requirePage: true
     requireBboxOrQuotedText: true

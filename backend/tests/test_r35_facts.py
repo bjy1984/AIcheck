@@ -89,3 +89,35 @@ def test_r35_extracted_claims_reach_existing_evidence_gate(confidence, conflicte
                                   evidence_facts=facts["judgment"]["claimedFacts"], evidence_refs=facts["judgment"]["evidenceRefs"])
     assert validate_evidence_grounding(params)["result"] == expected
     assert all(row["evidenceRefIds"] for row in facts["judgment"]["claimedFacts"])
+
+
+@pytest.mark.parametrize("scenario,expected", [("passed", "passed"), ("failed", "failed"), ("missing", "evidence_insufficient"), ("not_applicable", "not_applicable"), ("not_applicable_only_activity", "not_applicable"), ("not_applicable_low_confidence", "evidence_insufficient"), ("low_confidence", "evidence_insufficient")])
+def test_r35_real_binding_plan_four_states(scenario, expected):
+    from libs.business_pack import load_business_pack
+    from libs.review_orchestrator.runtime_tools import dispatch_runtime_tool, runtime_tool_catalog
+    from libs.review_tools import compile_node_tool_plan, execute_node_tool_plan
+
+    state, run = fixture()
+    tables = state["ocr_parse_results"][0]["tables"]
+    for table in tables:
+        table["structureConfidence"] = 0.9
+    if scenario == "failed":
+        tables[3]["normalizedRows"][0]["status"] = "nonconforming"
+    elif scenario == "missing":
+        tables[3]["normalizedRows"] = []
+    elif scenario.startswith("not_applicable"):
+        tables[-1]["normalizedRows"][0]["required"] = False
+        if scenario == "not_applicable_only_activity":
+            tables[:] = [tables[-1]]
+        elif scenario == "not_applicable_low_confidence":
+            tables[-1]["structureConfidence"] = 0.5
+    elif scenario == "low_confidence":
+        tables[3]["structureConfidence"] = 0.5
+    facts, _ = execute(state, run)
+    plan = compile_node_tool_plan(load_business_pack("engineering_inspection_v1"), "R35",
+                                  available_tools={item["name"] for item in runtime_tool_catalog()})
+    output = execute_node_tool_plan(plan, facts=facts, document_version_ids=["V1"],
+        evidence_facts=facts["judgment"]["claimedFacts"], evidence_refs=facts["judgment"]["evidenceRefs"],
+        tool_runner=lambda name, args: dispatch_runtime_tool(state, name, args, context={"reviewRun": run}))
+    assert output["result"] == expected, output
+    assert len(output["atomicResults"]) == 2
