@@ -6,6 +6,7 @@ from typing import Any
 
 from libs.review_orchestrator.material_facts import build_material_judgment
 from libs.review_orchestrator.ndt_table_facts import read_ndt_tables
+from libs.review_orchestrator.r39_content_inventory_facts import build_content_inputs
 from libs.review_orchestrator.r39_pt_facts import pt_application_input
 from libs.review_orchestrator.r39_reference_facts import reference_input
 from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
@@ -14,6 +15,7 @@ from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_tools import IDENTITY_FIELDS
 
 R39_TABLES = {
+    "ndt_content_document_inventory": "contentDocumentInventories", "ndt_content_document_members": "contentDocumentMembers",
     "ndt_pt_context": "ptContexts", "ndt_pt_basis": "ptBases", "ndt_pt_process": "ptProcesses",
     "ndt_reference_inventory": "referenceInventories", "ndt_reference_members": "referenceMembers",
     "ndt_reference_context": "referenceContexts", "ndt_reference_basis": "referenceBases",
@@ -90,7 +92,7 @@ def build_r39_business_facts(state: dict[str, Any], run: dict[str, Any]) -> dict
         facts["procedureReference"] = reference
     else:
         issues.append("r39_reference_pair_missing_or_ambiguous")
-    _content_input(state, run, groups, facts)
+    build_content_inputs(state, run, groups, facts, _approval_record, _content_input)
     applications = groups["applications"]
     if len(applications) == 1 and applications[0].get("projectId") == run["projectId"]:
         application = _clean(applications[0])

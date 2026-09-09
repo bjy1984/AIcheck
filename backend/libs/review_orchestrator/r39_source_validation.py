@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from libs.review_orchestrator.deterministic_tools import validate_evidence_grounding
 from libs.review_orchestrator.material_facts import build_material_judgment
+from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 from libs.review_tools.r39_reference import SCOPE_FIELDS
 
 SOURCE_GROUPS = {
@@ -10,7 +11,7 @@ SOURCE_GROUPS = {
     "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
     "firstUseValidation": ("applications", "bases", "validations"),
     "approvalChain": ("approvalContexts", "requirements", "steps", "signatureInventories", "signatures"),
-    "documentContent": ("contentContexts", "contentBases", "contentInventories", "contentFields"),
+    "documentContent": ("contentContexts", "contentBases", "contentInventories", "contentFields", "contentDocumentInventories", "contentDocumentMembers"),
 }
 
 
@@ -32,30 +33,37 @@ def validate_r39_sources(groups, input_name):
     return {"result": checked["result"], "checks": checked["checks"], "minConfidence": .75}
 
 
-def _isolate_reference_sources(groups, facts, checked):
-    """Retain independent pairs only when their shared inventory is trustworthy."""
-    value = facts.get("procedureReference")
+def _isolate_inventory_sources(groups, facts, checked, input_name):
+    """Retain independent inputs only when their shared inventory is trustworthy."""
+    if input_name == "procedureReference":
+        fields, collection, diagnostics = SCOPE_FIELDS, "referencePairs", "pairValidation"
+        shared_names = {"referenceInventories", "referenceMembers"}
+    else:
+        fields, collection, diagnostics = CONTENT_SCOPE_FIELDS, "documents", "documentValidation"
+        shared_names = {"contentDocumentInventories", "contentDocumentMembers"}
+    value = facts.get(input_name)
     if not isinstance(value, dict) or "inventory" not in value:
         return False
-    names = SOURCE_GROUPS["procedureReference"]
-    shared = {name: groups[name] if name in {"referenceInventories", "referenceMembers"} else [] for name in names}
-    checked["inventoryValidation"] = validate_r39_sources(shared, "procedureReference")
+    names = SOURCE_GROUPS[input_name]
+    shared = {name: groups[name] if name in shared_names else [] for name in names}
+    checked["inventoryValidation"] = validate_r39_sources(shared, input_name)
     if checked["inventoryValidation"]["result"] != "passed":
         return False
     retained = []
-    checked["pairValidation"] = []
-    for pair in value["referencePairs"]:
+    checked[diagnostics] = []
+    for pair in value[collection]:
         scope = pair.get("scope")
         if not isinstance(scope, dict):
             continue
-        selected = {name: [row for row in groups[name] if all(row.get(key) == scope[key] for key in SCOPE_FIELDS)]
-                    if name not in {"referenceInventories", "referenceMembers"} else [] for name in names}
-        validation = validate_r39_sources(selected, "procedureReference")
-        checked["pairValidation"].append({"scope": dict(scope), **validation})
+        selected = {name: [row for row in groups[name] if all(
+            row.get("reviewedDocumentVersionId" if input_name == "documentContent" and key == "documentVersionId" else key) == scope[key]
+            for key in fields)] if name not in shared_names else [] for name in names}
+        validation = validate_r39_sources(selected, input_name)
+        checked[diagnostics].append({"scope": dict(scope), **validation})
         if validation["result"] == "passed":
             retained.append(pair)
     # Keep coverage incomplete even if the unreliable row was outside the inventory.
-    value["referencePairs"] = [*retained, {}]
+    value[collection] = [*retained, {}]
     return True
 
 
@@ -65,6 +73,6 @@ def gate_r39_inputs(groups, facts):
     facts["sourceValidation"] = checks
     for name, checked in checks.items():
         if checked["result"] != "passed":
-            if name != "procedureReference" or not _isolate_reference_sources(groups, facts, checked):
+            if name not in {"procedureReference", "documentContent"} or not _isolate_inventory_sources(groups, facts, checked, name):
                 facts.pop(name, None)
             facts["sourceIssues"].append("r39_" + name + "_source_gate_failed")

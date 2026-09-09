@@ -35,6 +35,9 @@ def content_requirements(kind):
 
 
 def evaluate_r39_document_content(arguments: dict[str, Any]) -> dict[str, Any]:
+    if "inventory" in arguments or "documents" in arguments:
+        from libs.review_tools.r39_document_inventory import evaluate_document_inventory
+        return evaluate_document_inventory(arguments, SCOPE_FIELDS, evaluate_r39_document_content)
     rows = []
 
     def add(code, status, refs=None, clause=None):

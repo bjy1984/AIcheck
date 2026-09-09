@@ -220,7 +220,7 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r37_reinspection": "按明确缺陷与返修轮次核对原检测方法、范围、验收准则及修复后重检结果；独立对象核对不代表批次累进检查完成。",
     "evaluate_r11_project_parameters": "按同一对象逐项比对所选施工方案与设计固定版本的明确参数；单位、对象、原文或要求清单不明时保留不足，不代替施工技术要求验收。",
     "evaluate_r39_procedure_reference": "比对所选指导书引用的规程编号与版本；有来源的完整文件对清单按组核对并列出漏查项，不代替方法技术要求及整条规则验收。",
-    "evaluate_r39_document_content": "按NB/T47013.1-2015第7.2.2/7.2.3逐项核对工艺规程或指导书必备内容及同版本引用；漏读与明确缺项分开，不判定技术参数正确或整条R39。",
+    "evaluate_r39_document_content": "按NB/T47013.1-2015第7.2.2/7.2.3核对规程或指导书必备内容；有来源的完整文件清单逐份核对并列漏查项，漏读与明确缺项分开，不代替技术参数或整条R39验收。",
     "evaluate_r39_approval_chain": "按有来源且完整的质量体系要求核对单份工艺文件同版本同审批周期的必需签批、授权人员、先后与人员分离；不默认审批角色或等级，不代表整条R39通过。",
     "evaluate_r39_first_use_validation": "R39仅核对同工程、检测单位、指导书版本、对象及事件的首次应用工艺验证实施事实；不判定工艺技术符合性、批准程序或整条R39，缺证据不通过。",
     "evaluate_r36_ndt_plan": "R36逐对象比对带证据的明确检测要求与方案方法、百分比、时机和验收级别，核对审批及人员设备准备事实；不自动生成标准限值或见证事实。",
@@ -438,7 +438,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r11_project_parameters"
             else {"projectId": "string", "scope": "object?", "basis": "object?", "instructionReference": "object?", "procedureIdentity": "object?", "inventory": "object?", "referencePairs": ["object?"]}
             if name == "evaluate_r39_procedure_reference"
-            else {"projectId": "string", "scope": "object", "basis": "object", "contentInventory": "object"}
+            else {"projectId": "string", "scope": "object?", "basis": "object?", "contentInventory": "object?", "inventory": "object?", "documents": ["object?"]}
             if name == "evaluate_r39_document_content"
             else {"projectId": "string", "scope": "object", "basis": "object", "process": "object"}
             if name == "evaluate_r39_pt_emulsifier_application"
