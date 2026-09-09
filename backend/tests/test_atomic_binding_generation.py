@@ -46,3 +46,14 @@ def test_standalone_generator_works_from_unrelated_directory(tmp_path):
                                cwd=tmp_path, capture_output=True, text=True, check=False)
     assert completed.returncode == 0, completed.stderr
     assert yaml.safe_load((pack_dir / "atomic_check_tool_bindings.yaml").read_text()) == yaml.safe_load(generator.BINDINGS.read_text())
+
+
+def test_r37_bindings_separate_witness_closure_and_evidence_without_publication():
+    checks = yaml.safe_load(generator.SOURCE.read_text())["atomicChecks"]
+    rows = [generator.make_binding(row) for row in checks if row["sourceRuleId"] == "R37"]
+    assert all(row["implementationStatus"] == "binding_only" for row in rows)
+    assert "R37" not in generator.PILOT_RULES
+    assert rows[0]["parameters"]["decisionTool"] == "evaluate_ndt_nonconformance"
+    assert rows[1]["parameters"]["decisionTool"] == "evaluate_r37_defect_closure"
+    assert "evaluate_ndt_nonconformance" not in rows[1]["tools"]
+    assert rows[2]["parameters"]["resultRole"] == "evidence_gate"

@@ -2274,34 +2274,43 @@ atomicCheckToolBindings:
   implementationStatus: binding_only
 - atomicCheckId: AC-R37-01
   sourceRuleId: R37
-  requiredFacts: &id003
-  - ndtNonconformance.procedure
-  - ndtNonconformance.commission
-  - ndtNonconformance.notice
-  - ndtNonconformance.feedback
+  requiredFacts:
+  - r37.projectId
+  - r37.organizationId
+  - r37.applicability
+  - r37.procedure
+  - r37.caseInventory
+  - r37.commissions
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_required
+  - extract_table_records
   - evaluate_ndt_nonconformance
   - validate_evidence_grounding
   parameters:
-    profile: ndt_nonconformance
+    profile: ndt_nonconformance_witness
+    decisionTool: evaluate_ndt_nonconformance
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
   implementationStatus: binding_only
 - atomicCheckId: AC-R37-02
   sourceRuleId: R37
-  requiredFacts: *id003
+  requiredFacts:
+  - r37.projectId
+  - r37.organizationId
+  - r37.progressiveInventory
+  - r37.caseInventory
+  - r37.closureLinks
   tools:
   - get_document_ocr_result
   - extract_document_fields
-  - check_required
-  - evaluate_ndt_nonconformance
+  - extract_table_records
+  - evaluate_r37_defect_closure
   - validate_evidence_grounding
   parameters:
-    profile: ndt_nonconformance
+    profile: ndt_progression_reinspection_closure
+    decisionTool: evaluate_r37_defect_closure
     clauseSource: frozen_standard_clause_package
     failurePolicy: business_rule_result
   outputSchema: deterministic-tool-result-v1
@@ -2319,6 +2328,7 @@ atomicCheckToolBindings:
   - locate_evidence_fragment
   - validate_evidence_grounding
   parameters:
+    resultRole: evidence_gate
     minConfidence: 0.75
     requirePage: true
     requireBboxOrQuotedText: true

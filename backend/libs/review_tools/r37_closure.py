@@ -38,7 +38,7 @@ def evaluate_r37_defect_closure(arguments: dict[str, Any]) -> dict[str, Any]:
         status = "failed" if "failed" in statuses else "evidence_insufficient" if reason or "evidence_insufficient" in statuses else "passed" if rows else "not_applicable"
         output = result("evaluate_r37_defect_closure", status,
             facts={"closureChecks": deepcopy(rows), "reason": reason, "progression": progression, "reinspection": reinspection,
-                   "batchAcceptance": "not_evaluated"}, checks=[], rule_version="r37-progression-reinspection-closure-v1")
+                   "batchAcceptance": "not_evaluated"}, checks=[], rule_version="r37-progression-reinspection-closure-v2")
         output["evidenceRefs"] = deepcopy(sources)
         return output
 
@@ -56,6 +56,9 @@ def evaluate_r37_defect_closure(arguments: dict[str, Any]) -> dict[str, Any]:
         return finish("reinspection_inventory_invalid")
     required = {(event["eventId"], obj) for event in progression["facts"]["eventResults"]
                 for obj in event.get("facts", {}).get("repairRequiredObjectIds", [])}
+    applicability = arguments.get("applicability")
+    if required and isinstance(applicability, dict) and applicability.get("required") is False:
+        return finish("applicability_conflicts_with_defect_obligations")
     inventory, progressive_inventory = arguments["caseInventory"], arguments["progressiveInventory"]
     cases, links = inventory.get("cases"), arguments.get("closureLinks")
     if not isinstance(cases, list) or not isinstance(links, list):
