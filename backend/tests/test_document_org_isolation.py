@@ -2164,6 +2164,34 @@ def test_explicit_binding_requirement_is_project_scoped_and_batch_atomic(foreign
         assert next(row for row in created if row["requirementId"])["requirementName"] == requirement["name"]
 
 
+@pytest.mark.parametrize("select_old", [False, True])
+@pytest.mark.parametrize("old_submitted", [False, True])
+def test_binding_preserves_selected_version_and_submission(select_old, old_submitted):
+    document = repo.find_one("documents", DOCUMENTS["contractor_a"])
+    old_id = document["currentVersionId"]
+    old = repo.find_one("versions", old_id)
+    old["isCurrent"] = False
+    current = {**old, "id": f"{old_id}-NEW", "versionNo": "V2", "isCurrent": True}
+    repo.state["versions"].append(current)
+    document.update(currentVersionId=current["id"], poolSubmissionStatus="草稿")
+    previous = repo.find_one("bindings", f"BIND-{document['id']}")
+    previous["bindingStatus"] = "已提交" if old_submitted else "草稿挂载"
+    selected = old if select_old else current
+    response = client.post(
+        f"/api/projects/{PROJECT_ID}/inspection/nodes/{NODE_ID}/file-bindings",
+        headers={**_headers("inspection"), "Idempotency-Key": "version-specific-binding"},
+        json={"bindings": [{"documentId": document["id"], "documentVersionId": selected["id"]}]},
+    )
+    assert response.json()["code"] == 0, response.text
+    binding = repo.find_one("bindings", response.json()["data"]["affectedIds"][0])
+    assert binding["documentVersionId"] == selected["id"]
+    assert binding["versionNo"] == selected["versionNo"]
+    inherited = select_old and old_submitted
+    assert binding["bindingStatus"] == ("已提交" if inherited else "草稿挂载")
+    assert bool(binding.get("inheritedSubmission")) == inherited
+    assert not any(link.get("bindingId") == binding["id"] for link in repo.state["node_evidence_links"])
+
+
 def test_binding_requirement_patch_rejects_wrong_node_and_ignores_forged_name():
     binding_id = f"BIND-{DOCUMENTS['contractor_a']}"
     binding = repo.find_one("bindings", binding_id)

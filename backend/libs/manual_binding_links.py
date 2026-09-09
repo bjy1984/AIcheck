@@ -104,8 +104,10 @@ def submitted_binding_document_versions(
     return sorted(active.values(), key=lambda row: row["documentVersionId"])
 
 
-def document_already_submitted(state: dict[str, Any], project_id: str, document_id: str) -> bool:
-    """资料已进入审查视野：资料池已提交，或在任一节点上有已提交的挂载。"""
+def document_already_submitted(
+    state: dict[str, Any], project_id: str, document_id: str, *, version_id: str | None = None,
+) -> bool:
+    """指定版本只继承同版提交；省略版本保留资料级查询契约。"""
     document = next(
         (
             row
@@ -114,11 +116,14 @@ def document_already_submitted(state: dict[str, Any], project_id: str, document_
         ),
         None,
     )
-    if document and str(document.get("poolSubmissionStatus") or "") == "已提交":
+    if document and str(document.get("poolSubmissionStatus") or "") == "已提交" and (
+        version_id is None or str(document.get("currentVersionId") or "") == version_id
+    ):
         return True
     return any(
         str(binding.get("projectId") or "") == str(project_id)
         and str(binding.get("documentId") or "") == str(document_id)
+        and (version_id is None or str(binding.get("documentVersionId") or "") == version_id)
         and binding_is_submitted(binding)
         for binding in _bindings(state)
     )

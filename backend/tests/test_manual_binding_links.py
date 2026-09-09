@@ -99,6 +99,17 @@ def test_资料已进审查视野的判定():
     assert document_already_submitted(state, "P-1", "DOC-LIC")
 
 
+def test_submission_inheritance_is_version_specific():
+    state = _state()
+    assert document_already_submitted(state, "P-1", "DOC-OLD", version_id="DV-OLD-V1")
+    assert not document_already_submitted(state, "P-1", "DOC-OLD", version_id="DV-OLD-V2")
+    state["bindings"] = []
+    state["documents"][2]["poolSubmissionStatus"] = "已提交"
+    assert document_already_submitted(state, "P-1", "DOC-OLD", version_id="DV-OLD-V2")
+    assert not document_already_submitted(state, "P-1", "DOC-OLD", version_id="DV-OLD-V1")
+    assert not document_already_submitted(state, "OTHER", "DOC-OLD", version_id="DV-OLD-V2")
+
+
 def test_重算要点_老链接补上要点id():
     from libs.manual_binding_links import refresh_manual_binding_links
 

@@ -7901,7 +7901,7 @@ def bind_documents(
                 # 已进入审查视野的资料改挂/加挂节点是「换个地方看同一份资料」，不是新的提交：
                 # 直接继承已提交，并补证据链接。原来一律落草稿挂载，文件在台账上从
                 # 「已提交」退回「未提交」，监检还提交不了施工方的挂载（2026-09-03 审计）。
-                already_submitted = document_already_submitted(repo.state, project_id, document["id"])
+                already_submitted = document_already_submitted(repo.state, project_id, document["id"], version_id=version_id)
                 binding = {
                     "id": f"BIND-{node_id}-{uuid4().hex[:6].upper()}",
                     "projectId": project_id,
@@ -7911,7 +7911,7 @@ def bind_documents(
                     "documentId": document["id"],
                     "documentVersionId": version_id,
                     "fileName": document["fileName"],
-                    "versionNo": (repo.current_version(document["id"]) or {}).get("versionNo") or "--",
+                    "versionNo": (repo.find_one("versions", version_id) or {}).get("versionNo") or "--",
                     "usage": binding_input.get("usage") or body.get("usage") or "原始提交",
                     "sourceOrgName": document["sourceOrgName"],
                     "bindingStatus": "已提交" if already_submitted else "草稿挂载",
