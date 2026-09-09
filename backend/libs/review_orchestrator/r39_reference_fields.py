@@ -9,7 +9,7 @@ from libs.review_workstations import digest
 FIELDS = ("procedure_no", "procedure_revision", "organization_name", "document_kind", "method")
 
 
-def _field(parse, code):
+def _field(parse, code, *, evidence_prefix="R39-FIELD-"):
     rows = [row for row in parse.get("fields", []) if isinstance(row, dict) and row.get("fieldCode") == code]
     if len(rows) != 1:
         return None
@@ -26,7 +26,7 @@ def _field(parse, code):
         return None
     ref = {"documentVersionId": parse["documentVersionId"], "pageNo": page, "bbox": deepcopy(row.get("bbox")),
            "quotedText": fragments[0]["text"], "confidence": confidence}
-    ref["id"] = "R39-FIELD-" + digest({"fieldCode": code, **ref})[:24]
+    ref["id"] = evidence_prefix + digest({"fieldCode": code, **ref})[:24]
     ref["evidenceRefId"] = ref["id"]
     return {"value": value, "documentVersionId": parse["documentVersionId"], "evidence": ref, "evidenceRefs": [ref]}
 
