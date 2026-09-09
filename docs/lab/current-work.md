@@ -511,3 +511,11 @@ flowchart LR
 - 修正截斷後已有一個tile就跳過全頁的續跑問題：保留有效區塊，只補缺少或仍截斷區塊；記錄預期recoveryTileCount，重複區塊／印章ROI不算整頁完成。既有完成的純文字結果仍支持；沒有完成證據的partial舊結果不以渲染頁數猜完成數。
 - 新增12項頁進度案例及2項真實提取函數的離線客戶端情境：成本停止3頁只完成1頁→1/3 partial；單頁僅第一塊完成→0/1 partial，續跑只補tile-2後1/1 completed。共52項正式OCR／readiness／長文件／成本控制回歸通過，Ruff289/289、monolith及diff通過。
 - 此為離線客戶端與實體PDF流程驗證，未發起付費模型、未改寫歷史任務，未宣稱本輪Temporal實機重啟驗收。真實識別品質、本機全頁補全及69條驗收仍待完成，整體未達90%。詳見docs/lab/verification/2026-09-09-page-progress.md。
+
+
+## 2026-09-09：R39原文引用核對保留缺頁狀態
+
+- R39原文欄位引用適配接入OCR_PAGE_COVERAGE_INCOMPLETE／明示未完成coverage；選定文件尚有未讀頁時保留selectionIssues及coverage.complete=false，不只因現有身份欄位齊全就判整組通過，已有明确版次不一致仍保留。
+- review_page_scope僅傳遞本次範圍相關的reviewCoverageGap，不洩漏範圍外頁碼／摘要。明確缺頁在範圍外可排除；未知或格式有誤的缺頁位置不能假定在範圍外。縮窄已投影範圍亦重新過濾。
+- 新增11項跨範圍、整份／局部、已知失敗保留、未知缺頁及資料隔離案例；734項R39／頁碼／reader／render回歸通過；Ruff289/289、monolith和diff通過。
+- 本批作用於R39原文欄位引用路徑，不宣稱所有結構化清單與其餘69條來源完整性已驗收。真實業務事實、全頁實際辨識與全量驗收仍待完成，整體未達90%。詳見docs/lab/verification/2026-09-09-r39-page-coverage.md。

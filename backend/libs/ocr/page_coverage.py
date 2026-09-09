@@ -3,6 +3,27 @@
 CODE = "OCR_PAGE_COVERAGE_INCOMPLETE"
 
 
+def review_coverage_gap(result, bounds=None):
+    """Keep only page-gap metadata relevant to the frozen review range."""
+    metadata = result.get("metadata") or {}
+    coverage = metadata.get("recognitionPageCoverage") or metadata.get("localRenderCoverage") or {}
+    if "reviewCoverageGap" in result:
+        gap = result["reviewCoverageGap"]
+        if gap is None:
+            return None
+        coverage = {"complete": False, "unprocessedPageNos": gap.get("pageNos")}
+    if CODE not in ((result.get("quality") or {}).get("reasons") or []) and coverage.get("complete") is not False:
+        return None
+    raw = coverage.get("unprocessedPageNos", coverage.get("unrenderedPageNos", []))
+    located = isinstance(raw, list) and bool(raw) and all(type(page) is int and page > 0 for page in raw)
+    pages = sorted(set(raw)) if located else []
+    if bounds is not None and located:
+        pages = [page for page in pages if bounds["start"] <= page <= bounds["end"]]
+        if not pages:
+            return None
+    return {"code": CODE, "pageNos": pages, "gapLocationKnown": located}
+
+
 def render_coverage_issue(result, document_id):
     metadata = result.get("metadata") or {}
     coverage = metadata.get("recognitionPageCoverage") or metadata.get("localRenderCoverage") or {}

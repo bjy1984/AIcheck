@@ -1,6 +1,7 @@
 """Match selected instruction/procedure files by grounded OCR identity fields."""
 from copy import deepcopy
 
+from libs.ocr.page_coverage import review_coverage_gap
 from libs.review_input_data import selected_parse_results
 from libs.review_tools.r39_tools import _text
 from libs.review_workstations import digest
@@ -85,6 +86,10 @@ def reference_from_fields(state, run):
         return None, []
     issues, documents, unresolved_targets = [], {"instruction": [], "procedure": []}, set()
     for version, candidates in sorted(by_version.items()):
+        for parse in candidates:
+            gap = review_coverage_gap(parse)
+            if gap:
+                issues.append({**gap, "documentVersionId": version, "code": "r39_ocr_page_coverage_incomplete"})
         value = _document(state, run, candidates[0]) if len(candidates) == 1 else None
         if value is None:
             # Missing revision data does not make a same-number alternative

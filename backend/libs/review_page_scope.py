@@ -5,6 +5,8 @@ import os
 from copy import deepcopy
 from typing import Any
 
+from libs.ocr.page_coverage import review_coverage_gap
+
 
 def normalize_page_ranges(value: Any, version_ids: list[str]) -> dict[str, dict[str, int]]:
     """One inclusive range per selected version; omission means the whole fixed version."""
@@ -45,6 +47,7 @@ def restrict_parse_result(parse: dict[str, Any], bounds: dict[str, int]) -> dict
         result[key] = [deepcopy(row) for row in parse.get(key) or []
                        if isinstance(row, dict) and located_record_in_range(row, bounds)]
     result["reviewPageScope"] = deepcopy(bounds)
+    result["reviewCoverageGap"] = deepcopy(review_coverage_gap(parse, bounds))
     return result
 
 
