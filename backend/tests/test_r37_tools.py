@@ -25,7 +25,7 @@ def test_complete_sourced_witness_chain_passes_without_mutating_inputs():
     before = deepcopy(body)
     output = run(body)
     assert output["result"] == "passed"
-    assert output["ruleVersion"] == "r37-nonconformance-witness-chain-v2"
+    assert output["ruleVersion"] == "r37-nonconformance-witness-chain-v3"
     assert output["evidenceRefs"]
     assert body == before
 

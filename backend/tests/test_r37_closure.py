@@ -13,8 +13,8 @@ def arguments():
     event = {**progress["event"], "inventoryId": "PG1"}
     case = {**repair["case"], "eventId": "E1", "objectId": "W0"}
     original = {**repair["originalInspection"], "objectId": "W0", "requirements": [{key: event[key] for key in ("method", "scope", "acceptanceCriteriaId")}]}
-    disposition = {**repair["disposition"], "objectId": "W0", "completedAt": "2026-09-09T13:00:00+08:00"}
-    report = {**repair["reinspections"][0], "objectId": "W0", "inspectedAt": "2026-09-09T14:00:00+08:00", **original["requirements"][0]}
+    disposition = {**repair["disposition"], "eventId": "E1", "objectId": "W0", "completedAt": "2026-09-09T13:00:00+08:00"}
+    report = {**repair["reinspections"][0], "eventId": "E1", "objectId": "W0", "inspectedAt": "2026-09-09T14:00:00+08:00", **original["requirements"][0]}
     return {"projectId": "P1", "organizationId": "ORG1", "progressiveInventory": sourced(inventoryId="PG1", complete=True, eventCount=1),
             "progressiveEvents": [event], "inspectionBatches": [progress["batch"]], "inspectionBatchMembers": progress["batch"]["members"],
             "progressiveReports": [{**row, "stage": "first", "inventoryId": "PG1"} for row in progress["firstReports"]],

@@ -35,7 +35,7 @@ def test_inventory_reinspection_from_independent_selected_records():
     facts, output = execute(state, run)
     assert output["result"] == "passed", output
     assert len(output["facts"]["caseResults"]) == 1
-    assert output["ruleVersion"] == "r37-reinspection-inventory-v1"
+    assert output["ruleVersion"] == "r37-reinspection-inventory-v2"
     assert facts["r37"]["reinspections"][0]["evidenceRefs"][0]["pageNo"] == 10
     assert {ref["documentVersionId"] for ref in output["evidenceRefs"]} == {"V1"}
     assert state == before

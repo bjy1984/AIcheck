@@ -62,3 +62,23 @@ def test_real_r37_plan_preserves_roles_and_results(case, expected):
     assert output["result"] == expected, output
     assert len(output["atomicResults"]) == 3
     assert state == before
+
+
+@pytest.mark.parametrize("schema", ["ndt_nonconformance_notices", "ndt_nonconformance_feedback", "ndt_defect_dispositions", "ndt_reinspection_reports"])
+@pytest.mark.parametrize("event", ["OTHER", None, ""])
+def test_same_case_and_round_cannot_use_other_or_missing_event_records(schema, event):
+    state, run = fixture()
+    record = table(state, schema)["normalizedRows"][0]
+    if event is None:
+        record.pop("eventId", None)
+    else:
+        record["eventId"] = event
+    assert execute(state, run)["result"] == "evidence_insufficient"
+
+
+@pytest.mark.parametrize("schema", ["ndt_nonconformance_notices", "ndt_nonconformance_feedback", "ndt_defect_dispositions", "ndt_reinspection_reports"])
+def test_valid_witness_does_not_hide_extra_cross_event_record(schema):
+    state, run = fixture()
+    records = table(state, schema)["normalizedRows"]
+    records.append({**deepcopy(records[0]), "eventId": "OTHER"})
+    assert execute(state, run)["result"] == "evidence_insufficient"

@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import check, result
+from libs.review_tools.r37_identity import matches_case_record
 from libs.review_tools.r37_reinspection_set import evaluate_reinspection_set
 
 
@@ -35,7 +36,7 @@ def evaluate_r37_reinspection(arguments: dict[str, Any]) -> dict[str, Any]:
         status = "failed" if "failed" in statuses else "evidence_insufficient" if "evidence_insufficient" in statuses else "not_applicable" if statuses == {"not_applicable"} else "passed"
         output = result("evaluate_r37_reinspection", status, facts={"reinspectionChecks": rows},
                         checks=[check(row["code"], row["result"] == "passed", row["result"], "passed") for row in rows],
-                        rule_version="r37-original-reinspection-v1")
+                        rule_version="r37-original-reinspection-v2")
         output["evidenceRefs"] = [ref for row in rows for ref in row["evidenceRefs"]]
         output["standardBasis"] = {"standard": "GB/T 20801.1-2025", "clauses": ["8.1.3", "8.3.3.4"], "pdfPages": [118, 124]}
         return output
@@ -67,7 +68,7 @@ def evaluate_r37_reinspection(arguments: dict[str, Any]) -> dict[str, Any]:
     if not scoped(original) or not text(case.get("originalInspectionId")) or original.get("inspectionId") != case["originalInspectionId"] or original.get("objectId") != case["objectId"]:
         add("r37_original_inspection_unmatched", "evidence_insufficient", case, original)
         return finish()
-    if not scoped(disposition) or any(disposition.get(key) != case[key] or type(disposition.get(key)) is not type(case[key]) for key in identity_fields):
+    if not scoped(disposition) or not matches_case_record(disposition, case, identity_fields):
         add("r37_disposition_unmatched", "evidence_insufficient", case, disposition)
         return finish()
     action = disposition.get("action")
@@ -91,7 +92,7 @@ def evaluate_r37_reinspection(arguments: dict[str, Any]) -> dict[str, Any]:
             add(code + "_report_missing_or_ambiguous", "evidence_insufficient", original)
             continue
         report = matches[0]
-        if not scoped(report) or report.get("objectId") != target or any(report.get(key) != case[key] or type(report.get(key)) is not type(case[key]) for key in ("inventoryId", "caseId", "repairRound")):
+        if not scoped(report) or report.get("objectId") != target or not matches_case_record(report, case, ("inventoryId", "caseId", "repairRound")):
             add(code + "_report_identity_mismatch", "evidence_insufficient", disposition, report)
             continue
         inspected = instant(report.get("inspectedAt"))

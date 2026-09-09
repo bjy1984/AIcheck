@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from libs.review_orchestrator.deterministic_tools import result
+from libs.review_tools.r37_identity import matches_case_record
 
 
 def evaluate_reinspection_set(arguments: dict[str, Any], evaluate_one) -> dict[str, Any]:
@@ -20,7 +21,7 @@ def evaluate_reinspection_set(arguments: dict[str, Any], evaluate_one) -> dict[s
     def finish(status=None):
         statuses = {row["result"] for row in outcomes}
         status = status or ("failed" if "failed" in statuses else "evidence_insufficient" if "evidence_insufficient" in statuses else "not_applicable" if statuses == {"not_applicable"} else "passed")
-        output = result("evaluate_r37_reinspection", status, facts={"caseResults": deepcopy(outcomes)}, checks=[], rule_version="r37-reinspection-inventory-v1")
+        output = result("evaluate_r37_reinspection", status, facts={"caseResults": deepcopy(outcomes)}, checks=[], rule_version="r37-reinspection-inventory-v2")
         output["evidenceRefs"] = deepcopy([*refs(arguments.get("caseInventory")), *(ref for row in outcomes for ref in row.get("evidenceRefs", []))])
         return output
 
@@ -57,7 +58,7 @@ def evaluate_reinspection_set(arguments: dict[str, Any], evaluate_one) -> dict[s
         return reject("r37_reinspection_record_collections_missing")
 
     def matches_case(record, case):
-        return isinstance(record, dict) and all(record.get(key) == case[key] and type(record.get(key)) is type(case[key]) for key in ("inventoryId", "caseId", "repairRound"))
+        return matches_case_record(record, case, ("inventoryId", "caseId", "repairRound"))
 
     for record in [*dispositions, *reports]:
         if not scoped(record) or not any(matches_case(record, case) for case in cases):
