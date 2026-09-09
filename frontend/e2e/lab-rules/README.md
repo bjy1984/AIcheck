@@ -80,3 +80,6 @@ node e2e/lab-rules/check-workbench-css.mjs origin/main
 ```
 
 workstation-tools.html掛載真實共用工具區及三個子元件，API由測試腳本模擬，無需啟動4174橋接。涵蓋鍵盤操作、工程／任務參數、切換上下文、權限與無任務狀態、390／900橫向／1280與深淺色截圖；不是完整登入工作台的業務驗收。僅攔截/api/projects/業務請求，不攔截Vite的src/api模組。
+
+
+結果卡閱讀驗收：以同一 Vite 配置啟動於4394後，執行 `node e2e/lab-rules/check-readable-results.mjs`。readable-results.html 使用真實結果／Markdown元件和合成資料，不連業務API；覆蓋完整發現、長文、引用事件、收合、狀態與深淺色，截圖存 docs/lab/verification/browser/readable-results-*.png。

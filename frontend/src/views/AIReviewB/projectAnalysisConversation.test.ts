@@ -137,10 +137,16 @@ const componentSource = readFileSync(
   new URL('./ConversationalReviewWorkbenchB.vue', import.meta.url),
   'utf-8'
 )
-assert.match(componentSource, /证据依据/)
-assert.match(componentSource, /规则依据/)
-assert.match(componentSource, /projectAnalysisEvidenceLink\(evidence\)/)
-assert.match(componentSource, /openEvidence\(projectAnalysisEvidenceLink\(evidence\)!\)/)
+assert.match(componentSource, /<ReviewResultCard/)
+assert.match(componentSource, /@open-evidence="openEvidence"/)
+const resultCard = readFileSync(
+  new URL('./components/ReviewResultCard.vue', import.meta.url),
+  'utf-8'
+)
+assert.match(resultCard, /证据依据/)
+assert.match(resultCard, /规则依据/)
+assert.match(resultCard, /resolveProjectAnalysisEvidenceLink/)
+assert.match(resultCard, /emit\('open-evidence', resolved\)/)
 
 /* 幂等：把合并输出再喂回去，不产生重复卡片。
    正常渲染是 computed 不会触发，但乐观更新/快照回放一旦把合并结果

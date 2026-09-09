@@ -38,7 +38,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ChatDotRound,
-  CircleCheck,
   Document,
   Files,
   MagicStick,
@@ -96,7 +95,8 @@ import EvidenceLocatorDialog from '@/views/AICheck/components/EvidenceLocatorDia
 import ProjectNodeTree from '@/views/AICheck/components/ProjectNodeTree.vue'
 import R12RegistryVerificationDialog from '@/views/AICheck/components/R12RegistryVerificationDialog.vue'
 import R19SemanticEvidenceDialog from '@/views/AICheck/components/R19SemanticEvidenceDialog.vue'
-import ReviewMarkdownText from '@/views/AIReviewB/components/ReviewMarkdownText.vue'
+import ReviewReadableAnalysis from '@/views/AIReviewB/components/ReviewReadableAnalysis.vue'
+import ReviewResultCard from '@/views/AIReviewB/components/ReviewResultCard.vue'
 import ReturnCorrectionDialog from '@/views/AIReviewB/components/ReturnCorrectionDialog.vue'
 import ClauseContent from '@/components/ClauseContent'
 import {
@@ -110,11 +110,7 @@ import {
 import type { ReturnCorrectionRequest } from '@/views/AIReviewB/returnCorrection'
 import { formatReviewTokenUsage } from '@/views/AIReviewB/tokenUsage'
 import { createSessionWithAuthorizationRecovery } from '@/views/AIReviewB/reviewSessionRecovery'
-import {
-  mergeProjectAnalysisResultsIntoConversation,
-  projectAnalysisResultTagType,
-  resolveProjectAnalysisEvidenceLink
-} from './projectAnalysisConversation'
+import { mergeProjectAnalysisResultsIntoConversation } from './projectAnalysisConversation'
 
 const props = withDefaults(
   defineProps<{
@@ -1680,39 +1676,6 @@ const projectAnalysisResultOf = (
     ? (block as { result: ReviewBProjectAnalysisResult }).result
     : undefined
 
-const PROJECT_ANALYSIS_RESULT_LABELS: Record<string, string> = {
-  supported: '证据支持',
-  partially_supported: '部分证据支持',
-  insufficient_evidence: '证据不足',
-  conflict: '证据冲突',
-  mismatch: '不一致'
-}
-
-const projectAnalysisResultLabel = (result?: ReviewBProjectAnalysisResult) =>
-  PROJECT_ANALYSIS_RESULT_LABELS[String(result?.reviewResult || '')] ||
-  String(result?.reviewResult || '待人工确认')
-
-const projectAnalysisFindingSeverity = (finding: Record<string, unknown>) => {
-  const severity = String(finding.severity || '')
-  if (severity === 'critical' || severity === 'high') return 'danger'
-  if (severity === 'medium') return 'warning'
-  return 'info'
-}
-
-const projectAnalysisEvidenceLink = (evidence: Record<string, unknown>) =>
-  resolveProjectAnalysisEvidenceLink(evidence, workspace.value?.evidenceLinks || [])
-
-const projectAnalysisEvidenceLabel = (evidence: Record<string, unknown>) =>
-  [
-    evidence.fileName || evidence.fileId || evidence.evidenceLinkId,
-    evidence.pageNo ? `第 ${evidence.pageNo} 页` : ''
-  ]
-    .filter(Boolean)
-    .join(' · ') || '证据依据'
-
-const projectAnalysisRuleLabel = (rule: Record<string, unknown>) =>
-  String(rule.text || rule.ruleCode || rule.source || '规则依据')
-
 const blockText = (block: ReviewBContentBlock) =>
   typeof (block as { text?: unknown }).text === 'string'
     ? String((block as { text: string }).text)
@@ -1996,98 +1959,19 @@ onBeforeUnmount(() => {
                   v-for="(block, blockIndex) in message.contentBlocks"
                   :key="`${message.id}-${blockIndex}`"
                 >
-                  <section
+                  <ReviewResultCard
                     v-if="block.type === 'project_analysis_result'"
-                    class="content-card project-analysis-result-card"
-                  >
-                    <div class="project-analysis-result-head">
-                      <div>
-                        <ElTag type="primary" effect="plain" size="small">一键分析</ElTag>
-                        <strong>全工程分析 · 当前节点结果</strong>
-                      </div>
-                      <ElTag
-                        :type="
-                          projectAnalysisResultTagType(projectAnalysisResultOf(block)?.reviewResult)
-                        "
-                        effect="light"
-                      >
-                        {{ projectAnalysisResultLabel(projectAnalysisResultOf(block)) }}
-                      </ElTag>
-                    </div>
-                    <p class="project-analysis-result-meta">
-                      {{ projectAnalysisResultOf(block)?.finishedAt || '完成时间未记录' }}
-                      · ReviewRun {{ projectAnalysisResultOf(block)?.reviewRunId }}
-                    </p>
-                    <div
-                      v-if="projectAnalysisResultOf(block)?.findingDrafts.length"
-                      class="project-analysis-findings"
-                    >
-                      <article
-                        v-for="finding in projectAnalysisResultOf(block)?.findingDrafts || []"
-                        :key="String(finding.id || finding.title)"
-                      >
-                        <div>
-                          <ElTag
-                            v-if="finding.severity"
-                            :type="projectAnalysisFindingSeverity(finding)"
-                            size="small"
-                          >
-                            {{ finding.severity }}
-                          </ElTag>
-                          <strong>{{ finding.title || '审查发现' }}</strong>
-                        </div>
-                        <p>{{ finding.description || '该事项需要人工确认。' }}</p>
-                        <div
-                          v-if="Array.isArray(finding.evidenceRefs) && finding.evidenceRefs.length"
-                          class="project-analysis-support"
-                        >
-                          <strong>证据依据</strong>
-                          <div>
-                            <template
-                              v-for="(evidence, evidenceIndex) in finding.evidenceRefs"
-                              :key="
-                                String(evidence.evidenceLinkId || evidence.fileId || evidenceIndex)
-                              "
-                            >
-                              <button
-                                v-if="projectAnalysisEvidenceLink(evidence)"
-                                type="button"
-                                @click="openEvidence(projectAnalysisEvidenceLink(evidence)!)"
-                              >
-                                <span>{{ projectAnalysisEvidenceLabel(evidence) }}</span>
-                                <small v-if="evidence.quotedText">{{ evidence.quotedText }}</small>
-                              </button>
-                              <span v-else class="project-analysis-support-chip">
-                                <span>{{ projectAnalysisEvidenceLabel(evidence) }}</span>
-                                <small v-if="evidence.quotedText">{{ evidence.quotedText }}</small>
-                              </span>
-                            </template>
-                          </div>
-                        </div>
-                        <div
-                          v-if="Array.isArray(finding.ruleRefs) && finding.ruleRefs.length"
-                          class="project-analysis-support"
-                        >
-                          <strong>规则依据</strong>
-                          <div>
-                            <span
-                              v-for="(rule, ruleIndex) in finding.ruleRefs"
-                              :key="String(rule.ruleCode || rule.text || ruleIndex)"
-                              class="project-analysis-rule-chip"
-                            >
-                              {{ projectAnalysisRuleLabel(rule) }}
-                            </span>
-                          </div>
-                        </div>
-                      </article>
-                    </div>
-                    <p v-else class="project-analysis-empty-finding">
-                      本节点未生成独立 Finding，结果仍需人工确认。
-                    </p>
-                  </section>
+                    :result="projectAnalysisResultOf(block)"
+                    :evidence-links="workspace?.evidenceLinks || []"
+                    @open-evidence="openEvidence"
+                  />
 
-                  <ReviewMarkdownText
+                  <ReviewReadableAnalysis
                     v-else-if="block.type === 'text'"
+                    :compact="
+                      message.role === 'assistant' &&
+                      message.contentBlocks.some((item) => item.type === 'project_analysis_result')
+                    "
                     :content="blockDisplayText(block)"
                     :references="blockReferences(block)"
                     @open-reference="openMessageReference"
@@ -2212,26 +2096,28 @@ onBeforeUnmount(() => {
                     v-else-if="block.type === 'judgment_summary'"
                     class="content-card judgment-card"
                   >
-                    <h3
-                      ><ElIcon><CircleCheck /></ElIcon>判断摘要</h3
-                    >
+                    <h3>审查进度</h3>
                     <div class="judgment-grid">
                       <span
-                        >ReviewRun<strong>{{
-                          'reviewRunId' in block ? block.reviewRunId || '-' : '-'
+                        >执行状态<strong>{{
+                          RUN_STATUS_LABELS[String(block.status || '')] || '状态待确认'
                         }}</strong></span
                       >
                       <span
-                        >状态<strong>{{
-                          'status' in block ? block.status || '-' : '-'
-                        }}</strong></span
-                      >
-                      <span
-                        >当前步骤<strong>{{
-                          'currentStep' in block ? block.currentStep || '-' : '-'
+                        >审查发现<strong>{{
+                          typeof block.findingCount === 'number'
+                            ? `${block.findingCount} 项`
+                            : '待统计'
                         }}</strong></span
                       >
                     </div>
+                    <p>审查跑完后，还需要你看过分析和原文，才能确认最终结论。</p>
+                    <details class="judgment-record">
+                      <summary>查看任务记录</summary>
+                      <p>任务编号：{{ block.reviewRunId || '未记录' }}</p>
+                      <p>当前步骤：{{ block.currentStep || '未记录' }}</p>
+                      <p>原始状态：{{ block.status || '未记录' }}</p>
+                    </details>
                   </section>
 
                   <div v-else-if="block.type === 'action_suggestions'" class="suggestion-actions">
@@ -3173,112 +3059,6 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
-.project-analysis-result-card {
-  background: linear-gradient(135deg, #f5f9ff, #fff);
-  border-color: #cfe0f7;
-}
-
-.project-analysis-result-head {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.project-analysis-result-head > div {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.project-analysis-result-meta,
-.project-analysis-empty-finding {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--review-muted);
-}
-
-.project-analysis-findings {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.project-analysis-findings > article {
-  padding: 11px 12px;
-  background: #fff;
-  border: 1px solid #e0e9f5;
-  border-radius: 8px;
-}
-
-.project-analysis-findings > article > div {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.project-analysis-findings p {
-  margin: 7px 0 0;
-  line-height: 1.65;
-}
-
-.project-analysis-findings small {
-  display: block;
-  margin-top: 7px;
-  color: var(--review-muted);
-}
-
-.project-analysis-support {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.project-analysis-support > strong {
-  font-size: 12px;
-  color: #52647a;
-}
-
-.project-analysis-support > div {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.project-analysis-support button,
-.project-analysis-support-chip,
-.project-analysis-rule-chip {
-  display: grid;
-  max-width: 100%;
-  padding: 6px 9px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #35516f;
-  text-align: left;
-  background: #eef4fb;
-  border: 1px solid #d6e3f3;
-  border-radius: 7px;
-  gap: 2px;
-}
-
-.project-analysis-support button {
-  cursor: pointer;
-}
-
-.project-analysis-support button:hover {
-  color: var(--el-color-primary);
-  border-color: var(--el-color-primary-light-5);
-}
-
-.project-analysis-support small {
-  max-width: 560px;
-  margin: 0;
-  overflow: hidden;
-  color: var(--review-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .basis-card > div {
   padding: 9px 0;
   border-top: 1px dashed #dbe3ef;
@@ -3893,5 +3673,15 @@ onBeforeUnmount(() => {
   .project-switcher {
     width: 240px;
   }
+}
+.judgment-record summary {
+  min-height: 44px;
+  padding: 12px 0;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.judgment-record {
+  overflow-wrap: anywhere;
 }
 </style>
