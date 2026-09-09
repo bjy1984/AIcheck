@@ -101,6 +101,7 @@ from libs.review_tools.r37_progressive import evaluate_r37_progressive_inspectio
 from libs.review_tools.r37_reinspection import evaluate_r37_reinspection
 from libs.review_tools.r37_tools import evaluate_ndt_nonconformance
 from libs.review_tools.r39_approval import evaluate_r39_approval_chain
+from libs.review_tools.r39_content import evaluate_r39_document_content
 from libs.review_tools.r39_tools import evaluate_r39_first_use_validation
 
 COMMON_TOOL_NAMES = (
@@ -151,6 +152,7 @@ DOMAIN_TOOL_NAMES = (
     "evaluate_r36_ndt_plan",
     "evaluate_r39_first_use_validation",
     "evaluate_r39_approval_chain",
+    "evaluate_r39_document_content",
     "evaluate_r37_reinspection",
     "evaluate_r37_progressive_inspection",
     "evaluate_r37_defect_closure",
@@ -209,6 +211,7 @@ BUSINESS_TOOL_CAPABILITIES = {
     "evaluate_r37_defect_closure": "重新计算完整累进与重检清单，按事件、对象及最新返修轮次核对每个缺陷的结案证据；不接受调用方预先声明通过。",
     "evaluate_r37_progressive_inspection": "R37按明确批次、相同件与焊工及缺陷记录核对累进检查覆盖和升级阶段；覆盖完成不代表缺陷修复或整批验收通过。",
     "evaluate_r37_reinspection": "按明确缺陷与返修轮次核对原检测方法、范围、验收准则及修复后重检结果；独立对象核对不代表批次累进检查完成。",
+    "evaluate_r39_document_content": "按NB/T47013.1-2015第7.2.2/7.2.3逐项核对工艺规程或指导书必备内容及同版本引用；漏读与明确缺项分开，不判定技术参数正确或整条R39。",
     "evaluate_r39_approval_chain": "按有来源且完整的质量体系要求核对单份工艺文件同版本同审批周期的必需签批、授权人员、先后与人员分离；不默认审批角色或等级，不代表整条R39通过。",
     "evaluate_r39_first_use_validation": "R39仅核对同工程、检测单位、指导书版本、对象及事件的首次应用工艺验证实施事实；不判定工艺技术符合性、批准程序或整条R39，缺证据不通过。",
     "evaluate_r36_ndt_plan": "R36逐对象比对带证据的明确检测要求与方案方法、百分比、时机和验收级别，核对审批及人员设备准备事实；不自动生成标准限值或见证事实。",
@@ -422,6 +425,8 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r39_first_use_validation"
             else {"projectId": "string", "scope": "object", "requirements": "object", "signatureInventory": "object"}
             if name == "evaluate_r39_approval_chain"
+            else {"projectId": "string", "scope": "object", "basis": "object", "contentInventory": "object"}
+            if name == "evaluate_r39_document_content"
             else {"projectId": "string", "organizationId": "string", "applicability": "object", "procedure": "object", "caseInventory": "object", "commissions": ["object"], "notices": ["object"], "feedback": ["object"]}
             if name == "evaluate_ndt_nonconformance"
             else {"projectId": "string", "organizationId": "string", "case": "object?", "originalInspection": "object?", "disposition": "object?", "caseInventory": "object?", "originalInspections": ["object?"], "dispositions": ["object?"], "reinspections": ["object"]}
@@ -706,6 +711,7 @@ def dispatch_business_tool(tool_name: str, arguments: dict[str, Any]) -> dict[st
         "evaluate_r36_ndt_plan": evaluate_r36_ndt_plan,
         "evaluate_r39_first_use_validation": evaluate_r39_first_use_validation,
         "evaluate_r39_approval_chain": evaluate_r39_approval_chain,
+        "evaluate_r39_document_content": evaluate_r39_document_content,
         "evaluate_ndt_nonconformance": evaluate_ndt_nonconformance,
         "evaluate_r37_reinspection": evaluate_r37_reinspection,
         "evaluate_r37_progressive_inspection": evaluate_r37_progressive_inspection,
