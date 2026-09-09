@@ -11,6 +11,7 @@ from apps.api import routes as api
 from libs.contracts import errors
 from libs.contracts.responses import fail, ok, server_time
 from libs.db.repository import repo
+from libs.review_handoff_evidence import inspect_handoff_evidence
 from libs.review_handoffs import create_handoff_draft, validate_handoff_draft
 
 router = APIRouter()
@@ -91,7 +92,9 @@ def _record_view(request, project_id, record, visible_versions):
         return None, error
     try:
         validate_handoff_draft(draft, *runs, subject=draft["subject"])
-        validation = {"status": "current_draft", "authoritative": False}
+        repo.ensure_deferred_loaded("ocr_parse_results")
+        validation = {"status": "current_draft", "authoritative": False,
+                      "evidenceLocationCheck": inspect_handoff_evidence(draft, repo.state.get("ocr_parse_results", []))}
     except (TypeError, ValueError) as exc:
         validation = {"status": "stale_or_invalid", "authoritative": False, "reason": str(exc)}
     return {**repo.clone(record), "validation": validation}, None

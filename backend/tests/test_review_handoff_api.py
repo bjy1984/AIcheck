@@ -154,3 +154,45 @@ def test_removed_source_input_does_not_bypass_frozen_document_read_permission():
     assert client.get(f"{url}/{record['id']}", headers=HEADERS).json()["code"] != 0
     assert client.get(url, headers=HEADERS).json()["data"]["total"] == 0
     assert repo.find_one("review_handoffs", record["id"]) == record
+
+
+@pytest.mark.parametrize("case,expected", [("located", "page_located"), ("missing", "page_unavailable"),
+    ("tenant", "parse_unavailable"), ("version", "parse_unavailable"), ("duplicate", "parse_ambiguous"),
+    ("pages", "page_ambiguous"), ("boolean", "page_unavailable"), ("absent", "parse_unavailable")])
+def test_evidence_location_read_checks(case, expected):
+    version = "HANDOFF-V1"
+    repo.state["documents"].append({"id": "HANDOFF-D", "projectId": PROJECT, "tenantId": "TENANT-DEFAULT", "currentVersionId": version})
+    repo.state["versions"].append({"id": version, "documentId": "HANDOFF-D", "tenantId": "TENANT-DEFAULT"})
+    repo.find_one("review_runs", "SOURCE")["inputDocumentVersionIds"] = [version]
+    parse = {"id": "PARSE", "documentVersionId": version, "tenantId": "TENANT-DEFAULT", "pages": [{"pageNo": 1, "text": "original"}]}
+    if case == "missing":
+        parse["pages"] = [{"pageNo": 2}]
+    elif case == "boolean":
+        parse["pages"] = [{"pageNo": True}]
+    elif case == "tenant":
+        parse["tenantId"] = "OTHER"
+    elif case == "version":
+        parse["documentVersionId"] = "OTHER"
+    elif case == "pages":
+        parse["pages"].append({"pageNo": 1})
+    repo.state["ocr_parse_results"] = [] if case == "absent" else [parse]
+    if case == "duplicate":
+        repo.state["ocr_parse_results"].append({**parse, "id": "SECOND"})
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    result = client.post(url, headers=HEADERS, json={**payload(), "kind": "facts", "evidenceRefs": [{"documentVersionId": version, "pageNo": 1}]}).json()
+    assert result["code"] == 0, result
+    record = result["data"]
+    detail_url = f"{url}/{record['id']}"
+    view = client.get(detail_url, headers=HEADERS).json()["data"]
+    check = view["validation"]["evidenceLocationCheck"]
+    assert check["items"][0]["status"] == expected
+    assert check["authoritative"] is False and check["contentSupportStatus"] == "unverified"
+    assert view["draft"]["evidenceVerificationStatus"] == "unverified"
+    assert client.get(url, headers=HEADERS).json()["data"]["items"][0]["validation"] == view["validation"]
+    if case == "located":
+        parse["pages"][0]["text"] = "changed"
+        updated = client.get(detail_url, headers=HEADERS).json()["data"]
+        assert updated["validation"]["evidenceLocationCheck"]["items"][0]["parseFingerprint"] != check["items"][0]["parseFingerprint"]
+    assert repo.find_one("review_handoffs", record["id"]) == record
+    repo.find_one("review_runs", "SOURCE")["inputHash"] = "CHANGED"
+    assert "evidenceLocationCheck" not in client.get(detail_url, headers=HEADERS).json()["data"]["validation"]
