@@ -5,6 +5,11 @@ from typing import Any
 
 import yaml
 
+if __package__:
+    from .atomic_binding_overrides import ATOMIC_BINDING_OVERRIDES
+else:
+    from atomic_binding_overrides import ATOMIC_BINDING_OVERRIDES
+
 ROOT = Path(__file__).resolve().parents[2]
 PACK_DIR = ROOT / "backend" / "business_packs" / "engineering_inspection_v1"
 SOURCE = PACK_DIR / "atomic_checks.yaml"
@@ -12,7 +17,7 @@ BINDINGS = PACK_DIR / "atomic_check_tool_bindings.yaml"
 DOCUMENT = ROOT / "tools规划.md"
 
 TRACE_INSTRUCTION = "核验结论引用的文件、页码/坐标和原文字段可追溯；证据缺失、冲突或OCR低置信度时不得判定为符合。"
-PILOT_RULES = {"R01", "R02", "R03", "R06", "R07", "R09", "R12", "R13", "R14", "R15", "R16", "R17", "R18", "R19", "R20", "R21", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29", "R30", "R31", "R32", "R33", "R34", "R60", "R61", "R62"}
+PILOT_RULES = {"R04", "R05", "R08", "R38", "R01", "R02", "R03", "R06", "R07", "R09", "R12", "R13", "R14", "R15", "R16", "R17", "R18", "R19", "R20", "R21", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29", "R30", "R31", "R32", "R33", "R34", "R60", "R61", "R62"}
 
 
 RULE_PROFILES: dict[str, tuple[list[str], str, str]] = {
@@ -508,7 +513,7 @@ def planned_tools(instruction: str, domain_tool: str) -> list[str]:
     return unique(tools)
 
 
-def make_binding(check: dict[str, Any]) -> dict[str, Any]:
+def _make_profile_binding(check: dict[str, Any]) -> dict[str, Any]:
     check_id = check["id"]
     rule_id = check["sourceRuleId"]
     instruction = str(check["instruction"])
@@ -644,6 +649,18 @@ def make_binding(check: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def make_binding(check: dict[str, Any]) -> dict[str, Any]:
+    from copy import deepcopy
+
+    binding = _make_profile_binding(check)
+    binding.update(deepcopy(ATOMIC_BINDING_OVERRIDES.get(check["id"], {})))
+    # Match the audited capability declarations; pilot membership is release
+    # policy and must not automatically advertise a dedicated implementation.
+    dedicated = check["sourceRuleId"] in {"R04", *(f"R{number}" for number in range(12, 35))} or check["id"] == "AC-R05-01"
+    binding["implementationStatus"] = "pilot_implemented" if dedicated else "binding_only"
+    return binding
+
 def markdown_cell(values: Any) -> str:
     if isinstance(values, list):
         return "<br>".join(f"`{item}`" for item in values)
@@ -753,7 +770,7 @@ def main() -> None:
         "atomicCheckToolBindingSet": {
             "id": "engineering-inspection-tool-bindings-v1",
             "schemaVersion": "atomic-check-tool-binding-v1",
-            "version": "2026.07.16",
+            "version": "2026.08.07",
             "lifecycleStatus": "draft",
             "atomicCheckCount": len(bindings),
             "pilotRules": sorted(PILOT_RULES),
