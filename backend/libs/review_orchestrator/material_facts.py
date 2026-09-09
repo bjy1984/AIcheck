@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
 from libs.review_orchestrator.r13_facts import (
     _common_document_fields,
@@ -35,14 +36,7 @@ def extract_material_design_items(
 
 
 def iter_requested_parse_results(state: dict[str, Any], review_run: dict[str, Any]):
-    requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
-    for parse_result in state.get("ocr_parse_results", []):
-        if not isinstance(parse_result, dict):
-            continue
-        version_id = str(parse_result.get("documentVersionId") or "")
-        if requested and version_id not in requested:
-            continue
-        yield parse_result
+    yield from selected_parse_results(state, {}, context={"reviewRun": review_run})
 
 
 def material_document_kind(state: dict[str, Any], parse_result: dict[str, Any]) -> str | None:

@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from libs.regulatory_tables import product_inspection_rules
+from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.r12_agent import extract_component_items, stable_payload_hash
 from libs.review_orchestrator.r13_facts import (
     _business_rows,
@@ -37,16 +38,10 @@ def build_r14_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
         include_certificate_items=False,
         design_only=True,
     )
-    requested_versions = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
     pipeline_characteristics: list[dict[str, Any]] = []
     factory_reports: list[dict[str, Any]] = []
     special_reports: list[dict[str, Any]] = []
-    for parse_result in state.get("ocr_parse_results", []):
-        if not isinstance(parse_result, dict):
-            continue
-        version_id = str(parse_result.get("documentVersionId") or "")
-        if requested_versions and version_id not in requested_versions:
-            continue
+    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
         pipeline_characteristics.extend(_extract_pipeline_characteristics(state, parse_result))
         document_kind, inspection_types = _r14_document_kind(state, parse_result)
         if document_kind == "factory_inspection_report":

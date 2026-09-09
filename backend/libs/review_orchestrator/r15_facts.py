@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.r12_agent import (
     extract_component_items,
     extract_r12_license_candidates,
@@ -50,13 +51,7 @@ def build_r15_business_facts(state: dict[str, Any], review_run: dict[str, Any]) 
     type_test_reports: list[dict[str, Any]] = []
     arrival_records: list[dict[str, Any]] = []
     complete_machine_records: list[dict[str, Any]] = []
-    requested_versions = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
-    for parse_result in state.get("ocr_parse_results", []):
-        if not isinstance(parse_result, dict):
-            continue
-        version_id = str(parse_result.get("documentVersionId") or "")
-        if requested_versions and version_id not in requested_versions:
-            continue
+    for parse_result in selected_parse_results(state, {}, context={"reviewRun": review_run}):
         document_kind = _r13_document_kind(state, parse_result)
         if document_kind == "manufacturing_supervision_certificate":
             supervision_certificates.extend(_extract_supervision_certificates(state, parse_result))

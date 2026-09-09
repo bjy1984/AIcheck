@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from libs.business_pack import load_business_pack
 from libs.contracts.responses import server_time
+from libs.review_input_data import selected_parse_results
 from libs.review_orchestrator.r12_agent import stable_payload_hash
 from libs.review_rule_snapshot import effective_rule_snapshot
 from libs.rule_condition_bindings import compile_condition_bindings
@@ -108,9 +109,6 @@ def is_r19_formal_review(review_run: dict[str, Any]) -> bool:
 
 
 def build_r19_agent_context(state: dict[str, Any], review_run: dict[str, Any]) -> dict[str, Any]:
-    # Local import avoids the runtime registry -> R19 tool -> validator cycle.
-    from libs.review_orchestrator.runtime_tools import selected_parse_results
-
     requested = {str(item) for item in review_run.get("inputDocumentVersionIds") or [] if item}
     documents: list[dict[str, Any]] = []
     evidence_index: dict[str, dict[str, Any]] = {}
