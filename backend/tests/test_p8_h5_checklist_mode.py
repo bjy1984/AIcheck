@@ -148,11 +148,11 @@ def test_complete_checklist_retains_extras_beyond_legacy_limit():
     ]})
     run = {}
     drafts = checklist_mode.normalize_checklist_output(
-        run, {"checklistItems": []}, content, base=_base(), grounding_input=_grounding_input(),
+        run, {"checklistItems": _items()}, content, base=_base(), grounding_input=_grounding_input(),
         guard=lambda drafts, _: drafts, clone=lambda value: json.loads(json.dumps(value)),
         bounded_confidence=ex.bounded_confidence, complete=True,
     )
-    assert len(drafts) == 7
+    assert len([draft for draft in drafts if draft.get("checklistExtra")]) == 7
     assert run["llmMetadata"]["checklistSummary"]["extraFindings"] == 7
     payload = checklist_mode.apply_to_payload({}, [], complete=True)
     assert "最多 3 条" not in str(payload["requirements"])
