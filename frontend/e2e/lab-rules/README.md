@@ -42,3 +42,5 @@ CSS regression probe, not a logged-in workbench acceptance test.
 掛載腳本亦驗證整頁重新載入後重新選取相同版本，使用新操作編號仍沿用原掛載 ID；不代表多服務程序並行寫入驗收。
 
 歷史版本驗收：`node e2e/lab-rules/check-document-versions.mjs`。使用真實版本列表／original API 與臨時 PNG 夾具，驗證固定舊版、圖片解碼、空本體停用、原文缺失提示及保存保留。橋接按真實 Content-Type 傳回 Blob；不代表 PDF、完整登入或大型檔案驗收。
+
+PDF／窄螢幕：`node e2e/lab-rules/check-version-pdf-mobile.mjs`。以 1280px／390px Chrome 視窗驗證真實兩頁 PDF 的 Blob、內建閱讀器頁數及選取保存。依賴測試環境 PyMuPDF 產生臨時 PDF；Chrome 內建閱讀器 DOM 改版可能需調整檢查。此為視窗模擬，不是實體手機 Safari 驗收。

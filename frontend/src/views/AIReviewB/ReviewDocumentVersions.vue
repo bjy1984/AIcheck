@@ -13,12 +13,14 @@ const props = defineProps<{
 const emit = defineEmits<{ close: []; toggle: [version: DocumentVersion, checked: boolean] }>()
 const versions = ref<DocumentVersion[]>([])
 const loading = ref(false)
+const previewingId = ref('')
 const error = ref('')
 const preview = ref<{ url: string; type: string; label: string } | null>(null)
 let generation = 0
 let previewAttempt = 0
 const clearPreview = () => {
   previewAttempt++
+  previewingId.value = ''
   if (preview.value) URL.revokeObjectURL(preview.value.url)
   preview.value = null
 }
@@ -32,6 +34,7 @@ const previewVersion = async (version: DocumentVersion) => {
   const context = generation
   const attempt = previewAttempt
   error.value = ''
+  previewingId.value = version.id
   try {
     const blob = await getReviewVersionOriginal(props.projectId, props.documentId, version.id)
     if (context !== generation || attempt !== previewAttempt) return
@@ -47,6 +50,8 @@ const previewVersion = async (version: DocumentVersion) => {
   } catch {
     if (context === generation && attempt === previewAttempt)
       error.value = '所选版本原文不可用，未切换到其他版本。'
+  } finally {
+    if (context === generation && attempt === previewAttempt) previewingId.value = ''
   }
 }
 watch(
@@ -102,7 +107,11 @@ onBeforeUnmount(() => {
           {{ version.isCurrent ? '（当前版本）' : '（历史版本）' }}
         </ElCheckbox>
         <span v-if="!version.hash">文件未上传完整</span>
-        <ElButton link :disabled="!version.hash" @click="previewVersion(version)"
+        <ElButton
+          link
+          :loading="previewingId === version.id"
+          :disabled="!version.hash"
+          @click="previewVersion(version)"
           >预览此版本</ElButton
         >
       </div>
@@ -160,5 +169,23 @@ onBeforeUnmount(() => {
   max-width: 100%;
   max-height: 65vh;
   object-fit: contain;
+}
+
+@media (width <= 600px) {
+  .version-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+  }
+
+  .version-row .el-checkbox {
+    min-height: 44px;
+    grid-column: 1 / -1;
+  }
+
+  .version-row .el-button {
+    min-height: 44px;
+    grid-column: 2;
+  }
 }
 </style>

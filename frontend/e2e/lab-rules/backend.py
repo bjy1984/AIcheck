@@ -41,7 +41,17 @@ originals = tempfile.TemporaryDirectory(prefix="aicheck-version-browser-")
 routes.WORKSPACE_ROOT = Path(originals.name)
 (Path(originals.name) / "historical.png").write_bytes(base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1ioAAAAASUVORK5CYII="))
+import fitz
+with fitz.open() as pdf:
+    for page_number in (1, 2):
+        page = pdf.new_page(width=420, height=300)
+        page.insert_text((30, 70), f"HISTORICAL PDF - PAGE {page_number}", fontsize=20)
+        page.insert_text((30, 115), "Version V-PDF: fixed review input", fontsize=14)
+    pdf.save(Path(originals.name) / "historical.pdf")
 repo.state["versions"].extend([
+    {"id": "VER-PICK-1-PDF", "documentId": "DOC-PICK-1", "tenantId": "TENANT-DEFAULT", "versionNo": "V-PDF",
+     "fileName": "historical.pdf", "fileType": "application/pdf", "hash": "historical-pdf-fixture", "isCurrent": False,
+     "storageKey": "local://historical.pdf"},
     {"id": "VER-PICK-1-OLD", "documentId": "DOC-PICK-1", "tenantId": "TENANT-DEFAULT", "versionNo": "V0",
      "fileName": "historical.png", "fileType": "image/png", "hash": "historical-fixture", "isCurrent": False,
      "storageKey": "local://historical.png"},
