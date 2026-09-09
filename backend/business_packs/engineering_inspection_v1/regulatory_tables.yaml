@@ -645,28 +645,33 @@ gbt20801_inspection:
       - 注 e 适用于支管公称直径大于或等于 DN100 的焊接接头
       - Ⅴ 级环向对接接头的目视检查比例是 10%（不是 100%）
   acceptance:
-    sourceClause: 8.3.2.2 射线检测、8.3.2.3 超声检测、8.3.2.4 组合检测、8.3.3 表面无损检测
+    sourceClause: 8.3.3.2.2 射线检测、8.3.3.2.3 超声检测、8.3.3.2.4 组合检测、8.3.3.3 表面无损检测
     volumetric:
       radiographic:
+        sourceClause: "8.3.3.2.2"
+        sourcePage: 123
         standard: NB/T 47013.2、NB/T 47013.11、NB/T 47013.14
         full: {technique: 不低于 AB 级, level: 不低于 Ⅱ 级, appliesTo: 100% 检查的焊接接头}
         partial: {technique: 不低于 AB 级, level: 不低于 Ⅲ 级, appliesTo: 局部或抽样检查的焊接接头}
       ultrasonic:
+        sourceClause: "8.3.3.2.3"
+        sourcePage: 123
         standard: NB/T 47013.3、NB/T 47013.10、NB/T 47013.15
         full: {technique: 脉冲反射法不低于 B 级, level: Ⅰ 级, appliesTo: 100% 检查的焊接接头}
         partial: {technique: 脉冲反射法不低于 B 级, level: 不低于 Ⅱ 级, appliesTo: 局部或抽样检查的焊接接头}
         tofd: {technique: 原则上不低于 B 级, level: 不低于 Ⅱ 级, appliesTo: 采用衍射时差法的焊接接头}
         phasedArray: {technique: 原则上不低于 B 级, level: 不低于 Ⅱ 级, appliesTo: 采用相控阵超声检测的焊接接头}
-      combined: 采用射线、超声等方法组合检测时，质量要求和合格级别按各自执行的标准确定，且均应合格（8.3.2.4）
+      combined: 采用射线、超声等方法组合检测时，质量要求和合格级别按各自执行的标准确定，且均应合格（8.3.3.2.4）
     surface:
-      sourceClause: "8.3.3"
-      scope: 除设计文件另有规定外，现场焊接的管道及管道组成件的对接接头、支管连接接头和角焊缝应进行磁粉或渗透检测，检测比例不低于表 42（8.3.3.1）
+      sourceClause: "8.3.3.3"
+      sourcePages: [123, 124]
+      scope: 除设计文件另有规定外，现场焊接的管道及管道组成件的对接接头、支管连接接头和角焊缝应进行磁粉或渗透检测，检测比例不低于表 42（8.3.3.3.1）
       standard: NB/T 47013.4、NB/T 47013.5
       level: Ⅰ 级
-      delayedCrackHold: 具有延迟裂纹倾向的材料，焊接完成 24h 后才做无损检测（8.3.3.3）
-      reheatCrackTwice: 具有再热裂纹倾向的材料，焊接后与热处理后各做一次表面无损检测（8.3.3.4）
-    nonconformity: 抽样或局部检查发现不合格时按 8.1.4 累进检查；返修后用原规定的检测方法重新检查（8.3.4）
-    spotLocationApproval: 局部无损检测的位置及检查点由检查人员确定，并经建设单位（使用单位）或检验机构的检验人员批准（8.3.5）
+      delayedCrackHold: 具有延迟裂纹倾向的材料，焊接完成 24h 后才做无损检测（8.3.3.3.3）
+      reheatCrackTwice: 具有再热裂纹倾向的材料，焊接后与热处理后各做一次表面无损检测（8.3.3.3.4）
+    nonconformity: 抽样或局部检查发现不合格时按 8.1.4 累进检查；返修后用原规定的检测方法重新检查（8.3.3.4）
+    spotLocationApproval: 局部无损检测的位置及检查点由检查人员确定，并经建设单位（使用单位）或检验机构的检验人员批准（8.3.3.5）
   pressureTest:
     sourceClause: "8.6.1.3 液压试验、8.6.1.4 气压试验"
     hydroTestRatio: 1.5

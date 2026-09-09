@@ -883,7 +883,7 @@ standardClausePackages:
         operator: equals
         expected: true
         standardRef: STD-GBT-20801.1-2025
-        sourceClause: GB/T 20801.1-2025 8.3.2.2、8.3.2.3
+        sourceClause: GB/T 20801.1-2025 8.3.3.2.2、8.3.3.2.3
         verifiedBy: null
     corrosion:
       checks:

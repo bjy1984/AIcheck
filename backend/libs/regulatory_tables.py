@@ -90,7 +90,7 @@ _METHOD_KEYS = {
 
 
 def ndt_acceptance_level(method: str, *, coverage_percent: float | None = None) -> dict[str, Any] | None:
-    """GB/T 20801.1-2025 8.3.2：某种无损检测方法在该检查比例下的技术等级与合格级别。
+    """GB/T 20801.1-2025 8.3.3.2：某种无损检测方法在该检查比例下的技术等级与合格级别。
 
     100% 检查与局部/抽样检查的合格级别不同——射线 100% 要 Ⅱ 级、局部才是 Ⅲ 级；
     超声 100% 要 Ⅰ 级、局部是 Ⅱ 级。设计文件写"验收等级 Ⅲ 级"配 100% 射线是不合格的，
@@ -116,14 +116,18 @@ def ndt_acceptance_level(method: str, *, coverage_percent: float | None = None) 
         entry = (volumetric.get("ultrasonic") or {}).get(key)
         if not entry:
             return None
-        return {"method": key, "standard": (volumetric.get("ultrasonic") or {}).get("standard"), **entry}
+        section = volumetric.get("ultrasonic") or {}
+        return {"method": key, "standard": section.get("standard"), "requirementStandard": "GB/T 20801.1-2025",
+                "sourceClause": section.get("sourceClause"), "sourcePage": section.get("sourcePage"), **entry}
     section = volumetric.get(key) or {}
     if coverage_percent is None:
         return None
     entry = section.get("full") if coverage_percent >= 100 else section.get("partial")
     if not entry:
         return None
-    return {"method": key, "standard": section.get("standard"), "coveragePercent": coverage_percent, **entry}
+    return {"method": key, "standard": section.get("standard"), "coveragePercent": coverage_percent,
+            "requirementStandard": "GB/T 20801.1-2025", "sourceClause": section.get("sourceClause"),
+            "sourcePage": section.get("sourcePage"), **entry}
 
 
 def acceptance_level_meets(actual: str, required: str) -> bool | None:

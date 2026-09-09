@@ -635,3 +635,13 @@ def test_acceptance_grade_rejects_ambiguous_or_nontext_values(level):
     from libs.regulatory_tables import acceptance_level_meets
     assert acceptance_level_meets(level, "Ⅱ级") is None
     assert acceptance_level_meets("Ⅱ级", level) is None
+
+
+@pytest.mark.parametrize("method,clause", [("RT", "8.3.3.2.2"), ("UT", "8.3.3.2.3"), ("PAUT", "8.3.3.2.3"), ("TOFD", "8.3.3.2.3")])
+def test_ndt_acceptance_query_preserves_actual_requirement_source(method, clause):
+    from libs.regulatory_tables import ndt_acceptance_level
+    requirement = ndt_acceptance_level(method, coverage_percent=100)
+    assert requirement["requirementStandard"] == "GB/T 20801.1-2025"
+    assert requirement["sourceClause"] == clause
+    assert requirement["sourcePage"] == 123  # PDF page, printed page 115.
+    assert requirement["standard"].startswith("NB/T")  # Method standard is a different reference.
