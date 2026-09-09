@@ -60,10 +60,13 @@ def evaluate_r40_records(arguments):
                 add(f"r40_event_{index}_record_reference", "passed" if record["recordId"] == report["recordId"] else "failed")
             if len(used_records) != len(records) or len(used_reports) != len(reports):
                 add("r40_records_outside_declared_inventory", "evidence_insufficient")
+    selection_issues = arguments.get("selectionIssues", [])
+    if selection_issues:
+        add("r40_selected_source_coverage_incomplete", "evidence_insufficient")
     status = ("failed" if "failed" in statuses else "evidence_insufficient" if "evidence_insufficient" in statuses
               else "not_applicable" if set(statuses) == {"not_applicable"} else "passed")
     output = result("evaluate_ndt_process", status, checks=checks, rule_version="r40-record-report-correspondence-v1",
                     facts={"scope": "declared_record_report_correspondence_only", "wholeRuleAcceptance": "not_evaluated",
-                           "evidenceVerified": False, "pendingCapabilities": ["technical_parameters", "design_requirements", "report_results"]})
+                           "evidenceVerified": False, "selectionIssues": deepcopy(selection_issues), "pendingCapabilities": ["technical_parameters", "design_requirements", "report_results"]})
     output["evidenceRefs"] = deepcopy(refs)
     return output
