@@ -71,3 +71,29 @@ def test_actual_node_binding_executes_conclusion_comparison_and_preserves_blocke
     assert tool["result"] == "failed"
     assert output["result"] == "failed"
     assert "pending_capability:report_results" in decision["warnings"]
+
+
+@pytest.mark.parametrize("contradiction", [False, True])
+def test_missing_second_event_does_not_hide_the_first_conclusion(contradiction):
+    state, run = inputs("不合格" if contradiction else "合格", "合格")
+    members = state["ocr_parse_results"][0]["tables"][1]["normalizedRows"]
+    members.append({**members[0], "objectId": "W2", "eventId": "E2"})
+    output = evaluate(state, run)
+    assert output["result"] == ("failed" if contradiction else "evidence_insufficient")
+    checks = output["facts"]["conclusionChecks"]
+    assert any(row["code"] == "r40_conclusion_correspondence_unresolved" for row in checks)
+    assert any(row["code"] == "r40_conclusion_pair_0" and row["result"] == ("failed" if contradiction else "passed") for row in checks)
+
+
+def test_duplicate_event_identity_does_not_support_a_contradiction():
+    state, run = inputs("不合格", "合格")
+    state["ocr_parse_results"][0]["tables"][1]["normalizedRows"] *= 2
+    output = evaluate(state, run)
+    assert output["result"] == "evidence_insufficient"
+    assert not any(row["code"].startswith("r40_conclusion_pair_") for row in output["facts"]["conclusionChecks"])
+
+
+def test_unread_page_keeps_known_conclusion_contradiction():
+    state, run = inputs("不合格", "合格")
+    state["ocr_parse_results"][2]["metadata"] = {"recognitionPageCoverage": {"complete": False, "unprocessedPageNos": [9]}}
+    assert evaluate(state, run)["result"] == "failed"
