@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RuleTrialPanel from './RuleTrialPanel.vue'
+import { ruleDraftDiff } from './ruleDraftDiff'
 import ConditionExpressionEditor from './ConditionExpressionEditor.vue'
 import { newCondition } from './ruleConditionModel'
 import { computed, ref, watch } from 'vue'
@@ -42,6 +43,7 @@ const setAtomicBinding = (index: number, value: string) => {
 const selectedId = ref('')
 const form = ref<RuleDraftInput>({ inspectionItem: '', standardText: '', witnessText: '' })
 const baseline = ref(JSON.stringify(form.value))
+const changes = computed(() => ruleDraftDiff(JSON.parse(baseline.value), form.value))
 const selected = computed(() => rules.value.find((rule) => rule.id === selectedId.value))
 const editable = computed(
   () =>
@@ -265,6 +267,22 @@ watch(
           >
         </template>
       </ElForm>
+      <section v-if="dirty" class="rule-diff" aria-label="本次规则修改对照">
+        <h3>这次改了什么</h3>
+        <p>以下与打开时的版本对照。保存后仍是草稿，当前审查和历史结论不变。</p>
+        <p v-if="!changes.length">条件结构有调整，请保存后重新试跑确认。</p>
+        <article v-for="change in changes" :key="change.key">
+          <h4>{{ change.label }}</h4>
+          <div class="rule-diff-columns">
+            <div
+              ><strong>修改前</strong><p>{{ change.before || '未填写' }}</p></div
+            >
+            <div
+              ><strong>本次修改</strong><p>{{ change.after || '已清空' }}</p></div
+            >
+          </div>
+        </article>
+      </section>
       <RuleTrialPanel
         v-if="selected?.projectId === projectId && selected?.executionConditions"
         :project-id="projectId"
@@ -304,5 +322,22 @@ watch(
   margin: 0;
   line-height: 1.6;
   color: var(--el-text-color-secondary);
+}
+
+.rule-diff {
+  padding: 16px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+}
+
+.rule-diff-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.rule-diff-columns p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>
