@@ -1181,3 +1181,11 @@ cd backend
 - 缺對照／錯版／多餘或重複映射返回證據不足並列具體issues，不把資料鏈路問題直接判工程不符合。四清單一致也不代表技術判定或真實工程完整性完成。
 - 已接入來源門檻後的凍結事實、executor、100工具註冊及AC-R39-01實際綁定；保留原三類pendingCapabilities、36條試點及發布狀態。
 - 本批685項R39／工具／綁定／工位／發布驗收門檻回歸通過；Ruff289/289、monolith及diff通過。合成清單來源下編譯節點仍保持未完成；真實抽取、零應用／未使用文件的有據排除、方法專項及全面驗收仍待完成，整體未達90%。詳見 `docs/lab/verification/2026-09-09-r39-inventory-consistency.md`。
+
+
+## 2026-09-09：R39 尚未應用的有據排除
+
+- 應用清單允許有來源的declaredApplicationCount=0與空members，首次應用子工具返回不適用；沒有明確整數零聲明、與成員數不符或另有應用記錄時仍證據不足。
+- 跨清單核對增加unappliedInstructions，按文件固定版本確認reason=not_yet_applied、applied=false及引用；與實際應用映射衝突、錯版、重複、無來源均不排除。已使用與未使用指導書可同時存在，不用為未使用文件捏造應用事件。
+- 已接入ndt_unapplied_instructions凍結來源及可信度門檻，清單子工具規則版本升為v2。新增22项，707項R39／工具／綁定／工位／發布門檻回歸通過，Ruff289/289、monolith與diff通過。
+- 真實案件對尚未使用聲明的支持性、方法技術要求與69條全面驗收仍未完成，三類pendingCapabilities保持；整體尚未達90%。契約見 `docs/lab/verification/2026-09-09-r39-unapplied-instructions.md`。

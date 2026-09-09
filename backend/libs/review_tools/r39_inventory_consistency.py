@@ -2,6 +2,7 @@
 from copy import deepcopy
 
 from libs.review_orchestrator.deterministic_tools import result
+from libs.review_tools.r39_application_inventory import declared_count_valid
 from libs.review_tools.r39_approval import SCOPE_FIELDS as APPROVAL_FIELDS
 from libs.review_tools.r39_content import SCOPE_FIELDS as DOCUMENT_FIELDS
 from libs.review_tools.r39_reference import SCOPE_FIELDS as REFERENCE_FIELDS
@@ -21,7 +22,7 @@ def evaluate_r39_inventory_consistency(arguments):
         output = result("evaluate_r39_inventory_consistency", "evidence_insufficient" if issues else "passed",
             facts={"scope": "declared_inventory_consistency_only", "issues": issues,
                    "wholeRuleAcceptance": "not_evaluated", "realWorldCompleteness": "not_evaluated",
-                   "evidenceVerified": False}, checks=[], rule_version="r39-cross-inventory-v1")
+                   "evidenceVerified": False}, checks=[], rule_version="r39-cross-inventory-v2")
         output["evidenceRefs"] = deepcopy(refs)
         return output
 
@@ -30,7 +31,8 @@ def evaluate_r39_inventory_consistency(arguments):
         inventory = arguments.get(name)
         if (not _text(project) or not isinstance(inventory, dict) or inventory.get("projectId") != project
                 or inventory.get("complete") is not True or not _refs(inventory)
-                or not isinstance(inventory.get("members"), list) or not inventory["members"]):
+                or not isinstance(inventory.get("members"), list)
+                or (not declared_count_valid(inventory) if name == "applicationInventory" else not inventory["members"])):
             issue("r39_inventory_missing_or_incomplete", inventory=name)
             continue
         refs.extend(_refs(inventory))
@@ -70,7 +72,7 @@ def evaluate_r39_inventory_consistency(arguments):
             issue("r39_document_missing_content_inventory", inventory=name, document=dict(zip(DOCUMENT_FIELDS, key, strict=True)))
 
     links = arguments.get("applicationDocumentLinks")
-    if not isinstance(links, list) or not links:
+    if not isinstance(links, list) or (not links and inventories["applicationInventory"]):
         issue("r39_application_document_links_missing")
         return finish()
     linked, instruction_versions = {}, {}
@@ -97,6 +99,23 @@ def evaluate_r39_inventory_consistency(arguments):
             issue("r39_instruction_revision_maps_to_multiple_documents", instruction=list(identity))
     for key in sorted(set(inventories["applicationInventory"]) - linked.keys()):
         issue("r39_application_document_link_missing", application=dict(zip(IDENTITY_FIELDS, key, strict=True)))
-    for key in sorted({key for key in documents if key[4] == "instruction"} - set(linked.values())):
+    unapplied = arguments.get("unappliedInstructions", [])
+    excluded = set()
+    if not isinstance(unapplied, list):
+        issue("r39_unapplied_instruction_declarations_invalid")
+        unapplied = []
+    for record in unapplied:
+        if (not isinstance(record, dict) or any(not _text(record.get(field)) for field in DOCUMENT_FIELDS)
+                or record.get("projectId") != project or record.get("documentKind") != "instruction"
+                or record.get("reason") != "not_yet_applied" or record.get("applied") is not False or not _refs(record)):
+            issue("r39_unapplied_instruction_declaration_invalid")
+            continue
+        key = document_key(record)
+        refs.extend(_refs(record))
+        if key in excluded or key not in documents or key in linked.values():
+            issue("r39_unapplied_instruction_declaration_conflicting", document=dict(zip(DOCUMENT_FIELDS, key, strict=True)))
+            continue
+        excluded.add(key)
+    for key in sorted({key for key in documents if key[4] == "instruction"} - set(linked.values()) - excluded):
         issue("r39_instruction_has_no_declared_application", document=dict(zip(DOCUMENT_FIELDS, key, strict=True)))
     return finish()

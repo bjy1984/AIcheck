@@ -19,7 +19,7 @@ def application_input(run, groups, clean):
     inventories, members = groups["applicationInventories"], groups["applicationMembers"]
     if not inventories and not members:
         return _single_input(run, groups, clean)
-    if len(inventories) != 1 or not members:
+    if len(inventories) != 1:
         return None
     inventory = clean(inventories[0])
     inventory["members"] = [clean(row) for row in members]

@@ -16,6 +16,7 @@ from libs.review_orchestrator.r39_source_validation import gate_r39_inputs
 from libs.review_tools.r39_content import SCOPE_FIELDS as CONTENT_SCOPE_FIELDS
 
 R39_TABLES = {
+    "ndt_unapplied_instructions": "unappliedInstructions",
     "ndt_application_document_links": "applicationDocumentLinks",
     "ndt_approval_cycle_inventory": "approvalCycleInventories", "ndt_approval_cycle_members": "approvalCycleMembers",
     "ndt_application_inventory": "applicationInventories", "ndt_application_members": "applicationMembers",

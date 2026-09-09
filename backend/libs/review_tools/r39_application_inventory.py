@@ -5,6 +5,16 @@ from libs.review_orchestrator.deterministic_tools import result
 from libs.review_tools.r39_tools import _refs, _text
 
 
+def declared_count_valid(inventory):
+    members = inventory.get("members")
+    if not isinstance(members, list):
+        return False
+    if "declaredApplicationCount" not in inventory:
+        return bool(members)
+    count = inventory["declaredApplicationCount"]
+    return type(count) is int and count == len(members)
+
+
 def evaluate_application_inventory(arguments, fields, evaluate_one):
     inventory, applications = arguments.get("inventory"), arguments.get("applications")
     required, seen = set(), set()
@@ -20,7 +30,7 @@ def evaluate_application_inventory(arguments, fields, evaluate_one):
                                 "comparedCount": len(outputs), "complete": valid and not invalid and required == seen and all(
                                     row["result"] in {"passed", "failed", "not_applicable"} for row in outputs),
                                 "missingApplications": [dict(zip(fields, key, strict=True)) for key in sorted(required - seen)] if valid else []}},
-            checks=[], rule_version="r39-application-inventory-v1")
+            checks=[], rule_version="r39-application-inventory-v2")
         output["evidenceRefs"] = deepcopy([*(_refs(inventory) if isinstance(inventory, dict) else []),
             *member_refs, *[ref for row in outputs for ref in row.get("evidenceRefs", [])]])
         return output
@@ -29,7 +39,7 @@ def evaluate_application_inventory(arguments, fields, evaluate_one):
             or inventory.get("complete") is not True or not _refs(inventory)):
         return finish("evidence_insufficient", "r39_complete_application_inventory_missing")
     members = inventory.get("members")
-    if not isinstance(members, list) or not members or not isinstance(applications, list):
+    if not declared_count_valid(inventory) or not isinstance(applications, list):
         return finish("evidence_insufficient", "r39_application_inventory_members_missing")
     for member in members:
         if (not isinstance(member, dict) or member.get("projectId") != arguments.get("projectId")
@@ -41,6 +51,8 @@ def evaluate_application_inventory(arguments, fields, evaluate_one):
         required.add(key)
         member_refs.extend(_refs(member))
     valid = True
+    if not members and not applications:
+        return finish("not_applicable", "r39_declared_no_applications")
     candidates = {}
     for application in applications:
         if not isinstance(application, dict) or {"inventory", "applications"} & application.keys():

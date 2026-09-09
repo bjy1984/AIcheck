@@ -9,7 +9,7 @@ from libs.review_tools.r39_reference import SCOPE_FIELDS
 from libs.review_tools.r39_tools import IDENTITY_FIELDS
 
 SOURCE_GROUPS = {
-    "inventoryConsistency": ("applicationDocumentLinks",),
+    "inventoryConsistency": ("applicationDocumentLinks", "unappliedInstructions"),
     "ptEmulsifierApplication": ("ptContexts", "ptBases", "ptProcesses"),
     "procedureReference": ("referenceContexts", "referenceBases", "instructionReferences", "procedureIdentities", "referenceInventories", "referenceMembers"),
     "firstUseValidation": ("applications", "bases", "validations", "applicationInventories", "applicationMembers"),

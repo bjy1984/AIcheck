@@ -8,7 +8,9 @@ def build_inventory_consistency(run, groups, facts, clean):
     sources = {"referenceInventory": "procedureReference", "documentInventory": "documentContent",
                "approvalInventory": "approvalChain", "applicationInventory": "firstUseValidation"}
     value = {"projectId": run["projectId"],
-             "applicationDocumentLinks": [clean(row) for row in groups["applicationDocumentLinks"]]}
+             "applicationDocumentLinks": [clean(row) for row in groups["applicationDocumentLinks"]],
+             "unappliedInstructions": [{**clean(row), "documentVersionId": row.get("reviewedDocumentVersionId")}
+                                        for row in groups["unappliedInstructions"]]}
     for key, name in sources.items():
         source = facts.get(name, {})
         if not isinstance(source.get("inventory"), dict):

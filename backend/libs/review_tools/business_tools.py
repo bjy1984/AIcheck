@@ -443,7 +443,7 @@ BUSINESS_TOOL_DESCRIPTORS: list[dict[str, Any]] = [
             if name == "evaluate_r39_procedure_reference"
             else {"projectId": "string", "scope": "object?", "basis": "object?", "contentInventory": "object?", "inventory": "object?", "documents": ["object?"]}
             if name == "evaluate_r39_document_content"
-            else {"projectId": "string", "referenceInventory": "object", "documentInventory": "object", "approvalInventory": "object", "applicationInventory": "object", "applicationDocumentLinks": ["object"]}
+            else {"projectId": "string", "referenceInventory": "object", "documentInventory": "object", "approvalInventory": "object", "applicationInventory": "object", "applicationDocumentLinks": ["object"], "unappliedInstructions": ["object?"]}
             if name == "evaluate_r39_inventory_consistency"
             else {"projectId": "string", "scope": "object", "basis": "object", "process": "object"}
             if name == "evaluate_r39_pt_emulsifier_application"
