@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { needsAttention, overviewProgress, overviewResult } from './workstationOverview'
-import { filterWorkstationNodes, workstationNavigation } from './workstationNavigation'
+import {
+  filterWorkstationNodes,
+  workstationCounts,
+  workstationNavigation
+} from './workstationNavigation'
 import type { ReviewBWorkspace } from '@/types/ai-review-b'
 import type { ProjectTreePayload } from '@/api/aicheck'
 const registry = JSON.parse(
@@ -32,6 +36,25 @@ assert.deepEqual(
 )
 assert.deepEqual(filterWorkstationNodes(groups, 'A', '已通过'), [])
 assert.equal(groups[0].nodes.length, 2)
+assert.deepEqual(workstationCounts(groups, 'A'), { total: 1, review: 0, confirm: 1, correction: 0 })
+assert.deepEqual(workstationCounts(groups, 'E'), { total: 1, review: 0, confirm: 0, correction: 0 })
+assert.deepEqual(workstationCounts(groups, ''), { total: 2, review: 0, confirm: 1, correction: 0 })
+const mixed = [
+  {
+    groupName: 'visible',
+    nodes: [
+      { nodeId: 24, status: '待审查' },
+      { nodeId: 25, status: '复审中' },
+      { nodeId: 26, status: '需补正' },
+      { nodeId: 27, status: '补正中' },
+      { nodeId: 28, status: 'AI 预审中' },
+      { nodeId: 29, status: '待提交' }
+    ]
+  }
+] as ProjectTreePayload['groups']
+assert.deepEqual(workstationCounts(mixed, 'A'), { total: 6, review: 2, confirm: 0, correction: 2 })
+assert.equal(filterWorkstationNodes(mixed, 'A', '').flatMap((group) => group.nodes).length, 6)
+assert.deepEqual(workstationCounts([], 'A'), { total: 0, review: 0, confirm: 0, correction: 0 })
 const workspace: Pick<ReviewBWorkspace, 'activeReviewRun' | 'projectAnalysisResults'> = {
   activeReviewRun: { id: 'new', findingDrafts: [] },
   projectAnalysisResults: [

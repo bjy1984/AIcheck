@@ -65,3 +65,13 @@ export const filterWorkstationNodes = (
     }))
     .filter((group) => group.nodes.length)
 }
+
+export const workstationCounts = (groups: ProjectTreePayload['groups'], stationId: string) => {
+  const nodes = filterWorkstationNodes(groups, stationId, '').flatMap((group) => group.nodes)
+  return {
+    total: nodes.length,
+    review: nodes.filter((node) => ['待审查', '复审中'].includes(node.status)).length,
+    confirm: nodes.filter((node) => node.status === '待人工确认').length,
+    correction: nodes.filter((node) => ['需补正', '补正中'].includes(node.status)).length
+  }
+}
