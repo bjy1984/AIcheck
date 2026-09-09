@@ -27,7 +27,7 @@ def setup(monkeypatch):
 
 def payload():
     return {"sourceRunId": "SOURCE", "targetRunId": "TARGET", "kind": "collaboration",
-            "subject": {"objectType": "weld", "objectId": "W-1", "repairRound": 0},
+            "subject": {"objectType": "weld", "objectId": "W-1", "repairRound": 0, "eventId": "EVENT-1"},
             "payload": {"request": "核对返修后检测"}, "evidenceRefs": []}
 
 
@@ -377,3 +377,24 @@ def test_unselected_ocr_and_other_node_corrections_do_not_invalidate_handoff():
     })
     check = client.get(f"{url}/{saved['id']}", headers=HEADERS).json()["data"]["validation"]["inputSourceCheck"]
     assert check["status"] == "current"
+
+
+def test_event_bound_handoffs_deduplicate_only_within_same_event():
+    url = f"/api/projects/{PROJECT}/review-handoffs"
+    first_body = payload()
+    first = client.post(url, headers=HEADERS, json=first_body).json()["data"]
+    assert first["draft"]["schemaVersion"] == "review-handoff-draft-v2"
+    second_body = deepcopy(first_body)
+    second_body["subject"]["eventId"] = "EVENT-2"
+    second = client.post(url, headers=HEADERS, json=second_body).json()["data"]
+    assert first["id"] != second["id"]
+    assert client.post(url, headers=HEADERS, json=first_body).json()["data"]["id"] == first["id"]
+    assert client.get(url, headers=HEADERS).json()["data"]["total"] == 2
+    for event, identity in (("EVENT-1", first["id"]), ("EVENT-2", second["id"])):
+        filtered = client.get(url, headers=HEADERS, params={"eventId": event}).json()["data"]
+        assert filtered["total"] == 1 and filtered["items"][0]["id"] == identity
+    assert client.get(url, headers=HEADERS, params={"eventId": "UNKNOWN"}).json()["data"]["total"] == 0
+    missing = deepcopy(first_body)
+    missing["subject"].pop("eventId")
+    assert client.post(url, headers=HEADERS, json=missing).json()["code"] != 0
+    assert len(repo.state["review_handoffs"]) == 2

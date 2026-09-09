@@ -740,3 +740,12 @@ cd backend
 - 無來源指紋的歷史草稿維持原讀取契約，但明確unverified，不能冒充來源已驗證。未選文件與不相關修正不觸發失效；來源變動後也不改寫已保存記錄、既有任務狀態或歷史結論。
 - 交接API／契約／巨石基線57 passed，1條相依套件棄用警告；Ruff289／289，diff check通過。案例覆蓋source／target的OCR及人工修正變動、單筆／列表、保存／冪等重送、歷史無指紋與未選資料隔離。本批未重跑完整後端。
 - 此批提供交接草稿讀取時的來源失效判定；可信人工核驗、正式下游使用、依賴圖與傳遞失效、工位介面及選擇性重跑仍待完成。不能把此批描述為已完成自動下游重驗；未發布、未部署生產。
+
+
+### 2026-09-09 交接事件身份與v1存量相容
+
+- 新create_handoff_draft統一生成review-handoff-draft-v2；subject除objectType／objectId／repairRound外必須有明確非空eventId，拒絕缺欄位、非字串、空白及帶首尾空白的事件ID。不從文件存在、焊口ID或返修輪次猜填事件。
+- 事件納入完整快照與交接ID；同對象同輪次的不同事件產生不同記錄，使用另一事件subject驗證時拒絕。同事件同內容保持冪等。列表新增eventId精確過濾，沿用雙節點與文件權限檢查後分頁。
+- validate_handoff_draft仍支援既有v1，依原欄位重建並核對完整雜湊，不改原ID、內容或補造事件；新建API不提供降級v1入口。v1沒有事件範圍，不能套用到帶事件subject的交接驗證；後續正式使用與核驗仍需明確處理此限制。
+- 交接契約／API／巨石基線66 passed，1條相依套件棄用警告；Ruff289／289，diff check通過。本批未重跑完整後端。
+- 此為Lab新建交接契約的必要欄位變更，呼叫方需提供實際工作事件身份；事件ID存在不代表事件已核實，objectMatchStatus與evidenceVerificationStatus維持unverified、authoritative=false。完整工作台事件選取、可信核驗及下游使用／失效傳遞仍待完成，未部署生產或遷移歷史資料。

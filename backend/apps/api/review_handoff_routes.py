@@ -124,7 +124,8 @@ def _record_view(request, project_id, record, visible_versions):
 def list_handoffs(request: Request, project_id: str, page: int = Query(default=1, ge=1),
                   page_size: int = Query(default=20, alias="pageSize", ge=1, le=100),
                   source_run_id: str | None = Query(default=None, alias="sourceRunId"),
-                  target_run_id: str | None = Query(default=None, alias="targetRunId")):
+                  target_run_id: str | None = Query(default=None, alias="targetRunId"),
+                  event_id: str | None = Query(default=None, alias="eventId")):
     if error := _guard(request, project_id):
         return error
     repo.ensure_deferred_loaded("review_handoffs", "review_runs")
@@ -137,6 +138,8 @@ def list_handoffs(request: Request, project_id: str, page: int = Query(default=1
         if source_run_id is not None and draft.get("source", {}).get("runId") != source_run_id:
             continue
         if target_run_id is not None and draft.get("target", {}).get("runId") != target_run_id:
+            continue
+        if event_id is not None and draft.get("subject", {}).get("eventId") != event_id:
             continue
         view, error = _record_view(request, project_id, record, visible_versions)
         if error is None:

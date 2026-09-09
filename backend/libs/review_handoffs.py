@@ -31,16 +31,29 @@ def _identity(run: dict[str, Any]) -> dict[str, Any]:
 
 def create_handoff_draft(source: dict[str, Any], target: dict[str, Any], *, kind: str,
                          subject: dict[str, Any], payload: dict[str, Any], evidence_refs: list[dict[str, Any]]) -> dict[str, Any]:
-    """Freeze a proposed handoff, without asserting object matching or approving its content."""
+    """New drafts bind a caller-supplied event; its real-world identity is unverified."""
+    return _build_handoff_draft(source, target, kind=kind, subject=subject, payload=payload,
+                                evidence_refs=evidence_refs, schema="review-handoff-draft-v2")
+
+
+def _build_handoff_draft(source, target, *, kind, subject, payload, evidence_refs, schema):
+    """Reconstruct v1 only for historical validation; no public downgrade path."""
     if kind not in {"facts", "judgment", "collaboration"}:
         raise ReviewHandoffError("handoff_kind_invalid")
     if not isinstance(payload, dict) or not payload:
         raise ReviewHandoffError("handoff_payload_required")
-    if (not isinstance(subject, dict) or set(subject) != {"objectType", "objectId", "repairRound"}
+    fields = {"objectType", "objectId", "repairRound"}
+    if schema == "review-handoff-draft-v2":
+        fields.add("eventId")
+    if (not isinstance(subject, dict) or set(subject) != fields
             or subject["objectType"] not in {"project", "pipeline", "weld", "material", "component"}
             or not isinstance(subject["objectId"], str) or not subject["objectId"].strip()
             or type(subject["repairRound"]) is not int or subject["repairRound"] < 0):
         raise ReviewHandoffError("handoff_subject_invalid")
+    if schema == "review-handoff-draft-v2" and (
+            not isinstance(subject["eventId"], str) or not subject["eventId"].strip()
+            or subject["eventId"] != subject["eventId"].strip()):
+        raise ReviewHandoffError("handoff_event_identity_required")
     origin, recipient = _identity(source), _identity(target)
     if any(origin[key] != recipient[key] for key in ("projectId", "tenantId", "businessPackId")):
         raise ReviewHandoffError("handoff_scope_mismatch")
@@ -53,7 +66,7 @@ def create_handoff_draft(source: dict[str, Any], target: dict[str, Any], *, kind
         if (not isinstance(evidence, dict) or evidence.get("documentVersionId") not in allowed
                 or type(evidence.get("pageNo")) is not int or evidence["pageNo"] < 1):
             raise ReviewHandoffError("handoff_evidence_outside_source")
-    record = {"schemaVersion": "review-handoff-draft-v1", "kind": kind, "source": origin, "target": recipient,
+    record = {"schemaVersion": schema, "kind": kind, "source": origin, "target": recipient,
               "subject": deepcopy(subject), "payload": deepcopy(payload), "evidenceRefs": deepcopy(evidence_refs),
               "lifecycleStatus": "draft", "authoritative": False, "objectMatchStatus": "unverified",
               "evidenceVerificationStatus": "unverified"}
@@ -65,7 +78,7 @@ def create_handoff_draft(source: dict[str, Any], target: dict[str, Any], *, kind
 def validate_handoff_draft(record: dict[str, Any], source: dict[str, Any], target: dict[str, Any],
                            *, subject: dict[str, Any]) -> None:
     """Reject changed inputs, destinations, objects and repair rounds; never mutate history."""
-    if record.get("schemaVersion") != "review-handoff-draft-v1":
+    if record.get("schemaVersion") not in {"review-handoff-draft-v1", "review-handoff-draft-v2"}:
         raise ReviewHandoffError("handoff_schema_invalid")
     content = {key: value for key, value in record.items() if key not in {"id", "snapshotHash"}}
     if record.get("snapshotHash") != digest(content) or record.get("id") != "HANDOFF-" + digest(content)[:24].upper():
@@ -76,7 +89,8 @@ def validate_handoff_draft(record: dict[str, Any], source: dict[str, Any], targe
         raise ReviewHandoffError("handoff_subject_changed")
     if record.get("lifecycleStatus") != "draft" or record.get("authoritative") is not False:
         raise ReviewHandoffError("handoff_draft_cannot_grant_authority")
-    expected = create_handoff_draft(source, target, kind=record.get("kind"), subject=subject,
-                                    payload=record.get("payload"), evidence_refs=record.get("evidenceRefs"))
+    expected = _build_handoff_draft(source, target, kind=record.get("kind"), subject=subject,
+                                   payload=record.get("payload"), evidence_refs=record.get("evidenceRefs"),
+                                   schema=record["schemaVersion"])
     if record != expected:
         raise ReviewHandoffError("handoff_draft_contract_changed")

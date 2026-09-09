@@ -13,7 +13,7 @@ def runs():
     return source, target
 
 
-SUBJECT = {"objectType": "weld", "objectId": "W-101", "repairRound": 1}
+SUBJECT = {"objectType": "weld", "objectId": "W-101", "repairRound": 1, "eventId": "EVENT-1"}
 EVIDENCE = [{"documentVersionId": "VERSION-1", "pageNo": 2}]
 
 
@@ -79,3 +79,46 @@ def test_document_list_and_target_version_drift_leave_draft_unchanged():
         with pytest.raises(ReviewHandoffError, match="version_changed"):
             validate_handoff_draft(draft, left, right, subject=SUBJECT)
     validate_handoff_draft(draft, source, target, subject=SUBJECT)
+
+
+@pytest.mark.parametrize("event", [None, "", " ", True, 1, " EVENT-1"])
+def test_new_handoffs_require_explicit_nonblank_event(event):
+    source, target = runs()
+    with pytest.raises(ReviewHandoffError, match="event_identity_required"):
+        create_handoff_draft(source, target, kind="facts", subject={**SUBJECT, "eventId": event},
+                             payload={"value": 1}, evidence_refs=EVIDENCE)
+
+
+def test_same_object_round_different_events_are_distinct_and_cannot_be_substituted():
+    source, target = runs()
+    first = create_handoff_draft(source, target, kind="facts", subject=SUBJECT,
+                                 payload={"value": 1}, evidence_refs=EVIDENCE)
+    other_subject = {**SUBJECT, "eventId": "EVENT-2"}
+    second = create_handoff_draft(source, target, kind="facts", subject=other_subject,
+                                  payload={"value": 1}, evidence_refs=EVIDENCE)
+    assert first["schemaVersion"] == "review-handoff-draft-v2"
+    assert first["id"] != second["id"]
+    with pytest.raises(ReviewHandoffError, match="subject_changed"):
+        validate_handoff_draft(first, source, target, subject=other_subject)
+    assert first["objectMatchStatus"] == "unverified"
+
+
+def test_historical_v1_validates_without_inventing_event_or_rewriting_id():
+    from libs.review_workstations import digest
+
+    source, target = runs()
+    historical = create_handoff_draft(source, target, kind="facts", subject=SUBJECT,
+                                      payload={"value": 1}, evidence_refs=EVIDENCE)
+    historical["schemaVersion"] = "review-handoff-draft-v1"
+    historical["subject"].pop("eventId")
+    content = {key: value for key, value in historical.items() if key not in {"id", "snapshotHash"}}
+    historical["snapshotHash"] = digest(content)
+    historical["id"] = "HANDOFF-" + digest(content)[:24].upper()
+    before = deepcopy(historical)
+    validate_handoff_draft(historical, source, target, subject=historical["subject"])
+    assert historical == before
+    with pytest.raises(ReviewHandoffError, match="subject_changed"):
+        validate_handoff_draft(historical, source, target, subject=SUBJECT)
+    with pytest.raises(ReviewHandoffError, match="subject_invalid"):
+        create_handoff_draft(source, target, kind="facts", subject=historical["subject"],
+                             payload={"value": 1}, evidence_refs=EVIDENCE)
