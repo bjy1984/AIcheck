@@ -40,3 +40,35 @@ def test_invalid_conditions_cannot_execute(change):
     value["checks"][0].update(change)
     with pytest.raises(ValueError):
         validate_conditions(value)
+
+
+@pytest.mark.parametrize("applicable,thickness,result", [
+    (True, 11, "pass"), (True, 9, "fail"), (True, None, "evidence_insufficient"),
+    (False, None, "not_applicable"), (False, 1, "not_applicable"), (None, 11, "evidence_insufficient"),
+])
+def test_applicability_precedes_checks_without_guessing(applicable, thickness, result):
+    specification = conditions()
+    specification["applicability"] = {"id": "required", "field": "required", "operator": "eq", "expected": True}
+    facts = {
+        "required": {"value": applicable, "evidenceRefs": ["DESIGN-1"]},
+        "thickness": {"value": thickness, "unit": "mm", "evidenceRefs": ["MEASURE-1"]},
+    }
+    output = evaluate_conditions(specification, facts)
+    assert output["result"] == result
+    assert len(output["checks"]) == 1
+    if applicable is False:
+        assert output["checks"][0]["evidenceRefs"] == ["DESIGN-1"]
+        assert output["checks"][0]["reason"] == "applicability_not_met"
+    if applicable is None:
+        assert output["reason"] == "applicability_unknown"
+
+
+def test_applicability_without_evidence_is_not_a_skip():
+    specification = conditions()
+    specification["applicability"] = {"id": "required", "field": "required", "operator": "eq", "expected": True}
+    output = evaluate_conditions(specification, {"required": {"value": False}})
+    assert output["result"] == "evidence_insufficient"
+    assert output["applicability"]["reason"] == "evidence_reference_missing"
+    specification["checks"][0]["operator"] = "UNSUPPORTED"
+    with pytest.raises(ValueError, match="unsupported"):
+        evaluate_conditions(specification, {"required": {"value": False, "evidenceRefs": ["E1"]}})

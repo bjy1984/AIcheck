@@ -124,3 +124,9 @@ cd backend
 - `/projects/{projectId}/rules/versions/{versionId}/trial` 接受 facts：各欄位包含 value、unit、evidenceRefs。使用已儲存條件，不接受請求覆寫門檻；不修改草稿、審查或歷史結果。
 - 缺資料／引用、單位及型別不符回傳 evidence_insufficient；不隱式換算單位。結果明確標記 draft_trial、advisoryOnly=true、evidenceVerified=false，試跑引用未作正式證據核驗。
 - 條件及 API 試跑測試 14 passed；Ruff 無新增告警。條件表單、適用性／不適用判定、正式事實組裝、工具鏈整合及發布驗收仍待完成，不等同於 69 條正式規則已實作。
+
+### 適用條件與四態試跑
+
+- executionConditions 可增加 applicability，結構與單一 check 相同，先於 checks 執行。適用條件成立才進行判定；有引用且條件不成立時回傳 not_applicable；缺資料、引用或型別不符時回傳 evidence_insufficient。
+- 未執行的檢查仍逐項保留 ID、原因及適用性依據，不因不適用而從結果中消失。整份條件先驗證，不能利用不適用分支藏入未支援運算。
+- 條件／工程草稿／試跑 API 相關回歸 23 passed，Ruff 無新增告警。仍屬輔助試跑，引用未經正式核驗；複合適用條件、條件表單、正式資料與工具鏈整合仍待開發。
