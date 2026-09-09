@@ -45,7 +45,6 @@ from libs.reasoning_budget import (
     truncation_caused_by_reasoning,
 )
 from libs.regulatory_tables import product_inspection_rules
-from libs.review_document_scope import ensure_document_sources
 from libs.review_evidence import bind_evidence_package_to_review_run, review_run_evidence_lineage
 from libs.review_grounding import (
     apply_grounding_guardrails,
@@ -57,6 +56,7 @@ from libs.review_grounding import (
     is_canonical_clause,
     merge_canonical_grounding_metadata,
 )
+from libs.review_live_sources import ensure_live_document_sources as ensure_document_sources
 from libs.review_orchestrator import (
     checklist_mode,
     output_contract,
