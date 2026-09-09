@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from libs.review_document_scope import validate_document_sources
+from libs.review_page_scope import located_record_in_range, normalize_page_ranges
+
 
 def apply_node_fact_corrections(
     state: dict[str, Any],
     project_id: str,
     node_id: int,
     facts: dict[str, Any] | None,
+    *, review_run: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """把监检人员的事实修正覆盖到本节点的业务事实上（issue #5 / D-1）。
 
@@ -24,6 +28,14 @@ def apply_node_fact_corrections(
     """
     if not isinstance(facts, dict):
         return []
+    ranges = {}
+    allowed = None
+    if review_run is not None:
+        validate_document_sources(review_run, state)
+        if str(review_run.get("projectId")) != project_id or review_run.get("nodeId") != node_id:
+            raise ValueError("fact_correction_review_identity_mismatch")
+        allowed = set(review_run.get("inputDocumentVersionIds") or [])
+        ranges = normalize_page_ranges(review_run.get("inputDocumentPageRanges", {}), list(allowed))
     applied: list[dict[str, Any]] = []
     corrections = [
         item
@@ -33,6 +45,10 @@ def apply_node_fact_corrections(
         and item.get("status") == "active"
     ]
     for correction in sorted(corrections, key=lambda item: str(item.get("createdAt") or "")):
+        version = correction.get("documentVersionId")
+        if allowed is not None and (version not in allowed or
+                (version in ranges and not located_record_in_range(correction, ranges[version]))):
+            continue
         path = str(correction.get("factPath") or "")
         parts = [part for part in path.split(".") if part]
         if not parts:

@@ -53,7 +53,8 @@ def document_source_fingerprint(run: dict[str, Any], state: dict[str, Any]) -> s
                    if isinstance(row, dict) and row.get("documentVersionId") in allowed
                    and row.get("projectId") == run.get("projectId")
                    and str(row.get("nodeId")) == str(run.get("nodeId"))
-                   and row.get("status") == "active" and row.get("fieldId")]
+                   and row.get("status") == "active"
+                   and (row.get("fieldId") or (run.get("inputDocumentPageRanges") and row.get("factPath")))]
     # Preserve order: the existing correction reader uses the last matching value.
     sources = {"parses": parses, "corrections": corrections}
     if run.get("inputDocumentPageRanges"):

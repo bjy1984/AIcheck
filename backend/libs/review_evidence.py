@@ -8,6 +8,7 @@ from typing import Any
 
 from libs.contracts.responses import server_time
 from libs.model_usage import estimate_text_tokens, is_cjk_char
+from libs.review_page_scope import located_record_in_range, normalize_page_ranges
 
 
 def _stable_hash(value: Any) -> str:
@@ -158,6 +159,7 @@ def build_evidence_snapshot(
     prompt_version: str,
     strategy_version: str,
     document_version_ids: list[str] | None = None,
+    document_page_ranges: dict[str, dict[str, int]] | None = None,
 ) -> dict[str, Any]:
     active = active_node_document_versions(state, project_id, node_id)
     if document_version_ids is not None:
@@ -181,6 +183,9 @@ def build_evidence_snapshot(
         "promptVersion": str(prompt_version),
         "strategyVersion": str(strategy_version),
     }
+    if document_page_ranges is not None:
+        hash_payload["documentPageRanges"] = normalize_page_ranges(
+            document_page_ranges, [row["documentVersionId"] for row in document_versions])
     snapshot_hash = _stable_hash(hash_payload)
     return {
         "evidenceSnapshotId": f"ESNAP-{snapshot_hash.removeprefix('sha256:')[:16].upper()}",
@@ -212,13 +217,14 @@ def _manifest_artifact(
 
 
 def _artifacts_for_document(
-    state: dict[str, Any], document_version_id: str
+    state: dict[str, Any], document_version_id: str, bounds: dict[str, int] | None = None
 ) -> list[dict[str, Any]]:
     artifacts: list[dict[str, Any]] = []
     fields = [
         row
         for row in _records(state, "extracted_fields")
         if str(row.get("documentVersionId") or "") == document_version_id
+        and (bounds is None or located_record_in_range(row, bounds))
     ]
     for index, field in enumerate(fields, start=1):
         source_id = str(field.get("id") or f"field:{index}")
@@ -237,7 +243,7 @@ def _artifacts_for_document(
         rows = [
             compact_artifact_payload(artifact_type, row)
             for row in parse_result.get(collection_name) or []
-            if isinstance(row, dict)
+            if isinstance(row, dict) and (bounds is None or located_record_in_range(row, bounds))
         ]
         if artifact_type == "fragment":
             rows = _collapse_empty_fragments(rows, parse_result_id)
@@ -260,6 +266,7 @@ def _artifacts_for_document(
         row
         for row in _records(state, "evidence_links")
         if str(row.get("documentVersionId") or "") == document_version_id
+        and (bounds is None or located_record_in_range(row, bounds))
     ]
     for index, link in enumerate(evidence_links, start=1):
         source_id = str(link.get("id") or f"evidence-link:{index}")
@@ -295,13 +302,15 @@ def build_evidence_manifest(
 ) -> dict[str, Any]:
     artifacts: list[dict[str, Any]] = []
     documents: list[dict[str, Any]] = []
+    ranges = normalize_page_ranges(snapshot.get("documentPageRanges", {}),
+                                   [row["documentVersionId"] for row in snapshot.get("documentVersions") or []])
     for snapshot_document in snapshot.get("documentVersions") or []:
         if not isinstance(snapshot_document, dict):
             continue
         version_id = str(snapshot_document.get("documentVersionId") or "")
         if not version_id:
             continue
-        document_artifacts = _artifacts_for_document(state, version_id)
+        document_artifacts = _artifacts_for_document(state, version_id, ranges.get(version_id))
         artifacts.extend(document_artifacts)
         documents.append(
             {
@@ -320,6 +329,7 @@ def build_evidence_manifest(
         "documents": documents,
         "artifacts": artifacts,
         "counts": _artifact_counts(artifacts),
+        **({"documentPageRanges": deepcopy(ranges)} if "documentPageRanges" in snapshot else {}),
     }
     manifest_hash = _stable_hash(core)
     return {
@@ -869,6 +879,7 @@ def build_review_evidence_package(
     strategy_version: str,
     max_shard_estimated_tokens: int | None = None,
     document_version_ids: list[str] | None = None,
+    document_page_ranges: dict[str, dict[str, int]] | None = None,
 ) -> dict[str, Any]:
     snapshot = build_evidence_snapshot(
         state,
@@ -879,6 +890,7 @@ def build_review_evidence_package(
         prompt_version=prompt_version,
         strategy_version=strategy_version,
         document_version_ids=document_version_ids,
+        **({"document_page_ranges": document_page_ranges} if document_page_ranges is not None else {}),
     )
     manifest = build_evidence_manifest(state, snapshot)
     shards = build_evidence_shards(
@@ -953,7 +965,9 @@ def attach_review_evidence_package_to_ai_run(
         prompt_version=str(ai_run.get("promptVersion") or "review_prompt@1.0.0"),
         strategy_version="node-review-strategy-v1",
         document_version_ids=(list(ai_run.get("inputDocumentVersionIds") or [])
-                              if (ai_run.get("evidenceReadiness") or {}).get("inputSelection", {}).get("mode") == "explicit" else None),
+                              if "inputDocumentPageRanges" in ai_run or (ai_run.get("evidenceReadiness") or {}).get("inputSelection", {}).get("mode") == "explicit" else None),
+        **({"document_page_ranges": ai_run["inputDocumentPageRanges"]}
+           if "inputDocumentPageRanges" in ai_run else {}),
     )
     snapshot_versions = sorted(
         str(item.get("documentVersionId"))

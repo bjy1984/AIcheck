@@ -1519,6 +1519,7 @@ def run_step(review_run: dict[str, Any], node_key: str, context: dict[str, Any])
             str(review_run.get("projectId") or ""),
             int(review_run.get("nodeId") or 0),
             context.get("businessFacts") if isinstance(context.get("businessFacts"), dict) else None,
+            **({"review_run": review_run} if review_run.get("inputDocumentPageRanges") else {}),
         )
         if applied_corrections:
             review_run["appliedFactCorrections"] = repo.clone(applied_corrections)
